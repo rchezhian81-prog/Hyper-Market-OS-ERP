@@ -36,6 +36,12 @@ export interface PosDeps {
   readonly recordExceptions: (tenantId: string, exceptions: readonly SaleException[]) => Promise<void> | void;
   readonly openExceptions: (tenantId: string) => Promise<readonly SaleException[]> | readonly SaleException[];
   readonly now: () => string;
+  /**
+   * The permissions the named cashier holds through their grants; `undefined` when they hold none (an unknown name).
+   * SP-4b · F09: the cashier a till names is re-verified here, never taken on the till's word (§28 · hard rule #4).
+   * Absent → the intake raises no cashier finding (a composition that has no grants register).
+   */
+  readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
 }
 
 /** Enough of a sale to be a sale. Anything beyond this is a finding, never a refusal. */
@@ -68,12 +74,18 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           });
         }
 
+        // Who rang it — re-verified from THEIR grants (SP-4b · F09): unknown is `null`, a finding; not looked up is absent.
+        const cashierId = typeof sale.cashierId === 'string' ? sale.cashierId.trim() : '';
+        const cashierGrants = deps.permissionsOfUser === undefined || cashierId === ''
+          ? undefined
+          : ((await deps.permissionsOfUser(ctx.tenantId, cashierId)) ?? null);
         const intake = acceptSale(sale, {
           catalogue: await deps.catalogue(ctx.tenantId),
           currentPackVersion: await deps.currentPackVersion(ctx.tenantId),
           saleHoldingThisReceipt: await deps.saleHoldingReceipt(ctx.tenantId, sale.receiptNumber),
           alreadyBanked: await deps.isBanked(ctx.tenantId, sale.saleId),
           now: deps.now(),
+          ...(cashierGrants === undefined ? {} : { cashierGrants }),
         } satisfies IntakeContext);
 
         if (!intake.alreadyBanked) {

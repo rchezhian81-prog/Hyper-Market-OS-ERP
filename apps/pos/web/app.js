@@ -39,6 +39,11 @@ const WORDS = {
   en: {
     staleShell: 'No connection to the store computer. Billing still works. This price list is what this lane was last given, at',
     scanToBegin: 'Scan an item to begin.', qty: 'Qty', void: 'Void', tender: 'Tender',
+    // Who is on the till (SP-4b · F09): the lane the box said it is, and the cashier who signed in — or nobody.
+    lane: 'Lane', noLane: 'No lane set on this till', notSignedIn: 'Nobody signed in',
+    signIn: 'Sign in', signOut: 'Sign out', signInTitle: 'Your staff code',
+    signInHint: 'Scan your badge or key your staff code, then OK. Every sale names who rang it.',
+    signedInAs: 'Signed in',
     cancel: 'Cancel', ok: 'OK', quantity: 'Quantity', cashReceived: 'Cash received',
     changeDue: 'Change due', online: 'Online', offline: 'Offline', unsent: 'Unsent',
     // The badge's states, from the BOX (design system §1 rule 4): connection · unsent · last contact.
@@ -103,6 +108,10 @@ const WORDS = {
   ta: {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. பில் போடுவது வேலை செய்யும். இந்த விலைப் பட்டியல் இந்த லேனுக்குக் கடைசியாகக் கொடுக்கப்பட்டது:',
     scanToBegin: 'தொடங்க ஒரு பொருளை ஸ்கேன் செய்யவும்.', qty: 'எண்ணிக்கை', void: 'நீக்கு',
+    lane: 'லேன்', noLane: 'இந்த கவுண்டருக்கு லேன் அமைக்கப்படவில்லை', notSignedIn: 'யாரும் உள்நுழையவில்லை',
+    signIn: 'உள்நுழை', signOut: 'வெளியேறு', signInTitle: 'உங்கள் பணியாளர் குறியீடு',
+    signInHint: 'உங்கள் பேட்ஜை ஸ்கேன் செய்யவும் அல்லது பணியாளர் குறியீட்டை உள்ளிட்டு சரி அழுத்தவும். ஒவ்வொரு விற்பனையும் யார் செய்தார் என்பதைக் குறிக்கும்.',
+    signedInAs: 'உள்நுழைந்தவர்',
     tender: 'பணம் பெறு', cancel: 'ரத்து', ok: 'சரி', quantity: 'எண்ணிக்கை',
     cashReceived: 'பெற்ற பணம்', changeDue: 'மீதம் தர வேண்டியது', online: 'இணைப்பில்',
     offline: 'இணைப்பு இல்லை', unsent: 'அனுப்பப்படாதவை', reasonForVoid: 'நீக்கக் காரணம்',
@@ -209,6 +218,9 @@ function demoSession() {
     syncBadge: () => ({ connection: 'online', unsentCount: 0 }),
     scanBarcode() { throw new Error('No price list on this lane.'); },
     hasCatalogue: () => false,
+    // No identity without the bundle either — the stand-in says so rather than inventing a lane or a cashier.
+    signIn() {}, signOut() {}, operator: () => undefined,
+    lane: () => ({ laneId: null, tradingDayCutoff: '00:00', tradingDayAt: (at) => at.slice(0, 10) }),
     nextReceipt: () => 'R-' + Date.now().toString(36).toUpperCase(),
     tenderCash: (_id, number) => Promise.resolve(number),
     tenderCardOrUpi: ({ receiptNumber, outcome }) => (outcome === 'approved'
@@ -231,6 +243,42 @@ function demoSession() {
 
 const session = window.posSession ?? demoSession();
 let selectedLineId = null;
+
+// ── Who is on the till (SP-4b · F09) ────────────────────────────────────────
+//
+// The header names the LANE the store box said this till is and the CASHIER who signed in — never a stand-in.
+// A cashier signs in with their staff code (scanned or keyed) and is kept across a reload on THIS till only
+// (sessionStorage: it dies with the browser session, so a till left open overnight still starts with nobody).
+// With nobody signed in, or no lane, the model refuses to take payment in its own words; the header says why.
+const OPERATOR_KEY = 'sre-pos-operator';
+function rememberedOperator() {
+  try { return window.sessionStorage.getItem(OPERATOR_KEY) || null; } catch { return null; }
+}
+function rememberOperator(id) {
+  try { if (id) window.sessionStorage.setItem(OPERATOR_KEY, id); else window.sessionStorage.removeItem(OPERATOR_KEY); } catch { /* the till still works; the sign-in just does not survive a reload */ }
+}
+function paintOperator() {
+  const lane = session.lane ? session.lane() : { laneId: null };
+  const who = session.operator ? session.operator() : undefined;
+  const laneWords = lane.laneId ? `${t('lane')} ${lane.laneId}` : t('noLane');
+  el('lane').textContent = `${laneWords} · ${who ? `${t('signedInAs')}: ${who}` : t('notSignedIn')}`;
+  el('lane').setAttribute('data-operator', who || '');
+  el('lane').setAttribute('data-lane', lane.laneId || '');
+  el('signin').textContent = who ? t('signOut') : t('signIn');
+}
+async function toggleSignIn() {
+  if (session.operator && session.operator()) {
+    session.signOut();
+    rememberOperator(null);
+    paintOperator();
+    return;
+  }
+  const code = await askScanOrKey({ title: t('signInTitle'), hint: t('signInHint') });
+  if (code === null || code === '' || code === '0') return;
+  session.signIn(String(code));
+  rememberOperator(String(code));
+  paintOperator();
+}
 
 // ── The banner ──────────────────────────────────────────────────────────────
 
@@ -444,6 +492,7 @@ function render() {
   el('empty').textContent = suspended ? t('onHold') : t('scanToBegin');
   el('total').textContent = inr(session.payableMinor());
 
+  paintOperator();
   paintBadge();
 }
 
@@ -697,6 +746,9 @@ async function takeCashToSafe() {
  * scanner (which stays off while a panel is open).
  */
 function askScanOrKey({ title, hint = '' }) {
+  // The button that opened this prompt must NOT keep focus: a scanner ends its code with Enter, and Enter on a focused
+  // button is a click — the sign-in button would sign the cashier straight back out (found by the F09 browser test).
+  if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
   return new Promise((resolve) => {
     let done = false;
     let buffer = '';
@@ -894,6 +946,13 @@ el('lang').addEventListener('click', () => {
   el('pay-cancel').textContent = t('cancel');
   render();
 });
+
+el('signin').addEventListener('click', () => { void toggleSignIn(); });
+// A reload keeps the cashier who signed in on THIS till (F09 reload test) — re-applied to the real session before paint.
+{
+  const remembered = rememberedOperator();
+  if (remembered && session.signIn && !(session.operator && session.operator())) session.signIn(remembered);
+}
 
 el('unsent').addEventListener('click', () => {
   const unsent = box.reachable && box.status ? box.status.unsent : session.syncBadge().unsentCount;

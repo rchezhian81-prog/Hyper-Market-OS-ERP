@@ -2077,6 +2077,10 @@ export function posAdapter(input: {
   return {
     now: input.now,
 
+    // SP-4b · F09: the cashier a till names is re-verified from their grants — the same register every relayed identity
+    // is checked against — so a sale under an unknown or unauthorised name is a finding the manager sees.
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+
     catalogue: async (tenantId) => {
       const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
       return new Map((pack?.snapshot.products ?? []).map((p: CatalogueProduct) => [p.productId, p]));

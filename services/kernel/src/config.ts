@@ -194,6 +194,12 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    */
   { key: 'EDGE_LANE_PORT', numeric: true, optional: true },
   /**
+   * Which LANE this box is (SP-4b · F09). Told to the served till and stamped on every sale that leaves here, so a sale
+   * is never filed under a lane that does not exist. Optional for the back-office box, which serves no till; a till box
+   * without it refuses to take payment and says why.
+   */
+  { key: 'EDGE_LANE_ID', optional: true },
+  /**
    * The loopback port the six screens are served from. Optional for the same reason the lane port
    * is: a till does not need to serve the owner's brief, and not opening a socket beats opening
    * one nobody uses.

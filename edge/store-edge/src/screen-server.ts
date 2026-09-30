@@ -28,7 +28,7 @@
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
-import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, type ScreenInput, type ScreenName } from './screen-data';
+import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, posLanePayload, type ScreenInput, type ScreenName } from './screen-data';
 import { navigationPayload } from './screen-navigation';
 
 /**
@@ -267,6 +267,8 @@ export function startScreenServer(input: {
    * box serves no lane socket, in which case the screen keeps its local, read-only behaviour.
    */
   readonly laneWriteBase?: string;
+  /** Which LANE this box is (`EDGE_LANE_ID`, SP-4b · F09) — told to the served till so every sale names it. */
+  readonly laneId?: string;
 }): Promise<ScreenServer> {
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
@@ -323,6 +325,9 @@ export function startScreenServer(input: {
       // (M01-FR-02): its own global beside the catalogue, so a bill printed offline carries the words and the
       // version. Absent when none has reached this box — the till prints with its defaults and stamps nothing.
       const receiptTemplate = route.screen === 'pos' ? posReceiptTemplate(snap) : undefined;
+      // The till alone is also told which lane it IS and when the shop's day ends (SP-4b · F09) — never who the cashier
+      // is; the person signs in at the till.
+      const posLane = route.screen === 'pos' ? posLanePayload(snap, input.laneId) : undefined;
       // Every ERP page also gets its menu — the screens THIS viewer may open on THIS box, worked out per request
       // from the pack's role register and the screen's named viewer (Stage G slice 5b · §27 · P-07). Only the ERP:
       // the till, the handhelds and the apps are one job each and have no menu to draw.
@@ -334,6 +339,7 @@ export function startScreenServer(input: {
         {
           catalogueFreshness: catalogueFreshness(snap),
           ...(receiptTemplate === undefined ? {} : { posReceiptTemplate: receiptTemplate }),
+          ...(posLane === undefined ? {} : { posLane }),
           ...(navigation === undefined ? {} : { sreNavigation: navigation }),
           // The one write a screen makes back to the box: the manager's day close (M14-FR-04). Only
           // present when this box serves a lane socket to post to; the screen falls back to read-only

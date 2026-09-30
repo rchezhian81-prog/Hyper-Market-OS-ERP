@@ -199,11 +199,33 @@ device, human UAT and production verification separate; approved deferrals stay 
   and does not yet show the held quantity, the governance flags or offer the decision (SP-9); the disposition write path
   for damaged / expired / rejected stock (accept / return / claim) is SP-6; a receipt does not reduce the PO remainder
   (F01, SP-6).
-- **Current-work pointer:** last verified = SP-4 (ii) (this PR); next = **SP-4b** [W02, F09] (the served till carries
-  the real cashier, lane and trading day into disk, cloud, audit and day reports; observation `pos.test.ts` F09 case
-  inverted); then SP-4c (F10), SP-5/5b (F05/F06), SP-6 (F01), SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker
-  + driver) after the core-store chain; genuine blockers: none; external gates unchanged (providers, hardware, real
-  data, pilot GO).
+- **SP-4b — the served till names who rang the sale, on which lane, on which day — or refuses (F09 · W02 · M12-FR-01 ·
+  M02 · §28 · hard rules #4 #7).** The three placeholders (`cashier`, `lane-1`, `1970-01-01`) are gone. LANE: the store
+  box's own setting `EDGE_LANE_ID` (installer `--lane`), told to the served till as `window.posLane` and stamped by the box
+  on a record that names none, as the store id is. CASHIER: the person signs in at the till with their staff code (the
+  `Sign in` control; kept across a reload of this browser session); a name carried in a pack for whoever is at the till
+  would be a shared identity, so none is. With nobody signed in, or no lane, Tender / refund / cash movement / Close are
+  refused before the money, in the cashier's words (`NoOperatorError`, `NoLaneError`). DAY: worked out at the moment of
+  each sale from the shop's cut-off in the machine's wall clock (`wallClockIn` / `tradingDateOf`) — found while doing it:
+  the box dated its screen day and day close from the ISO-UTC string (wrong for five and a half hours after midnight UTC
+  in Tamil Nadu); both now use the wall clock. HEAD OFFICE re-verifies the cashier a sale names from their grants
+  (`pos.sale.sync`): `cashier_unknown`, `cashier_lacks_authority`, `sale_names_no_cashier`, `sale_names_no_lane`,
+  `sale_names_no_trading_day` are material findings on the banked sale, never a refusal of a sale that happened.
+  Evidence: observation `pos.test.ts` F09 case inverted (F10 still observed); `pos-operator-and-day.test.ts` 5;
+  `trading-day.test.ts` wall clock (Asia/Kolkata vs UTC); `service-pos.test.ts` attribution findings;
+  `the-till-names-its-operator.test.ts` 4 (cloud findings on real routes; box stamps its lane; served till told its lane
+  and cut-off, never a cashier); `the-served-till-takes-a-sale.e2e.ts` in real Chromium (sign in → the disk record names
+  the three → reload keeps the cashier); the installer names the lane (`install-till.test.ts`,
+  `the-installed-till-starts.test.ts`); every till e2e signs in first, and the interaction-budget e2e counts the sign-in
+  at two acts (Sign in → badge scan, once a shift) — that test found a scanner's closing Enter re-clicking the
+  still-focused Sign in button and signing the cashier straight back out; every scan-or-key prompt now drops the
+  opener's focus first (`askScanOrKey`). **Still open, honestly:** the staff code
+  identifies but does not authenticate — a credential-checked till login (PIN / badge verified against the store
+  computer, offline-capable) is GAP-POS-LOGIN-01; F10 (the Close button's input) is SP-4c; no physical device or UAT.
+- **Current-work pointer:** last verified = SP-4b (this PR); next = **SP-4c** [W10 part, F10] (till close and cash —
+  float, pickup, shift close delivered durably like sales, restart-safe, reconciled; observation `pos.test.ts` F10 case
+  inverted); then SP-5/5b (F05/F06), SP-6 (F01), SP-7 (F02/F04), SP-8/8b (F08), SP-9/9b; **SP-3c** (picker + driver)
+  after the core-store chain; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

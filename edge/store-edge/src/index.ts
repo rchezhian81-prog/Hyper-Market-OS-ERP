@@ -162,6 +162,12 @@ export function createEdgeNode(input: {
    * cloud falls back to the pack's scope or the lane, and says so on the movement (P-08). Never invented here.
    */
   readonly storeId?: () => string | undefined;
+  /**
+   * The lane this box IS (`EDGE_LANE_ID`, SP-4b · F09) — stamped as the sale's `laneId` on the way to the cloud when the
+   * till's record names none. A record that names its lane keeps it; a box with no lane stamps nothing (the cloud then
+   * raises `sale_names_no_lane`, P-08).
+   */
+  readonly laneId?: () => string | undefined;
 }): EdgeNode {
   let held = input.initialPack;
   // Work committing right now, keyed by its id, so a concurrent second call with the same id awaits
@@ -193,7 +199,7 @@ export function createEdgeNode(input: {
             // Translated to the cloud's sale contract before it leaves — the disk record speaks
             // `id`/`total`, `/v1/sales` speaks `saleId`/`totalMinor`/`packVersion`. The pack this edge
             // holds is the one the lane priced this sale from, so it stamps the version (see cloud-sale.ts).
-            payload: toCloudSale(JSON.parse(record) as unknown, held?.snapshot.version ?? 0, input.storeId?.()),
+            payload: toCloudSale(JSON.parse(record) as unknown, held?.snapshot.version ?? 0, input.storeId?.(), input.laneId?.()),
           }));
         }
         // Teach the refund-entitlement guard what this sale sold, so a refund taken later in the SAME

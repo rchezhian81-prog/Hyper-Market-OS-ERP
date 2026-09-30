@@ -72,7 +72,7 @@ import { toCloudSale } from './cloud-sale';
 import { toCloudReturn } from './cloud-return';
 import { toCloudConcessionTag } from './cloud-concession-tag';
 import { toCloudChecklist, toCloudTaskCompletion, checklistIdOf, taskIdOf } from './cloud-completion';
-import { makeTradingDayRule, tradingDate, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
+import { makeTradingDayRule, tradingDate, wallClockIn, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import { readFile } from 'node:fs/promises';
 
 /** The returns pipeline's own cursor file, so the sale and refund logs advance independently. */
@@ -481,6 +481,17 @@ export async function startEdge(
   const storeIdOfThisBox = (): string | undefined =>
     (pack.policies.known && typeof pack.policies.value.storeId === 'string' && pack.policies.value.storeId !== '' ? pack.policies.value.storeId : undefined);
 
+  // Which LANE this box is (SP-4b · F09): its own setting, never a default. Stamped on every sale that leaves here when
+  // the till's record names none, and told to the served till so a sale is never filed under a lane that does not exist.
+  const laneIdOfThisBox = (): string | undefined => {
+    const v = settings['EDGE_LANE_ID'];
+    return v === undefined || v.trim() === '' ? undefined : v.trim();
+  };
+  const laneOfBox = laneIdOfThisBox();
+  say(laneOfBox === undefined
+    ? 'no EDGE_LANE_ID is set: the till this box serves will refuse to take payment until this box is told which lane it is.'
+    : `this box is lane ${laneOfBox}: every sale it rings names it.`);
+
   /**
    * Rebuild each queue from its durable log and its durable dead-letter store.
    *
@@ -508,7 +519,7 @@ export async function startEdge(
       return makeEvent({
         id: `edge-sale-${saleId}`, type: 'SaleCommitted', occurredAt: new Date().toISOString(),
         idempotencyKey: `edge-${tenantId}-${saleId}`, source: 'edge/lane',
-        payload: toCloudSale(parsed, restoredPackVersion, storeIdOfThisBox()),
+        payload: toCloudSale(parsed, restoredPackVersion, storeIdOfThisBox(), laneIdOfThisBox()),
       });
     },
   });
@@ -824,6 +835,8 @@ export async function startEdge(
     ...(restoredPack === undefined ? {} : { initialPack: restoredPack }),
     // Which store this box is — stamped on every sale it queues as the stock location (M08-FR-01, Stage D slice 2).
     storeId: storeIdOfThisBox,
+    // Which lane this box is — stamped on a sale whose record names none (SP-4b · F09).
+    laneId: laneIdOfThisBox,
   });
 
   // The lane socket. Absent `EDGE_LANE_PORT`, this edge has no screen attached and does the
@@ -903,7 +916,9 @@ export async function startEdge(
       unreadableRecords: recordsNow.unreadable,
       outbox,
       now,
-      tradingDay: tradingDate(now.slice(0, 16), packCutoff(pack)),
+      // The shop's own wall clock, not UTC: dated in UTC, a Tamil Nadu shop was on the wrong day for five and a half
+      // hours after midnight UTC (SP-4b). The till dates each sale by the same rule at the moment it is taken.
+      tradingDay: tradingDate(wallClockIn(now), packCutoff(pack)),
       ...(heldCatalogue === undefined ? {} : { cataloguePack: heldCatalogue }),
     };
   };
@@ -915,6 +930,8 @@ export async function startEdge(
     ...(screenHost === undefined ? {} : { host: screenHost }),
     appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',
     snapshot,
+    // Which lane this box is — told to the served till so every sale names it (SP-4b · F09).
+    ...(laneOfBox === undefined ? {} : { laneId: laneOfBox }),
     // The manager's day close (M14-FR-04) posts to this box's lane socket — tell the screen where it is.
     // Only when this box actually serves a lane; otherwise the screen stays read-only (a local preview).
     ...(lane === null ? {} : { laneWriteBase: `http://${LANE_HOST}:${lane.port}` }),
@@ -976,7 +993,7 @@ export async function startEdge(
     // The day being closed is the most-recently-ENDED trading day: the previous trading date relative
     // to now. The engine refuses to close a day whose cut-off has not passed (currentTradingDate must
     // be later than the day closed), so closing the previous date is the only one that can succeed.
-    const currentTradingDate = tradingDate(input.now.slice(0, 16), rule);
+    const currentTradingDate = tradingDate(wallClockIn(input.now), rule);
     const dayToClose = ((): string => {
       const dt = new Date(`${currentTradingDate}T00:00:00Z`);
       dt.setUTCDate(dt.getUTCDate() - 1);
@@ -1000,7 +1017,7 @@ export async function startEdge(
     try {
       decideDayClose({
         id: req.dayCloseId, storeId: tenantId, tradingDay: dayToClose, closedBy: req.closedBy,
-        closedAtLocal: input.now.slice(0, 16), closedAt: input.now, tradingDayRule: rule,
+        closedAtLocal: wallClockIn(input.now), closedAt: input.now, tradingDayRule: rule,
         unresolvedExceptions, unsentSyncItems,
       }, new SyncOutbox());
     } catch (e) {

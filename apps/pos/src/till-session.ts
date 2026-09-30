@@ -30,6 +30,8 @@ import { assertReturnValid, commitReturn, type CommitReturnInput, type Committed
 import { closeShift, type CloseShiftInput, type ShiftCloseResult } from '../../../packages/till/src/till';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
+import { makeTradingDayRule, tradingDateOf } from '../../../packages/calendar/src/index';
+import { NoOperatorError, NoLaneError } from './session';
 
 /**
  * The lane's durable write for a refund — post it to this till's own edge and wait for the answer,
@@ -87,9 +89,14 @@ export class RefundUncertainError extends Error {
 
 export interface TillConfig {
   readonly tillId: string;
-  readonly laneId: string;
-  readonly cashierId: string;
-  readonly tradingDay: string;
+  /** The lane this till IS (the box's `EDGE_LANE_ID`); absent → cash, refunds and the close are refused (F09). */
+  readonly laneId?: string;
+  /** The cashier at the till when built; usually absent — the person signs in (`signIn`), §28 · hard rule #4. */
+  readonly cashierId?: string;
+  /** A FIXED trading day (tests / replay). Absent → dated at the moment of each action, per the cut-off. */
+  readonly tradingDay?: string;
+  /** Where this shop's trading day ends, "HH:MM" local (M01-FR-02). Absent = midnight. */
+  readonly tradingDayCutoff?: string;
   /** |over/short| at or above which the variance is material and needs a reason. Per-tenant. */
   readonly varianceToleranceMinor: number;
 }
@@ -137,6 +144,11 @@ export interface TillSession {
    * did not record. The edge queues it for the cloud; the cloud re-verifies the §28 approver on sync.
    */
   refund(input: Omit<CommitReturnInput, 'laneId' | 'processedBy'>): Promise<CommittedReturn>;
+  /** A cashier signs in with their staff code (SP-4b · F09); cash movements, refunds and the close name them. */
+  signIn(cashierId: string): void;
+  signOut(): void;
+  /** Who is at the till now — the signed-in cashier, else the configured one, else nobody. */
+  operator(): string | undefined;
 
   /**
    * Close the shift against a **counted** figure.
@@ -173,6 +185,21 @@ export function createTillSession(
 ): TillSession {
   const inr = (minor: number): Money => money(minor, 'INR');
 
+  // Who, where, which day — real or refused (F09). The same rule the sale session applies.
+  let operatorId: string | undefined;
+  const operator = (): string | undefined => operatorId ?? config.cashierId;
+  const who = (action: string): string => {
+    const id = operator();
+    if (id === undefined) throw new NoOperatorError(action);
+    return id;
+  };
+  const lane = (action: string): string => {
+    if (config.laneId === undefined || config.laneId === '') throw new NoLaneError(action);
+    return config.laneId;
+  };
+  const dayOf = (atIsoUtc: string): string =>
+    config.tradingDay ?? tradingDateOf(atIsoUtc, makeTradingDayRule(config.tradingDayCutoff ?? '00:00'));
+
   /** The refund record posted to the edge — exactly the fields the synced-return route + `toCloudReturn`
    * read (the bill it is against, who processed it, the §28 approver, and the lines). */
   const toReturnRecord = (full: CommitReturnInput): string => JSON.stringify({
@@ -197,22 +224,30 @@ export function createTillSession(
   });
 
   return {
+    signIn: (cashierId) => {
+      const id = cashierId.trim();
+      if (id === '') throw new RangeError('A staff code is required to sign in.');
+      operatorId = id;
+    },
+    signOut: () => { operatorId = undefined; },
+    operator,
+
     moveCash: (input) => recordCashMovement({
       id: `cm-${config.tillId}-${input.at}`,
       tillId: config.tillId,
-      laneId: config.laneId,
+      laneId: lane('record a cash movement'),
       kind: input.kind,
       amount: inr(input.amountMinor),
-      custodianId: config.cashierId,
-      performedBy: input.performedBy ?? config.cashierId,
+      custodianId: who('record a cash movement'),
+      performedBy: input.performedBy ?? who('record a cash movement'),
       at: input.at,
-      tradingDay: config.tradingDay,
+      tradingDay: dayOf(input.at),
     }, cashLedger, outbox),
 
     drawerBalanceMinor: () => tillBalanceMinor(cashLedger, config.tillId),
 
     refund: async (input) => {
-      const full: CommitReturnInput = { ...input, laneId: config.laneId, processedBy: config.cashierId };
+      const full: CommitReturnInput = { ...input, laneId: lane('take a refund'), processedBy: who('take a refund') };
 
       // Decide first — an invalid refund is refused before anything is written anywhere (the sale
       // path's "decide, then record" order). `assertReturnValid` throws the specific M13 error and
@@ -251,9 +286,9 @@ export function createTillSession(
     close: (input) => closeShift({
       id: input.shiftId,
       tillId: config.tillId,
-      laneId: config.laneId,
-      cashierId: config.cashierId,
-      tradingDay: config.tradingDay,
+      laneId: lane('close the till'),
+      cashierId: who('close the till'),
+      tradingDay: dayOf(input.closedAt),
       closedAt: input.closedAt,
       openingFloat: inr(input.openingFloatMinor),
       cashSales: inr(input.cashSalesMinor),

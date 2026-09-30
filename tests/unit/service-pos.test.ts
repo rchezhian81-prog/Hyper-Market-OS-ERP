@@ -452,3 +452,20 @@ describe('the service on the kernel', () => {
     expect((res.body as { critical: unknown[] }).critical).toHaveLength(1);
   });
 });
+
+describe('who rang it, on which lane, on which day (SP-4b · F09) — attribution defects are findings, never refusals', () => {
+  it('a sale naming no cashier, no lane or no day is banked and flagged material, one finding each', () => {
+    const r = acceptSale(sale({ cashierId: '', laneId: '', tradingDay: '' }), ctx());
+    expect(r.banked).toBe(true);
+    expect(kinds(r.exceptions)).toEqual(expect.arrayContaining(['sale_names_no_cashier', 'sale_names_no_lane', 'sale_names_no_trading_day']));
+    for (const e of r.exceptions) expect(e.severity).toBe('material');
+  });
+
+  it('a cashier head office does not know is a finding; one with no till authority is another; a real cashier is none', () => {
+    expect(kinds(acceptSale(sale(), ctx({ cashierGrants: null })).exceptions)).toEqual(['cashier_unknown']);
+    expect(kinds(acceptSale(sale(), ctx({ cashierGrants: ['inventory.availability.read'] })).exceptions)).toEqual(['cashier_lacks_authority']);
+    expect(kinds(acceptSale(sale(), ctx({ cashierGrants: ['pos.sale.sync', 'pos.return.record'] })).exceptions)).toEqual([]);
+    // Not looked up at all → not judged (a composition with no grants register).
+    expect(kinds(acceptSale(sale(), ctx()).exceptions)).toEqual([]);
+  });
+});

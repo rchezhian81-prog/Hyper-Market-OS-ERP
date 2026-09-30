@@ -56,11 +56,12 @@ export function checkNodeVersion(version) {
 
 /** Parse the command line into flags. Unknown flags are named, not ignored. */
 export function parseArgs(argv) {
-  const flags = { tenant: undefined, dir: undefined, composeEnv: undefined, lanePort: '8090', screenPort: '8091', generateKey: false, skipBuild: false, force: false, dryRun: false, unknown: [] };
+  const flags = { tenant: undefined, lane: undefined, dir: undefined, composeEnv: undefined, lanePort: '8090', screenPort: '8091', generateKey: false, skipBuild: false, force: false, dryRun: false, unknown: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = () => { i += 1; return argv[i]; };
     if (a === '--tenant') flags.tenant = next();
+    else if (a === '--lane') flags.lane = next();
     else if (a === '--dir') flags.dir = next();
     else if (a === '--from-compose-env') flags.composeEnv = next();
     else if (a === '--lane-port') flags.lanePort = next();
@@ -96,6 +97,12 @@ export function planTillSettings(input) {
   const tenantId = flags.tenant ?? (realValue(composeEnv?.EDGE_TENANT_ID) ? composeEnv.EDGE_TENANT_ID : undefined) ?? existing?.EDGE_TENANT_ID;
   if (!realValue(tenantId)) problems.push('no tenant id: pass --tenant <id>, or fill EDGE_TENANT_ID in the cloud settings file (infra/compose/.env)');
 
+  // Which lane THIS till is (SP-4b · F09). Every sale it rings names the lane, so the lane must be a real, chosen name —
+  // `--lane`, else what an earlier install wrote. Never a default: two tills defaulting to the same lane would be one lane
+  // on paper and two in the shop.
+  const laneId = flags.lane ?? existing?.EDGE_LANE_ID;
+  if (!realValue(laneId)) problems.push('no lane id: pass --lane <id> (for example lane-1) — every sale this till rings names the lane it was rung on');
+
   let signingKey;
   if (realValue(existing?.PACK_SIGNING_KEY)) {
     signingKey = existing.PACK_SIGNING_KEY;
@@ -122,6 +129,7 @@ export function planTillSettings(input) {
   const settings = {
     EDGE_DATA_DIR: join(installDir, 'edge-data'),
     EDGE_TENANT_ID: tenantId ?? '',
+    EDGE_LANE_ID: laneId ?? '',
     PACK_SIGNING_KEY: signingKey ?? '',
     EDGE_CAPACITY_BYTES: existing?.EDGE_CAPACITY_BYTES ?? '10737418240',
     EDGE_LANE_PORT: String(flags.lanePort),
@@ -145,6 +153,8 @@ export function renderTillEnv(settings) {
     `EDGE_DATA_DIR=${settings.EDGE_DATA_DIR}`,
     '# Which shop this till belongs to.',
     `EDGE_TENANT_ID=${settings.EDGE_TENANT_ID}`,
+    '# Which LANE this till is. Every sale it rings names this lane; the cashier signs in with their staff code.',
+    `EDGE_LANE_ID=${settings.EDGE_LANE_ID}`,
     '# Signs the price list this till trades on. Must be the SAME key the cloud signs packs with.',
     `PACK_SIGNING_KEY=${settings.PACK_SIGNING_KEY}`,
     '# How much disk the till may use for locally-saved work (10 GiB = days of trading with no line).',
@@ -231,6 +241,7 @@ export function renderNextSteps(input) {
     `  1. Start the till: ${platform === 'win32' ? `double-click ${start}` : `run ${join(installDir, start)}`}`,
     '     It prints "lane socket on 127.0.0.1:' + settings.EDGE_LANE_PORT + '" and "screens on 127.0.0.1:' + settings.EDGE_SCREEN_PORT + '". Leave it running.',
     `  2. Open the till in a browser on THIS PC: http://127.0.0.1:${settings.EDGE_SCREEN_PORT}/pos/`,
+    '     Sign in with your staff code (top right) before the first sale — every sale names who rang it and on which lane.',
     '  3. Ring a sale and take cash — the receipt number appears once the sale is on this PC\'s disk.',
     '  4. Pull the network cable and ring another — it still completes; the unsent counter goes up. Nothing is lost.',
     `  5. Check the pieces: pnpm run standup:check   (reads ${join(installDir, 'till.env')})`,

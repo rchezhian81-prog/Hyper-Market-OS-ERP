@@ -98,7 +98,17 @@ export type SaleExceptionKind =
   /** A commit time ahead of the server's clock — a lane whose clock is wrong. */
   | 'committed_in_the_future'
   /** Lines do not add up to the sale total. */
-  | 'lines_do_not_sum_to_total';
+  | 'lines_do_not_sum_to_total'
+  /** The sale names no cashier — nobody can be asked about it (SP-4b · F09 · §28 · hard rule #4). */
+  | 'sale_names_no_cashier'
+  /** The named cashier holds no grants in this shop — head office does not know them (F09). */
+  | 'cashier_unknown'
+  /** The named cashier holds no till authority (`pos.sale.sync`) — they should not have been signed in (F09 · §28). */
+  | 'cashier_lacks_authority'
+  /** The sale names no lane — the till was never told which lane it is (F09). */
+  | 'sale_names_no_lane'
+  /** The sale carries no trading day — it cannot be placed in a day's books (F09 · M01-FR-02). */
+  | 'sale_names_no_trading_day';
 
 /** How fast a person has to act, which is not the same as how large the number is. */
 export type ExceptionSeverity = 'critical' | 'material' | 'informational';
@@ -152,7 +162,18 @@ export interface IntakeContext {
   readonly stalePackVersions?: number;
   /** Price difference below which nobody is told. Per-tenant. Default 0. */
   readonly priceToleranceMinor?: number;
+  /**
+   * The permissions the sale's named cashier holds through their grants in this tenant (SP-4b · F09): `null` when head
+   * office has no such user, absent when nobody looked (no finding is raised then). Re-verified here, never taken on
+   * the till's word — the same rule every relayed identity follows (§28 · hard rule #4).
+   */
+  readonly cashierGrants?: readonly string[] | null;
 }
+
+const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+
+/** The permission that says "may ring sales at a till" in the role catalogue (`cashier`, `store_manager`, `owner`). */
+export const TILL_AUTHORITY = 'pos.sale.sync';
 
 /**
  * Take a sale and say what is wrong with it — without ever declining it.
@@ -187,6 +208,33 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
       `the lines add to ${lineSum} against a total of ${sale.totalMinor}`,
       'The receipt the customer holds does not add up. Keep it for the day-end review.',
       { differenceMinor: lineSum - sale.totalMinor });
+  }
+
+  // ── Who rang it, on which lane, on which day (SP-4b · F09). The money is real either way; a sale that ──────
+  // ── names nobody, no lane or no day is one the shop cannot answer for, so each is a MATERIAL finding. ──────
+  const cashierId = text(sale.cashierId);
+  if (cashierId === '') {
+    add('sale_names_no_cashier', 'material',
+      'the sale names no cashier',
+      'Nobody can be asked about this sale. Find out which till sent it and who was on it — a till must be signed in before it takes payment.');
+  } else if (ctx.cashierGrants === null) {
+    add('cashier_unknown', 'material',
+      `cashier "${cashierId}" holds no grants in this shop`,
+      'Head office does not know this staff code. Check who was on the till; a sale under an unknown name cannot be attributed to anyone.');
+  } else if (ctx.cashierGrants !== undefined && !ctx.cashierGrants.includes(TILL_AUTHORITY)) {
+    add('cashier_lacks_authority', 'material',
+      `cashier "${cashierId}" holds no till authority`,
+      'This person is not allowed to ring sales. Check who was on the till and why they were signed in.');
+  }
+  if (text(sale.laneId) === '') {
+    add('sale_names_no_lane', 'material',
+      'the sale names no lane',
+      'The till was never told which lane it is. Set EDGE_LANE_ID on that store computer.');
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text(sale.tradingDay))) {
+    add('sale_names_no_trading_day', 'material',
+      `the sale carries no trading day ("${text(sale.tradingDay)}")`,
+      'It cannot be placed in a day\'s books until the till dates its sales. Check that store computer\'s cut-off setting and clock.');
   }
 
   // ── The catalogue. Every finding here is "the lane and the cloud disagree", ──

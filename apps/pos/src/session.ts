@@ -18,11 +18,24 @@ import { commitSale, UnpaidSaleError, type CommittedSale } from '../../../packag
 import type { Ledger } from '../../../packages/ledger/src/ledger';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
+import { makeTradingDayRule, tradingDateOf } from '../../../packages/calendar/src/index';
 
 export interface PosSessionConfig {
-  readonly laneId: string;
-  readonly cashierId: string;
-  readonly tradingDay: string;
+  /**
+   * The lane this till IS — the store box's own identity (`EDGE_LANE_ID`), told to the served shell; never a default
+   * (audit finding F09). Absent means the box was never told, and a sale is REFUSED rather than filed under a lane
+   * that does not exist.
+   */
+  readonly laneId?: string;
+  /**
+   * The cashier at the till when the session was built. Usually absent: the person SIGNS IN with their staff code
+   * (`signIn`), so every sale names who actually rang it (§28 · hard rule #4). Absent and nobody signed in → refused.
+   */
+  readonly cashierId?: string;
+  /** A FIXED trading day (a test, a replay). Absent → each sale is dated at the moment it is taken, per the cut-off. */
+  readonly tradingDay?: string;
+  /** Where this shop's trading day ends, "HH:MM" local (M01-FR-02), from the store pack. Absent = midnight. */
+  readonly tradingDayCutoff?: string;
   readonly currency: CurrencyCode;
   /** Default tax rate when a line doesn't carry its own (per-tenant config). */
   readonly defaultTaxRate: Rate;
@@ -123,12 +136,35 @@ export class LocalCommitRefusedError extends Error {
   }
 }
 
+/**
+ * Nobody is signed in at this till (SP-4b · F09 · §28 · hard rule #4). A sale with no cashier is a sale nobody can be
+ * asked about, so it is refused BEFORE the money is taken — with the cashier's words, like every lane refusal.
+ */
+export class NoOperatorError extends Error {
+  readonly laneMessage = 'Nobody is signed in at this till. Sign in with your staff code before taking payment.';
+  constructor(action = 'take payment') {
+    super(`Cannot ${action}: nobody is signed in at this till.`);
+    this.name = 'NoOperatorError';
+  }
+}
+
+/** This till has no lane id — the store box was never told which lane it is (SP-4b · F09). Refused before the money. */
+export class NoLaneError extends Error {
+  readonly laneMessage = 'This till has no lane id. Do not take money — ask the installer to set the lane on this store computer.';
+  constructor(action = 'take payment') {
+    super(`Cannot ${action}: this till has no lane id.`);
+    this.name = 'NoLaneError';
+  }
+}
+
 export class PosSession {
   private readonly lines: BasketEntry[] = [];
   private seq = 0;
   private state: PosState = 'idle';
   private connection: ConnectionState = 'online';
   private promotions: readonly Promotion[] = [];
+  /** The cashier who signed in at this till (SP-4b) — over the configured one, when both exist. */
+  private operatorId: string | undefined;
   /** Evaluation instant for effective-dated promotions; set by the caller (no clock). */
   private nowRef = '1970-01-01T00:00:00Z';
 
@@ -306,6 +342,37 @@ export class PosSession {
   }
 
   /** Set the evaluation instant used for effective-dated promotions. */
+  /** A cashier signs in with their staff code (SP-4b · F09). Every sale from here names them. */
+  signIn(cashierId: string): void {
+    const id = cashierId.trim();
+    if (id === '') throw new RangeError('A staff code is required to sign in.');
+    this.operatorId = id;
+  }
+
+  /** The cashier leaves the till: the next sale is refused until somebody signs in. */
+  signOut(): void {
+    this.operatorId = undefined;
+  }
+
+  /** Who is at the till now — the signed-in cashier, else the one the session was built with, else nobody. */
+  operator(): string | undefined {
+    return this.operatorId ?? this.config.cashierId;
+  }
+
+  /** The lane this till is, or undefined when the box never said. */
+  laneId(): string | undefined {
+    return this.config.laneId === undefined || this.config.laneId === '' ? undefined : this.config.laneId;
+  }
+
+  /**
+   * The trading day a moment belongs to — per this shop's cut-off, in this machine's wall clock (M01-FR-02), or the
+   * fixed day the session was built with. Worked out at COMMIT, so a till left open past the cut-off dates the next
+   * sale to the new day rather than the one the page was opened on (F09).
+   */
+  tradingDayFor(atIsoUtc: string): string {
+    return this.config.tradingDay ?? tradingDateOf(atIsoUtc, makeTradingDayRule(this.config.tradingDayCutoff ?? '00:00'));
+  }
+
   setNow(atIsoUtc: string): void {
     this.nowRef = atIsoUtc;
   }
@@ -345,13 +412,19 @@ export class PosSession {
       throw new EmptyBasketError();
     }
 
+    // Who, where, which day — REAL, or refused (F09). A placeholder here becomes a sale nobody can be asked about.
+    const cashierId = this.operator();
+    if (cashierId === undefined) throw new NoOperatorError();
+    const laneId = this.laneId();
+    if (laneId === undefined) throw new NoLaneError();
+
     const active = this.activeLines();
     const input = {
         id: saleId,
         number,
-        laneId: this.config.laneId,
-        cashierId: this.config.cashierId,
-        tradingDay: this.config.tradingDay,
+        laneId,
+        cashierId,
+        tradingDay: this.tradingDayFor(committedAt),
         committedAt,
         lines: active.map((l) => ({
           productId: l.productId,

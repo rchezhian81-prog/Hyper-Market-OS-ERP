@@ -36,8 +36,12 @@ the books. One command installs it; one script starts it.
 From the repository folder:
 
 ```
-pnpm run till:install -- --tenant <your tenant id>
+pnpm run till:install -- --tenant <your tenant id> --lane <this till's lane, e.g. lane-1>
 ```
+
+**`--lane` names which lane THIS PC is** (SP-4b). Every sale the till rings carries that lane, and the cashier signs in
+with their staff code before the first sale, so every sale names who rang it and where. Give each till PC its own lane
+name; a re-run keeps the lane an earlier install wrote.
 
 **If the cloud runs on this PC** and you have already filled `infra/compose/.env` (see
 `pilot-deployment.md`), leave `--tenant` out — the installer reads the tenant id and the pack signing

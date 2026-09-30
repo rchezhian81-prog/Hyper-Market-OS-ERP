@@ -47,6 +47,8 @@ interface PosWindow {
   readonly posSession?: {
     scan(item: { productId: string; description: string; unitPriceMinor: number; qty: number }): void;
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
+    signIn(cashierId: string): void;
+    operator(): string | undefined;
     lookupRefund(receipt: string): Promise<RefundLookup | null>;
   };
 }
@@ -73,7 +75,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     // The edge exactly as a one-PC install runs it, with NO cloud configured — the offline case.
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
     }, () => {}))!;
     stops.push(() => edge.stop());
     expect(edge.lane?.port).toBe(8090);
@@ -87,6 +89,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const result = await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
       // Ring one item and take cash — a bill to refund against.
+      w.posSession!.signIn('u-lanecash'); // the cashier signs in first (SP-4b · F09)
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
       await w.posSession!.tenderCash('S-1', 'R-0001', '2026-08-28T10:00:00Z');
 
@@ -145,7 +148,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
     }, () => {}))!;
     stops.push(() => edge.stop());
 
@@ -157,6 +160,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
 
     const result = await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
+      w.posSession!.signIn('u-lanecash'); // the cashier signs in first (SP-4b · F09)
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
       await w.posSession!.tenderCash('S-3', 'R-0003', '2026-08-28T10:10:00Z');
       const bill = await w.posSession!.lookupRefund('R-0003');
@@ -191,7 +195,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     dirs.push(dir);
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
     }, () => {}))!;
     stops.push(() => edge.stop());
 
@@ -203,6 +207,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
 
     const outcome = await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
+      w.posSession!.signIn('u-lanecash'); // the cashier signs in first (SP-4b · F09)
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
       await w.posSession!.tenderCash('S-2', 'R-0002', '2026-08-28T10:05:00Z');
       const bill = await w.posSession!.lookupRefund('R-0002');

@@ -18,6 +18,7 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
  * and every tap and scan is tallied per spec row; the row fails if the state is not reached inside its budget.
  *
  *   Till (pos-cashier.md)                       budget   Manager (store-manager.md)          budget
+ *   sign in for the shift: Sign in → badge scan    2     (once a shift, not per sale — SP-4b)
  *   scan an item (a scanner is one act)            1     approve a request, reason recorded     3
  *   change quantity: line → Qty → number           3     start the day close                    2
  *   go to tender                                   1
@@ -54,7 +55,7 @@ const MANAGER_PACK = JSON.stringify({
 });
 
 interface PosWindow {
-  readonly posSession?: { hasCatalogue(): boolean };
+  readonly posSession?: { hasCatalogue(): boolean; operator(): string | undefined };
   readonly managerSession?: unknown;
 }
 
@@ -112,10 +113,16 @@ describe.skipIf(!HAVE_BROWSER)('the spec\'s interaction budget, counted on the s
     return page;
   }
 
-  it('till: scan 1 · quantity 3 · tender 1 · cash 3 · hold 1 · recall 1 — and the sale lands on the box', async () => {
-    const edge = await box(TILL_PACK, { EDGE_LANE_PORT: '8090' });
+  it('till: sign in 2 · scan 1 · quantity 3 · tender 1 · cash 3 · hold 1 · recall 1 — and the sale lands on the box', async () => {
+    const edge = await box(TILL_PACK, { EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1' });
     const page = await open('/pos/', 'till', edge.screens!.port);
     const taps = new Tally(page);
+
+    // Sign in for the shift (SP-4b · F09): tap Sign in, scan the staff badge — two acts, once a shift, never per sale.
+    await taps.tap('#signin');
+    await taps.scan('u-lanecash');
+    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession?.operator() === 'u-lanecash');
+    expect(taps.reset(), 'sign in for the shift').toBeLessThanOrEqual(2);
 
     // Scan an item — one act, no target to find. The catalogue the box trusted prices it.
     await taps.scan('8901234567890');

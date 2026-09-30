@@ -56,7 +56,7 @@ const startLane = async () => {
 describe('a sale rung on the screen reaches this till\'s disk', () => {
   it('commits through the loopback socket, and the sale is on the disk afterwards', async () => {
     const edge = await startLane();
-    const view = bootPos({ laneId: 'lane-1', durable: laneDurable(edge.lane!.port) });
+    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durable: laneDurable(edge.lane!.port) });
 
     view.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
     const receipt = await view.tenderCash('S-1', 'R-0001', '2026-08-05T10:00:00Z');
@@ -70,7 +70,7 @@ describe('a sale rung on the screen reaches this till\'s disk', () => {
 
   it('queues it for the cloud in the same breath', async () => {
     const edge = await startLane();
-    const view = bootPos({ laneId: 'lane-1', durable: laneDurable(edge.lane!.port) });
+    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durable: laneDurable(edge.lane!.port) });
 
     view.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
     await view.tenderCash('S-1', 'R-0001', '2026-08-05T10:00:00Z');
@@ -83,7 +83,7 @@ describe('a sale rung on the screen reaches this till\'s disk', () => {
   it('REFUSES the sale when this till\'s store is not running', async () => {
     // The screen's honest default. A lane with nowhere to write must not take money — and the
     // refusal reaches the cashier in words, before the receipt exists.
-    const view = bootPos({ laneId: 'lane-1', durable: laneDurable(1) }); // nothing listens on port 1
+    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durable: laneDurable(1) }); // nothing listens on port 1
     view.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
 
     await expect(view.tenderCash('S-1', 'R-0001', '2026-08-05T10:00:00Z'))
@@ -102,7 +102,7 @@ describe('a refund taken on the screen reaches this till\'s disk (M13-FR-01)', (
 
   it('commits through the loopback socket to the RETURNS log, and queues it for the cloud', async () => {
     const edge = await startLane();
-    const view = bootPos({ laneId: 'lane-1', durableReturn: laneDurableReturn(edge.lane!.port) });
+    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durableReturn: laneDurableReturn(edge.lane!.port) });
 
     const committed = await view.till.refund(refundInput());
     expect(committed.refundStatus).toBe('settled');
@@ -123,7 +123,7 @@ describe('a refund taken on the screen reaches this till\'s disk (M13-FR-01)', (
     // that, the reply might have been lost AFTER a durable write (a power cut between fsync and the
     // HTTP reply), so "definitely failed, use another lane" is exactly what could cause a second
     // refund. The cashier is told to hold and not re-run it — and crucially NO cash leaves the drawer.
-    const view = bootPos({ laneId: 'lane-1', durableReturn: laneDurableReturn(1) }); // nothing listens on port 1
+    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durableReturn: laneDurableReturn(1) }); // nothing listens on port 1
     await expect(view.till.refund(refundInput())).rejects.toThrow(/could not be confirmed|do not run it again/i);
   });
 });

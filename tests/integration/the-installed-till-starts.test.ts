@@ -36,13 +36,13 @@ describe('the installed till starts (Stage D, KL-08)', () => {
   afterAll(async () => { await rm(dir, { recursive: true, force: true }); });
 
   it('one command writes till.env, the data folder and the start scripts — and never prints the key', async () => {
-    const r = run(['--dir', dir, '--tenant', 't-sre', '--generate-key', '--skip-build', '--from-compose-env', join(dir, 'no-such-env')], dir);
+    const r = run(['--dir', dir, '--tenant', 't-sre', '--lane', 'lane-1', '--generate-key', '--skip-build', '--from-compose-env', join(dir, 'no-such-env')], dir);
     expect(r.code).toBe(0);
     expect(r.out).toContain('Till installed.');
     expect(r.out).toContain('OFFLINE-ONLY');
     expect(r.out).toContain(`http://127.0.0.1:8091/pos/`);
     const env = parseEnv(await readFile(join(dir, 'till.env'), 'utf8')) as Record<string, string>;
-    expect(env).toMatchObject({ EDGE_TENANT_ID: 't-sre', EDGE_LANE_PORT: '8090', EDGE_SCREEN_PORT: '8091', EDGE_CAPACITY_BYTES: '10737418240', CLOUD_API_URL: '', CLOUD_API_TOKEN: '' });
+    expect(env).toMatchObject({ EDGE_TENANT_ID: 't-sre', EDGE_LANE_ID: 'lane-1', EDGE_LANE_PORT: '8090', EDGE_SCREEN_PORT: '8091', EDGE_CAPACITY_BYTES: '10737418240', CLOUD_API_URL: '', CLOUD_API_TOKEN: '' });
     expect(env['PACK_SIGNING_KEY']!.length).toBeGreaterThanOrEqual(32);
     expect(r.out).not.toContain(env['PACK_SIGNING_KEY']);
     expect(env['EDGE_DATA_DIR']).toBe(join(dir, 'edge-data'));
@@ -83,7 +83,7 @@ describe('the installed till starts (Stage D, KL-08)', () => {
     try {
       const cloudKey = 'c'.repeat(48);
       await writeFile(join(cloudDir, 'compose.env'), `EDGE_TENANT_ID=t-cloud\nPACK_SIGNING_KEY=${cloudKey}\nCLOUD_API_URL=http://127.0.0.1:8081\nCLOUD_API_TOKEN=${'t'.repeat(40)}\n`);
-      const r = run(['--dir', join(cloudDir, 'till'), '--skip-build', '--from-compose-env', join(cloudDir, 'compose.env')], cloudDir);
+      const r = run(['--dir', join(cloudDir, 'till'), '--lane', 'lane-1', '--skip-build', '--from-compose-env', join(cloudDir, 'compose.env')], cloudDir);
       expect(r.code).toBe(0);
       expect(r.out).toContain('copied the pack signing key');
       const env = parseEnv(await readFile(join(cloudDir, 'till', 'till.env'), 'utf8')) as Record<string, string>;
@@ -97,7 +97,7 @@ describe('the installed till starts (Stage D, KL-08)', () => {
   it('refuses to install with nothing to sign packs with, naming the fix — and exits 78 like the edge itself', async () => {
     const bare = await mkdtemp(join(tmpdir(), 'sre-till-bare-'));
     try {
-      const r = run(['--dir', bare, '--tenant', 't-sre', '--skip-build', '--from-compose-env', join(bare, 'none')], bare);
+      const r = run(['--dir', bare, '--tenant', 't-sre', '--lane', 'lane-1', '--skip-build', '--from-compose-env', join(bare, 'none')], bare);
       expect(r.code).toBe(78);
       expect(r.out).toContain('no pack signing key');
       expect(r.out).toContain('--generate-key');

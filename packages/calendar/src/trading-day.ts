@@ -40,6 +40,30 @@ function previousDate(dateStr: string): string {
 }
 
 /**
+ * The local wall-clock moment ("YYYY-MM-DDTHH:MM") an ISO-8601 instant falls on, in a time zone — the store's when
+ * named, otherwise this machine's (the till PC and the store box stand in the shop). `tradingDate` wants the LOCAL
+ * moment: fed an ISO-UTC string, a shop in Tamil Nadu is dated to the wrong day for the five and a half hours after
+ * midnight UTC (SP-4b · F09 · M01-FR-02).
+ */
+export function wallClockIn(isoInstant: string, timeZone?: string): string {
+  const ms = Date.parse(isoInstant);
+  if (Number.isNaN(ms)) {
+    throw new RangeError(`isoInstant must be an ISO-8601 instant, got "${isoInstant}".`);
+  }
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    ...(timeZone === undefined ? {} : { timeZone }),
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(ms));
+  const part = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
+}
+
+/** The trading date an instant belongs to, per the rule, in the store's zone (or this machine's when none is named). */
+export function tradingDateOf(isoInstant: string, rule: TradingDayRule, timeZone?: string): string {
+  return tradingDate(wallClockIn(isoInstant, timeZone), rule);
+}
+
+/**
  * The trading date (YYYY-MM-DD) that a local wall-clock moment belongs to, per the
  * rule. `localDateTime` is "YYYY-MM-DDTHH:MM" (or with seconds), already in the
  * store's time zone. A moment before the cut-off is dated to the previous day.

@@ -124,7 +124,7 @@ describe('closing the shift — the blind count (M15)', () => {
       expect(name).not.toMatch(/expectedCash|expectedMinor/i);
     }
     // And the interface itself has no such method — there is nothing to call early.
-    expect(Object.keys(till).sort()).toEqual(['close', 'drawerBalanceMinor', 'moveCash', 'refund']);
+    expect(Object.keys(till).sort()).toEqual(['close', 'drawerBalanceMinor', 'moveCash', 'operator', 'refund', 'signIn', 'signOut']);
   });
 });
 

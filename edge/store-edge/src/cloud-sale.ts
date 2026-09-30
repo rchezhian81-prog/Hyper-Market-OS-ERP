@@ -52,7 +52,7 @@ function toCloudTender(t: unknown): IncomingTender {
  * against. Pure; the record is untrusted JSON off the disk, so every field is read defensively and a
  * missing one becomes an empty/zero the cloud will surface as an exception rather than a silent guess.
  */
-export function toCloudSale(record: unknown, packVersion: number, storeId?: string): IncomingSale {
+export function toCloudSale(record: unknown, packVersion: number, storeId?: string, laneId?: string): IncomingSale {
   const r = (record !== null && typeof record === 'object' ? record : {}) as Rec;
   const lines: readonly IncomingSaleLine[] = Array.isArray(r['lines'])
     ? (r['lines'] as IncomingSaleLine[])
@@ -63,7 +63,9 @@ export function toCloudSale(record: unknown, packVersion: number, storeId?: stri
   return {
     saleId: str(r['saleId']) ?? str(r['id']) ?? '',
     receiptNumber: str(r['receiptNumber']) ?? str(r['number']) ?? '',
-    laneId: str(r['laneId']) ?? '',
+    // WHICH LANE rang it (SP-4b · F09): the record's own lane where the till named one; else the lane this box IS
+    // (`EDGE_LANE_ID`); else empty — and the cloud says so as a finding rather than this box inventing one.
+    laneId: str(r['laneId']) ?? str(laneId) ?? '',
     cashierId: str(r['cashierId']) ?? '',
     tradingDay: str(r['tradingDay']) ?? '',
     committedAt: str(r['committedAt']) ?? '',

@@ -19,7 +19,7 @@ import { ReservedRangeAllocator } from '../../../packages/numbering/src/numberin
 import { money } from '../../../packages/contracts/src/money';
 import type { TenderKind } from '../../../packages/contracts/src/enums';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
-import { PosSession, taxRateFromPercent } from './session';
+import { PosSession, taxRateFromPercent, NoOperatorError } from './session';
 import { createTillSession } from './till-session';
 import { createPosView, type PosView } from './view-adapter';
 import {
@@ -60,9 +60,24 @@ export interface PosReceiptTemplate {
   readonly ageHours: number;
 }
 
+/**
+ * Who this till IS, as the store box told the served page (SP-4b · F09): the lane (`EDGE_LANE_ID`) and the shop's
+ * trading-day cut-off. `laneId` is null when the box was never told — the till then refuses to take payment and says
+ * so. The cashier is NOT here: the person signs in at the till with their staff code (hard rule #4).
+ */
+export interface PosLane {
+  readonly laneId: string | null;
+  readonly tradingDayCutoff: string;
+  readonly tradingDayCutoffKnown: boolean;
+  readonly tradingDay: string;
+  readonly storeId: string | null;
+}
+
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
 interface PosWindow {
   posSession?: PosView;
+  /** Which lane this box is and when its day ends, injected by the edge before boot (SP-4b · F09). */
+  posLane?: PosLane;
   /** The lane's cached catalogue snapshot, injected by the edge before boot (§31). */
   posCatalogue?: CatalogueSnapshot;
   /** This lane's reserved receipt-number range, injected by the edge before boot (per lane). */
@@ -209,13 +224,19 @@ export interface RefundLookup {
 /**
  * Build the lane's session from its configuration.
  *
- * In deployment the lane config (lane id, cashier, trading day, currency, tax rate) comes from the
- * tenant's signed local config pack; the defaults here let the shell run standalone.
+ * In deployment the LANE comes from the store box's own setting (`EDGE_LANE_ID`) and the trading-day cut-off from the
+ * store pack, both injected into the served page; the CASHIER signs in with their staff code (SP-4b · F09). There are
+ * no stand-in values: a till that knows no lane, or has nobody signed in, refuses to take payment and says why.
  */
 export function bootPos(config?: {
+  /** Which lane this till IS. Absent = the box never said → a sale is refused (`NoLaneError`). */
   laneId?: string;
+  /** The cashier at boot (tests / a kiosk). In the shop nobody is passed here — the person signs in. */
   cashierId?: string;
+  /** A FIXED trading day (tests). Absent → each sale is dated at the moment it is taken, per the cut-off. */
   tradingDay?: string;
+  /** Where this shop's trading day ends, "HH:MM" local (M01-FR-02). Absent = midnight. */
+  tradingDayCutoff?: string;
   taxPercent?: number;
   /** The lane's cached catalogue snapshot; without it, barcode scanning is off. */
   catalogue?: CatalogueSnapshot;
@@ -255,13 +276,25 @@ export function bootPos(config?: {
   /** The receipt template this lane prints with — header, footer and the version to stamp — or `null` when none
    *  has reached this box (print with defaults, stamp nothing). Read from the box's pack, never fetched at print time. */
   readonly receiptTemplate: () => PosReceiptTemplate | null;
+  /** A cashier signs in with their staff code (SP-4b · F09): the sale session AND the till name them from here on. */
+  readonly signIn: (cashierId: string) => void;
+  readonly signOut: () => void;
+  /** Who is at the till now, or undefined when nobody is signed in. */
+  readonly operator: () => string | undefined;
+  /** Which lane this till is (null = the box never said) and the trading day a moment falls on, per the shop's cut-off. */
+  readonly lane: () => { readonly laneId: string | null; readonly tradingDayCutoff: string; readonly tradingDayAt: (atIsoUtc: string) => string };
 } {
   const outbox = new SyncOutbox();
+  // Only what was GIVEN goes in: no lane, cashier or day is ever made up here (F09).
+  const identity = {
+    ...(config?.laneId === undefined ? {} : { laneId: config.laneId }),
+    ...(config?.cashierId === undefined ? {} : { cashierId: config.cashierId }),
+    ...(config?.tradingDay === undefined ? {} : { tradingDay: config.tradingDay }),
+    ...(config?.tradingDayCutoff === undefined ? {} : { tradingDayCutoff: config.tradingDayCutoff }),
+  };
   const session = new PosSession(
     {
-      laneId: config?.laneId ?? 'lane-1',
-      cashierId: config?.cashierId ?? 'cashier',
-      tradingDay: config?.tradingDay ?? '1970-01-01',
+      ...identity,
       currency: 'INR',
       defaultTaxRate: taxRateFromPercent(config?.taxPercent ?? 18),
     },
@@ -280,9 +313,7 @@ export function bootPos(config?: {
   const till = createTillSession(
     {
       tillId: config?.tillId ?? 'till-1',
-      laneId: config?.laneId ?? 'lane-1',
-      cashierId: config?.cashierId ?? 'cashier',
-      tradingDay: config?.tradingDay ?? '1970-01-01',
+      ...identity,
       varianceToleranceMinor: config?.varianceToleranceMinor ?? 10_000,
     },
     new Ledger(new InMemoryLedgerStore()),
@@ -312,7 +343,6 @@ export function bootPos(config?: {
   // the approver truly holds the authority on sync).
   const refundPolicy: RefundPolicy = config?.refundPolicy ?? { approvalThresholdMinor: 0 };
   const lookup = config?.laneLookup ?? laneLookup(config?.lanePort ?? DEFAULT_LANE_PORT);
-  const cashierId = config?.cashierId ?? 'cashier';
 
   const lookupRefund = async (receipt: string): Promise<RefundLookup | null> => {
     const found = await lookup(receipt);
@@ -333,6 +363,9 @@ export function bootPos(config?: {
         returnId: '', number: '', originalSale, reasonCode: '', lines: [], refundMinor, refundTender: 'cash', noReceipt,
       }),
       submit: (draft) => {
+        // The refund is asked for by whoever is signed in NOW (F09); nobody signed in → refused in the till's words.
+        const cashierId = session.operator();
+        if (cashierId === undefined) return Promise.resolve({ kind: 'refused', laneMessage: new NoOperatorError('take a refund').laneMessage } as RefundScreenOutcome);
         const approval: DecidedRequest | undefined = draft.approval === undefined ? undefined : {
           id: `ovr-${draft.returnId}`, subjectType: 'pos.return', subjectRef: draft.returnId,
           requestedBy: cashierId, branchId: null, value: money(draft.refundMinor, 'INR'),
@@ -353,7 +386,17 @@ export function bootPos(config?: {
 
   const receiptTemplate = (): PosReceiptTemplate | null => config?.receiptTemplate ?? null;
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund, receiptTemplate });
+  // The cashier signs in ONCE for both surfaces — the sale and the till name the same person (SP-4b · F09).
+  const signIn = (cashierId: string): void => { session.signIn(cashierId); till.signIn(cashierId); };
+  const signOut = (): void => { session.signOut(); till.signOut(); };
+  const operator = (): string | undefined => session.operator();
+  const lane = () => ({
+    laneId: session.laneId() ?? null,
+    tradingDayCutoff: config?.tradingDayCutoff ?? '00:00',
+    tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
+  });
+
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund, receiptTemplate, signIn, signOut, operator, lane });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -361,8 +404,13 @@ export function bootPos(config?: {
 // so this needs no DOM types.
 const browserWindow = (globalThis as { window?: PosWindow }).window;
 if (browserWindow !== undefined) {
+  // Who this till IS comes from the box (SP-4b · F09): the lane it was told it is and the shop's cut-off. Who the CASHIER
+  // is never comes from here — the person signs in on the screen. Nothing below invents a lane, a cashier or a day.
+  const lane = browserWindow.posLane;
   browserWindow.posSession = bootPos({
     catalogue: browserWindow.posCatalogue,
+    ...(lane?.laneId === undefined || lane.laneId === null || lane.laneId === '' ? {} : { laneId: lane.laneId }),
+    ...(lane === undefined ? {} : { tradingDayCutoff: lane.tradingDayCutoff }),
     ...(browserWindow.posReceiptSeries === undefined ? {} : { receipt: browserWindow.posReceiptSeries }),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
   });
