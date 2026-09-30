@@ -55,6 +55,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.receipt.sync', 'inventory.count.sync', 'inventory.count.policy.set', 'inventory.count.policy.read',
       // SP-7a: the owner holds the box's invoice-sync hop too, so a maker-checker grant of the box identity can be approved.
       'purchase.invoice.sync',
+      // SP-7b: the owner sets the three-way-match tolerances every invoice is judged by (never the body, OC-13).
+      'purchase.match.policy.set',
       'inventory.movement.sync',
       // SP-3b: adjustment REQUESTS relayed from the warehouse handheld, and the separate person who approves them (§28).
       'inventory.adjustment.sync', 'inventory.adjustment.approve',

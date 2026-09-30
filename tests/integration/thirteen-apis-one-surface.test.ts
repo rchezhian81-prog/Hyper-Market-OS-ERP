@@ -49,7 +49,7 @@ const ALL: readonly Route[] = [
   }),
   ...purchaseRoutes({
     invoice: () => undefined, invoices: () => [], recordInvoice: () => {}, purchaseOrder: () => undefined, permissionsOfUser: () => undefined,
-    latestMatch: () => undefined, recordMatch: () => {}, applyBankChange: () => {},
+    latestMatch: () => undefined, recordMatch: () => {}, matchPolicy: () => undefined, recordMatchPolicy: () => {}, applyBankChange: () => {},
     openCommitments: () => ({ count: 0, valueMinor: 0 }), now: () => NOW,
   }),
   ...inventoryRoutes({ availability: () => [], appendMovement: () => {}, isKnown: () => false, valuation: () => [], ageing: () => ({ lots: [], unvaluedMinor: 0 }), performance: () => ({ from: NOW, to: NOW, periodDays: 0, total: { cogs: { minor: 0, currency: 'INR' }, averageInventory: { minor: 0, currency: 'INR' } }, byProduct: [] }), now: () => NOW }),

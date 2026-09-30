@@ -19,6 +19,7 @@
 
 import { postJournal, type PostingInput, type PostingMap, type JournalEntry as PostedJournal } from './posting';
 import { extractInclusiveGst } from './inclusive-tax';
+import { PAYABLES_POSTING_RULES } from './payables';
 import type { CurrencyCode } from '../../contracts/src/money';
 
 export type DayBookSourceKind = 'sale' | 'return';
@@ -424,5 +425,8 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
         },
       ];
     }),
+    // SP-7b (M23-FR-01): the supplier account — a matched invoice's payable, its reversal, a debit note — through a
+    // goods-received-not-invoiced clearing (`payables.ts`). Suggested like the rest; the accountant commits it.
+    ...PAYABLES_POSTING_RULES,
   ],
 };

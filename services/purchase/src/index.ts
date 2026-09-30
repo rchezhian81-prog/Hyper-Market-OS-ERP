@@ -231,9 +231,29 @@ export interface StoredMatch extends MatchResult {
     readonly order: { readonly status: string; readonly supplierId: string; readonly lineCount: number } | null;
     /** Where the received figures came from: the goods receipts folded into the order (SP-6) — never a typed number. */
     readonly received: 'goods_receipts_folded_into_the_order' | 'none';
+    /** The tolerances applied (SP-7b): the tenant's own policy, or the engine's defaults — said as `defaulted`. */
+    readonly policy?: MatchTolerancePolicy & { readonly defaulted: boolean };
   };
   readonly flags: readonly string[];
 }
+
+/**
+ * The tenant's three-way-match tolerances (SP-7b · OC-13): how far a quantity or a price may differ before a person must
+ * look, and the value below which a difference is nobody's time. The owner's call, applied by `/match` to every invoice
+ * and recorded on every verdict — never a figure a caller sends with the match. Until the owner sets one the engine's
+ * defaults apply and the verdict SAYS so (`sources.policy.defaulted`).
+ */
+export interface MatchTolerancePolicy {
+  readonly quantityToleranceBps: number;
+  readonly priceToleranceBps: number;
+  readonly immaterialMinor: number;
+}
+export interface StoredMatchPolicy extends MatchTolerancePolicy {
+  readonly setBy: string;
+  readonly setAt: string;
+}
+/** The engine's own defaults (`threeWayMatch`): no quantity tolerance, 1% on price, ₹1 immaterial. */
+export const DEFAULT_MATCH_POLICY: MatchTolerancePolicy = Object.freeze({ quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100 });
 
 const isPosInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0;
 const isIso = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
@@ -344,6 +364,9 @@ export interface PurchaseDeps {
   /** The latest recorded match for an invoice, or undefined when it was never matched. */
   readonly latestMatch: (tenantId: string, invoiceId: string) => Promise<StoredMatch | undefined> | StoredMatch | undefined;
   readonly recordMatch: (tenantId: string, invoiceId: string, r: StoredMatch) => Promise<void> | void;
+  /** SP-7b: the tenant's match tolerances as SET, or `undefined` when the owner has set none (the engine's defaults apply, said). */
+  readonly matchPolicy: (tenantId: string) => Promise<StoredMatchPolicy | undefined> | StoredMatchPolicy | undefined;
+  readonly recordMatchPolicy: (tenantId: string, policy: StoredMatchPolicy) => Promise<void> | void;
   readonly applyBankChange: (tenantId: string, r: BankChangeRequest) => Promise<void> | void;
   /**
    * What is on order and not yet received.
@@ -496,18 +519,23 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         const invoice = await deps.invoice(ctx.tenantId, invoiceId);
         const matchedAt = deps.now();
         const flags: string[] = [];
+        // SP-7b: the tolerances are the TENANT'S (the owner set them) or the engine's defaults — never the body's; which, is said.
+        const set = await deps.matchPolicy(ctx.tenantId);
+        const policy: MatchTolerancePolicy & { readonly defaulted: boolean } = set === undefined
+          ? { ...DEFAULT_MATCH_POLICY, defaulted: true }
+          : { quantityToleranceBps: set.quantityToleranceBps, priceToleranceBps: set.priceToleranceBps, immaterialMinor: set.immaterialMinor, defaulted: false };
         let poId: string | null = null;
         let order: StoredPurchaseOrder | undefined;
         let result: MatchResult;
         if (invoice === undefined) {
           flags.push('invoice_unknown');
-          result = threeWayMatch({ lines: [] });
+          result = threeWayMatch({ lines: [], ...policy });
         } else {
           poId = isStr(b['poId']) ? b['poId'] : invoice.poId;
           const orderFlags: InvoiceFlag[] = [];
           order = await orderForInvoice(deps, ctx.tenantId, poId, invoice.supplierId, orderFlags);
           flags.push(...orderFlags);
-          result = threeWayMatch({ lines: matchLinesFrom(order, invoice) });
+          result = threeWayMatch({ lines: matchLinesFrom(order, invoice), ...policy });
         }
         const stored: StoredMatch = {
           ...result, invoiceId, poId, matchedBy: ctx.userId, matchedAt,
@@ -515,6 +543,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
             invoice: invoice === undefined ? null : { capturedBy: invoice.capturedBy, capturedAt: invoice.capturedAt, totalMinor: invoice.totalMinor },
             order: order === undefined ? null : { status: order.status, supplierId: order.supplierId, lineCount: order.lines.length },
             received: order !== undefined && order.status === 'issued' ? 'goods_receipts_folded_into_the_order' : 'none',
+            policy,
           },
           flags,
         };
@@ -560,6 +589,45 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
             asAt: deps.now(),
           },
         };
+      },
+    },
+    {
+      // SP-7b (OC-13): the tenant's match tolerances — the owner's call, applied by /match to every invoice, never a body's.
+      // Body: { quantityToleranceBps, priceToleranceBps, immaterialMinor }. Latest applies; every version stays on the ledger.
+      api: 'API-03', method: 'POST', path: '/v1/purchase/match-policy',
+      permission: 'purchase.match.policy.set', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isNonNegInt(b['quantityToleranceBps']) || !isNonNegInt(b['priceToleranceBps']) || !isNonNegInt(b['immaterialMinor'])
+          || b['quantityToleranceBps'] > 10_000 || b['priceToleranceBps'] > 10_000) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_match_policy',
+            whatHappened: 'A match policy needs whole, non-negative quantityToleranceBps and priceToleranceBps (at most 10000 — 100%) and a whole, non-negative immaterialMinor.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { quantityToleranceBps, priceToleranceBps, immaterialMinor }. Nothing was changed.',
+          });
+        }
+        const policy: StoredMatchPolicy = {
+          quantityToleranceBps: b['quantityToleranceBps'], priceToleranceBps: b['priceToleranceBps'], immaterialMinor: b['immaterialMinor'],
+          setBy: ctx.userId, setAt: deps.now(),
+        };
+        await deps.recordMatchPolicy(ctx.tenantId, policy);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'match.policy.set', objectType: 'match_policy', objectId: ctx.tenantId,
+          at: policy.setAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: { quantityToleranceBps: String(policy.quantityToleranceBps), priceToleranceBps: String(policy.priceToleranceBps), immaterialMinor: String(policy.immaterialMinor) },
+          correlationId: `match-policy-${ctx.tenantId}`,
+        });
+        return { status: 201, body: { policy } };
+      },
+    },
+    {
+      api: 'API-03', method: 'GET', path: '/v1/purchase/match-policy',
+      permission: 'purchase.commitment.read',
+      handler: async (ctx) => {
+        const policy = await deps.matchPolicy(ctx.tenantId);
+        return { status: 200, body: { policy: policy ?? null, defaultPolicy: DEFAULT_MATCH_POLICY, inForce: policy ?? DEFAULT_MATCH_POLICY } };
       },
     },
     {
