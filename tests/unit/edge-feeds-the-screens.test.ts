@@ -213,6 +213,8 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   storedValuePolicy: known({ userId: 'u-manager', permissions: ['lp.case.read'] }),
   integrationHealthPolicy: known({ userId: 'u-admin', permissions: ['platform.health.read'] }),
   goodsReceiptPolicy: known({ userId: 'u-manager', permissions: ['inventory.availability.read'] }),
+  // Suppliers (M06-FR-01 · §28). Who is looking + what they hold; the list comes live from the cloud.
+  suppliersPolicy: known({ userId: 'u-acct', permissions: ['supplier.view', 'purchase.supplier.approve'] }),
   dataIoPolicy: known({ userId: 'u-owner', permissions: ['export.read', 'purchase.import.read', 'purchase.import.record'], importTemplates: [{ id: 'products-basic', domain: 'products', label: 'Products', financial: false, columns: [{ name: 'sku', type: 'text' }], keyColumns: ['sku'] }] }),
   workforceInboxPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
   // Employee self-service (M25). Who is looking + whether they hold `payroll.ess.self`; rota + payslip come live.

@@ -89,6 +89,9 @@ export interface SupplierListRow {
   readonly name: string | null;
   readonly status: 'proposed' | 'active' | 'no_master_record';
   readonly blocked: boolean;
+  /** Who proposed the master record (its `createdBy`), or `null` when nobody has recorded one — so a screen can refuse a
+   *  self-approval before it is even sent (§28). The route refuses it again regardless. */
+  readonly proposedBy: string | null;
   readonly bank: SupplierBankState | null;
   readonly totals: SupplierAccountStatement['totals'];
   readonly needsAttention: boolean;
@@ -274,7 +277,7 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
           const account = foldSupplierAccount({ ...regs, supplierId });
           const attention = attentionReasons({ record, blocked, bank, duplicateBank: duplicateBank.has(supplierId), account });
           rows.push({
-            supplierId, name: record?.name ?? null, status: record?.status ?? 'no_master_record', blocked, bank: bank ?? null,
+            supplierId, name: record?.name ?? null, status: record?.status ?? 'no_master_record', blocked, proposedBy: record?.createdBy ?? null, bank: bank ?? null,
             totals: account.totals, needsAttention: attention.length > 0 || needsAttention(account), attention,
           });
         }

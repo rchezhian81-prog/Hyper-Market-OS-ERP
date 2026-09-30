@@ -50,14 +50,14 @@ import {
   basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
-import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
+import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import { packFreshness, type SignedPack } from '../../../services/catalogue/src/pack';
 
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1692,6 +1692,22 @@ export function goodsReceiptPayload(input: ScreenInput): Record<string, unknown>
 }
 
 /**
+ * The suppliers payload (M06-FR-01 · M23-FR-01 · §28 · P-03). Who is looking and what they hold, so the shell can gate
+ * the read on `supplier.view` and offer PROPOSE (`purchase.supplier.manage`) and APPROVE (`purchase.supplier.approve`)
+ * only to the people who hold them; the supplier list itself is read live from the cloud, never shipped in the pack,
+ * and the cloud re-checks every authority and the maker≠approver rule on each write.
+ */
+export function suppliersPayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.suppliersPolicy.known) return null;
+  const policy: PackSuppliersPolicy = input.pack.suppliersPolicy.value;
+
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+
+  return payload;
+}
+
+/**
  * The data import/export console payload (M30-FR-01/02/03 · P-06).
  *
  * `null` when the box has not been told who is on the screen. The exportable domains and the export log are read
@@ -1971,6 +1987,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'stored-value': 'storedValueData',
   'integration-health': 'integrationHealthData',
   'goods-receipt': 'goodsReceiptData',
+  suppliers: 'suppliersData',
   'data-io': 'dataIoData',
   workforce: 'workforceInboxData',
   ess: 'essData',
@@ -2021,6 +2038,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'stored-value': storedValuePayload,
   'integration-health': integrationHealthPayload,
   'goods-receipt': goodsReceiptPayload,
+  suppliers: suppliersPayload,
   'data-io': dataIoPayload,
   workforce: workforcePayload,
   ess: essPayload,

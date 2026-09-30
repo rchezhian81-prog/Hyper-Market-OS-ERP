@@ -101,3 +101,20 @@ own `DN-` number series, once. The supplier's own portal statement reads the sam
 (`tests/unit/purchase-match-lines.test.ts`). **Still recorded, not dropped:** the Suppliers screen (SP-7d); an unapproved
 supplier can still be issued an order (only a hold refuses one); compliance documents are recorded, not yet checked at
 the order; physical-device verification and UAT PENDING.
+
+## Measured (SP-7d — the supplier has one face on the screen, owner's Option 2 directive of 30 September 2026)
+The Supplier workbench (§ above) is now a screen the store computer serves at `/suppliers`, in English and Tamil. It
+lists every supplier the records name with the ones needing a person at the top — a hold shown as an error with the
+word, then the most money owed — and says every reason in plain words: no record yet, waiting for approval, looks like
+another supplier, shares a bank account, no verified bank account to pay, bills not matched, bills blocked, money
+withheld, refused goods still to go back, billed more than ordered. Each row carries its verified bank account or its
+absence and the ONE balance the matched bills say, read live from head office; Refresh re-reads it. A purchase user
+sees an **Add or update a supplier** form (code, name, GSTIN, phone, email, payment terms) and nothing else; an
+approver sees **Approve a proposed supplier** offering only the suppliers somebody ELSE proposed, with a reason box
+that is the record. The proposer of a supplier is told so on the row and is refused on the screen before anything is
+sent; head office refuses them again. A reader without the right sees a plain "no permission" and no controls. Proven
+in a real browser (`tests/e2e/suppliers-delivery.e2e.ts`), pinned by `tests/guardrails/the-suppliers-screen-is-usable.test.ts`
+and `tests/unit/erp-suppliers-session.test.ts`, and served by the real box in `tests/integration/the-screens-are-fed.test.ts`.
+**Still recorded, not dropped:** payments, quarantined-stock disposition and debit-note issue have no screen yet (SP-9);
+an unapproved supplier can still be issued an order (only a hold refuses one); compliance documents are recorded, not
+yet checked at the order; the browser leg runs against a stub cloud; physical-device verification and UAT PENDING.

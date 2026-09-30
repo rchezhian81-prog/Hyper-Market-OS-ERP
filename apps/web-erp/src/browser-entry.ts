@@ -195,6 +195,11 @@ import {
   type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView,
 } from './goods-receipt-session';
 import {
+  createSuppliersSession,
+  type SuppliersPorts, type SuppliersSession, type SuppliersData, type SupplierRowView, type SupplierAttentionReason,
+  type SupplierApprovePort, type SupplierProposePort, type ApprovePostResult, type ProposePostResult,
+} from './suppliers-session';
+import {
   createDataIoSession,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
@@ -2336,6 +2341,152 @@ export async function fetchIntegrationHealth(): Promise<IntegrationHealthData | 
   }
 }
 
+// ── Suppliers (M06-FR-01 · M23-FR-01 · §28) ─────────────────────────────────────────────────────────────────
+
+const SUPPLIER_VIEW_PERMISSION = 'supplier.view';
+const SUPPLIER_MANAGE_PERMISSION = 'purchase.supplier.manage';
+const SUPPLIER_APPROVE_PERMISSION = 'purchase.supplier.approve';
+
+/** What the box tells the Suppliers screen: who is looking, what they hold, and (optionally) a snapshot of the list.
+ *  The list is a LIVE cloud read (`GET /v1/purchase/suppliers`), refreshed by the shell when online; offline the
+ *  screen shows its clearly-marked sample stand-in. The two writes — propose, approve — run under the reader's own
+ *  session on an explicit click; the cloud re-checks the authority and refuses the proposer as approver (§28). */
+export interface SuppliersScreenData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly snapshot?: SuppliersData;
+}
+
+const EMPTY_SUPPLIERS: SuppliersData = Object.freeze({});
+
+export function suppliersPortsFromData(
+  data: SuppliersScreenData | undefined,
+  snapshot?: SuppliersData,
+  approvePort?: SupplierApprovePort,
+  proposePort?: SupplierProposePort,
+): SuppliersPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    snapshot: () => snapshot ?? data?.snapshot ?? EMPTY_SUPPLIERS,
+    // Default-deny: an absent permission list can read / write nothing (the server would refuse it anyway).
+    mayRead: () => held.has(SUPPLIER_VIEW_PERMISSION),
+    mayPropose: () => held.has(SUPPLIER_MANAGE_PERMISSION),
+    mayApprove: () => held.has(SUPPLIER_APPROVE_PERMISSION),
+    approvePort: () => approvePort ?? null,
+    proposePort: () => proposePort ?? null,
+  };
+}
+
+/** Build the Suppliers session, or `null` when the box carried no payload (shell shows the sample). */
+export function bootSuppliers(
+  data: SuppliersScreenData | undefined,
+  snapshot?: SuppliersData,
+  approvePort?: SupplierApprovePort,
+  proposePort?: SupplierProposePort,
+): SuppliersSession | null {
+  if (data === undefined) return null;
+  return createSuppliersSession(
+    { userId: data.userId === undefined ? null : data.userId },
+    suppliersPortsFromData(data, snapshot, approvePort, proposePort),
+  );
+}
+
+/** Read the live supplier list — one GET, read-only — and fold it into the screen's snapshot. Returns null when
+ *  nothing could be read, so the shell keeps whatever it was showing. Each row's state, hold, verified bank, balance
+ *  and reasons are carried through as the cloud said them; nothing is recomputed here (P-02). */
+export async function fetchSuppliers(): Promise<SuppliersData | null> {
+  const body = await getInventory('/v1/purchase/suppliers');
+  if (body === null || !Array.isArray(body['suppliers'])) return null;
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+  const suppliers: SupplierRowView[] = (body['suppliers'] as Record<string, unknown>[]).map((s) => {
+    const totals = (s['totals'] ?? {}) as Record<string, unknown>;
+    const bank = (s['bank'] ?? null) as Record<string, unknown> | null;
+    const status = s['status'];
+    return {
+      supplierId: String(s['supplierId'] ?? ''), name: str(s['name']),
+      status: status === 'proposed' || status === 'active' ? status : 'no_master_record',
+      blocked: s['blocked'] === true, proposedBy: str(s['proposedBy']),
+      bankAccountRef: bank === null ? null : str(bank['accountRef']),
+      owedMinor: num(totals['owedMinor']), withheldMinor: num(totals['withheldMinor']), paidMinor: num(totals['paidMinor']),
+      unmatchedInvoices: num(totals['unmatchedInvoices']), blockedInvoices: num(totals['blockedInvoices']), pendingReturns: num(totals['pendingReturns']),
+      currency: 'INR',
+      needsAttention: s['needsAttention'] === true,
+      attention: (Array.isArray(s['attention']) ? s['attention'] : []).filter((r): r is SupplierAttentionReason => typeof r === 'string'),
+    };
+  });
+  const out: SuppliersData = {
+    suppliers,
+    ...(typeof body['asAt'] === 'string' ? { asAt: body['asAt'] } : {}),
+    ...(typeof body['owedMinor'] === 'number' ? { owedMinor: body['owedMinor'] } : {}),
+  };
+  return out;
+}
+
+/** The authenticated POST of a supplier APPROVAL — the approver's OWN session (`credentials: 'same-origin'`), never a
+ *  service token; the server attributes the approval to the caller and refuses the proposer (§28). A fresh key per
+ *  attempt: the approval is idempotent by STATE on the server (an approved supplier answers `alreadyApproved`), and a
+ *  refused attempt by one person must never be replayed onto a different person's click. A network failure is a lost
+ *  link, not a refusal (P-08). */
+export function openSupplierApprovePort(): SupplierApprovePort {
+  return {
+    post: async ({ supplierId, reason }): Promise<ApprovePostResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `supplier-approval-${supplierId}-${reason.length}`;
+      try {
+        const res = await fetchFn(`/v1/purchase/suppliers/${encodeURIComponent(supplierId)}/approval`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          // Only the reason rides along: the approver is the authenticated caller, never a body field.
+          body: JSON.stringify({ reason }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { alreadyApproved?: boolean; whatHappened?: string };
+        if (res.status >= 200 && res.status < 300) return { result: body.alreadyApproved === true ? 'already_approved' : 'approved' };
+        return { result: 'refused', reason: body.whatHappened ?? 'head office did not approve the supplier' };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
+  };
+}
+
+/** The authenticated POST that PROPOSES or updates a supplier (`POST /v1/purchase/suppliers/:id`). The proposer is
+ *  the authenticated caller; a 201 is a new proposal, a 200 an update to an existing record; the cloud's
+ *  `possibleDuplicates` are carried back so the screen can SAY them (M06-FR-01), never hide them. */
+export function openSupplierProposePort(): SupplierProposePort {
+  return {
+    post: async (input): Promise<ProposePostResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `supplier-propose-${input.supplierId}-${input.name.length}`;
+      try {
+        const res = await fetchFn(`/v1/purchase/suppliers/${encodeURIComponent(input.supplierId)}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            name: input.name,
+            ...(input.gstin === null ? {} : { gstin: input.gstin }),
+            ...(input.phone === null ? {} : { phone: input.phone }),
+            ...(input.email === null ? {} : { email: input.email }),
+            ...(input.paymentTermsDays === null ? {} : { paymentTermsDays: input.paymentTermsDays }),
+          }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { created?: boolean; supplier?: { possibleDuplicates?: unknown }; whatHappened?: string };
+        if (res.status >= 200 && res.status < 300) {
+          const dupes = Array.isArray(body.supplier?.possibleDuplicates) ? body.supplier.possibleDuplicates.filter((d): d is string => typeof d === 'string') : [];
+          return { result: body.created === false ? 'updated' : 'proposed', possibleDuplicates: dupes };
+        }
+        return { result: 'refused', reason: body.whatHappened ?? 'head office did not save the supplier' };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
+  };
+}
+
 // ── Goods-receipt review (M07-FR-02/03 — read-only) ──────────────────────────────────────────────────────────
 
 /** What the box tells the goods-receipt review screen: who is looking, what they may read, and (optionally) a
@@ -3591,6 +3742,13 @@ interface ManagerWindow {
   };
   goodsReceiptData?: GoodsReceiptScreenData;
   goodsReceiptSession?: GoodsReceiptSession;
+  suppliersData?: SuppliersScreenData;
+  suppliersSession?: SuppliersSession;
+  /** The shell reads the live supplier list through this and re-presents it — a GET read, never a write. */
+  suppliers?: {
+    refresh(): Promise<SuppliersData | null>;
+    present(snapshot: SuppliersData): SuppliersSession;
+  };
   /** The shell reads the live GRN list through this and re-presents it — a GET read, never a write. */
   goodsReceipt?: {
     refresh(): Promise<GoodsReceiptData | null>;
@@ -4788,6 +4946,24 @@ if (browserWindow !== undefined) {
         return integrationHealthCurrent;
       },
       present: presentIntegrationHealth,
+    };
+  }
+  // The Suppliers screen (M06-FR-01 · §28): boots from the box's policy (who + what they hold), then the shell
+  // refreshes the supplier list with a live GET. The two writes — PROPOSE a supplier (purchase.supplier.manage) and
+  // APPROVE a proposed one with a reason (purchase.supplier.approve) — run only on an explicit click under the
+  // reader's own session; the session refuses the proposer as approver before any POST, and the cloud refuses again.
+  const suppliersData = browserWindow.suppliersData;
+  const supplierApprovePort = openSupplierApprovePort();
+  const supplierProposePort = openSupplierProposePort();
+  const suppliersScreen = bootSuppliers(suppliersData, undefined, supplierApprovePort, supplierProposePort);
+  if (suppliersScreen !== null) {
+    browserWindow.suppliersSession = suppliersScreen;
+    browserWindow.suppliers = {
+      refresh: fetchSuppliers,
+      present: (snapshot) => createSuppliersSession(
+        { userId: suppliersData?.userId === undefined ? null : suppliersData.userId },
+        suppliersPortsFromData(suppliersData, snapshot, supplierApprovePort, supplierProposePort),
+      ),
     };
   }
   // The goods-receipt review screen (M07 — read-only): boots from the box's policy (who + whether they hold

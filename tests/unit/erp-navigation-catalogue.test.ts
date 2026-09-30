@@ -83,7 +83,8 @@ describe('every screen the store computer serves has a door, and every door open
     const unservedPages = readdirSync('apps/web-erp/web').filter((f) => f.endsWith('.html') && !servedFiles.has(f)).sort();
     expect(unservedPages).toEqual(['company-report.html', 'erasure-console.html', 'payroll-payslip.html', 'payroll.html', 'setup.html']);
     expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['my-payslip', 'payroll', 'store-setup']);
-    expect(notBox.filter((i) => i.served === 'unbuilt').map((i) => i.id).sort()).toEqual(['reconciliation', 'settings', 'suppliers']);
+    // `suppliers` left this list at SP-7d (30 Sep 2026): the Suppliers screen is built and served by the box.
+    expect(notBox.filter((i) => i.served === 'unbuilt').map((i) => i.id).sort()).toEqual(['reconciliation', 'settings']);
   });
 });
 
@@ -102,8 +103,9 @@ describe('every door is gated on a word somebody enforces and somebody holds (P-
     for (const i of boxItems) expect(granted.has(i.requires), `${i.id} requires "${i.requires}", which no role grants`).toBe(true);
   });
 
-  it('the eighteen words nobody enforced are gone from every served item', () => {
-    const phantoms = ['admin.settings.manage', 'admin.users.manage', 'approval.decide', 'audit.view', 'cash.view', 'catalogue.view', 'erp.dashboard.view', 'exception.view', 'finance.view', 'grn.view', 'po.view', 'price.view', 'promotion.view', 'reconciliation.view', 'return.view', 'sales.view', 'stock.view', 'supplier.view'];
+  it('the words nobody enforced are gone from every served item (supplier.view left the list at SP-7c, when the supplier routes began to enforce it)', () => {
+    const phantoms = ['admin.settings.manage', 'admin.users.manage', 'approval.decide', 'audit.view', 'cash.view', 'catalogue.view', 'erp.dashboard.view', 'exception.view', 'finance.view', 'grn.view', 'po.view', 'price.view', 'promotion.view', 'reconciliation.view', 'return.view', 'sales.view', 'stock.view'];
+    expect(enforced.has('supplier.view')).toBe(true);
     for (const i of boxItems) expect(phantoms, `${i.id} still gates on ${i.requires}`).not.toContain(i.requires);
   });
 

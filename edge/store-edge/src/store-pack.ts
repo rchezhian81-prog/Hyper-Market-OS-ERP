@@ -641,6 +641,15 @@ export interface PackGoodsReceiptPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Who is on the Suppliers screen and what they hold (M06-FR-01 · §28): `supplier.view` to read the list,
+ *  `purchase.supplier.manage` to propose or update a supplier, `purchase.supplier.approve` to approve a proposed one.
+ *  Only who is looking and what they hold — the list is read live from the cloud, and the cloud re-checks every
+ *  authority and refuses the proposer as approver whatever this says. */
+export interface PackSuppliersPolicy {
+  readonly userId?: string;
+  readonly permissions: readonly string[];
+}
+
 /** One import template the box ships to the data import/export screen (M30-FR-01) — the store's configured
  *  loads. The full column spec travels because the validate/commit routes take the template in the body; there
  *  is no proprietary "list templates" route. */
@@ -1183,6 +1192,8 @@ export interface StorePack {
   readonly integrationHealthPolicy: Register<PackIntegrationHealthPolicy>;
   /** Who is on the READ-ONLY goods-receipt review screen and whether they may read it (M07). */
   readonly goodsReceiptPolicy: Register<PackGoodsReceiptPolicy>;
+  /** Who is on the Suppliers screen and what they hold (M06-FR-01 · §28). */
+  readonly suppliersPolicy: Register<PackSuppliersPolicy>;
   /** Who is on the data import/export console, what they may do, and the store's import templates (M30). */
   readonly dataIoPolicy: Register<PackDataIoPolicy>;
   /** Who is on the Workforce guidance inbox screen and what they may do there (A10). */
@@ -1355,6 +1366,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     storedValuePolicy: notKnown(why),
     integrationHealthPolicy: notKnown(why),
     goodsReceiptPolicy: notKnown(why),
+    suppliersPolicy: notKnown(why),
     dataIoPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
@@ -1488,6 +1500,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     storedValuePolicy: section<PackStoredValuePolicy>('storedValuePolicy'),
     integrationHealthPolicy: section<PackIntegrationHealthPolicy>('integrationHealthPolicy'),
     goodsReceiptPolicy: section<PackGoodsReceiptPolicy>('goodsReceiptPolicy'),
+    suppliersPolicy: section<PackSuppliersPolicy>('suppliersPolicy'),
     dataIoPolicy: section<PackDataIoPolicy>('dataIoPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),
