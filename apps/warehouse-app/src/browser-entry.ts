@@ -17,6 +17,7 @@
 // handheld gets left on a shelf; what is on it should be worth nothing to whoever finds it.
 
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
+import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { WarehouseSession, type WarehouseAssignment } from './warehouse-session';
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */
@@ -26,6 +27,41 @@ interface WarehouseWindow {
   warehouseOutbox?: DeviceOutbox;
   /** Anything that went wrong with the device's own storage, for the shell to show (P-08). */
   warehouseStorageProblem?: string | null;
+  /** The store computer's write base the box injected: `''` on the device socket (same origin), absent off it. */
+  laneWriteBase?: string;
+  warehouseRelay?: WarehouseRelay;
+}
+
+export interface WarehouseRelay {
+  /**
+   * One pass of the shared device → store-computer leg (SP-3a): hand the accepted scans to the box (accepted or
+   * duplicate → handed; refused → a visible refusal; link down → kept, nothing lost), then ask the box where the
+   * items it holds have got to and fold that into the session's sent-work list.
+   */
+  syncNow(): Promise<{ readonly handed: number; readonly refused: number; readonly failed: number; readonly offline: boolean }>;
+}
+
+/**
+ * The warehouse handheld's leg of the shared sync path (SP-3a · S1). The handheld is served BY the box's device socket,
+ * so the base is the page's own origin (`''`); the device's cookie rides on every call. `undefined` when the shell was
+ * not served by a box (a file, a test server): the queue still fills and survives, and the badge says "not connected".
+ */
+export function openWarehouseRelay(
+  laneWriteBase: string | undefined,
+  session: WarehouseSession,
+  outbox: DeviceOutbox,
+): WarehouseRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'warehouse', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) session.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
 }
 
 /**
@@ -58,5 +94,10 @@ if (browserWindow !== undefined) {
   const outbox = openDeviceOutbox(store, (why) => { browserWindow.warehouseStorageProblem = why; });
   browserWindow.warehouseOutbox = outbox;
   const session = bootWarehouse(browserWindow.warehouseData, outbox);
-  if (session !== null) browserWindow.warehouseSession = session;
+  if (session !== null) {
+    browserWindow.warehouseSession = session;
+    // The relay to the store computer — present only when the box served this page (it injects `laneWriteBase`).
+    const relay = openWarehouseRelay(browserWindow.laneWriteBase, session, outbox);
+    if (relay !== undefined) browserWindow.warehouseRelay = relay;
+  }
 }

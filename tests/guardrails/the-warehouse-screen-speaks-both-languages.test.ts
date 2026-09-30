@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { FEEDBACK_CODES } from '../../apps/warehouse-app/src/warehouse-session';
+import { FEEDBACK_CODES, SENT_WORK_KINDS } from '../../apps/warehouse-app/src/warehouse-session';
+import { DEVICE_ITEM_STATES } from '../../packages/sync/src/device-relay';
 import { WAREHOUSE_EXCEPTION_KINDS, WAREHOUSE_TASK_KINDS } from '../../apps/web-erp/src/warehouse-supervisor-session';
 import { APPROVE_REASONS, REJECT_REASONS } from '../../packages/approvals/src/reasons';
 
@@ -39,6 +40,27 @@ describe('every warehouse scan outcome has a word in both languages', () => {
   it('tripwire — the detector fires on a code that is genuinely absent', () => {
     // Otherwise a regex that silently matched everything would make the checks above vacuous.
     expect(/\bnever_a_real_code:/.test(en)).toBe(false);
+  });
+
+  /** The keys of a `{ key: { en, ta } }` map in the view, each with both languages. */
+  const bothLanguagesFor = (vocabulary: readonly string[], mapName: string): void => {
+    const from = VIEW.indexOf(`const ${mapName}`);
+    expect(from, `${mapName} is missing from the view`).toBeGreaterThan(-1);
+    const block = VIEW.slice(from, VIEW.indexOf('\n};', from));
+    for (const member of vocabulary) {
+      const at = block.indexOf(`${member}: {`);
+      expect(at, `"${member}" has no words in ${mapName}`).toBeGreaterThan(-1);
+      const entry = block.slice(at, block.indexOf('},', at));
+      expect(entry, `"${member}" has no English`).toMatch(/\ben:/);
+      expect(entry, `"${member}" has no Tamil`).toMatch(/\bta:/);
+    }
+  };
+
+  it('has words in both languages for where each sent scan is — the five shared device states — and for each kind of work sent (SP-3a)', () => {
+    bothLanguagesFor(DEVICE_ITEM_STATES, 'STATE_WORDS');
+    bothLanguagesFor(DEVICE_ITEM_STATES, 'STATE_SHORT');
+    bothLanguagesFor(SENT_WORK_KINDS, 'KIND_WORDS');
+    expect(() => bothLanguagesFor(['a_state_nobody_translated'], 'STATE_WORDS')).toThrow();
   });
 });
 

@@ -39,6 +39,12 @@ export interface Device {
   readonly lastSeenAt?: string;
   /** A rooted or jailbroken device is never trusted with trading (§35). */
   readonly integrityCompromised?: boolean;
+  /**
+   * The one-time enrolment code head office issued for this handheld (SP-3a · ADR-0019): its HASH, never the code,
+   * and when it stops being usable. Present only for a handheld that has been issued one; the store box compares
+   * a typed code against the hash and mints the device its own credential.
+   */
+  readonly enrolment?: { readonly codeHash: string; readonly expiresAt: string; readonly issuedAt: string };
 }
 
 export interface VersionPolicy {

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 754 | 457 | 457 | 59 | 253 |
+| 13 | 758 | 460 | 460 | 59 | 254 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -181,6 +181,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/movements` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/near-expiry` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/performance` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/receiving-scans` | `inventory.availability.read` | core | — |
+| POST | `/v1/inventory/receiving-scans/:commandId/synced` | `inventory.receipt.sync` | core | yes |
 | GET | `/v1/inventory/sales-history` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/stockout-impact` | `inventory.availability.read` | core | yes |
 | GET | `/v1/inventory/valuation` | `inventory.availability.read` | core | — |
@@ -236,6 +238,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/warehouse/bins/:binId` | `inventory.availability.read` | core | — |
 | POST | `/v1/warehouse/bins/:binId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/warehouse/movements/:commandId` | `inventory.movement.append` | core | yes |
+| POST | `/v1/warehouse/movements/:commandId/synced` | `inventory.movement.sync` | core | yes |
 | POST | `/v1/warehouse/put-away/suggest` | `inventory.availability.read` | core | yes |
 | GET | `/v1/warehouse/transfers/:transferId` | `inventory.availability.read` | core | — |
 | POST | `/v1/warehouse/transfers/:transferId` | `inventory.movement.append` | core | yes |
@@ -576,6 +579,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/consolidation/contributions` | `reporting.consolidation.manage` | core | yes |
 | POST | `/v1/consolidation/memberships` | `reporting.consolidation.manage` | core | yes |
 | GET | `/v1/platform/devices` | `platform.health.read` | core | — |
+| POST | `/v1/platform/devices/:deviceId/enrolment` | `platform.device.manage` | core | yes |
 | POST | `/v1/platform/devices/:deviceId/register` | `platform.device.manage` | core | yes |
 | POST | `/v1/platform/devices/:deviceId/report` | `platform.device.manage` | core | yes |
 | POST | `/v1/platform/devices/:deviceId/status` | `platform.device.manage` | core | yes |

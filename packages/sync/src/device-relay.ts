@@ -44,7 +44,21 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // `StockCounted` in W2 (SP-3), once the LAN device route exists.
   GoodsReceived: { surfaces: ['manager'] },
   StockCounted: { surfaces: ['manager'] },
+  // SP-3a: the warehouse handheld's work, over the box's authenticated DEVICE socket (ADR-0019). A receiving scan
+  // is its own type (per scan, not a whole GRN like the manager's `GoodsReceived`) so each rides its own cloud route.
+  WarehouseMovementApplied: { surfaces: ['warehouse'] },
+  ReceivingScanned: { surfaces: ['warehouse'] },
 });
+
+/**
+ * The surfaces a HANDHELD may claim on the device socket (SP-3a). A handheld never speaks as `manager`: the manager's
+ * types (an approval decision, a whole receipt, a blind count) would otherwise ride a warehouse device's credential.
+ */
+export const HANDHELD_SOURCES = Object.freeze(['warehouse', 'picker', 'driver'] as const);
+export type HandheldSource = (typeof HANDHELD_SOURCES)[number];
+export function isHandheldSource(source: string): source is HandheldSource {
+  return (HANDHELD_SOURCES as readonly string[]).includes(source);
+}
 
 export function isRelayable(type: string, source: string): boolean {
   const entry = RELAYABLE_DEVICE_EVENTS[type];

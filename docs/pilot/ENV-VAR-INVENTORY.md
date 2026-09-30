@@ -42,6 +42,8 @@ to boot / optional. **Set for pilot**: the safe pilot value or "generate".
 | `EDGE_SCREEN_PORT` | — | optional | — | loopback port the screens are served from | set on a screen box |
 | `EDGE_APPS_DIR` | — | optional | — | where `apps/` lives, to serve screens from disk | as installed |
 | `EDGE_SCREEN_HOST` | — | optional | default `127.0.0.1` | the address the screens bind to; a container behind the public proxy names `0.0.0.0` on the private compose network, no host port published, and the boot log says so (ADR-0018) | compose sets it; a shop PC leaves it unset |
+| `EDGE_DEVICE_PORT` | — | optional | — | the handhelds' DEVICE socket (ADR-0019): serves only the handheld screens and the device routes, to handhelds enrolled with a one-time head-office code; absent = no device socket | set on the back-office box that serves the handhelds |
+| `EDGE_DEVICE_HOST` | — | optional | default `127.0.0.1` | the address the device socket binds to; the shop names the box's shop-network address so the handhelds on the staff wifi can reach it, and the boot log says so in words (ADR-0019) | set with the port on the back-office box |
 | `EDGE_PACK_FILE` | — | optional | — | the last pack the cloud sent (never defaults — absent ≠ empty) | after first pack |
 | `CLOUD_API_URL` | — | optional | — | **absent = sell-and-queue offline-first**; set to drain to the cloud | set once sync is wanted |
 | `CLOUD_API_TOKEN` | 🔒 | optional | — | store token for cloud drain (minted for a provisioned store login) | mint at set-up |

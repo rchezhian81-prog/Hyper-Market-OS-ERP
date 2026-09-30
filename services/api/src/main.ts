@@ -103,6 +103,7 @@ import { planogramRoutes } from '../../inventory/src/planograms';
 import { spacePerformanceRoutes } from '../../inventory/src/space-performance';
 import { assortmentRoutes } from '../../inventory/src/assortment';
 import { warehouseRoutes } from '../../inventory/src/warehouse';
+import { syncedWarehouseRoutes, receivingScanRoutes } from '../../inventory/src/warehouse-synced';
 import { transfersRoutes } from '../../inventory/src/warehouse-transfers';
 import { replenishmentRoutes } from '../../inventory/src/replenishment';
 import { salesHistoryRoutes } from '../../inventory/src/sales-history';
@@ -207,7 +208,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   dayBookAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, syncedCountsAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
+  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, syncedCountsAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -502,6 +503,16 @@ export function buildSurface(deps: {
     ...warehouseRoutes(store === undefined ? {
       bins: empty([]), contents: empty({}), appliedCommandIds: empty([]), recordBin: () => {}, recordMovement: () => {}, now,
     } : warehouseAdapter({ store, now })),
+    // The warehouse HANDHELD's work, relayed by the box from its authenticated device socket (SP-3a · ADR-0019 · F11): a
+    // put-away or pick re-runs the same bin engine over head office's bins with the MOVER re-verified; a receiving scan
+    // becomes a `received` movement at the store with the RECEIVER re-verified, and is kept on the GRN-scans register.
+    ...syncedWarehouseRoutes(store === undefined ? {
+      bins: empty([]), contents: empty({}), appliedCommandIds: empty([]), recordBin: () => {}, recordMovement: () => {}, now,
+      permissionsOfUser: empty(undefined),
+    } : { ...syncedWarehouseAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    ...receivingScanRoutes(store === undefined ? {
+      permissionsOfUser: empty(undefined), appendMovement: () => {}, isKnown: empty(false), scanExists: empty(false), recordScan: () => {}, scansOf: empty([]), now,
+    } : { ...receivingScanAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...transfersRoutes(store === undefined ? {
       transfer: empty(undefined), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {}, now,
     } : transfersAdapter({ store, now })),
@@ -1015,7 +1026,7 @@ export function buildSurface(deps: {
     // and fleet-health runs the tested rollup over the STORED fleet (refusing a fleet-bricking policy first).
     ...deviceRegistryRoutes(store === undefined
       ? { fleet: () => [], recordDeviceEvent: () => {}, now }
-      : deviceRegistryAdapter({ store, now })),
+      : { ...deviceRegistryAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // Durable version-policy store (M33-FR-02/04 remote kill · A-10) — an admin sets the current/previous/
     // minimum-supported versions and withdraws (kills) a broken release, durably; the fleet is then judged
     // against the STORED policy. A policy that would brick the fleet is refused before anything is stored.
