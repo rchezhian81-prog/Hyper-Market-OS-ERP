@@ -205,6 +205,10 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    * out loud that the screens are reachable beyond loopback, and no host port is ever published for them.
    */
   { key: 'EDGE_SCREEN_HOST', optional: true },
+  // The handhelds' DEVICE socket (SP-3a · ADR-0019): the shop-network-facing door the enrolled handhelds hand their work
+  // through. Absent → no device socket at all. The host stays loopback unless named — a shop names its LAN address.
+  { key: 'EDGE_DEVICE_PORT', numeric: true, optional: true },
+  { key: 'EDGE_DEVICE_HOST', optional: true },
   /** Where `apps/` lives on this box, so the screens can be served from disk. */
   { key: 'EDGE_APPS_DIR', optional: true },
   /**

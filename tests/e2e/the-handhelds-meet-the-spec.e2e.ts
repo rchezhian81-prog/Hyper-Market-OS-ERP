@@ -326,7 +326,9 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     await page.waitForSelector('#banner.good:not([hidden])');
     expect(taps.reset(), 'put away a line').toBeLessThanOrEqual(3);
     expect(await page.evaluate('globalThis.warehouseOutbox.unsentCount()')).toBe(1);
-    expect(await page.textContent('#queue-text')).toBe('1 waiting to sync');
+    // Since SP-3a the warehouse badge counts this handheld's scans by where each is (no box served this page → saved here).
+    expect(await page.textContent('#queue-text')).toBe('1 saved here');
+    expect(await page.textContent('#sent-work .sent[data-kind="put_away"] .pill')).toBe('Saved on this handheld — not yet with the store computer');
     // The pick line is untouched by the put-away: still 12 to pick from BIN-A.
     expect(await page.textContent('.item.pick .qty')).toBe('12 units · EA');
   });
@@ -358,7 +360,8 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     // The line is done and gone; the movement waits on the device, and the badge says so in words.
     expect(await page.locator('.item.pick').count()).toBe(0);
     expect(await page.evaluate('globalThis.warehouseOutbox.unsentCount()')).toBe(1);
-    expect(await page.textContent('#queue-text')).toBe('1 waiting to sync');
+    expect(await page.textContent('#queue-text')).toBe('1 saved here');
+    expect(await page.textContent('#sent-work .sent[data-kind="pick"] .what')).toBe('Picked · p-rice · BIN-A — 12 EA · ORD-77');
     expect(await page.evaluate('globalThis.warehouseSession.binContents()["BIN-A|p-rice|"]')).toBe(28);
     const queued = await page.evaluate('globalThis.warehouseOutbox.pending().map((i) => [i.event.type, i.event.idempotencyKey, i.event.payload.command.kind, i.event.payload.command.fromBinId, i.event.payload.command.toBinId])');
     expect(queued).toEqual([['WarehouseMovementApplied', expect.stringMatching(/^wh-move:pick-/), 'pick', 'BIN-A', null]]);

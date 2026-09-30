@@ -39,6 +39,9 @@ import {
 import { isExpired } from '../../../packages/fefo/src/fefo';
 import type { StockState } from '../../../packages/stock/src/position';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import {
+  deviceItemReason, deviceItemState, type BoxItemStatus, type DeviceItemState,
+} from '../../../packages/sync/src/device-relay';
 
 /** How the shell should react to a scan (OA-9 scan confirmation: visual, sound, vibration). */
 export type ScanFeedback = 'accept' | 'warn' | 'reject';
@@ -185,6 +188,29 @@ export type PickCheck =
   | { readonly ok: true; readonly line: PickLine }
   | { readonly ok: false; readonly signal: FeedbackSignal };
 
+/** The event a receiving SCAN travels under (SP-3a): one scan, not a whole receipt — the manager's `GoodsReceived` is that. */
+export const RECEIVING_SCANNED = 'ReceivingScanned';
+/** The event a put-away or a pick travels under — the command the handheld applied, for the cloud to re-apply. */
+export const WAREHOUSE_MOVEMENT_APPLIED = 'WarehouseMovementApplied';
+
+/** The kinds of work this handheld hands to the store computer — a value, so the shell must have words for each. */
+export const SENT_WORK_KINDS = Object.freeze(['receipt', 'put_away', 'pick'] as const);
+export type SentWorkKind = (typeof SENT_WORK_KINDS)[number];
+
+/** One accepted scan on its way to head office, and where it has got to (the five shared state words, SP-2a). */
+export interface SentWork {
+  readonly kind: SentWorkKind;
+  /** The handheld's own command id — the key every hop dedupes on. */
+  readonly id: string;
+  /** What a person reads: the product (and batch), and for a movement the bin. */
+  readonly what: string;
+  readonly detail: string;
+  readonly at: string;
+  readonly state: DeviceItemState;
+  readonly attempts: number;
+  readonly reason?: string;
+}
+
 /** What the box served the handheld — the assignment it caches and works offline. */
 export interface WarehouseAssignment {
   readonly assignmentId: string;
@@ -230,6 +256,8 @@ export class WarehouseSession {
   private readonly picks = new Map<string, { readonly line: AssignedPickLine; pickedMinor: number }>();
   private readonly appliedCommandIds: string[] = [];
   private readonly receivedSoFar: Record<string, number> = {};
+  /** The store computer's word on each item it took, keyed by queue key — filled by `noteBoxStatus` (SP-3a). */
+  private readonly boxWord = new Map<string, BoxItemStatus>();
 
   private readonly currency: CurrencyCode;
   private readonly at: () => string;
@@ -269,6 +297,44 @@ export class WarehouseSession {
   /** The current local bin projection — the base contents plus every put-away accepted this session. */
   binContents(): BinContents {
     return { ...this.contents };
+  }
+
+  /** Fold in the store computer's word on items it took (`GET /lane/outbox/status`) — "posted" is only ever its say-so. */
+  noteBoxStatus(statuses: readonly BoxItemStatus[]): void {
+    for (const s of statuses) this.boxWord.set(s.key, s);
+  }
+
+  /** The queue keys of work the store computer has taken, to ask it where they have got to. */
+  handedKeys(): readonly string[] {
+    return this.outbox.all().filter((item) => item.state === 'acknowledged').map((item) => item.key);
+  }
+
+  /**
+   * Every accepted scan this handheld has queued — receipts, put-aways, picks — newest first, each with where it has
+   * got to (SP-3a · S1): saved here · retrying · with the store computer · posted · refused (with the reason). Read from
+   * the durable device queue, so the list is the same after the app is closed and opened again.
+   */
+  sentWork(): readonly SentWork[] {
+    return this.outbox.all()
+      .flatMap((item): SentWork[] => {
+        const box = this.boxWord.get(item.key);
+        const common = { at: item.event.occurredAt, state: deviceItemState(item, box), attempts: item.attempts } as const;
+        const reason = deviceItemReason(item, box);
+        const withReason = reason === undefined ? {} : { reason };
+        if (item.event.type === RECEIVING_SCANNED) {
+          const p = item.event.payload as { commandId: string; productId: string; batchId: string | null; quantityMinor: number; uom: string; grnId: string };
+          return [{ kind: 'receipt', id: p.commandId, what: `${p.productId}${p.batchId ? ` · ${p.batchId}` : ''}`, detail: `${p.quantityMinor} ${p.uom} · ${p.grnId}`, ...common, ...withReason }];
+        }
+        if (item.event.type === WAREHOUSE_MOVEMENT_APPLIED) {
+          const p = item.event.payload as { command: MovementCommand; orderRef?: string };
+          const c = p.command;
+          const kind: SentWorkKind = c.kind === 'pick' ? 'pick' : 'put_away';
+          const bin = c.kind === 'pick' ? (c.fromBinId ?? '') : (c.toBinId ?? '');
+          return [{ kind, id: c.commandId, what: `${c.productId}${c.batchId ? ` · ${c.batchId}` : ''} · ${bin}`, detail: `${c.quantityMinor} ${c.uom}${p.orderRef ? ` · ${p.orderRef}` : ''}`, ...common, ...withReason }];
+        }
+        return [];
+      })
+      .reverse();
   }
 
   private isRecalled(productId: string, batchId: string | null): boolean {
@@ -332,16 +398,19 @@ export class WarehouseSession {
       recalled: this.isRecalled(productId, batchId),
     });
 
+    // One SCAN, keyed on its own command id (§31.1). Head office appends the `received` movement at the store and
+    // keeps the scan on the GRN's register (SP-3a); the whole receipt is assembled there later (SP-6).
     this.outbox.enqueue(makeEvent({
       id: `recv-${input.grnId}-${result.commandId}`,
-      type: 'GoodsReceived',
+      type: RECEIVING_SCANNED,
       occurredAt: command.at,
       idempotencyKey: `recv:${input.grnId}:${result.commandId}`,
       source: this.assignment.assignmentId,
       payload: {
         grnId: input.grnId, commandId: result.commandId, productId, batchId,
-        quantityMinor: result.quantityMinor, source: input.source,
+        quantityMinor: result.quantityMinor, uom: prior?.uom ?? 'EA', source: input.source,
         poId: input.poId ?? null, state, expiry: input.expiry ?? null, receivedBy: this.assignment.workerId,
+        storeId: this.assignment.storeId, at: command.at,
       },
     }));
 
@@ -423,13 +492,13 @@ export class WarehouseSession {
 
     this.outbox.enqueue(makeEvent({
       id: `wh-move-${result.commandId}`,
-      type: 'WarehouseMovementApplied',
+      type: WAREHOUSE_MOVEMENT_APPLIED,
       occurredAt: input.at,
       // The command's own id — the cloud keys its movement ledger on the same id, so a re-sent scan
-      // reconciles to one movement (idempotent sync, hard rule #1 / §31.1).
+      // reconciles to one movement (idempotent sync, hard rule #1 / §31.1). Top-level too, for the route.
       idempotencyKey: `wh-move:${result.commandId}`,
       source: this.assignment.assignmentId,
-      payload: { command, movements: result.movements, movedBy: this.assignment.workerId },
+      payload: { commandId: result.commandId, command, movements: result.movements, movedBy: this.assignment.workerId },
     }));
 
     return { result, signal: signalFor('accept', 'moved', result.detail) };
@@ -525,12 +594,12 @@ export class WarehouseSession {
 
     this.outbox.enqueue(makeEvent({
       id: `wh-move-${result.commandId}`,
-      type: 'WarehouseMovementApplied',
+      type: WAREHOUSE_MOVEMENT_APPLIED,
       occurredAt: input.at,
       // The command's own id — the cloud keys its movement ledger on it, so a re-sent pick is one movement.
       idempotencyKey: `wh-move:${result.commandId}`,
       source: this.assignment.assignmentId,
-      payload: { command, movements: result.movements, movedBy: this.assignment.workerId, orderRef: line.orderRef, lineId: line.lineId },
+      payload: { commandId: result.commandId, command, movements: result.movements, movedBy: this.assignment.workerId, orderRef: line.orderRef, lineId: line.lineId },
     }));
 
     const left = line.remainingMinor - quantity;

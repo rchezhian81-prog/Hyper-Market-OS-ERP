@@ -130,7 +130,8 @@ export type LaneDayCloseHandler = (
  * each strictly itself, so the socket never decides what a valid record is.
  */
 export type LaneDeviceRelayHandler = (
-  batch: { readonly source: string; readonly items: readonly unknown[] },
+  /** `deviceId` is present when the batch came over the authenticated device socket (SP-3a), naming the handheld. */
+  batch: { readonly source: string; readonly items: readonly unknown[]; readonly deviceId?: string },
 ) => Promise<RelayReply>;
 
 /** Where the items a device handed over have got to, by key — from the box's own pipeline (SP-2a). */

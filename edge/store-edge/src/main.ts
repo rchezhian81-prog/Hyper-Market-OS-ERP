@@ -60,6 +60,8 @@ import { commitLocally } from './durability';
 import { readRelayItem, isRelayable, type BoxItemStatus, type DeviceAck } from '../../../packages/sync/src/device-relay';
 import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-status';
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
+import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
+import { DeviceEnrolments, readPackDevices } from './device-enrolments';
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, type StorePack } from './store-pack';
 import { managerPayload, type ScreenInput } from './screen-data';
@@ -292,6 +294,14 @@ export interface EdgeProcess {
    * to serve the owner's brief, and not opening a socket is better than opening one nobody uses.
    */
   readonly screens: ScreenServer | null;
+  /**
+   * The handhelds' DEVICE socket (SP-3a · ADR-0019), or null when `EDGE_DEVICE_PORT` is unset. Serves only the
+   * handheld shells and the device routes, to enrolled handhelds only; loopback unless `EDGE_DEVICE_HOST` names
+   * the shop's address.
+   */
+  readonly devices: DeviceServer | null;
+  /** The box's register of enrolled handhelds, or null when there is no device socket. */
+  readonly enrolments: DeviceEnrolments | null;
   stop(): Promise<void>;
 }
 
@@ -656,6 +666,13 @@ export async function startEdge(
       deviceEventsOutbox.enqueue(event);
       acks.push({ key, status: 'accepted' });
     }
+    // A handheld's batch names the device it came from (the device socket authenticated it): said in the log, so the
+    // box's own record shows which handheld handed over what — counts only, never a record or a credential.
+    if (batch.deviceId !== undefined) {
+      const taken = acks.filter((a) => a.status === 'accepted').length;
+      const refused = acks.filter((a) => a.status === 'refused').length;
+      say(`handheld ${batch.deviceId} (${batch.source}) handed over ${taken} record(s)${refused > 0 ? `, ${refused} refused` : ''}`);
+    }
     return { acks };
   };
 
@@ -908,6 +925,37 @@ export async function startEdge(
       : `screens on ${screens.host}:${screens.port} — NOT loopback: anything that can reach this address can read the day's takings. Only right inside a private container network with the public proxy in front of it and no host port published (ADR-0018).`);
   }
 
+  // The handhelds' DEVICE socket (SP-3a · ADR-0019): the shop-network-facing door for ENROLLED handhelds only. It
+  // serves the handheld shells and the device routes — never the till, the manager, the owner or the takings — and
+  // nothing at all to a device that has not enrolled with the one-time code head office issued for it. Loopback
+  // unless `EDGE_DEVICE_HOST` names the shop's address, and the boot log says in words when it has.
+  const devicePort = settings['EDGE_DEVICE_PORT'];
+  const enrolments = devicePort === undefined ? null : await DeviceEnrolments.open({
+    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+  });
+  const deviceHost = settings['EDGE_DEVICE_HOST'];
+  const devices = devicePort === undefined || enrolments === null ? null : await startDeviceServer({
+    port: Number(devicePort),
+    ...(deviceHost === undefined ? {} : { host: deviceHost }),
+    appsDir: settings['EDGE_APPS_DIR'] ?? 'apps',
+    snapshot,
+    enrolments,
+    // The pack's fleet register is the truth about which handhelds belong to the shop; none known → none served.
+    devices: () => { const register = snapshot().pack.devices; return register.known ? readPackDevices(register.value) : undefined; },
+    relayDeviceEvents,
+    deviceEventStatus,
+    syncStatus,
+    now: () => new Date().toISOString(),
+  });
+  if (devices !== null && enrolments !== null) {
+    say(devices.host === DEVICE_HOST || devices.host === 'localhost'
+      ? `device socket on ${devices.host}:${devices.port} — loopback only; name EDGE_DEVICE_HOST with the shop's address for the handhelds on the wifi to reach it`
+      : `device socket on ${devices.host}:${devices.port} — reachable on the shop network; only handhelds enrolled with a head-office code may use it, and it serves the handheld screens only (ADR-0019)`);
+    const live = enrolments.enrolled().filter((e) => e.revokedAt === null).length;
+    if (live > 0) say(`  ${live} handheld(s) enrolled on this box`);
+    if (enrolments.unreadableRecords > 0) say(`  ${enrolments.unreadableRecords} enrolment record(s) could not be read whole — kept, not repaired. Raise this.`);
+  }
+
   // Close and LOCK the store's trading day, on the box where the live facts live (M14-FR-04, P-01).
   //
   // The DECISION belongs here, not in the manager's browser: the "no unsent items" gate can only be
@@ -1048,7 +1096,7 @@ export async function startEdge(
     // The badge on every screen says exactly that, from the box's own mouth (design system §1 rule 4).
     syncStatusRelay.current = () => laneSyncStatus({ configured: false, queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
     return {
-      log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, node, lane, screens, syncStatus,
+      log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, node, lane, screens, devices, enrolments, syncStatus,
       agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
@@ -1057,6 +1105,8 @@ export async function startEdge(
       stop: async () => {
         if (lane !== null) await lane.stop();
         if (screens !== null) await screens.stop();
+        if (devices !== null) await devices.stop();
+        if (enrolments !== null) await enrolments.close();
         await log.close();
         await returnsLog.close();
         await completionsLog.close();
@@ -1347,6 +1397,8 @@ export async function startEdge(
     node,
     lane,
     screens,
+    devices,
+    enrolments,
     agent,
     returnsAgent,
     completionsAgent,
@@ -1417,6 +1469,8 @@ export async function startEdge(
       }
       if (lane !== null) await lane.stop();
       if (screens !== null) await screens.stop();
+      if (devices !== null) await devices.stop();
+      if (enrolments !== null) await enrolments.close();
       await log.close();
       await returnsLog.close();
       await completionsLog.close();

@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { makeEvent } from '../../packages/contracts/src/event';
 import {
-  DEVICE_ITEM_STATES, DEVICE_OUTBOX_PATH, DEVICE_OUTBOX_STATUS_PATH, RELAYABLE_DEVICE_EVENTS,
-  deviceItemReason, deviceItemState, isRelayable, readRelayBatch, readRelayItem, relayableItems,
+  DEVICE_ITEM_STATES, DEVICE_OUTBOX_PATH, DEVICE_OUTBOX_STATUS_PATH, RELAYABLE_DEVICE_EVENTS, HANDHELD_SOURCES,
+  deviceItemReason, deviceItemState, isHandheldSource, isRelayable, readRelayBatch, readRelayItem, relayableItems,
 } from '../../packages/sync/src/device-relay';
 import { boxStatus, drainToBox, type FetchLike } from '../../packages/sync/src/device-drain';
 
@@ -85,8 +85,17 @@ describe('the contract reads strictly and refuses with a reason', () => {
     expect(RELAYABLE_DEVICE_EVENTS['StockCounted']?.surfaces).toEqual(['manager']);
     expect(isRelayable('GoodsReceived', 'manager')).toBe(true);
     expect(isRelayable('StockCounted', 'manager')).toBe(true);
-    expect(isRelayable('StockCounted', 'warehouse')).toBe(false); // W2 adds the handheld in SP-3
+    expect(isRelayable('StockCounted', 'warehouse')).toBe(false); // W2 adds the handheld in SP-3b
     expect(isRelayable('SaleCommitted', 'manager')).toBe(false);
+    // SP-3a: the warehouse handheld's scans ride the device socket as the `warehouse` surface — and only that surface.
+    expect(RELAYABLE_DEVICE_EVENTS['WarehouseMovementApplied']?.surfaces).toEqual(['warehouse']);
+    expect(RELAYABLE_DEVICE_EVENTS['ReceivingScanned']?.surfaces).toEqual(['warehouse']);
+    expect(isRelayable('WarehouseMovementApplied', 'manager')).toBe(false);
+    expect(isRelayable('ReceivingScanned', 'picker')).toBe(false);
+    // A handheld may claim only a handheld surface on the device socket; `manager` is never one.
+    expect([...HANDHELD_SOURCES]).toEqual(['warehouse', 'picker', 'driver']);
+    expect(isHandheldSource('warehouse')).toBe(true);
+    expect(isHandheldSource('manager')).toBe(false);
     const outbox = new SyncOutbox();
     outbox.enqueue(decided('a1'));
     outbox.enqueue(other('g1'));

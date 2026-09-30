@@ -21,9 +21,9 @@ import {
 } from '../../../packages/warehouse/src/movements';
 import type { StockMovement, StockState } from '../../../packages/stock/src/position';
 
-const KINDS: readonly MovementKind[] = ['put_away', 'bin_to_bin', 'pick', 'pack', 'dispatch', 'return_to_bin'];
+export const MOVEMENT_KINDS: readonly MovementKind[] = ['put_away', 'bin_to_bin', 'pick', 'pack', 'dispatch', 'return_to_bin'];
 const ZONES = ['ambient', 'chilled', 'frozen', 'secure', 'quarantine'] as const;
-const STATES: readonly StockState[] = ['on_hand', 'reserved', 'quarantine', 'damaged', 'expired', 'in_transit'];
+export const STOCK_STATES: readonly StockState[] = ['on_hand', 'reserved', 'quarantine', 'damaged', 'expired', 'in_transit'];
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isInt = (v: unknown): v is number => Number.isInteger(v);
 const nbin = (v: unknown): string | null => (isStr(v) ? v : null);
@@ -73,9 +73,9 @@ export function warehouseRoutes(deps: WarehouseDeps): readonly Route[] {
       handler: async (ctx) => {
         const commandId = ctx.params['commandId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (typeof b['kind'] !== 'string' || !(KINDS as readonly string[]).includes(b['kind'])
+        if (typeof b['kind'] !== 'string' || !(MOVEMENT_KINDS as readonly string[]).includes(b['kind'])
           || !isStr(b['storeId']) || !isStr(b['productId']) || !isInt(b['quantityMinor']) || !isStr(b['uom'])
-          || (b['stockState'] !== undefined && !(STATES as readonly string[]).includes(b['stockState'] as string))) {
+          || (b['stockState'] !== undefined && !(STOCK_STATES as readonly string[]).includes(b['stockState'] as string))) {
           throw apiError(400, {
             code: 'not_readable_as_a_movement',
             whatHappened: 'A movement needs a kind, storeId, productId, whole quantityMinor and a uom (fromBinId/toBinId/batchId may be null).',
@@ -88,7 +88,7 @@ export function warehouseRoutes(deps: WarehouseDeps): readonly Route[] {
           productId: b['productId'] as string, batchId: nbin(b['batchId']), quantityMinor: b['quantityMinor'] as number,
           uom: b['uom'] as string, fromBinId: nbin(b['fromBinId']), toBinId: nbin(b['toBinId']),
           movedBy: ctx.userId, at: deps.now(),
-          ...((STATES as readonly string[]).includes(b['stockState'] as string) ? { stockState: b['stockState'] as StockState } : {}),
+          ...((STOCK_STATES as readonly string[]).includes(b['stockState'] as string) ? { stockState: b['stockState'] as StockState } : {}),
           ...(isStr(b['reason']) ? { reason: b['reason'] as string } : {}),
         };
 
@@ -140,7 +140,7 @@ export function warehouseRoutes(deps: WarehouseDeps): readonly Route[] {
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as { productId?: unknown; batchId?: unknown; quantityMinor?: unknown; state?: unknown };
         if (!isStr(b.productId) || !isInt(b.quantityMinor) || (b.quantityMinor as number) <= 0
-          || (b.state !== undefined && !(STATES as readonly string[]).includes(b.state as string))) {
+          || (b.state !== undefined && !(STOCK_STATES as readonly string[]).includes(b.state as string))) {
           throw apiError(400, {
             code: 'not_readable_as_a_put_away',
             whatHappened: 'A put-away suggestion needs a productId and a whole positive quantityMinor (batchId and state optional).',
@@ -150,7 +150,7 @@ export function warehouseRoutes(deps: WarehouseDeps): readonly Route[] {
         }
         const suggestion = suggestPutAway({
           productId: b.productId, batchId: nbin(b.batchId), quantityMinor: b.quantityMinor as number,
-          ...((STATES as readonly string[]).includes(b.state as string) ? { state: b.state as StockState } : {}),
+          ...((STOCK_STATES as readonly string[]).includes(b.state as string) ? { state: b.state as StockState } : {}),
           bins: await deps.bins(ctx.tenantId), contents: await deps.contents(ctx.tenantId),
         });
         return { status: 200, body: suggestion };

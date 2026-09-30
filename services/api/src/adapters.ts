@@ -151,6 +151,7 @@ import type { DisplayContract, AssortmentEntry } from '../../../packages/merchan
 import type { DelegationDeps } from '../../identity/src/delegation';
 import type { ApprovalDecisionDeps, ApprovalDecisionRecord } from '../../identity/src/approval-decisions';
 import type { SyncedGoodsReceiptDeps } from '../../inventory/src/goods-receipt-synced';
+import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
 import type { SyncedCountsDeps, CountPolicy } from '../../inventory/src/counts-synced';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
 import type { EmergencyAccessDeps, EmergencyGrant } from '../../identity/src/emergency-access';
@@ -3942,6 +3943,52 @@ export function syncedGoodsReceiptAdapter(input: {
       return ordered;
     },
     receiptPolicy: () => undefined,
+  };
+}
+
+/**
+ * The warehouse handheld's put-aways and picks, relayed by the box (SP-3a · F11 handheld half): the same bin registry and
+ * append-only movement ledger as the direct route, plus the MOVER's real grants for re-verification.
+ */
+export function syncedWarehouseAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<SyncedWarehouseDeps, 'recordAudit'> {
+  return {
+    ...warehouseAdapter(input),
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+  };
+}
+
+/**
+ * Receiving scans from the warehouse handheld (SP-3a): the M08 ledger's own append (so stock rises at head office when
+ * goods come in the back door) plus a GRN-scans register on the purchase stream for SP-6 to assemble the receipt from.
+ */
+export function receivingScanAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<ReceivingScanDeps, 'recordAudit'> {
+  const inv = inventoryAdapter(input);
+  const scansStream = streamName(STREAM.purchase, 'grn-scans');
+  const scans = (tenantId: string) => allOf<ReceivingScanRecord>(input.store, tenantId, scansStream, 'ReceivingScanRecorded');
+  return {
+    now: input.now,
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    appendMovement: inv.appendMovement,
+    isKnown: inv.isKnown,
+    scanExists: async (tenantId, commandId) => (await scans(tenantId)).some((r) => r.commandId === commandId),
+    scansOf: async (tenantId, grnId) => (await scans(tenantId)).filter((r) => r.grnId === grnId),
+    recordScan: async (tenantId, scan) => {
+      await input.store.append(tenantId, scansStream, makeEvent({
+        id: `recv-scan-${scan.commandId}`,
+        type: 'ReceivingScanRecorded',
+        occurredAt: scan.at,
+        // The handheld's own command id: a re-relayed scan collapses to one record (§31.1).
+        idempotencyKey: `recv-scan-${tenantId}-${scan.commandId}`,
+        source: 'api/inventory',
+        payload: scan,
+      }));
+    },
   };
 }
 

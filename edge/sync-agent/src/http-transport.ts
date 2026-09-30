@@ -162,6 +162,12 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // → dead-lettered here by name for a person (hard rule #10); the same decision again is 200 → delivered once.
   // `id` is the decided request's own id — a plain payload field matching the path param.
   ApprovalDecided: '/v1/approvals/decisions/:id/synced',
+  // The warehouse handheld's work, relayed by the box from its authenticated device socket (SP-3a · ADR-0019 · S1).
+  // A put-away or pick re-runs the tested bin engine at head office with the MOVER re-verified; a receiving scan
+  // becomes a `received` movement at the store with the RECEIVER re-verified. Both idempotent on the handheld's own
+  // command id (a plain top-level payload field); a refusal is 422 → dead-lettered here by name for a person.
+  WarehouseMovementApplied: '/v1/warehouse/movements/:commandId/synced',
+  ReceivingScanned: '/v1/inventory/receiving-scans/:commandId/synced',
   // A delivery booked in and a blind count captured on the manager's screen (SP-2b · F11 · M07-FR-01 · M09-FR-04).
   // Same path as the decision: device queue → box → here under the store token → a synced route that re-verifies the
   // RECEIVER / COUNTER and owns every judgement the device must not make (rules, cost, expected quantity, threshold).
@@ -173,7 +179,8 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
 };
 
 /** Fill `:name` segments from the payload, or run a resolver, so a route can address a thing. */
-function pathFor(event: DomainEvent): string | undefined {
+/** The cloud path an event travels to, from `EVENT_ROUTES` and the event's own payload; undefined = no route (dead-lettered by name). */
+export function pathFor(event: DomainEvent): string | undefined {
   const route = EVENT_ROUTES[event.type];
   if (route === undefined) return undefined;
   const payload = (event.payload ?? {}) as Record<string, unknown>;

@@ -73,7 +73,7 @@ describe('warehouse PWA is fed its assignment and executes receiving + put-away 
     expect(s.goodsIn()).toHaveLength(1);
     expect(s.goodsIn()[0]).toMatchObject({ productId: 'P1', quantityMinor: 100 });
     // One accepted receipt, queued once for idempotent sync.
-    expect(box.pending().map((i) => i.event.type)).toEqual(['GoodsReceived']);
+    expect(box.pending().map((i) => i.event.type)).toEqual(['ReceivingScanned']);
   });
 
   it('sends an unknown barcode to the resolution queue and banks nothing', () => {
@@ -127,7 +127,7 @@ describe('warehouse PWA is fed its assignment and executes receiving + put-away 
     expect(put.signal).toMatchObject({ feedback: 'accept' });
     expect(s.binContents()['B-PICK|P1|']).toBe(50);
     expect(s.goodsIn()[0]?.quantityMinor).toBe(50); // 100 received − 50 put away
-    expect(box.pending().map((i) => i.event.type)).toEqual(['GoodsReceived', 'WarehouseMovementApplied']);
+    expect(box.pending().map((i) => i.event.type)).toEqual(['ReceivingScanned', 'WarehouseMovementApplied']);
   });
 
   it('refuses the wrong item, an unknown bin, an over-full bin and more than is in goods-in', () => {

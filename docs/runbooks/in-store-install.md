@@ -146,6 +146,48 @@ the books whenever there is a line, and keeps selling when there is not.
 
 ---
 
+## Step 6 — Enrolling a handheld (the warehouse phone or scanner) — SP-3a
+
+The warehouse handheld does not use a login. It is **enrolled once** with a code head office issues for THAT device,
+and from then on the store computer knows it by a credential it holds itself (ADR-0019). Nothing on the handheld's
+screen is served to a device that has not enrolled.
+
+1. **Open the handheld door on the store computer.** In the till's environment file add
+
+   ```
+   EDGE_DEVICE_PORT=8092
+   EDGE_DEVICE_HOST=<the store computer's address on the STAFF wifi, e.g. 192.168.10.5>
+   ```
+
+   and restart the till (Step 2). The boot log says `handhelds: enrolled handhelds on the shop network can reach
+   this box at http://<address>:8092/`. Leave `EDGE_DEVICE_HOST` out and the door opens on the computer itself only
+   (nothing on the network can reach it) — useful for a rehearsal, useless for a phone.
+2. **Register the device at head office** (the fleet register, `POST /v1/platform/devices/<deviceId>/register`,
+   kind `handheld` or `mobile`) — the same step every till goes through. The store pack the box pulls carries the
+   fleet's `devices` list; until the pack section feed is built (SP-9) the operator copies that list into the
+   pack file (`store-pack.json` → `devices`) — never a code, only what head office returns.
+3. **Issue the code** — `POST /v1/platform/devices/<deviceId>/enrolment` by a person holding
+   `platform.device.manage`. The answer holds the code ONCE (twenty letters and digits in four groups); head office
+   keeps only its fingerprint and the expiry (a day by default). Put the returned `enrolment` block on the device's
+   pack entry and let the box pull the pack (or restart it against the file).
+4. **On the handheld**, open `http://<address>:8092/` in the browser. It shows **Enrol this handheld**: type the
+   device id and the code, press Enrol. A wrong code says so and counts (five wrong per device per fifteen minutes,
+   then a wait); an expired code says so — issue a new one; a code already used says so — it never works twice.
+   On success the warehouse screen opens as the named worker with the served assignment.
+5. **Check it took:** the boot log line `handheld <deviceId> (warehouse) handed over N record(s)` appears after the
+   first scan; on the handheld the list **"Sent from this handheld"** shows each scan and where it is —
+   *saved on this handheld* → *with the store computer* → *posted at head office* (or *refused*, with the reason).
+   Closing the browser or restarting the phone loses nothing: the list is the same when it reopens.
+6. **A lost or leaving handheld:** at head office set its status to `blocked` (or `retired`); the next pack pull
+   refuses it at its next request and sends it to the enrolment page. A new code for the same device supersedes the
+   old one.
+
+> **The shop-network leg is plain HTTP for now.** Until TLS is added at the device socket (a Stage E follow-up),
+> the handhelds must be on a **staff-only WPA2/WPA3 wifi, separate from any guest wifi** (owner action register
+> OA-16). The till's and manager's screens are not on this door at all — it serves the handheld screens only.
+
+---
+
 ## Stopping and starting
 
 - **The till:** Ctrl-C in its window (or close it) to stop; run the start script again to start.
@@ -171,6 +213,9 @@ Being straight about the boundaries:
   checklist. Until a pack is published and pulled, the till has no price list and says so.
 - **A receipt printer** — receipt building is built and tested; attaching a physical printer is a
   device step (EX-09).
+- **TLS on the handheld door** — the device socket (Step 6) speaks plain HTTP on the staff wifi until the Stage E
+  follow-up; the picker's and driver's phones are admitted by the door but their records have no head-office route
+  yet (SP-3c).
 - **A Windows service** — on Windows the till runs in a window you leave open (or a Task Scheduler
   entry you create for `start-till.cmd`); the Linux start-at-login unit is provided.
 

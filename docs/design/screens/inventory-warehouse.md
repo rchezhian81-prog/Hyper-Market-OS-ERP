@@ -54,3 +54,24 @@ nothing. Words in both languages for every outcome (`picked` · `wrong_bin` · `
 step, the green banner, and the list in Tamil — zero findings. **Still recorded, not dropped:** start a count (W2) ·
 record an adjustment with reason (W3) · the device's queue drains to nothing yet (S1) · physical-device verification
 PENDING.
+
+## Measured (SP-3a — the handheld reaches the store computer, owner's Option 2 directive of 30 September 2026)
+The handheld's queue drained to nothing (S1, audit finding F11): its shell was served on the box's loopback address and
+its write base was the box's loopback lane, so no phone in the shop could load it or hand anything over. Now the box
+opens a separate **device socket** for the handhelds (ADR-0019, `EDGE_DEVICE_PORT` / `EDGE_DEVICE_HOST`): it serves only
+the handheld screens and the three device routes, and nothing at all to a device that has not **enrolled** — once, on an
+enrolment page, with the one-time code head office issued for that registered handheld. The box keeps only hashes; a
+handheld head office blocks is refused at its next request. After enrolment the shell opens as the named worker with
+the served assignment, and every accepted scan — a receipt, a put-away, a pick — is queued on the device, handed to the
+store computer after the scan and every ten seconds, and listed under **"Sent from this handheld"** with one of the five
+shared state words (saved on this handheld · trying again · with the store computer · posted at head office · refused,
+with the reason), in English and Tamil; the badge's first line counts them by state. At head office the put-away and the
+pick re-run the same bin engine over head office's bins with the worker re-verified; a receiving scan becomes one
+`received` movement at the store and is kept on the delivery's scan register. Measured in a real browser at a handheld's
+size against a real box (`tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts`): no credential → the enrolment
+page, the wrong code → refused with a reason and no shell, the right code → the shell; receive + put away → *with the
+store computer* within a moment, both records on the box's fsync'd log; reload → both still listed. Head office delivery
+is proven on the real box against the real kernel (`tests/integration/warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts`).
+**Still recorded, not dropped:** start a count (W2) · record an adjustment with reason (W3) — SP-3b; the picker and driver
+handhelds on the same socket — SP-3c; TLS on the shop-network leg (a staff-only wifi meanwhile) — Stage E;
+physical-device verification PENDING.

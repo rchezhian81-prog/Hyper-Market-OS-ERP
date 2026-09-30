@@ -109,12 +109,38 @@ device, human UAT and production verification separate; approved deferrals stay 
   honestly:** handheld queues have no sender (SP-3); a held material count variance has no approve-then-apply (SP-4); the
   counts review screen is pack-fed and does not list relayed counts (SP-9); count corrections are not in ordinary
   availability (F06 → SP-5b).
-- **Current-work pointer:** last verified = SP-2b (this PR); next = **SP-3** (handhelds on `/lane/outbox` via the LAN
-  device credential from the pack's `devices` register — never a shared login; picker, driver and warehouse queues drain
-  to the box on the shared `drainToBox`; W2 blind count on the handheld reusing `StockCounted` → the synced counts route
-  (add `warehouse` to the allow-list); W3 adjustment request with supervisor approval before posting; accurate pending /
-  failed / conflict / synchronised badge on all three handhelds); genuine blockers: none for SP-3..SP-9; external gates
-  unchanged (providers, hardware, real data, pilot GO).
+- **SP-3a — the warehouse handheld reaches the store computer and head office, over an authenticated DEVICE socket
+  (ADR-0019 · S1 · F11's handheld half · M09-FR-01 · M07-FR-01 · §28 · hard rules #1 #4 #6 #10).** The box opens a
+  separate socket for the handhelds (`EDGE_DEVICE_PORT`, `EDGE_DEVICE_HOST`; loopback by default; `edge/store-edge/src/device-server.ts`)
+  that serves ONLY the handheld shells + `/lane/outbox`, `/lane/outbox/status`, `/lane/sync-status` (same paths as the
+  loopback lane socket, so the shared drain works unchanged with `laneWriteBase = ''`), and nothing without a per-device
+  credential: head office issues a one-time enrolment code for a registered handheld (`POST /v1/platform/devices/:id/enrolment`,
+  hash + expiry on the fleet register), the handheld enrols once at `/device/enrol`, the box mints a session token kept
+  only as a hash on the fsync'd `device-enrolments.log` and sets an HttpOnly SameSite=Strict cookie; a blocked / retired
+  / unlisted device is refused at its next request; codes are one-time; guessing is bounded; `source` must be a handheld
+  surface (never `manager`). Cloud: `POST /v1/warehouse/movements/:commandId/synced` (same `applyMovement` over head
+  office's bins, MOVER re-verified, 422 → visible dead-letter) and `POST /v1/inventory/receiving-scans/:commandId/synced`
+  (one `received` movement at the store, damaged/quarantine/expired held out of stock and flagged, GRN-scans register for
+  SP-6), permission `inventory.movement.sync` on the box identity; `EVENT_ROUTES` and the allow-list carry
+  `WarehouseMovementApplied` and `ReceivingScanned` for the `warehouse` surface. Handheld: the receiving scan is its own
+  event type (with storeId/uom), the movement carries its command id on top, `sentWork()` lists every accepted scan with
+  the five state words (EN/TA, guardrail-bound), the badge counts them by state, the relay runs after each scan and every
+  10 s. Evidence: `device-enrolments.test.ts` 6, `device-server.test.ts` 8, `warehouse-handheld-sent-work.test.ts` 4,
+  `platform-device-enrolment.test.ts` 2, `warehouse-synced-routes.test.ts` 7, `warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts` 5
+  (real box + device socket + real kernel: durable before ack → cloud bin once, duplicate before/after restart with the
+  enrolment surviving, lost reply → one movement, refused bin → dead-letter survives restart, blocked device 403,
+  no-cloud hold + day close refused), `warehouse-handheld-syncs-through-the-box.e2e.ts` 2 (real Chromium on the box's
+  device socket: enrol → receive + put away → with the store computer → reload → both listed); `docs/api/surface.md` +4
+  routes; ADR-0019; ENV-VAR-INVENTORY; runbook. **Still open, honestly:** picker and driver handhelds are admitted by the
+  socket but their event types have no cloud routes (SP-3c); W2 blind count and W3 adjustment request on the handheld
+  (SP-3b); no TLS on the shop-network leg — a staff-only WPA2/WPA3 wifi is the operator control meanwhile (OA-16), TLS at
+  the device socket is a Stage E follow-up; the pack's `devices` register is file-fed until SP-9; no physical device.
+- **Current-work pointer:** last verified = SP-3a (this PR); next = **SP-3b** (W2: bin-level blind count on the warehouse
+  handheld → `StockCounted`-style event for the `warehouse` surface → a cloud route that computes the expected quantity
+  from head office's bin contents, values it, applies an immaterial variance and HOLDS a material one pending a separate
+  approver; W3: adjustment request with a reason → recorded pending approval, never posted by the raiser; EN/TA,
+  scanner-first, ≤2 / ≤3 taps); then **SP-3c** (picker + driver on the device socket with their synced routes); genuine
+  blockers: none for SP-3b..SP-9; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

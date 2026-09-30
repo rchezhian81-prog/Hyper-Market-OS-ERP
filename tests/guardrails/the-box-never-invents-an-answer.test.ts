@@ -99,6 +99,23 @@ describe('the box never invents a figure it cannot work out', () => {
 });
 
 describe('the screens socket is loopback, and reads only', () => {
+  it('the handhelds\' device socket binds to loopback unless named, serves only the handheld screens, and lets nothing through without a device credential (SP-3a · ADR-0019)', () => {
+    const DEVICE_SERVER = readFileSync('edge/store-edge/src/device-server.ts', 'utf8');
+    expect(code(DEVICE_SERVER)).toMatch(/DEVICE_HOST = '127\.0\.0\.1'/);
+    expect(code(DEVICE_SERVER)).toMatch(/HANDHELD_SCREENS: readonly ScreenName\[\] = \['warehouse', 'picker', 'driver'\]/);
+    expect(code(DEVICE_SERVER)).toMatch(/server\.listen\(input\.port, input\.host \?\? DEVICE_HOST/);
+    // Every request past the enrolment route is authenticated before anything else is decided.
+    expect(code(DEVICE_SERVER)).toMatch(/const auth = input\.enrolments\.authenticate\(cookieValue\(req\.headers\.cookie, DEVICE_COOKIE\), input\.devices\(\)\);/);
+    expect(code(DEVICE_SERVER)).toMatch(/if \(!isHandheldSource\(batch\.source\)\)/);
+    // The credential rides HttpOnly and SameSite=Strict; the socket answers no CORS at all.
+    expect(code(DEVICE_SERVER)).toMatch(/HttpOnly; SameSite=Strict/);
+    expect(code(DEVICE_SERVER)).not.toMatch(/access-control-allow-origin/);
+    // The box only opens it when told a port, and the lane and screen sockets keep their loopback binds.
+    const MAIN = readFileSync('edge/store-edge/src/main.ts', 'utf8');
+    expect(code(MAIN)).toMatch(/const devicePort = settings\['EDGE_DEVICE_PORT'\];/);
+    expect(code(MAIN)).toMatch(/devicePort === undefined \|\| enrolments === null \? null : await startDeviceServer\(/);
+  });
+
   it('binds to 127.0.0.1 unless a deployment names another address explicitly — and never widens by itself', () => {
     // The bind address is the entire security control, and this socket carries the day's takings,
     // the exception register and the price list. On the shop network, any phone could read them. The
