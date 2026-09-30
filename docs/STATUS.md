@@ -42,10 +42,29 @@ device, human UAT and production verification separate; approved deferrals stay 
   independent receipt (F08) → SP-9 connected E2E suite on real services + real PostgreSQL → SP-10 physical device +
   staff UAT (separate gates, PENDING until performed). The W2/W3/S1/S2 program of 30 Sep is folded into SP-3 in this
   order by the owner's Option 2; nothing is dropped.
-- **Current-work pointer:** last verified = SP-0 (this PR); next = **SP-1** (`edge/sync-agent/src/http-transport.ts`
-  `classify` + body-aware conflict detection; invert `tests/audit-observations/sync.test.ts` case 1 into the regression;
-  prove restart retains the conflict via the durable dead-letter store); genuine blockers: none for SP-1..SP-9;
-  external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-1 — F12 FIXED: a rejected sync conflict is a visible exception, never a delivery (M31 · QG-04 · §31.1 · hard
+  rules #6 #10).** `edge/sync-agent/src/http-transport.ts` read the status alone and called every 409 "accepted", so the
+  kernel's `409 idempotency_key_reused` / `wasItSaved: not_saved` — a DIFFERENT payload sent under a key it already held,
+  nothing saved — was acknowledged as delivered and the event vanished from the queue. Now `classify(status, errorCode)`
+  reads the ONE field a 409 body carries that matters (`error.code`, via `errorCodeOf` — the code, never the body, hard
+  rule #4): a 409 naming a record already on file (a count already reconciled, a tag already recorded) is accepted — a
+  duplicate delivery is what idempotency is for; a 409 `idempotency_key_reused` is REJECTED as a named conflict
+  (`conflict: head office already holds a different record under this key … nothing saved — kept for a person`) to the
+  visible, restart-surviving dead-letter queue; a 409 with no readable code is retryable — ambiguous is never assumed
+  delivered (bounded by the attempt budget). An identical replay is the kernel's 2xx replay and stays accepted once.
+  Evidence: `tests/unit/sync-http-transport.test.ts` (+4, the old "409 is accepted" case replaced),
+  `tests/audit-observations/sync.test.ts` case 1 INVERTED into the regression (real authenticated kernel: 0 acknowledged,
+  1 dead-lettered with the conflict named, the original record stands at 10, the identical payload replayed under the
+  same key is accepted once), `tests/integration/failed-sync-survives-restart.test.ts` (+1: a sale the cloud answers 409
+  `idempotency_key_reused` is dead-lettered as a conflict on the REAL box, survives a restart with its reason, and is not
+  re-sent). Every other suite driving the transport against the real kernel (sale, refund, day-close, completion,
+  concession-tag, migration relays) passes unchanged: their business 409s carry a code and stay accepted.
+- **Current-work pointer:** last verified = SP-1 (this PR); next = **SP-2a** (`docs/…` plan in the session scratchpad:
+  manager screen on `DeviceOutbox`; `POST /lane/outbox` + `GET /lane/outbox/status` on the box with a sixth durable
+  pipeline; `ApprovalDecided` → `POST /v1/approvals/decisions/:requestId/synced` re-verifying the decider; states
+  saved-locally / handed-to-store-computer / posted / refused on the screen; lost-reply recovery; invert
+  `tests/audit-observations/sync.test.ts` cases 2–3); genuine blockers: none for SP-2..SP-9; external gates unchanged
+  (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

@@ -1,5 +1,8 @@
-// Temporary READ-ONLY AUDIT observations. These assertions demonstrate current defects;
-// passing is evidence of the defect, not evidence that the audited behavior is correct.
+// Audit observations from the 30 Sep 2026 store-workflow audit (see README.md in this folder).
+//
+// F12 is FIXED (SP-1): its case below is now the intended-behaviour REGRESSION — a kernel conflict is a
+// visible rejected exception, never acknowledged as delivered. F11's two cases still assert the DEFECT
+// (a pass confirms it) until SP-2 inverts them.
 import { describe, expect, it } from 'vitest';
 import { apiHarness } from '../support/api-harness';
 import { httpTransport } from '../../edge/sync-agent/src/http-transport';
@@ -16,7 +19,7 @@ const TENANT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const AT = '2026-08-07T10:00:00.000Z';
 
 describe('audit observations: current sync and manager defects', () => {
-  it('acknowledges an event that the real authenticated kernel refused as a conflicting request', async () => {
+  it('F12 FIXED — an event the real authenticated kernel refused as a conflicting request is a visible exception, never acknowledged', async () => {
     const h = apiHarness();
     await h.seedOwner(TENANT, 'u-owner');
     const token = h.idp.issue({ sub: 'u-owner', tenantId: TENANT });
@@ -40,11 +43,22 @@ describe('audit observations: current sync and manager defects', () => {
     const agent = new SyncAgent(outbox, httpTransport({ baseUrl: 'https://audit.test', token, fetch: fetchFn }));
     const result = await agent.drain({ at: AT });
     expect(observed[0]).toMatchObject({ status: 409, body: { error: { code: 'idempotency_key_reused', wasItSaved: 'not_saved' } } });
-    expect(result.acknowledged).toBe(1);
-    expect(outbox.find('collision')?.state).toBe('acknowledged');
-    expect(outbox.deadLetters()).toHaveLength(0);
+    // The repaired behaviour: nothing acknowledged, the conflicting event dead-lettered with a reason that
+    // names the conflict, and the cloud's record untouched (the ORIGINAL 10 stands; the 99 never applied).
+    expect(result.acknowledged).toBe(0);
+    expect(result.deadLettered).toBe(1);
+    expect(outbox.find('collision')?.state).toBe('dead_letter');
+    expect(outbox.deadLetters()).toHaveLength(1);
+    expect(outbox.deadLetters()[0]?.reason).toContain('idempotency_key_reused');
+    expect(outbox.deadLetters()[0]?.reason).toMatch(/^conflict: /);
     const availability = await h.request({ method: 'GET', path: '/v1/inventory/availability', userId: 'u-owner', tenantId: TENANT });
     expect(availability.body).toMatchObject({ rows: [{ onHandMinor: 10 }] });
+    // And the SAME payload sent again under the SAME key is the kernel's replay of the first answer — accepted once.
+    const replay = new SyncOutbox();
+    replay.enqueue(makeEvent({ id: 'same', type: 'InventoryMoved', source: 'edge', occurredAt: AT, idempotencyKey: 'collision', payload: body }));
+    const again = await new SyncAgent(replay, httpTransport({ baseUrl: 'https://audit.test', token, fetch: fetchFn })).drain({ at: AT });
+    expect(again.acknowledged).toBe(1);
+    expect(observed[1]).toMatchObject({ status: 202 });
   });
 
   it('returns approved without changing the register, appending an audit record, or queuing any decision', () => {
