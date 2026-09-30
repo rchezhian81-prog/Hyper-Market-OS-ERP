@@ -24,6 +24,8 @@ import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-re
  *     `posted`; the same batch again is `duplicate` before AND after a box restart (the enrolment survives the restart
  *     too), and nothing is re-sent;
  *   • a receiving scan whose cloud reply is lost is retried and settles to ONE `received` movement at the store;
+ *   • "delivery complete" (SP-6b) assembles ONE goods receipt from the scans head office already holds, appends no second
+ *     stock movement, folds into the issued order, and is the same receipt however often it is relayed or asked for;
  *   • a movement head office refuses (a bin it does not have) is a visible dead-letter on the box, with the code in its
  *     reason, that survives a restart — and moved nothing;
  *   • a device the pack now BLOCKS is refused at its next request, even with a valid cookie;
@@ -63,6 +65,11 @@ const putAway = (id: string, over: Record<string, unknown> = {}) => makeEvent({
     command: { commandId: id, kind: 'put_away', storeId: 'store-1', productId: 'p-good', batchId: null, quantityMinor: 6, uom: 'EA', fromBinId: null, toBinId: 'BIN-A', movedBy: 'u-worker', at: AT, ...over },
     movements: [],
   },
+});
+/** The delivery declared complete on the handheld (SP-6b) — one per GRN, queued behind its scans; no quantity travels. */
+const completed = (grnId = 'grn-1', commandIds: string[] = []) => makeEvent({
+  id: `recv-done-${grnId}`, type: 'ReceivingCompleted', occurredAt: AT, idempotencyKey: `recv-done:${grnId}`, source: 'A-1',
+  payload: { grnId, poId: 'po-1', completedBy: 'u-worker', storeId: 'store-1', at: AT, scanCount: commandIds.length, commandIds, source: 'warehouse-handheld' },
 });
 /** A receiving scan as the handheld queues it. */
 const scanned = (id: string) => makeEvent({
@@ -114,6 +121,9 @@ async function cloud(): Promise<{ h: ApiHarness; dir: string; start: (deviceStat
   await h.provisionRole(A, 'u-worker', 'store_manager');
   await h.provisionRole(A, 'u-box', 'cashier');
   expect((await h.request({ method: 'POST', path: '/v1/warehouse/bins/BIN-A', userId: 'u-owner', tenantId: A, idempotencyKey: 'bin-a', body: { storeId: 'store-1', capacityMinor: 1000, pickable: true, zone: 'ambient' } })).status).toBe(201);
+  // The order the delivery is against (SP-6b): 10 of p-rice, proposed by the worker (a store manager here), issued by the owner.
+  expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-worker', tenantId: A, idempotencyKey: 'po-1', body: { supplierId: 's-1', lines: [{ productId: 'p-rice', orderedQty: 10, unitCost: { minor: 4000, currency: 'INR' } }] } })).status).toBe(201);
+  expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-1/approval', userId: 'u-owner', tenantId: A, idempotencyKey: 'po-1-approve', body: { reason: 'fixture' } })).status).toBe(200);
   const dir = await tempDir('sre-wh-handheld-cloud-');
 
   let online = true;
@@ -266,6 +276,61 @@ describe('the warehouse handheld: enrol → device socket → box (durable) → 
     expect(second.deviceEventsOutbox.pending().map((i) => i.key)).toEqual(['wh-move:mv-4', 'recv:grn-1:recv-4']);
     expect(second.syncStatus().unsent).toBe(2);
     expect((await postBatch(second, cookie, [{ key: s.idempotencyKey, event: s }])).acks).toEqual([{ key: 'recv:grn-1:recv-4', status: 'duplicate' }]);
+  });
+
+  it('"delivery complete" assembles ONE goods receipt at head office from the scans it already holds — no second stock movement, folded into the order — and stays one receipt however often it is relayed (SP-6b · W06 · hard rule #2)', async () => {
+    const c = await cloud();
+    const edge = await c.start();
+    const { cookie } = await enrol(edge);
+    const s1 = scanned('recv-7');
+    const s2 = scanned('recv-8');
+    const done = completed('grn-1', ['recv-7', 'recv-8']);
+    const batch = await postBatch(edge, cookie, [s1, s2, done].map((ev) => ({ key: ev.idempotencyKey, event: ev })));
+    expect(batch.acks.map((a) => a.status)).toEqual(['accepted', 'accepted', 'accepted']);
+    // Nothing at head office yet: no receipt, no stock, the order fully open.
+    expect((await c.h.request({ method: 'GET', path: '/v1/inventory/goods-receipt/grn-1', userId: 'u-owner', tenantId: A })).status).toBe(404);
+    const pass = await edge.syncOnce!();
+    expect(pass.sent).toBe(3);
+    expect(pass.dead).toBe(0);
+    expect((await statusOf(edge, cookie!, ['recv:grn-1:recv-7', 'recv-done:grn-1'])).map((i) => i.state)).toEqual(['posted', 'posted']);
+
+    // ONE receipt: one line of p-rice, counted 2 against the order's 10, sellable 2 — built from head office's scan register,
+    // the worker as receiver, the box as relay; it names the scans and the movements THEY posted, and appended none of its own.
+    const grn = (await c.h.request({ method: 'GET', path: '/v1/inventory/goods-receipt/grn-1', userId: 'u-owner', tenantId: A })).body as { grn: Record<string, unknown>; awaitsDecision: boolean };
+    expect(grn.grn).toMatchObject({
+      grnId: 'grn-1', poId: 'po-1', warehouseId: 'store-1', receivedBy: 'u-worker', relayedBy: 'u-box', source: 'warehouse-handheld',
+      availableMinor: 2, heldMinor: 0,
+      captured: { lines: [{ lineId: 'grn-1:1', productId: 'p-rice', sellableMinor: 2, quarantinedMinor: 0, disposition: 'sellable' }] },
+      poReceipt: { receiptId: 'grn-1', receivedByProduct: { 'p-rice': 2 } },
+      assembledFrom: { scanCount: 2, commandIds: ['recv-7', 'recv-8'], scannedBy: ['u-worker'], completedBy: 'u-worker', onHandByLine: { 'grn-1:1': 2 }, onHandMovementIds: ['recv:grn-1:recv-7', 'recv:grn-1:recv-8'], disagreements: [] },
+    });
+    expect(grn.awaitsDecision).toBe(false);
+    expect(await onHandAt(c.h, 'p-rice')).toBe(2);
+    const moved = (await c.h.store.readStream(A, 'inventory', { type: 'InventoryMoved' })).map((e) => (e.event.payload as { movementId: string }).movementId);
+    expect(moved.filter((id) => id.includes('grn-1'))).toEqual(['recv:grn-1:recv-7', 'recv:grn-1:recv-8']);
+    // The order was folded in the same append as the receipt: 10 ordered, 2 received, 8 open.
+    const po = (await c.h.request({ method: 'GET', path: '/v1/purchase/orders/po-1', userId: 'u-owner', tenantId: A })).body;
+    expect(po).toMatchObject({ order: { receivedByProduct: { 'p-rice': 2 } }, openCommitment: { fullyReceived: false, lines: [{ productId: 'p-rice', orderedQty: 10, receivedQty: 2, openQty: 8 }] } });
+
+    // The handheld re-sending the completion after a lost reply is duplicate at the box; a second pass reaches head office with nothing new.
+    expect((await postBatch(edge, cookie, [{ key: done.idempotencyKey, event: done }])).acks).toEqual([{ key: 'recv-done:grn-1', status: 'duplicate' }]);
+    await edge.syncOnce!();
+    expect(c.posts()).toBe(3);
+    expect(await onHandAt(c.h, 'p-rice')).toBe(2);
+    // A person asking head office to assemble it again gets the SAME receipt, not a second one.
+    const again = await c.h.request({ method: 'POST', path: '/v1/inventory/goods-receipt/grn-1/assemble', userId: 'u-owner', tenantId: A, idempotencyKey: 'assemble-again', body: { poId: 'po-1' } });
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ alreadyReceived: true, grn: { assembledFrom: { scanCount: 2 } } });
+    expect(((await c.h.request({ method: 'GET', path: '/v1/inventory/goods-receipt', userId: 'u-owner', tenantId: A })).body as { count: number }).count).toBe(1);
+
+    // A scan that arrives AFTER the delivery was assembled is still the truth about goods in the building: posted, and SAID.
+    const late = scanned('recv-9');
+    await postBatch(edge, cookie, [{ key: late.idempotencyKey, event: late }]);
+    await edge.syncOnce!();
+    expect(await onHandAt(c.h, 'p-rice')).toBe(3);
+    const scans = (await c.h.request({ method: 'GET', path: '/v1/inventory/receiving-scans', userId: 'u-owner', tenantId: A, query: { grnId: 'grn-1' } })).body as { scans: { commandId: string; governanceFlags: string[] }[] };
+    expect(scans.scans.find((r) => r.commandId === 'recv-9')?.governanceFlags).toContain('after_assembly');
+    expect(scans.scans.find((r) => r.commandId === 'recv-7')?.governanceFlags).not.toContain('after_assembly');
   });
 
   it('a BLIND bin count and an adjustment REQUEST ride the same socket: head office reconciles the count against ITS bin and holds it, and posts the request ONCE only when a different person approves (SP-3b · W2 · W3 · §28)', async () => {

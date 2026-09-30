@@ -92,6 +92,9 @@ describe('the contract reads strictly and refuses with a reason', () => {
     // SP-3a: the warehouse handheld's scans ride the device socket as the `warehouse` surface — and only that surface.
     expect(RELAYABLE_DEVICE_EVENTS['WarehouseMovementApplied']?.surfaces).toEqual(['warehouse']);
     expect(RELAYABLE_DEVICE_EVENTS['ReceivingScanned']?.surfaces).toEqual(['warehouse']);
+    // SP-6b: the delivery's completion rides behind its scans — the warehouse handheld's alone, never the desk's.
+    expect(RELAYABLE_DEVICE_EVENTS['ReceivingCompleted']?.surfaces).toEqual(['warehouse']);
+    expect(isRelayable('ReceivingCompleted', 'manager')).toBe(false);
     expect(isRelayable('WarehouseMovementApplied', 'manager')).toBe(false);
     expect(isRelayable('ReceivingScanned', 'picker')).toBe(false);
     // A handheld may claim only a handheld surface on the device socket; `manager` is never one.

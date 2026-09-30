@@ -65,6 +65,8 @@ export const FEEDBACK_CODES = Object.freeze([
   'picked', 'wrong_bin', 'wrong_item', 'not_on_pick_list', 'line_done',
   // a blind bin count (W2) and an adjustment request (W3) — SP-3b
   'counted', 'adjustment_requested', 'not_a_quantity', 'no_reason',
+  // the delivery declared complete — sent as ONE receipt for head office to assemble against the order (SP-6b)
+  'receiving_done', 'nothing_received',
 ] as const);
 export type FeedbackCode = (typeof FEEDBACK_CODES)[number];
 
@@ -201,10 +203,30 @@ export const STOCK_COUNTED = 'StockCounted';
 export const ADJUSTMENT_REQUESTED = 'AdjustmentRequested';
 /** The reason a routine handheld bin count carries — a cycle count, not a correction (the correction is head office's). */
 export const HANDHELD_COUNT_REASON = 'cycle_count';
+/**
+ * The event a delivery's COMPLETION travels under (SP-6b): one per GRN, behind its scans in the queue. Head office assembles
+ * the goods receipt from the scans it already holds and folds it into the purchase order — nothing in it moves stock.
+ */
+export const RECEIVING_COMPLETED = 'ReceivingCompleted';
 
 /** The kinds of work this handheld hands to the store computer — a value, so the shell must have words for each. */
-export const SENT_WORK_KINDS = Object.freeze(['receipt', 'put_away', 'pick', 'count', 'adjustment'] as const);
+export const SENT_WORK_KINDS = Object.freeze(['receipt', 'receipt_done', 'put_away', 'pick', 'count', 'adjustment'] as const);
 export type SentWorkKind = (typeof SENT_WORK_KINDS)[number];
+
+/** "Delivery complete" (SP-6b): the GRN this handheld has been receiving, and the order it was delivered against when known. */
+export interface CompleteReceivingInput {
+  readonly grnId: string;
+  /** Overrides the assignment's order; `null` says there is none (a DSD). */
+  readonly poId?: string | null;
+  readonly at?: string;
+}
+export interface CompleteReceivingResult {
+  readonly accepted: boolean;
+  readonly grnId: string;
+  /** How many of this handheld's receiving scans the completion covers. */
+  readonly scanCount: number;
+  readonly signal: FeedbackSignal;
+}
 
 /** One blind count of one product in one bin (W2): what the worker SAW, and nothing the system expects. */
 export interface CountBinInput {
@@ -268,6 +290,8 @@ export interface WarehouseAssignment {
   /** The GRN context: what is on order, so an over-delivery or an off-order item is caught (§28). */
   readonly grnId?: string;
   readonly ordered?: readonly OrderedProduct[];
+  /** SP-6b: the purchase order the delivery is against, named on "delivery complete" so head office folds the GRN into it. */
+  readonly poId?: string;
   /** Goods already received and awaiting put-away when the assignment was served. */
   readonly goodsIn?: readonly GoodsInItem[];
   /** Order lines to pick from the racking, each naming its bin (M09-FR-01 pick). Absent = no pick work. */
@@ -368,6 +392,10 @@ export class WarehouseSession {
           const p = item.event.payload as { commandId: string; productId: string; batchId: string | null; quantityMinor: number; uom: string; grnId: string };
           return [{ kind: 'receipt', id: p.commandId, what: `${p.productId}${p.batchId ? ` · ${p.batchId}` : ''}`, detail: `${p.quantityMinor} ${p.uom} · ${p.grnId}`, ...common, ...withReason }];
         }
+        if (item.event.type === RECEIVING_COMPLETED) {
+          const p = item.event.payload as { grnId: string; poId: string | null; scanCount: number };
+          return [{ kind: 'receipt_done', id: p.grnId, what: p.grnId, detail: `${p.scanCount} ${p.scanCount === 1 ? 'scan' : 'scans'}${p.poId ? ` · ${p.poId}` : ''}`, ...common, ...withReason }];
+        }
         if (item.event.type === WAREHOUSE_MOVEMENT_APPLIED) {
           const p = item.event.payload as { command: MovementCommand; orderRef?: string };
           const c = p.command;
@@ -467,6 +495,47 @@ export class WarehouseSession {
     }));
 
     return { result, signal: signalFor('accept', 'received', result.detail) };
+  }
+
+  /** This handheld's receiving scans for a delivery — from the DURABLE queue, so they are the same after the app was closed. */
+  private receiptScansOf(grnId: string) {
+    return this.outbox.all().filter((i) => i.event.type === RECEIVING_SCANNED && (i.event.payload as { grnId?: string }).grnId === grnId);
+  }
+
+  /** True while this handheld has received something for the delivery and not yet sent it as ONE receipt (SP-6b). */
+  receivingOpen(grnId: string): boolean {
+    return this.receiptScansOf(grnId.trim()).length > 0 && this.outbox.find(`recv-done:${grnId.trim()}`) === undefined;
+  }
+
+  /**
+   * Declare the delivery COMPLETE (SP-6b · M07-FR-01): one `ReceivingCompleted`, keyed on the GRN id, queued BEHIND the
+   * scans it covers, so head office assembles ONE goods receipt from the scans it already holds — against the order named
+   * here — and folds it into the purchase order. Nothing moves on this handheld and no quantity travels: the scans are the
+   * truth, this only says they are all in. Refused when nothing was received here (a completion with no scans would be a
+   * dead-letter at head office) and, harmlessly, when the delivery was already completed.
+   */
+  completeReceiving(input: CompleteReceivingInput): CompleteReceivingResult {
+    const grnId = input.grnId.trim();
+    const scans = this.receiptScansOf(grnId);
+    const refused = (code: string, detail: string, feedback: ScanFeedback = 'reject'): CompleteReceivingResult =>
+      ({ accepted: false, grnId, scanCount: scans.length, signal: signalFor(feedback, code, detail) });
+    if (this.outbox.find(`recv-done:${grnId}`) !== undefined) return refused('duplicate_ignored', `delivery ${grnId} was already sent as one receipt — nothing changed`, 'warn');
+    if (scans.length === 0) return refused('nothing_received', `nothing has been received on this handheld for delivery ${grnId} — scan the delivery in first`);
+    const at = input.at ?? this.at();
+    const poId = input.poId === undefined ? (this.assignment.poId ?? null) : input.poId;
+    this.outbox.enqueue(makeEvent({
+      id: `recv-done-${grnId}`,
+      type: RECEIVING_COMPLETED,
+      occurredAt: at,
+      idempotencyKey: `recv-done:${grnId}`,
+      source: this.assignment.assignmentId,
+      payload: {
+        grnId, poId, completedBy: this.assignment.workerId, storeId: this.assignment.storeId, at,
+        scanCount: scans.length, commandIds: scans.map((i) => (i.event.payload as { commandId: string }).commandId), source: 'warehouse-handheld',
+      },
+    }));
+    const detail = `delivery ${grnId} sent as one receipt of ${scans.length} ${scans.length === 1 ? 'scan' : 'scans'} — head office assembles it against ${poId ?? 'no order'}`;
+    return { accepted: true, grnId, scanCount: scans.length, signal: signalFor('accept', 'receiving_done', detail) };
   }
 
   /**

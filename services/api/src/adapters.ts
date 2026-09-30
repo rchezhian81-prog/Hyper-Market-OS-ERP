@@ -150,6 +150,7 @@ import type { DisplayContract, AssortmentEntry } from '../../../packages/merchan
 import type { DelegationDeps } from '../../identity/src/delegation';
 import type { ApprovalDecisionDeps, ApprovalDecisionRecord } from '../../identity/src/approval-decisions';
 import type { SyncedGoodsReceiptDeps } from '../../inventory/src/goods-receipt-synced';
+import type { AssembledGoodsReceiptDeps } from '../../inventory/src/goods-receipt-assembled';
 import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
 import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
 import type { AdjustmentRequestDeps, AdjustmentRequestRecord } from '../../inventory/src/adjustment-requests';
@@ -3951,6 +3952,17 @@ export function syncedGoodsReceiptAdapter(input: {
 }
 
 /**
+ * SP-6b: a delivery's handheld scans assembled into ONE GRN — the relayed receipt's deps (the GRN register, the order, the
+ * master, the policy, the cloud's cost, the grants) plus the SP-3a scan register the lines are built from.
+ */
+export function assembledGoodsReceiptAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<AssembledGoodsReceiptDeps, 'recordAudit'> {
+  return { ...syncedGoodsReceiptAdapter(input), scansOf: receivingScanAdapter(input).scansOf };
+}
+
+/**
  * The warehouse handheld's put-aways and picks, relayed by the box (SP-3a · F11 handheld half): the same bin registry and
  * append-only movement ledger as the direct route, plus the MOVER's real grants for re-verification.
  */
@@ -3982,6 +3994,8 @@ export function receivingScanAdapter(input: {
     isKnown: inv.isKnown,
     scanExists: async (tenantId, commandId) => (await scans(tenantId)).some((r) => r.commandId === commandId),
     scansOf: async (tenantId, grnId) => (await scans(tenantId)).filter((r) => r.grnId === grnId),
+    // SP-6b: a scan after the delivery was assembled is said (`after_assembly`) — the GRN register is the one the assembly wrote.
+    receiptExists: async (tenantId, grnId) => (await goodsReceiptAdapter(input).grn(tenantId, grnId)) !== undefined,
     recordScan: async (tenantId, scan) => {
       await input.store.append(tenantId, scansStream, makeEvent({
         id: `recv-scan-${scan.commandId}`,

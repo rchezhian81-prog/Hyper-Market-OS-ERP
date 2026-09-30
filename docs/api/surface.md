@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 768 | 468 | 468 | 59 | 260 |
+| 13 | 770 | 470 | 470 | 59 | 260 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -181,6 +181,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/goods-receipt` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/goods-receipt/:grnId` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/goods-receipt/:grnId` | `inventory.movement.append` | core | yes |
+| POST | `/v1/inventory/goods-receipt/:grnId/assemble` | `inventory.movement.append` | core | yes |
+| POST | `/v1/inventory/goods-receipt/:grnId/assembled` | `inventory.receipt.sync` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/excess/decide` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/lines/:lineId/disposition` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/synced` | `inventory.receipt.sync` | core | yes |

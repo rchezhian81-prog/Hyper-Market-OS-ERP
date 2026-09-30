@@ -174,6 +174,9 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // command id (a plain top-level payload field); a refusal is 422 → dead-lettered here by name for a person.
   WarehouseMovementApplied: '/v1/warehouse/movements/:commandId/synced',
   ReceivingScanned: '/v1/inventory/receiving-scans/:commandId/synced',
+  // SP-6b: the delivery declared complete on the handheld → head office assembles ONE GRN from the scans on ITS register
+  // (never the body), against the issued order, appending no second stock movement. Idempotent on the GRN id.
+  ReceivingCompleted: '/v1/inventory/goods-receipt/:grnId/assembled',
   // SP-3b (W3): an adjustment request raised on the warehouse handheld, recorded at head office pending approval.
   AdjustmentRequested: '/v1/inventory/adjustment-requests/:requestId/synced',
   // A delivery booked in and a blind count captured on the manager's screen (SP-2b · F11 · M07-FR-01 · M09-FR-04).
