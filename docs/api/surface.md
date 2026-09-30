@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 750 | 454 | 454 | 59 | 249 |
+| 13 | 754 | 457 | 457 | 59 | 253 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -164,8 +164,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/ageing` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/asn/compare` | `inventory.availability.read` | core | yes |
 | GET | `/v1/inventory/availability` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/count-policy` | `inventory.count.policy.read` | core | — |
+| POST | `/v1/inventory/count-policy` | `inventory.count.policy.set` | core | yes |
 | GET | `/v1/inventory/counts` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/counts/:countId` | `inventory.movement.append` | core | yes |
+| POST | `/v1/inventory/counts/:countId/synced` | `inventory.count.sync` | core | yes |
 | GET | `/v1/inventory/demand-forecast` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/dock-slots/book` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/exceptions` | `inventory.availability.read` | core | — |
@@ -174,6 +177,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/goods-receipt` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/goods-receipt/:grnId` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/goods-receipt/:grnId` | `inventory.movement.append` | core | yes |
+| POST | `/v1/inventory/goods-receipt/:grnId/synced` | `inventory.receipt.sync` | core | yes |
 | POST | `/v1/inventory/movements` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/near-expiry` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/performance` | `inventory.availability.read` | core | — |

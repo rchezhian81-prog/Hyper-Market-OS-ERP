@@ -50,6 +50,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'concession.tag.sync',
       // SP-2a: an approval decided on the manager's screen reaches the cloud's decisions register through the box.
       'approvals.decision.sync',
+      // SP-2b: a delivery booked in and a blind count captured on the manager's screen reach head office through the
+      // box; the owner sets the count-approval threshold policy the cloud reconciles against (never the body, F07).
+      'inventory.receipt.sync', 'inventory.count.sync', 'inventory.count.policy.set', 'inventory.count.policy.read',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.return.threshold.set', 'pos.return.window.set', 'pos.storecredit.cap.set', 'pos.return.noreceipt.cap.set', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read', 'till.overshort.review',
       'till.dayclose.sync', 'till.dayclose.read', 'till.dayclose.approve',
@@ -208,6 +211,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // SP-2a hop: the box relays approvals DECIDED on the manager's screen to the cloud's decisions register under
       // this identity. The route re-verifies the DECIDER's own authority from their grants — this grants no decision.
       'approvals.decision.sync',
+      // SP-2b hops: the box relays deliveries booked in and blind counts captured on the manager's screen. The routes
+      // re-verify the RECEIVER / COUNTER and own every judgement (rules, cost, expected, threshold) — these grant nothing.
+      'inventory.receipt.sync', 'inventory.count.sync',
       // M01-FR-02: the box pulls the PUBLISHED document templates (the receipt header/footer in force) into the
       // lane's pack under this identity — a read of what head office put in force, never of drafts or names.
       'org.template.pull',

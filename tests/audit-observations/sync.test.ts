@@ -4,8 +4,8 @@
 // visible rejected exception, never acknowledged as delivered. F11 is PARTLY FIXED (SP-2a): case 2 (the
 // approval decision) and the receipt half of case 3 are now regressions — the decision and the receipt are in
 // the durable device queue before the screen says so, and survive a reboot of the screen over the same device
-// storage. The COUNT half of case 3 still asserts the DEFECT (the manager count reconciles against an in-memory
-// ledger that is empty after a reload) until SP-2b moves counts onto the same path.
+// storage. Since SP-2b the COUNT half of case 3 is a regression too: the count is captured blind and queued, never
+// reconciled on the screen.
 import { describe, expect, it } from 'vitest';
 import { apiHarness } from '../support/api-harness';
 import { httpTransport } from '../../edge/sync-agent/src/http-transport';
@@ -68,12 +68,11 @@ describe('audit observations: current sync and manager defects', () => {
     const request = requestApproval({ id: 'a1', subjectType: 'refund', subjectRef: 'r1', requestedBy: 'cashier', branchId: 'b1', value: { minor: 100, currency: 'INR' } });
     const ledger = new Ledger(new InMemoryLedgerStore());
     const outbox = new SyncOutbox();
-    const session = createManagerSession({ storeId: 's1', branchId: 'b1', tradingDay: '2026-08-07', tradingDayRule: makeTradingDayRule('02:00'), manager: { userId: 'manager', branchScope: ['b1'], authorityLimit: null }, currency: 'INR', warehouseId: 's1', countApprovalThresholdMinor: 100_000 }, {
+    const session = createManagerSession({ storeId: 's1', branchId: 'b1', tradingDay: '2026-08-07', tradingDayRule: makeTradingDayRule('02:00'), manager: { userId: 'manager', branchScope: ['b1'], authorityLimit: null }, currency: 'INR', warehouseId: 's1' }, {
       approvals: () => ({ known: true, requests: [request] }),
       openExceptions: () => ({ known: true, items: [] }),
       unsentItems: () => ({ known: true, items: [] }),
       tasks: () => ({ known: true, items: [] }),
-      productValue: () => ({ known: true, valuePerUnitMinor: 100 }),
     }, ledger, outbox);
     expect(session.decideApproval({ requestId: 'a1', decision: 'approved', reasonCode: 'within_policy', decidedAt: AT })).toMatchObject({ ok: true, request: { status: 'approved' } });
     // The repaired behaviour: the decision is in the queue (an `ApprovalDecided` event under the decision's own key),
@@ -93,26 +92,34 @@ describe('audit observations: current sync and manager defects', () => {
     expect(request.status).toBe('pending');
   });
 
-  it('F11 PARTLY FIXED (SP-2a) — a manager receipt survives a reboot of the screen and counts as unsent; the COUNT still reconciles against an empty ledger (SP-2b)', () => {
+  it('F11 FIXED (SP-2b) — a manager receipt AND count survive a reboot of the screen, count as unsent, and the count is captured blind (no expected figure here)', () => {
     // The device's storage, as a browser's localStorage behaves: the same key read back after a reload.
     const held = new Map<string, string>();
     const storage = { getItem: (k: string) => held.get(k) ?? null, setItem: (k: string, v: string) => { held.set(k, v); } };
-    const config = { managerId: 'manager', storage, data: { products: [{ id: 'P1', valuePerUnitMinor: 100 }], unsentItems: [], openExceptions: [] } };
+    const config = { managerId: 'manager', storage, data: { unsentItems: [], openExceptions: [] } };
     const first = bootManager(config);
     first.receive({ grnId: 'grn-1', number: 'GRN-1', poId: null, receivedAt: AT, lines: [{ productId: 'P1', quantityMinor: 10, uom: 'EA' }] });
     // Repaired: the receipt is on the device and counted as not yet sent — never "0 unsent" (P-08).
     expect(first.floor().unsent).toEqual({ known: true, count: 1 });
     expect(first.floor().heldHere).toBe(1);
     const count = { countId: 'c1', productId: 'P1', locationId: 's1', uom: 'EA', countedMinor: 10, reasonCode: 'cycle_count', at: AT };
-    expect(first.countStock(count)).toMatchObject({ counted: true, result: { expectedMinor: 10, varianceMinor: 0 } });
+    // Repaired (SP-2b): the count is CAPTURED and QUEUED — the screen no longer reconciles it against anything and
+    // returns no expected or variance figure at all. Head office computes both against the authoritative ledger.
+    expect(first.countStock(count)).toEqual({ counted: true, queued: true, countId: 'c1' });
+    expect(first.floor().unsent).toEqual({ known: true, count: 2 });
 
     const reloaded = bootManager(config);
-    // Repaired: the queue is rebuilt from the device — the receipt is still there (a zero-variance count queues
-    // nothing, by the counts engine's own rule), and still counted as not yet sent.
-    expect(reloaded.floor().unsent).toEqual({ known: true, count: 1 });
-    expect(reloaded.floor().heldHere).toBe(1);
-    // STILL THE DEFECT (SP-2b): the count reconciles against this browser's in-memory ledger, which is empty after
-    // the reload, so the expected quantity is 0 and a 10-unit "variance" is invented. A pass here confirms it.
-    expect(reloaded.countStock({ ...count, countId: 'c2' })).toMatchObject({ counted: true, result: { expectedMinor: 0, varianceMinor: 10, adjusted: true } });
+    // Repaired: the queue is rebuilt from the device — the receipt and the count are both still there.
+    expect(reloaded.floor().unsent).toEqual({ known: true, count: 2 });
+    expect(reloaded.floor().heldHere).toBe(2);
+    expect(reloaded.savedWork().map((w) => [w.kind, w.id, w.state])).toEqual([['count', 'c1', 'saved_here'], ['receipt', 'grn-1', 'saved_here']]);
+    // Repaired: the old defect was `expectedMinor: 0, varianceMinor: 10, adjusted: true` here — a variance invented
+    // from an empty in-memory ledger. There is no longer any expected figure on this path to be wrong.
+    const again = reloaded.countStock({ ...count, countId: 'c2' });
+    expect(again).toEqual({ counted: true, queued: true, countId: 'c2' });
+    expect(JSON.stringify(again)).not.toMatch(/expected|variance|adjusted/);
+    // And the same count id a second time is refused, not queued twice (a re-count is a new count).
+    expect(reloaded.countStock(count)).toMatchObject({ counted: false, refusal: 'already_counted' });
+    expect(reloaded.floor().unsent).toEqual({ known: true, count: 3 });
   });
 });

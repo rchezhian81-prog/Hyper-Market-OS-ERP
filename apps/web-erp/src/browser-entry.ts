@@ -35,7 +35,6 @@ import {
   type ManagerSession,
   type Register,
   type RegisterItem,
-  type ValueRegister,
 } from './manager-session';
 import type { ApprovalRequest } from '../../../packages/approvals/src/approvals';
 import {
@@ -257,20 +256,12 @@ if (demoBannerDoc !== undefined && demoBannerDoc !== null) {
     typeof PILOT_DEMO_BANNER === 'string' ? PILOT_DEMO_BANNER : '');
 }
 
-/** What the store knows about a product this screen may be asked to count. */
-export interface ProductFact {
-  readonly id: string;
-  /** Value of one smallest unit, in minor units. Without it a count cannot be valued. */
-  readonly valuePerUnitMinor: number;
-}
-
 /** The last-synced payload the ERP server injects before boot. Absent = this screen knows nothing. */
 export interface ManagerData {
   readonly approvals?: readonly ApprovalRequest[];
   readonly openExceptions?: readonly RegisterItem[];
   readonly unsentItems?: readonly RegisterItem[];
   readonly tasks?: readonly RegisterItem[];
-  readonly products?: readonly ProductFact[];
   // Who runs this screen, where, and which day — from the store pack (Stage G slice 5c · §28 · hard rule #4).
   // Absent means the box was not told; the screen then names nobody and refuses every decision.
   readonly userId?: string;
@@ -281,7 +272,6 @@ export interface ManagerData {
   readonly branchId?: string | null;
   readonly tradingDay?: string;
   readonly tradingDayCutoff?: string;
-  readonly countApprovalThresholdMinor?: number;
   readonly warehouseId?: string;
 }
 
@@ -3666,22 +3656,13 @@ export function portsFromData(data: ManagerData | undefined): ManagerPorts {
   const approvals = (): ApprovalRegister =>
     data.approvals === undefined ? notKnown(NOT_CONNECTED) : { known: true, requests: data.approvals };
 
-  // A product this screen was never told about is not a product worth nothing. Refusing the count
-  // is the only honest answer, and it is what keeps a shrinkage above somebody's approval limit.
-  const productValue = (productId: string): ValueRegister => {
-    const fact = data.products?.find((p) => p.id === productId);
-    if (fact === undefined) {
-      return notKnown(`this screen has not been told what "${productId}" is worth`);
-    }
-    return { known: true, valuePerUnitMinor: fact.valuePerUnitMinor };
-  };
-
+  // Since SP-2b this screen values nothing: a count is captured blind and head office values and reconciles it
+  // (F07/F11), so there is no product-value port here for a payload to fill with zeros.
   return {
     approvals,
     openExceptions: () => register(data.openExceptions),
     unsentItems: () => register(data.unsentItems),
     tasks: () => register(data.tasks),
-    productValue,
   };
 }
 
@@ -3743,7 +3724,6 @@ export function bootManager(config?: {
   /** Maximum value this manager may approve, in minor units; null = unlimited. */
   approvalLimitMinor?: number | null;
   warehouseId?: string;
-  countApprovalThresholdMinor?: number;
   data?: ManagerData;
   /** The box's lane write address (M14-FR-04). Present = the day close goes to the store computer. */
   laneWriteBase?: string;
@@ -3783,7 +3763,6 @@ export function bootManager(config?: {
       },
       currency: 'INR',
       warehouseId: config?.warehouseId ?? data?.warehouseId ?? 'store-1',
-      countApprovalThresholdMinor: config?.countApprovalThresholdMinor ?? data?.countApprovalThresholdMinor ?? 100_000,
     },
     // The read registers come from the last-synced payload; the one WRITE port (day close) is added
     // only when this box serves a lane to post to. `??` on the whole port keeps a missing box honest.
@@ -3839,7 +3818,7 @@ export function openManagerRelay(
   return {
     syncNow: async () => {
       const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
-      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedDecisionKeys(), fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedKeys(), fetch: fetchFn });
       if (statuses !== undefined) session.noteBoxStatus(statuses);
       return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
     },

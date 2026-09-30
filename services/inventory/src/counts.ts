@@ -38,6 +38,17 @@ export interface StoredReconciliation {
   readonly counterId: string;
   readonly approvedBy: string | null;
   readonly at: string;
+  /**
+   * SP-2b — a count relayed from a store device whose material variance has NO approver yet: recorded, valued and
+   * visible, the correction NOT applied until a separate person approves (§28). Absent on a direct-route count.
+   */
+  readonly pendingApproval?: boolean;
+  /** SP-2b — what head office's re-verification found about a relayed count (empty = nothing to flag). */
+  readonly governanceFlags?: readonly string[];
+  /** SP-2b — the identity that relayed it (the store box), the surface, and the store, when relayed. */
+  readonly relayedBy?: string;
+  readonly source?: string;
+  readonly storeId?: string | null;
 }
 
 export interface CountsDeps {
@@ -55,7 +66,8 @@ const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !==
 const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
 
 /** The count corrections applied so far for this key — the layer on top of the M08 base position. */
-const priorCorrections = (recs: readonly StoredReconciliation[]): number =>
+/** The corrections already layered on M08 for a position — only counts that were actually ADJUSTED count. */
+export const priorCorrections = (recs: readonly StoredReconciliation[]): number =>
   recs.filter((r) => r.adjusted).reduce((s, r) => s + r.varianceMinor, 0);
 
 export function countsRoutes(deps: CountsDeps): readonly Route[] {

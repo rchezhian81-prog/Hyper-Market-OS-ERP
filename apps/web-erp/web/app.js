@@ -53,9 +53,10 @@ const WORDS = {
     biggestFirst: 'Biggest first.', approve: 'Approve', reject: 'Reject', cancel: 'Cancel', ok: 'OK',
     whyApprove: 'Why are you approving this?', whyReject: 'Why are you rejecting this?',
     decided: 'Decided', requestedBy: 'asked for by', noValue: 'no value',
-    // Where each decision this screen took has got to (SP-2a): the list under the inbox, and the tile note.
-    decidedHere: 'Decided on this screen', decisionsLead: 'Where each decision has got to. Nothing here is lost on a reload.',
+    // Everything this screen saved — decisions, deliveries, counts — and where each has got to (SP-2a/2b).
+    savedHere: 'Saved on this screen', savedLead: 'Decisions, deliveries and counts this screen saved, and where each has got to. Nothing here is lost on a reload.',
     approvedWord: 'Approved', rejectedWord: 'Rejected', heldHere: 'saved on this screen, not yet with the store computer',
+    linesWord: 'lines', noOrderWord: 'no purchase order',
     read: 'Please read this', done: 'Done',
     deliveryNote: 'Delivery note number', poNumber: 'Purchase order number (leave empty if there is none)',
     itemCode: 'Item code', howMany: 'How many', addItem: 'Add this item', noItemsYet: 'No items added yet.',
@@ -63,15 +64,14 @@ const WORDS = {
     needNumber: 'Give the delivery note a number first.', needLines: 'Add at least one item first.',
     needItem: 'Type an item code and how many.',
     received: 'Delivery saved', unmatchedWarning: 'There is no purchase order behind this delivery, so nobody can check the invoice against it. Tell the buyer today.',
-    matchedNote: 'Stock is up to date. It will go to the cloud on its own.',
+    matchedNote: 'Head office will check it against the order and the item rules when it arrives there.',
     productCode: 'Product code', whereIsIt: 'Where (aisle or bay)',
     enterCount: 'Enter the count', howManyOnShelf: 'How many are actually there?',
     countBlindHint: "Count what is actually on the shelf. This screen will not show you the system's figure first — that is on purpose.",
     whyDifferent: 'Why is it different?', needProduct: 'Type a product code and where it is.',
-    countMatches: 'The count matches the system exactly.',
-    countedMore: 'You counted more than the system had, by', countedFewer: 'You counted fewer than the system had, by',
-    worth: 'worth', needsApproval: 'This difference is large enough that somebody else must approve it. It is recorded and waiting.',
-    cannotValue: 'This screen does not know what that item is worth, so it cannot work out how much the difference costs — and a difference worth nothing would slip past the approval limit. Nothing has been changed.',
+    countRecorded: 'Count recorded',
+    countNote: 'Head office works out the difference and what it is worth. A large difference waits there for somebody else to approve; the shelf figure does not change until then.',
+    alreadyCounted: 'That count is already saved on this screen. To count the item again, enter a new count.',
     checkOpen: 'Check what is still open', closeNow: 'Close the day now',
     closedNote: 'A closed day is locked. Anything found afterwards is a correction, not a change.',
     dayClosed: 'The day is closed and locked.', stillOpen: 'The day cannot close yet',
@@ -93,8 +93,9 @@ const WORDS = {
     approve: 'ஒப்புதல்', reject: 'மறு', cancel: 'ரத்து', ok: 'சரி',
     whyApprove: 'ஏன் ஒப்புதல் அளிக்கிறீர்கள்?', whyReject: 'ஏன் மறுக்கிறீர்கள்?',
     decided: 'முடிவு பதிவாகியது', requestedBy: 'கேட்டவர்', noValue: 'மதிப்பு இல்லை',
-    decidedHere: 'இந்தத் திரையில் முடிவு செய்யப்பட்டவை', decisionsLead: 'ஒவ்வொரு முடிவும் எங்கே உள்ளது. மறுபடியும் ஏற்றினாலும் இங்கு எதுவும் இழக்கப்படாது.',
+    savedHere: 'இந்தத் திரையில் சேமிக்கப்பட்டவை', savedLead: 'இந்தத் திரை சேமித்த முடிவுகள், டெலிவரிகள், எண்ணிக்கைகள் — ஒவ்வொன்றும் எங்கே உள்ளது. மறுபடியும் ஏற்றினாலும் இங்கு எதுவும் இழக்கப்படாது.',
     approvedWord: 'ஒப்புதல் அளிக்கப்பட்டது', rejectedWord: 'மறுக்கப்பட்டது', heldHere: 'இந்தத் திரையில் சேமிக்கப்பட்டது, கடை கணினிக்கு இன்னும் செல்லவில்லை',
+    linesWord: 'வரிகள்', noOrderWord: 'கொள்முதல் ஆர்டர் இல்லை',
     read: 'இதைப் படிக்கவும்', done: 'முடிந்தது',
     deliveryNote: 'டெலிவரி நோட்டு எண்', poNumber: 'கொள்முதல் ஆர்டர் எண் (இல்லையென்றால் காலியாக விடவும்)',
     itemCode: 'பொருள் குறியீடு', howMany: 'எத்தனை', addItem: 'இந்தப் பொருளைச் சேர்',
@@ -103,15 +104,14 @@ const WORDS = {
     needLines: 'குறைந்தது ஒரு பொருளையாவது சேர்க்கவும்.', needItem: 'பொருள் குறியீடும் எண்ணிக்கையும் தேவை.',
     received: 'டெலிவரி சேமிக்கப்பட்டது',
     unmatchedWarning: 'இந்த டெலிவரிக்கு கொள்முதல் ஆர்டர் இல்லை. எனவே இன்வாய்ஸை யாரும் சரிபார்க்க முடியாது. இன்றே வாங்குபவரிடம் சொல்லவும்.',
-    matchedNote: 'இருப்பு புதுப்பிக்கப்பட்டது. அது தானாகவே கிளௌடுக்குச் செல்லும்.',
+    matchedNote: 'தலைமை அலுவலகம் அது அங்கு வந்தவுடன் ஆர்டருடனும் பொருள் விதிகளுடனும் சரிபார்க்கும்.',
     productCode: 'பொருள் குறியீடு', whereIsIt: 'எங்கே (அடுக்கு அல்லது இடம்)',
     enterCount: 'எண்ணிக்கையைப் பதிவு செய்', howManyOnShelf: 'உண்மையில் எத்தனை உள்ளன?',
     countBlindHint: 'அடுக்கில் உள்ளதை எண்ணவும். கணினியின் எண்ணிக்கையை இந்தத் திரை முதலில் காட்டாது — அது வேண்டுமென்றே.',
     whyDifferent: 'ஏன் வித்தியாசம்?', needProduct: 'பொருள் குறியீடும் இடமும் தேவை.',
-    countMatches: 'எண்ணிக்கை கணினியுடன் சரியாகப் பொருந்துகிறது.',
-    countedMore: 'கணினியில் உள்ளதை விட நீங்கள் எண்ணியது அதிகம்', countedFewer: 'கணினியில் உள்ளதை விட நீங்கள் எண்ணியது குறைவு',
-    worth: 'மதிப்பு', needsApproval: 'இந்த வித்தியாசம் பெரியது. வேறு ஒருவர் ஒப்புதல் அளிக்க வேண்டும். பதிவு செய்யப்பட்டு காத்திருக்கிறது.',
-    cannotValue: 'அந்தப் பொருளின் மதிப்பு இந்தத் திரைக்குத் தெரியாது. எனவே வித்தியாசத்தின் மதிப்பைக் கணக்கிட முடியாது — மதிப்பு இல்லாத வித்தியாசம் ஒப்புதல் வரம்பைத் தாண்டிவிடும். எதுவும் மாற்றப்படவில்லை.',
+    countRecorded: 'எண்ணிக்கை பதிவு செய்யப்பட்டது',
+    countNote: 'வித்தியாசத்தையும் அதன் மதிப்பையும் தலைமை அலுவலகம் கணக்கிடும். பெரிய வித்தியாசம் அங்கு வேறு ஒருவரின் ஒப்புதலுக்குக் காத்திருக்கும்; அதுவரை அலமாரி எண்ணிக்கை மாறாது.',
+    alreadyCounted: 'அந்த எண்ணிக்கை இந்தத் திரையில் ஏற்கனவே சேமிக்கப்பட்டுள்ளது. மீண்டும் எண்ண, புதிய எண்ணிக்கையை உள்ளிடவும்.',
     checkOpen: 'இன்னும் என்ன மீதம் உள்ளது என்று பார்', closeNow: 'இப்போது நாளை முடி',
     closedNote: 'முடிக்கப்பட்ட நாள் பூட்டப்படும். பின்னர் கண்டறியப்படுவது திருத்தமே, மாற்றம் அல்ல.',
     dayClosed: 'நாள் முடிக்கப்பட்டு பூட்டப்பட்டது.', stillOpen: 'நாளை இன்னும் முடிக்க முடியாது',
@@ -186,6 +186,13 @@ const STATE_WORDS = {
   handed_to_box: { en: 'With the store computer — it will send this to head office', ta: 'கடை கணினியிடம் உள்ளது — அது இதை தலைமை அலுவலகத்திற்கு அனுப்பும்' },
   posted: { en: 'Posted at head office', ta: 'தலைமை அலுவலகத்தில் பதிவாகியது' },
   refused: { en: 'Refused — a person must look at this', ta: 'மறுக்கப்பட்டது — ஒருவர் இதைப் பார்க்க வேண்டும்' },
+};
+
+/** The kinds of work this screen saves (the model's `SAVED_WORK_KINDS`, guarded): a decision, a delivery, a count. */
+const KIND_WORDS = {
+  decision: { en: 'Decision', ta: 'முடிவு' },
+  receipt: { en: 'Delivery', ta: 'டெலிவரி' },
+  count: { en: 'Count', ta: 'எண்ணிக்கை' },
 };
 
 /** Why a queued request is not this manager's to decide (the workbench's `blockedReason`). */
@@ -541,41 +548,54 @@ function renderApprovals() {
     }
     return box;
   }));
-  renderDecisions();
+  renderSavedWork();
 }
 
 /**
- * The decisions this screen has taken and where each has got to (SP-2a · F11). Read from the DURABLE device
- * queue, so the list is the same after a reload — the proof the decision was not lost with the tab. Each row
- * carries one of the five state words; a refusal carries its reason, because a person has to act on it.
+ * Everything this screen saved and where each item has got to (SP-2a · SP-2b · F11): decisions, deliveries and
+ * counts alike, read from the DURABLE device queue, so the list is the same after a reload — the proof the work
+ * was not lost with the tab. Each row carries one of the five state words; a refusal carries its reason, because
+ * a person has to act on it. A count row shows what was COUNTED, never what was expected (the count stays blind).
  */
-function renderDecisions() {
-  const decisions = typeof session.decisions === 'function' ? session.decisions() : [];
-  el('decisions-title').hidden = decisions.length === 0;
-  el('decisions-lead').hidden = decisions.length === 0;
-  el('decision-rows').replaceChildren(...decisions.map((d) => {
+function renderSavedWork() {
+  const saved = typeof session.savedWork === 'function' ? session.savedWork() : [];
+  el('saved-title').hidden = saved.length === 0;
+  el('saved-lead').hidden = saved.length === 0;
+  el('saved-rows').replaceChildren(...saved.map((w) => {
     const box = document.createElement('div');
-    box.className = 'row decision';
-    box.dataset.state = d.state;
-    box.dataset.requestId = d.requestId;
+    box.className = `row saved ${w.kind}`;
+    box.dataset.state = w.state;
+    box.dataset.kind = w.kind;
+    box.dataset.id = w.id;
 
     const what = document.createElement('div');
     what.className = 'what';
-    what.textContent = `${words(SUBJECT_WORDS, d.subjectType)} · ${d.subjectRef} — ${d.decision === 'approved' ? t('approvedWord') : t('rejectedWord')}`;
+    what.textContent = `${words(KIND_WORDS, w.kind)} · ${w.what} — ${detailOf(w)}`;
 
     const state = document.createElement('div');
-    state.className = `pill ${d.state}`;
-    state.textContent = words(STATE_WORDS, d.state);
+    state.className = `pill ${w.state}`;
+    state.textContent = words(STATE_WORDS, w.state);
 
     box.append(what, state);
-    if (d.reason) {
+    if (w.reason) {
       const why = document.createElement('div');
       why.className = 'blocked';
-      why.textContent = d.reason;
+      why.textContent = w.reason;
       box.appendChild(why);
     }
     return box;
   }));
+}
+
+/** The second line of a saved-work row, in the reader's language. */
+function detailOf(w) {
+  if (w.kind === 'decision') return w.detail === 'approved' ? t('approvedWord') : t('rejectedWord');
+  if (w.kind === 'receipt') {
+    // The model gives "<n> · <po>" or "<n> · no purchase order"; say it in words.
+    const [n, po] = w.detail.split(' · ');
+    return `${n} ${t('linesWord')} · ${po === 'no purchase order' ? t('noOrderWord') : po}`;
+  }
+  return w.detail;
 }
 
 /**
@@ -592,7 +612,7 @@ async function syncToBox() {
   } catch {
     /* the queue is untouched; the state words say "saved here" */
   }
-  if (view === 'approvals') renderDecisions();
+  if (view === 'approvals') renderSavedWork();
   if (view === 'home') renderHome();
 }
 
@@ -617,7 +637,7 @@ async function decide(request, decision) {
   if (outcome.ok) {
     // Said only once it is in the durable queue (the session enqueues BEFORE it answers ok), with WHERE it is —
     // "saved on this screen" until the store computer takes it, never a bare "decided" (P-08).
-    const queued = session.decisions().find((d) => d.requestId === request.id);
+    const queued = session.savedWork().find((w) => w.kind === 'decision' && w.id === request.id);
     const where = queued === undefined ? '' : ` — ${words(STATE_WORDS, queued.state)}`;
     tell(t('decided'), `${words(SUBJECT_WORDS, request.subjectType)} · ${request.subjectRef}${where}`, true);
     void syncToBox();
@@ -684,7 +704,12 @@ el('save-receipt').addEventListener('click', () => {
     });
     // An unmatched delivery is SAID, not filed quietly. Nobody can check an invoice against a
     // purchase order that does not exist, and the person who can still fix that is the buyer today.
-    tell(t('received'), received.unmatched ? t('unmatchedWarning') : t('matchedNote'), !received.unmatched);
+    // And WHERE the delivery is (SP-2b): saved on this screen until the store computer takes it — the whole
+    // receipt now travels to head office on the same path as a decision, never a bare "saved" (P-08).
+    const saved = session.savedWork().find((w) => w.kind === 'receipt' && w.id === received.receipt.id);
+    const where = saved === undefined ? '' : ` — ${words(STATE_WORDS, saved.state)}`;
+    tell(t('received'), `${received.unmatched ? t('unmatchedWarning') : t('matchedNote')}${where}`, !received.unmatched);
+    void syncToBox();
     receiptLines = [];
     el('grn-number').value = '';
     el('grn-po').value = '';
@@ -727,26 +752,22 @@ el('enter-count').addEventListener('click', async () => {
       countId: `count-${stamp}`, productId, locationId, uom: 'ea',
       countedMinor: quantity, reasonCode, at: new Date().toISOString(),
     });
-  } catch {
-    // The engine refuses a material variance with no second approver (§28). The manager is told
-    // what needs to happen rather than shown a validation error.
-    tell(t('read'), t('needsApproval'));
+  } catch (e) {
+    // Only the device's own storage can fail here; the count was NOT saved and the manager is told so.
+    tell(t('read'), String(e && e.message ? e.message : e));
     return;
   }
 
   if (!attempt.counted) {
-    tell(t('read'), attempt.refusal === 'nobody_named' ? t('nobodyNamed') : t('cannotValue'));
+    tell(t('read'), attempt.refusal === 'nobody_named' ? t('nobodyNamed') : t('alreadyCounted'));
     return;
   }
-  // The expected figure may be shown NOW: it can no longer influence what somebody wrote down.
-  const result = attempt.result;
-  if (result.varianceMinor === 0) { tell(t('done'), t('countMatches'), true); return; }
-  const direction = result.varianceMinor > 0 ? t('countedMore') : t('countedFewer');
-  const size = Math.abs(result.varianceMinor);
-  tell(
-    `${direction} ${size}`,
-    `${t('worth')} ${inr(result.varianceValue.minor)}${result.requiredApproval ? ` — ${t('needsApproval')}` : ''}`,
-  );
+  // Recorded and QUEUED — and that is all this screen knows (SP-2b). The expected figure, the difference and its
+  // value are head office's; a large difference waits there for somebody else. The banner says where the count is.
+  const saved = session.savedWork().find((w) => w.kind === 'count' && w.id === attempt.countId);
+  const where = saved === undefined ? '' : ` — ${words(STATE_WORDS, saved.state)}`;
+  tell(t('countRecorded'), `${t('countNote')}${where}`, true);
+  void syncToBox();
   el('count-product').value = '';
   el('count-location').value = '';
 });
@@ -879,8 +900,8 @@ function paintChrome() {
   el('home-lead').textContent = t('tapAFigure');
   el('approvals-title').textContent = t('approvals');
   el('approvals-lead').textContent = t('biggestFirst');
-  el('decisions-title').textContent = t('decidedHere');
-  el('decisions-lead').textContent = t('decisionsLead');
+  el('saved-title').textContent = t('savedHere');
+  el('saved-lead').textContent = t('savedLead');
   el('receive-title').textContent = t('receive');
   el('grn-number-label').textContent = t('deliveryNote');
   el('grn-po-label').textContent = t('poNumber');

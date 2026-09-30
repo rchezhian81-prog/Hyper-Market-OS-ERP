@@ -162,6 +162,12 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // → dead-lettered here by name for a person (hard rule #10); the same decision again is 200 → delivered once.
   // `id` is the decided request's own id — a plain payload field matching the path param.
   ApprovalDecided: '/v1/approvals/decisions/:id/synced',
+  // A delivery booked in and a blind count captured on the manager's screen (SP-2b · F11 · M07-FR-01 · M09-FR-04).
+  // Same path as the decision: device queue → box → here under the store token → a synced route that re-verifies the
+  // RECEIVER / COUNTER and owns every judgement the device must not make (rules, cost, expected quantity, threshold).
+  // `grnId` / `countId` are plain payload fields matching the path params.
+  GoodsReceived: '/v1/inventory/goods-receipt/:grnId/synced',
+  StockCounted: '/v1/inventory/counts/:countId/synced',
   MigrationExceptionResolved: '/v1/migration/exceptions/:exceptionId/resolution/synced',
   MigrationTotalSigned: '/v1/migration/control-totals/:totalId/signature/synced',
 };

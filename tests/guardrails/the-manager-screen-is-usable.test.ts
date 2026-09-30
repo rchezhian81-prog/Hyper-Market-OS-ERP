@@ -5,6 +5,7 @@ import {
   BLOCKER_KINDS,
   DECIDE_REFUSALS,
   REJECT_REASONS,
+  SAVED_WORK_KINDS,
 } from '../../apps/web-erp/src/manager-session';
 import { DEVICE_ITEM_STATES } from '../../packages/sync/src/device-relay';
 
@@ -166,6 +167,8 @@ describe('a decision reason is the model\'s, never the screen\'s', () => {
     // Where each decision has got to (SP-2a): one word per shared device-relay state, in both languages, so a manager
     // reads "with the store computer" or "refused", never `handed_to_box` off a screen.
     expectWordsFor(DEVICE_ITEM_STATES, 'STATE_WORDS');
+    // …and for each KIND of work the screen saves (SP-2b): a decision, a delivery, a count.
+    expectWordsFor(SAVED_WORK_KINDS, 'KIND_WORDS');
   });
 
   it('offers a count reason as a choice, never as free text', () => {
@@ -188,8 +191,8 @@ describe('the screen runs as the person the store named — and says so when it 
     expect(code(APP)).not.toMatch(/'manager'\s*[,}]/); // no stand-in identity anywhere on the page
   });
 
-  it('a count refused for want of a name says that, not "cannot value"', () => {
-    expect(code(APP)).toMatch(/attempt\.refusal === 'nobody_named' \? t\('nobodyNamed'\) : t\('cannotValue'\)/);
+  it('a count refused for want of a name says that, not "already counted"', () => {
+    expect(code(APP)).toMatch(/attempt\.refusal === 'nobody_named' \? t\('nobodyNamed'\) : t\('alreadyCounted'\)/);
   });
 
   it('the composition root boots nobody unless somebody is named — the old `manager` default is gone', () => {
@@ -228,9 +231,12 @@ describe('the count stays blind', () => {
     expect(panel).not.toMatch(/expected|system says|should be|on hand/i);
   });
 
-  it('reads the expected figure only from the RESULT, after a count was submitted', () => {
-    expect(code(APP)).toMatch(/result\.varianceMinor/);
+  it('never reads or shows an expected or variance figure at all — the count is captured blind and reconciled at head office (SP-2b)', () => {
+    // Before SP-2b the screen showed the variance AFTER the count, from a ledger that was empty after a reload
+    // (F11). Now nothing on this path computes or renders one: not the view, not the model.
+    expect(code(APP)).not.toMatch(/varianceMinor|expectedMinor|varianceValue/);
     expect(code(APP)).not.toMatch(/session\.(?:onHand|expected|stockOnHand)/);
+    expect(code(MODEL)).not.toMatch(/valuePerUnit|thresholdMinor|reconcileCount/);
   });
 
   it('never asks the model for an on-hand quantity, because there is nothing to ask', () => {
@@ -239,9 +245,17 @@ describe('the count stays blind', () => {
     expect(MODEL).not.toMatch(/^\s*(?:expected|onHand)\w*\s*\(/m);
   });
 
-  it('refuses a count it cannot value, and says so in words a manager can act on', () => {
+  it('says the count is recorded and WHERE it is, and that head office values it — never a value from this screen', () => {
     expect(code(APP)).toMatch(/attempt\.counted/);
-    expect(code(APP)).toContain("t('cannotValue')");
+    expect(code(APP)).toContain("t('countRecorded')");
+    expect(code(APP)).toContain("t('countNote')");
+    expect(code(APP)).toMatch(/w\.kind === 'count' && w\.id === attempt\.countId/);
+    expect(code(APP)).not.toContain("t('cannotValue')");
+  });
+
+  it('a saved count row shows what was COUNTED, never what was expected', () => {
+    // The model builds the row's detail from the counted quantity alone; the view has no other figure to show.
+    expect(code(MODEL)).toMatch(/detail: `\$\{p\.countedMinor\} \$\{p\.uom\}`/);
   });
 });
 

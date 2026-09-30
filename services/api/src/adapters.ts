@@ -150,6 +150,9 @@ import type { AssortmentDeps } from '../../inventory/src/assortment';
 import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
 import type { DelegationDeps } from '../../identity/src/delegation';
 import type { ApprovalDecisionDeps, ApprovalDecisionRecord } from '../../identity/src/approval-decisions';
+import type { SyncedGoodsReceiptDeps } from '../../inventory/src/goods-receipt-synced';
+import type { SyncedCountsDeps, CountPolicy } from '../../inventory/src/counts-synced';
+import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
 import type { EmergencyAccessDeps, EmergencyGrant } from '../../identity/src/emergency-access';
 import type { Delegation } from '../../../packages/approvals/src/index';
 import type { DrillThroughDeps } from '../../reporting/src/drill-through';
@@ -3867,6 +3870,111 @@ export function delegationAdapter(input: {
 
 /** The decisions register (SP-2a): every approval decided at a store and relayed here, on its own identity stream. */
 const APPROVAL_DECISIONS_STREAM = streamName(STREAM.identity, 'approval-decisions');
+
+/**
+ * The permissions a user genuinely holds in a tenant — from their grants and the role catalogue, never from a body.
+ * `undefined` when they hold no grant at all (an unknown name), which the synced routes record as its own flag (§28).
+ */
+async function permissionsHeldBy(store: EventStore, tenantId: string, userId: string): Promise<readonly string[] | undefined> {
+  const grants = await allOf<RoleAssignment>(store, tenantId, STREAM.identity, 'RoleGranted');
+  const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+  if (roleIds.size === 0) return undefined;
+  return [...new Set(ROLE_CATALOGUE.filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
+}
+
+/**
+ * The cloud's own unit cost for a product (SP-2b · F07): the weighted average of what it cost to buy, folded from the
+ * `received` movements that carried a cost, across locations; failing that, the production cost register; failing
+ * that `undefined` — said, never a silent zero.
+ */
+async function unitCostHeldFor(store: EventStore, tenantId: string, productId: string): Promise<number | undefined> {
+  const moves = (await store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' }))
+    .map((e) => payloadOf<Movement>(e))
+    .filter((m) => m.productId === productId)
+    .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
+  const rows = weightedAverageValuation(
+    moves.map((m): ValuationMovement => ({
+      productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
+      isPurchaseReceipt: m.kind === 'received',
+      ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+    })),
+    'INR',
+  );
+  let valued = 0;
+  let value = 0;
+  for (const r of rows) {
+    if (r.unitCostMinor === 'not_known' || r.onHandMinor <= 0) continue;
+    valued += r.onHandMinor;
+    value += r.value.minor;
+  }
+  if (valued > 0) return Math.round(value / valued);
+  const costs = await allOf<{ productId: string; cost: Money }>(store, tenantId, streamName(STREAM.inventory, 'production'), 'ProductionCostSet');
+  let latestCost: Money | undefined;
+  for (const c of costs) if (c.productId === productId) latestCost = c.cost;
+  return latestCost?.minor;
+}
+
+/**
+ * Deliveries booked in on a store screen and relayed through the box (SP-2b · F11): the same GRN register and atomic
+ * commit as the direct route, plus what head office knows that the screen does not — product rules from the published
+ * catalogue, unit cost from its own valuation, ordered quantities from the purchase order, who the receiver really is.
+ * No tenant receiving-tolerance register exists yet (F03 → SP-4), so `receiptPolicy` is honestly `undefined` and the
+ * route applies and FLAGS the default.
+ */
+export function syncedGoodsReceiptAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<SyncedGoodsReceiptDeps, 'recordAudit'> {
+  return {
+    ...goodsReceiptAdapter(input),
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    productRule: async (tenantId, productId): Promise<ProductReceiptRules | undefined> => {
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      const product = pack?.snapshot.products.find((p) => p.productId === productId);
+      return product === undefined ? undefined : { productId, batchTracked: product.batchTracked ?? false };
+    },
+    unitCostMinor: (tenantId, productId) => unitCostHeldFor(input.store, tenantId, productId),
+    orderedByProduct: async (tenantId, poId) => {
+      const po = (await foldPurchaseOrders(input.store, tenantId)).get(poId);
+      if (po === undefined) return undefined;
+      const ordered: Record<string, number> = {};
+      for (const line of po.lines) ordered[line.productId] = (ordered[line.productId] ?? 0) + line.orderedQty;
+      return ordered;
+    },
+    receiptPolicy: () => undefined,
+  };
+}
+
+/** The tenant's count-approval policy — one per tenant, latest wins, on its own inventory stream (SP-2b). */
+const COUNT_POLICY_STREAM = streamName(STREAM.inventory, 'count-policy');
+
+/**
+ * Blind counts relayed from a store device (SP-2b · F11 · W2's path): the same count register as the direct route,
+ * plus the cloud's own unit value and the tenant's threshold policy — the two figures the direct route still takes from
+ * the body (F07), taken here from authoritative records instead.
+ */
+export function syncedCountsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<SyncedCountsDeps, 'recordAudit'> {
+  return {
+    ...countsAdapter(input),
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    unitValueMinor: (tenantId, productId) => unitCostHeldFor(input.store, tenantId, productId),
+    countPolicy: (tenantId) => latest<CountPolicy>(input.store, tenantId, COUNT_POLICY_STREAM, 'CountPolicySet'),
+    recordCountPolicy: async (tenantId, policy) => {
+      await input.store.append(tenantId, COUNT_POLICY_STREAM, makeEvent({
+        id: `count-policy-${tenantId}-${policy.setAt}`,
+        type: 'CountPolicySet',
+        occurredAt: policy.setAt,
+        // Keyed on the value: re-setting the same threshold collapses, a new value supersedes.
+        idempotencyKey: `count-policy-${tenantId}-${policy.approvalThresholdMinor}`,
+        source: 'api/inventory',
+        payload: policy,
+      }));
+    },
+  };
+}
 
 export function approvalDecisionAdapter(input: {
   readonly store: EventStore;

@@ -33,7 +33,6 @@ const CONFIG: ManagerConfig = {
   manager: { userId: 'u-mgr', branchScope: ['b1'], authorityLimit: money(500_000, 'INR') },
   currency: 'INR',
   warehouseId: 'wh-store',
-  countApprovalThresholdMinor: 100_000, // ₹1,000
 };
 
 /** After the 2 am cut-off on the 5th, so the trading day of the 4th has ended. */
@@ -48,7 +47,6 @@ function clearPorts(overrides: Partial<ManagerPorts> = {}): ManagerPorts {
     openExceptions: () => ({ known: true, items: [] }),
     unsentItems: () => ({ known: true, items: [] }),
     tasks: () => ({ known: true, items: [] }),
-    productValue: () => ({ known: true, valuePerUnitMinor: 2_500 }), // ₹25.00 each
     ...overrides,
   };
 }
@@ -187,7 +185,6 @@ describe('a register that cannot be read stops the day closing', () => {
       openExceptions: () => notKnown('b'),
       unsentItems: () => notKnown('c'),
       tasks: () => notKnown('d'),
-      productValue: () => notKnown('e'),
     });
     expect(session.blockersForClose(AFTER_CUTOFF).map((b) => b.source).sort())
       .toEqual(['exceptions', 'unsent']);
@@ -407,7 +404,7 @@ describe('receiving a delivery', () => {
   });
 });
 
-describe('the stock count stays blind', () => {
+describe('the stock count stays blind — captured here, reconciled at head office (SP-2b · F11 · F07)', () => {
   it('offers no way to ask what the system expects', () => {
     // Structural, not a habit. There is nothing to call and nothing for a later change to render
     // early — the same control the till uses for the drawer.
@@ -416,8 +413,10 @@ describe('the stock count stays blind', () => {
     expect(surface.filter((k) => /expect|onHand|shouldBe/i.test(k))).toEqual([]);
   });
 
-  it('derives the expected quantity from the ledger and returns the variance after the count', () => {
-    const { session } = newSession();
+  it('queues ONLY what the counter saw — no expected, variance, value or threshold — under the count\'s one key, before it answers counted', () => {
+    // Before SP-2b the screen reconciled against its own in-memory ledger — empty after a reload, so every count
+    // after a reload invented a variance (F11) — valued at a figure the screen supplied (F07). Now it captures.
+    const { session, outbox, stock } = newSession();
     session.receive({
       grnId: 'grn-4', number: 'GRN-0004', poId: 'po-2', receivedAt: AT,
       lines: [{ productId: 'p-4', quantityMinor: 100, uom: 'ea' }],
@@ -425,63 +424,53 @@ describe('the stock count stays blind', () => {
     const attempt = session.countStock({
       countId: 'c-1', productId: 'p-4', locationId: 'aisle-3', uom: 'ea',
       countedMinor: 94, reasonCode: 'shrinkage', at: AT,
-      approval: {
-        id: 'ap-1', subjectType: 'stock_adjustment', subjectRef: 'c-1', requestedBy: 'u-mgr',
-        branchId: 'b1', value: money(15_000, 'INR'), status: 'approved', decidedBy: 'u-owner',
-        reason: 'checked_the_stock', decidedAt: AT,
-      },
     });
-    expect(attempt.counted).toBe(true);
-    if (!attempt.counted) return;
-    expect(attempt.result.expectedMinor).toBe(100);
-    expect(attempt.result.varianceMinor).toBe(-6);
-    expect(attempt.result.varianceValue).toEqual(money(15_000, 'INR')); // 6 × ₹25.00
-    expect(attempt.result.adjusted).toBe(true);
+    expect(attempt).toEqual({ counted: true, queued: true, countId: 'c-1' });
+    const item = outbox.find('count-c-1');
+    expect(item?.event.type).toBe('StockCounted');
+    expect(item?.state).toBe('pending');
+    expect(item?.event.payload).toEqual({
+      countId: 'c-1', productId: 'p-4', locationId: 'aisle-3', uom: 'ea', countedMinor: 94, reasonCode: 'shrinkage',
+      counterId: 'u-mgr', at: AT, storeId: 'store-1', source: 'manager-screen',
+    });
+    expect(Object.keys(item!.event.payload as object).join(' ')).not.toMatch(/expected|variance|value|threshold|approv/i);
+    // Nothing on the local ledger changed: the correction, if any, is head office's to make (F06 → SP-5b).
+    expect(stock.entries()).toHaveLength(1); // the receipt's one movement; the count wrote nothing
+    // It is held here and counts as unsent — and blocks the day close — until the store computer takes it.
+    expect(session.floor().heldHere).toBe(2); // the receipt and the count
+    expect(session.savedWork().map((w) => [w.kind, w.id, w.what, w.detail, w.state])).toEqual([
+      ['count', 'c-1', 'p-4 @ aisle-3', '94 ea', 'saved_here'],
+      ['receipt', 'grn-4', 'GRN-0004', '1 · po-2', 'saved_here'],
+    ]);
   });
 
-  it('refuses a count it cannot value, rather than valuing it at nothing', () => {
-    // The dangerous version of "an empty answer is not an all-clear", because the empty answer is a
-    // number and the number looks fine. Valued at ₹0 a shrinkage of any size sits below every
-    // approval threshold there is, and the adjustment posts with nobody's approval at all.
-    const { session, stock, outbox } = newSession(clearPorts({
-      productValue: () => notKnown('no cost price for that item on this screen'),
-    }));
-    session.receive({
-      grnId: 'grn-8', number: 'GRN-0008', poId: 'po-6', receivedAt: AT,
-      lines: [{ productId: 'p-8', quantityMinor: 500, uom: 'ea' }],
-    });
-    const before = stock.entries().length;
+  it('refuses the same count id twice — a re-count is a NEW count — and a count by nobody', () => {
+    const { session, outbox } = newSession();
+    const input = { countId: 'c-2', productId: 'p-5', locationId: 'aisle-4', uom: 'ea', countedMinor: 40, reasonCode: 'shrinkage', at: AT };
+    expect(session.countStock(input).counted).toBe(true);
+    const again = session.countStock({ ...input, countedMinor: 41 });
+    expect(again).toMatchObject({ counted: false, refusal: 'already_counted' });
+    expect(outbox.all()).toHaveLength(1);
+    expect((outbox.all()[0]?.event.payload as { countedMinor: number }).countedMinor).toBe(40);
 
-    const attempt = session.countStock({
-      countId: 'c-3', productId: 'p-8', locationId: 'aisle-1', uom: 'ea',
-      countedMinor: 1, reasonCode: 'shrinkage', at: AT,
-    });
-
-    expect(attempt.counted).toBe(false);
-    if (attempt.counted) return;
-    expect(attempt.refusal).toBe('value_not_known');
-    expect(attempt.why).toMatch(/cost price/);
-    // And nothing was written: no adjustment on the ledger, nothing queued for cloud.
-    expect(stock.entries()).toHaveLength(before);
-    expect(outbox.pending().map((i) => i.event.type)).not.toContain('StockAdjusted');
+    const nobody = createManagerSession({ ...CONFIG, manager: null }, clearPorts(), new Ledger(new InMemoryLedgerStore()), new SyncOutbox());
+    expect(nobody.countStock(input)).toMatchObject({ counted: false, refusal: 'nobody_named' });
   });
 
-  it('will not let the manager who counted approve their own material variance (§28)', () => {
-    const { session } = newSession();
+  it('the receipt it queues carries the whole delivery for head office to re-check, and says which store and screen booked it in', () => {
+    const { session, outbox } = newSession();
     session.receive({
-      grnId: 'grn-5', number: 'GRN-0005', poId: 'po-3', receivedAt: AT,
-      lines: [{ productId: 'p-5', quantityMinor: 100, uom: 'ea' }],
+      grnId: 'grn-9', number: 'GRN-0009', poId: null, receivedAt: AT,
+      lines: [{ productId: 'p-9', quantityMinor: 12, uom: 'ea', batchId: 'B-1' }],
     });
-    expect(() => session.countStock({
-      countId: 'c-2', productId: 'p-5', locationId: 'aisle-4', uom: 'ea',
-      countedMinor: 40, reasonCode: 'shrinkage', at: AT,
-      approval: {
-        id: 'ap-2', subjectType: 'stock_adjustment', subjectRef: 'c-2', requestedBy: 'u-mgr',
-        branchId: 'b1', value: money(150_000, 'INR'), status: 'approved',
-        decidedBy: 'u-mgr', // the counter, approving themselves
-        reason: 'checked_the_stock', decidedAt: AT,
-      },
-    })).toThrow();
+    const item = outbox.find('grn:grn-9');
+    expect(item?.event.type).toBe('GoodsReceived');
+    expect(item?.event.payload).toMatchObject({
+      grnId: 'grn-9', number: 'GRN-0009', poId: null, lineCount: 1, warehouseId: 'wh-store', receivedBy: 'u-mgr', receivedAt: AT,
+      lines: [{ productId: 'p-9', quantityMinor: 12, uom: 'ea', batchId: 'B-1' }],
+      storeId: 'store-1', source: 'manager-screen',
+    });
+    expect(session.savedWork()[0]).toMatchObject({ kind: 'receipt', id: 'grn-9', what: 'GRN-0009', detail: '1 · no purchase order', state: 'saved_here' });
   });
 });
 
@@ -495,7 +484,6 @@ describe('the home screen tells the truth about what it cannot see', () => {
       openExceptions: () => ({ known: true, items: items('one') }),
       unsentItems: () => notKnown('the edge did not answer'),
       tasks: () => ({ known: true, items: items('a', 'b', 'c') }),
-      productValue: () => ({ known: true, valuePerUnitMinor: 100 }),
     });
     const floor = session.floor();
     expect(floor.approvalsWaiting).toEqual({ known: true, count: 2 });
@@ -624,7 +612,7 @@ describe('a decision is queued before it is called decided, and the screen knows
 
     outbox.acknowledge('approval-decision-d1');
     expect(session.decisions().find((d) => d.requestId === 'd1')?.state).toBe('handed_to_box');
-    expect(session.handedDecisionKeys()).toEqual(['approval-decision-d1']);
+    expect(session.handedKeys()).toEqual(['approval-decision-d1']);
 
     // Never "posted" on the device's say-so: only the box's word makes it so.
     session.noteBoxStatus([{ key: 'approval-decision-d1', state: 'pending', attempts: 0 }]);

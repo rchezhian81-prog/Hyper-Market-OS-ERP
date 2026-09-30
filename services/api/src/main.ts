@@ -107,6 +107,8 @@ import { transfersRoutes } from '../../inventory/src/warehouse-transfers';
 import { replenishmentRoutes } from '../../inventory/src/replenishment';
 import { salesHistoryRoutes } from '../../inventory/src/sales-history';
 import { countsRoutes } from '../../inventory/src/counts';
+import { syncedCountsRoutes } from '../../inventory/src/counts-synced';
+import { syncedGoodsReceiptRoutes } from '../../inventory/src/goods-receipt-synced';
 import { productionRoutes } from '../../inventory/src/production';
 import { weighedCostingRoutes } from '../../inventory/src/weighed-costing';
 import { packagingRoutes } from '../../inventory/src/packaging';
@@ -205,7 +207,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   dayBookAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, approvalDecisionAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
+  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, identityAdapter, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, syncedCountsAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -462,6 +464,14 @@ export function buildSurface(deps: {
     ...goodsReceiptRoutes(store === undefined
       ? { grn: empty(undefined), all: empty([]), commit: () => {}, now }
       : goodsReceiptAdapter({ store, now })),
+    // Deliveries booked in on the manager's screen and RELAYED through the box (SP-2b · F11 · M07-FR-01): the same GRN
+    // register and atomic commit, with the receiver re-verified and the rules/cost/order read from head office's own records.
+    ...syncedGoodsReceiptRoutes(store === undefined
+      ? {
+        grn: empty(undefined), all: empty([]), commit: () => {}, now,
+        permissionsOfUser: empty(undefined), productRule: empty(undefined), unitCostMinor: empty(undefined), orderedByProduct: empty(undefined), receiptPolicy: empty(undefined),
+      }
+      : { ...syncedGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // Back-door dock scheduling + ASN comparison (M07-FR-01) — two lorries on one door is refused, and the
     // advice note is compared against what actually arrived (a promise, not a receipt). Stateless decisions.
     ...asnRoutes(),
@@ -500,6 +510,11 @@ export function buildSurface(deps: {
     ...countsRoutes(store === undefined ? {
       onHand: empty(0), reconciliations: empty([]), countExists: empty(false), recordReconciliation: () => {}, now,
     } : countsAdapter({ store, now })),
+    // Blind counts RELAYED from a store device (SP-2b · F11 · M09-FR-04): expected, value and threshold are the cloud's.
+    ...syncedCountsRoutes(store === undefined ? {
+      onHand: empty(0), reconciliations: empty([]), countExists: empty(false), recordReconciliation: () => {}, now,
+      permissionsOfUser: empty(undefined), unitValueMinor: empty(undefined), countPolicy: empty(undefined), recordCountPolicy: () => {},
+    } : { ...syncedCountsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...writeOffRoutes(store === undefined ? {
       writeOffExists: empty(false), writeOffs: empty([]), recordWriteOff: () => {},
       writeOffThreshold: () => undefined, recordWriteOffThreshold: () => {}, canApproveWriteOff: () => Promise.resolve(false),
