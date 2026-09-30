@@ -150,6 +150,8 @@ import type { DisplayContract, AssortmentEntry } from '../../../packages/merchan
 import type { DelegationDeps } from '../../identity/src/delegation';
 import type { ApprovalDecisionDeps, ApprovalDecisionRecord } from '../../identity/src/approval-decisions';
 import type { SyncedGoodsReceiptDeps } from '../../inventory/src/goods-receipt-synced';
+import type { FloorIndentsDeps } from '../../inventory/src/floor-indents';
+import type { FloorIndent } from '../../../packages/warehouse/src/indents';
 import type { AssembledGoodsReceiptDeps } from '../../inventory/src/goods-receipt-assembled';
 import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
 import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
@@ -4523,13 +4525,41 @@ export function warehouseAdapter(input: {
   };
 }
 
+/** The transfer aggregates' stream — shared by the transfer routes, the inventory reads and the floor indents (SP-8). */
+const TRANSFERS_STREAM = streamName(STREAM.warehouse, 'transfers');
+
+/** SP-5 (F05): the M08 postings as batch entries, each idempotent on the inventory adapter's own key format so `isKnown`
+ *  and every fold see them as any other movement. */
+function movementEntries(tenantId: string, posted: readonly Movement[]): Parameters<EventStore['appendBatch']>[1] {
+  return posted.map((m) => ({
+    stream: STREAM.inventory,
+    event: makeEvent({
+      id: `mv-${m.movementId}`,
+      type: 'InventoryMoved',
+      occurredAt: m.occurredAt,
+      idempotencyKey: `mv-${tenantId}-${m.movementId}`,
+      source: 'api/inventory',
+      payload: m,
+    }),
+  }));
+}
+function transferProposedEvent(tenantId: string, transfer: Transfer, at: string): DomainEvent {
+  return makeEvent({ id: `transfer-proposed-${transfer.transferId}`, type: 'TransferProposed', occurredAt: at, idempotencyKey: `transfer-proposed-${tenantId}-${transfer.transferId}`, source: 'api/inventory', payload: { transfer } });
+}
+function transferDispatchedEvent(tenantId: string, transfer: Transfer, movements: readonly StockMovement[], posted: readonly Movement[], at: string): DomainEvent {
+  return makeEvent({ id: `transfer-dispatched-${transfer.transferId}`, type: 'TransferDispatched', occurredAt: transfer.dispatchedAt ?? at, idempotencyKey: `transfer-dispatched-${tenantId}-${transfer.transferId}`, source: 'api/inventory', payload: { transfer, movements, posted: posted.map((m) => m.movementId) } });
+}
+function transferReceivedEvent(tenantId: string, transfer: Transfer, movements: readonly StockMovement[], discrepancies: unknown, posted: readonly Movement[], at: string): DomainEvent {
+  return makeEvent({ id: `transfer-received-${transfer.transferId}`, type: 'TransferReceived', occurredAt: transfer.receivedAt ?? at, idempotencyKey: `transfer-received-${tenantId}-${transfer.transferId}`, source: 'api/inventory', payload: { transfer, movements, discrepancies, posted: posted.map((m) => m.movementId) } });
+}
+
 export function transfersAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): TransfersDeps {
   // Each transfer folds one per-tenant stream by transferId; the aggregate carried on each event is the
   // latest truth (proposed → in_transit → received). Movements/discrepancies ride the event as evidence.
-  const transfersStream = streamName(STREAM.warehouse, 'transfers');
+  const transfersStream = TRANSFERS_STREAM;
   const foldTransfers = async (tenantId: string): Promise<Map<string, Transfer>> => {
     const events = await input.store.readStream(tenantId, transfersStream);
     const byId = new Map<string, Transfer>();
@@ -4549,18 +4579,7 @@ export function transfersAdapter(input: {
   /** SP-5 (F05): the transfer event plus its M08 postings, ONE atomic write; every entry idempotent on its own key. */
   const transferBatch = (tenantId: string, event: DomainEvent, posted: readonly Movement[]): Parameters<EventStore['appendBatch']>[1] => [
     { stream: transfersStream, event },
-    ...posted.map((m) => ({
-      stream: STREAM.inventory,
-      event: makeEvent({
-        id: `mv-${m.movementId}`,
-        type: 'InventoryMoved',
-        occurredAt: m.occurredAt,
-        // The inventory adapter's own key format, so `isKnown` and every fold see it as any other movement.
-        idempotencyKey: `mv-${tenantId}-${m.movementId}`,
-        source: 'api/inventory',
-        payload: m,
-      }),
-    })),
+    ...movementEntries(tenantId, posted),
   ];
 
   return {
@@ -4600,38 +4619,115 @@ export function transfersAdapter(input: {
     },
 
     recordProposed: async (tenantId, transfer) => {
-      await input.store.append(tenantId, transfersStream, makeEvent({
-        id: `transfer-proposed-${transfer.transferId}`,
-        type: 'TransferProposed',
-        occurredAt: input.now(),
-        idempotencyKey: `transfer-proposed-${tenantId}-${transfer.transferId}`,
-        source: 'api/inventory',
-        payload: { transfer },
-      }));
+      await input.store.append(tenantId, transfersStream, transferProposedEvent(tenantId, transfer, input.now()));
     },
 
     // SP-5 (F05): the dispatched aggregate and its `transferred_out` movements at the source commit together, or not at all.
     recordDispatched: async (tenantId, transfer, movements, posted) => {
-      await input.store.appendBatch(tenantId, transferBatch(tenantId, makeEvent({
-        id: `transfer-dispatched-${transfer.transferId}`,
-        type: 'TransferDispatched',
-        occurredAt: transfer.dispatchedAt ?? input.now(),
-        idempotencyKey: `transfer-dispatched-${tenantId}-${transfer.transferId}`,
-        source: 'api/inventory',
-        payload: { transfer, movements, posted: posted.map((m) => m.movementId) },
-      }), posted));
+      await input.store.appendBatch(tenantId, transferBatch(tenantId, transferDispatchedEvent(tenantId, transfer, movements, posted, input.now()), posted));
     },
 
     // SP-5 (F05): the received aggregate and its `transferred_in` movements at the destination, atomically.
     recordReceived: async (tenantId, transfer, movements, discrepancies, posted) => {
-      await input.store.appendBatch(tenantId, transferBatch(tenantId, makeEvent({
-        id: `transfer-received-${transfer.transferId}`,
-        type: 'TransferReceived',
-        occurredAt: transfer.receivedAt ?? input.now(),
-        idempotencyKey: `transfer-received-${tenantId}-${transfer.transferId}`,
-        source: 'api/inventory',
-        payload: { transfer, movements, discrepancies, posted: posted.map((m) => m.movementId) },
-      }), posted));
+      await input.store.appendBatch(tenantId, transferBatch(tenantId, transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted, input.now()), posted));
+    },
+  };
+}
+
+/**
+ * The FLOOR INDENT chain (SP-8 · F08 · WF-06/07 · M09-FR-03 · M08-FR-02 · §28). One per-tenant stream, the aggregate
+ * carried whole on every event (latest wins, like the transfers). An issue, a floor receipt and an accepted return each
+ * commit the indent step, the transfer step(s) it rides on and the M08 movements in ONE atomic batch — the same event
+ * shapes and keys the transfer routes write, so the transfer reads, the availability read (`inTransit`), the valuation
+ * and the exceptions read (`transferShortfalls`) all see them as any other transfer. Nothing here is a second stock
+ * posting: the indent aggregate moves no stock; its transfers do, once.
+ */
+export function floorIndentsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): FloorIndentsDeps {
+  const indentsStream = streamName(STREAM.warehouse, 'indents');
+  const transfers = transfersAdapter(input);
+  const inv = inventoryAdapter(input);
+
+  const foldIndents = async (tenantId: string): Promise<Map<string, FloorIndent>> => {
+    const events = await input.store.readStream(tenantId, indentsStream);
+    const byId = new Map<string, FloorIndent>();
+    for (const e of events) {
+      const i = (e.event.payload as { indent?: FloorIndent }).indent;
+      if (i !== undefined) byId.set(i.indentId, i);
+    }
+    return byId;
+  };
+  const stepEvent = (tenantId: string, type: string, indent: FloorIndent, step: string, sub: string | null, at: string): { stream: string; event: DomainEvent } => ({
+    stream: indentsStream,
+    event: makeEvent({
+      id: `indent-${step}-${indent.indentId}${sub === null ? '' : `-${sub}`}`,
+      type,
+      occurredAt: at,
+      idempotencyKey: `indent-${step}-${tenantId}-${indent.indentId}${sub === null ? '' : `-${sub}`}`,
+      source: 'api/inventory',
+      payload: { indent },
+    }),
+  });
+
+  return {
+    now: input.now,
+    indent: async (tenantId, indentId) => (await foldIndents(tenantId)).get(indentId),
+    indents: async (tenantId) => [...(await foldIndents(tenantId)).values()],
+    transferOf: async (tenantId, transferId) => (await foldTransferAggregates(input.store, tenantId)).find((t) => t.transferId === transferId),
+    knownLocation: transfers.knownLocation,
+    availableAt: transfers.availableAt,
+    unitCostAt: transfers.unitCostAt,
+    // Head office's own on-hand at the back store per product — the allocation is judged against this, never the ask.
+    onHandAt: async (tenantId, locationId, productIds) => {
+      const out: { productId: string; onHandMinor: number }[] = [];
+      for (const productId of productIds) {
+        const rows = await inv.availability(tenantId, productId);
+        out.push({ productId, onHandMinor: rows.filter((r) => r.locationId === locationId).reduce((s, r) => s + r.onHandMinor, 0) });
+      }
+      return out;
+    },
+    recordIndent: async (tenantId, indent, type) => {
+      const step = type === 'FloorIndentRequested' ? 'requested' : type === 'FloorIndentApproved' ? 'approved' : type === 'FloorIndentRejected' ? 'rejected' : type === 'FloorIndentCancelled' ? 'cancelled' : 'return-requested';
+      const sub = type === 'FloorIndentReturnRequested' ? (indent.returns.at(-1)?.returnId ?? null) : null;
+      const at = input.now();
+      await input.store.append(tenantId, indentsStream, stepEvent(tenantId, type, indent, step, sub, at).event);
+    },
+    // An ISSUE: the indent step, the transfer proposed + dispatched, and the `transferred_out` movements — one atomic batch.
+    recordIssued: async (tenantId, indent, transfer, movements, posted) => {
+      const at = input.now();
+      const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
+      await input.store.appendBatch(tenantId, [
+        stepEvent(tenantId, 'FloorIndentIssued', indent, 'issued', issue?.issueId ?? transfer.transferId, at),
+        { stream: TRANSFERS_STREAM, event: transferProposedEvent(tenantId, { ...transfer, state: 'proposed', approvedBy: undefined, dispatchedAt: undefined, lineCostsMinor: undefined }, at) },
+        { stream: TRANSFERS_STREAM, event: transferDispatchedEvent(tenantId, transfer, movements, posted, at) },
+        ...movementEntries(tenantId, posted),
+      ]);
+    },
+    // A floor RECEIPT: the indent step, the received transfer and the `transferred_in` movements — one atomic batch.
+    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted) => {
+      const at = input.now();
+      const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
+      await input.store.appendBatch(tenantId, [
+        stepEvent(tenantId, 'FloorIndentReceived', indent, 'received', issue?.issueId ?? transfer.transferId, at),
+        { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted, at) },
+        ...movementEntries(tenantId, posted),
+      ]);
+    },
+    // A RETURN accepted at the back store: the indent step and the return's transfer proposed, dispatched and received in
+    // one step — a trolley walk — with the `transferred_out` (floor) and `transferred_in` (back store) movements.
+    recordReturnAccepted: async (tenantId, indent, transfer, dispatchMovements, receiveMovements, discrepancies, posted) => {
+      const at = input.now();
+      const ret = indent.returns.find((r) => r.transferId === transfer.transferId);
+      const dispatched: Transfer = { ...transfer, state: 'in_transit', receivedAt: undefined };
+      await input.store.appendBatch(tenantId, [
+        stepEvent(tenantId, 'FloorIndentReturnAccepted', indent, 'return-accepted', ret?.returnId ?? transfer.transferId, at),
+        { stream: TRANSFERS_STREAM, event: transferProposedEvent(tenantId, { ...transfer, state: 'proposed', approvedBy: undefined, dispatchedAt: undefined, receivedAt: undefined, lineCostsMinor: undefined }, at) },
+        { stream: TRANSFERS_STREAM, event: transferDispatchedEvent(tenantId, dispatched, dispatchMovements, posted.filter((m) => m.kind === 'transferred_out'), at) },
+        { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, receiveMovements, discrepancies, posted.filter((m) => m.kind === 'transferred_in'), at) },
+        ...movementEntries(tenantId, posted),
+      ]);
     },
   };
 }

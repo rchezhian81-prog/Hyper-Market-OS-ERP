@@ -46,6 +46,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'export.read', 'export.sensitive',
       'supplier.portal.manage', 'supplier.portal.submit', 'supplier.portal.review',
       'inventory.movement.append', 'inventory.availability.read', 'inventory.writeoff.threshold.set',
+      // SP-8 (F08): the floor indent chain — raise, approve / reject and read the register.
+      'inventory.indent.request', 'inventory.indent.approve', 'inventory.indent.read',
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
       'concession.tag.sync',
       // SP-2a: an approval decided on the manager's screen reaches the cloud's decisions register through the box.
@@ -162,6 +164,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.movement.append', 'inventory.availability.read',
       // SP-3b: the store manager is the supervisor who approves (or rejects) a handheld's adjustment request — never the raiser.
       'inventory.adjustment.approve',
+      // SP-8 (F08): the floor indent chain — a manager raises, approves (never their own) and reads the register.
+      'inventory.indent.request', 'inventory.indent.approve', 'inventory.indent.read',
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.close', 'till.shift.read', 'till.overshort.review',
@@ -234,6 +238,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.receipt.sync', 'inventory.count.sync',
       // SP-3a hop: the box relays the warehouse handheld's put-aways and picks to the synced movement route.
       'inventory.movement.sync',
+      // SP-8 (F08): floor staff raise an indent for the shelf and read where it is; a different person approves and issues.
+      'inventory.indent.request', 'inventory.indent.read',
       // SP-3b hop: the box relays the handheld's adjustment REQUESTS; the route records them pending — this grants no approval.
       'inventory.adjustment.sync',
       // SP-4c hop: the box relays the till's cash movements and shift closes (F10). The routes re-verify the custodian /
