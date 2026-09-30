@@ -510,12 +510,50 @@ device, human UAT and production verification separate; approved deferrals stay 
   debit note (SP-9 review screens); an unapproved (not blocked) supplier can still be issued a PO; compliance documents
   are recorded, not checked at the PO; the browser leg runs against a stub cloud (the connected leg on real services +
   real PostgreSQL is SP-9); physical device + UAT PENDING.
-- **Current-work pointer:** last verified = SP-7d (this PR) — W07 CLOSED on the cloud and the screen; next = **SP-8**
-  [W08, F08] (floor indent → approval → allocation → scan issue → in transit → independent floor receipt → shelf
-  availability → sale: the shared durable queue for the floor's indent and receipt, the back-store issue as a stock
-  movement, the floor receipt independent of the issue, the shelf availability the till reads), then SP-8b, SP-9/9b;
-  **SP-3c** (picker + driver) after the core-store chain; genuine blockers: none; external gates unchanged (providers,
-  hardware, real data, pilot GO).
+- **SP-8 — the floor's ask for stock is one record from the shelf to the shelf (F08 cloud chain · WF-06 · WF-07 ·
+  M09-FR-03 · M04-FR-03 · M08-FR-02 · §28 · P-03 · P-08 · hard rule #2).** Until now the pieces existed and nothing joined
+  them: refill tasks were calculated and never kept, a transfer knew nothing of who asked, the merchandising count save
+  only mutated page data. Now the FLOOR INDENT is a durable lifecycle on the cloud — a pure engine
+  (`packages/warehouse/src/indents.ts`, 9 unit cases) and routes (`services/inventory/src/floor-indents.ts`, 10 routes,
+  API surface +10): (i) `POST /v1/floor/indents/:id` — the floor ASKS (`inventory.indent.request`: owner, store manager,
+  cashier) for products from the back store to the floor (the store's location — the place the till sells from); both
+  places must be ones head office knows. (ii) `POST …/approval` / `…/rejection` — a DIFFERENT person
+  (`inventory.indent.approve`; 422 `self_approval`) allocates against head office's OWN back-store on-hand: the default
+  is min(requested, on-hand), the approver may cut but never raise, a short back store and a short allocation are SAID as
+  flags. (iii) `POST …/issues/:issueId` — the back store ISSUES (`inventory.movement.append`): each issue is a TRANSFER
+  (`<indentId>:<issueId>`) proposed in the requester's name and dispatched by the issuer through the existing
+  `dispatchTransfer` engine, so the requester can never issue to themselves (`requester_cannot_issue`), stock leaves the
+  back store ONCE (`transferred_out`), sits in transit at the floor (visible on `GET /v1/inventory/availability`, not
+  sellable) and the engine refuses an over-draw, a recalled or held batch against head office's stock; a product the floor
+  did not ask for is a wrong item (`not_on_indent`); more than is owed is `over_issue`. (iv) `POST …/issues/:issueId/receipt`
+  — an INDEPENDENT floor receipt by a person other than the issuer (`issuer_cannot_receive`) through `receiveTransfer`:
+  what arrived is on-hand at the floor at the cost it left with (shelf availability; a `sold` movement then draws from it),
+  a shortfall is a VALUED exception on `GET /v1/inventory/exceptions`, a product not on the issue is `not_on_issue`.
+  (v) `POST …/cancel` withdraws the unissued remainder only — the trolley must still be received. (vi)
+  `POST …/returns/:returnId` (the floor asks to send back what the indent brought, never more) + `…/accepted` (a second
+  person at the back store counts it in: the return's transfer is dispatched and received in one step). (vii)
+  `GET /v1/floor/indents[?open=true]` / `…/:id` (`inventory.indent.read`) — the register the manager needs: needing a
+  person first (awaiting approval, then owed by the back store / on the trolley / arrived short / a return awaiting the
+  back store), with requested / allocated / issued / received / in transit / shortfall / returned / outstanding per line
+  — DERIVED, never stored twice — and the tenant's `inTransitMinor` and `outstandingMinor`. Every issue, receipt and
+  accepted return commits the indent step, the transfer step(s) and the M08 movements in ONE atomic batch, using the same
+  event shapes the transfer routes write (the transfer builders are now shared), so a transfer read, the availability
+  read, the valuation and the exceptions read see them as any other transfer. Evidence:
+  `tests/integration/floor-indents.test.ts` (5, real API + real RBAC: the whole chain → sale with the register; a partial
+  receipt's valued shortfall, idempotent by state; over-draw and recalled batch refused by the engine, cancel of the
+  remainder, rejection; a return accepted; restart rebuild + tenant isolation), `tests/unit/floor-indents-engine.test.ts`
+  (9). Roles: owner + store manager hold request / approve / read; cashier holds request / read. No rung change (M08 /
+  M09 already E2E_VERIFIED; the matrix row for the chain moves EVIDENCE MISSING → WIRED + INTEGRATION_TESTED). **Still
+  open, honestly (SP-8b):** no screen or handheld drives the chain (a floor indent screen; the back-store issue on the
+  warehouse handheld over the shared device queue; the manager's pending-indents / in-transit register on a served
+  screen); the merchandising refill task does not yet raise an indent; the shelf-count save is still page-only; the
+  "products nobody can sell" screen; physical device + UAT PENDING.
+- **Current-work pointer:** last verified = SP-8 (this PR); next = **SP-8b** [W08, screens] (the floor indent screen
+  served by the box — raise, see where it is, receive independently — on the shared device queue; the back-store issue
+  on the warehouse handheld against the indent; the manager's register; the merchandising refill task raising an indent
+  and the shelf-count save reaching the cloud; the "products nobody can sell" screen), then SP-9/9b; **SP-3c** (picker +
+  driver) after the core-store chain; genuine blockers: none; external gates unchanged (providers, hardware, real data,
+  pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

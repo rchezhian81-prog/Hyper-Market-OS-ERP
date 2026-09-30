@@ -134,3 +134,19 @@ gone; the box's log holds the completion behind the scan with no quantity on it.
 real box against the real kernel (`tests/integration/warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts`).
 **Still recorded, not dropped:** the review screen does not yet show an assembled receipt's scans or a late scan (SP-9);
 physical-device verification PENDING.
+
+## Measured (SP-8 — the floor's ask for stock is one record from the shelf to the shelf, owner's Option 2 directive of 30 September 2026)
+No screen changed in this slice; what changed is that the chain the owner named now EXISTS at head office, as one record
+per ask (audit finding F08). Until now a refill task was a calculation nobody kept, a transfer knew nothing of who asked,
+and the merchandising screen's count save only changed the page. Now the floor RAISES an indent for products from the back
+store to the shelf; a DIFFERENT person approves it, allocating against what the back store actually holds — a short back
+store is said, not hidden; the back store ISSUES it as a transfer the ledger already understands, so stock leaves the back
+store exactly once and sits on the trolley at the floor, visible and not sellable, and the same person can never ask and
+issue to themselves; a THIRD person counts it in at the floor and it becomes shelf availability the till sells from — what
+did not arrive is a valued exception with an owner, and a wrong item is not received against the issue; the unissued
+remainder can be cancelled (the trolley must still be received); and stock sent back is accepted at the back store by a
+second person. Requested, issued, received and outstanding are four figures, per line, never one. Proven on the real API
+with real roles (`tests/integration/floor-indents.test.ts`) and in the pure engine (`tests/unit/floor-indents-engine.test.ts`).
+**Still recorded, not dropped (SP-8b):** the floor screen, the handheld issue against the indent, the manager's
+pending-indents / in-transit register on a screen, the refill task that raises an indent, the shelf-count save that reaches
+the cloud; physical-device verification and UAT PENDING.
