@@ -181,11 +181,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
     'payroll.js': 'apps/web-erp/src/payroll-session.ts',
     'payroll-payslip.js': 'apps/web-erp/src/payroll-ess-session.ts',
   };
-  /** Pages that are English-only today — recorded, not hidden (docs/STATUS.md, Stage G slice 5a findings). */
-  const RECORDED_ENGLISH_ONLY = ['erasure-console.js', 'company-report.js'];
-
+  // No page is English-only any more: the erasure console and the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {
-    if (RECORDED_ENGLISH_ONLY.includes(script)) continue;
     it(`${script}: every English key has a Tamil key`, () => {
       const source = script in SESSION_WORDS ? readFileSync(SESSION_WORDS[script]!, 'utf8') : read(script);
       const blocks = bilingualBlocks(source);

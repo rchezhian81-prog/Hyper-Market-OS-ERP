@@ -400,6 +400,10 @@
       ]
     }
   ],
+  "managerPolicy": {
+    "userId": "REPLACE_WITH_MANAGER_USER_ID",
+    "approvalLimitMinor": 500000
+  },
   "reportingPolicy": {
     "laggingAfterMinutes": 5,
     "staleAfterMinutes": 60,

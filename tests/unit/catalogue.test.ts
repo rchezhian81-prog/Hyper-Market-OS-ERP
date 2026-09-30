@@ -8,6 +8,7 @@ import {
   parseGs1Date,
   type CatalogueSnapshot,
   type CatalogueProduct,
+  UnknownUnitError,
 } from '../../packages/catalogue/src/index';
 
 // The lane's local catalogue: O(1) barcode lookup from an offline snapshot,
@@ -215,5 +216,26 @@ describe('CatalogueCache', () => {
     const cache = new CatalogueCache(snapshot());
     expect(cache.findBySku('RICE1')?.productId).toBe('p1');
     expect(cache.findBySku('NOPE')).toBeUndefined();
+  });
+});
+
+describe('a unit of measure the till does not know is refused at the scan, by name (Stage G slice 5c)', () => {
+  it('refuses "each" — the engine knows `ea` — instead of pricing the line as ₹NaN', () => {
+    const cache = new CatalogueCache(snapshot({
+      products: [product({ productId: 'p9', sku: 'ODD', name: 'Odd Item', baseUom: 'each' })],
+      barcodes: [{ code: '8901234500009', productId: 'p9', kind: 'standard' }],
+    }));
+    expect(() => cache.scan('8901234500009')).toThrow(UnknownUnitError);
+    expect(() => cache.scan('8901234500009')).toThrow('Cannot sell Odd Item: its unit "each" is not one this till knows.');
+  });
+
+  it('every unit the system knows still scans', () => {
+    for (const uom of ['ea', 'kg', 'g', 'L', 'ml']) {
+      const cache = new CatalogueCache(snapshot({
+        products: [product({ productId: 'p9', sku: 'U', name: `In ${uom}`, baseUom: uom })],
+        barcodes: [{ code: '8901234500009', productId: 'p9', kind: 'standard' }],
+      }));
+      expect(cache.scan('8901234500009').product.baseUom).toBe(uom);
+    }
   });
 });

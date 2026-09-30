@@ -270,6 +270,18 @@ export interface ManagerData {
   readonly unsentItems?: readonly RegisterItem[];
   readonly tasks?: readonly RegisterItem[];
   readonly products?: readonly ProductFact[];
+  // Who runs this screen, where, and which day — from the store pack (Stage G slice 5c · §28 · hard rule #4).
+  // Absent means the box was not told; the screen then names nobody and refuses every decision.
+  readonly userId?: string;
+  /** Maximum value this manager may approve alone; null = no limit. */
+  readonly approvalLimitMinor?: number | null;
+  readonly storeId?: string;
+  /** The branch this screen works in; null = company-wide. */
+  readonly branchId?: string | null;
+  readonly tradingDay?: string;
+  readonly tradingDayCutoff?: string;
+  readonly countApprovalThresholdMinor?: number;
+  readonly warehouseId?: string;
 }
 
 /** What the buyer's screen was last told. Absent means this box knows nothing about buying. */
@@ -3726,26 +3738,32 @@ export function bootManager(config?: {
   /** The box's lane write address (M14-FR-04). Present = the day close goes to the store computer. */
   laneWriteBase?: string;
 }): ManagerSession {
+  // What the box served rides in `data` (Stage G slice 5c); an explicit config value still wins, so a test or a
+  // standalone shell can name its own. Before this the served screen booted as user `manager` in branch
+  // `store-1` with no limit whatever the pack said — a shared identity deciding §28 approvals (hard rule #4).
+  const data = config?.data;
   // `??` would be wrong here and was: an explicit `null` means *company-wide*, and `null ?? 'store-1'`
   // quietly demoted a company-wide manager to one branch — where their own scope then blocked them
   // from deciding anything outside it. Only `undefined` means "not configured".
-  const branchId = config?.branchId === undefined ? 'store-1' : config.branchId;
-  const limit = config?.approvalLimitMinor;
+  const branchId = config?.branchId !== undefined ? config.branchId : data?.branchId !== undefined ? data.branchId : 'store-1';
+  const limit = config?.approvalLimitMinor !== undefined ? config.approvalLimitMinor : data?.approvalLimitMinor;
+  // Nobody named means nobody: no stand-in identity, and the session refuses every decision with the reason.
+  const managerId = config?.managerId ?? data?.userId;
   const requestDayClose = openDayClosePort(config?.laneWriteBase);
   return createManagerSession(
     {
-      storeId: config?.storeId ?? 'store-1',
+      storeId: config?.storeId ?? data?.storeId ?? 'store-1',
       branchId,
-      tradingDay: config?.tradingDay ?? '1970-01-01',
-      tradingDayRule: makeTradingDayRule(config?.tradingDayCutoff ?? '00:00'),
-      manager: {
-        userId: config?.managerId ?? 'manager',
+      tradingDay: config?.tradingDay ?? data?.tradingDay ?? '1970-01-01',
+      tradingDayRule: makeTradingDayRule(config?.tradingDayCutoff ?? data?.tradingDayCutoff ?? '00:00'),
+      manager: managerId === undefined ? null : {
+        userId: managerId,
         branchScope: branchId === null ? 'all' : [branchId],
         authorityLimit: limit === undefined || limit === null ? null : { minor: limit, currency: 'INR' },
       },
       currency: 'INR',
-      warehouseId: config?.warehouseId ?? 'store-1',
-      countApprovalThresholdMinor: config?.countApprovalThresholdMinor ?? 100_000,
+      warehouseId: config?.warehouseId ?? data?.warehouseId ?? 'store-1',
+      countApprovalThresholdMinor: config?.countApprovalThresholdMinor ?? data?.countApprovalThresholdMinor ?? 100_000,
     },
     // The read registers come from the last-synced payload; the one WRITE port (day close) is added
     // only when this box serves a lane to post to. `??` on the whole port keeps a missing box honest.

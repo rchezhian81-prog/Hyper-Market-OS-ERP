@@ -127,3 +127,39 @@ describe('createPosView', () => {
     expect(view.productName('p1')).toBeUndefined();
   });
 });
+
+describe('a product with a unit the till does not know is refused at the scan, by name — never priced as ₹NaN (Stage G slice 5c)', () => {
+  const snapshotWith = (baseUom: string): CatalogueSnapshot => ({
+    tenantId: 't1', version: 1, builtAt: AT,
+    products: [{ productId: 'p-odd', sku: 'ODD', name: 'Odd Item', baseUom, unitPriceMinor: 100_00, taxBps: 1800, status: 'active' }],
+    barcodes: [{ code: '8901234500099', productId: 'p-odd', kind: 'standard' }],
+  });
+
+  it('the scan is refused with the product\'s name and the unit, and the basket stays empty and finite', () => {
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'clerk-1', tradingDay: '2026-08-02', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      ledger, new SyncOutbox(),
+      () => Promise.resolve({ committed: true as const, durable: true as const, detail: 'test double', laneMessage: 'Sale complete.' }),
+    );
+    session.setNow(AT);
+    const view = createPosView(session, 'INR', new CatalogueCache(snapshotWith('each')));
+    expect(() => view.scanBarcode('8901234500099')).toThrow('Cannot sell Odd Item: its unit "each" is not one this till knows.');
+    expect(view.basket()).toEqual([]);
+    expect(view.payableMinor()).toBe(0);
+    expect(Number.isFinite(view.payableMinor())).toBe(true);
+  });
+
+  it('the same product in a known unit scans and prices', () => {
+    const ledger = new Ledger(new InMemoryLedgerStore());
+    const session = new PosSession(
+      { laneId: 'lane-1', cashierId: 'clerk-1', tradingDay: '2026-08-02', currency: 'INR', defaultTaxRate: taxRateFromPercent(18) },
+      ledger, new SyncOutbox(),
+      () => Promise.resolve({ committed: true as const, durable: true as const, detail: 'test double', laneMessage: 'Sale complete.' }),
+    );
+    session.setNow(AT);
+    const view = createPosView(session, 'INR', new CatalogueCache(snapshotWith('ea')));
+    view.scanBarcode('8901234500099');
+    expect(view.payableMinor()).toBe(118_00);
+  });
+});

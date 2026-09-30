@@ -170,6 +170,32 @@ describe('a decision reason is the model\'s, never the screen\'s', () => {
   });
 });
 
+describe('the screen runs as the person the store named — and says so when it named nobody (Stage G slice 5c · hard rule #4)', () => {
+  const html = readFileSync('apps/web-erp/web/index.html', 'utf8');
+
+  it('carries the nobody strip and the running-as line in its header', () => {
+    expect(html).toMatch(/<p class="nobody" id="nobody" hidden role="status"><\/p>/);
+    expect(html).toMatch(/<small id="whoami"><\/small>/);
+  });
+
+  it('paints both from the model\'s `floor().manager`, never from a name of its own', () => {
+    expect(code(APP)).toMatch(/el\('whoami'\)\.textContent = floor\.manager === null \? '' : `\$\{t\('runningAs'\)\} \$\{floor\.manager\}`/);
+    expect(code(APP)).toMatch(/el\('nobody'\)\.hidden = floor\.manager !== null/);
+    expect(code(APP)).not.toMatch(/'manager'\s*[,}]/); // no stand-in identity anywhere on the page
+  });
+
+  it('a count refused for want of a name says that, not "cannot value"', () => {
+    expect(code(APP)).toMatch(/attempt\.refusal === 'nobody_named' \? t\('nobodyNamed'\) : t\('cannotValue'\)/);
+  });
+
+  it('the composition root boots nobody unless somebody is named — the old `manager` default is gone', () => {
+    const entry = readFileSync('apps/web-erp/src/browser-entry.ts', 'utf8');
+    expect(entry).toMatch(/const managerId = config\?\.managerId \?\? data\?\.userId;/);
+    expect(entry).toMatch(/manager: managerId === undefined \? null : \{/);
+    expect(entry).not.toMatch(/userId: config\?\.managerId \?\? 'manager'/);
+  });
+});
+
 describe('a row the manager cannot decide says why, rather than offering a dead button', () => {
   it('renders the blocked reason instead of the action buttons', () => {
     expect(code(APP)).toMatch(/if \(row\.actionable\)/);
@@ -178,10 +204,10 @@ describe('a row the manager cannot decide says why, rather than offering a dead 
 
   it('has words for each blocked reason in both languages', () => {
     const block = code(APP).slice(code(APP).indexOf('const BLOCKED_WORDS'), code(APP).indexOf('\n};', code(APP).indexOf('const BLOCKED_WORDS')));
-    for (const reason of ['own_request', 'out_of_scope', 'exceeds_authority']) {
+    for (const reason of ['own_request', 'out_of_scope', 'exceeds_authority', 'nobody_named']) {
       expect(block, `"${reason}" is missing`).toContain(`${reason}: {`);
     }
-    expect([...block.matchAll(/ta: '/g)]).toHaveLength(3);
+    expect([...block.matchAll(/ta: '/g)]).toHaveLength(4);
   });
 
   it('keeps a decision inside the ≤3-tap budget by deciding on the reason tap', () => {

@@ -180,6 +180,8 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   }]),
   roleAssignments: known([{ userId: 'u-report', roleId: 'analyst', branchScope: ['b1'] }]),
   reportingPolicy: known({ laggingAfterMinutes: 5, staleAfterMinutes: 60, userId: 'u-report' }),
+  // Who runs the manager screen on this box (Stage G slice 5c).
+  managerPolicy: known({ userId: 'u-mgr', approvalLimitMinor: 500_000 }),
   // The service desk: what it needs to take goods back (M13) and run its cases (M21).
   returnHistory: known([]),
   serviceCases: known([{
@@ -560,6 +562,58 @@ describe('the manager’s day close — the loop that has been open for three se
   });
 });
 
+describe('the served manager is the person the pack NAMES, in the pack\'s branch, on the pack\'s day (Stage G slice 5c · hard rule #4)', () => {
+  it('the manager payload carries the identity, limit, branch, cut-off, threshold, warehouse and trading day from the pack', async () => {
+    const base = await serve(snapshotOf());
+    const payload = (await payloadFromScreen(base, 'manager'))!;
+    expect(payload['userId']).toBe('u-mgr');
+    expect(payload['approvalLimitMinor']).toBe(500_000);
+    expect(payload['branchId']).toBe('b1');
+    expect(payload['storeId']).toBe('store-1');
+    expect(payload['tradingDayCutoff']).toBe('02:00');
+    expect(payload['tradingDay']).toBe(DAY);
+  });
+
+  it('booted from the served payload ALONE, the screen runs as u-mgr in b1 — the request routed to b1 is theirs to clear', async () => {
+    const base = await serve(snapshotOf());
+    const session = bootManager({ data: (await payloadFromScreen(base, 'manager'))! as never });
+    expect(session.floor().manager).toBe('u-mgr');
+    expect(session.floor().tradingDay).toBe(DAY);
+    const queue = session.approvalQueue();
+    if (!queue.known) throw new Error('queue unknown');
+    expect(queue.rows.map((r) => [r.request.id, r.actionable])).toEqual([['a1', true]]);
+  });
+
+  it('a pack that names no manager serves a screen that names nobody: it lists the request and refuses to decide it', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ managerPolicy: notKnown('no manager named') }) }));
+    const session = bootManager({ data: (await payloadFromScreen(base, 'manager'))! as never });
+    expect(session.floor().manager).toBeNull();
+    const queue = session.approvalQueue();
+    if (!queue.known) throw new Error('queue unknown');
+    expect(queue.rows.map((r) => r.blockedReason)).toEqual(['nobody_named']);
+    expect(session.decideApproval({ requestId: 'a1', decision: 'approved', reasonCode: 'within_policy', decidedAt: NOW })).toEqual({ ok: false, refusal: 'nobody_named' });
+    const close = session.closeTheDay({ dayCloseId: 'dc-x', closedAtLocal: '2026-08-06T02:30', closedAt: '2026-08-06T02:30:00Z' });
+    expect(close.closed).toBe(false);
+    if (!close.closed) expect(close.blockers.map((b) => b.kind)).toContain('nobody_named');
+  });
+});
+
+describe('a product with an unknown unit of measure never reaches the lane as a ₹NaN line (Stage G slice 5c)', () => {
+  it('the box keeps it off the till and names it, like a missing tax rate', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ products: known([{ ...PRODUCTS[0]!, uom: 'each' }]) }) }));
+    const payload = (await payloadFromScreen(base, 'pos'))!;
+    expect(payload['products']).toEqual([]);
+    expect(payload['excludedProducts']).toEqual([{ productId: 'p1', name: 'Toor dal 1kg', why: 'unknown unit of measure "each" on the catalogue' }]);
+  });
+
+  it('and should one arrive another way, the till refuses the scan by name', async () => {
+    const base = await serve(snapshotOf());
+    const served = (await payloadFromScreen(base, 'pos'))! as { products: { baseUom: string }[] };
+    const cache = new CatalogueCache({ ...served, products: served.products.map((p) => ({ ...p, baseUom: 'each' })) } as never);
+    expect(() => cache.scan('8901')).toThrow('Cannot sell Toor dal 1kg: its unit "each" is not one this till knows.');
+  });
+});
+
 describe('the other five screens boot on what the box served them', () => {
   it('the owner’s brief carries the day’s real takings and a real margin', async () => {
     const base = await serve(snapshotOf());
@@ -768,7 +822,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       salesByAreaMinor: notKnown('never'), marginByAreaMinor: notKnown('never'),
       displayContracts: notKnown('never'), fundingReceivedMinor: notKnown('never'),
       stillOccupying: notKnown('never'), merchandisingPolicy: notKnown('never'),
-      reportingRecords: notKnown('never'), roles: notKnown('never'),
+      reportingRecords: notKnown('never'), roles: notKnown('never'), managerPolicy: notKnown('never'),
       roleAssignments: notKnown('never'), reportingPolicy: notKnown('never'),
       returnHistory: notKnown('never'), serviceCases: notKnown('never'),
       satisfaction: notKnown('never'), slaPolicy: notKnown('never'),
@@ -2677,10 +2731,19 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
     }
   });
 
-  it('a screen whose payload names nobody gets no sections and the reason — the manager\'s, today (a recorded G5c gap)', async () => {
-    const base = await serve(snapshotOf({ pack: pack(FLOOR) }));
+  it('a screen whose payload names nobody gets no sections and the reason — the manager\'s, when the pack names no manager', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ ...FLOOR, managerPolicy: notKnown('no manager named in this pack') }) }));
     const menu = await menuFromScreen(base, '/manager/');
     expect(menu).toEqual({ userId: null, branchId: 'b1', why: 'no_user', groups: [] });
+  });
+
+  it('the manager\'s screen names its manager from the pack (Stage G slice 5c), and so gets a menu', async () => {
+    const base = await serve(snapshotOf({ pack: pack(FLOOR) }));
+    const menu = await menuFromScreen(base, '/manager/');
+    expect(menu!['userId']).toBe('u-mgr');
+    expect(menu!['why']).toBeNull();
+    const items = (menu!['groups'] as { items: { id: string; current: boolean }[] }[]).flatMap((g) => g.items);
+    expect(items.filter((i) => i.current).map((i) => i.id)).toEqual(['dashboard']);
   });
 
   it('a box with no role register gets no sections and THAT reason — never a guessed menu', async () => {

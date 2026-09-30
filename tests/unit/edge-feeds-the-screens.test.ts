@@ -150,6 +150,8 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   }]),
   roleAssignments: known([{ userId: 'u-report', roleId: 'analyst', branchScope: ['b1'] }]),
   reportingPolicy: known({ laggingAfterMinutes: 5, staleAfterMinutes: 60, userId: 'u-report' }),
+  // Who runs the manager screen on this box (Stage G slice 5c).
+  managerPolicy: known({ userId: 'u-mgr', approvalLimitMinor: 500_000 }),
   // The service desk: what it needs to take goods back (M13) and run its cases (M21).
   returnHistory: known([]),
   serviceCases: known([{
@@ -839,5 +841,51 @@ describe('the box tells each screen about ONE trading day', () => {
     // exactly as much evidence as one that sold this morning.
     const sold = merchandisingPayload(input())!['soldProductIds'] as string[];
     expect(sold).toEqual(['p1']);
+  });
+});
+
+describe('the manager\'s payload carries who runs the screen, where and which day — from the pack, never defaulted (Stage G slice 5c)', () => {
+  it('names the manager, their limit, the branch, the cut-off, the count threshold, the warehouse and the trading day', () => {
+    const payload = managerPayload(input({ pack: fullPack() }));
+    expect(payload['userId']).toBe('u-mgr');
+    expect(payload['approvalLimitMinor']).toBe(500_000);
+    expect(payload['storeId']).toBe('store-1');
+    expect(payload['branchId']).toBe('b1');
+    expect(payload['tradingDayCutoff']).toBe('02:00');
+    expect(payload['countApprovalThresholdMinor']).toBe(100_00);
+    expect(payload['warehouseId']).toBe('wh-1');
+    expect(payload['tradingDay']).toBe(DAY);
+  });
+
+  it('a pack that names no manager yields NO userId — the screen then names nobody and refuses to decide', () => {
+    const payload = managerPayload(input({ pack: fullPack({ managerPolicy: notKnown('not named') }) }));
+    expect('userId' in payload).toBe(false);
+    expect('approvalLimitMinor' in payload).toBe(false);
+    expect(payload['branchId']).toBe('b1');
+  });
+
+  it('a limit the pack leaves out is served as null (no limit), and a company-wide branch as null — never dropped', () => {
+    const payload = managerPayload(input({ pack: fullPack({
+      managerPolicy: known({ userId: 'u-owner' }),
+      policies: known({ storeId: 'store-1', branchId: null, branchName: 'HQ', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 1, handoverToleranceMinor: 1, privacySlaDays: 30, warehouseId: 'wh-1' }),
+    }) }));
+    expect(payload['approvalLimitMinor']).toBeNull();
+    expect(payload['branchId']).toBeNull();
+  });
+});
+
+describe('a product with a unit of measure the till cannot price is kept OFF the lane, and named (Stage G slice 5c)', () => {
+  it('excludes it with the reason, like a missing tax rate — no more ₹NaN on a line', () => {
+    const payload = posPayload(input({ pack: fullPack({ products: known([{ ...PRODUCTS[0]!, uom: 'each' }]) }) }))!;
+    expect(payload['products']).toEqual([]);
+    expect(payload['excludedProducts']).toEqual([
+      { productId: 'p1', name: 'Toor dal 1kg', why: 'unknown unit of measure "each" on the catalogue' },
+    ]);
+  });
+
+  it('still ships a RECALLED product with a bad unit, WITH its block, so the lane refuses it by name', () => {
+    const payload = posPayload(input({ pack: fullPack({ products: known([{ ...PRODUCTS[0]!, uom: 'each', recallBlock: true }]) }) }))!;
+    const products = payload['products'] as { productId: string; recallBlock?: boolean }[];
+    expect(products.map((p) => [p.productId, p.recallBlock])).toEqual([['p1', true]]);
   });
 });

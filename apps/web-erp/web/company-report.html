@@ -19,11 +19,10 @@
       body {
         margin: 0; background: var(--bg); color: var(--ink);
         font: 16px/1.5 var(--font);
-        min-height: 100dvh; padding: 16px; display: grid; place-items: start center;
+        min-height: 100dvh; display: flex; flex-direction: column;
       }
-      main { width: min(760px, 100%); display: grid; gap: 16px; }
+      main { width: min(760px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
       section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 12px; }
-      h1 { margin: 0; font-size: 22px; }
       h2 { margin: 0; font-size: 17px; }
       p.lede { margin: 0; color: var(--muted); font-size: 14px; }
       label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
@@ -58,57 +57,59 @@
     </style>
   </head>
   <body>
+    <header>
+      <h1 class="who" id="title">Company report</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
     <main>
       <section>
-        <h1>Company report <span lang="ta">/ நிறுவன அறிக்கை</span></h1>
-        <p class="lede">One number for the whole company, and the honest truth about how current it is. <span lang="ta">முழு நிறுவனத்திற்கும் ஒரே எண் — எவ்வளவு புதியது என்பதையும் சேர்த்து.</span></p>
+        <p class="lede" id="lede">One number for the whole company, and the honest truth about how current it is.</p>
         <div class="controls">
-          <label for="family">Report <span lang="ta">/ அறிக்கை</span>
+          <label for="family"><span id="report-label">Report</span>
             <select id="family">
-              <option value="sales">Sales / விற்பனை</option>
-              <option value="returns">Returns / திரும்பியவை</option>
+              <option value="sales" id="opt-sales">Sales</option>
+              <option value="returns" id="opt-returns">Returns</option>
             </select>
           </label>
-          <label for="scope">View as <span lang="ta">/ பார்வை</span>
+          <label for="scope"><span id="scope-label">View as</span>
             <select id="scope">
-              <option value="all">Whole company / முழு நிறுவனம்</option>
-              <option value="br-1">Anna Nagar branch only / அண்ணா நகர்</option>
-              <option value="br-2">T. Nagar branch only / டி. நகர்</option>
+              <option value="all" id="opt-all">Whole company</option>
+              <option value="br-1" id="opt-br-1">Anna Nagar — branch only</option>
+              <option value="br-2" id="opt-br-2">T. Nagar — branch only</option>
             </select>
           </label>
         </div>
       </section>
-
       <section aria-labelledby="tot-h">
-        <h2 id="tot-h">Company total <span lang="ta">/ மொத்தம்</span></h2>
+        <h2 id="tot-h">Company total</h2>
         <div><span class="badge" id="freshness">…</span></div>
         <div class="kpis" id="kpis"></div>
         <p class="flag" id="missing" role="status" aria-live="polite"></p>
         <p class="flag" id="withheld" role="status" aria-live="polite"></p>
         <p class="flag" id="reconcile"></p>
       </section>
-
       <section aria-labelledby="drill-h">
-        <h2 id="drill-h">By branch <span lang="ta">/ கிளை வாரியாக</span></h2>
-        <p class="lede">Drill from the total to the branches that make it up — worst first. <span lang="ta">மோசமானது முதலில்.</span></p>
+        <h2 id="drill-h">By branch</h2>
+        <p class="lede" id="drill-lede">Drill from the total to the branches that make it up — worst first.</p>
         <div class="sre-scroll-x">
         <table>
           <thead>
-            <tr><th>Branch</th><th>Gross</th><th>Net</th><th>Last refreshed</th></tr>
+            <tr><th id="th-branch">Branch</th><th id="th-gross">Gross</th><th id="th-net">Net</th><th id="th-refreshed">Last refreshed</th></tr>
           </thead>
           <tbody id="rows"></tbody>
         </table>
         </div>
       </section>
-
       <section aria-labelledby="exp-h">
-        <h2 id="exp-h">Export <span lang="ta">/ ஏற்றுமதி</span></h2>
-        <p class="lede">Take the numbers out as an open spreadsheet file (CSV). Only what your view allows. <span lang="ta">உங்கள் பார்வை அனுமதிப்பதை மட்டும்.</span></p>
-        <button id="export" type="button">Export CSV <span lang="ta">/ ஏற்றுமதி</span></button>
+        <h2 id="exp-h">Export</h2>
+        <p class="lede" id="exp-lede">Take the numbers out as an open spreadsheet file (CSV). Only what your view allows.</p>
+        <button id="export" type="button">Export CSV</button>
         <p class="status" id="export-status" role="status" aria-live="polite"></p>
-        <a id="download" class="download" hidden download="company-report.csv">Download the file / கோப்பைப் பதிவிறக்கு</a>
+        <a id="download" class="download" hidden download="company-report.csv">Download the file</a>
         <pre id="preview" hidden aria-label="CSV preview"></pre>
-        <p class="foot">Every export is authorised and logged; a branch view never carries another branch's rows.</p>
+        <p class="foot" id="foot">Every export is authorised and logged; a branch view never carries another branch's rows.</p>
       </section>
     </main>
     <script type="module" src="./company-report.js"></script>

@@ -351,6 +351,20 @@ export interface PackShelfPolicy {
  * long a shelf count stays worth acting on — a shop that counts twice a day and one that counts on
  * Sundays need different numbers, and acting on a three-day-old reading wastes a walk.
  */
+/**
+ * Who runs the floor on this box's manager screen (Stage G slice 5c · §28 · hard rule #4).
+ *
+ * Absent means the box was not told, and the served manager screen then names nobody: it lists what is waiting
+ * but refuses every decision, receipt, count and the day close, and says why. Before this the screen booted as a
+ * user called `manager` in branch `store-1` with no approval limit — a shared identity nobody holds, deciding
+ * §28 approvals under a name the audit trail could not attach to a person.
+ */
+export interface PackManagerPolicy {
+  readonly userId: string;
+  /** Maximum value this manager may approve alone, in minor units; null = no limit (the owner). Absent = null. */
+  readonly approvalLimitMinor?: number | null;
+}
+
 /** When a figure stops being current, and when it stops being usable (§32). Per-tenant. */
 export interface PackReportingPolicy {
   readonly laggingAfterMinutes: number;
@@ -1026,6 +1040,8 @@ export interface StorePack {
   readonly roleAssignments: Register<readonly unknown[]>;
   /** Reporting freshness thresholds (§32), per-tenant. */
   readonly reportingPolicy: Register<PackReportingPolicy>;
+  /** Who runs the manager screen on this box (Stage G slice 5c). */
+  readonly managerPolicy: Register<PackManagerPolicy>;
   /**
    * What the desk needs to take goods back (M13) and run its cases (M21).
    *
@@ -1273,6 +1289,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     roles: notKnown(why),
     roleAssignments: notKnown(why),
     reportingPolicy: notKnown(why),
+    managerPolicy: notKnown(why),
     returnHistory: notKnown(why),
     serviceCases: notKnown(why),
     satisfaction: notKnown(why),
@@ -1405,6 +1422,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     roles: section<readonly unknown[]>('roles'),
     roleAssignments: section<readonly unknown[]>('roleAssignments'),
     reportingPolicy: section<PackReportingPolicy>('reportingPolicy'),
+    managerPolicy: section<PackManagerPolicy>('managerPolicy'),
     returnHistory: section<readonly unknown[]>('returnHistory'),
     serviceCases: section<readonly unknown[]>('serviceCases'),
     satisfaction: section<readonly unknown[]>('satisfaction'),

@@ -23,7 +23,7 @@ import {
 } from '../../../packages/approvals/src/approvals';
 
 /** Why a queued request is not actionable by this user right now. */
-export type BlockedReason = 'own_request' | 'out_of_scope' | 'exceeds_authority';
+export type BlockedReason = 'own_request' | 'out_of_scope' | 'exceeds_authority' | 'nobody_named';
 
 /** A queued request as the workbench presents it. */
 export interface QueueRow {
@@ -54,7 +54,11 @@ function withinAuthority(approver: Approver, value: Money | null): boolean {
 }
 
 /** Classify why (or whether) this approver may act on a request. */
-function classify(request: ApprovalRequest, approver: Approver): { actionable: boolean; reason?: BlockedReason } {
+function classify(request: ApprovalRequest, approver: Approver | null): { actionable: boolean; reason?: BlockedReason } {
+  // Nobody named on this screen decides nothing (hard rule #4): the queue is still shown, so it can be chased.
+  if (approver === null) {
+    return { actionable: false, reason: 'nobody_named' };
+  }
   // §28 first: the maker can never decide their own request, whatever their limit.
   if (request.requestedBy === approver.userId) {
     return { actionable: false, reason: 'own_request' };
@@ -73,6 +77,7 @@ const BLOCKED_WORDS: Readonly<Record<BlockedReason, string>> = Object.freeze({
   own_request: 'your own request — someone else must decide it',
   out_of_scope: 'outside your branch scope',
   exceeds_authority: 'above your approval limit — escalate',
+  nobody_named: 'nobody is named on this screen — it cannot decide',
 });
 
 /**
@@ -83,7 +88,8 @@ const BLOCKED_WORDS: Readonly<Record<BlockedReason, string>> = Object.freeze({
  */
 export function buildQueue(
   requests: readonly ApprovalRequest[],
-  approver: Approver,
+  /** Null when the screen names nobody: every row is then visible and none is actionable. */
+  approver: Approver | null,
 ): QueueRow[] {
   return [...requests]
     .sort((a, b) => (b.value?.minor ?? 0) - (a.value?.minor ?? 0))

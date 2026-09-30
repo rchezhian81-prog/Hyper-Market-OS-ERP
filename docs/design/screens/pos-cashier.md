@@ -49,3 +49,8 @@ persistent per cashier; number pad and totals oversized.
 Owner command centre · Store/Manager · Purchase/Supplier & receiving handheld ·
 Inventory/Warehouse · Customer app · Picker · Delivery · CRM/Service · Admin ·
 Migration · AI control.
+
+## Measured (Stage G slice 5c)
+- A product whose unit of measure the till cannot price never reaches the lane: the store computer keeps it off the
+  till's catalogue and names it (`excludedProducts`), and the catalogue engine refuses the scan by name should one
+  arrive another way. A line is never ₹NaN.

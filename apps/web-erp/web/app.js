@@ -41,6 +41,8 @@ const inr = (minor) =>
 const WORDS = {
   en: {
     manager: 'Store manager', tradingDay: 'Trading day', today: 'Today', approvals: 'Approvals',
+    nobodyNamed: 'Nobody is named for this screen on the store computer. What is waiting is shown; nothing can be decided, received, counted or closed until a manager is named.',
+    runningAs: 'Running as',
     // The badge's states from the BOX (design system §1 rule 4): connection · last contact.
     // The home screen's ONE primary action (store-manager.md: clear the next approval or exception; ≤3 taps).
     nextApproval: 'Clear the next approval',
@@ -76,6 +78,8 @@ const WORDS = {
   },
   ta: {
     manager: 'கடை மேலாளர்', tradingDay: 'வியாபார நாள்', today: 'இன்று', approvals: 'ஒப்புதல்கள்',
+    nobodyNamed: 'இந்தத் திரைக்கு கடை கணினியில் யாரும் பெயரிடப்படவில்லை. காத்திருப்பவை காட்டப்படுகின்றன; மேலாளர் பெயரிடப்படும் வரை எதையும் முடிவு செய்ய, பெற, எண்ண அல்லது மூட முடியாது.',
+    runningAs: 'இயங்குவது',
     nextApproval: 'அடுத்த ஒப்புதலை முடிக்க',
     receive: 'பொருள் பெறு', count: 'எண்ணிக்கை', closeDay: 'நாளை முடி',
     tapAFigure: 'ஒரு எண்ணைத் தொட்டால் அந்தத் திரைக்குச் செல்லும்.', waiting: 'காத்திருக்கிறது',
@@ -131,6 +135,10 @@ const BLOCKER_WORDS = {
     en: { title: 'exception(s) are still open', todo: 'Clear each one below, then check again.' },
     ta: { title: 'விதிவிலக்கு(கள்) இன்னும் திறந்திருக்கின்றன', todo: 'கீழே உள்ள ஒவ்வொன்றையும் முடித்துவிட்டு மீண்டும் பார்க்கவும்.' },
   },
+  nobody_named: {
+    en: { title: 'Nobody is named on this screen', todo: 'The store computer has no manager named for this screen. Ask head office to name one in the store pack; nothing can be closed until then.' },
+    ta: { title: 'இந்தத் திரையில் யாரும் பெயரிடப்படவில்லை', todo: 'கடை கணினியில் இந்தத் திரைக்கு மேலாளர் பெயரிடப்படவில்லை. தலைமை அலுவலகத்தை கடைத் தொகுப்பில் ஒருவரைப் பெயரிடச் சொல்லுங்கள்; அதுவரை எதையும் மூட முடியாது.' },
+  },
   items_unsent: {
     en: { title: 'item(s) have not reached the cloud', todo: 'Nothing is lost — they are saved in the store. Check the internet connection, then check again.' },
     ta: { title: 'பொருள்(கள்) கிளௌடுக்குச் செல்லவில்லை', todo: 'எதுவும் இழக்கப்படவில்லை — கடையில் சேமிக்கப்பட்டுள்ளன. இணைய இணைப்பைச் சரிபார்த்து மீண்டும் பார்க்கவும்.' },
@@ -158,6 +166,7 @@ const REFUSAL_WORDS = {
   exceeds_authority: { en: 'This is above your approval limit. Send it up.', ta: 'இது உங்கள் ஒப்புதல் வரம்பைத் தாண்டியது. மேலே அனுப்பவும்.' },
   request_not_found: { en: 'That request is no longer waiting. Somebody else may have decided it.', ta: 'அந்தக் கோரிக்கை இனி காத்திருக்கவில்லை. வேறு ஒருவர் முடிவு செய்திருக்கலாம்.' },
   unknown_reason_code: { en: 'That reason cannot be used for this decision.', ta: 'இந்த முடிவுக்கு அந்தக் காரணத்தைப் பயன்படுத்த முடியாது.' },
+  nobody_named: { en: 'Nobody is named on this screen, so no decision can be recorded against a person.', ta: 'இந்தத் திரையில் யாரும் பெயரிடப்படவில்லை, எனவே எந்த முடிவையும் ஒருவரின் பெயரில் பதிவு செய்ய முடியாது.' },
 };
 
 /** Why a queued request is not this manager's to decide (the workbench's `blockedReason`). */
@@ -165,6 +174,7 @@ const BLOCKED_WORDS = {
   own_request: { en: 'Your own request — somebody else must decide it', ta: 'உங்கள் சொந்தக் கோரிக்கை — வேறு ஒருவர் முடிவு செய்ய வேண்டும்' },
   out_of_scope: { en: 'Not your branch', ta: 'உங்கள் கிளை அல்ல' },
   exceeds_authority: { en: 'Above your approval limit — send it up', ta: 'உங்கள் ஒப்புதல் வரம்பைத் தாண்டியது — மேலே அனுப்பவும்' },
+  nobody_named: { en: 'Nobody is named on this screen — it cannot decide', ta: 'இந்தத் திரையில் யாரும் பெயரிடப்படவில்லை — முடிவு செய்ய முடியாது' },
 };
 
 /**
@@ -232,6 +242,7 @@ function demoSession() {
   const open = () => exceptions.filter((e) => !decided.has(e.id));
   return {
     floor: () => ({
+      manager: 'sample',
       tradingDay: 'sample',
       approvalsWaiting: { known: true, count: requests.length },
       approvalsIcanClear: { known: true, count: requests.filter((r) => r.requestedBy !== 'you').length },
@@ -408,6 +419,10 @@ function tile({ figure, label, note, goTo, attentionWhen }) {
 function renderHome() {
   const floor = session.floor();
   el('day').textContent = `${t('tradingDay')} ${floor.tradingDay}`;
+  // Who this screen runs as, said in the header; and when the store named nobody, the strip says so (hard rule #4).
+  el('whoami').textContent = floor.manager === null ? '' : `${t('runningAs')} ${floor.manager}`;
+  el('nobody').hidden = floor.manager !== null;
+  el('nobody').textContent = floor.manager === null ? t('nobodyNamed') : '';
   const clearable = floor.approvalsIcanClear;
   el('tiles').replaceChildren(
     tile({
@@ -634,7 +649,7 @@ el('enter-count').addEventListener('click', async () => {
   }
 
   if (!attempt.counted) {
-    tell(t('read'), t('cannotValue'));
+    tell(t('read'), attempt.refusal === 'nobody_named' ? t('nobodyNamed') : t('cannotValue'));
     return;
   }
   // The expected figure may be shown NOW: it can no longer influence what somebody wrote down.
