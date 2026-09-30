@@ -281,3 +281,20 @@ describe('the served manager is the person the store NAMED — never a stand-in 
     expect(bootManager().floor().manager).toBeNull();
   });
 });
+
+describe('who judges whether the day has ended (M14-FR-04)', () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const clean: ManagerData = { userId: 'u-mgr', tradingDay: today, tradingDayCutoff: '02:00', openExceptions: [], unsentItems: [], tasks: [] };
+
+  it('with no store computer wired, this screen judges it: the running day has not ended, so the preview close is blocked', () => {
+    const session = bootManager({ data: clean });
+    const blockers = session.blockersForClose(`${today}T12:00`);
+    expect(blockers.map((b) => b.kind)).toEqual(['day_not_ended']);
+  });
+
+  it('with a store computer wired, the BOX judges it — the screen lists only the registers, and the box closes the last ended day', () => {
+    const session = bootManager({ data: clean, laneWriteBase: 'http://127.0.0.1:1' });
+    expect(session.canCloseViaBox).toBe(true);
+    expect(session.blockersForClose(`${today}T12:00`)).toEqual([]);
+  });
+});

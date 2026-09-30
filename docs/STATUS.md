@@ -1159,6 +1159,11 @@ accounts.
   the reason; the queue lists every request as not actionable with `nobody_named`. The page shows "Running as <id>" in
   the header and the nobody strip when the store named nobody, in both languages; the old default is gone
   (`bootManager()` with nothing names nobody). The 5b menu now appears on the manager's page (the viewer is named).
+  Passing the real trading day exposed a second accident: the served screen's local "day has not ended" pre-check
+  had only ever been vacuous (day 1970); on the running day it would block every close. Now that check is the
+  screen's own only when NO store computer is wired (the browser preview close); with a box wired the BOX is the
+  authority — it closes the most recently ended trading day and refuses one that has not (M14-FR-04) — and the
+  screen lists only the two registers and the named-manager gate before the tap.
   (b) **Unknown unit.** `"each"` where the engine knows `ea` reached the till and priced as ₹NaN. The box now excludes
   such a product from the till payload and names it (`unknown unit of measure "each" on the catalogue`, the same
   register as a missing tax rate; a recalled product still ships WITH its block), and the catalogue engine refuses the

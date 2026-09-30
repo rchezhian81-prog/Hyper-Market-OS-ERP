@@ -471,22 +471,28 @@ export function createManagerSession(
       blockers.push({ kind: 'nobody_named', count: 0, items: [], source: 'manager' });
     }
 
-    // 1. Has the day this manager is closing actually ended? The engine checks this too; checking
-    //    it here is what lets the screen say so alongside everything else rather than one at a time.
-    try {
-      const currentTradingDate = tradingDate(closedAtLocal, config.tradingDayRule);
-      if (!(currentTradingDate > config.tradingDay)) {
-        blockers.push({ kind: 'day_not_ended', count: 0, items: [], source: 'trading-day' });
+    // 1. Has the day this manager is closing actually ended? Judged HERE only when this screen is the closer
+    //    (no store computer wired): the local preview close locks `config.tradingDay`, so it must have ended.
+    //    With a store computer wired, the BOX is the authority (M14-FR-04): it closes the most recently ENDED
+    //    trading day itself and refuses one that has not, while this screen's `tradingDay` is the RUNNING day
+    //    for the floor's registers — judging that day here would block every close. (Before Stage G slice 5c
+    //    the served screen ran on day 1970-01-01, which made this check vacuous by accident, not by design.)
+    if (ports.requestDayClose === undefined) {
+      try {
+        const currentTradingDate = tradingDate(closedAtLocal, config.tradingDayRule);
+        if (!(currentTradingDate > config.tradingDay)) {
+          blockers.push({ kind: 'day_not_ended', count: 0, items: [], source: 'trading-day' });
+        }
+      } catch (error) {
+        // A clock this screen cannot read is not a reason to close the day anyway.
+        blockers.push({
+          kind: 'cannot_see',
+          count: 0,
+          items: [],
+          source: 'trading-day',
+          why: error instanceof Error ? error.message : String(error),
+        });
       }
-    } catch (error) {
-      // A clock this screen cannot read is not a reason to close the day anyway.
-      blockers.push({
-        kind: 'cannot_see',
-        count: 0,
-        items: [],
-        source: 'trading-day',
-        why: error instanceof Error ? error.message : String(error),
-      });
     }
 
     // 2 and 3. The two gates M14-FR-04 names. Each register gets the same treatment, and *not
