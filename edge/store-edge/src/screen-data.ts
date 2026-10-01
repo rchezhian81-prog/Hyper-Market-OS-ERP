@@ -57,7 +57,7 @@ import { packFreshness, type SignedPack } from '../../../services/catalogue/src/
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'indents', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'indents', 'unsellable', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -101,6 +101,64 @@ export function catalogueFreshness(input: ScreenInput): Record<string, unknown> 
   };
 }
 
+/** Why the till cannot sell a product — the box's own judgement, named for the person who can fix it. */
+export type UnsellableWhy = 'recall_block' | 'no_tax_rate' | 'no_status' | 'unknown_uom' | 'not_on_sale';
+export interface UnsellableProduct {
+  readonly productId: string;
+  readonly name: string;
+  readonly nameTa?: string;
+  readonly why: UnsellableWhy;
+  /** The box's own sentence about the record — the same words the till payload has always carried under `excludedProducts`. */
+  readonly detail: string;
+}
+/** The gaps that keep a product OUT of the till's catalogue; a recall and an off-sale status are shipped and refused by name. */
+const NOT_SHIPPED_TO_THE_LANE: ReadonlySet<UnsellableWhy> = new Set<UnsellableWhy>(['no_tax_rate', 'no_status', 'unknown_uom']);
+/** The statuses a lane may sell (`packages/catalogue`): draft and discontinued are refused at the scan. */
+const LANE_SELLS: ReadonlySet<string> = new Set(['active', 'clearance']);
+
+/**
+ * Every product in the pack the till cannot sell, and why (SP-8c-ii · F08 · P-08 · M03-FR-03 · M10-FR-04 · G5c).
+ *
+ * ONE judgement for two readers: the till payload drops the catalogue gaps from the lane's catalogue by this list, and the
+ * "Products nobody can sell" screen shows the same list to the person who can fix it. Recall is judged first — a safety
+ * block before a catalogue gap, and from EITHER source (the lane summary or the master), failing safe.
+ */
+export function unsellableProducts(pack: StorePack): readonly UnsellableProduct[] {
+  if (!pack.products.known) return [];
+  const master = new Map((pack.productMaster.known ? pack.productMaster.value : []).map((m) => [m.productId, m] as const));
+  const rows: UnsellableProduct[] = [];
+  for (const p of pack.products.value) {
+    const m = master.get(p.productId);
+    const status = p.status ?? m?.lifecycle;
+    const named = (why: UnsellableWhy, detail: string): void => {
+      rows.push({ productId: p.productId, name: p.name, ...(p.nameTa === undefined ? {} : { nameTa: p.nameTa }), why, detail });
+    };
+    if (p.recallBlock === true || m?.recallBlocked === true) named('recall_block', 'recall block set on the catalogue — refused at the till by name');
+    else if (p.taxBps === undefined) named('no_tax_rate', 'no tax rate on the catalogue');
+    else if (status === undefined) named('no_status', 'no status on the catalogue');
+    else if (!isUom(p.uom)) named('unknown_uom', `unknown unit of measure "${p.uom}" on the catalogue`);
+    else if (!LANE_SELLS.has(status)) named('not_on_sale', `status "${status}" on the catalogue — refused at the till`);
+  }
+  return rows;
+}
+
+/**
+ * The "Products nobody can sell" screen's payload (SP-8c-ii · P-08): the list the till payload is built from, with when the
+ * box received the catalogue it judged and how many products the till CAN sell, so the list reads against something.
+ * `null` when the box was never given a catalogue — the screen then says it cannot say, rather than "all clear".
+ */
+export function unsellablePayload(input: ScreenInput): Record<string, unknown> | null {
+  if (!input.pack.products.known) return null;
+  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+  const rows = unsellableProducts(input.pack);
+  return {
+    storeId: policies?.storeId ?? 'store-1',
+    asAt: input.pack.receivedAt ?? input.now,
+    rows: rows.map((r) => ({ productId: r.productId, name: r.name, ...(r.nameTa === undefined ? {} : { nameTa: r.nameTa }), reason: r.why, detail: r.detail })),
+    sellableCount: input.pack.products.value.length - rows.length,
+  };
+}
+
 /**
  * The till's payload: the catalogue, and nothing else.
  *
@@ -124,36 +182,34 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
   const products: Record<string, unknown>[] = [];
   const barcodes: Record<string, unknown>[] = [];
   const excluded: Record<string, unknown>[] = [];
+  // **A product the lane cannot judge is not shipped to the lane.**
+  //
+  // No tax rate means every line of tax on that sale would be invented; no status means the
+  // catalogue cannot tell active from discontinued, and `SELLABLE.includes(undefined)` is false,
+  // so it would refuse at the scan with a reason nobody can act on. Excluded and COUNTED, the
+  // same treatment the tested snapshot builder already gives them — an unknown barcode at the
+  // till is at least a question somebody asks, where a wrong tax rate is not.
+  //
+  // A recalled product is the exception: it is shipped WITH its block rather than excluded, so
+  // the lane refuses the scan by name — *this is under recall* — instead of by absence. "Unknown
+  // barcode" on a recalled tin is a cashier keying it in by hand.
+  //
+  // A unit of measure the pricing maths cannot make a Quantity in gets the same treatment (Stage G slice 5c):
+  // `"each"` where the engine knows `ea` reached the till and priced as ₹NaN on the line. Excluded, counted, and
+  // the till refuses it by name too should one ever arrive another way.
+  //
+  // SP-8c-ii: the judgement is made ONCE, in `unsellableProducts`, and the "Products nobody can sell" screen reads the
+  // same list — so what the till is not given and what the person who can fix it is shown can never disagree.
+  const notShipped = new Map(unsellableProducts(input.pack).filter((r) => NOT_SHIPPED_TO_THE_LANE.has(r.why)).map((r) => [r.productId, r] as const));
 
   for (const p of input.pack.products.value) {
     const m = master.get(p.productId);
     const recallBlock = p.recallBlock === true || m?.recallBlocked === true;
     const status = p.status ?? m?.lifecycle;
     const minimumAge = m?.safety?.minimumAge;
-    // **A product the lane cannot judge is not shipped to the lane.**
-    //
-    // No tax rate means every line of tax on that sale would be invented; no status means the
-    // catalogue cannot tell active from discontinued, and `SELLABLE.includes(undefined)` is false,
-    // so it would refuse at the scan with a reason nobody can act on. Excluded and COUNTED, the
-    // same treatment the tested snapshot builder already gives them — an unknown barcode at the
-    // till is at least a question somebody asks, where a wrong tax rate is not.
-    //
-    // A recalled product is the exception: it is shipped WITH its block rather than excluded, so
-    // the lane refuses the scan by name — *this is under recall* — instead of by absence. "Unknown
-    // barcode" on a recalled tin is a cashier keying it in by hand.
-    //
-    // A unit of measure the pricing maths cannot make a Quantity in gets the same treatment (Stage G slice 5c):
-    // `"each"` where the engine knows `ea` reached the till and priced as ₹NaN on the line. Excluded, counted, and
-    // the till refuses it by name too should one ever arrive another way.
-    const unitKnown = isUom(p.uom);
-    if ((p.taxBps === undefined || status === undefined || !unitKnown) && !recallBlock) {
-      excluded.push({
-        productId: p.productId,
-        name: p.name,
-        why: p.taxBps === undefined ? 'no tax rate on the catalogue'
-          : status === undefined ? 'no status on the catalogue'
-            : `unknown unit of measure "${p.uom}" on the catalogue`,
-      });
+    const gap = notShipped.get(p.productId);
+    if (gap !== undefined) {
+      excluded.push({ productId: p.productId, name: p.name, why: gap.detail });
       continue;
     }
     products.push({
@@ -927,6 +983,26 @@ export function merchandisingPayload(input: ScreenInput): Record<string, unknown
     countStaleAfterMinutes: policy.countStaleAfterMinutes,
     refillRole: policy.refillRole,
   };
+
+  // SP-8c-ii: who counts, and the link to the indent chain. The counter's name goes on every count the screen queues for
+  // head office (which re-verifies it from their grants); the Indents policy gives the refill tasks their way to become ONE
+  // indent on the SAME durable queue the Floor indents screen uses. Named only when the pack named somebody — never a stand-in.
+  const indentsPolicy = input.pack.indentsPolicy.known ? input.pack.indentsPolicy.value : undefined;
+  const who = policy.userId ?? indentsPolicy?.userId;
+  if (who !== undefined) payload['userId'] = who;
+  if (policy.permissions !== undefined) payload['permissions'] = policy.permissions;
+  if (indentsPolicy !== undefined) {
+    const indents: Record<string, unknown> = { permissions: indentsPolicy.permissions };
+    if (who !== undefined) indents['userId'] = who;
+    if (input.pack.policies.known) {
+      indents['storeId'] = input.pack.policies.value.storeId;
+      indents['backStoreId'] = input.pack.policies.value.warehouseId;
+    }
+    if (input.pack.products.known) {
+      indents['products'] = input.pack.products.value.map((p) => ({ productId: p.productId, name: p.name, ...(p.nameTa === undefined ? {} : { nameTa: p.nameTa }), uom: p.uom }));
+    }
+    payload['indents'] = indents;
+  }
 
   if (input.pack.shelfLocations.known) payload['shelfLocations'] = input.pack.shelfLocations.value;
   if (input.pack.shelfAssignments.known) payload['shelfAssignments'] = input.pack.shelfAssignments.value;
@@ -2040,6 +2116,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'goods-receipt': 'goodsReceiptData',
   suppliers: 'suppliersData',
   indents: 'indentsData',
+  unsellable: 'unsellableData',
   'data-io': 'dataIoData',
   workforce: 'workforceInboxData',
   ess: 'essData',
@@ -2092,6 +2169,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'goods-receipt': goodsReceiptPayload,
   suppliers: suppliersPayload,
   indents: indentsPayload,
+  unsellable: unsellablePayload,
   'data-io': dataIoPayload,
   workforce: workforcePayload,
   ess: essPayload,

@@ -52,6 +52,7 @@ const SCREENS = [
   { name: 'the stock health', dir: 'web-erp', view: 'stock-health.js', page: 'stock-health.html', bundle: 'web-erp.bundle.js' },
   { name: 'the suppliers', dir: 'web-erp', view: 'suppliers.js', page: 'suppliers.html', bundle: 'web-erp.bundle.js' },
   { name: 'the floor indents', dir: 'web-erp', view: 'indents.js', page: 'indents.html', bundle: 'web-erp.bundle.js' },
+  { name: 'the products nobody can sell', dir: 'web-erp', view: 'unsellable.js', page: 'unsellable.html', bundle: 'web-erp.bundle.js' },
   { name: 'the import/export console', dir: 'web-erp', view: 'data-io.js', page: 'data-io.html', bundle: 'web-erp.bundle.js' },
   { name: 'the workforce inbox', dir: 'web-erp', view: 'workforce.js', page: 'workforce.html', bundle: 'web-erp.bundle.js' },
   { name: 'the self-service', dir: 'web-erp', view: 'ess.js', page: 'ess.html', bundle: 'web-erp.bundle.js' },

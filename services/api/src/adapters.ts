@@ -132,7 +132,7 @@ import { replayConnectorQueue, type ConnectorDeliveryDeps, type ConnectorDeliver
 import type { SecretsDeps, SecretRef } from '../../platform/src/secrets';
 import type { OrgStructureDeps, OrgNode, GstRegistration } from '../../platform/src/org-structure';
 import type { DrReadinessDeps, DrDrillRecord } from '../../platform/src/dr-readiness';
-import type { ShelfCountDeps, ShelfCount } from '../../inventory/src/shelf-count';
+import type { ShelfCountDeps, StoredShelfCount } from '../../inventory/src/shelf-count';
 import type { PlanogramStoreDeps, StoredShelfMap, StoredPlanogram } from '../../inventory/src/planograms';
 import { projectFleet, type DeviceRegistryDeps, type DeviceRegistryEvent } from '../../platform/src/device-registry';
 import { projectVersionPolicy, type VersionPolicyDeps, type VersionPolicyEvent } from '../../platform/src/version-policy';
@@ -3801,9 +3801,14 @@ export function shelfCountAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): ShelfCountDeps {
+  const planograms = planogramStoreAdapter(input);
   return {
     now: input.now,
-    counts: (tenantId, storeId) => allOf<ShelfCount>(input.store, tenantId, forShelfCounts(storeId), 'ShelfCountRecorded'),
+    counts: (tenantId, storeId) => allOf<StoredShelfCount>(input.store, tenantId, forShelfCounts(storeId), 'ShelfCountRecorded'),
+    // SP-8c-ii: a RELAYED count's counter is re-verified from their own grants, and judged against the shelf map head
+    // office itself published for the store (the device's list only when there is none — and that is flagged).
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    knownShelves: async (tenantId, storeId) => (await planograms.shelfMap(tenantId, storeId))?.locations.map((l) => l.locationId),
     recordCount: async (tenantId, countId, count) => {
       await input.store.append(tenantId, forShelfCounts(count.storeId), makeEvent({
         id: `shelf-count-${count.storeId}-${countId}`,

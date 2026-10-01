@@ -98,6 +98,14 @@
       tr.flag td { color: var(--warn); }
       .empty { color: var(--muted); padding: 20px 4px; }
 
+      /* Work saved on this device (SP-8c-ii): a count or an ask, and where it has got to — a word, never colour alone. */
+      ul.saved { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      li.saved { background: var(--panel); border-radius: 12px; padding: 10px 14px; display: grid; gap: 4px; }
+      li.saved .what { font-weight: 600; } li.saved .detail { font-size: 13px; color: var(--muted); }
+      li.saved .pill { font-size: 13px; font-weight: 600; } li.saved .why { font-size: 13px; color: var(--danger-text, #fecaca); }
+      p.note { margin: 0; color: var(--muted); font-size: 14px; }
+      [hidden] { display: none !important; }
+
       .sheet {
         position: fixed; inset: 0; background: rgba(2, 6, 23, .85);
         display: grid; place-items: center; z-index: 20; padding: 16px;
@@ -170,6 +178,10 @@
         </div>
         <button id="save-count" class="primary wide" type="button">Save this count</button>
 
+        <h3 id="saved-counts-heading" hidden>Saved on this screen</h3>
+        <p class="note" id="saved-counts-lead" hidden></p>
+        <ul class="saved" id="saved-counts" aria-label="Counts saved on this screen"></ul>
+
         <h3 id="tocount-title">Still to count</h3>
         <p class="lead" id="tocount-lead">The ones nobody has ever counted come first — nothing can be said about those at all.</p>
         <div id="tocount-list"></div>
@@ -184,6 +196,11 @@
 
         <h3 id="tasks-title">Go and fill these</h3>
         <div id="tasks-list"></div>
+        <button id="raise-refill" class="primary wide" type="button" hidden>Ask the back store for these</button>
+
+        <h3 id="saved-refills-heading" hidden>Asked of the back store</h3>
+        <p class="note" id="saved-refills-lead" hidden></p>
+        <ul class="saved" id="saved-refills" aria-label="Asks raised from this screen"></ul>
 
         <h3 id="issues-title">Everything the check found</h3>
         <div id="issues-list"></div>

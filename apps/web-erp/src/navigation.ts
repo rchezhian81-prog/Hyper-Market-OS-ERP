@@ -90,6 +90,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // it to someone the server would refuse; §28/evidence/threshold all stay server-side (M28-FR-01).
   { id: 'write-off-capture', label: 'Record a write-off', labelTa: 'தள்ளுபடியைப் பதிவு செய்', path: '/write-off-capture', requires: 'inventory.movement.append', group: 'Inventory' },
   { id: 'stock-health', label: 'Stock health', labelTa: 'சரக்கு நிலை', path: '/stock-health', requires: 'inventory.availability.read', group: 'Inventory' },
+  // Products nobody can sell (SP-8c-ii · P-08): what the till refuses or was never given, and why — the list the box builds the
+  // till's catalogue from, shown to the person who can fix it. Read-only, so gated on the same availability read as stock health.
+  { id: 'unsellable', label: 'Products nobody can sell', labelTa: 'யாரும் விற்க முடியாத பொருட்கள்', path: '/unsellable', requires: 'inventory.availability.read', group: 'Inventory' },
   // Shelves and space — counts on the shelf, refills, the range, the planogram (M04). Gated on the range read
   // (`merchandising.range.read`) the assortment route checks.
   { id: 'merchandising', label: 'Shelves & space', labelTa: 'அடுக்குகளும் இடமும்', path: '/merchandising/', requires: 'merchandising.range.read', group: 'Inventory' },

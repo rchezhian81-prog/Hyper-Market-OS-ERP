@@ -285,7 +285,8 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
 
     await page.click('#sre-menu-button');
     expect(await page.textContent('#sre-menu .who-can')).toBe('Screens for u-mgr');
-    expect(await texts(page, '#sre-menu a')).toEqual(['Goods receipt review', 'Stock counts', 'Stock health', 'Warehouse']);
+    // SP-8c-ii: "Products nobody can sell" is gated on the same availability read as stock health, so this reader sees it too.
+    expect(await texts(page, '#sre-menu a')).toEqual(['Goods receipt review', 'Stock counts', 'Stock health', 'Products nobody can sell', 'Warehouse']);
     expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['Stock counts']);
 
     await page.click('#sre-menu a:has-text("Stock health")');

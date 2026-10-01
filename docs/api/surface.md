@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 799 | 489 | 489 | 59 | 270 |
+| 13 | 800 | 490 | 490 | 59 | 271 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -236,6 +236,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/merchandising/planogram-compliance` | `planogram.compliance.read` | core | yes |
 | GET | `/v1/merchandising/shelf-counts` | `shelf.count.read` | core | — |
 | POST | `/v1/merchandising/shelf-counts/:countId` | `shelf.count.record` | core | yes |
+| POST | `/v1/merchandising/shelf-counts/:countId/synced` | `shelf.count.sync` | core | yes |
 | POST | `/v1/merchandising/shelf-counts/worklist` | `shelf.count.read` | core | yes |
 | POST | `/v1/merchandising/space/performance` | `merchandising.space.read` | core | yes |
 | GET | `/v1/merchandising/stores/:storeId/planograms` | `planogram.compliance.read` | core | — |

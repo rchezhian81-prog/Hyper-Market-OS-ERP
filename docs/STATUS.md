@@ -633,11 +633,46 @@ device, human UAT and production verification separate; approved deferrals stay 
   `the-till-closes-through-the-box.test.ts` "a material short" fixed its shift to 30 Sep while the refund it counts is
   stamped by the till's own clock. Both now follow the clock they depend on (checked: both pass; the behaviour under test is
   unchanged).
-- **Current-work pointer:** last verified = SP-8c-i (this PR); next = **SP-8c-ii** [W08, remainder] (the merchandising
-  refill task raising an indent on the shared queue; the shelf-count save reaching the cloud as a relayed, re-verified
-  count; the "products nobody can sell" screen fed by the box's own till exclusions), then SP-9/9b; **SP-3c** (picker +
-  driver) after the core-store chain; genuine blockers: none; external gates unchanged (providers, hardware, real data,
-  pilot GO).
+- **SP-8c-ii — the shelf's two saves leave the page; the products nobody can sell have a screen (F08 remainder · M04-FR-02 ·
+  M04-FR-03 · M03-FR-03 · WF-06 · §28 · §31 · P-01 · P-02 · P-08 · hard rules #1 #2 #4 #6 #10).** (i) The merchandising
+  screen's COUNT is written to the SHARED durable device queue (`sre.indents.outbox.<storeId>` — the Floor indents screen's)
+  before the screen says saved (`apps/web-erp/src/merchandising-session.ts` `count` → `ShelfCounted`; `savedCounts` with the
+  five shared state words, "posted" only on the box's word), handed to the box by one relay (`openQueueRelay`) and relayed to
+  the new `POST /v1/merchandising/shelf-counts/:countId/synced` (`services/inventory/src/shelf-count.ts`, permission
+  `shelf.count.sync` held by the owner and the box identity): the counter is re-verified from THEIR grants and flagged
+  (`counter_unknown` / `counter_lacks_authority`), the shelf is judged against head office's PUBLISHED shelf map when there is
+  one (else the device's list, flagged `shelves_from_device`), a refusal is 4xx → a visible dead-letter on the box, the same
+  count again is one observation, every relayed count is audited; nobody named at the screen → the engine's own
+  `nobody_signed_this_count`, nothing saved, the gap listed. (ii) The REFILL TASKS become ONE indent with one tap — through
+  the Indents session (`refillIndentPortOf`) onto the same queue, one line per product in the catalogue's unit,
+  `ind-refill-<day>-<shelves>` so the same shelves ask once a day (a second tap says "already asked"), refused before the wire
+  for no link / nobody named / no right / nothing to fill; a different person approves it on the Floor indents screen.
+  (iii) The "Products nobody can sell" screen (`/unsellable`: `apps/web-erp/web/unsellable.html|js`,
+  `apps/web-erp/src/unsellable-session.ts`, nav item under Inventory on `inventory.availability.read`) lists every product
+  the till refuses or was never given — recall FIRST, then no tax rate, no status, a unit the till cannot price, not on
+  sale — each with what to do, EN/TA, from `unsellableProducts(pack)` in `edge/store-edge/src/screen-data.ts`, which is
+  now the ONE function the till payload drops its exclusions by (the recalled-tin guardrail reads the judgement there).
+  The box payload (`merchandisingPayload`) carries who is at the screen (`merchandisingPolicy.userId`, else the Indents
+  policy's person) and the Indents policy for the refill ask. Evidence: `tests/integration/shelf-count.test.ts` (+5: API with
+  real RBAC — only the box identity relays, the counter flagged, head office's map wins, 400/422; REAL box → real API — on
+  the box before the device hears accepted, one observation across a lost reply and a box restart, a refused count a
+  visible dead-letter that survives a restart, the refill ask on head office's register with the relay beside it),
+  `tests/e2e/merchandising-count-and-refill.e2e.ts` (4, real Chromium: count → saved → handed → posted on the box's word →
+  reload keeps it, sends nothing twice; refill → ONE `FloorIndentRequested` with the catalogue's unit → "already asked";
+  nobody named → refused in words; on the REAL box both on its fsync'd device-events log), `tests/e2e/unsellable-screen.e2e.ts`
+  (2, the REAL box: the screen's catalogue gaps = the same box's till exclusions, recall first, EN/TA; clean / no catalogue
+  said plainly), `tests/unit/erp-merchandising-session.test.ts` (+8), `tests/unit/erp-unsellable-session.test.ts` (6),
+  `tests/unit/edge-feeds-the-screens.test.ts` (+3), guardrails `the-merchandising-screen-is-usable` (new),
+  `the-unsellable-screen-is-usable` (new), `a-recalled-tin-cannot-be-sold` (re-pointed at the shared judgement), relay
+  allow-list +1 (`ShelfCounted`), API surface +1, 49 ERP pages. Matrix rows 109 and 112 → E2E_VERIFIED; M04 → E2E_VERIFIED;
+  **F08 fully FIXED.** Denominator 104 preserved. **Still open, honestly:** physical device + staff UAT (SP-10) for every
+  screen in this chain.
+- **Current-work pointer:** last verified = SP-8c-ii (this PR); next = **SP-9 / SP-9b** [W10, W12] (the connected store E2E
+  suite through the actual application on real services + real PostgreSQL: purchase → receiving/QC → back store → floor →
+  sale → return/exchange → till close, with stock, payment, cash, accounting and reporting outcomes checked; the exchange /
+  no-receipt till interfaces with CH-01 preserved unless the owner lifts it), then **SP-3c** (picker + driver handhelds on
+  the shared device route); **SP-10** (physical device + staff UAT) stays PENDING until performed; genuine blockers: none;
+  external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 
