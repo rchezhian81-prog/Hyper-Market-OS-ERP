@@ -15,7 +15,7 @@ reach the box, GitHub's environment secrets, the store PC or a phone, so every s
 
 | Fact | Evidence |
 |---|---|
-| `main` is at **`ed35952`** (PR #670, 1 Oct 2026); its pipeline run is green on all three verification jobs | GitHub Actions run 36842090658 |
+| `main` was at **`ed35952`** (PR #670, 1 Oct 2026) when this was confirmed; its pipeline run is green on all three verification jobs. This runbook and the smoke command merged after it as **`0bf098a`** (PR #671), so the release to deploy is `0bf098a` or later | GitHub Actions runs 36842090658 and the `main` run for `0bf098a` |
 | The release job ran on that merge and its deploy step was **skipped**: "No demo box is configured" — the `demo` environment holds no `DEPLOY_*` secrets | the same run, job *Deploy the merged release to the demo box* |
 | The demo box was stood up on **28 September** at commit **`e72b4ae`** (`docs/STATUS.md`, "demo stood up on VM3"); `main` is **78 commits** ahead of it | `git rev-list --count e72b4ae..main` |
 | What the box lacks from those 78 commits that the first release will meet: the release script itself (`infra/deploy/release.sh`, 29 Sep), the compose **`proxy`** service on 443/80, migrations **0012** (row-level security) and **0013** (tenants register), the **application database role** (`APP_DB_USER`), and seven new settings in `.env.pilot` | `git diff e72b4ae main --stat -- infra db/migrations`; template diff in §2 step C |
@@ -121,8 +121,9 @@ request). The job *Deploy the merged release to the demo box* must end **green**
 
 ## 3. Verify the deployed release (PREPARED — commands for the administrator; paste the output back without addresses)
 
-The commit to expect is the head of `main` at the time of the run — **`ed35952`** on 1 October 2026 (full id in the
-Actions run; the release log records the full 40 characters).
+The commit to expect is the head of `main` at the time of the run — **`0bf098a`** (PR #671, 1 October 2026) or later;
+it must not be older than `0bf098a`, which is where `pnpm run demo:smoke` first exists (full id in the Actions run; the
+release log records the full 40 characters).
 
 ```bash
 tail -3 /opt/sre/releases.log                         # last line: result=deployed sha=<main head> previous=<the old commit>
@@ -160,7 +161,7 @@ its records to the demo box. So the practice environment is: the demo box (head 
 ### 4.2 The store PC (follow `docs/runbooks/in-store-install.md`; the deltas for the practice environment are below)
 
 ```bash
-git clone <the repository> sre && cd sre && git checkout ed35952 && pnpm install   # the SAME commit as the demo box
+git clone <the repository> sre && cd sre && git checkout <the deployed sha> && pnpm install   # the SAME commit as the demo box (from /opt/sre/releases.log)
 ```
 
 Make a small settings file for the installer to copy from (it copies the tenant, the key and the cloud address — never
@@ -340,7 +341,7 @@ Cross-cutting, once per person: the DEMO banner is visible; a refused action say
 
 ## 9. Known limitations of this practice environment
 
-- The demo box is still on the 28 September release until §2 is done; this document is written for the release at `ed35952`.
+- The demo box is still on the 28 September release until §2 is done; this document is written for the release at `0bf098a` (PR #671) or later.
 - The ERP screens have no interactive staff sign-in: the pack names one person per screen (KL-01, OA-4). The till
   identifies the cashier by staff code without authenticating them (GAP-POS-LOGIN-01).
 - The box signs in to head office as `pilot-cashier` for the demo; a dedicated `store-edge` login is a go-live step (UAT-05).

@@ -26,7 +26,8 @@ requirements register continues; completed development is not repeated.
   app-role `DATABASE_URL`; `SRE_PUBLIC_HOST` / `SRE_TLS`; ports 443/80 freed for the stack's own proxy; the application role
   created on the existing database; a backup before the first upgrade). Nothing here can be executed from the build
   session: it cannot reach the box or GitHub's environment secrets, and no secret value may pass through it.
-- **DP-3 — deploy and verify (PREPARED).** The CI-passing commit to deploy is `ed35952`; §3 gives the verification
+- **DP-3 — deploy and verify (PREPARED).** The commit to deploy is the head of `main` once PR #671 is in — `0bf098a` or
+  later (the smoke command first exists there); `ed35952` was the confirmed CI-passing head before it. §3 gives the verification
   commands (release log line, checkout commit, `/readyz`, migrations 13 applied / 0 on re-run, `standup:check` GREEN, the
   public origin with the DEMO banner, staff screens 404 by name) and the rollback command. **Not executed:** no deployment
   has happened; a green workflow with a skipped deploy step is recorded as exactly that.
