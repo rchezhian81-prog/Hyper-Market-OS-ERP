@@ -123,6 +123,16 @@ const WORDS = {
     noReceiptMax: 'No-receipt limit',
     noReceiptOverCap: 'That is above the no-receipt limit —',
     noReceiptManagerHint: 'Every return without a receipt needs a manager — a different person from the cashier',
+    exchange: 'Exchange',
+    exchangeNeedsBasket: 'Scan the replacement items onto the bill first, then choose Exchange.',
+    exchangeCredit: 'Credit for the goods coming back',
+    exchangeEven: 'Even exchange — nothing to pay, nothing to refund',
+    exchangeConfirm: 'Record the exchange',
+    exchangeCollect: 'Customer pays the difference',
+    exchangeRefunds: 'Shop refunds the difference',
+    exchangeHow: 'How does the customer pay?',
+    exchangeDone: 'Exchange recorded',
+    exchangeStop: 'Do not hand over the new goods',
     declinedMsg: 'The payment was declined. The sale is NOT complete — do not hand over the goods. Ask for another payment method.',
     noAnswerMsg: 'The card machine has not answered, so we do not know whether the customer has paid. The sale is NOT complete — do not hand over the goods. Check the machine, and if it is unclear, ask the manager before trying again.',
   },
@@ -208,6 +218,16 @@ const WORDS = {
     noReceiptMax: 'ரசீது இல்லாத வரம்பு',
     noReceiptOverCap: 'ரசீது இல்லாத வரம்பை விட அதிகம் —',
     noReceiptManagerHint: 'ரசீது இல்லாத ஒவ்வொரு திரும்பப் பெறலுக்கும் ஒரு மேலாளர் தேவை — காசாளர் அல்லாத வேறு ஒருவர்',
+    exchange: 'பரிமாற்றம்',
+    exchangeNeedsBasket: 'முதலில் மாற்றுப் பொருட்களை பில்லில் ஸ்கேன் செய்யவும், பிறகு பரிமாற்றம் தேர்வு செய்யவும்.',
+    exchangeCredit: 'திரும்பும் பொருட்களுக்கான வரவு',
+    exchangeEven: 'சம பரிமாற்றம் — செலுத்த வேண்டியதும் இல்லை, திரும்பத் தர வேண்டியதும் இல்லை',
+    exchangeConfirm: 'பரிமாற்றத்தைப் பதிவு செய்',
+    exchangeCollect: 'வாடிக்கையாளர் வித்தியாசத்தைச் செலுத்துகிறார்',
+    exchangeRefunds: 'கடை வித்தியாசத்தைத் திரும்பத் தருகிறது',
+    exchangeHow: 'வாடிக்கையாளர் எப்படிச் செலுத்துகிறார்?',
+    exchangeDone: 'பரிமாற்றம் பதிவு செய்யப்பட்டது',
+    exchangeStop: 'புதிய பொருட்களைக் கொடுக்க வேண்டாம்',
     declinedMsg: 'பணம் மறுக்கப்பட்டது. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். வேறு முறையில் பணம் கேட்கவும்.',
     noAnswerMsg: 'கார்டு இயந்திரம் பதில் சொல்லவில்லை. வாடிக்கையாளர் பணம் செலுத்தினாரா என்று தெரியவில்லை. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். இயந்திரத்தைச் சரிபார்க்கவும்; தெளிவில்லை என்றால் மேலாளரிடம் கேட்கவும்.',
   },
@@ -776,6 +796,8 @@ el('more').addEventListener('click', async () => {
     ...(cash === null || !cash.shiftOpen ? [{ value: 'float', label: t('takeFloat') }] : []),
     ...(cash === null || cash.shiftOpen ? [{ value: 'pickup', label: t('pickup') }] : []),
     { value: 'refund', label: t('refund') },
+    // An EXCHANGE — goods back against a bill, new goods out, the difference settled (SP-9b-ii · M13-FR-03).
+    { value: 'exchange', label: t('exchange') },
     // A return WITHOUT a receipt is offered only when the store computer gave this till a no-receipt cap and a price
     // list to name the item from (SP-9b-i · M13-FR-01). Without them the option is not there — the till never guesses a limit.
     ...(session.noReceiptReturn && session.noReceiptReturn() !== null ? [{ value: 'no_receipt', label: t('noReceipt') }] : []),
@@ -785,6 +807,7 @@ el('more').addEventListener('click', async () => {
   if (what === 'float') return takeFloat();
   if (what === 'pickup') return takeCashToSafe();
   if (what === 'refund') return startRefund();
+  if (what === 'exchange') return startExchange();
   if (what === 'no_receipt') return startNoReceiptReturn();
   if (what === 'close') return closeTheTill();
 });
@@ -992,6 +1015,149 @@ async function startRefund() {
   }
   showRefundOutcome(outcome);
   render();
+}
+
+/**
+ * The EXCHANGE (SP-9b-ii · M13-FR-03): goods coming back against a bill, new goods going out, the difference settled.
+ *
+ * The cashier rings the REPLACEMENT goods onto the bill first — so they are priced, promoted, age-checked and
+ * MRP-capped exactly as any sale (one commerce truth, P-02) — then chooses Exchange, finds the customer's bill and
+ * says what is coming back. The till quotes: the credit at the bill's OWN price, the replacement as rung, and which
+ * way the difference goes. Even → nothing changes hands. The customer owes → they pay the difference (cash, or what
+ * the card machine said). The shop owes → it refunds the difference by the refund's own rules, a manager approving
+ * where the policy says so (§28) — the money that actually leaves is what is judged, never the credit. Everything is
+ * decided before anything is written; the credit is recorded first, then the replacement sale paid with it. If the
+ * second half cannot be recorded, the screen SAYS so (do not hand over the new goods) rather than pretending.
+ */
+async function startExchange() {
+  // 0. The replacement must already be on the bill.
+  if (session.basket().filter((l) => !l.voided).length === 0) { tell(t('read'), t('exchangeNeedsBasket')); return; }
+
+  // 1. Find the customer's bill — scan the receipt, or key the bill number.
+  const receipt = await askScanOrKey({ title: t('refundFind'), hint: t('refundFindHint') });
+  if (receipt === null || receipt === '' || receipt === '0') return;
+  let bill;
+  try {
+    bill = await session.lookupRefund(String(receipt));
+  } catch {
+    tell(t('refundStop'), t('refundLookupFailed'));
+    return;
+  }
+  if (!bill) { tell(t('read'), t('refundNotFound')); return; }
+  if (!bill.exchange) { tell(t('read'), t('refundNotFound')); return; }
+  const returnable = bill.returnable.filter((l) => l.returnableMinor > 0);
+  if (returnable.length === 0) { tell(t('read'), t('refundNothingLeft')); return; }
+
+  // 2. What is coming back, and how many — capped at what is still returnable on the bill.
+  const productId = await choose(t('refundWhichItem'), returnable.map((l) => ({
+    value: l.productId, label: `${descOf(l.productId)} — ${t('refundCanReturn')} ${l.returnableMinor}`,
+  })));
+  if (productId === null) return;
+  const line = returnable.find((l) => l.productId === productId);
+  const qtyAns = await ask({
+    title: `${t('refundHowMany')} — ${descOf(productId)}`, mode: 'number', initial: '1',
+    hint: `${t('refundCanReturn')}: ${line.returnableMinor}`,
+  });
+  if (qtyAns === null) return;
+  const qty = Number(qtyAns);
+  if (!Number.isInteger(qty) || qty <= 0 || qty > line.returnableMinor) { tell(t('read'), t('refundBadQty')); return; }
+
+  // 3. Reason (chosen, never typed — M15) and the condition the goods come back in (M13-FR-02).
+  const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS });
+  if (!reason) return;
+  const disposition = await choose(t('refundCondition'), [
+    { value: 'resell', label: t('dispResell') },
+    { value: 'damaged', label: t('dispDamaged') },
+  ]);
+  if (disposition === null) return;
+  const returnLines = [{ productId, uom: line.uom, quantityMinor: qty, disposition }];
+
+  // 4. The quote — the engine's arithmetic over the bill's history and the goods on the bill now. Nothing recorded.
+  const quote = bill.exchange.quote(returnLines);
+  if (!quote.ok) { tell(t('read'), quote.detail); return; }
+
+  // 5. Settle the difference — the customer's way in, or the shop's way out (with a manager where §28 says so).
+  const settlement = {};
+  let approval;
+  const credit = `${t('exchangeCredit')}: ${inr(quote.returnedValueMinor)}`;
+  if (quote.balance === 'even') {
+    const go = await choose(`${credit} — ${t('exchangeEven')}`, [{ value: 'go', label: t('exchangeConfirm') }]);
+    if (go === null) return;
+  } else if (quote.balance === 'top_up') {
+    const kind = await choose(`${credit} — ${t('exchangeCollect')}: ${inr(quote.balanceMinor)} — ${t('exchangeHow')}`, [
+      { value: 'cash', label: t('cash') },
+      { value: 'card', label: t('card') },
+      { value: 'upi', label: t('upi') },
+    ]);
+    if (kind === null) return;
+    settlement.topUp = { kind };
+    if (kind !== 'cash') {
+      // What the card machine said — three answers, and silence is NOT approval (M12-FR-03).
+      const outcome = await choose(`${t('tapTerminal')} — ${inr(quote.balanceMinor)}`, [
+        { value: 'approved', label: t('approved') },
+        { value: 'declined', label: t('declined') },
+        { value: 'no_answer', label: t('noAnswer') },
+      ]);
+      if (outcome === null) return;
+      if (outcome !== 'approved') { tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg')); return; }
+      settlement.topUp.outcome = outcome;
+    }
+  } else {
+    const refundTender = await choose(`${credit} — ${t('exchangeRefunds')}: ${inr(quote.balanceMinor)} — ${t('refundHow')}`, [
+      { value: 'cash', label: t('cash') },
+      { value: 'card', label: t('card') },
+      { value: 'upi', label: t('upi') },
+      { value: 'store_credit', label: t('storeCredit') },
+    ]);
+    if (refundTender === null) return;
+    settlement.refundTender = refundTender;
+    if (refundTender === 'store_credit') {
+      const who = await askScanOrKey({ title: t('refundCustomerId'), hint: t('refundCustomerHint') });
+      if (who === null || who === '' || who === '0') { tell(t('read'), t('refundNeedCustomer')); return; }
+      settlement.customerRef = String(who);
+    }
+    if (quote.needsApproval) {
+      const by = await askScanOrKey({ title: t('refundManagerId'), hint: t('refundManagerHint') });
+      if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager')); return; }
+      const approveReason = await ask({ title: t('refundApproveReason'), mode: 'choice', choices: REFUND_REASONS });
+      if (!approveReason) return;
+      approval = { by: String(by), reason: approveReason };
+    }
+  }
+
+  // 6. Two documents from this lane's gap-free range: the return (the credit) and the replacement sale's receipt.
+  let number;
+  let replacementReceipt;
+  try {
+    number = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
+    replacementReceipt = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}X`;
+  } catch {
+    tell(t('read'), t('receiptsUsedUp'));
+    return;
+  }
+
+  let outcome;
+  try {
+    outcome = await bill.exchange.complete({
+      exchangeId: `RT-${number}`, number, reasonCode: reason, returnLines,
+      replacementSaleId: `S-${replacementReceipt}`, replacementReceipt,
+      settlement,
+      ...(approval ? { approval } : {}),
+    });
+  } catch (e) {
+    tell(t('exchangeStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    return;
+  }
+  if (outcome.kind === 'done') {
+    tell(t('exchangeDone'), `${outcome.laneMessage} ${outcome.number} · ${outcome.replacementReceipt}`);
+    session.newSale();
+    void refreshBadge();
+    selectedLineId = null;
+    render();
+    return;
+  }
+  if (outcome.kind === 'half_done') { tell(t('exchangeStop'), outcome.laneMessage); return; }
+  showRefundOutcome(outcome);
 }
 
 /**

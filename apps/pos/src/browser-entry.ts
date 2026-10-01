@@ -29,6 +29,9 @@ import {
   createRefundView, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome,
 } from './refund-view';
 import type { ReturnableLine } from '../../../packages/returns/src/return-register';
+import { assessExchange, type ExchangeBalanceKind } from '../../../packages/returns/src/exchange';
+import { refundRequiresApproval, type ExchangeSettlementInput } from '../../../packages/returns/src/returns';
+import { settle, type Tender } from '../../../packages/tender/src/tender';
 
 /**
  * This lane's reserved receipt-number range (M01-FR-02), provisioned per lane in the signed local
@@ -269,6 +272,59 @@ export interface RefundDraftInput {
   readonly customerRef?: string;
 }
 
+/**
+ * What an EXCHANGE against this bill would come to, against the replacement goods on the bill NOW (SP-9b-ii ·
+ * M13-FR-03): the credit for the goods coming back at the bill's own price, the replacement as rung, and which way
+ * the difference goes. `ok: false` names why it cannot happen (nothing on the bill to replace with, more coming back
+ * than was sold, a credit past what the bill was paid…) — nothing is recorded by a quote.
+ */
+export interface ExchangeQuote {
+  readonly ok: boolean;
+  readonly refusedBecause?: string;
+  readonly detail: string;
+  readonly returnedValueMinor: number;
+  readonly replacementTotalMinor: number;
+  readonly balance: ExchangeBalanceKind;
+  readonly balanceMinor: number;
+  readonly appliedMinor: number;
+  /** Whether the refund of the balance needs a manager (§28) — never for an even exchange or a top-up. */
+  readonly needsApproval: boolean;
+}
+
+/** The exchange as the screen assembled it. Two documents are minted at the lane: the return (`exchangeId`, `number`)
+ *  and the replacement sale (`replacementSaleId`, `replacementReceipt`), both from the lane's own reserved range. */
+export interface ExchangeDraftInput {
+  readonly exchangeId: string;
+  readonly number: string;
+  readonly reasonCode: string;
+  readonly returnLines: readonly RefundLineChoice[];
+  readonly replacementSaleId: string;
+  readonly replacementReceipt: string;
+  readonly settlement: {
+    /** How the shop refunds the balance, when it owes one. */
+    readonly refundTender?: TenderKind;
+    /** The customer a store-credit balance is issued to (M13-FR-03). */
+    readonly customerRef?: string;
+    /** How the customer pays the balance, when they owe one. Card/UPI carry what the terminal said (M12-FR-03). */
+    readonly topUp?: { readonly kind: 'cash' | 'card' | 'upi'; readonly outcome?: 'approved' | 'declined' | 'no_answer' };
+  };
+  readonly approval?: { readonly by: string; readonly reason: string };
+}
+
+/**
+ * The one screen state an exchange resolves to. `done` carries both documents and how the balance moved; `half_done`
+ * is the state this screen exists to make VISIBLE (P-08): the goods coming back are recorded as a credit on the bill
+ * but the replacement sale could not be — do not hand over the new goods, get the manager. The rest are the refund's
+ * own refusals (nothing recorded).
+ */
+export type ExchangeOutcome =
+  | {
+    readonly kind: 'done'; readonly balance: ExchangeBalanceKind; readonly balanceMinor: number; readonly returnedValueMinor: number;
+    readonly refundStatus: 'settled' | 'pending'; readonly number: string; readonly replacementReceipt: string; readonly laneMessage: string;
+  }
+  | { readonly kind: 'half_done'; readonly number: string; readonly returnedValueMinor: number; readonly laneMessage: string }
+  | Exclude<RefundScreenOutcome, { kind: 'settled' } | { kind: 'pending' }>;
+
 /** A looked-up bill, ready for the refund screen to show and act on. */
 export interface RefundLookup {
   readonly sale: { readonly saleId: string; readonly number: string; readonly totalMinor: number };
@@ -278,6 +334,13 @@ export interface RefundLookup {
   readonly needsApproval: (refundMinor: number, noReceipt?: boolean) => boolean;
   /** Complete the refund, resolving to exactly one plain-English screen state. Never throws. */
   readonly submit: (draft: RefundDraftInput) => Promise<RefundScreenOutcome>;
+  /** The EXCHANGE against this bill (SP-9b-ii): quote it against the goods on the bill now; complete it. */
+  readonly exchange: {
+    readonly quote: (returnLines: readonly RefundLineChoice[]) => ExchangeQuote;
+    /** Record the exchange: the return (credit) FIRST, then the replacement sale paid with that credit plus any top-up.
+     *  Resolves to exactly one screen state. Never throws. */
+    readonly complete: (draft: ExchangeDraftInput) => Promise<ExchangeOutcome>;
+  };
 }
 
 /** An item named for a return with no receipt — from the lane's catalogue, never judged for sale (SP-9b-i). */
@@ -439,14 +502,19 @@ export function bootPos(config?: {
 
   // A manager's lane approval, as the §28 `DecidedRequest` the engine checks (decidedBy ≠ processedBy; the cloud
   // re-verifies the approver truly holds the authority on sync). Shared by the receipted and the no-receipt return.
-  const decidedAtTheLane = (draft: RefundDraftInput, cashierId: string): DecidedRequest | undefined => (draft.approval === undefined ? undefined : {
+  const decidedAtTheLane = (
+    draft: { readonly returnId: string; readonly refundMinor: number; readonly approval?: { readonly by: string; readonly reason: string } },
+    cashierId: string,
+  ): DecidedRequest | undefined => (draft.approval === undefined ? undefined : {
     id: `ovr-${draft.returnId}`, subjectType: 'pos.return', subjectRef: draft.returnId,
     requestedBy: cashierId, branchId: null, value: money(draft.refundMinor, 'INR'),
     status: 'approved', decidedBy: draft.approval.by, reason: draft.approval.reason,
     decidedAt: new Date().toISOString(),
   });
   // Nobody signed in → refused in the till's words, before anything is written (F09).
-  const nobodyAtTheTill = (): RefundScreenOutcome => ({ kind: 'refused', laneMessage: new NoOperatorError('take a refund').laneMessage });
+  const nobodyAtTheTill = (): { readonly kind: 'refused'; readonly laneMessage: string } => ({ kind: 'refused', laneMessage: new NoOperatorError('take a refund').laneMessage });
+  // The two outcomes that mean the return IS on the disk (settled at the lane, or a reversal pending) — everything else is a refusal.
+  const creditRecorded = (o: RefundScreenOutcome): o is Extract<RefundScreenOutcome, { kind: 'settled' | 'pending' }> => o.kind === 'settled' || o.kind === 'pending';
 
   const lookupRefund = async (receipt: string): Promise<RefundLookup | null> => {
     const found = await lookup(receipt);
@@ -479,6 +547,107 @@ export function bootPos(config?: {
           ...(approval === undefined ? {} : { approval }),
           ...(draft.customerRef === undefined ? {} : { customerRef: draft.customerRef }),
         });
+      },
+      exchange: {
+        // The arithmetic is the tested engine's (`assessExchange`), run over the bill's own history and the goods on
+        // the bill NOW: the credit at the bill's own price, the replacement as rung (promotions attributed per line, as
+        // the sale record carries them), the balance and whether a refunded balance needs a manager. Nothing recorded.
+        quote: (returnLines) => {
+          const a = assessExchange({
+            sale: originalSale, priorReturns: found.returns, priorRefunds: found.refunds,
+            exchange: {
+              exchangeId: '',
+              returnLines: returnLines.map((l) => ({ productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor, disposition: l.disposition })),
+              replacementLines: session.replacementLines(),
+            },
+          });
+          return {
+            ok: a.ok, ...(a.refusedBecause === undefined ? {} : { refusedBecause: a.refusedBecause }), detail: a.detail,
+            returnedValueMinor: a.returnedValueMinor, replacementTotalMinor: a.replacementTotalMinor,
+            balance: a.balance, balanceMinor: a.balanceMinor, appliedMinor: a.appliedMinor,
+            needsApproval: a.balance === 'refund' && refundRequiresApproval(a.balanceMinor, false, refundPolicy.approvalThresholdMinor),
+          };
+        },
+        // Decide everything, THEN record the return (the credit against the bill, through the same durable-first
+        // refund path as any return), THEN the replacement sale paid with that credit plus any top-up (through the same
+        // durable-first sale path as any sale). The credit goes first so goods never leave against a credit that was
+        // not recorded; if the sale half then cannot be recorded, the screen is told so by name (`half_done`, P-08) —
+        // the credit stands on the bill for the manager to complete, and the new goods stay on the counter.
+        complete: async (draft): Promise<ExchangeOutcome> => {
+          const cashierId = session.operator();
+          if (cashierId === undefined) return nobodyAtTheTill();
+          const q = (() => assessExchange({
+            sale: originalSale, priorReturns: found.returns, priorRefunds: found.refunds,
+            exchange: {
+              exchangeId: draft.exchangeId,
+              returnLines: draft.returnLines.map((l) => ({ productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor, disposition: l.disposition })),
+              replacementLines: session.replacementLines(),
+            },
+          }))();
+          if (!q.ok) return { kind: 'invalid', laneMessage: `${q.detail} Nothing was recorded.` };
+
+          // The settlement, from what the screen captured — refused in words before anything is written.
+          const tenders: Tender[] = q.appliedMinor > 0 ? [{ kind: 'exchange_credit', amount: money(q.appliedMinor, 'INR'), status: 'settled' }] : [];
+          let balanceTender: TenderKind | undefined;
+          let topUpTenders: ExchangeSettlementInput['topUpTenders'];
+          if (q.balance === 'refund') {
+            balanceTender = draft.settlement.refundTender;
+            if (balanceTender === undefined) return { kind: 'invalid', laneMessage: 'The shop owes the customer the difference — choose how it is refunded. Nothing was recorded.' };
+            if (balanceTender === 'store_credit' && draft.settlement.customerRef === undefined) {
+              return { kind: 'invalid', laneMessage: 'Store credit must go to a customer. Scan their loyalty card or key their number — or choose a different refund method. Nothing was recorded.' };
+            }
+          } else if (q.balance === 'top_up') {
+            const topUp = draft.settlement.topUp;
+            if (topUp === undefined) return { kind: 'invalid', laneMessage: 'The customer owes the difference — choose how they pay it. Nothing was recorded.' };
+            if (topUp.kind !== 'cash' && topUp.outcome !== 'approved') {
+              // The terminal did not approve: declined is declined, and silence is NOT approval (M12-FR-03) — nothing is recorded.
+              return { kind: 'refused', laneMessage: topUp.outcome === 'declined' ? 'The card/UPI payment was declined. Nothing was recorded — the goods stay on the counter.' : 'The terminal has not answered. Do not hand over the goods — nothing was recorded; try again once the machine answers.' };
+            }
+            tenders.push({ kind: topUp.kind, amount: money(q.balanceMinor, 'INR'), status: topUp.kind === 'cash' ? 'settled' : 'authorized' });
+            topUpTenders = [{ kind: topUp.kind, amountMinor: q.balanceMinor }];
+          }
+          if (!settle(money(q.replacementTotalMinor, 'INR'), tenders).fullyPaid) {
+            return { kind: 'invalid', laneMessage: 'The credit and the payment do not cover the replacement. Nothing was recorded.' };
+          }
+
+          // 1. The return — the credit against the bill — through the tested refund view + till (durable first).
+          const exchange: ExchangeSettlementInput = {
+            replacementSaleId: draft.replacementSaleId, replacementTotalMinor: q.replacementTotalMinor, appliedMinor: q.appliedMinor,
+            balance: q.balance, balanceMinor: q.balanceMinor,
+            ...(balanceTender === undefined ? {} : { balanceTender }),
+            ...(topUpTenders === undefined ? {} : { topUpTenders }),
+          };
+          const approval = decidedAtTheLane({ returnId: draft.exchangeId, refundMinor: q.balanceMinor, ...(draft.approval === undefined ? {} : { approval: draft.approval }) }, cashierId);
+          const credit = await refundView.submit({
+            returnId: draft.exchangeId, number: draft.number, originalSale,
+            reasonCode: draft.reasonCode, lines: draft.returnLines,
+            refundMinor: q.returnedValueMinor, refundTender: 'exchange', exchange,
+            ...(approval === undefined ? {} : { approval }),
+            ...(draft.settlement.customerRef === undefined ? {} : { customerRef: draft.settlement.customerRef }),
+          });
+          if (!creditRecorded(credit)) return credit;
+
+          // 2. The replacement — a real sale, paid with the credit (+ any top-up), through the same durable-first path.
+          try {
+            const sale = await session.commit(draft.replacementSaleId, draft.replacementReceipt, new Date().toISOString(), tenders);
+            const moved = q.balance === 'even' ? 'Even exchange — nothing to pay, nothing to refund.'
+              : q.balance === 'top_up' ? `Collect ₹${(q.balanceMinor / 100).toFixed(2)} from the customer.`
+                : credit.kind === 'pending' ? `Refund of ₹${(q.balanceMinor / 100).toFixed(2)} sent for reversal — PENDING, do not hand over cash.`
+                  : `Refund ₹${(q.balanceMinor / 100).toFixed(2)} to the customer.`;
+            return {
+              kind: 'done', balance: q.balance, balanceMinor: q.balanceMinor, returnedValueMinor: q.returnedValueMinor,
+              refundStatus: credit.kind === 'pending' ? 'pending' : 'settled', number: credit.number, replacementReceipt: sale.number,
+              laneMessage: `Exchange recorded. ${moved}`,
+            };
+          } catch (e) {
+            const why = e !== null && typeof e === 'object' && 'laneMessage' in e && typeof (e as { laneMessage: unknown }).laneMessage === 'string'
+              ? (e as { laneMessage: string }).laneMessage : String(e instanceof Error ? e.message : e);
+            return {
+              kind: 'half_done', number: credit.number, returnedValueMinor: q.returnedValueMinor,
+              laneMessage: `The goods coming back are recorded as a credit of ₹${(q.returnedValueMinor / 100).toFixed(2)} on bill ${originalSale.number} (${credit.number}), but the replacement sale could NOT be recorded: ${why} Do not hand over the new goods — get the manager to complete the exchange.`,
+            };
+          }
+        },
       },
     };
   };

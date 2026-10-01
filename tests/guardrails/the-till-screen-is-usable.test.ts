@@ -257,6 +257,29 @@ describe('the refund screen gives money back, safely', () => {
     expect(flow).toContain('showRefundOutcome(outcome)');
   });
 
+  it('exchanges goods only against the replacement already on the bill; quotes through the tested surface; settles the difference the right way round; stops by name when half done (SP-9b-ii · M13-FR-03)', () => {
+    expect(code(APP)).toMatch(/if \(what === 'exchange'\) return startExchange\(\);/);
+    const flow = code(APP).slice(code(APP).indexOf('async function startExchange()'), code(APP).indexOf('async function startNoReceiptReturn()'));
+    // The replacement is rung as a SALE first (priced, promoted, MRP-capped like any sale) — an empty bill cannot be exchanged into.
+    expect(flow).toContain("t('exchangeNeedsBasket')");
+    // The bill is found the same way as for a refund; the quote and the completion run through the tested surface.
+    expect(flow).toMatch(/session\.lookupRefund\(/);
+    expect(flow).toMatch(/bill\.exchange\.quote\(returnLines\)/);
+    expect(flow).toMatch(/bill\.exchange\.complete\(\{/);
+    // The difference: even confirms; a top-up asks how the customer pays, and what the card machine said; a refund asks the
+    // method, a customer for store credit, and a manager when the surface says the balance needs one — never the credit.
+    expect(flow).toContain("t('exchangeEven')");
+    expect(flow).toContain("t('exchangeCollect')");
+    expect(flow).toContain("t('tapTerminal')");
+    expect(flow).toContain("t('exchangeRefunds')");
+    expect(flow).toMatch(/refundTender === 'store_credit'/);
+    expect(flow).toMatch(/if \(quote\.needsApproval\)/);
+    // Half done is its own state, headed "do not hand over the new goods"; the rest reuse the refund's own words.
+    expect(flow).toMatch(/outcome\.kind === 'half_done'/);
+    expect(flow).toContain("t('exchangeStop')");
+    expect(flow).toContain('showRefundOutcome(outcome)');
+  });
+
   it('captures the customer for a store-credit refund, and refuses to issue it to nobody (M13-FR-03)', () => {
     // Store credit is money on a customer's account, so the screen asks WHO it belongs to (scanned or
     // keyed) whenever store credit is chosen, passes it as customerRef, and stops with a plain message

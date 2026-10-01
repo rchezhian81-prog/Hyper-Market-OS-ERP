@@ -49,6 +49,7 @@ interface PosWindow {
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
     signIn(cashierId: string): void;
     operator(): string | undefined;
+    newSale(): void;
     lookupRefund(receipt: string): Promise<RefundLookup | null>;
     noReceiptReturn(): { capMinor: number } | null;
   };
@@ -61,7 +62,10 @@ const PACK_FILE_WITH_CAP = {
   version: 1,
   policies: { storeId: 'S1', branchId: 'S1', branchName: 'SRE Hyper Market', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
   servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: 100_000, agentAuthorityMinor: 0, compensationCapMinor: 0 },
-  products: [{ productId: 'P1', name: 'Amul Ghee Gold 1L', categoryId: 'dairy', unitPriceMinor: 64_000, unitCostMinor: 50_000, uom: 'ea', barcodes: ['8901234567890'], availableMinor: 10, taxBps: 500, status: 'active' }],
+  products: [
+    { productId: 'P1', name: 'Amul Ghee Gold 1L', categoryId: 'dairy', unitPriceMinor: 64_000, unitCostMinor: 50_000, uom: 'ea', barcodes: ['8901234567890'], availableMinor: 10, taxBps: 500, status: 'active' },
+    { productId: 'P2', name: 'Amul Ghee Gold 1L — premium tin', categoryId: 'dairy', unitPriceMinor: 70_000, unitCostMinor: 55_000, uom: 'ea', barcodes: ['8901234500002'], availableMinor: 10, taxBps: 500, status: 'active' },
+  ],
   lossPreventionRules: [],
 };
 
@@ -304,6 +308,96 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     expect(edge.returnsOutbox.unsentCount()).toBe(1);
     // No sale was rung — the sale log is untouched (separate pipelines, M13-FR-01).
     expect(await readLog(edge.log.path)).toHaveLength(0);
+  });
+
+  it('an EXCHANGE driven through the real screen: the replacement rung by barcode → More → Exchange → the bill → the item coming back → the quote → the customer pays the ₹60 difference in cash → both documents on this box\'s disk, linked (SP-9b-ii · M13-FR-03)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sre-served-exchange-'));
+    dirs.push(dir);
+    const packFile = join(dir, 'store-pack.json');
+    await writeFile(packFile, JSON.stringify(PACK_FILE_WITH_CAP), 'utf8');
+    const edge: EdgeProcess = (await startEdge({
+      EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
+    }, () => {}))!;
+    stops.push(() => edge.stop());
+
+    const context = await browser.newContext();
+    stops.push(() => context.close());
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
+
+    // Yesterday's bill: one ₹640 tin, paid in cash — the bill the customer brings back.
+    await page.evaluate(async () => {
+      const w = globalThis as unknown as PosWindow;
+      w.posSession!.signIn('u-lanecash');
+      w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
+      await w.posSession!.tenderCash('S-1', 'R-0001', '2026-08-28T10:00:00Z');
+      w.posSession!.newSale(); // the shell clears the bill after every sale; done here because the sale was rung from the test
+    });
+
+    // ── The cashier's own steps. The replacement is rung FIRST, by barcode, like any sale: the ₹700 premium tin.
+    await page.keyboard.type('8901234500002');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(`((document.getElementById('lines') || {}).textContent || '').includes('premium tin')`, undefined, { timeout: 15_000 });
+
+    // More → Exchange.
+    await page.click('#more');
+    await panelTitled(page, 'More');
+    expect(await page.$$eval('#pay-kinds button', (b) => b.map((x) => x.textContent ?? ''))).toContain('Exchange');
+    await page.click('#pay-kinds button:text-is("Exchange")');
+
+    // The bill, by its receipt number (scanned off the customer's slip).
+    await sheetTitled(page, 'Scan the receipt, or key the bill number');
+    await page.keyboard.type('R-0001');
+    await page.keyboard.press('Enter');
+
+    // Which item is coming back (one tin, still returnable), how many, why, in what condition.
+    await panelTitled(page, 'Which item is coming back?');
+    await page.click('#pay-kinds button:text-is("Amul Ghee Gold 1L — can return 1")');
+    await sheetTitled(page, 'How many are coming back? — Amul Ghee Gold 1L');
+    await page.click('#sheet-ok');
+    await sheetTitled(page, 'Why is it coming back?');
+    await page.click('#reasons button:text-is("Wrong item")');
+    await page.click('#sheet-ok');
+    await panelTitled(page, 'What condition is the item in?');
+    await page.click('#pay-kinds button:text-is("Good — back on the shelf")');
+
+    // The quote, in the model's figures: ₹640 credited at the bill's own price against the ₹700 rung → the customer pays ₹60.
+    await panelTitled(page, 'Credit for the goods coming back: ₹640.00 — Customer pays the difference: ₹60.00');
+    await page.click('#pay-kinds button:text-is("Cash")');
+
+    // Recorded — both documents named, and what to collect.
+    await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
+    expect(await page.textContent('#refusal-title')).toBe('Exchange recorded');
+    const said = (await page.textContent('#refusal-text')) ?? '';
+    expect(said).toContain('Collect ₹60.00 from the customer');
+    await page.click('#refusal-ok');
+    // The bill is cleared for the next customer.
+    expect(await page.$$eval('#lines tr', (rows) => rows.length)).toBe(0);
+
+    // ── On THIS box's disk: the return (the ₹640 credit against bill S-1, tender "exchange", the settlement naming the
+    //    replacement) and the replacement sale (₹700, paid with ₹640 of exchange credit + ₹60 cash) — linked by id, each
+    //    on its own durable log and queue (offline-first: no cloud is configured here).
+    const refunds = await readLog(edge.returnsLog.path);
+    expect(refunds).toHaveLength(1);
+    const credit = refunds[0]?.ok === true ? JSON.parse(refunds[0].record) as Record<string, unknown> : undefined;
+    expect(credit).toMatchObject({
+      originalSaleId: 'S-1', refundTender: 'exchange', refundMinor: 64_000, processedBy: 'u-lanecash', reasonCode: 'wrong_item',
+      lines: [{ productId: 'P1', quantityMinor: 1, disposition: 'resell' }],
+      exchange: { replacementTotalMinor: 70_000, appliedMinor: 64_000, balance: 'top_up', balanceMinor: 6_000, topUpTenders: [{ kind: 'cash', amountMinor: 6_000 }] },
+    });
+    const sales = await readLog(edge.log.path);
+    expect(sales).toHaveLength(2);
+    const replacement = sales[1]?.ok === true ? JSON.parse(sales[1].record) as Record<string, unknown> : undefined;
+    expect(replacement).toMatchObject({
+      total: 70_000, cashierId: 'u-lanecash', laneId: 'lane-1',
+      lines: [{ productId: 'P2', quantityMinor: 1, lineTotalMinor: 70_000 }],
+      tenders: [{ kind: 'exchange_credit', amount: { minor: 64_000 } }, { kind: 'cash', amount: { minor: 6_000 } }],
+    });
+    expect((credit!['exchange'] as { replacementSaleId: string }).replacementSaleId).toBe(replacement!['id']);
+    expect(edge.returnsOutbox.unsentCount()).toBe(1);
+    expect(edge.outbox.unsentCount()).toBe(2);
   });
 
   it('a box that was given NO no-receipt cap offers no return without a receipt — the till never guesses a limit (fail safe)', async () => {

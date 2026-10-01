@@ -163,7 +163,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession!.operator() === 'u-meena');
 
     // Float, then the sale by barcode — keystrokes and Enter, as a scanner does — then exact cash.
-    expect(await moreOffers(page)).toEqual(['Take float (open the till)', 'Refund']);
+    expect(await moreOffers(page)).toEqual(['Take float (open the till)', 'Refund', 'Exchange']);
     await choose(page, 'Take float (open the till)');
     await keyAmount(page, '2000');
     expect(await shown(page)).toMatchObject({ title: 'Float taken — the till is open' });
@@ -204,13 +204,13 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     expect(await onHandAt(STORE)).toBe(10);
 
     // A pickup, a reload (the browser forgets; the box remembers the float is out), then the blind close: 2,000 + 480 − 480 − 1,000 = ₹1,000.
-    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Refund', 'Close till']);
+    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Refund', 'Exchange', 'Close till']);
     await choose(page, 'Cash to safe');
     await keyAmount(page, '1000');
     expect(await shown(page)).toMatchObject({ title: 'Moved to the safe' });
     await open(base);
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession!.operator() === 'u-meena');
-    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Refund', 'Close till']);
+    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Refund', 'Exchange', 'Close till']);
     await choose(page, 'Close till');
     await page.waitForSelector('#count:not([hidden])');
     expect(await page.textContent('#count')).not.toMatch(/expected|1,000/);

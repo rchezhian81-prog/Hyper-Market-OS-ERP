@@ -297,9 +297,23 @@ export function shiftFigures(input: {
   const cashRefundsMinor = input.returns
     .filter((r) => r !== null && typeof r === 'object')
     .map((r) => r as Record<string, unknown>)
-    .filter((r) => onLane(r, input.laneId) && r['refundTender'] === 'cash' && within(r['processedAt'], from, input.closedAt))
-    .reduce((n, r) => n + (int(r['refundMinor']) ?? 0), 0);
+    .filter((r) => onLane(r, input.laneId) && within(r['processedAt'], from, input.closedAt))
+    .reduce((n, r) => n + cashOutOfDrawer(r), 0);
   return { openingFloatMinor, pickupsMinor, cashSalesMinor, cashRefundsMinor };
+}
+
+/**
+ * The cash a return took OUT of the drawer: a cash refund's amount; on an EXCHANGE (SP-9b-ii · M13-FR-03) only a balance
+ * refunded in cash — the credited value never left the drawer (it paid for the replacement as `exchange_credit`, and a
+ * cash top-up came IN on the replacement sale, counted with the sales above). Nothing for card/UPI/store credit.
+ */
+function cashOutOfDrawer(r: Record<string, unknown>): number {
+  const exchange = r['exchange'];
+  if (exchange !== null && typeof exchange === 'object') {
+    const x = exchange as Record<string, unknown>;
+    return x['balance'] === 'refund' && x['balanceTender'] === 'cash' ? (int(x['balanceMinor']) ?? 0) : 0;
+  }
+  return r['refundTender'] === 'cash' ? (int(r['refundMinor']) ?? 0) : 0;
 }
 
 /** The box's default when the store pack names no cash tolerance: ₹100. Applied AND said (`toleranceKnown: false`). */

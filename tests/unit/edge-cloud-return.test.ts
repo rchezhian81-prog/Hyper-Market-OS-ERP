@@ -77,6 +77,16 @@ describe('toCloudReturn — the lane refund record → the cloud synced-return c
     expect(toCloudReturn(RETURN_RECORD, 'S1').locationId).toBe('S1');
   });
 
+  it('carries an EXCHANGE settlement as the lane wrote it (SP-9b-ii · M13-FR-03), only when present and readable — nothing invented', () => {
+    const settlement = { replacementSaleId: 'S-X', replacementTotalMinor: 7000, appliedMinor: 5000, balance: 'top_up', balanceMinor: 2000, topUpTenders: [{ kind: 'cash', amountMinor: 2000 }] };
+    const r = toCloudReturn({ ...RETURN_RECORD, refundTender: 'exchange', exchange: settlement });
+    expect(r.refundTender).toBe('exchange');
+    expect(r.exchange).toEqual({ exchangeId: 'RT1', ...settlement }); // the exchange is the return's own id unless the lane named one
+    expect(toCloudReturn(RETURN_RECORD)).not.toHaveProperty('exchange');
+    // A block naming no replacement sale is not an exchange the cloud can link — dropped; the cloud flags the odd tender itself.
+    expect(toCloudReturn({ ...RETURN_RECORD, exchange: { balance: 'even' } })).not.toHaveProperty('exchange');
+  });
+
   it('tolerates a bare id in place of returnId, both here and in returnIdOf', () => {
     expect(toCloudReturn({ ...RETURN_RECORD, returnId: undefined, id: 'RT9' }).returnId).toBe('RT9');
     expect(returnIdOf({ returnId: 'RT1' })).toBe('RT1');

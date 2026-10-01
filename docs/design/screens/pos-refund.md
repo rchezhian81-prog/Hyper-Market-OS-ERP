@@ -125,10 +125,20 @@ never free text.
    Chromium through the screen (`the-served-till-takes-a-refund.e2e.ts`) and connected on the real stack
    (`tests/integration/the-till-returns-without-a-receipt.test.ts`).
 
-Still open on the screen itself (tracked, not silently dropped): the **exchange** (SP-9b-ii — the cloud half
-exists: `assessExchange`, `POST /v1/sales/:saleId/exchanges`; the lane-side return + replacement with
-`exchange_credit` and its panels are what remain); the box does not yet pull head office's no-receipt cap (the
-pack file's applies at the lane; head office flags a return above its own); and the **usability acceptance**
-(a person with a stopwatch against the ≤3-interaction bar, `../usability-test-script.md`) — the e2e proves it
-*works*, not yet that it meets the speed bar. Product names are shown from the lane's catalogue (a code
-fallback when the catalogue does not know the id).
+5. **The EXCHANGE (SP-9b-ii, 1 Oct 2026) — DONE.** The cashier rings the REPLACEMENT onto the bill first, like
+   any sale (priced, promoted, MRP-capped, age-checked — one commerce truth), then More → Exchange → the customer's
+   bill by receipt → the item coming back, quantity, reason, condition → the quote: the credit at the bill's OWN
+   price against the goods rung → even (confirm) / the customer pays the difference (cash, or what the card machine
+   said — silence is not approval) / the shop refunds the difference (method, a customer for store credit, a manager
+   where the surface says — the BALANCE is judged, never the credit). The credit is recorded first (`refundTender:
+   'exchange'` + the settlement), then the replacement sale paid with `exchange_credit`; if the second half cannot
+   be recorded the screen says HALF DONE — do not hand over the new goods. Proven offline in a real Chromium
+   (`tests/e2e/the-served-till-takes-a-refund.e2e.ts`) and connected on the real stack
+   (`tests/integration/the-till-exchanges.test.ts`).
+
+Still open on the screen itself (tracked, not silently dropped): the box does not yet pull head office's no-receipt
+cap (the pack file's applies at the lane; head office flags a return above its own); HALF DONE is visible, not
+self-healing (the manager completes it at the desk); and the **usability acceptance** (a person with a stopwatch
+against the ≤3-interaction bar, `../usability-test-script.md`) — the e2e proves it *works*, not yet that it meets
+the speed bar. Product names are shown from the lane's catalogue (a code fallback when the catalogue does not know
+the id).

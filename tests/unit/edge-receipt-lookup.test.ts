@@ -36,10 +36,14 @@ describe('turning a sale record into an OriginalSale', () => {
     expect(s.saleId).toBe('S-1');
     expect(s.number).toBe('B-1');
     expect(s.totalMinor).toBe(20_000);
+    // Each line's CHARGED total rides along (SP-9b-ii), so an exchange credits the bill's own price for the goods coming back.
     expect(s.lines).toEqual([
-      { productId: 'P1', uom: 'ea', quantityMinor: 2 },
-      { productId: 'P2', uom: 'ea', quantityMinor: 1 },
+      { productId: 'P1', uom: 'ea', quantityMinor: 2, lineTotalMinor: 15_000 },
+      { productId: 'P2', uom: 'ea', quantityMinor: 1, lineTotalMinor: 5_000 },
     ]);
+    // An older record with no line totals still yields the bill — without them (the exchange engine then pro-rates).
+    const old = toOriginalSale(JSON.parse(sale({ lines: [{ productId: 'P1', quantityMinor: 2, uom: 'ea' }] })))!;
+    expect(old.lines).toEqual([{ productId: 'P1', uom: 'ea', quantityMinor: 2 }]);
     expect(s.tenders).toEqual([{ kind: 'cash', amountMinor: 20_000 }]);
   });
 

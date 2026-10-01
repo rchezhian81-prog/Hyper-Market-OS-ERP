@@ -212,6 +212,38 @@ interface SyncedReturn {
   /** The customer a store-credit refund taken offline belongs to (M13-FR-03 / §31), carried on the
    *  ReturnAccepted event so the cloud can issue the credit to them when it reconciles. */
   readonly customerRef?: string;
+  /** Present when the lane's return is the returning half of an EXCHANGE taken at the till (SP-9b-ii):
+   *  `refundMinor` is then the value credited against the bill and `refundTender` is `exchange`. The replacement
+   *  sale arrives through the sales pipeline on its own (paid with `exchange_credit`); this block links the two
+   *  and says which way the balance moved, so the record, the exceptions and the day book read it as an exchange. */
+  readonly exchange?: ExchangeSettlement;
+}
+
+/** The exchange settlement as the lane wrote it — every amount a whole number ≥ 0, the balance one of the three kinds;
+ *  anything else is not an exchange block, and the return is then recorded as it came (and flagged by its own rules). */
+function readExchangeSettlement(v: unknown, returnId: string): ExchangeSettlement | undefined {
+  if (v === null || typeof v !== 'object') return undefined;
+  const x = v as Record<string, unknown>;
+  const isStr = (u: unknown): u is string => typeof u === 'string' && u.trim() !== '';
+  const whole = (u: unknown): u is number => typeof u === 'number' && Number.isInteger(u) && u >= 0;
+  if (!isStr(x['replacementSaleId']) || !whole(x['replacementTotalMinor']) || !whole(x['appliedMinor']) || !whole(x['balanceMinor'])) return undefined;
+  if (x['balance'] !== 'even' && x['balance'] !== 'refund' && x['balance'] !== 'top_up') return undefined;
+  const topUp = Array.isArray(x['topUpTenders'])
+    ? (x['topUpTenders'] as unknown[]).flatMap((t) => {
+      const r = (t ?? {}) as Record<string, unknown>;
+      return isStr(r['kind']) && whole(r['amountMinor']) ? [{ kind: r['kind'], amountMinor: r['amountMinor'] }] : [];
+    })
+    : undefined;
+  return {
+    exchangeId: isStr(x['exchangeId']) ? x['exchangeId'] : returnId,
+    replacementSaleId: x['replacementSaleId'],
+    replacementTotalMinor: x['replacementTotalMinor'],
+    appliedMinor: x['appliedMinor'],
+    balance: x['balance'],
+    balanceMinor: x['balanceMinor'],
+    ...(isStr(x['balanceTender']) ? { balanceTender: x['balanceTender'] } : {}),
+    ...(topUp === undefined ? {} : { topUpTenders: topUp }),
+  };
 }
 
 function readSyncedReturn(body: unknown): SyncedReturn | undefined {
@@ -223,6 +255,7 @@ function readSyncedReturn(body: unknown): SyncedReturn | undefined {
     || !isStr(b['refundTender']) || !Array.isArray(b['lines'])) {
     return undefined;
   }
+  const exchange = readExchangeSettlement(b['exchange'], b['returnId'] as string);
   return {
     returnId: b['returnId'] as string,
     number: isStr(b['number']) ? (b['number'] as string) : (b['returnId'] as string),
@@ -237,8 +270,14 @@ function readSyncedReturn(body: unknown): SyncedReturn | undefined {
     processedAt: isStr(b['processedAt']) ? (b['processedAt'] as string) : '',
     lines: b['lines'] as ReturnRequestLine[],
     ...(isStr(b['customerRef']) ? { customerRef: b['customerRef'] as string } : {}),
+    ...(exchange === undefined ? {} : { exchange }),
   };
 }
+
+/** The money that actually LEFT the shop on a synced return — what the §28 governance rule judges: the refund, or on an
+ *  exchange only a refunded balance (an even exchange or a top-up moved nothing out; the credit paid for the replacement). */
+const moneyOutOf = (s: SyncedReturn): number =>
+  s.exchange === undefined ? s.refundMinor : (s.exchange.balance === 'refund' ? s.exchange.balanceMinor : 0);
 
 export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
   return [
@@ -615,7 +654,7 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           ? await deps.canApproveRefund(ctx.tenantId, s.approvedBy)
           : false;
         const governanceFlags = refundGovernanceFindings({
-          refundMinor: s.refundMinor, approvalThresholdMinor: thresholdMinor, processedBy: s.processedBy,
+          refundMinor: moneyOutOf(s), approvalThresholdMinor: thresholdMinor, processedBy: s.processedBy,
           ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }), approverHoldsAuthority,
         });
 
@@ -642,19 +681,24 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         // (or no cap is set), the credit is still recorded and a visible governance exception is flagged.
         const processedAt = s.processedAt === '' ? deps.now() : s.processedAt;
         let storeCredit: StoreCreditIssue | undefined;
-        if (s.refundTender === 'store_credit' && s.refundMinor > 0) {
+        // The store credit handed over at the lane: a store-credit refund's whole amount, or on an exchange a balance
+        // refunded as store credit (SP-9b-ii) — the credited value itself paid for the replacement and is no credit.
+        const storeCreditMinor = s.exchange === undefined
+          ? (s.refundTender === 'store_credit' ? s.refundMinor : 0)
+          : (s.exchange.balance === 'refund' && s.exchange.balanceTender === 'store_credit' ? s.exchange.balanceMinor : 0);
+        if (storeCreditMinor > 0) {
           if (s.customerRef === undefined) {
             flags.push('store_credit_no_customer'); // cannot issue to nobody — a person must resolve it
           } else {
             const capMinor = await deps.storeCreditCap(ctx.tenantId);
-            if (capMinor === undefined || s.refundMinor > capMinor) {
+            if (capMinor === undefined || storeCreditMinor > capMinor) {
               flags.push('store_credit_over_cap');
             }
             // Issue the credit regardless (it happened at the lane) — capMinor set to the amount so it
             // always issues; the over-cap breach above is what surfaces a lane that ignored its cap.
             const issue = issueRefundCredit({
-              ownerRef: s.customerRef, amountMinor: s.refundMinor, returnId: s.returnId,
-              at: processedAt, capMinor: s.refundMinor,
+              ownerRef: s.customerRef, amountMinor: storeCreditMinor, returnId: s.returnId,
+              at: processedAt, capMinor: storeCreditMinor,
             });
             if (issue.ok) {
               storeCredit = { movement: issue.movement!, ...(issue.instrument === undefined ? {} : { instrument: issue.instrument }) };
@@ -670,6 +714,8 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           ...(flags.length > 0 ? { governanceFlags: flags } : {}),
           ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }),
           ...(s.customerRef === undefined ? {} : { customerRef: s.customerRef }),
+          // The returning half of a till exchange keeps its settlement (SP-9b-ii) — the day book clears the credit.
+          ...(s.exchange === undefined ? {} : { exchange: s.exchange }),
         };
         await deps.recordReturn(ctx.tenantId, saleId, record, storeCredit);
         // Seal the refund fact for the offline lane refund too — attributed to the lane's recorded

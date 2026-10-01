@@ -24,7 +24,11 @@ export interface ReplacementLine {
   readonly uom: string;
   readonly quantityMinor: number;
   readonly unitPriceMinor: number;
+  /** What the line actually charged: unit × quantity, less any `discountMinor` (never more). */
   readonly lineTotalMinor: number;
+  /** A promotion discount ATTRIBUTED to this line by the till (SP-9b-ii · M05-FR-03 · CGST s.15(3)) — the same
+   *  per-line attribution the sale record carries. Absent or 0 when the line was charged at full price. */
+  readonly discountMinor?: number;
 }
 
 export type ExchangeRefusal =
@@ -120,11 +124,13 @@ export function assessExchange(input: {
     if (!Number.isInteger(l.quantityMinor) || l.quantityMinor <= 0) return refuse('line_not_readable', `Returned ${l.productId}: the quantity must be a positive whole number.`);
   }
   for (const l of exchange.replacementLines) {
-    if (!Number.isInteger(l.quantityMinor) || l.quantityMinor <= 0 || !Number.isInteger(l.unitPriceMinor) || l.unitPriceMinor < 0 || !Number.isInteger(l.lineTotalMinor) || l.lineTotalMinor < 0) {
-      return refuse('line_not_readable', `Replacement ${l.productId}: quantity, unit price and line total must be whole numbers (quantity > 0).`);
+    const discount = l.discountMinor ?? 0;
+    if (!Number.isInteger(l.quantityMinor) || l.quantityMinor <= 0 || !Number.isInteger(l.unitPriceMinor) || l.unitPriceMinor < 0 || !Number.isInteger(l.lineTotalMinor) || l.lineTotalMinor < 0
+      || !Number.isInteger(discount) || discount < 0) {
+      return refuse('line_not_readable', `Replacement ${l.productId}: quantity, unit price, line total and discount must be whole numbers (quantity > 0, discount ≥ 0).`);
     }
-    if (l.unitPriceMinor * l.quantityMinor !== l.lineTotalMinor) {
-      return refuse('replacement_lines_do_not_sum', `Replacement ${l.productId}: ${l.quantityMinor} × ${l.unitPriceMinor} ≠ ${l.lineTotalMinor}.`);
+    if (l.unitPriceMinor * l.quantityMinor - discount !== l.lineTotalMinor) {
+      return refuse('replacement_lines_do_not_sum', `Replacement ${l.productId}: ${l.quantityMinor} × ${l.unitPriceMinor}${discount > 0 ? ` − ${discount}` : ''} ≠ ${l.lineTotalMinor}.`);
     }
   }
 

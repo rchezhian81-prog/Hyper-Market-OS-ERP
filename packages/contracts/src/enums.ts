@@ -11,7 +11,11 @@ export function isMember<T extends string>(allowed: readonly T[], value: string)
 }
 
 /** Tender kinds (`db/data-dictionary/pos-cash.md`, M12-FR-03). */
-export const TENDER_KINDS = ['cash', 'card', 'upi', 'store_credit', 'split'] as const;
+/** How a bill is paid. `exchange_credit` is the value of goods coming back applied against a replacement sale on an
+ *  EXCHANGE (M13-FR-03) — money that never changes hands, banked as a tender so the replacement's tenders sum to its
+ *  total and the day book clears it against the return (`exchange_credit_clearing`). Minted by the cloud exchange
+ *  route and, since SP-9b-ii, by the till. */
+export const TENDER_KINDS = ['cash', 'card', 'upi', 'store_credit', 'split', 'exchange_credit'] as const;
 export type TenderKind = (typeof TENDER_KINDS)[number];
 export const isTenderKind = (v: string): v is TenderKind => isMember(TENDER_KINDS, v);
 
