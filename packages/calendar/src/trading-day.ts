@@ -83,3 +83,54 @@ export function tradingDate(localDateTime: string, rule: TradingDayRule): string
   const minutesAfterMidnight = hours * 60 + mins;
   return minutesAfterMidnight >= rule.cutoffMinutes ? dateStr : previousDate(dateStr);
 }
+
+/**
+ * The shop's trading calendar as head office holds it (M01-FR-02): the IANA time zone its clocks keep and the "HH:MM"
+ * cut-off where one trading day ends. The till and the store box stand in the shop and read the machine clock; a cloud
+ * server does not, so it must be TOLD the zone — or it dates "today" by its own clock, and between the shop's midnight
+ * and 05:30 IST the owner's dashboard read the wrong day (audit finding F14, SP-9-i-c).
+ */
+export interface TradingCalendar {
+  readonly timeZone: string;
+  readonly tradingDayCutoff: string;
+}
+
+/** The trading date an instant belongs to, in the shop's calendar — what the till stamps on each sale. */
+export function tradingDayIn(isoInstant: string, calendar: TradingCalendar): string {
+  return tradingDateOf(isoInstant, makeTradingDayRule(calendar.tradingDayCutoff), calendar.timeZone);
+}
+
+/** `YYYY-MM-DD` plus n calendar days (n may be negative), with no time zone in the arithmetic. */
+export function shiftDate(dateStr: string, n: number): string {
+  const dt = new Date(`${dateStr}T00:00:00Z`);
+  if (Number.isNaN(dt.getTime())) throw new RangeError(`dateStr must be YYYY-MM-DD, got "${dateStr}".`);
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * The ISO instant at which a zone's wall clock reads `localDateTime` ("YYYY-MM-DDTHH:MM"). The zone's offset is found
+ * by reading the clock back (`wallClockIn`) and correcting — twice, so a reading that lands across a daylight-saving
+ * change is corrected once more. A wall time that a zone skips (the spring-forward gap) resolves to the instant the
+ * clock reaches it; one it repeats resolves to the first occurrence.
+ */
+export function instantOf(localDateTime: string, timeZone: string): string {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(localDateTime.trim());
+  if (!m) throw new RangeError(`localDateTime must be "YYYY-MM-DDTHH:MM", got "${localDateTime}".`);
+  const asIfUtc = Date.parse(`${localDateTime.trim()}:00.000Z`);
+  let guess = asIfUtc;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const read = Date.parse(`${wallClockIn(new Date(guess).toISOString(), timeZone)}:00.000Z`);
+    guess += asIfUtc - read;
+  }
+  return new Date(guess).toISOString();
+}
+
+/** The instants a trading day spans in the shop's calendar: from its cut-off to the next day's, [from, to). */
+export function tradingDayWindow(tradingDay: string, calendar: TradingCalendar): { readonly from: string; readonly to: string } {
+  makeTradingDayRule(calendar.tradingDayCutoff); // validates the cut-off before it is spliced into a wall time
+  return {
+    from: instantOf(`${tradingDay}T${calendar.tradingDayCutoff}`, calendar.timeZone),
+    to: instantOf(`${shiftDate(tradingDay, 1)}T${calendar.tradingDayCutoff}`, calendar.timeZone),
+  };
+}

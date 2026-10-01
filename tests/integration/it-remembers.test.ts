@@ -567,7 +567,8 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
   });
 
   it('reports today\'s sales from the sales stream, not from a stored total', async () => {
-    const figures = await reportingAdapter({ store, now: () => new Date().toISOString() })
+    // This suite dates its sales by the UTC calendar date, so the shop's calendar here is UTC with a midnight cut-off (F14).
+    const figures = await reportingAdapter({ store, now: () => new Date().toISOString(), calendar: () => ({ timeZone: 'UTC', tradingDayCutoff: '00:00' }) })
       .figures(TENANT, 'dashboard');
     const sales = figures.find((f) => f.name === 'Sales today');
     // Three sales banked earlier in this file, on today's trading day: 64,000 + 50,000 + 64,000.

@@ -90,6 +90,17 @@ describe('answering setup items', () => {
     expect(s.isSet('acme', SETTINGS.DEFAULT_TAX_BPS)).toBe(false);
   });
 
+  it('validates the shop\'s time zone as a real IANA name — head office dates "today" by it (F14)', () => {
+    const s = newSettings();
+    expect(s.get('acme', SETTINGS.STORE_TIME_ZONE)).toBe('Asia/Kolkata'); // this shop's default
+    applyAnswer(s, 'acme', item('locale.time_zone'), 'Asia/Dubai', 'owner', AT);
+    expect(s.get('acme', SETTINGS.STORE_TIME_ZONE)).toBe('Asia/Dubai');
+    expect(() => applyAnswer(s, 'acme', item('locale.time_zone'), 'Mars/Olympus_Mons', 'owner', AT))
+      .toThrow(/not a time zone this system knows/);
+    expect(() => applyAnswer(s, 'acme', item('locale.time_zone'), '', 'owner', AT)).toThrow(InvalidSetupAnswerError);
+    expect(s.get('acme', SETTINGS.STORE_TIME_ZONE)).toBe('Asia/Dubai'); // the refused answers stored nothing
+  });
+
   it('validates the receipt paper size against the built-in formats', () => {
     const s = newSettings();
     applyAnswer(s, 'acme', item('receipt.paper_format'), 'thermal-80', 'owner', AT);

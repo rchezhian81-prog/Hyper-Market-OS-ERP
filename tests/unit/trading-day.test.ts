@@ -4,6 +4,10 @@ import {
   makeTradingDayRule,
   wallClockIn,
   tradingDateOf,
+  instantOf,
+  tradingDayIn,
+  tradingDayWindow,
+  shiftDate,
 } from '../../packages/calendar/src/index';
 
 // The trading day is an explicit rule (M01-FR-02): a moment before the cut-off
@@ -73,5 +77,42 @@ describe('wallClockIn / tradingDateOf — the day is dated in the SHOP\'s wall c
 
   it('refuses a moment that is not an instant', () => {
     expect(() => wallClockIn('yesterday')).toThrow(RangeError);
+  });
+});
+
+describe('the shop\'s calendar at head office — instantOf / tradingDayIn / tradingDayWindow (SP-9-i-c · F14 · M01-FR-02)', () => {
+  const IST_0200 = { timeZone: 'Asia/Kolkata', tradingDayCutoff: '02:00' };
+  const IST_MIDNIGHT = { timeZone: 'Asia/Kolkata', tradingDayCutoff: '00:00' };
+  const UTC = { timeZone: 'UTC', tradingDayCutoff: '00:00' };
+
+  it('instantOf: the moment a zone\'s wall clock reads a local time', () => {
+    expect(instantOf('2026-08-10T02:00', 'Asia/Kolkata')).toBe('2026-08-09T20:30:00.000Z');
+    expect(instantOf('2026-08-10T00:00', 'UTC')).toBe('2026-08-10T00:00:00.000Z');
+    expect(instantOf('2026-07-01T12:00', 'Europe/London')).toBe('2026-07-01T11:00:00.000Z'); // summer time
+    expect(instantOf('2026-01-01T12:00', 'Europe/London')).toBe('2026-01-01T12:00:00.000Z'); // winter
+    expect(() => instantOf('2026-08-10 02:00', 'UTC')).toThrow(RangeError);
+  });
+
+  it('tradingDayIn: 20:00 UTC on the 10th is 01:30 IST on the 11th — the 11th with a midnight cut-off, still the 10th with a 02:00 one, the 10th in UTC', () => {
+    const late = '2026-08-10T20:00:00.000Z';
+    expect(tradingDayIn(late, IST_MIDNIGHT)).toBe('2026-08-11');
+    expect(tradingDayIn(late, IST_0200)).toBe('2026-08-10');
+    expect(tradingDayIn(late, UTC)).toBe('2026-08-10');
+  });
+
+  it('tradingDayWindow: a trading day runs from the shop\'s cut-off to the next one, in the shop\'s zone — and agrees with tradingDayIn at both edges', () => {
+    const window = tradingDayWindow('2026-08-10', IST_0200);
+    expect(window).toEqual({ from: '2026-08-09T20:30:00.000Z', to: '2026-08-10T20:30:00.000Z' });
+    expect(tradingDayIn(window.from, IST_0200)).toBe('2026-08-10');
+    expect(tradingDayIn('2026-08-10T20:29:59.000Z', IST_0200)).toBe('2026-08-10');
+    expect(tradingDayIn(window.to, IST_0200)).toBe('2026-08-11');
+    expect(tradingDayWindow('2026-08-10', UTC)).toEqual({ from: '2026-08-10T00:00:00.000Z', to: '2026-08-11T00:00:00.000Z' });
+    expect(() => tradingDayWindow('2026-08-10', { timeZone: 'UTC', tradingDayCutoff: '2:00' })).toThrow(RangeError);
+  });
+
+  it('shiftDate: calendar arithmetic across month and year ends, both ways', () => {
+    expect(shiftDate('2026-12-31', 1)).toBe('2027-01-01');
+    expect(shiftDate('2026-03-01', -1)).toBe('2026-02-28');
+    expect(() => shiftDate('yesterday', 1)).toThrow(RangeError);
   });
 });

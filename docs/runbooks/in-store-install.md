@@ -28,6 +28,10 @@ the books. One command installs it; one script starts it.
 2. **Node.js 22** (LTS) and **pnpm** installed. (Docker is needed only if the cloud runs on this PC —
    Step 3.)
 3. A copy of this repository on that machine, with `pnpm install` run once.
+4. The PC's **clock right and set to the shop's time zone** (Asia/Kolkata). The till dates every sale by this clock
+   and the shop's cut-off; head office dates "today" on the dashboard by the time zone you answer in store setup
+   (`locale.time_zone`, default Asia/Kolkata — SP-9-i-c). If the PC keeps a different zone, the two will disagree
+   about which day a late sale belongs to.
 
 ---
 

@@ -32,6 +32,7 @@ export interface EditorSpec {
 const KINDS: Readonly<Record<string, EditorSpec>> = {
   'tax.default_bps': { kind: 'number' },
   'trading_day.cutoff': { kind: 'time' },
+  'locale.time_zone': { kind: 'text' },
   'receipt.paper_format': { kind: 'select', options: PAPER_FORMATS.map((f) => ({ id: f.id, label: f.label })) },
   'locale.languages': { kind: 'list' },
   'locale.currency': { kind: 'currency' },
