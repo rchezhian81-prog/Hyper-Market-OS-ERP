@@ -45,8 +45,18 @@ export const HANDHELD_SCREENS: readonly ScreenName[] = ['warehouse', 'picker', '
 export const DEVICE_COOKIE = 'sre_device';
 export const DEVICE_ENROL_ROUTE = '/device/enrol';
 export const DEVICE_SYNC_STATUS_ROUTE = '/lane/sync-status';
-/** The one screen a freshly enrolled device is sent to today; the picker and the driver join in SP-3c. */
+/**
+ * Where a freshly enrolled device is sent. The screen it ASKED for when it was turned away (`?next=/picker/`, carried by the
+ * redirect and posted back by the enrolment page) — validated against the handheld screens this socket serves, so the
+ * enrolment page can never send a device to a page that is not a handheld's; the warehouse shell when nothing was asked.
+ */
 const HOME_AFTER_ENROL = '/warehouse/';
+export function homeAfterEnrol(requested: unknown): string {
+  if (typeof requested !== 'string') return HOME_AFTER_ENROL;
+  const route = routeOf(requested);
+  if (route === null || !HANDHELD_SCREENS.includes(route.screen) || route.file !== 'index.html') return HOME_AFTER_ENROL;
+  return `/${route.screen}/`;
+}
 
 /** A device's batch, with the device this socket authenticated it from — the box logs who handed what. */
 export type DeviceRelayHandler = (batch: { readonly source: string; readonly items: readonly unknown[]; readonly deviceId: string }) => Promise<RelayReply>;
@@ -125,7 +135,7 @@ function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<{ readonl
  * supervisor with the code head office issued — so, unlike the handheld's working screens, typing is the point here.
  * The refusal shown is the box's own sentence; the code itself is never echoed back.
  */
-export function enrolPage(why: string | null): string {
+export function enrolPage(why: string | null, next: string | null = null): string {
   const notice = why === null ? '' : `<p class="notice" role="status">${escapeHtml(WHY_WORDS[why] ?? 'This handheld must be enrolled before it can be used. · இந்த கருவியைப் பயன்படுத்த முன் பதிவு செய்ய வேண்டும்.')}</p>`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -154,7 +164,7 @@ export function enrolPage(why: string | null): string {
       e.preventDefault();
       const out = document.getElementById('out');
       out.hidden = true; out.className = 'notice';
-      const body = { deviceId: document.getElementById('deviceId').value.trim(), code: document.getElementById('code').value.trim() };
+      const body = { deviceId: document.getElementById('deviceId').value.trim(), code: document.getElementById('code').value.trim(), next: ${JSON.stringify(homeAfterEnrol(next))} };
       try {
         const res = await fetch(${JSON.stringify(DEVICE_ENROL_ROUTE)}, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin' });
         const reply = await res.json();
@@ -209,7 +219,7 @@ export function startDeviceServer(input: {
 
       // ── Enrolment: the one route open to a device that holds no credential yet ──
       if (pathname === DEVICE_ENROL_ROUTE) {
-        if (req.method === 'GET') { send(res, 200, TYPES['.html']!, enrolPage(url.searchParams.get('why'))); return; }
+        if (req.method === 'GET') { send(res, 200, TYPES['.html']!, enrolPage(url.searchParams.get('why'), url.searchParams.get('next'))); return; }
         if (req.method !== 'POST') { send(res, 405, 'text/plain; charset=utf-8', 'enrolment is a POST'); return; }
         if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
           sendJson(res, 415, { enrolled: false, refusal: 'not_json', why: 'an enrolment is sent as application/json' }); req.resume(); return;
@@ -229,14 +239,20 @@ export function startDeviceServer(input: {
         // The credential rides in an HttpOnly, SameSite=Strict cookie: the page's scripts never see it, a cross-site
         // page never sends it. A year, because revocation is head office's and this register's — never the clock's.
         const cookie = `${DEVICE_COOKIE}=${encodeURIComponent(`${outcome.deviceId}.${outcome.token}`)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000`;
-        sendJson(res, 200, { enrolled: true, deviceId: outcome.deviceId, next: HOME_AFTER_ENROL }, { 'set-cookie': cookie });
+        // SP-3c: back to the screen the device asked for (the picker's, the driver's), never to a page that is not a handheld's.
+        sendJson(res, 200, { enrolled: true, deviceId: outcome.deviceId, next: homeAfterEnrol(b['next']) }, { 'set-cookie': cookie });
         return;
       }
 
       // ── Everything else needs a live device credential, checked against this register AND the pack's fleet ──
       const auth = input.enrolments.authenticate(cookieValue(req.headers.cookie, DEVICE_COOKIE), input.devices());
       if (!auth.ok) {
-        if (req.method === 'GET' && wantsHtml(req)) { redirect(res, `${DEVICE_ENROL_ROUTE}?why=${encodeURIComponent(auth.refusal)}`); return; }
+        if (req.method === 'GET' && wantsHtml(req)) {
+          // Carry the screen the browser asked for, so enrolment lands it there (SP-3c) — a handheld screen or nothing.
+          const next = homeAfterEnrol(pathname);
+          redirect(res, `${DEVICE_ENROL_ROUTE}?why=${encodeURIComponent(auth.refusal)}${next === HOME_AFTER_ENROL ? '' : `&next=${encodeURIComponent(next)}`}`);
+          return;
+        }
         sendJson(res, 403, { error: auth.refusal, detail: auth.why });
         req.resume();
         return;

@@ -18,6 +18,7 @@
 // somebody's pocket; what is on it should be worth nothing to whoever finds it.
 
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
+import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { PickSession, type PickLineInput } from './pick-session';
 
 /** The wave the handheld was given. Absent means there is no assigned work to show. */
@@ -44,6 +45,41 @@ interface PickerWindow {
   pickerOutbox?: DeviceOutbox;
   /** Anything that went wrong with the device's own storage, for the view to show (P-08). */
   pickerStorageProblem?: string | null;
+  /** The store computer's write base the box injected: `''` on the device socket (same origin), absent off it. */
+  laneWriteBase?: string;
+  pickerRelay?: PickerRelay;
+}
+
+export interface PickerRelay {
+  /**
+   * One pass of the shared device → store-computer leg (SP-3c-i): hand the queued outcomes and the pack to the box
+   * (accepted or duplicate → handed; refused → a visible refusal; link down → kept, nothing lost), then ask the box where
+   * the items it holds have got to and fold that into the session's sent-work list.
+   */
+  syncNow(): Promise<{ readonly handed: number; readonly refused: number; readonly failed: number; readonly offline: boolean }>;
+}
+
+/**
+ * The picker handheld's leg of the shared sync path (SP-3c-i · F11's picker half). The handheld is served BY the box's
+ * device socket, so the base is the page's own origin (`''`); the device's cookie rides on every call. `undefined` when
+ * the shell was not served by a box (a file, a test server): the queue still fills and survives, and the badge says so.
+ */
+export function openPickerRelay(
+  laneWriteBase: string | undefined,
+  session: PickSession,
+  outbox: DeviceOutbox,
+): PickerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'picker', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) session.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
 }
 
 /**
@@ -60,7 +96,8 @@ export function bootPicker(
 ): PickSession | null {
   const lines = data?.lines;
   if (data?.waveId === undefined || lines === undefined || lines.length === 0) return null;
-  return new PickSession(data.waveId, lines, outbox, { now });
+  // The picker the wave names travels on every outcome, so head office can re-verify the person — never invented here.
+  return new PickSession(data.waveId, lines, outbox, { now, ...(data.pickerId === undefined ? {} : { pickerId: data.pickerId }) });
 }
 
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
@@ -79,5 +116,10 @@ if (browserWindow !== undefined) {
   const outbox = openDeviceOutbox(store, (why) => { browserWindow.pickerStorageProblem = why; });
   browserWindow.pickerOutbox = outbox;
   const session = bootPicker(browserWindow.pickerData, outbox);
-  if (session !== null) browserWindow.pickSession = session;
+  if (session !== null) {
+    browserWindow.pickSession = session;
+    // The relay to the store computer — present only when the box served this page (it injects `laneWriteBase`).
+    const relay = openPickerRelay(browserWindow.laneWriteBase, session, outbox);
+    if (relay !== undefined) browserWindow.pickerRelay = relay;
+  }
 }

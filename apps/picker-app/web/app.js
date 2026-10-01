@@ -21,8 +21,9 @@
 // **4. No `prompt`, `confirm` or `alert`, and the banner does not fade** — the same two decisions
 // the till and the manager's screen hold.
 //
-// No scan touches the network. Every scan is local and queues to the device (§31 picking row); the one
-// call this file makes is a read of the store computer's sync status, for the badge (design system §1 rule 4).
+// No scan touches the network. Every scan is local and queues to the device (§31 picking row); the calls this file
+// makes are a read of the store computer's sync status, for the badge (design system §1 rule 4), and — through the
+// composition root's relay, when the box served this page — the hand-over of the queue to the store computer (SP-3c-i).
 
 const el = (id) => document.getElementById(id);
 
@@ -39,6 +40,7 @@ const WORDS = {
     cloudUnknown: 'head office not checked yet', lastContact: 'last contact',
     staleShell: 'No connection to the store computer. This is the work this handheld was last given, at',
     myWave: 'My wave', done: 'done', waiting: 'waiting to sync', allSent: 'everything sent',
+    sentHeading: 'Sent from this handheld', nothingSent: 'nothing sent yet',
     noShelfAddress: 'no shelf address — look for it', walkedIn: 'Walked in',
     scanTheBin: 'Scan the bin', scanTheItem: 'Scan the item', confirmQty: 'Confirm how many',
     stepBin: 'Step 1 of 3 — walk to the bin and scan it',
@@ -80,6 +82,7 @@ const WORDS = {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்த ஹேண்ட்ஹெல்டுக்குக் கடைசியாகக் கொடுக்கப்பட்ட வேலை இதுதான்:',
     myWave: 'என் வேலை', done: 'முடிந்தது', waiting: 'அனுப்பக் காத்திருக்கிறது', allSent: 'அனைத்தும் அனுப்பப்பட்டன',
     noShelfAddress: 'அலமாரி முகவரி இல்லை — தேடிப் பாருங்கள்', walkedIn: 'நடக்கும் வரிசை',
+    sentHeading: 'இந்தக் கருவியிலிருந்து அனுப்பப்பட்டவை', nothingSent: 'இன்னும் எதுவும் அனுப்பப்படவில்லை',
     scanTheBin: 'இடத்தை ஸ்கேன் செய்யவும்', scanTheItem: 'பொருளை ஸ்கேன் செய்யவும்', confirmQty: 'எத்தனை என்று உறுதி செய்யவும்',
     stepBin: 'படி 1 / 3 — இடத்திற்குச் சென்று ஸ்கேன் செய்யவும்',
     stepItem: 'படி 2 / 3 — கையில் உள்ள பொருளை ஸ்கேன் செய்யவும்',
@@ -123,6 +126,32 @@ const STATE_WORDS = {
   short: { en: 'Short', ta: 'குறைவு' },
   substituted: { en: 'Swapped', ta: 'மாற்றப்பட்டது' },
   quality_failed: { en: 'Quality — rejected', ta: 'தரம் — நிராகரிக்கப்பட்டது' },
+};
+
+/**
+ * Where a queued outcome or pack is — the FIVE shared device states (`packages/sync/src/device-relay.ts`), in both
+ * languages (SP-3c-i). The device's own "saved" is never shown as "sent": only the store computer's word says head office
+ * has it (P-08). A guardrail binds these to the shared list.
+ */
+const SENT_STATE_WORDS = {
+  saved_here: { en: 'Saved on this handheld — not yet with the store computer', ta: 'இந்தக் கருவியில் சேமிக்கப்பட்டது — கடை கணினிக்கு இன்னும் செல்லவில்லை' },
+  retrying: { en: 'Retrying — the store computer did not take it yet', ta: 'மீண்டும் முயற்சி — கடை கணினி இன்னும் ஏற்கவில்லை' },
+  handed_to_box: { en: 'With the store computer', ta: 'கடை கணினியிடம் உள்ளது' },
+  posted: { en: 'Posted at head office', ta: 'தலைமை அலுவலகத்தில் பதிவானது' },
+  refused: { en: 'Refused — a person must look', ta: 'மறுக்கப்பட்டது — ஒருவர் பார்க்க வேண்டும்' },
+};
+/** The same five, short, for the badge's count line. */
+const STATE_SHORT = {
+  saved_here: { en: 'saved here', ta: 'இங்கே சேமிப்பு' },
+  retrying: { en: 'retrying', ta: 'மீண்டும் முயற்சி' },
+  handed_to_box: { en: 'with the store computer', ta: 'கடை கணினியிடம்' },
+  posted: { en: 'posted', ta: 'பதிவாகியது' },
+  refused: { en: 'refused', ta: 'மறுக்கப்பட்டது' },
+};
+/** The kinds of work this handheld sends (the session's `SENT_WORK_KINDS`). */
+const KIND_WORDS = {
+  line: { en: 'Line', ta: 'வரி' },
+  pack: { en: 'Crate packed', ta: 'கிரேட் பேக் ஆனது' },
 };
 
 /**
@@ -324,9 +353,61 @@ function renderStep() {
   return say(t('stepBin'), `${line.bin} · ${line.description}`);
 }
 
+/**
+ * Where each outcome and the pack have got to (SP-3c-i): read from the DURABLE device queue plus the store computer's own
+ * word, so the list is the same after the app is closed — the proof a scan was not lost with it. A refusal carries its
+ * reason, because a person has to act on it. Nothing here is a rule; the session owns the states.
+ */
+function renderSent() {
+  const sent = real && typeof real.sentWork === 'function' ? real.sentWork().slice(0, 12) : [];
+  el('sent-heading').textContent = t('sentHeading');
+  el('sent-heading').hidden = sent.length === 0;
+  const host = el('sent-work');
+  host.textContent = '';
+  for (const w of sent) {
+    const row = document.createElement('div');
+    row.className = `sent ${w.state}`;
+    row.dataset.state = w.state;
+    row.dataset.kind = w.kind;
+    row.dataset.id = w.id;
+    const what = document.createElement('div');
+    what.className = 'what';
+    what.textContent = `${words(KIND_WORDS, w.kind)} · ${w.what} — ${w.detail}`;
+    const state = document.createElement('div');
+    state.className = `pill ${w.state}`;
+    state.textContent = words(SENT_STATE_WORDS, w.state);
+    row.append(what, state);
+    if (w.reason) {
+      const why = document.createElement('div');
+      why.className = 'why';
+      why.textContent = w.reason;
+      row.append(why);
+    }
+    host.append(row);
+  }
+}
+
 function renderQueue() {
+  renderSent();
   paintBadge();
 }
+
+/**
+ * Hand the queued work to the store computer and learn where it has got to (SP-3c-i). The relay is the composition
+ * root's (`window.pickerRelay`), present only when the box served this page over its device socket. Called after every
+ * accepted action and every ten seconds; a failure leaves the queue untouched and the state words say "saved here".
+ */
+async function syncToBox() {
+  const relay = window.pickerRelay;
+  if (!relay) return;
+  try {
+    await relay.syncNow();
+  } catch {
+    /* the queue is untouched; the state words say "saved here" */
+  }
+  render();
+}
+setInterval(() => { void syncToBox(); }, 10_000);
 
 function render() {
   const lines = session.work();
@@ -423,6 +504,7 @@ async function startLine(line, binCode = null) {
   try {
     session.pick(line.lineId, itemCode, qty);
     tell(t('pickedOk'), line.description, true);
+    void syncToBox();
   } catch (e) {
     // The model's rule, translated into what to do about it in an aisle.
     const name = e && e.name;
@@ -462,6 +544,7 @@ async function substituteLine(line) {
   try {
     session.substitute(line.lineId, substituteCode, approvalRef, line.requiredQty, line.unitPrice ?? { minor: 0, currency: 'INR' });
     tell(t('swapDone'), `${line.description} → ${substituteCode}`, true);
+    void syncToBox();
   } catch (e) {
     const name = e && e.name;
     tell(t('read'),
@@ -499,6 +582,7 @@ async function reportProblem(line) {
       session.markUnavailable(line.lineId, code);
       tell(t('markedUnavailable'), line.description, true);
     }
+    void syncToBox();
   } catch (e) {
     tell(t('read'), String(e && e.message ? e.message : e));
   }
@@ -533,6 +617,7 @@ el('pack').addEventListener('click', async () => {
     tell(t('packedOk'),
       `${manifest.lines.length} ${t('manifestLines')} · ${t('manifestValue')} ${inr(manifest.totalValue.minor)}`,
       true);
+    void syncToBox();
   } catch (e) {
     tell(t('read'), String(e && e.message ? e.message : e));
   }
@@ -601,24 +686,39 @@ function paintBadge() {
   const dot = el('queue-dot');
   const unsent = outbox === null ? 0 : outbox.unsentCount();
   dot.classList.remove('waiting', 'error', 'idle', 'degraded');
-  // Words as well as a dot — one man in twelve cannot tell the two colours apart.
-  el('queue-text').textContent = unsent === 0 ? t('allSent') : `${unsent} ${t('waiting')}`;
-  let words;
-  if (laneBase() === null) { dot.classList.add('idle'); words = t('noBoxLink'); }
-  else if (!box.asked) { dot.classList.add('idle'); words = t('checkingBox'); }
-  else if (!box.reachable) { dot.classList.add('error'); words = t('boxNotAnswering'); }
+  // Words as well as a dot — one man in twelve cannot tell the two colours apart. The first line counts THIS handheld's
+  // work by where each piece is (SP-3c-i): saved here · retrying · with the store computer · posted · refused — never a
+  // bare "sent" (P-08). Without a session it falls back to the queue's own unsent count.
+  const sent = real && typeof real.sentWork === 'function' ? real.sentWork() : null;
+  if (sent === null) el('queue-text').textContent = unsent === 0 ? t('allSent') : `${unsent} ${t('waiting')}`;
+  else if (sent.length === 0) el('queue-text').textContent = t('nothingSent');
+  else {
+    const counts = {};
+    for (const w of sent) counts[w.state] = (counts[w.state] ?? 0) + 1;
+    const parts = [];
+    for (const k of Object.keys(STATE_SHORT)) if (counts[k]) parts.push(`${counts[k]} ${words(STATE_SHORT, k)}`);
+    el('queue-text').textContent = parts.join(' · ');
+  }
+  let refusedCount = 0;
+  for (const w of sent ?? []) if (w.state === 'refused') refusedCount += 1;
+  let boxWords;
+  if (laneBase() === null) { dot.classList.add('idle'); boxWords = t('noBoxLink'); }
+  else if (!box.asked) { dot.classList.add('idle'); boxWords = t('checkingBox'); }
+  else if (!box.reachable) { dot.classList.add('error'); boxWords = t('boxNotAnswering'); }
   else {
     const s = box.status;
     const when = s.lastContactAt ? ` · ${t('lastContact')} ${clock(s.lastContactAt)}` : '';
-    if (s.cloud === 'online') words = `${t('boxOnline')}${when}`;
+    if (s.cloud === 'online') boxWords = `${t('boxOnline')}${when}`;
     else {
       dot.classList.add(s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded');
-      words = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
+      boxWords = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
     }
   }
-  // Work waiting on this device shows as waiting unless the store computer itself is down — that is worse.
+  // Work waiting on this device shows as waiting unless the store computer itself is down — that is worse; a refusal is
+  // worse still, because a person has to act on it.
   if (unsent > 0 && !dot.classList.contains('error')) { dot.classList.remove('idle', 'degraded'); dot.classList.add('waiting'); }
-  el('box-text').textContent = words;
+  if (refusedCount > 0) { dot.classList.remove('idle', 'degraded', 'waiting'); dot.classList.add('error'); }
+  el('box-text').textContent = boxWords;
 }
 
 async function refreshBadge() {

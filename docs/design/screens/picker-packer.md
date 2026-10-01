@@ -36,3 +36,15 @@ Counted in a real browser at a handheld's size (`tests/e2e/the-handhelds-meet-th
 asked-for quantity) · record a substitution **3** (Substitute on the item panel → scan the swap → scan the customer's
 reference) · flag a quality fail **2** (Problem on the item panel → the reason). **Listed exception:** a bin whose
 label cannot be read is started by a tap on the line, then the three steps — **4**.
+
+## Sync — where each piece of work is (SP-3c-i, 1 Oct 2026)
+
+The handheld is served by the store computer's **device socket** (ADR-0019): it enrols once with head office's one-time
+code and is sent back to this screen. Every line outcome and the crate's pack are queued on the device first, handed to
+the store computer after each accepted action and every ten seconds, and relayed by it to head office's wave register
+(`/v1/fulfilment/waves/:waveId/lines/:lineId/synced`, `/v1/fulfilment/waves/:waveId/packed/synced`). Below the lines,
+**Sent from this handheld** lists each piece of work with one of the five shared state words — *saved here · retrying ·
+with the store computer · posted · refused* (with the reason) — and the badge counts them by state. The device's own
+"saved" is never shown as "sent": only the store computer's word says head office has it (P-08). Head office re-verifies
+the picker and the packer from their own grants and compares the pack with the line outcomes it holds; a disagreement is
+recorded and said, never silently accepted. Nothing on this screen moves stock.

@@ -235,6 +235,7 @@ import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
 import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
+import type { WaveSyncDeps, WaveLineOutcome, WavePackRecord } from '../../fulfilment/src/waves';
 import type { IdentityDeps } from '../../identity/src/index';
 import type { TokenRevocation, TokenRevocationStore } from '../../identity/src/revocation';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
@@ -7761,6 +7762,47 @@ export function dispatchAdapter(input: {
  * supersedes), one for its manifest. The pack is recorded so dispatch builds the manifest from what
  * was PACKED, never from what the caller re-supplies.
  */
+/**
+ * The picker handheld's wave register (SP-3c-i · F11's picker half · M19-FR-01/02). One stream per wave holds every line
+ * outcome the handheld relayed (append-only history — a line picked and then rejected is two facts) and the wave's pack.
+ * The picker / packer are re-verified from THEIR grants by the route; this only keeps and reads the records.
+ */
+export function fulfilmentWaveAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<WaveSyncDeps, 'recordAudit'> {
+  const forWave = (waveId: string): string => streamName(STREAM.delivery, 'wave', waveId);
+  return {
+    now: input.now,
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    lineOutcomes: (tenantId, waveId) => allOf<WaveLineOutcome>(input.store, tenantId, forWave(waveId), 'PickLineOutcomeRecorded'),
+    recordLineOutcome: async (tenantId, o) => {
+      await input.store.append(tenantId, forWave(o.waveId), makeEvent({
+        id: `wave-line-${o.waveId}-${o.lineId}-${o.state}`,
+        type: 'PickLineOutcomeRecorded',
+        occurredAt: o.at,
+        idempotencyKey: `wave-line-${tenantId}-${o.waveId}-${o.lineId}-${o.state}`,
+        source: 'api/fulfilment',
+        payload: o,
+      }));
+    },
+    pack: async (tenantId, waveId) => {
+      const all = await allOf<WavePackRecord>(input.store, tenantId, forWave(waveId), 'WavePackRecorded');
+      return all[0]; // a wave packs once; the first record is the record
+    },
+    recordPack: async (tenantId, r) => {
+      await input.store.append(tenantId, forWave(r.waveId), makeEvent({
+        id: `wave-pack-${r.waveId}`,
+        type: 'WavePackRecorded',
+        occurredAt: r.at,
+        idempotencyKey: `wave-pack-${tenantId}-${r.waveId}`,
+        source: 'api/fulfilment',
+        payload: r,
+      }));
+    },
+  };
+}
+
 export function fulfilmentPackingAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;

@@ -179,6 +179,14 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   ReceivingCompleted: '/v1/inventory/goods-receipt/:grnId/assembled',
   // SP-3b (W3): an adjustment request raised on the warehouse handheld, recorded at head office pending approval.
   AdjustmentRequested: '/v1/inventory/adjustment-requests/:requestId/synced',
+  // SP-3c-i (F11's picker half · M19-FR-01/02 · D09): the PICKER handheld's work, relayed by the box from its device socket.
+  // A line's outcome lands on head office's wave register with the PICKER re-verified and record-and-flagged; the wave's
+  // pack is checked against the line outcomes already on that register (count and value) and any disagreement is SAID
+  // on the record, never silently accepted. Idempotent on the handheld's own keys: a re-sent outcome or pack is 200,
+  // one record. `waveId` / `lineId` are plain top-level payload fields matching the params; a payload head office
+  // cannot read is 400 → dead-lettered here by name for a person (hard rule #6). Nothing on these routes moves stock.
+  PickLineResolved: '/v1/fulfilment/waves/:waveId/lines/:lineId/synced',
+  WavePacked: '/v1/fulfilment/waves/:waveId/packed/synced',
   // A delivery booked in and a blind count captured on the manager's screen (SP-2b · F11 · M07-FR-01 · M09-FR-04).
   // Same path as the decision: device queue → box → here under the store token → a synced route that re-verifies the
   // RECEIVER / COUNTER and owns every judgement the device must not make (rules, cost, expected quantity, threshold).

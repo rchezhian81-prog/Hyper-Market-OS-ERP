@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startDeviceServer, DEVICE_HOST, HANDHELD_SCREENS, DEVICE_COOKIE, cookieValue, type DeviceServer } from '../../edge/store-edge/src/device-server';
+import { startDeviceServer, DEVICE_HOST, HANDHELD_SCREENS, DEVICE_COOKIE, cookieValue, type DeviceServer, homeAfterEnrol } from '../../edge/store-edge/src/device-server';
 import { DeviceEnrolments, type PackDevice } from '../../edge/store-edge/src/device-enrolments';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import { readPack } from '../../edge/store-edge/src/store-pack';
@@ -150,6 +150,34 @@ describe('the device socket', () => {
     expect(bare.headers.get('location')).toBe('/warehouse/');
     const root = await fetch(`${base}/`, { headers: { accept: 'text/html', cookie }, redirect: 'manual' });
     expect(root.headers.get('location')).toBe('/warehouse/');
+  });
+
+  it('enrolment lands the device on the handheld screen it asked for — the picker\'s, the driver\'s — and never on a page that is not a handheld\'s (SP-3c)', async () => {
+    const { base } = await start();
+    // Turned away from the picker shell: the redirect carries where it was going, so the enrolment page can send it back there.
+    const away = await fetch(`${base}/picker/`, { headers: { accept: 'text/html' }, redirect: 'manual' });
+    expect(away.status).toBe(302);
+    expect(away.headers.get('location')).toBe('/device/enrol?why=no_credential&next=%2Fpicker%2F');
+    const page = await (await fetch(`${base}/device/enrol?why=no_credential&next=%2Fpicker%2F`)).text();
+    expect(page).toContain('next: "/picker/"');
+    // The warehouse shell is the default — no `next` on its redirect, none on the page.
+    expect((await fetch(`${base}/warehouse/`, { headers: { accept: 'text/html' }, redirect: 'manual' })).headers.get('location')).toBe('/device/enrol?why=no_credential');
+    expect(await (await fetch(`${base}/device/enrol`)).text()).toContain('next: "/warehouse/"');
+
+    // The one-time code enrols once: the device that asked for the picker shell is sent back to it.
+    const res = await fetch(`${base}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId: 'hh-01', code: CODE, next: '/picker/' }) });
+    expect(await res.json()).toMatchObject({ enrolled: true, deviceId: 'hh-01', next: '/picker/' });
+    // The rule itself: a handheld screen's root, however it was spelled; the till, the manager, a file inside a shell, an
+    // absolute URL, garbage → the warehouse shell, never the asked-for page.
+    expect(homeAfterEnrol('/driver/')).toBe('/driver/');
+    expect(homeAfterEnrol('/picker/?x=1')).toBe('/picker/');
+    expect(homeAfterEnrol('/picker')).toBe('/picker/');
+    expect(homeAfterEnrol('/pos/')).toBe('/warehouse/');
+    expect(homeAfterEnrol('/manager/')).toBe('/warehouse/');
+    expect(homeAfterEnrol('/picker/app.js')).toBe('/warehouse/');
+    expect(homeAfterEnrol('https://evil.example/picker/')).toBe('/warehouse/');
+    expect(homeAfterEnrol(42)).toBe('/warehouse/');
+    expect(homeAfterEnrol(undefined)).toBe('/warehouse/');
   });
 
   it('serves ONLY the handheld screens: the till, the manager, the owner and every ERP page are 404 by name, even to an enrolled device', async () => {

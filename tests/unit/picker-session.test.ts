@@ -13,6 +13,7 @@ import {
 import { SubstitutionNotConfirmedError } from '../../packages/fulfilment/src/index';
 import { SyncOutbox } from '../../packages/sync/src/index';
 import { money } from '../../packages/contracts/src/money';
+import { SENT_WORK_KINDS, PICK_LINE_RESOLVED, WAVE_PACKED } from '../../apps/picker-app/src/pick-session';
 
 // Every pick is a scan, in order; a substitution needs the customer's agreement;
 // weighed lines capture their final price; the manifest matches the crate (M19).
@@ -207,5 +208,71 @@ describe('packing and the dispatch manifest', () => {
     const manifest = wave.pack(evidence);
     expect(manifest.lines[0]?.orderRef).toBe('ORD-1');
     expect(JSON.stringify(manifest)).not.toMatch(/customer|phone|address/i);
+  });
+});
+
+// ── SP-3c-i: who did it travels on every outcome, and the handheld can say where each piece of work has got to ──────
+
+describe('every outcome names the picker the wave was assigned to (SP-3c-i · §28)', () => {
+  it('carries pickedBy on the line event when the wave named a picker, and null — never an invented name — when it did not', () => {
+    const outbox = new SyncOutbox();
+    const wave = new PickSession('wave-1', WORK, outbox, { now: () => AT, pickerId: 'u-picker' });
+    wave.scanBin('A-01');
+    wave.pick('l1', 'p1', 2);
+    const line = outbox.pending().find((i) => i.event.type === PICK_LINE_RESOLVED)!.event;
+    expect(line.payload).toMatchObject({ waveId: 'wave-1', lineId: 'l1', state: 'picked', pickedQty: 2, uom: 'ea', finalPriceMinor: 200_00, pickedBy: 'u-picker' });
+    expect(line.idempotencyKey).toBe('pick:wave-1:l1:picked');
+
+    const unnamed = new SyncOutbox();
+    const anon = new PickSession('wave-2', WORK, unnamed, { now: () => AT });
+    anon.scanBin('A-01');
+    anon.pick('l1', 'p1', 2);
+    expect(unnamed.pending()[0]!.event.payload).toMatchObject({ pickedBy: null });
+  });
+});
+
+describe('where each piece of work is — the five shared device states, from the durable queue and the box\'s word (SP-3c-i)', () => {
+  it('lists every outcome and the pack newest first as "saved here", moves to "with the store computer" when the box takes them, and to "posted" / "refused" only on the box\'s word', () => {
+    const outbox = new SyncOutbox();
+    const wave = new PickSession('wave-1', WORK, outbox, { now: () => AT, pickerId: 'u-picker' });
+    expect(wave.sentWork()).toEqual([]);
+    expect(wave.handedKeys()).toEqual([]);
+    wave.scanBin('A-01');
+    wave.pick('l1', 'p1', 2);
+    wave.failQuality('l2', 'damaged');
+    wave.pack({ packedBy: 'u-picker', at: AT, temperatureC: 4, tamperSealRef: 'SEAL-1' });
+
+    const before = wave.sentWork();
+    expect(before.map((w) => [w.kind, w.id, w.state])).toEqual([
+      ['pack', 'wave-1', 'saved_here'],
+      ['line', 'l2', 'saved_here'],
+      ['line', 'l1', 'saved_here'],
+    ]);
+    expect(before[2]).toMatchObject({ what: 'p1 · ORD-1', detail: 'picked · 2 ea' });
+    expect(before[1]).toMatchObject({ what: 'p2 · ORD-1', detail: 'quality_failed · 0 kg' });
+    expect(before[0]).toMatchObject({ what: 'wave-1', detail: '1 line · 20000 INR' });
+    for (const kind of SENT_WORK_KINDS) expect(before.some((w) => w.kind === kind)).toBe(true);
+
+    // The box takes the two line outcomes (the device's "acknowledged" = the box has them — never "posted" on the device's say-so).
+    const keys = outbox.pending().filter((i) => i.event.type === PICK_LINE_RESOLVED).map((i) => i.key);
+    outbox.acknowledge(keys[0]!);
+    outbox.acknowledge(keys[1]!);
+    expect(wave.handedKeys()).toEqual(keys);
+    expect(wave.sentWork().map((w) => [w.kind, w.state])).toEqual([['pack', 'saved_here'], ['line', 'handed_to_box'], ['line', 'handed_to_box']]);
+
+    // The box's word: one posted at head office, one refused with the reason. Only now do those words appear.
+    wave.noteBoxStatus([
+      { key: 'pick:wave-1:l1:picked', state: 'posted', attempts: 1 },
+      { key: 'pick:wave-1:l2:quality_failed', state: 'refused', attempts: 1, reason: 'not_readable_as_a_pick_outcome' },
+    ]);
+    const after = wave.sentWork();
+    expect(after.map((w) => [w.id, w.state])).toEqual([['wave-1', 'saved_here'], ['l2', 'refused'], ['l1', 'posted']]);
+    expect(after[1]?.reason).toBe('not_readable_as_a_pick_outcome');
+    expect(after[2]?.reason).toBeUndefined();
+
+    // The pack the box refuses outright is dead-lettered on the device, with the reason — and stays listed.
+    const packKey = outbox.pending().find((i) => i.event.type === WAVE_PACKED)!.key;
+    outbox.deadLetter(packKey, 'WavePacked is not a record this box relays for warehouse');
+    expect(wave.sentWork()[0]).toMatchObject({ kind: 'pack', state: 'refused', reason: 'WavePacked is not a record this box relays for warehouse' });
   });
 });
