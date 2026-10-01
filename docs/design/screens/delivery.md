@@ -39,3 +39,17 @@ driver is at (the first unfinished stop is selected on their behalf and outlined
 Photo or Signed) · record COD collected **2** (Cash or UPI → OK on the amount the order says, or type the actual
 amount) · mark failed with reason **3** (Could not deliver → the reason → try again / back to the store).
 **Listed exception:** proof by the customer's OTP costs one tap per digit plus OK — the digits are the customer's.
+
+## Sync — where each piece of work is (SP-3c-ii, 1 Oct 2026)
+
+On the shop wifi the phone is served by the store computer's **device socket** (ADR-0019): it enrols once with head
+office's one-time code and is sent back to this screen. Every stop outcome, the end-of-shift settlement and the counted
+cash handover are queued on the phone first, handed to the store computer after each accepted action and every ten
+seconds (out on the road the hand-over simply fails and the queue waits), and relayed by it to head office's route
+register (`/v1/delivery/routes/:routeId/stops/:stopId/synced`, `…/settled/synced`, `…/handover/synced`). Below the stops,
+**Sent from this phone** lists each piece of work with one of the five shared state words — *saved here · retrying ·
+with the store computer · posted · refused* (with the reason) — and the badge counts them by state. The phone's own
+"saved" is never shown as "sent": only the store computer's word says head office has it (P-08). **End of shift** now
+queues the COD settlement (M19-FR-04) before the counted handover. Head office re-verifies the driver, moves the order
+through its own lifecycle for each stop (a step the order cannot take is written down and shown, never forced), compares
+the settlement and the handover with the stops it holds, and flags a material cash difference for the cash office.

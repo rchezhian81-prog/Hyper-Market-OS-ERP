@@ -855,14 +855,51 @@ device, human UAT and production verification separate; approved deferrals stay 
   folded into the per-order pack / dispatch manifest (`/v1/fulfilment/orders/:id/pack`) — the wave register is the record and
   the review screens read it; head office produces no handheld wave assignment (the pack file's `wave` section is the
   source today); no TLS on the LAN leg (OA-16); physical device + staff UAT (SP-10).
-- **Current-work pointer:** last verified = SP-3c-i (this PR); next = **SP-3c-ii** [W09 remainder, F11 driver half] (the
-  DRIVER handheld on the shared device route — `DeliveryStopUpdated` / `RouteSettled` / `DriverCashHandedOver` from
-  `apps/delivery-app/src/route-session.ts` admitted for the `driver` surface and routed to synced routes that map a stop's
-  state onto the delivery state machine (`services/fulfilment/src/index.ts`) and keep run-settlement and cash-handover
-  registers with the DRIVER re-verified, record-and-flag; `openDriverRelay` + sent list + state-counted badge on the delivery
-  shell; `tests/audit-observations/sync.test.ts` F11 driver half; mirror the picker proofs); then **SP-10** (physical device +
-  staff UAT) stays PENDING until performed; genuine blockers: none; external gates unchanged (providers, hardware, real
-  data, pilot GO).
+- **SP-3c-ii — the DRIVER's phone reaches the store computer and head office over the device socket (W09 remainder ·
+  F11's driver half — F11 CLOSED on every surface · M19-FR-03 · M19-FR-04 · M23 · ADR-0019 · §28 · §31 · hard rules #1 #3
+  #4 #6 #10).** `DeliveryStopUpdated`, `RouteSettled` and `DriverCashHandedOver` are admitted on the shared relay for the
+  `driver` surface and routed to three new SYNCED routes on the fulfilment service (`services/fulfilment/src/driver-runs.ts`,
+  permission `delivery.stop.sync` on the box identity and the owner, the delivery feature): a stop's outcome lands on an
+  append-only ROUTE REGISTER with the DRIVER re-verified from their own grants (`driver_unknown` / `driver_lacks_authority`
+  said, never refused) and the box recorded as relay, and is mapped onto the ORDER's own lifecycle through the SAME state
+  machine the direct transition route runs — the step the order can take from where head office has it is recorded in the
+  driver's name (a delivery carries the proof KIND and where the evidence is held; the proof itself stays on the phone by
+  design, §31), a step it cannot take is recorded and SAID (`order_state_disagrees`), never applied blindly; goods handed over
+  with no proof kind are flagged and step nothing; the SETTLEMENT and the counted HANDOVER are compared with the stops head
+  office holds (expected / collected / held derived from the register beside the phone's figures; `stops_disagree`,
+  `has_exceptions`, `recorded_disagrees`) and a material handover variance is flagged for the cash office
+  (`cash_office_review`); COD is cash or UPI — a card method cannot be read (400 → visible dead-letter, hard rule #3);
+  idempotent on the phone's own keys (a re-sent outcome is ONE record; failed → reattempted → delivered are three).
+  `GET /v1/delivery/routes/:routeId` reads the route; `GET /v1/delivery/orders/:orderId` now agrees with the phone. The
+  driver session gains `sentWork` / `handedKeys` / `noteBoxStatus`; `openDriverRelay` drains as `driver`; the shell lists
+  **Sent from this phone** with the five shared state words in EN/TA (guardrail
+  `tests/guardrails/the-driver-screen-speaks-both-languages.test.ts`), syncs after every accepted action and every 10 s,
+  counts the badge by state, and **settles the shift (M19-FR-04) before the counted handover** at "End of shift". Proofs:
+  `tests/unit/fulfilment-driver-runs-synced.test.ts` (22), `tests/unit/delivery-route.test.ts` (+1), `tests/unit/device-relay.test.ts`,
+  `tests/unit/sync-http-transport.test.ts`; `tests/integration/driver-handheld-reaches-the-cloud-through-the-edge.test.ts` (6:
+  turned away WITH where it was going → enrolled back to `/driver/` → a stop on the box's disk before `accepted` → the route
+  register once with the driver verified AND the order stepped → `duplicate` before and after a restart, one cloud post; a
+  lost reply retried to ONE record and ONE order step; a whole shift — departed, delivered with cash, failed and returned,
+  settled, handed over — register, orders and cash agree with no flags, while a disagreeing settlement and a material
+  handover on a second route are posted AND flagged; a stop the order cannot reach recorded and said, an unknown driver
+  flagged, a card COD method dead-lettered and surviving a restart; a driver batch cannot ride as `picker`; a box with no
+  cloud holds the work and will not close the day over it); `tests/e2e/driver-handheld-syncs-through-the-box.e2e.ts` (2:
+  real Chromium at phone size enrols from `/driver/`, delivers with proof and cash, fails a stop back to the store, counts the
+  cash blind and hands over → seven records listed saved here → with the store computer, each naming the driver, none a
+  customer; reload → all listed, nothing re-sent). `docs/api/surface.md` +4 routes. Matrix rows 39/144, §3 F11 (closed), §4
+  SP-3 (DONE in software), §5; traceability F11, driver app shell, M19-FR-03/04; ADR-0019 and the screen specs' follow-on
+  notes; `tests/audit-observations/README.md` F11. Denominator 104 unchanged. **Still open:** the phone's stops are not yet
+  folded into the per-driver run reconciliation (`/v1/delivery/runs/:driverId` reads the attempts register) — the route
+  register is the record and the cash office reads it; head office produces no route assignment for the phone (the pack
+  file's `route` section or the box's own dispatch plan is the source); no TLS on the LAN leg (OA-16); physical device +
+  staff UAT (SP-10).
+- **Current-work pointer:** last verified = SP-3c-ii (this PR) — **SP-3 is DONE in software and F11 is closed on every
+  surface**; next = **SP-10** (physical device + staff UAT: the three handhelds and the till on real hardware in the store,
+  staff walking the workflows on synthetic data — stays PENDING until performed; it needs the owner to put devices in hands,
+  not more code) and, in software, the recorded limitations in dependency order: fold the picker's wave pack into the
+  per-order pack / manifest (M19-FR-02), fold the driver's stops into the run reconciliation (M19-FR-04), head office
+  assignment of waves / routes to handhelds (the pack sections are the source today); genuine blockers: none; external gates
+  unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

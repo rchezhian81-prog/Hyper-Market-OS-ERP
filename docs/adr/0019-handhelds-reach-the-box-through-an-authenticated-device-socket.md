@@ -62,7 +62,7 @@
 - **The pack's `devices` register is file-fed today** (as `approvals` and `warehouse` are). The cloud registry holds the
   hashes; the cloud → pack section feed is the SP-9 pack work. Until then the operator carries the fleet register into
   the pack file — never a code, only its hash.
-- **The picker handheld** rides the socket end to end since SP-3c-i (1 Oct 2026): `PickLineResolved` / `WavePacked` → the cloud wave register (`services/fulfilment/src/waves.ts`), and enrolment lands a device on the handheld screen it asked for (`?next=/picker/`). **The driver handheld** is admitted by the socket but its event types have no cloud routes yet (SP-3c-ii);
+- **The picker handheld** rides the socket end to end since SP-3c-i (1 Oct 2026): `PickLineResolved` / `WavePacked` → the cloud wave register (`services/fulfilment/src/waves.ts`), and enrolment lands a device on the handheld screen it asked for (`?next=/picker/`). **The driver handheld** rides it end to end since SP-3c-ii (1 Oct 2026): `DeliveryStopUpdated` / `RouteSettled` / `DriverCashHandedOver` → the cloud route register (`services/fulfilment/src/driver-runs.ts`), each stop stepping the order's own lifecycle;
   W2 (blind count) and W3 (adjustment request) on the warehouse handheld are SP-3b.
 
 ## §19-substitution impact

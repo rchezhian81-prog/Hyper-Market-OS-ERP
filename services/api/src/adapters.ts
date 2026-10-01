@@ -236,6 +236,7 @@ import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilmen
 import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { WaveSyncDeps, WaveLineOutcome, WavePackRecord } from '../../fulfilment/src/waves';
+import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord } from '../../fulfilment/src/driver-runs';
 import type { IdentityDeps } from '../../identity/src/index';
 import type { TokenRevocation, TokenRevocationStore } from '../../identity/src/revocation';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
@@ -7800,6 +7801,59 @@ export function fulfilmentWaveAdapter(input: {
         payload: r,
       }));
     },
+  };
+}
+
+/**
+ * The driver handheld's route register (SP-3c-ii · F11's driver half · M19-FR-03/04 · M23). One stream per route holds every
+ * stop outcome the phone relayed (append-only history — a stop that failed, was reattempted and delivered is three facts),
+ * the end-of-shift settlement and the counted cash handover. The order's own lifecycle is the fulfilment adapter's register,
+ * so the dispatcher's "where is it" and the driver's phone agree on one record. The driver is re-verified by the route.
+ */
+export function driverRunAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<SyncedDriverRunDeps, 'recordAudit'> {
+  const forRoute = (routeId: string): string => streamName(STREAM.delivery, 'route', routeId);
+  const orders = fulfilmentAdapter(input);
+  return {
+    now: input.now,
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    stopUpdates: (tenantId, routeId) => allOf<RouteStopUpdate>(input.store, tenantId, forRoute(routeId), 'RouteStopUpdateRecorded'),
+    recordStopUpdate: async (tenantId, u) => {
+      await input.store.append(tenantId, forRoute(u.routeId), makeEvent({
+        id: `route-stop-${u.routeId}-${u.stopId}-${u.state}`,
+        type: 'RouteStopUpdateRecorded',
+        occurredAt: u.at,
+        idempotencyKey: `route-stop-${tenantId}-${u.routeId}-${u.stopId}-${u.state}`,
+        source: 'api/fulfilment',
+        payload: u,
+      }));
+    },
+    settlement: async (tenantId, routeId) => (await allOf<RouteSettlementRecord>(input.store, tenantId, forRoute(routeId), 'RouteSettlementRecorded'))[0],
+    recordSettlement: async (tenantId, r) => {
+      await input.store.append(tenantId, forRoute(r.routeId), makeEvent({
+        id: `route-settled-${r.routeId}`,
+        type: 'RouteSettlementRecorded',
+        occurredAt: r.at,
+        idempotencyKey: `route-settled-${tenantId}-${r.routeId}`,
+        source: 'api/fulfilment',
+        payload: r,
+      }));
+    },
+    handover: async (tenantId, routeId) => (await allOf<CashHandoverRecord>(input.store, tenantId, forRoute(routeId), 'DriverCashHandoverRecorded'))[0],
+    recordHandover: async (tenantId, r) => {
+      await input.store.append(tenantId, forRoute(r.routeId), makeEvent({
+        id: `route-handover-${r.routeId}`,
+        type: 'DriverCashHandoverRecorded',
+        occurredAt: r.at,
+        idempotencyKey: `route-handover-${tenantId}-${r.routeId}`,
+        source: 'api/fulfilment',
+        payload: r,
+      }));
+    },
+    deliveryState: orders.deliveryState,
+    recordDeliveryTransition: orders.recordDeliveryTransition,
   };
 }
 

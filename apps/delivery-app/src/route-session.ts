@@ -37,6 +37,7 @@
 import { makeEvent } from '../../../packages/contracts/src/event';
 import { money, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { deviceItemReason, deviceItemState, type BoxItemStatus, type DeviceItemState } from '../../../packages/sync/src/device-relay';
 import {
   transitionDelivery,
   assertProofOfDelivery,
@@ -91,6 +92,34 @@ export interface RouteProgress {
   readonly complete: boolean;
 }
 
+/** The three event types this phone queues — named once, for the session, the box's allow-list and the cloud routes. */
+export const DELIVERY_STOP_UPDATED = 'DeliveryStopUpdated';
+export const ROUTE_SETTLED = 'RouteSettled';
+export const DRIVER_CASH_HANDED_OVER = 'DriverCashHandedOver';
+
+/** The kinds of work this phone sends: a stop's outcome, the route's settlement, the cash handover. A guardrail binds the shell's words to this. */
+export const SENT_WORK_KINDS = Object.freeze(['stop', 'settlement', 'handover'] as const);
+export type SentWorkKind = (typeof SENT_WORK_KINDS)[number];
+
+/**
+ * One piece of work this phone queued, and where it has got to (SP-3c-ii · the five shared device states). Read from the
+ * DURABLE device queue plus the store computer's own word — so the list is the same after the app is closed, which for a
+ * driver carrying cash is the difference between a record and a rumour.
+ */
+export interface SentWork {
+  readonly kind: SentWorkKind;
+  /** The stop id for a stop outcome; the route id for the settlement and the handover. */
+  readonly id: string;
+  /** What it was: the area and the order reference for a stop; the route for the rest. Never a customer. */
+  readonly what: string;
+  /** The outcome in the model's own words: the state and the cash for a stop; the figures for the rest. */
+  readonly detail: string;
+  readonly at: string;
+  readonly state: DeviceItemState;
+  readonly attempts: number;
+  readonly reason?: string;
+}
+
 export class NoSuchStopError extends Error {
   constructor(stopId: string) {
     super(`No stop "${stopId}" on this route.`);
@@ -139,6 +168,8 @@ export class RouteSession {
   private readonly currency: CurrencyCode;
   private readonly contributionRule: ContributionRule | undefined;
   private readonly at: () => string;
+  /** The store computer's word on each item it took, keyed by queue key — filled by `noteBoxStatus` (SP-3c-ii). */
+  private readonly boxWord = new Map<string, BoxItemStatus>();
 
   constructor(
     readonly routeId: string,
@@ -209,7 +240,7 @@ export class RouteSession {
     this.outbox.enqueue(
       makeEvent({
         id: `${this.routeId}:${next.stopId}:${next.state}`,
-        type: 'DeliveryStopUpdated',
+        type: DELIVERY_STOP_UPDATED,
         occurredAt: this.at(),
         idempotencyKey: `stop:${this.routeId}:${next.stopId}:${next.state}`,
         source: this.routeId,
@@ -416,7 +447,7 @@ export class RouteSession {
     this.outbox.enqueue(
       makeEvent({
         id: `${this.routeId}:settled`,
-        type: 'RouteSettled',
+        type: ROUTE_SETTLED,
         occurredAt: this.at(),
         idempotencyKey: `settle:${this.routeId}`,
         source: this.routeId,
@@ -484,7 +515,7 @@ export class RouteSession {
     this.outbox.enqueue(
       makeEvent({
         id: `${this.routeId}:handover`,
-        type: 'DriverCashHandedOver',
+        type: DRIVER_CASH_HANDED_OVER,
         occurredAt: input.at,
         idempotencyKey: `handover:${this.routeId}`,
         source: this.routeId,
@@ -492,5 +523,50 @@ export class RouteSession {
       }),
     );
     return handover;
+  }
+
+  // ── Where each piece of work has got to (SP-3c-ii · the shared device → box → head office leg) ────────
+
+  /** Fold in the store computer's word on the items it holds (asked over `/lane/outbox/status`). */
+  noteBoxStatus(statuses: readonly BoxItemStatus[]): void {
+    for (const s of statuses) this.boxWord.set(s.key, s);
+  }
+
+  /** The keys the box has taken — the ones worth asking it about. */
+  handedKeys(): readonly string[] {
+    return this.outbox.all().filter((item) => item.state === 'acknowledged').map((item) => item.key);
+  }
+
+  /**
+   * Every stop outcome, the settlement and the handover this phone queued, newest first, each with one of the five shared
+   * state words. The device's own "acknowledged" means the BOX has it — only the box's word says head office does (P-08).
+   * A refusal carries its reason, because a person has to act on it. Never a customer's name or number (§31).
+   */
+  sentWork(): readonly SentWork[] {
+    return this.outbox.all()
+      .flatMap((item): SentWork[] => {
+        const box = this.boxWord.get(item.key);
+        const common = { at: item.event.occurredAt, state: deviceItemState(item, box), attempts: item.attempts } as const;
+        const reason = deviceItemReason(item, box);
+        const withReason = reason === undefined ? {} : { reason };
+        if (item.event.type === DELIVERY_STOP_UPDATED) {
+          const p = item.event.payload as { stopId: string; orderRef: string; state: DeliveryState; codCollectedMinor: number; currency: string; failureReason: string | null };
+          const area = this.stops.find((s) => s.stopId === p.stopId)?.area ?? p.stopId;
+          const money = p.codCollectedMinor > 0 ? ` · ${p.codCollectedMinor} ${p.currency}` : '';
+          const why = p.failureReason === null ? '' : ` · ${p.failureReason}`;
+          return [{ kind: 'stop', id: p.stopId, what: `${area} · ${p.orderRef}`, detail: `${p.state}${money}${why}`, ...common, ...withReason }];
+        }
+        if (item.event.type === ROUTE_SETTLED) {
+          const p = item.event.payload as { routeId: string; expectedMinor: number; collectedMinor: number; exceptionCount: number; currency: string };
+          return [{ kind: 'settlement', id: p.routeId, what: p.routeId, detail: `${p.collectedMinor} of ${p.expectedMinor} ${p.currency} · ${p.exceptionCount} ${p.exceptionCount === 1 ? 'exception' : 'exceptions'}`, ...common, ...withReason }];
+        }
+        if (item.event.type === DRIVER_CASH_HANDED_OVER) {
+          const p = item.event.payload as CashHandover;
+          const variance = p.varianceMinor === 0 ? 'balanced' : p.varianceMinor > 0 ? `over ${p.varianceMinor}` : `short ${-p.varianceMinor}`;
+          return [{ kind: 'handover', id: p.routeId, what: p.routeId, detail: `counted ${p.countedMinor} ${p.currency} · ${variance}${p.material ? ' · cash office' : ''}`, ...common, ...withReason }];
+        }
+        return [];
+      })
+      .reverse();
   }
 }

@@ -187,6 +187,16 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // cannot read is 400 → dead-lettered here by name for a person (hard rule #6). Nothing on these routes moves stock.
   PickLineResolved: '/v1/fulfilment/waves/:waveId/lines/:lineId/synced',
   WavePacked: '/v1/fulfilment/waves/:waveId/packed/synced',
+  // SP-3c-ii (F11's driver half · M19-FR-03/04 · M23): the DRIVER handheld's work, relayed by the box from its device socket.
+  // A stop's outcome lands on head office's route register with the DRIVER re-verified and is mapped onto the ORDER's
+  // delivery lifecycle through the same state machine the direct route runs (a step the order cannot take from where head
+  // office has it is recorded and SAID, never applied blindly); the settlement and the counted cash handover are compared
+  // with the stops head office holds and every disagreement is said; a material handover variance is flagged for the cash
+  // office. Idempotent on the handheld's own keys. `routeId` / `stopId` are plain top-level payload fields matching the
+  // params; a payload head office cannot read is 400 → dead-lettered here by name for a person (hard rule #6).
+  DeliveryStopUpdated: '/v1/delivery/routes/:routeId/stops/:stopId/synced',
+  RouteSettled: '/v1/delivery/routes/:routeId/settled/synced',
+  DriverCashHandedOver: '/v1/delivery/routes/:routeId/handover/synced',
   // A delivery booked in and a blind count captured on the manager's screen (SP-2b · F11 · M07-FR-01 · M09-FR-04).
   // Same path as the decision: device queue → box → here under the store token → a synced route that re-verifies the
   // RECEIVER / COUNTER and owns every judgement the device must not make (rules, cost, expected quantity, threshold).

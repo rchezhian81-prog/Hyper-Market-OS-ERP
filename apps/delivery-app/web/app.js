@@ -41,6 +41,7 @@ const WORDS = {
     cashCarrying: 'Cash you are carrying', collect: 'Collect', prepaid: 'Already paid',
     delivered: 'Delivered', couldNotDeliver: 'Could not deliver', endOfShift: 'End of shift — hand cash over',
     partlyDelivered: 'Partly delivered', partialOk: 'Recorded as partly delivered',
+    sentHeading: 'Sent from this phone', nothingSent: 'nothing sent yet',
     cancel: 'Cancel', ok: 'OK', read: 'Please read this',
     tapStopFirst: 'Tap the stop you are at first.',
     howProved: 'How did you prove the delivery?', photo: 'Photo at the door', otp: 'Customer’s OTP',
@@ -78,6 +79,7 @@ const WORDS = {
     cashCarrying: 'நீங்கள் வைத்திருக்கும் பணம்', collect: 'வாங்க வேண்டியது', prepaid: 'ஏற்கனவே செலுத்தப்பட்டது',
     delivered: 'கொடுக்கப்பட்டது', couldNotDeliver: 'கொடுக்க முடியவில்லை', endOfShift: 'ஷிப்ட் முடிவு — பணத்தை ஒப்படை',
     partlyDelivered: 'ஓரளவு கொடுக்கப்பட்டது', partialOk: 'ஓரளவு கொடுக்கப்பட்டதாக பதிவானது',
+    sentHeading: 'இந்த ஃபோனிலிருந்து அனுப்பப்பட்டவை', nothingSent: 'இன்னும் எதுவும் அனுப்பப்படவில்லை',
     cancel: 'ரத்து', ok: 'சரி', read: 'இதைப் படிக்கவும்',
     tapStopFirst: 'முதலில் நீங்கள் இருக்கும் நிறுத்தத்தைத் தொடவும்.',
     howProved: 'கொடுத்ததை எப்படி நிரூபித்தீர்கள்?', photo: 'வாசலில் புகைப்படம்', otp: 'வாடிக்கையாளரின் OTP',
@@ -119,6 +121,34 @@ const STATE_WORDS = {
   partially_delivered: { en: 'Partly delivered', ta: 'ஓரளவு கொடுக்கப்பட்டது' },
   failed: { en: 'Not delivered', ta: 'கொடுக்கப்படவில்லை' },
   returned_to_origin: { en: 'Back to store', ta: 'கடைக்குத் திரும்பியது' },
+};
+
+/**
+ * Where a queued outcome, the settlement or the handover is — the FIVE shared device states
+ * (`packages/sync/src/device-relay.ts`), in both languages (SP-3c-ii). The phone's own "saved" is never shown as "sent":
+ * only the store computer's word says head office has it (P-08). For a driver carrying cash that is the difference between a
+ * record and a rumour. A guardrail binds these to the shared list.
+ */
+const SENT_STATE_WORDS = {
+  saved_here: { en: 'Saved on this phone — not yet with the store computer', ta: 'இந்த ஃபோனில் சேமிக்கப்பட்டது — கடை கணினிக்கு இன்னும் செல்லவில்லை' },
+  retrying: { en: 'Retrying — the store computer did not take it yet', ta: 'மீண்டும் முயற்சி — கடை கணினி இன்னும் ஏற்கவில்லை' },
+  handed_to_box: { en: 'With the store computer', ta: 'கடை கணினியிடம் உள்ளது' },
+  posted: { en: 'Posted at head office', ta: 'தலைமை அலுவலகத்தில் பதிவானது' },
+  refused: { en: 'Refused — a person must look', ta: 'மறுக்கப்பட்டது — ஒருவர் பார்க்க வேண்டும்' },
+};
+/** The same five, short, for the badge's count line. */
+const STATE_SHORT = {
+  saved_here: { en: 'saved here', ta: 'இங்கே சேமிப்பு' },
+  retrying: { en: 'retrying', ta: 'மீண்டும் முயற்சி' },
+  handed_to_box: { en: 'with the store computer', ta: 'கடை கணினியிடம்' },
+  posted: { en: 'posted', ta: 'பதிவாகியது' },
+  refused: { en: 'refused', ta: 'மறுக்கப்பட்டது' },
+};
+/** The kinds of work this phone sends (the session's `SENT_WORK_KINDS`). */
+const KIND_WORDS = {
+  stop: { en: 'Stop', ta: 'நிறுத்தம்' },
+  settlement: { en: 'Shift settled', ta: 'ஷிப்ட் கணக்கு' },
+  handover: { en: 'Cash handed over', ta: 'பணம் ஒப்படைப்பு' },
 };
 
 /** Why a delivery failed. Chosen, never typed — it routes the order and is reported on later. */
@@ -338,9 +368,62 @@ function currentStop() {
   return session.route().find((s) => !TERMINAL.has(s.state)) ?? null;
 }
 
+/**
+ * Where each outcome, the settlement and the handover have got to (SP-3c-ii): read from the DURABLE device queue plus the
+ * store computer's own word, so the list is the same after the app is closed — the proof a delivery and its cash were not
+ * lost with the phone. A refusal carries its reason, because a person has to act on it. Nothing here is a rule.
+ */
+function renderSent() {
+  const sent = real && typeof real.sentWork === 'function' ? real.sentWork().slice(0, 12) : [];
+  el('sent-heading').textContent = t('sentHeading');
+  el('sent-heading').hidden = sent.length === 0;
+  const host = el('sent-work');
+  host.textContent = '';
+  for (const w of sent) {
+    const row = document.createElement('div');
+    row.className = `sent ${w.state}`;
+    row.dataset.state = w.state;
+    row.dataset.kind = w.kind;
+    row.dataset.id = w.id;
+    const what = document.createElement('div');
+    what.className = 'what';
+    what.textContent = `${words(KIND_WORDS, w.kind)} · ${w.what} — ${w.detail}`;
+    const state = document.createElement('div');
+    state.className = `pill ${w.state}`;
+    state.textContent = words(SENT_STATE_WORDS, w.state);
+    row.append(what, state);
+    if (w.reason) {
+      const why = document.createElement('div');
+      why.className = 'why';
+      why.textContent = w.reason;
+      row.append(why);
+    }
+    host.append(row);
+  }
+}
+
 function renderQueue() {
+  renderSent();
   paintBadge();
 }
+
+/**
+ * Hand the queued work to the store computer and learn where it has got to (SP-3c-ii). The relay is the composition root's
+ * (`window.driverRelay`), present only when the box served this page over its device socket — on the shop wifi, before the
+ * van leaves and when it is back. Called after every accepted action and every ten seconds; out on the road the calls simply
+ * fail, the queue is untouched, and the state words say "saved here".
+ */
+async function syncToBox() {
+  const relay = window.driverRelay;
+  if (!relay) return;
+  try {
+    await relay.syncNow();
+  } catch {
+    /* the queue is untouched; the state words say "saved here" */
+  }
+  render();
+}
+setInterval(() => { void syncToBox(); }, 10_000);
 
 function render() {
   const stops = session.route();
@@ -458,6 +541,7 @@ el('deliver').addEventListener('click', async () => {
     if (stop.state === 'assigned') session.depart(stop.stopId);
     session.deliver(stop.stopId, { kind, ref }, { codCollectedMinor: collected, codMethod: method });
     tell(t('deliveredOk'), `${stop.area}${collected > 0 ? ` · ${inr(collected)}` : ''}`, true);
+    void syncToBox();
   } catch (e) {
     tell(t('read'), e && e.name === 'ProofRequiredError' ? t('noProof') : String(e && e.message ? e.message : e));
   }
@@ -524,6 +608,7 @@ el('delivered-partial').addEventListener('click', async () => {
     if (stop.state === 'assigned') session.depart(stop.stopId);
     session.deliverPartial(stop.stopId, { kind, ref }, { codCollectedMinor: collected, codMethod: method });
     tell(t('partialOk'), `${stop.area}${collected > 0 ? ` · ${inr(collected)}` : ''}`, true);
+    void syncToBox();
   } catch (e) {
     tell(t('read'), e && e.name === 'ProofRequiredError' ? t('noProof') : String(e && e.message ? e.message : e));
   }
@@ -564,6 +649,7 @@ el('failed').addEventListener('click', async () => {
     if (next === 'reattempt') session.reattempt(stop.stopId);
     if (next === 'rto') session.returnToOrigin(stop.stopId);
     tell(t('failedOk'), stop.area, true);
+    void syncToBox();
   } catch (e) {
     tell(t('read'), String(e && e.message ? e.message : e));
   }
@@ -582,6 +668,9 @@ el('handover').addEventListener('click', async () => {
   if (counted === null) return;
 
   try {
+    // End of shift is when the day's COD is reconciled (M19-FR-04): the settlement — expected against collected, every short
+    // or over a valued exception — is queued FIRST, then the counted handover against it. Both travel whatever they say.
+    if (typeof session.settle === 'function') session.settle();
     const result = session.handOver({
       countedMinor: counted,
       at: new Date().toISOString(),
@@ -593,6 +682,7 @@ el('handover').addEventListener('click', async () => {
         : `${t('short')} ${inr(-variance)}`;
     // The recorded figure may be shown NOW — it can no longer influence what was counted.
     tell(headline, result.material ? t('materialVariance') : `${t('counted')}: ${inr(counted)}`, !result.material);
+    void syncToBox();
   } catch (e) {
     tell(t('read'), String(e && e.message ? e.message : e));
   }
@@ -628,24 +718,39 @@ function paintBadge() {
   const dot = el('queue-dot');
   const unsent = outbox === null ? 0 : outbox.unsentCount();
   dot.classList.remove('waiting', 'error', 'idle', 'degraded');
-  // Words as well as a dot — one man in twelve cannot tell the two colours apart.
-  el('queue-text').textContent = unsent === 0 ? t('allSent') : `${unsent} ${t('waiting')}`;
-  let words;
-  if (laneBase() === null) { dot.classList.add('idle'); words = t('noBoxLink'); }
-  else if (!box.asked) { dot.classList.add('idle'); words = t('checkingBox'); }
-  else if (!box.reachable) { dot.classList.add('error'); words = t('boxNotAnswering'); }
+  // Words as well as a dot — one man in twelve cannot tell the two colours apart. The first line counts THIS phone's work by
+  // where each piece is (SP-3c-ii): saved here · retrying · with the store computer · posted · refused — never a bare "sent"
+  // (P-08). Without a session it falls back to the queue's own unsent count.
+  const sent = real && typeof real.sentWork === 'function' ? real.sentWork() : null;
+  if (sent === null) el('queue-text').textContent = unsent === 0 ? t('allSent') : `${unsent} ${t('waiting')}`;
+  else if (sent.length === 0) el('queue-text').textContent = t('nothingSent');
+  else {
+    const counts = {};
+    for (const w of sent) counts[w.state] = (counts[w.state] ?? 0) + 1;
+    const parts = [];
+    for (const k of Object.keys(STATE_SHORT)) if (counts[k]) parts.push(`${counts[k]} ${words(STATE_SHORT, k)}`);
+    el('queue-text').textContent = parts.join(' · ');
+  }
+  let refusedCount = 0;
+  for (const w of sent ?? []) if (w.state === 'refused') refusedCount += 1;
+  let boxWords;
+  if (laneBase() === null) { dot.classList.add('idle'); boxWords = t('noBoxLink'); }
+  else if (!box.asked) { dot.classList.add('idle'); boxWords = t('checkingBox'); }
+  else if (!box.reachable) { dot.classList.add('error'); boxWords = t('boxNotAnswering'); }
   else {
     const s = box.status;
     const when = s.lastContactAt ? ` · ${t('lastContact')} ${clock(s.lastContactAt)}` : '';
-    if (s.cloud === 'online') words = `${t('boxOnline')}${when}`;
+    if (s.cloud === 'online') boxWords = `${t('boxOnline')}${when}`;
     else {
       dot.classList.add(s.cloud === 'unknown' || s.cloud === 'starting' ? 'idle' : 'degraded');
-      words = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
+      boxWords = `${s.cloud === 'offline' ? t('noCloud') : s.cloud === 'not_configured' ? t('cloudNotSetUp') : t('cloudUnknown')}${when}`;
     }
   }
-  // Work waiting on this device shows as waiting unless the store computer itself is down — that is worse.
+  // Work waiting on this device shows as waiting unless the store computer itself is down — that is worse; a refusal is
+  // worse still, because a person has to act on it.
   if (unsent > 0 && !dot.classList.contains('error')) { dot.classList.remove('idle', 'degraded'); dot.classList.add('waiting'); }
-  el('box-text').textContent = words;
+  if (refusedCount > 0) { dot.classList.remove('idle', 'degraded', 'waiting'); dot.classList.add('error'); }
+  el('box-text').textContent = boxWords;
 }
 
 async function refreshBadge() {

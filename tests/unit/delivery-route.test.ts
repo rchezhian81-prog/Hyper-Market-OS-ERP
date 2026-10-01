@@ -3,6 +3,10 @@ import {
   RouteSession,
   NoSuchStopError,
   ReasonRequiredError,
+  SENT_WORK_KINDS,
+  DELIVERY_STOP_UPDATED,
+  ROUTE_SETTLED,
+  DRIVER_CASH_HANDED_OVER,
   type StopInput,
 } from '../../apps/delivery-app/src/index';
 import { ProofRequiredError, InvalidDeliveryTransitionError, CardDataError } from '../../packages/fulfilment/src/index';
@@ -216,5 +220,61 @@ describe('RouteSession — picked-up, arrived and partial delivery (M19-FR-01/FR
     const settlement = route.settle();
     expect(settlement.matchedCount).toBe(1); // reconciles to the ₹100 actually taken
     expect(settlement.exceptionCount).toBe(0);
+  });
+});
+
+// ── SP-3c-ii: the phone can say where each piece of work has got to — from the durable queue and the box's word ──────
+
+describe('where each piece of work is — the five shared device states (SP-3c-ii)', () => {
+  it('lists every stop outcome, the settlement and the handover newest first as "saved here"; moves to "with the store computer" when the box takes them; "posted" / "refused" only on the box\'s word', () => {
+    const outbox = new SyncOutbox();
+    const route = newRoute(undefined, outbox);
+    expect(route.sentWork()).toEqual([]);
+    expect(route.handedKeys()).toEqual([]);
+    route.depart('s1');
+    route.deliver('s1', OTP, { codCollectedMinor: 250_00, codMethod: 'cash' });
+    route.depart('s2');
+    route.fail('s2', 'nobody_home');
+    route.settle();
+    route.handOver({ countedMinor: 240_00, at: '2026-08-02T18:00:00Z', toleranceMinor: 10_000 });
+
+    const before = route.sentWork();
+    expect(before.map((w) => [w.kind, w.id, w.state])).toEqual([
+      ['handover', 'route-1', 'saved_here'],
+      ['settlement', 'route-1', 'saved_here'],
+      ['stop', 's2', 'saved_here'],
+      ['stop', 's2', 'saved_here'],
+      ['stop', 's1', 'saved_here'],
+      ['stop', 's1', 'saved_here'],
+    ]);
+    expect(before[4]).toMatchObject({ what: 'Anna Nagar · ORD-1', detail: 'delivered · 25000 INR' });
+    expect(before[5]).toMatchObject({ what: 'Anna Nagar · ORD-1', detail: 'out_for_delivery' });
+    expect(before[2]).toMatchObject({ what: 'Gandhipuram · ORD-2', detail: 'failed · nobody_home' });
+    expect(before[1]).toMatchObject({ what: 'route-1', detail: '25000 of 25000 INR · 0 exceptions' });
+    expect(before[0]).toMatchObject({ what: 'route-1', detail: 'counted 24000 INR · short 1000' });
+    for (const kind of SENT_WORK_KINDS) expect(before.some((w) => w.kind === kind)).toBe(true);
+    // Never a customer on the list (§31).
+    expect(JSON.stringify(before)).not.toMatch(/customer|phone|address/i);
+
+    // The box takes the stop outcomes (the device's "acknowledged" = the box has them — never "posted" on the device's say-so).
+    const stopKeys = outbox.pending().filter((i) => i.event.type === DELIVERY_STOP_UPDATED).map((i) => i.key);
+    for (const k of stopKeys) outbox.acknowledge(k);
+    expect(route.handedKeys()).toEqual(stopKeys);
+    expect(route.sentWork().map((w) => w.state)).toEqual(['saved_here', 'saved_here', 'handed_to_box', 'handed_to_box', 'handed_to_box', 'handed_to_box']);
+
+    // The box's word: the delivery posted at head office; the failure refused with the reason.
+    route.noteBoxStatus([
+      { key: 'stop:route-1:s1:delivered', state: 'posted', attempts: 1 },
+      { key: 'stop:route-1:s2:failed', state: 'refused', attempts: 1, reason: 'not_readable_as_a_stop_outcome' },
+    ]);
+    const after = route.sentWork();
+    expect(after.find((w) => w.id === 's1' && w.detail.startsWith('delivered'))?.state).toBe('posted');
+    expect(after.find((w) => w.id === 's2' && w.detail.startsWith('failed'))).toMatchObject({ state: 'refused', reason: 'not_readable_as_a_stop_outcome' });
+
+    // A settlement the box refuses outright is dead-lettered on the device, with the reason — and stays listed.
+    const settleKey = outbox.pending().find((i) => i.event.type === ROUTE_SETTLED)!.key;
+    outbox.deadLetter(settleKey, 'RouteSettled is not a record this box relays for picker');
+    expect(route.sentWork()[1]).toMatchObject({ kind: 'settlement', state: 'refused', reason: 'RouteSettled is not a record this box relays for picker' });
+    expect(outbox.pending().some((i) => i.event.type === DRIVER_CASH_HANDED_OVER)).toBe(true);
   });
 });

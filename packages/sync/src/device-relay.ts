@@ -74,6 +74,13 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // their grants and keeps a wave register; a payload it cannot read dead-letters visibly. Nothing here moves stock.
   PickLineResolved: { surfaces: ['picker'] },
   WavePacked: { surfaces: ['picker'] },
+  // SP-3c-ii (F11's driver half): the DRIVER handheld's work over the same socket. A stop's outcome (departed, at the door,
+  // delivered with proof KIND and the cash taken, partly delivered, failed with a reason, reattempted, returned), the route's
+  // end-of-shift settlement and the counted cash handover. Head office re-verifies the DRIVER, maps a stop onto the order's
+  // lifecycle, compares the settlement and the handover with the stops it holds, and says every disagreement on the record.
+  DeliveryStopUpdated: { surfaces: ['driver'] },
+  RouteSettled: { surfaces: ['driver'] },
+  DriverCashHandedOver: { surfaces: ['driver'] },
 });
 
 /**
