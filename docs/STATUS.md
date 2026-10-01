@@ -5,6 +5,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Demo deployment pipeline and the store practice environment — Option 1 (1 October 2026)
+
+**Owner direction (1 Oct 2026, in writing): Option 1** — connect the existing automatic deployment to the already-purchased
+demo VPS, deploy the current tested `main`, verify it, prepare a complete store practice environment on synthetic data,
+prove the deployed workflow, record staff/device results under SP-10; no new server, no rebuilt deployment system; the
+requirements register continues; completed development is not repeated.
+
+- **DP-1 — the existing setup confirmed (EXECUTED).** `main` = `ed35952` (PR #670), pipeline green; the release job's
+  deploy step is SKIPPED on every merge because the GitHub `demo` environment holds no `DEPLOY_*` secrets. The demo box was
+  stood up on 28 Sep at `e72b4ae`, 78 commits behind `main`, before the release script, the compose `proxy`, migrations
+  0012/0013 and the application database role existed. The stand-up's server-side work (demo sign-in page, data bridge,
+  the fixed-UUID demo tenant, HOSTED-DEMO-RESULTS, ADR 0016) was NEVER pushed — `origin` has no `claude/pilot-hosted-standup`
+  branch and no `pilot-rc-1` tag — so it cannot be reconciled from here; the administrator pushes it (runbook §1) and it is
+  reviewed and merged on receipt. `main`'s pilot seed still names the demo tenant with the label `pilot-demo` (the UUID fix
+  lives on the box).
+- **DP-2 — automatic deployment connection (PREPARED).** `docs/runbooks/demo-practice-environment.md` §2: the ordered
+  one-time administrator checklist with the exact secret names (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT`, `DEPLOY_SSH_KEY`,
+  `DEPLOY_HOST_KEY`) and what the box, stood up before Stage F, must gain first (checkout to `main`; `APP_DB_USER` and the
+  app-role `DATABASE_URL`; `SRE_PUBLIC_HOST` / `SRE_TLS`; ports 443/80 freed for the stack's own proxy; the application role
+  created on the existing database; a backup before the first upgrade). Nothing here can be executed from the build
+  session: it cannot reach the box or GitHub's environment secrets, and no secret value may pass through it.
+- **DP-3 — deploy and verify (PREPARED).** The CI-passing commit to deploy is `ed35952`; §3 gives the verification
+  commands (release log line, checkout commit, `/readyz`, migrations 13 applied / 0 on re-run, `standup:check` GREEN, the
+  public origin with the DEMO banner, staff screens 404 by name) and the rollback command. **Not executed:** no deployment
+  has happened; a green workflow with a skipped deploy step is recorded as exactly that.
+- **DP-4 — the store practice environment (PREPARED; physical steps named).** §4: the store PC install at the same commit
+  with `--from-compose-env` (tenant, pack signing key and cloud address copied by the installer, the token minted on the box
+  and placed by hand), the practice store pack (`managerPolicy.userId`, the warehouse assignment, the picker's wave, the
+  driver's route, the handheld fleet), phone enrolment, what stays disabled. Physical: a shop PC with a scanner, a
+  staff-only wifi, two or three Android phones.
+- **DP-5 — the deployed-workflow smoke test (EXECUTED here; PREPARED for the box).** `scripts/demo-smoke.ts`
+  (`pnpm run demo:smoke`): a fresh synthetic tenant through the operator bootstrap, then supplier → order → delivery with
+  quarantine → QC return → indent → approval → issue (in transit) → independent receipt → the till sells one by barcode (a
+  real store box in-process against the deployed API) → the shelf falls by ONE → a resale return puts it back → float,
+  pickup, blind close → cash office balanced, no over/short → invoice, debit note, payables and day book balanced, ledger
+  = register → dashboard → the same sale re-sent banks once. Sixteen PASS/FAIL steps, exit code, a report file with the
+  checkout commit; no secret printed. Proven on the real stack: `tests/integration/the-demo-smoke-script-proves-the-loop.test.ts`
+  (16/16; a second run in the same tenant fails honestly at the first authenticated write). Bundled by
+  `scripts/build-service.mjs tools`.
+- **DP-6 — practice script, SP-10 register, records (EXECUTED).** §7 role-by-role script; `docs/registers/sp10-staff-uat.md`
+  (0 sessions, software version per session mandatory; deployment and automated tests never fill a row); §6 access
+  without secrets; §9 limitations.
+- **Blocked / needs the administrator:** every PREPARED step above. **Next in software** (unchanged): the SP-3c recorded
+  limitations and the owner's choice on the driver run reconciliation; SP-10 stays PENDING until a session is recorded.
+
 ## Store operations first — requirement audit, then E2E completion (30 September 2026)
 
 **Owner direction (30 Sep 2026, in writing): Option 2.** Fix the manager queue BEFORE W2, on the shared synchronisation
