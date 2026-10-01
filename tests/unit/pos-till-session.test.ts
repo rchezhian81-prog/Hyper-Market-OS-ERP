@@ -240,6 +240,16 @@ describe('a refund is durable on this till\'s edge before any cash is handed bac
     });
   });
 
+  it('writes the EXCHANGE settlement onto the edge record with the exchange tender (SP-9b-ii), exactly as the cloud route reads it', async () => {
+    const posted: Record<string, unknown>[] = [];
+    const confirming: DurableReturnWrite = async (_id, record) => { posted.push(JSON.parse(record) as Record<string, unknown>); return { committed: true, durable: true, detail: 'on disk', laneMessage: 'ok' }; };
+    const { till } = newTill(confirming);
+    const exchange = { replacementSaleId: 'S-X', replacementTotalMinor: 70_000, appliedMinor: 64_000, balance: 'top_up' as const, balanceMinor: 6_000, topUpTenders: [{ kind: 'cash' as const, amountMinor: 6_000 }] };
+    const result = await till.refund({ ...REFUND, refundTender: 'exchange', approvalThresholdMinor: 0, exchange });
+    expect(result).toMatchObject({ refundTender: 'exchange', refundStatus: 'settled', requiredApproval: false });
+    expect(posted[0]).toMatchObject({ returnId: 'ret-2', refundTender: 'exchange', refundMinor: 64_000, exchange });
+  });
+
   it('refuses the refund — hands back NO cash — when the edge would not record it durably', async () => {
     const refusing: DurableReturnWrite = async () => ({
       committed: false, refusedBecause: 'could_not_write_durably', detail: 'disk full',

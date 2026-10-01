@@ -116,6 +116,30 @@ describe('the cash a sale puts in the drawer', () => {
   });
 });
 
+describe('the cash an EXCHANGE moves at the drawer (SP-9b-ii · M14-FR-02)', () => {
+  it('counts only a balance refunded in cash as cash out; the credit never left the drawer, and a cash top-up came in on the replacement sale', () => {
+    const figures = shiftFigures({
+      state: state([float('m1', 100_000, at(9))]), laneId: LANE, closedAt: at(20),
+      sales: [
+        // The replacement sale on a top-up exchange: ₹700 paid with ₹640 of exchange credit and ₹60 cash → ₹60 into the drawer.
+        sale('S-X1', at(10), 70_000, [{ kind: 'exchange_credit', minor: 64_000 }, { kind: 'cash', minor: 6_000 }]),
+      ],
+      returns: [
+        // The returning half of that exchange: ₹640 credited, nothing out — refundTender 'exchange', balance top_up.
+        { returnId: 'X1', laneId: LANE, processedAt: at(10), refundMinor: 64_000, refundTender: 'exchange', exchange: { balance: 'top_up', balanceMinor: 6_000, topUpTenders: [{ kind: 'cash', amountMinor: 6_000 }] } },
+        // An exchange where the shop refunded a ₹40 balance in cash → ₹40 out, not the ₹640 credited.
+        { returnId: 'X2', laneId: LANE, processedAt: at(11), refundMinor: 64_000, refundTender: 'exchange', exchange: { balance: 'refund', balanceMinor: 4_000, balanceTender: 'cash' } },
+        // The same, refunded to a card: nothing out of the drawer.
+        { returnId: 'X3', laneId: LANE, processedAt: at(12), refundMinor: 64_000, refundTender: 'exchange', exchange: { balance: 'refund', balanceMinor: 4_000, balanceTender: 'card' } },
+        // A plain cash refund still counts in full.
+        { returnId: 'R-9', laneId: LANE, processedAt: at(13), refundMinor: 8_000, refundTender: 'cash' },
+      ],
+    });
+    expect(figures.cashSalesMinor).toBe(6_000);
+    expect(figures.cashRefundsMinor).toBe(4_000 + 8_000);
+  });
+});
+
 describe('the shift\'s figures come from what the BOX recorded, never from the till', () => {
   const opened = [float('m1', 200_000, at(9)), pickup('m2', 50_000, at(13)), { ...float('m3', 10_000, at(14)), movementKind: 'loan' as const }];
 

@@ -310,6 +310,24 @@ export class PosSession {
     return this.activeLines().map((l) => this.priceOf(l));
   }
 
+  /**
+   * The active basket as a REPLACEMENT on an exchange (SP-9b-ii · M13-FR-03): each line as rung — unit price, quantity,
+   * the promotion discount attributed to it and what it actually charged — so the exchange engine can check the goods
+   * going out against the credit for the goods coming back with the same arithmetic the sale record will carry.
+   */
+  replacementLines(): readonly { readonly productId: string; readonly uom: string; readonly quantityMinor: number; readonly unitPriceMinor: number; readonly lineTotalMinor: number; readonly discountMinor?: number }[] {
+    const perLineDiscount = this.promotionDiscountByLine();
+    return this.activeLines().map((l) => {
+      const discountMinor = perLineDiscount.get(l.lineId) ?? 0;
+      return {
+        productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor,
+        unitPriceMinor: l.unitPrice.minor,
+        lineTotalMinor: this.priceOf(l).total.minor - discountMinor,
+        ...(discountMinor > 0 ? { discountMinor } : {}),
+      };
+    });
+  }
+
   /** The running total shown on screen — the largest element on the Sale screen. */
   totals(): BasketTotals {
     const currency = this.config.currency;

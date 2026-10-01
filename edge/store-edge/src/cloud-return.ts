@@ -57,7 +57,45 @@ export interface CloudReturn {
    *  (stated as assumed, P-08) — a shelf nobody sells from, so the store's own figure stays short. A record that
    *  declares one keeps its own; a box that knows no store stamps nothing and the cloud's stated fallback stands. */
   readonly locationId?: string;
+  /** Present only when this return is the returning half of an EXCHANGE taken at the till (SP-9b-ii · M13-FR-03):
+   *  `refundMinor` is then the value credited against the bill and `refundTender` is `exchange`; this says which
+   *  replacement sale the credit paid for, how much was applied, and which way (and how) the balance moved. Carried
+   *  as the lane wrote it, every amount read defensively; the cloud records it on the return and the day book clears
+   *  the `exchange_credit`. Absent on a plain refund. */
+  readonly exchange?: CloudExchangeSettlement;
   readonly lines: readonly CloudReturnLine[];
+}
+
+export interface CloudExchangeSettlement {
+  readonly exchangeId: string;
+  readonly replacementSaleId: string;
+  readonly replacementTotalMinor: number;
+  readonly appliedMinor: number;
+  readonly balance: string;
+  readonly balanceMinor: number;
+  readonly balanceTender?: string;
+  readonly topUpTenders?: readonly { readonly kind: string; readonly amountMinor: number }[];
+}
+
+function toCloudExchange(v: unknown, returnId: string): CloudExchangeSettlement | undefined {
+  if (v === null || typeof v !== 'object') return undefined;
+  const x = v as Rec;
+  const replacementSaleId = str(x['replacementSaleId']);
+  if (replacementSaleId === undefined) return undefined; // not an exchange block we can relay — the cloud sees a plain 'exchange'-tender return and flags it
+  const balanceTender = str(x['balanceTender']);
+  const topUp = Array.isArray(x['topUpTenders'])
+    ? (x['topUpTenders'] as unknown[]).map((t) => { const r = (t ?? {}) as Rec; return { kind: str(r['kind']) ?? '', amountMinor: int(r['amountMinor']) ?? 0 }; })
+    : undefined;
+  return {
+    exchangeId: str(x['exchangeId']) ?? returnId,
+    replacementSaleId,
+    replacementTotalMinor: int(x['replacementTotalMinor']) ?? 0,
+    appliedMinor: int(x['appliedMinor']) ?? 0,
+    balance: str(x['balance']) ?? '',
+    balanceMinor: int(x['balanceMinor']) ?? 0,
+    ...(balanceTender === undefined ? {} : { balanceTender }),
+    ...(topUp === undefined ? {} : { topUpTenders: topUp }),
+  };
 }
 
 function toCloudLine(l: unknown): CloudReturnLine {
@@ -85,11 +123,13 @@ export function toCloudReturn(record: unknown, storeId?: string): CloudReturn {
   const customerRef = str(r['customerRef']);
   const laneId = str(r['laneId']);
   const locationId = str(r['locationId']) ?? str(storeId);
+  const returnId = str(r['returnId']) ?? str(r['id']) ?? '';
+  const exchange = toCloudExchange(r['exchange'], returnId);
   const lines: readonly CloudReturnLine[] = Array.isArray(r['lines'])
     ? (r['lines'] as unknown[]).map(toCloudLine)
     : [];
   return {
-    returnId: str(r['returnId']) ?? str(r['id']) ?? '',
+    returnId,
     // Preserve a genuine null (no-receipt); only an absent/empty value falls back to null.
     originalSaleId: originalSaleId ?? null,
     // The no-receipt flag is the routing key — carried only when the engine set it true (M13-FR-01).
@@ -107,6 +147,8 @@ export function toCloudReturn(record: unknown, storeId?: string): CloudReturn {
     ...(customerRef === undefined ? {} : { customerRef }),
     // The store the unit goes back to (F17) — the box's own, unless the record declared one. Absent when neither knows.
     ...(locationId === undefined ? {} : { locationId }),
+    // The exchange's settlement, when this return is one (SP-9b-ii) — carried, never invented.
+    ...(exchange === undefined ? {} : { exchange }),
     lines,
   };
 }

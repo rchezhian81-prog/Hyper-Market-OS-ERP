@@ -14,15 +14,14 @@
 // no-receipt cap, the no-receipt path is UNAVAILABLE (fail safe) rather than defaulted to a guess.
 
 import { money, type CurrencyCode } from '../../../packages/contracts/src/money';
-import type { TenderKind } from '../../../packages/contracts/src/enums';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import {
   returnRegister, returnableLines, alreadyRefundedMinor,
   type OriginalSale, type ReturnableLine, type RecordedReturn,
 } from '../../../packages/returns/src/return-register';
 import {
-  refundRequiresApproval, type CommitReturnInput, type CommittedReturn, type Disposition,
-  EmptyReturnError, MissingReasonError, MissingOriginalSaleError,
+  refundRequiresApproval, type CommitReturnInput, type CommittedReturn, type Disposition, type RefundTender, type ExchangeSettlementInput,
+  EmptyReturnError, MissingReasonError, MissingOriginalSaleError, InvalidExchangeError,
   InvalidReturnQuantityError, OverReturnError, ExcessRefundError, ApprovalRequiredError,
 } from '../../../packages/returns/src/returns';
 import {
@@ -65,9 +64,14 @@ export interface RefundDraft {
   readonly noReceipt?: boolean;
   readonly reasonCode: string;
   readonly lines: readonly RefundLineChoice[];
-  /** The amount to give back, in minor units. Shown, not typed beyond the cap the screen enforces. */
+  /** The amount to give back, in minor units. Shown, not typed beyond the cap the screen enforces. On an
+   *  exchange, the value credited against the bill for the goods coming back. */
   readonly refundMinor: number;
-  readonly refundTender: TenderKind;
+  readonly refundTender: RefundTender;
+  /** Present when this return is the returning half of an EXCHANGE (SP-9b-ii · M13-FR-03): the replacement sale,
+   *  what was applied and which way the balance went. The engine checks it adds up and judges approval by the money
+   *  that actually leaves. */
+  readonly exchange?: ExchangeSettlementInput;
   /** A manager's decision, when the refund requires one (§28). */
   readonly approval?: DecidedRequest;
   /** The customer a store-credit refund is issued to (M13-FR-03 / §31). Rides the ReturnAccepted event
@@ -144,8 +148,10 @@ export function createRefundView(deps: RefundViewDeps): RefundView {
     0, sale.totalMinor - alreadyRefundedMinor(sale.saleId, deps.priorRefunds ?? []),
   );
 
+  // The money that actually leaves is what the §28 rule judges: on an exchange only a refunded balance.
   const needsApproval = (draft: RefundDraft): boolean => refundRequiresApproval(
-    draft.refundMinor, draft.noReceipt ?? false, deps.policy.approvalThresholdMinor,
+    draft.exchange === undefined ? draft.refundMinor : (draft.exchange.balance === 'refund' ? draft.exchange.balanceMinor : 0),
+    draft.noReceipt ?? false, deps.policy.approvalThresholdMinor,
   );
 
   const submit = async (draft: RefundDraft): Promise<RefundScreenOutcome> => {
@@ -198,6 +204,7 @@ export function createRefundView(deps: RefundViewDeps): RefundView {
       ...(deps.policy.noReceiptCapMinor === undefined ? {} : { noReceiptCapMinor: deps.policy.noReceiptCapMinor }),
       ...(draft.approval === undefined ? {} : { approval: draft.approval }),
       ...(draft.customerRef === undefined ? {} : { customerRef: draft.customerRef }),
+      ...(draft.exchange === undefined ? {} : { exchange: draft.exchange }),
     };
 
     try {
@@ -228,6 +235,9 @@ export function createRefundView(deps: RefundViewDeps): RefundView {
  * Anything unrecognised is treated as a refusal — the safe direction for money out (do not pay).
  */
 function mapError(e: unknown): RefundScreenOutcome {
+  // An exchange whose settlement does not add up is refused before anything is written — a screen defect, not a
+  // customer's doing; the engine's own words say what did not add up.
+  if (e instanceof InvalidExchangeError) return { kind: 'invalid', laneMessage: `This exchange does not add up: ${e.why}. Nothing was recorded.` };
   // Durable, money-critical — the model's own words, never reworded.
   if (e instanceof RefundUncertainError) return { kind: 'uncertain', laneMessage: e.laneMessage };
   if (e instanceof RefundConflictError) return { kind: 'conflict', laneMessage: e.laneMessage };

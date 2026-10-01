@@ -53,6 +53,32 @@ export interface ReturnLineInput {
   readonly batchId?: string | null;
 }
 
+/** How a refund is given. `exchange` marks the returning half of an EXCHANGE (M13-FR-03): the "refund" is then the
+ *  value CREDITED against the bill, applied to a replacement sale — the money that actually moved is in `exchange`. */
+export type RefundTender = TenderKind | 'exchange';
+
+/**
+ * The settlement of an EXCHANGE at the lane (SP-9b-ii · M13-FR-03): the goods coming back are credited at the bill's own
+ * price (`refund`), the replacement is a real sale paid with that credit (`appliedMinor` as its `exchange_credit`
+ * tender) plus any top-up, and the DIFFERENCE is refunded, collected or nothing. The approval rule follows the money
+ * that actually leaves: only a refund of the balance is judged against the threshold; an even exchange or a top-up
+ * needs no second person (a zero-value refund is not material). Pure data; the engine checks it adds up.
+ */
+export interface ExchangeSettlementInput {
+  /** The replacement sale committed with this exchange — a real sale, returnable in its own right. */
+  readonly replacementSaleId: string;
+  readonly replacementTotalMinor: number;
+  /** The part of the credited value applied to the replacement: min(credit, replacement total). */
+  readonly appliedMinor: number;
+  readonly balance: 'even' | 'refund' | 'top_up';
+  /** |replacement − credit| — 0 when even. */
+  readonly balanceMinor: number;
+  /** How the shop refunded the balance (when `balance` is `refund`); drives settled vs pending (M13-FR-04). */
+  readonly balanceTender?: TenderKind;
+  /** What the customer paid on top (when `balance` is `top_up`). */
+  readonly topUpTenders?: readonly { readonly kind: TenderKind; readonly amountMinor: number }[];
+}
+
 export interface CommitReturnInput {
   readonly id: string;
   readonly number: string;
@@ -65,10 +91,12 @@ export interface CommitReturnInput {
   readonly processedAt: string; // ISO-8601 UTC
   readonly reasonCode: string;
   readonly lines: readonly ReturnLineInput[];
-  /** The refund amount to give the customer. */
+  /** The refund amount to give the customer — on an exchange, the value credited against the bill. */
   readonly refund: Money;
-  /** How the refund is given (drives the offline/pending distinction). */
-  readonly refundTender: TenderKind;
+  /** How the refund is given (drives the offline/pending distinction); `exchange` on an exchange's returning half. */
+  readonly refundTender: RefundTender;
+  /** Present only on the returning half of an EXCHANGE (requires `refundTender: 'exchange'`). */
+  readonly exchange?: ExchangeSettlementInput;
   /** Maximum refundable for these lines (e.g. the original paid amount). */
   readonly maxRefund: Money;
   /** Refund value at/above which a separate approval is required (per-tenant). */
@@ -88,13 +116,29 @@ export type RefundStatus = 'settled' | 'pending';
 
 const OFFLINE_SETTLED_TENDERS: readonly TenderKind[] = ['cash', 'store_credit'];
 
+/** Whether the money that actually left settled at the lane: a refund by its tender; an exchange by the tender of its
+ *  balance refund (nothing left on an even exchange or a top-up, so settled). Card/UPI is a reversal nobody has done yet. */
+function refundStatusOf(input: CommitReturnInput): RefundStatus {
+  if (input.exchange !== undefined) {
+    if (input.exchange.balance !== 'refund') return 'settled';
+    return input.exchange.balanceTender !== undefined && OFFLINE_SETTLED_TENDERS.includes(input.exchange.balanceTender) ? 'settled' : 'pending';
+  }
+  return input.refundTender !== 'exchange' && OFFLINE_SETTLED_TENDERS.includes(input.refundTender) ? 'settled' : 'pending';
+}
+
+/** The money that actually LEAVES the shop on this return — what the §28 approval rule judges. */
+function moneyOutMinor(input: CommitReturnInput): number {
+  if (input.exchange === undefined) return input.refund.minor;
+  return input.exchange.balance === 'refund' ? input.exchange.balanceMinor : 0;
+}
+
 export interface CommittedReturn {
   readonly id: string;
   readonly number: string;
   readonly originalSaleId: string | null;
   readonly noReceipt: boolean;
   readonly refund: Money;
-  readonly refundTender: TenderKind;
+  readonly refundTender: RefundTender;
   readonly refundStatus: RefundStatus;
   readonly requiredApproval: boolean;
   /** Lines whose disposition = resell — the units back in sellable stock. */
@@ -103,6 +147,14 @@ export interface CommittedReturn {
    *  Visible so the desk/report can show a returned unit was HELD, not resold (P-08), never silent. */
   readonly recallHeldLines: number;
   readonly processedAt: string;
+}
+
+/** The exchange settlement does not add up with the credit and the replacement — refused before anything is written. */
+export class InvalidExchangeError extends Error {
+  constructor(id: string, readonly why: string) {
+    super(`Return "${id}": the exchange settlement does not add up — ${why}.`);
+    this.name = 'InvalidExchangeError';
+  }
 }
 
 export class EmptyReturnError extends Error {
@@ -213,6 +265,33 @@ export function assertReturnValid(input: CommitReturnInput): ReturnValidity {
     }
   }
 
+  // An exchange's settlement must be the arithmetic of its own credit and replacement (SP-9b-ii · M13-FR-03): the
+  // balance is |replacement − credit| in the right direction, the credit applied is what the replacement could absorb,
+  // a refund names its tender, a top-up's tenders add up to it, and nothing is collected or refunded on an even one.
+  const x = input.exchange;
+  if (x !== undefined) {
+    if (input.refundTender !== 'exchange') throw new InvalidExchangeError(input.id, 'an exchange is recorded with refundTender "exchange"');
+    if (noReceipt) throw new InvalidExchangeError(input.id, 'an exchange is against a bill, never without a receipt');
+    const whole = (n: number): boolean => Number.isInteger(n) && n >= 0;
+    if (!whole(x.replacementTotalMinor) || !whole(x.appliedMinor) || !whole(x.balanceMinor) || x.replacementSaleId.trim() === '') {
+      throw new InvalidExchangeError(input.id, 'the replacement sale id and every amount must be present and whole');
+    }
+    const net = x.replacementTotalMinor - input.refund.minor;
+    const expected = net === 0 ? 'even' : net > 0 ? 'top_up' : 'refund';
+    if (x.balance !== expected || x.balanceMinor !== Math.abs(net)) {
+      throw new InvalidExchangeError(input.id, `credit ${input.refund.minor} against a replacement of ${x.replacementTotalMinor} is a ${expected} of ${Math.abs(net)}, not a ${x.balance} of ${x.balanceMinor}`);
+    }
+    if (x.appliedMinor !== Math.min(input.refund.minor, x.replacementTotalMinor)) {
+      throw new InvalidExchangeError(input.id, `the credit applied must be ${Math.min(input.refund.minor, x.replacementTotalMinor)}, not ${x.appliedMinor}`);
+    }
+    const topUp = (x.topUpTenders ?? []).reduce((n, t) => n + t.amountMinor, 0);
+    if (x.balance === 'refund' && x.balanceTender === undefined) throw new InvalidExchangeError(input.id, 'a refund of the balance must say how it is given');
+    if (x.balance === 'top_up' && topUp !== x.balanceMinor) throw new InvalidExchangeError(input.id, `the top-up tenders add to ${topUp} against a balance of ${x.balanceMinor}`);
+    if (x.balance !== 'top_up' && topUp !== 0) throw new InvalidExchangeError(input.id, 'nothing is collected unless the customer owes the difference');
+  } else if (input.refundTender === 'exchange') {
+    throw new InvalidExchangeError(input.id, 'refundTender "exchange" needs the exchange settlement');
+  }
+
   // Per-line: a positive quantity, and cumulatively no more than was sold. The
   // sold-quantity check applies to receipted returns (a no-receipt return has no
   // original line to check against — the cap + approval are its controls).
@@ -231,7 +310,7 @@ export function assertReturnValid(input: CommitReturnInput): ReturnValidity {
   // Approval: a material refund or any no-receipt return needs a valid approval by
   // a DIFFERENT person (M13-FR-03 / §28). An AI agent can never authorise a refund
   // (AI-NFR-12) — the approval is a human DecidedRequest produced upstream.
-  const requiredApproval = refundRequiresApproval(input.refund.minor, noReceipt, input.approvalThresholdMinor);
+  const requiredApproval = refundRequiresApproval(moneyOutMinor(input), noReceipt, input.approvalThresholdMinor);
   if (requiredApproval) {
     const a = input.approval;
     const valid =
@@ -319,9 +398,7 @@ export function commitReturn(
     );
   }
 
-  const refundStatus: RefundStatus = OFFLINE_SETTLED_TENDERS.includes(input.refundTender)
-    ? 'settled'
-    : 'pending'; // card/UPI/split reversal — queued, never assumed successful (M13-FR-04)
+  const refundStatus: RefundStatus = refundStatusOf(input); // card/UPI/split reversal — queued, never assumed successful (M13-FR-04)
 
   outbox.enqueue(
     makeEvent({
@@ -348,6 +425,9 @@ export function commitReturn(
         currency: input.refund.currency,
         refundTender: input.refundTender,
         refundStatus,
+        // The exchange's settlement (SP-9b-ii): the replacement sale, what was applied, which way the balance went and
+        // how — so the cloud records the return as the returning half of an exchange, and the day book clears the credit.
+        ...(input.exchange === undefined ? {} : { exchange: input.exchange }),
         lineCount: input.lines.length,
         // **What was returned, line by line, not just how many lines there were.**
         //

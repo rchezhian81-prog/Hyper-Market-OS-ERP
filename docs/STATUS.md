@@ -792,11 +792,37 @@ device, human UAT and production verification separate; approved deferrals stay 
   104 unchanged; no rung changed. **Still open, honestly:** the box does not pull head office's no-receipt cap (the
   lane applies its pack file's; head office flags — never loses — a return above its own); exchange on the till
   (SP-9b-ii); physical device + staff UAT (SP-10).
-- **Current-work pointer:** last verified = SP-9b-i (this PR); next = **SP-9b-ii** [W12 remainder] (exchange on the till:
-  lane-side return + replacement with `exchange_credit`, `assessExchange` + `POST /v1/sales/:saleId/exchanges` exist on
-  the cloud, `docs/design/screens/pos-refund.md`), then **SP-3c** (picker + driver handhelds on the shared device route);
-  **SP-10** (physical device + staff UAT) stays PENDING until performed; genuine blockers: none; external gates unchanged
-  (providers, hardware, real data, pilot GO).
+- **SP-9b-ii — the EXCHANGE on the served till (W12 remainder · M13-FR-03 · M08-FR-01 · M14-FR-02 · M23 · §28 ·
+  hard rules #1 #2 #10 · CH-01 preserved: nothing deferred).** The return engine learns the exchange settlement
+  (`ExchangeSettlementInput`, `refundTender: 'exchange'`, `InvalidExchangeError`): the settlement must be the arithmetic
+  of credit and replacement; §28 approval is judged by the money that actually LEAVES (a refunded balance — never the
+  credit); settled or pending by the balance's tender; the settlement rides the event. `exchange_credit` is a tender
+  kind the lane may mint; the lane's bill lookup carries each line's charged total so the credit is the bill's OWN price;
+  the exchange engine honours a per-line promotion discount. `bootPos.lookupRefund(...).exchange.quote / complete`
+  (`apps/pos/src/browser-entry.ts`) runs the tested `assessExchange` over the bill's history and the goods on the bill
+  NOW, refuses in words before any write (no way to pay, no customer for store credit, a terminal that declined or did
+  not answer), records the credit FIRST through the refund path, then the replacement sale through the sale path paid
+  with `exchange_credit` (+ top-up) — and says HALF DONE by name if the second half cannot be recorded (P-08). The shell's
+  More menu gains "Exchange" (EN/TA): replacement rung first → bill → item → quantity → reason → condition → the quote →
+  even / pay the difference (cash, or what the card machine said) / refund the difference (method, customer for store
+  credit, manager where the surface says). The box relays the settlement; the cloud's synced-return route records it as
+  the returning half of an exchange, judges governance by the balance, issues a store-credit balance, the day book
+  clears the credit; the box counts only a cash balance refund as cash out of the drawer. **Proof:** unit +14, the till
+  usability guardrail, `tests/e2e/the-served-till-takes-a-refund.e2e.ts` +1 (a real Chromium rings the replacement by
+  barcode, finds the bill, quotes ₹640 against ₹700, collects ₹60 cash; both documents on the box's disk, linked), and
+  `tests/integration/the-till-exchanges.test.ts` on the REAL stack (two bills banked; a dearer swap paid ₹60 cash, no
+  manager; a cheaper swap refunding ₹40 with a manager — refused without one and self-approved; the retry a conflict; one
+  sync pass lands both credits and both replacement sales; nothing left to return on either bill; no governance
+  exception; returned tins back at S1, replacements off it; the day book posts with the exchange credit clearing, every
+  journal balanced). Matrix row 122, §4 SP-9b-ii DONE, §5; traceability M13-FR-03 (cloud row + ledger), M13 module
+  note; CH-01 register. Denominator 104 unchanged; no rung changed (M13 stays INTEGRATION_TESTED — browser-verified for
+  refund, no-receipt and exchange; externally blocked EX-03). **W12 is complete in software.** **Still open, honestly:**
+  HALF DONE is visible, not self-healing (the manager completes it at the desk); the box does not pull head office's
+  no-receipt cap; physical device + staff UAT (SP-10).
+- **Current-work pointer:** last verified = SP-9b-ii (this PR); next = **SP-3c** [W09 remainder, F11] (picker + driver
+  handhelds on the shared device route — `tests/audit-observations/sync.test.ts` F11 picker/driver half, ADR-0019 device
+  socket, `edge/store-edge/src/device-server.ts`); **SP-10** (physical device + staff UAT) stays PENDING until performed;
+  genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

@@ -54,8 +54,11 @@ export function toOriginalSale(record: unknown): OriginalSale | undefined {
     const line = asRec(l);
     const productId = str(line['productId']);
     const quantityMinor = int(line['quantityMinor']) ?? int(line['qty']);
+    // The line's charged total (the till writes it since A5/A9) — so an EXCHANGE credits the bill's own price for the
+    // goods coming back (SP-9b-ii · M13-FR-03). Absent on an older record, and the exchange engine then pro-rates.
+    const lineTotalMinor = int(line['lineTotalMinor']);
     return productId !== undefined && quantityMinor !== undefined
-      ? [{ productId, uom: str(line['uom']) ?? 'ea', quantityMinor }]
+      ? [{ productId, uom: str(line['uom']) ?? 'ea', quantityMinor, ...(lineTotalMinor === undefined ? {} : { lineTotalMinor }) }]
       : [];
   });
   if (lines.length === 0) return undefined;

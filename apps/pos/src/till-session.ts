@@ -266,6 +266,9 @@ export function createTillSession(
     refundMinor: full.refund.minor,
     currency: full.refund.currency,
     refundTender: full.refundTender,
+    // The exchange's settlement (SP-9b-ii): which replacement sale the credit paid for and which way the balance went —
+    // `toCloudReturn` relays it; the box's cash figures read only a cash balance refund as cash out of the drawer.
+    ...(full.exchange === undefined ? {} : { exchange: full.exchange }),
     processedAt: full.processedAt,
     lines: full.lines.map((l) => ({
       productId: l.productId, uom: l.uom, quantityMinor: Math.abs(l.quantityMinor), disposition: l.disposition,

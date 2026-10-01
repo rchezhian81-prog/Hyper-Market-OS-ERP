@@ -37,6 +37,7 @@ const CATALOGUE: CatalogueSnapshot = {
 const boot = (over: {
   laneLookup?: LaneLookup;
   durableReturn?: DurableWrite;
+  durable?: DurableWrite;
   approvalThresholdMinor?: number;
   noReceiptCapMinor?: number;
   catalogue?: CatalogueSnapshot | null;
@@ -46,6 +47,7 @@ const boot = (over: {
   ...(over.cashierId === null ? {} : { cashierId: over.cashierId ?? 'u-meena' }),
   laneLookup: over.laneLookup ?? (async () => LOOKUP),
   durableReturn: over.durableReturn ?? okReturn,
+  durable: over.durable ?? okReturn,
   refundPolicy: {
     approvalThresholdMinor: over.approvalThresholdMinor ?? 100_000,
     ...(over.noReceiptCapMinor === undefined ? {} : { noReceiptCapMinor: over.noReceiptCapMinor }),
@@ -221,5 +223,129 @@ describe('returning without a receipt', () => {
     expect((await desk.submit(draft({ refundTender: 'store_credit', customerRef: 'c-asha' }))).kind).toBe('settled');
     expect(posted).toMatchObject({ refundTender: 'store_credit', customerRef: 'c-asha', noReceipt: true });
     expect((await desk.submit(draft({ returnId: 'RT-NR-2', refundTender: 'card' }))).kind).toBe('pending');
+  });
+});
+
+/**
+ * **The EXCHANGE at the till (SP-9b-ii · M13-FR-03 · §28).** The replacement is rung onto the bill like any sale; the
+ * surface quotes the credit at the bill's own price against it, settles the difference the right way round, records the
+ * credit FIRST and then the replacement sale paid with it — and says so by name when only the first half could be recorded.
+ */
+describe('exchanging goods on a bill', () => {
+  // The bill: 2 × P1 paid ₹200 (₹100 each). The replacement is rung from the catalogue: P1 ₹640 or P9 ₹100.
+  const PRICED: SaleLookupResult = {
+    ...LOOKUP,
+    sale: { ...LOOKUP.sale, lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 2, lineTotalMinor: 20_000 }] },
+  };
+  const back = [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' as const }];
+  const ring = (till: ReturnType<typeof boot>, productId: string, unitPriceMinor: number) => till.scan({ productId, description: productId, unitPriceMinor, qty: 1 });
+  const draft = (over: Record<string, unknown> = {}) => ({
+    exchangeId: 'X-1', number: 'RT-0010', reasonCode: 'wrong_size', returnLines: back,
+    replacementSaleId: 'S-X1', replacementReceipt: 'R-0011', settlement: {}, ...over,
+  });
+
+  it('quotes against the goods on the bill NOW: nothing rung → refused; a dearer replacement is a top-up; a cheaper one a refund; equal is even', async () => {
+    const till = boot({ laneLookup: async () => PRICED, approvalThresholdMinor: 0 });
+    const bill = (await till.lookupRefund('B-1'))!;
+    expect(bill.exchange.quote(back)).toMatchObject({ ok: false, refusedBecause: 'no_replacement_lines' });
+    ring(till, 'P1', 64_000);
+    expect(bill.exchange.quote(back)).toMatchObject({ ok: true, returnedValueMinor: 10_000, replacementTotalMinor: 64_000, balance: 'top_up', balanceMinor: 54_000, appliedMinor: 10_000, needsApproval: false });
+    till.newSale();
+    ring(till, 'P9', 5_000);
+    // The shop owes ₹50 — at threshold 0 that refund of the balance needs a manager; the ₹100 credit is not what is judged.
+    expect(bill.exchange.quote(back)).toMatchObject({ ok: true, balance: 'refund', balanceMinor: 5_000, appliedMinor: 5_000, needsApproval: true });
+    till.newSale();
+    ring(till, 'P9', 10_000);
+    expect(bill.exchange.quote(back)).toMatchObject({ ok: true, balance: 'even', balanceMinor: 0, appliedMinor: 10_000, needsApproval: false });
+    // More coming back than the bill sold is refused by the register, whatever is rung.
+    expect(bill.exchange.quote([{ ...back[0]!, quantityMinor: 3 }])).toMatchObject({ ok: false, refusedBecause: 'more_than_was_sold' });
+  });
+
+  it('an EVEN exchange records the credit, then the replacement sale paid entirely with exchange credit — no money, no manager', async () => {
+    const returns: Record<string, unknown>[] = [];
+    const sales: Record<string, unknown>[] = [];
+    const till = boot({
+      laneLookup: async () => PRICED, approvalThresholdMinor: 0,
+      durableReturn: async (_id, r) => { returns.push(JSON.parse(r) as Record<string, unknown>); return okReturn('', ''); },
+      durable: async (_id, r) => { sales.push(JSON.parse(r) as Record<string, unknown>); return okReturn('', ''); },
+    });
+    const bill = (await till.lookupRefund('B-1'))!;
+    ring(till, 'P9', 10_000);
+    const out = await bill.exchange.complete(draft());
+    expect(out).toMatchObject({ kind: 'done', balance: 'even', balanceMinor: 0, returnedValueMinor: 10_000, refundStatus: 'settled', number: 'RT-0010', replacementReceipt: 'R-0011' });
+    // The credit first: the return record with the exchange settlement, against the bill, tender 'exchange'.
+    expect(returns).toHaveLength(1);
+    expect(returns[0]).toMatchObject({
+      returnId: 'X-1', originalSaleId: 'S-1', refundTender: 'exchange', refundMinor: 10_000, processedBy: 'u-meena',
+      exchange: { replacementSaleId: 'S-X1', replacementTotalMinor: 10_000, appliedMinor: 10_000, balance: 'even', balanceMinor: 0 },
+      lines: [{ productId: 'P1', quantityMinor: 1, disposition: 'resell' }],
+    });
+    // Then the replacement — a real sale whose only tender is the credit.
+    expect(sales).toHaveLength(1);
+    expect(sales[0]).toMatchObject({ id: 'S-X1', number: 'R-0011', total: 10_000, tenders: [{ kind: 'exchange_credit', amount: { minor: 10_000 } }] });
+  });
+
+  it('a TOP-UP collects exactly the difference: cash settles; a card that the terminal declined or did not answer records NOTHING', async () => {
+    const returns: unknown[] = [];
+    const sales: Record<string, unknown>[] = [];
+    const till = boot({
+      laneLookup: async () => PRICED, approvalThresholdMinor: 0,
+      durableReturn: async (_id, r) => { returns.push(JSON.parse(r)); return okReturn('', ''); },
+      durable: async (_id, r) => { sales.push(JSON.parse(r) as Record<string, unknown>); return okReturn('', ''); },
+    });
+    const bill = (await till.lookupRefund('B-1'))!;
+    ring(till, 'P1', 64_000);
+    // No way to pay → refused before any write; silence from the terminal → refused before any write.
+    expect((await bill.exchange.complete(draft())).kind).toBe('invalid');
+    expect((await bill.exchange.complete(draft({ settlement: { topUp: { kind: 'card', outcome: 'no_answer' } } }))).kind).toBe('refused');
+    expect((await bill.exchange.complete(draft({ settlement: { topUp: { kind: 'upi', outcome: 'declined' } } }))).kind).toBe('refused');
+    expect(returns).toHaveLength(0);
+    expect(sales).toHaveLength(0);
+    const out = await bill.exchange.complete(draft({ settlement: { topUp: { kind: 'cash' } } }));
+    expect(out).toMatchObject({ kind: 'done', balance: 'top_up', balanceMinor: 54_000 });
+    expect(returns[0]).toMatchObject({ refundTender: 'exchange', refundMinor: 10_000, exchange: { balance: 'top_up', balanceMinor: 54_000, appliedMinor: 10_000, topUpTenders: [{ kind: 'cash', amountMinor: 54_000 }] } });
+    expect(sales[0]).toMatchObject({ id: 'S-X1', total: 64_000, tenders: [{ kind: 'exchange_credit', amount: { minor: 10_000 } }, { kind: 'cash', amount: { minor: 54_000 } }] });
+  });
+
+  it('a REFUNDED balance follows the refund\'s rules: a tender, a customer for store credit, a manager at the threshold (not the cashier); card stays pending', async () => {
+    const returns: Record<string, unknown>[] = [];
+    const till = boot({
+      laneLookup: async () => PRICED, approvalThresholdMinor: 0,
+      durableReturn: async (_id, r) => { returns.push(JSON.parse(r) as Record<string, unknown>); return okReturn('', ''); },
+    });
+    const bill = (await till.lookupRefund('B-1'))!;
+    ring(till, 'P9', 5_000);
+    expect((await bill.exchange.complete(draft())).kind).toBe('invalid');                                                          // how is it refunded?
+    expect((await bill.exchange.complete(draft({ settlement: { refundTender: 'store_credit' } }))).kind).toBe('invalid');           // to whom?
+    expect((await bill.exchange.complete(draft({ settlement: { refundTender: 'cash' } }))).kind).toBe('approval_required');         // ₹50 at threshold 0
+    expect((await bill.exchange.complete(draft({ settlement: { refundTender: 'cash' }, approval: { by: 'u-meena', reason: 'mine' } }))).kind).toBe('approval_required'); // §28
+    expect(returns).toHaveLength(0);
+    const cash = await bill.exchange.complete(draft({ settlement: { refundTender: 'cash' }, approval: { by: 'u-manager', reason: 'checked' } }));
+    expect(cash).toMatchObject({ kind: 'done', balance: 'refund', balanceMinor: 5_000, refundStatus: 'settled' });
+    expect(returns[0]).toMatchObject({ approvedBy: 'u-manager', exchange: { balance: 'refund', balanceMinor: 5_000, balanceTender: 'cash' } });
+    // A card balance is a reversal nobody has done yet — pending, never shown as paid (M13-FR-04).
+    till.newSale();
+    ring(till, 'P9', 5_000);
+    const card = await bill.exchange.complete(draft({ exchangeId: 'X-2', replacementSaleId: 'S-X2', replacementReceipt: 'R-0012', settlement: { refundTender: 'card' }, approval: { by: 'u-manager', reason: 'checked' } }));
+    expect(card).toMatchObject({ kind: 'done', refundStatus: 'pending' });
+  });
+
+  it('says HALF DONE by name when the credit recorded but the replacement sale could not — the new goods stay on the counter (P-08)', async () => {
+    const till = boot({
+      laneLookup: async () => PRICED, approvalThresholdMinor: 0,
+      durable: async () => ({ committed: false, refusedBecause: 'could_not_write_durably', detail: 'disk full', laneMessage: 'This lane is not ready to record a sale.' }),
+    });
+    const bill = (await till.lookupRefund('B-1'))!;
+    ring(till, 'P9', 10_000);
+    const out = await bill.exchange.complete(draft());
+    expect(out.kind).toBe('half_done');
+    expect(out.laneMessage).toContain('credit of ₹100.00 on bill B-1');
+    expect(out.laneMessage).toContain('Do not hand over the new goods');
+  });
+
+  it('refuses when nobody is signed in — before anything is written', async () => {
+    const till = boot({ laneLookup: async () => PRICED, cashierId: null });
+    const bill = (await till.lookupRefund('B-1'))!;
+    expect((await bill.exchange.complete(draft())).kind).toBe('refused');
   });
 });

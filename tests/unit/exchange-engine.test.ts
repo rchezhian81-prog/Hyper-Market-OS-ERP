@@ -65,6 +65,12 @@ describe('assessExchange — the balance and the two register rules', () => {
     expect(assess([back('P1', 1)], [{ productId: 'P3', uom: 'each', quantityMinor: 2, unitPriceMinor: 5000, lineTotalMinor: 5000 }])).toMatchObject({ ok: false, refusedBecause: 'replacement_lines_do_not_sum' });
     expect(assess([back('P1', 0)], [out('P3', 1, 5000)])).toMatchObject({ ok: false, refusedBecause: 'line_not_readable' });
   });
+  it('honours a promotion discount ATTRIBUTED to a replacement line (SP-9b-ii): unit × qty − discount must equal the line total', () => {
+    const discounted: ReplacementLine = { productId: 'P3', uom: 'each', quantityMinor: 2, unitPriceMinor: 3000, discountMinor: 1000, lineTotalMinor: 5000 };
+    expect(assess([back('P1', 1)], [discounted])).toMatchObject({ ok: true, balance: 'even', replacementTotalMinor: 5000 });
+    expect(assess([back('P1', 1)], [{ ...discounted, lineTotalMinor: 6000 }])).toMatchObject({ ok: false, refusedBecause: 'replacement_lines_do_not_sum' });
+    expect(assess([back('P1', 1)], [{ ...discounted, discountMinor: -1 }])).toMatchObject({ ok: false, refusedBecause: 'line_not_readable' });
+  });
   it('does not count itself — an idempotent retry is assessed as if new', () => {
     const own: RecordedReturn[] = [{ returnId: 'X1', originalSaleId: 'S1', processedAt: '2026-08-08T10:00:00.000Z', lines: [{ productId: 'P1', uom: 'each', quantityMinor: 3 }] }];
     expect(assess([back('P1', 3)], [out('P3', 3, 5000)], own, [{ returnId: 'X1', originalSaleId: 'S1', refundMinor: 15000 }]).ok).toBe(true);

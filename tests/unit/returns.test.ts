@@ -7,6 +7,7 @@ import {
   OverReturnError,
   ExcessRefundError,
   ApprovalRequiredError,
+  InvalidExchangeError,
 } from '../../packages/returns/src/index';
 import { money } from '../../packages/contracts/src/money';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
@@ -345,5 +346,62 @@ describe('commitReturn', () => {
     commitReturn(baseInput(), ledger, outbox);
     expect(ledger.entries()).toHaveLength(1);
     expect(outbox.unsentCount()).toBe(1);
+  });
+});
+
+/**
+ * **The returning half of an EXCHANGE at the lane (SP-9b-ii · M13-FR-03 · §28).** The "refund" is the value credited
+ * against the bill; the replacement is a real sale paid with that credit. The engine checks the settlement adds up,
+ * judges approval by the money that actually LEAVES (a refunded balance — never the credit), settles or holds pending
+ * by the balance's tender, and carries the settlement on the ReturnAccepted event.
+ */
+describe('commitReturn — the returning half of an exchange', () => {
+  const exchangeOf = (over: Record<string, unknown> = {}, settlement: Record<string, unknown> = {}) => baseInput({
+    refund: money(100_00, 'INR'), refundTender: 'exchange' as const, maxRefund: money(150_00, 'INR'), approvalThresholdMinor: 0,
+    exchange: { replacementSaleId: 'sale-X', replacementTotalMinor: 100_00, appliedMinor: 100_00, balance: 'even', balanceMinor: 0, ...settlement },
+    ...over,
+  });
+  const run = (input: ReturnType<typeof baseInput>) => commitReturn(input as never, new Ledger(new InMemoryLedgerStore()), new SyncOutbox());
+
+  it('an EVEN exchange needs no approver even at threshold 0 — nothing leaves the shop — and settles; the event carries the settlement', () => {
+    const outbox = new SyncOutbox();
+    const out = commitReturn(exchangeOf() as never, new Ledger(new InMemoryLedgerStore()), outbox);
+    expect(out).toMatchObject({ refundTender: 'exchange', refundStatus: 'settled', requiredApproval: false, restockedLines: 1 });
+    const accepted = outbox.pending().find((i) => i.event.type === 'ReturnAccepted')!.event;
+    expect(accepted.payload).toMatchObject({
+      refundMinor: 100_00, refundTender: 'exchange', refundStatus: 'settled',
+      exchange: { replacementSaleId: 'sale-X', replacementTotalMinor: 100_00, appliedMinor: 100_00, balance: 'even', balanceMinor: 0 },
+    });
+  });
+
+  it('a TOP-UP needs no approver either; the tenders collected must add up to the balance', () => {
+    expect(run(exchangeOf({}, { replacementTotalMinor: 130_00, balance: 'top_up', balanceMinor: 30_00, topUpTenders: [{ kind: 'upi', amountMinor: 30_00 }] })).requiredApproval).toBe(false);
+    expect(() => run(exchangeOf({}, { replacementTotalMinor: 130_00, balance: 'top_up', balanceMinor: 30_00, topUpTenders: [{ kind: 'upi', amountMinor: 20_00 }] }))).toThrow(InvalidExchangeError);
+    expect(() => run(exchangeOf({}, { replacementTotalMinor: 130_00, balance: 'top_up', balanceMinor: 30_00 }))).toThrow(InvalidExchangeError);
+  });
+
+  it('a REFUNDED balance is judged like a refund: at or above the threshold it needs a different person; it settles in cash and stays PENDING on a card', () => {
+    const refund = (settlement: Record<string, unknown>, over: Record<string, unknown> = {}) => exchangeOf({ approvalThresholdMinor: 20_00, ...over }, {
+      replacementTotalMinor: 70_00, appliedMinor: 70_00, balance: 'refund', balanceMinor: 30_00, balanceTender: 'cash', ...settlement,
+    });
+    expect(() => run(refund({}))).toThrow(ApprovalRequiredError);                                       // ₹30 ≥ ₹20, nobody approved
+    expect(() => run(refund({}, { approval: approvalFor('ret-1', 'clerk-1') }))).toThrow(ApprovalRequiredError); // self-approval (§28)
+    const cash = run(refund({}, { approval: approvalFor('ret-1') }));
+    expect(cash).toMatchObject({ requiredApproval: true, refundStatus: 'settled' });
+    const card = run(refund({ balanceTender: 'card' }, { approval: approvalFor('ret-1') }));
+    expect(card.refundStatus).toBe('pending'); // a reversal nobody has done yet (M13-FR-04)
+    // Below the threshold the balance refund needs nobody — the CREDIT (₹100) is never what is judged.
+    expect(run(refund({}, { approvalThresholdMinor: 50_00 })).requiredApproval).toBe(false);
+    expect(() => run(refund({ balanceTender: undefined }, { approvalThresholdMinor: 50_00 }))).toThrow(InvalidExchangeError); // a refund must say how
+  });
+
+  it('refuses a settlement that does not add up, an exchange without a bill, and the exchange tender without its settlement — before anything is written', () => {
+    expect(() => run(exchangeOf({}, { balance: 'refund', balanceMinor: 10_00, balanceTender: 'cash' }))).toThrow(InvalidExchangeError); // 100 vs 100 is even, not a refund
+    expect(() => run(exchangeOf({}, { appliedMinor: 50_00 }))).toThrow(InvalidExchangeError);                                           // applied must be min(credit, replacement)
+    expect(() => run(exchangeOf({}, { replacementSaleId: '' }))).toThrow(InvalidExchangeError);
+    expect(() => run(exchangeOf({ noReceipt: true, noReceiptCapMinor: 500_00, approval: approvalFor('ret-1') }))).toThrow(InvalidExchangeError);
+    expect(() => run(baseInput({ refundTender: 'exchange' as const }))).toThrow(InvalidExchangeError);
+    // The credit still cannot take the bill past what it was paid (M13-FR-03).
+    expect(() => run(exchangeOf({ refund: money(160_00, 'INR') }, { replacementTotalMinor: 160_00, appliedMinor: 160_00 }))).toThrow(ExcessRefundError);
   });
 });
