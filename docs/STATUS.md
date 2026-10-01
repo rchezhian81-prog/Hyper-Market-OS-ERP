@@ -740,11 +740,36 @@ device, human UAT and production verification separate; approved deferrals stay 
   unchanged; no rung changed. **Still open, honestly:** the store box dates by its machine clock (the till PC must keep the
   shop's zone — an install fact, recorded for the runbook, not enforced); the purchasing half on the real stack (SP-9-ii),
   exchange / no-receipt UI (SP-9b), concurrent tills and a cut line mid-day, physical device + staff UAT (SP-10).
-- **Current-work pointer:** last verified = SP-9-i-c (this PR); next = **SP-9-ii** [W10 remainder] (purchase → receiving/QC →
-  back store → floor → sale on the SAME real stack, reconciling balances, in transit, valuation and the supplier account;
-  offline/reconnect mid-day; concurrent tills), then **SP-9b** [W12] (exchange / no-receipt till UI, CH-01 preserved), then
-  **SP-3c** (picker + driver handhelds on the shared device route); **SP-10** (physical device + staff UAT) stays PENDING
-  until performed; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-9-ii — the PURCHASING half of the store loop, connected on the real stack; F16 found and fixed (W10 remainder · M06 ·
+  M07 · M08 · M09 · M23 · §28 · hard rules #1 #2 #10).** `tests/integration/the-store-buys-what-it-sells.test.ts` (2 cases,
+  real API as the application role + real PostgreSQL + real boxes + the till's own session; run in CI): supplier proposed by
+  the buyer and approved by the owner (a store manager's approval refused — no right) → order proposed by the buyer, issued
+  by the owner (commitment known, then nil) → delivery at the BACK STORE against the order, 10 good + 2 damaged: the damaged
+  QUARANTINED on the receipt (never on hand, never sellable), the 10 on hand and valued, 12 folded into the order, the same
+  delivery re-keyed answered once and a different body under the same key refused → the damaged two sent back by a second
+  person (receiver refused; a good line has nothing to dispose) → indent raised by a cashier, approved by the manager against
+  real back-store stock (cashier's approval refused; over-issue refused), issued by the back store (in transit — on hand at
+  neither end), received INDEPENDENTLY on the floor (issuer refused): floor 10, back 0, value follows, re-keyed receipt does
+  not double → the till sells one from the pulled pack; banked; floor 9 → the invoice for twelve captured (self-approval
+  refused, nothing stored), matched by a second person against the STORED order and receipts (owes twelve, nothing
+  withheld), the returned two a debit note, the account owes ten → payables posted (accrual + debit note, balanced; register
+  and ledger agree) and the day book posted (balanced); the dashboard shows the sale. Case 2: two lanes on two boxes sell from
+  the same shelf before either speaks to head office; one lane's line is cut mid-day — its box restarts unreachable, still
+  trades from the pack it restored, keeps the sale pending (never dead), still finds the receipt — and banks it once when the
+  line returns; the shelf falls once per sale; three receipts on the dashboard. **F16 found on the way and FIXED:** a
+  part-damaged delivery captured as two lines of one product was judged short on each line (2 short AND 10 short of a
+  complete 12) because `alignToOrder` kept the sender's per-line claims when they did not add up; it now apportions the
+  order's figure across the lines in line order exactly as the handheld's assembled receipt does, repeating the order's
+  figure on every line is no disagreement, a split that adds up stays the sender's (`tests/unit/goods-receipt-order-fold.test.ts`
+  +1). Matrix §3 F16, §4 SP-9-ii DONE, §2 evidence on eleven rows; traceability F16, M06-FR-02, M07-FR-01/03, M09-FR-03,
+  M23-FR-01. Denominator 104 unchanged; no rung changed. **Still open, honestly:** a held EXCESS, expiry / batch / cold-chain
+  receipts and the quality-hold register were not re-run on the real stack (proven on the in-process harness); the purchasing
+  SCREENS' browser proofs ran against stubs, not the real cloud; exchange / no-receipt UI (SP-9b); physical device + staff
+  UAT (SP-10).
+- **Current-work pointer:** last verified = SP-9-ii (this PR); next = **SP-9b** [W12] (exchange / no-receipt till UI, CH-01
+  preserved: `assessExchange` + `POST /v1/sales/:saleId/exchanges` exist, `docs/design/screens/pos-refund.md`), then **SP-3c**
+  (picker + driver handhelds on the shared device route); **SP-10** (physical device + staff UAT) stays PENDING until
+  performed; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

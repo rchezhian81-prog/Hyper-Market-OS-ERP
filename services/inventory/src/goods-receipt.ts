@@ -301,9 +301,29 @@ export function alignToOrder(lines: readonly CapturedLine[], ordered: Readonly<R
       continue;
     }
     const claimed = group.reduce((n, l) => n + l.orderedMinor, 0);
-    if (claimed !== onOrder) say('ordered_quantity_disagrees');
-    if (group.length === 1) aligned.set(group[0]!, { ...group[0]!, orderedMinor: onOrder });
-    else for (const l of group) aligned.set(l, l);
+    if (group.length === 1) {
+      if (claimed !== onOrder) say('ordered_quantity_disagrees');
+      aligned.set(group[0]!, { ...group[0]!, orderedMinor: onOrder });
+      continue;
+    }
+    // Several lines of ONE product — good and damaged, two batches. A split the sender gave that adds up to the order is
+    // theirs. Otherwise there are two honest ways the sender says "against the 12 ordered": split it, or repeat the 12 on
+    // every line — the second is no disagreement, just unsplit — and in both cases the ORDER's figure is apportioned across
+    // the lines in line order exactly as the handheld's assembled receipt does (SP-6b): each line takes what it counted
+    // while the order lasts, the last line takes the rest. One shortage or excess, said once. Until SP-9-ii (F16) the
+    // sender's per-line claims were kept as they stood, so a 10-good + 2-damaged delivery of 12 captured as two lines
+    // each "against 12" was judged 2 short AND 10 short — a false claim on a complete delivery.
+    if (claimed === onOrder) {
+      for (const l of group) aligned.set(l, l);
+      continue;
+    }
+    if (!group.every((l) => l.orderedMinor === onOrder)) say('ordered_quantity_disagrees');
+    let remaining = onOrder;
+    group.forEach((l, i) => {
+      const share = i === group.length - 1 ? remaining : Math.min(remaining, l.countedMinor);
+      remaining -= share;
+      aligned.set(l, { ...l, orderedMinor: share });
+    });
   }
   return lines.map((l) => aligned.get(l) ?? l);
 }
