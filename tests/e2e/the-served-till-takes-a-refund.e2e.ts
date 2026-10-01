@@ -100,9 +100,9 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
       const draft = {
         returnId: 'RT-1', number: 'RT-0001', reasonCode: 'damaged',
         lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
-        // The whole bill back: the tax-inclusive amount actually paid (₹640 + 18% GST = ₹755.20),
+        // The whole bill back: the amount actually paid — the ₹640 shelf price, the 18% GST INSIDE it (A9; F15 fixed) —
         // which is what the screen offers as the ceiling.
-        refundMinor: 75_520, refundTender: 'cash',
+        refundMinor: 64_000, refundTender: 'cash',
         // Threshold defaults to 0 → every refund needs a manager (a DIFFERENT person, §28).
         approval: { by: 'u-manager', reason: 'checked the goods' },
       };
@@ -124,8 +124,8 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     expect(result.found).toBe(true);
     if (!result.found) return;
     expect(result.returnableMinor).toBe(1);
-    // The ceiling is what was actually PAID for the bill — the tax-inclusive total (₹755.20).
-    expect(result.maxRefundMinor).toBe(75_520);
+    // The ceiling is what was actually PAID for the bill — the ₹640 shelf price, never the price plus GST (F15).
+    expect(result.maxRefundMinor).toBe(64_000);
     // The refund settled at the lane (cash) — the cashier is told to hand it over.
     expect(result.first.kind).toBe('settled');
     // The reused id is REFUSED as a conflict, never a second settled refund — no double payout.
@@ -170,7 +170,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
       const out = await bill.submit({
         returnId: 'RT-3', number: 'RT-0003', reasonCode: 'customer_changed_mind',
         lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
-        refundMinor: 75_520, refundTender: 'store_credit',
+        refundMinor: 64_000, refundTender: 'store_credit',
         approval: { by: 'u-manager', reason: 'checked the goods' },
         customerRef: 'c-asha',
       });

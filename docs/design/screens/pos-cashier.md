@@ -90,6 +90,14 @@ Migration · AI control.
   till's catalogue and names it (`excludedProducts`), and the catalogue engine refuses the scan by name should one
   arrive another way. A line is never ₹NaN.
 
+## Measured (SP-9-i-b)
+- The price on the shelf is the price on the screen: every catalogue price is GST-INCLUSIVE (roadmap A9; Legal
+  Metrology — the MRP or below, tax inside). The till charges price × quantity and pulls the taxable value and the GST
+  OUT of it (`pricesIncludeTax` in `packages/pricing/src/pricing.ts`, used by `apps/pos/src/session.ts` for every
+  line); it never adds tax on top, so the total never exceeds the MRP (M05-FR-02). A promotion comes off the inclusive
+  line and the GST is re-extracted from what was actually charged. Regression: `tests/audit-observations/pos.test.ts`
+  case 3 (₹480 shelf price, 5%, ₹500 MRP → ₹480 charged, ₹457.14 + ₹22.86), inverted from the F15 observation.
+
 ## Measured (SP-4b)
 - The served till boots with the box's lane and cut-off and **no cashier**; a sale is refused until somebody signs in, then
   names the real cashier, lane and day (`tests/audit-observations/pos.test.ts` case 1, inverted from the F09 observation;

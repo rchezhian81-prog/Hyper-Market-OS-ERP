@@ -186,7 +186,7 @@ describe.skipIf(!DATABASE_URL)('Stage 9 — the day closes honestly (real Postgr
     for (const id of [`S-${RUN}-1`, `S-${RUN}-2`, `S-${RUN}-3`]) {
       const { committed, payable } = await ringUp(id, [{ price: 45_000, qty: 1 }, { price: 18_000, qty: 2 }]);
       expect(committed.id).toBe(id);
-      expect(payable).toEqual(money(85_050, CURRENCY)); // ₹810.00 + 5% GST
+      expect(payable).toEqual(money(81_000, CURRENCY)); // ₹810.00 — the shelf prices, 5% GST inside them (A9)
       await store.append(TENANT, `sale/${id}`, makeEvent({
         id: `${id}:ev`,
         type: 'SaleCommitted',

@@ -703,13 +703,32 @@ device, human UAT and production verification separate; approved deferrals stay 
   M08-FR-01, M14-FR-02. Denominator 104 unchanged; no rung changed. **Still open, honestly:** F15 (the next slice), F14,
   the purchasing half of the loop on the real stack (SP-9-ii), exchange / no-receipt UI (SP-9b), concurrent tills and a cut
   line mid-day, physical device + staff UAT (SP-10).
-- **Current-work pointer:** last verified = SP-9-i (this PR); next = **SP-9-i-b** [W10 part, F15] (the till treats the
-  catalogue price as GST-INCLUSIVE and pulls the GST out — never above the MRP; refund ceiling, cash chain and day book
-  re-based; observation case 3 inverted; F14 if the tenant calendar lands with it), then **SP-9-ii** [W10 remainder] (purchase
-  → receiving/QC → back store → floor → sale on the SAME real stack, reconciling balances, in transit, valuation and the
-  supplier account; offline/reconnect mid-day; concurrent tills), then **SP-9b** [W12] (exchange / no-receipt till UI, CH-01
-  preserved), then **SP-3c** (picker + driver handhelds on the shared device route); **SP-10** (physical device + staff UAT)
-  stays PENDING until performed; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-9-i-b — F15 FIXED: the till charges the GST-inclusive shelf price, never the price plus GST (W10 part · A9 ·
+  M12-FR-01 · M05-FR-02 · M03-FR-03 · M23-FR-01 · P-02 · P-08 · hard rules #1 #2).** The till ADDED the GST on top of the
+  catalogue's shelf price (₹504 charged for a ₹480 price under a ₹500 MRP) while the day book, the GST return and A9 treat
+  every line total as GST-inclusive. Now `priceLine` has a `pricesIncludeTax` mode and a `splitInclusive` helper
+  (`packages/pricing/src/pricing.ts`): total = price × quantity − discount, taxable = total × 10000 / (10000 + rate) rounded
+  once, GST = the remainder — the same arithmetic as the finance package's `extractInclusiveGst`, proven equal to the paisa
+  rate by rate (`tests/unit/pricing.test.ts` +6). The till (`apps/pos/src/session.ts` `priceOf`) prices NOTHING any other
+  way — the running total, the lines the cloud sees and the disk record all carry the shelf price — and the record's net +
+  GST are re-extracted from what each line actually charged AFTER its attributed promotion, so net + tax == total on the
+  disk exactly as on the cloud's lines. The default of `priceLine` stays tax-exclusive (a purchase line is unchanged).
+  Re-based: every POS money test (₹118 → ₹100, ₹755.20 → ₹640, ₹661.50 → ₹630, ₹850.50 → ₹810, ₹504 → ₹480 — unit, view,
+  barcode, refund e2e, core lane, day close, offline sync); observation case 3 inverted into the REGRESSION (₹480 charged,
+  ₹457.14 + ₹22.86 inside it, ≤ MRP, the cloud line with the frozen rate); the connected run (integration in CI + Chromium
+  locally) now records ₹480 on disk, in the cloud contract, at the refund ceiling, in the drawer and on the dashboard.
+  Matrix §3 F15 FIXED, rows 61–62 cleared, §4 SP-9-i-b DONE + SP-9-i-c (F14) registered; traceability F15, M03-FR-03,
+  M05-FR-02, M12-FR-01; `docs/design/screens/pos-cashier.md` "Measured (SP-9-i-b)"; observation README. Denominator 104
+  unchanged; no rung changed. **Still open, honestly:** F14 (head office dates "Sales today" by UTC — needs a tenant
+  calendar at head office, SP-9-i-c), the purchasing half on the real stack (SP-9-ii), exchange / no-receipt UI (SP-9b),
+  concurrent tills and a cut line mid-day, physical device + staff UAT (SP-10).
+- **Current-work pointer:** last verified = SP-9-i-b (this PR); next = **SP-9-i-c** [F14] (a per-tenant calendar — time zone
+  + the cut-off the till already applies — owned at head office; the dashboard and the day's reports date "today" by it; the
+  connected run's dashboard check un-gated), then **SP-9-ii** [W10 remainder] (purchase → receiving/QC → back store → floor →
+  sale on the SAME real stack, reconciling balances, in transit, valuation and the supplier account; offline/reconnect
+  mid-day; concurrent tills), then **SP-9b** [W12] (exchange / no-receipt till UI, CH-01 preserved), then **SP-3c** (picker +
+  driver handhelds on the shared device route); **SP-10** (physical device + staff UAT) stays PENDING until performed;
+  genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

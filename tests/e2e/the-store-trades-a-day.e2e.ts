@@ -39,9 +39,7 @@ const MANAGER = 'u-manager';
 const ACCT = 'u-acct';
 const PRODUCT = 'p-rice';
 const BARCODE = '8901234567890';
-const PRICE = 48_000;   // the shelf price head office published
-/** What the till charges for it: GST added ON TOP of the inclusive shelf price — F15, registered; see the integration twin. */
-const CHARGED = 50_400;
+const PRICE = 48_000;   // the shelf price head office published — the 5% GST INSIDE it (A9); what the customer pays (F15 fixed)
 const COST = 40_000;
 
 interface RefundOutcome { readonly kind: string; readonly laneMessage: string; readonly refundMinor?: number }
@@ -176,7 +174,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     await page.keyboard.type(BARCODE);
     await page.keyboard.press('Enter');
     await page.waitForSelector('#lines tr');
-    expect(await page.textContent('#total')).toBe('₹504.00'); // F15: ₹480 + 5% added on top
+    expect(await page.textContent('#total')).toBe('₹480.00'); // the shelf price — never the price plus GST (F15 fixed), never above the ₹500 MRP
     expect(await page.evaluate(async ([when]) => {
       const w = globalThis as unknown as PosWindow;
       const r = await w.posSession!.tenderCash('S-1', 'R-S-1', when!);
@@ -198,14 +196,14 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
       return bill.submit({
         returnId: 'RT-1', number: 'RT-0001', reasonCode: 'changed_mind',
         lines: [{ productId: 'p-rice', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
-        refundMinor: 50_400, refundTender: 'cash', approval: { by: manager, reason: 'checked the goods' },
+        refundMinor: 48_000, refundTender: 'cash', approval: { by: manager, reason: 'checked the goods' },
       });
     }, [MANAGER]);
-    expect(refunded).toMatchObject({ kind: 'settled', refundMinor: CHARGED });
+    expect(refunded).toMatchObject({ kind: 'settled', refundMinor: PRICE });
     expect(await edge.syncOnce!()).toMatchObject({ dead: 0, remaining: 0 });
     expect(await onHandAt(STORE)).toBe(10);
 
-    // A pickup, a reload (the browser forgets; the box remembers the float is out), then the blind close: 2,000 + 504 − 504 − 1,000 = ₹1,000.
+    // A pickup, a reload (the browser forgets; the box remembers the float is out), then the blind close: 2,000 + 480 − 480 − 1,000 = ₹1,000.
     expect(await moreOffers(page)).toEqual(['Cash to safe', 'Refund', 'Close till']);
     await choose(page, 'Cash to safe');
     await keyAmount(page, '1000');

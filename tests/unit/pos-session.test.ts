@@ -62,14 +62,14 @@ const cash = (minor: number): Tender => ({
 });
 
 describe('PosSession — the Sale screen', () => {
-  it('scans an item and shows a running total with tax', () => {
+  it('scans an item and shows a running total with the GST INSIDE the shelf price (A9 — never added on top, F15)', () => {
     const { session } = newSession();
     scanItem(session);
     const totals = session.totals();
     expect(totals.lineCount).toBe(1);
-    expect(totals.net).toEqual(money(100_00, 'INR'));
-    expect(totals.tax).toEqual(money(18_00, 'INR')); // 18%
-    expect(totals.payable).toEqual(money(118_00, 'INR'));
+    expect(totals.payable).toEqual(money(100_00, 'INR')); // the shelf price IS what the customer pays
+    expect(totals.net).toEqual(money(84_75, 'INR')); // 100 × 10000 / 11800 = 84.745… → ₹84.75 taxable
+    expect(totals.tax).toEqual(money(15_25, 'INR')); // 18% pulled out of the ₹100: the remainder, to the paisa
     expect(session.currentState()).toBe('selling');
   });
 
@@ -77,16 +77,17 @@ describe('PosSession — the Sale screen', () => {
     const { session } = newSession();
     const line = scanItem(session);
     session.setQuantity(line.lineId, 3);
-    expect(session.totals().payable).toEqual(money(354_00, 'INR')); // 3 × 118
+    expect(session.totals().payable).toEqual(money(300_00, 'INR')); // 3 × ₹100 — the shelf price, nothing on top
   });
 
   it('prices a weighed item exactly', () => {
     const { session } = newSession();
-    // 1.234 kg at ₹80/kg = ₹98.72 net → +18% = ₹116.49 (half-up)
+    // 1.234 kg at ₹80/kg = ₹98.72 charged (the shelf price is inclusive); 18% inside → ₹83.66 taxable + ₹15.06 GST (half-up)
     scanItem(session, { unitPrice: money(80_00, 'INR'), quantityMinor: 1234, uom: 'kg' });
     const totals = session.totals();
-    expect(totals.net).toEqual(money(98_72, 'INR'));
-    expect(totals.payable).toEqual(money(116_49, 'INR'));
+    expect(totals.payable).toEqual(money(98_72, 'INR'));
+    expect(totals.net).toEqual(money(83_66, 'INR'));
+    expect(totals.tax).toEqual(money(15_06, 'INR'));
   });
 
   it('keeps a voided line visible with its reason and excludes it from the total', () => {
@@ -100,7 +101,7 @@ describe('PosSession — the Sale screen', () => {
     expect(voided?.voidReason).toBe('customer changed mind');
     expect(session.basket()).toHaveLength(2); // never erased — visible to loss prevention
     expect(session.totals().lineCount).toBe(1);
-    expect(session.totals().payable).toEqual(money(118_00, 'INR'));
+    expect(session.totals().payable).toEqual(money(100_00, 'INR'));
   });
 
   it('requires a reason to void a line (M15)', () => {
@@ -126,7 +127,7 @@ describe('PosSession — the Sale screen', () => {
     scanItem(session);
     const totals = session.totals();
     expect(totals.promotionDiscount).toEqual(money(10_00, 'INR')); // 10% of ₹100 unit price
-    expect(totals.payable).toEqual(money(108_00, 'INR')); // 118 − 10
+    expect(totals.payable).toEqual(money(90_00, 'INR')); // 100 − 10
   });
 
   it('refuses to tender an empty basket', () => {
@@ -138,10 +139,10 @@ describe('PosSession — the Sale screen', () => {
     const { session } = newSession();
     scanItem(session);
     const settlement = session.previewSettlement([
-      { kind: 'card', amount: money(118_00, 'INR'), status: 'pending' },
+      { kind: 'card', amount: money(100_00, 'INR'), status: 'pending' },
     ]);
     expect(settlement.fullyPaid).toBe(false);
-    expect(settlement.pending).toEqual(money(118_00, 'INR'));
+    expect(settlement.pending).toEqual(money(100_00, 'INR'));
     expect(settlement.settled).toEqual(money(0, 'INR'));
   });
 
@@ -149,9 +150,9 @@ describe('PosSession — the Sale screen', () => {
     const { session, ledger, outbox } = newSession();
     scanItem(session);
     session.goToTender();
-    const sale = await session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
+    const sale = await session.commit('sale-1', 'S-0001', AT, [cash(100_00)]);
 
-    expect(sale.total).toEqual(money(118_00, 'INR'));
+    expect(sale.total).toEqual(money(100_00, 'INR'));
     expect(session.currentState()).toBe('committed');
     expect(ledger.entries()).toHaveLength(1); // stock moved locally
     expect(outbox.unsentCount()).toBe(1); // queued for the cloud
@@ -168,15 +169,15 @@ describe('PosSession — the Sale screen', () => {
       (_id, r) => { record = r; return Promise.resolve({ committed: true as const, durable: true as const, detail: 'ok', laneMessage: 'Sale complete.' }); },
     );
     session.setNow(AT);
-    // ₹100 ex-tax at 18% → line total ₹118 (tax added); HSN frozen from the pack.
+    // ₹100 shelf price with the 18% INSIDE it → line total ₹100 (A9: nothing added on top); HSN frozen from the pack.
     session.scan({ productId: 'p1', description: 'Rice 1kg', unitPrice: money(100_00, 'INR'), quantityMinor: 1, uom: 'ea', taxRate: taxRateFromPercent(18), hsnCode: '1006' });
-    await session.commit('sale-1', 'S-0001', AT, [cash(118_00)]);
+    await session.commit('sale-1', 'S-0001', AT, [cash(100_00)]);
 
     const line = (JSON.parse(record) as { lines: Array<Record<string, unknown>> }).lines[0]!;
     expect(line).toMatchObject({
       productId: 'p1', quantityMinor: 1, uom: 'ea',
-      unitPriceMinor: 100_00,   // ex-tax unit price (for the MRP / price-difference checks)
-      lineTotalMinor: 118_00,   // tax-inclusive line total (sums to the sale total; GST pulled from it)
+      unitPriceMinor: 100_00,   // the shelf price, GST inside (for the MRP / price-difference checks)
+      lineTotalMinor: 100_00,   // tax-inclusive line total (sums to the sale total; GST pulled from it)
       taxRateBps: 1800,         // the rate frozen at supply
       hsnCode: '1006',          // the HSN frozen at supply
     });
@@ -190,19 +191,19 @@ describe('PosSession — the Sale screen', () => {
       (_id, r) => { record = r; return Promise.resolve({ committed: true as const, durable: true as const, detail: 'ok', laneMessage: 'Sale complete.' }); },
     );
     session.setNow(AT);
-    // 10% off p1 only. p1 ₹100 @18% → line ₹118; p2 ₹200 @18% → line ₹236. Promo = ₹10 off p1's gross.
+    // 10% off p1 only. p1 ₹100 (18% inside) → line ₹100; p2 ₹200 (18% inside) → line ₹200. Promo = ₹10 off p1's gross.
     session.loadPromotions([
       { id: 'p1-10', kind: 'percent_off', startsAt: '2026-08-01T00:00:00Z', endsAt: '2026-08-31T23:59:59Z', status: 'active', productIds: ['p1'], percentBps: 1000 } as Promotion,
     ]);
     session.scan({ productId: 'p1', description: 'A', unitPrice: money(100_00, 'INR'), quantityMinor: 1, uom: 'ea', taxRate: taxRateFromPercent(18), hsnCode: '1001' });
     session.scan({ productId: 'p2', description: 'B', unitPrice: money(200_00, 'INR'), quantityMinor: 1, uom: 'ea', taxRate: taxRateFromPercent(18), hsnCode: '1002' });
-    const payable = session.totals().payable.minor; // (118 + 236) − 10 = 344_00
+    const payable = session.totals().payable.minor; // (100 + 200) − 10 = 290_00
     await session.commit('sale-1', 'S-0001', AT, [cash(payable)]);
 
     const parsed = JSON.parse(record) as { total: number; lines: Array<{ productId: string; lineTotalMinor: number }> };
     const byProduct = Object.fromEntries(parsed.lines.map((l) => [l.productId, l.lineTotalMinor]));
-    expect(byProduct['p1']).toBe(108_00); // ₹118 − ₹10 (the promo came off p1)
-    expect(byProduct['p2']).toBe(236_00); // p2 untouched
+    expect(byProduct['p1']).toBe(90_00); // ₹100 − ₹10 (the promo came off p1)
+    expect(byProduct['p2']).toBe(200_00); // p2 untouched
     // The line totals sum to exactly what the customer paid — no line-sum exception on the cloud.
     expect(parsed.lines.reduce((s, l) => s + l.lineTotalMinor, 0)).toBe(payable);
     expect(parsed.total).toBe(payable);

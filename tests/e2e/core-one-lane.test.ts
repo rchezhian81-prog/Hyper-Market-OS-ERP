@@ -45,7 +45,7 @@ const TILL = 'u-till';
 // banked sale lands inside the owner dashboard's "today" window.
 const COMMITTED_AT = new Date(Date.now() - 60_000).toISOString();
 const TRADING_DAY = COMMITTED_AT.slice(0, 10);
-const TOTAL_MINOR = 75_520; // ₹640.00 unit + 18% tax, one unit
+const TOTAL_MINOR = 64_000; // ₹640.00 shelf price, one unit — the 18% GST is INSIDE it (A9), never added on top
 
 /** A `fetch` that carries the sync agent's POST to the real cloud surface as the till principal. */
 function cloudFetch(h: ApiHarness): typeof globalThis.fetch {
