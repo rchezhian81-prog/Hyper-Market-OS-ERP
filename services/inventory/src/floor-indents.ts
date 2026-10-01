@@ -16,7 +16,7 @@ import {
   requestIndent, approveIndent, rejectIndent, planIssue, applyIssue, planReceipt, applyReceipt, cancelIndent,
   planReturn, applyReturnRequest, returnTransfer, planReturnAcceptance, applyReturnAcceptance, indentTotals, indentAttention,
   IndentRefusedError,
-  type FloorIndent, type IndentLine, type IssueLine, type ReceivedLine, type ShortfallLine, type IndentRefusal,
+  type FloorIndent, type IndentLine, type IssueLine, type ReceivedLine, type ShortfallLine, type DamagedLine, type IndentRefusal,
 } from '../../../packages/warehouse/src/indents';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
@@ -25,6 +25,12 @@ import type { Movement } from './index';
 
 export type IndentEventType =
   | 'FloorIndentRequested' | 'FloorIndentApproved' | 'FloorIndentRejected' | 'FloorIndentCancelled' | 'FloorIndentReturnRequested';
+
+/** SP-8c: one bin-level movement head office applied for a handheld issue, keyed on the command it collapses on. */
+export interface BinMovementRecord {
+  readonly commandId: string;
+  readonly movements: readonly StockMovement[];
+}
 
 export interface FloorIndentsDeps {
   readonly indent: (tenantId: string, indentId: string) => Promise<FloorIndent | undefined> | FloorIndent | undefined;
@@ -41,8 +47,9 @@ export interface FloorIndentsDeps {
   readonly unitCostAt: (tenantId: string, locationId: string, productId: string) => Promise<number | undefined> | number | undefined;
   /** A lifecycle step that moves no stock — the indent aggregate alone. */
   readonly recordIndent: (tenantId: string, indent: FloorIndent, type: IndentEventType) => Promise<void> | void;
-  /** An ISSUE: the indent, the transfer proposed AND dispatched, and its `transferred_out` movements — ONE atomic write. */
-  readonly recordIssued: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], posted: readonly Movement[]) => Promise<void> | void;
+  /** An ISSUE: the indent, the transfer proposed AND dispatched, and its `transferred_out` movements — ONE atomic write.
+   *  SP-8c: a handheld issue also names the back-store BIN it took from; its bin movement(s) ride the same write. */
+  readonly recordIssued: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], posted: readonly Movement[], binMovements?: readonly BinMovementRecord[]) => Promise<void> | void;
   /** A floor RECEIPT: the indent, the received transfer and its `transferred_in` movements — ONE atomic write. */
   readonly recordReceipt: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[]) => Promise<void> | void;
   /** A RETURN accepted at the back store: the indent and the return's transfer proposed, dispatched and received in one step, with both legs' movements — ONE atomic write. */
@@ -89,8 +96,9 @@ export function readIssueLines(v: unknown): IssueLine[] | undefined {
   if (!Array.isArray(v) || v.length === 0) return undefined;
   const out: IssueLine[] = [];
   for (const raw of v) {
-    if (!isObj(raw) || !isStr(raw['productId']) || !isPosInt(raw['quantityMinor']) || (raw['batchId'] !== undefined && raw['batchId'] !== null && !isStr(raw['batchId']))) return undefined;
-    out.push({ productId: raw['productId'], batchId: isStr(raw['batchId']) ? raw['batchId'] : null, quantityMinor: raw['quantityMinor'] });
+    if (!isObj(raw) || !isStr(raw['productId']) || !isPosInt(raw['quantityMinor']) || (raw['batchId'] !== undefined && raw['batchId'] !== null && !isStr(raw['batchId']))
+      || (raw['binId'] !== undefined && raw['binId'] !== null && !isStr(raw['binId']))) return undefined;
+    out.push({ productId: raw['productId'], batchId: isStr(raw['batchId']) ? raw['batchId'] : null, quantityMinor: raw['quantityMinor'], ...(isStr(raw['binId']) ? { binId: raw['binId'] } : {}) });
   }
   return out;
 }
@@ -99,8 +107,9 @@ export function readCounted(v: unknown): ReceivedLine[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const out: ReceivedLine[] = [];
   for (const raw of v) {
-    if (!isObj(raw) || !isStr(raw['productId']) || !isInt(raw['quantityMinor']) || (raw['quantityMinor'] as number) < 0 || (raw['batchId'] !== undefined && raw['batchId'] !== null && !isStr(raw['batchId']))) return undefined;
-    out.push({ productId: raw['productId'], batchId: isStr(raw['batchId']) ? raw['batchId'] : null, quantityMinor: raw['quantityMinor'] });
+    if (!isObj(raw) || !isStr(raw['productId']) || !isInt(raw['quantityMinor']) || (raw['quantityMinor'] as number) < 0 || (raw['batchId'] !== undefined && raw['batchId'] !== null && !isStr(raw['batchId']))
+      || (raw['damagedMinor'] !== undefined && (!isInt(raw['damagedMinor']) || (raw['damagedMinor'] as number) < 0))) return undefined;
+    out.push({ productId: raw['productId'], batchId: isStr(raw['batchId']) ? raw['batchId'] : null, quantityMinor: raw['quantityMinor'], ...(isInt(raw['damagedMinor']) && (raw['damagedMinor'] as number) > 0 ? { damagedMinor: raw['damagedMinor'] as number } : {}) });
   }
   return out;
 }
@@ -111,6 +120,41 @@ export const shortfallOf = (discrepancies: readonly TransferDiscrepancy[]): Shor
 export const receivedOf = (movements: readonly StockMovement[], transfer: Transfer): ReceivedLine[] =>
   movements.filter((m) => m.from === 'in_transit' && m.to === 'on_hand' && m.locationId === transfer.toLocationId)
     .map((m) => ({ productId: m.productId, batchId: m.batchId, quantityMinor: m.quantityMinor }));
+
+// ── SP-8c: damage on arrival ──────────────────────────────────────────────────────────────────────────────────
+// The floor counts GOOD and DAMAGED separately. Both ARRIVED — so both leave transit through the transfer engine (a damaged
+// carton is in the building, not a shortfall) — but only the good units become shelf availability. The damaged units are
+// written off at the floor in the SAME atomic write, valued at the cost the stock left with, and carried on the indent as a
+// valued exception with an owner. Nothing is on the shelf that cannot sell; nothing is quietly gone (P-08, hard rule #2).
+
+/** What arrived, good and damaged alike — what the transfer engine receives out of transit. */
+export const arrivedOf = (counted: readonly ReceivedLine[]): { productId: string; batchId: string | null; quantityMinor: number }[] =>
+  counted.map((c) => ({ productId: c.productId, batchId: c.batchId, quantityMinor: c.quantityMinor + (c.damagedMinor ?? 0) }));
+
+/** The damaged units, valued at the transfer line's cost (what left the back store). */
+export const damagedOf = (counted: readonly ReceivedLine[], transfer: Transfer): DamagedLine[] =>
+  counted.filter((c) => (c.damagedMinor ?? 0) > 0).map((c) => {
+    const i = transfer.lines.findIndex((l) => l.productId === c.productId && l.batchId === c.batchId);
+    const unitCost = i >= 0 ? transfer.lineCostsMinor?.[i] ?? transfer.lines[i]!.unitCost.minor : 0;
+    return { productId: c.productId, batchId: c.batchId, quantityMinor: c.damagedMinor!, valueMinor: unitCost * c.damagedMinor! };
+  });
+
+/** The GOOD units received: what arrived (capped at what was sent, as the engine counts it) less what arrived damaged. */
+export const goodOf = (received: readonly ReceivedLine[], damaged: readonly DamagedLine[]): ReceivedLine[] =>
+  received.map((r) => {
+    const d = damaged.find((x) => x.productId === r.productId && x.batchId === r.batchId);
+    return d === undefined ? r : { ...r, quantityMinor: Math.max(0, r.quantityMinor - d.quantityMinor) };
+  });
+
+/** The M08 write-off of the damaged units at the floor — `wasted`, in the same batch as the `transferred_in` that brought them. */
+export const damagePostings = (transfer: Transfer, damaged: readonly DamagedLine[], receivedBy: string, at: string): Movement[] =>
+  damaged.map((d, i): Movement => ({
+    movementId: `${transfer.transferId}-damaged-${i + 1}`, productId: d.productId, locationId: transfer.toLocationId, kind: 'wasted',
+    quantityMinor: d.quantityMinor, uom: transfer.lines.find((l) => l.productId === d.productId && l.batchId === d.batchId)?.uom ?? 'EA',
+    occurredAt: at, enteredBy: receivedBy,
+    reason: `transfer ${transfer.transferId} arrived damaged at ${transfer.toLocationId} — written off, value ${d.valueMinor} minor`,
+    ...(d.batchId === null ? {} : { batchId: d.batchId }),
+  }));
 
 /** The indent as every read returns it: the aggregate plus its derived figures and why it needs a person. */
 export function presentIndent(indent: FloorIndent): Record<string, unknown> {
@@ -292,16 +336,19 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           planReceipt({ indent, issueId, receivedBy: ctx.userId, counted });
           const transfer = await deps.transferOf(ctx.tenantId, issue.transferId);
           if (transfer === undefined) throw notFound(`transfer ${issue.transferId}`);
-          const result = receiveTransfer({ transfer, counted, receivedBy: ctx.userId, at: now, currency: (b['currency'] as CurrencyCode | undefined) ?? 'INR' });
-          const posted = receivePostings(result.transfer, result.movements, ctx.userId);
-          const next = applyReceipt(indent, issueId, { receivedBy: ctx.userId, at: now, received: receivedOf(result.movements, result.transfer), shortfall: shortfallOf(result.discrepancies) });
+          const result = receiveTransfer({ transfer, counted: arrivedOf(counted), receivedBy: ctx.userId, at: now, currency: (b['currency'] as CurrencyCode | undefined) ?? 'INR' });
+          // SP-8c: damaged units arrived (out of transit) and are written off at the floor in the same write — never on the shelf.
+          const damaged = damagedOf(counted, result.transfer);
+          const posted = [...receivePostings(result.transfer, result.movements, ctx.userId), ...damagePostings(result.transfer, damaged, ctx.userId, now)];
+          const next = applyReceipt(indent, issueId, { receivedBy: ctx.userId, at: now, received: goodOf(receivedOf(result.movements, result.transfer), damaged), shortfall: shortfallOf(result.discrepancies), damaged });
           await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted);
           await audit(ctx.tenantId, {
             actorId: ctx.userId, action: 'floor_indent.receive', objectType: 'floor_indent', objectId: indentId, at: now, origin: origin(ctx.tenantId, ctx.branchId ?? null),
-            before: { state: indent.state, issueId, issuedBy: issue.issuedBy }, after: { state: next.state, receivedMinor: String(counted.reduce((s, c) => s + c.quantityMinor, 0)), shortfalls: String(result.discrepancies.filter((d) => d.differenceMinor < 0).length), posted: posted.map((m) => m.movementId).join(',') },
+            before: { state: indent.state, issueId, issuedBy: issue.issuedBy },
+            after: { state: next.state, receivedMinor: String(counted.reduce((s, c) => s + c.quantityMinor, 0)), damagedMinor: String(damaged.reduce((s, d) => s + d.quantityMinor, 0)), shortfalls: String(result.discrepancies.filter((d) => d.differenceMinor < 0).length), posted: posted.map((m) => m.movementId).join(',') },
             correlationId: indentId,
           });
-          return { status: 201, body: { indent: presentIndent(next), issue: next.issues.find((i) => i.issueId === issueId), posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies, alreadyReceived: false } };
+          return { status: 201, body: { indent: presentIndent(next), issue: next.issues.find((i) => i.issueId === issueId), posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies, damaged, alreadyReceived: false } };
         } catch (e) { return refusedBy(e); }
       },
     },

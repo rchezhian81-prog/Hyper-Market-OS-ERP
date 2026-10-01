@@ -58,6 +58,7 @@
       .item.recalled { border-left-color: var(--danger); }
       /* A pick line: the bin is the biggest thing, because the bin is where the worker must walk to. */
       .item.pick { border-left-color: var(--accent); }
+      .item.issue { border-left-color: var(--accent); }
       .item .where { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
       .item .what { font-size: 20px; font-weight: 700; }
       .item .qty { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
@@ -149,6 +150,9 @@
     <main>
       <h2 class="section" id="pick-heading" hidden>—</h2>
       <div id="pick-lines"></div>
+      <!-- SP-8c: floor indents the back store owes — issue against the indent: tap the line → scan the bin you take from → scan the item → confirm. -->
+      <h2 class="section" id="issue-heading" hidden>—</h2>
+      <div id="issue-lines"></div>
       <h2 class="section" id="goods-in-heading">—</h2>
       <div id="goods-in"></div>
       <p class="empty" id="empty" hidden>—</p>
@@ -167,6 +171,8 @@
         <button id="done-receiving" class="wide" type="button" hidden>Delivery complete — send the receipt</button>
         <!-- Shown only when the handheld holds pick work. Scanning a line's bin from the list starts the pick without it. -->
         <button id="pick" class="primary wide" type="button" disabled hidden>Pick — scan the bin</button>
+        <!-- SP-8c: shown only when the handheld holds floor indents to issue. -->
+        <button id="issue" class="primary wide" type="button" disabled hidden>Issue to the floor — scan the bin</button>
         <!-- SP-3b: a BLIND bin count (W2) and an adjustment REQUEST with a reason (W3). Neither moves stock on this handheld. -->
         <button id="count-bin" type="button" disabled>Count a bin</button>
         <button id="adjust-stock" type="button" disabled>Adjust stock</button>

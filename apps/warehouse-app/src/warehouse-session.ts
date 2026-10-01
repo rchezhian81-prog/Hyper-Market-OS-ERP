@@ -67,6 +67,8 @@ export const FEEDBACK_CODES = Object.freeze([
   'counted', 'adjustment_requested', 'not_a_quantity', 'no_reason',
   // the delivery declared complete — sent as ONE receipt for head office to assemble against the order (SP-6b)
   'receiving_done', 'nothing_received',
+  // SP-8c: the back store ISSUES against a floor indent (tap the line → scan the bin you take from → scan the item → confirm)
+  'issued', 'not_on_indent', 'indent_line_done', 'requester_cannot_issue', 'bin_has_none',
 ] as const);
 export type FeedbackCode = (typeof FEEDBACK_CODES)[number];
 
@@ -193,6 +195,56 @@ export type PickCheck =
   | { readonly ok: true; readonly line: PickLine }
   | { readonly ok: false; readonly signal: FeedbackSignal };
 
+/**
+ * SP-8c: one approved floor-indent line the back store still owes, as the box served it from head office's register
+ * (`GET /v1/floor/indents?open=true`, pulled into the pack). The handheld issues against it: any bin here that holds the
+ * product will do — the indent names no bin — so the row shows where the stock is and the worker scans the bin they take from.
+ */
+export interface AssignedIndentLine {
+  readonly indentId: string;
+  readonly productId: string;
+  readonly uom: string;
+  /** Still owed to the floor as head office last said: allocated − issued. */
+  readonly outstandingMinor: number;
+  /** Who asked — the person who may NOT issue it (§28). */
+  readonly requestedBy: string;
+  readonly toLocationId: string;
+}
+
+/** An indent line as the worklist shows it: the assignment plus what has been issued against it on this handheld and where the product is. */
+export interface IndentIssueLine extends AssignedIndentLine {
+  readonly issuedHereMinor: number;
+  readonly remainingMinor: number;
+  /** The bins on this handheld's projection that hold the product — where to walk. */
+  readonly binIds: readonly string[];
+}
+
+export interface IssueToFloorInput {
+  readonly commandId: string;
+  readonly indentId: string;
+  readonly productId: string;
+  readonly scannedBinId: string;
+  readonly scannedItem: string;
+  /** Defaults to what is still owed, capped at what the scanned bin holds — the confirm step shows the number before it is committed. */
+  readonly quantityMinor?: number;
+  readonly at: string;
+}
+
+export interface IssueToFloorResult {
+  readonly accepted: boolean;
+  readonly commandId: string;
+  readonly indentId: string;
+  readonly productId?: string;
+  readonly binId: string;
+  readonly quantityMinor?: number;
+  readonly signal: FeedbackSignal;
+}
+
+/** What the screen asks between scans of an issue: is this a bin holding the product, is this the item? Commits nothing. */
+export type IssueCheck =
+  | { readonly ok: true; readonly line: IndentIssueLine; readonly batchId: string | null; readonly inBinMinor: number }
+  | { readonly ok: false; readonly signal: FeedbackSignal };
+
 /** The event a receiving SCAN travels under (SP-3a): one scan, not a whole receipt — the manager's `GoodsReceived` is that. */
 export const RECEIVING_SCANNED = 'ReceivingScanned';
 /** The event a put-away or a pick travels under — the command the handheld applied, for the cloud to re-apply. */
@@ -208,9 +260,11 @@ export const HANDHELD_COUNT_REASON = 'cycle_count';
  * the goods receipt from the scans it already holds and folds it into the purchase order — nothing in it moves stock.
  */
 export const RECEIVING_COMPLETED = 'ReceivingCompleted';
+/** SP-8c: the event a back-store ISSUE against a floor indent travels under — the cloud re-runs the indent + transfer engines on it. */
+export const FLOOR_INDENT_ISSUED = 'FloorIndentIssued';
 
 /** The kinds of work this handheld hands to the store computer — a value, so the shell must have words for each. */
-export const SENT_WORK_KINDS = Object.freeze(['receipt', 'receipt_done', 'put_away', 'pick', 'count', 'adjustment'] as const);
+export const SENT_WORK_KINDS = Object.freeze(['receipt', 'receipt_done', 'put_away', 'pick', 'count', 'adjustment', 'issue'] as const);
 export type SentWorkKind = (typeof SENT_WORK_KINDS)[number];
 
 /** "Delivery complete" (SP-6b): the GRN this handheld has been receiving, and the order it was delivered against when known. */
@@ -296,6 +350,8 @@ export interface WarehouseAssignment {
   readonly goodsIn?: readonly GoodsInItem[];
   /** Order lines to pick from the racking, each naming its bin (M09-FR-01 pick). Absent = no pick work. */
   readonly pickLines?: readonly AssignedPickLine[];
+  /** SP-8c: floor indents the back store owes — approved lines with something still to issue (from head office's register via the box). Absent = none sent. */
+  readonly indentLines?: readonly AssignedIndentLine[];
   /** Products / batches under recall — never put into a pickable bin, even offline (M10-FR-04). */
   readonly recalledProductIds?: readonly string[];
   readonly recalledBatchIds?: readonly string[];
@@ -321,6 +377,8 @@ export class WarehouseSession {
   private readonly goods = new Map<string, GoodsInItem>();
   /** The pick list by line id, with what has been picked against each line this session. */
   private readonly picks = new Map<string, { readonly line: AssignedPickLine; pickedMinor: number }>();
+  /** SP-8c: the floor indents owed, by `indentId|productId`, with what has been issued against each on this handheld. */
+  private readonly indents = new Map<string, { readonly line: AssignedIndentLine; issuedMinor: number }>();
   private readonly appliedCommandIds: string[] = [];
   private readonly receivedSoFar: Record<string, number> = {};
   /** The store computer's word on each item it took, keyed by queue key — filled by `noteBoxStatus` (SP-3a). */
@@ -347,6 +405,7 @@ export class WarehouseSession {
     this.at = options.now ?? (() => new Date().toISOString());
     for (const item of assignment.goodsIn ?? []) this.goods.set(gKey(item.productId, item.batchId), { ...item });
     for (const line of assignment.pickLines ?? []) this.picks.set(line.lineId, { line: { ...line, batchId: line.batchId ?? null }, pickedMinor: 0 });
+    for (const line of assignment.indentLines ?? []) this.indents.set(`${line.indentId}|${line.productId}`, { line, issuedMinor: 0 });
   }
 
   /** The put-away worklist: goods received and not yet binned. */
@@ -358,6 +417,14 @@ export class WarehouseSession {
   pickLines(): readonly PickLine[] {
     return [...this.picks.values()]
       .map(({ line, pickedMinor }) => ({ ...line, pickedMinor, remainingMinor: line.quantityMinor - pickedMinor }))
+      .filter((line) => line.remainingMinor > 0);
+  }
+
+  /** SP-8c: the floor indents the back store still owes — every line with something left to issue, in the order the box sent
+   *  them, with the bins on this handheld's projection that hold the product (where to walk). */
+  indentLines(): readonly IndentIssueLine[] {
+    return [...this.indents.values()]
+      .map(({ line, issuedMinor }) => ({ ...line, issuedHereMinor: issuedMinor, remainingMinor: line.outstandingMinor - issuedMinor, binIds: this.binsHolding(line.productId) }))
       .filter((line) => line.remainingMinor > 0);
   }
 
@@ -411,6 +478,12 @@ export class WarehouseSession {
         if (item.event.type === ADJUSTMENT_REQUESTED) {
           const p = item.event.payload as { requestId: string; productId: string; binId: string | null; deltaMinor: number; uom: string; reasonCode: string };
           return [{ kind: 'adjustment', id: p.requestId, what: `${p.productId}${p.binId ? ` · ${p.binId}` : ''}`, detail: `${p.deltaMinor > 0 ? '+' : ''}${p.deltaMinor} ${p.uom} · ${p.reasonCode}`, ...common, ...withReason }];
+        }
+        if (item.event.type === FLOOR_INDENT_ISSUED) {
+          // SP-8c: an issue against a floor indent — which indent, what, how many, from which bin.
+          const p = item.event.payload as { indentId: string; issueId: string; lines: readonly { productId: string; batchId: string | null; quantityMinor: number; binId: string; uom: string }[] };
+          const l = p.lines[0];
+          return [{ kind: 'issue', id: p.issueId, what: `${l?.productId ?? ''}${l?.batchId ? ` · ${l.batchId}` : ''} · ${l?.binId ?? ''}`, detail: `${l?.quantityMinor ?? 0} ${l?.uom ?? ''} · ${p.indentId}`, ...common, ...withReason }];
         }
         return [];
       })
@@ -733,6 +806,119 @@ export class WarehouseSession {
     }));
     const detail = `${input.deltaMinor > 0 ? '+' : ''}${input.deltaMinor} ${uom} of ${productId} (${reasonCode}) — waits for a supervisor's approval before it posts`;
     return { accepted: true, requestId: input.requestId, productId, signal: signalFor('accept', 'adjustment_requested', detail) };
+  }
+
+  /** The bins on this handheld's projection holding any of the product — where the worker walks for an issue. */
+  private binsHolding(productId: string): readonly string[] {
+    const out = new Set<string>();
+    for (const [key, qty] of Object.entries(this.contents)) {
+      const [binId, product] = key.split('|');
+      if (binId !== undefined && product === productId && qty > 0) out.add(binId);
+    }
+    return [...out].sort();
+  }
+
+  /** The lot of the product in a bin (first batch by id; the null batch sorts first), or null when the bin holds none. */
+  private lotInBin(binId: string, productId: string): { readonly batchId: string | null; readonly quantityMinor: number } | null {
+    const lots = Object.entries(this.contents)
+      .map(([key, qty]) => ({ parts: key.split('|'), qty }))
+      .filter(({ parts, qty }) => parts[0] === binId && parts[1] === productId && qty > 0)
+      .map(({ parts, qty }) => ({ batchId: parts[2] === undefined || parts[2] === '' ? null : parts[2], quantityMinor: qty }))
+      .sort((a, b) => (a.batchId ?? '').localeCompare(b.batchId ?? ''));
+    return lots[0] ?? null;
+  }
+
+  /**
+   * SP-8c: is this a bin that holds the product the floor asked for — and, once scanned, the right item? The indent names no
+   * bin (the floor does not know the racking), so ANY bin here holding the product will do; what is refused is a bin holding
+   * none of it, an unknown bin, a wrong item, a line already fully issued, and — before anything is scanned — the requester
+   * issuing to themselves (§28). The same codes `issueToFloor` returns, so the screen shows one vocabulary. Commits nothing.
+   */
+  checkIssue(input: { readonly indentId: string; readonly productId: string; readonly scannedBinId: string; readonly scannedItem?: string }): IssueCheck {
+    const entry = this.indents.get(`${input.indentId}|${input.productId}`);
+    if (entry === undefined) {
+      return { ok: false, signal: signalFor('reject', 'not_on_indent', `${input.productId} is not owed on indent ${input.indentId} on this handheld`) };
+    }
+    const remaining = entry.line.outstandingMinor - entry.issuedMinor;
+    const line: IndentIssueLine = { ...entry.line, issuedHereMinor: entry.issuedMinor, remainingMinor: remaining, binIds: this.binsHolding(entry.line.productId) };
+    if (remaining <= 0) {
+      return { ok: false, signal: signalFor('warn', 'indent_line_done', `${line.indentId} · ${line.productId} is fully issued — nothing left to send`) };
+    }
+    if (entry.line.requestedBy === this.assignment.workerId) {
+      return { ok: false, signal: signalFor('reject', 'requester_cannot_issue', `you raised ${line.indentId} — a different person must issue it (§28)`) };
+    }
+    const binId = input.scannedBinId.trim();
+    if (!this.knowsBin(binId)) return { ok: false, signal: signalFor('reject', 'unknown_bin', `${binId} is not a bin in this store — set it aside for someone to sort out`, true) };
+    const lot = this.lotInBin(binId, line.productId);
+    if (lot === null) return { ok: false, signal: signalFor('reject', 'bin_has_none', `${binId} holds none of ${line.productId} — scan the bin the stock is in`) };
+    if (input.scannedItem !== undefined) {
+      const productId = this.productOfScan(input.scannedItem);
+      if (productId === null) return { ok: false, signal: signalFor('reject', 'unknown_barcode', `"${input.scannedItem.trim()}" is not a barcode this handheld knows`, true) };
+      if (productId !== line.productId) return { ok: false, signal: signalFor('reject', 'wrong_item', `${productId} is not ${line.productId}, the item the floor asked for`) };
+    }
+    return { ok: true, line, batchId: lot.batchId, inBinMinor: lot.quantityMinor };
+  }
+
+  /**
+   * SP-8c: ISSUE one indent line to the floor from the bin scanned (inventory-warehouse.md: tap the line → scan the bin → scan
+   * the item → confirm, ≤3 after the tap). The bin movement is the authoritative `applyMovement` kind `pick` out of the scanned
+   * bin — it refuses a draw the bin cannot cover and a repeated command — and the quantity can never exceed what the indent
+   * still owes. An accepted issue lowers the local bin projection, advances the line and queues ONE `FloorIndentIssued`
+   * keyed on the command id; head office re-runs the indent and transfer engines on it (the requester refused as issuer,
+   * over-issue, over-draw against ITS stock) and lowers the SAME bin in the same write — never a second movement from here.
+   * A refusal changes nothing and queues nothing (hard rules #1 #2, §31.1).
+   */
+  issueToFloor(input: IssueToFloorInput): IssueToFloorResult {
+    const binId = input.scannedBinId.trim();
+    const refused = (code: string, detail: string, feedback: ScanFeedback = 'reject', resolutionRequired = false): IssueToFloorResult =>
+      ({ accepted: false, commandId: input.commandId, indentId: input.indentId, binId, signal: signalFor(feedback, code, detail, resolutionRequired) });
+    if (this.appliedCommandIds.includes(input.commandId) || this.outbox.find(`indent-issue:${input.indentId}:${input.commandId}`) !== undefined) {
+      return refused('duplicate_ignored', 'this issue has already been recorded — scanning again changes nothing', 'warn');
+    }
+    const check = this.checkIssue({ indentId: input.indentId, productId: input.productId, scannedBinId: binId, scannedItem: input.scannedItem });
+    if (!check.ok) return refused(check.signal.code, check.signal.detail, check.signal.feedback, check.signal.resolutionRequired ?? false);
+    const { line, batchId, inBinMinor } = check;
+    const quantity = input.quantityMinor ?? Math.min(line.remainingMinor, inBinMinor);
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > line.remainingMinor) {
+      return refused('invalid_command', `${line.indentId} still owes ${line.remainingMinor} of ${line.productId}, not ${String(quantity)}`);
+    }
+
+    const command: MovementCommand = {
+      commandId: input.commandId, kind: 'pick', storeId: this.assignment.storeId,
+      productId: line.productId, batchId, quantityMinor: quantity, uom: line.uom,
+      fromBinId: binId, toBinId: null, movedBy: this.assignment.workerId, at: input.at,
+      reason: `indent ${line.indentId}`,
+    };
+    const result = applyMovement({ command, appliedCommandIds: this.appliedCommandIds, bins: this.bins, contents: this.contents });
+    if (!result.accepted) {
+      const feedback: ScanFeedback = result.outcome === 'duplicate_ignored' ? 'warn' : 'reject';
+      return refused(result.outcome, result.detail, feedback, result.resolutionRequired ?? false);
+    }
+
+    // Accepted. Lower the bin projection, advance the line, queue the ONE fact head office needs.
+    this.appliedCommandIds.push(result.commandId);
+    const fromKey = binKey(binId, line.productId, batchId);
+    this.contents[fromKey] = (this.contents[fromKey] ?? 0) - quantity;
+    const entry = this.indents.get(`${line.indentId}|${line.productId}`)!;
+    entry.issuedMinor += quantity;
+
+    this.outbox.enqueue(makeEvent({
+      id: `indent-issue:${line.indentId}:${input.commandId}`,
+      type: FLOOR_INDENT_ISSUED,
+      occurredAt: input.at,
+      // The command's own id is the issue id — the cloud keys the issue and its bin movement on it, so a re-sent scan is one issue.
+      idempotencyKey: `indent-issue:${line.indentId}:${input.commandId}`,
+      source: this.assignment.assignmentId,
+      payload: {
+        indentId: line.indentId, issueId: input.commandId,
+        lines: [{ productId: line.productId, batchId, quantityMinor: quantity, binId, uom: line.uom }],
+        issuedBy: this.assignment.workerId, at: input.at, storeId: this.assignment.storeId, source: 'warehouse-handheld',
+      },
+    }));
+
+    const left = line.remainingMinor - quantity;
+    const detail = `${quantity} ${line.uom} of ${line.productId} issued to the floor for ${line.indentId} from ${binId}` + (left > 0 ? ` — ${left} still owed` : '');
+    return { accepted: true, commandId: input.commandId, indentId: line.indentId, productId: line.productId, binId, quantityMinor: quantity, signal: signalFor('accept', 'issued', detail) };
   }
 
   /**

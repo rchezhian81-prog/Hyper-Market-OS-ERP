@@ -195,6 +195,7 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // `indentId` / `issueId` are plain top-level payload fields matching the path params.
   FloorIndentRequested: '/v1/floor/indents/:indentId/synced',
   FloorIndentReceived: '/v1/floor/indents/:indentId/issues/:issueId/receipt/synced',
+  FloorIndentIssued: '/v1/floor/indents/:indentId/issues/:issueId/synced',
   MigrationExceptionResolved: '/v1/migration/exceptions/:exceptionId/resolution/synced',
   MigrationTotalSigned: '/v1/migration/control-totals/:totalId/signature/synced',
 };

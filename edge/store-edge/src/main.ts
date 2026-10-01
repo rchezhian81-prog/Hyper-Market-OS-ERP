@@ -45,10 +45,15 @@ import {
   httpPublishedTemplatesSource, pullPublishedTemplates,
   type PublishedTemplatesPullOutcome, type PublishedTemplatesPullStatus, type PublishedTemplatesReceiver,
 } from '../../../edge/sync-agent/src/published-templates';
+import {
+  httpIndentsFeedSource, pullIndentsFeed,
+  type IndentsFeedPullOutcome, type IndentsFeedPullStatus, type IndentsFeedReceiver,
+} from '../../../edge/sync-agent/src/indents-feed';
 import { openFileLog, readLog, type OpenFileLog } from './file-log';
 import { readSignedPack, writeSignedPack } from './signed-pack-file';
 import { readHeldMigrationFeed, writeHeldMigrationFeed, type HeldMigrationFeed } from './migration-feed-file';
 import { readHeldPublishedTemplates, writeHeldPublishedTemplates, type HeldPublishedTemplates } from './published-templates-file';
+import { readHeldIndentsFeed, writeHeldIndentsFeed, type HeldIndentsFeed } from './indents-feed-file';
 import { SyncPipeline } from './sync-pipeline';
 import { canonicalHash, IdempotencyGuard } from './idempotency';
 import { ReturnEntitlement, type EntitlementLine } from './entitlement';
@@ -63,7 +68,7 @@ import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-serv
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
 import { readSales } from './read-model';
-import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, type StorePack } from './store-pack';
+import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, type StorePack } from './store-pack';
 import { managerPayload, type ScreenInput } from './screen-data';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
@@ -307,6 +312,12 @@ export interface EdgeProcess {
    * cable out. Null when no cloud is configured. Rides the same loop as `refreshPack`; exposed for the same reason.
    */
   readonly refreshPublishedTemplates: (() => Promise<PublishedTemplatesPullOutcome>) | null;
+  /**
+   * Pull head office's open floor indents now (SP-8c · F08) and lay them into the pack, so the warehouse handheld knows
+   * what the back store owes and the Indents screen has its register with the cable out. Null when no cloud is
+   * configured. Rides the same loop as `refreshPack`; exposed for the same reason.
+   */
+  readonly refreshIndentsFeed: (() => Promise<IndentsFeedPullOutcome>) | null;
   /**
    * Run exactly one drain-and-settle of both queues (sales then refunds), returning what moved.
    * Null when no cloud is configured — there is nothing to drain to. The poll loop calls the same
@@ -1058,6 +1069,14 @@ export async function startEdge(
     say(`migration register as of ${heldFeed.feed.generatedAt} restored from disk — the last one this box pulled.`);
   }
 
+  // Head office's open floor indents as this box last pulled them (SP-8c), restored from disk and laid into the pack — so
+  // a reboot with the cable out still gives the warehouse handheld what the back store owes, under the cloud's own clock.
+  let heldIndents: HeldIndentsFeed | undefined = await readHeldIndentsFeed(settings['EDGE_DATA_DIR']!, tenantId);
+  if (heldIndents !== undefined) {
+    pack = withIndentsFeed(pack, heldIndents.feed, heldIndents.receivedAt);
+    say(`floor indents as of ${heldIndents.feed.asAt} restored from disk — the last register this box pulled.`);
+  }
+
   // The document templates in force as this box last pulled them (M01-FR-02), restored from disk and laid into the
   // pack — so a reboot with the cable out still prints the receipt header head office published, under its
   // version (P-01, P-08). Nothing restored means the till prints with its defaults and stamps no version.
@@ -1284,7 +1303,7 @@ export async function startEdge(
     syncStatusRelay.current = () => laneSyncStatus({ configured: false, queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
     return {
       log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, tillCashLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox, node, lane, screens, devices, enrolments, syncStatus,
-      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, syncOnce: null,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -1461,6 +1480,36 @@ export async function startEdge(
     return outcome;
   };
 
+  // SP-8c: head office's open floor indents ride the same loop — fetched under the box's credential, taken when not older
+  // than what is held, laid into the pack for the warehouse handheld (what the back store owes) and the Indents screen
+  // (the register offline), persisted so a reboot keeps them. The whole register replaces what was held, so a closed or
+  // cancelled indent leaves the handheld's list.
+  const indentsSource = httpIndentsFeedSource({ baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch });
+  const indentsReceiver: IndentsFeedReceiver = {
+    heldFeed: () => heldIndents?.feed,
+    takeFeed: (feed, receivedAt) => {
+      heldIndents = { tenantId, feed, receivedAt };
+      pack = withIndentsFeed(pack, feed, receivedAt);
+    },
+  };
+  let lastIndentsStatus: IndentsFeedPullStatus | undefined;
+
+  const refreshIndentsFeed = async (): Promise<IndentsFeedPullOutcome> => {
+    const outcome = await pullIndentsFeed({ source: indentsSource, receiver: indentsReceiver, now: new Date().toISOString() });
+    if (outcome.status === 'updated') {
+      try {
+        if (heldIndents !== undefined) await writeHeldIndentsFeed(settings['EDGE_DATA_DIR']!, heldIndents);
+      } catch (e) {
+        say(`the floor indents could not be saved to disk (${e instanceof Error ? e.message : String(e)}). They are live now and will be pulled again next time.`);
+      }
+      say(outcome.staffMessage);
+    } else if (outcome.status !== 'unchanged' && outcome.status !== lastIndentsStatus) {
+      say(outcome.staffMessage);
+    }
+    lastIndentsStatus = outcome.status;
+    return outcome;
+  };
+
   let stopping = false;
   let quietPasses = 0;
   let timer: NodeJS.Timeout | undefined;
@@ -1583,6 +1632,12 @@ export async function startEdge(
     } catch (e) {
       say(`document template refresh failed: ${e instanceof Error ? e.message : String(e)}. The lanes keep the templates this box holds.`);
     }
+    // SP-8c: the floor indents ride the same loop too — the handheld keeps what this box holds on a failure.
+    try {
+      await refreshIndentsFeed();
+    } catch (e) {
+      say(`floor indents refresh failed: ${e instanceof Error ? e.message : String(e)}. The handheld keeps the indents this box holds.`);
+    }
     if (!stopping) timer = setTimeout(() => { void pass(); }, nextInterval(quietPasses));
   };
 
@@ -1623,6 +1678,7 @@ export async function startEdge(
     refreshPack,
     refreshMigrationFeed,
     refreshPublishedTemplates,
+    refreshIndentsFeed,
     syncOnce: () => drainAndSettle(),
     syncStatus,
     stop: async () => {

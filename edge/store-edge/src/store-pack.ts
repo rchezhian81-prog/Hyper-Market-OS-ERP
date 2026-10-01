@@ -29,6 +29,7 @@
 
 /** A section of the pack: what the cloud said, or why this box does not know. */
 import type { MigrationFeed } from '../../sync-agent/src/migration-feed';
+import type { IndentsFeed } from '../../sync-agent/src/indents-feed';
 import type { PublishedTemplatesFeed, PublishedTemplate } from '../../sync-agent/src/published-templates';
 
 export type Register<T> =
@@ -658,6 +659,31 @@ export interface PackIndentsPolicy {
   readonly permissions: readonly string[];
 }
 
+/** SP-8c: head office's open floor indents as the box last pulled them (`GET /v1/floor/indents?open=true`) — the register the
+ *  warehouse handheld issues against (what the back store owes) and the Indents screen shows offline. Carried whole; the box
+ *  interprets only the id, the state, the places and the owed lines. `asAt` is the cloud's clock — the screens' "as of". */
+export interface PackFloorIndentLine {
+  readonly productId: string;
+  readonly uom?: string;
+  readonly outstandingMinor?: number;
+  readonly [k: string]: unknown;
+}
+export interface PackFloorIndent {
+  readonly indentId: string;
+  readonly state: string;
+  readonly fromLocationId?: string;
+  readonly toLocationId?: string;
+  readonly requestedBy?: string;
+  readonly totals?: { readonly lines?: readonly PackFloorIndentLine[]; readonly [k: string]: unknown };
+  readonly [k: string]: unknown;
+}
+export interface PackFloorIndents {
+  readonly asAt: string;
+  readonly indents: readonly PackFloorIndent[];
+  /** The box's clock when it took the register — absent on a pack-file section. */
+  readonly receivedAt?: string;
+}
+
 /** One import template the box ships to the data import/export screen (M30-FR-01) — the store's configured
  *  loads. The full column spec travels because the validate/commit routes take the template in the body; there
  *  is no proprietary "list templates" route. */
@@ -1204,6 +1230,8 @@ export interface StorePack {
   readonly suppliersPolicy: Register<PackSuppliersPolicy>;
   /** Who is on the Floor indents screen and what they hold (SP-8b · §28). */
   readonly indentsPolicy: Register<PackIndentsPolicy>;
+  /** SP-8c: head office's open floor indents as the box last pulled them — for the handheld's issue list and the Indents screen offline. */
+  readonly floorIndents: Register<PackFloorIndents>;
   /** Who is on the data import/export console, what they may do, and the store's import templates (M30). */
   readonly dataIoPolicy: Register<PackDataIoPolicy>;
   /** Who is on the Workforce guidance inbox screen and what they may do there (A10). */
@@ -1378,6 +1406,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     goodsReceiptPolicy: notKnown(why),
     suppliersPolicy: notKnown(why),
     indentsPolicy: notKnown(why),
+    floorIndents: notKnown(why),
     dataIoPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
@@ -1513,6 +1542,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     goodsReceiptPolicy: section<PackGoodsReceiptPolicy>('goodsReceiptPolicy'),
     suppliersPolicy: section<PackSuppliersPolicy>('suppliersPolicy'),
     indentsPolicy: section<PackIndentsPolicy>('indentsPolicy'),
+    floorIndents: section<PackFloorIndents>('floorIndents'),
     dataIoPolicy: section<PackDataIoPolicy>('dataIoPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),
@@ -1611,6 +1641,13 @@ export function withMigrationFeed(pack: StorePack, feed: MigrationFeed, received
  * is no longer in force, and the lane must not keep printing it. The box's own facts (who is on the template
  * screen) are untouched; this section is wording the lanes print, nothing about people.
  */
+/** SP-8c: lay head office's open floor indents (as pulled by `pullIndentsFeed`) into the pack — the handheld's issue list and
+ *  the Indents screen's offline register. The whole register replaces what was held: an indent head office no longer lists
+ *  as open leaves the pack, so the back store never issues against a cancelled or closed one. */
+export function withIndentsFeed(pack: StorePack, feed: IndentsFeed, receivedAt: string): StorePack {
+  return { ...pack, floorIndents: known<PackFloorIndents>({ asAt: feed.asAt, indents: feed.indents, receivedAt }) };
+}
+
 export function withPublishedTemplates(pack: StorePack, feed: PublishedTemplatesFeed, receivedAt: string): StorePack {
   return {
     ...pack,

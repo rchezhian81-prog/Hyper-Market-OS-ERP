@@ -590,11 +590,54 @@ device, human UAT and production verification separate; approved deferrals stay 
   (SP-8c):** the back-store ISSUE on the warehouse handheld against the indent; the merchandising refill task raising an
   indent; the shelf-count save reaching the cloud; the register on the handheld; the "products nobody can sell" screen;
   physical device + UAT PENDING.
-- **Current-work pointer:** last verified = SP-8b (this PR); next = **SP-8c** [W08, remainder] (the back-store issue on
-  the warehouse handheld — scan bin → scan item → confirm against the indent — on the shared device queue; the
-  merchandising refill task raising an indent and the shelf-count save reaching the cloud; the register on the handheld;
-  the "products nobody can sell" screen), then SP-9/9b; **SP-3c** (picker + driver) after the core-store chain; genuine
-  blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-8c-i — the back store issues against the indent on the handheld; damage on arrival; the chain reconciles on real
+  PostgreSQL (F08 handheld half · WF-06 · WF-07 · M09-FR-03 · M08-FR-02 · M08-FR-04 · §28 · §31 · P-01 · P-08 · hard rules
+  #1 #2 #4 #6 #10).** (i) The BOX now pulls head office's open floor indents on its sync loop
+  (`edge/sync-agent/src/indents-feed.ts`: `GET /v1/floor/indents?open=true` under the box's own credential, taken only when
+  not older than what is held, the whole register replacing it so a closed indent leaves the list; persisted to disk and
+  restored at boot) and lays them into the pack (`floorIndents`), from which the warehouse handheld gets ONE row per owed
+  line (approved / issuing, something outstanding, this back store) and the Indents screen gets its register as an offline
+  snapshot. (ii) The warehouse HANDHELD lists "To issue to the floor" — the indent, the item, who asked, what is still owed,
+  the bins here that hold it — and issues it: tap the line → scan the bin you take from → scan the item → confirm (≤3 after
+  the tap). The session refuses the requester before any scan (§28), a bin holding none of the product, an unknown bin, a
+  wrong item, a line already issued, more than is owed or more than the bin holds (the authoritative movement engine's own
+  refusal), and a repeated command; an accepted issue lowers the handheld's bin projection and queues ONE `FloorIndentIssued`
+  (indent, issue id = the command id, line with batch and BIN, issuer) on the shared device queue. (iii) The CLOUD's new
+  `POST /v1/floor/indents/:id/issues/:issueId/synced` (`inventory.indent.sync`) re-runs the indent engine (requester ≠
+  issuer, wrong item, over-issue) and the transfer engine against head office's own back-store lots (over-draw, recalled,
+  held), verifies the named issuer from their grants (`issuer_unknown` / `issuer_lacks_authority`), posts the
+  `transferred_out` movements ONCE and lowers the SAME bin in the SAME atomic write through `applyMovement` on head
+  office's bin register — a bin it does not know or that cannot cover the issue is flagged `bin_disagrees`, never forced
+  and never a second posting; the same issue again is 200. (iv) DAMAGE on the floor receipt (direct and synced):
+  `damagedMinor` per counted line — what arrived (good + damaged) leaves transit through the transfer engine, the good
+  units become shelf availability, the damaged units are written off at the floor (`wasted`) at the cost they left with in
+  the same write, carried on the issue as valued `damaged` lines, flag `arrived_damaged`, totals say received / damaged /
+  short / in transit / owed separately. Evidence: `tests/integration/floor-indents-handheld-issue.test.ts` (2 cases run on
+  the in-memory store AND on REAL PostgreSQL, real box + real cloud behind a controllable fetch: ask → approve → handheld
+  issue on the box before the device hears accepted → one sync pass dispatches with the bin lowered → a lost reply settles to
+  ONE dispatch on the retry → duplicate before and after a box restart → an unknown bin flagged, stock moved once → count in
+  10 good + 2 damaged → 10 on the shelf, 2 written off valued 10,000, nothing of that issue in transit → back + floor + in
+  transit + written-off = 50 units and 250,000 minor at EVERY step → a cut line holds, never refuses → the shelf sells 3;
+  requester-as-issuer / over-issue / wrong item are dead-letters with the code in the reason surviving a restart, nothing
+  moved; an unknown issuer recorded and flagged), `tests/e2e/warehouse-handheld-issues-to-floor.e2e.ts` (real Chromium on
+  the REAL box: enrol → the owed list with the bins → a bin holding none and a wrong item refused at the racking → tap ·
+  scan · scan · confirm → with the store computer on its fsync'd log as one `FloorIndentIssued` → the bin projection fell →
+  reload keeps it, nothing re-sent), `tests/e2e/the-handhelds-meet-the-spec.e2e.ts` (issue budget, WCAG audit of the new
+  rows), `tests/unit/warehouse-handheld-issues-to-floor.test.ts` (7), `tests/unit/indents-feed-pull.test.ts` (6),
+  `tests/unit/floor-indents-engine.test.ts` (+3 damage), relay allow-list +1, API surface +1. No rung change (M08 / M09
+  already E2E_VERIFIED); F08's handheld half FIXED. **Still open, honestly (SP-8c-ii):** the merchandising refill task
+  raising an indent; the shelf-count save reaching the cloud; the "products nobody can sell" screen; physical device + UAT
+  PENDING. **Also in this PR (gate repair, no production code):** two pre-existing tests turned red on 1 Oct when the
+  calendar left September and fail on unchanged `main` — `day-book-posts-the-day.test.ts` "a closed month takes nothing"
+  pinned the posting month to 2026-09 although the surface counts the next open period from its real clock, and
+  `the-till-closes-through-the-box.test.ts` "a material short" fixed its shift to 30 Sep while the refund it counts is
+  stamped by the till's own clock. Both now follow the clock they depend on (checked: both pass; the behaviour under test is
+  unchanged).
+- **Current-work pointer:** last verified = SP-8c-i (this PR); next = **SP-8c-ii** [W08, remainder] (the merchandising
+  refill task raising an indent on the shared queue; the shelf-count save reaching the cloud as a relayed, re-verified
+  count; the "products nobody can sell" screen fed by the box's own till exclusions), then SP-9/9b; **SP-3c** (picker +
+  driver) after the core-store chain; genuine blockers: none; external gates unchanged (providers, hardware, real data,
+  pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 
