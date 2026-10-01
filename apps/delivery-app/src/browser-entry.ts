@@ -22,6 +22,7 @@
 // problem being uploaded, not a delivery being proved.
 
 import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../packages/sync/src/device-outbox';
+import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { RouteSession, type ContributionRule, type StopInput } from './route-session';
 
 /** The route the phone was given. Absent means there is no assigned work to show. */
@@ -44,6 +45,41 @@ interface DriverWindow {
   driverHandoverToleranceMinor?: number;
   /** Anything that went wrong with the device's own storage, for the view to show (P-08). */
   driverStorageProblem?: string | null;
+  /** The store computer's write base the box injected: `''` on the device socket (same origin), absent off it. */
+  laneWriteBase?: string;
+  driverRelay?: DriverRelay;
+}
+
+export interface DriverRelay {
+  /**
+   * One pass of the shared device → store-computer leg (SP-3c-ii): hand the queued stop outcomes, the settlement and the
+   * handover to the box (accepted or duplicate → handed; refused → a visible refusal; link down → kept, nothing lost — the
+   * cash record is the point), then ask the box where the items it holds have got to and fold that into the sent-work list.
+   */
+  syncNow(): Promise<{ readonly handed: number; readonly refused: number; readonly failed: number; readonly offline: boolean }>;
+}
+
+/**
+ * The driver's leg of the shared sync path (SP-3c-ii · F11's driver half). The phone is served BY the box's device socket
+ * when it is on the shop wifi, so the base is the page's own origin (`''`); the device's cookie rides on every call.
+ * `undefined` when the shell was not served by a box: the queue still fills and survives, and the badge says so.
+ */
+export function openDriverRelay(
+  laneWriteBase: string | undefined,
+  session: RouteSession,
+  outbox: DeviceOutbox,
+): DriverRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'driver', fetch: fetchFn });
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys: session.handedKeys(), fetch: fetchFn });
+      if (statuses !== undefined) session.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
 }
 
 /**
@@ -86,5 +122,10 @@ if (browserWindow !== undefined) {
   // the cash office over a rupee, and a control everybody routes around is not a control.
   browserWindow.driverHandoverToleranceMinor = browserWindow.driverData?.handoverToleranceMinor ?? 10_000;
   const session = bootDriver(browserWindow.driverData, outbox);
-  if (session !== null) browserWindow.routeSession = session;
+  if (session !== null) {
+    browserWindow.routeSession = session;
+    // The relay to the store computer — present only when the box served this page (it injects `laneWriteBase`).
+    const relay = openDriverRelay(browserWindow.laneWriteBase, session, outbox);
+    if (relay !== undefined) browserWindow.driverRelay = relay;
+  }
 }

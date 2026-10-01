@@ -374,5 +374,9 @@ describe('the till\'s cash reaches the synced doors that re-verify it (SP-4c · 
     // SP-3c-i: the picker handheld's outcomes and packs travel to the wave register, keyed by plain payload fields.
     expect(EVENT_ROUTES['PickLineResolved']).toBe('/v1/fulfilment/waves/:waveId/lines/:lineId/synced');
     expect(EVENT_ROUTES['WavePacked']).toBe('/v1/fulfilment/waves/:waveId/packed/synced');
+    // SP-3c-ii: the driver's stop outcomes, settlement and cash handover travel to the route register.
+    expect(EVENT_ROUTES['DeliveryStopUpdated']).toBe('/v1/delivery/routes/:routeId/stops/:stopId/synced');
+    expect(EVENT_ROUTES['RouteSettled']).toBe('/v1/delivery/routes/:routeId/settled/synced');
+    expect(EVENT_ROUTES['DriverCashHandedOver']).toBe('/v1/delivery/routes/:routeId/handover/synced');
   });
 });

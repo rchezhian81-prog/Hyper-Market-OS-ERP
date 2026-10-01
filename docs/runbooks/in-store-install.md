@@ -222,8 +222,7 @@ Being straight about the boundaries:
 - **A receipt printer** — receipt building is built and tested; attaching a physical printer is a
   device step (EX-09).
 - **TLS on the handheld door** — the device socket (Step 6) speaks plain HTTP on the staff wifi until the Stage E
-  follow-up; the picker's phone reaches head office through the door since SP-3c-i; the driver's phone is admitted by
-  the door but its records have no head-office route yet (SP-3c-ii).
+  follow-up; the picker's and the driver's phones reach head office through the door since SP-3c (1 Oct 2026).
 - **A Windows service** — on Windows the till runs in a window you leave open (or a Task Scheduler
   entry you create for `start-till.cmd`); the Linux start-at-login unit is provided.
 

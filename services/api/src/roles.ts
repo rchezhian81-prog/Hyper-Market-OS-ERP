@@ -91,6 +91,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'fulfilment.pack.record', 'fulfilment.pack.read',
       // SP-3c-i hop: the box relays the picker handheld's line outcomes and packs to the wave register.
       'fulfilment.pick.sync',
+      // SP-3c-ii hop: the box relays the driver handheld's stop outcomes, settlement and cash handover to the route register.
+      'delivery.stop.sync',
       'finance.journal.post', 'finance.posting.configure', 'finance.period.close', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       'b2b.account.manage', 'b2b.account.read', 'b2b.receivable.record', 'b2b.credit.check',
@@ -247,6 +249,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // SP-3c-i hop: the box relays the PICKER handheld's line outcomes and wave packs to head office's wave register. The
       // routes re-verify the PICKER / PACKER from THEIR grants and record-and-flag — this grants no pick or pack of its own.
       'fulfilment.pick.sync',
+      // SP-3c-ii hop: the box relays the DRIVER handheld's stop outcomes, end-of-shift settlement and counted cash handover to
+      // head office's route register. The routes re-verify the DRIVER from THEIR grants, run the order's own state machine and
+      // record-and-flag — this grants no delivery, settlement or cash authority of its own.
+      'delivery.stop.sync',
       // SP-8 (F08): floor staff raise an indent for the shelf and read where it is; a different person approves and issues.
       'inventory.indent.request', 'inventory.indent.read',
       // SP-8b hop: the box relays the floor's indent and its independent receipt from the served Indents screen.
