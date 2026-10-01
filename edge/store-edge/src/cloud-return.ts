@@ -51,6 +51,12 @@ export interface CloudReturn {
   /** The customer a store-credit refund belongs to (M13-FR-03 / §31); absent for a cash/card refund or
    *  when no customer was captured at the lane. Carried so the cloud issues the credit to them on sync. */
   readonly customerRef?: string;
+  /** WHERE a resold unit goes back on the shelf (M08-FR-01 · SP-9b-i · F17): the store this box belongs to, as its
+   *  store pack names it — the same basis as the sale's `locationId`. Matters for a NO-RECEIPT return, which has no
+   *  bill to take the location from: without it the cloud re-enters the unit at a location named after the LANE
+   *  (stated as assumed, P-08) — a shelf nobody sells from, so the store's own figure stays short. A record that
+   *  declares one keeps its own; a box that knows no store stamps nothing and the cloud's stated fallback stands. */
+  readonly locationId?: string;
   readonly lines: readonly CloudReturnLine[];
 }
 
@@ -72,12 +78,13 @@ function toCloudLine(l: unknown): CloudReturnLine {
  * the flag here would misroute it (a flagless, bill-less record is dead-lettered by name, hard rule #6).
  * `approvedBy` is carried only when present, so the cloud can tell "no approver" from "this approver" (§28).
  */
-export function toCloudReturn(record: unknown): CloudReturn {
+export function toCloudReturn(record: unknown, storeId?: string): CloudReturn {
   const r = (record !== null && typeof record === 'object' ? record : {}) as Rec;
   const originalSaleId = str(r['originalSaleId']);
   const approvedBy = str(r['approvedBy']);
   const customerRef = str(r['customerRef']);
   const laneId = str(r['laneId']);
+  const locationId = str(r['locationId']) ?? str(storeId);
   const lines: readonly CloudReturnLine[] = Array.isArray(r['lines'])
     ? (r['lines'] as unknown[]).map(toCloudLine)
     : [];
@@ -98,6 +105,8 @@ export function toCloudReturn(record: unknown): CloudReturn {
     // Carried only when present, so a cash/card refund (and one with no customer captured) stays absent —
     // the cloud tells "no customer" apart from "this customer" and record-and-flags the former (P-08).
     ...(customerRef === undefined ? {} : { customerRef }),
+    // The store the unit goes back to (F17) — the box's own, unless the record declared one. Absent when neither knows.
+    ...(locationId === undefined ? {} : { locationId }),
     lines,
   };
 }

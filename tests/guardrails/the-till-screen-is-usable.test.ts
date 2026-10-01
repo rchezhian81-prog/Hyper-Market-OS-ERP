@@ -233,6 +233,30 @@ describe('the refund screen gives money back, safely', () => {
     expect(code(APP)).toMatch(/needsApproval\(/);
   });
 
+  it('offers a return WITHOUT a receipt only when the store computer gave a cap and a price list; names the item from that list; stops above the cap; a manager ALWAYS approves (SP-9b-i · M13-FR-01 · §28)', () => {
+    // Offered from More only when the tested surface says it may be (a cap and a catalogue) — never a guessed limit.
+    expect(code(APP)).toMatch(/session\.noReceiptReturn\(\) !== null \? \[\{ value: 'no_receipt'/);
+    expect(code(APP)).toMatch(/if \(what === 'no_receipt'\) return startNoReceiptReturn\(\);/);
+    // The item is the evidence: scanned or keyed, named from the lane's own catalogue; a stranger stops the flow.
+    expect(code(APP)).toContain("t('noReceiptItem')");
+    expect(code(APP)).toMatch(/desk\.findProduct\(String\(code\)\)/);
+    expect(code(APP)).toContain("t('noReceiptUnknown')");
+    // The amount is shown against the cap as they type and stopped above it before the engine is even asked.
+    expect(code(APP)).toContain("t('noReceiptMax')");
+    expect(code(APP)).toMatch(/if \(refundMinor > desk\.capMinor\) \{ tell\(t\('read'\), `\$\{t\('noReceiptOverCap'\)\}/);
+    // No "if needsApproval" branch here: the manager is asked UNCONDITIONALLY, and the flow stops without one.
+    const flow = code(APP).slice(code(APP).indexOf('async function startNoReceiptReturn()'), code(APP).indexOf('function showRefundOutcome('));
+    expect(flow).toContain("t('refundManagerId')");
+    expect(flow).toContain("t('noReceiptManagerHint')");
+    expect(flow).toContain("t('refundNeedManager')");
+    expect(flow).not.toMatch(/needsApproval\(/);
+    expect(flow).toMatch(/approval: \{ by: String\(by\), reason: approveReason \}/);
+    // And it is submitted as a no-receipt return against no bill, through the tested surface, outcome in the model's words.
+    expect(flow).toMatch(/desk\.submit\(\{/);
+    expect(flow).toContain('noReceipt: true');
+    expect(flow).toContain('showRefundOutcome(outcome)');
+  });
+
   it('captures the customer for a store-credit refund, and refuses to issue it to nobody (M13-FR-03)', () => {
     // Store credit is money on a customer's account, so the screen asks WHO it belongs to (scanned or
     // keyed) whenever store credit is chosen, passes it as customerRef, and stops with a plain message

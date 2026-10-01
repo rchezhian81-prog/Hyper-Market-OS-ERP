@@ -28,7 +28,7 @@
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
-import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, posLanePayload, type ScreenInput, type ScreenName } from './screen-data';
+import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, posLanePayload, posRefundPolicyPayload, type ScreenInput, type ScreenName } from './screen-data';
 import { navigationPayload } from './screen-navigation';
 
 /**
@@ -331,6 +331,9 @@ export function startScreenServer(input: {
       // The till alone is also told which lane it IS and when the shop's day ends (SP-4b · F09) — never who the cashier
       // is; the person signs in at the till.
       const posLane = route.screen === 'pos' ? posLanePayload(snap, input.laneId) : undefined;
+      // And the refund policy its store pack carries (SP-9b-i · M13-FR-01): the approval threshold and the no-receipt
+      // cap. Absent when the box holds none — the till then offers no return without a receipt, rather than guessing a cap.
+      const posRefundPolicy = route.screen === 'pos' ? posRefundPolicyPayload(snap) : undefined;
       // Every ERP page also gets its menu — the screens THIS viewer may open on THIS box, worked out per request
       // from the pack's role register and the screen's named viewer (Stage G slice 5b · §27 · P-07). Only the ERP:
       // the till, the handhelds and the apps are one job each and have no menu to draw.
@@ -343,6 +346,7 @@ export function startScreenServer(input: {
           catalogueFreshness: catalogueFreshness(snap),
           ...(receiptTemplate === undefined ? {} : { posReceiptTemplate: receiptTemplate }),
           ...(posLane === undefined ? {} : { posLane }),
+          ...(posRefundPolicy === undefined ? {} : { posRefundPolicy }),
           ...(navigation === undefined ? {} : { sreNavigation: navigation }),
           // The one write a screen makes back to the box: the manager's day close (M14-FR-04). Only
           // present when this box serves a lane socket to post to; the screen falls back to read-only

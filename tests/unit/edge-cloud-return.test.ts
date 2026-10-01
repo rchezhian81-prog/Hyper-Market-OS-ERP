@@ -62,6 +62,21 @@ describe('toCloudReturn — the lane refund record → the cloud synced-return c
     expect('customerRef' in toCloudReturn({ ...RETURN_RECORD, customerRef: '' })).toBe(false);
   });
 
+  it('stamps the store this box belongs to as the return\'s locationId, so a resold no-receipt unit re-enters THIS shop\'s stock (F17 · M08-FR-01)', () => {
+    // A no-receipt return has no bill to take the location from. Before SP-9b-i the cloud fell back to a location
+    // named after the LANE ("lane-1" — stated as assumed), a shelf nobody sells from, so the store's own figure
+    // stayed short. The box now stamps the store its pack names, exactly as it does on a sale (Stage D slice 2).
+    const noReceipt = { ...RETURN_RECORD, originalSaleId: null, noReceipt: true };
+    expect(toCloudReturn(noReceipt, 'S1').locationId).toBe('S1');
+    // A record that declared its own location keeps it; the box never overrides what the lane said.
+    expect(toCloudReturn({ ...noReceipt, locationId: 'S1-FLOOR' }, 'S1').locationId).toBe('S1-FLOOR');
+    // A box that knows no store stamps nothing — the cloud's stated fallback stands (P-08), nothing is invented.
+    expect(toCloudReturn(noReceipt)).not.toHaveProperty('locationId');
+    expect(toCloudReturn(noReceipt, '')).not.toHaveProperty('locationId');
+    // A receipted return carries it too; the cloud takes the bill's own location for that one.
+    expect(toCloudReturn(RETURN_RECORD, 'S1').locationId).toBe('S1');
+  });
+
   it('tolerates a bare id in place of returnId, both here and in returnIdOf', () => {
     expect(toCloudReturn({ ...RETURN_RECORD, returnId: undefined, id: 'RT9' }).returnId).toBe('RT9');
     expect(returnIdOf({ returnId: 'RT1' })).toBe('RT1');

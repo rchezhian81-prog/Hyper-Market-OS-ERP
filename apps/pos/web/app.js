@@ -116,6 +116,13 @@ const WORDS = {
     refundDone: 'Refund recorded',
     refundPending: 'Refund pending',
     refundStop: 'Do not hand over cash',
+    noReceipt: 'Return without receipt',
+    noReceiptItem: 'Scan the item coming back, or key its code',
+    noReceiptItemHint: 'No bill, so the item is the evidence — scan its barcode, or type the product code and press OK',
+    noReceiptUnknown: 'That item is not in this lane\'s price list. Check the barcode, or send the customer to the service desk.',
+    noReceiptMax: 'No-receipt limit',
+    noReceiptOverCap: 'That is above the no-receipt limit —',
+    noReceiptManagerHint: 'Every return without a receipt needs a manager — a different person from the cashier',
     declinedMsg: 'The payment was declined. The sale is NOT complete — do not hand over the goods. Ask for another payment method.',
     noAnswerMsg: 'The card machine has not answered, so we do not know whether the customer has paid. The sale is NOT complete — do not hand over the goods. Check the machine, and if it is unclear, ask the manager before trying again.',
   },
@@ -194,6 +201,13 @@ const WORDS = {
     refundDone: 'திரும்பப் பணம் பதிவு செய்யப்பட்டது',
     refundPending: 'திரும்பப் பணம் நிலுவையில்',
     refundStop: 'பணத்தைக் கொடுக்க வேண்டாம்',
+    noReceipt: 'ரசீது இல்லாமல் திரும்பப் பெறல்',
+    noReceiptItem: 'திரும்பும் பொருளை ஸ்கேன் செய்யவும், அல்லது அதன் குறியீட்டை உள்ளிடவும்',
+    noReceiptItemHint: 'பில் இல்லை, பொருளே ஆதாரம் — அதன் பார்கோடை ஸ்கேன் செய்யவும், அல்லது பொருள் குறியீட்டை உள்ளிட்டு OK அழுத்தவும்',
+    noReceiptUnknown: 'அந்தப் பொருள் இந்த லேனின் விலைப் பட்டியலில் இல்லை. பார்கோடைச் சரிபார்க்கவும், அல்லது வாடிக்கையாளரை சேவை மேசைக்கு அனுப்பவும்.',
+    noReceiptMax: 'ரசீது இல்லாத வரம்பு',
+    noReceiptOverCap: 'ரசீது இல்லாத வரம்பை விட அதிகம் —',
+    noReceiptManagerHint: 'ரசீது இல்லாத ஒவ்வொரு திரும்பப் பெறலுக்கும் ஒரு மேலாளர் தேவை — காசாளர் அல்லாத வேறு ஒருவர்',
     declinedMsg: 'பணம் மறுக்கப்பட்டது. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். வேறு முறையில் பணம் கேட்கவும்.',
     noAnswerMsg: 'கார்டு இயந்திரம் பதில் சொல்லவில்லை. வாடிக்கையாளர் பணம் செலுத்தினாரா என்று தெரியவில்லை. விற்பனை முடியவில்லை — பொருட்களைக் கொடுக்க வேண்டாம். இயந்திரத்தைச் சரிபார்க்கவும்; தெளிவில்லை என்றால் மேலாளரிடம் கேட்கவும்.',
   },
@@ -266,6 +280,8 @@ function demoSession() {
     // No real bills without the bundle, so a refund lookup finds nothing — the screen says so
     // honestly rather than pretending. The real, tested surface replaces this at build time.
     lookupRefund: () => Promise.resolve(null),
+    // And no return without a receipt: the stand-in was given no cap and no catalogue, so it offers none (fail safe).
+    noReceiptReturn: () => null,
     // The demo till has no store computer, so it says so the way the real one does — it never pretends to record cash.
     till: {
       moveCash: () => Promise.resolve({ committed: false, refusedBecause: 'no_store_box', laneMessage: WORDS.en.cash_no_store_box }),
@@ -760,12 +776,16 @@ el('more').addEventListener('click', async () => {
     ...(cash === null || !cash.shiftOpen ? [{ value: 'float', label: t('takeFloat') }] : []),
     ...(cash === null || cash.shiftOpen ? [{ value: 'pickup', label: t('pickup') }] : []),
     { value: 'refund', label: t('refund') },
+    // A return WITHOUT a receipt is offered only when the store computer gave this till a no-receipt cap and a price
+    // list to name the item from (SP-9b-i · M13-FR-01). Without them the option is not there — the till never guesses a limit.
+    ...(session.noReceiptReturn && session.noReceiptReturn() !== null ? [{ value: 'no_receipt', label: t('noReceipt') }] : []),
     ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill') }] : []),
   ];
   const what = await choose(t('more'), options);
   if (what === 'float') return takeFloat();
   if (what === 'pickup') return takeCashToSafe();
   if (what === 'refund') return startRefund();
+  if (what === 'no_receipt') return startNoReceiptReturn();
   if (what === 'close') return closeTheTill();
 });
 
@@ -967,6 +987,101 @@ async function startRefund() {
   } catch (e) {
     // submit is written not to throw, but a lost connection to the store can still reject here — treat
     // it as a stop, never as a silent success.
+    tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    return;
+  }
+  showRefundOutcome(outcome);
+  render();
+}
+
+/**
+ * The return WITHOUT a receipt (SP-9b-i · M13-FR-01). The same honesty as the refund, with the three controls that
+ * replace the bill: the item is named from this lane's own price list (scanned or keyed — a delisted item can still
+ * come back), the amount is capped at the limit the store computer gave this till, and a manager ALWAYS approves
+ * (a different person, §28). The engine refuses an amount above the cap and a missing approver before anything is
+ * written; the cloud re-checks all three when the return reaches it and shows a breach on the exceptions screen.
+ */
+async function startNoReceiptReturn() {
+  const desk = session.noReceiptReturn ? session.noReceiptReturn() : null;
+  if (!desk) { tell(t('read'), t('noReceiptUnknown')); return; }
+
+  // 1. The item — the only evidence there is. Scanned, or its code keyed.
+  const code = await askScanOrKey({ title: t('noReceiptItem'), hint: t('noReceiptItemHint') });
+  if (code === null || code === '' || code === '0') return;
+  const item = desk.findProduct(String(code));
+  if (!item) { tell(t('read'), t('noReceiptUnknown')); return; }
+
+  // 2. How many.
+  const qtyAns = await ask({ title: `${t('refundHowMany')} — ${item.name}`, mode: 'number', initial: '1' });
+  if (qtyAns === null) return;
+  const qty = Number(qtyAns);
+  if (!Number.isInteger(qty) || qty <= 0) { tell(t('read'), t('refundBadQty')); return; }
+
+  // 3. Reason (chosen, never typed — M15) and the condition the goods come back in (M13-FR-02).
+  const reason = await ask({ title: t('refundReason'), mode: 'choice', choices: REFUND_REASONS });
+  if (!reason) return;
+  const disposition = await choose(t('refundCondition'), [
+    { value: 'resell', label: t('dispResell') },
+    { value: 'damaged', label: t('dispDamaged') },
+  ]);
+  if (disposition === null) return;
+
+  // 4. The amount — shown against the no-receipt limit as they type, and stopped here if it is above it.
+  const amount = await ask({
+    title: t('refundAmount'), mode: 'number',
+    hint: `${t('noReceiptMax')}: ${inr(desk.capMinor)}`,
+    onChange: (rupees) => (Math.round(rupees * 100) > desk.capMinor
+      ? `${t('noReceiptOverCap')} ${inr(desk.capMinor)}`
+      : `${t('refundGiving')}: ${inr(Math.round(rupees * 100))}`),
+  });
+  if (amount === null) return;
+  const refundMinor = Math.round(Number(amount) * 100);
+  if (refundMinor <= 0) return;
+  if (refundMinor > desk.capMinor) { tell(t('read'), `${t('noReceiptOverCap')} ${inr(desk.capMinor)}`); return; }
+
+  const refundTender = await choose(t('refundHow'), [
+    { value: 'cash', label: t('cash') },
+    { value: 'card', label: t('card') },
+    { value: 'upi', label: t('upi') },
+    { value: 'store_credit', label: t('storeCredit') },
+  ]);
+  if (refundTender === null) return;
+
+  // 4a. Store credit must go to a NAMED customer (M13-FR-03) — the same rule as the receipted refund.
+  let customerRef;
+  if (refundTender === 'store_credit') {
+    const who = await askScanOrKey({ title: t('refundCustomerId'), hint: t('refundCustomerHint') });
+    if (who === null || who === '' || who === '0') { tell(t('read'), t('refundNeedCustomer')); return; }
+    customerRef = String(who);
+  }
+
+  // 5. A manager, ALWAYS (§28) — scanned badge or keyed staff code, a different person from the cashier; the engine
+  // enforces the difference and the cloud re-verifies the authority on sync.
+  const by = await askScanOrKey({ title: t('refundManagerId'), hint: t('noReceiptManagerHint') });
+  if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager')); return; }
+  const approveReason = await ask({ title: t('refundApproveReason'), mode: 'choice', choices: REFUND_REASONS });
+  if (!approveReason) return;
+
+  // 6. The document number from this lane's gap-free range, and the operation identity (idempotency key, RR-F03).
+  let number;
+  try {
+    number = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
+  } catch {
+    tell(t('read'), t('receiptsUsedUp'));
+    return;
+  }
+  const returnId = `RT-${number}`;
+
+  let outcome;
+  try {
+    outcome = await desk.submit({
+      returnId, number, reasonCode: reason, noReceipt: true,
+      lines: [{ productId: item.productId, uom: item.uom, quantityMinor: qty, disposition }],
+      refundMinor, refundTender,
+      approval: { by: String(by), reason: approveReason },
+      ...(customerRef ? { customerRef } : {}),
+    });
+  } catch (e) {
     tell(t('refundStop'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
     return;
   }

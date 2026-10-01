@@ -237,6 +237,26 @@ export class CatalogueCache {
   }
 
   /**
+   * The product behind a barcode OR a product code, with NO sale-side judgement — for a screen that
+   * needs to know WHAT an item is without asking whether it may be SOLD (SP-9b-i · M13-FR-01): a
+   * customer returning an item without a receipt may hold a product that has since been delisted,
+   * blocked or recalled, and the till must still name it so the return (and its disposition) can be
+   * recorded. `scan` is the selling path and refuses those by design; this does not. Tries the exact
+   * barcode first, then the SKU, then the product id. Undefined when this lane's catalogue knows none
+   * of them, so the caller can say so rather than invent an item.
+   */
+  findProduct(code: string): CatalogueProduct | undefined {
+    const trimmed = code.trim();
+    if (trimmed === '') return undefined;
+    const barcode = this.byBarcode.get(trimmed);
+    if (barcode !== undefined) {
+      const product = this.byProductId.get(barcode.productId);
+      if (product !== undefined) return product;
+    }
+    return this.bySku.get(trimmed) ?? this.byProductId.get(trimmed);
+  }
+
+  /**
    * The product a lane rang under this id, for a screen that has only the id — the refund screen
    * shows the item the customer is returning, and the sale record it reads carries the productId, not
    * the name. Undefined when this lane's catalogue does not know the id (a product delisted since the

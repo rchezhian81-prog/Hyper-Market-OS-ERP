@@ -113,8 +113,22 @@ never free text.
    reused refund id is refused (no double payout), and a refund with no manager is refused. Self-skips
    where no browser binary is present, like the sale e2e.
 
-Still open on the screen itself (tracked, not silently dropped): no-receipt refunds (await a cap), and
-the **usability acceptance** (a person with a stopwatch against the ≤3-interaction bar,
-`../usability-test-script.md`) — the e2e proves it *works*, not yet that it meets the speed bar.
-Product names are now shown from the lane's catalogue (a code fallback when the catalogue does not
-know the id).
+4. **The return WITHOUT a receipt (SP-9b-i, 1 Oct 2026) — DONE.** The box hands the till its refund policy
+   from the pack's `servicePolicy` (`window.posRefundPolicy`: approval threshold + no-receipt cap). "Return
+   without receipt" appears on More ONLY when the box gave a positive cap and the till has a catalogue to
+   name the item from — never a guessed limit. Flow: scan or key the item (named from the lane's catalogue by
+   barcode / SKU / id; a delisted or recalled item can still come back; a stranger stops the flow) → quantity
+   → reason (chips) → condition → amount shown against the no-receipt limit and stopped above it → method
+   (store credit needs a customer) → a manager ALWAYS (a different person) → the model's own words. The record
+   says `noReceipt: true` against no bill; the box stamps its store as the stock location (F17); head office
+   re-checks cap and approver on `/v1/returns/no-receipt/synced` and flags a breach. Proven offline in a real
+   Chromium through the screen (`the-served-till-takes-a-refund.e2e.ts`) and connected on the real stack
+   (`tests/integration/the-till-returns-without-a-receipt.test.ts`).
+
+Still open on the screen itself (tracked, not silently dropped): the **exchange** (SP-9b-ii — the cloud half
+exists: `assessExchange`, `POST /v1/sales/:saleId/exchanges`; the lane-side return + replacement with
+`exchange_credit` and its panels are what remain); the box does not yet pull head office's no-receipt cap (the
+pack file's applies at the lane; head office flags a return above its own); and the **usability acceptance**
+(a person with a stopwatch against the ≤3-interaction bar, `../usability-test-script.md`) — the e2e proves it
+*works*, not yet that it meets the speed bar. Product names are shown from the lane's catalogue (a code
+fallback when the catalogue does not know the id).

@@ -1,6 +1,6 @@
 # Audit observation tests — defect reproductions, not acceptance tests
 
-These four files are the EXACT observation tests from the independent store-workflow audit of 30 September 2026 (plus F15, found by SP-9-i's connected run on 1 October 2026 and recorded the same way; F16, found by SP-9-ii's connected run the same day, is pinned as a regression in `tests/unit/goods-receipt-order-fold.test.ts` and in `tests/integration/the-store-buys-what-it-sells.test.ts`)
+These four files are the EXACT observation tests from the independent store-workflow audit of 30 September 2026 (plus F15, found by SP-9-i's connected run on 1 October 2026 and recorded the same way; F16, found by SP-9-ii's connected run the same day, is pinned as a regression in `tests/unit/goods-receipt-order-fold.test.ts` and in `tests/integration/the-store-buys-what-it-sells.test.ts`; F17, found by SP-9b-i's connected run the same day, in `tests/unit/edge-cloud-return.test.ts` and `tests/integration/the-till-returns-without-a-receipt.test.ts`)
 (handover package pinned to commit `8f4f6c5`). **They deliberately assert the DEFECTIVE behaviour: a pass confirms the
 defect is still present.** They are kept here, running in the ordinary suite, for one reason — each repair slice must
 turn its observation into the intended-behaviour regression in the same PR, so a green run can never quietly mean

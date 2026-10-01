@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { chromium, type Browser } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 
@@ -50,8 +50,31 @@ interface PosWindow {
     signIn(cashierId: string): void;
     operator(): string | undefined;
     lookupRefund(receipt: string): Promise<RefundLookup | null>;
+    noReceiptReturn(): { capMinor: number } | null;
   };
+  readonly posRefundPolicy?: { approvalThresholdMinor: number; noReceiptCapMinor: number };
 }
+
+/** The store pack a one-PC install carries, WITH the service policy (the no-receipt cap) and a price list, so the till
+ *  can name the item the customer is holding (SP-9b-i). Written to the box's data dir; no cloud is configured. */
+const PACK_FILE_WITH_CAP = {
+  version: 1,
+  policies: { storeId: 'S1', branchId: 'S1', branchName: 'SRE Hyper Market', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
+  servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: 100_000, agentAuthorityMinor: 0, compensationCapMinor: 0 },
+  products: [{ productId: 'P1', name: 'Amul Ghee Gold 1L', categoryId: 'dairy', unitPriceMinor: 64_000, unitCostMinor: 50_000, uom: 'ea', barcodes: ['8901234567890'], availableMinor: 10, taxBps: 500, status: 'active' }],
+  lossPreventionRules: [],
+};
+
+/** Wait for the keypad sheet to show a step whose title starts with the given words — the flow's steps reuse one sheet, so
+ *  waiting on "visible" alone could catch the step before. */
+const shows = (page: Page, panelId: string, titleId: string, startsWith: string): Promise<unknown> => page.waitForFunction(
+  `(() => { const p = document.getElementById(${JSON.stringify(panelId)}); const t = document.getElementById(${JSON.stringify(titleId)});`
+  + ` return p !== null && !p.hidden && t !== null && (t.textContent || '').startsWith(${JSON.stringify(startsWith)}); })()`,
+  undefined, { timeout: 15_000 },
+);
+const sheetTitled = (page: Page, startsWith: string): Promise<unknown> => shows(page, 'sheet', 'sheet-title', startsWith);
+/** The same for the choice panel (More / condition / refund method). */
+const panelTitled = (page: Page, startsWith: string): Promise<unknown> => shows(page, 'pay', 'pay-title', startsWith);
 
 describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives money back offline', () => {
   let browser: Browser;
@@ -188,6 +211,123 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     expect(rec?.refundTender).toBe('store_credit');
     expect(rec?.customerRef).toBe('c-asha');
     expect(edge.returnsOutbox.unsentCount()).toBe(1);
+  });
+
+  it('a return WITHOUT a receipt, driven through the real screen: More → scan the item → quantity → reason → condition → amount under the cap → cash → manager → recorded on this box\'s disk as no-receipt, against no bill, once (SP-9b-i · M13-FR-01 · §28)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sre-served-noreceipt-'));
+    dirs.push(dir);
+    const packFile = join(dir, 'store-pack.json');
+    await writeFile(packFile, JSON.stringify(PACK_FILE_WITH_CAP), 'utf8');
+    // The box as a one-PC install runs it, with its store pack (cap + price list) and NO cloud — the offline case.
+    const edge: EdgeProcess = (await startEdge({
+      EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
+    }, () => {}))!;
+    stops.push(() => edge.stop());
+
+    const context = await browser.newContext();
+    stops.push(() => context.close());
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
+
+    // The box told the till its policy, and the till therefore offers the return — the cap is the pack's, never a guess.
+    const given = await page.evaluate(() => {
+      const w = globalThis as unknown as PosWindow;
+      w.posSession!.signIn('u-lanecash'); // the cashier signs in first (SP-4b · F09)
+      return { policy: w.posRefundPolicy, offered: w.posSession!.noReceiptReturn() };
+    });
+    expect(given.policy).toEqual({ approvalThresholdMinor: 0, noReceiptCapMinor: 100_000 });
+    expect(given.offered).toEqual({ capMinor: 100_000 });
+
+    // ── The cashier's own steps, on the real screen. More → "Return without receipt".
+    await page.click('#more');
+    await panelTitled(page, 'More');
+    const offers = await page.$$eval('#pay-kinds button', (b) => b.map((x) => x.textContent ?? ''));
+    expect(offers).toContain('Return without receipt');
+    expect(offers).toContain('Refund');
+    await page.click('#pay-kinds button:text-is("Return without receipt")');
+
+    // The item is the evidence: the scanner types the barcode and presses Enter (the shell listens on the window).
+    await sheetTitled(page, 'Scan the item coming back');
+    await page.keyboard.type('8901234567890');
+    await page.keyboard.press('Enter');
+
+    // Named from the lane's own price list; one is coming back.
+    await sheetTitled(page, 'How many are coming back? — Amul Ghee Gold 1L');
+    expect(await page.textContent('#entry')).toBe('1');
+    await page.click('#sheet-ok');
+
+    // Why (a chosen reason, M15), and in what condition (M13-FR-02).
+    await sheetTitled(page, 'Why is it coming back?');
+    await page.click('#reasons button:text-is("Damaged / faulty")');
+    await page.click('#sheet-ok');
+    await panelTitled(page, 'What condition is the item in?');
+    await page.click('#pay-kinds button:text-is("Good — back on the shelf")');
+
+    // How much — shown against the no-receipt limit, not against any bill. ₹500, under the ₹1,000 cap.
+    await sheetTitled(page, 'How much to refund?');
+    expect(await page.textContent('#entry-hint')).toBe('No-receipt limit: ₹1,000.00');
+    for (const digit of '500') await page.click(`#keypad button:text-is("${digit}")`);
+    expect(await page.textContent('#entry-hint')).toBe('Refunding: ₹500.00');
+    await page.click('#sheet-ok');
+
+    // Given back as cash.
+    await panelTitled(page, 'How is the refund given?');
+    await page.click('#pay-kinds button:text-is("Cash")');
+
+    // A manager, ALWAYS — scanned badge or keyed staff code — then why they approve.
+    await sheetTitled(page, 'Manager: scan your badge or key your staff code');
+    expect(await page.textContent('#entry-hint')).toContain('Every return without a receipt needs a manager');
+    await page.keyboard.type('u-manager');
+    await page.keyboard.press('Enter');
+    await sheetTitled(page, 'Manager: why is this refund approved?');
+    await page.click('#reasons button:text-is("Damaged / faulty")');
+    await page.click('#sheet-ok');
+
+    // The outcome, in the model's own words: recorded — hand over the refund.
+    await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
+    expect(await page.textContent('#refusal-title')).toBe('Refund recorded');
+    expect(await page.textContent('#refusal-text')).toContain('Hand over the refund');
+    await page.click('#refusal-ok');
+
+    // ── On THIS box's disk: one return, no receipt, against no bill, the cashier and the manager named, the item and the
+    //    money as keyed — and queued once for head office to re-check when the line returns (offline-first, never lost).
+    const refunds = await readLog(edge.returnsLog.path);
+    expect(refunds).toHaveLength(1);
+    const record = refunds[0]?.ok === true ? JSON.parse(refunds[0].record) as Record<string, unknown> : undefined;
+    expect(record).toMatchObject({
+      noReceipt: true, originalSaleId: null, laneId: 'lane-1', processedBy: 'u-lanecash', approvedBy: 'u-manager',
+      reasonCode: 'damaged', refundMinor: 50_000, refundTender: 'cash',
+      lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
+    });
+    expect(edge.returnsOutbox.unsentCount()).toBe(1);
+    // No sale was rung — the sale log is untouched (separate pipelines, M13-FR-01).
+    expect(await readLog(edge.log.path)).toHaveLength(0);
+  });
+
+  it('a box that was given NO no-receipt cap offers no return without a receipt — the till never guesses a limit (fail safe)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sre-served-noreceipt-'));
+    dirs.push(dir);
+    const edge: EdgeProcess = (await startEdge({
+      EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+    }, () => {}))!;
+    stops.push(() => edge.stop());
+    const context = await browser.newContext();
+    stops.push(() => context.close());
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
+    expect(await page.evaluate(() => {
+      const w = globalThis as unknown as PosWindow;
+      return { policy: w.posRefundPolicy, offered: w.posSession!.noReceiptReturn() };
+    })).toEqual({ policy: undefined, offered: null });
+    await page.click('#more');
+    await panelTitled(page, 'More');
+    const offers = await page.$$eval('#pay-kinds button', (b) => b.map((x) => x.textContent ?? ''));
+    expect(offers).toContain('Refund');
+    expect(offers).not.toContain('Return without receipt');
   });
 
   it('refuses to give money back without a manager — every refund needs §28 approval', async () => {

@@ -87,6 +87,9 @@ interface PosWindow {
   posReceiptSeries?: PosReceiptSeries;
   /** The receipt template in force, injected by the edge before boot when this box has pulled one (M01-FR-02). */
   posReceiptTemplate?: PosReceiptTemplate;
+  /** The refund policy the box's store pack carries — approval threshold + no-receipt cap — injected by the edge before
+   *  boot (SP-9b-i · M13-FR-01). Absent when the box holds none: the till then offers NO return without a receipt. */
+  posRefundPolicy?: RefundPolicy;
 }
 
 /** Where this till's edge listens. Loopback only — see ADR-0004 and `edge/store-edge/src/lane-server.ts`. */
@@ -277,6 +280,30 @@ export interface RefundLookup {
   readonly submit: (draft: RefundDraftInput) => Promise<RefundScreenOutcome>;
 }
 
+/** An item named for a return with no receipt — from the lane's catalogue, never judged for sale (SP-9b-i). */
+export interface NoReceiptItem {
+  readonly productId: string;
+  readonly name: string;
+  readonly uom: string;
+}
+
+/**
+ * The till's surface for a return WITHOUT a receipt (M13-FR-01 · §28). There is no bill to look up, so the item is
+ * named from the lane's own catalogue (barcode, SKU or id — a delisted or blocked product can still come back), the
+ * refund is bounded by the cap the box was GIVEN, and a second person ALWAYS approves. The cloud re-checks the cap,
+ * the approver and the stock location when the return reconciles, and flags a breach as a visible exception.
+ */
+export interface NoReceiptReturnSurface {
+  /** The most a no-receipt refund may be on this lane, in minor units — the policy's cap, never invented. */
+  readonly capMinor: number;
+  /** Name the item the customer is holding, or `null` when this lane's catalogue does not know the code. */
+  readonly findProduct: (code: string) => NoReceiptItem | null;
+  /** Always true: every no-receipt return needs a manager who is not the cashier (§28). Here so the screen asks. */
+  readonly needsApproval: () => boolean;
+  /** Complete the return, resolving to exactly one plain-English screen state. Never throws. */
+  readonly submit: (draft: RefundDraftInput) => Promise<RefundScreenOutcome>;
+}
+
 /**
  * Build the lane's session from its configuration.
  *
@@ -330,6 +357,9 @@ export function bootPos(config?: {
   readonly receiptsRemaining: () => number;
   /** Look up a bill this lane rang, for the refund screen — or `null` if it did not ring it. */
   readonly lookupRefund: (receipt: string) => Promise<RefundLookup | null>;
+  /** The return-without-a-receipt surface (SP-9b-i · M13-FR-01) — or `null` when this till may not offer one: no
+   *  no-receipt cap was given (or it is 0, switched off), or the till has no catalogue to name the item from. */
+  readonly noReceiptReturn: () => NoReceiptReturnSurface | null;
   /** The receipt template this lane prints with — header, footer and the version to stamp — or `null` when none
    *  has reached this box (print with defaults, stamp nothing). Read from the box's pack, never fetched at print time. */
   readonly receiptTemplate: () => PosReceiptTemplate | null;
@@ -407,6 +437,17 @@ export function bootPos(config?: {
   const refundPolicy: RefundPolicy = config?.refundPolicy ?? { approvalThresholdMinor: 0 };
   const lookup = config?.laneLookup ?? laneLookup(config?.lanePort ?? DEFAULT_LANE_PORT);
 
+  // A manager's lane approval, as the §28 `DecidedRequest` the engine checks (decidedBy ≠ processedBy; the cloud
+  // re-verifies the approver truly holds the authority on sync). Shared by the receipted and the no-receipt return.
+  const decidedAtTheLane = (draft: RefundDraftInput, cashierId: string): DecidedRequest | undefined => (draft.approval === undefined ? undefined : {
+    id: `ovr-${draft.returnId}`, subjectType: 'pos.return', subjectRef: draft.returnId,
+    requestedBy: cashierId, branchId: null, value: money(draft.refundMinor, 'INR'),
+    status: 'approved', decidedBy: draft.approval.by, reason: draft.approval.reason,
+    decidedAt: new Date().toISOString(),
+  });
+  // Nobody signed in → refused in the till's words, before anything is written (F09).
+  const nobodyAtTheTill = (): RefundScreenOutcome => ({ kind: 'refused', laneMessage: new NoOperatorError('take a refund').laneMessage });
+
   const lookupRefund = async (receipt: string): Promise<RefundLookup | null> => {
     const found = await lookup(receipt);
     if (found === null) return null;
@@ -428,18 +469,43 @@ export function bootPos(config?: {
       submit: (draft) => {
         // The refund is asked for by whoever is signed in NOW (F09); nobody signed in → refused in the till's words.
         const cashierId = session.operator();
-        if (cashierId === undefined) return Promise.resolve({ kind: 'refused', laneMessage: new NoOperatorError('take a refund').laneMessage } as RefundScreenOutcome);
-        const approval: DecidedRequest | undefined = draft.approval === undefined ? undefined : {
-          id: `ovr-${draft.returnId}`, subjectType: 'pos.return', subjectRef: draft.returnId,
-          requestedBy: cashierId, branchId: null, value: money(draft.refundMinor, 'INR'),
-          status: 'approved', decidedBy: draft.approval.by, reason: draft.approval.reason,
-          decidedAt: new Date().toISOString(),
-        };
+        if (cashierId === undefined) return Promise.resolve(nobodyAtTheTill());
+        const approval = decidedAtTheLane(draft, cashierId);
         return refundView.submit({
           returnId: draft.returnId, number: draft.number, originalSale,
           reasonCode: draft.reasonCode, lines: draft.lines,
           refundMinor: draft.refundMinor, refundTender: draft.refundTender,
           noReceipt: draft.noReceipt ?? false,
+          ...(approval === undefined ? {} : { approval }),
+          ...(draft.customerRef === undefined ? {} : { customerRef: draft.customerRef }),
+        });
+      },
+    };
+  };
+
+  // The return WITHOUT a receipt (SP-9b-i · M13-FR-01). Offered only when the box GAVE a positive cap and the till has
+  // a catalogue to name the item from — a till without either must not guess a limit or an item (fail safe). There is
+  // no bill, so there are no prior returns to check against: the cap, the mandatory second person and the cloud's
+  // own re-check on sync are the controls; the engine refuses an amount above the cap before anything is written.
+  const noReceiptReturn = (): NoReceiptReturnSurface | null => {
+    const capMinor = refundPolicy.noReceiptCapMinor;
+    if (capMinor === undefined || !Number.isSafeInteger(capMinor) || capMinor <= 0 || catalogue === undefined) return null;
+    const refundView = createRefundView({ refund: till.refund, now: () => new Date().toISOString(), policy: refundPolicy });
+    return {
+      capMinor,
+      findProduct: (code) => {
+        const product = catalogue.findProduct(code);
+        return product === undefined ? null : { productId: product.productId, name: product.name, uom: product.baseUom };
+      },
+      needsApproval: () => true,
+      submit: (draft) => {
+        const cashierId = session.operator();
+        if (cashierId === undefined) return Promise.resolve(nobodyAtTheTill());
+        const approval = decidedAtTheLane(draft, cashierId);
+        return refundView.submit({
+          returnId: draft.returnId, number: draft.number, noReceipt: true,
+          reasonCode: draft.reasonCode, lines: draft.lines,
+          refundMinor: draft.refundMinor, refundTender: draft.refundTender,
           ...(approval === undefined ? {} : { approval }),
           ...(draft.customerRef === undefined ? {} : { customerRef: draft.customerRef }),
         });
@@ -459,7 +525,7 @@ export function bootPos(config?: {
     tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
   });
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund, receiptTemplate, signIn, signOut, operator, lane });
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -476,5 +542,7 @@ if (browserWindow !== undefined) {
     ...(lane === undefined ? {} : { tradingDayCutoff: lane.tradingDayCutoff }),
     ...(browserWindow.posReceiptSeries === undefined ? {} : { receipt: browserWindow.posReceiptSeries }),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
+    // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
+    ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),
   });
 }
