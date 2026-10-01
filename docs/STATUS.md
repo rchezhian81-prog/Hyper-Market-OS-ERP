@@ -819,10 +819,50 @@ device, human UAT and production verification separate; approved deferrals stay 
   refund, no-receipt and exchange; externally blocked EX-03). **W12 is complete in software.** **Still open, honestly:**
   HALF DONE is visible, not self-healing (the manager completes it at the desk); the box does not pull head office's
   no-receipt cap; physical device + staff UAT (SP-10).
-- **Current-work pointer:** last verified = SP-9b-ii (this PR); next = **SP-3c** [W09 remainder, F11] (picker + driver
-  handhelds on the shared device route — `tests/audit-observations/sync.test.ts` F11 picker/driver half, ADR-0019 device
-  socket, `edge/store-edge/src/device-server.ts`); **SP-10** (physical device + staff UAT) stays PENDING until performed;
-  genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-3c-i — the PICKER handheld reaches the store computer and head office over the device socket (W09 remainder ·
+  F11's picker half · M19-FR-01 · M19-FR-02 · D09 · ADR-0019 · §28 · §31 · hard rules #1 #4 #6 #10).** `PickLineResolved`
+  and `WavePacked` are admitted on the shared relay for the `picker` surface and routed to two new SYNCED routes on the
+  fulfilment service (`services/fulfilment/src/waves.ts`): a line's outcome lands on an append-only WAVE REGISTER with the
+  PICKER re-verified from their own grants (`picker_unknown` / `picker_lacks_authority` / `picker_unnamed` said on the
+  record, never a refusal) and the box recorded as the relay; the wave's PACK is compared with the line outcomes head
+  office already holds (`lines_disagree`, `no_cold_chain_temperature`, `no_tamper_seal` said on the record, the crate
+  derived from the register beside the handheld's figures); idempotent on the handheld's own keys (a re-sent outcome or
+  pack is ONE record; a NEW outcome for a line — picked, then rejected — is a second); a payload head office cannot read is
+  400 → a visible dead-letter on the box. `GET /v1/fulfilment/waves/:waveId` reads the wave. Nothing on these routes moves
+  stock (an online order's stock was reserved at order time). The picker session names the picker on every outcome
+  (`pickedBy`) and gains `sentWork` / `handedKeys` / `noteBoxStatus`; the browser entry opens `openPickerRelay` (the shared
+  `drainToBox` as `picker`); the shell lists **Sent from this handheld** with the five shared state words in EN/TA
+  (guardrail `tests/guardrails/the-picker-screen-speaks-both-languages.test.ts`), syncs after every accepted action and
+  every 10 s, and counts the badge by state. Enrolment now lands a device on the handheld screen it asked for
+  (`?next=/picker/`, validated against the handheld screens — never a page that is not a handheld's). Permission
+  `fulfilment.pick.sync` on the box identity (cashier) and the owner; `docs/api/surface.md` +3 routes. Proofs:
+  `tests/unit/fulfilment-waves-synced.test.ts` (21), `tests/unit/picker-session.test.ts` (+2), `tests/unit/device-relay.test.ts`,
+  `tests/unit/device-server.test.ts` (+1), `tests/unit/sync-http-transport.test.ts`;
+  `tests/integration/picker-handheld-reaches-the-cloud-through-the-edge.test.ts` (6: turned away WITH where it was going →
+  enrolled back to `/picker/` → an outcome on the box's disk before `accepted` → the wave register once with the picker
+  verified → `duplicate` before and after a box restart, one cloud post; a lost reply retried to ONE record; a pack agreeing
+  with the lines → no flags, one disagreeing / sealed warm → posted AND flagged; an unknown picker flagged, an unreadable
+  payload dead-lettered with the code and surviving a restart; a picker batch cannot ride as `warehouse` nor a warehouse type
+  as `picker`; a box with no cloud holds the work and will not close the day over it);
+  `tests/e2e/picker-handheld-syncs-through-the-box.e2e.ts` (2: real Chromium at handheld size is sent from `/picker/` to
+  enrol carrying `next`, enrols back to the picker shell as the named picker; picks a line the spec's way, flags a quality
+  fail from the shelf, packs the crate → each listed saved here → with the store computer; the box's fsync'd log holds the
+  three records naming the picker; reload → all listed, nothing re-sent). `tests/e2e/the-handhelds-meet-the-spec.e2e.ts`
+  badge wording follows the state counts ("3 saved here", "nothing sent yet"). Matrix rows 39/144, §3 F11, §4 SP-3, §5;
+  traceability F11, picker app shell, M19-FR-01/02; ADR-0019 and the warehouse/picker screen specs' follow-on notes;
+  `tests/audit-observations/README.md` F11. Denominator 104 unchanged. **Still open:** the DRIVER handheld (SP-3c-ii —
+  `DeliveryStopUpdated` / `RouteSettled` / `DriverCashHandedOver` have no cloud routes yet); the handheld's pack is not yet
+  folded into the per-order pack / dispatch manifest (`/v1/fulfilment/orders/:id/pack`) — the wave register is the record and
+  the review screens read it; head office produces no handheld wave assignment (the pack file's `wave` section is the
+  source today); no TLS on the LAN leg (OA-16); physical device + staff UAT (SP-10).
+- **Current-work pointer:** last verified = SP-3c-i (this PR); next = **SP-3c-ii** [W09 remainder, F11 driver half] (the
+  DRIVER handheld on the shared device route — `DeliveryStopUpdated` / `RouteSettled` / `DriverCashHandedOver` from
+  `apps/delivery-app/src/route-session.ts` admitted for the `driver` surface and routed to synced routes that map a stop's
+  state onto the delivery state machine (`services/fulfilment/src/index.ts`) and keep run-settlement and cash-handover
+  registers with the DRIVER re-verified, record-and-flag; `openDriverRelay` + sent list + state-counted badge on the delivery
+  shell; `tests/audit-observations/sync.test.ts` F11 driver half; mirror the picker proofs); then **SP-10** (physical device +
+  staff UAT) stays PENDING until performed; genuine blockers: none; external gates unchanged (providers, hardware, real
+  data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

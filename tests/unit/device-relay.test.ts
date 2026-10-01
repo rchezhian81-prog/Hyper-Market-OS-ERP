@@ -104,6 +104,14 @@ describe('the contract reads strictly and refuses with a reason', () => {
     expect(isRelayable('ReceivingCompleted', 'manager')).toBe(false);
     expect(isRelayable('WarehouseMovementApplied', 'manager')).toBe(false);
     expect(isRelayable('ReceivingScanned', 'picker')).toBe(false);
+    // SP-3c-i (F11's picker half): the picker handheld's line outcomes and wave packs ride as `picker` — and only that surface.
+    expect(RELAYABLE_DEVICE_EVENTS['PickLineResolved']?.surfaces).toEqual(['picker']);
+    expect(RELAYABLE_DEVICE_EVENTS['WavePacked']?.surfaces).toEqual(['picker']);
+    expect(isRelayable('PickLineResolved', 'picker')).toBe(true);
+    expect(isRelayable('WavePacked', 'picker')).toBe(true);
+    expect(isRelayable('PickLineResolved', 'warehouse')).toBe(false);
+    expect(isRelayable('WavePacked', 'manager')).toBe(false);
+    expect(isRelayable('WarehouseMovementApplied', 'picker')).toBe(false); // a picker's handheld never moves bin stock
     // A handheld may claim only a handheld surface on the device socket; `manager` is never one.
     expect([...HANDHELD_SOURCES]).toEqual(['warehouse', 'picker', 'driver']);
     expect(isHandheldSource('warehouse')).toBe(true);

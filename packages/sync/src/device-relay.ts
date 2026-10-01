@@ -68,6 +68,12 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // Head office re-verifies the COUNTER from their grants and judges the shelf against its own map; a count against a shelf
   // it does not have dead-letters visibly. The refill task's indent rides `FloorIndentRequested` above, from the same screen.
   ShelfCounted: { surfaces: ['manager'] },
+  // SP-3c-i (F11's picker half): the PICKER handheld's work over the same device socket (ADR-0019). A line's outcome
+  // (picked / short / substituted / quality failed, with the final price captured at pick, D09) and the wave's pack
+  // (the manifest's facts with the cold-chain and tamper evidence). Head office re-verifies the PICKER / PACKER from
+  // their grants and keeps a wave register; a payload it cannot read dead-letters visibly. Nothing here moves stock.
+  PickLineResolved: { surfaces: ['picker'] },
+  WavePacked: { surfaces: ['picker'] },
 });
 
 /**

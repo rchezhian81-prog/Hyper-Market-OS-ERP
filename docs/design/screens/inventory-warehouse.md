@@ -73,7 +73,7 @@ page, the wrong code → refused with a reason and no shell, the right code → 
 store computer* within a moment, both records on the box's fsync'd log; reload → both still listed. Head office delivery
 is proven on the real box against the real kernel (`tests/integration/warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts`).
 **Still recorded, not dropped:** start a count (W2) · record an adjustment with reason (W3) — SP-3b; the picker and driver
-handhelds on the same socket — SP-3c; TLS on the shop-network leg (a staff-only wifi meanwhile) — Stage E;
+handhelds on the same socket — the picker's connected in SP-3c-i, the driver's SP-3c-ii; TLS on the shop-network leg (a staff-only wifi meanwhile) — Stage E;
 physical-device verification PENDING.
 
 ## Measured (SP-3b — start a count · record an adjustment with reason, owner's Option 2 directive of 30 September 2026)
@@ -93,7 +93,7 @@ compensating movement posts (`tests/integration/adjustment-requests.test.ts`,
 `tests/integration/warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts` case 6). Reasons: damaged · expired ·
 miscount · found · theft suspected · other, in English and Tamil, guardrail-bound.
 **Still recorded, not dropped:** the manager's own relayed approval decision does not yet post a held count or request
-(SP-4); pending requests reach the manager's screen only with the pack (SP-9); the picker and driver handhelds — SP-3c;
+(SP-4); pending requests reach the manager's screen only with the pack (SP-9); the picker handheld connected (SP-3c-i), the driver handheld — SP-3c-ii;
 TLS on the shop-network leg — Stage E; physical-device verification and staff UAT — PENDING.
 
 ## Measured (SP-5 / SP-5b — one stock truth for transfers and counts, owner's Option 2 directive of 30 September 2026)
@@ -115,7 +115,7 @@ occupancy AND the store's on-hand: one count, one correction, every reader. Noth
 recorded before this slice, which posted no movement, still layer exactly as they did.
 **Still recorded, not dropped:** no screen drives dispatch / receive — the floor-indent chain (SP-8) will; the counts
 review screen and the stock-health screen do not yet show posted corrections or in-transit stock (SP-9); the picker and
-driver handhelds — SP-3c; TLS on the shop-network leg — Stage E; physical-device verification and staff UAT — PENDING.
+driver handhelds — the picker's connected in SP-3c-i, the driver's SP-3c-ii; TLS on the shop-network leg — Stage E; physical-device verification and staff UAT — PENDING.
 
 ## Measured (SP-6b — the delivery is one receipt, owner's Option 2 directive of 30 September 2026)
 Since SP-3a the handheld's receiving scans reached head office one by one — each a `received` movement and a row on the

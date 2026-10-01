@@ -278,9 +278,11 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     await page.waitForSelector('.line.quality_failed');
     expect(taps.reset(), 'flag a quality fail').toBeLessThanOrEqual(2);
 
-    // Everything the picker did is on the device, waiting to go — and the badge says so in words.
+    // Everything the picker did is on the device, waiting to go — and the badge says so in words, by state (SP-3c-i): no box
+    // served this page, so each piece of work is "saved here", and the list below the lines says the same per item.
     expect(await page.evaluate('globalThis.pickerOutbox.unsentCount()')).toBe(3);
-    expect(await page.textContent('#queue-text')).toBe('3 waiting to sync');
+    expect(await page.textContent('#queue-text')).toBe('3 saved here');
+    expect(await page.textContent('#sent-work .sent[data-kind="line"][data-id="l1"] .pill')).toBe('Saved on this handheld — not yet with the store computer');
     expect(await page.getAttribute('#queue-dot', 'class')).toContain('waiting');
   });
 
@@ -452,7 +454,7 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     await page.evaluate('globalThis.pickerBadge.refresh()');
     expect(await page.textContent('#box-text')).toBe('store computer not answering');
     expect(await page.getAttribute('#queue-dot', 'class')).toContain('error');
-    expect(await page.textContent('#queue-text')).toBe('everything sent');
+    expect(await page.textContent('#queue-text')).toBe('nothing sent yet');
 
     // And in Tamil.
     await page.click('#lang');

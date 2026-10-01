@@ -67,6 +67,20 @@
       .line .qty { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
       .line .state { font-size: 14px; font-weight: 600; }
 
+      /* Sent from this handheld (SP-3c-i): what each queued outcome was, then one of the five shared state words as a
+         pill; a refusal carries its reason. The same shape the warehouse handheld shows, for the same reason. */
+      .section { font-size: 14px; font-weight: 600; color: var(--muted); margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+      .section[hidden] { display: none; }
+      .sent { background: var(--panel); border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; display: grid; gap: 6px; border-left: 6px solid var(--line); }
+      .sent .what { font-size: 16px; font-weight: 600; }
+      .sent .why { font-size: 14px; color: var(--muted); }
+      .sent.refused { border-left-color: var(--danger); }
+      .sent.posted { border-left-color: var(--good); }
+      .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--line); color: var(--ink); justify-self: start; }
+      .pill.posted { background: var(--good); color: var(--on-accent); }
+      .pill.refused { background: var(--danger-surface); color: var(--on-danger); }
+      .pill.retrying { background: var(--warn); color: var(--on-warn); }
+
       footer { background: var(--panel); padding: 12px 14px 18px; display: grid; gap: 10px; }
       /* The next step, spelled out. A handheld user should never have to work out where they are. */
       .step { font-size: 19px; font-weight: 600; min-height: 26px; }
@@ -143,6 +157,9 @@
     <main>
       <div id="lines"></div>
       <p class="empty" id="empty" hidden>—</p>
+      <!-- Where each outcome and the pack have got to — read from the durable device queue and the store computer's word. -->
+      <h2 class="section" id="sent-heading" hidden>—</h2>
+      <div id="sent-work"></div>
     </main>
 
     <footer>

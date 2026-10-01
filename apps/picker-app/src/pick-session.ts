@@ -32,6 +32,7 @@ import { money, multiplyByInteger, scaleMoney, type Money, type CurrencyCode } f
 import { precisionOf, type Uom } from '../../../packages/contracts/src/quantity';
 import { confirmSubstitution } from '../../../packages/fulfilment/src/delivery';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { deviceItemReason, deviceItemState, type BoxItemStatus, type DeviceItemState } from '../../../packages/sync/src/device-relay';
 
 export type LineState = 'pending' | 'picked' | 'short' | 'substituted' | 'quality_failed';
 
@@ -104,6 +105,32 @@ export interface DispatchManifest {
   readonly evidence: PackEvidence;
 }
 
+/** The two event types this handheld queues — named once, for the session, the box's allow-list and the cloud routes. */
+export const PICK_LINE_RESOLVED = 'PickLineResolved';
+export const WAVE_PACKED = 'WavePacked';
+
+/** The kinds of work this handheld sends: a line's outcome, and the wave's pack. A guardrail binds the shell's words to this. */
+export const SENT_WORK_KINDS = Object.freeze(['line', 'pack'] as const);
+export type SentWorkKind = (typeof SENT_WORK_KINDS)[number];
+
+/**
+ * One piece of work this handheld queued, and where it has got to (SP-3c-i · the five shared device states). Read from
+ * the DURABLE device queue plus the store computer's own word — so the list is the same after the app is closed.
+ */
+export interface SentWork {
+  readonly kind: SentWorkKind;
+  /** The line id for a line outcome; the wave id for the pack. */
+  readonly id: string;
+  /** What it was: the product (or substitute) and the order reference; the wave for a pack. */
+  readonly what: string;
+  /** The outcome in the model's own words: the state and quantity for a line; lines and value for a pack. */
+  readonly detail: string;
+  readonly at: string;
+  readonly state: DeviceItemState;
+  readonly attempts: number;
+  readonly reason?: string;
+}
+
 export class NoSuchLineError extends Error {
   constructor(lineId: string) {
     super(`No pick line "${lineId}" in this wave.`);
@@ -167,6 +194,10 @@ export class PickSession {
 
   private readonly currency: CurrencyCode;
   private readonly at: () => string;
+  /** Who is picking, as the wave named them — travels on every outcome so head office can re-verify the picker (§28). */
+  private readonly pickerId: string | null;
+  /** The store computer's word on each item it took, keyed by queue key — filled by `noteBoxStatus` (SP-3c-i). */
+  private readonly boxWord = new Map<string, BoxItemStatus>();
 
   constructor(
     readonly waveId: string,
@@ -177,10 +208,13 @@ export class PickSession {
       readonly currency?: CurrencyCode;
       /** Injected so a test is deterministic; the handheld passes its own clock. */
       readonly now?: () => string;
+      /** The picker the wave was assigned to. Absent on a wave that named nobody — recorded as such, never invented. */
+      readonly pickerId?: string;
     } = {},
   ) {
     this.currency = options.currency ?? 'INR';
     this.at = options.now ?? (() => new Date().toISOString());
+    this.pickerId = options.pickerId ?? null;
     this.lines = assigned.map((l) => ({
       ...l,
       state: 'pending' as LineState,
@@ -232,7 +266,7 @@ export class PickSession {
     this.outbox.enqueue(
       makeEvent({
         id: `${this.waveId}:${next.lineId}:${next.state}`,
-        type: 'PickLineResolved',
+        type: PICK_LINE_RESOLVED,
         occurredAt: this.at(),
         idempotencyKey: `pick:${this.waveId}:${next.lineId}:${next.state}`,
         source: this.waveId,
@@ -244,10 +278,13 @@ export class PickSession {
           productId: next.substituteProductId ?? next.productId,
           state: next.state,
           pickedQty: next.pickedQty,
+          uom: next.uom,
           finalPriceMinor: next.finalPrice.minor,
           currency: next.finalPrice.currency,
           substituted: next.state === 'substituted',
           note: next.note ?? null,
+          // Who did it (SP-3c-i): head office re-verifies this person from THEIR grants, never the relay's.
+          pickedBy: this.pickerId,
         },
       }),
     );
@@ -420,7 +457,7 @@ export class PickSession {
     this.outbox.enqueue(
       makeEvent({
         id: `${this.waveId}:packed`,
-        type: 'WavePacked',
+        type: WAVE_PACKED,
         occurredAt: evidence.at,
         idempotencyKey: `pack:${this.waveId}`,
         source: this.waveId,
@@ -441,5 +478,42 @@ export class PickSession {
   /** The manifest once packed, or null before. */
   manifest(): DispatchManifest | null {
     return this.packed;
+  }
+
+  // ── Where each piece of work has got to (SP-3c-i · the shared device → box → head office leg) ──────────
+
+  /** Fold in the store computer's word on the items it holds (asked over `/lane/outbox/status`). */
+  noteBoxStatus(statuses: readonly BoxItemStatus[]): void {
+    for (const s of statuses) this.boxWord.set(s.key, s);
+  }
+
+  /** The keys the box has taken — the ones worth asking it about. */
+  handedKeys(): readonly string[] {
+    return this.outbox.all().filter((item) => item.state === 'acknowledged').map((item) => item.key);
+  }
+
+  /**
+   * Every outcome and pack this handheld queued, newest first, each with one of the five shared state words. The
+   * device's own "acknowledged" means the BOX has it — only the box's word says head office does (P-08). A refusal
+   * carries its reason, because a person has to act on it.
+   */
+  sentWork(): readonly SentWork[] {
+    return this.outbox.all()
+      .flatMap((item): SentWork[] => {
+        const box = this.boxWord.get(item.key);
+        const common = { at: item.event.occurredAt, state: deviceItemState(item, box), attempts: item.attempts } as const;
+        const reason = deviceItemReason(item, box);
+        const withReason = reason === undefined ? {} : { reason };
+        if (item.event.type === PICK_LINE_RESOLVED) {
+          const p = item.event.payload as { lineId: string; orderRef: string; productId: string; state: LineState; pickedQty: number; uom: string; finalPriceMinor: number };
+          return [{ kind: 'line', id: p.lineId, what: `${p.productId} · ${p.orderRef}`, detail: `${p.state} · ${p.pickedQty} ${p.uom}`, ...common, ...withReason }];
+        }
+        if (item.event.type === WAVE_PACKED) {
+          const p = item.event.payload as { waveId: string; lineCount: number; totalValueMinor: number; currency: string };
+          return [{ kind: 'pack', id: p.waveId, what: p.waveId, detail: `${p.lineCount} ${p.lineCount === 1 ? 'line' : 'lines'} · ${p.totalValueMinor} ${p.currency}`, ...common, ...withReason }];
+        }
+        return [];
+      })
+      .reverse();
   }
 }
