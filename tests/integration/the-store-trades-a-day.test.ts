@@ -122,7 +122,8 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     expect((await call('POST', `/v1/catalogue/products/${PRODUCT}/barcodes/${BARCODE}`, OWNER, { kind: 'ean' }, `barcode-${PRODUCT}`)).status).toBeLessThan(300);
     const published = await call('POST', '/v1/catalogue/pack', OWNER, { storeId: STORE, asOf: today }, 'pack-1');
     expect(published.status, JSON.stringify(published.body)).toBe(201);
-    // Opening stock at the store — SP-9-ii replaces this single movement with the purchase → GRN → back store → floor chain.
+    // Opening stock at the store, booked directly so this suite stays the RETAIL leg. The chain that fills a shelf for real —
+    // supplier → order → delivery → quarantine → back store → indent → floor — runs connected in `the-store-buys-what-it-sells` (SP-9-ii).
     const opening = await call('POST', '/v1/inventory/movements', OWNER, {
       movementId: 'mv-opening', productId: PRODUCT, locationId: STORE, kind: 'received', quantityMinor: 10, uom: 'ea',
       occurredAt: `${today}T00:30:00.000Z`, enteredBy: OWNER, unitCostMinor: COST,
