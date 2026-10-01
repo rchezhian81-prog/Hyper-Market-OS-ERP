@@ -9,13 +9,14 @@ import {
   payloadFor, managerPayload, ownerPayload, posPayload, customerPayload,
   pickerPayload, driverPayload, reportingPayload, merchandisingPayload, unsellablePayload, unsellableProducts, catalogueFreshness,
   GLOBAL_FOR, SCREENS, type ScreenInput,
+  tillCatalogue,
 } from '../../edge/store-edge/src/screen-data';
 import { embed, injectPayload, routeOf, safeFile, DATA_MARKER, APP_SHELL } from '../../edge/store-edge/src/screen-server';
 import { SyncOutbox } from '../../packages/sync/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { hmacSigner } from '../../services/catalogue/src/index';
 import { publishPack, type SignedPack } from '../../services/catalogue/src/pack';
-import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
+import { CatalogueCache, type CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 
 /**
  * **The store box feeding the six screens.**
@@ -346,12 +347,15 @@ describe('the pack-age badge is on every screen (SYNC-01, P-08)', () => {
   });
 
   it('still shows the badge on a screen whose own payload is null (told nothing else)', () => {
-    // posPayload is null when the box holds no products; the badge must still ride.
-    const noProducts = input({ pack: fullPack({ products: notKnown('no catalogue') }), cataloguePack: signedCatalogue(7, '2026-08-05T09:00:00.000Z') });
-    expect(posPayload(noProducts)).toBeNull();
-    const html = injectPayload(`${DATA_MARKER}`, GLOBAL_FOR['pos'], posPayload(noProducts), { catalogueFreshness: catalogueFreshness(noProducts) });
+    // The expiry screen's payload is null when the pack carries no expiry policy; the badge must still ride.
+    const noPolicy = input({ pack: fullPack({ expiryPolicy: notKnown('no expiry policy') }), cataloguePack: signedCatalogue(7, '2026-08-05T09:00:00.000Z') });
+    expect(payloadFor('expiry', noPolicy)).toBeNull();
+    const html = injectPayload(`${DATA_MARKER}`, GLOBAL_FOR['expiry'], payloadFor('expiry', noPolicy), { catalogueFreshness: catalogueFreshness(noPolicy) });
     expect(html).toContain('window.catalogueFreshness =');
-    expect(html).not.toContain(`window.${GLOBAL_FOR['pos']} =`); // no screen payload, but the badge is there
+    expect(html).not.toContain(`window.${GLOBAL_FOR['expiry']} =`); // no screen payload, but the badge is there
+    // The till is the one screen a held pack always feeds (SP-9-i · F13): a file with no products and a pulled pack = head office's catalogue.
+    const noProducts = input({ pack: fullPack({ products: notKnown('no catalogue') }), cataloguePack: signedCatalogue(7, '2026-08-05T09:00:00.000Z') });
+    expect(posPayload(noProducts)).toMatchObject({ source: 'head_office', version: 7 });
   });
 });
 
@@ -891,6 +895,72 @@ describe('a product with a unit of measure the till cannot price is kept OFF the
     const payload = posPayload(input({ pack: fullPack({ products: known([{ ...PRODUCTS[0]!, uom: 'each', recallBlock: true }]) }) }))!;
     const products = payload['products'] as { productId: string; recallBlock?: boolean }[];
     expect(products.map((p) => [p.productId, p.recallBlock])).toEqual([['p1', true]]);
+  });
+});
+
+// ── SP-9-i (F13 · P-02): the till sells from the catalogue head office PUBLISHED and this box PULLED — the file is the fallback ──
+describe('the till is built from the pulled head-office pack once the box holds one, and from the pack file until then (SP-9-i · F13 · P-02)', () => {
+  const HO_KEY = ['head', 'office', 'pack', 'key'].join('-').padEnd(48, '0');
+  const headOffice = (over: Partial<CatalogueSnapshot> = {}): SignedPack => {
+    const snapshot: CatalogueSnapshot = {
+      tenantId: 't-sre', scope: { tenantId: 't-sre', storeId: 'S1' }, version: 12, builtAt: '2026-10-01T04:00:00.000Z',
+      products: [
+        { productId: 'P1', sku: 'GHEE-1L', name: 'Ghee 1L', baseUom: 'ea', unitPriceMinor: 64_000, taxBps: 500, hsnCode: '0405', mrpMinor: 70_000, status: 'active' },
+        { productId: 'P2', sku: 'BEER-650', name: 'Lager 650ml', baseUom: 'ea', unitPriceMinor: 18_000, taxBps: 2800, status: 'active', regulatedFlags: { minimumAge: 21 } },
+        { productId: 'P3', sku: 'TIN-400', name: 'Recalled tin', baseUom: 'ea', unitPriceMinor: 9_000, taxBps: 500, status: 'clearance', recallBlock: true, batchTracked: true },
+        { productId: 'P4', sku: 'ODD', name: 'Odd unit', baseUom: 'each', unitPriceMinor: 1_000, taxBps: 500, status: 'active' },
+        { productId: 'P5', sku: 'OLD', name: 'Discontinued', baseUom: 'ea', unitPriceMinor: 1_000, taxBps: 500, status: 'discontinued' },
+      ],
+      barcodes: [{ code: '8901234567890', productId: 'P1', kind: 'standard' }, { code: '8901234567891', productId: 'P1', kind: 'alternate' }, { code: '2000001000005', productId: 'P2', kind: 'price_embedded' }],
+      embeddedRules: [],
+      ...over,
+    };
+    const result = publishPack({ snapshot, approvals: [], signer: hmacSigner(HO_KEY), publishedBy: 'u-owner', publishedAt: snapshot.builtAt });
+    if (!result.ok || result.pack === undefined) throw new Error(result.detail);
+    return result.pack;
+  };
+
+  it('with a pulled pack held, the till is head office\'s catalogue — version, build time, store scope, prices, tax, HSN, MRP, every barcode with its kind, the age flag and the recall block as published', () => {
+    const payload = posPayload(input({ cataloguePack: headOffice() }))!;
+    expect(payload).toMatchObject({ source: 'head_office', tenantId: 't-sre', version: 12, builtAt: '2026-10-01T04:00:00.000Z', scope: { storeId: 'S1' }, embeddedRules: [] });
+    const products = payload['products'] as Record<string, unknown>[];
+    expect(products.map((p) => p['productId'])).toEqual(['P1', 'P2', 'P3', 'P5']); // P4's unit the till cannot price: excluded, named
+    expect(products[0]).toEqual({ productId: 'P1', sku: 'GHEE-1L', name: 'Ghee 1L', baseUom: 'ea', unitPriceMinor: 64_000, taxBps: 500, hsnCode: '0405', mrpMinor: 70_000, status: 'active' });
+    expect(products[1]).toMatchObject({ productId: 'P2', regulatedFlags: { minimumAge: 21 } });
+    expect(products[2]).toMatchObject({ productId: 'P3', recallBlock: true, batchTracked: true, status: 'clearance' });
+    expect(payload['barcodes']).toEqual([
+      { code: '8901234567890', productId: 'P1', kind: 'standard' }, { code: '8901234567891', productId: 'P1', kind: 'alternate' }, { code: '2000001000005', productId: 'P2', kind: 'price_embedded' },
+    ]);
+    expect(payload['excludedProducts']).toEqual([{ productId: 'P4', name: 'Odd unit', why: 'unknown unit of measure "each" on the catalogue' }]);
+    // The file's products (seven of them, v7) are NOT what the lane sells from any more.
+    expect(products.some((p) => p['productId'] === 'p1')).toBe(false);
+    // …and it builds a real lane catalogue.
+    expect(new CatalogueCache(payload as never).scan('8901234567890').product.unitPriceMinor).toBe(64_000);
+  });
+
+  it('the file\'s master still wins a SAFETY argument: a recall only the master knows blocks the pulled product too (either source says blocked → blocked)', () => {
+    const master = [{ productId: 'P1', tenantId: 't-sre', sku: 'GHEE-1L', name: 'Ghee 1L', primaryCategoryId: null, baseUom: 'ea', taxClass: null, lifecycle: 'active' as const, recallBlocked: true }];
+    const payload = posPayload(input({ pack: fullPack({ productMaster: known(master) }), cataloguePack: headOffice() }))!;
+    expect((payload['products'] as { productId: string; recallBlock?: boolean }[]).find((p) => p.productId === 'P1')?.recallBlock).toBe(true);
+  });
+
+  it('the "products nobody can sell" screen judges the SAME catalogue the till sells from, and counts against it', () => {
+    const rows = unsellableProducts(fullPack(), headOffice());
+    expect(rows.map((r) => [r.productId, r.why])).toEqual([['P3', 'recall_block'], ['P4', 'unknown_uom'], ['P5', 'not_on_sale']]);
+    const payload = unsellablePayload(input({ cataloguePack: headOffice() }))!;
+    expect(payload).toMatchObject({ source: 'head_office', asAt: '2026-10-01T04:00:00.000Z', sellableCount: 2 });
+    expect((payload['rows'] as { productId: string }[]).map((r) => r.productId)).toEqual(['P3', 'P4', 'P5']);
+  });
+
+  it('with NO pulled pack the file is the catalogue, named as such — and with neither, the till has none', () => {
+    const fromFile = posPayload(input())!;
+    expect(fromFile).toMatchObject({ source: 'pack_file', version: 7, tenantId: 'store-1' });
+    expect((fromFile['barcodes'] as { kind: string }[]).every((b) => b.kind === 'ean13')).toBe(true);
+    expect(unsellablePayload(input())).toMatchObject({ source: 'pack_file' });
+    expect(tillCatalogue(fullPack({ products: notKnown('none') }), undefined, NOW)).toBeUndefined();
+    expect(posPayload(input({ pack: fullPack({ products: notKnown('none') }) }))).toBeNull();
+    // A pulled pack with a file that carries no products: the till still has head office's catalogue.
+    expect(posPayload(input({ pack: fullPack({ products: notKnown('none') }), cataloguePack: headOffice() }))).toMatchObject({ source: 'head_office', version: 12 });
   });
 });
 

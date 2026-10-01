@@ -116,6 +116,110 @@ const NOT_SHIPPED_TO_THE_LANE: ReadonlySet<UnsellableWhy> = new Set<UnsellableWh
 /** The statuses a lane may sell (`packages/catalogue`): draft and discontinued are refused at the scan. */
 const LANE_SELLS: ReadonlySet<string> = new Set(['active', 'clearance']);
 
+/** Where the till's catalogue came from — named on the payload so a screen (and a test) can say which truth the lane sells from. */
+export type TillCatalogueSource = 'head_office' | 'pack_file';
+
+/** One product as the till is judged on and built from — the slice both sources can fill. */
+export interface TillProduct {
+  readonly productId: string;
+  readonly sku?: string;
+  readonly name: string;
+  readonly nameTa?: string;
+  readonly unitPriceMinor: number;
+  readonly uom: string;
+  readonly barcodes: readonly { readonly code: string; readonly kind: string }[];
+  readonly taxBps?: number;
+  readonly hsnCode?: string;
+  readonly mrpMinor?: number;
+  readonly status?: string;
+  readonly recallBlock?: boolean;
+  readonly batchTracked?: boolean;
+  /** `ageRestricted` on the pack file; the master's minimum age fills the number where it knows one. */
+  readonly ageRestricted?: boolean;
+  readonly regulatedFlags?: Readonly<Record<string, unknown>>;
+}
+
+export interface TillCatalogue {
+  readonly source: TillCatalogueSource;
+  readonly tenantId: string;
+  readonly version: number;
+  readonly builtAt: string;
+  readonly products: readonly TillProduct[];
+  readonly scope?: SignedPack['snapshot']['scope'];
+  readonly embeddedRules?: SignedPack['snapshot']['embeddedRules'];
+}
+
+/**
+ * The catalogue the till is judged on and built from (SP-9-i · F13 · P-02 · M03-FR-03 · M05-FR-01).
+ *
+ * The signed pack this box PULLED from head office is the one commerce truth and wins whenever the box holds one: a price
+ * change, a new barcode or a recall block published at head office reaches the lane on the next pull — not when somebody
+ * edits a file on the shop PC. Until SP-9 the pulled pack fed only the pack-age badge and the till priced from the pack
+ * FILE's `products`, so "Catalogue updated to v2" in the boot log meant nothing at the scanner (F13). The file's products
+ * remain the fallback for a box that has pulled nothing yet (first boot before the first pull, or a box with no cloud at
+ * all — the arrangement the one-PC install starts in). Holding neither, the till has no catalogue and says so.
+ */
+export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undefined, now: string): TillCatalogue | undefined {
+  if (cataloguePack !== undefined) {
+    const snapshot = cataloguePack.snapshot;
+    // Barcodes grouped per product. A product with none genuinely has none on head office's catalogue — the empty list is
+    // what the snapshot says, not a substitute for a missing section (the barcode register is part of the signed pack).
+    const codes = new Map<string, { code: string; kind: string }[]>();
+    for (const b of snapshot.barcodes) {
+      const list = codes.get(b.productId);
+      if (list === undefined) codes.set(b.productId, [{ code: b.code, kind: b.kind }]);
+      else list.push({ code: b.code, kind: b.kind });
+    }
+    const codesOf = (productId: string): readonly { code: string; kind: string }[] => {
+      const list = codes.get(productId);
+      return list === undefined ? [] : list;
+    };
+    return {
+      source: 'head_office',
+      tenantId: snapshot.tenantId,
+      version: snapshot.version,
+      builtAt: snapshot.builtAt,
+      ...(snapshot.scope === undefined ? {} : { scope: snapshot.scope }),
+      ...(snapshot.embeddedRules === undefined ? {} : { embeddedRules: snapshot.embeddedRules }),
+      products: snapshot.products.map((p) => ({
+        productId: p.productId,
+        sku: p.sku,
+        name: p.name,
+        unitPriceMinor: p.unitPriceMinor,
+        uom: p.baseUom,
+        barcodes: codesOf(p.productId),
+        taxBps: p.taxBps,
+        ...(p.hsnCode === undefined ? {} : { hsnCode: p.hsnCode }),
+        ...(p.mrpMinor === undefined ? {} : { mrpMinor: p.mrpMinor }),
+        status: p.status,
+        ...(p.recallBlock === true ? { recallBlock: true } : {}),
+        ...(p.batchTracked === true ? { batchTracked: true } : {}),
+        ...(p.regulatedFlags === undefined ? {} : { regulatedFlags: p.regulatedFlags }),
+      })),
+    };
+  }
+  if (!pack.products.known) return undefined;
+  const policies = pack.policies.known ? pack.policies.value : undefined;
+  return {
+    source: 'pack_file',
+    tenantId: policies?.storeId ?? 'store-1',
+    version: pack.version,
+    builtAt: pack.receivedAt ?? now,
+    products: pack.products.value.map((p) => ({
+      productId: p.productId,
+      name: p.name,
+      ...(p.nameTa === undefined ? {} : { nameTa: p.nameTa }),
+      unitPriceMinor: p.unitPriceMinor,
+      uom: p.uom,
+      barcodes: p.barcodes.map((code) => ({ code, kind: 'ean13' })),
+      ...(p.taxBps === undefined ? {} : { taxBps: p.taxBps }),
+      ...(p.status === undefined ? {} : { status: p.status }),
+      ...(p.recallBlock === true ? { recallBlock: true } : {}),
+      ...(p.ageRestricted === true ? { ageRestricted: true } : {}),
+    })),
+  };
+}
+
 /**
  * Every product in the pack the till cannot sell, and why (SP-8c-ii · F08 · P-08 · M03-FR-03 · M10-FR-04 · G5c).
  *
@@ -123,11 +227,12 @@ const LANE_SELLS: ReadonlySet<string> = new Set(['active', 'clearance']);
  * "Products nobody can sell" screen shows the same list to the person who can fix it. Recall is judged first — a safety
  * block before a catalogue gap, and from EITHER source (the lane summary or the master), failing safe.
  */
-export function unsellableProducts(pack: StorePack): readonly UnsellableProduct[] {
-  if (!pack.products.known) return [];
+export function unsellableProducts(pack: StorePack, cataloguePack?: SignedPack): readonly UnsellableProduct[] {
+  const till = tillCatalogue(pack, cataloguePack, '');
+  if (till === undefined) return [];
   const master = new Map((pack.productMaster.known ? pack.productMaster.value : []).map((m) => [m.productId, m] as const));
   const rows: UnsellableProduct[] = [];
-  for (const p of pack.products.value) {
+  for (const p of till.products) {
     const m = master.get(p.productId);
     const status = p.status ?? m?.lifecycle;
     const named = (why: UnsellableWhy, detail: string): void => {
@@ -148,14 +253,17 @@ export function unsellableProducts(pack: StorePack): readonly UnsellableProduct[
  * `null` when the box was never given a catalogue — the screen then says it cannot say, rather than "all clear".
  */
 export function unsellablePayload(input: ScreenInput): Record<string, unknown> | null {
-  if (!input.pack.products.known) return null;
+  const till = tillCatalogue(input.pack, input.cataloguePack, input.now);
+  if (till === undefined) return null;
   const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
-  const rows = unsellableProducts(input.pack);
+  const rows = unsellableProducts(input.pack, input.cataloguePack);
   return {
     storeId: policies?.storeId ?? 'store-1',
-    asAt: input.pack.receivedAt ?? input.now,
+    // The catalogue judged: head office's build time when the lane sells from the pulled pack, else when the box took the file.
+    asAt: till.source === 'head_office' ? till.builtAt : (input.pack.receivedAt ?? input.now),
+    source: till.source,
     rows: rows.map((r) => ({ productId: r.productId, name: r.name, ...(r.nameTa === undefined ? {} : { nameTa: r.nameTa }), reason: r.why, detail: r.detail })),
-    sellableCount: input.pack.products.value.length - rows.length,
+    sellableCount: till.products.length - rows.length,
   };
 }
 
@@ -168,8 +276,9 @@ export function unsellablePayload(input: ScreenInput): Record<string, unknown> |
  * make every scan an unknown-barcode error instead.
  */
 export function posPayload(input: ScreenInput): Record<string, unknown> | null {
-  if (!input.pack.products.known) return null;
-  const policies = input.pack.policies.known ? input.pack.policies.value : undefined;
+  // SP-9-i (F13 · P-02): the catalogue head office published and this box pulled, when it holds one; the pack file until then.
+  const till = tillCatalogue(input.pack, input.cataloguePack, input.now);
+  if (till === undefined) return null;
 
   // The master record, where the pack carried one. Recall and lifecycle live there, and the
   // lane-facing summary carries them too — so the two can disagree, and on a SAFETY flag a
@@ -200,9 +309,9 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
   //
   // SP-8c-ii: the judgement is made ONCE, in `unsellableProducts`, and the "Products nobody can sell" screen reads the
   // same list — so what the till is not given and what the person who can fix it is shown can never disagree.
-  const notShipped = new Map(unsellableProducts(input.pack).filter((r) => NOT_SHIPPED_TO_THE_LANE.has(r.why)).map((r) => [r.productId, r] as const));
+  const notShipped = new Map(unsellableProducts(input.pack, input.cataloguePack).filter((r) => NOT_SHIPPED_TO_THE_LANE.has(r.why)).map((r) => [r.productId, r] as const));
 
-  for (const p of input.pack.products.value) {
+  for (const p of till.products) {
     const m = master.get(p.productId);
     const recallBlock = p.recallBlock === true || m?.recallBlocked === true;
     const status = p.status ?? m?.lifecycle;
@@ -214,21 +323,27 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
     }
     products.push({
       productId: p.productId,
+      ...(p.sku === undefined ? {} : { sku: p.sku }),
       name: p.name,
       ...(p.nameTa === undefined ? {} : { nameTa: p.nameTa }),
       baseUom: p.uom,
       unitPriceMinor: p.unitPriceMinor,
       taxBps: p.taxBps ?? 0,
+      ...(p.hsnCode === undefined ? {} : { hsnCode: p.hsnCode }),
+      ...(p.mrpMinor === undefined ? {} : { mrpMinor: p.mrpMinor }),
       status: status ?? 'discontinued',
       // **The recall block, at last.** The lane's catalogue has refused a recall-blocked scan
       // since it was written — "even offline", the loudest safety claim in this codebase — and
       // the flag had no field to arrive in, so the refusal was unreachable and a recalled batch
       // could be sold at the till.
       ...(recallBlock ? { recallBlock: true } : {}),
-      ...(p.ageRestricted === true ? { regulatedFlags: { minimumAge: minimumAge ?? 18 } } : {}),
+      ...(p.batchTracked === true ? { batchTracked: true } : {}),
+      // Head office's flags ride as published; the pack file's `ageRestricted` becomes the lane's age prompt.
+      ...(p.regulatedFlags !== undefined ? { regulatedFlags: p.regulatedFlags }
+        : p.ageRestricted === true ? { regulatedFlags: { minimumAge: minimumAge ?? 18 } } : {}),
     });
-    for (const code of p.barcodes) {
-      barcodes.push({ code, productId: p.productId, kind: 'ean13' });
+    for (const b of p.barcodes) {
+      barcodes.push({ code: b.code, productId: p.productId, kind: b.kind });
     }
   }
 
@@ -237,9 +352,13 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
   // `taxBps` — and `new CatalogueCache(snapshot)` threw on `snapshot.barcodes` before the till
   // rendered anything. A cashier saw a blank screen, and nothing anywhere said why.
   return {
-    tenantId: policies?.storeId ?? 'store-1',
-    version: input.pack.version,
-    builtAt: input.pack.receivedAt ?? input.now,
+    tenantId: till.tenantId,
+    version: till.version,
+    builtAt: till.builtAt,
+    // Which truth this lane sells from — head office's pulled pack or the shop PC's file (SP-9-i · F13).
+    source: till.source,
+    ...(till.scope === undefined ? {} : { scope: till.scope }),
+    ...(till.embeddedRules === undefined ? {} : { embeddedRules: till.embeddedRules }),
     products,
     barcodes,
     // Named, never silently dropped: a product missing from the till is a product nobody can sell.

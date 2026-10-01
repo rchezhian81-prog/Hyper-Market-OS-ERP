@@ -120,7 +120,7 @@ describe('a product the lane cannot judge is not given to the lane', () => {
   it('excludes it and names it, rather than shipping a guessed tax rate', () => {
     expect(judgement()).toMatch(/p\.taxBps === undefined\) named\('no_tax_rate'/);
     expect(judgement()).toMatch(/status === undefined\) named\('no_status'/);
-    expect(builder()).toMatch(/unsellableProducts\(input\.pack\)\.filter\(\(r\) => NOT_SHIPPED_TO_THE_LANE\.has\(r\.why\)\)/);
+    expect(builder()).toMatch(/unsellableProducts\(input\.pack, input\.cataloguePack\)\.filter\(\(r\) => NOT_SHIPPED_TO_THE_LANE\.has\(r\.why\)\)/);
     expect(builder()).toMatch(/excludedProducts/);
   });
 
