@@ -551,9 +551,11 @@ export function buildSurface(deps: {
     // advice note is compared against what actually arrived (a promise, not a receipt). Stateless decisions.
     ...asnRoutes(),
     // Shelf counting (M04-FR-02/03) — the blind-count producer that feeds planogram compliance.
+    // SP-8c-ii: the merchandising screen's count reaches here RELAYED through the box too (`…/synced`), re-verifying the
+    // counter from their grants and judging against head office's shelf map; a sealed audit entry per relayed count.
     ...shelfCountRoutes(store === undefined
       ? { counts: empty([]), recordCount: () => {}, now }
-      : shelfCountAdapter({ store, now })),
+      : { ...shelfCountAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // Planogram compliance (M04-FR-03) — the CONSUMER: recorded counts drive refill-vs-reorder tasks,
     // reading the same shelf-count stream the producer above writes.
     ...planogramComplianceRoutes(store === undefined

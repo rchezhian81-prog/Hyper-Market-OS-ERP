@@ -22,8 +22,8 @@ const styleOf = (html: string): string => html.slice(html.indexOf('<style>'), ht
 const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
 describe('every page carries the one chrome', () => {
-  it('finds the forty-seven pages', () => {
-    expect(PAGES.length).toBe(48);
+  it('finds the forty-nine pages', () => {
+    expect(PAGES.length).toBe(49);
   });
 
   it('loads sre-chrome.js AFTER its own script, so the page\'s words come first and the chrome finishes the frame', () => {

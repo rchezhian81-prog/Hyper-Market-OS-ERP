@@ -21,6 +21,7 @@ import { InMemoryLedgerStore, Ledger } from '../../../packages/ledger/src/ledger
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { openDeviceOutbox, guardedStore } from '../../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
+import type { BoxItemStatus } from '../../../packages/sync/src/device-relay';
 import { makeTradingDayRule } from '../../../packages/calendar/src/trading-day';
 import {
   APPROVE_REASONS,
@@ -60,8 +61,9 @@ import {
 } from '../../../packages/merchandising/src/index';
 import {
   createMerchandisingSession,
-  type MerchandisingPorts, type MerchandisingSession,
+  type MerchandisingPorts, type MerchandisingSession, type MerchandisingDevice, type RefillIndentPort,
 } from './merchandising-session';
+import { createUnsellableSession, type UnsellableSession, type UnsellableData } from './unsellable-session';
 import {
   createReportingSession,
   type DayTotal, type ReportableSale, type ReportingPorts, type ReportingSession,
@@ -333,7 +335,11 @@ export interface CatalogueData {
 
 /** What the merchandising screen was last told. Absent means this box knows nothing of it. */
 export interface MerchandisingData {
+  /** Who is at the screen — the counter's name on every count it queues. Absent: nobody named, and a count is refused. */
   readonly userId?: string;
+  readonly permissions?: readonly string[];
+  /** SP-8c-ii: the Floor indents screen's policy for THIS reader, so the refill tasks can become one indent on the shared queue. */
+  readonly indents?: IndentsScreenData;
   readonly storeId?: string;
   readonly today?: string;
   readonly now?: string;
@@ -3722,6 +3728,13 @@ interface ManagerWindow {
   merchandisingSession?: MerchandisingSession;
   merchandisingData?: MerchandisingData;
   merchandisingGaps?: readonly MerchandisingGap[];
+  /** SP-8c-ii: the merchandising screen's leg of the shared sync path — the SAME durable queue as the Floor indents screen. */
+  merchandisingOutbox?: SyncOutbox;
+  merchandisingRelay?: ManagerRelay;
+  merchandisingStorageProblem?: string;
+  /** SP-8c-ii: the "Products nobody can sell" screen — read-only, the list the till payload is built from. */
+  unsellableData?: UnsellableData;
+  unsellableSession?: UnsellableSession;
   reportingSession?: ReportingSession;
   reportingData?: ReportingData;
   serviceData?: ServiceData;
@@ -4550,6 +4563,8 @@ export const MERCHANDISING_GAPS = Object.freeze([
   'what_is_in_the_stockroom',
   'what_this_shop_carries',
   'how_big_each_part_of_the_floor_is',
+  // SP-8c-ii: nobody is named at the screen, so no count can be put in anyone's name and none is saved.
+  'who_is_counting',
 ] as const);
 export type MerchandisingGap = (typeof MERCHANDISING_GAPS)[number];
 
@@ -4561,6 +4576,7 @@ export function merchandisingGaps(data: MerchandisingData | undefined): readonly
   if (data?.backstock === undefined) gaps.push('what_is_in_the_stockroom');
   if (data?.assortment === undefined) gaps.push('what_this_shop_carries');
   if (data?.spaceAreas === undefined) gaps.push('how_big_each_part_of_the_floor_is');
+  if (data?.userId === undefined || data.userId.trim() === '') gaps.push('who_is_counting');
   return gaps;
 }
 
@@ -4613,14 +4629,16 @@ export function merchandisingPortsFromData(data: MerchandisingData | undefined):
   };
 }
 
-/** Build the merchandising session, or `null` when this box was told nothing about it. */
-export function bootMerchandising(data: MerchandisingData | undefined): MerchandisingSession | null {
+/** Build the merchandising session, or `null` when this box was told nothing about it. `device` (SP-8c-ii) is the durable
+ *  queue, the box's words on it and the indent chain — absent, a count changes only the page and no indent can be raised. */
+export function bootMerchandising(data: MerchandisingData | undefined, device: MerchandisingDevice = {}): MerchandisingSession | null {
   if (data === undefined) return null;
   return createMerchandisingSession(
     {
       tenantId: 'tenant',
       storeId: data.storeId ?? 'store-1',
-      userId: data.userId ?? 'merchandiser',
+      // Nobody named is nobody — never a stand-in: a count in a made-up name is one head office would only flag as unknown.
+      userId: data.userId ?? '',
       currency: 'INR',
       today: data.today ?? '1970-01-01',
       // No clock in the screen. A device whose date is a day out would otherwise judge every count
@@ -4631,7 +4649,47 @@ export function bootMerchandising(data: MerchandisingData | undefined): Merchand
       refillRole: data.refillRole ?? 'shelf-filler',
     },
     merchandisingPortsFromData(data),
+    device,
   );
+}
+
+/** Build the "Products nobody can sell" session, or `null` when the box carried no catalogue (the shell shows the sample). */
+export function bootUnsellable(data: UnsellableData | undefined): UnsellableSession | null {
+  if (data === undefined) return null;
+  return createUnsellableSession(data);
+}
+
+/** The Floor indents session as the merchandising screen reaches it (SP-8c-ii): raise ONE ask, read back what it saved. */
+export function refillIndentPortOf(session: IndentsSession): RefillIndentPort {
+  return {
+    raise: (draft) => session.raise(draft),
+    savedWork: () => session.savedWork(),
+    canRequest: () => session.view('en').canRequest,
+  };
+}
+
+/** Something that saved work on a shared queue and wants the store computer's word on it. */
+export interface QueueListener {
+  handedKeys(): readonly string[];
+  noteBoxStatus(statuses: readonly BoxItemStatus[]): void;
+}
+
+/** One relay over one shared queue for several sessions (SP-8c-ii: the merchandising screen's counts AND the refill indents
+ *  it raised through the Indents session, on the SAME queue): drain to the box, then ask after every handed key once and tell
+ *  each session. `undefined` when no box is wired: the queue still fills and survives. */
+export function openQueueRelay(laneWriteBase: string | undefined, outbox: SyncOutbox, listeners: readonly QueueListener[]): ManagerRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      const keys = [...new Set(listeners.flatMap((l) => l.handedKeys()))];
+      const statuses = await boxStatus({ boxBase: laneWriteBase, keys, fetch: fetchFn });
+      if (statuses !== undefined) for (const l of listeners) l.noteBoxStatus(statuses);
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
 }
 
 /**
@@ -4738,11 +4796,30 @@ if (browserWindow !== undefined) {
     browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData);
     browserWindow.catalogueOutbox = catalogueOutbox;
   }
-  const merchandising = bootMerchandising(browserWindow.merchandisingData);
-  if (merchandising !== null) {
-    browserWindow.merchandisingSession = merchandising;
-    browserWindow.merchandisingGaps = merchandisingGaps(browserWindow.merchandisingData);
+  // The merchandising screen (SP-8c-ii · F08 · §31): its count and its refill indent go onto the SAME durable device queue
+  // the Floor indents screen uses for this store, so one relay carries both to the box and "posted" is the box's word for
+  // either. The refill indent is raised through the Indents screen's own session — the same record the floor raises by hand.
+  const merchandisingData = browserWindow.merchandisingData;
+  if (merchandisingData !== undefined) {
+    const merchandisingOutbox = openIndentsOutbox(merchandisingData.storeId ?? 'store-1');
+    const merchandisingBoxWords: IndentBoxWords = new Map();
+    const refillIndents = merchandisingData.indents === undefined ? null : bootIndents(merchandisingData.indents, merchandisingOutbox, undefined, undefined, merchandisingBoxWords);
+    const merchandising = bootMerchandising(merchandisingData, {
+      outbox: merchandisingOutbox, boxWords: merchandisingBoxWords,
+      ...(refillIndents === null ? {} : { indents: refillIndentPortOf(refillIndents) }),
+    });
+    if (merchandising !== null) {
+      browserWindow.merchandisingSession = merchandising;
+      browserWindow.merchandisingGaps = merchandisingGaps(merchandisingData);
+      browserWindow.merchandisingOutbox = merchandisingOutbox;
+      const merchandisingRelay = openQueueRelay(browserWindow.laneWriteBase, merchandisingOutbox, refillIndents === null ? [merchandising] : [merchandising, refillIndents]);
+      if (merchandisingRelay !== undefined) browserWindow.merchandisingRelay = merchandisingRelay;
+      if (indentsStorageProblem !== undefined) browserWindow.merchandisingStorageProblem = indentsStorageProblem;
+    }
   }
+  // The "Products nobody can sell" screen (SP-8c-ii · P-08): read-only, from the list the box builds the till's catalogue with.
+  const unsellable = bootUnsellable(browserWindow.unsellableData);
+  if (unsellable !== null) browserWindow.unsellableSession = unsellable;
   const reporting = bootReporting(browserWindow.reportingData);
   if (reporting !== null) browserWindow.reportingSession = reporting;
   const service = bootService(browserWindow.serviceData);

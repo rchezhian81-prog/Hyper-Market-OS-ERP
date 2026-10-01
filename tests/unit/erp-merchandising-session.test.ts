@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createMerchandisingSession,
-  type MerchandisingConfig, type MerchandisingPorts,
+  createMerchandisingSession, refillDraft, refillIndentId, SHELF_COUNTED, REFILL_INDENT_PREFIX, shelfCountKeyFor,
+  type MerchandisingConfig, type MerchandisingPorts, type MerchandisingDevice, type RefillIndentPort, type RefillDraft,
 } from '../../apps/web-erp/src/merchandising-session';
+import { createIndentsSession, FLOOR_INDENT_REQUESTED } from '../../apps/web-erp/src/indents-session';
+import { refillIndentPortOf } from '../../apps/web-erp/src/browser-entry';
+import { openDeviceOutbox, guardedStore } from '../../packages/sync/src/device-outbox';
 import {
   Assortment, ShelfMap,
   type DisplayContract, type Planogram, type ShelfAssignment, type ShelfCount,
@@ -278,5 +281,153 @@ describe('what the floor earns', () => {
       displayContracts: () => [{ ...CONTRACTS[0]!, approvedBy: undefined, endsOn: '2027-01-01' }],
     }).contracts();
     expect(found[0]?.finding).toBe('unapproved');
+  });
+});
+
+// ── SP-8c-ii (F08): the two saves leave the page ─────────────────────────────────────────────────────────────
+
+const memory = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v); } }; };
+/** The SAME queue key the Floor indents screen opens for this store — one queue, one relay, one set of state words. */
+const queueOn = (storage = memory()) => openDeviceOutbox(guardedStore('sre.indents.outbox.store-1', storage, () => {}), () => {});
+
+/** A stand-in for the Indents session: records what was asked, answers like the real one, and reads back what it holds. */
+function fakeIndents(over: { canRequest?: boolean; refuse?: string } = {}): RefillIndentPort & { raised: RefillDraft[] } {
+  const raised: RefillDraft[] = [];
+  return {
+    raised,
+    raise: (draft) => { if (over.refuse !== undefined) return { ok: false, refusal: over.refuse }; raised.push(draft); return { ok: true, indentId: draft.indentId }; },
+    savedWork: () => raised.map((d) => ({ kind: 'request', id: d.indentId, detail: d.lines.map((l) => `${l.productId} × ${l.quantityMinor}`).join(' · '), at: NOW, state: 'saved_here' as const, attempts: 0 })),
+    canRequest: () => over.canRequest ?? true,
+  };
+}
+const withDevice = (device: MerchandisingDevice, over: Partial<MerchandisingPorts> = {}, config: Partial<MerchandisingConfig> = {}) =>
+  createMerchandisingSession({ ...CONFIG, ...config }, ports(over), device);
+
+describe('a count is on the DURABLE device queue before the screen is told saved (SP-8c-ii · P-01 · §31)', () => {
+  it('a good count is queued as ONE ShelfCounted in the counter\'s name, with the shop\'s shelves for head office to judge against, and listed as saved here', () => {
+    const outbox = queueOn();
+    const s = withDevice({ outbox, freshCountId: () => 'sc-1' });
+    const outcome = s.count({ locationId: 'L-A1', productId: 'rice', countedMinor: 12 });
+    expect(outcome).toMatchObject({ ok: true, countId: 'sc-1', queued: true });
+    const items = outbox.all();
+    expect(items).toHaveLength(1);
+    expect(items[0]!.key).toBe(shelfCountKeyFor('sc-1'));
+    expect(items[0]!.event).toMatchObject({
+      type: SHELF_COUNTED, idempotencyKey: 'shelf-count:sc-1', occurredAt: NOW, source: 'web-erp/merchandising',
+      payload: { countId: 'sc-1', storeId: 'store-1', locationId: 'L-A1', productId: 'rice', countedMinor: 12, countedBy: 'u-merch', at: NOW, knownLocationIds: ['L-A1', 'L-B3'], source: 'merchandising-screen' },
+    });
+    // No expected quantity rides along — counted blind stays blind on the wire too.
+    expect(Object.keys(items[0]!.event.payload as object)).not.toContain('expectedMinor');
+    expect(s.savedCounts()).toEqual([{ countId: 'sc-1', productId: 'rice', locationId: 'L-A1', countedMinor: 12, at: NOW, state: 'saved_here', attempts: 0 }]);
+    expect(s.handedKeys()).toEqual([]);
+  });
+
+  it('once the store computer has taken it the key is handed, and "posted" / "refused" are only ever the box\'s word (P-08)', () => {
+    const outbox = queueOn();
+    const s = withDevice({ outbox, freshCountId: () => 'sc-2' });
+    s.count({ locationId: 'L-A1', productId: 'rice', countedMinor: 3 });
+    outbox.recordFailure('shelf-count:sc-2');
+    expect(s.savedCounts()[0]?.state).toBe('retrying');
+    outbox.acknowledge('shelf-count:sc-2');
+    expect(s.savedCounts()[0]?.state).toBe('handed_to_box');
+    expect(s.handedKeys()).toEqual(['shelf-count:sc-2']);
+    s.noteBoxStatus([{ key: 'shelf-count:sc-2', state: 'posted', attempts: 1 }]);
+    expect(s.savedCounts()[0]?.state).toBe('posted');
+    s.noteBoxStatus([{ key: 'shelf-count:sc-2', state: 'refused', attempts: 1, reason: 'this_shop_has_no_such_shelf' }]);
+    expect(s.savedCounts()[0]).toMatchObject({ state: 'refused', reason: 'this_shop_has_no_such_shelf' });
+  });
+
+  it('the work is still there when the screen is reopened over the same storage; with no queue wired a count changes only the page and says so', () => {
+    const storage = memory();
+    withDevice({ outbox: queueOn(storage), freshCountId: () => 'sc-3' }).count({ locationId: 'L-B3', productId: 'oil', countedMinor: 4 });
+    const reopened = withDevice({ outbox: queueOn(storage) });
+    expect(reopened.savedCounts().map((c) => c.countId)).toEqual(['sc-3']);
+    expect(session().count({ locationId: 'L-A1', productId: 'rice', countedMinor: 1 })).toMatchObject({ ok: true, queued: false });
+  });
+
+  it('refuses — with NOTHING queued — a count nobody signed (no person named at the screen) and a count against a shelf the shop does not have', () => {
+    const outbox = queueOn();
+    const nobody = withDevice({ outbox }, {}, { userId: '' });
+    expect(nobody.count({ locationId: 'L-A1', productId: 'rice', countedMinor: 1 })).toMatchObject({ ok: false, refusal: 'nobody_signed_this_count' });
+    const named = withDevice({ outbox });
+    expect(named.count({ locationId: 'L-TYPO', productId: 'rice', countedMinor: 1 })).toMatchObject({ ok: false, refusal: 'this_shop_has_no_such_shelf' });
+    expect(outbox.all()).toEqual([]);
+  });
+});
+
+describe('the refill tasks become ONE indent on the shared queue, asked once a day (SP-8c-ii · F08 · M04-FR-03 · WF-06)', () => {
+  /** Both planned facings looked at and found empty: two tasks, two products. */
+  const emptyShelves = { shelfCounts: () => [counted('rice', 'L-A1', 0), counted('oil', 'L-B3', 0)] };
+
+  it('the draft is one line per product with the tasks\' quantities, named for the shelves, under an id that is the same for the same shelves today', () => {
+    const s = withDevice({ indents: fakeIndents() }, emptyShelves);
+    const view = s.refills();
+    expect(view.tasks.map((t) => [t.productId, t.quantityMinor])).toEqual([['rice', 24], ['oil', 18]]);
+    expect(view.draft).toEqual({
+      indentId: refillIndentId(TODAY, view.tasks),
+      lines: [{ productId: 'rice', quantityMinor: '24', uom: '' }, { productId: 'oil', quantityMinor: '18', uom: '' }],
+      reason: 'shelf refill · A1, B3',
+    });
+    expect(view.draft!.indentId.startsWith(`${REFILL_INDENT_PREFIX}${TODAY}-`)).toBe(true);
+    expect(view).toMatchObject({ canRaise: true, alreadySaved: false, saved: [] });
+    // The id is a function of the DAY and the SHELVES, not of the quantities or the order — a recount does not ask again.
+    expect(refillIndentId(TODAY, [...view.tasks].reverse())).toBe(view.draft!.indentId);
+    expect(refillIndentId(TODAY, view.tasks.map((t) => ({ ...t, quantityMinor: 1 })))).toBe(view.draft!.indentId);
+    expect(refillIndentId('2026-08-07', view.tasks)).not.toBe(view.draft!.indentId);
+    expect(refillIndentId(TODAY, view.tasks.slice(0, 1))).not.toBe(view.draft!.indentId);
+    // The same product on two shelves asks once, for both.
+    const twice = refillDraft(TODAY, [view.tasks[0]!, { ...view.tasks[0]!, taskId: 't2', locationId: 'L-B3', location: { ...view.tasks[0]!.location, label: 'B3' }, quantityMinor: 6 }]);
+    expect(twice?.lines).toEqual([{ productId: 'rice', quantityMinor: '30', uom: '' }]);
+    expect(twice?.reason).toBe('shelf refill · A1, B3');
+  });
+
+  it('raising it hands the draft to the Indents session ONCE; a second tap says already asked and raises nothing new; the ask is listed with its state', () => {
+    const indents = fakeIndents();
+    const s = withDevice({ indents }, emptyShelves);
+    const first = s.raiseRefill();
+    expect(first).toMatchObject({ ok: true, alreadySaved: false });
+    expect(indents.raised).toHaveLength(1);
+    expect(indents.raised[0]!.lines.map((l) => l.productId)).toEqual(['rice', 'oil']);
+    const again = s.raiseRefill();
+    expect(again).toMatchObject({ ok: true, alreadySaved: true, indentId: (first as { indentId: string }).indentId });
+    expect(indents.raised).toHaveLength(1);
+    const view = s.refills();
+    expect(view.alreadySaved).toBe(true);
+    expect(view.saved).toEqual([{ indentId: (first as { indentId: string }).indentId, detail: 'rice × 24 · oil × 18', at: NOW, state: 'saved_here', attempts: 0 }]);
+  });
+
+  it('refuses — with nothing asked — when there is no link to the indents, nobody is named, the reader lacks the right, or nothing needs filling; the Indents session\'s own refusal is passed on', () => {
+    expect(withDevice({}, emptyShelves).raiseRefill()).toEqual({ ok: false, refusal: 'no_indent_link' });
+    expect(withDevice({ indents: fakeIndents() }, emptyShelves, { userId: '' }).raiseRefill()).toEqual({ ok: false, refusal: 'nobody_named' });
+    const noRight = fakeIndents({ canRequest: false });
+    expect(withDevice({ indents: noRight }, emptyShelves).raiseRefill()).toEqual({ ok: false, refusal: 'not_permitted' });
+    expect(withDevice({ indents: noRight }, emptyShelves).refills().canRaise).toBe(false);
+    expect(withDevice({ indents: fakeIndents() }).raiseRefill()).toEqual({ ok: false, refusal: 'nothing_to_fill' }); // nothing counted → no task
+    expect(withDevice({ indents: fakeIndents({ refuse: 'bad_line' }) }, emptyShelves).raiseRefill()).toEqual({ ok: false, refusal: 'bad_line' });
+    expect(noRight.raised).toEqual([]);
+  });
+
+  it('through the REAL Indents session it is the same record the floor raises by hand: a FloorIndentRequested from the back store to the floor, in the reader\'s name, with the catalogue\'s unit, on the SAME queue as the counts', () => {
+    const outbox = queueOn();
+    const indents = createIndentsSession(
+      { userId: 'u-merch', storeId: 'store-1', backStoreId: 'store-1-back', products: [{ productId: 'rice', name: 'Rice', uom: 'KG' }, { productId: 'oil', name: 'Oil', uom: 'LTR' }], now: () => NOW },
+      { snapshot: () => ({}), mayRead: () => true, mayRequest: () => true, mayApprove: () => false, mayReceive: () => false, approvePort: () => null },
+      outbox,
+    );
+    const s = withDevice({ outbox, indents: refillIndentPortOf(indents), freshCountId: () => 'sc-9' }, emptyShelves);
+    s.count({ locationId: 'L-A1', productId: 'rice', countedMinor: 0 });
+    const raised = s.raiseRefill();
+    expect(raised.ok).toBe(true);
+    const asks = outbox.all().filter((i) => i.event.type === FLOOR_INDENT_REQUESTED);
+    expect(asks).toHaveLength(1);
+    expect(asks[0]!.event.payload).toMatchObject({
+      indentId: (raised as { indentId: string }).indentId, fromLocationId: 'store-1-back', toLocationId: 'store-1', requestedBy: 'u-merch', at: NOW, storeId: 'store-1',
+      lines: [{ productId: 'rice', quantityMinor: 24, uom: 'KG' }, { productId: 'oil', quantityMinor: 18, uom: 'LTR' }], reason: 'shelf refill · A1, B3',
+    });
+    // One queue carries both: the count and the ask sit side by side, and the refill view reads its ask back from it.
+    expect(outbox.all().map((i) => i.event.type)).toEqual([SHELF_COUNTED, FLOOR_INDENT_REQUESTED]);
+    expect(s.refills().saved.map((r) => r.indentId)).toEqual([(raised as { indentId: string }).indentId]);
+    expect(s.raiseRefill()).toMatchObject({ ok: true, alreadySaved: true });
+    expect(outbox.all()).toHaveLength(2);
   });
 });

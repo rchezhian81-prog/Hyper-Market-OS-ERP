@@ -7,7 +7,7 @@ import {
 } from '../../edge/store-edge/src/store-pack';
 import {
   payloadFor, managerPayload, ownerPayload, posPayload, customerPayload,
-  pickerPayload, driverPayload, reportingPayload, merchandisingPayload, catalogueFreshness,
+  pickerPayload, driverPayload, reportingPayload, merchandisingPayload, unsellablePayload, unsellableProducts, catalogueFreshness,
   GLOBAL_FOR, SCREENS, type ScreenInput,
 } from '../../edge/store-edge/src/screen-data';
 import { embed, injectPayload, routeOf, safeFile, DATA_MARKER, APP_SHELL } from '../../edge/store-edge/src/screen-server';
@@ -891,5 +891,54 @@ describe('a product with a unit of measure the till cannot price is kept OFF the
     const payload = posPayload(input({ pack: fullPack({ products: known([{ ...PRODUCTS[0]!, uom: 'each', recallBlock: true }]) }) }))!;
     const products = payload['products'] as { productId: string; recallBlock?: boolean }[];
     expect(products.map((p) => [p.productId, p.recallBlock])).toEqual([['p1', true]]);
+  });
+});
+
+// ── SP-8c-ii: the "Products nobody can sell" screen reads the SAME judgement the till payload is built from ──────────
+describe('the products nobody can sell: one judgement for the till and for the person who can fix it (SP-8c-ii · P-08)', () => {
+  const catalogue = [
+    { productId: 'ok', name: 'Sells', categoryId: 'c', unitPriceMinor: 100, uom: 'ea', barcodes: ['1'], availableMinor: 5, taxBps: 500, status: 'active' },
+    { productId: 'notax', name: 'No tax', categoryId: 'c', unitPriceMinor: 100, uom: 'ea', barcodes: [], availableMinor: 5, status: 'active' },
+    { productId: 'nostatus', name: 'No status', categoryId: 'c', unitPriceMinor: 100, uom: 'ea', barcodes: [], availableMinor: 5, taxBps: 500 },
+    { productId: 'unit', name: 'Odd unit', nameTa: 'வித்தியாச அலகு', categoryId: 'c', unitPriceMinor: 100, uom: 'each', barcodes: [], availableMinor: 5, taxBps: 500, status: 'active' },
+    { productId: 'recalled', name: 'Recalled tin', categoryId: 'c', unitPriceMinor: 100, uom: 'ea', barcodes: ['2'], availableMinor: 5, taxBps: 500, status: 'clearance', recallBlock: true },
+    { productId: 'draft', name: 'Not yet', categoryId: 'c', unitPriceMinor: 100, uom: 'ea', barcodes: [], availableMinor: 0, taxBps: 500, status: 'draft' },
+    // Recalled only on the MASTER, with a gap the till would otherwise drop it for: recall wins, and it is shipped with its block.
+    { productId: 'master-recall', name: 'Master says recalled', categoryId: 'c', unitPriceMinor: 100, uom: 'ea', barcodes: [], availableMinor: 5, status: 'active' },
+  ];
+  const master = [{ productId: 'master-recall', tenantId: 't1', sku: 'MR', name: 'Master says recalled', primaryCategoryId: null, baseUom: 'ea', taxClass: null, lifecycle: 'active' as const, recallBlocked: true }];
+  const withGaps = () => input({ pack: fullPack({ products: known(catalogue), productMaster: known(master) }) });
+
+  it('names every product the till cannot sell with WHY and the box\'s own sentence, recall first and from either source', () => {
+    const rows = unsellableProducts(withGaps().pack);
+    expect(rows.map((r) => [r.productId, r.why])).toEqual([
+      ['notax', 'no_tax_rate'], ['nostatus', 'no_status'], ['unit', 'unknown_uom'], ['recalled', 'recall_block'], ['draft', 'not_on_sale'], ['master-recall', 'recall_block'],
+    ]);
+    expect(rows.find((r) => r.productId === 'unit')).toMatchObject({ nameTa: 'வித்தியாச அலகு', detail: 'unknown unit of measure "each" on the catalogue' });
+    expect(rows.find((r) => r.productId === 'draft')?.detail).toBe('status "draft" on the catalogue — refused at the till');
+  });
+
+  it('the till payload is built from that list: exactly the catalogue GAPS are excluded (with the same words), the recalled and the off-sale ones are shipped and refused by name', () => {
+    const payload = posPayload(withGaps())!;
+    const rows = unsellableProducts(withGaps().pack);
+    const gaps = rows.filter((r) => r.why === 'no_tax_rate' || r.why === 'no_status' || r.why === 'unknown_uom');
+    expect(payload['excludedProducts']).toEqual(gaps.map((r) => ({ productId: r.productId, name: r.name, why: r.detail })));
+    const shipped = (payload['products'] as { productId: string; recallBlock?: boolean; status: string }[]);
+    expect(shipped.map((p) => p.productId).sort()).toEqual(['draft', 'master-recall', 'ok', 'recalled']);
+    expect(shipped.find((p) => p.productId === 'recalled')?.recallBlock).toBe(true);
+    expect(shipped.find((p) => p.productId === 'master-recall')?.recallBlock).toBe(true);
+    expect(shipped.find((p) => p.productId === 'draft')?.status).toBe('draft');
+  });
+
+  it('feeds the screen the same rows, when the catalogue was judged, and how many the till CAN sell; nothing at all when the box has no catalogue', () => {
+    const payload = unsellablePayload(withGaps())!;
+    expect(payload['storeId']).toBe('store-1');
+    expect(payload['sellableCount']).toBe(1);
+    expect((payload['rows'] as { productId: string; reason: string; detail: string }[]).map((r) => r.productId)).toEqual(['notax', 'nostatus', 'unit', 'recalled', 'draft', 'master-recall']);
+    expect((payload['rows'] as { reason: string }[])[3]?.reason).toBe('recall_block');
+    expect(typeof payload['asAt']).toBe('string');
+    expect(unsellablePayload(input({ pack: fullPack({ products: notKnown('never') }) }))).toBeNull();
+    // A clean catalogue is an empty list, not an absent payload — "all clear" is a statement the screen may make only when told so.
+    expect(unsellablePayload(input({ pack: fullPack({ products: known([catalogue[0]!]) }) }))).toMatchObject({ rows: [], sellableCount: 1 });
   });
 });

@@ -18,6 +18,15 @@
 // at the end of a shift agrees with it. The session model has no method that would return one, so
 // there is nothing here to render even by accident.
 //
+// ── Since SP-8c-ii the two saves leave the page ─────────────────────────────
+//
+// A count is written to the DURABLE device queue through the session before this screen says "saved"
+// — the SAME queue the Floor indents screen uses — and listed under "Saved on this screen" with the
+// five shared state words until the store computer says head office has it. The refill tasks become
+// ONE indent on that queue through `session.raiseRefill()`, the same record the floor would raise by
+// hand; the same shelves asked once a day. The relay (window.merchandisingRelay) hands the queue to
+// the store computer after every save and when the page comes back — never on a timer.
+//
 // No `prompt`, `confirm` or `alert`; the banner does not fade.
 
 const el = (id) => document.getElementById(id);
@@ -64,6 +73,16 @@ const WORDS = {
     needDropFields: 'Give the item code and a reason.',
     sampleData: 'Sample data — this is not your shop.',
     gapsTitle: 'This screen has not been told everything',
+    savedCounts: 'Saved on this screen',
+    savedCountsLead: 'Each count is kept on this device and carried by the store computer to head office. "Posted" is only ever the store computer\u2019s word.',
+    countKeptHere: 'kept on this device',
+    countOnPage: 'changed this page only — no store computer is wired',
+    raiseRefill: 'Ask the back store for these',
+    refillRaised: 'Indent raised for the back store',
+    refillAlready: 'Already asked today — see below',
+    savedRefills: 'Asked of the back store',
+    savedRefillsLead: 'The refill tasks above became one indent, kept on this device and carried to head office; a different person approves it on the Floor indents screen.',
+    askedToday: 'asked today',
   },
   ta: {
     title: 'அலமாரிகளும் இடமும்',
@@ -101,7 +120,38 @@ const WORDS = {
     needDropFields: 'பொருள் குறியீடும் ஒரு காரணமும் கொடுக்கவும்.',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     gapsTitle: 'இந்தத் திரைக்கு எல்லாத் தகவலும் வரவில்லை',
+    savedCounts: 'இந்தத் திரையில் சேமிக்கப்பட்டவை',
+    savedCountsLead: 'ஒவ்வொரு எண்ணிக்கையும் இந்தச் சாதனத்தில் வைக்கப்பட்டு, கடைக் கணினி தலைமை அலுவலகத்திற்குக் கொண்டு செல்கிறது. "பதிவானது" என்பது கடைக் கணினியின் சொல் மட்டுமே.',
+    countKeptHere: 'இந்தச் சாதனத்தில் வைக்கப்பட்டது',
+    countOnPage: 'இந்தப் பக்கம் மட்டுமே மாறியது — கடைக் கணினி இணைக்கப்படவில்லை',
+    raiseRefill: 'இவற்றைப் பின்கடையிடம் கேளுங்கள்',
+    refillRaised: 'பின்கடைக்கு கோரிக்கை எழுப்பப்பட்டது',
+    refillAlready: 'இன்று ஏற்கனவே கேட்கப்பட்டது — கீழே பார்க்கவும்',
+    savedRefills: 'பின்கடையிடம் கேட்டவை',
+    savedRefillsLead: 'மேலே உள்ள நிரப்பும் வேலைகள் ஒரே கோரிக்கையாகி, இந்தச் சாதனத்தில் வைக்கப்பட்டு தலைமை அலுவலகத்திற்குச் செல்கிறது; வேறு ஒருவர் தளக் கோரிக்கைகள் திரையில் ஒப்புதல் அளிக்கிறார்.',
+    askedToday: 'இன்று கேட்கப்பட்டது',
   },
+};
+
+/** The five SHARED device states — the same words as the manager's, the buyer's and the indents screens (P-08). */
+const STATE_WORDS = {
+  saved_here: { en: 'Saved on this device — not yet with the store computer', ta: 'இந்தச் சாதனத்தில் சேமிக்கப்பட்டது — கடைக் கணினிக்கு இன்னும் செல்லவில்லை' },
+  retrying: { en: 'Saved on this device — trying the store computer again', ta: 'இந்தச் சாதனத்தில் சேமிக்கப்பட்டது — கடைக் கணினியை மீண்டும் முயல்கிறது' },
+  handed_to_box: { en: 'With the store computer — waiting for head office', ta: 'கடைக் கணினியில் உள்ளது — தலைமை அலுவலகத்திற்காகக் காத்திருக்கிறது' },
+  posted: { en: 'Posted at head office', ta: 'தலைமை அலுவலகத்தில் பதிவானது' },
+  refused: { en: 'Refused — a person must look at this', ta: 'மறுக்கப்பட்டது — ஒருவர் இதைப் பார்க்க வேண்டும்' },
+};
+
+/** Why a refill ask was refused before anything was saved — one entry per `RefillRefusal`. */
+const REFILL_REFUSAL_WORDS = {
+  no_indent_link: { en: 'This screen has no link to the floor indents, so it cannot ask the back store. Use the Floor indents screen.', ta: 'இந்தத் திரைக்கு தளக் கோரிக்கைகளுடன் இணைப்பு இல்லை. தளக் கோரிக்கைகள் திரையைப் பயன்படுத்துங்கள்.' },
+  nothing_to_fill: { en: 'Nothing needs filling from what has been counted, so there is nothing to ask for.', ta: 'எண்ணப்பட்டவற்றில் நிரப்ப வேண்டியது எதுவும் இல்லை. எனவே கேட்க எதுவும் இல்லை.' },
+  not_permitted: { en: 'You do not hold the right to raise an indent. Ask the floor supervisor.', ta: 'கோரிக்கை எழுப்பும் உரிமை உங்களுக்கு இல்லை. தள மேற்பார்வையாளரைக் கேளுங்கள்.' },
+  nobody_named: { en: 'Nobody is signed in on this screen, so the ask cannot be put in anyone\u2019s name.', ta: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை. எனவே கோரிக்கையை யார் பெயரிலும் வைக்க முடியாது.' },
+  no_places: { en: 'The store computer has not named the floor and the back store, so there is nowhere to ask from.', ta: 'கடைக் கணினி தளத்தையும் பின்கடையையும் குறிப்பிடவில்லை.' },
+  no_lines: { en: 'The ask would have no lines.', ta: 'கோரிக்கையில் வரிகள் இல்லை.' },
+  bad_line: { en: 'A line on the ask is not a whole number of an item.', ta: 'கோரிக்கையில் ஒரு வரி முழு எண்ணாக இல்லை.' },
+  duplicate_product: { en: 'The same item appears twice on the ask.', ta: 'ஒரே பொருள் கோரிக்கையில் இரண்டு முறை உள்ளது.' },
 };
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
@@ -160,6 +210,10 @@ const GAP_WORDS = {
     en: 'It has not been told how big each part of the floor is, so sales per square foot cannot be worked out — and a made-up one would decide a layout.',
     ta: 'தரையின் ஒவ்வொரு பகுதியும் எவ்வளவு பெரியது என்று தெரியவில்லை. எனவே சதுர அடிக்கான விற்பனையைக் கணக்கிட முடியாது.',
   },
+  who_is_counting: {
+    en: 'It has not been told who is at this screen, so no count can be put in anyone\u2019s name and none will be saved.',
+    ta: 'இந்தத் திரையில் யார் இருக்கிறார்கள் என்று தெரியவில்லை. எனவே எந்த எண்ணிக்கையும் யார் பெயரிலும் சேமிக்க முடியாது.',
+  },
 };
 
 const words = (map, key) => (map[key]?.[lang] ?? map[key]?.en ?? String(key).replace(/_/g, ' '));
@@ -181,6 +235,11 @@ function sampleSession() {
     countingList: () => [],
     ages: () => [],
     count: () => ({ ok: false, refusal: 'this_shop_has_no_such_shelf', detail: 'this is sample data' }),
+    savedCounts: () => [],
+    handedKeys: () => [],
+    noteBoxStatus: () => {},
+    refills: () => ({ tasks: [], draft: null, canRaise: false, alreadySaved: false, saved: [] }),
+    raiseRefill: () => ({ ok: false, refusal: 'no_indent_link' }),
     check: () => ({ why: 'this_store_has_no_shelf_map' }),
     range: () => [],
     drop: () => ({ ok: false, detail: 'this is sample data' }),
@@ -231,7 +290,30 @@ for (const name of VIEWS) {
   el(`tab-${name}`).addEventListener('click', () => { show(name); });
 }
 
+/** One piece of work saved on this device: what it was, and where it has got to — a word, never colour alone. */
+function savedRow(what, detail, w) {
+  const li = document.createElement('li');
+  li.className = 'saved';
+  li.dataset.state = w.state;
+  const head = document.createElement('div'); head.className = 'what'; head.textContent = what;
+  const sub = document.createElement('div'); sub.className = 'detail'; sub.textContent = detail;
+  const pill = document.createElement('div'); pill.className = `pill ${w.state}`; pill.textContent = words(STATE_WORDS, w.state);
+  li.append(head, sub, pill);
+  if (w.reason) { const why = document.createElement('div'); why.className = 'why'; why.textContent = w.reason; li.append(why); }
+  return li;
+}
+
 // ── Counting ────────────────────────────────────────────────────────────────
+
+/** Every count this screen saved, newest first, with the five shared state words (P-08). */
+function renderSavedCounts() {
+  const saved = session.savedCounts();
+  el('saved-counts-heading').hidden = saved.length === 0;
+  el('saved-counts-lead').hidden = saved.length === 0;
+  el('saved-counts-heading').textContent = t('savedCounts');
+  el('saved-counts-lead').textContent = t('savedCountsLead');
+  el('saved-counts').replaceChildren(...saved.map((w) => savedRow(`${w.productId} · ${w.countedMinor}`, `${w.locationId} · ${w.countId}`, w)));
+}
 
 function renderCount() {
   el('count-title').textContent = t('countTab');
@@ -262,6 +344,7 @@ function renderCount() {
     el('tocount-list').replaceChildren(none);
     return;
   }
+  renderSavedCounts();
   el('tocount-list').replaceChildren(...list.map((row) => {
     const item = document.createElement('div');
     item.className = 'row ' + (row.lastCountedAt === null ? 'urgent' : 'normal');
@@ -288,6 +371,7 @@ el('save-count').addEventListener('click', () => {
     tell(t('read'), t('needCountFields'));
     return;
   }
+  // The session writes the count to the durable device queue BEFORE it returns ok (SP-8c-ii); the view only renders.
   const outcome = session.count({ locationId, productId, countedMinor: Number(qty) });
   if (!outcome.ok) { tell(t('read'), words(COUNT_REFUSAL_WORDS, outcome.refusal)); return; }
 
@@ -298,7 +382,8 @@ el('save-count').addEventListener('click', () => {
   el('count-qty').value = '';
   renderCount();
   renderRefill();
-  tell(t('countSaved'), `${outcome.count.productId} · ${outcome.count.countedMinor}`, true);
+  tell(t('countSaved'), `${outcome.count.productId} · ${outcome.count.countedMinor} — ${outcome.queued ? t('countKeptHere') : t('countOnPage')}`, true);
+  void syncToBox();
 });
 
 // ── Refills ─────────────────────────────────────────────────────────────────
@@ -308,6 +393,8 @@ function renderRefill() {
   el('refill-lead').textContent = t('refillLead');
   el('tasks-title').textContent = t('goFill');
   el('issues-title').textContent = t('everythingFound');
+  el('raise-refill').textContent = t('raiseRefill');
+  renderSavedRefills();
 
   const check = session.check();
   const coverage = el('coverage');
@@ -325,8 +412,16 @@ function renderRefill() {
     coverage.append(head, why);
     el('tasks-list').replaceChildren();
     el('issues-list').replaceChildren();
+    el('raise-refill').hidden = true;
     return;
   }
+
+  // The refill tasks become ONE indent on the shared queue — offered only when this reader may raise it and there is
+  // something to fill; the same shelves asked once a day, so the button says so instead of asking again.
+  const refills = session.refills();
+  el('raise-refill').hidden = !refills.canRaise;
+  el('raise-refill').disabled = refills.alreadySaved;
+  el('raise-refill').textContent = refills.alreadySaved ? t('refillAlready') : t('raiseRefill');
 
   const counted = check.plannedFacings - check.notObserved;
   coverage.className = 'coverage ' + (check.wholePlanObserved ? 'whole' : counted === 0 ? 'none' : 'partial');
@@ -398,6 +493,26 @@ function renderRefill() {
     return row;
   }));
 }
+
+/** The asks this screen raised from refill tasks, newest first, with the five shared state words. */
+function renderSavedRefills() {
+  const saved = session.refills().saved;
+  el('saved-refills-heading').hidden = saved.length === 0;
+  el('saved-refills-lead').hidden = saved.length === 0;
+  el('saved-refills-heading').textContent = t('savedRefills');
+  el('saved-refills-lead').textContent = t('savedRefillsLead');
+  el('saved-refills').replaceChildren(...saved.map((w) => savedRow(`${w.indentId} · ${t('askedToday')}`, w.detail, w)));
+}
+
+el('raise-refill').addEventListener('click', () => {
+  // The session refuses before anything is saved (no link, nobody named, no right, nothing to fill); a good ask is on the
+  // durable queue through the Indents session before this returns ok. The view invents no wording.
+  const outcome = session.raiseRefill();
+  if (!outcome.ok) { tell(t('read'), words(REFILL_REFUSAL_WORDS, outcome.refusal)); return; }
+  renderRefill();
+  tell(outcome.alreadySaved ? t('refillAlready') : t('refillRaised'), outcome.indentId, true);
+  void syncToBox();
+});
 
 // ── Range ───────────────────────────────────────────────────────────────────
 
@@ -580,6 +695,22 @@ el('lang').addEventListener('click', () => {
 el('sample').hidden = real !== undefined;
 paintChrome();
 show('count');
+
+/**
+ * Hand this screen's saved counts and asks to the store computer and learn where they have got to (SP-2 / SP-8c-ii). The
+ * relay is the composition root's (`window.merchandisingRelay`), present only when the box told this screen where its
+ * socket is. Called after every save and when the page regains the network or the reader's attention — no timer.
+ */
+async function syncToBox() {
+  const relay = window.merchandisingRelay;
+  if (!relay) return;
+  try { await relay.syncNow(); } catch { /* the queue is untouched; the state words say "saved on this device" */ }
+  renderSavedCounts();
+  renderSavedRefills();
+}
+for (const moment of ['online', 'focus', 'pageshow']) window.addEventListener(moment, () => { void syncToBox(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void syncToBox(); });
+void syncToBox();
 
 // ── The shell's own honesty about where this page came from ─────────────────
 //

@@ -875,6 +875,10 @@ export interface PackMerchandisingPolicy {
   readonly countStaleAfterMinutes: number;
   /** The role that picks up a refill task. A task with no owner is not a task (M25). */
   readonly refillRole: string;
+  /** SP-8c-ii: who is at the merchandising screen and what they hold — the counter's name on every count the screen queues
+   *  for head office. Absent → the Indents policy's person, if any; nobody → the screen refuses to save a count. */
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
 }
 
 /** Who buys, who may check them, and the tolerances this tenant matches on. All per-tenant. */

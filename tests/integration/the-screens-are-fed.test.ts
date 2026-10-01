@@ -2728,7 +2728,7 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
     const groups = menu!['groups'] as { group: { en: string; ta: string }; items: { id: string; path: string; current: boolean; label: { en: string; ta: string } }[] }[];
     expect(groups.map((g) => g.group.en)).toEqual(['Overview', 'Purchasing', 'Inventory', 'Administration']);
     const items = groups.flatMap((g) => g.items);
-    expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'counts', 'stock-health', 'warehouse-supervisor', 'day-reopen']);
+    expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'counts', 'stock-health', 'unsellable', 'warehouse-supervisor', 'day-reopen']);
     expect(items.filter((i) => i.current).map((i) => i.id)).toEqual(['counts']);
     // Both languages ride along, so the chrome never draws half a menu.
     for (const i of items) expect(i.label.ta, `${i.id} has no Tamil label`).toMatch(/[஀-௿]/);

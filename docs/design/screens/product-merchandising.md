@@ -35,3 +35,21 @@ All handle the §27.1 states.
 - A price change cannot take effect without a separate approver.
 - An item missing mandatory fields shows a low completeness score and cannot be published.
 - A recall block set here stops sale at POS and on the customer app.
+
+## Measured (SP-8c-ii — the shelf's two saves leave the page; the products nobody can sell, owner's directive of 1 October 2026)
+On **Shelves and space**, a count typed at a facing is kept on this device before the screen says "Count saved — kept on this
+device", listed under "Saved on this screen" with the five shared state words (saved on this device · trying again · with the
+store computer · posted at head office · refused), carried by the store computer to head office once, and still listed after a
+reload with nothing sent twice. Head office re-checks who counted from its own records and judges the shelf against the shelf
+map it published, flagging rather than trusting the relay; a count it refuses comes back as a visible refusal with the reason.
+The counting field still shows nothing about what the facing should hold. On **Refills**, once somebody has looked and a
+shelf needs filling, one button — "Ask the back store for these" — turns the tasks into ONE indent for the back store (one
+line per product, the catalogue's unit), kept on the same queue, approved by a different person on the Floor indents screen;
+the same shelves asked once a day, so the button then says "Already asked today". With nobody named at the screen a count
+is refused in words and nothing is saved; the gap is listed. The new **Products nobody can sell** page lists every product the
+till refuses or was never given — recall first, then no tax rate, no status, a unit the till cannot price, not on sale —
+each with what to do, in English and Tamil, from the same judgement the till's catalogue is built with, so the two can
+never disagree. Measured in real Chromium against a stub store computer and on the REAL box
+(`tests/e2e/merchandising-count-and-refill.e2e.ts`, `tests/e2e/unsellable-screen.e2e.ts`) and box → cloud on the real API
+(`tests/integration/shelf-count.test.ts`). **Still recorded, not dropped:** physical-device verification and staff UAT
+(SP-10) PENDING.

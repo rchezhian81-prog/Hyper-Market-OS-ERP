@@ -112,16 +112,24 @@ describe('a recalled tin cannot be sold at the till', () => {
 // ── 3. Off the lane, unless recalled ────────────────────────────────────────
 
 describe('a product the lane cannot judge is not given to the lane', () => {
+  // SP-8c-ii: the judgement lives ONCE, in `unsellableProducts` — the till builder drops by it and the "Products nobody can
+  // sell" screen shows by it — so these read the judgement where it is made and check the builder consumes it.
+  const judgement = () => code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf('export function unsellableProducts'), code(SCREEN_DATA).indexOf('export function unsellablePayload'));
+  const builder = () => code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf('export function posPayload'), code(SCREEN_DATA).indexOf('export function managerPayload'));
+
   it('excludes it and names it, rather than shipping a guessed tax rate', () => {
-    const builder = code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf('export function posPayload'));
-    expect(builder).toMatch(/p\.taxBps === undefined \|\| status === undefined/);
-    expect(builder).toMatch(/excludedProducts/);
+    expect(judgement()).toMatch(/p\.taxBps === undefined\) named\('no_tax_rate'/);
+    expect(judgement()).toMatch(/status === undefined\) named\('no_status'/);
+    expect(builder()).toMatch(/unsellableProducts\(input\.pack\)\.filter\(\(r\) => NOT_SHIPPED_TO_THE_LANE\.has\(r\.why\)\)/);
+    expect(builder()).toMatch(/excludedProducts/);
   });
 
   it('ships a RECALLED one anyway, so the refusal is by name and not by absence', () => {
-    // "Unknown barcode" on a recalled tin is a cashier keying it in by hand.
-    const builder = code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf('export function posPayload'));
-    expect(builder).toMatch(/\) && !recallBlock\) \{/);
+    // "Unknown barcode" on a recalled tin is a cashier keying it in by hand. Recall is judged FIRST, from either source, and
+    // is NOT one of the gaps that keep a product off the lane.
+    expect(judgement()).toMatch(/if \(p\.recallBlock === true \|\| m\?\.recallBlocked === true\) named\('recall_block'/);
+    expect(code(SCREEN_DATA)).toMatch(/NOT_SHIPPED_TO_THE_LANE: ReadonlySet<UnsellableWhy> = new Set<UnsellableWhy>\(\['no_tax_rate', 'no_status', 'unknown_uom'\]\)/);
+    expect(builder()).toMatch(/\.\.\.\(recallBlock \? \{ recallBlock: true \} : \{\}\)/);
   });
 });
 

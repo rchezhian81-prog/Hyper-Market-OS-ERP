@@ -50,7 +50,7 @@ describe('role-scoped navigation', () => {
     const nav = navigationFor(access, { userId: 'mgr-1', branchId: 'b1' });
     expect(nav.map((g) => g.group)).toEqual(['Overview', 'Purchasing', 'Inventory', 'Trading', 'Administration']);
     expect(nav[0]?.items.map((i) => i.id)).toEqual(['dashboard']);
-    expect(nav[2]?.items.map((i) => i.id)).toEqual(['counts', 'stock-health', 'warehouse-supervisor']);
+    expect(nav[2]?.items.map((i) => i.id)).toEqual(['counts', 'stock-health', 'unsellable', 'warehouse-supervisor']);
   });
 
   it('shows nothing to an unknown user (default-deny)', () => {

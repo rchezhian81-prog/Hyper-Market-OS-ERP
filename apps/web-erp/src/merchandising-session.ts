@@ -35,13 +35,16 @@
 // square footage nobody recorded is a number that decides a layout, and it would be made up.
 
 import type { CurrencyCode, Money } from '../../../packages/contracts/src/money';
+import { makeEvent } from '../../../packages/contracts/src/event';
+import type { SyncOutbox } from '../../../packages/sync/src/outbox';
+import { deviceItemState, deviceItemReason, type BoxItemStatus, type DeviceItemState } from '../../../packages/sync/src/device-relay';
 import {
   Assortment, checkAssortmentIntegrity, countingWorklist, dropFromRange, latestCounts,
   planogramCompliance, recordShelfCount, reviewDisplayContracts, spacePerformance,
   RangeDecisionError,
   type AssortmentEntry, type AssortmentIssue, type CountAge, type ComplianceIssue,
   type ContractStatus, type DisplayContract, type DropDecision, type DropReason,
-  type Planogram, type ReplenishmentTask, type ShelfCount, type ShelfCountOutcome,
+  type Planogram, type ReplenishmentTask, type ShelfCount, type CountRefusal,
   type ShelfMap, type SpaceArea, type SpacePerformanceRow,
 } from '../../../packages/merchandising/src/index';
 
@@ -112,16 +115,153 @@ export interface ShelfCheck {
 /** Nothing to check against, and why. `null` from `check()` is never silence. */
 export type NoPlanReason = 'this_store_has_no_shelf_map' | 'this_store_has_never_published_a_planogram';
 
+// ── SP-8c-ii (F08): the two saves this screen makes leave the page ─────────────────────────────────────────────
+//
+// Before SP-8c-ii a count saved here changed the page and nothing else, and a refill task was a line on a list.
+// Now a count is written to the DURABLE device queue before the screen says "saved" — the SAME queue the Floor
+// indents screen uses (`sre.indents.outbox.<storeId>`), handed to the store computer and relayed to head office,
+// which re-verifies the counter and judges the shelf against its own map. And the refill tasks become ONE indent
+// on that same queue, raised through the Indents screen's own session so the ask is the same record the floor
+// would have raised by hand — one ask per set of shelves per trading day, so a second tap raises nothing new.
+
+export const SHELF_COUNTED = 'ShelfCounted';
+export const shelfCountKeyFor = (countId: string): string => `shelf-count:${countId}`;
+/** The id prefix of an indent this screen raised from refill tasks — how its asks are told apart on the shared queue. */
+export const REFILL_INDENT_PREFIX = 'ind-refill-';
+
+export interface ShelfCountedPayload {
+  readonly countId: string;
+  readonly storeId: string;
+  readonly locationId: string;
+  readonly productId: string;
+  readonly countedMinor: number;
+  readonly countedBy: string;
+  readonly at: string;
+  /** The shelves this device was told the shop has — judged against head office's own map when it has one. */
+  readonly knownLocationIds: readonly string[];
+  readonly source: 'merchandising-screen';
+}
+
+/** One count this screen saved on its device, and where it has got to (the five shared device states). */
+export interface SavedShelfCount {
+  readonly countId: string;
+  readonly productId: string;
+  readonly locationId: string;
+  readonly countedMinor: number;
+  readonly at: string;
+  readonly state: DeviceItemState;
+  readonly attempts: number;
+  readonly reason?: string;
+}
+
+/** The lines of the one indent the refill tasks become. */
+export interface RefillLine { readonly productId: string; readonly quantityMinor: string; readonly uom: string }
+export interface RefillDraft { readonly indentId: string; readonly lines: readonly RefillLine[]; readonly reason: string }
+
+/** One ask this screen raised from refill tasks, as the shared queue holds it. */
+export interface SavedRefill {
+  readonly indentId: string;
+  readonly detail: string;
+  readonly at: string;
+  readonly state: DeviceItemState;
+  readonly attempts: number;
+  readonly reason?: string;
+}
+
+export interface RefillView {
+  readonly tasks: readonly ReplenishmentTask[];
+  /** The ask the tasks would become — null when there is nothing to fill. */
+  readonly draft: RefillDraft | null;
+  /** This reader may raise it from here: a link to the indent chain, the right to ask, somebody named, something to fill. */
+  readonly canRaise: boolean;
+  /** Already saved on this device for the draft's id (so the button says so instead of asking again). */
+  readonly alreadySaved: boolean;
+  readonly saved: readonly SavedRefill[];
+}
+
+export type RefillRefusal = 'no_indent_link' | 'nothing_to_fill' | 'not_permitted' | 'nobody_named' | 'no_places' | 'no_lines' | 'bad_line' | 'duplicate_product';
+export type RefillOutcome = { readonly ok: true; readonly indentId: string; readonly alreadySaved: boolean } | { readonly ok: false; readonly refusal: RefillRefusal };
+
+/** The Floor indents screen's session, as this screen may reach it: raise ONE ask on the shared queue, and read back what it saved. */
+export interface RefillIndentPort {
+  raise(input: RefillDraft): { readonly ok: true; readonly indentId: string } | { readonly ok: false; readonly refusal: string };
+  savedWork(): readonly { readonly kind: string; readonly id: string; readonly detail: string; readonly at: string; readonly state: DeviceItemState; readonly attempts: number; readonly reason?: string }[];
+  canRequest(): boolean;
+}
+
+/** What the composition root gives this screen to leave the page with: the durable queue, the box's words on it, the indent chain. */
+export interface MerchandisingDevice {
+  readonly outbox?: SyncOutbox;
+  /** The store computer's word per queue key — shared with every session over the same queue, so "posted" is never lost. */
+  readonly boxWords?: Map<string, BoxItemStatus>;
+  readonly indents?: RefillIndentPort;
+  /** A fresh count id on this device. Injected for tests; the browser's random id otherwise. */
+  readonly freshCountId?: () => string;
+}
+
+export type CountOutcome =
+  | { readonly ok: true; readonly count: ShelfCount; readonly countId: string; readonly queued: boolean }
+  | { readonly ok: false; readonly refusal: CountRefusal; readonly detail: string };
+
+/** A small, stable hash so the same set of shelves asks ONCE a day: FNV-1a over the sorted facings, as 8 hex digits. */
+export function refillIndentId(today: string, tasks: readonly ReplenishmentTask[]): string {
+  const facings = tasks.map((t) => `${t.locationId}|${t.productId}`).sort().join('\n');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < facings.length; i += 1) {
+    h ^= facings.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `${REFILL_INDENT_PREFIX}${today}-${h.toString(16).padStart(8, '0')}`;
+}
+
+/** The one indent the refill tasks become: a line per product (the same product on two shelves asks once, for both). */
+export function refillDraft(today: string, tasks: readonly ReplenishmentTask[]): RefillDraft | null {
+  if (tasks.length === 0) return null;
+  const byProduct = new Map<string, number>();
+  const where: string[] = [];
+  for (const t of tasks) {
+    byProduct.set(t.productId, (byProduct.get(t.productId) ?? 0) + t.quantityMinor);
+    const label = t.location.label ?? t.locationId;
+    if (!where.includes(label)) where.push(label);
+  }
+  return {
+    indentId: refillIndentId(today, tasks),
+    lines: [...byProduct.entries()].filter(([, q]) => q > 0).map(([productId, q]) => ({ productId, quantityMinor: String(q), uom: '' })),
+    reason: `shelf refill · ${where.join(', ')}`,
+  };
+}
+
+let counter = 0;
+const freshId = (prefix: string, now: string): string => {
+  const uuid = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto?.randomUUID?.();
+  if (uuid !== undefined) return `${prefix}-${uuid.slice(0, 8)}`;
+  counter += 1;
+  return `${prefix}-${now.replace(/[^0-9]/g, '').slice(0, 14)}-${counter}`;
+};
+
 export interface MerchandisingSession {
   /** Facings that most need counting, never-counted first. */
   countingList(): readonly CountAge[];
 
-  /** Record what somebody counted at a facing. Blind — no expected quantity is accepted. */
+  /** Record what somebody counted at a facing. Blind — no expected quantity is accepted. Since SP-8c-ii the count is on the
+   *  DURABLE device queue before this returns ok (`queued: true`); with no queue wired it changes only the page (`queued: false`). */
   count(input: {
     readonly locationId: string;
     readonly productId: string;
     readonly countedMinor: number;
-  }): ShelfCountOutcome;
+  }): CountOutcome;
+
+  /** Every count this screen saved on its device, newest first, with the five shared device states. */
+  savedCounts(): readonly SavedShelfCount[];
+  /** The queue keys the store computer has taken, to ask it where they have got to. */
+  handedKeys(): readonly string[];
+  /** Fold in the store computer's word — "posted" is only ever its say-so (P-08). */
+  noteBoxStatus(statuses: readonly BoxItemStatus[]): void;
+
+  /** The refill tasks and the ONE indent they would become, with what this device already asked. */
+  refills(): RefillView;
+  /** Raise that indent on the shared durable queue — refused here before anything is saved when this reader may not. */
+  raiseRefill(): RefillOutcome;
 
   /** The shelf against the plan, or why it cannot be checked at all. */
   check(): ShelfCheck | { readonly why: NoPlanReason };
@@ -158,6 +298,7 @@ export interface MerchandisingSession {
 export function createMerchandisingSession(
   config: MerchandisingConfig,
   ports: MerchandisingPorts,
+  device: MerchandisingDevice = {},
 ): MerchandisingSession {
   /** The facings the plan actually names — the only ones worth counting. */
   const plannedFacings = (): readonly { productId: string; locationId: string }[] => {
@@ -165,8 +306,19 @@ export function createMerchandisingSession(
     if (planogram === null) return [];
     return planogram.assignments.map((a) => ({ productId: a.productId, locationId: a.locationId }));
   };
+  const knownLocationIds = (): readonly string[] => ports.shelfMap()?.allLocations().map((l) => l.locationId) ?? [];
+  const boxWord = device.boxWords ?? new Map<string, BoxItemStatus>();
+  const nobodyNamed = config.userId.trim() === '';
 
-  return {
+  const tasksNow = (): readonly ReplenishmentTask[] => {
+    const c = session.check();
+    return 'why' in c ? [] : c.tasks;
+  };
+  const savedRefills = (): readonly SavedRefill[] => (device.indents?.savedWork() ?? [])
+    .filter((w) => w.kind === 'request' && w.id.startsWith(REFILL_INDENT_PREFIX))
+    .map((w) => ({ indentId: w.id, detail: w.detail, at: w.at, state: w.state, attempts: w.attempts, ...(w.reason === undefined ? {} : { reason: w.reason }) }));
+
+  const session: MerchandisingSession = {
     countingList: () => countingWorklist({
       planned: plannedFacings(),
       counts: ports.shelfCounts(),
@@ -176,18 +328,72 @@ export function createMerchandisingSession(
 
     ages: () => latestCounts(ports.shelfCounts(), config.now, config.countStaleAfterMinutes).ages,
 
-    count: (input) => recordShelfCount({
-      storeId: config.storeId,
-      locationId: input.locationId,
-      productId: input.productId,
-      countedMinor: input.countedMinor,
-      countedBy: config.userId,
-      at: config.now,
-      // A count against a shelf this shop does not have is a count nobody can act on. With no map
-      // at all every shelf is unknown, which refuses every count — correct, and the screen says
-      // the map is missing rather than letting somebody count into nowhere for an hour.
-      knownLocationIds: ports.shelfMap()?.allLocations().map((l) => l.locationId) ?? [],
-    }),
+    count: (input) => {
+      const known = knownLocationIds();
+      const outcome = recordShelfCount({
+        storeId: config.storeId,
+        locationId: input.locationId,
+        productId: input.productId,
+        countedMinor: input.countedMinor,
+        // Nobody named → the engine's own refusal (`nobody_signed_this_count`): a count nobody put their name to is
+        // one nobody can ask about later, and head office would only flag it as unknown.
+        countedBy: config.userId,
+        at: config.now,
+        // A count against a shelf this shop does not have is a count nobody can act on. With no map
+        // at all every shelf is unknown, which refuses every count — correct, and the screen says
+        // the map is missing rather than letting somebody count into nowhere for an hour.
+        knownLocationIds: known,
+      });
+      if (!outcome.ok) return outcome;
+      const countId = device.freshCountId?.() ?? freshId('sc', config.now);
+      if (device.outbox === undefined) return { ok: true, count: outcome.count, countId, queued: false };
+      // QUEUED before it is called saved (SP-8c-ii): the outbox is the durable device queue the composition root opened —
+      // enqueue writes it to the device before returning; the shared device → box → cloud path carries it from there.
+      const payload: ShelfCountedPayload = {
+        countId, storeId: config.storeId, locationId: outcome.count.locationId, productId: outcome.count.productId,
+        countedMinor: outcome.count.countedMinor, countedBy: outcome.count.countedBy, at: outcome.count.at, knownLocationIds: known, source: 'merchandising-screen',
+      };
+      const key = shelfCountKeyFor(countId);
+      device.outbox.enqueue(makeEvent({ id: key, type: SHELF_COUNTED, occurredAt: outcome.count.at, idempotencyKey: key, source: 'web-erp/merchandising', payload }));
+      return { ok: true, count: outcome.count, countId, queued: true };
+    },
+
+    savedCounts: () => (device.outbox?.all() ?? [])
+      .filter((item) => item.event.type === SHELF_COUNTED)
+      .map((item): SavedShelfCount => {
+        const p = item.event.payload as ShelfCountedPayload;
+        const box = boxWord.get(item.key);
+        const reason = deviceItemReason(item, box);
+        return { countId: p.countId, productId: p.productId, locationId: p.locationId, countedMinor: p.countedMinor, at: p.at, state: deviceItemState(item, box), attempts: item.attempts, ...(reason === undefined ? {} : { reason }) };
+      })
+      .reverse(),
+
+    handedKeys: () => (device.outbox?.all() ?? []).filter((item) => item.event.type === SHELF_COUNTED && item.state === 'acknowledged').map((item) => item.key),
+
+    noteBoxStatus: (statuses) => { for (const st of statuses) boxWord.set(st.key, st); },
+
+    refills: () => {
+      const tasks = tasksNow();
+      const draft = refillDraft(config.today, tasks);
+      const saved = savedRefills();
+      const alreadySaved = draft !== null && saved.some((r) => r.indentId === draft.indentId);
+      const canRaise = draft !== null && device.indents !== undefined && device.indents.canRequest() && !nobodyNamed;
+      return { tasks, draft, canRaise, alreadySaved, saved };
+    },
+
+    raiseRefill: () => {
+      if (device.indents === undefined) return { ok: false, refusal: 'no_indent_link' };
+      if (nobodyNamed) return { ok: false, refusal: 'nobody_named' };
+      if (!device.indents.canRequest()) return { ok: false, refusal: 'not_permitted' };
+      const draft = refillDraft(config.today, tasksNow());
+      if (draft === null) return { ok: false, refusal: 'nothing_to_fill' };
+      // The same set of shelves asked once today: the ask is on the queue under the same id, so nothing is raised twice —
+      // the Indents session's queue would collapse it anyway (§31.1); saying so is the honest answer for the button.
+      if (savedRefills().some((r) => r.indentId === draft.indentId)) return { ok: true, indentId: draft.indentId, alreadySaved: true };
+      const raised = device.indents.raise(draft);
+      if (!raised.ok) return { ok: false, refusal: (REFILL_REFUSALS.has(raised.refusal) ? raised.refusal : 'not_permitted') as RefillRefusal };
+      return { ok: true, indentId: raised.indentId, alreadySaved: false };
+    },
 
     check: () => {
       const map = ports.shelfMap();
@@ -270,7 +476,10 @@ export function createMerchandisingSession(
       currency: config.currency,
     }),
   };
+  return session;
 }
+
+const REFILL_REFUSALS: ReadonlySet<string> = new Set<RefillRefusal>(['no_indent_link', 'nothing_to_fill', 'not_permitted', 'nobody_named', 'no_places', 'no_lines', 'bad_line', 'duplicate_product']);
 
 /** Re-exported so a view can render an entry without importing the package directly. */
 export type { AssortmentEntry, DropReason };

@@ -196,6 +196,10 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   FloorIndentRequested: '/v1/floor/indents/:indentId/synced',
   FloorIndentReceived: '/v1/floor/indents/:indentId/issues/:issueId/receipt/synced',
   FloorIndentIssued: '/v1/floor/indents/:indentId/issues/:issueId/synced',
+  // SP-8c-ii (F08): the shelf count taken on the merchandising screen — `countId` is a plain top-level payload field. The
+  // synced route re-verifies the COUNTER from their grants and judges the shelf against head office's own map; a count
+  // against a shelf head office does not have is 422 → dead-lettered here by name for a person.
+  ShelfCounted: '/v1/merchandising/shelf-counts/:countId/synced',
   MigrationExceptionResolved: '/v1/migration/exceptions/:exceptionId/resolution/synced',
   MigrationTotalSigned: '/v1/migration/control-totals/:totalId/signature/synced',
 };

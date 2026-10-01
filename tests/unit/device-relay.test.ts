@@ -88,6 +88,7 @@ describe('the contract reads strictly and refuses with a reason', () => {
     expect(RELAYABLE_DEVICE_EVENTS['FloorIndentRequested']?.surfaces).toEqual(['manager']);
     expect(RELAYABLE_DEVICE_EVENTS['FloorIndentReceived']?.surfaces).toEqual(['manager']);
     expect(RELAYABLE_DEVICE_EVENTS['FloorIndentIssued']?.surfaces).toEqual(['warehouse']);
+    expect(RELAYABLE_DEVICE_EVENTS['ShelfCounted']?.surfaces).toEqual(['manager']);
     expect(RELAYABLE_DEVICE_EVENTS['StockCounted']?.surfaces).toEqual(['manager', 'warehouse']);
     expect(RELAYABLE_DEVICE_EVENTS['AdjustmentRequested']?.surfaces).toEqual(['warehouse']);
     expect(isRelayable('GoodsReceived', 'manager')).toBe(true);

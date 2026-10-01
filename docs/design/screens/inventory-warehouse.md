@@ -185,5 +185,6 @@ Measured in real Chromium on the REAL box (`tests/e2e/warehouse-handheld-issues-
 and WCAG audit in `tests/e2e/the-handhelds-meet-the-spec.e2e.ts`) and box → cloud on the real API and on real PostgreSQL
 (`tests/integration/floor-indents-handheld-issue.test.ts`), where the back store, the floor, the trolley and the write-off
 add up to what was ever received — in units and in rupees — at every step.
-**Still recorded, not dropped (SP-8c-ii):** the refill task that raises an indent, the shelf-count save that reaches the
-cloud, the "products nobody can sell" screen; physical-device verification and UAT PENDING.
+**Closed at SP-8c-ii (1 October 2026):** the refill task that raises an indent and the shelf-count save that reaches the
+cloud (both on the merchandising screen — see `product-merchandising.md`, Measured SP-8c-ii), and the "products nobody can
+sell" screen. **Still recorded, not dropped:** physical-device verification and staff UAT (SP-10) PENDING.

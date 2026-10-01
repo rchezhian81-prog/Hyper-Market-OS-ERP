@@ -64,6 +64,10 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   FloorIndentReceived: { surfaces: ['manager'] },
   // SP-8c: the back store's ISSUE against the indent, from the warehouse handheld (tap the line → scan bin → scan item → confirm).
   FloorIndentIssued: { surfaces: ['warehouse'] },
+  // SP-8c-ii (F08): the shelf count taken on the merchandising screen (the ERP surface the box serves, so it rides as `manager`).
+  // Head office re-verifies the COUNTER from their grants and judges the shelf against its own map; a count against a shelf
+  // it does not have dead-letters visibly. The refill task's indent rides `FloorIndentRequested` above, from the same screen.
+  ShelfCounted: { surfaces: ['manager'] },
 });
 
 /**
