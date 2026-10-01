@@ -56,3 +56,16 @@ pilot. The master source of truth for the human sign-offs is `../registers/uat-c
   evidence from *outside* it: the bank, the filed returns, the supplier's own statement, and a
   physical count. **A vendor export is one system's account of itself; a bank statement is an
   adversary's.**
+
+## The demo deployment and the store practice environment (Option 1, 1 October 2026)
+
+- **`automatic-deployment.md`** — Stage F: a merged `main` deploys itself to the demo box through the
+  `deploy` user's forced command (`infra/deploy/release.sh`); a broken release puts the previous one back.
+  The five GitHub `demo` environment secret **names** are in it; no value is written anywhere.
+- **`demo-practice-environment.md`** — the master runbook for the owner's Option 1: where the demo box
+  actually stands (28 Sep release, 78 commits behind), the one-time administrator checklist that connects
+  the pipeline to the box that was stood up before Stage F existed, the verification of the deployed
+  release, the store PC / phones / practice pack for the shop, the deployed-workflow smoke test
+  (`pnpm run demo:smoke`), access without secrets, the role-by-role practice script, and how every
+  practice session is recorded in `../registers/sp10-staff-uat.md` with its software version. Every
+  step is marked EXECUTED or PREPARED.
