@@ -246,6 +246,7 @@ import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { figure } from '../../reporting/src/index';
 import type { ReportingDeps, Figure } from '../../reporting/src/index';
+import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
 import { salesSummary, ingestContribution } from '../../../packages/reporting/src/index';
 import type { Producer, SaleFact, BranchContribution, BranchMembership } from '../../../packages/reporting/src/index';
@@ -8596,6 +8597,12 @@ export function reportingAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
   /**
+   * The shop's trading calendar — its time zone and trading-day cut-off, from tenant settings (M01-FR-02). "Today" on
+   * the dashboard is the SHOP's trading day, never this server's calendar date (audit finding F14). Required, not
+   * defaulted: a composition that cannot say which day the shop is on has no business calling anything "today".
+   */
+  readonly calendar: (tenantId: string) => Promise<TradingCalendar> | TradingCalendar;
+  /**
    * What this shop records and what this build can work out — the two facts the report catalogue
    * needs (M29/M30). Declared by the composition root because neither is the reporting service's to
    * invent; conservative by default (nothing claimed) so the catalogue never overstates the shop.
@@ -8620,18 +8627,26 @@ export function reportingAdapter(input: {
      * with eleven zeroes and a real one is not.
      */
     figures: async (tenantId) => {
-      const today = input.now().slice(0, 10);
+      // "Today" is the SHOP's trading day — its time zone and cut-off from tenant settings — not this server's
+      // calendar date. A cloud box keeps UTC; the till dates every sale by the shop's wall clock and cut-off
+      // (`tradingDayFor`), so between the shop's midnight and 05:30 IST the two disagreed and the owner's figure
+      // read the wrong day (audit finding F14). One rule, both ends.
+      const calendar = await input.calendar(tenantId);
+      const today = tradingDayIn(input.now(), calendar);
       // A read of today, not a read of every sale the shop has ever made followed by a filter.
       // The owner looks at this number every morning, which makes it the one query in the system
       // guaranteed to be run against the largest table daily, forever.
       //
       // The window is on `occurredAt` and the check is on `tradingDay`, and both are needed: the
       // window is what makes the read cheap, and the trading day is what makes it *right*, because
-      // a shop trading past midnight books those sales to the day that is still open (M09).
+      // a shop trading past midnight books those sales to the day that is still open (M09). The
+      // window is the trading day's own span — from the shop's cut-off to the next one, in the
+      // shop's zone — so it is exactly one day of sales whatever the zone and whatever the cut-off.
+      const window = tradingDayWindow(today, calendar);
       const events = await input.store.readStream(tenantId, STREAM.sales, {
         type: 'SaleCommitted',
-        from: `${today}T00:00:00.000Z`,
-        to: `${addDays(today, 1)}T00:00:00.000Z`,
+        from: window.from,
+        to: window.to,
       });
       const todays = events.map((e) => payloadOf<IncomingSale>(e))
         .filter((s) => s.tradingDay === today);

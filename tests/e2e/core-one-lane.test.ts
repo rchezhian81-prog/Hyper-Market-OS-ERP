@@ -89,6 +89,10 @@ describe('the core, on one lane, end to end', () => {
     // One principal that both syncs a sale (pos.sale.sync) and reads the owner dashboard
     // (reporting.dashboard.read) — the owner. Seeded through the guarded genesis path.
     await h.seedOwner(TENANT, TILL);
+    // This test dates its sale by the UTC calendar date, so the owner tells head office the shop's clocks keep UTC —
+    // "Sales today" is the SHOP's trading day, read from tenant settings, never the server's date (F14, SP-9-i-c).
+    const tz = await h.request({ method: 'PUT', path: '/v1/platform/setup/locale.time_zone', userId: TILL, tenantId: TENANT, idempotencyKey: 'setup-tz-utc', body: { value: 'UTC' } });
+    expect(tz.status).toBe(200);
 
     // Ring one sale on the lane, through the loopback socket to this till's own disk — no cloud call.
     const view = bootPos({ laneId: 'lane-1', cashierId: 'cashier', tradingDay: TRADING_DAY, durable: laneDurable(edge.lane!.port) });

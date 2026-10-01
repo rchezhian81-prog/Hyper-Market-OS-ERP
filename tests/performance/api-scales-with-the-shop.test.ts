@@ -250,7 +250,7 @@ describe('the API does not get slower as the shop trades', () => {
 
     const store = new CountingStore(inner);
     store.rowsRead = 0;
-    const figures = await reportingAdapter({ store, now: () => NOW }).figures(TENANT, 'dashboard');
+    const figures = await reportingAdapter({ store, now: () => NOW, calendar: () => ({ timeZone: 'UTC', tradingDayCutoff: '00:00' }) }).figures(TENANT, 'dashboard');
 
     // Right answer...
     expect(figures.find((f) => f.name === 'Sales today')?.valueMinor).toBe(64_000);
@@ -324,7 +324,7 @@ describe('no read grows with history that has nothing to do with it', () => {
       ['pos.catalogue', () => Promise.resolve(posAdapter({ store, now }).catalogue(TENANT))],
       ['pos.openExceptions', () => Promise.resolve(posAdapter({ store, now }).openExceptions(TENANT))],
       ['inventory.isKnown', () => Promise.resolve(inventoryAdapter({ store, now }).isKnown(TENANT, 'M-NEW'))],
-      ['catalogue-ish: reporting.figures', () => Promise.resolve(reportingAdapter({ store, now }).figures(TENANT, 'dashboard'))],
+      ['catalogue-ish: reporting.figures', () => Promise.resolve(reportingAdapter({ store, now, calendar: () => ({ timeZone: 'UTC', tradingDayCutoff: '00:00' }) }).figures(TENANT, 'dashboard'))],
       ['customer.consentRecords', () => Promise.resolve(customerAdapter({ store, now }).consentRecords(TENANT, 'C-1'))],
       ['customer.pointsBalance', () => Promise.resolve(customerAdapter({ store, now }).pointsBalance(TENANT, 'C-1'))],
       ['purchase.invoice', () => Promise.resolve(purchaseAdapter({ store, now }).invoice(TENANT, 'INV-1'))],

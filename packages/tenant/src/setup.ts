@@ -41,6 +41,15 @@ const isStringArray = (v: unknown): v is readonly string[] =>
 
 const validateCutoff: SetupValidator = (v) =>
   isString(v) && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? null : 'Use a 24-hour time like 22:00.';
+const validateTimeZone: SetupValidator = (v) => {
+  if (!isString(v) || v.trim() === '') return 'Name the time zone the way the world does, like Asia/Kolkata.';
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: v });
+    return null;
+  } catch {
+    return `"${v}" is not a time zone this system knows. Use an IANA name like Asia/Kolkata.`;
+  }
+};
 const validateCurrency: SetupValidator = (v) =>
   isString(v) && /^[A-Z]{3}$/.test(v) ? null : 'Use a 3-letter ISO currency code, e.g. INR.';
 const validateLanguages: SetupValidator = (v) =>
@@ -85,6 +94,13 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     required: false,
     question: 'When does one trading day end and the next begin? (Drives the daily close and the GST day.)',
     validate: validateCutoff,
+  },
+  {
+    setting: SETTINGS.STORE_TIME_ZONE,
+    group: 'check_default',
+    required: false,
+    question: 'Which time zone do the shop\'s clocks keep? (Head office dates "today" on the dashboard and in the day\'s reports by it.)',
+    validate: validateTimeZone,
   },
   {
     setting: SETTINGS.RECEIPT_PAPER_FORMAT,

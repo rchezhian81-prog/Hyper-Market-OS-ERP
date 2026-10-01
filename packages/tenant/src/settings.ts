@@ -21,6 +21,17 @@ export const SETTINGS = {
     label: 'Trading-day cut-off (HH:MM)',
     defaultValue: '00:00',
   } as TenantSetting<string>,
+  /**
+   * The IANA time zone the shop's clocks keep (M01-FR-02). The till and the store box stand in the shop and read the
+   * machine clock; head office does not, so it must be told — or its "today" is the server's, and the owner's dashboard
+   * read the wrong day between the shop's midnight and 05:30 IST (audit finding F14). The default is this shop's; a
+   * tenant elsewhere changes it, not our code.
+   */
+  STORE_TIME_ZONE: {
+    key: 'locale.time_zone',
+    label: 'Store time zone (IANA name, e.g. Asia/Kolkata)',
+    defaultValue: 'Asia/Kolkata',
+  } as TenantSetting<string>,
   BASE_CURRENCY: {
     key: 'locale.currency',
     label: 'Base currency (ISO 4217)',

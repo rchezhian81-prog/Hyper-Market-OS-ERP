@@ -75,6 +75,9 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     await cloud.grant(CASHIER, 'cashier');
     await cloud.grant(MANAGER, 'store_manager');
     await cloud.grant(ACCT, 'accountant');
+    // The box in this run keeps this machine's clock (UTC) with a midnight cut-off; the owner tells head office so,
+    // through store setup — "Sales today" is then the SHOP's trading day at head office too (F14 fixed, SP-9-i-c).
+    expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'setup-tz-utc')).status).toBe(200);
     await publishCatalogueAndStock();
   }, 60_000);
   afterAll(async () => { await cloud?.stop(); });
@@ -227,12 +230,10 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     // Sold and refunded in full: nothing left in sales clearing.
     expect(read.accounts.find((a) => a.accountCode === 'sales_clearing')?.balanceMinor ?? 0).toBe(0);
 
-    // ── The owner's dashboard. Head office dates "today" by the server's UTC date while the till dates the sale by the shop's
-    // wall clock (F14, registered — the two agree except between the shop's midnight and UTC midnight). Checked when they agree.
-    if (tradingDay === new Date().toISOString().slice(0, 10)) {
-      const dash = (await call('GET', '/v1/reports/dashboard', OWNER)).body as { figures: { name: string; valueMinor?: number }[] };
-      expect(dash.figures.find((f) => f.name === 'Sales today')).toMatchObject({ valueMinor: PRICE });
-    }
+    // ── The owner's dashboard: "Sales today" is the SHOP's trading day — head office reads the shop's time zone and
+    // cut-off from the setup answers above, the same rule the till dated the sale by (F14 FIXED). Unconditional.
+    const dash = (await call('GET', '/v1/reports/dashboard', OWNER)).body as { figures: { name: string; valueMinor?: number }[] };
+    expect(dash.figures.find((f) => f.name === 'Sales today')).toMatchObject({ valueMinor: PRICE });
 
     // ── Restart on the same disk: the pulled pack is restored, the served till still sells from it, nothing is re-sent.
     const dataDir = dirs[dirs.length - 1]!;

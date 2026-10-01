@@ -1047,7 +1047,15 @@ export function buildSurface(deps: {
       : riskRegisterAdapter({ store, now })),
     ...reportingRoutes(store === undefined
       ? { figures: empty([]), now }
-      : reportingAdapter({ store, now, records: REPORTING_RECORDS, produced: REPORTING_PRODUCED })),
+      : reportingAdapter({
+          store, now, records: REPORTING_RECORDS, produced: REPORTING_PRODUCED,
+          // The shop's calendar from the SAME durable settings the owner answers in store setup (M01-FR-02), read at
+          // request time — "today" on the dashboard is the shop's trading day, not this server's date (F14).
+          calendar: async (tenantId) => ({
+            timeZone: await settings.value(tenantId, SETTINGS.STORE_TIME_ZONE),
+            tradingDayCutoff: await settings.value(tenantId, SETTINGS.TRADING_DAY_CUTOFF),
+          }),
+        })),
     // Company-wide consolidation (M01/M29/D13, owner decision) — branches POST contributions + memberships,
     // the head office GETs the roll-up for a node/family/period. Idempotent by revision, effective-dated,
     // reconciled, scope-enforced (the tested @sre/reporting consolidation engine).

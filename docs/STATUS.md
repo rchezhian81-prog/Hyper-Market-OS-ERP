@@ -722,13 +722,29 @@ device, human UAT and production verification separate; approved deferrals stay 
   unchanged; no rung changed. **Still open, honestly:** F14 (head office dates "Sales today" by UTC — needs a tenant
   calendar at head office, SP-9-i-c), the purchasing half on the real stack (SP-9-ii), exchange / no-receipt UI (SP-9b),
   concurrent tills and a cut line mid-day, physical device + staff UAT (SP-10).
-- **Current-work pointer:** last verified = SP-9-i-b (this PR); next = **SP-9-i-c** [F14] (a per-tenant calendar — time zone
-  + the cut-off the till already applies — owned at head office; the dashboard and the day's reports date "today" by it; the
-  connected run's dashboard check un-gated), then **SP-9-ii** [W10 remainder] (purchase → receiving/QC → back store → floor →
-  sale on the SAME real stack, reconciling balances, in transit, valuation and the supplier account; offline/reconnect
-  mid-day; concurrent tills), then **SP-9b** [W12] (exchange / no-receipt till UI, CH-01 preserved), then **SP-3c** (picker +
-  driver handhelds on the shared device route); **SP-10** (physical device + staff UAT) stays PENDING until performed;
-  genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-9-i-c — F14 FIXED: head office dates "Sales today" by the shop's own trading day (M01-FR-02 · M29-FR-01 · P-02 ·
+  P-08).** The dashboard took "today" from the server's UTC date while the till dates every sale by the shop's wall clock
+  and cut-off, so between the shop's midnight and 05:30 IST the owner's figure read the wrong day. Now: (i) store setup has
+  a new answer, `locale.time_zone` (IANA name, default Asia/Kolkata, validated as a zone this system knows), beside the
+  existing `trading_day.cutoff` (`packages/tenant/src/settings.ts`, `packages/tenant/src/setup.ts`; a text editor on the
+  setup screen, `apps/web-erp/src/setup-editing.ts`); (ii) `packages/calendar/src/trading-day.ts` gains `TradingCalendar`,
+  `tradingDayIn` (the day an instant falls on in the shop's calendar), `instantOf` (the instant a zone's clock reads a
+  local time) and `tradingDayWindow` (a trading day's span, cut-off to next cut-off, in the shop's zone); (iii)
+  `reportingAdapter` REQUIRES a per-tenant `calendar` — no default, a composition that cannot say which day the shop is on
+  calls nothing "today" — and reads exactly that day's span from the ledger (still one day of sales, never the history);
+  `services/api/src/main.ts` supplies both answers from the SAME durable settings at request time. Regressions:
+  `reporting-kpis-run-on-the-engine` +3 (01:30 IST is the 11th at a midnight cut-off and still the 10th at 02:00; two tenants
+  see two "todays" at one instant; the old UTC answer shown wrong), `trading-day` +4, `tenant-setup` +1; the connected run
+  (`the-store-trades-a-day`, `core-one-lane`) has the owner answer the shop's zone through store setup and asserts the
+  dashboard UNCONDITIONALLY. Matrix §3 F14 FIXED, §4 SP-9-i-c DONE; traceability F14, M01, M29-FR-01. Denominator 104
+  unchanged; no rung changed. **Still open, honestly:** the store box dates by its machine clock (the till PC must keep the
+  shop's zone — an install fact, recorded for the runbook, not enforced); the purchasing half on the real stack (SP-9-ii),
+  exchange / no-receipt UI (SP-9b), concurrent tills and a cut line mid-day, physical device + staff UAT (SP-10).
+- **Current-work pointer:** last verified = SP-9-i-c (this PR); next = **SP-9-ii** [W10 remainder] (purchase → receiving/QC →
+  back store → floor → sale on the SAME real stack, reconciling balances, in transit, valuation and the supplier account;
+  offline/reconnect mid-day; concurrent tills), then **SP-9b** [W12] (exchange / no-receipt till UI, CH-01 preserved), then
+  **SP-3c** (picker + driver handhelds on the shared device route); **SP-10** (physical device + staff UAT) stays PENDING
+  until performed; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 
