@@ -49,14 +49,10 @@ const MANAGER = 'u-manager';  // approves the refund (store_manager: pos.return.
 const ACCT = 'u-acct';        // posts the day book
 const PRODUCT = 'p-rice';
 const BARCODE = '8901234567890';
-const PRICE = 48_000;         // ₹480.00 — the shelf price head office published (≤ the ₹500 MRP)
-/**
- * What the till actually charges for that shelf price: ₹504.00 — it adds the 5% GST ON TOP of a price every other engine
- * (the day book, the GST return, A9) treats as GST-INCLUSIVE, and so charges ABOVE the ₹500 MRP (M05-FR-02). Registered as
- * F15 (observation: `tests/audit-observations/pos.test.ts` case 3); the fix is its own money-path slice. Until it lands the
- * connected run records the figure the till really charges, so this proof never papers over it.
- */
-const CHARGED = 50_400;
+const PRICE = 48_000;         // ₹480.00 — the shelf price head office published (≤ the ₹500 MRP), the 5% GST INSIDE it (A9)
+/** The GST inside the ₹480: 480 × 100/105 = ₹457.14 taxable, ₹22.86 GST — the remainder, so the two sum to the price to the paisa. */
+const TAXABLE = 45_714;
+const GST = 2_286;
 const COST = 40_000;
 
 interface Reply { status: number; body: unknown }
@@ -173,10 +169,11 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     // Durable on THIS box first (hard rule #1), queued for the cloud; nothing has reached head office yet.
     const onDisk = (await readLog(edge.log.path)).map((r) => JSON.parse((r as { record: string }).record) as Record<string, unknown>);
     expect(onDisk).toHaveLength(1);
-    expect(onDisk[0]).toMatchObject({ id: 'S-1', number: 'R-S-1', cashierId: CASHIER, laneId: LANE, tradingDay, netMinor: PRICE, taxMinor: CHARGED - PRICE });
+    // The customer paid the shelf price — never the price plus GST (F15 fixed): the GST is pulled OUT of the ₹480.
+    expect(onDisk[0]).toMatchObject({ id: 'S-1', number: 'R-S-1', cashierId: CASHIER, laneId: LANE, tradingDay, total: PRICE, netMinor: TAXABLE, taxMinor: GST });
     // Queued for head office as the cloud's contract, stamped by the BOX: the pulled pack's version and this shop as the stock location.
     expect(edge.outbox.unsentCount()).toBe(1);
-    expect(edge.outbox.pending()[0]!.event.payload).toMatchObject({ saleId: 'S-1', packVersion: 1, locationId: STORE, cashierId: CASHIER, laneId: LANE, tradingDay, totalMinor: CHARGED });
+    expect(edge.outbox.pending()[0]!.event.payload).toMatchObject({ saleId: 'S-1', packVersion: 1, locationId: STORE, cashierId: CASHIER, laneId: LANE, tradingDay, totalMinor: PRICE });
     expect((await call('GET', '/v1/sales/S-1', OWNER)).status).toBe(404);
     expect(await onHandAt(STORE)).toBe(10);
 
@@ -191,19 +188,19 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
 
     // ── The refund, on the till: the bill looked up on this box, a manager's approval, cash back; synced, the stock returns.
     const bill = (await till.lookupRefund('R-S-1'))!;
-    expect(bill).toMatchObject({ sale: { saleId: 'S-1', totalMinor: CHARGED }, maxRefundMinor: CHARGED }); // F15: ₹504, not ₹480
+    expect(bill).toMatchObject({ sale: { saleId: 'S-1', totalMinor: PRICE }, maxRefundMinor: PRICE }); // what was paid: the ₹480 shelf price
     const refunded = await bill.submit({
       returnId: 'RT-1', number: 'RT-0001', reasonCode: 'changed_mind',
       lines: [{ productId: PRODUCT, uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
-      refundMinor: CHARGED, refundTender: 'cash', approval: { by: MANAGER, reason: 'checked the goods' },
+      refundMinor: PRICE, refundTender: 'cash', approval: { by: MANAGER, reason: 'checked the goods' },
     });
-    expect(refunded).toMatchObject({ kind: 'settled', refundMinor: CHARGED });
+    expect(refunded).toMatchObject({ kind: 'settled', refundMinor: PRICE });
     const pass2 = await edge.syncOnce!();
     expect(pass2).toMatchObject({ dead: 0, remaining: 0 });
     expect(await onHandAt(STORE)).toBe(10);
     expect(((await call('GET', `/v1/inventory/valuation?productId=${PRODUCT}`, OWNER)).body as { totalValueMinor: number }).totalValueMinor).toBe(10 * COST);
 
-    // ── Cash: a pickup to the safe, then the blind close. 2,000 + 504 − 504 − 1,000 = ₹1,000 in the drawer.
+    // ── Cash: a pickup to the safe, then the blind close. 2,000 + 480 − 480 − 1,000 = ₹1,000 in the drawer.
     expect(await till.till.moveCash({ kind: 'pickup', amountMinor: 100_000, at: at(30), movementId: 'cm-pick' })).toMatchObject({ committed: true });
     expect(await till.till.close({ shiftId: 'sh-1', closedAt: at(60), countedMinor: 100_000 })).toMatchObject({ closed: true, varianceMinor: 0 });
     const pass3 = await edge.syncOnce!();
@@ -234,7 +231,7 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     // wall clock (F14, registered — the two agree except between the shop's midnight and UTC midnight). Checked when they agree.
     if (tradingDay === new Date().toISOString().slice(0, 10)) {
       const dash = (await call('GET', '/v1/reports/dashboard', OWNER)).body as { figures: { name: string; valueMinor?: number }[] };
-      expect(dash.figures.find((f) => f.name === 'Sales today')).toMatchObject({ valueMinor: CHARGED });
+      expect(dash.figures.find((f) => f.name === 'Sales today')).toMatchObject({ valueMinor: PRICE });
     }
 
     // ── Restart on the same disk: the pulled pack is restored, the served till still sells from it, nothing is re-sent.

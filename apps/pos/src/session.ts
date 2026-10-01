@@ -11,7 +11,7 @@ import { money, add, type Money, type CurrencyCode } from '../../../packages/con
 import { quantity, type Uom } from '../../../packages/contracts/src/quantity';
 import { rate, type Rate } from '../../../packages/contracts/src/rate';
 import type { ConnectionState } from '../../../packages/contracts/src/enums';
-import { priceLine, sumLines, type LinePricing, type BillTotals } from '../../../packages/pricing/src/pricing';
+import { priceLine, sumLines, splitInclusive, type LinePricing, type BillTotals } from '../../../packages/pricing/src/pricing';
 import { bestPrice, type Promotion, type BasketLine, type PromotionResult } from '../../../packages/promotions/src/promotions';
 import { settle, type Tender, type Settlement } from '../../../packages/tender/src/tender';
 import { commitSale, UnpaidSaleError, type CommittedSale } from '../../../packages/sale/src/sale';
@@ -37,14 +37,14 @@ export interface PosSessionConfig {
   /** Where this shop's trading day ends, "HH:MM" local (M01-FR-02), from the store pack. Absent = midnight. */
   readonly tradingDayCutoff?: string;
   readonly currency: CurrencyCode;
-  /** Default tax rate when a line doesn't carry its own (per-tenant config). */
+  /** Default tax rate EXTRACTED from the inclusive price when a line doesn't carry its own (per-tenant config). */
   readonly defaultTaxRate: Rate;
 }
 
 export interface ScanInput {
   readonly productId: string;
   readonly description: string;
-  /** Price of one UOM unit (per each, per kg, …). */
+  /** Price of one UOM unit (per each, per kg, …) — the SHELF price, GST already inside it (≤ MRP, A9). */
   readonly unitPrice: Money;
   /** Quantity in the UOM's smallest unit (e.g. 1 ea, or 1234 g for 1.234 kg). */
   readonly quantityMinor: number;
@@ -288,15 +288,26 @@ export class PosSession {
     return next;
   }
 
+  /**
+   * Price ONE line the way a retail till prices: the catalogue's unit price is the shelf price, GST already inside
+   * it (Legal Metrology: the MRP or below, tax included — roadmap A9), so the customer pays price × quantity and the
+   * taxable value and the GST are pulled OUT of that amount. The till never adds tax on top of a shelf price: that
+   * charged ₹504 against a ₹500 MRP (audit finding F15, M05-FR-02) and disagreed with the day book and the GST
+   * return, which already read every line total as inclusive. Both the running total and the lines the cloud sees
+   * go through here, so the two cannot differ.
+   */
+  private priceOf(l: BasketEntry): LinePricing {
+    return priceLine({
+      unitPrice: l.unitPrice,
+      quantity: quantity(l.quantityMinor, l.uom),
+      taxRate: l.taxRate,
+      pricesIncludeTax: true,
+    });
+  }
+
   /** Price every active line (exact, weighed goods included). */
   private pricedLines(): LinePricing[] {
-    return this.activeLines().map((l) =>
-      priceLine({
-        unitPrice: l.unitPrice,
-        quantity: quantity(l.quantityMinor, l.uom),
-        taxRate: l.taxRate,
-      }),
-    );
+    return this.activeLines().map((l) => this.priceOf(l));
   }
 
   /** The running total shown on screen — the largest element on the Sale screen. */
@@ -435,8 +446,8 @@ export class PosSession {
     };
 
     // The lines the CLOUD sees carry more than the local ledger needs: the unit price and the
-    // tax-inclusive line total (so the day's figures and the GST return can be projected without
-    // guessing), and the HSN + rate the line was priced under, FROZEN at the moment of sale so the
+    // tax-inclusive line total — the shelf price × quantity, GST inside it (A9), so the day's figures
+    // and the GST return can be projected without guessing — and the HSN + rate the line was priced under, FROZEN at the moment of sale so the
     // GST return files each sale under what actually applied — even across a mid-period rate change
     // (A5). These are a record, never a control: they are read off the pack the lane already holds,
     // add no network call and no new way for a sale to fail (hard rule #1).
@@ -448,7 +459,7 @@ export class PosSession {
     // pulled from the correct reduced value.
     const perLineDiscount = this.promotionDiscountByLine();
     const recordLines = active.map((l) => {
-      const lineTotalMinor = priceLine({ unitPrice: l.unitPrice, quantity: quantity(l.quantityMinor, l.uom), taxRate: l.taxRate }).total.minor;
+      const lineTotalMinor = this.priceOf(l).total.minor;
       return {
         productId: l.productId,
         quantityMinor: l.quantityMinor,
@@ -459,6 +470,16 @@ export class PosSession {
         ...(l.hsnCode !== undefined ? { hsnCode: l.hsnCode } : {}),
       };
     });
+    // The record's net and GST are the sum of what is INSIDE each line as actually charged — after the attributed
+    // promotion discount — so net + tax == total on the disk record exactly as on the cloud's lines, and the box's
+    // day figures (`costTheDay`) read the same GST the GST return will file.
+    const inside = recordLines.reduce(
+      (acc, l) => {
+        const split = splitInclusive(money(l.lineTotalMinor, totals.payable.currency), rate(l.taxRateBps));
+        return { net: acc.net + split.net.minor, tax: acc.tax + split.tax.minor };
+      },
+      { net: 0, tax: 0 },
+    );
 
     // **Is this a sale at all? Ask before the disk, not after.**
     //
@@ -501,8 +522,8 @@ export class PosSession {
       ...input,
       lines: recordLines, // the cloud sees the rich lines (prices + frozen HSN/rate); commitSale keeps the ledger shape
       total: totals.payable.minor,
-      netMinor: totals.net.minor,
-      taxMinor: totals.tax.minor,
+      netMinor: inside.net,
+      taxMinor: inside.tax,
       currency: totals.payable.currency,
     }));
     if (!outcome.committed) throw new LocalCommitRefusedError(saleId, outcome.laneMessage);

@@ -53,7 +53,7 @@ describe('POS barcode scanning', () => {
     expect(outcome.description).toBe('Rice 1kg');
     expect(outcome.qty).toBe(1);
     expect(view.basket()).toHaveLength(1);
-    expect(view.payableMinor()).toBe(118_00); // ₹100 + 18% from the product's tax class
+    expect(view.payableMinor()).toBe(100_00); // ₹100 — the shelf price; the product's 18% tax class is INSIDE it (A9)
   });
 
   it('scans a weighed item from an embedded barcode and prices it exactly', () => {
@@ -96,7 +96,7 @@ describe('POS barcode scanning', () => {
     const { view, ledger, outbox } = newLane();
     view.scanBarcode('8901234567890');
     view.scanBarcode('2123456012349');
-    expect(view.payableMinor()).toBe(216_72); // ₹118.00 + ₹98.72
+    expect(view.payableMinor()).toBe(198_72); // ₹100.00 + ₹98.72
 
     const receipt = await view.tenderCash('sale-1', 'S-0001', AT);
     expect(receipt).toBe('S-0001');

@@ -38,20 +38,20 @@ describe('createPosView', () => {
     view.scan({ productId: 'p1', description: 'Rice 1kg', unitPriceMinor: 100_00, qty: 2 });
     expect(view.basket()).toHaveLength(1);
     expect(view.basket()[0]?.unitPriceMinor).toBe(100_00);
-    expect(view.payableMinor()).toBe(236_00); // (2 × ₹100) + 18%
+    expect(view.payableMinor()).toBe(200_00); // 2 × ₹100 — the shelf price, GST inside it (A9)
   });
 
   it('supports a weighed line via its uom', () => {
     const { view } = newView();
     view.scan({ productId: 'p2', description: 'Tomato', unitPriceMinor: 80_00, qty: 1234, uom: 'kg' });
-    expect(view.payableMinor()).toBe(116_49); // 1.234 kg × ₹80 + 18%
+    expect(view.payableMinor()).toBe(98_72); // 1.234 kg × ₹80, GST inside
   });
 
   it('changes quantity through the model', () => {
     const { view } = newView();
     view.scan({ productId: 'p1', description: 'Rice', unitPriceMinor: 100_00, qty: 1 });
     view.setQuantity(view.basket()[0]!.lineId, 3);
-    expect(view.payableMinor()).toBe(354_00);
+    expect(view.payableMinor()).toBe(300_00);
   });
 
   it('keeps a voided line on the bill with its reason and drops it from the total', () => {
@@ -63,7 +63,7 @@ describe('createPosView', () => {
     expect(view.basket()).toHaveLength(2); // still shown
     expect(view.basket()[1]?.voided).toBe(true);
     expect(view.basket()[1]?.voidReason).toBe('changed mind');
-    expect(view.payableMinor()).toBe(118_00); // only the first line counts
+    expect(view.payableMinor()).toBe(100_00); // only the first line counts
   });
 
   it('takes cash locally, returns the receipt number and queues the sale', async () => {
@@ -160,6 +160,6 @@ describe('a product with a unit the till does not know is refused at the scan, b
     session.setNow(AT);
     const view = createPosView(session, 'INR', new CatalogueCache(snapshotWith('ea')));
     view.scanBarcode('8901234500099');
-    expect(view.payableMinor()).toBe(118_00);
+    expect(view.payableMinor()).toBe(100_00); // the shelf price; its 18% tax class is inside it
   });
 });

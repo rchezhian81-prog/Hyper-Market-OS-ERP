@@ -173,8 +173,8 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
 
     const { committed, outbox, payable } = await ringUpSale('S-OFFLINE-1', catalogue);
 
-    // ₹450.00 + ₹180.00 = ₹630.00, +5% GST = ₹661.50
-    expect(payable).toEqual(money(66_150, CURRENCY));
+    // ₹450.00 + ₹180.00 = ₹630.00 — shelf prices, the 5% GST inside them (A9)
+    expect(payable).toEqual(money(63_000, CURRENCY));
     expect(committed.id).toBe('S-OFFLINE-1');
     // The sale is DONE — locally, with nothing waiting on a network call.
     expect(outbox.unsentCount()).toBe(1);
@@ -312,6 +312,6 @@ describe.skipIf(!DATABASE_URL)('Stage 6 — offline/sync vertical slice (real Po
       }, 0);
 
     expect(cloudTotalMinor).toBe(laneTotalMinor);
-    expect(laneTotalMinor).toBe(4 * 66_150); // ₹2,646.00 across four baskets
+    expect(laneTotalMinor).toBe(4 * 63_000); // ₹2,520.00 across four baskets
   });
 });
