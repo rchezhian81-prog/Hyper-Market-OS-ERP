@@ -4649,6 +4649,9 @@ export function floorIndentsAdapter(input: {
   const indentsStream = streamName(STREAM.warehouse, 'indents');
   const transfers = transfersAdapter(input);
   const inv = inventoryAdapter(input);
+  // SP-8c: head office's bin register and the stream its bin movements collapse on — a handheld issue lowers its bin in the same write.
+  const wh = warehouseAdapter({ store: input.store, now: input.now });
+  const warehouseMovementsStream = streamName(STREAM.warehouse, 'movements');
 
   const foldIndents = async (tenantId: string): Promise<Map<string, FloorIndent>> => {
     const events = await input.store.readStream(tenantId, indentsStream);
@@ -4678,6 +4681,10 @@ export function floorIndentsAdapter(input: {
     transferOf: async (tenantId, transferId) => (await foldTransferAggregates(input.store, tenantId)).find((t) => t.transferId === transferId),
     // SP-8b: the requester / receiver a relayed step names, re-verified from THEIR grants (record-and-flag).
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    // SP-8c: head office's bin register, so a handheld issue lowers the bin it took from in the same write.
+    bins: (tenantId) => wh.bins(tenantId),
+    contents: (tenantId) => wh.contents(tenantId),
+    appliedCommandIds: (tenantId) => wh.appliedCommandIds(tenantId),
     knownLocation: transfers.knownLocation,
     availableAt: transfers.availableAt,
     unitCostAt: transfers.unitCostAt,
@@ -4697,7 +4704,7 @@ export function floorIndentsAdapter(input: {
       await input.store.append(tenantId, indentsStream, stepEvent(tenantId, type, indent, step, sub, at).event);
     },
     // An ISSUE: the indent step, the transfer proposed + dispatched, and the `transferred_out` movements — one atomic batch.
-    recordIssued: async (tenantId, indent, transfer, movements, posted) => {
+    recordIssued: async (tenantId, indent, transfer, movements, posted, binMovements = []) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
@@ -4705,6 +4712,12 @@ export function floorIndentsAdapter(input: {
         { stream: TRANSFERS_STREAM, event: transferProposedEvent(tenantId, { ...transfer, state: 'proposed', approvedBy: undefined, dispatchedAt: undefined, lineCostsMinor: undefined }, at) },
         { stream: TRANSFERS_STREAM, event: transferDispatchedEvent(tenantId, transfer, movements, posted, at) },
         ...movementEntries(tenantId, posted),
+        // SP-8c: the back-store BIN the handheld took from, lowered in the SAME write — the same `WarehouseMovementRecorded`
+        // the handheld's own put-aways and picks collapse on, keyed on the command, so a re-sent issue moves a bin once.
+        ...binMovements.map((m) => ({
+          stream: warehouseMovementsStream,
+          event: makeEvent({ id: `wh-move-${m.commandId}`, type: 'WarehouseMovementRecorded', occurredAt: at, idempotencyKey: `wh-move-${tenantId}-${m.commandId}`, source: 'api/inventory', payload: { commandId: m.commandId, movements: m.movements } }),
+        })),
       ]);
     },
     // A floor RECEIPT: the indent step, the received transfer and the `transferred_in` movements — one atomic batch.
@@ -4713,7 +4726,8 @@ export function floorIndentsAdapter(input: {
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
         stepEvent(tenantId, 'FloorIndentReceived', indent, 'received', issue?.issueId ?? transfer.transferId, at),
-        { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted, at) },
+        // The transfer's own record carries what it brought IN; a damaged write-off (SP-8c) rides the same batch as a movement only.
+        { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted.filter((m) => m.kind === 'transferred_in'), at) },
         ...movementEntries(tenantId, posted),
       ]);
     },

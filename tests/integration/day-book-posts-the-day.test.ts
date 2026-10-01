@@ -10,7 +10,9 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa23';
 const OWNER = 'u-owner'; const ACCT = 'u-acct'; const CASHIER = 'u-cash';
-const DAY = '2026-08-05'; // the harness clock is 7 Aug 2026 — the day's period is the open current month
+const DAY = '2026-08-05'; // a day in August 2026; no month is closed unless a case closes one, so its period is open
+/** The month the surface's REAL clock stands in: a late day posts to the next period open from today, not from the day. */
+const THIS_MONTH = new Date().toISOString().slice(0, 7);
 
 const seedCatalogue = (h: ApiHarness, products: { productId: string; hsnCode: string; taxBps: number }[], version = 1) =>
   h.store.append(A, STREAM.catalogue, makeEvent({
@@ -144,9 +146,12 @@ describe('the day book posts the day (M23-FR-01, API-09)', () => {
     }));
     await bankSale(h, 's1', 'RICE', 10_500, 'cash');
     const body = (await post(h, `/v1/finance/day-book/${DAY}/post`, ACCT, 'db-post-1')).body as PostBody;
-    expect(body.postedTo).toBe('2026-09');
+    // The next open period is counted from the clock the surface runs on (today's month), not from the day's own month,
+    // so the expectation is tied to that clock: pinning it to one month turned this case red the day the month rolled.
+    expect(THIS_MONTH > '2026-08').toBe(true);
+    expect(body.postedTo).toBe(THIS_MONTH);
     expect(body.postedLate).toEqual({ belongsTo: '2026-08' });
-    expect(body.journals[0]).toMatchObject({ period: '2026-09', documentDate: DAY, belongsTo: '2026-08' });
+    expect(body.journals[0]).toMatchObject({ period: THIS_MONTH, documentDate: DAY, belongsTo: '2026-08' });
   });
 
   it('who may: a cashier neither defines the mapping nor posts the day; the owner and accountant do; a bad day is refused', async () => {

@@ -95,6 +95,12 @@ const WORDS = {
     stepAdjustReason: 'Set the quantity, then tap the reason',
     counted: 'Counted', adjustment_requested: 'Adjustment requested — waits for a supervisor',
     not_a_quantity: 'That is not a whole quantity', no_reason: 'Pick a reason from the list',
+    // SP-8c: the back store issues against a floor indent — tap the line → scan the bin you take from → scan the item → confirm
+    toIssue: 'To issue to the floor', issue: 'Issue to the floor — scan the bin', scanIssueBin: 'Scan the bin you are taking it from',
+    confirmIssue: 'Confirm the issue', askedBy: 'asked by', owed: 'still owed',
+    stepIssue: 'Tap an indent line to issue it to the floor', stepIssueScanBin: 'Scan the bin you are taking it from',
+    issued: 'Issued to the floor', not_on_indent: 'Not on an indent this handheld holds', indent_line_done: 'This line is already fully issued',
+    requester_cannot_issue: 'You raised this indent — a different person must issue it', bin_has_none: 'This bin holds none of that item — scan the bin the stock is in',
   },
   ta: {
     noBoxLink: 'கடை கணினியுடன் இணைக்கப்படவில்லை', checkingBox: 'கடை கணினியைச் சரிபார்க்கிறது…',
@@ -154,6 +160,12 @@ const WORDS = {
     stepAdjustReason: 'அளவை அமைத்து, பின் காரணத்தைத் தொடவும்',
     counted: 'எண்ணப்பட்டது', adjustment_requested: 'திருத்தக் கோரிக்கை — மேற்பார்வையாளருக்குக் காத்திருக்கிறது',
     not_a_quantity: 'அது முழு அளவு அல்ல', no_reason: 'பட்டியலில் இருந்து ஒரு காரணத்தைத் தேர்வு செய்யவும்',
+    // SP-8c
+    toIssue: 'தளத்திற்கு வழங்க வேண்டியவை', issue: 'தளத்திற்கு வழங்கு — இடத்தை ஸ்கேன் செய்', scanIssueBin: 'எடுக்கும் இடத்தை ஸ்கேன் செய்யவும்',
+    confirmIssue: 'வழங்கலை உறுதிப்படுத்து', askedBy: 'கேட்டவர்', owed: 'இன்னும் தர வேண்டியது',
+    stepIssue: 'தளத்திற்கு வழங்க ஒரு கோரிக்கை வரியைத் தட்டவும்', stepIssueScanBin: 'எடுக்கும் இடத்தை ஸ்கேன் செய்யவும்',
+    issued: 'தளத்திற்கு வழங்கப்பட்டது', not_on_indent: 'இந்தக் கருவியில் உள்ள கோரிக்கையில் இல்லை', indent_line_done: 'இந்த வரி முழுமையாக வழங்கப்பட்டது',
+    requester_cannot_issue: 'இந்தக் கோரிக்கையை நீங்கள் எழுப்பினீர்கள் — வேறு ஒருவர் வழங்க வேண்டும்', bin_has_none: 'இந்த இடத்தில் அந்தப் பொருள் இல்லை — பொருள் உள்ள இடத்தை ஸ்கேன் செய்யவும்',
   },
 };
 let lang = 'en';
@@ -184,6 +196,7 @@ const KIND_WORDS = {
   receipt_done: { en: 'Receipt sent', ta: 'ரசீது அனுப்பப்பட்டது' },
   put_away: { en: 'Put away', ta: 'அடுக்கப்பட்டது' },
   pick: { en: 'Picked', ta: 'எடுக்கப்பட்டது' },
+  issue: { en: 'Issued to the floor', ta: 'தளத்திற்கு வழங்கப்பட்டது' },
   count: { en: 'Counted', ta: 'எண்ணப்பட்டது' },
   adjustment: { en: 'Adjustment requested', ta: 'திருத்தக் கோரிக்கை' },
 };
@@ -206,6 +219,8 @@ const grnId = (data && data.grnId) || 'GRN';
 let selected = null; // the goods-in item chosen to put away
 let selectedPick = null; // the pick-list line (by id) chosen by a tap; a bin scan from the list needs no tap
 let pickStep = null; // where a pick in progress is: 'bin' | 'item' | 'confirm' | null
+let selectedIssue = null; // the floor-indent line (`indentId|productId`) chosen by a tap (SP-8c)
+let issueStep = null; // where an issue to the floor is: 'bin' | 'item' | 'confirm' | null (SP-8c)
 let countStep = null; // where a blind count is: 'bin' | 'item' | 'qty' | null (W2)
 let adjustStep = null; // where an adjustment request is: 'item' | 'reason' | null (W3)
 
@@ -243,6 +258,17 @@ function settleConfirm(answer) {
 }
 el('confirm-ok').addEventListener('click', () => settleConfirm(true));
 el('confirm-cancel').addEventListener('click', () => settleConfirm(false));
+
+/** SP-8c: the confirm step of an issue to the floor — the number shown before it is committed. */
+function awaitConfirmIssue(line, quantity, binId) {
+  el('confirm-title').textContent = `${t('confirmIssue')} — ${line.indentId}`;
+  el('confirm-qty').textContent = `${quantity} ${t('units')} · ${line.uom}`;
+  el('confirm-hint').textContent = `${line.productId} · ${t('fromBin')} ${binId} · ${t('askedBy')} ${line.requestedBy}`;
+  el('confirm-cancel').textContent = t('cancel');
+  el('confirm-ok').textContent = t('confirm');
+  el('confirm').hidden = false;
+  return new Promise((resolve) => { confirmResolve = resolve; });
+}
 
 // ── A quantity on a keypad (W2 / W3) ────────────────────────────────────────
 // Buttons, never a text box (the scanner discipline above). '0' is a real count — an empty bin is a finding.
@@ -356,6 +382,7 @@ const nextId = (prefix) => `${prefix}-${Date.now()}-${seq++}`;
 function render() {
   const lines = real && typeof real.pickLines === 'function' ? real.pickLines() : [];
   const items = real && typeof real.goodsIn === 'function' ? real.goodsIn() : [];
+  const issues = real && typeof real.indentLines === 'function' ? real.indentLines() : [];
 
   el('goods-in-heading').textContent = t('goodsIn');
   el('receive').textContent = t('receive');
@@ -374,9 +401,18 @@ function render() {
   el('pick').hidden = lines.length === 0;
   if (!lines.some((l) => l.lineId === selectedPick)) selectedPick = null;
   el('pick').disabled = selectedPick === null;
+  // SP-8c: the Issue button exists only while the handheld holds floor indents to issue.
+  el('issue-heading').textContent = t('toIssue');
+  el('issue').textContent = t('issue');
+  el('issue').hidden = issues.length === 0;
+  if (!issues.some((l) => `${l.indentId}|${l.productId}` === selectedIssue)) selectedIssue = null;
+  el('issue').disabled = selectedIssue === null;
   // The footer always says which step comes next — nobody should work out where they are in a sequence.
   el('step').firstChild.textContent =
-    countStep === 'bin' ? t('stepCountBin')
+    issueStep === 'bin' ? t('stepIssueScanBin')
+      : issueStep === 'item' ? t('stepScanItem')
+        : issueStep === 'confirm' ? t('stepConfirm')
+          : countStep === 'bin' ? t('stepCountBin')
       : countStep === 'item' ? t('stepCountItem')
         : countStep === 'qty' ? t('stepCountQty')
           : adjustStep === 'item' ? t('stepAdjustItem')
@@ -385,8 +421,10 @@ function render() {
       : pickStep === 'item' ? t('stepScanItem')
         : pickStep === 'confirm' ? t('stepConfirm')
           : selectedPick !== null ? t('stepPickScanBin')
+            : selectedIssue !== null ? t('stepIssueScanBin')
             : selected !== null ? t('stepScanBin')
               : lines.length > 0 ? t('stepPick')
+                : issues.length > 0 ? t('stepIssue')
                 : t('stepSelect');
 
   paintBadge();
@@ -413,15 +451,39 @@ function render() {
     qty.className = 'qty';
     qty.textContent = `${line.remainingMinor} ${t('units')} · ${line.uom}`;
     row.append(where, what, qty);
-    row.addEventListener('click', () => { selectedPick = line.lineId; selected = null; render(); });
+    row.addEventListener('click', () => { selectedPick = line.lineId; selected = null; selectedIssue = null; render(); });
     pickHost.append(row);
+  }
+
+  // SP-8c: the floor indents the back store owes — the bins holding the product are the biggest thing on the row (where to
+  // walk); the indent, the item and who asked; what is still owed. Tap a line → Issue → scan the bin → scan the item → confirm.
+  const issueHost = el('issue-lines');
+  issueHost.textContent = '';
+  el('issue-heading').hidden = issues.length === 0;
+  for (const line of issues) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'item issue';
+    row.setAttribute('aria-selected', String(selectedIssue === `${line.indentId}|${line.productId}`));
+    const where = document.createElement('div');
+    where.className = 'where';
+    where.textContent = line.binIds.length > 0 ? line.binIds.join(' · ') : '—';
+    const what = document.createElement('div');
+    what.className = 'what';
+    what.textContent = `${line.indentId} · ${line.productId} · ${t('askedBy')} ${line.requestedBy}`;
+    const qty = document.createElement('div');
+    qty.className = 'qty';
+    qty.textContent = `${line.remainingMinor} ${t('units')} · ${line.uom} · ${t('owed')}`;
+    row.append(where, what, qty);
+    row.addEventListener('click', () => { selectedIssue = `${line.indentId}|${line.productId}`; selectedPick = null; selected = null; render(); });
+    issueHost.append(row);
   }
 
   const host = el('goods-in');
   host.textContent = '';
   // With pick work but nothing to put away, the goods-in heading would sit over nothing.
-  el('goods-in-heading').hidden = items.length === 0 && lines.length > 0;
-  if (items.length === 0 && lines.length === 0) {
+  el('goods-in-heading').hidden = items.length === 0 && (lines.length > 0 || issues.length > 0);
+  if (items.length === 0 && lines.length === 0 && issues.length === 0) {
     el('empty').hidden = false;
     el('empty').textContent = `${t('noWork')} ${t('noWorkBody')}`;
     return;
@@ -440,7 +502,7 @@ function render() {
     qty.textContent = `${item.quantityMinor} ${t('units')} · ${item.uom}`;
     row.append(what, qty);
     if (item.recalled) { const f = document.createElement('div'); f.className = 'flag'; f.textContent = t('recalledFlag'); row.append(f); }
-    row.addEventListener('click', () => { selected = index; selectedPick = null; render(); });
+    row.addEventListener('click', () => { selected = index; selectedPick = null; selectedIssue = null; render(); });
     host.append(row);
   });
 }
@@ -570,6 +632,42 @@ el('pick').addEventListener('click', () => {
   if (selectedPick === null || real === undefined) return;
   const line = real.pickLines().find((l) => l.lineId === selectedPick);
   if (line !== undefined) void startPick(line);
+});
+
+/**
+ * SP-8c: issue one floor-indent line to the floor (inventory-warehouse.md, ≤3 after the tap): scan the bin you take it
+ * from → scan the item → confirm the quantity (what is still owed, capped at what the bin holds). The model checks each
+ * scan as it happens (`checkIssue`): a bin holding none of it, an unknown bin, a wrong item, the requester issuing to
+ * themselves are refused at the racking — never after the worker has confirmed. The model commits and queues ONE fact.
+ */
+async function startIssue(line) {
+  if (real === undefined) return;
+  issueStep = 'bin'; render();
+  const bin = await awaitScan(`${t('scanIssueBin')} — ${line.productId}`);
+  if (bin === null) { issueStep = null; render(); return; }
+  const atBin = real.checkIssue({ indentId: line.indentId, productId: line.productId, scannedBinId: bin });
+  if (!atBin.ok) { issueStep = null; feltResult(atBin.signal); render(); return; }
+  issueStep = 'item'; render();
+  const item = await awaitScan(`${t('scanItem')} — ${line.productId}`);
+  if (item === null) { issueStep = null; render(); return; }
+  const withItem = real.checkIssue({ indentId: line.indentId, productId: line.productId, scannedBinId: bin, scannedItem: item });
+  if (!withItem.ok) { issueStep = null; feltResult(withItem.signal); render(); return; }
+  issueStep = 'confirm'; render();
+  const quantity = Math.min(withItem.line.remainingMinor, withItem.inBinMinor);
+  const confirmed = await awaitConfirmIssue(withItem.line, quantity, bin);
+  issueStep = null;
+  if (!confirmed) { render(); return; }
+  const out = real.issueToFloor({ commandId: nextId('issue'), indentId: line.indentId, productId: line.productId, scannedBinId: bin, scannedItem: item, quantityMinor: quantity, at: new Date().toISOString() });
+  feltResult(out.signal);
+  selectedIssue = null;
+  render();
+  if (out.signal.feedback === 'accept') void syncToBox();
+}
+
+el('issue').addEventListener('click', () => {
+  if (selectedIssue === null || real === undefined) return;
+  const line = real.indentLines().find((l) => `${l.indentId}|${l.productId}` === selectedIssue);
+  if (line !== undefined) void startIssue(line);
 });
 
 /**

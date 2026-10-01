@@ -121,10 +121,15 @@ describe('a shift on the served till: float → sales → pickup → blind count
   });
 
   it('a material short is refused until a reason is given — the refusal says how far out, the close records the reason; the cash refunded counts', async () => {
+    // The refund below is stamped by the till's OWN clock (the moment it is given back), so this shift's window has to
+    // bracket real time: it opened an hour ago and closes an hour from now. Fixed dates here turned the case red the
+    // day the calendar moved past them — the refund fell outside the shift and silently stopped counting.
+    const T = Date.now();
+    const minutesFromNow = (m: number) => new Date(T + m * 60_000).toISOString();
     const edge = await startBox({ lane: 'lane-1' });
     const till = tillOn(edge);
-    await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: '2026-09-30T09:00:00.000Z' });
-    await ring(till, 'S-1', '2026-09-30T10:00:00.000Z', 48_000);
+    await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: minutesFromNow(-60) });
+    await ring(till, 'S-1', minutesFromNow(-30), 48_000);
     // A ₹100 cash refund on that bill goes through the box's return route — and out of the drawer.
     const bill = await till.lookupRefund('R-S-1');
     expect(bill).not.toBeNull();
@@ -135,10 +140,10 @@ describe('a shift on the served till: float → sales → pickup → blind count
     expect(refund.kind).toBe('settled');
 
     // Expected = 2,000 + 480 − 0 − 100 = ₹2,380. Counting ₹2,100 is ₹280 short: material (tolerance ₹100).
-    const refused = await till.till.close({ shiftId: 'sh-2', closedAt: '2026-09-30T20:00:00.000Z', countedMinor: 210_000 });
+    const refused = await till.till.close({ shiftId: 'sh-2', closedAt: minutesFromNow(60), countedMinor: 210_000 });
     expect(refused).toMatchObject({ closed: false, refusedBecause: 'material_variance_needs_a_reason', varianceMinor: -28_000 });
     expect((await cashLog(edge)).filter((r) => r.kind === 'close')).toHaveLength(0); // nothing recorded on a refusal
-    const closed = await till.till.close({ shiftId: 'sh-2', closedAt: '2026-09-30T20:00:00.000Z', countedMinor: 210_000, reasonCode: 'wrong_change' });
+    const closed = await till.till.close({ shiftId: 'sh-2', closedAt: minutesFromNow(60), countedMinor: 210_000, reasonCode: 'wrong_change' });
     expect(closed).toMatchObject({ closed: true, varianceMinor: -28_000, exceptionRaised: true, reasonCode: 'wrong_change' });
     expect((await cashLog(edge)).at(-1)).toMatchObject({ kind: 'close', cashSalesMinor: 48_000, cashRefundsMinor: 10_000, expectedMinor: 238_000, varianceMinor: -28_000, reasonCode: 'wrong_change' });
   });

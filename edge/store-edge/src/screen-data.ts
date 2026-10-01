@@ -514,7 +514,28 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
       lineId: l.lineId, orderRef: l.orderRef, productId: l.productId, batchId: l.batchId ?? null,
       binId: l.binId, quantityMinor: l.quantityMinor, uom: l.uom,
     })) }),
+    // SP-8c: the floor indents the back store owes, from head office's register as the box last pulled it — approved or
+    // part-issued, lines with something still owed, for THIS back store when the pack names one. Absent stays absent.
+    ...indentLinesFor(input),
   };
+}
+
+/** SP-8c: the handheld's issue list — one row per owed indent line, from the register the box holds. */
+function indentLinesFor(input: ScreenInput): Record<string, unknown> {
+  if (!input.pack.floorIndents.known) return {};
+  const feed = input.pack.floorIndents.value;
+  const backStore = input.pack.policies.known ? input.pack.policies.value.warehouseId : undefined;
+  const indentLines = feed.indents
+    .filter((i) => (i.state === 'approved' || i.state === 'issuing') && (backStore === undefined || i.fromLocationId === undefined || i.fromLocationId === backStore))
+    // A row head office sent without its totals yields no issue line: nothing owed can be derived from it, and the box
+    // derives, never invents.
+    .flatMap((i) => (i.totals?.lines === undefined ? [] : i.totals.lines)
+      .filter((l) => typeof l.outstandingMinor === 'number' && l.outstandingMinor > 0)
+      .map((l) => ({
+        indentId: i.indentId, productId: l.productId, uom: typeof l.uom === 'string' ? l.uom : 'EA', outstandingMinor: l.outstandingMinor,
+        requestedBy: i.requestedBy ?? '', toLocationId: i.toLocationId ?? '',
+      })));
+  return { indentLines, indentsAsAt: feed.asAt };
 }
 
 /**
@@ -1726,6 +1747,12 @@ export function indentsPayload(input: ScreenInput): Record<string, unknown> | nu
   }
   if (input.pack.products.known) {
     payload['products'] = input.pack.products.value.map((p) => ({ productId: p.productId, name: p.name, ...(p.nameTa === undefined ? {} : { nameTa: p.nameTa }), uom: p.uom }));
+  }
+  // SP-8c: the register as the box last pulled it — the screen opens on it with the cable out and re-reads head office when it can.
+  if (input.pack.floorIndents.known) {
+    const feed = input.pack.floorIndents.value;
+    // Only rows head office sent WITH their totals are shown — a row without them would be a blank the screen cannot explain.
+    payload['snapshot'] = { asAt: feed.asAt, indents: feed.indents.filter((i) => i.totals?.lines !== undefined).map((i) => ({ ...i, lines: i.totals!.lines })) };
   }
 
   return payload;

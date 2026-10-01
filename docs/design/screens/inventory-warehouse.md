@@ -167,3 +167,23 @@ its own records and flags a breach rather than trusting the relay. Measured in r
 **Still recorded, not dropped (SP-8c):** the back-store ISSUE on this handheld against the indent (scan bin → scan item →
 confirm), the register on the handheld, the refill task that raises an indent, the shelf-count save that reaches the cloud,
 the "products nobody can sell" screen; physical-device verification and UAT PENDING.
+
+## Measured (SP-8c-i — the back store issues against the indent on this handheld, owner's directive of 1 October 2026)
+This handheld now shows **To issue to the floor**: every floor indent head office has approved that this back store still
+owes — the indent, the item, who asked, what is still owed, and the bins here that hold it (the row's biggest words, because
+the bin is where the worker walks). The list is head office's own register, pulled by the store computer under its own
+login and kept on its disk, so it is there with the cable out and a closed indent drops off it. The worker taps the line,
+scans the bin they take from (any bin holding the item — the floor does not know the racking), scans the item and confirms
+the quantity (what is still owed, capped at what the bin holds): three steps after the tap. The handheld refuses, before
+anything is confirmed, a bin holding none of that item, an unknown bin, the wrong item, a line already issued, a draw the
+bin cannot cover — and the person who raised the indent, who may never issue it to themselves. An accepted issue lowers
+this handheld's own bin figure, is listed under "Sent from this handheld" with the five shared state words, and reaches head
+office through the store computer as ONE fact; head office dispatches the transfer once, lowers the same bin in the same
+write, and says so if its bin disagrees rather than forcing it. On the floor's count-in, units that arrived DAMAGED are
+counted separately: off the trolley, never on the shelf, written off at the price they left with, and shown on the indent.
+Measured in real Chromium on the REAL box (`tests/e2e/warehouse-handheld-issues-to-floor.e2e.ts`; the interaction budget
+and WCAG audit in `tests/e2e/the-handhelds-meet-the-spec.e2e.ts`) and box → cloud on the real API and on real PostgreSQL
+(`tests/integration/floor-indents-handheld-issue.test.ts`), where the back store, the floor, the trolley and the write-off
+add up to what was ever received — in units and in rupees — at every step.
+**Still recorded, not dropped (SP-8c-ii):** the refill task that raises an indent, the shelf-count save that reaches the
+cloud, the "products nobody can sell" screen; physical-device verification and UAT PENDING.

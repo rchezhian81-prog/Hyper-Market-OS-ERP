@@ -50,15 +50,29 @@ export interface IssueLine {
   readonly productId: string;
   readonly batchId: string | null;
   readonly quantityMinor: number;
+  /** SP-8c: the back-store bin the handheld took it from — so head office lowers the SAME bin in the same write. Absent on a desk issue. */
+  readonly binId?: string | null;
 }
 
 export interface ReceivedLine {
   readonly productId: string;
   readonly batchId: string | null;
+  /** The GOOD units counted — what the shelf can sell. */
   readonly quantityMinor: number;
+  /** SP-8c: units that ARRIVED damaged — off the trolley, never on the shelf: written off at the floor as a valued exception. */
+  readonly damagedMinor?: number;
 }
 
 export interface ShortfallLine {
+  readonly productId: string;
+  readonly batchId: string | null;
+  readonly quantityMinor: number;
+  readonly valueMinor: number;
+}
+
+/** SP-8c: units that arrived DAMAGED — they left transit (they are in the building) and were written off at the floor at the
+ *  cost they left with. A valued exception with an owner, never silently on the shelf and never silently gone. */
+export interface DamagedLine {
   readonly productId: string;
   readonly batchId: string | null;
   readonly quantityMinor: number;
@@ -78,6 +92,8 @@ export interface IndentIssue {
   readonly received?: readonly ReceivedLine[];
   /** Dispatched and not arrived — a VALUED exception the ledger carries; never absorbed here. */
   readonly shortfall?: readonly ShortfallLine[];
+  /** SP-8c: arrived damaged — written off at the floor, valued; on the register beside the shortfall. */
+  readonly damaged?: readonly DamagedLine[];
   /** SP-8b: what head office found when a RELAYED receipt named its receiver — a breach is flagged, never silently applied. */
   readonly governanceFlags?: readonly string[];
   /** SP-8b: the relay (the store box) that carried the receipt, beside — never instead of — the receiver. */
@@ -112,6 +128,7 @@ export const INDENT_FLAGS = Object.freeze([
   'short_allocated',      // the approver allocated less than requested, on at least one line
   'partial_issue',        // an issue went with some of the allocation still owed
   'partial_receipt',      // an issue arrived short (a valued shortfall is on the exceptions read)
+  'arrived_damaged',      // SP-8c: some of an issue arrived damaged — written off at the floor, valued, never on the shelf
   'cancelled_remainder',  // the unissued remainder was withdrawn after something had already gone
 ] as const);
 export type IndentFlag = (typeof INDENT_FLAGS)[number];
@@ -186,6 +203,8 @@ export interface IndentLineTotals {
   readonly inTransitMinor: number;
   /** Dispatched and never arrived — carried as a valued exception, never quietly lost. */
   readonly shortfallMinor: number;
+  /** SP-8c: arrived damaged and written off at the floor — never on the shelf, never quietly lost. */
+  readonly damagedMinor: number;
   /** Sent back to the back store and accepted there. */
   readonly returnedMinor: number;
   /** Still owed by the back store: allocated − issued, or 0 once the remainder is cancelled / the indent is closed. */
@@ -200,6 +219,7 @@ export interface IndentTotals {
   readonly receivedMinor: number;
   readonly inTransitMinor: number;
   readonly shortfallMinor: number;
+  readonly damagedMinor: number;
   readonly returnedMinor: number;
   readonly outstandingMinor: number;
 }
@@ -212,12 +232,13 @@ export function indentTotals(indent: FloorIndent): IndentTotals {
     const issued = sum(indent.issues.map((i) => sum(i.lines.filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
     const received = sum(indent.issues.map((i) => sum((i.received ?? []).filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
     const shortfall = sum(indent.issues.map((i) => sum((i.shortfall ?? []).filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
+    const damaged = sum(indent.issues.map((i) => sum((i.damaged ?? []).filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
     const inTransit = sum(indent.issues.filter((i) => i.state === 'in_transit').map((i) => sum(i.lines.filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
     const returned = sum(indent.returns.filter((r) => r.state === 'accepted').map((r) => sum((r.received ?? []).filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
     const outstanding = OPEN_FOR_ISSUE.includes(indent.state) && !indent.remainderCancelled ? Math.max(0, allocated - issued) : 0;
     return {
       productId: line.productId, uom: line.uom, requestedMinor: line.requestedMinor, allocatedMinor: allocated,
-      issuedMinor: issued, receivedMinor: received, inTransitMinor: inTransit, shortfallMinor: shortfall, returnedMinor: returned, outstandingMinor: outstanding,
+      issuedMinor: issued, receivedMinor: received, inTransitMinor: inTransit, shortfallMinor: shortfall, damagedMinor: damaged, returnedMinor: returned, outstandingMinor: outstanding,
     };
   });
   const total = (pick: (l: IndentLineTotals) => number): number => sum(lines.map(pick));
@@ -225,7 +246,7 @@ export function indentTotals(indent: FloorIndent): IndentTotals {
     lines,
     requestedMinor: total((l) => l.requestedMinor), allocatedMinor: total((l) => l.allocatedMinor), issuedMinor: total((l) => l.issuedMinor),
     receivedMinor: total((l) => l.receivedMinor), inTransitMinor: total((l) => l.inTransitMinor), shortfallMinor: total((l) => l.shortfallMinor),
-    returnedMinor: total((l) => l.returnedMinor), outstandingMinor: total((l) => l.outstandingMinor),
+    damagedMinor: total((l) => l.damagedMinor), returnedMinor: total((l) => l.returnedMinor), outstandingMinor: total((l) => l.outstandingMinor),
   };
 }
 
@@ -374,6 +395,7 @@ export function planReceipt(input: {
   if (input.receivedBy === issue!.issuedBy) refuse(indent.indentId, 'issuer_cannot_receive', `${input.receivedBy} issued this stock and cannot also receive it at the floor (§28) — the floor's count is independent`);
   for (const c of input.counted) {
     if (!isNonNegInt(c.quantityMinor)) refuse(indent.indentId, 'not_on_issue', `${c.productId}: a counted quantity is a whole number, zero or more`);
+    if (c.damagedMinor !== undefined && !isNonNegInt(c.damagedMinor)) refuse(indent.indentId, 'not_on_issue', `${c.productId}: a damaged quantity is a whole number, zero or more`);
     if (!issue!.lines.some((l) => l.productId === c.productId && l.batchId === c.batchId)) {
       refuse(indent.indentId, 'not_on_issue', `${c.productId}${c.batchId === null ? '' : ` · ${c.batchId}`} was not on issue ${input.issueId} — a wrong item is not received against it`);
     }
@@ -386,17 +408,22 @@ export function applyReceipt(indent: FloorIndent, issueId: string, receipt: {
   readonly at: string;
   readonly received: readonly ReceivedLine[];
   readonly shortfall: readonly ShortfallLine[];
+  /** SP-8c: arrived damaged — written off at the floor, valued. */
+  readonly damaged?: readonly DamagedLine[];
   readonly governanceFlags?: readonly string[];
   readonly relayed?: RelayedBy;
 }): FloorIndent {
+  const damaged = receipt.damaged ?? [];
   const issues = indent.issues.map((i) => (i.issueId === issueId
     ? {
       ...i, state: 'received' as const, receivedBy: receipt.receivedBy, receivedAt: receipt.at, received: receipt.received, shortfall: receipt.shortfall,
+      ...(damaged.length === 0 ? {} : { damaged }),
       ...(receipt.governanceFlags === undefined ? {} : { governanceFlags: receipt.governanceFlags }),
       ...(receipt.relayed === undefined ? {} : { relayed: receipt.relayed }),
     }
     : i));
-  const next: FloorIndent = { ...indent, issues, flags: receipt.shortfall.length > 0 ? withFlag(indent.flags, 'partial_receipt') : indent.flags };
+  const flagged = receipt.shortfall.length > 0 ? withFlag(indent.flags, 'partial_receipt') : indent.flags;
+  const next: FloorIndent = { ...indent, issues, flags: damaged.length > 0 ? withFlag(flagged, 'arrived_damaged') : flagged };
   const everyIssueReceived = issues.every((i) => i.state === 'received');
   const nothingOwed = indentTotals(next).outstandingMinor === 0;
   const closed = everyIssueReceived && (indent.state === 'issued' || nothingOwed);
@@ -502,6 +529,7 @@ export function indentAttention(indent: FloorIndent): readonly string[] {
   if (t.outstandingMinor > 0) out.push('owed_by_back_store');
   if (t.inTransitMinor > 0) out.push('on_the_trolley');
   if (t.shortfallMinor > 0) out.push('arrived_short');
+  if (t.damagedMinor > 0) out.push('arrived_damaged');
   if (indent.returns.some((r) => r.state === 'requested')) out.push('return_awaiting_back_store');
   return out;
 }

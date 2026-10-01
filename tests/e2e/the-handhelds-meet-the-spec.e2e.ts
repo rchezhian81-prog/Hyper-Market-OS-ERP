@@ -83,6 +83,8 @@ const WAREHOUSE: Shell = {
     // The pick list (W1): one order line, in BIN-A, which the box says holds 40 of p-rice.
     contents: { 'BIN-A|p-rice|': 40 },
     pickLines: [{ lineId: 'pl-1', orderRef: 'ORD-77', productId: 'p-rice', batchId: null, binId: 'BIN-A', quantityMinor: 12, uom: 'EA' }],
+    // SP-8c: one floor indent the back store owes — 6 of p-rice asked by the floor — the box derived from head office's register.
+    indentLines: [{ indentId: 'ind-1', productId: 'p-rice', uom: 'EA', outstandingMinor: 6, requestedBy: 'u-floor', toLocationId: 'store-1' }],
   }),
 };
 
@@ -365,6 +367,36 @@ describe.skipIf(!HAVE_BROWSER)('the handhelds on a low-spec phone: audited, and 
     expect(await page.evaluate('globalThis.warehouseSession.binContents()["BIN-A|p-rice|"]')).toBe(28);
     const queued = await page.evaluate('globalThis.warehouseOutbox.pending().map((i) => [i.event.type, i.event.idempotencyKey, i.event.payload.command.kind, i.event.payload.command.fromBinId, i.event.payload.command.toBinId])');
     expect(queued).toEqual([['WarehouseMovementApplied', expect.stringMatching(/^wh-move:pick-/), 'pick', 'BIN-A', null]]);
+  });
+
+  it('warehouse budget — issue to the floor 3 after the tap (scan the bin you take from → scan the item → confirm); the row says where the stock is and who asked (SP-8c)', async () => {
+    const page = await open(WAREHOUSE);
+    const taps = new Tally(page);
+    expect(await page.textContent('.item.issue .where')).toBe('BIN-A');
+    expect(await page.textContent('.item.issue .what')).toBe('ind-1 · p-rice · asked by u-floor');
+    expect(await page.textContent('.item.issue .qty')).toBe('6 units · EA · still owed');
+    await taps.tap('.item.issue');
+    expect(await page.textContent('#step')).toContain('Scan the bin you are taking it from');
+    taps.reset();
+    await taps.tap('#issue');
+    await taps.scan('BIN-A');
+    await page.waitForSelector('#scan:not([hidden])');
+    expect(await page.textContent('#scan-title')).toBe('Scan the item — p-rice');
+    await taps.scan('890RICE');
+    await page.waitForSelector('#confirm:not([hidden])');
+    expect(await page.textContent('#confirm-title')).toBe('Confirm the issue — ind-1');
+    expect(await page.textContent('#confirm-qty')).toBe('6 units · EA');
+    expect(await page.textContent('#confirm-hint')).toBe('p-rice · from bin BIN-A · asked by u-floor');
+    await taps.tap('#confirm-ok');
+    await page.waitForSelector('#banner.good:not([hidden])');
+    expect(taps.reset(), 'issue to the floor').toBeLessThanOrEqual(4); // the Issue button + 3
+    expect(await page.textContent('#banner-title')).toBe('Issued to the floor');
+    // The line is done and gone; the handheld's bin fell by what went; ONE FloorIndentIssued waits for the box.
+    expect(await page.locator('.item.issue').count()).toBe(0);
+    expect(await page.evaluate('globalThis.warehouseSession.binContents()["BIN-A|p-rice|"]')).toBe(34);
+    const queued = await page.evaluate('globalThis.warehouseOutbox.pending().map((i) => [i.event.type, i.event.payload.indentId, i.event.payload.issuedBy, i.event.payload.lines[0].binId, i.event.payload.lines[0].quantityMinor])');
+    expect(queued).toEqual([['FloorIndentIssued', 'ind-1', 'u-worker', 'BIN-A', 6]]);
+    expect(await page.textContent('#sent-work .sent[data-kind="issue"] .what')).toBe('Issued to the floor · p-rice · BIN-A — 6 EA · ind-1');
   });
 
   it('warehouse — the wrong bin is refused at the racking and the wrong item at the shelf, before anything is confirmed (W1)', async () => {

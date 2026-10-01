@@ -62,6 +62,8 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   // same indent engine the direct routes run; a refusal (unknown place, wrong item, issuer receiving) dead-letters visibly.
   FloorIndentRequested: { surfaces: ['manager'] },
   FloorIndentReceived: { surfaces: ['manager'] },
+  // SP-8c: the back store's ISSUE against the indent, from the warehouse handheld (tap the line → scan bin → scan item → confirm).
+  FloorIndentIssued: { surfaces: ['warehouse'] },
 });
 
 /**

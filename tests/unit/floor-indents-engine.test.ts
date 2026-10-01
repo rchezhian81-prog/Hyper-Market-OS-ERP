@@ -189,3 +189,42 @@ describe('cancel and return', () => {
     expect(refusal(() => planReturnAcceptance({ indent: accepted, returnId: 'rt-1', acceptedBy: 'u-back', counted: [] }))).toBe('return_already_accepted');
   });
 });
+
+describe('SP-8c: damage on arrival — arrived, so out of transit; damaged, so never on the shelf; valued, so never quietly gone', () => {
+  const issuing = (): FloorIndent => {
+    const plan = planIssue({ indent: approved(), issueId: 'is-1', issuedBy: 'u-back', lines: [{ productId: 'RICE', batchId: null, quantityMinor: 12, binId: 'BIN-A' }], unitCostsMinor: { RICE: 5_000 }, currency: 'INR', at: AT });
+    return applyIssue(approved(), plan.issue);
+  };
+
+  it('the issue line remembers the bin the handheld took from; the receipt validates a damaged count as a whole number', () => {
+    const indent = issuing();
+    expect(indent.issues[0]!.lines[0]).toMatchObject({ productId: 'RICE', quantityMinor: 12, binId: 'BIN-A' });
+    expect(planReceipt({ indent, issueId: 'is-1', receivedBy: 'u-floor2', counted: [{ productId: 'RICE', batchId: null, quantityMinor: 10, damagedMinor: 2 }] }).issueId).toBe('is-1');
+    expect(refusal(() => planReceipt({ indent, issueId: 'is-1', receivedBy: 'u-floor2', counted: [{ productId: 'RICE', batchId: null, quantityMinor: 10, damagedMinor: -1 }] }))).toBe('not_on_issue');
+    expect(refusal(() => planReceipt({ indent, issueId: 'is-1', receivedBy: 'u-floor2', counted: [{ productId: 'RICE', batchId: null, quantityMinor: 10, damagedMinor: 1.5 }] }))).toBe('not_on_issue');
+  });
+
+  it('10 good + 2 damaged of 12: received 10, damaged 2 valued at the back store\'s cost, no shortfall; the indent is flagged arrived_damaged and says so', () => {
+    const indent = issuing();
+    const after = applyReceipt(indent, 'is-1', {
+      receivedBy: 'u-floor2', at: LATER,
+      received: [{ productId: 'RICE', batchId: null, quantityMinor: 10 }],
+      shortfall: [],
+      damaged: [{ productId: 'RICE', batchId: null, quantityMinor: 2, valueMinor: 10_000 }],
+    });
+    const t = indentTotals(after);
+    expect(t.lines.find((l) => l.productId === 'RICE')).toMatchObject({ issuedMinor: 12, receivedMinor: 10, damagedMinor: 2, shortfallMinor: 0, inTransitMinor: 0, outstandingMinor: 8 });
+    expect(t.damagedMinor).toBe(2);
+    expect(after.flags).toContain('arrived_damaged');
+    expect(after.flags).not.toContain('partial_receipt');
+    expect(after.issues[0]!.damaged).toEqual([{ productId: 'RICE', batchId: null, quantityMinor: 2, valueMinor: 10_000 }]);
+    expect(indentAttention(after)).toEqual(['owed_by_back_store', 'arrived_damaged']);
+  });
+
+  it('nothing damaged → no damaged list, no flag — the common case stays clean', () => {
+    const after = applyReceipt(issuing(), 'is-1', { receivedBy: 'u-floor2', at: LATER, received: [{ productId: 'RICE', batchId: null, quantityMinor: 12 }], shortfall: [], damaged: [] });
+    expect(after.issues[0]!.damaged).toBeUndefined();
+    expect(after.flags).not.toContain('arrived_damaged');
+    expect(indentTotals(after).damagedMinor).toBe(0);
+  });
+});
