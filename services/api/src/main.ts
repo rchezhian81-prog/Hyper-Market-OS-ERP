@@ -18,6 +18,7 @@
 //      means take me out of rotation, not restart me.
 //   5. **On SIGTERM, drain.** In-flight requests finish before the process goes.
 
+import { once } from 'node:events';
 import { Pool } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
 import { SqlSnapshotStore, type SnapshotStore } from '../../../packages/persistence/src/snapshot';
@@ -1221,13 +1222,32 @@ export function buildSurface(deps: {
   return surface;
 }
 
-export async function main(env: Readonly<Record<string, string | undefined>> = process.env): Promise<void> {
+/** A running API, as `startApi` hands it back: where it listens, how big its surface is, and how to stop it cleanly. */
+export interface RunningApi {
+  /** The port actually bound — the configured one, or the ephemeral one the kernel chose for `PORT=0`. */
+  readonly port: number;
+  readonly routeCount: number;
+  /** Stops accepting, lets in-flight requests finish, then closes the database pool. */
+  readonly stop: () => Promise<void>;
+}
+
+/**
+ * Boot the API from configuration and hand back a handle, or `undefined` when it refuses to start — the reason already
+ * written through `err`, exactly as the process entry point prints it. Everything production assembles is assembled
+ * here, once: `main()` only adds the exit code and the signal handlers. Extracted (SP-9) so the connected store suite
+ * can start the SAME service on an ephemeral port against a real database and stop it, instead of a copy that could
+ * drift from what the container runs.
+ */
+export async function startApi(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  out: (text: string) => void = (text) => { process.stdout.write(text); },
+  err: (text: string) => void = (text) => { process.stderr.write(text); },
+): Promise<RunningApi | undefined> {
   // 1 — Configuration. Every problem at once, then stop.
   const config = loadConfig(CLOUD_API_CONFIG, env);
   if (!config.ok) {
-    process.stderr.write(`\n${config.detail}\n\n`);
-    process.exitCode = 78; // EX_CONFIG — a configuration fault, not a crash
-    return;
+    err(`\n${config.detail}\n\n`);
+    return undefined;
   }
   const settings = config.value!;
 
@@ -1253,13 +1273,12 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
   );
   const r = role.rows[0];
   if (r === undefined || r.rolsuper || r.rolbypassrls) {
-    process.stderr.write(`\nthe API is connected to the database as "${r?.rolname ?? 'unknown'}", a ${r?.rolsuper ? 'SUPERUSER' : 'BYPASSRLS'} role, and will not start:\n`
+    err(`\nthe API is connected to the database as "${r?.rolname ?? 'unknown'}", a ${r?.rolsuper ? 'SUPERUSER' : 'BYPASSRLS'} role, and will not start:\n`
       + '  • a superuser (or BYPASSRLS) role bypasses the row-level security that keeps one tenant\'s rows from another (db/migrations/0012);\n'
       + '  • connect as the application role instead — on a fresh compose install it is created for you (infra/compose/db-init/01-app-role.sh);\n'
       + '  • on an existing database, create it once by hand as the administrator (docs/runbooks/pilot-deployment.md, "Row-level security"), then point DATABASE_URL at it.\n\n');
     await db.end();
-    process.exitCode = 78;
-    return;
+    return undefined;
   }
   // The event store gets the TRANSACTIONAL adapter (`pgPoolClient`), so a money-critical command
   // that writes more than one event — a banked sale plus its receipt index, a return plus its
@@ -1277,7 +1296,7 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
   const genesisOwner = settings['BOOTSTRAP_OWNER_USER_ID'];
   if (genesisTenant !== undefined && genesisOwner !== undefined) {
     const outcome = await seedGenesisOwner(store, OWNER_ROLE_ID, genesisTenant, genesisOwner, new Date().toISOString());
-    process.stdout.write(`genesis owner for tenant ${genesisTenant}: ${outcome}\n`);
+    out(`genesis owner for tenant ${genesisTenant}: ${outcome}\n`);
   }
 
   // 3 — The surface. A route that breaks a convention fails here, not on the request that finds it.
@@ -1313,11 +1332,10 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     }],
   }));
   if (!built.ok) {
-    process.stderr.write(`\nthe API surface is malformed and this service will not start:\n${
+    err(`\nthe API surface is malformed and this service will not start:\n${
       built.refusals.map((r) => `  • ${r.detail}`).join('\n')}\n\n`);
     await db.end();
-    process.exitCode = 78;
-    return;
+    return undefined;
   }
 
   // Observability: one structured JSON line per request to stdout, and in-memory request metrics
@@ -1325,7 +1343,7 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
   // change to these two lines, not to any handler.
   const metrics = new RequestMetrics();
   const observe = combineObservers(
-    structuredLogger((line) => process.stdout.write(`${line}\n`)),
+    structuredLogger((line) => { out(`${line}\n`); }),
     metrics.record,
   );
 
@@ -1349,7 +1367,7 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
         maxLifetimeSeconds: Number(settings['IDP_MAX_TOKEN_LIFETIME_SECONDS']),
       },
       revocations,
-      (reason) => { process.stderr.write(`auth refused: ${reason}\n`); },
+      (reason) => { err(`auth refused: ${reason}\n`); },
     ),
     // Real, per-tenant authorization. Was `new AccessControl([], [])` — a global, empty table that
     // authorised NOTHING and, worse, was never rebuilt from anyone's grants, so the whole least-
@@ -1374,7 +1392,7 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     // hard rule #6 was protecting evidence that was never being kept. The TRANSACTIONAL adapter
     // (`pgPoolClient`, audit FND-01) lets each write seal itself onto the previous one under a
     // per-tenant lock, so the SHA-256 chain (audit FND-02) cannot fork.
-    audit: new SqlAuditSink(pgPoolClient(db), (detail) => { process.stderr.write(`${detail}\n`); }),
+    audit: new SqlAuditSink(pgPoolClient(db), (detail) => { err(`${detail}\n`); }),
 
     // Rate limiting and auth-attempt lockout (audit FND-03 / GAP-SEC-04). The API had exactly one
     // 429 in the whole product (the AI budget gate); nothing capped request volume and nothing slowed
@@ -1392,15 +1410,37 @@ export async function main(env: Readonly<Record<string, string | undefined>> = p
     dependenciesReachable: reachable,
   });
 
-  process.stdout.write(`sre-api listening on ${settings['PORT']}, ${built.router!.list().length} routes\n`);
+  // The kernel binds asynchronously; wait for the socket before reporting the port, because for `PORT=0` the port
+  // is not known until then and a caller that proceeded early would be talking to nothing.
+  if (!server.server.listening) await once(server.server, 'listening');
+  const bound = server.server.address();
+  const port = typeof bound === 'object' && bound !== null ? bound.port : Number(settings['PORT']);
+  const routeCount = built.router!.list().length;
+  out(`sre-api listening on ${port}, ${routeCount} routes\n`);
+
+  return {
+    port,
+    routeCount,
+    stop: async () => {
+      await server.stop();
+      await db.end();
+    },
+  };
+}
+
+export async function main(env: Readonly<Record<string, string | undefined>> = process.env): Promise<void> {
+  const running = await startApi(env);
+  if (running === undefined) {
+    process.exitCode = 78; // EX_CONFIG — a configuration fault, not a crash
+    return;
+  }
 
   // 5 — Drain on SIGTERM. Killing in-flight work is a sale that reached the process and not the
   // database, while the till believes it was delivered.
   const shutdown = (signal: string) => {
     void (async () => {
       process.stdout.write(`${signal}: draining\n`);
-      await server.stop();
-      await db.end();
+      await running.stop();
       process.stdout.write('stopped cleanly\n');
     })();
   };

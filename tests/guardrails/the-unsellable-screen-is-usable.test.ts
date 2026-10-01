@@ -64,11 +64,11 @@ describe('read-only, and honest about where it came from', () => {
 describe('the box and the screen cannot disagree about what nobody can sell (P-08)', () => {
   it('the till payload is built from unsellableProducts(...) — the same function the screen\'s payload reads — and no second judgement of tax / status / unit is left in the till builder', () => {
     const till = SCREEN_DATA.slice(SCREEN_DATA.indexOf('export function posPayload('), SCREEN_DATA.indexOf('export function managerPayload('));
-    expect(till).toMatch(/unsellableProducts\(input\.pack\)/);
+    expect(till).toMatch(/unsellableProducts\(input\.pack, input\.cataloguePack\)/);
     expect(till).not.toMatch(/p\.taxBps === undefined \?/);
     expect(till).not.toMatch(/'no tax rate on the catalogue'/);
     const screen = SCREEN_DATA.slice(SCREEN_DATA.indexOf('export function unsellablePayload('), SCREEN_DATA.indexOf('export function posPayload('));
-    expect(screen).toMatch(/unsellableProducts\(input\.pack\)/);
+    expect(screen).toMatch(/unsellableProducts\(input\.pack, input\.cataloguePack\)/);
     // The judgement itself names every reason the screen has words for, and recall is judged FIRST.
     const judge = SCREEN_DATA.slice(SCREEN_DATA.indexOf('export function unsellableProducts('), SCREEN_DATA.indexOf('export function unsellablePayload('));
     const order = UNSELLABLE_REASONS.map((r) => judge.indexOf(`'${r}'`));

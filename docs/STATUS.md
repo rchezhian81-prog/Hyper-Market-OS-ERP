@@ -667,12 +667,49 @@ device, human UAT and production verification separate; approved deferrals stay 
   allow-list +1 (`ShelfCounted`), API surface +1, 49 ERP pages. Matrix rows 109 and 112 → E2E_VERIFIED; M04 → E2E_VERIFIED;
   **F08 fully FIXED.** Denominator 104 preserved. **Still open, honestly:** physical device + staff UAT (SP-10) for every
   screen in this chain.
-- **Current-work pointer:** last verified = SP-8c-ii (this PR); next = **SP-9 / SP-9b** [W10, W12] (the connected store E2E
-  suite through the actual application on real services + real PostgreSQL: purchase → receiving/QC → back store → floor →
-  sale → return/exchange → till close, with stock, payment, cash, accounting and reporting outcomes checked; the exchange /
-  no-receipt till interfaces with CH-01 preserved unless the owner lifts it), then **SP-3c** (picker + driver handhelds on
-  the shared device route); **SP-10** (physical device + staff UAT) stays PENDING until performed; genuine blockers: none;
-  external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-9-i — the connected-run harness, the till fed from the pulled pack (F13), and the retail leg run end to end on the
+  REAL stack (W10 · M03-FR-03 · M05-FR-01/02 · M08-FR-01 · M12-FR-01 · M13-FR-01 · M14-FR-02 · M23-FR-04 · M29-FR-01 · P-01 ·
+  P-02 · P-08 · hard rules #1 #2 #4 #6 #7 #10).** (i) `services/api/src/main.ts` is split: `startApi(env, out, err)` boots
+  EXACTLY the production assembly (pool, superuser refusal, genesis owner, surface, revocation-aware authenticator, RBAC,
+  entitlements, durable idempotency, sealed audit, limiter, lockout) and returns `{ port, routeCount, stop }`; `main()` is now
+  its wrapper (exit code 78 on a refusal, the SIGTERM/SIGINT drain) — behaviour unchanged, every composition guardrail
+  still matching. `tests/support/real-store.ts` (`startRealCloud`) migrates the database, creates the application role,
+  starts that API on an ephemeral port as that role with the TEST identity provider's policy as its configuration, seeds
+  the genesis owner and grants roles the way the product does (two people, `POST /v1/identity/grants`). (ii) **F13 FIXED:**
+  the served till's catalogue came only from the pack FILE — the signed pack the box pulled from head office fed nothing but
+  the pack-age badge, so a published price, barcode or recall never reached the scanner (a freshly installed till had no
+  catalogue at all). `tillCatalogue(pack, cataloguePack, now)` (`edge/store-edge/src/screen-data.ts`) makes the pulled pack
+  the till's catalogue AND the "Products nobody can sell" judgement whenever the box holds one (version, build time, store
+  scope, prices, tax, HSN, MRP, every barcode with its kind, age flags, recall block, embedded rules; `source:
+  'head_office'`), the file the fallback until the first pull (`source: 'pack_file'`); the file's master still wins a
+  recall argument. (iii) **The connected run** (`tests/integration/the-store-trades-a-day.test.ts`, 2 cases, real API +
+  real PostgreSQL + real box + the till's own session — the CI-run proof; `tests/e2e/the-store-trades-a-day.e2e.ts`, the
+  same on the SERVED shell in a real Chromium, locally): tax rate, product, store price, barcode authored and the pack
+  published at head office; opening stock booked; the box (a policies-only pack file) pulls the pack and the served till is
+  built from it; float; the barcode scanned; cash taken; the sale on the box's disk first (cashier, lane, trading day) and
+  queued as the cloud contract stamped by the box (pack v1, this store); one pass → banked, on-hand 10 → 9, valuation 9 ×
+  cost; the refund on the till (bill looked up on the box, manager's approval) → settled → on-hand 10 and valuation back;
+  pickup, blind close balanced → the cash office sees ₹1,000 and no over/short; the accountant maps the books and posts
+  the day → every journal balances, nothing open, sales clearing nil; the dashboard's "Sales today" equals the takings
+  (gated on F14, below); the box restarts and still sells from the restored pack, nothing re-sent. Then: the same sale
+  posted twice to the box and re-sent to head office banks once; a box whose identity holds no sync right pulls "offline",
+  reaches nothing and loses nothing. (iv) **Found on the way, registered, not hidden:** **F14** — head office dates "Sales
+  today" by the server's UTC date while the till dates by the shop's clock (00:00–05:30 IST read the wrong day); **F15** —
+  the till ADDS GST on top of the catalogue's shelf price, which the day book, the GST return and A9 treat as GST-inclusive,
+  so a ₹480 shelf price with a ₹500 MRP is charged at ₹504, above the MRP (`tests/audit-observations/pos.test.ts` case 3
+  asserts the defect; both connected legs record the ₹504 the till really charges). Guardrails `the-unsellable-screen-is-
+  usable` and `a-recalled-tin-cannot-be-sold` re-pointed at the two-source judgement; `edge-feeds-the-screens` +4. Matrix §3
+  F13–F15, §4 SP-9-i DONE / SP-9-i-b / SP-9-ii / SP-9b, rows 61–62 evidenced; traceability F13–F15 + M03-FR-03, M05-FR-01/02,
+  M08-FR-01, M14-FR-02. Denominator 104 unchanged; no rung changed. **Still open, honestly:** F15 (the next slice), F14,
+  the purchasing half of the loop on the real stack (SP-9-ii), exchange / no-receipt UI (SP-9b), concurrent tills and a cut
+  line mid-day, physical device + staff UAT (SP-10).
+- **Current-work pointer:** last verified = SP-9-i (this PR); next = **SP-9-i-b** [W10 part, F15] (the till treats the
+  catalogue price as GST-INCLUSIVE and pulls the GST out — never above the MRP; refund ceiling, cash chain and day book
+  re-based; observation case 3 inverted; F14 if the tenant calendar lands with it), then **SP-9-ii** [W10 remainder] (purchase
+  → receiving/QC → back store → floor → sale on the SAME real stack, reconciling balances, in transit, valuation and the
+  supplier account; offline/reconnect mid-day; concurrent tills), then **SP-9b** [W12] (exchange / no-receipt till UI, CH-01
+  preserved), then **SP-3c** (picker + driver handhelds on the shared device route); **SP-10** (physical device + staff UAT)
+  stays PENDING until performed; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

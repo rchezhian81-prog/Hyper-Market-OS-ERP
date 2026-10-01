@@ -12,6 +12,10 @@ import { inMemoryTillBox } from '../support/in-memory-till-box';
 // F10 — FIXED in SP-4c: case 2 is now the REGRESSION (the Close button sends exactly what a cashier knows — shift, moment,
 // count, and a reason once asked — and that IS the complete input: the store box works every other figure out from what
 // it recorded, decides the close and records it durably; the till keeps no cash of its own).
+// F15 — OBSERVED in SP-9-i's connected run (1 Oct 2026): the till ADDS GST on top of the catalogue's shelf price, which every
+// other engine (the day book, the GST return, A9 "the tax is already inside the price") treats as GST-INCLUSIVE — so a ₹480
+// shelf price with a ₹500 MRP is charged at ₹504, above the MRP (M05-FR-02). Case 3 asserts the DEFECTIVE figure; the fix
+// slice inverts it (charge ₹480, pull ₹22.86 of GST out of it).
 describe('audit observations: the served POS configuration and close call', () => {
   it('F09 FIXED: the served page boot passes the box\'s lane and cut-off and NO cashier; a sale is refused until somebody signs in, then names the real cashier, lane and day', async () => {
     const source = readFileSync('apps/pos/src/browser-entry.ts', 'utf8');
@@ -71,5 +75,27 @@ describe('audit observations: the served POS configuration and close call', () =
     expect(await session.till.close(actualUiInput)).toMatchObject({ closed: true, varianceMinor: 0, exceptionRaised: false, countedMinor: 100 });
     // And the close is a record on the box with every figure the box itself worked out.
     expect(box.records.at(-1)).toMatchObject({ kind: 'close', shiftId: 'AUDIT-SH1', openingFloatMinor: 100, cashSalesMinor: 0, pickupsMinor: 0, cashRefundsMinor: 0, expectedMinor: 100, cashierId: 'audit-cashier', laneId: 'audit-lane' });
+  });
+
+  it('F15 OBSERVED: a ₹480 shelf price with 5% GST and a ₹500 MRP is charged at ₹504 — GST added on top of an inclusive price, above the MRP', async () => {
+    let written: Record<string, unknown> | undefined;
+    const session = bootPos({
+      laneId: 'lane-7', tradingDayCutoff: '00:00',
+      catalogue: {
+        tenantId: 't-audit', version: 1, builtAt: '2026-10-01T00:00:00.000Z',
+        products: [{ productId: 'RICE', sku: 'RICE-5KG', name: 'Ponni rice 5kg', baseUom: 'ea', unitPriceMinor: 48_000, taxBps: 500, mrpMinor: 50_000, status: 'active' }],
+        barcodes: [{ code: '8901234567890', productId: 'RICE', kind: 'standard' }],
+      },
+      durable: async (_id, record) => {
+        written = JSON.parse(record) as Record<string, unknown>;
+        return { committed: true, durable: true, detail: 'audit interception', laneMessage: 'saved' };
+      },
+    });
+    session.signIn('u-meena');
+    expect(session.scanBarcode('8901234567890')).toMatchObject({ amountMinor: 48_000 }); // the line shows the shelf price…
+    await session.tenderCash('AUDIT-S3', 'AUDIT-R3', '2026-10-01T10:00:00.000Z');
+    // …and the customer is charged ₹504.00: the ₹480 plus ₹24 of GST on top. The MRP is ₹500. A pass here CONFIRMS F15.
+    expect(written).toMatchObject({ netMinor: 48_000, taxMinor: 2_400, total: 50_400 });
+    expect(written!['total'] as number).toBeGreaterThan(50_000);
   });
 });
