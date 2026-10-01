@@ -1751,6 +1751,19 @@ export function posLanePayload(input: ScreenInput, laneId: string | undefined): 
   };
 }
 
+/**
+ * The refund policy the till is GIVEN (SP-9b-i · M13-FR-01 · M13-FR-03 · §28): the approval threshold and the
+ * no-receipt cap, exactly as the box's store pack carries them in `servicePolicy` — the same numbers the service desk
+ * screen is given. Never invented: `undefined` when the box holds no service policy, and the till then offers NO
+ * return without a receipt (fail safe — the cap is a control, and a till without it must not guess one). The till
+ * reads only these two; the desk's own limits (agent authority, compensation cap, return window) stay with the desk.
+ */
+export function posRefundPolicyPayload(input: ScreenInput): Record<string, unknown> | undefined {
+  if (!input.pack.servicePolicy.known) return undefined;
+  const policy = input.pack.servicePolicy.value;
+  return { approvalThresholdMinor: policy.approvalThresholdMinor, noReceiptCapMinor: policy.noReceiptCapMinor };
+}
+
 export function posReceiptTemplate(input: ScreenInput): Record<string, unknown> | undefined {
   if (!input.pack.documentTemplates.known) return undefined;
   const held = input.pack.documentTemplates.value;

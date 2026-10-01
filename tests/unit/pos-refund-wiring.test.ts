@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { bootPos, type LaneLookup, type DurableWrite } from '../../apps/pos/src/browser-entry';
 import type { SaleLookupResult } from '../../edge/store-edge/src/receipt-lookup';
 import type { CommitReturnInput } from '../../packages/returns/src/returns';
+import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 
 /**
  * **The shell's refund surface (M13, §27) — the seam that binds the refund screen to the engine.**
@@ -23,16 +24,33 @@ const LOOKUP: SaleLookupResult = {
 
 const okReturn: DurableWrite = async () => ({ committed: true, durable: true, detail: 'on disk', laneMessage: 'ok' });
 
+/** The lane's catalogue: one product the till sells, one it no longer sells (still returnable), and a barcode each. */
+const CATALOGUE: CatalogueSnapshot = {
+  tenantId: 't-sre', version: 3, builtAt: '2026-08-05T06:00:00Z',
+  products: [
+    { productId: 'P1', sku: 'GHEE-1L', name: 'Amul Ghee 1L', baseUom: 'ea', unitPriceMinor: 64_000, taxBps: 500, status: 'active' },
+    { productId: 'P9', sku: 'OLD-TIN', name: 'Discontinued tin', baseUom: 'ea', unitPriceMinor: 10_000, taxBps: 500, status: 'discontinued' },
+  ],
+  barcodes: [{ code: '8901234567890', productId: 'P1', kind: 'standard' }, { code: '8901234500009', productId: 'P9', kind: 'standard' }],
+};
+
 const boot = (over: {
   laneLookup?: LaneLookup;
   durableReturn?: DurableWrite;
   approvalThresholdMinor?: number;
+  noReceiptCapMinor?: number;
+  catalogue?: CatalogueSnapshot | null;
+  cashierId?: string | null;
 } = {}) => bootPos({
   laneId: 'lane-1',
-  cashierId: 'u-meena',
+  ...(over.cashierId === null ? {} : { cashierId: over.cashierId ?? 'u-meena' }),
   laneLookup: over.laneLookup ?? (async () => LOOKUP),
   durableReturn: over.durableReturn ?? okReturn,
-  refundPolicy: { approvalThresholdMinor: over.approvalThresholdMinor ?? 100_000 },
+  refundPolicy: {
+    approvalThresholdMinor: over.approvalThresholdMinor ?? 100_000,
+    ...(over.noReceiptCapMinor === undefined ? {} : { noReceiptCapMinor: over.noReceiptCapMinor }),
+  },
+  ...(over.catalogue === null ? {} : { catalogue: over.catalogue ?? CATALOGUE }),
 });
 
 const line = { productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' as const };
@@ -123,5 +141,85 @@ describe('completing a refund through the surface', () => {
     });
     // The refund record the edge stores carries the bill it is against.
     expect(posted?.originalSaleId).toBe('S-1');
+  });
+});
+
+/**
+ * **The return WITHOUT a receipt (SP-9b-i · M13-FR-01 · §28).** There is no bill to look up: the item is named from the
+ * lane's catalogue, the refund is bounded by the cap the till was GIVEN, and a manager always approves. The surface
+ * is offered only when the till can do that honestly — a cap and a catalogue — and refuses what the engine refuses.
+ */
+describe('returning without a receipt', () => {
+  const draft = (over: Record<string, unknown> = {}) => ({
+    returnId: 'RT-NR-1', number: 'RT-0007', reasonCode: 'damaged',
+    lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' as const }],
+    refundMinor: 20_000, refundTender: 'cash' as const,
+    approval: { by: 'u-manager', reason: 'checked the goods' },
+    ...over,
+  });
+
+  it('is NOT offered when the box gave no cap, a cap of zero, or the till has no catalogue to name the item from (fail safe)', () => {
+    expect(boot().noReceiptReturn()).toBeNull();                                   // no cap given
+    expect(boot({ noReceiptCapMinor: 0 }).noReceiptReturn()).toBeNull();           // 0 = switched off, the cloud's own convention
+    expect(boot({ noReceiptCapMinor: 100_000, catalogue: null }).noReceiptReturn()).toBeNull(); // nothing to name the item from
+    expect(boot({ noReceiptCapMinor: 100_000 }).noReceiptReturn()).not.toBeNull();
+  });
+
+  it('names the item from the lane\'s catalogue by barcode, SKU or id — a delisted item included — and knows no stranger', () => {
+    const desk = boot({ noReceiptCapMinor: 100_000 }).noReceiptReturn()!;
+    expect(desk.capMinor).toBe(100_000);
+    expect(desk.findProduct('8901234567890')).toEqual({ productId: 'P1', name: 'Amul Ghee 1L', uom: 'ea' });
+    expect(desk.findProduct('GHEE-1L')?.productId).toBe('P1');
+    expect(desk.findProduct('8901234500009')).toEqual({ productId: 'P9', name: 'Discontinued tin', uom: 'ea' });
+    expect(desk.findProduct('0000000000000')).toBeNull();
+    expect(desk.needsApproval()).toBe(true); // always — every no-receipt return needs a second person
+  });
+
+  it('settles a cash return within the cap with a manager, and the record the edge stores says NO RECEIPT against NO bill', async () => {
+    let posted: Record<string, unknown> | undefined;
+    const durableReturn: DurableWrite = async (_id, record) => { posted = JSON.parse(record) as Record<string, unknown>; return okReturn('', ''); };
+    const desk = boot({ noReceiptCapMinor: 100_000, durableReturn }).noReceiptReturn()!;
+    const out = await desk.submit(draft());
+    expect(out.kind).toBe('settled');
+    expect(posted).toMatchObject({
+      returnId: 'RT-NR-1', number: 'RT-0007', noReceipt: true, originalSaleId: null,
+      processedBy: 'u-meena', approvedBy: 'u-manager', refundMinor: 20_000, refundTender: 'cash',
+      lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
+    });
+  });
+
+  it('refuses one with NO manager as approval_required, and one approved by the cashier themself (§28) — nothing is written', async () => {
+    let writes = 0;
+    const durableReturn: DurableWrite = async () => { writes += 1; return okReturn('', ''); };
+    const desk = boot({ noReceiptCapMinor: 100_000, durableReturn }).noReceiptReturn()!;
+    expect((await desk.submit(draft({ approval: undefined }))).kind).toBe('approval_required');
+    expect((await desk.submit(draft({ approval: { by: 'u-meena', reason: 'mine' } }))).kind).toBe('approval_required');
+    expect(writes).toBe(0);
+  });
+
+  it('refuses an amount above the cap before anything is written (M13-FR-01)', async () => {
+    let writes = 0;
+    const durableReturn: DurableWrite = async () => { writes += 1; return okReturn('', ''); };
+    const desk = boot({ noReceiptCapMinor: 15_000, durableReturn }).noReceiptReturn()!;
+    const out = await desk.submit(draft({ refundMinor: 20_000 }));
+    expect(out.kind).toBe('invalid');
+    expect(writes).toBe(0);
+    expect((await desk.submit(draft({ refundMinor: 15_000 }))).kind).toBe('settled'); // at the cap is allowed
+  });
+
+  it('refuses when nobody is signed in — a no-receipt return is asked for by a named cashier (F09)', async () => {
+    const till = boot({ noReceiptCapMinor: 100_000, cashierId: null });
+    expect((await till.noReceiptReturn()!.submit(draft())).kind).toBe('refused');
+    till.signIn('u-meena');
+    expect((await till.noReceiptReturn()!.submit(draft())).kind).toBe('settled');
+  });
+
+  it('carries the customer of a store-credit no-receipt return, and a card one comes back pending (M13-FR-03/04)', async () => {
+    let posted: Record<string, unknown> | undefined;
+    const durableReturn: DurableWrite = async (_id, record) => { posted = JSON.parse(record) as Record<string, unknown>; return okReturn('', ''); };
+    const desk = boot({ noReceiptCapMinor: 100_000, durableReturn }).noReceiptReturn()!;
+    expect((await desk.submit(draft({ refundTender: 'store_credit', customerRef: 'c-asha' }))).kind).toBe('settled');
+    expect(posted).toMatchObject({ refundTender: 'store_credit', customerRef: 'c-asha', noReceipt: true });
+    expect((await desk.submit(draft({ returnId: 'RT-NR-2', refundTender: 'card' }))).kind).toBe('pending');
   });
 });

@@ -6,7 +6,7 @@ import {
   emptyPack, readPack, known, notKnown, orElse, type PackProduct, type StorePack,
 } from '../../edge/store-edge/src/store-pack';
 import {
-  payloadFor, managerPayload, ownerPayload, posPayload, customerPayload,
+  payloadFor, managerPayload, ownerPayload, posPayload, posRefundPolicyPayload, customerPayload,
   pickerPayload, driverPayload, reportingPayload, merchandisingPayload, unsellablePayload, unsellableProducts, catalogueFreshness,
   GLOBAL_FOR, SCREENS, type ScreenInput,
   tillCatalogue,
@@ -549,6 +549,13 @@ describe('each screen gets what it needs, and nothing when the box has nothing',
   it('gives the till a catalogue, and null when there is none', () => {
     expect(posPayload(input())).toMatchObject({ version: 7 });
     expect(posPayload(input({ pack: fullPack({ products: notKnown('x') }) }))).toBeNull();
+  });
+
+  it('hands the till its refund policy — the approval threshold and the no-receipt cap, as the pack carries them — and nothing when the box holds none (SP-9b-i · M13-FR-01)', () => {
+    // The same two numbers the service desk screen is given; the till reads no other desk limit. Without a service
+    // policy the global is absent, and the till then offers NO return without a receipt rather than guessing a cap.
+    expect(posRefundPolicyPayload(input())).toEqual({ approvalThresholdMinor: 200_00, noReceiptCapMinor: 100_00 });
+    expect(posRefundPolicyPayload(input({ pack: fullPack({ servicePolicy: notKnown('no service policy on this box') }) }))).toBeUndefined();
   });
 
   it('gives the customer app the PACK VERSION, so a stale price cannot be paid against', () => {

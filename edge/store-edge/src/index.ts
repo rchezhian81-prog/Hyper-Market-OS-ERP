@@ -301,8 +301,9 @@ export function createEdgeNode(input: {
             idempotencyKey: `edge-return-${input.tenantId}-${returnId}`,
             source: 'edge/lane',
             // Translated to the cloud's synced-return contract before it leaves. `returnAcceptedRoute`
-            // reads `originalSaleId` to address the bill; the cloud re-verifies the §28 approver.
-            payload: toCloudReturn(JSON.parse(record) as unknown),
+            // reads `originalSaleId` to address the bill; the cloud re-verifies the §28 approver. Stamped with
+            // the store this box belongs to, so a resold no-receipt unit re-enters THIS shop's stock (F17).
+            payload: toCloudReturn(JSON.parse(record) as unknown, input.storeId?.()),
           }));
         }
         return outcome;

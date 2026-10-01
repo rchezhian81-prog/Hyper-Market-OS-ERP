@@ -89,6 +89,21 @@ describe('CatalogueCache', () => {
     expect(cache.findByProductId('p-nope')).toBeUndefined();
   });
 
+  it('names the item behind a barcode, a SKU or an id WITHOUT judging whether it may be sold — for a return with no receipt (SP-9b-i · M13-FR-01)', () => {
+    const cache = new CatalogueCache(snapshot());
+    expect(cache.findProduct('8901234567890')?.productId).toBe('p1');
+    expect(cache.findProduct(' RICE1 ')?.productId).toBe('p1'); // a keyed SKU, trimmed like a scan
+    expect(cache.findProduct('p2')?.name).toBe('Tomato');
+    // A discontinued or recalled item can still COME BACK — `scan` refuses to sell them; this still names them,
+    // so the return (and its condition) can be recorded rather than the till inventing an item or refusing by mistake.
+    expect(cache.findProduct('8901234500004')?.name).toBe('Old Item');
+    expect(cache.findProduct('8901234500005')?.name).toBe('Recalled Batch Item');
+    expect(() => cache.scan('8901234500004')).toThrow();
+    // Unknown stays unknown — nothing is guessed.
+    expect(cache.findProduct('0000000000000')).toBeUndefined();
+    expect(cache.findProduct('')).toBeUndefined();
+  });
+
   it('refuses an unknown barcode', () => {
     const cache = new CatalogueCache(snapshot());
     expect(() => cache.scan('0000000000000')).toThrow(UnknownBarcodeError);

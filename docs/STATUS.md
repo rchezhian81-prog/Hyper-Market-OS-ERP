@@ -766,10 +766,37 @@ device, human UAT and production verification separate; approved deferrals stay 
   receipts and the quality-hold register were not re-run on the real stack (proven on the in-process harness); the purchasing
   SCREENS' browser proofs ran against stubs, not the real cloud; exchange / no-receipt UI (SP-9b); physical device + staff
   UAT (SP-10).
-- **Current-work pointer:** last verified = SP-9-ii (this PR); next = **SP-9b** [W12] (exchange / no-receipt till UI, CH-01
-  preserved: `assessExchange` + `POST /v1/sales/:saleId/exchanges` exist, `docs/design/screens/pos-refund.md`), then **SP-3c**
-  (picker + driver handhelds on the shared device route); **SP-10** (physical device + staff UAT) stays PENDING until
-  performed; genuine blockers: none; external gates unchanged (providers, hardware, real data, pilot GO).
+- **SP-9b-i — a return WITHOUT a receipt on the served till; F17 found and fixed (W12 part · M13-FR-01 · M13-FR-03 ·
+  M08-FR-01 · §28 · hard rules #1 #5 #10 · CH-01 preserved).** The box hands the till its refund policy from the pack's
+  `servicePolicy` (`posRefundPolicyPayload` → `window.posRefundPolicy`: approval threshold + no-receipt cap; absent when
+  the box holds none). `bootPos.noReceiptReturn()` is offered only with a positive cap AND a catalogue — never a guessed
+  limit — names the item from the lane's catalogue by barcode / SKU / id without judging it for sale
+  (`CatalogueCache.findProduct`: a delisted or recalled item can still come back), and submits through the tested refund
+  view as `noReceipt: true` against no bill, the §28 approval mapped exactly as the receipted refund's. The shell's More
+  menu gains "Return without receipt" (EN/TA): scan or key the item → quantity → reason → condition → amount shown
+  against the cap and stopped above it → method (store credit needs a customer) → a manager ALWAYS → the model's own
+  words. The box stamps its store as the return's `locationId` on the way to head office (F17) and relays it to
+  `/v1/returns/no-receipt/synced`. **Proof:** unit +11 (catalogue finder, policy payload, store stamp, wiring ×7), the till
+  usability guardrail, `the-served-till-takes-a-refund.e2e.ts` +2 (a real Chromium drives the WHOLE flow on the served
+  screen offline — scanner keystrokes, keypad, choices — and reads the record off the box's disk: `noReceipt: true`,
+  no bill, cashier and manager named, queued once; a capless box offers none), and
+  `tests/integration/the-till-returns-without-a-receipt.test.ts` on the REAL stack (owner sets the cap, owner-only; the
+  box pulls head office's catalogue and serves the pack's policy; the till takes one under the cap with a manager —
+  refused without one, refused self-approved; the same return again is a conflict; one the LANE's wider cap allows but
+  head office's does not; one above the lane's cap refused before any write; one sync pass → both registered, exactly
+  the over-cap one flagged `no_receipt_over_cap` on the exceptions screen, both tins back at S1 and none at lane-1, a
+  second pass sends nothing). **F17 found on the way and FIXED:** a resold no-receipt unit re-entered stock at a
+  location named after the LANE ("lane-1", stated as assumed) because the box stamped its store on sales but not on
+  returns — `toCloudReturn(record, storeId)` now stamps it (live and on restart), the record's own wins, nothing
+  invented. Matrix row 122, §3 F17, §4 SP-9b-i DONE / SP-9b-ii; traceability F17, M13-FR-01/03, M08-FR-01. Denominator
+  104 unchanged; no rung changed. **Still open, honestly:** the box does not pull head office's no-receipt cap (the
+  lane applies its pack file's; head office flags — never loses — a return above its own); exchange on the till
+  (SP-9b-ii); physical device + staff UAT (SP-10).
+- **Current-work pointer:** last verified = SP-9b-i (this PR); next = **SP-9b-ii** [W12 remainder] (exchange on the till:
+  lane-side return + replacement with `exchange_credit`, `assessExchange` + `POST /v1/sales/:saleId/exchanges` exist on
+  the cloud, `docs/design/screens/pos-refund.md`), then **SP-3c** (picker + driver handhelds on the shared device route);
+  **SP-10** (physical device + staff UAT) stays PENDING until performed; genuine blockers: none; external gates unchanged
+  (providers, hardware, real data, pilot GO).
 
 ## Owner program — "complete every module, deploy, then pilot" — Stages A and B closed (29 September 2026)
 

@@ -589,7 +589,7 @@ export async function startEdge(
     eventFor: (record, index) => {
       let parsed: unknown;
       try { parsed = JSON.parse(record) as unknown; } catch { return undefined; }
-      const cloud = toCloudReturn(parsed);
+      const cloud = toCloudReturn(parsed, storeIdOfThisBox()); // the store stamp survives a restart too (F17)
       const returnId = cloud.returnId !== '' ? cloud.returnId : `record-${index}`;
       return makeEvent({
         id: `edge-return-${returnId}`, type: 'ReturnAccepted', occurredAt: new Date().toISOString(),
