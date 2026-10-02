@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   syncedDriverRunRoutes, cashFromStops, latestStops, stepBetween, currentOrderState, presentRoute, DRIVER_RUN_SYNC_FLAGS, COD_METHODS,
+  FAILURE_REASON_OUTCOMES, attemptFromStop,
   type SyncedDriverRunDeps, type RouteStopUpdate, type RouteSettlementRecord, type CashHandoverRecord,
 } from '../../services/fulfilment/src/driver-runs';
-import type { DeliveryStateRecord } from '../../services/fulfilment/src/index';
+import { reconcileRun, type DeliveryAttempt, type DeliveryStateRecord } from '../../services/fulfilment/src/index';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 import type { AuditEntry } from '../../packages/audit/src/index';
 
@@ -21,6 +22,8 @@ interface World {
   readonly settlements: RouteSettlementRecord[];
   readonly handovers: CashHandoverRecord[];
   readonly orders: DeliveryStateRecord[];
+  /** The driver's run register (OB-09) — what `/v1/delivery/runs/:driverId` reads. */
+  readonly attempts: DeliveryAttempt[];
   readonly audit: AuditEntry[];
   readonly routes: readonly Route[];
 }
@@ -30,6 +33,7 @@ function world(grants: Record<string, readonly string[] | undefined> = { 'u-driv
   const settlements: RouteSettlementRecord[] = [];
   const handovers: CashHandoverRecord[] = [];
   const orders: DeliveryStateRecord[] = [];
+  const attempts: DeliveryAttempt[] = [];
   const audit: AuditEntry[] = [];
   const deps: SyncedDriverRunDeps = {
     permissionsOfUser: (_t, userId) => grants[userId],
@@ -41,10 +45,11 @@ function world(grants: Record<string, readonly string[] | undefined> = { 'u-driv
     recordHandover: (_t, r) => { handovers.push(r); },
     deliveryState: (_t, orderId) => orders.filter((o) => o.orderId === orderId),
     recordDeliveryTransition: (_t, r) => { orders.push(r); },
+    recordAttempt: (_t, a) => { attempts.push(a); },
     recordAudit: (_t, e) => { audit.push(e); },
     now: () => NOW,
   };
-  return { stops, settlements, handovers, orders, audit, routes: syncedDriverRunRoutes(deps) };
+  return { stops, settlements, handovers, orders, attempts, audit, routes: syncedDriverRunRoutes(deps) };
 }
 
 const route = (w: World, method: string, path: string): Route => {
@@ -245,5 +250,96 @@ describe('the read', () => {
     });
     expect(presentRoute('R-1', w.stops, undefined, undefined)).toMatchObject({ stopCount: 1 });
     await expect(route(w, 'GET', '/v1/delivery/routes/:routeId').handler(ctx({ routeId: '' }))).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe('OB-09 — the stop joins the driver\'s run register (owner, 2 Oct 2026: Option 2 — partial delivery and "customer had no cash" are run outcomes in their own right)', () => {
+  const depart = (w: World, stopId: string, orderRef: string, codExpectedMinor = 250_00) =>
+    post(w, STOP, { routeId: 'R-1', stopId }, stop({ stopId, orderRef, state: 'out_for_delivery', codExpectedMinor }));
+  const runOf = (w: World, cashHandedInMinor: number) =>
+    reconcileRun({ driverId: 'u-driver', runDate: '2026-10-01', assignedOrderIds: ['ORD-1', 'ORD-2', 'ORD-3'], attempts: w.attempts, cashHandedInMinor });
+
+  it('a full delivery, a PARTIAL delivery and a customer who had no cash each become the driver\'s own attempt — exact reason, quantities and cash kept — and the run counts them apart', async () => {
+    const w = world();
+    const gone = await depart(w, 's1', 'ORD-1');
+    expect(gone.body).toMatchObject({ runAttempt: 'not_a_door_outcome', flags: [] });
+    const d = await post(w, STOP, { routeId: 'R-1', stopId: 's1' }, delivered());
+    expect(d.body).toMatchObject({ flags: [], runAttempt: { attemptId: 'R-1/s1/delivered', outcome: 'delivered', runDate: '2026-10-01' } });
+    await depart(w, 's2', 'ORD-2', 300_00);
+    const p = await post(w, STOP, { routeId: 'R-1', stopId: 's2' }, stop({ stopId: 's2', orderRef: 'ORD-2', state: 'partially_delivered', codExpectedMinor: 300_00, codCollectedMinor: 120_00, codMethod: 'cash', proofKind: 'photo' }));
+    expect(p.body).toMatchObject({ flags: [], orderStep: { event: 'deliver_partial', to: 'partially_delivered' }, runAttempt: { outcome: 'partially_delivered' } });
+    await depart(w, 's3', 'ORD-3', 450_00);
+    const n = await post(w, STOP, { routeId: 'R-1', stopId: 's3' }, stop({ stopId: 's3', orderRef: 'ORD-3', state: 'failed', codExpectedMinor: 450_00, failureReason: 'customer_had_no_cash' }));
+    expect(n.body).toMatchObject({ flags: [], orderStep: { event: 'fail', to: 'failed' }, runAttempt: { attemptId: 'R-1/s3/failed', outcome: 'customer_had_no_cash' } });
+    expect(w.attempts).toEqual([
+      { attemptId: 'R-1/s1/delivered', orderId: 'ORD-1', driverId: 'u-driver', attemptedAt: NOW, outcome: 'delivered', proofRef: 'otp@handheld:R-1/s1', cashCollectedMinor: 250_00, codExpectedMinor: 250_00 },
+      { attemptId: 'R-1/s2/partially_delivered', orderId: 'ORD-2', driverId: 'u-driver', attemptedAt: NOW, outcome: 'partially_delivered', proofRef: 'photo@handheld:R-1/s2', cashCollectedMinor: 120_00, codExpectedMinor: 300_00 },
+      { attemptId: 'R-1/s3/failed', orderId: 'ORD-3', driverId: 'u-driver', attemptedAt: NOW, outcome: 'customer_had_no_cash', notes: 'customer_had_no_cash', codExpectedMinor: 450_00 },
+    ]);
+    // The SAME `reconcileRun` the direct route and the dispatcher read: counted apart, the money held by name.
+    const run = runOf(w, 370_00);
+    expect(run).toMatchObject({
+      attempts: 3, delivered: 1, partiallyDelivered: 1, failed: 1, customerHadNoCash: 1, cashExpectedMinor: 370_00, differenceMinor: 0,
+      codUncollectedMinor: 450_00, noCashOrders: ['ORD-3'], partialRemainderMinor: 180_00, partialOrders: ['ORD-2'], outstanding: [], unassigned: [],
+    });
+    expect(run.detail).toBe('u-driver on 2026-10-01: 1 delivered, 1 partly delivered, 1 failed (1 because the customer had no cash), 0 not attempted, 0 not on the run');
+    expect(run.ownerAction).toContain('1 customer(s) had no cash at the door: 45000 of cash-on-delivery is uncollected on ORD-3');
+    expect(run.ownerAction).toContain("not u-driver's shortfall");
+    // The read shows how each stop joined the run.
+    const view = presentRoute('R-1', w.stops, undefined, undefined) as { stops: Array<Record<string, unknown>> };
+    expect(view.stops.map((s) => [s['stopId'], (s['runAttempt'] as { outcome?: string }).outcome ?? s['runAttempt']])).toEqual([['s1', 'delivered'], ['s2', 'partially_delivered'], ['s3', 'customer_had_no_cash']]);
+    // The audit says it too.
+    expect(w.audit.map((e) => e.after?.['runAttempt'])).toEqual(['not_a_door_outcome', 'delivered', 'not_a_door_outcome', 'partially_delivered', 'not_a_door_outcome', 'customer_had_no_cash']);
+  });
+
+  it('maps every reason the phone offers onto the run register\'s closed list — the exact word travels as the note; a reason the run has no word for is kept on the stop and SAID, never guessed at', async () => {
+    expect(FAILURE_REASON_OUTCOMES).toMatchObject({
+      nobody_home: 'nobody_in', customer_refused: 'refused', wrong_address: 'wrong_address', address_not_found: 'could_not_access',
+      customer_had_no_cash: 'customer_had_no_cash', goods_damaged: 'damaged_in_transit',
+    });
+    const w = world();
+    const reasons = ['nobody_home', 'customer_refused', 'wrong_address', 'address_not_found', 'goods_damaged'];
+    for (const [i, reason] of reasons.entries()) {
+      await depart(w, `f${i}`, `ORD-${i}`);
+      const r = await post(w, STOP, { routeId: 'R-1', stopId: `f${i}` }, stop({ stopId: `f${i}`, orderRef: `ORD-${i}`, state: 'failed', failureReason: reason }));
+      expect(r.body).toMatchObject({ flags: [] });
+    }
+    expect(w.attempts.map((a) => [a.outcome, a.notes])).toEqual([
+      ['nobody_in', 'nobody_home'], ['refused', 'customer_refused'], ['wrong_address', 'wrong_address'], ['could_not_access', 'address_not_found'], ['damaged_in_transit', 'goods_damaged'],
+    ]);
+    await depart(w, 'x1', 'ORD-9');
+    const odd = await post(w, STOP, { routeId: 'R-1', stopId: 'x1' }, stop({ stopId: 'x1', orderRef: 'ORD-9', state: 'failed', failureReason: 'dog_at_the_gate' }));
+    expect(odd.body).toMatchObject({ flags: ['run_outcome_unmapped'], runAttempt: 'unmapped' });
+    await depart(w, 'x2', 'ORD-10');
+    const none = await post(w, STOP, { routeId: 'R-1', stopId: 'x2' }, stop({ stopId: 'x2', orderRef: 'ORD-10', state: 'failed' }));
+    expect(none.body).toMatchObject({ flags: ['run_outcome_unmapped'], runAttempt: 'unmapped' });
+    expect(w.attempts).toHaveLength(5);
+    expect(w.stops.filter((s) => s.runAttempt === 'unmapped').map((s) => s.failureReason)).toEqual(['dog_at_the_gate', null]);
+    // The run then shows those orders as not attempted — visible, not reconciled against nothing.
+    const run = reconcileRun({ driverId: 'u-driver', runDate: '2026-10-01', assignedOrderIds: ['ORD-9', 'ORD-10'], attempts: w.attempts, cashHandedInMinor: 0 });
+    expect(run.outstanding).toEqual(['ORD-10', 'ORD-9']);
+  });
+
+  it('a hand-over with no proof kind is refused by the run register too (one flag, not two); a re-sent outcome is ONE attempt; the pure mapper names what is not a door outcome', async () => {
+    const w = world();
+    await depart(w, 's1', 'ORD-1');
+    const bare = await post(w, STOP, { routeId: 'R-1', stopId: 's1' }, delivered({ proofKind: null }));
+    expect(bare.body).toMatchObject({ flags: ['delivered_without_proof_kind'], orderStep: 'no_proof_kind', runAttempt: 'refused' });
+    expect(w.attempts).toEqual([]);
+    const w2 = world();
+    await depart(w2, 's1', 'ORD-1');
+    await post(w2, STOP, { routeId: 'R-1', stopId: 's1' }, delivered());
+    const again = await post(w2, STOP, { routeId: 'R-1', stopId: 's1' }, delivered());
+    expect(again.body).toMatchObject({ alreadyRecorded: true, runAttempt: { outcome: 'delivered' } });
+    expect(w2.attempts).toHaveLength(1);
+    for (const state of ['assigned', 'picked_up', 'out_for_delivery', 'attempted', 'returned_to_origin'] as const) {
+      expect(attemptFromStop({ ...stop({ state }), at: NOW } as Parameters<typeof attemptFromStop>[0], 'R-1', 's1')).toBe('not_a_door_outcome');
+    }
+    // Cash recorded against a door where nothing changed hands: the run register refuses it, the stop is kept and flagged.
+    const w3 = world();
+    await depart(w3, 's1', 'ORD-1');
+    const cashy = await post(w3, STOP, { routeId: 'R-1', stopId: 's1' }, stop({ state: 'failed', failureReason: 'customer_refused', codCollectedMinor: 50_00, codMethod: 'cash' }));
+    expect(cashy.body).toMatchObject({ flags: ['run_outcome_refused'], runAttempt: 'refused' });
+    expect(w3.attempts).toEqual([]);
   });
 });

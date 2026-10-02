@@ -282,6 +282,45 @@ describe('the driver\'s phone: enrol → device socket → box (durable) → hea
     expect(v2.flags).toEqual(['stops_disagree', 'cash_office_review']);
   });
 
+  it('OB-09 — a PARTIAL delivery and a customer who had no cash reach the per-driver run reconciliation with their exact reason, quantities and cash balances', async () => {
+    const c = await cloud();
+    const edge = await c.start();
+    const { cookie } = await enrol(edge);
+    const events = [
+      stopAt('s1', 'out_for_delivery', { orderRef: 'ORD-6', codExpectedMinor: 300_00 }, 'R-3'),
+      stopAt('s1', 'partially_delivered', { orderRef: 'ORD-6', codExpectedMinor: 300_00, codCollectedMinor: 120_00, codMethod: 'cash', proofKind: 'photo' }, 'R-3'),
+      stopAt('s2', 'out_for_delivery', { orderRef: 'ORD-7', codExpectedMinor: 450_00 }, 'R-3'),
+      stopAt('s2', 'failed', { orderRef: 'ORD-7', codExpectedMinor: 450_00, failureReason: 'customer_had_no_cash' }, 'R-3'),
+      stopAt('s2', 'returned_to_origin', { orderRef: 'ORD-7', codExpectedMinor: 450_00, failureReason: 'customer_had_no_cash' }, 'R-3'),
+    ];
+    expect((await postBatch(edge, cookie, events.map(item))).acks.map((a) => a.status)).toEqual(events.map(() => 'accepted'));
+    const pass = await edge.syncOnce!();
+    expect(pass.sent).toBe(5);
+    expect(pass.dead).toBe(0);
+    const view = await routeAt(c.h, 'R-3');
+    expect(view.flags).toEqual([]);
+    const runDate = (view.stops[0]!['at'] as string).slice(0, 10);
+    expect(view.stops.map((s) => [s['stopId'], s['state'], s['runAttempt']])).toEqual([
+      ['s1', 'partially_delivered', { attemptId: 'R-3/s1/partially_delivered', outcome: 'partially_delivered', runDate }],
+      ['s2', 'returned_to_origin', 'not_a_door_outcome'],
+    ]);
+    expect(view.cash).toEqual({ expectedMinor: 120_00, collectedMinor: 120_00, cashHeldMinor: 120_00 });
+    // The driver's RUN — the register the direct route and the dispatcher read — counts the stops apart and holds the money.
+    const run = (await c.h.request({ method: 'GET', path: '/v1/delivery/runs/u-driver', userId: 'u-owner', tenantId: A, query: { runDate, cashHandedInMinor: '12000' } })).body as Record<string, unknown>;
+    expect(run).toMatchObject({
+      attempts: 2, delivered: 0, partiallyDelivered: 1, failed: 1, customerHadNoCash: 1, cashExpectedMinor: 120_00, differenceMinor: 0,
+      codUncollectedMinor: 450_00, noCashOrders: ['ORD-7'], partialRemainderMinor: 180_00, partialOrders: ['ORD-6'],
+    });
+    expect(run['detail']).toContain('1 partly delivered, 1 failed (1 because the customer had no cash)');
+    // No dispatch plan named these orders: the run says so rather than reconciling against nothing (the earlier finding).
+    expect(run['unassigned']).toEqual(['ORD-6', 'ORD-7']);
+    // The orders followed: ORD-6 partially delivered with the proof kind and where it is held; ORD-7 failed and went back.
+    const o6 = await orderAt(c.h, 'ORD-6');
+    expect(o6.state).toBe('partially_delivered');
+    expect(o6.history[1]).toMatchObject({ by: 'u-driver', proofRef: 'photo@handheld:R-3/s1' });
+    expect((await orderAt(c.h, 'ORD-7')).history.map((h) => h['event'])).toEqual(['depart', 'fail', 'rto']);
+  });
+
   it('a stop the order cannot reach from where head office has it is recorded and SAID; an unknown driver is flagged; a card COD method is a visible dead-letter that survives a restart and recorded nothing', async () => {
     const c = await cloud();
     const first = await c.start();

@@ -54,7 +54,7 @@ through a pull request like any other change. Until that merge, **do not re-run 
 
 ---
 
-## 2. Connect automatic deployment (PREPARED — the administrator performs it once; ~30 minutes)
+## 2. Connect automatic deployment (PREPARED — the administrator performs it once; ~60 minutes; the ordered one-sheet version with evidence to return is `demo-deployment-handover.md`)
 
 Follow `docs/runbooks/automatic-deployment.md`. The ordered list below adds what that runbook assumes but the box, as
 stood up on 28 September, does not yet have. Secret **names** are exact; **values** are never written anywhere but the
@@ -79,10 +79,14 @@ at `main` shows each with a comment; names only here):
 | `SRE_AUTH_ROUTE`, `SRE_AUTH_UPSTREAM`, `HTTPS_PORT`, `HTTP_PORT` | leave at the template defaults | customer sign-in answers 503 by name (KL-15); the proxy listens on 443/80 |
 | `EDGE_TENANT_ID` | leave as it is — the demo tenant's fixed UUID the stand-up set | the store token and the smoke test read it |
 
-**D. Free ports 443 and 80 for the stack's own proxy.** The stand-up put HTTPS in front by hand (before the compose
-`proxy` existed). Check what listens: `sudo ss -ltnp | grep -E ':443 |:80 '`. If a hand-installed web server (Caddy or
-nginx) is there, stop and disable it (`sudo systemctl disable --now <service>`) so the first release can bind the ports;
-otherwise the release rolls back with the container log saying the port is in use. Keep UFW as it is (443/80 open).
+**D. Inspect ports 443 and 80 FIRST, then choose.** The stand-up put HTTPS in front by hand (before the compose `proxy`
+existed), and the VPS may serve other applications. `sudo ss -ltnp '( sport = :80 or sport = :443 )'` and the running
+service list say what is there. **Configuration A** (nothing else, or only the hand-installed front for this demo): stop and
+disable that front so the stack's proxy can bind 443/80. **Configuration B** (another application is served through the
+existing front): keep it; set `HTTPS_PORT=127.0.0.1:8443` / `HTTP_PORT=127.0.0.1:8088` so the stack binds loopback only,
+and add one site to the existing front forwarding the demo hostname to `https://127.0.0.1:8443` with the Host header kept
+(limitation: the API's per-IP limits are then shared by every visitor). The exact commands, the two configurations and the
+front snippets are in **`demo-deployment-handover.md`** steps C and F — the one sheet the administrator follows.
 
 **E. Create the application database role on the EXISTING database** (a fresh volume would do this itself; yours was
 initialised before the script existed). The three statements are in `docs/runbooks/pilot-deployment.md`, section

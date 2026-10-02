@@ -5,6 +5,66 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-09 (Option 2) done, and the administrator's deployment handover (2 October 2026)
+
+**Owner direction (2 Oct 2026, in writing):** proceed with the existing demo deployment; record approval of **Option 2** for
+delivery reconciliation ("preserve partial delivery and the exact 'customer had no cash' reason, quantities and cash
+balances. Reuse the existing delivery model. Do not ask me to select this option again."); if the session cannot reach the
+server, prepare ONE complete administrator handover and continue software work meanwhile.
+
+- **OB-09 — DONE in software (2 Oct 2026).** `docs/registers/decisions.md` OB-09 records the decision and the three options
+  it closed. `services/fulfilment/src/index.ts`: `AttemptOutcome` += `partially_delivered`, `customer_had_no_cash`
+  (`ATTEMPT_OUTCOMES`, the closed list the attempts route now checks — 400 `not_readable_as_a_delivery_attempt` for a word
+  off it); `DeliveryAttempt.codExpectedMinor`; `checkAttempt` requires proof and allows cash wherever goods changed hands
+  (full OR partial), requires a note and refuses cash on every failure including no-cash; `stateAfterAttempt` maps a
+  partial to `deliver_partial`; `reconcileRun` counts delivered / partly delivered / failed / customer-had-no-cash apart and
+  reports `cashExpectedMinor` (delivered + partial takes), `codUncollectedMinor` + `noCashOrders`, `partialRemainderMinor`
+  + `partialOrders`, with the owner action naming the no-cash money as the customer's payment to chase, not the driver's
+  shortfall (a cash difference still comes first). `services/fulfilment/src/driver-runs.ts`: every door outcome the phone
+  relays becomes the driver's own `DeliveryAttempt` on the SAME run register the direct route writes (`attemptFromStop`,
+  `FAILURE_REASON_OUTCOMES` — the phone's six reasons mapped, the exact word kept verbatim as the note; `recordAttempt`
+  dep wired to `fulfilmentAdapter.appendAttempt`); a reason the run has no word for → `run_outcome_unmapped`, a hand-over
+  the run's check refuses → `run_outcome_refused`; each stop record and the audit say how it joined (`runAttempt`).
+  **Proof:** unit `service-customer-fulfilment.test.ts` (+4: partial needs proof / carries cash; no-cash needs a note /
+  never cash; the run's counts and balances with the cash difference first; the route's 400 and a partial to the engine's
+  own state), `fulfilment-driver-runs-synced.test.ts` (+3: the three outcomes to the run with the exact figures and the
+  audit; every phone reason mapped and an unmapped one kept + said with the order left outstanding; no-proof refused once,
+  re-sent once, cash-without-handover refused); connected `driver-handheld-reaches-the-cloud-through-the-edge.test.ts`
+  (+1 on the real stack: a partial delivery and a no-cash failure through the box to `GET /v1/delivery/runs/u-driver` —
+  counts, `codUncollectedMinor` 450_00, `partialRemainderMinor` 180_00, the orders stepped, the run honest about no dispatch
+  plan). Records: M19.md FR-04, traceability M19-FR-03/04, matrix SP-3 row. Denominator 104 unchanged; no rung changed.
+- **The administrator's handover (PREPARED).** `docs/runbooks/demo-deployment-handover.md` — one sheet, every step marked
+  with WHERE it runs (the box / the administrator's own computer / GitHub's web settings), prerequisites, exact commands,
+  and the evidence to return without an address, key or secret. Order: preserve the server work and runtime configuration
+  → push the stand-up branch (secrets excluded) → inspect 80/443 and the existing front, choose configuration A (the
+  stack's proxy takes 443/80) or B (an existing front stays; the stack on loopback ports; the per-IP limit then shared —
+  recorded) → backup with the administrator URL → application role on the existing database → `.env.pilot` settings →
+  checkout to `main` → deploy user, forced-command key, `deploy.conf` → the five `demo` secrets → re-run `main` → verify
+  (release log, commit, `/readyz`, migrations, `standup:check`, HTTPS, sign-in posture 401/503 by name) → the smoke
+  (`pnpm run demo:smoke`) proving a sale reduces the shelf by one and an eligible return restores it. This session confirmed
+  it has NO route to the box (no key, no address, no secret may pass through it): nothing in the handover is executed here.
+- **Not done, by definition:** deployment, verification on the VPS, the demo URL (the administrator returns it; it is not
+  written in the repository), SP-10 staff sessions (0).
+- **Next in software — the exact next task:** fold the picker's wave pack into the per-order pack / manifest (M19-FR-02),
+  then head office assignment of waves / routes to handhelds. **Design facts established 2 Oct 2026 (do not re-derive):**
+  the per-order pack register (`services/fulfilment/src/packing.ts`, `packOrder` → `recordPack`, dispatch builds the
+  manifest FROM the recorded pack) needs per line `name`, `handling` (ambient / chilled / frozen / raw_meat / ready_to_eat /
+  fragile / hazardous), `orderedMinor`, `pickedMinor`, `uom`, `unitPriceMinor`, and for cold lines `packTenthsC`; the picker
+  relays per line only `orderRef`, `productId`, `state`, `pickedQty`, `uom`, `finalPriceMinor`, `currency`, `substituted`,
+  `note`, `pickedBy` (`readRelayedOutcome` in `waves.ts`) and per wave `temperatureC` / `tamperSealRef`; the phone's own line
+  model already holds `description` and `requiredQty` (`apps/picker-app/src/pick-session.ts`) but does not send them; the
+  product master has `safety.storageConditions` (free text) and **no handling class**; the order register holds lines as
+  `productId` + `quantityMinor`. So the fold is three steps in dependency order: (1) the picker payload gains `description`
+  and `requiredQty` (the phone has them; one relay field each, backward compatible); (2) a per-product **handling class** on
+  the product master (M03-FR-03 regulated flags / M10 cold chain — the right source; it rides the published catalogue pack
+  to the box like the age restriction does), read by head office at fold time — a product with none is folded as
+  `handling_unknown` and FLAGGED, never defaulted to ambient; (3) on `…/packed/synced`, head office derives one `PackResult`
+  per ORDER on the wave from the line register (`finalPriceMinor` is the D09 price captured at pick; the crate's
+  `temperatureC` stands as every cold line's `packTenthsC`; a missing one keeps the existing `no_cold_chain_temperature`
+  flag) and records it on the per-order pack register so `GET /v1/fulfilment/orders/:orderId/pack` and the dispatch route
+  work for an order picked on the handheld. Proof to write: unit on the fold, an integration case in
+  `picker-handheld-reaches-the-cloud-through-the-edge.test.ts` reading the order's pack and dispatching it.
+
 ## Demo deployment pipeline and the store practice environment — Option 1 (1 October 2026)
 
 **Owner direction (1 Oct 2026, in writing): Option 1** — connect the existing automatic deployment to the already-purchased
@@ -49,7 +109,8 @@ requirements register continues; completed development is not repeated.
   (0 sessions, software version per session mandatory; deployment and automated tests never fill a row); §6 access
   without secrets; §9 limitations.
 - **Blocked / needs the administrator:** every PREPARED step above. **Next in software** (unchanged): the SP-3c recorded
-  limitations and the owner's choice on the driver run reconciliation; SP-10 stays PENDING until a session is recorded.
+  limitations (the driver run reconciliation choice became **OB-09** on 2 Oct 2026 and is done — see the section above);
+  SP-10 stays PENDING until a session is recorded.
 
 ## Store operations first — requirement audit, then E2E completion (30 September 2026)
 
