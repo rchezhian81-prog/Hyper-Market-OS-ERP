@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { mayWeSend, recordConsent, customerRoutes, type ConsentRecord, type CustomerDeps } from '../../services/customer/src/index';
 import { promise, expired, ordersRoutes, type Reservation, type OrdersDeps } from '../../services/orders/src/index';
-import { checkAttempt, reconcileRun, fulfilmentRoutes, type DeliveryAttempt, type FulfilmentDeps } from '../../services/fulfilment/src/index';
+import type { RequestContext } from '../../services/kernel/src/index';
+import { checkAttempt, reconcileRun, fulfilmentRoutes, type AttemptOutcome, type DeliveryAttempt, type FulfilmentDeps } from '../../services/fulfilment/src/index';
 import { buildRouter } from '../../services/kernel/src/index';
 
 // API-06 Customer/Loyalty · API-07 OMS · API-08 Fulfilment.
@@ -240,5 +241,65 @@ describe('all three register cleanly on the kernel', () => {
       ...customerRoutes(customer), ...ordersRoutes(orders), ...fulfilmentRoutes(fulfilment),
     ]);
     expect(built.refusals.map((r) => r.detail)).toEqual([]);
+  });
+});
+
+describe('OB-09 — a partial delivery and a customer who had no cash are run outcomes in their own right (owner, 2 Oct 2026, Option 2)', () => {
+  const attempt = (over: Partial<DeliveryAttempt> = {}): DeliveryAttempt => ({
+    attemptId: 'A-1', orderId: 'O-1', driverId: 'd-ravi', attemptedAt: NOW, outcome: 'delivered', proofRef: 'sig-8891', ...over,
+  });
+
+  it('a partial delivery needs proof like a delivery, and may carry the cash taken for the goods handed over', () => {
+    expect(checkAttempt(attempt({ outcome: 'partially_delivered', cashCollectedMinor: 120_00, codExpectedMinor: 300_00 })).ok).toBe(true);
+    expect(checkAttempt(attempt({ outcome: 'partially_delivered', proofRef: undefined })).refusedBecause).toBe('delivered_without_proof');
+  });
+
+  it('a customer who had no cash is a failure under its own name: a note like any failure, and NEVER cash', () => {
+    expect(checkAttempt(attempt({ outcome: 'customer_had_no_cash', proofRef: undefined, notes: 'customer_had_no_cash', codExpectedMinor: 450_00 })).ok).toBe(true);
+    expect(checkAttempt(attempt({ outcome: 'customer_had_no_cash', proofRef: undefined })).refusedBecause).toBe('failure_without_a_reason');
+    expect(checkAttempt(attempt({ outcome: 'customer_had_no_cash', proofRef: undefined, notes: 'customer_had_no_cash', cashCollectedMinor: 100 })).refusedBecause).toBe('cash_without_delivery');
+  });
+
+  it('the run counts them apart and keeps the money: cash expected includes the partial\'s take; the no-cash COD is owed by the customer, not the driver', () => {
+    const r = reconcileRun({
+      driverId: 'd-ravi', runDate: '2026-10-02', assignedOrderIds: ['O-1', 'O-2', 'O-3'],
+      attempts: [
+        attempt({ cashCollectedMinor: 500_00, codExpectedMinor: 500_00 }),
+        attempt({ attemptId: 'A-2', orderId: 'O-2', outcome: 'partially_delivered', proofRef: 'photo-1', cashCollectedMinor: 100_00, codExpectedMinor: 250_00 }),
+        attempt({ attemptId: 'A-3', orderId: 'O-3', outcome: 'customer_had_no_cash', proofRef: undefined, notes: 'customer_had_no_cash', codExpectedMinor: 300_00 }),
+      ],
+      cashHandedInMinor: 600_00,
+    });
+    expect(r).toMatchObject({
+      attempts: 3, delivered: 1, partiallyDelivered: 1, failed: 1, customerHadNoCash: 1, cashExpectedMinor: 600_00, differenceMinor: 0,
+      codUncollectedMinor: 300_00, noCashOrders: ['O-3'], partialRemainderMinor: 150_00, partialOrders: ['O-2'], outstanding: [], unassigned: [],
+    });
+    expect(r.detail).toBe('d-ravi on 2026-10-02: 1 delivered, 1 partly delivered, 1 failed (1 because the customer had no cash), 0 not attempted, 0 not on the run');
+    expect(r.ownerAction).toContain('1 customer(s) had no cash at the door: 30000 of cash-on-delivery is uncollected on O-3');
+    expect(r.ownerAction).toContain("not d-ravi's shortfall");
+    // A cash difference still comes first — it is the one that goes stale overnight.
+    const short = reconcileRun({
+      driverId: 'd-ravi', runDate: '2026-10-02', assignedOrderIds: ['O-1', 'O-3'],
+      attempts: [attempt({ cashCollectedMinor: 500_00 }), attempt({ attemptId: 'A-3', orderId: 'O-3', outcome: 'customer_had_no_cash', proofRef: undefined, notes: 'customer_had_no_cash', codExpectedMinor: 300_00 })],
+      cashHandedInMinor: 450_00,
+    });
+    expect(short.ownerAction).toContain('cash is out by -5000');
+    // A run with only a partial delivery, fully handed in, reconciles.
+    expect(reconcileRun({ driverId: 'd-ravi', runDate: '2026-10-02', assignedOrderIds: ['O-2'], attempts: [attempt({ orderId: 'O-2', outcome: 'partially_delivered', cashCollectedMinor: 100_00, codExpectedMinor: 250_00 })], cashHandedInMinor: 100_00 }).ownerAction)
+      .toBe('nothing — the run reconciles and every order has an outcome');
+  });
+
+  it('the attempts route refuses an outcome the run register has never heard — 400 by name, nothing written — and takes a partial delivery to the engine\'s own state', async () => {
+    const appended: DeliveryAttempt[] = [];
+    const deps: FulfilmentDeps = { appendAttempt: (_t, a) => { appended.push(a); }, attempts: () => [], assigned: () => [], deliveryState: () => [], recordDeliveryTransition: () => {}, now: () => NOW };
+    const r = fulfilmentRoutes(deps).find((x) => x.method === 'POST' && x.path === '/v1/delivery/attempts')!;
+    const ctx = (body: unknown): RequestContext => ({ tenantId: 'tenant-a', userId: 'd-ravi', branchId: null, params: {}, query: {}, body, traceId: 't', idempotencyKey: 'k' });
+    const err = await Promise.resolve().then(() => r.handler(ctx(attempt({ outcome: 'left_with_neighbour' as AttemptOutcome, proofRef: undefined, notes: 'left it next door' })))).catch((e: unknown) => e) as { status?: number; body?: unknown };
+    expect(err.status).toBe(400);
+    expect(JSON.stringify(err.body ?? err)).toContain('not_readable_as_a_delivery_attempt');
+    expect(appended).toEqual([]);
+    const ok = await r.handler(ctx(attempt({ outcome: 'partially_delivered', cashCollectedMinor: 100_00, codExpectedMinor: 250_00 })));
+    expect(ok).toMatchObject({ status: 201, body: { deliveryState: 'partially_delivered', final: true } });
+    expect(appended).toHaveLength(1);
   });
 });

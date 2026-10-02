@@ -30,7 +30,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { canTransitionDelivery, transitionDelivery, type DeliveryEvent, type DeliveryState } from '../../../packages/fulfilment/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import type { DeliveryStateRecord } from './index';
+import { checkAttempt, type AttemptOutcome, type DeliveryAttempt, type DeliveryStateRecord } from './index';
 
 export const STOP_STATES: readonly DeliveryState[] = ['assigned', 'picked_up', 'out_for_delivery', 'attempted', 'delivered', 'partially_delivered', 'failed', 'returned_to_origin'];
 const STEPS: readonly DeliveryEvent[] = ['pick_up', 'depart', 'arrive', 'deliver', 'deliver_partial', 'fail', 'reattempt', 'rto'];
@@ -53,11 +53,36 @@ export const DRIVER_RUN_SYNC_FLAGS = Object.freeze([
   'recorded_disagrees',
   // The counted cash differs from the recorded cash by at least the tenant's tolerance: the cash office decides.
   'cash_office_review',
+  // OB-09: the stop's failure reason is one the run register has no word for — the exact reason is kept on this record,
+  // and the run shows the order as NOT attempted until a person reads it; never mapped onto a guess.
+  'run_outcome_unmapped',
+  // OB-09: the run register's own check refused the attempt (cash against a door where nothing changed hands, a hand-over
+  // with no proof) — the stop is kept here and said; the run does not count it.
+  'run_outcome_refused',
 ] as const);
 export type DriverRunSyncFlag = (typeof DRIVER_RUN_SYNC_FLAGS)[number];
 
 /** The permission a person must hold to have delivered in their own name. */
 const DRIVE_PERMISSION = 'delivery.attempt.record';
+
+/**
+ * The reasons the driver's phone offers (`apps/delivery-app` FAILURE_REASONS) beside the run register's outcomes (OB-09).
+ * The run register's own words are accepted too, so a client that already speaks them is not refused. The exact reason
+ * the phone sent travels verbatim as the attempt's note whatever it maps to.
+ */
+export const FAILURE_REASON_OUTCOMES: Readonly<Record<string, AttemptOutcome>> = Object.freeze({
+  nobody_home: 'nobody_in', nobody_in: 'nobody_in',
+  customer_refused: 'refused', refused: 'refused',
+  wrong_address: 'wrong_address',
+  address_not_found: 'could_not_access', could_not_access: 'could_not_access',
+  customer_had_no_cash: 'customer_had_no_cash',
+  goods_damaged: 'damaged_in_transit', damaged_in_transit: 'damaged_in_transit',
+});
+
+/** How the stop joined the driver's run register — the attempt it became, or why it is not a run attempt (OB-09). */
+export type RunAttemptOutcome =
+  | { readonly attemptId: string; readonly outcome: AttemptOutcome; readonly runDate: string }
+  | 'not_a_door_outcome' | 'unmapped' | 'refused';
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -88,6 +113,8 @@ export interface RouteStopUpdate {
   /** The lifecycle step recorded on the order, or why none was. */
   readonly orderStep: { readonly event: DeliveryEvent; readonly from: DeliveryState; readonly to: DeliveryState } | 'already_there' | 'disagrees' | 'no_proof_kind';
   readonly governanceFlags: readonly DriverRunSyncFlag[];
+  /** OB-09 — absent on records written before 2 Oct 2026. */
+  readonly runAttempt?: RunAttemptOutcome;
 }
 
 /** The route's end-of-shift settlement as head office keeps it: the phone's figures beside the figures ITS register supports. */
@@ -141,6 +168,8 @@ export interface SyncedDriverRunDeps {
   /** The order's own append-only lifecycle (the same register the direct transition route writes). */
   readonly deliveryState: (tenantId: string, orderId: string) => Promise<readonly DeliveryStateRecord[]> | readonly DeliveryStateRecord[];
   readonly recordDeliveryTransition: (tenantId: string, record: DeliveryStateRecord) => Promise<void> | void;
+  /** The driver's own run register (OB-09) — the same `DeliveryAttempt` the direct `/v1/delivery/attempts` route records. */
+  readonly recordAttempt: (tenantId: string, attempt: DeliveryAttempt) => Promise<void> | void;
   readonly now: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
@@ -210,6 +239,30 @@ function readRelayedStop(body: unknown, routeId: string, stopId: string, now: st
     failureReason: optStr(body['failureReason']), contributionFlag: optStr(body['contributionFlag']),
     currency: isStr(body['currency']) ? body['currency'] : 'INR',
     at: isIso(body['occurredAt']) ? body['occurredAt'] : isIso(body['at']) ? body['at'] : now,
+  };
+}
+
+/**
+ * The stop as the DRIVER's run register would record it (OB-09) — the same `DeliveryAttempt` the direct route takes — or
+ * why it is not a run attempt: a state that is not a door outcome (departed, at the door, returned), or a failure reason the
+ * run has no word for. Pure. The caller runs the run register's own check before recording.
+ */
+export function attemptFromStop(s: RelayedStop, routeId: string, stopId: string): DeliveryAttempt | 'not_a_door_outcome' | 'unmapped' {
+  let outcome: AttemptOutcome;
+  if (s.state === 'delivered') outcome = 'delivered';
+  else if (s.state === 'partially_delivered') outcome = 'partially_delivered';
+  else if (s.state === 'failed') {
+    const mapped = s.failureReason === null ? undefined : FAILURE_REASON_OUTCOMES[s.failureReason];
+    if (mapped === undefined) return 'unmapped';
+    outcome = mapped;
+  } else return 'not_a_door_outcome';
+  return {
+    attemptId: `${routeId}/${stopId}/${s.state}`, orderId: s.orderRef, driverId: s.driverId, attemptedAt: s.at, outcome,
+    ...(s.proofKind === null ? {} : { proofRef: `${s.proofKind}@handheld:${routeId}/${stopId}` }),
+    // The exact reason, verbatim — never paraphrased into the category it mapped to.
+    ...(s.failureReason === null ? {} : { notes: s.failureReason }),
+    ...(s.codCollectedMinor > 0 ? { cashCollectedMinor: s.codCollectedMinor } : {}),
+    codExpectedMinor: s.codExpectedMinor,
   };
 }
 
@@ -283,7 +336,7 @@ export function syncedDriverRunRoutes(deps: SyncedDriverRunDeps): readonly Route
         const history = await deps.stopUpdates(ctx.tenantId, routeId);
         const prior = history.find((u) => u.stopId === stopId && u.state === r.state);
         if (prior !== undefined) {
-          return { status: 200, body: { routeId, stopId, state: r.state, recorded: true, alreadyRecorded: true, flags: prior.governanceFlags, orderStep: prior.orderStep } };
+          return { status: 200, body: { routeId, stopId, state: r.state, recorded: true, alreadyRecorded: true, flags: prior.governanceFlags, orderStep: prior.orderStep, runAttempt: prior.runAttempt } };
         }
         const flags: DriverRunSyncFlag[] = await verifyDriver(deps.permissionsOfUser, ctx.tenantId, r.driverId);
         if (r.geofenceMismatch) flags.push('geofence_mismatch');
@@ -315,11 +368,30 @@ export function syncedDriverRunRoutes(deps: SyncedDriverRunDeps): readonly Route
           }
         }
 
+        // OB-09: the stop joins the DRIVER's run register — the same `DeliveryAttempt` the direct route records — so the
+        // per-driver run reconciliation counts it: a full delivery, a PARTIAL delivery with the cash actually taken, or a
+        // failure under its exact reason (a customer who had no cash, by name). A hand-over the run's own check refuses, or
+        // a reason the run has no word for, is kept HERE and said — the run then shows that order as not attempted, never as fine.
+        let runAttempt: RunAttemptOutcome;
+        const candidate = attemptFromStop(r, routeId, stopId);
+        if (orderStep === 'no_proof_kind') {
+          runAttempt = 'refused'; // already flagged `delivered_without_proof_kind` above — one flag, not two
+        } else if (candidate === 'not_a_door_outcome' || candidate === 'unmapped') {
+          runAttempt = candidate;
+          if (candidate === 'unmapped') flags.push('run_outcome_unmapped');
+        } else if (!checkAttempt(candidate).ok) {
+          flags.push('run_outcome_refused');
+          runAttempt = 'refused';
+        } else {
+          await deps.recordAttempt(ctx.tenantId, candidate);
+          runAttempt = { attemptId: candidate.attemptId, outcome: candidate.outcome, runDate: candidate.attemptedAt.slice(0, 10) };
+        }
+
         const update: RouteStopUpdate = {
           routeId, stopId, driverId: r.driverId, orderRef: r.orderRef, state: r.state, codExpectedMinor: r.codExpectedMinor,
           codCollectedMinor: r.codCollectedMinor, codMethod: r.codMethod, proofKind: r.proofKind, geofenceMismatch: r.geofenceMismatch,
           failureReason: r.failureReason, contributionFlag: r.contributionFlag, currency: r.currency, relayedBy: ctx.userId, at: r.at,
-          orderStep, governanceFlags: flags,
+          orderStep, governanceFlags: flags, runAttempt,
         };
         await deps.recordStopUpdate(ctx.tenantId, update);
         await deps.recordAudit?.(ctx.tenantId, {
@@ -329,12 +401,13 @@ export function syncedDriverRunRoutes(deps: SyncedDriverRunDeps): readonly Route
           after: {
             stopId, orderRef: r.orderRef, state: r.state, codExpectedMinor: String(r.codExpectedMinor), codCollectedMinor: String(r.codCollectedMinor),
             codMethod: r.codMethod ?? '', proofKind: r.proofKind ?? '', failureReason: r.failureReason ?? '',
-            orderStep: typeof orderStep === 'string' ? orderStep : orderStep.event, relayedBy: ctx.userId, flags: flags.join(','),
+            orderStep: typeof orderStep === 'string' ? orderStep : orderStep.event, runAttempt: typeof runAttempt === 'string' ? runAttempt : runAttempt.outcome,
+            relayedBy: ctx.userId, flags: flags.join(','),
           },
           correlationId: routeId,
         });
         // 202: it happened at the door; this records that head office now holds it.
-        return { status: 202, body: { routeId, stopId, state: r.state, recorded: true, flags, orderStep } };
+        return { status: 202, body: { routeId, stopId, state: r.state, recorded: true, flags, orderStep, runAttempt } };
       },
     },
     {

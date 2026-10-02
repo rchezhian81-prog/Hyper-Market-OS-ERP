@@ -777,7 +777,7 @@ export function buildSurface(deps: {
     ...syncedDriverRunRoutes(store === undefined
       ? {
         permissionsOfUser: empty(undefined), stopUpdates: empty([]), recordStopUpdate: () => {}, settlement: empty(undefined), recordSettlement: () => {},
-        handover: empty(undefined), recordHandover: () => {}, deliveryState: empty([]), recordDeliveryTransition: () => {}, now,
+        handover: empty(undefined), recordHandover: () => {}, deliveryState: empty([]), recordDeliveryTransition: () => {}, recordAttempt: () => {}, now,
       }
       : { ...driverRunAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...financeRoutes(store === undefined ? {

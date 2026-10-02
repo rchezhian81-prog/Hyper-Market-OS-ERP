@@ -62,6 +62,11 @@ pilot. The master source of truth for the human sign-offs is `../registers/uat-c
 - **`automatic-deployment.md`** — Stage F: a merged `main` deploys itself to the demo box through the
   `deploy` user's forced command (`infra/deploy/release.sh`); a broken release puts the previous one back.
   The five GitHub `demo` environment secret **names** are in it; no value is written anywhere.
+- **`demo-deployment-handover.md`** — the ONE sheet the server administrator follows (2 Oct 2026): every step marked
+  with where it runs (the box, the administrator's own computer, GitHub's settings), prerequisites, exact commands and
+  the evidence to return without an address, key or secret — preserve the server work, push the stand-up branch, inspect
+  80/443 and choose configuration A or B, back up, the application database role, settings, checkout to `main`, the
+  `deploy` user and forced-command key, the five `demo` secrets, deploy, verify, smoke.
 - **`demo-practice-environment.md`** — the master runbook for the owner's Option 1: where the demo box
   actually stands (28 Sep release, 78 commits behind), the one-time administrator checklist that connects
   the pipeline to the box that was stood up before Stage F existed, the verification of the deployed

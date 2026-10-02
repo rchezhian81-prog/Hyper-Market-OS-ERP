@@ -7854,6 +7854,8 @@ export function driverRunAdapter(input: {
     },
     deliveryState: orders.deliveryState,
     recordDeliveryTransition: orders.recordDeliveryTransition,
+    // OB-09: the phone's door outcomes join the driver's own run register — the stream `/v1/delivery/runs/:driverId` reads.
+    recordAttempt: orders.appendAttempt,
   };
 }
 

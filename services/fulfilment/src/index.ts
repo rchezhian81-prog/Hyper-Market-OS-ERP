@@ -30,8 +30,23 @@ import {
   type CodCollection,
 } from '../../../packages/fulfilment/src/index';
 
+/**
+ * Every outcome a drop can have. `partially_delivered` and `customer_had_no_cash` were added by the owner's written
+ * decision OB-09 (2 Oct 2026, Option 2): a customer who kept SOME of the order with proof, and a door where nothing
+ * changed hands because the customer had no cash, are outcomes in their own right on the driver's run — the exact
+ * reason, the quantities and the cash balances are kept, never folded into "delivered" or "refused".
+ */
 export type AttemptOutcome =
-  | 'delivered' | 'nobody_in' | 'refused' | 'wrong_address' | 'could_not_access' | 'damaged_in_transit';
+  | 'delivered' | 'partially_delivered'
+  | 'nobody_in' | 'refused' | 'wrong_address' | 'could_not_access' | 'damaged_in_transit' | 'customer_had_no_cash';
+
+/** The closed list a payload's outcome is checked against — a word the run register has never heard is refused, not guessed at. */
+export const ATTEMPT_OUTCOMES: readonly AttemptOutcome[] = Object.freeze([
+  'delivered', 'partially_delivered', 'nobody_in', 'refused', 'wrong_address', 'could_not_access', 'damaged_in_transit', 'customer_had_no_cash',
+] as const);
+
+/** The outcomes where goods changed hands: proof is required (hard rule #6) and cash may have been taken. */
+const HANDS_OVER: ReadonlySet<AttemptOutcome> = new Set<AttemptOutcome>(['delivered', 'partially_delivered']);
 
 export interface DeliveryAttempt {
   readonly attemptId: string;
@@ -44,6 +59,9 @@ export interface DeliveryAttempt {
   readonly notes?: string;
   /** Cash taken at the door, if any. */
   readonly cashCollectedMinor?: number;
+  /** The cash-on-delivery the order expected at that door (OB-09): what a partial delivery left uncollected, and what a
+   *  customer who had no cash still owes. Optional — the direct route's older callers never sent it. */
+  readonly codExpectedMinor?: number;
 }
 
 export type AttemptRefusal = 'delivered_without_proof' | 'failure_without_a_reason' | 'cash_without_delivery';
@@ -62,19 +80,19 @@ export interface AttemptCheck {
  * of them.
  */
 export function checkAttempt(a: DeliveryAttempt): AttemptCheck {
-  if (a.outcome === 'delivered' && (a.proofRef === undefined || a.proofRef.trim() === '')) {
+  if (HANDS_OVER.has(a.outcome) && (a.proofRef === undefined || a.proofRef.trim() === '')) {
     return {
       ok: false, refusedBecause: 'delivered_without_proof',
       detail: 'a delivery recorded with no proof cannot be defended when the customer says it never arrived, and by then the driver has done two hundred more drops and remembers none of them',
     };
   }
-  if (a.outcome !== 'delivered' && (a.notes === undefined || a.notes.trim().length < 5)) {
+  if (!HANDS_OVER.has(a.outcome) && (a.notes === undefined || a.notes.trim().length < 5)) {
     return {
       ok: false, refusedBecause: 'failure_without_a_reason',
       detail: `a ${a.outcome} attempt with no note tells whoever redelivers nothing about what to do differently`,
     };
   }
-  if ((a.cashCollectedMinor ?? 0) > 0 && a.outcome !== 'delivered') {
+  if ((a.cashCollectedMinor ?? 0) > 0 && !HANDS_OVER.has(a.outcome)) {
     return {
       ok: false, refusedBecause: 'cash_without_delivery',
       detail: `cash was recorded against a ${a.outcome} attempt. Money taken at a door where nothing was handed over needs a person to look at it, not a record that quietly balances`,
@@ -88,7 +106,18 @@ export interface RunReconciliation {
   readonly runDate: string;
   readonly attempts: number;
   readonly delivered: number;
+  /** Failures of every kind — the customer-had-no-cash ones are counted again, by name, in `customerHadNoCash`. */
   readonly failed: number;
+  /** Stops where the customer took SOME of the order with proof (OB-09) — apart from full deliveries and from failures. */
+  readonly partiallyDelivered: number;
+  /** Stops where nothing changed hands because the customer had no cash (OB-09) — a payment problem, not a driver shortfall. */
+  readonly customerHadNoCash: number;
+  /** Cash-on-delivery expected at the doors where the customer had no cash — money the shop is still owed, by order. */
+  readonly codUncollectedMinor: number;
+  readonly noCashOrders: readonly string[];
+  /** On partial deliveries: the COD expected less the cash taken — the remainder is settled downstream (M18/M23), never a driver "short". */
+  readonly partialRemainderMinor: number;
+  readonly partialOrders: readonly string[];
   readonly cashExpectedMinor: number;
   readonly cashHandedInMinor: number;
   readonly differenceMinor: number;
@@ -116,7 +145,16 @@ export function reconcileRun(input: {
 }): RunReconciliation {
   const mine = input.attempts.filter((a) => a.driverId === input.driverId);
   const delivered = mine.filter((a) => a.outcome === 'delivered');
-  const cashExpectedMinor = delivered.reduce((t, a) => t + (a.cashCollectedMinor ?? 0), 0);
+  // OB-09: a partial delivery is neither a delivery nor a failure — the customer kept some goods with proof and the
+  // driver holds the cash taken for them; a customer who had no cash is a failure whose reason is kept by name.
+  const partial = mine.filter((a) => a.outcome === 'partially_delivered');
+  const noCash = mine.filter((a) => a.outcome === 'customer_had_no_cash');
+  const failedCount = mine.length - delivered.length - partial.length;
+  const cashExpectedMinor = [...delivered, ...partial].reduce((t, a) => t + (a.cashCollectedMinor ?? 0), 0);
+  const codUncollectedMinor = noCash.reduce((t, a) => t + (a.codExpectedMinor ?? 0), 0);
+  const partialRemainderMinor = partial.reduce((t, a) => t + Math.max(0, (a.codExpectedMinor ?? 0) - (a.cashCollectedMinor ?? 0)), 0);
+  const noCashOrders = [...new Set(noCash.map((a) => a.orderId))].sort();
+  const partialOrders = [...new Set(partial.map((a) => a.orderId))].sort();
   const attempted = new Set(mine.map((a) => a.orderId));
   const assigned = new Set(input.assignedOrderIds);
   const outstanding = input.assignedOrderIds.filter((id) => !attempted.has(id)).sort();
@@ -133,17 +171,21 @@ export function reconcileRun(input: {
 
   return {
     driverId: input.driverId, runDate: input.runDate,
-    attempts: mine.length, delivered: delivered.length, failed: mine.length - delivered.length,
+    attempts: mine.length, delivered: delivered.length, failed: failedCount,
+    partiallyDelivered: partial.length, customerHadNoCash: noCash.length,
+    codUncollectedMinor, noCashOrders, partialRemainderMinor, partialOrders,
     cashExpectedMinor, cashHandedInMinor: input.cashHandedInMinor, differenceMinor,
     outstanding, unassigned,
-    detail: `${input.driverId} on ${input.runDate}: ${delivered.length} delivered, ${mine.length - delivered.length} failed, ${outstanding.length} not attempted, ${unassigned.length} not on the run`,
+    detail: `${input.driverId} on ${input.runDate}: ${delivered.length} delivered, ${partial.length} partly delivered, ${failedCount} failed (${noCash.length} because the customer had no cash), ${outstanding.length} not attempted, ${unassigned.length} not on the run`,
     ownerAction: differenceMinor !== 0
       ? `cash is out by ${differenceMinor} against what the delivered orders say was collected. Settle it with ${input.driverId} today — tomorrow nobody can say which door it was`
       : unassigned.length > 0
         ? `${unassigned.length} delivery attempt(s) were made against orders that are not on ${input.driverId}'s run for ${input.runDate}: ${unassigned.join(', ')}. Either the run was never recorded, or goods left the building against orders nobody dispatched`
         : outstanding.length > 0
           ? `${outstanding.length} order(s) went out and have no attempt recorded at all: ${outstanding.join(', ')}. Those are not failures, they are orders nobody can account for`
-          : 'nothing — the run reconciles and every order has an outcome',
+          : noCashOrders.length > 0
+            ? `${noCashOrders.length} customer(s) had no cash at the door: ${codUncollectedMinor} of cash-on-delivery is uncollected on ${noCashOrders.join(', ')}. That is the customer's payment to chase — a payment link or a redelivery — not ${input.driverId}'s shortfall; the orders stay failed until reattempted or returned`
+            : 'nothing — the run reconciles and every order has an outcome',
   };
 }
 
@@ -209,7 +251,7 @@ function readProof(v: unknown): ProofOfDelivery | undefined {
  * a `failed` state the order can later be reattempted from or returned to origin, never a silence.
  */
 function stateAfterAttempt(outcome: AttemptOutcome): DeliveryState {
-  const event: DeliveryEvent = outcome === 'delivered' ? 'deliver' : 'fail';
+  const event: DeliveryEvent = outcome === 'delivered' ? 'deliver' : outcome === 'partially_delivered' ? 'deliver_partial' : 'fail';
   return transitionDelivery('out_for_delivery', event);
 }
 
@@ -258,7 +300,19 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
       api: 'API-08', method: 'POST', path: '/v1/delivery/attempts',
       permission: 'delivery.attempt.record', entitlement: 'delivery', idempotent: true,
       handler: async (ctx) => {
-        const attempt = ctx.body as DeliveryAttempt;
+        const b = (ctx.body ?? {}) as Partial<DeliveryAttempt>;
+        // The outcome is a word from the closed list (OB-09 added two) — never guessed at; the money fields are whole paisa.
+        if (!ATTEMPT_OUTCOMES.includes(b.outcome as AttemptOutcome)
+          || (b.cashCollectedMinor !== undefined && !isNonNegInt(b.cashCollectedMinor))
+          || (b.codExpectedMinor !== undefined && !isNonNegInt(b.codExpectedMinor))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_delivery_attempt',
+            whatHappened: `A delivery attempt needs an outcome from: ${ATTEMPT_OUTCOMES.join(', ')} — and whole paisa in cashCollectedMinor / codExpectedMinor when present.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the outcome the run register knows. The order still shows as out for delivery; do not leave the drop unrecorded.',
+          });
+        }
+        const attempt = b as DeliveryAttempt;
         const check = checkAttempt(attempt);
         if (!check.ok) {
           throw apiError(422, {
