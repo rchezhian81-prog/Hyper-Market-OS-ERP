@@ -45,8 +45,25 @@ server, prepare ONE complete administrator handover and continue software work m
   it has NO route to the box (no key, no address, no secret may pass through it): nothing in the handover is executed here.
 - **Not done, by definition:** deployment, verification on the VPS, the demo URL (the administrator returns it; it is not
   written in the repository), SP-10 staff sessions (0).
-- **Next in software:** fold the picker's wave pack into the per-order pack / manifest (M19-FR-02), then head office
-  assignment of waves / routes to handhelds.
+- **Next in software — the exact next task:** fold the picker's wave pack into the per-order pack / manifest (M19-FR-02),
+  then head office assignment of waves / routes to handhelds. **Design facts established 2 Oct 2026 (do not re-derive):**
+  the per-order pack register (`services/fulfilment/src/packing.ts`, `packOrder` → `recordPack`, dispatch builds the
+  manifest FROM the recorded pack) needs per line `name`, `handling` (ambient / chilled / frozen / raw_meat / ready_to_eat /
+  fragile / hazardous), `orderedMinor`, `pickedMinor`, `uom`, `unitPriceMinor`, and for cold lines `packTenthsC`; the picker
+  relays per line only `orderRef`, `productId`, `state`, `pickedQty`, `uom`, `finalPriceMinor`, `currency`, `substituted`,
+  `note`, `pickedBy` (`readRelayedOutcome` in `waves.ts`) and per wave `temperatureC` / `tamperSealRef`; the phone's own line
+  model already holds `description` and `requiredQty` (`apps/picker-app/src/pick-session.ts`) but does not send them; the
+  product master has `safety.storageConditions` (free text) and **no handling class**; the order register holds lines as
+  `productId` + `quantityMinor`. So the fold is three steps in dependency order: (1) the picker payload gains `description`
+  and `requiredQty` (the phone has them; one relay field each, backward compatible); (2) a per-product **handling class** on
+  the product master (M03-FR-03 regulated flags / M10 cold chain — the right source; it rides the published catalogue pack
+  to the box like the age restriction does), read by head office at fold time — a product with none is folded as
+  `handling_unknown` and FLAGGED, never defaulted to ambient; (3) on `…/packed/synced`, head office derives one `PackResult`
+  per ORDER on the wave from the line register (`finalPriceMinor` is the D09 price captured at pick; the crate's
+  `temperatureC` stands as every cold line's `packTenthsC`; a missing one keeps the existing `no_cold_chain_temperature`
+  flag) and records it on the per-order pack register so `GET /v1/fulfilment/orders/:orderId/pack` and the dispatch route
+  work for an order picked on the handheld. Proof to write: unit on the fold, an integration case in
+  `picker-handheld-reaches-the-cloud-through-the-edge.test.ts` reading the order's pack and dispatching it.
 
 ## Demo deployment pipeline and the store practice environment — Option 1 (1 October 2026)
 
