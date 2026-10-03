@@ -624,6 +624,11 @@ export function pickerPayload(input: ScreenInput): Record<string, unknown> | nul
     wavesAssigned: assigned?.waves.length ?? 0,
   };
 
+  // HA-2: the product master's handling class, as the pulled catalogue pack carries it — so the picker sees "chilled" on the
+  // line and keeps it cold. A product the pack does not classify carries none; the phone shows nothing rather than a guess.
+  const handlingOf = new Map<string, string>();
+  const classified = input.cataloguePack?.snapshot.products;
+  if (classified !== undefined) for (const p of classified) if (p.handling !== undefined) handlingOf.set(p.productId, p.handling);
   const lines = wave.lines.map((l) => ({
     lineId: l.lineId,
     orderRef: l.orderRef,
@@ -633,6 +638,7 @@ export function pickerPayload(input: ScreenInput): Record<string, unknown> | nul
     requiredQty: l.requiredQty,
     uom: l.uom,
     unitPrice: { minor: l.unitPriceMinor, currency: 'INR' },
+    ...(handlingOf.has(l.productId) ? { handling: handlingOf.get(l.productId)! } : {}),
   }));
 
   const map = shelfMapFor(input);

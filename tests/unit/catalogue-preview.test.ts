@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { regulatedFlagsFor } from '../../services/catalogue/src/catalogue-preview';
+import { regulatedFlagsFor, toMaster } from '../../services/catalogue/src/catalogue-preview';
+import type { ProductRecord } from '../../packages/product/src/index';
 
 // E1b (M03-FR-03 → M12-FR-04): the product master's declared minimum age is what the cloud-built pack carries as the
 // pack contract's `regulatedFlags` — the ONE field the lane's age gate (`requiresAgeCheck`) and the publish step-up's
@@ -21,5 +22,15 @@ describe('regulatedFlagsFor — the product master’s restriction becomes the p
     for (const bad of [0, -1, 17.5, Number.NaN, Number.POSITIVE_INFINITY, '18' as unknown as number]) {
       expect(regulatedFlagsFor({ safety: { minimumAge: bad } }), `minimumAge ${String(bad)}`).toBeUndefined();
     }
+  });
+});
+
+describe('toMaster — the product master\'s handling class becomes the pack\'s (HA-2)', () => {
+  const record = (over: Partial<ProductRecord> = {}): ProductRecord => ({
+    productId: 'p-milk', tenantId: 't1', sku: 'MILK1', name: 'Milk 1L', primaryCategoryId: 'grocery', baseUom: 'each', taxClass: '0401', lifecycle: 'active', ...over,
+  });
+  it('travels as the master holds it, and stays ABSENT when the master has none — never ambient by default', () => {
+    expect(toMaster(record({ handling: 'chilled' }), '2026-10-03').handling).toBe('chilled');
+    expect(toMaster(record(), '2026-10-03')).not.toHaveProperty('handling');
   });
 });

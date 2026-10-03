@@ -55,6 +55,13 @@ function readProduct(productId: string, tenantId: string, p: Record<string, unkn
     ...(typeof p['recallBlocked'] === 'boolean' ? { recallBlocked: p['recallBlocked'] } : {}),
     // M19-FR-02: the handling class travels as given; the ENGINE refuses a word off its list (blocks_publish), never coerces it.
     ...(typeof p['handling'] === 'string' ? { handling: p['handling'] as HandlingClass } : {}),
+    // HA-3: a product's own cold-chain limits travel as given (numbers only); the ENGINE judges them — whole tenths, ordered, cold class.
+    ...(isObj(p['coldChain']) ? {
+      coldChain: {
+        ...(typeof p['coldChain']['minTenthsC'] === 'number' ? { minTenthsC: p['coldChain']['minTenthsC'] } : {}),
+        ...(typeof p['coldChain']['maxTenthsC'] === 'number' ? { maxTenthsC: p['coldChain']['maxTenthsC'] } : {}),
+      },
+    } : {}),
   };
 }
 

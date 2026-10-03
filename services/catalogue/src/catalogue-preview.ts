@@ -56,7 +56,7 @@ export function regulatedFlagsFor(r: Pick<ProductRecord, 'safety'>): Readonly<Re
   return typeof age === 'number' && Number.isInteger(age) && age > 0 ? { minimumAge: age } : undefined;
 }
 
-function toMaster(r: ProductRecord, asOf: string): MasterProduct {
+export function toMaster(r: ProductRecord, asOf: string): MasterProduct {
   const mrp = mrpOn(r, asOf); // the MRP in force on the build date (a future MRP does not apply early)
   const regulatedFlags = regulatedFlagsFor(r);
   return {
@@ -69,6 +69,8 @@ function toMaster(r: ProductRecord, asOf: string): MasterProduct {
     ...(mrp !== undefined ? { mrpMinor: mrp.minor } : {}),
     ...(r.recallBlocked !== undefined ? { recallBlock: r.recallBlocked } : {}),
     ...(regulatedFlags !== undefined ? { regulatedFlags } : {}),
+    // HA-2: the handling class rides the pack as the master holds it — absent stays absent, never 'ambient' by default.
+    ...(r.handling !== undefined ? { handling: r.handling } : {}),
   };
 }
 

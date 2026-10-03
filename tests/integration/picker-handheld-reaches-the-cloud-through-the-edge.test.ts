@@ -132,12 +132,13 @@ async function cloud(): Promise<Cloud> {
   await h.enableFeature(A, 'delivery'); // this shop's plan includes home delivery (M36-FR-01) — a route can be assigned (HA-1)
   // The product master (M19-FR-02 fold): rice travels ambient, milk chilled — and ghee has NO handling class, deliberately.
   const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
-  const publish = (id: string, name: string, handling?: string) => h.request({
+  // HA-3: the milk carries its OWN cold-chain limit (6.0 °C); the pack line says it was judged by the product's limit.
+  const publish = (id: string, name: string, handling?: string, coldChain?: { maxTenthsC: number }) => h.request({
     method: 'POST', path: `/v1/catalogue/products/${id}/publish`, userId: 'u-owner', tenantId: A, idempotencyKey: `pub-${id}`,
-    body: { product: { sku: `SKU-${id}`, name, baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'draft', ...(handling === undefined ? {} : { handling }) }, categories: [GROCERY] },
+    body: { product: { sku: `SKU-${id}`, name, baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'draft', ...(handling === undefined ? {} : { handling }), ...(coldChain === undefined ? {} : { coldChain }) }, categories: [GROCERY] },
   });
-  for (const [id, name, handling] of [['p-rice', 'Rice 5kg', 'ambient'], ['p-milk', 'Milk 1L', 'chilled'], ['p-ghee', 'Ghee 500g', undefined]] as const) {
-    expect((await publish(id, name, handling)).status).toBe(201);
+  for (const [id, name, handling, coldChain] of [['p-rice', 'Rice 5kg', 'ambient', undefined], ['p-milk', 'Milk 1L', 'chilled', { maxTenthsC: 60 }], ['p-ghee', 'Ghee 500g', undefined, undefined]] as const) {
+    expect((await publish(id, name, handling, coldChain)).status).toBe(201);
   }
   const dir = await tempDir('sre-picker-handheld-cloud-');
 
@@ -311,6 +312,9 @@ describe('the picker handheld: enrol → device socket → box (durable) → hea
       expect.objectContaining({ lineId: 'l1', productId: 'p-rice', name: 'Rice 5kg', handling: 'ambient', packedMinor: 2, finalPriceMinor: 200_00, shortMinor: 0, crateId: 'crate-1' }),
       expect.objectContaining({ lineId: 'l2', productId: 'p-milk', name: 'Milk 1L', handling: 'chilled', packedMinor: 1, finalPriceMinor: 60_00, shortMinor: 0, crateId: 'crate-1' }),
     ]);
+    // HA-3: the milk was judged by the limit set on the product, and the line says so; the ambient rice carries none.
+    expect(pack.lines[1]).toMatchObject({ coldChain: { maxTenthsC: 60, source: 'product' } });
+    expect(pack.lines[0]).not.toHaveProperty('coldChain');
     const packRecords = async (orderId: string) => (await c.h.store.readStream(A, STREAM_FOR.forOrderPack(orderId), { type: 'OrderPacked' })).length;
     expect(await packRecords('ORD-1')).toBe(1);
 

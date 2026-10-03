@@ -71,6 +71,19 @@ export type RegulatedKind = 'food' | 'packed' | 'weighed' | 'age_restricted' | '
 export const HANDLING_CLASSES = Object.freeze(['ambient', 'chilled', 'frozen', 'raw_meat', 'ready_to_eat', 'fragile', 'hazardous'] as const);
 export type HandlingClass = (typeof HANDLING_CLASSES)[number];
 
+/** The handling classes the pack engine judges by temperature — the only ones a per-product limit may be set on (HA-3). */
+export const COLD_HANDLING_CLASSES = Object.freeze(['chilled', 'frozen', 'raw_meat'] as const);
+
+/**
+ * A product's own cold-chain limits at pack, in tenths of a degree (HA-3 · M10-FR-02 · M19-FR-02). Set only on a chilled,
+ * frozen or raw-meat product. Absent means the pack engine's APPROVED class default applies — and every packed line says
+ * which of the two it was judged by, so a default is never silent.
+ */
+export interface ColdChainLimits {
+  readonly minTenthsC?: number;
+  readonly maxTenthsC?: number;
+}
+
 /** Safety and compliance content (M03-FR-03 / D01). */
 export interface SafetyContent {
   /** Ingredient list, where the law requires one. */
@@ -119,6 +132,8 @@ export interface ProductRecord {
   readonly recallBlocked?: boolean;
   /** How it travels and what it may share a crate with (M19-FR-02). Absent = nobody has said; the pack refuses, never guesses. */
   readonly handling?: HandlingClass;
+  /** The product's own cold-chain limits at pack (HA-3). Absent = the approved class default, said on the pack line. */
+  readonly coldChain?: ColdChainLimits;
 }
 
 export type ValidationSeverity = 'blocks_publish' | 'advisory';
@@ -321,6 +336,20 @@ export function validateProduct(
       severity: 'blocks_publish',
       message: `handling "${product.handling}" is not one of ${HANDLING_CLASSES.join(', ')} — the packer's crate rules cannot read it`,
     });
+  }
+
+  // A cold-chain limit is explicit or it is nothing: whole tenths of a degree, a minimum not above the maximum, and only on
+  // a product whose handling class the pack engine judges by temperature. Never coerced, never applied to a warm product.
+  const cc = product.coldChain;
+  if (cc !== undefined) {
+    const whole = (v: number | undefined): boolean => v === undefined || Number.isInteger(v);
+    if (!whole(cc.minTenthsC) || !whole(cc.maxTenthsC) || (cc.minTenthsC === undefined && cc.maxTenthsC === undefined)) {
+      issues.push({ field: 'coldChain', severity: 'blocks_publish', message: 'a cold-chain limit needs a whole minimum and/or maximum in tenths of a degree (for example maxTenthsC 50 for 5.0 °C)' });
+    } else if (cc.minTenthsC !== undefined && cc.maxTenthsC !== undefined && cc.minTenthsC > cc.maxTenthsC) {
+      issues.push({ field: 'coldChain', severity: 'blocks_publish', message: `the cold-chain minimum (${cc.minTenthsC}) is above the maximum (${cc.maxTenthsC})` });
+    } else if (product.handling === undefined || !(COLD_HANDLING_CLASSES as readonly string[]).includes(product.handling)) {
+      issues.push({ field: 'coldChain', severity: 'blocks_publish', message: `a cold-chain limit on a product whose handling is ${product.handling ?? 'not set'} — set handling to chilled, frozen or raw_meat first, or remove the limit` });
+    }
   }
 
   return {

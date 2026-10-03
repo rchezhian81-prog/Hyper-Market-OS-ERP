@@ -39,6 +39,8 @@ export interface MasterProduct {
   /** Lot/batch-tracked — the lane captures the batch on each sale line for recall traceability (M10-FR-03). */
   readonly batchTracked?: boolean;
   readonly regulatedFlags?: Readonly<Record<string, unknown>>;
+  /** The product master's handling class (HA-2) — carried as given, absent when none was set. */
+  readonly handling?: string;
 }
 
 /** Tax classes (HSN/GST) keyed by id, in basis points. */
@@ -129,6 +131,7 @@ export function buildCatalogueSnapshot(input: BuildSnapshotInput): BuildSnapshot
       recallBlock: master.recallBlock,
       batchTracked: master.batchTracked,
       regulatedFlags: master.regulatedFlags,
+      ...(master.handling === undefined ? {} : { handling: master.handling }),
     });
   }
 

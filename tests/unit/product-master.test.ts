@@ -247,3 +247,18 @@ describe('the handling class is master data (M19-FR-02 fold · M10-FR-02)', () =
     expect(none.issues.map((i) => i.field)).not.toContain('handling');
   });
 });
+
+describe('a product\'s own cold-chain limit is explicit or it is nothing (HA-3 · M10-FR-02)', () => {
+  it('publishes whole tenths on a chilled / frozen / raw-meat product; refuses a fraction, an empty limit, a minimum above the maximum, and a limit on a product that is not cold or has no handling class', () => {
+    expect(validateProduct(product({ handling: 'chilled', coldChain: { maxTenthsC: 30 } }), CATEGORIES).publishable).toBe(true);
+    expect(validateProduct(product({ handling: 'frozen', coldChain: { maxTenthsC: -180 } }), CATEGORIES).publishable).toBe(true);
+    expect(validateProduct(product({ handling: 'raw_meat', coldChain: { minTenthsC: -20, maxTenthsC: 40 } }), CATEGORIES).publishable).toBe(true);
+    const bad = (over: Partial<ProductRecord>) => validateProduct(product(over), CATEGORIES).issues.filter((i) => i.field === 'coldChain').map((i) => i.message);
+    expect(bad({ handling: 'chilled', coldChain: { maxTenthsC: 3.5 } })[0]).toContain('whole minimum and/or maximum');
+    expect(bad({ handling: 'chilled', coldChain: {} })[0]).toContain('whole minimum and/or maximum');
+    expect(bad({ handling: 'chilled', coldChain: { minTenthsC: 60, maxTenthsC: 30 } })[0]).toContain('minimum (60) is above the maximum (30)');
+    expect(bad({ handling: 'ambient', coldChain: { maxTenthsC: 30 } })[0]).toContain('whose handling is ambient');
+    expect(bad({ coldChain: { maxTenthsC: 30 } })[0]).toContain('whose handling is not set');
+    expect(validateProduct(product({ handling: 'chilled' }), CATEGORIES).issues.map((i) => i.field)).not.toContain('coldChain'); // absent = the approved class default, said on the pack line
+  });
+});
