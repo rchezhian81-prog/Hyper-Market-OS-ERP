@@ -25,6 +25,9 @@ SRE_API_URL=http://127.0.0.1:8081
 # The public front, checked after the stand-up check (which looks at loopback ports only, so a proxy that refuses to
 # start would otherwise pass). Configuration B (the stack's proxy on a loopback port): https://127.0.0.1:8443. Empty skips it.
 SRE_FRONT_URL=https://127.0.0.1
+# The web front on the box's loopback (the base compose publishes it there). After a tool restart the release waits for
+# it to answer again before the stand-up check; empty skips the wait.
+SRE_WEB_URL=http://127.0.0.1:8080
 SRE_READY_TIMEOUT=180
 SRE_READY_POLL=2
 # The append-only record of every deployment attempt, and the lock that keeps deployments one at a time.

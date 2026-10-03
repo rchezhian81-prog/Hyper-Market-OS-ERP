@@ -52,6 +52,7 @@ if [ -f "$CONF" ]; then . "$CONF"; fi
 : "${SRE_BUILD_TOOLS:=demo-login}"
 : "${SRE_API_URL:=http://127.0.0.1:8081}"
 : "${SRE_FRONT_URL:=https://127.0.0.1}"
+: "${SRE_WEB_URL:=http://127.0.0.1:8080}"
 : "${SRE_READY_TIMEOUT:=180}"
 : "${SRE_READY_POLL:=2}"
 : "${SRE_RELEASE_LOG:=/opt/sre/releases.log}"
@@ -145,6 +146,20 @@ bring_up() {
   done
 }
 
+# The demo front answers the till probe only through the demo sign-in's gate, so for a second or two after that
+# restart it says 500 — and the stand-up check, a one-shot, went RED on a healthy box (3 Oct 2026, run 37134559059,
+# "rollback failed" with nothing broken). Give the front up to 45 s to answer again before judging anything.
+web_settled() {
+  [ -z "$SRE_WEB_URL" ] && return 0
+  local deadline=$(( $(date +%s) + 45 )) code
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    code=$(curl -sS -L -o /dev/null --max-time 5 -w '%{http_code}' "$SRE_WEB_URL/pos/" 2>/dev/null || echo 000)
+    case "$code" in 2*|3*|401|403) return 0;; esac
+    sleep "$SRE_READY_POLL"
+  done
+  return 1
+}
+
 wait_ready() {
   local deadline=$(( $(date +%s) + SRE_READY_TIMEOUT ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -170,6 +185,8 @@ front_answers() {
 verify() {
   say "waiting up to ${SRE_READY_TIMEOUT}s for the API to be READY…"
   wait_ready || { say "the API did not become ready in time."; return 1; }
+  say "waiting for the web front to answer again after the tool restarts…"
+  web_settled || say "  (the web front did not answer within 45 s — the stand-up check will say so)"
   say "running the stand-up check…"
   STANDUP_ENV_FILE="$SRE_APP_DIR/infra/compose/$SRE_ENV_FILE" node scripts/standup-check.mjs || return 1
   say "checking the public front at ${SRE_FRONT_URL:-"(skipped)"}…"
