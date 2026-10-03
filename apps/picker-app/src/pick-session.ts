@@ -276,6 +276,10 @@ export class PickSession {
           // The order reference travels; the customer does not. PII stays off the handheld (§31).
           orderRef: next.orderRef,
           productId: next.substituteProductId ?? next.productId,
+          // M19-FR-02 fold: head office builds the ORDER's pack from this — the name as the shop wrote it and the quantity
+          // the order asked for, so a short line is charged for what goes and says by how much it is short.
+          description: next.description,
+          requiredQty: next.requiredQty,
           state: next.state,
           pickedQty: next.pickedQty,
           uom: next.uom,

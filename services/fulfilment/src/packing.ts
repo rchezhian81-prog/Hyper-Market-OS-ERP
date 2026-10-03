@@ -25,7 +25,7 @@ import {
 
 export type { PackResult, Manifest } from '../../../packages/fulfilment/src/index';
 
-const HANDLING: readonly HandlingClass[] = ['ambient', 'chilled', 'frozen', 'raw_meat', 'ready_to_eat', 'fragile', 'hazardous'];
+export const HANDLING: readonly HandlingClass[] = ['ambient', 'chilled', 'frozen', 'raw_meat', 'ready_to_eat', 'fragile', 'hazardous'];
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isNonNegInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
@@ -89,7 +89,8 @@ export interface FulfilmentPackingDeps {
   readonly now: () => string;
 }
 
-const packDigest = (r: PackResult): string =>
+/** What makes two packs the same pack — the key a retry collapses on (the wave fold uses it too). */
+export const packDigest = (r: PackResult): string =>
   [r.outcome, r.totalMinor, r.lines.map((l) => `${l.lineId}:${l.finalPriceMinor}:${l.crateId}`).join(','), r.refused.map((x) => `${x.lineId}:${x.reason}`).join(',')].join('|');
 
 export function fulfilmentPackingRoutes(deps: FulfilmentPackingDeps): readonly Route[] {

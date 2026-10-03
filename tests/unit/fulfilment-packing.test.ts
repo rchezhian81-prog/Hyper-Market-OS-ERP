@@ -56,6 +56,25 @@ describe('a weighed line is priced at its ACTUAL packed weight (D09)', () => {
   });
 });
 
+describe('a price settled at pick stands (D09 · M19-FR-02 fold)', () => {
+  it('keeps the handheld\'s final price exactly — the pack never re-prices what the scale settled, and a weighed line needs no grams here', () => {
+    const r = pack([
+      line({ lineId: 'l-chicken', productId: 'p-chicken', name: 'Fresh chicken', handling: 'raw_meat', orderedMinor: 1, pickedMinor: 1, uom: 'kg', unitPriceMinor: 0, weighed: true, packTenthsC: 22, finalPriceMinor: 28_488 }),
+      line({ orderedMinor: 3, pickedMinor: 2, unitPriceMinor: 0, finalPriceMinor: 53_000 }),
+    ]);
+    expect(r.outcome).toBe('packed');
+    expect(r.lines.map((l) => [l.lineId, l.finalPriceMinor, l.shortMinor])).toEqual([['l-chicken', 28_488, 0], ['l-1', 53_000, 1]]);
+    expect(r.totalMinor).toBe(81_488);
+    expect(r.lines[1]!.detail).toContain('2 of 3, short, and charged only for what is going');
+    expect(r.lines[0]!.detail).toContain('settled at pick');
+  });
+
+  it('a line without one is priced here as before — by count, or by weight when the grams were captured', () => {
+    expect(pack([line({})]).lines[0]!.finalPriceMinor).toBe(53_000);
+    expect(pack([CHICKEN]).lines[0]!.finalPriceMinor).toBe(28_488);
+  });
+});
+
 describe('a missing pack temperature is a failure, not a gap (M10-FR-02)', () => {
   it('REFUSES a chilled line with no reading taken', () => {
     const result = pack([{ ...CHICKEN, packTenthsC: undefined }], { 'l-chicken': 'crate-cold' });

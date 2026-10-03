@@ -1583,7 +1583,7 @@ export function payslipStoreAdapter(input: { readonly store: EventStore; readonl
   };
 }
 
-export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forSaleReturns, supplierInvoices: SUPPLIER_INVOICES_STREAM } as const;
+export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forSaleReturns, forOrderPack, supplierInvoices: SUPPLIER_INVOICES_STREAM } as const;
 
 export function catalogueAdapter(input: {
   readonly store: EventStore;
@@ -7773,6 +7773,8 @@ export function fulfilmentWaveAdapter(input: {
   readonly now: () => string;
 }): Omit<WaveSyncDeps, 'recordAudit'> {
   const forWave = (waveId: string): string => streamName(STREAM.delivery, 'wave', waveId);
+  const products = productMasterAdapter(input);
+  const packs = fulfilmentPackingAdapter(input);
   return {
     now: input.now,
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
@@ -7801,6 +7803,11 @@ export function fulfilmentWaveAdapter(input: {
         payload: r,
       }));
     },
+    // M19-FR-02 fold: the product master's handling class, and the SAME per-order pack register the desk's pack route
+    // writes and dispatch reads — one record per (order, pack digest), so a retried or restarted fold writes nothing twice.
+    productHandling: async (tenantId, productId) => (await products.product(tenantId, productId))?.handling,
+    orderPack: (tenantId, orderId) => packs.pack(tenantId, orderId),
+    recordOrderPack: (tenantId, orderId, result, key) => packs.recordPack(tenantId, orderId, result, key),
   };
 }
 

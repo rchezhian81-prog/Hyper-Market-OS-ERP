@@ -24,6 +24,8 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { packOrder, type HandlingClass, type PackLine, type PackResult } from '../../../packages/fulfilment/src/index';
+import { packDigest } from './packing';
 
 /** The outcomes a line can be relayed in. `pending` is not an outcome — a line nobody has resolved sends nothing. */
 export const PICK_LINE_OUTCOMES = Object.freeze(['picked', 'short', 'substituted', 'quality_failed'] as const);
@@ -36,6 +38,15 @@ export const WAVE_SYNC_FLAGS = Object.freeze([
   'lines_disagree',
   // A crate sealed with no temperature or no tamper seal recorded — said, so the review screen can ask why.
   'no_cold_chain_temperature', 'no_tamper_seal',
+  // M19-FR-02 fold — the wave becomes one pack per ORDER:
+  // a line's product has no handling class on the product master: refused on the order's pack and said here; never guessed.
+  'handling_unknown',
+  // a line arrived without the quantity the order asked for (a handheld before 3 Oct 2026): the pack cannot say how short.
+  'required_qty_unknown',
+  // an order on the wave already had a pack head office keeps (the desk packed it, or another wave did): left as it was, said.
+  'order_already_packed',
+  // the crate the handheld sealed is not what the orders' packs add up to — value in the crate no order pack carries (a refusal), or the reverse.
+  'orders_disagree',
 ] as const);
 export type WaveSyncFlag = (typeof WAVE_SYNC_FLAGS)[number];
 
@@ -67,6 +78,19 @@ export interface WaveLineOutcome {
   readonly relayedBy: string;
   readonly at: string;
   readonly governanceFlags: readonly WaveSyncFlag[];
+  /** M19-FR-02 fold — the name as the shop wrote it and the quantity the order asked for. Absent on records before 3 Oct 2026. */
+  readonly description?: string | null;
+  readonly requiredQty?: number | null;
+}
+
+/** How one ORDER on the wave reached the per-order pack register (M19-FR-02 fold). */
+export interface OrderFold {
+  readonly orderId: string;
+  /** The pack engine's outcome for the pack head office recorded — or `already_packed`: the order already had a pack head office keeps, left as it was and said. */
+  readonly outcome: PackResult['outcome'] | 'already_packed';
+  readonly lineCount: number;
+  readonly totalMinor: number;
+  readonly refused: readonly { readonly lineId: string; readonly reason: string }[];
 }
 
 /** The wave's pack as head office keeps it: the handheld's figures beside the figures ITS register supports. */
@@ -83,6 +107,9 @@ export interface WavePackRecord {
   /** What the line register held when the pack arrived — the crate as head office can prove it. */
   readonly fromLines: { readonly lineCount: number; readonly totalValueMinor: number };
   readonly governanceFlags: readonly WaveSyncFlag[];
+  /** M19-FR-02 fold — each order on the wave and how it reached the per-order pack register. Absent on records before 3 Oct 2026. */
+  readonly orders?: readonly OrderFold[];
+  readonly ordersTotalMinor?: number;
 }
 
 export interface WaveSyncDeps {
@@ -92,6 +119,11 @@ export interface WaveSyncDeps {
   readonly recordLineOutcome: (tenantId: string, outcome: WaveLineOutcome) => Promise<void> | void;
   readonly pack: (tenantId: string, waveId: string) => Promise<WavePackRecord | undefined> | WavePackRecord | undefined;
   readonly recordPack: (tenantId: string, record: WavePackRecord) => Promise<void> | void;
+  /** The product master's handling class for a product — undefined when head office has no such product, or it names none (M19-FR-02 fold). */
+  readonly productHandling: (tenantId: string, productId: string) => Promise<HandlingClass | undefined> | HandlingClass | undefined;
+  /** The per-order pack register — the SAME one `/v1/fulfilment/orders/:orderId/pack` writes and dispatch reads. */
+  readonly orderPack: (tenantId: string, orderId: string) => Promise<PackResult | undefined> | PackResult | undefined;
+  readonly recordOrderPack: (tenantId: string, orderId: string, result: PackResult, key: string) => Promise<void> | void;
   readonly now: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
@@ -109,6 +141,67 @@ export function crateFromLines(history: readonly WaveLineOutcome[]): { readonly 
   return { lineCount: inCrate.length, totalValueMinor: inCrate.reduce((n, o) => n + o.finalPriceMinor, 0) };
 }
 
+/** Tenths of a degree from the handheld's °C reading; undefined when none was taken. */
+const tenths = (c: number | null): number | undefined => (c === null ? undefined : Math.round(c * 10));
+
+/**
+ * The wave folded into ONE pack per ORDER (M19-FR-02) — from the line register head office holds, through the SAME tested
+ * pack engine the desk's route runs, under the approved handling rules: the picker's final price stands (D09, settled at
+ * the scale), the crate's temperature stands as every line's pack reading (none taken → the engine's own cold-chain
+ * refusal), a product whose master names no handling class is refused `handling_unknown` and said — never defaulted,
+ * never read off its name. A quality-failed line is `nothing_picked`. Every refusal is listed on the order's pack. Pure.
+ */
+export function foldWaveIntoOrders(input: {
+  readonly history: readonly WaveLineOutcome[];
+  readonly temperatureC: number | null;
+  readonly handlingOf: (productId: string) => HandlingClass | undefined;
+  readonly at: string;
+}): { readonly orders: readonly { readonly orderId: string; readonly result: PackResult }[]; readonly flags: readonly WaveSyncFlag[] } {
+  const flags = new Set<WaveSyncFlag>();
+  const byOrder = new Map<string, WaveLineOutcome[]>();
+  for (const o of latestOutcomes(input.history)) byOrder.set(o.orderRef, [...(byOrder.get(o.orderRef) ?? []), o]);
+  const reading = tenths(input.temperatureC);
+  const orders: { orderId: string; result: PackResult }[] = [];
+  for (const [orderId, outcomes] of byOrder) {
+    const lines: PackLine[] = [];
+    const unknown: { lineId: string; reason: 'handling_unknown'; detail: string }[] = [];
+    for (const o of outcomes) {
+      const name = o.description ?? o.productId;
+      const handling = input.handlingOf(o.productId);
+      if (handling === undefined) {
+        flags.add('handling_unknown');
+        unknown.push({ lineId: o.lineId, reason: 'handling_unknown', detail: `${name}: the product master names no handling class for ${o.productId} — it cannot be packed from the wave until a person sets one (never guessed from its name)` });
+        continue;
+      }
+      const required = o.requiredQty ?? null;
+      if (required === null) flags.add('required_qty_unknown');
+      const picked = o.state === 'quality_failed' ? 0 : o.pickedQty;
+      lines.push({
+        lineId: o.lineId, orderId, productId: o.productId, name, handling,
+        orderedMinor: required ?? picked, pickedMinor: picked, uom: o.uom,
+        unitPriceMinor: 0, finalPriceMinor: o.finalPriceMinor,
+        ...(reading === undefined ? {} : { packTenthsC: reading }),
+      });
+    }
+    const engine: PackResult = lines.length === 0
+      ? { orderId, packed: false, outcome: 'handling_unknown', lines: [], refused: [], totalMinor: 0, detail: '' }
+      : packOrder({ orderId, lines, crateAssignment: {}, at: input.at });
+    const refused = [...engine.refused, ...unknown];
+    orders.push({
+      orderId,
+      result: {
+        ...engine,
+        refused,
+        outcome: engine.refused.length === 0 && unknown.length > 0 ? 'handling_unknown' : engine.outcome,
+        detail: unknown.length === 0
+          ? engine.detail
+          : `${engine.lines.length} line(s) packed, ${engine.totalMinor}; ${refused.length} refused and listed rather than quietly left out (${unknown.length} with no handling class on the product master)`,
+      },
+    });
+  }
+  return { orders, flags: [...flags] };
+}
+
 /** Re-verify the named person from THEIR grants (§28): flags, never a silent trust of the relay's word. */
 async function verifyPerson(
   permissionsOfUser: Permissions, tenantId: string, userId: string, unknownFlag: WaveSyncFlag, lacksFlag: WaveSyncFlag,
@@ -122,6 +215,7 @@ interface RelayedOutcome {
   readonly orderRef: string; readonly productId: string; readonly state: PickLineOutcomeState; readonly pickedQty: number;
   readonly uom: string; readonly finalPriceMinor: number; readonly currency: string; readonly substituted: boolean;
   readonly note: string | null; readonly pickedBy: string | null; readonly at: string;
+  readonly description: string | null; readonly requiredQty: number | null;
 }
 
 /** The outcome as the handheld queued it (`PickLineResolved`), read strictly; undefined when it cannot be read. */
@@ -139,6 +233,7 @@ function readRelayedOutcome(body: unknown, waveId: string, lineId: string, now: 
     currency: isStr(body['currency']) ? body['currency'] : 'INR',
     substituted: typeof body['substituted'] === 'boolean' ? body['substituted'] : state === 'substituted',
     note: optStr(body['note']), pickedBy: optStr(body['pickedBy']), at: isIso(body['occurredAt']) ? body['occurredAt'] : isIso(body['at']) ? body['at'] : now,
+    description: optStr(body['description']), requiredQty: isNonNegInt(body['requiredQty']) ? body['requiredQty'] : null,
   };
 }
 
@@ -203,6 +298,7 @@ export function syncedWaveRoutes(deps: WaveSyncDeps): readonly Route[] {
           waveId, lineId, orderRef: r.orderRef, productId: r.productId, state: r.state, pickedQty: r.pickedQty, uom: r.uom,
           finalPriceMinor: r.finalPriceMinor, currency: r.currency, substituted: r.substituted, note: r.note,
           pickedBy: r.pickedBy, relayedBy: ctx.userId, at: r.at, governanceFlags: flags,
+          description: r.description, requiredQty: r.requiredQty,
         };
         await deps.recordLineOutcome(ctx.tenantId, outcome);
         await deps.recordAudit?.(ctx.tenantId, {
@@ -239,16 +335,43 @@ export function syncedWaveRoutes(deps: WaveSyncDeps): readonly Route[] {
         }
         const existing = await deps.pack(ctx.tenantId, waveId);
         if (existing !== undefined) {
-          return { status: 200, body: { waveId, recorded: true, alreadyRecorded: true, flags: existing.governanceFlags, fromLines: existing.fromLines } };
+          return { status: 200, body: { waveId, recorded: true, alreadyRecorded: true, flags: existing.governanceFlags, fromLines: existing.fromLines, orders: existing.orders ?? [], ordersTotalMinor: existing.ordersTotalMinor ?? null } };
         }
         const flags = await verifyPerson(deps.permissionsOfUser, ctx.tenantId, p.packedBy, 'packer_unknown', 'packer_lacks_authority');
-        const fromLines = crateFromLines(await deps.lineOutcomes(ctx.tenantId, waveId));
+        const history = await deps.lineOutcomes(ctx.tenantId, waveId);
+        const fromLines = crateFromLines(history);
         if (fromLines.lineCount !== p.lineCount || fromLines.totalValueMinor !== p.totalValueMinor) flags.push('lines_disagree');
         if (p.temperatureC === null) flags.push('no_cold_chain_temperature');
         if (p.tamperSealRef === null) flags.push('no_tamper_seal');
+
+        // M19-FR-02: the wave becomes ONE pack per ORDER on the register the desk's pack route writes and dispatch reads.
+        // The handling class comes from the product master — read once per product, never guessed; the fold is pure.
+        const handlingById = new Map<string, HandlingClass | undefined>();
+        for (const id of new Set(latestOutcomes(history).map((o) => o.productId))) handlingById.set(id, await deps.productHandling(ctx.tenantId, id));
+        const fold = foldWaveIntoOrders({ history, temperatureC: p.temperatureC, handlingOf: (id) => handlingById.get(id), at: p.at });
+        for (const f of fold.flags) flags.push(f);
+        const orders: OrderFold[] = [];
+        for (const { orderId, result } of fold.orders) {
+          const existing = await deps.orderPack(ctx.tenantId, orderId);
+          if (existing !== undefined && packDigest(existing) !== packDigest(result)) {
+            // The order already has a pack head office keeps (the desk packed it, or another wave did): left as it is, SAID.
+            flags.push('order_already_packed');
+            orders.push({ orderId, outcome: 'already_packed', lineCount: existing.lines.length, totalMinor: existing.totalMinor, refused: existing.refused.map((x) => ({ lineId: x.lineId, reason: x.reason })) });
+            continue;
+          }
+          // The same pack already there (a fold that was cut off before this record was written, now retried) writes nothing.
+          if (existing === undefined) await deps.recordOrderPack(ctx.tenantId, orderId, result, `wave:${waveId}:${packDigest(result)}`);
+          orders.push({ orderId, outcome: result.outcome, lineCount: result.lines.length, totalMinor: result.totalMinor, refused: result.refused.map((x) => ({ lineId: x.lineId, reason: x.reason })) });
+        }
+        const ordersTotalMinor = orders.reduce((n, o) => n + o.totalMinor, 0);
+        // The crate the handheld sealed against the orders head office could pack from it: a difference is value in the crate
+        // no order pack carries (a refusal listed on that order), or the reverse — said, so the dispatcher looks before the van leaves.
+        if (ordersTotalMinor !== p.totalValueMinor) flags.push('orders_disagree');
+
         const record: WavePackRecord = {
           waveId, packedBy: p.packedBy, relayedBy: ctx.userId, lineCount: p.lineCount, totalValueMinor: p.totalValueMinor,
           currency: p.currency, temperatureC: p.temperatureC, tamperSealRef: p.tamperSealRef, at: p.at, fromLines, governanceFlags: flags,
+          orders, ordersTotalMinor,
         };
         await deps.recordPack(ctx.tenantId, record);
         await deps.recordAudit?.(ctx.tenantId, {
@@ -259,11 +382,12 @@ export function syncedWaveRoutes(deps: WaveSyncDeps): readonly Route[] {
             lineCount: String(p.lineCount), totalValueMinor: String(p.totalValueMinor), currency: p.currency,
             temperatureC: p.temperatureC === null ? '' : String(p.temperatureC), tamperSealRef: p.tamperSealRef ?? '',
             fromLinesCount: String(fromLines.lineCount), fromLinesValueMinor: String(fromLines.totalValueMinor),
+            orders: orders.map((o) => `${o.orderId}:${o.outcome}:${o.lineCount}:${o.totalMinor}`).join(','), ordersTotalMinor: String(ordersTotalMinor),
             relayedBy: ctx.userId, flags: flags.join(','),
           },
           correlationId: waveId,
         });
-        return { status: 202, body: { waveId, recorded: true, flags, fromLines } };
+        return { status: 202, body: { waveId, recorded: true, flags, fromLines, orders, ordersTotalMinor } };
       },
     },
     {
