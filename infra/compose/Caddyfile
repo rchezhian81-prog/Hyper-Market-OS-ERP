@@ -7,8 +7,10 @@
 #   /auth/*                 → customer sign-in        (503 by name until the sign-in service is deployed)
 #   /customer/*             → the customer app        (served by the edge's screen server, private network only)
 #   /                       → /customer/
-#   anything else           → 404 by name. Staff screens (till, owner, manager, …) are NOT on the public origin:
-#                             they stay on the store box until a sign-in gate exists in front of them.
+#   staff screens, /login,  → 404 by name (SRE_STAFF_ROUTE=staff-not-public, the default): till, owner, manager, … stay on
+#   /store, /store-lane       the store box. The hosted DEMO sets staff-demo-gate: forwarded to the demo front behind
+#                             the demo sign-in (ADR-0016). See the two snippets below.
+#   anything else           → 404 by name.
 #
 # TLS: SRE_PUBLIC_HOST names the address(es) the site answers to. A domain → a free certificate is fetched
 # automatically (SRE_TLS = the email for certificate notices). Otherwise the proxy makes certificates itself
@@ -44,6 +46,41 @@
 	}
 }
 
+# Staff screens on the public origin — OFF by default (ADR-0018 §2: 404 by name until a sign-in gate exists). The hosted
+# DEMO switches the gate on with SRE_STAFF_ROUTE=staff-demo-gate (ADR-0016, merged 3 Oct 2026): the staff shells, the
+# demo sign-in (/login) and the demo store box's relay (/store, /store-lane) are forwarded to the DEMO FRONT — the `web`
+# service running infra/compose/nginx.pilot.conf on the private compose network — which lets each request through only
+# after the demo sign-in says yes (auth_request) and turns the demo session cookie into a bearer token for /v1. A /v1 call
+# that carries that cookie and no Authorization header goes the same way for that one reason; every other /v1 call still
+# goes straight to the API from here. The demo front never faces the public network: TLS, HSTS and the client address
+# (overwritten from the connection, as below) remain this proxy's.
+(staff-not-public) {
+	@staff path /login /login/* /pos /pos/* /owner /owner/* /erp /erp/* /picker /picker/* /delivery /delivery/* /warehouse /warehouse/* /supplier /supplier/* /store /store/* /store-lane /store-lane/*
+	handle @staff {
+		header Content-Type application/json
+		respond `{"error":{"code":"staff_screens_not_public","whatHappened":"Staff screens are not served on this address: SRE_STAFF_ROUTE is staff-not-public (the default). They live on the store box.","wasItSaved":"not_saved","nextSafeAction":"Open the screen on the store box. Only the hosted DEMO switches the demo sign-in gate on (SRE_STAFF_ROUTE=staff-demo-gate)."}}` 404
+	}
+}
+
+(staff-demo-gate) {
+	@staff path /login /login/* /pos /pos/* /owner /owner/* /erp /erp/* /picker /picker/* /delivery /delivery/* /warehouse /warehouse/* /supplier /supplier/* /store /store/* /store-lane /store-lane/*
+	handle @staff {
+		reverse_proxy web:80 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	@apiWithDemoCookie {
+		path /v1/*
+		header !Authorization
+		header_regexp Cookie (^|;\s*)sre_demo_session=
+	}
+	handle @apiWithDemoCookie {
+		reverse_proxy web:80 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+}
+
 :80 {
 	redir https://{host}{uri} permanent
 }
@@ -55,9 +92,20 @@
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
-		Referrer-Policy no-referrer
 		-Server
 	}
+	# No referrer leaves this origin — except from the demo sign-in's own pages, whose service sets `same-origin` itself:
+	# under `no-referrer` a browser posts the sign-in form with `Origin: null`, which the sign-in refuses as cross-site.
+	# Deferred, like the block above, so it is the LAST word on every other response.
+	@notSignIn not path /login /login/*
+	header @notSignIn {
+		Referrer-Policy no-referrer
+		defer
+	}
+
+	# Staff screens: `staff-not-public` (default, 404 by name) or the hosted demo's `staff-demo-gate` — see the snippets.
+	# Imported BEFORE the API route so that, with the gate on, a /v1 call carrying the demo session cookie is matched here first.
+	import {$SRE_STAFF_ROUTE}
 
 	@api path /v1/* /livez /readyz
 	handle @api {

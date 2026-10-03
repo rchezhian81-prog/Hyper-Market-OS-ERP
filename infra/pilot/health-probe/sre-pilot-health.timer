@@ -1,0 +1,12 @@
+# Every 5 minutes, and 2 minutes after boot. Healthchecks.io: period 5 min, grace 10 min.
+[Unit]
+Description=Run the SRE demo pilot health probe every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

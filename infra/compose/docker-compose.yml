@@ -222,6 +222,10 @@ services:
       # service is deployed); `auth-upstream` forwards to SRE_AUTH_UPSTREAM.
       SRE_AUTH_ROUTE: ${SRE_AUTH_ROUTE:-auth-not-deployed}
       SRE_AUTH_UPSTREAM: ${SRE_AUTH_UPSTREAM:-auth:8082}
+      # Staff screens on the public origin: `staff-not-public` (default) answers them 404 by name — they live on the
+      # store box. Only the hosted DEMO's pilot overlay sets `staff-demo-gate`: forwarded to the demo front (`web`),
+      # which lets them through behind the demo sign-in (ADR-0016 on ADR-0018). Never the default anywhere.
+      SRE_STAFF_ROUTE: ${SRE_STAFF_ROUTE:-staff-not-public}
     ports:
       - '${HTTPS_PORT:-443}:443'
       - '${HTTP_PORT:-80}:80'

@@ -5,6 +5,54 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-11 (Option 3) — the box's stand-up branch merged behind the public proxy; the demo sign-in gate (3 October 2026)
+
+- **Owner decision OB-11 — Option 3 (in writing: "option 3").** Context: the administrator (the owner himself) is executing the
+  handover; step C showed **configuration A** (only the demo stack on the box; its own `web` container holds 443; nothing on 80;
+  firewall SSH + 443). Review of the pushed branch `claude/pilot-hosted-standup` (18 commits on `e72b4ae`) found that today's
+  demo serves every staff screen behind the demo sign-in (ADR-0016) while `main`'s public origin (ADR-0018) serves only the
+  customer app and the API — so deploying `main` as it stood would take the owner's browser demo away. Three options were put;
+  the owner chose: **deploy `main` now, the staff screens return through the pipeline when the gate release merges.** Recorded in
+  `docs/registers/decisions.md`; Options 1 and 2 declined.
+- **DONE in software (this PR):** the branch merged into `main` with the demo sign-in gate behind the proxy. `SRE_STAFF_ROUTE` on
+  the proxy — `staff-not-public` (base default: staff paths, `/login`, `/store` 404 by name) or `staff-demo-gate` (pilot overlay
+  default): the proxy forwards the staff shells, `/login`, `/store`, `/store-lane` and the `/v1` calls carrying the demo cookie to
+  the DEMO FRONT (`web`, `nginx.pilot.conf`, now plain HTTP behind the proxy with realip), which lets them through only after the
+  demo sign-in says yes (`auth_request`) — the staff shells themselves included, not only their data. TLS, HSTS, the hidden
+  `Server` header and the overwritten client address stay the proxy's; the sign-in's pages keep `Referrer-Policy: same-origin`
+  (the `Origin: null` trap), every other response gets `no-referrer` last. The relay reaches the edge's compose screen port
+  (8091). `release.sh` builds the demo sign-in bundle on every release (`SRE_BUILD_TOOLS`); `deploy.conf.example` carries
+  `PILOT_DEMO_LANE_BASE=/store-lane` for the demo till. The box's address, found hard-coded in `docs/pilot/HOSTED-DEMO-RESULTS.md`
+  and `tests/unit/demo-login.test.ts`, is replaced (`<demo-host>`, `demo.example`) and is never repeated in chat.
+- **Proof:** guardrails `the-public-origin-is-one-and-guarded` (12), `pilot-host-exposes-only-https` (rewritten, 11),
+  `demo-login-is-pilot-only` (12); the CI `deploy` job now also brings the **pilot overlay** up and proves from the outside: every
+  staff path and `/store/pos/` → 302 to `/login/?next=…`; the sign-in page 200 with its own Referrer-Policy; a forged cookie reaches
+  the API as a bearer and is refused (401); `/v1` without a cookie still goes straight to the API; the lane refuses a sale (401);
+  the customer app, HSTS and the hidden Server header unchanged; the box's loopback check still 200. Records: ADR-0016 merge note,
+  ADR-0018 amendment, traceability (slice 4 row), handover sheet corrected (C result, F's `systemctl` line skipped when there is no
+  host front, **G is not harmless** on this box — do it right before J, after removing the two demo-only containers; J's note on what
+  the first `main` deployment changes; K's expectations before/after the gate release).
+- **What is NOT done / pending:** the deployment itself is the administrator's (OB-10): A–E done, B pushed, F and H in progress,
+  G → last two secrets → J → K → L to follow; evidence pending (commit id, workflow result, K and L outputs with the address masked).
+  Until the gate release deploys, the demo address serves the customer app and the API only. The owner's browser check of the
+  staff screens at `https://<demo>/login/` after that, and SP-10 staff/device UAT, remain pending. H-13 (a sale does not move on-hand
+  on the cloud ledger — see ADR-0016 consequences) stays an owner item.
+- **Found while merging — H-14, an owner data item:** the pilot seed gave the demo products units the till's pricing engine does not
+  know (`each`, `litre`; the engine's codes are `ea`, `kg`, `g`, `L`, `ml` — `packages/contracts/src/quantity.ts`). Since Stage G
+  slice 5c the till is NOT given a product whose unit it cannot price; it is named on the "Products nobody can sell" screen instead
+  (`unknown unit of measure "each" on the catalogue`). The seed dataset is corrected in this PR (`ea`, `L`) and the merged hosted-seed
+  proof now ships all five products to the till. **On the demo box the five products were seeded with the old units**, so after the
+  first deployment of `main` the demo till (`/store/pos/`) will refuse them by name until a person corrects the units. Options for
+  the owner: (1) change the unit of each of the five products in the ERP catalogue screen and republish each, then publish the price
+  list again (`pnpm run demo:publish-pack`), rebuild the store pack (`pnpm run demo:store-pack`) and restart the edge; (2) re-run the
+  seed with the corrected dataset (`pnpm run seed:pilot`) — whether the product-publish route accepts a changed unit on an already
+  published product is NOT yet verified; (3) leave it until the real-data day (the demo till then sells nothing). The build session
+  will verify (2) in the next slice and say which option is the smaller job.
+- **Next task (unchanged):** the head-office screen for assigning waves and routes to handhelds (HA-1 routes exist), then the phone
+  choosing its own wave when several are open.
+
+---
+
 ## HA-2 and HA-3 — the handling class rides the catalogue pack; per-product cold-chain limits judged and named (3 October 2026)
 
 - **HA-2 — DONE in software.** `CatalogueProduct.handling` / `MasterProduct.handling` (`packages/catalogue`), `toMaster` in
@@ -2435,6 +2483,124 @@ each document independently fact-checked against its sources before saving:
   GO — build + test the loader / tenant procedure / report writers before any real load.
 - **Blocked / needs owner:** Option 2 GO (unapproved); R-05 / G10 names + maximum parallel duration; emergency-console
   confirmation before the server login switch-over; store hardware (EX-09).
+## Option 1 (hosted) — hardening option B, partial: backups encrypted; SSH switch-over ON HOLD (28 September 2026)
+
+- **Done:** encrypted on-box backups (owner option C; nightly timer; private key held only by the owner,
+  shredded from the box); non-root `sre` user created (password locked, no key yet).
+- **ON HOLD by owner decision (28 Sep):** key-only SSH + disabling root/password login. Root + password SSH
+  stay ON. To be completed **before real data (Option 2)**, after the owner confirms the MilesWeb emergency
+  console works. Required then: owner public key → `sre`, `passwd sre`, second-window test, then disable.
+- **Before real data also:** off-site encrypted backups; a restore drill using the owner's saved key.
+- **Now:** owner creates his own demo OWNER login (`pnpm run demo-login:add`) to click through the data.
+
+---
+
+## Option 1 (hosted) — ALL runbook §9 host checks passed on VM3 (28 September 2026)
+
+- **§9.5 monitoring ✅** — scheduled probe (every 5 min) → Healthchecks.io (owner option A, free
+  Hobbyist plan); test alert sent 11:03 UTC; the incident owner **Chezhian** confirmed receipt of both the
+  DOWN and the UP email.
+- **Host checks, all green:** §9.1 browser sign-in + permissions (7 roles) and 19 live pages via the demo
+  identity bridge · §9.2 RBAC/isolation · §9.3 restart + persistence · §9.4 offline + two tills,
+  exactly-once · §9.5 alerting · §9.6 backup → restore into a clean DB · §9.7 rollback (4 s) / forward (3 s).
+- **Still open (not blockers for the demo, each an owner item):** personal tester logins + human UAT
+  (G8); key-only SSH + non-root user (deferred by owner); encrypted off-site backups; a real domain +
+  certificate (fixes H-10 browser offline); screens that need the store edge stay sample-only on the
+  cloud demo (H-11); a sync-only store-edge role (least privilege); the branch
+  `claude/pilot-hosted-standup` to be copied across by a developer and merged through a PR.
+- Payroll bank-file release + bulk product publish remain DISABLED; synthetic data only; Option 2
+  (real product/price data) remains unapproved.
+
+---
+
+## Option 1 (hosted) — §9 host checks complete except the alert test (28 September 2026)
+
+- **§9.7 rollback ✅** (owner option A): back to `e72b4ae` in 4 s, forward in 3 s; data identical; DB
+  compatible (11 checked, 0 applied); browser check green after.
+- **§9.4 offline + concurrent tills ✅** (owner option A): machine login `pilot-store-edge` (cashier role)
+  provisioned by the owner's seed run; edge syncing; drill GREEN — 3 sales on two tills with the cloud
+  down, 0 in cloud, all 3 banked exactly once 115 s after reconnect, replay not double-counted.
+- **§9.5 monitoring ⛔** — incident owner named **Chezhian**; the alert email arrived as `<l>` (not an
+  address) — waiting for a valid address before the test alert.
+- Payroll bank-file release + bulk product publish remain DISABLED. Branch not pushed (owner: a developer
+  copies it across).
+- **Next:** valid alert email → wire + test alert; personal tester logins; human UAT on the 19 live pages.
+
+---
+
+## Option 1 (hosted) — §9 host checks: restart ✅, backup→restore ✅; offline + rollback await owner (28 September 2026)
+
+- **§9.3 restart + persistence ✅** — whole stack stopped/started; ledger fingerprint identical; GREEN.
+- **§9.6 backup → restore into a clean DB ✅** — reconciles exactly; audit chain intact; overwrite refused.
+- **§9.4 offline/concurrent tills ⛔ owner decision** — the store edge needs its own synthetic login with
+  `pos.sale.sync`; granting it is a person's act (hard rule #5), and borrowing the cashier's login would be a
+  shared identity (hard rule #4). Options put to the owner: (A) add synthetic `pilot-store-edge` with the
+  existing `cashier` role (smallest role that can sync) to the seed, owner re-runs the seed, then the drill;
+  (B) first define a sync-only store-edge role (least privilege; confirm against the roadmap);
+  (C) rely on the automated offline proof for the demo.
+- **§9.5 monitoring test alert ⛔** — no real incident-owner name/contact yet.
+- **§9.7 rollback ⏸ paused for approval.** Plan: (1) fresh backup; (2) redeploy the previous build
+  `e72b4ae` (services/, edge/, packages/, db/migrations/ are byte-identical to the current branch, so the
+  DB is compatible — 11/11 migrations either way); (3) GREEN + fingerprint check; (4) roll forward to the
+  current branch; (5) GREEN + fingerprint + browser check. Demo unavailable ~5–10 min; the previous build
+  has no demo sign-in/bridge/banner while it runs. Optional (6): restore the fresh backup OVER the live
+  demo DB with `--force` — destructive (synthetic data, backed up) — only with explicit approval.
+
+---
+
+## Option 1 (hosted) — seed GREEN; browser sign-in verified; demo identity bridge (option A) (28 September 2026)
+
+- Owner re-ran the seed: **GREEN** (68 ledger events, synthetic demo tenant).
+- Browser check found every real-browser sign-in refused 403 (H-12: `Origin: null` under no-referrer) —
+  fixed; all 7 roles now sign in / are refused out-of-role (403) / sign out (401) in real Chromium.
+- **Owner chose option A** for H-11: DEMO-ONLY identity bridge injects only `{userId, permissions}` from
+  the live API into 18 ERP pages + the supplier portal, which then read live data from `/v1`. Verified in
+  the browser: 20/20 page visits identified, live reads 200; cashier refused stock health by the API.
+  Remaining sample-only screens still need the store edge (listed in HOSTED-DEMO-RESULTS H-11).
+- Payroll bank-file release + bulk product publish remain DISABLED.
+- **Waiting on the owner:** real name + contact for monitoring alerts; personal tester logins
+  (`pnpm run demo-login:add`, run in his own SSH window); remaining §9 host checks (restart,
+  backup→restore, offline/edge sync, rollback — rollback pauses for approval).
+
+---
+
+## Option 1 (hosted) — demo sign-in, banners on all shells, seed tenant-id fix (27–28 September 2026)
+
+On the box, branch `claude/pilot-hosted-standup` (still not pushed — owner: a developer copies it across).
+- **Built (owner decision A):** DEMO-ONLY sign-in `infra/pilot/demo-login` (pilot overlay only) + browser
+  check `pnpm run check:browser`; DEMO banner on all 8 shells. Payroll bank-file release + bulk publish
+  remain DISABLED; seed enables only loyalty/delivery/dept.concession.
+- **Owner's first seed run was RED (H-08):** the demo tenant id `'pilot-demo'` is not a UUID, which the
+  ledger requires. Fixed (`de300000-…-000000000001`), proven on a throwaway real PostgreSQL; box setting
+  updated; demo DB untouched. Full suite 7,788 passed / 0 failed.
+- **Found (H-11, P1, owner decision):** screens take identity/data only from the store-edge screen server
+  (ADR-0004, loopback). From the cloud front they show sample views even when signed in, so browser UAT
+  needs more than a login. Options to put to the owner: (A) demo-only identity bridge for the live ERP +
+  supplier pages; (B) serve the edge screen server behind HTTPS (needs an ADR); (C) API-level UAT only.
+- **Also:** H-09 login-file mount fixed; H-10 self-signed cert blocks service workers (offline demo).
+- **Waiting on the owner:** re-run the seed; H-11 decision; real name + contact for monitoring alerts
+  (the message carried the placeholder `<NAME>, <email/phone>`).
+
+---
+
+## Option 1 (hosted) — ON-SERVER stand-up executed on VM3 (27 September 2026)
+
+Session run **on the box** (MilesWeb VM3, Mumbai) per `DEMO-PILOT-STANDUP-RUNBOOK.md`; results reported
+**separately** in **`docs/pilot/HOSTED-DEMO-RESULTS.md`** (new). Branch `claude/pilot-hosted-standup`
+(commit on the box; **not pushed — the box has no GitHub credential**).
+- **Done:** UFW on (22 + 443 only); secrets generated on the box (`.env.pilot`, 0600, git-ignored);
+  self-signed TLS (owner chose no domain); `sre-pilot` stack up, 11/11 migrations, `standup:check` GREEN
+  5/5; 8 shells built with `PILOT_DEMO_BANNER=1`; HTTPS verified (TLS 1.3); 80/8080/8081/5432 NOT
+  reachable from the network. Full suite 7,749 passed / 0 failed; clean-export secret scan clean.
+- **New:** HTTPS-only pilot front (`nginx.pilot.conf`, overlay `!override`) + guardrail (9 tests); hosted
+  seed runner `pnpm run seed:pilot -- --operator "<name>"` + integration test over a real socket (8).
+- **Kept by owner instruction:** SSH password login ON (no key yet); no `sre` user yet.
+- **Defects:** H-01 (P1) **no browser sign-in exists** → human UAT blocked, owner decision; H-02 fixed
+  (web port bypassed UFW); H-03 edge restart-loop with no cloud; H-04 banner only in ERP shell; H-05
+  secret-scan flags git-ignored files; H-06 BOOTSTRAP_OWNER_* not passed by compose; H-07 fixed.
+- **Waiting on the owner:** (1) run the seed command (it grants the demo roles — a human act, hard rule
+  #5); (2) H-01 sign-in decision; (3) a way to push the branch (deploy key/token) so a PR can be opened;
+  (4) named incident owner + alert channel for §9.5. Rollback drill (§9.7) will pause for approval.
 
 ---
 

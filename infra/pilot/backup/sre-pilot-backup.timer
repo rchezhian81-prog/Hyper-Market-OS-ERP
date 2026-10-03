@@ -1,0 +1,11 @@
+# 01:30 India time (20:00 UTC) every night; catches up after downtime.
+[Unit]
+Description=Nightly SRE demo pilot encrypted backup
+
+[Timer]
+OnCalendar=*-*-* 20:00:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

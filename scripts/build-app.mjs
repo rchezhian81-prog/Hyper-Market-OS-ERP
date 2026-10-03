@@ -55,7 +55,12 @@ const options = {
   // Build-time flag for the "DEMO / PILOT — NOT PRODUCTION" banner. The hosted demo builds with
   // PILOT_DEMO_BANNER=1 so the banner shows; a production build leaves it unset, so it does not.
   // Baked in at build time (esbuild `define`) rather than read at runtime — a browser has no env.
-  define: { PILOT_DEMO_BANNER: JSON.stringify(process.env.PILOT_DEMO_BANNER ?? '') },
+  define: {
+    PILOT_DEMO_BANNER: JSON.stringify(process.env.PILOT_DEMO_BANNER ?? ''),
+    // DEMO ONLY (ADR-0016): the hosted demo's till writes to the demo store box via this same-origin path.
+    // Unset in production, where the till writes to its own store's loopback exactly as before.
+    PILOT_DEMO_LANE_BASE: JSON.stringify(process.env.PILOT_DEMO_LANE_BASE ?? ''),
+  },
 };
 
 if (process.argv.includes('--watch')) {

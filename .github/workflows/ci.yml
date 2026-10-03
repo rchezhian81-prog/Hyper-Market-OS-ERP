@@ -242,6 +242,55 @@ jobs:
           if curl -skI https://127.0.0.1/customer/ | grep -qi '^server:'; then fail "the Server header is exposed"; fi
           echo "public origin: API, customer app and sign-in refusal on one https address; staff screens refused"
 
+      - name: Set up pnpm (the pilot overlay runs the demo sign-in from a bundle built here)
+        uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: The hosted-demo overlay puts the staff screens behind the demo sign-in — and nowhere else (ADR-0016 on ADR-0018)
+        # The same stack with the pilot overlay on top: the proxy now forwards the staff shells, /login and the demo
+        # store box to the demo front, which lets a visitor through only with a demo session. Proven from the outside:
+        # no session → the sign-in (as a relative redirect the proxy puts the https origin in front of); the sign-in
+        # page keeps its own Referrer-Policy; a forged cookie reaches the API as a bearer token and is refused; /v1
+        # without a cookie still goes straight to the API; the lane refuses a sale; the customer app, HSTS and the
+        # hidden Server header are unchanged; the box's own loopback check still answers.
+        run: |
+          pnpm install --frozen-lockfile
+          node scripts/build-service.mjs demo-login
+          cd infra/compose
+          # The demo sign-in refuses every tenant but the synthetic demo tenant (hard rule #7): the overlay is brought up for it.
+          sed -i 's/^EDGE_TENANT_ID=.*/EDGE_TENANT_ID=de300000-0000-4000-8000-000000000001/' .env
+          # This .env was copied from .env.example, whose SRE_STAFF_ROUTE is the store default (off) — and an env-file value
+          # beats the overlay's default. The hosted demo's template (.env.pilot.example) says staff-demo-gate; so does this run.
+          sed -i 's/^SRE_STAFF_ROUTE=.*/SRE_STAFF_ROUTE=staff-demo-gate/' .env
+          P="docker compose -f docker-compose.yml -f docker-compose.pilot.yml"
+          $P up -d --build
+          fail() { echo "::error::$1"; $P logs --no-color proxy web demo-login | tail -120; exit 1; }
+          for i in $(seq 1 60); do curl -fskS https://127.0.0.1/readyz >/dev/null 2>&1 && break; sleep 1; done
+          curl -fskS https://127.0.0.1/readyz | grep -q '"ready":true' || fail "the API's readiness did not come through the proxy with the overlay on"
+          for i in $(seq 1 30); do [ "$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1/login/)" = "200" ] && break; sleep 1; done
+          for p in /pos/ /erp/ /owner/ /picker/ /store/pos/; do
+            out=$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' "https://127.0.0.1$p")
+            test "$out" = "302 https://127.0.0.1/login/?next=$p" || fail "$p must send a visitor without a demo session to the sign-in (got: $out)"
+          done
+          curl -sk https://127.0.0.1/login/ | grep -q 'action="/login/"' || fail "the demo sign-in page is not served at /login/"
+          curl -skI https://127.0.0.1/login/ | grep -qi '^referrer-policy: same-origin' || fail "the sign-in page must keep its own Referrer-Policy (same-origin), or the browser posts the form with Origin: null"
+          curl -skI https://127.0.0.1/customer/ | grep -qi '^referrer-policy: no-referrer' || fail "every other page keeps no-referrer"
+          code=$(curl -sk -o /dev/null -w '%{http_code}' -H 'Cookie: sre_demo_session=not-a-token' https://127.0.0.1/v1/catalogue/pack)
+          test "$code" = "401" || fail "a forged demo cookie must reach the API as a bearer token and be refused (got $code)"
+          code=$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1/v1/catalogue/pack)
+          test "$code" = "401" || fail "/v1 without a cookie still goes straight to the API and is refused (got $code)"
+          code=$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{}' https://127.0.0.1/store-lane/lane/sale)
+          test "$code" = "401" || fail "the demo box's lane must refuse a sale without a selling session (got $code)"
+          curl -sk https://127.0.0.1/customer/ | grep -q 'customer-app.bundle.js' || fail "the customer app must still be served from the edge with the gate on"
+          curl -skI https://127.0.0.1/login/ | grep -qi '^strict-transport-security' || fail "no HSTS header on the sign-in page"
+          if curl -skI https://127.0.0.1/login/ | grep -qi '^server:'; then fail "the Server header is exposed on the sign-in page"; fi
+          code=$(curl -sL -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/pos/)
+          test "$code" = "200" || fail "the box's own loopback check (standup:check follows the redirect to the sign-in) must still answer 200 (got $code)"
+          echo "hosted-demo overlay: staff screens, the demo store box and /v1-with-cookie reachable only through the demo sign-in gate"
+
       - name: It drains rather than being killed
         run: |
           cd infra/compose
@@ -254,7 +303,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: cd infra/compose && docker compose down -v && rm -f .env
+        run: cd infra/compose && docker compose -f docker-compose.yml -f docker-compose.pilot.yml down -v --remove-orphans && rm -f .env
 
   release:
     name: Deploy the merged release to the demo box (rolls back if it does not come up)
