@@ -769,7 +769,7 @@ export function buildSurface(deps: {
     // socket. The routes re-verify the picker / packer from their grants, compare the pack with the line register and
     // record-and-flag; nothing here moves stock.
     ...syncedWaveRoutes(store === undefined
-      ? { permissionsOfUser: empty(undefined), lineOutcomes: empty([]), recordLineOutcome: () => {}, pack: empty(undefined), recordPack: () => {}, now }
+      ? { permissionsOfUser: empty(undefined), lineOutcomes: empty([]), recordLineOutcome: () => {}, pack: empty(undefined), recordPack: () => {}, productHandling: empty(undefined), orderPack: empty(undefined), recordOrderPack: () => {}, now }
       : { ...fulfilmentWaveAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // SP-3c-ii (F11's driver half): the DRIVER handheld's stop outcomes, settlement and cash handover, RELAYED by the box. The
     // routes re-verify the driver, run the order's own state machine, compare the money with the stop register and

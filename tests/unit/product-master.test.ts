@@ -8,9 +8,11 @@ import {
   mrpOn,
   NotPublishableError,
   CategoryNotFoundError,
+  HANDLING_CLASSES,
   type Category,
   type ProductRecord,
 } from '../../packages/product/src/index';
+import { HANDLING } from '../../services/fulfilment/src/packing';
 import { money } from '../../packages/contracts/src/money';
 
 // M03-FR-01/03 — the single trusted product truth (P-02). An incomplete product is a
@@ -225,5 +227,23 @@ describe('sellability and effective-dated MRP', () => {
       ],
     });
     expect(mrpOn(future, '2026-11-30')).toEqual(money(25_000, INR));
+  });
+});
+
+describe('the handling class is master data (M19-FR-02 fold · M10-FR-02)', () => {
+  it('speaks the SAME words the pack engine judges by — the two lists are pinned together', () => {
+    expect([...HANDLING_CLASSES]).toEqual([...HANDLING]);
+    expect([...HANDLING_CLASSES]).toEqual(['ambient', 'chilled', 'frozen', 'raw_meat', 'ready_to_eat', 'fragile', 'hazardous']);
+  });
+
+  it('publishes with a class the engine can read, refuses a word it cannot, and is legitimately ABSENT — the pack then refuses, never guesses', () => {
+    expect(validateProduct(product({ handling: 'chilled' }), CATEGORIES).publishable).toBe(true);
+    const bad = validateProduct(product({ handling: 'cold-ish' as ProductRecord['handling'] }), CATEGORIES);
+    expect(bad.publishable).toBe(false);
+    expect(bad.issues.map((i) => i.field)).toEqual(['handling']);
+    expect(bad.issues[0]!.message).toContain('cold-ish');
+    const none = validateProduct(product({}), CATEGORIES);
+    expect(none.publishable).toBe(true);
+    expect(none.issues.map((i) => i.field)).not.toContain('handling');
   });
 });

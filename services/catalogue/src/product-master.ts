@@ -19,7 +19,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   publishProduct, NotPublishableError, CategoryNotFoundError,
-  type ProductRecord, type Category, type ProductLifecycle,
+  type ProductRecord, type Category, type ProductLifecycle, type HandlingClass,
 } from '../../../packages/product/src/index';
 
 export interface ProductMasterDeps {
@@ -53,6 +53,8 @@ function readProduct(productId: string, tenantId: string, p: Record<string, unkn
     ...(isObj(p['attributes']) ? { attributes: p['attributes'] as Readonly<Record<string, string>> } : {}),
     ...(isObj(p['safety']) ? { safety: p['safety'] as ProductRecord['safety'] } : {}),
     ...(typeof p['recallBlocked'] === 'boolean' ? { recallBlocked: p['recallBlocked'] } : {}),
+    // M19-FR-02: the handling class travels as given; the ENGINE refuses a word off its list (blocks_publish), never coerces it.
+    ...(typeof p['handling'] === 'string' ? { handling: p['handling'] as HandlingClass } : {}),
   };
 }
 

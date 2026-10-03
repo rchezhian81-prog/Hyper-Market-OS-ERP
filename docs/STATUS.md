@@ -5,6 +5,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## M19-FR-02 — the picker's wave pack folded into per-order packs and manifests (3 October 2026)
+
+**Owner direction (3 Oct 2026):** continue M19-FR-02 along the sequence recorded on 2 Oct; reuse existing models and
+completed code; reconcile wave totals with individual orders; preserve exceptions; prevent duplicate packing on retries or
+restart; flag missing handling classification explicitly — never assume one or invent it from the product name; apply the
+existing approved handling rules. OB-09 preserved. The deployment handover stays ready for the administrator.
+
+- **Step 1 — the picker payload (DONE).** `PickLineResolved` carries `description` and `requiredQty` (the phone already held
+  them; one relay field each, backward compatible — an older payload is read as null and flagged `required_qty_unknown`).
+- **Step 2 — the handling class is product master data (DONE).** `packages/product` `HANDLING_CLASSES` / `ProductRecord.handling`
+  (ambient / chilled / frozen / raw_meat / ready_to_eat / fragile / hazardous — the pack engine's own words, pinned together
+  by `tests/unit/product-master.test.ts`); `validateProduct` blocks a word the engine cannot read; absent is legitimate and
+  means "nobody has said"; the publish route reads it off the body. Head office reads it per product at fold time
+  (`productMasterAdapter.product`). **Not done, recorded:** the class does not yet ride the published catalogue pack to the
+  box (no consumer there yet); per-product cold-chain limits stay the engine's approved defaults (`DEFAULT_RULES`).
+- **Step 3 — the fold (DONE).** `foldWaveIntoOrders` (`services/fulfilment/src/waves.ts`, pure): on `…/packed/synced` the
+  wave's line register becomes ONE `PackResult` per ORDER through the SAME `packOrder` engine the desk's route runs, with
+  the approved handling rules; the picker's final price stands (`PackLine.finalPriceMinor` — settled at pick, D09; the engine
+  never re-prices it and a weighed line needs no grams); the crate's `temperatureC` is every line's `packTenthsC` (none →
+  the engine's `temperature_not_taken`); a product with no handling class → refused `handling_unknown` on the order's pack
+  and flagged on the wave — never defaulted to ambient, never read off the name; a quality-failed line → `nothing_picked`;
+  every refusal listed. Recorded on the per-order pack register (`fulfilmentPackingAdapter.recordPack`, key
+  `wave:<waveId>:<pack digest>` → one record per order and digest: a retried or restarted fold writes nothing twice); an
+  order that already has a DIFFERENT pack head office keeps is left as it was and flagged `order_already_packed`; the crate
+  the handheld sealed is reconciled with the orders' packs (`ordersTotalMinor` ≠ the handheld's total → `orders_disagree`).
+  The wave record carries `orders[]` (how each order reached the register) and the audit names them. So
+  `GET /v1/fulfilment/orders/:orderId/pack` and `POST …/dispatch` (the manifest FROM the recorded pack) now work for an
+  order picked on the handheld. `main.ts` fallback and `fulfilmentWaveAdapter` wired; `STREAM_FOR.forOrderPack` exported.
+- **Proof.** Unit: `fulfilment-packing.test.ts` (+2: a price settled at pick stands; a line without one is priced as before),
+  `product-master.test.ts` (+2: the two handling lists pinned; valid / invalid / absent), `fulfilment-waves-synced.test.ts`
+  M19-FR-02 block (two orders on one wave folded with the exact figures; a product with no handling refused and said with
+  the crate disagreeing; no temperature → the cold line refused; an order already packed elsewhere left as it was; a retried
+  fold and a fold cut off before the wave record both write nothing twice; a quality-failed line is `nothing_picked`; an
+  older payload flagged `required_qty_unknown`; the read shows the orders). Connected, real stack:
+  `picker-handheld-reaches-the-cloud-through-the-edge.test.ts` M19-FR-02 case — products published WITH handling through the
+  product master, the wave picked and packed through the box, the ORDER's pack read with the picker's prices and the crate's
+  temperature, ONE `OrderPacked` record after the handheld re-sends and after a box restart, the order DISPATCHED on a manifest
+  built from that pack, and a product with no handling class refused `handling_unknown` with the wave flagged.
+- **Records.** M19.md FR-02; traceability M19-FR-01/02 (the SP-3c-i limitation closed); matrix SP-3 row. Denominator 104
+  unchanged; no rung changed.
+- **Exact next task:** head office assignment of waves and routes to handhelds (the pack file's `wave` / `route` sections are
+  the source today). Then: the handling class riding the published catalogue pack; per-product cold-chain limits on the
+  product master feeding the engine's `rules`. Deployment: unchanged — the administrator's handover
+  (`docs/runbooks/demo-deployment-handover.md`) is ready; nothing executed from here.
+
 ## OB-09 (Option 2) done, and the administrator's deployment handover (2 October 2026)
 
 **Owner direction (2 Oct 2026, in writing):** proceed with the existing demo deployment; record approval of **Option 2** for

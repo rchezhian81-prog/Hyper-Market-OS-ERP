@@ -62,6 +62,15 @@ export interface Category {
 
 export type RegulatedKind = 'food' | 'packed' | 'weighed' | 'age_restricted' | 'drug' | 'hazardous';
 
+/**
+ * How a product travels and what it may share a crate with (M19-FR-02 / M10-FR-02) — owned HERE as master data, in the
+ * same words the fulfilment pack engine judges by (`tests/unit/product-master.test.ts` pins the two lists together).
+ * A product with none cannot be packed from a picker's wave: head office says `handling_unknown` and a person sets it.
+ * Never defaulted to ambient, never inferred from the product's name.
+ */
+export const HANDLING_CLASSES = Object.freeze(['ambient', 'chilled', 'frozen', 'raw_meat', 'ready_to_eat', 'fragile', 'hazardous'] as const);
+export type HandlingClass = (typeof HANDLING_CLASSES)[number];
+
 /** Safety and compliance content (M03-FR-03 / D01). */
 export interface SafetyContent {
   /** Ingredient list, where the law requires one. */
@@ -108,6 +117,8 @@ export interface ProductRecord {
   readonly lifecycle: ProductLifecycle;
   /** Stops sale AND purchase everywhere, honoured offline (M10-FR-04 / D01-FR-05). */
   readonly recallBlocked?: boolean;
+  /** How it travels and what it may share a crate with (M19-FR-02). Absent = nobody has said; the pack refuses, never guesses. */
+  readonly handling?: HandlingClass;
 }
 
 export type ValidationSeverity = 'blocks_publish' | 'advisory';
@@ -300,6 +311,15 @@ export function validateProduct(
       field: 'safety.storageConditions',
       severity: 'advisory',
       message: 'no storage conditions — worth adding for a food item',
+    });
+  }
+
+  // A handling class the pack engine cannot read is no handling class: refused here, never carried as a word nobody judges by.
+  if (product.handling !== undefined && !(HANDLING_CLASSES as readonly string[]).includes(product.handling)) {
+    issues.push({
+      field: 'handling',
+      severity: 'blocks_publish',
+      message: `handling "${product.handling}" is not one of ${HANDLING_CLASSES.join(', ')} — the packer's crate rules cannot read it`,
     });
   }
 

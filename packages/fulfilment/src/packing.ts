@@ -45,6 +45,12 @@ export interface PackLine {
   readonly packedGrams?: number;
   /** Temperature at pack, in tenths of a degree. Absent = not taken. */
   readonly packTenthsC?: number;
+  /**
+   * The final price already settled upstream — captured at pick on the handheld (D09: a weighed line priced at the
+   * scale), in integer minor units. When present it IS the line's price: the pack never re-prices what the scale
+   * settled, and a weighed line needs no grams here. Absent for a line the pack prices itself.
+   */
+  readonly finalPriceMinor?: number;
 }
 
 /** Per-product cold-chain limits at pack, from the product master. */
@@ -78,7 +84,10 @@ export type PackRefusal =
   | 'temperature_out_of_range'
   | 'weight_not_captured'
   | 'incompatible_crate'
-  | 'nothing_picked';
+  | 'nothing_picked'
+  // The product master names no handling class for the line's product (M19-FR-02 fold). Raised by the wave fold in
+  // `services/fulfilment/src/waves.ts`, never by this engine, which requires a class on every line it is given.
+  | 'handling_unknown';
 
 export interface PackedLine {
   readonly lineId: string;
@@ -187,7 +196,10 @@ export function packOrder(input: {
     }
 
     let finalPriceMinor: number;
-    if (line.weighed === true) {
+    if (line.finalPriceMinor !== undefined) {
+      // Settled at pick (D09) — the scale's price stands; this pack does not price it again.
+      finalPriceMinor = line.finalPriceMinor;
+    } else if (line.weighed === true) {
       if (line.packedGrams === undefined || line.packedGrams <= 0) {
         refused.push({
           lineId: line.lineId,
@@ -212,7 +224,9 @@ export function packOrder(input: {
       handling: line.handling,
       crateId,
       detail:
-        line.weighed === true
+        line.finalPriceMinor !== undefined
+          ? `${line.pickedMinor} ${line.uom} at the price settled at pick = ${finalPriceMinor}${line.pickedMinor < line.orderedMinor ? ` — ${line.pickedMinor} of ${line.orderedMinor}, short, and charged only for what is going` : ''}`
+          : line.weighed === true
           ? `${line.packedGrams}g at ${line.unitPriceMinor} per kg = ${finalPriceMinor}`
           : line.pickedMinor < line.orderedMinor
             ? `${line.pickedMinor} of ${line.orderedMinor} — short, and charged only for what is going`

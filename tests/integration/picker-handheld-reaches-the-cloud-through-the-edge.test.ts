@@ -9,6 +9,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-relay';
+import { STREAM_FOR } from '../../services/api/src/adapters';
 
 /**
  * **A picker handheld's outcomes and pack reach head office through the store box's DEVICE socket — enrolled once, durable at
@@ -66,6 +67,7 @@ const resolved = (lineId: string, state: string, over: Record<string, unknown> =
   id: `${waveId}:${lineId}:${state}`, type: 'PickLineResolved', occurredAt: AT, idempotencyKey: `pick:${waveId}:${lineId}:${state}`, source: waveId,
   payload: {
     waveId, lineId, orderRef: 'ORD-1', productId: lineId === 'l1' ? 'p-rice' : 'p-milk', state,
+    description: lineId === 'l1' ? 'Rice 5kg' : 'Milk 1L', requiredQty: lineId === 'l1' ? 2 : 1,
     pickedQty: state === 'picked' ? (lineId === 'l1' ? 2 : 1) : 0, uom: 'ea',
     finalPriceMinor: state === 'picked' ? (lineId === 'l1' ? 200_00 : 60_00) : 0, currency: 'INR',
     substituted: state === 'substituted', note: null, pickedBy: 'u-picker', ...over,
@@ -123,6 +125,15 @@ async function cloud(): Promise<Cloud> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-picker', 'store_manager');
   await h.provisionRole(A, 'u-box', 'cashier');
+  // The product master (M19-FR-02 fold): rice travels ambient, milk chilled — and ghee has NO handling class, deliberately.
+  const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
+  const publish = (id: string, name: string, handling?: string) => h.request({
+    method: 'POST', path: `/v1/catalogue/products/${id}/publish`, userId: 'u-owner', tenantId: A, idempotencyKey: `pub-${id}`,
+    body: { product: { sku: `SKU-${id}`, name, baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'draft', ...(handling === undefined ? {} : { handling }) }, categories: [GROCERY] },
+  });
+  for (const [id, name, handling] of [['p-rice', 'Rice 5kg', 'ambient'], ['p-milk', 'Milk 1L', 'chilled'], ['p-ghee', 'Ghee 500g', undefined]] as const) {
+    expect((await publish(id, name, handling)).status).toBe(201);
+  }
   const dir = await tempDir('sre-picker-handheld-cloud-');
 
   let online = true;
@@ -259,9 +270,76 @@ describe('the picker handheld: enrol → device socket → box (durable) → hea
     expect(pass2.sent).toBe(2);
     expect(pass2.dead).toBe(0);
     const w2 = await waveAt(c.h, 'W-2');
-    expect(w2.packed).toMatchObject({ lineCount: 2, totalValueMinor: 300_00, temperatureC: null, fromLines: { lineCount: 1, totalValueMinor: 200_00 }, governanceFlags: ['lines_disagree', 'no_cold_chain_temperature'] });
-    expect(w2.flags).toEqual(['lines_disagree', 'no_cold_chain_temperature']);
+    // …and the fold (M19-FR-02): ORD-1 was already packed by W-1 above (rice, milk refused), so this wave's different pack for it is
+    // left as it was and SAID — and the crate the handheld sealed (300) is not what the order's kept pack adds up to (200).
+    expect(w2.packed).toMatchObject({
+      lineCount: 2, totalValueMinor: 300_00, temperatureC: null, fromLines: { lineCount: 1, totalValueMinor: 200_00 },
+      governanceFlags: ['lines_disagree', 'no_cold_chain_temperature', 'order_already_packed', 'orders_disagree'],
+      orders: [{ orderId: 'ORD-1', outcome: 'already_packed', lineCount: 1, totalMinor: 200_00, refused: [{ lineId: 'l2', reason: 'nothing_picked' }] }], ordersTotalMinor: 200_00,
+    });
+    expect(w2.flags).toEqual(['lines_disagree', 'no_cold_chain_temperature', 'order_already_packed', 'orders_disagree']);
     expect((await statusOf(edge, cookie!, ['pack:W-2']))[0]?.state).toBe('posted');
+  });
+
+  it('M19-FR-02 — the wave becomes ONE pack per order on the register dispatch reads: the picker\'s price stands, the crate\'s temperature is every line\'s reading, ONE record after a re-send and a box restart, the order dispatches on a manifest built from it, and a product with no handling class is refused and SAID', async () => {
+    const c = await cloud();
+    const edge = await c.start();
+    const { cookie } = await enrol(edge);
+    const events = [resolved('l1', 'picked'), resolved('l2', 'picked'), packedWave()];
+    expect((await postBatch(edge, cookie, events.map(item))).acks.map((a) => a.status)).toEqual(['accepted', 'accepted', 'accepted']);
+    const pass = await edge.syncOnce!();
+    expect(pass.sent).toBe(3);
+    expect(pass.dead).toBe(0);
+    const wave = await waveAt(c.h);
+    expect(wave.flags).toEqual([]);
+    expect(wave.packed).toMatchObject({ orders: [{ orderId: 'ORD-1', outcome: 'packed', lineCount: 2, totalMinor: 260_00, refused: [] }], ordersTotalMinor: 260_00 });
+
+    // The ORDER's pack, on the same register the desk's pack route writes: the picker's prices, the product master's handling, the crate's reading.
+    interface PackView { orderId: string; packed: boolean; outcome: string; totalMinor: number; lines: Record<string, unknown>[]; refused: Record<string, unknown>[] }
+    const packOf = async (orderId: string) => c.h.request({ method: 'GET', path: `/v1/fulfilment/orders/${orderId}/pack`, userId: 'u-owner', tenantId: A });
+    const pack = (await packOf('ORD-1')).body as PackView;
+    expect(pack).toMatchObject({ orderId: 'ORD-1', packed: true, outcome: 'packed', totalMinor: 260_00, refused: [] });
+    expect(pack.lines).toEqual([
+      expect.objectContaining({ lineId: 'l1', productId: 'p-rice', name: 'Rice 5kg', handling: 'ambient', packedMinor: 2, finalPriceMinor: 200_00, shortMinor: 0, crateId: 'crate-1' }),
+      expect.objectContaining({ lineId: 'l2', productId: 'p-milk', name: 'Milk 1L', handling: 'chilled', packedMinor: 1, finalPriceMinor: 60_00, shortMinor: 0, crateId: 'crate-1' }),
+    ]);
+    const packRecords = async (orderId: string) => (await c.h.store.readStream(A, STREAM_FOR.forOrderPack(orderId), { type: 'OrderPacked' })).length;
+    expect(await packRecords('ORD-1')).toBe(1);
+
+    // The handheld re-sends the pack after a lost reply: duplicate at the box; a second pass posts nothing; the box restarts: still ONE record.
+    expect((await postBatch(edge, cookie, [item(packedWave())])).acks).toEqual([{ key: 'pack:W-1', status: 'duplicate' }]);
+    await edge.syncOnce!();
+    expect(c.posts()).toBe(3);
+    await edge.stop();
+    cleanups.pop();
+    const second = await c.start();
+    expect((await postBatch(second, cookie, [item(packedWave())])).acks).toEqual([{ key: 'pack:W-1', status: 'duplicate' }]);
+    await second.syncOnce!();
+    expect(c.posts()).toBe(3);
+    expect(await packRecords('ORD-1')).toBe(1);
+
+    // Dispatch builds the manifest FROM that pack — the order picked on the handheld leaves on a sealed, listed load.
+    const dispatched = await c.h.request({ method: 'POST', path: '/v1/fulfilment/orders/ORD-1/dispatch', userId: 'u-picker', tenantId: A, idempotencyKey: 'disp-ORD-1', body: { manifestId: 'MAN-1', locationId: 'store-1', seals: { 'crate-1': 'SEAL-7' } } });
+    expect(dispatched.status).toBe(200);
+    expect(dispatched.body).toMatchObject({ dispatched: true, manifest: { manifestId: 'MAN-1', orderId: 'ORD-1', totalMinor: 260_00, crates: ['crate-1'], seals: { 'crate-1': 'SEAL-7' } } });
+    const manifest = (await c.h.request({ method: 'GET', path: '/v1/fulfilment/orders/ORD-1/manifest', userId: 'u-owner', tenantId: A })).body as { lines: Record<string, unknown>[] };
+    expect(manifest.lines.map((l) => [l['lineId'], l['quantityMinor'], l['handling']])).toEqual([['l1', 2, 'ambient'], ['l2', 1, 'chilled']]);
+
+    // A product whose master names NO handling class: refused on the order's pack, said on the wave, the crate disagreeing — and nothing to dispatch.
+    const ghee = resolved('l9', 'picked', { orderRef: 'ORD-9', productId: 'p-ghee', description: 'Ghee 500g', requiredQty: 1, pickedQty: 1, finalPriceMinor: 450_00 }, 'W-3');
+    expect((await postBatch(second, cookie, [item(ghee), item(packedWave({ lineCount: 1, totalValueMinor: 450_00 }, 'W-3'))])).acks.map((a) => a.status)).toEqual(['accepted', 'accepted']);
+    const pass3 = await second.syncOnce!();
+    expect(pass3.sent).toBe(2);
+    expect(pass3.dead).toBe(0);
+    const w3 = await waveAt(c.h, 'W-3');
+    expect(w3.flags).toEqual(['handling_unknown', 'orders_disagree']);
+    expect(w3.packed).toMatchObject({ orders: [{ orderId: 'ORD-9', outcome: 'handling_unknown', lineCount: 0, totalMinor: 0, refused: [{ lineId: 'l9', reason: 'handling_unknown' }] }], ordersTotalMinor: 0 });
+    const gheePack = (await packOf('ORD-9')).body as PackView;
+    expect(gheePack).toMatchObject({ packed: false, outcome: 'handling_unknown', totalMinor: 0, lines: [] });
+    expect(gheePack.refused).toEqual([expect.objectContaining({ lineId: 'l9', reason: 'handling_unknown' })]);
+    const refusedDispatch = await c.h.request({ method: 'POST', path: '/v1/fulfilment/orders/ORD-9/dispatch', userId: 'u-picker', tenantId: A, idempotencyKey: 'disp-ORD-9', body: { manifestId: 'MAN-9', locationId: 'store-1', seals: {} } });
+    expect(refusedDispatch.status).toBe(409);
+    expect(JSON.stringify(refusedDispatch.body)).toContain('nothing_packed');
   });
 
   it('a picker head office does not know is flagged, not refused; a payload head office cannot read is a visible dead-letter on the box with the code in its reason, survives a restart, and recorded nothing', async () => {
