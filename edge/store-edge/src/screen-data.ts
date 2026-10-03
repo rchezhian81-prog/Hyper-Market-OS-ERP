@@ -613,8 +613,16 @@ export function shelfMapFor(input: ScreenInput): ShelfMap | null {
  * walks it trusting an order that was never applied.
  */
 export function pickerPayload(input: ScreenInput): Record<string, unknown> | null {
-  if (!input.pack.wave.known || input.pack.wave.value === null) return null;
-  const wave = input.pack.wave.value;
+  // HA-1: head office's assignment is the normal source; a wave written by hand into the pack file is the override, and
+  // the screen is told which of the two it is holding — never left to assume.
+  const handWritten = input.pack.wave.known && input.pack.wave.value !== null ? input.pack.wave.value : null;
+  const assigned = input.pack.assignments.known ? input.pack.assignments.value : null;
+  const wave = handWritten ?? assigned?.waves[0] ?? null;
+  if (wave === null) return null;
+  const source = {
+    assignedBy: handWritten !== null ? 'this box\'s pack file — a wave written by hand' : `head office, as of ${assigned!.asAt}`,
+    wavesAssigned: assigned?.waves.length ?? 0,
+  };
 
   const lines = wave.lines.map((l) => ({
     lineId: l.lineId,
@@ -632,6 +640,7 @@ export function pickerPayload(input: ScreenInput): Record<string, unknown> | nul
     return {
       waveId: wave.waveId,
       pickerId: wave.pickerId,
+      ...source,
       lines,
       orderedBy: 'the order the list arrived in — this store has no shelf map',
       unmapped: [],
@@ -642,6 +651,7 @@ export function pickerPayload(input: ScreenInput): Record<string, unknown> | nul
   return {
     waveId: wave.waveId,
     pickerId: wave.pickerId,
+    ...source,
     // The shelf address travels with the line, so the handheld can show where to go rather than
     // only which bin to scan. An unmapped line keeps its place at the end of the list and says so.
     lines: walk.lines.map((l) => {
@@ -809,6 +819,23 @@ export function driverPayload(input: ScreenInput, driverId?: string): Record<str
       ...(route.contributionRule === undefined ? {} : { contributionRule: route.contributionRule }),
       ...tolerance,
     };
+  }
+
+  // HA-1: a route head office assigned to this store's driver — the normal source when no dispatcher overrode it by hand.
+  if (input.pack.assignments.known) {
+    const assigned = input.pack.assignments.value;
+    const route = driverId === undefined ? assigned.routes[0] : assigned.routes.find((r) => r.driverId === driverId);
+    if (route !== undefined) {
+      return {
+        routeId: route.routeId,
+        driverId: route.driverId,
+        stops: route.stops,
+        plannedBy: `head office, as of ${assigned.asAt}`,
+        routesAssigned: assigned.routes.length,
+        ...(route.contributionRule === undefined ? {} : { contributionRule: route.contributionRule }),
+        ...tolerance,
+      };
+    }
   }
 
   const plan = dispatchPlanFor(input);

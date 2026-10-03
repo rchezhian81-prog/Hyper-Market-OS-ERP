@@ -231,6 +231,7 @@ import type {
 import type { ServiceabilityConfigDeps } from '../../orders/src/serviceability';
 import type { ServiceabilityPeriod } from '../../../packages/storefront/src/index';
 import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../../fulfilment/src/index';
+import type { AssignmentsDeps, WaveAssignment, RouteAssignment } from '../../fulfilment/src/assignments';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
 import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
@@ -7863,6 +7864,50 @@ export function driverRunAdapter(input: {
     recordDeliveryTransition: orders.recordDeliveryTransition,
     // OB-09: the phone's door outcomes join the driver's own run register — the stream `/v1/delivery/runs/:driverId` reads.
     recordAttempt: orders.appendAttempt,
+  };
+}
+
+/**
+ * Head office's assignments of waves to pickers and routes to drivers, per store (HA-1 · M19-FR-01/03). One stream per store
+ * holds every assignment as an append-only fact (`WaveAssigned` / `RouteAssigned`, keyed on the wave or route and the content
+ * digest, so the same assignment posted twice is one record and a changed one is a new record that replaces it). "Done" is
+ * read from the registers that already exist: a wave with a pack on the wave register, a route with a settlement on the route
+ * register.
+ */
+export function assignmentsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<AssignmentsDeps, 'recordAudit'> {
+  const forStore = (storeId: string): string => streamName(STREAM.delivery, 'assignments', storeId);
+  const waves = fulfilmentWaveAdapter(input);
+  const runs = driverRunAdapter(input);
+  return {
+    now: input.now,
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    waveAssignments: (tenantId, storeId) => allOf<WaveAssignment>(input.store, tenantId, forStore(storeId), 'WaveAssigned'),
+    recordWaveAssignment: async (tenantId, a) => {
+      await input.store.append(tenantId, forStore(a.storeId), makeEvent({
+        id: `wave-assigned-${a.waveId}-${a.digest}`,
+        type: 'WaveAssigned',
+        occurredAt: a.at,
+        idempotencyKey: `wave-assigned-${tenantId}-${a.storeId}-${a.waveId}-${a.digest}`,
+        source: 'api/fulfilment',
+        payload: a,
+      }));
+    },
+    routeAssignments: (tenantId, storeId) => allOf<RouteAssignment>(input.store, tenantId, forStore(storeId), 'RouteAssigned'),
+    recordRouteAssignment: async (tenantId, a) => {
+      await input.store.append(tenantId, forStore(a.storeId), makeEvent({
+        id: `route-assigned-${a.routeId}-${a.digest}`,
+        type: 'RouteAssigned',
+        occurredAt: a.at,
+        idempotencyKey: `route-assigned-${tenantId}-${a.storeId}-${a.routeId}-${a.digest}`,
+        source: 'api/fulfilment',
+        payload: a,
+      }));
+    },
+    wavePacked: async (tenantId, waveId) => (await waves.pack(tenantId, waveId)) !== undefined,
+    routeSettled: async (tenantId, routeId) => (await runs.settlement(tenantId, routeId)) !== undefined,
   };
 }
 

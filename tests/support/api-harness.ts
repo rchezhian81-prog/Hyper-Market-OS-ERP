@@ -74,7 +74,7 @@ export interface ApiHarness {
     authTimeFromNowSeconds?: number | null; amr?: readonly string[] | null;
   }): Promise<HttpResponse>;
   /** Send a request with an explicit Authorization token (or none) and optional extra headers. */
-  raw(input: { method: Method; path: string; token?: string; body?: unknown; idempotencyKey?: string; headers?: Record<string, string> }): Promise<HttpResponse>;
+  raw(input: { method: Method; path: string; token?: string; body?: unknown; idempotencyKey?: string; headers?: Record<string, string>; query?: Readonly<Record<string, string>> }): Promise<HttpResponse>;
   /** Establish the tenant's first owner via the guarded genesis path (once-only). */
   seedOwner(tenantId: string, userId: string): Promise<void>;
   /** Provision an owner directly (as tenant provisioning would seed the initial admin set). */
@@ -130,8 +130,8 @@ export function apiHarness(opts: {
         ...(authTimeFromNowSeconds === undefined ? {} : { authTimeFromNowSeconds }),
         ...(amr === undefined ? {} : { amr }),
       }), idempotencyKey) }),
-    raw: ({ method, path, token, body, idempotencyKey, headers: extra }) =>
-      handle(kernel, { method, path, body, headers: headers(token, idempotencyKey, extra) }),
+    raw: ({ method, path, token, body, idempotencyKey, headers: extra, query }) =>
+      handle(kernel, { method, path, body, ...(query === undefined ? {} : { query }), headers: headers(token, idempotencyKey, extra) }),
     seedOwner: async (tenantId, userId) => { await seedGenesisOwner(store, OWNER_ROLE_ID, tenantId, userId, AT); },
     provisionOwner: (tenantId, userId) => appendGrant(store, tenantId, userId, OWNER_ROLE_ID),
     provisionRole: (tenantId, userId, roleId) => appendGrant(store, tenantId, userId, roleId),

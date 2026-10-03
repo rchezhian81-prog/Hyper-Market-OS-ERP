@@ -5,6 +5,48 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-10 recorded; HA-1 — head office assigns waves and routes to the handhelds (3 October 2026)
+
+**Owner direction (3 Oct 2026):** Option 1 for deployment — the administrator executes the handover (recorded as **OB-10**,
+`docs/registers/decisions.md`; the sheet is retained, not recreated; the access blocker is recorded once, above). Continue:
+(1) head-office assignment of waves and routes to handhelds, (2) the handling class through the catalogue pack, (3) the
+per-product cold-chain controls — reusing PR #674's packing and manifest work; missing classifications and limits explicit,
+never invented or defaulted.
+
+- **HA-1 — DONE in software (3 Oct 2026).** `services/fulfilment/src/assignments.ts`: `POST /v1/fulfilment/waves/:waveId/assignment`
+  (`fulfilment.wave.assign` — owner, store manager) hands a wave to a picker; `POST /v1/delivery/routes/:routeId/assignment`
+  (`delivery.dispatch.manage`, delivery feature) hands a route to a driver; both append-only and idempotent on CONTENT (the same
+  assignment again → 200 `alreadyAssigned`, one record; changed → 201 `replaced`, a new record, history kept); the person is
+  re-verified from THEIR grants and REFUSED by name (422 `picker_unknown` / `picker_lacks_authority`, `driver_*`) — this is a
+  person's act, unlike the relay routes which flag; finished work cannot be reassigned (409 `wave_already_packed` from the wave
+  register's pack, `route_already_settled` from the route register's settlement). `GET /v1/fulfilment/assignments?storeId=`
+  (`fulfilment.assignment.read` — the box identity too) returns only the OPEN ones, so done work leaves the phones by itself.
+  Storage `assignmentsAdapter` (one stream per store, `WaveAssigned` / `RouteAssigned`). **The box** (`edge/sync-agent/src/assignments-feed.ts`,
+  `edge/store-edge/src/assignments-feed-file.ts`): pulls the store's open assignments under its own credential on the sync loop
+  (take / re-confirm / keep out an older feed / hold through offline, the token never in a message), holds them on disk so a
+  reboot with the cable out keeps the phones' work, lays them into the pack's new `assignments` register; `pickerPayload` and
+  `driverPayload` serve head office's wave / route and NAME the source (`assignedBy` / `plannedBy: "head office, as of …"`,
+  `wavesAssigned` / `routesAssigned`); the pack file's `wave` / `route` sections remain the dispatcher's **hand-written override**
+  and win, and the screen says so. A box whose pack names no store cannot ask and says so once. `docs/api/surface.md` +3 routes.
+- **Proof.** Unit `tests/unit/fulfilment-assignments.test.ts` (15: gates; assign / same / replaced with the audit; 422 ×2; 400 ×7;
+  409; route assignment with the contribution rule in the digest; 422/400/409 for routes; the open read per store with done work
+  dropping off), `tests/unit/assignments-feed-pull.test.ts` (4: the feed's shape; the source's one path, token, store check and
+  statuses; take / re-confirm / kept / offline with ages; the pack and both phones with the sources named and the hand-written
+  override winning). Connected, real box: the HA-1 case in `picker-handheld-reaches-the-cloud-through-the-edge.test.ts` —
+  assigned at head office, pulled, shown on BOTH phones with "head office" named, kept through a reboot with the cable out (the
+  pull says offline, not empty), the hand-written pack-file wave wins and says so, the picker packs the wave through the box and
+  head office lists it no longer so the next pull drops it, reassigning it is 409 and an unauthorised picker 422 by name.
+- **Not done, recorded:** no head-office SCREEN for assigning yet — the two routes are called through the API (a dispatcher's
+  screen is a follow-on); a box serves the first open wave / the first open route (or the named driver's) — several waves per
+  store need the phone to pick its own, a follow-on; the pack file's sections stay the override for the first practice session.
+- **Records.** M19.md (FR-02 acceptance note), traceability (picker and driver shell rows), matrix SP-3 row, practice runbook §9.
+  OB-09 and every earlier decision preserved. Denominator 104 unchanged; no rung changed.
+- **Exact next task:** HA-2 — the handling class through the published catalogue pack (`toMaster` in
+  `services/catalogue/src/catalogue-preview.ts`, `MasterProduct` / `CatalogueProduct.handling` in `packages/catalogue`, the box's
+  picker lines showing it in both languages); then HA-3 — per-product cold-chain limits on the product master
+  (`ProductRecord.coldChain`, validated; the fold passes per-line limits; the pack line says which limit applied — the product's
+  or the approved class default — never silent).
+
 ## Deployment attempt from the build session — NOT POSSIBLE from here; what it takes (3 October 2026)
 
 **Owner direction (3 Oct 2026):** execute `docs/runbooks/demo-deployment-handover.md` on the existing demo VPS; preserve

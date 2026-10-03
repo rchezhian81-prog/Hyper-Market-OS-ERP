@@ -268,6 +268,7 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   suppliersPolicy: known({ userId: 'u-acct', permissions: ['supplier.view', 'purchase.supplier.approve'] }),
   indentsPolicy: known({ userId: 'u-floor', permissions: ['inventory.indent.read', 'inventory.indent.request', 'inventory.movement.append'] }),
   floorIndents: notKnown('not pulled in this fixture'),
+  assignments: notKnown('not pulled in this fixture'),
   dataIoPolicy: known({ userId: 'u-owner', permissions: ['export.read', 'purchase.import.read', 'purchase.import.record'], importTemplates: [{ id: 'products-basic', domain: 'products', label: 'Products', financial: false, columns: [{ name: 'sku', type: 'text' }, { name: 'name', type: 'text' }], keyColumns: ['sku'] }] }),
   workforceInboxPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
   // Employee self-service (M25). Who is looking + whether they hold `payroll.ess.self`; rota + payslip come live.
@@ -828,7 +829,7 @@ describe('a box that has been told nothing tells every screen so', () => {
   const nothing = snapshotOf({
     pack: {
       receivedAt: null, version: 0,
-      policies: notKnown('never'), products: notKnown('never'), approvals: notKnown('never'),
+      policies: notKnown('never'), products: notKnown('never'), approvals: notKnown('never'), assignments: notKnown('never'),
       checklist: notKnown('never'), wave: notKnown('never'), route: notKnown('never'),
       deliveries: notKnown('never'), drivers: notKnown('never'), routingPolicy: notKnown('never'),
       slots: notKnown('never'), purchaseOrders: notKnown('never'), receipts: notKnown('never'),
