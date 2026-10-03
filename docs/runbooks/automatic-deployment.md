@@ -106,6 +106,7 @@ repository settings. Nothing below is typed into this repository.
 | `ROLLBACK FAILED` (exit 71) | neither release answered | a person on the box now: `docker compose … ps`, `… logs api migrate`, `pnpm run standup:check`; if the database is the problem, the backup runbook |
 | `another deployment is running` (exit 75) | two merges landed close together | the second one re-runs by itself when you press *Re-run* on the job |
 | `NOT SET UP` (exit 78) | `/opt/sre/app` is not the checkout, or `deploy.conf` points elsewhere | check step 1–3 |
+| `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` (then `ROLLBACK FAILED` on the same commit, nothing changed) | the modules directory was laid down by another pnpm version or user and pnpm wanted a yes nobody could give; releases before 3 Oct 2026 did not set `CI=true` | the release script now exports `CI=true`; on an older script, run `sudo -u deploy sh -c 'cd /opt/sre/app && CI=true pnpm install --frozen-lockfile'` once and re-run the job |
 | `Permission denied (publickey)` or `Host key verification failed` | the key or host key in the `demo` environment does not match the box | redo steps 5–7; never lower `StrictHostKeyChecking` |
 
 ## Before this ever deploys real data
