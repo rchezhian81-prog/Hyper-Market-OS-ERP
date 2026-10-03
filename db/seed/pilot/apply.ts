@@ -11,6 +11,7 @@
 // No silent partial seed (P-08): every step is recorded, and the report's `ok` is false if any step
 // did not land. A caller that wants fail-fast can pass `{ throwOnError: true }`.
 
+import { createHash } from 'node:crypto';
 import type { PilotFoundation, PilotCatalogue, PilotTradingPartners, PilotTransactions } from './dataset';
 import { PILOT_DEMO_BRANCH } from './dataset';
 
@@ -73,6 +74,11 @@ interface SeedRunner {
   readonly steps: SeedStep[];
   record(step: SeedStep): void;
   post(what: string, path: string, body: unknown, idempotencyKey: string): Promise<SeedResponse>;
+}
+
+/** A short, stable digest of what a step publishes — the part of an idempotency key that changes when the data does. */
+function digestOf(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 12);
 }
 
 function makeRunner(client: SeedClient, tenantId: string, actor: string, options: ApplyOptions): SeedRunner {
@@ -201,6 +207,11 @@ export async function applyPilotCatalogue(
 
   // 2. Products — published through the real compliance gate; every publish carries the full
   //    category set so the primary category (and its food-safety rules) can be validated.
+  //
+  //    The idempotency key carries a digest of what is published. An unchanged product replays the first
+  //    answer on a re-run (nothing moves); a product whose dataset entry CHANGED — a unit corrected from
+  //    `each` to `ea` (H-14, 3 Oct 2026) — is published again as a new version, never an overwrite (hard
+  //    rule #2). With a fixed key the kernel replayed the first publish and the correction never landed.
   for (const product of catalogue.products) {
     await post(
       `product ${product.productId}`,
@@ -214,7 +225,7 @@ export async function applyPilotCatalogue(
         },
         categories: catalogue.categories,
       },
-      `seed-product-${product.productId}`,
+      `seed-product-${product.productId}-${digestOf({ sku: product.sku, name: product.name, baseUom: product.baseUom, primaryCategoryId: product.primaryCategoryId, taxClass: product.taxClass, lifecycle: product.lifecycle, brand: product.brand, safety: product.safety })}`,
     );
   }
 
@@ -236,7 +247,7 @@ export async function applyPilotCatalogue(
       `pack ${product.productId}`,
       `/v1/catalogue/products/${encodeURIComponent(product.productId)}/pack`,
       { baseUom: product.pack.baseUom, levels: product.pack.levels },
-      `seed-pack-${product.productId}`,
+      `seed-pack-${product.productId}-${digestOf(product.pack)}`,
     );
   }
 

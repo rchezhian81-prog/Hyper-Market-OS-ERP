@@ -45,7 +45,7 @@ banked; floor 9_ and _an eligible RESALE return … floor back to 10_.
 
 ## Still pending
 
-- The owner's click-through of the gated screens after sign-in (till `/pos/`, store box `/store/pos/`): the sign-in page is confirmed; the rest not yet reported.
-- H-14: the five demo products carry units the till cannot price (`each`, `litre`); a person corrects them (`docs/STATUS.md`).
+- ~~The owner's click-through after sign-in~~ — **done the same evening:** the owner signed in (login `owner1`, made by him on the box to replace the forgotten 28 September one) and the till opened; reported by the owner with a screen recording he kept.
+- H-14: the five demo products carry units the till cannot price (`each`, `litre`); the seed's keys now follow the data, so the owner's re-run of the seed republishes them (`docs/STATUS.md` for the three commands).
 - SP-10 staff/device UAT (`docs/registers/sp10-staff-uat.md`): none performed.
 - The 28 September items that stay open: key-only SSH, off-site encrypted backups, a real domain and certificate.
