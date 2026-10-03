@@ -25,6 +25,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   route) built by `demo:store-pack` from the seeded data, so `/store/manager/`, `/store/owner/`, `/store/buying/`,
   `/store/counts/` show content. **DF-3** after that: head office builds and delivers the store pack to every box — the
   product's own answer and the audit's biggest gap; planned as roadmap slices with an ADR.
+- **DF-1 DEPLOYED (`6f1cc43`, then `4833b29`, `e54fa28`).** Two release-script lessons on the way, both fixed and deployed:
+  the sign-in runs a bundle from a mounted folder, so a release rewrote the file but the container kept the old code — the
+  release now restarts each `SRE_BUILD_TOOLS` service (#684); that restart then raced the stand-up check, whose till probe
+  passes through the sign-in's gate and answered 500 for a second — run 37134559059 went RED and "rollback failed" on a
+  healthy box; the release now waits for the web front to answer again before judging (#685), proven by run 37135232295.
+  The demo home is live: sign in at `/login/` and the page lists what works first.
 - **Pending:** the owner's browser-check run (`pnpm run check:browser`), which tells page by page what loads with data on
   `main`'s shells — the bridged pages were proven on the 28 September code, not yet on today's; H-14's effect on the till
   (owner to look); SP-10 UAT; store PC and phones; 28 September items.
