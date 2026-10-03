@@ -156,6 +156,7 @@ describe('the release script deploys a merged commit and rolls a broken one back
     expect(log).toContain('build-app owner-app banner=1');
     expect(log).toContain('build-service demo-login'); // the demo sign-in bundle the pilot overlay runs, rebuilt per release
     expect(log).toContain('docker compose -p sre-test -f docker-compose.yml --env-file .env.test up -d --build');
+    expect(log).toContain('docker compose -p sre-test -f docker-compose.yml --env-file .env.test restart demo-login'); // a mounted bundle needs its container restarted
     expect(log).toContain(`standup-check env=${join(app, 'infra/compose/.env.test')}`);
     expect(log).toContain('curl -fsk --max-time 10 https://127.0.0.1/readyz'); // the public front, which the stand-up check cannot see
     expect(await lastLogLine()).toMatch(new RegExp(`^\\d{4}-\\d{2}-\\d{2}T[\\d:]+Z result=deployed sha=${V2} previous=${V1} by=octocat run=123$`));
