@@ -349,7 +349,7 @@ Cross-cutting, once per person: the DEMO banner is visible; a refused action say
 - The ERP screens have no interactive staff sign-in: the pack names one person per screen (KL-01, OA-4). The till
   identifies the cashier by staff code without authenticating them (GAP-POS-LOGIN-01).
 - The box signs in to head office as `pilot-cashier` for the demo; a dedicated `store-edge` login is a go-live step (UAT-05).
-- Head office does not yet assign waves or routes to phones; the pack file carries them (recorded limitation of SP-3c).
+- Head office assigns waves and routes to phones since 3 Oct 2026 (HA-1: `POST /v1/fulfilment/waves/:waveId/assignment`, `POST /v1/delivery/routes/:routeId/assignment`; the box pulls the open ones). The pack file's `wave` / `route` sections below are the hand-written override and still work for a first practice session; the screen says which source it is holding. A head-office screen for assigning is not built yet — the two routes are called through the API.
 - No TLS on the shop-network leg to the phones (OA-16: staff-only wifi is the control).
 - Receipt printing, weighing scales and cash drawers are built but not attached (EX-09).
 - The seed in `main` names the demo tenant with a label; the fixed-UUID fix lives on the box until §1 is merged.

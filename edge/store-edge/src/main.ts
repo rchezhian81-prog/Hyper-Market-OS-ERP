@@ -54,6 +54,11 @@ import { readSignedPack, writeSignedPack } from './signed-pack-file';
 import { readHeldMigrationFeed, writeHeldMigrationFeed, type HeldMigrationFeed } from './migration-feed-file';
 import { readHeldPublishedTemplates, writeHeldPublishedTemplates, type HeldPublishedTemplates } from './published-templates-file';
 import { readHeldIndentsFeed, writeHeldIndentsFeed, type HeldIndentsFeed } from './indents-feed-file';
+import { readHeldAssignmentsFeed, writeHeldAssignmentsFeed, type HeldAssignmentsFeed } from './assignments-feed-file';
+import {
+  httpAssignmentsFeedSource, pullAssignmentsFeed,
+  type AssignmentsFeedReceiver, type AssignmentsFeedPullOutcome, type AssignmentsFeedPullStatus,
+} from '../../../edge/sync-agent/src/assignments-feed';
 import { SyncPipeline } from './sync-pipeline';
 import { canonicalHash, IdempotencyGuard } from './idempotency';
 import { ReturnEntitlement, type EntitlementLine } from './entitlement';
@@ -68,7 +73,7 @@ import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-serv
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
 import { readSales } from './read-model';
-import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, type StorePack } from './store-pack';
+import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
 import { managerPayload, type ScreenInput } from './screen-data';
 import { hmacSigner } from '../../../services/catalogue/src/index';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
@@ -318,6 +323,8 @@ export interface EdgeProcess {
    * configured. Rides the same loop as `refreshPack`; exposed for the same reason.
    */
   readonly refreshIndentsFeed: (() => Promise<IndentsFeedPullOutcome>) | null;
+  /** HA-1: pull head office's open wave / route assignments for this store now. Null without a cloud or a store id. */
+  readonly refreshAssignmentsFeed: (() => Promise<AssignmentsFeedPullOutcome>) | null;
   /**
    * Run exactly one drain-and-settle of both queues (sales then refunds), returning what moved.
    * Null when no cloud is configured — there is nothing to drain to. The poll loop calls the same
@@ -1077,6 +1084,14 @@ export async function startEdge(
     say(`floor indents as of ${heldIndents.feed.asAt} restored from disk — the last register this box pulled.`);
   }
 
+  // Head office's open wave / route assignments as this box last pulled them (HA-1), restored from disk and laid into the
+  // pack — so a reboot with the cable out still gives the picker and the driver their work, under the cloud's own clock.
+  let heldAssignments: HeldAssignmentsFeed | undefined = await readHeldAssignmentsFeed(settings['EDGE_DATA_DIR']!, tenantId);
+  if (heldAssignments !== undefined) {
+    pack = withAssignmentsFeed(pack, heldAssignments.feed, heldAssignments.receivedAt);
+    say(`assignments as of ${heldAssignments.feed.asAt} restored from disk — ${heldAssignments.feed.waves.length} wave(s), ${heldAssignments.feed.routes.length} route(s).`);
+  }
+
   // The document templates in force as this box last pulled them (M01-FR-02), restored from disk and laid into the
   // pack — so a reboot with the cable out still prints the receipt header head office published, under its
   // version (P-01, P-08). Nothing restored means the till prints with its defaults and stamps no version.
@@ -1303,7 +1318,7 @@ export async function startEdge(
     syncStatusRelay.current = () => laneSyncStatus({ configured: false, queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
     return {
       log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, tillCashLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox, node, lane, screens, devices, enrolments, syncStatus,
-      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, syncOnce: null,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -1494,6 +1509,37 @@ export async function startEdge(
   };
   let lastIndentsStatus: IndentsFeedPullStatus | undefined;
 
+  // HA-1: head office's open wave / route assignments ride the same loop — fetched under the box's credential for THIS store,
+  // taken when not older than what is held, laid into the pack for the picker and driver phones, persisted so a reboot keeps
+  // them. The whole feed replaces what was held, so a packed wave or a settled route leaves the phones by itself. A box whose
+  // pack names no store cannot ask, and says so once.
+  const storeIdOfBox = pack.policies.known ? pack.policies.value.storeId : undefined;
+  const assignmentsSource = storeIdOfBox === undefined ? null : httpAssignmentsFeedSource({ baseUrl: cloudUrl, token: cloudToken, storeId: storeIdOfBox, fetch: globalThis.fetch });
+  if (assignmentsSource === null) say('this box\'s pack names no store, so head office cannot be asked for assignments — the phones use the pack file\'s wave and route.');
+  const assignmentsReceiver: AssignmentsFeedReceiver = {
+    heldFeed: () => heldAssignments?.feed,
+    takeFeed: (feed, receivedAt) => {
+      heldAssignments = { tenantId, feed, receivedAt };
+      pack = withAssignmentsFeed(pack, feed, receivedAt);
+    },
+  };
+  let lastAssignmentsStatus: AssignmentsFeedPullStatus | undefined;
+  const refreshAssignmentsFeed = assignmentsSource === null ? null : async (): Promise<AssignmentsFeedPullOutcome> => {
+    const outcome = await pullAssignmentsFeed({ source: assignmentsSource, receiver: assignmentsReceiver, now: new Date().toISOString() });
+    if (outcome.status === 'updated') {
+      try {
+        if (heldAssignments !== undefined) await writeHeldAssignmentsFeed(settings['EDGE_DATA_DIR']!, heldAssignments);
+      } catch (e) {
+        say(`the assignments could not be saved to disk (${e instanceof Error ? e.message : String(e)}). They are live now and will be pulled again next time.`);
+      }
+      say(outcome.staffMessage);
+    } else if (outcome.status !== 'unchanged' && outcome.status !== lastAssignmentsStatus) {
+      say(outcome.staffMessage);
+    }
+    lastAssignmentsStatus = outcome.status;
+    return outcome;
+  };
+
   const refreshIndentsFeed = async (): Promise<IndentsFeedPullOutcome> => {
     const outcome = await pullIndentsFeed({ source: indentsSource, receiver: indentsReceiver, now: new Date().toISOString() });
     if (outcome.status === 'updated') {
@@ -1638,6 +1684,14 @@ export async function startEdge(
     } catch (e) {
       say(`floor indents refresh failed: ${e instanceof Error ? e.message : String(e)}. The handheld keeps the indents this box holds.`);
     }
+    // HA-1: the assignments ride the same loop too — the phones keep what this box holds on a failure.
+    if (refreshAssignmentsFeed !== null) {
+      try {
+        await refreshAssignmentsFeed();
+      } catch (e) {
+        say(`assignments refresh failed: ${e instanceof Error ? e.message : String(e)}. The phones keep the assignments this box holds.`);
+      }
+    }
     if (!stopping) timer = setTimeout(() => { void pass(); }, nextInterval(quietPasses));
   };
 
@@ -1679,6 +1733,7 @@ export async function startEdge(
     refreshMigrationFeed,
     refreshPublishedTemplates,
     refreshIndentsFeed,
+    refreshAssignmentsFeed,
     syncOnce: () => drainAndSettle(),
     syncStatus,
     stop: async () => {

@@ -218,6 +218,7 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   suppliersPolicy: known({ userId: 'u-acct', permissions: ['supplier.view', 'purchase.supplier.approve'] }),
   indentsPolicy: known({ userId: 'u-floor', permissions: ['inventory.indent.read', 'inventory.indent.request', 'inventory.movement.append'] }),
   floorIndents: notKnown('not pulled in this fixture'),
+  assignments: notKnown('not pulled in this fixture'),
   dataIoPolicy: known({ userId: 'u-owner', permissions: ['export.read', 'purchase.import.read', 'purchase.import.record'], importTemplates: [{ id: 'products-basic', domain: 'products', label: 'Products', financial: false, columns: [{ name: 'sku', type: 'text' }], keyColumns: ['sku'] }] }),
   workforceInboxPolicy: known({ userId: 'u-owner', permissions: ['ai.proposal.read'] }),
   // Employee self-service (M25). Who is looking + whether they hold `payroll.ess.self`; rota + payslip come live.

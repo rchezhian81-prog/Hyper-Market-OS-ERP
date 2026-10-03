@@ -89,6 +89,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',
       'delivery.serviceability.manage', 'delivery.serviceability.read',
       'fulfilment.pack.record', 'fulfilment.pack.read',
+      // HA-1: hand a wave to a picker at head office, and read a store's open assignments (the box pulls them).
+      'fulfilment.wave.assign', 'fulfilment.assignment.read',
       // SP-3c-i hop: the box relays the picker handheld's line outcomes and packs to the wave register.
       'fulfilment.pick.sync',
       // SP-3c-ii hop: the box relays the driver handheld's stop outcomes, settlement and cash handover to the route register.
@@ -191,6 +193,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'delivery.attempt.record', 'delivery.run.read', 'delivery.dispatch.manage',
       'delivery.serviceability.manage', 'delivery.serviceability.read',
       'fulfilment.pack.record', 'fulfilment.pack.read',
+      // HA-1: hand a wave to a picker at head office, and read a store's open assignments (the box pulls them).
+      'fulfilment.wave.assign', 'fulfilment.assignment.read',
       'finance.period.read', 'reporting.dashboard.read', 'reporting.report.read',
       'scrap.review.read', 'waste.view', 'count.view', 'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read', 'workforce.roster.read', 'workforce.roster.manage', 'workforce.task.read', 'workforce.checklist.read', 'workforce.completion.sync', 'workforce.incentive.read', 'workforce.sop.read',
       'platform.health.read', 'platform.alert.manage', 'platform.device.manage',
@@ -249,6 +253,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // SP-3c-i hop: the box relays the PICKER handheld's line outcomes and wave packs to head office's wave register. The
       // routes re-verify the PICKER / PACKER from THEIR grants and record-and-flag — this grants no pick or pack of its own.
       'fulfilment.pick.sync',
+      // HA-1: the box PULLS the store's open wave and route assignments for its picker and driver phones — a read of what head
+      // office handed this store; it grants no assignment of its own.
+      'fulfilment.assignment.read',
       // SP-3c-ii hop: the box relays the DRIVER handheld's stop outcomes, end-of-shift settlement and counted cash handover to
       // head office's route register. The routes re-verify the DRIVER from THEIR grants, run the order's own state machine and
       // record-and-flag — this grants no delivery, settlement or cash authority of its own.

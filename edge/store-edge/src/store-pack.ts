@@ -30,6 +30,7 @@
 /** A section of the pack: what the cloud said, or why this box does not know. */
 import type { MigrationFeed } from '../../sync-agent/src/migration-feed';
 import type { IndentsFeed } from '../../sync-agent/src/indents-feed';
+import type { AssignmentsFeed } from '../../sync-agent/src/assignments-feed';
 import type { PublishedTemplatesFeed, PublishedTemplate } from '../../sync-agent/src/published-templates';
 
 export type Register<T> =
@@ -1236,6 +1237,9 @@ export interface StorePack {
   readonly indentsPolicy: Register<PackIndentsPolicy>;
   /** SP-8c: head office's open floor indents as the box last pulled them — for the handheld's issue list and the Indents screen offline. */
   readonly floorIndents: Register<PackFloorIndents>;
+  /** Head office's OPEN wave and route assignments for this store, as the box last pulled them (HA-1). The pack file's
+   *  `wave` / `route` sections stay the dispatcher's hand-written override; the screens say which they are holding. */
+  readonly assignments: Register<PackAssignments>;
   /** Who is on the data import/export console, what they may do, and the store's import templates (M30). */
   readonly dataIoPolicy: Register<PackDataIoPolicy>;
   /** Who is on the Workforce guidance inbox screen and what they may do there (A10). */
@@ -1411,6 +1415,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     suppliersPolicy: notKnown(why),
     indentsPolicy: notKnown(why),
     floorIndents: notKnown(why),
+    assignments: notKnown(why),
     dataIoPolicy: notKnown(why),
     workforceInboxPolicy: notKnown(why),
     essPolicy: notKnown(why),
@@ -1547,6 +1552,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     suppliersPolicy: section<PackSuppliersPolicy>('suppliersPolicy'),
     indentsPolicy: section<PackIndentsPolicy>('indentsPolicy'),
     floorIndents: section<PackFloorIndents>('floorIndents'),
+    assignments: section<PackAssignments>('assignments'),
     dataIoPolicy: section<PackDataIoPolicy>('dataIoPolicy'),
     workforceInboxPolicy: section<PackWorkforceInboxPolicy>('workforceInboxPolicy'),
     essPolicy: section<PackEssPolicy>('essPolicy'),
@@ -1650,6 +1656,21 @@ export function withMigrationFeed(pack: StorePack, feed: MigrationFeed, received
  *  as open leaves the pack, so the back store never issues against a cancelled or closed one. */
 export function withIndentsFeed(pack: StorePack, feed: IndentsFeed, receivedAt: string): StorePack {
   return { ...pack, floorIndents: known<PackFloorIndents>({ asAt: feed.asAt, indents: feed.indents, receivedAt }) };
+}
+
+/** The open assignments head office holds for this store, as the box last pulled them (HA-1). */
+export interface PackAssignments {
+  readonly asAt: string;
+  readonly storeId: string;
+  readonly waves: readonly (PackWave & { readonly assignedBy: string; readonly assignedAt: string })[];
+  readonly routes: readonly (PackRoute & { readonly assignedBy: string; readonly assignedAt: string })[];
+  /** The box's clock when it took the feed — absent on a pack-file section. */
+  readonly receivedAt?: string;
+}
+
+/** Lay head office's open assignments into the pack. The pack file's `wave` / `route` (hand-written) are left untouched. */
+export function withAssignmentsFeed(pack: StorePack, feed: AssignmentsFeed, receivedAt: string): StorePack {
+  return { ...pack, assignments: known<PackAssignments>({ asAt: feed.asAt, storeId: feed.storeId, waves: feed.waves, routes: feed.routes, receivedAt }) };
 }
 
 export function withPublishedTemplates(pack: StorePack, feed: PublishedTemplatesFeed, receivedAt: string): StorePack {

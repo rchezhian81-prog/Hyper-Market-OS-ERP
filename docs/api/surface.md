@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 807 | 495 | 495 | 63 | 273 |
+| 13 | 810 | 497 | 497 | 64 | 275 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -460,16 +460,19 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/delivery/orders/:orderId` | `delivery.run.read` | `delivery` | — |
 | POST | `/v1/delivery/orders/:orderId/transition` | `delivery.attempt.record` | `delivery` | yes |
 | GET | `/v1/delivery/routes/:routeId` | `delivery.run.read` | `delivery` | — |
+| POST | `/v1/delivery/routes/:routeId/assignment` | `delivery.dispatch.manage` | `delivery` | yes |
 | POST | `/v1/delivery/routes/:routeId/handover/synced` | `delivery.stop.sync` | `delivery` | yes |
 | POST | `/v1/delivery/routes/:routeId/settled/synced` | `delivery.stop.sync` | `delivery` | yes |
 | POST | `/v1/delivery/routes/:routeId/stops/:stopId/synced` | `delivery.stop.sync` | `delivery` | yes |
 | GET | `/v1/delivery/runs/:driverId` | `delivery.run.read` | `delivery` | — |
+| GET | `/v1/fulfilment/assignments` | `fulfilment.assignment.read` | core | — |
 | POST | `/v1/fulfilment/cod/reconcile` | `delivery.run.read` | `delivery` | yes |
 | POST | `/v1/fulfilment/orders/:orderId/dispatch` | `fulfilment.pack.record` | core | yes |
 | GET | `/v1/fulfilment/orders/:orderId/manifest` | `fulfilment.pack.read` | core | — |
 | GET | `/v1/fulfilment/orders/:orderId/pack` | `fulfilment.pack.read` | core | — |
 | POST | `/v1/fulfilment/orders/:orderId/pack` | `fulfilment.pack.record` | core | yes |
 | GET | `/v1/fulfilment/waves/:waveId` | `fulfilment.pack.read` | core | — |
+| POST | `/v1/fulfilment/waves/:waveId/assignment` | `fulfilment.wave.assign` | core | yes |
 | POST | `/v1/fulfilment/waves/:waveId/lines/:lineId/synced` | `fulfilment.pick.sync` | core | yes |
 | POST | `/v1/fulfilment/waves/:waveId/packed/synced` | `fulfilment.pick.sync` | core | yes |
 

@@ -41,17 +41,20 @@ const KEY = ['picker', 'handheld', 'edge', 'signing', 'key'].join('-').padEnd(48
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab';
 const AT = '2026-10-01T10:00:00.000Z';
 const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
-const packJson = (deviceStatus = 'registered'): string => JSON.stringify({
+const packJson = (deviceStatus = 'registered', withWave = true): string => JSON.stringify({
   version: 1,
   policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privilegedActions: [] },
   lossPreventionRules: [],
-  wave: {
-    waveId: 'W-1', pickerId: 'u-picker',
-    lines: [
-      { lineId: 'l1', orderRef: 'ORD-1', productId: 'p-rice', description: 'Rice 5kg', bin: 'A-01', requiredQty: 2, uom: 'ea', unitPriceMinor: 100_00 },
-      { lineId: 'l2', orderRef: 'ORD-1', productId: 'p-milk', description: 'Milk 1L', bin: 'B-04', requiredQty: 1, uom: 'ea', unitPriceMinor: 60_00 },
-    ],
-  },
+  // The pack file's wave is the dispatcher's HAND-WRITTEN override (HA-1); a box without one serves head office's assignment.
+  ...(withWave ? {
+    wave: {
+      waveId: 'W-1', pickerId: 'u-picker',
+      lines: [
+        { lineId: 'l1', orderRef: 'ORD-1', productId: 'p-rice', description: 'Rice 5kg', bin: 'A-01', requiredQty: 2, uom: 'ea', unitPriceMinor: 100_00 },
+        { lineId: 'l2', orderRef: 'ORD-1', productId: 'p-milk', description: 'Milk 1L', bin: 'B-04', requiredQty: 1, uom: 'ea', unitPriceMinor: 60_00 },
+      ],
+    },
+  } : {}),
   devices: [{ deviceId: 'hh-02', kind: 'handheld', status: deviceStatus, label: 'Aisle picker', enrolment: { codeHash: enrolmentCodeHash(CODE), expiresAt: '2099-01-01T00:00:00.000Z' } }],
 });
 
@@ -117,14 +120,16 @@ async function boxWithoutCloud(dir?: string): Promise<EdgeProcess> {
   return edge;
 }
 
-interface Cloud { h: ApiHarness; start: (deviceStatus?: string) => Promise<EdgeProcess>; setOnline: (v: boolean) => void; loseNextReply: () => void; posts: () => number }
+interface Cloud { h: ApiHarness; start: (deviceStatus?: string, withWave?: boolean) => Promise<EdgeProcess>; setOnline: (v: boolean) => void; loseNextReply: () => void; posts: () => number }
 
 /** A real cloud — cast: the owner, the picker (a store manager: may pack), the box (a cashier: may relay) — behind a controllable `fetch`. */
 async function cloud(): Promise<Cloud> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-picker', 'store_manager');
+  await h.provisionRole(A, 'u-driver', 'store_manager');
   await h.provisionRole(A, 'u-box', 'cashier');
+  await h.enableFeature(A, 'delivery'); // this shop's plan includes home delivery (M36-FR-01) — a route can be assigned (HA-1)
   // The product master (M19-FR-02 fold): rice travels ambient, milk chilled — and ghee has NO handling class, deliberately.
   const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
   const publish = (id: string, name: string, handling?: string) => h.request({
@@ -143,20 +148,23 @@ async function cloud(): Promise<Cloud> {
     if (url.startsWith('http://127.0.0.1:')) return savedFetch(url, init);
     if (!online) throw new Error('ENETUNREACH');
     const hdr = (init.headers ?? {}) as Record<string, string>;
-    const path = new URL(url).pathname;
+    const u = new URL(url);
+    const path = u.pathname;
     if (path.startsWith('/v1/fulfilment/') && (init.method ?? 'GET') === 'POST') posts += 1;
     const res = await h.raw({
       method: (init.method ?? 'GET') as HttpRequest['method'], path,
       token: hdr['authorization']?.replace(/^Bearer /, ''), idempotencyKey: hdr['idempotency-key'],
       body: init.body === undefined ? undefined : JSON.parse(String(init.body)) as unknown,
+      // The box's pulls carry their query string (HA-1: ?storeId=) — passed through as the kernel reads it.
+      ...(u.search === '' ? {} : { query: Object.fromEntries(u.searchParams) }),
     });
     if (lose) { lose = false; throw new Error('ECONNRESET'); }
     return new Response(JSON.stringify(res.body), { status: res.status });
   }) as unknown as typeof globalThis.fetch;
 
-  const start = async (deviceStatus = 'registered'): Promise<EdgeProcess> => {
+  const start = async (deviceStatus = 'registered', withWave = true): Promise<EdgeProcess> => {
     const packFile = join(dir, 'store-pack.json');
-    await writeFile(packFile, packJson(deviceStatus), 'utf8');
+    await writeFile(packFile, packJson(deviceStatus, withWave), 'utf8');
     const edge = (await startEdge({
       ...EDGE_ENV, EDGE_DATA_DIR: dir, EDGE_PACK_FILE: packFile,
       CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
@@ -340,6 +348,77 @@ describe('the picker handheld: enrol → device socket → box (durable) → hea
     const refusedDispatch = await c.h.request({ method: 'POST', path: '/v1/fulfilment/orders/ORD-9/dispatch', userId: 'u-picker', tenantId: A, idempotencyKey: 'disp-ORD-9', body: { manifestId: 'MAN-9', locationId: 'store-1', seals: {} } });
     expect(refusedDispatch.status).toBe(409);
     expect(JSON.stringify(refusedDispatch.body)).toContain('nothing_packed');
+  });
+
+  it('HA-1 — head office ASSIGNS the wave and the route: the box pulls them under its own credential, the phones show them with "head office" named, a reboot with the cable out keeps them, a hand-written pack-file wave wins and says so, a packed wave leaves the list by itself, and finished or unauthorised work is refused by name', async () => {
+    const c = await cloud();
+    // A fresh idempotency key per call, so the ROUTE judges the content (the kernel would otherwise replay the first answer).
+    let calls = 0;
+    const assignWave = (waveId: string, lines: unknown[], pickerId = 'u-picker') => c.h.request({
+      method: 'POST', path: `/v1/fulfilment/waves/${waveId}/assignment`, userId: 'u-owner', tenantId: A, idempotencyKey: `asg-${waveId}-${pickerId}-${(calls += 1)}`, body: { storeId: 'store-1', pickerId, lines },
+    });
+    const LINES = [{ lineId: 'h1', orderRef: 'ORD-HQ', productId: 'p-rice', description: 'Rice 5kg', bin: 'A-01', requiredQty: 1, uom: 'ea', unitPriceMinor: 100_00 }];
+    expect((await assignWave('W-HQ', LINES)).status).toBe(201);
+    expect((await assignWave('W-HQ', LINES)).body).toMatchObject({ alreadyAssigned: true }); // the same content again is one record
+    const route = await c.h.request({
+      method: 'POST', path: '/v1/delivery/routes/R-HQ/assignment', userId: 'u-owner', tenantId: A, idempotencyKey: 'asg-R-HQ',
+      body: { storeId: 'store-1', driverId: 'u-driver', stops: [{ stopId: 's1', orderRef: 'ORD-HQ', area: 'Anna Nagar', codMinor: 100_00 }] },
+    });
+    expect(route.status).toBe(201);
+
+    // A box whose pack file has NO wave of its own: one pull brings head office's, and both phones see it with the source named.
+    const edge = await c.start('registered', false);
+    expect((await edge.refreshAssignmentsFeed!()).status).toBe('updated');
+    const { cookie } = await enrol(edge);
+    const shellOf = async (box: EdgeProcess, screen: string) => (await savedFetch(`${deviceBase(box)}/${screen}/`, { headers: { accept: 'text/html', cookie: cookie! } })).text();
+    const picker = await shellOf(edge, 'picker');
+    expect(picker).toContain('"waveId":"W-HQ"');
+    expect(picker).toContain('"pickerId":"u-picker"');
+    expect(picker).toContain('"assignedBy":"head office, as of ');
+    const driver = await shellOf(edge, 'driver');
+    expect(driver).toContain('"routeId":"R-HQ"');
+    expect(driver).toContain('"driverId":"u-driver"');
+    expect(driver).toContain('"plannedBy":"head office, as of ');
+
+    // Reboot with the cable out: the feed restores from disk and the phones still have their work; the pull says offline, not empty.
+    await edge.stop();
+    cleanups.pop();
+    c.setOnline(false);
+    const second = await c.start('registered', false);
+    const offline = await second.refreshAssignmentsFeed!();
+    expect(offline.status).toBe('offline');
+    expect(offline.asAt).not.toBeNull();
+    expect(await shellOf(second, 'picker')).toContain('"waveId":"W-HQ"');
+    c.setOnline(true);
+
+    // A wave written by hand into the pack file WINS over head office's — and the screen says which it is holding.
+    await second.stop();
+    cleanups.pop();
+    const third = await c.start('registered', true);
+    expect((await third.refreshAssignmentsFeed!()).status).not.toBe('offline');
+    const hand = await shellOf(third, 'picker');
+    expect(hand).toContain('"waveId":"W-1"');
+    expect(hand).toContain('written by hand');
+    expect(hand).toContain('"wavesAssigned":1');
+
+    // The picker packs W-HQ through the box: head office no longer lists it as open, the next pull drops it from the phone.
+    const events = [resolved('h1', 'picked', { productId: 'p-rice', orderRef: 'ORD-HQ', description: 'Rice 5kg', requiredQty: 1, pickedQty: 1, finalPriceMinor: 100_00 }, 'W-HQ'), packedWave({ lineCount: 1, totalValueMinor: 100_00 }, 'W-HQ')];
+    expect((await postBatch(third, cookie, events.map(item))).acks.map((a) => a.status)).toEqual(['accepted', 'accepted']);
+    expect((await third.syncOnce!()).sent).toBe(2);
+    const open = (await c.h.request({ method: 'GET', path: '/v1/fulfilment/assignments', userId: 'u-owner', tenantId: A, query: { storeId: 'store-1' } })).body as { waves: unknown[]; routes: { routeId: string }[] };
+    expect(open.waves).toEqual([]);
+    expect(open.routes.map((r) => r.routeId)).toEqual(['R-HQ']);
+    expect((await third.refreshAssignmentsFeed!()).status).toBe('updated');
+    await third.stop();
+    cleanups.pop();
+    const fourth = await c.start('registered', false);
+    expect(await shellOf(fourth, 'picker')).not.toContain('"waveId":"W-HQ"');
+
+    // Finished work cannot be reassigned; a person who may not pick is refused by name — nothing assigned either way.
+    expect((await assignWave('W-HQ', LINES)).status).toBe(409);
+    const refused = await assignWave('W-HQ2', LINES, 'u-box');
+    expect(refused.status).toBe(422);
+    expect(JSON.stringify(refused.body)).toContain('picker_lacks_authority');
   });
 
   it('a picker head office does not know is flagged, not refused; a payload head office cannot read is a visible dead-letter on the box with the code in its reason, survives a restart, and recorded nothing', async () => {
