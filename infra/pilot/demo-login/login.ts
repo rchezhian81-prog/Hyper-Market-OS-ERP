@@ -198,11 +198,67 @@ const SHELLS: ReadonlyArray<readonly [string, string]> = [
   ['/store/owner/', 'Demo store box — owner'],
 ];
 
-/** Only a same-origin path to one of the shells is a valid place to go back to (no open redirect). */
+/** Where a sign-in lands when nothing asked for a particular screen: the demo home below, never an empty shell. */
+export const DEMO_HOME = '/login/';
+
+/**
+ * The demo home (owner instruction, 3 Oct 2026, after the first sign-in landed on the Store manager shell — which is
+ * fed by the store computer and on this demo shows "Not known" everywhere). Two honest lists, nothing else:
+ *   LIVE_PAGES — pages that work on this demo today: the bridged pages that read their own data from /v1 as the
+ *                signed-in person (screen-bridge.ts), the demo store box's till, the customer app;
+ *   NEEDS_BOX  — shells that only come alive when a store computer feeds them; on this demo they say "Not known"
+ *                until the demo store box's pack carries their sections (the next slice, DF-2).
+ * What a page lets a person DO is still decided by the API on every call; a page outside the person's role says so.
+ */
+export const LIVE_PAGES: ReadonlyArray<readonly [string, string]> = [
+  ['/store/pos/', 'Till — the demo store box (scan, price, sell; a sale reaches the books)'],
+  ['/erp/operations.html', 'Operations inbox'],
+  ['/erp/checklist.html', 'Opening and closing checklist'],
+  ['/erp/cash-office.html', 'Cash office'],
+  ['/erp/goods-receipt.html', 'Goods receipt'],
+  ['/erp/stock-health.html', 'Stock health'],
+  ['/erp/loss-prevention.html', 'Loss prevention inbox'],
+  ['/erp/data-quality.html', 'Data quality inbox'],
+  ['/erp/return-governance.html', 'Return governance'],
+  ['/erp/day-reopen.html', 'Day reopen'],
+  ['/erp/rostering.html', 'Rostering'],
+  ['/erp/workforce.html', 'Workforce'],
+  ['/erp/ess.html', 'Employee self-service'],
+  ['/erp/production.html', 'Production (cafe and fresh)'],
+  ['/erp/facilities.html', 'Facilities'],
+  ['/erp/stored-value.html', 'Stored value and gift cards'],
+  ['/erp/risk-acceptance.html', 'Risk acceptance'],
+  ['/erp/integration-health.html', 'Integration health'],
+  ['/erp/data-io.html', 'Data import and export'],
+  ['/supplier/', 'Supplier portal (as a supplier login)'],
+  ['/customer/', 'Customer app (public)'],
+];
+export const NEEDS_BOX: ReadonlyArray<readonly [string, string]> = [
+  ['/erp/', 'Store manager — today, approvals, receive, count, close the day'],
+  ['/store/manager/', 'Demo store box — manager day'],
+  ['/store/owner/', 'Demo store box — owner'],
+  ['/owner/', 'Owner'], ['/warehouse/', 'Warehouse'], ['/picker/', 'Picker'], ['/delivery/', 'Delivery'],
+  ['/pos/', 'Till served by the cloud (use the demo store box till above)'],
+];
+
+function homePage(who: string): string {
+  const li = (pages: ReadonlyArray<readonly [string, string]>): string =>
+    pages.map(([p, label]) => `<li><a href="${p}">${esc(label)}</a> <span class="path">${esc(p)}</span></li>`).join('');
+  return page('Demo home', `<h1>Signed in as ${esc(who)}</h1>
+<h2>Live on this demo</h2>
+<p class="muted">These pages read real (made-up) data as you. A page outside your role says so when you open it.</p>
+<ul>${li(LIVE_PAGES)}</ul>
+<h2>Needs the store computer</h2>
+<p class="muted">These screens come alive only when a store computer feeds them. On this demo they say "Not known" until the demo store box's pack carries their sections.</p>
+<ul>${li(NEEDS_BOX)}</ul>
+<form method="post" action="/login/logout"><button type="submit">Sign out</button></form>`);
+}
+
+/** Only a same-origin path to one of the shells (or the demo home) is a valid place to go back to (no open redirect). */
 export function safeNext(next: string | undefined): string {
-  if (next === undefined) return '/erp/';
-  if (!next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return '/erp/';
-  return SHELLS.some(([p]) => next.startsWith(p)) ? next : '/erp/';
+  if (next === undefined) return DEMO_HOME;
+  if (!next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return DEMO_HOME;
+  return next === DEMO_HOME || SHELLS.some(([p]) => next.startsWith(p)) ? next : DEMO_HOME;
 }
 
 const esc = (s: string): string =>
@@ -219,7 +275,7 @@ h1{font-size:1.4rem}label{display:block;margin:.8rem 0 .2rem;font-weight:600}
 input{width:100%;box-sizing:border-box;padding:.7rem;font-size:1rem;border:1px solid #888;border-radius:.4rem}
 button{margin-top:1.2rem;width:100%;padding:.8rem;font-size:1rem;font-weight:700;border:0;border-radius:.4rem;background:#1f5f99;color:#fff}
 .err{background:#fde2e1;border-left:4px solid #b3261e;padding:.6rem .8rem}
-ul{padding-left:1.1rem}a{color:#1f5f99}
+ul{padding-left:1.1rem}a{color:#1f5f99}h2{font-size:1.1rem;margin:1.4rem 0 .2rem}.muted{color:#555;margin:.2rem 0 .6rem}.path{color:#777;font-size:.85rem}
 </style></head><body>
 <div class="demo" role="alert">${esc(DEMO_BANNER_TEXT_EN)}<br>${esc(DEMO_BANNER_TEXT_TA)}</div>
 <main>${inner}</main></body></html>`;
@@ -285,10 +341,7 @@ export function createDemoLoginHandler(deps: DemoLoginDeps): (req: LoginRequest)
       const token = cookieOf(req.headers);
       const verdict = token === undefined ? undefined : verifyToken(token, deps.idp, deps.now());
       if (verdict?.ok === true && verdict.principal !== undefined) {
-        const who = verdict.principal.userId;
-        return html(200, page('Signed in', `<h1>Signed in as ${esc(who)}</h1>
-<p>Open a screen:</p><ul>${SHELLS.map(([p, label]) => `<li><a href="${p}">${esc(label)}</a></li>`).join('')}</ul>
-<form method="post" action="/login/logout"><button type="submit">Sign out</button></form>`));
+        return html(200, homePage(verdict.principal.userId));
       }
       return html(200, formPage(safeNext(url.searchParams.get('next') ?? undefined)));
     }

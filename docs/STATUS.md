@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-12 — the demo's staff experience: front door first, then a full demo pack, then head-office pack delivery (3 October 2026, night)
+
+- **What the owner saw (screen recording, frames extracted and read by the build session):** after signing in he landed on
+  `/erp/`, the Store manager shell — "Not connected to the store computer", trading day 1970-01-01, "Nobody is named for
+  this screen", four tiles saying "Not known", empty forms behind Receive / Count / Close the day. That shell is fed by the
+  store computer; the hosted demo has none behind that page. Defect **H-11** of 28 September described exactly this; the
+  sign-in's default landing was `/erp/`; and the build session had told him "the staff screens are back" and sent him there
+  without opening it first. His words: an empty shell, "like a blog page". He is right.
+- **What works on the demo tonight:** the demo store box's till `/store/pos/`; nineteen bridged pages that read real data as
+  the signed-in person (`/erp/operations.html`, `checklist`, `cash-office`, `goods-receipt`, `stock-health`, `loss-prevention`,
+  `data-quality`, `return-governance`, `day-reopen`, `rostering`, `workforce`, `ess`, `production`, `facilities`,
+  `stored-value`, `risk-acceptance`, `integration-health`, `data-io`, the supplier portal); the customer app. Everything else
+  under `/erp/` and `/store/` says "Not known" because the demo store box's pack holds the five products and nothing else.
+- **Owner decision OB-12 — all three, in order:** **DF-1** the demo front door (this PR): the signed-in page is now the demo
+  home — "Live on this demo" first, then "Needs the store computer" with the shells named honestly — and a sign-in with no
+  screen asked for lands there (`safeNext` → `/login/`), never on an empty shell; tests. **DF-2** next: the demo store box's
+  pack gains the practice runbook's synthetic sections (policies, named manager, approvals, checklist, warehouse, wave,
+  route) built by `demo:store-pack` from the seeded data, so `/store/manager/`, `/store/owner/`, `/store/buying/`,
+  `/store/counts/` show content. **DF-3** after that: head office builds and delivers the store pack to every box — the
+  product's own answer and the audit's biggest gap; planned as roadmap slices with an ADR.
+- **Pending:** the owner's browser-check run (`pnpm run check:browser`), which tells page by page what loads with data on
+  `main`'s shells — the bridged pages were proven on the 28 September code, not yet on today's; H-14's effect on the till
+  (owner to look); SP-10 UAT; store PC and phones; 28 September items.
+- **Next task:** DF-2, then DF-3's plan; the head-office assignment screen waits behind them (owner's order).
+
+---
+
 ## Demo deployment EXECUTED — the pipeline put `2f9714c` on the box; verified by the owner's evidence (3 October 2026, evening)
 
 - **Done, by the owner as administrator, guided step by step:** handover A–L. Configuration A. The first automatic deployment
