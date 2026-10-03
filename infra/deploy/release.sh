@@ -113,6 +113,11 @@ PREVIOUS="${4:-}"
 [[ "$PREVIOUS" =~ ^[0-9a-f]{40}$ ]] || usage
 cd "$SRE_APP_DIR"
 
+# Unattended by definition (an SSH forced command, no terminal). pnpm asks before it clears a modules directory laid
+# down by another version or user and, with no TTY to answer, ABORTS — the first release on a box set up by hand died
+# there. CI=true tells it to proceed without a prompt; it also quietens the shell builds' progress output.
+export CI=true
+
 bring_up() {
   say "installing dependencies…"
   pnpm install --frozen-lockfile || return 1

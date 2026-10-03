@@ -45,7 +45,7 @@ console.log(ready === 'ok' ? 'GREEN — 5 of 5 checks passed.' : 'RED — 1 of 5
 process.exitCode = ready === 'ok' ? 0 : 1;
 `;
 const PNPM_STUB = `#!/usr/bin/env bash
-echo "pnpm $*" >> "$SRE_TEST_CALLS"
+echo "pnpm $* ci=\${CI:-}" >> "$SRE_TEST_CALLS"
 exit 0
 `;
 // \`docker compose … up\` takes the next answer from the queue (ok / down) and makes it the API's state.
@@ -150,7 +150,7 @@ describe('the release script deploys a merged commit and rolls a broken one back
     expect(r.out).toContain('DEPLOYED');
     expect(head()).toBe(V2);
     const log = await callLog();
-    expect(log).toContain('pnpm install --frozen-lockfile');
+    expect(log).toContain('pnpm install --frozen-lockfile ci=true'); // unattended: pnpm must never wait for a yes
     expect(log).toContain('build-app pos banner=1');
     expect(log).toContain('build-app owner-app banner=1');
     expect(log).toContain('build-service demo-login'); // the demo sign-in bundle the pilot overlay runs, rebuilt per release
