@@ -49,6 +49,7 @@ if [ -f "$CONF" ]; then . "$CONF"; fi
 : "${SRE_ENV_FILE:=.env.pilot}"
 : "${SRE_BUILD_SHELLS:=pos owner-app web-erp picker-app delivery-app customer-app warehouse-app}"
 : "${SRE_BUILD_ENV:=}"
+: "${SRE_BUILD_TOOLS:=demo-login}"
 : "${SRE_API_URL:=http://127.0.0.1:8081}"
 : "${SRE_READY_TIMEOUT:=180}"
 : "${SRE_READY_POLL:=2}"
@@ -119,6 +120,12 @@ bring_up() {
     say "building the $app shell…"
     # shellcheck disable=SC2086
     env $SRE_BUILD_ENV node scripts/build-app.mjs "$app" || return 1
+  done
+  # Tool bundles the compose overlay runs from the checkout (the DEMO-ONLY sign-in, pilot overlay only). Built on
+  # every release so the running bundle is the release's; harmless on a stack that never starts the service.
+  for tool in $SRE_BUILD_TOOLS; do
+    say "building the $tool bundle…"
+    node scripts/build-service.mjs "$tool" || return 1
   done
   say "bringing the stack up (migrations run first, idempotently)…"
   compose up -d --build || return 1

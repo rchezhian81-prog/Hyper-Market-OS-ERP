@@ -20,8 +20,20 @@
 //
 // Pure data + types: no clock, no I/O.
 
-/** The one demo tenant every pilot-seed record lives in. Tenant isolation is the demo marker. */
-export const PILOT_DEMO_TENANT = 'pilot-demo';
+/**
+ * The one demo tenant every pilot-seed record lives in. Tenant isolation is the demo marker.
+ *
+ * A UUID, because the ledger's `tenant_id` column is `uuid` (ADR-0003; migrations 0001/0002/0007/0009).
+ * It used to be the string 'pilot-demo', which every in-memory test accepted and the first seed of a
+ * REAL database refused on its first write ("invalid input syntax for type uuid") — found on the
+ * hosted demo box, 27–28 Sep 2026. Fixed and recognisable: the `de30…` prefix and trailing `1` mark it
+ * as the synthetic demo tenant; no real tenant is ever issued this id. Its human label is below.
+ */
+export const PILOT_DEMO_TENANT = 'de300000-0000-4000-8000-000000000001';
+/** Machine identities in the demo: they sync, they never sign in as a person (hard rule #4). */
+export const PILOT_MACHINE_USERS: readonly string[] = Object.freeze(['pilot-store-edge']);
+/** The demo tenant's human-readable name, for operator output and docs. */
+export const PILOT_DEMO_TENANT_LABEL = 'pilot-demo';
 
 /** A stamp carried into the seed report, docs and any operator output so nobody mistakes this for
  *  real data. Mirrors the platform's existing `syntheticDataOnly` convention (partner sandboxes). */
@@ -97,6 +109,11 @@ export const PILOT_FOUNDATION: PilotFoundation = {
     { userId: 'pilot-accountant', displayName: 'Pilot Accountant (demo)', role: 'accountant' },
     { userId: 'pilot-ca', displayName: 'Pilot Chartered Accountant (demo)', role: 'chartered_accountant' },
     { userId: 'pilot-platform-admin', displayName: 'Pilot Platform Admin (demo)', role: 'platform_admin' },
+    // The STORE EDGE's own machine identity, so the box can sync its queued sales (`pos.sale.sync`) for the
+    // hosted offline/reconnect drill (runbook §9.4; owner decision 28 Sep 2026, option A). `cashier` is the
+    // smallest existing role that carries the sync permission; a sync-only role does not exist yet. Never a
+    // person's login: the demo sign-in refuses it (PILOT_MACHINE_USERS), so no human shares its identity.
+    { userId: 'pilot-store-edge', displayName: 'Pilot Store Edge — machine (demo)', role: 'cashier' },
   ],
   entitlements: ['loyalty', 'delivery', 'dept.concession'],
   gstRegistrations: [
@@ -215,14 +232,16 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
   products: [
     {
       productId: 'prod-soap', sku: 'DEMO-SOAP-100', name: 'Demo Bath Soap 100g (demo)',
-      baseUom: 'each', primaryCategoryId: 'cat-household', taxClass: '34011190', lifecycle: 'active',
+      // Units are the engine's codes (packages/contracts/src/quantity.ts): `ea` for discrete items, `kg`, `g`, `L`, `ml`. A product
+      // whose unit the engine does not know is NOT shipped to the till — it is named on the "Products nobody can sell" screen.
+      baseUom: 'ea', primaryCategoryId: 'cat-household', taxClass: '34011190', lifecycle: 'active',
       brand: 'DemoBrand', barcode: { code: '8900000000017', kind: 'ean' },
-      pack: { baseUom: 'each', levels: [{ level: 'each', containsMinor: 1 }, { level: 'case', containsMinor: 48 }] },
+      pack: { baseUom: 'ea', levels: [{ level: 'ea', containsMinor: 1 }, { level: 'case', containsMinor: 48 }] },
       price: { priceMinor: 3500, mrpMinor: 4000, costMinor: 2000, currency: INR, marginFloorBps: 0 },
     },
     {
       productId: 'prod-brush', sku: 'DEMO-BRUSH-1', name: 'Demo Toothbrush (demo)',
-      baseUom: 'each', primaryCategoryId: 'cat-household', taxClass: '34011190', lifecycle: 'active',
+      baseUom: 'ea', primaryCategoryId: 'cat-household', taxClass: '34011190', lifecycle: 'active',
       brand: 'DemoBrand', barcode: { code: '8900000000116', kind: 'ean' },
       price: { priceMinor: 2500, mrpMinor: 3000, costMinor: 1500, currency: INR, marginFloorBps: 0 },
     },
@@ -236,16 +255,16 @@ export const PILOT_CATALOGUE: PilotCatalogue = {
     },
     {
       productId: 'prod-biscuit', sku: 'DEMO-BISCUIT-200', name: 'Demo Marie Biscuits 200g (demo)',
-      baseUom: 'each', primaryCategoryId: 'cat-food', taxClass: '19053100', lifecycle: 'active',
+      baseUom: 'ea', primaryCategoryId: 'cat-food', taxClass: '19053100', lifecycle: 'active',
       brand: 'DemoBrand',
       safety: { allergens: ['wheat', 'milk'], countryOfOrigin: 'India', storageConditions: 'Store in a cool, dry place' },
       barcode: { code: '8900000000130', kind: 'ean' },
-      pack: { baseUom: 'each', levels: [{ level: 'each', containsMinor: 1 }, { level: 'case', containsMinor: 24 }] },
+      pack: { baseUom: 'ea', levels: [{ level: 'ea', containsMinor: 1 }, { level: 'case', containsMinor: 24 }] },
       price: { priceMinor: 3000, mrpMinor: 3500, costMinor: 1800, currency: INR, marginFloorBps: 0 },
     },
     {
       productId: 'prod-oil', sku: 'DEMO-OIL-1L', name: 'Demo Sunflower Oil 1L (demo)',
-      baseUom: 'litre', primaryCategoryId: 'cat-food', taxClass: '15079010', lifecycle: 'active',
+      baseUom: 'L', primaryCategoryId: 'cat-food', taxClass: '15079010', lifecycle: 'active',
       brand: 'DemoBrand',
       safety: { allergens: [], countryOfOrigin: 'India', storageConditions: 'Store away from direct sunlight' },
       barcode: { code: '8900000000147', kind: 'ean' },
@@ -350,11 +369,11 @@ export const PILOT_TRADING_PARTNERS: PilotTradingPartners = {
       // receipt carries the counted lines only, with batch + expiry where the item is tracked.
       grnId: 'grn-demo-001', warehouseId: WAREHOUSE_ID, receivedOnDate: RECEIVED_ON, currency: INR,
       lines: [
-        { lineId: 'l1', productId: 'prod-soap', orderedMinor: 100_000, countedMinor: 100_000, uom: 'each', unitCostMinor: 2000, condition: 'good' },
-        { lineId: 'l2', productId: 'prod-brush', orderedMinor: 60_000, countedMinor: 60_000, uom: 'each', unitCostMinor: 1500, condition: 'good' },
+        { lineId: 'l1', productId: 'prod-soap', orderedMinor: 100_000, countedMinor: 100_000, uom: 'ea', unitCostMinor: 2000, condition: 'good' },
+        { lineId: 'l2', productId: 'prod-brush', orderedMinor: 60_000, countedMinor: 60_000, uom: 'ea', unitCostMinor: 1500, condition: 'good' },
         { lineId: 'l3', productId: 'prod-rice', orderedMinor: 200_000, countedMinor: 200_000, uom: 'kg', unitCostMinor: 5000, condition: 'good', batchId: 'BATCH-RICE-2609', expiry: DEMO_EXPIRY },
-        { lineId: 'l4', productId: 'prod-biscuit', orderedMinor: 80_000, countedMinor: 80_000, uom: 'each', unitCostMinor: 1800, condition: 'good', batchId: 'BATCH-BISC-2609', expiry: DEMO_EXPIRY },
-        { lineId: 'l5', productId: 'prod-oil', orderedMinor: 120_000, countedMinor: 120_000, uom: 'litre', unitCostMinor: 9000, condition: 'good', batchId: 'BATCH-OIL-2609', expiry: DEMO_EXPIRY },
+        { lineId: 'l4', productId: 'prod-biscuit', orderedMinor: 80_000, countedMinor: 80_000, uom: 'ea', unitCostMinor: 1800, condition: 'good', batchId: 'BATCH-BISC-2609', expiry: DEMO_EXPIRY },
+        { lineId: 'l5', productId: 'prod-oil', orderedMinor: 120_000, countedMinor: 120_000, uom: 'L', unitCostMinor: 9000, condition: 'good', batchId: 'BATCH-OIL-2609', expiry: DEMO_EXPIRY },
       ],
     },
   ],

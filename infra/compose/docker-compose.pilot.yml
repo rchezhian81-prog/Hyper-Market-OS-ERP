@@ -1,9 +1,10 @@
-# Pilot overlay for the SRE Retail OS stack (non-production).
+# Pilot overlay for the SRE Retail OS stack (non-production) — the HOSTED DEMO's shape.
 #
-# Layers resource/capacity limits and pilot-safe restart policy on top of
-# docker-compose.yml, WITHOUT changing the application. Isolation from any other
-# stack comes from a distinct compose PROJECT NAME (separate volumes + network),
-# and pilot secrets/config come from a separate env file — never committed.
+# Layers resource/capacity limits and pilot-safe restart policy on top of docker-compose.yml, and adds the
+# DEMO-ONLY pieces (ADR-0016, merged behind the ADR-0018 proxy on 3 Oct 2026): the demo sign-in, the demo
+# store box's relay, and the demo front (`web` serving every shell behind that sign-in). Isolation from any
+# other stack comes from a distinct compose PROJECT NAME (separate volumes + network), and pilot
+# secrets/config come from a separate env file — never committed.
 #
 # Bring the pilot up (from infra/compose/):
 #   cp .env.pilot.example .env.pilot            # then fill in generated secrets
@@ -11,11 +12,13 @@
 #     -f docker-compose.yml -f docker-compose.pilot.yml \
 #     --env-file .env.pilot up -d
 #
-# Project name `sre-pilot` namespaces the volumes as `sre-pilot_db-data` /
-# `sre-pilot_edge-data` — separate storage, separate database, separate from a dev
-# stack on the same host. HTTPS: terminate TLS in front of the `web`/`api` ports
-# (a reverse proxy or an nginx TLS server block); the pilot must not be reached over
-# plain HTTP. See docs/pilot/SAFE-PILOT-ENVIRONMENT.md.
+# Project name `sre-pilot` namespaces the volumes as `sre-pilot_db-data` / `sre-pilot_edge-data` —
+# separate storage, separate database, separate from a dev stack on the same host.
+#
+# THE ONLY PUBLIC PORTS ARE THE PROXY'S (ADR-0018, in the base file): TLS ends there, http redirects there.
+# Nothing in this overlay publishes a port to the network — Docker-published ports bypass UFW, so a port
+# published here would be open to the internet whatever the firewall says. `web` keeps the base's plain
+# HTTP on 127.0.0.1 for `standup:check` on the box only. See docs/pilot/SAFE-PILOT-ENVIRONMENT.md.
 
 services:
   db:
@@ -37,8 +40,104 @@ services:
     mem_limit: 512m
     cpus: 0.5
     pids_limit: 256
+    environment:
+      # The till's lane socket, for the hosted offline/concurrent-tills drill (runbook §9.4) and the demo till. The
+      # edge binds it to 127.0.0.1 INSIDE the container and nothing publishes it — the same loopback-only property a
+      # store lane has. Only the demo relay below, which shares this container's network namespace, reaches it, and
+      # the proxy forwards to the relay only behind the demo sign-in (ADR-0016).
+      EDGE_LANE_PORT: '8095'
+      # The DEMO store pack (products from the published price list), read once at start-up — built on the box by a
+      # person: `pnpm run demo:store-pack`. A directory mount, so a rebuilt pack is seen on restart. A box without one
+      # starts anyway and tells every screen it has not been told (edge/store-edge/src/main.ts says so in its log).
+      EDGE_PACK_FILE: /etc/store-pack/store-pack.json
+    volumes:
+      - ${DEMO_STORE_PACK_DIR:-/etc/sre-pilot/store-pack}:/etc/store-pack:ro
 
+  # The DEMO FRONT, behind the proxy: every app shell, the demo identity bridge (H-11), the demo sign-in's cookie
+  # turned into a bearer token for /v1 (H-01), and the demo store box's relay — all behind the demo sign-in
+  # (infra/compose/nginx.pilot.conf). It publishes nothing new (the base's loopback-only port stays, for the box's
+  # own `standup:check`); the proxy reaches it as web:80, and only while SRE_STAFF_ROUTE=staff-demo-gate (below).
+  # The volume list is REPLACED (`!override`), not merged: the base mounts two shells and the store nginx.conf.
   web:
     mem_limit: 128m
     cpus: 0.5
     pids_limit: 128
+    depends_on:
+      - migrate
+      - api
+      - demo-login
+    volumes: !override
+      - ../../apps/pos/web:/usr/share/nginx/html/pos:ro
+      - ../../apps/owner-app/web:/usr/share/nginx/html/owner:ro
+      - ../../apps/web-erp/web:/usr/share/nginx/html/erp:ro
+      - ../../apps/picker-app/web:/usr/share/nginx/html/picker:ro
+      - ../../apps/delivery-app/web:/usr/share/nginx/html/delivery:ro
+      - ../../apps/customer-app/web:/usr/share/nginx/html/customer:ro
+      - ../../apps/warehouse-app/web:/usr/share/nginx/html/warehouse:ro
+      - ../../apps/supplier-app/web:/usr/share/nginx/html/supplier:ro
+      - ./nginx.pilot.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # The public proxy (base file) with the staff gate ON: the hosted demo is the one place the staff screens are
+  # reachable from the internet, and only through the demo sign-in at /login/. A store, or any stack without this
+  # overlay, keeps the base default `staff-not-public` (404 by name). SRE_STAFF_ROUTE=staff-not-public in .env.pilot
+  # switches the demo's gate off again without touching this file.
+  proxy:
+    depends_on:
+      - web
+    environment:
+      SRE_STAFF_ROUTE: ${SRE_STAFF_ROUTE:-staff-demo-gate}
+
+  # DEMO-ONLY sign-in (owner decision 27 Sep 2026, defect H-01) — exists ONLY in this pilot overlay; the base (store)
+  # compose file has no such service, so a store stack cannot run it. It refuses to start unless DEMO_LOGIN_ENABLED=1
+  # and the tenant is the synthetic demo tenant (PILOT_DEMO_TENANT in db/seed/pilot/dataset.ts — set EDGE_TENANT_ID to
+  # it in .env.pilot). No port is published: it is reached only through the proxy and the demo front at /login/. The
+  # bundle is built on the box by infra/deploy/release.sh on every release (SRE_BUILD_TOOLS), or by hand:
+  #   pnpm run build:demo-login     (writes infra/pilot/demo-login/dist/demo-login.mjs)
+  # Logins are added by a person on the box:
+  #   pnpm run demo-login:add -- --login <name> --user <pilot-user> --by "<your name>"
+  demo-login:
+    image: node:22-alpine
+    restart: unless-stopped
+    command: ['node', '/app/demo-login.mjs', 'serve']
+    user: '1000:1000'
+    environment:
+      DEMO_LOGIN_ENABLED: '1'
+      DEMO_TENANT_ID: ${EDGE_TENANT_ID}
+      MIGRATION_TARGET_KIND: ${MIGRATION_TARGET_KIND:-rehearsal}
+      IDP_SIGNING_KEY: ${IDP_SIGNING_KEY}
+      IDP_ISSUER: ${IDP_ISSUER}
+      IDP_AUDIENCE: ${IDP_AUDIENCE}
+      DEMO_LOGIN_FILE: /etc/demo-login/logins.json
+      PORT: '8090'
+    volumes:
+      - ../pilot/demo-login/dist:/app:ro
+      # The DIRECTORY, not the file: logins are replaced atomically (write + rename), and a single-file
+      # bind mount would keep showing the container the old file forever.
+      - ${DEMO_LOGIN_DIR:-/etc/sre-pilot/demo-login}:/etc/demo-login:ro
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 32
+
+  # DEMO ONLY (ADR-0016): the relay to the demo store box's screen server and loopback lane socket. It shares the
+  # edge's network namespace (so the edge's lane still binds only 127.0.0.1) and publishes nothing; the demo front
+  # forwards to it (edge:8096) only after the demo sign-in's auth_request. Not in the base (store) compose file.
+  edge-relay:
+    image: nginx:alpine
+    restart: unless-stopped
+    network_mode: 'service:edge'
+    depends_on:
+      - edge
+    volumes:
+      - ./nginx.edge-relay.conf:/etc/nginx/conf.d/default.conf:ro
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    cpus: 0.25

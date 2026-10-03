@@ -13,8 +13,13 @@ SRE_ENV_FILE=.env.pilot
 # Which app shells to rebuild on each release (folder names under apps/).
 SRE_BUILD_SHELLS="pos owner-app web-erp picker-app delivery-app customer-app warehouse-app"
 # Build-time flags. PILOT_DEMO_BANNER=1 bakes the "DEMO / PILOT — NOT PRODUCTION" banner into every shell;
-# leave it EMPTY only on a box that holds real data under a written GO.
-SRE_BUILD_ENV="PILOT_DEMO_BANNER=1"
+# leave it EMPTY only on a box that holds real data under a written GO. PILOT_DEMO_LANE_BASE=/store-lane makes the
+# hosted demo's till (served by the demo front) ring its sales on the DEMO store box through the signed-in front
+# (ADR-0016); a store's build leaves it out, so its till keeps writing to its own box on loopback.
+SRE_BUILD_ENV="PILOT_DEMO_BANNER=1 PILOT_DEMO_LANE_BASE=/store-lane"
+# Tool bundles built from the checkout on every release: the DEMO-ONLY sign-in the pilot overlay runs. Harmless on
+# a stack that never starts that service; set it EMPTY to skip.
+SRE_BUILD_TOOLS="demo-login"
 # Where the API answers on this box, how long to wait for READY, and how often to ask.
 SRE_API_URL=http://127.0.0.1:8081
 SRE_READY_TIMEOUT=180

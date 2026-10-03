@@ -25,6 +25,17 @@ import { openDeviceOutbox, guardedStore, type DeviceOutbox } from '../../../pack
 import { drainToBox, boxStatus } from '../../../packages/sync/src/device-drain';
 import { RouteSession, type ContributionRule, type StopInput } from './route-session';
 
+import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
+
+// The "DEMO / PILOT — NOT PRODUCTION" strip, exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
+// build-time constant baked in by esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty
+// in production. `typeof` guards the unbundled case (identifier absent) and a non-browser import.
+declare const PILOT_DEMO_BANNER: string;
+const demoBannerDoc = (globalThis as { document?: unknown }).document;
+if (demoBannerDoc !== undefined && demoBannerDoc !== null) {
+  mountDemoBanner(demoBannerDoc as BannerDocument, typeof PILOT_DEMO_BANNER === 'string' ? PILOT_DEMO_BANNER : '');
+}
+
 /** The route the phone was given. Absent means there is no assigned work to show. */
 export interface DriverData {
   readonly routeId?: string;

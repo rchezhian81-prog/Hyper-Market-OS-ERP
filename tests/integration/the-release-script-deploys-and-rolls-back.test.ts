@@ -35,6 +35,9 @@ const git = (cwd: string, ...args: string[]): string =>
 const BUILD_STUB = `import { appendFileSync } from 'node:fs';
 appendFileSync(process.env.SRE_TEST_CALLS, \`build-app \${process.argv.slice(2).join(' ')} banner=\${process.env.PILOT_DEMO_BANNER ?? ''}\\n\`);
 `;
+const TOOL_STUB = `import { appendFileSync } from 'node:fs';
+appendFileSync(process.env.SRE_TEST_CALLS, \`build-service \${process.argv.slice(2).join(' ')}\\n\`);
+`;
 const STANDUP_STUB = `import { appendFileSync, readFileSync } from 'node:fs';
 appendFileSync(process.env.SRE_TEST_CALLS, \`standup-check env=\${process.env.STANDUP_ENV_FILE}\\n\`);
 let ready = ''; try { ready = readFileSync(process.env.SRE_TEST_READY, 'utf8').trim(); } catch { /* not there yet */ }
@@ -92,6 +95,7 @@ describe('the release script deploys a merged commit and rolls a broken one back
     await chmod(join(author, 'infra/deploy/release.sh'), 0o755);
     await writeFile(join(author, 'infra/compose/docker-compose.yml'), 'services: {}\n');
     await writeFile(join(author, 'scripts/build-app.mjs'), BUILD_STUB);
+    await writeFile(join(author, 'scripts/build-service.mjs'), TOOL_STUB);
     await writeFile(join(author, 'scripts/standup-check.mjs'), STANDUP_STUB);
     await writeFile(join(author, 'package.json'), '{ "name": "sandbox", "private": true, "type": "module" }\n');
     const commit = async (version: string): Promise<string> => {
@@ -149,6 +153,7 @@ describe('the release script deploys a merged commit and rolls a broken one back
     expect(log).toContain('pnpm install --frozen-lockfile');
     expect(log).toContain('build-app pos banner=1');
     expect(log).toContain('build-app owner-app banner=1');
+    expect(log).toContain('build-service demo-login'); // the demo sign-in bundle the pilot overlay runs, rebuilt per release
     expect(log).toContain('docker compose -p sre-test -f docker-compose.yml --env-file .env.test up -d --build');
     expect(log).toContain(`standup-check env=${join(app, 'infra/compose/.env.test')}`);
     expect(await lastLogLine()).toMatch(new RegExp(`^\\d{4}-\\d{2}-\\d{2}T[\\d:]+Z result=deployed sha=${V2} previous=${V1} by=octocat run=123$`));

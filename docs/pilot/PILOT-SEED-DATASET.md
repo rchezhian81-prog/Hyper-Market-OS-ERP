@@ -35,6 +35,13 @@ clearly-non-real dataset for that purpose.
 - **Genesis owner** (`pilot-owner`) via the guarded once-only genesis path.
 - **Five more role logins:** store manager, cashier, accountant, chartered accountant, platform admin —
   each carrying its real role permissions (asserted in the test).
+- **Store price list for the demo branch (28 Sep 2026, ADR-0016):** each demo product also gets a
+  `store`-scoped, effective-dated price-list entry for `pilot-demo-branch` through the real
+  `POST /v1/prices/list/:productId/entries/:entryId` gate — the prices a till's signed catalogue pack is
+  built from (the governed price changes alone left the pack empty: `no_price` for every product).
+- **One machine identity (28 Sep 2026, owner decision):** `pilot-store-edge`, the store edge's own login for
+  syncing queued sales in the hosted offline drill; role `cashier` (smallest existing role with
+  `pos.sale.sync`). The demo sign-in refuses it as a person's login.
 - **Entitlements:** `loyalty`, `delivery`, `dept.concession` (turned on so the routes gated on them
   become reachable in later slices).
 - **Org skeleton:** a GST registration → a company → an active branch (filed under the demo GSTIN) → a

@@ -12,6 +12,7 @@
 // did not land. A caller that wants fail-fast can pass `{ throwOnError: true }`.
 
 import type { PilotFoundation, PilotCatalogue, PilotTradingPartners, PilotTransactions } from './dataset';
+import { PILOT_DEMO_BRANCH } from './dataset';
 
 export interface SeedResponse {
   readonly status: number;
@@ -53,6 +54,9 @@ export interface SeedReport {
 export interface ApplyOptions {
   /** Throw on the first failed step instead of collecting it into the report. */
   readonly throwOnError?: boolean;
+  /** The day store price-list entries take effect (YYYY-MM-DD). Default: today (UTC). The price route
+   *  refuses a back-dated entry, so this is never earlier than the day the seed runs. */
+  readonly today?: string;
 }
 
 const OK_STATUS = new Set([200, 201]);
@@ -247,6 +251,26 @@ export async function applyPilotCatalogue(
         currency: product.price.currency, marginFloorBps: product.price.marginFloorBps,
       },
       `seed-price-${product.productId}`,
+    );
+  }
+
+  // 6. The demo branch's STORE price list — what a till's signed catalogue pack prices a scan from (the
+  //    pack build resolves each product's price per store from these entries; the governed changes above
+  //    do not feed it). Same governed gate (never above MRP, never back-dated, below cost only with a
+  //    separate approver). Keyed by day, so re-seeding on another day adds a same-price entry for that day
+  //    rather than colliding with yesterday's key — append-only, nothing overwritten (hard rule #2).
+  const today = options.today ?? new Date().toISOString().slice(0, 10);
+  for (const product of catalogue.products) {
+    const entryId = `seed-${product.productId}-${PILOT_DEMO_BRANCH}-${today}`;
+    await post(
+      `store price list ${product.productId} @ ${PILOT_DEMO_BRANCH}`,
+      `/v1/prices/list/${encodeURIComponent(product.productId)}/entries/${encodeURIComponent(entryId)}`,
+      {
+        scope: 'store', scopeRef: PILOT_DEMO_BRANCH,
+        priceMinor: product.price.priceMinor, mrpMinor: product.price.mrpMinor, costMinor: product.price.costMinor,
+        currency: product.price.currency, marginFloorBps: product.price.marginFloorBps, effectiveFrom: today,
+      },
+      `seed-pricelist-${product.productId}-${PILOT_DEMO_BRANCH}-${today}`,
     );
   }
 

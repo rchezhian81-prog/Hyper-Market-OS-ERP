@@ -1,6 +1,6 @@
 # Administrator handover — connect and deploy the demo box (one sheet, 2 October 2026)
 
-_Status 3 Oct 2026: NOT executed — the build session has no route to the box (no client, key or address; port 22 egress blocked); see `docs/STATUS.md` for the two ways forward. The sheet stands ready._
+_Status 3 Oct 2026, afternoon: **being executed by the administrator (the owner)** — A–E done, C = configuration **A**, the stand-up branch pushed (B); F, H, G→J, K, L in progress. Owner **Option 3 (OB-11)**: deploy `main` now; the staff screens return to the demo address behind the demo sign-in when the sign-in-gate release deploys itself. Earlier that day: NOT executed — the build session has no route to the box (no client, key or address; port 22 egress blocked); see `docs/STATUS.md`. The sheet stands ready._
 
 _For the person with administrator access to the demo VPS and to the GitHub repository settings. Everything on this sheet
 is **PREPARED** by the build session and **EXECUTED** by you; the build session has no route to the box, no key and no
@@ -63,7 +63,7 @@ Read the output and pick **one**:
 
 | If… | Then it is configuration… |
 |---|---|
-| Nothing else uses 80/443, **or** the only thing there is the front the 28 Sep stand-up installed by hand for this demo (a host Caddy/nginx forwarding to the demo's own API/edge) | **A — the stack's own proxy takes 443/80.** In step F you stop and disable that hand-installed front. The demo is then exactly what the repository's compose file describes. |
+| Nothing else uses 80/443, **or** the only thing there is the front the 28 Sep stand-up installed for this demo — a host Caddy/nginx forwarding to the demo's own API/edge, **or the demo stack's own `web` container holding 443 (`sre-pilot-web-1`, shown by `docker ps` as `0.0.0.0:443->443/tcp`; this is what the box showed on 3 Oct 2026)** | **A — the stack's own proxy takes 443/80.** In step F you stop and disable that hand-installed front. The demo is then exactly what the repository's compose file describes. |
 | **Another application** on this VPS is served through the existing front on 80/443 | **B — the existing front stays and forwards one hostname to the demo.** The stack's proxy binds loopback ports only; nothing else on the box is interrupted. |
 
 **Evidence to return:** the `ss` output (addresses replaced by `<box>`), the service list line, the `docker ps` lines, and the
@@ -116,7 +116,7 @@ Edit `infra/compose/.env.pilot` (the template at `main`, `infra/compose/.env.pil
 
 Then the front, by configuration:
 
-- **A:** `sudo systemctl disable --now <the hand-installed front service>` (from step C) and `sudo ufw allow 80/tcp` (the
+- **A:** `sudo systemctl disable --now <the hand-installed front service>` (from step C; **skip this line when step C showed no host front service** — the 28 Sep front is the stack's own `web` container, which the first release replaces by itself) and `sudo ufw allow 80/tcp` (the
   stand-up opened only 443; port 80 carries the http→https redirect and the simplest certificate issuance).
 - **B:** add ONE site to the existing front and reload it. It terminates TLS with its own certificate for the demo hostname
   and forwards to the stack's proxy on loopback, keeping the `Host` header (the stack's proxy answers only for
@@ -151,7 +151,16 @@ Then the front, by configuration:
 
 ## G. [BOX] Bring the checkout to `main`
 
-The running containers keep serving the old release until the pipeline deploys; this only moves the files.
+⚠ **Not harmless on a box whose running front serves the shells straight from this checkout** — the 28 Sep stand-up does (`web`
+bind-mounts `apps/*/web` and `nginx.pilot.conf`): the moment the folder is on `main`, the live demo serves `main`'s files. So do G in
+the **same sitting as J, right before it**. And first, while the checkout still describes them, remove the two demo-only containers
+(the relay shares the edge's network namespace; left behind, the release may fail to recreate the edge):
+
+```bash
+cd /opt/sre/app/infra/compose && docker compose -p sre-pilot -f docker-compose.yml -f docker-compose.pilot.yml --env-file .env.pilot rm -sf edge-relay demo-login
+```
+
+Then:
 
 ```bash
 cd /opt/sre/app && git switch main && git fetch origin main && git pull --ff-only && git rev-parse HEAD && git status --short | wc -l
@@ -166,7 +175,7 @@ Follow `docs/runbooks/automatic-deployment.md`, "One-time set-up", steps 1–6, 
 
 1. **[BOX]** `sudo adduser --disabled-password --gecos "" deploy && sudo usermod -aG docker deploy && sudo chown -R deploy:deploy /opt/sre`
 2. **[BOX]** `sudo -u deploy git -C /opt/sre/app fetch origin main` must succeed (the same read-only deploy key or token the stand-up used).
-3. **[BOX]** `sudo -u deploy cp /opt/sre/app/infra/deploy/deploy.conf.example /opt/sre/deploy.conf` — keep `SRE_BUILD_ENV="PILOT_DEMO_BANNER=1"`; change nothing else unless your paths differ.
+3. **[BOX]** `sudo -u deploy cp /opt/sre/app/infra/deploy/deploy.conf.example /opt/sre/deploy.conf` — keep `SRE_BUILD_ENV` and `SRE_BUILD_TOOLS` as the example has them (the demo banner, the demo till's lane path, the demo sign-in bundle); change nothing else unless your paths differ.
 4. **[YOUR PC]** `ssh-keygen -t ed25519 -N "" -C sre-retail-os-pipeline -f sre-pipeline-key` — two files; the private one goes into GitHub in step I and is then deleted.
 5. **[YOUR PC]** `ssh-keyscan -t ed25519 -p 22 <the box's address>` — keep the one output line that starts with the address.
 6. **[BOX]** put the public key as the ONE forced-command line from `infra/deploy/authorized_keys.example` into
@@ -193,6 +202,13 @@ Then **[YOUR PC]** `rm sre-pipeline-key sre-pipeline-key.pub`. The private key n
 **Evidence to return:** a screenshot or the list of the five secret **names** on the environment page (values are hidden there).
 
 ## J. [GITHUB] Deploy the latest eligible `main` commit
+
+**What the first deployment of `main` changes on the demo address (owner Option 3, OB-11, 3 Oct 2026):** the staff screens, the demo
+sign-in and `/store/…` answer **404 by name** until the sign-in-gate release — the merge of the box's stand-up branch behind the
+public proxy (ADR-0018 amendment) — deploys itself through this same pipeline; the customer app, the API, the database, the
+store-edge sync and the demo logins on the box's disk are unaffected. After that release the staff screens are at
+`https://<demo>/login/` (sign in, then the till, owner, ERP, picker, driver, warehouse and supplier screens, and the demo store box
+at `/store/…`).
 
 Repository → **Actions → CI → the newest run on `main`** → **Re-run all jobs**. (Or merge the next pull request.) The commit it
 deploys is that run's `main` head — it must be `0bf098a` or newer (the first commit that holds `pnpm run demo:smoke`).
@@ -221,10 +237,15 @@ curl -skI "$H/customer/" | head -1                                              
 curl -sk "$H/v1/livez"; echo                                                    # the API through the proxy
 curl -sk -o /dev/null -w '%{http_code}\n' "$H/v1/floor/indents"                 # 401 — the API refuses an unauthenticated call by name
 curl -sk -o /dev/null -w '%{http_code}\n' "$H/auth/anything"                    # 503 — customer sign-in is "not deployed", by name (KL-15)
-curl -sk -o /dev/null -w '%{http_code}\n' "$H/pos/"                             # 404 — staff screens are NOT on the public origin
+curl -sk -o /dev/null -w '%{http_code}\n' "$H/pos/"                             # 404 before the sign-in-gate release; 302 (to /login/) after it — behind the demo sign-in either way
+curl -sk -o /dev/null -w '%{http_code}\n' "$H/login/"                           # 404 before the sign-in-gate release; 200 after it — the demo sign-in page
 ```
 
 Open `$H/customer/` in a browser: the **DEMO / PILOT — NOT PRODUCTION** banner must be visible.
+
+**Known after the sign-in-gate release (H-14, `docs/STATUS.md` 3 Oct 2026):** the demo till at `$H/store/pos/` will list the five
+seeded products under "Products nobody can sell" with `unknown unit of measure "each"` / `"litre"` until a person corrects their units
+to the engine's codes (`ea`, `L`) — the seed is corrected in the repository; the box's data was seeded before. Not a deployment fault.
 
 **Evidence to return:** every line's output, with the address replaced by `<box>`. The sign-in posture is the pair 401/503:
 the API accepts only a token (the smoke in step L proves hundreds of accepted, authenticated calls) and customer sign-in
