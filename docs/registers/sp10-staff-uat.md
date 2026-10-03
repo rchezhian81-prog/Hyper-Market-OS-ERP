@@ -22,7 +22,7 @@ Rules (owner, 1 October 2026):
 |---|---|
 | Sessions run | **0** — no staff or device session has been performed yet |
 | Devices verified on real hardware | **none** — store PC, scanner, phones pending (physical installation steps in `docs/runbooks/demo-practice-environment.md` §4) |
-| Software version on the demo box | not yet connected to the pipeline (see the runbook §2); last known: the 28 September stand-up at `e72b4ae` |
+| Software version on the demo box | **`2f9714c`** — deployed by the pipeline (run 37125939387) on 3 Oct 2026 after the administrator executed the handover; stand-up GREEN, smoke 16/16, sign-in page live (`docs/evidence/demo-deployment-2026-10-03.md`). Every later merge to `main` deploys itself; read the current commit from `/opt/sre/releases.log` |
 
 ## Sessions
 

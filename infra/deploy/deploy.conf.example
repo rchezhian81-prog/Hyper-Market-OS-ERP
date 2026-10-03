@@ -22,6 +22,9 @@ SRE_BUILD_ENV="PILOT_DEMO_BANNER=1 PILOT_DEMO_LANE_BASE=/store-lane"
 SRE_BUILD_TOOLS="demo-login"
 # Where the API answers on this box, how long to wait for READY, and how often to ask.
 SRE_API_URL=http://127.0.0.1:8081
+# The public front, checked after the stand-up check (which looks at loopback ports only, so a proxy that refuses to
+# start would otherwise pass). Configuration B (the stack's proxy on a loopback port): https://127.0.0.1:8443. Empty skips it.
+SRE_FRONT_URL=https://127.0.0.1
 SRE_READY_TIMEOUT=180
 SRE_READY_POLL=2
 # The append-only record of every deployment attempt, and the lock that keeps deployments one at a time.

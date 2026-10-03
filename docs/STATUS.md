@@ -5,6 +5,34 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Demo deployment EXECUTED — the pipeline put `2f9714c` on the box; verified by the owner's evidence (3 October 2026, evening)
+
+- **Done, by the owner as administrator, guided step by step:** handover A–L. Configuration A. The first automatic deployment
+  (run 37120682570) reached the box and died on an unattended pnpm prompt (`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`,
+  nothing changed on the box); `release.sh` now exports `CI=true` (#679) and **that fix deployed itself** — run 37125939387,
+  `DEPLOYED 2f9714c (replaced c49073a)`, stand-up GREEN 5/5, 13 migrations checked / 2 applied (0012 row-level security,
+  0013 tenants). **Verified by the owner's evidence** (`docs/evidence/demo-deployment-2026-10-03.md`): release log, `rev-parse`,
+  readyz, containers, public `/customer/` 200 · `/v1/…` 401 · `/pos/` 302 → sign-in · `/login/` 200, **smoke 16/16** (`EXIT=0`,
+  checkout `2f9714c`), and the sign-in page with the demo banner in the owner's browser. Every later merge to `main` deploys
+  itself.
+- **Snags met, each fixed in the step and in the tool (this PR):** E — the application login was the database's bootstrap
+  superuser (cannot be demoted): `sre_app` created as the limited login, every table/sequence handed over, `DATABASE_URL`/
+  `APP_DB_USER` switched; `sre_pilot_app` stays the administrator. F/K — `SRE_PUBLIC_HOST` ended in an empty entry; the proxy
+  restarted forever while the stand-up check stayed GREEN: `release.sh` now checks the public front (`SRE_FRONT_URL`, after the
+  stand-up check; test + guardrail). L — the smoke could not resolve the compose name `db` from the box:
+  `scripts/lib/database-url-from-the-host.ts` translates it (unit test). K — a headers-only request to `/customer/` gets 405
+  from the edge's screen server; the sheet uses a page request. Sheet, red-run table, practice runbook §1/2/3/5 (PREPARED →
+  EXECUTED), SP-10 register (software version `2f9714c`), traceability updated.
+- **Pending:** the owner's click-through of the gated screens after sign-in (till `/pos/`, store box `/store/pos/`) — the sign-in
+  page is confirmed, the rest not yet reported; **H-14** (the five demo products' units — a person corrects them; whether a re-run
+  of the corrected seed is enough is to be verified next); SP-10 staff/device UAT; the store PC and phones (practice runbook §4);
+  the 28 September items (key-only SSH, off-site backups, a real domain and certificate). The box's address never entered the
+  repository; it appeared in the owner's screenshots in chat, and he was asked to mask it.
+- **Next task:** verify H-14 option 2 (does a re-run of the corrected seed change an existing product's unit?), then the head-office
+  screen for assigning waves and routes to handhelds, then the phone choosing its own wave when several are open.
+
+---
+
 ## OB-11 (Option 3) — the box's stand-up branch merged behind the public proxy; the demo sign-in gate (3 October 2026)
 
 - **Owner decision OB-11 — Option 3 (in writing: "option 3").** Context: the administrator (the owner himself) is executing the

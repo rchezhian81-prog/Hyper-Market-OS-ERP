@@ -31,7 +31,7 @@ runbook are ready.
 
 ---
 
-## 1. Reconcile the server work (step A is PREPARED for the administrator; the review is EXECUTED on receipt)
+## 1. Reconcile the server work (EXECUTED 3 Oct 2026 — the branch was pushed by the administrator, reviewed and merged behind the public proxy, PR #678)
 
 The box holds work the repository does not. It must be reviewed and merged **before** anything from `main` is re-seeded
 onto the box, and before the first release (the release script checks out a commit and refuses a dirty checkout).
@@ -54,7 +54,7 @@ through a pull request like any other change. Until that merge, **do not re-run 
 
 ---
 
-## 2. Connect automatic deployment (PREPARED — the administrator performs it once; ~60 minutes; the ordered one-sheet version with evidence to return is `demo-deployment-handover.md`)
+## 2. Connect automatic deployment (EXECUTED 3 Oct 2026 by the administrator — the pipeline deployed `2f9714c`, run 37125939387; evidence in `docs/evidence/demo-deployment-2026-10-03.md`; the ordered one-sheet version is `demo-deployment-handover.md`)
 
 Follow `docs/runbooks/automatic-deployment.md`. The ordered list below adds what that runbook assumes but the box, as
 stood up on 28 September, does not yet have. Secret **names** are exact; **values** are never written anywhere but the
@@ -123,7 +123,7 @@ request). The job *Deploy the merged release to the demo box* must end **green**
 
 ---
 
-## 3. Verify the deployed release (PREPARED — commands for the administrator; paste the output back without addresses)
+## 3. Verify the deployed release (EXECUTED 3 Oct 2026 — the administrator's output: commit, readyz, migrations, public 200 · 401 · 302 · 200; `docs/evidence/demo-deployment-2026-10-03.md`)
 
 The commit to expect is the head of `main` at the time of the run — **`0bf098a`** (PR #671, 1 October 2026) or later;
 it must not be older than `0bf098a`, which is where `pnpm run demo:smoke` first exists (full id in the Actions run; the
@@ -269,7 +269,7 @@ baked into every shell by `SRE_BUILD_ENV="PILOT_DEMO_BANNER=1"` in `deploy.conf`
 
 ---
 
-## 5. Prove the deployed workflow (PREPARED — one command on the box; the script is EXECUTED here on the real stack)
+## 5. Prove the deployed workflow (EXECUTED 3 Oct 2026 on the box — smoke 16/16 on `2f9714c`, `EXIT=0`; the script was also EXECUTED here on the real stack)
 
 ```bash
 cd /opt/sre/app && pnpm run demo:smoke -- --env-file infra/compose/.env.pilot --report /opt/sre/smoke-$(date +%F).json

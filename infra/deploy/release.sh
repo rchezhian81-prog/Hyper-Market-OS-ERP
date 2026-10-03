@@ -51,6 +51,7 @@ if [ -f "$CONF" ]; then . "$CONF"; fi
 : "${SRE_BUILD_ENV:=}"
 : "${SRE_BUILD_TOOLS:=demo-login}"
 : "${SRE_API_URL:=http://127.0.0.1:8081}"
+: "${SRE_FRONT_URL:=https://127.0.0.1}"
 : "${SRE_READY_TIMEOUT:=180}"
 : "${SRE_READY_POLL:=2}"
 : "${SRE_RELEASE_LOG:=/opt/sre/releases.log}"
@@ -145,11 +146,26 @@ wait_ready() {
   return 1
 }
 
+# The public front (the proxy, ADR-0018), which the stand-up check does not see — it looks at loopback ports only. On
+# 3 Oct 2026 a release went GREEN while the proxy restarted forever on an empty name in SRE_PUBLIC_HOST, and nobody could
+# reach the demo address. The front makes its own certificate on a demo, hence -k. Empty SRE_FRONT_URL skips the check.
+front_answers() {
+  [ -z "$SRE_FRONT_URL" ] && return 0
+  local deadline=$(( $(date +%s) + 45 ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    if curl -fsk --max-time 10 "$SRE_FRONT_URL/readyz" >/dev/null 2>&1; then return 0; fi
+    sleep "$SRE_READY_POLL"
+  done
+  return 1
+}
+
 verify() {
   say "waiting up to ${SRE_READY_TIMEOUT}s for the API to be READY…"
   wait_ready || { say "the API did not become ready in time."; return 1; }
   say "running the stand-up check…"
   STANDUP_ENV_FILE="$SRE_APP_DIR/infra/compose/$SRE_ENV_FILE" node scripts/standup-check.mjs || return 1
+  say "checking the public front at ${SRE_FRONT_URL:-"(skipped)"}…"
+  front_answers || { say "the public front did not answer at $SRE_FRONT_URL/readyz while the API behind it is fine — the proxy is down or refused its configuration (an empty name in SRE_PUBLIC_HOST?). See 'When it goes red'."; return 1; }
 }
 
 if bring_up && verify; then

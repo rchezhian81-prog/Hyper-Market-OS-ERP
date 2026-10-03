@@ -62,6 +62,7 @@ esac
 exit 0
 `;
 const CURL_STUB = `#!/usr/bin/env bash
+echo "curl $*" >> "$SRE_TEST_CALLS"
 if [ "$(cat "$SRE_TEST_READY" 2>/dev/null)" = "ok" ]; then echo '{"ready":true}'; exit 0; fi
 exit 22
 `;
@@ -156,6 +157,7 @@ describe('the release script deploys a merged commit and rolls a broken one back
     expect(log).toContain('build-service demo-login'); // the demo sign-in bundle the pilot overlay runs, rebuilt per release
     expect(log).toContain('docker compose -p sre-test -f docker-compose.yml --env-file .env.test up -d --build');
     expect(log).toContain(`standup-check env=${join(app, 'infra/compose/.env.test')}`);
+    expect(log).toContain('curl -fsk --max-time 10 https://127.0.0.1/readyz'); // the public front, which the stand-up check cannot see
     expect(await lastLogLine()).toMatch(new RegExp(`^\\d{4}-\\d{2}-\\d{2}T[\\d:]+Z result=deployed sha=${V2} previous=${V1} by=octocat run=123$`));
     expect(r.out).not.toContain(SENTINEL);
   }, 30_000);
