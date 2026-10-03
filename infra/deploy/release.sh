@@ -135,6 +135,14 @@ bring_up() {
   done
   say "bringing the stack up (migrations run first, idempotently)…"
   compose up -d --build || return 1
+  # A tool bundle runs from a folder MOUNTED into its container (the demo sign-in: ../pilot/demo-login/dist → /app).
+  # Rebuilding the file changes nothing compose can see, so `up` leaves the container running the old code — the
+  # demo home shipped on 3 Oct 2026 did not appear until the container was restarted by hand. Restart each tool's
+  # service after `up`; a stack without that service (a store) just says so and carries on.
+  for tool in $SRE_BUILD_TOOLS; do
+    say "restarting the $tool service so it runs this release's bundle…"
+    compose restart "$tool" >/dev/null 2>&1 || say "  (no $tool service in this stack — nothing to restart)"
+  done
 }
 
 wait_ready() {

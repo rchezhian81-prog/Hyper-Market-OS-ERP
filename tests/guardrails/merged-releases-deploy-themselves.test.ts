@@ -60,6 +60,7 @@ describe('the on-box release script is the one thing the key can run, and it is 
     expect(SCRIPT_CODE).toContain('/readyz');
     expect(SCRIPT_CODE).toContain('standup-check.mjs');
     expect(SCRIPT_CODE).toContain('SRE_FRONT_URL'); // the public front is checked too — the stand-up check sees loopback only
+    expect(SCRIPT_CODE).toMatch(/compose restart "\$tool"/); // a tool that runs a mounted bundle is restarted on every release
     expect(CONF).toMatch(/^SRE_FRONT_URL=https:\/\/127\.0\.0\.1$/m);
     expect(SCRIPT_CODE).toContain('record deployed');
     expect(SCRIPT_CODE).toContain('record rolled_back');
