@@ -34,7 +34,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   five products with `ea`/`L`), `pnpm run demo:publish-pack -- --operator "<name>"` (the price list — the box's till pulls it
   within five minutes), `pnpm run demo:store-pack -- --operator "<name>"` then `docker restart sre-pilot-edge-1` (the demo store
   box's own screens). Option 1 (the ERP catalogue screen) remains the fallback.
-- **Pending:** the owner's H-14 run and the till showing the five products as sellable; SP-10 staff/device UAT; the store PC
+- **H-14 run by the owner the same evening (after `eabc38f` deployed itself):** catalogue 26/26 — the five products republished with
+  `ea`/`L`; price list published (201); demo store pack v2 written with the five products; edge restarted. One line red: the
+  28 September goods receipt, whose unit words changed in the dataset, was refused under its fixed key (`idempotency_key_reused`)
+  — correct: a receipt is history and is never re-done. The loader now reports that case as *landed earlier, left as it is*
+  instead of failing the run (`post` in `db/seed/pilot/apply.ts`; tests 5).
+- **Pending:** the owner's look at the till showing the five products as sellable; SP-10 staff/device UAT; the store PC
   and phones (practice runbook §4); the 28 September items (key-only SSH, off-site backups, a real domain and certificate). The
   box's address never entered the repository; it appeared in the owner's screenshots in chat, and he was asked to mask it.
 - **Next task:** the head-office screen for assigning waves and routes to handhelds, then the phone choosing its own wave when

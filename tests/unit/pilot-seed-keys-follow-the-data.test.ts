@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { applyPilotCatalogue, type SeedClient } from '../../db/seed/pilot/apply';
-import { PILOT_CATALOGUE } from '../../db/seed/pilot/dataset';
+import { applyPilotCatalogue, applyPilotTradingPartners, type SeedClient } from '../../db/seed/pilot/apply';
+import { PILOT_CATALOGUE, PILOT_TRADING_PARTNERS } from '../../db/seed/pilot/dataset';
 
 // H-14 (3 Oct 2026): the demo products were seeded with units the till cannot price. Correcting the dataset was not
 // enough — the seed's product key was fixed per product, so a re-run on the box REPLAYED the first publish and the
@@ -58,5 +58,34 @@ describe('the pilot seed\'s idempotency keys follow the data', () => {
     const publish = `POST /v1/catalogue/products/${encodeURIComponent(withPack.productId)}/publish`;
     expect(after.keys.get(pack)).not.toBe(before.keys.get(pack));
     expect(after.keys.get(publish)).toBe(before.keys.get(publish));
+  });
+});
+
+describe('a step under a fixed key whose dataset text changed after it landed', () => {
+  const refusing = (code: string): SeedClient => ({
+    async request(req) {
+      const aboutTheReceipt = req.path.includes('grn-demo-001') || JSON.stringify(req.body ?? '').includes('grn-demo-001');
+      if (aboutTheReceipt) return { status: 409, body: { error: { code, whatHappened: 'refused' } } };
+      return { status: 201, body: {} };
+    },
+    async seedOwner() { /* not exercised */ },
+    async provisionRole() { /* not exercised */ },
+    async enableFeature() { /* not exercised */ },
+  });
+
+  it('is reported as landed earlier and left as it is — history is never re-done, and the seed stays re-runnable', async () => {
+    const report = await applyPilotTradingPartners(refusing('idempotency_key_reused'), PILOT_TRADING_PARTNERS, 'pilot-owner');
+    const receipt = report.steps.find((s) => s.what.includes('grn-demo-001'))!;
+    expect(receipt.ok).toBe(true);
+    expect(receipt.status).toBe(409);
+    expect(receipt.detail).toContain('landed earlier');
+    expect(report.ok).toBe(true);
+  });
+
+  it('any other refusal of the same step stays a failure', async () => {
+    const report = await applyPilotTradingPartners(refusing('receipt_already_posted_differently'), PILOT_TRADING_PARTNERS, 'pilot-owner');
+    const receipt = report.steps.find((s) => s.what.includes('grn-demo-001'))!;
+    expect(receipt.ok).toBe(false);
+    expect(report.ok).toBe(false);
   });
 });

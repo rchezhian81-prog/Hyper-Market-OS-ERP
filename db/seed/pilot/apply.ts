@@ -91,7 +91,16 @@ function makeRunner(client: SeedClient, tenantId: string, actor: string, options
   };
   const post = async (what: string, path: string, body: unknown, idempotencyKey: string): Promise<SeedResponse> => {
     const res = await client.request({ method: 'POST', path, userId: actor, tenantId, body, idempotencyKey });
-    record({ what, ok: OK_STATUS.has(res.status), status: res.status, ...(detailOf(res) === undefined ? {} : { detail: detailOf(res) }) });
+    const detail = detailOf(res);
+    // A step under a FIXED key whose dataset text changed after it landed (a receipt's unit word corrected months later,
+    // H-14): the kernel refuses the changed request under the old key — rightly, a receipt, an order or a payment is
+    // history and is never re-done. That is "landed earlier", not a failure; said so, and the seed stays re-runnable.
+    // (A product or a pack carries a digest in its key precisely so that a change DOES land again, as a new version.)
+    if (res.status === 409 && detail?.startsWith('idempotency_key_reused') === true) {
+      record({ what, ok: true, status: res.status, detail: 'landed earlier under this key, in an earlier form of the dataset — left as it is (history is never re-done)' });
+      return res;
+    }
+    record({ what, ok: OK_STATUS.has(res.status), status: res.status, ...(detail === undefined ? {} : { detail }) });
     return res;
   };
   return { steps, record, post };
