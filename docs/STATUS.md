@@ -5,6 +5,42 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Deployment attempt from the build session — NOT POSSIBLE from here; what it takes (3 October 2026)
+
+**Owner direction (3 Oct 2026):** execute `docs/runbooks/demo-deployment-handover.md` on the existing demo VPS; preserve
+unpublished work, runtime configuration and other applications; deploy an eligible CI-passing release; verify the running
+commit, HTTPS, sign-in and the smoke (sale reduces stock, eligible return restores it); return the URL, commit, results and
+access instructions; synthetic data only; staff/device UAT stays pending.
+
+**Checked on 3 Oct 2026, before claiming anything:** this cloud build session holds **no SSH client, no key, no address
+and no environment secret** for the box, and the environment's network policy **blocks outbound port 22** (probe to a known
+host: filtered). GitHub's `demo` environment secrets cannot be set from here either, and three of the five values (the
+box's address, its host key, the public half installed on the box) need a person on the box regardless. So **nothing on
+the sheet was executed; nothing is deployed; the box still runs the 28 September release.** A green workflow with a
+skipped deploy step is recorded as exactly that.
+
+**Two ways to get it executed — the owner's choice, consequences named:**
+
+1. **The server administrator runs the sheet** (`demo-deployment-handover.md`, steps A–L, about an hour) and returns the
+   evidence listed on it. The build session then reviews the pushed stand-up branch, records the deployed commit as the
+   software version in `docs/registers/sp10-staff-uat.md`, files the smoke report under `docs/evidence/` and turns the
+   PREPARED marks into EXECUTED. No new access is created for an AI session. **Recommended.**
+2. **A build session executes it.** The owner (or administrator) puts an administrator SSH login for the box into the
+   cloud environment's settings as environment variables — never into chat or the repository — under the names
+   `SRE_DEMO_HOST`, `SRE_DEMO_SSH_PORT`, `SRE_DEMO_SSH_USER`, `SRE_DEMO_SSH_PRIVATE_KEY`, `SRE_DEMO_HOST_KEY`, and widens the
+   environment's network access to allow that host on port 22; a NEW session picks them up and runs steps A–L itself,
+   with every command in the session transcript. Consequence: an AI session then holds administrator access to the demo
+   box (synthetic data only, but root-equivalent there), which the roadmap's AI governance (AID-02/AID-08) treats as a
+   person's role; the GitHub `demo` secrets would still be set by a person in GitHub's settings.
+
+Until one of these happens, the deployment, the demo URL, the deployed commit, the on-box test results and SP-10 stay
+**not done**. The access instructions for the practice sessions are already written (`demo-practice-environment.md` §6)
+and apply the moment the box is on a release ≥ `0bf098a`.
+
+**Exact next task (software, unchanged by this):** head office assignment of waves and routes to handhelds — the pack
+file's `wave` / `route` sections are the source today; after it, the handling class riding the published catalogue pack,
+and per-product cold-chain limits on the product master feeding the pack engine's `rules`.
+
 ## M19-FR-02 — the picker's wave pack folded into per-order packs and manifests (3 October 2026)
 
 **Owner direction (3 Oct 2026):** continue M19-FR-02 along the sequence recorded on 2 Oct; reuse existing models and

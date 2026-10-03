@@ -1,5 +1,7 @@
 # Administrator handover — connect and deploy the demo box (one sheet, 2 October 2026)
 
+_Status 3 Oct 2026: NOT executed — the build session has no route to the box (no client, key or address; port 22 egress blocked); see `docs/STATUS.md` for the two ways forward. The sheet stands ready._
+
 _For the person with administrator access to the demo VPS and to the GitHub repository settings. Everything on this sheet
 is **PREPARED** by the build session and **EXECUTED** by you; the build session has no route to the box, no key and no
 address, and no secret may pass through it. Follow the steps in order. Where a step says ⚠ STOP, stop and report._
