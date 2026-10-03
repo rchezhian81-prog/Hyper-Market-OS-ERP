@@ -262,6 +262,9 @@ jobs:
           cd infra/compose
           # The demo sign-in refuses every tenant but the synthetic demo tenant (hard rule #7): the overlay is brought up for it.
           sed -i 's/^EDGE_TENANT_ID=.*/EDGE_TENANT_ID=de300000-0000-4000-8000-000000000001/' .env
+          # This .env was copied from .env.example, whose SRE_STAFF_ROUTE is the store default (off) — and an env-file value
+          # beats the overlay's default. The hosted demo's template (.env.pilot.example) says staff-demo-gate; so does this run.
+          sed -i 's/^SRE_STAFF_ROUTE=.*/SRE_STAFF_ROUTE=staff-demo-gate/' .env
           P="docker compose -f docker-compose.yml -f docker-compose.pilot.yml"
           $P up -d --build
           fail() { echo "::error::$1"; $P logs --no-color proxy web demo-login | tail -120; exit 1; }

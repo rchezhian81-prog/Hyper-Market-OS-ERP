@@ -167,6 +167,7 @@ describe('CI proves the public origin over TLS on every run', () => {
     expect(CI).toContain('$P up -d --build');
     expect(CI).toContain('EDGE_TENANT_ID=de300000-0000-4000-8000-000000000001'); // the demo sign-in serves only the synthetic demo tenant
     expect(CI).toContain('node scripts/build-service.mjs demo-login');
+    expect(CI).toContain("sed -i 's/^SRE_STAFF_ROUTE=.*/SRE_STAFF_ROUTE=staff-demo-gate/' .env"); // the CI .env comes from .env.example (gate off)
     expect(CI).toContain('for p in /pos/ /erp/ /owner/ /picker/ /store/pos/');
     expect(CI).toContain('302 https://127.0.0.1/login/?next=$p');
     expect(CI).toContain("'^referrer-policy: same-origin'");
