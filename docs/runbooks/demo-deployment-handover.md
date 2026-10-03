@@ -288,6 +288,10 @@ curl -sk -o /dev/null -w '%{http_code}\n' "$H/login/"                           
 
 Open `$H/customer/` in a browser: the **DEMO / PILOT — NOT PRODUCTION** banner must be visible.
 
+After the DF-1 release (3 Oct 2026, OB-12): sign in at `$H/login/` and you land on the **demo home**, which lists the pages that work on
+this demo and names the store-computer-fed shells as such. Do not judge the demo by `/erp/` — the Store manager shell shows
+"Not known" until a store computer (or, on the demo, the DF-2 pack) feeds it.
+
 **Known after the sign-in-gate release (H-14, `docs/STATUS.md` 3 Oct 2026):** the demo till at `$H/store/pos/` will list the five
 seeded products under "Products nobody can sell" with `unknown unit of measure "each"` / `"litre"` until a person corrects their units
 to the engine's codes (`ea`, `L`) — the seed is corrected in the repository; the box's data was seeded before. Not a deployment fault.

@@ -52,6 +52,13 @@ describe('demo sign-in — a good sign-in', () => {
     for (const attr of ['HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/', `Max-Age=${SESSION_SECONDS}`]) expect(cookie).toContain(attr);
   });
 
+  it('with no screen asked for, lands on the demo home — not on a shell that shows "Not known" without a store computer', () => {
+    const { handle } = setup();
+    const res = handle(post({ login: 'ravi.cashier', password: PASSWORD }));
+    expect(res.status).toBe(303);
+    expect(res.headers['location']).toBe('/login/');
+  });
+
   it('mints a token the REAL API verifier accepts, as the mapped synthetic user in the demo tenant', () => {
     const { handle } = setup();
     const res = handle(post({ login: 'RAVI.cashier ', password: PASSWORD }));
@@ -87,6 +94,11 @@ describe('demo sign-in — a good sign-in', () => {
     const home = handle({ method: 'GET', url: '/login/', body: '', headers: { cookie: `a=b; ${COOKIE_NAME}=${token}` } });
     expect(home.status).toBe(200);
     expect(home.body).toContain('Signed in as pilot-cashier');
+    // The demo home: what works on this demo first, the store-computer-fed shells named as such — never an empty shell.
+    expect(home.body.indexOf('Live on this demo')).toBeLessThan(home.body.indexOf('Needs the store computer'));
+    expect(home.body).toContain('href="/store/pos/"');
+    expect(home.body).toContain('href="/erp/cash-office.html"');
+    expect(home.body).toMatch(/Needs the store computer[\s\S]*href="\/erp\/"/);
     const out = handle({ method: 'POST', url: '/login/logout', body: '', headers: { host: HOST, origin: `https://${HOST}` } });
     expect(out.status).toBe(303);
     expect(String(out.headers['set-cookie'])).toMatch(/Max-Age=0/);
@@ -123,10 +135,12 @@ describe('demo sign-in — refusals', () => {
 
   it('never redirects off-site (no open redirect)', () => {
     for (const bad of ['https://evil.example/', '//evil.example/', '/\\evil.example', 'javascript:alert(1)', '/v1/identity/grants']) {
-      expect(safeNext(bad)).toBe('/erp/');
+      expect(safeNext(bad)).toBe('/login/');
     }
     expect(safeNext('/supplier/')).toBe('/supplier/');
-    expect(safeNext(undefined)).toBe('/erp/');
+    expect(safeNext('/login/')).toBe('/login/');
+    // No particular screen asked for → the demo home, never the Store manager shell (empty without a store computer).
+    expect(safeNext(undefined)).toBe('/login/');
   });
 
   it('escapes what it echoes back into the page', () => {
