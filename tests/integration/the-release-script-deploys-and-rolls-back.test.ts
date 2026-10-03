@@ -45,7 +45,7 @@ console.log(ready === 'ok' ? 'GREEN — 5 of 5 checks passed.' : 'RED — 1 of 5
 process.exitCode = ready === 'ok' ? 0 : 1;
 `;
 const PNPM_STUB = `#!/usr/bin/env bash
-echo "pnpm $* ci=${CI:-}" >> "$SRE_TEST_CALLS"
+echo "pnpm $* ci=\${CI:-}" >> "$SRE_TEST_CALLS"
 exit 0
 `;
 // \`docker compose … up\` takes the next answer from the queue (ok / down) and makes it the API's state.
