@@ -59,6 +59,8 @@ describe('the on-box release script is the one thing the key can run, and it is 
   it('waits for READY and the stand-up check, rolls back to the previous commit, records every attempt, and never tears down or traces', () => {
     expect(SCRIPT_CODE).toContain('/readyz');
     expect(SCRIPT_CODE).toContain('standup-check.mjs');
+    expect(SCRIPT_CODE).toContain('SRE_FRONT_URL'); // the public front is checked too — the stand-up check sees loopback only
+    expect(CONF).toMatch(/^SRE_FRONT_URL=https:\/\/127\.0\.0\.1$/m);
     expect(SCRIPT_CODE).toContain('record deployed');
     expect(SCRIPT_CODE).toContain('record rolled_back');
     expect(SCRIPT_CODE).toContain('record rollback_failed');

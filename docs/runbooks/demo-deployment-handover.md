@@ -1,6 +1,6 @@
 # Administrator handover — connect and deploy the demo box (one sheet, 2 October 2026)
 
-_Status 3 Oct 2026, afternoon: **being executed by the administrator (the owner)** — A–E done, C = configuration **A**, the stand-up branch pushed (B); F, H, G→J, K, L in progress. Owner **Option 3 (OB-11)**: deploy `main` now; the staff screens return to the demo address behind the demo sign-in when the sign-in-gate release deploys itself. Earlier that day: NOT executed — the build session has no route to the box (no client, key or address; port 22 egress blocked); see `docs/STATUS.md`. The sheet stands ready._
+_Status 3 Oct 2026, evening: **EXECUTED by the administrator (the owner), steps A–L.** Deployed `2f9714c` by pipeline run 37125939387 (the first attempt, run 37120682570, died on an unattended pnpm prompt — fixed in #679 and the fix deployed itself); K verified (release log, commit, readyz, 13 migrations / 2 applied, public 200 · 401 · 302 · 200); smoke **16/16**; the sign-in page live at `/login/`. Evidence: `docs/evidence/demo-deployment-2026-10-03.md`. Snags met on the way and now written into the steps below: E (the application login was the bootstrap superuser), F (an empty address left the proxy restarting while the stand-up check stayed GREEN — the release script now checks the front), K (a headers-only request gets 405), L (the compose name `db` from the box — the smoke now translates it). Owner **Option 3 (OB-11)** was taken: `main` deployed with the sign-in gate already merged, so there was no gap in the staff screens. Earlier that day: NOT executed — the build session has no route to the box (no client, key or address; port 22 egress blocked); see `docs/STATUS.md`. The sheet stands ready._
 
 _For the person with administrator access to the demo VPS and to the GitHub repository settings. Everything on this sheet
 is **PREPARED** by the build session and **EXECUTED** by you; the build session has no route to the box, no key and no
@@ -86,6 +86,51 @@ Since migration 0012 the API refuses to run as the database superuser (row-level
 itself; your database was created before that, so once, by hand. Read `POSTGRES_USER` and `POSTGRES_DB` from `.env.pilot`
 (names, not secrets) and use the **same password as `POSTGRES_PASSWORD`**, typed into the terminal only:
 
+⚠ **First check whether `POSTGRES_USER` is itself `sre_pilot_app`** (`grep -oE '^POSTGRES_USER=.*' .env.pilot`). If it is, the
+box's database was born with that single login and PostgreSQL will not take SUPERUSER away from its bootstrap user
+(`The bootstrap user must have the SUPERUSER attribute`, met on 3 Oct 2026). Then keep `sre_pilot_app` as the
+administrator and create the limited application login **`sre_app`** instead — the name a fresh install creates — and hand the
+tables over to it, tables first (a counter linked to a table moves with its table and cannot be handed over on its own):
+
+```bash
+cd /opt/sre/app/infra/compose
+D=$(grep -E '^POSTGRES_DB=' .env.pilot | cut -d= -f2-); PW=$(grep -E '^POSTGRES_PASSWORD=' .env.pilot | cut -d= -f2-)
+C="docker compose -p sre-pilot -f docker-compose.yml -f docker-compose.pilot.yml --env-file .env.pilot"
+$C exec db psql -U sre_pilot_app -d "$D" -c "CREATE ROLE sre_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD '$PW';"; unset PW
+cat > /tmp/handover-e.sql <<'SQL'
+GRANT CONNECT, TEMPORARY ON DATABASE :"db" TO sre_app;
+GRANT ALL ON SCHEMA public TO sre_app;
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT c.relkind, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles o ON o.oid = c.relowner
+           WHERE n.nspname = 'public' AND o.rolname = 'sre_pilot_app' AND c.relkind IN ('r','p','v','m') LOOP
+    IF r.relkind = 'v' THEN EXECUTE format('ALTER VIEW public.%I OWNER TO sre_app', r.relname);
+    ELSIF r.relkind = 'm' THEN EXECUTE format('ALTER MATERIALIZED VIEW public.%I OWNER TO sre_app', r.relname);
+    ELSE EXECUTE format('ALTER TABLE public.%I OWNER TO sre_app', r.relname); END IF;
+  END LOOP;
+  FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles o ON o.oid = c.relowner
+           WHERE n.nspname = 'public' AND o.rolname = 'sre_pilot_app' AND c.relkind = 'S' LOOP
+    EXECUTE format('ALTER SEQUENCE public.%I OWNER TO sre_app', r.relname);
+  END LOOP;
+  FOR r IN SELECT p.oid::regprocedure AS sig FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles o ON o.oid = p.proowner
+           WHERE n.nspname = 'public' AND o.rolname = 'sre_pilot_app' LOOP
+    EXECUTE format('ALTER FUNCTION %s OWNER TO sre_app', r.sig);
+  END LOOP;
+  FOR r IN SELECT t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace JOIN pg_roles o ON o.oid = t.typowner
+           WHERE n.nspname = 'public' AND o.rolname = 'sre_pilot_app' AND t.typtype IN ('e','d') LOOP
+    EXECUTE format('ALTER TYPE public.%I OWNER TO sre_app', r.typname);
+  END LOOP;
+END $$;
+SQL
+$C exec -T db psql -U sre_pilot_app -d "$D" -v ON_ERROR_STOP=1 -v db="$D" < /tmp/handover-e.sql; rm /tmp/handover-e.sql
+sed -i 's/^APP_DB_USER=.*/APP_DB_USER=sre_app/; s#://sre_pilot_app:#://sre_app:#; s#://sre_pilot_app@#://sre_app@#' .env.pilot
+$C exec db psql -U sre_pilot_app -d "$D" -c "\du" -c "\dt"
+```
+
+Evidence then: `sre_app` with an empty Attributes column, every table's Owner `sre_app`, and `POSTGRES_USER` unchanged. In step F
+set `APP_DB_USER=sre_app` (the line above already did) and leave `POSTGRES_USER` as it is. **Otherwise**, the standard case:
+
 ```bash
 cd /opt/sre/app/infra/compose
 C="docker compose -p sre-pilot -f docker-compose.yml -f docker-compose.pilot.yml --env-file .env.pilot"
@@ -107,7 +152,7 @@ Edit `infra/compose/.env.pilot` (the template at `main`, `infra/compose/.env.pil
 |---|---|---|
 | `APP_DB_USER=` | `sre_pilot_app` (the role from step E) | both |
 | `DATABASE_URL=` | the same URL with the **user part changed** from `<POSTGRES_USER>` to `sre_pilot_app` (same password, same host, same database) | both |
-| `SRE_PUBLIC_HOST=` | **A with a domain:** `demo.yourdomain` · **A without a domain:** `localhost, 127.0.0.1, <the box's public IP>` · **B:** `demo.yourdomain` (the name the existing front will forward) | both |
+| `SRE_PUBLIC_HOST=` | ⚠ never an empty entry — `localhost, 127.0.0.1, ` with nothing after the last comma leaves the proxy restarting forever while the stand-up check stays GREEN (3 Oct 2026; the release script now checks the front and says NOT HEALTHY). Check with `grep -oE '^SRE_PUBLIC_HOST=.*' .env.pilot`. · **A with a domain:** `demo.yourdomain` · **A without a domain:** `localhost, 127.0.0.1, <the box's public IP>` · **B:** `demo.yourdomain` (the name the existing front will forward) | both |
 | `SRE_TLS=` | **A with a domain:** the email address for certificate notices · **A without / B:** `internal` | both |
 | `SRE_DEFAULT_SNI=` | `localhost` (leave the default) | both |
 | `SRE_AUTH_ROUTE=` / `SRE_AUTH_UPSTREAM=` | leave the defaults (`auth-not-deployed`, `auth:8082`) | both |
@@ -233,7 +278,7 @@ $C ps
 $C logs migrate 2>/dev/null | tail -5                                           # 13 migrations applied once; "0" on a re-run
 cd /opt/sre/app && STANDUP_ENV_FILE=infra/compose/.env.pilot pnpm run standup:check   # GREEN on every piece
 H=https://<the demo hostname or the box's IP>                                   # configuration A: the box; B: the name the front serves
-curl -skI "$H/customer/" | head -1                                              # HTTP/2 200 — the customer app, DEMO banner inside
+curl -sk -o /dev/null -w '%{http_code}\n' "$H/customer/"                        # 200 — the customer app (a headers-only request, -I, gets 405 from the edge's screen server; not a fault)
 curl -sk "$H/v1/livez"; echo                                                    # the API through the proxy
 curl -sk -o /dev/null -w '%{http_code}\n' "$H/v1/floor/indents"                 # 401 — the API refuses an unauthenticated call by name
 curl -sk -o /dev/null -w '%{http_code}\n' "$H/auth/anything"                    # 503 — customer sign-in is "not deployed", by name (KL-15)
@@ -254,9 +299,14 @@ is deliberately not deployed.
 ## L. [BOX] Prove the deployed workflow — the smoke
 
 ```bash
-cd /opt/sre/app && pnpm run demo:smoke -- --env-file infra/compose/.env.pilot --report /opt/sre/smoke-$(date +%F).json; echo "EXIT=$?"
+cd /opt/sre/app && sudo -u deploy pnpm run demo:smoke -- --env-file infra/compose/.env.pilot --report /opt/sre/smoke-$(date +%F).json; echo "EXIT=$?"
 cat /opt/sre/smoke-$(date +%F).json
 ```
+
+Run it as `deploy`, so the bundles it builds in the checkout stay the deploy user's. The settings file names the database `db`
+(its name inside the containers); since 3 Oct 2026 the smoke translates that to the box's own loopback itself and says so. On an
+older checkout, run it against a temporary copy: `sudo -u deploy sh -c "umask 077; sed 's/@db:/@127.0.0.1:/' infra/compose/.env.pilot > /opt/sre/.env.smoke"`,
+pass `--env-file /opt/sre/.env.smoke`, then `sudo -u deploy rm -f /opt/sre/.env.smoke`.
 
 It creates a fresh synthetic tenant and runs sixteen steps through the real routes against the API this box is serving, with a
 real store box started inside the command: supplier → order → delivery with quarantine → QC → indent / approval / issue /
@@ -289,6 +339,8 @@ independent receipt → the till sells one by barcode → **the shelf falls by e
 | J | run number · "Deployed <sha> to the demo box" · green |
 | K | every verification line |
 | L | `EXIT=0` · the smoke report JSON |
+
+**Received 3 Oct 2026, A–L** — summarised in `docs/evidence/demo-deployment-2026-10-03.md`; deployed `2f9714c`.
 
 On receipt the build session: reviews and merges the stand-up branch (B), records the deployed commit as the software
 version in `docs/registers/sp10-staff-uat.md`, files the smoke report under `docs/evidence/`, updates

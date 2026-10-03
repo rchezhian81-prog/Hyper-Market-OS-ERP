@@ -38,6 +38,7 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../packages/calendar/src/trading-day';
 import { SqlEventStore } from '../packages/persistence/src/event-store';
 import { pgPoolClient } from '../packages/persistence/src/pg-client';
+import { databaseUrlFromTheHost } from './lib/database-url-from-the-host';
 import { seedInitialAdmins } from '../services/api/src/access';
 import { OWNER_ROLE_ID, ROLE_CATALOGUE } from '../services/api/src/roles';
 import { planTenantBootstrap } from '../packages/migration/src/tenant-bootstrap';
@@ -430,7 +431,10 @@ async function main(): Promise<void> {
     if (!plan.ok) { out(`REFUSED (${plan.refusedBecause}) — ${plan.detail}`); process.exit(1); }
     const databaseUrl = env['DATABASE_URL'];
     if (databaseUrl === undefined || databaseUrl === '') { out(`DATABASE_URL is not in ${envFile} — cannot create the smoke tenant. Pass --tenant <uuid> of a tenant that already holds the smoke people.`); process.exit(2); }
-    const db = new Pool({ connectionString: databaseUrl, max: 2 });
+    // Written for the containers, the URL names the database `db`; from this machine it is on loopback.
+    const here = databaseUrlFromTheHost(databaseUrl, env);
+    if (here.translated) out(`DATABASE_URL names the compose service "db"; from this machine the database is at 127.0.0.1:${env['POSTGRES_PORT'] ?? '5432'} — using that.`);
+    const db = new Pool({ connectionString: here.url, max: 2 });
     try {
       const outcome = await seedInitialAdmins(new SqlEventStore(pgPoolClient(db)), plan.tenantId, plan.admins, plan.operator, new Date().toISOString());
       if (outcome.outcome === 'already_bootstrapped') { out(`Tenant ${tenantId} already holds grants — not touched.`); process.exit(1); }
