@@ -23,13 +23,22 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   `scripts/lib/database-url-from-the-host.ts` translates it (unit test). K — a headers-only request to `/customer/` gets 405
   from the edge's screen server; the sheet uses a page request. Sheet, red-run table, practice runbook §1/2/3/5 (PREPARED →
   EXECUTED), SP-10 register (software version `2f9714c`), traceability updated.
-- **Pending:** the owner's click-through of the gated screens after sign-in (till `/pos/`, store box `/store/pos/`) — the sign-in
-  page is confirmed, the rest not yet reported; **H-14** (the five demo products' units — a person corrects them; whether a re-run
-  of the corrected seed is enough is to be verified next); SP-10 staff/device UAT; the store PC and phones (practice runbook §4);
-  the 28 September items (key-only SSH, off-site backups, a real domain and certificate). The box's address never entered the
-  repository; it appeared in the owner's screenshots in chat, and he was asked to mask it.
-- **Next task:** verify H-14 option 2 (does a re-run of the corrected seed change an existing product's unit?), then the head-office
-  screen for assigning waves and routes to handhelds, then the phone choosing its own wave when several are open.
+- **Later the same evening — the owner signed in and the till opened** (reported by the owner with a screen recording he kept;
+  the build session cannot play video and takes his word as the evidence). The forgotten 28 September owner login was replaced
+  on the box by the owner (`owner1` → `pilot-owner`; a name is not a secret, the password was shown once to him only).
+- **H-14 verified: a re-run of the corrected seed would NOT have changed the units** — the seed's product and pack keys were
+  fixed per product, so the box's idempotency table replays the first publish and skips the route. Fixed in this PR: the keys
+  carry a digest of what is published (unchanged → replay; changed → a new version through the real route, hard rule #2);
+  `tests/unit/pilot-seed-keys-follow-the-data.test.ts` (3). **Owner's H-14 procedure, after this merge deploys itself** (three
+  commands on the box, as the deploy user, each a person's act): `pnpm run seed:pilot -- --operator "<name>"` (republishes the
+  five products with `ea`/`L`), `pnpm run demo:publish-pack -- --operator "<name>"` (the price list — the box's till pulls it
+  within five minutes), `pnpm run demo:store-pack -- --operator "<name>"` then `docker restart sre-pilot-edge-1` (the demo store
+  box's own screens). Option 1 (the ERP catalogue screen) remains the fallback.
+- **Pending:** the owner's H-14 run and the till showing the five products as sellable; SP-10 staff/device UAT; the store PC
+  and phones (practice runbook §4); the 28 September items (key-only SSH, off-site backups, a real domain and certificate). The
+  box's address never entered the repository; it appeared in the owner's screenshots in chat, and he was asked to mask it.
+- **Next task:** the head-office screen for assigning waves and routes to handhelds, then the phone choosing its own wave when
+  several are open.
 
 ---
 
