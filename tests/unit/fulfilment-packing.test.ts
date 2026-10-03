@@ -75,6 +75,21 @@ describe('a price settled at pick stands (D09 · M19-FR-02 fold)', () => {
   });
 });
 
+describe('a product\'s own cold-chain limit stands in for the class default, and the line says which judged it (HA-3)', () => {
+  it('packs under the product limit and names it; refuses outside it naming the product; a line with no limit of its own is judged by the approved class default and says so; an ambient line carries none', () => {
+    const milk = line({ lineId: 'l-milk', productId: 'p-milk', name: 'Milk 1L', handling: 'chilled', orderedMinor: 1, pickedMinor: 1, packTenthsC: 40 });
+    const own = pack([{ ...milk, coldChain: { maxTenthsC: 45 } }]);
+    expect(own.lines[0]!.coldChain).toEqual({ maxTenthsC: 45, source: 'product' });
+    const tooWarm = pack([{ ...milk, coldChain: { maxTenthsC: 30 } }]);
+    expect(tooWarm.refused[0]).toMatchObject({ lineId: 'l-milk', reason: 'temperature_out_of_range' });
+    expect(tooWarm.refused[0]!.detail).toContain('outside the chilled range set on the product');
+    expect(pack([milk]).lines[0]!.coldChain).toEqual({ minTenthsC: -20, maxTenthsC: 50, source: 'class_default' });
+    expect(pack([milk, line({ packTenthsC: 60 })]).refused).toEqual([]);
+    expect(pack([milk, line({ packTenthsC: 60 })]).lines[1]!.coldChain).toBeUndefined();
+    expect(pack([{ ...milk, packTenthsC: 70 }]).refused[0]!.detail).toContain('outside the chilled range (the approved class default)');
+  });
+});
+
 describe('a missing pack temperature is a failure, not a gap (M10-FR-02)', () => {
   it('REFUSES a chilled line with no reading taken', () => {
     const result = pack([{ ...CHICKEN, packTenthsC: undefined }], { 'l-chicken': 'crate-cold' });

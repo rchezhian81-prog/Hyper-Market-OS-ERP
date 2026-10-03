@@ -58,6 +58,9 @@ export interface PickLineInput {
   readonly uom: Uom;
   /** Price per UOM unit — used to capture a weighed line's final price (D09). */
   readonly unitPrice: Money;
+  /** The product master's handling class, when the catalogue pack carries one (HA-2) — shown so the picker keeps a cold
+   *  item cold. Absent means nobody has said; the handheld shows nothing rather than a guess. */
+  readonly handling?: string;
 }
 
 export interface PickLine extends PickLineInput {

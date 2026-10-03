@@ -51,6 +51,12 @@ export interface PackLine {
    * settled, and a weighed line needs no grams here. Absent for a line the pack prices itself.
    */
   readonly finalPriceMinor?: number;
+  /**
+   * The product's OWN cold-chain limits (HA-3), from the product master. When present they stand in for the class rule for
+   * this line, and the packed line says so (`coldChain.source: 'product'`); absent, the approved class default applies and the
+   * line says that instead. Never defaulted silently.
+   */
+  readonly coldChain?: { readonly minTenthsC?: number; readonly maxTenthsC?: number };
 }
 
 /** Per-product cold-chain limits at pack, from the product master. */
@@ -100,6 +106,8 @@ export interface PackedLine {
   readonly handling: HandlingClass;
   readonly crateId: string;
   readonly detail: string;
+  /** The temperature limits this line was judged by, and whose they were (HA-3) — absent for a line no rule applies to. */
+  readonly coldChain?: { readonly minTenthsC?: number; readonly maxTenthsC?: number; readonly source: 'product' | 'class_default' };
 }
 
 export interface PackResult {
@@ -172,7 +180,10 @@ export function packOrder(input: {
       continue;
     }
 
-    const rule = ruleFor(line.handling, rules);
+    // HA-3: the product's own limits stand in for the class rule when the master set them; either way the line says which.
+    const classRule = ruleFor(line.handling, rules);
+    const rule: HandlingRule | undefined = line.coldChain !== undefined ? { handling: line.handling, ...line.coldChain } : classRule;
+    const ruleSource: 'product' | 'class_default' = line.coldChain !== undefined ? 'product' : 'class_default';
     if (rule !== undefined) {
       if (line.packTenthsC === undefined) {
         // Missing reading = failed reading. Same rule as the goods-in door.
@@ -189,7 +200,7 @@ export function packOrder(input: {
         refused.push({
           lineId: line.lineId,
           reason: 'temperature_out_of_range',
-          detail: `${line.name} packed at ${line.packTenthsC / 10}°C, outside the ${rule.handling} range — it does not go on the van`,
+          detail: `${line.name} packed at ${line.packTenthsC / 10}°C, outside the ${rule.handling} range${ruleSource === 'product' ? ' set on the product' : ' (the approved class default)'} — it does not go on the van`,
         });
         continue;
       }
@@ -223,6 +234,13 @@ export function packOrder(input: {
       shortMinor: Math.max(0, line.orderedMinor - line.pickedMinor),
       handling: line.handling,
       crateId,
+      ...(rule === undefined ? {} : {
+        coldChain: {
+          ...(rule.minTenthsC === undefined ? {} : { minTenthsC: rule.minTenthsC }),
+          ...(rule.maxTenthsC === undefined ? {} : { maxTenthsC: rule.maxTenthsC }),
+          source: ruleSource,
+        },
+      }),
       detail:
         line.finalPriceMinor !== undefined
           ? `${line.pickedMinor} ${line.uom} at the price settled at pick = ${finalPriceMinor}${line.pickedMinor < line.orderedMinor ? ` — ${line.pickedMinor} of ${line.orderedMinor}, short, and charged only for what is going` : ''}`

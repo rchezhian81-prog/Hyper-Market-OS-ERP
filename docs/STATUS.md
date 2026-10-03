@@ -5,6 +5,30 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## HA-2 and HA-3 — the handling class rides the catalogue pack; per-product cold-chain limits judged and named (3 October 2026)
+
+- **HA-2 — DONE in software.** `CatalogueProduct.handling` / `MasterProduct.handling` (`packages/catalogue`), `toMaster` in
+  `services/catalogue/src/catalogue-preview.ts` carries `ProductRecord.handling` as given — absent stays absent, never
+  ambient by default; the box's `pickerPayload` reads it off the pulled signed catalogue pack per line (`handling`), and the
+  picker shell shows it in both languages (`HANDLING_WORDS`, bound to `HANDLING_CLASSES` by the language guardrail; a line
+  with none shows nothing). `PickLineInput.handling?` documented. Proof: `catalogue-snapshot-builder` (+1),
+  `catalogue-preview` (+1, `toMaster` exported), `edge-feeds-the-screens` (+1), the picker language guardrail (+1).
+- **HA-3 — DONE in software.** `ProductRecord.coldChain` (`minTenthsC` / `maxTenthsC`; `COLD_HANDLING_CLASSES`) validated at
+  publish: whole tenths, at least one bound, min ≤ max, only on a chilled / frozen / raw-meat product — otherwise
+  `blocks_publish` by name; the publish route reads it as numbers only. The pack engine (`PackLine.coldChain`) lets the
+  product's own limit stand in for the approved class default (`DEFAULT_RULES`) for that line, and every packed cold line
+  carries `coldChain: { …, source: 'product' | 'class_default' }`; an out-of-range refusal names the source. The fold's
+  `productPacking` dep (replacing `productHandling`) returns the master's handling AND limits per product. Proof:
+  `product-master` (+1), `fulfilment-packing` (+1), `fulfilment-waves-synced` (HA-3 block +1 and the two-order case now
+  asserts the sources), the M19-FR-02 connected case (the milk published with its own 6.0 °C limit → the order's pack line
+  says `source: 'product'`; the ambient rice carries none).
+- **Records.** M19.md, M03.md (FR-03), traceability M03-FR-03 and M19-FR-02, matrix SP-3 row. Denominator 104 unchanged.
+- **Not done, recorded:** the picker's line shows the class but the handheld does not yet refuse or warn on a cold item left
+  out of the crate (the pack engine judges at fold time; a phone-side prompt is a follow-on); cold-chain limits do not ride
+  the catalogue pack (no consumer on the box yet).
+- **Exact next task:** a head-office SCREEN for assigning waves and routes (HA-1 is API-only today), then the phone choosing
+  its own wave when a store has several open. Deployment unchanged (OB-10: the administrator's handover stands).
+
 ## OB-10 recorded; HA-1 — head office assigns waves and routes to the handhelds (3 October 2026)
 
 **Owner direction (3 Oct 2026):** Option 1 for deployment — the administrator executes the handover (recorded as **OB-10**,

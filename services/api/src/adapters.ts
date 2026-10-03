@@ -7806,7 +7806,10 @@ export function fulfilmentWaveAdapter(input: {
     },
     // M19-FR-02 fold: the product master's handling class, and the SAME per-order pack register the desk's pack route
     // writes and dispatch reads — one record per (order, pack digest), so a retried or restarted fold writes nothing twice.
-    productHandling: async (tenantId, productId) => (await products.product(tenantId, productId))?.handling,
+    productPacking: async (tenantId, productId) => {
+      const p = await products.product(tenantId, productId);
+      return p === undefined ? undefined : { ...(p.handling === undefined ? {} : { handling: p.handling }), ...(p.coldChain === undefined ? {} : { coldChain: p.coldChain }) };
+    },
     orderPack: (tenantId, orderId) => packs.pack(tenantId, orderId),
     recordOrderPack: (tenantId, orderId, result, key) => packs.recordPack(tenantId, orderId, result, key),
   };

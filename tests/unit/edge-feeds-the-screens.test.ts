@@ -308,10 +308,10 @@ const input = (over: Partial<ScreenInput> = {}): ScreenInput => ({
 
 // A genuinely signed catalogue pack (real signature), for the pack-age badge tests below.
 const FRESH_KEY = ['edge', 'screens', 'freshness', 'key'].join('-').padEnd(48, '0');
-function signedCatalogue(version: number, builtAt: string): SignedPack {
+function signedCatalogue(version: number, builtAt: string, products?: CatalogueSnapshot['products']): SignedPack {
   const snapshot: CatalogueSnapshot = {
     tenantId: 't-sre', version, builtAt,
-    products: [{ productId: 'P1', sku: 'GHEE-1L', name: 'Ghee 1L', baseUom: 'each', unitPriceMinor: 64_000, taxBps: 500, mrpMinor: 70_000, status: 'active' }],
+    products: products ?? [{ productId: 'P1', sku: 'GHEE-1L', name: 'Ghee 1L', baseUom: 'each', unitPriceMinor: 64_000, taxBps: 500, mrpMinor: 70_000, status: 'active' }],
     barcodes: [{ code: '8901234567890', productId: 'P1', kind: 'standard' }],
   };
   const result = publishPack({ snapshot, approvals: [], signer: hmacSigner(FRESH_KEY), publishedBy: 'u-manager', publishedAt: builtAt });
@@ -616,6 +616,31 @@ describe('each screen gets what it needs, and nothing when the box has nothing',
     }))!;
     expect(assigned['waveId']).toBe('w1');
     expect((assigned['lines'] as { unitPrice: unknown }[])[0]?.unitPrice).toEqual({ minor: 145_00, currency: 'INR' });
+  });
+
+  it('tells the picker how each product travels from the pulled catalogue pack — the product master\'s handling class — and says nothing for a product the pack does not classify (HA-2)', () => {
+    const catalogue = signedCatalogue(8, '2026-08-05T09:00:00.000Z', [
+      { productId: 'p-milk', sku: 'MILK1', name: 'Milk 1L', baseUom: 'each', unitPriceMinor: 60_00, taxBps: 0, status: 'active', handling: 'chilled' },
+      { productId: 'p-rice', sku: 'RICE1', name: 'Rice 5kg', baseUom: 'each', unitPriceMinor: 100_00, taxBps: 500, status: 'active' },
+    ]);
+    const payload = pickerPayload(input({
+      cataloguePack: catalogue,
+      pack: fullPack({
+        wave: known({
+          waveId: 'w2', pickerId: 'u-picker',
+          lines: [
+            { lineId: 'l1', orderRef: 'ORD-1', productId: 'p-milk', description: 'Milk 1L', bin: 'B-04', requiredQty: 1, uom: 'ea', unitPriceMinor: 60_00 },
+            { lineId: 'l2', orderRef: 'ORD-1', productId: 'p-rice', description: 'Rice 5kg', bin: 'A-01', requiredQty: 2, uom: 'ea', unitPriceMinor: 100_00 },
+          ],
+        }),
+      }),
+    }))!;
+    const lines = payload['lines'] as { lineId: string; handling?: string }[];
+    expect(lines.find((l) => l.lineId === 'l1')?.handling).toBe('chilled');
+    expect(lines.find((l) => l.lineId === 'l2')).not.toHaveProperty('handling');
+    // No catalogue pulled yet: no handling on any line — never a guess.
+    const none = pickerPayload(input({ pack: fullPack({ wave: known({ waveId: 'w3', pickerId: 'u-picker', lines: [{ lineId: 'l1', orderRef: 'ORD-1', productId: 'p-milk', description: 'Milk 1L', bin: 'B-04', requiredQty: 1, uom: 'ea', unitPriceMinor: 60_00 }] }) }) }))!;
+    expect((none['lines'] as { handling?: string }[])[0]).not.toHaveProperty('handling');
   });
 
   it('gives the driver nothing when no route was dispatched (M20)', () => {

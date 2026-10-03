@@ -45,6 +45,10 @@ export interface CatalogueProduct {
   readonly batchTracked?: boolean;
   /** e.g. { minimumAge: 18 } — the lane prompts before selling (M12-FR-04). */
   readonly regulatedFlags?: Readonly<Record<string, unknown>>;
+  /** How the product travels and what it may share a crate with (M19-FR-02 / M10-FR-02) — the product master's handling
+   *  class in the pack engine's words (ambient / chilled / frozen / raw_meat / ready_to_eat / fragile / hazardous). Absent
+   *  when nobody has said; never defaulted here or anywhere downstream (HA-2). */
+  readonly handling?: string;
 }
 
 export interface CatalogueBarcode {

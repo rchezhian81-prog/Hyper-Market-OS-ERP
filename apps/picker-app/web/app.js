@@ -148,6 +148,19 @@ const STATE_SHORT = {
   posted: { en: 'posted', ta: 'பதிவாகியது' },
   refused: { en: 'refused', ta: 'மறுக்கப்பட்டது' },
 };
+/**
+ * How a product travels (HA-2 — the product master's handling class, carried by the catalogue pack). A guardrail binds these
+ * to the master's `HANDLING_CLASSES`. A line with no class shows nothing: never a guess.
+ */
+const HANDLING_WORDS = {
+  ambient: { en: 'ambient', ta: 'சாதாரண வெப்பநிலை' },
+  chilled: { en: 'chilled — keep cold', ta: 'குளிரூட்டப்பட்டது — குளிராக வைக்க' },
+  frozen: { en: 'frozen — keep frozen', ta: 'உறைந்தது — உறைந்தபடி வைக்க' },
+  raw_meat: { en: 'raw meat — keep apart', ta: 'பச்சை இறைச்சி — தனியாக வைக்க' },
+  ready_to_eat: { en: 'ready to eat', ta: 'உடனடி உணவு' },
+  fragile: { en: 'fragile', ta: 'உடையக்கூடியது' },
+  hazardous: { en: 'hazardous — keep apart', ta: 'ஆபத்தானது — தனியாக வைக்க' },
+};
 /** The kinds of work this handheld sends (the session's `SENT_WORK_KINDS`). */
 const KIND_WORDS = {
   line: { en: 'Line', ta: 'வரி' },
@@ -442,11 +455,16 @@ function render() {
     const asQty = (n) => (line.uom === 'kg' ? `${(n / 1000).toFixed(3)} kg` : String(n));
     qty.textContent = `${t('required')} ${asQty(line.requiredQty)}` +
       (line.pickedQty > 0 ? ` · ${t('picked')} ${asQty(line.pickedQty)}` : '');
+    // HA-2: how it travels, when the catalogue pack says — a cold item is told to the picker, never assumed.
+    const handling = document.createElement('span');
+    handling.className = 'handling';
+    handling.hidden = line.handling === undefined;
+    if (line.handling !== undefined) handling.textContent = words(HANDLING_WORDS, line.handling);
     const state = document.createElement('span');
     state.className = 'state';
     state.textContent = words(STATE_WORDS, line.state);
 
-    row.append(bin, what, qty, state);
+    row.append(bin, what, handling, qty, state);
     row.addEventListener('click', () => { selectedLineId = line.lineId; startLine(line); });
     return row;
   }));

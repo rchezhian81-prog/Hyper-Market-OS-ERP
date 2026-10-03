@@ -770,7 +770,7 @@ export function buildSurface(deps: {
     // socket. The routes re-verify the picker / packer from their grants, compare the pack with the line register and
     // record-and-flag; nothing here moves stock.
     ...syncedWaveRoutes(store === undefined
-      ? { permissionsOfUser: empty(undefined), lineOutcomes: empty([]), recordLineOutcome: () => {}, pack: empty(undefined), recordPack: () => {}, productHandling: empty(undefined), orderPack: empty(undefined), recordOrderPack: () => {}, now }
+      ? { permissionsOfUser: empty(undefined), lineOutcomes: empty([]), recordLineOutcome: () => {}, pack: empty(undefined), recordPack: () => {}, productPacking: empty(undefined), orderPack: empty(undefined), recordOrderPack: () => {}, now }
       : { ...fulfilmentWaveAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     // HA-1 (3 Oct 2026): head office ASSIGNS a wave to a picker and a route to a driver, per store; the box pulls the OPEN
     // ones under its own credential and serves them to the phones with "head office" named. The person assigned is re-verified

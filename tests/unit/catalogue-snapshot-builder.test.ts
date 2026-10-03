@@ -66,6 +66,16 @@ describe('buildCatalogueSnapshot', () => {
     expect(plain.snapshot.products[0]!.batchTracked).toBeUndefined();
   });
 
+  it('carries the product master\'s handling class onto the lane snapshot, and leaves it ABSENT when none was set — never ambient by default (HA-2)', () => {
+    const snap = buildCatalogueSnapshot(input({
+      products: [master({ productId: 'p1', sku: 'RICE1', name: 'Rice 1kg' }), master({ productId: 'p2', sku: 'MILK1', name: 'Milk 1L', handling: 'chilled' })],
+      barcodes: [], priceEntries: [priceEntry({ id: 'b1', productId: 'p1', scope: 'store', scopeRef: 'store-1' }), priceEntry({ id: 'b2', productId: 'p2', scope: 'store', scopeRef: 'store-1' })],
+    }));
+    const byId = new Map(snap.snapshot.products.map((p) => [p.productId, p]));
+    expect(byId.get('p2')?.handling).toBe('chilled');
+    expect(byId.get('p1')).not.toHaveProperty('handling');
+  });
+
   it('carries the HSN / tax-class code from the master onto the lane snapshot (A5 GST-return assembly)', () => {
     // A tenant that files GST sets the tax class to a real HSN code; it flows onto the published product.
     const result = buildCatalogueSnapshot(input({

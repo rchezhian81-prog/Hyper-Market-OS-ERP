@@ -83,6 +83,12 @@ export interface WaveLineOutcome {
   readonly requiredQty?: number | null;
 }
 
+/** What the product master says about packing a product: how it travels, and its own cold-chain limits when set (HA-3). */
+export interface ProductPacking {
+  readonly handling?: HandlingClass;
+  readonly coldChain?: { readonly minTenthsC?: number; readonly maxTenthsC?: number };
+}
+
 /** How one ORDER on the wave reached the per-order pack register (M19-FR-02 fold). */
 export interface OrderFold {
   readonly orderId: string;
@@ -119,8 +125,9 @@ export interface WaveSyncDeps {
   readonly recordLineOutcome: (tenantId: string, outcome: WaveLineOutcome) => Promise<void> | void;
   readonly pack: (tenantId: string, waveId: string) => Promise<WavePackRecord | undefined> | WavePackRecord | undefined;
   readonly recordPack: (tenantId: string, record: WavePackRecord) => Promise<void> | void;
-  /** The product master's handling class for a product — undefined when head office has no such product, or it names none (M19-FR-02 fold). */
-  readonly productHandling: (tenantId: string, productId: string) => Promise<HandlingClass | undefined> | HandlingClass | undefined;
+  /** What the product master says about packing a product (M19-FR-02 fold · HA-3): its handling class and its own cold-chain
+   *  limits. Undefined when head office has no such product; a product with no handling class packs as `handling_unknown`. */
+  readonly productPacking: (tenantId: string, productId: string) => Promise<ProductPacking | undefined> | ProductPacking | undefined;
   /** The per-order pack register — the SAME one `/v1/fulfilment/orders/:orderId/pack` writes and dispatch reads. */
   readonly orderPack: (tenantId: string, orderId: string) => Promise<PackResult | undefined> | PackResult | undefined;
   readonly recordOrderPack: (tenantId: string, orderId: string, result: PackResult, key: string) => Promise<void> | void;
@@ -154,7 +161,7 @@ const tenths = (c: number | null): number | undefined => (c === null ? undefined
 export function foldWaveIntoOrders(input: {
   readonly history: readonly WaveLineOutcome[];
   readonly temperatureC: number | null;
-  readonly handlingOf: (productId: string) => HandlingClass | undefined;
+  readonly packingOf: (productId: string) => ProductPacking | undefined;
   readonly at: string;
 }): { readonly orders: readonly { readonly orderId: string; readonly result: PackResult }[]; readonly flags: readonly WaveSyncFlag[] } {
   const flags = new Set<WaveSyncFlag>();
@@ -167,7 +174,8 @@ export function foldWaveIntoOrders(input: {
     const unknown: { lineId: string; reason: 'handling_unknown'; detail: string }[] = [];
     for (const o of outcomes) {
       const name = o.description ?? o.productId;
-      const handling = input.handlingOf(o.productId);
+      const packing = input.packingOf(o.productId);
+      const handling = packing?.handling;
       if (handling === undefined) {
         flags.add('handling_unknown');
         unknown.push({ lineId: o.lineId, reason: 'handling_unknown', detail: `${name}: the product master names no handling class for ${o.productId} — it cannot be packed from the wave until a person sets one (never guessed from its name)` });
@@ -181,6 +189,8 @@ export function foldWaveIntoOrders(input: {
         orderedMinor: required ?? picked, pickedMinor: picked, uom: o.uom,
         unitPriceMinor: 0, finalPriceMinor: o.finalPriceMinor,
         ...(reading === undefined ? {} : { packTenthsC: reading }),
+        // HA-3: the product's own limits when the master set them; else the engine's approved class default — the line says which.
+        ...(packing?.coldChain === undefined ? {} : { coldChain: packing.coldChain }),
       });
     }
     const engine: PackResult = lines.length === 0
@@ -346,9 +356,9 @@ export function syncedWaveRoutes(deps: WaveSyncDeps): readonly Route[] {
 
         // M19-FR-02: the wave becomes ONE pack per ORDER on the register the desk's pack route writes and dispatch reads.
         // The handling class comes from the product master — read once per product, never guessed; the fold is pure.
-        const handlingById = new Map<string, HandlingClass | undefined>();
-        for (const id of new Set(latestOutcomes(history).map((o) => o.productId))) handlingById.set(id, await deps.productHandling(ctx.tenantId, id));
-        const fold = foldWaveIntoOrders({ history, temperatureC: p.temperatureC, handlingOf: (id) => handlingById.get(id), at: p.at });
+        const packingById = new Map<string, ProductPacking | undefined>();
+        for (const id of new Set(latestOutcomes(history).map((o) => o.productId))) packingById.set(id, await deps.productPacking(ctx.tenantId, id));
+        const fold = foldWaveIntoOrders({ history, temperatureC: p.temperatureC, packingOf: (id) => packingById.get(id), at: p.at });
         for (const f of fold.flags) flags.push(f);
         const orders: OrderFold[] = [];
         for (const { orderId, result } of fold.orders) {

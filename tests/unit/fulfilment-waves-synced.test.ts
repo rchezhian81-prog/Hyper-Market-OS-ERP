@@ -3,7 +3,8 @@ import {
   syncedWaveRoutes, crateFromLines, latestOutcomes, presentWave, foldWaveIntoOrders, WAVE_SYNC_FLAGS, PICK_LINE_OUTCOMES,
   type WaveSyncDeps, type WaveLineOutcome, type WavePackRecord,
 } from '../../services/fulfilment/src/waves';
-import type { HandlingClass, PackResult } from '../../packages/fulfilment/src/index';
+import type { PackResult } from '../../packages/fulfilment/src/index';
+import type { ProductPacking } from '../../services/fulfilment/src/waves';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 import type { AuditEntry } from '../../packages/audit/src/index';
 
@@ -30,12 +31,12 @@ interface World {
   readonly routes: readonly Route[];
 }
 
-/** The product master's handling classes head office knows — p-ghee deliberately has none. */
-const PRODUCTS: Record<string, HandlingClass | undefined> = { 'p-rice': 'ambient', 'p-milk': 'chilled', 'p-paneer': 'chilled' };
+/** What the product master says about packing each product — p-ghee deliberately has no handling class; p-paneer carries its own limit (HA-3). */
+const PRODUCTS: Record<string, ProductPacking | undefined> = { 'p-rice': { handling: 'ambient' }, 'p-milk': { handling: 'chilled' }, 'p-paneer': { handling: 'chilled', coldChain: { maxTenthsC: 30 } } };
 
 function world(
   grants: Record<string, readonly string[] | undefined> = { 'u-picker': ['fulfilment.pack.record'], 'u-floor': ['pos.sale.record'] },
-  products: Record<string, HandlingClass | undefined> = PRODUCTS,
+  products: Record<string, ProductPacking | undefined> = PRODUCTS,
 ): World {
   const lines: WaveLineOutcome[] = [];
   const packs: WavePackRecord[] = [];
@@ -48,7 +49,7 @@ function world(
     recordLineOutcome: (_t, o) => { lines.push(o); },
     pack: (_t, waveId) => packs.find((p) => p.waveId === waveId),
     recordPack: (_t, r) => { packs.push(r); },
-    productHandling: (_t, productId) => products[productId],
+    productPacking: (_t, productId) => products[productId],
     orderPack: (_t, orderId) => orderPacks.get(orderId)?.at(-1),
     recordOrderPack: (_t, orderId, result, key) => {
       if (orderPackKeys.has(`${orderId}|${key}`)) return; // the adapter's idempotency key — a retry writes nothing
@@ -233,7 +234,7 @@ describe('M19-FR-02 — the wave becomes ONE pack per ORDER on the register disp
   it('two orders on one wave are folded with the exact figures: the picker\'s price stands, the crate\'s temperature is every line\'s reading, a short line says by how much, the crate reconciles — and the read and the audit show how each order joined', async () => {
     const w = world();
     await line(w, picked()); await line(w, milk()); await line(w, paneer());
-    const res = await packW1(w, { lineCount: 3, totalValueMinor: 310_00 });
+    const res = await packW1(w, { lineCount: 3, totalValueMinor: 310_00, temperatureC: 2 });
     expect(res.status).toBe(202);
     expect(res.body).toMatchObject({
       flags: [], fromLines: { lineCount: 3, totalValueMinor: 310_00 }, ordersTotalMinor: 310_00,
@@ -251,6 +252,10 @@ describe('M19-FR-02 — the wave becomes ONE pack per ORDER on the register disp
     ]);
     const o2 = w.orderPacks.get('ORD-2')![0]!;
     expect(o2.lines).toEqual([expect.objectContaining({ lineId: 'l3', name: 'Paneer 200g', handling: 'chilled', packedMinor: 1, shortMinor: 1, finalPriceMinor: 50_00 })]);
+    // HA-3: every cold line says which limit judged it — the product's own, or the approved class default; an ambient line none.
+    expect(o1[0]!.lines[0]).not.toHaveProperty('coldChain');
+    expect(o1[0]!.lines[1]!.coldChain).toEqual({ minTenthsC: -20, maxTenthsC: 50, source: 'class_default' });
+    expect(o2.lines[0]!.coldChain).toEqual({ maxTenthsC: 30, source: 'product' });
     expect(o2.lines[0]!.detail).toContain('1 of 2, short, and charged only for what is going');
     expect(w.packs[0]).toMatchObject({ orders: [{ orderId: 'ORD-1' }, { orderId: 'ORD-2' }], ordersTotalMinor: 310_00, governanceFlags: [] });
     expect(presentWave('W-1', w.lines, w.packs[0])).toMatchObject({ packed: { orders: [{ orderId: 'ORD-1', totalMinor: 260_00 }, { orderId: 'ORD-2', totalMinor: 50_00 }] }, flags: [] });
@@ -273,7 +278,7 @@ describe('M19-FR-02 — the wave becomes ONE pack per ORDER on the register disp
     expect(pack.refused[0]!.detail).toContain('never guessed from its name');
     expect(pack.detail).toContain('1 with no handling class on the product master');
     // The pure fold, over the same register: the SAME answer, so the route adds nothing the engine did not say.
-    const fold = foldWaveIntoOrders({ history: w.lines, temperatureC: 4, handlingOf: (id) => PRODUCTS[id], at: NOW });
+    const fold = foldWaveIntoOrders({ history: w.lines, temperatureC: 4, packingOf: (id) => PRODUCTS[id], at: NOW });
     expect(fold.flags).toEqual(['handling_unknown']);
     expect(fold.orders[0]!.result.refused.map((r) => r.reason)).toEqual(['handling_unknown']);
   });
@@ -302,7 +307,7 @@ describe('M19-FR-02 — the wave becomes ONE pack per ORDER on the register disp
     // Cut off between the order's record and the wave's: the retry finds the identical pack and writes nothing, flags nothing.
     const w2 = world();
     await line(w2, picked());
-    const same = foldWaveIntoOrders({ history: w2.lines, temperatureC: 4, handlingOf: (id) => PRODUCTS[id], at: NOW }).orders[0]!.result;
+    const same = foldWaveIntoOrders({ history: w2.lines, temperatureC: 4, packingOf: (id) => PRODUCTS[id], at: NOW }).orders[0]!.result;
     w2.orderPacks.set('ORD-1', [same]);
     const retried = await packW1(w2);
     expect(retried.body).toMatchObject({ flags: [], orders: [{ orderId: 'ORD-1', outcome: 'packed', totalMinor: 200_00 }] });
@@ -324,5 +329,20 @@ describe('M19-FR-02 — the wave becomes ONE pack per ORDER on the register disp
     expect(res.body).toMatchObject({ flags: ['required_qty_unknown'], orders: [{ orderId: 'ORD-1', outcome: 'packed', lineCount: 1, totalMinor: 100_00 }] });
     expect(w.orderPacks.get('ORD-1')![0]!.lines[0]).toMatchObject({ name: 'p-rice', packedMinor: 1, shortMinor: 0, finalPriceMinor: 100_00 });
     expect(w.lines[0]).toMatchObject({ description: null, requiredQty: null });
+  });
+});
+
+describe('HA-3 — a product\'s own cold-chain limit stands in for the class default, and the pack says which it used', () => {
+  it('a crate sealed at 4 °C packs the milk under the chilled default but REFUSES the paneer under its own 3.0 °C limit — said, by name, with the source', async () => {
+    const w = world();
+    await route(w, 'POST', LINE).handler(ctx({ waveId: 'W-1', lineId: 'l2' }, picked({ lineId: 'l2', productId: 'p-milk', description: 'Milk 1L', pickedQty: 1, requiredQty: 1, finalPriceMinor: 60_00 })));
+    await route(w, 'POST', LINE).handler(ctx({ waveId: 'W-1', lineId: 'l3' }, picked({ lineId: 'l3', productId: 'p-paneer', description: 'Paneer 200g', pickedQty: 1, requiredQty: 1, finalPriceMinor: 50_00 })));
+    const res = await route(w, 'POST', PACK).handler(ctx({ waveId: 'W-1' }, packed({ lineCount: 2, totalValueMinor: 110_00, temperatureC: 4 })));
+    expect(res.body).toMatchObject({ flags: ['orders_disagree'], orders: [{ orderId: 'ORD-1', outcome: 'temperature_out_of_range', lineCount: 1, totalMinor: 60_00, refused: [{ lineId: 'l3', reason: 'temperature_out_of_range' }] }] });
+    const pack = w.orderPacks.get('ORD-1')![0]!;
+    expect(pack.lines[0]).toMatchObject({ lineId: 'l2', coldChain: { minTenthsC: -20, maxTenthsC: 50, source: 'class_default' } });
+    expect(pack.refused[0]!.detail).toContain('packed at 4°C, outside the chilled range set on the product');
+    // A product with no limit of its own and a class the engine does not judge by temperature carries no limit at all.
+    expect(foldWaveIntoOrders({ history: w.lines, temperatureC: 4, packingOf: () => ({ handling: 'ambient' }), at: NOW }).orders[0]!.result.lines.every((l) => l.coldChain === undefined)).toBe(true);
   });
 });

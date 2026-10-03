@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { SENT_WORK_KINDS } from '../../apps/picker-app/src/pick-session';
 import { DEVICE_ITEM_STATES } from '../../packages/sync/src/device-relay';
+import { HANDLING_CLASSES } from '../../packages/product/src/index';
 
 /**
  * **The picker handheld says where every outcome and pack has got to — in English AND Tamil (SP-3c-i · OA-9 · P-08).**
@@ -55,5 +56,13 @@ describe('the picker handheld names where each sent piece of work is, in both la
     expect((VIEW.match(/void syncToBox\(\);/g) ?? []).length).toBeGreaterThanOrEqual(4);
     // The device's own "saved" is never shown as "sent": only the box's word says head office has it (P-08).
     expect(VIEW).toContain("t('nothingSent')");
+  });
+});
+
+describe('the picker handheld names how a product travels, in both languages (HA-2 · M19-FR-02 · M10-FR-02)', () => {
+  it('has words for every handling class the product master can set, and shows them from the line the catalogue pack carried — nothing when none was set', () => {
+    bothLanguagesFor(HANDLING_CLASSES, 'HANDLING_WORDS');
+    expect(VIEW).toMatch(/words\(HANDLING_WORDS, line\.handling\)/);
+    expect(VIEW).toMatch(/handling\.hidden = line\.handling === undefined/);
   });
 });
