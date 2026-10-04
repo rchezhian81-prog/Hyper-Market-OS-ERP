@@ -1,0 +1,168 @@
+/* ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+   SRE gap fixes — applied AFTER base.css and professional.css. Nothing here changes a module, a page, a
+   field or a rule of the owner's reference; it changes how big the words and the targets are, and adds the
+   two fixtures every SRE screen carries that the reference left out (the reader's language, and honest
+   "not known" / freshness on figures). Each block names the rule it serves:
+     docs/design/design-system.md §1 rule 4 (connection state + freshness on every screen),
+     rule 6 (English and Tamil throughout), rule 7 (large targets, high contrast, readable at arm's length
+     by staff aged 50 under fluorescent light); §2 (universal states — "unknown" is a state, not a zero);
+     §3 (base ≥ 16px equivalent, targets ≥ 44px, totals the largest text on a tender screen); P-08.
+   Measured on the reference before this layer: 47 rules at 10px, 31 at 11px, 21 at 9px, one at 8px;
+   controls at 32–42px; the context strip's grey at 3.47:1 on the canvas (AA needs 4.5:1).
+   ────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Same stack as packages/ui/web/sre-foundation.css: the Tamil faces come before Arial, so தமிழ் renders in a
+     real Tamil face on Windows (Nirmala UI, Latha) and Android (Noto Sans Tamil) instead of a fallback box. */
+  --sre-font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Tamil", "Nirmala UI", "Latha", Arial, sans-serif;
+  --sre-text: 16px;      /* body */
+  --sre-small: 14px;     /* captions, meta, strips — never smaller */
+  --sre-label: 12.5px;   /* uppercase letter-spaced labels only (table heads, eyebrows) */
+  --sre-tap: 44px;       /* the smallest control on the back-office desktop (design system §3; the product's bar is --tap 48px) */
+  --sre-tap-primary: 48px;
+  --sre-tap-till: 56px;  /* the till and the handhelds keep the product's 56px */
+  --sre-strip-ink: #4f5e56; /* 6.9:1 on the canvas, 7.6:1 on white */
+  --sre-unknown: #8a5e1b;   /* the reference's amber: 5.7:1 on white */
+  --sre-focus: #0f4c3a;
+}
+
+/* ── Type: readable at arm's length ───────────────────────────────────────────────────────────────────────── */
+html { font-size: 16px; }
+body, button, input, select, textarea, kbd { font-family: var(--sre-font); }
+body { font-size: var(--sre-text); line-height: 1.5; color: var(--text); }
+/* Tamil glyphs sit taller than Latin ones; give the lines room or the ascenders clip (foundation note). */
+html[lang="ta"] body { line-height: 1.6; }
+
+.brand small, .branch-card small, .user-card small, .user-card strong { font-size: var(--sre-small); }
+.nav-label { font-size: 12.5px; letter-spacing: .8px; padding-top: 18px; }
+.nav-item { font-size: 15px; min-height: var(--sre-tap); gap: 12px; padding: 10px 12px; }
+.nav-count { font-size: 13px; min-width: 24px; height: 24px; }
+.side-bottom button { font-size: 15px; min-height: var(--sre-tap); }
+
+.crumbs { font-size: var(--sre-small); gap: 8px; }
+.crumbs button, .crumbs strong { font-size: var(--sre-small); }
+.search-trigger { font-size: var(--sre-small); min-height: var(--sre-tap); max-width: 260px; }
+.search-trigger kbd { font-size: 12px; }
+.role-select { font-size: var(--sre-small); }
+.role-select select { min-height: var(--sre-tap); font-size: 15px; max-width: 180px; }
+.icon-btn { width: var(--sre-tap); height: var(--sre-tap); }
+
+/* The strip under the header is a status line people must be able to read, not a caption: 14px, no
+   letter-spacing, no all-caps, ink that passes AA. The sync control inside it is a real target. */
+.context-strip { font-size: var(--sre-small); letter-spacing: 0; text-transform: none; color: var(--sre-strip-ink); padding: 8px 24px; }
+.context-strip > span { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; }
+#sync-indicator { font-size: var(--sre-small); min-height: var(--sre-tap); color: var(--sre-strip-ink); font-weight: 600; }
+.sync-time { font-size: 13px; font-weight: 400; }
+.preview-dot { width: 10px; height: 10px; }
+
+.page-eyebrow, .eyebrow, .cash-panel .eyebrow, .section-label, .section-subtitle { font-size: var(--sre-label); letter-spacing: .8px; }
+.page-sub, .page-desc, .page-head p { font-size: var(--sre-text); }
+.kpi-top, .kpi:first-child .kpi-top { font-size: var(--sre-small); color: var(--sre-strip-ink); margin-bottom: 12px; }
+.kpi-value { font-size: 30px; }
+.kpi-bottom, .kpi:first-child .kpi-bottom { font-size: 13px; color: var(--sre-strip-ink); margin-top: 10px; }
+.kpi-trend { font-size: 13px; }
+.panel-title { font-size: 17px; }
+.panel-desc { font-size: var(--sre-small); }
+.section-title { font-size: 17px; }
+.text-link, .panel-header > .text-link { font-size: var(--sre-small); min-height: var(--sre-tap); }
+.btn { font-size: 15px; min-height: var(--sre-tap); padding: 10px 16px; }
+.btn.primary, .btn-primary, .btn.full-width { min-height: var(--sre-tap-primary); font-size: 16px; }
+.badge { font-size: 13px; padding: 5px 9px; }
+.journey button { font-size: 13px; min-height: 100px; }
+.journey button b { font-size: var(--sre-small); }
+.journey button small { font-size: 13px; }
+.journey-num { width: 30px; height: 30px; font-size: 13px; }
+.flow-footer, .day-band { font-size: var(--sre-small); }
+.work-tile { min-height: 164px; padding: 16px; }
+.work-tile strong, .module-grid .work-tile strong { font-size: 16px; }
+.work-tile p, .work-tile small, .tile-caption, .tile-meta { font-size: var(--sre-small); }
+.attention-item { min-height: var(--sre-tap); }
+.attention-item strong, .attention-item b { font-size: 15px; }
+.attention-item small, .attention-item p { font-size: var(--sre-small); }
+.attention-footer, .table-footer, .hero-note, .workspace-footer, .workspace-footer button, .map-group small, .bin small { font-size: var(--sre-small); }
+.workspace-footer button { min-height: var(--sre-tap); }
+.data-table th { font-size: var(--sre-label); letter-spacing: .5px; padding: 12px 16px; }
+.data-table td { font-size: 15px; padding: 14px 16px; color: #34443b; }
+.data-table td small { font-size: 13px; }
+.summary-item span { font-size: 13px; }
+.summary-item strong { font-size: 20px; }
+.status-track span, .count-label, .filter-count { font-size: 13px; }
+.report-bar strong, .report-bar small { font-size: 13px; }
+.cash-panel p, .cash-panel strong { font-size: var(--sre-text); }
+.toast { font-size: 15px; }
+
+/* ── Targets: nothing a finger or a tired hand must hit is under 44px; inputs at 16px also stop phones zooming ── */
+.filter-tabs button, .panel-tabs button, .tabs button, .segmented button, .chip-row button { min-height: var(--sre-tap); font-size: 15px; }
+input:not([type="checkbox"]):not([type="radio"]), select, textarea, .field-search input, .field input { min-height: var(--sre-tap); font-size: 16px; }
+label, .field label, .form-label { font-size: var(--sre-small); }
+input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; }
+.row-link, .rowlink, .data-table tbody tr[tabindex] { min-height: var(--sre-tap); }
+dialog .btn { min-height: var(--sre-tap-primary); }
+
+/* ── The till: the product's 56px, totals the largest text on the screen (§3 numbers & money) ─────────────── */
+.pos-layout .product-card { min-height: 180px; }
+.pos-layout .product-card strong { font-size: 17px; }
+.pos-layout .product-card small { font-size: 14px; }
+.pos-layout .product-card b { font-size: 16px; }
+.pos-layout .btn, .pos-panel .btn.full-width { min-height: var(--sre-tap-till); font-size: 17px; }
+.pos-layout .panel-tabs button { min-height: var(--sre-tap-primary); }
+.basket-qty button { min-width: var(--sre-tap); min-height: var(--sre-tap); font-size: 18px; }
+.basket-qty { font-size: 16px; }
+.basket-item strong, .pos-layout .basket-item strong { font-size: 17px; }
+.basket-item small { font-size: 14px; }
+.basket-sub, .pos-layout .basket-sub { font-size: 14px; }
+.basket-total { font-size: 34px; font-variant-numeric: tabular-nums; }
+.pos-layout .privacy-note { font-size: 14px; }
+
+/* ── Freshness on every figure, and the honest "not known" (design system §2, P-08) ───────────────────────── */
+.kpi-fresh { margin-top: 10px; font-size: 13px; color: var(--sre-strip-ink); display: flex; align-items: center; gap: 6px; }
+.kpi-fresh::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
+.kpi-fresh.stale { color: var(--sre-unknown); font-weight: 600; }
+.kpi-fresh.stale::before { background: var(--sre-unknown); }
+.kpi.is-unknown { box-shadow: inset 4px 0 0 var(--sre-unknown); }
+.kpi.is-unknown .kpi-value { color: var(--sre-unknown); font-size: 24px; letter-spacing: 0; }
+.kpi.is-unknown .kpi-trend, .kpi.is-unknown .mini-bars, .kpi.is-unknown svg.bars { display: none; }
+
+/* ── The reader's language (design system §1 rule 6) ──────────────────────────────────────────────────────── */
+.lang-toggle { min-height: var(--sre-tap); min-width: var(--sre-tap); padding: 0 14px; border: 1px solid var(--line); border-radius: 6px; background: #fff; font-size: 15px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.lang-toggle[aria-pressed="true"] { background: var(--mint); border-color: var(--green); color: var(--green); }
+.lang-note { font-size: 13px; color: var(--sre-strip-ink); }
+
+/* ── Focus you can see from a metre away (the reference has outlines; this makes them one colour everywhere) ── */
+:focus-visible { outline: 3px solid var(--sre-focus); outline-offset: 2px; }
+
+/* ── Phone ─────────────────────────────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 760px) {
+  .context-strip { font-size: 13px; padding: 6px 16px; }
+  .kpi-value { font-size: 28px; }
+  .role-select select { max-width: 150px; }
+  .lang-toggle { padding: 0 10px; }
+  .search-trigger { max-width: none; }
+}
+@media (max-width: 380px) {
+  .nav-item { font-size: 15px; }
+  .kpi-value { font-size: 26px; }
+}
+@media (prefers-reduced-motion: reduce) { .kpi-fresh::before { transition: none; } }
+
+/* ── Page head (pageHead(): .page-head > .eyebrow + h1 + .subtitle/.page-description + .head-actions) ──────── */
+.page-head h1 { font-size: 30px; }
+.page-head .subtitle, .page-head .page-description { font-size: var(--sre-text); }
+.detail-note, .connection-option strong { font-size: var(--sre-text); }
+.connection-option small, .connection-option span { font-size: var(--sre-small); }
+.connection-option { min-height: var(--sre-tap-primary); }
+
+/* ── Second pass after measuring the build: nothing a person must read sits under 14px except the logo mark,
+   the avatar initials and the ⌘K hint; the strip wraps instead of squeezing when Tamil needs more room. ── */
+.kpi-bottom, .kpi:first-child .kpi-bottom, .kpi-fresh, .kpi-trend, .sync-time, .badge, .count-label, .nav-count, .journey-num,
+.row-btn, small, .data-table td small, .journey button small, .attention-item small, .work-tile small, .basket-item small, .product-card small,
+.summary-item span, .status-track span, .filter-count, .report-bar strong, .report-bar small, .lang-note, .connection-option small { font-size: 14px; }
+.nav-count { min-width: 26px; height: 26px; }
+.journey-num { width: 32px; height: 32px; }
+.row-btn { min-height: var(--sre-tap); }
+.branch-card strong, .user-card strong { font-size: 15px; }
+.brand span small { font-size: 14px; }
+.crumbs button { min-height: var(--sre-tap); min-width: var(--sre-tap); padding: 0 6px; }
+.context-strip { flex-wrap: wrap; row-gap: 0; }
+.context-strip > span { flex-wrap: wrap; }
+.lang-note { flex-basis: 100%; min-height: 0; padding-bottom: 6px; }
+#sync-indicator { white-space: nowrap; }

@@ -1,0 +1,63 @@
+SRE HYPER MARKET ERP — FULL MODEL, PROFESSIONAL DESIGN
+4 October 2026
+
+OPEN THE DESIGN
+Download and open SRE-Hypermarket-ERP-Professional.html in your browser.
+It is a standalone HTML prototype with sample data. No ERP connection or installation is needed.
+
+WHAT CHANGED
+The full original model is retained: 15 modules and 147 proposed destinations.
+This version adds dark forest navigation, white work surfaces, a quieter professional
+presentation, compact panels and fine edge stripes on tiles.
+It does not remove modules, redesign business rules or restart completed development work.
+
+EXPLORE
+1. Start at the dashboard; click a workspace tile, then a subpage tile.
+2. Open the complete page map to inspect the proposed architecture.
+3. Use the role selector to preview each team's workspace.
+4. Explore the core store flow:
+   Purchase > Purchase orders
+   Receiving & QC > Goods receipts
+   Inventory & backstore > Stock on hand
+   Shop floor > Floor indents / Floor receiving
+   Sales & service > Point of sale
+   Cash & finance > Cash office
+5. Try the sample forms, drafts, notes, floor receipt and cash checkout.
+
+PREVIEW LIMITS
+All displayed names, stock, amounts, dates and transactions are illustrative.
+Selected interactions work locally as design demonstrations; other destinations show proposed
+fields and layouts. Refreshing the file resets practice data. Role and sync controls are
+simulations, not real authentication or synchronization. There is no live backend or service.
+English/Tamil support is specified for implementation; this preview is in English.
+Browser visual verification has not been completed. Responsive CSS is included, but desktop
+and mobile rendering and browser accessibility checks still require direct browser review.
+Isolated logic checks do not establish production, device or staff acceptance readiness.
+
+PACKAGE CONTENTS
+- SRE-Hypermarket-ERP-Professional.html: standalone clickable full-model design.
+- DESIGN-HANDOVER.md: complete hierarchy, roles, route mappings and reuse instructions.
+- architecture.json: machine-readable inventory of all 15 modules and 147 destinations.
+- source/: editable template, base stylesheet, professional stylesheet, icons, interaction
+  code, build script and isolated verification script.
+- design-reference/: retained navigation and guidance snapshots from the original source review.
+- verification.json: generated isolated-check results and explicit verification limits.
+- REVISION-NOTES.md and preservation-check.json: changes, retained scope and source checks.
+
+DEVELOPER COMMANDS
+Run commands from this package's root folder.
+
+  python3 source/build.py
+  node source/verify.cjs
+
+Python 3 builds the standalone HTML. Node.js runs isolated JavaScript checks.
+The finished HTML has no external runtime dependency. Keep the files in source/ together.
+Consult the build script for the exact source composition before editing.
+
+IMPLEMENTATION HANDOVER
+Read DESIGN-HANDOVER.md and architecture.json first.
+The 147 destinations can map to existing pages, tabs or drawers. They are not 147 new tasks.
+Reuse existing screens, services and verified workflows; preserve requirement IDs and the
+existing completion ledger. Preserve stock truth, approvals, tenant/branch authorization,
+offline contracts and audit controls. This visual revision is not a fresh repository audit.
+The package changes no production code, hosting, data or GitHub files.

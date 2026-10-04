@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SRE Hyper Market · Store workspace</title>
+<style>/*__CSS__*/</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to workspace</a>
+<div class="app" id="app">
+ <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+  <button class="brand" data-go="overview/dashboard" aria-label="SRE Hyper Market home"><span class="brand-mark">sre<span>✳</span></span><span>HYPER MARKET<small>Store workspace</small></span></button>
+  <div class="branch-card"><span class="branch-icon" data-icon="store"></span><div><strong>SRE · Main store</strong><small>Store & head office</small></div><span class="dot"></span></div>
+  <nav id="nav"></nav>
+  <div class="side-bottom"><button data-action="page-map"><span data-icon="panels-top-left"></span> All pages <span class="shortcut">↗</span></button><button data-action="help"><span data-icon="circle-help"></span> Help & SOPs</button><div class="user-card"><span class="avatar">SM</span><div><strong id="side-role">Store manager</strong><small>Design preview</small></div></div></div>
+ </aside>
+ <div class="content">
+  <header class="topbar"><button class="icon-btn mobile-menu" data-action="menu" aria-label="Open navigation"><span data-icon="menu"></span></button><div class="crumbs" id="crumbs"></div><div class="top-tools"><button class="search-trigger" data-action="search"><span data-icon="search"></span><span>Search pages, products…</span><kbd>⌘ K</kbd></button><button class="icon-btn notice-btn" data-action="notifications" aria-label="View notifications"><span data-icon="bell"></span><b></b></button><label class="role-select"><span data-icon="user-round"></span><select id="role" aria-label="Preview staff role"><option value="manager">Store manager</option><option value="owner">Owner</option><option value="buyer">Buyer</option><option value="warehouse">Warehouse team</option><option value="floor">Floor team</option><option value="cashier">Cashier</option><option value="finance">Accounts team</option></select></label></div></header>
+  <div class="context-strip"><span><span class="preview-dot"></span> DESIGN PREVIEW <span class="strip-divider">/</span> Sample data</span><button data-action="sync" id="sync-indicator"><span class="dot"></span> Online · 0 unsent <span class="sync-time">Last synced just now</span><span data-icon="chevron-right"></span></button></div>
+  <main id="main"></main>
+  <footer class="workspace-footer"><span>SRE Hyper Market <span>·</span> Store operations workspace</span><button data-action="page-map">Explore the page map <span data-icon="arrow-up-right"></span></button></footer>
+ </div>
+</div>
+<div class="mobile-shade" id="mobile-shade" data-action="menu"></div>
+<dialog id="detail-dialog" class="detail-dialog"><div id="detail-content"></div></dialog>
+<dialog id="modal" class="modal"><div id="modal-content"></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>/*__ICONS__*/</script>
+<script>/*__DATA__*/</script>
+<script>/*__APP__*/</script>
+</body></html>

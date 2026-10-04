@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-04T04:50:20.057Z",
+  "validationType": "isolated JavaScript logic checks using a deliberately minimal DOM stub",
+  "browserValidated": false,
+  "scope": "Design prototype only. No ERP backend, production system or real browser is tested.",
+  "limitations": [
+    "No browser engine or real DOM parser was executed.",
+    "CSS layout, visual appearance, responsive behaviour, accessibility and focus are not validated.",
+    "FormData and reportValidity are stubbed; native browser validation is not exercised.",
+    "Clicks and submissions invoke registered handlers with synthetic events; this does not prove real pointer or keyboard interaction.",
+    "No persistence across page reloads, real payments, stock posting, API calls or authorization security is tested."
+  ],
+  "source": {
+    "appSha256": "028d6056d1a0c79f9ae647433381224beef3e504670334b0ee05c9c28574ea97",
+    "architectureSha256": "adccdbe520132a4e0aad0a2a44e41a399afc7205142e4b33a49a6c34f72a480f"
+  },
+  "totals": {
+    "passed": 13,
+    "failed": 0,
+    "ownerPagesRendered": 147,
+    "renderedRoutesByRole": {
+      "owner": 147,
+      "manager": 101,
+      "buyer": 41,
+      "warehouse": 48,
+      "floor": 19,
+      "cashier": 21,
+      "finance": 53
+    },
+    "emittedPageLinksChecked": 2968
+  },
+  "cases": [
+    {
+      "name": "Architecture contains 147 unique page destinations",
+      "status": "passed"
+    },
+    {
+      "name": "Owner renders all 147 pages and every module landing; emitted page links resolve",
+      "status": "passed"
+    },
+    {
+      "name": "Every allowed page renders for all seven roles; role homes are accessible",
+      "status": "passed",
+      "detail": {
+        "owner": 147,
+        "manager": 101,
+        "buyer": 41,
+        "warehouse": 48,
+        "floor": 19,
+        "cashier": 21,
+        "finance": 53
+      }
+    },
+    {
+      "name": "Restricted initial link and invalid route render safe home",
+      "status": "passed"
+    },
+    {
+      "name": "Received is exact, Open retains partial receipts, and cash status groups match",
+      "status": "passed"
+    },
+    {
+      "name": "Purchase-order submit creates visible draft with decimal unit cost",
+      "status": "passed"
+    },
+    {
+      "name": "Prepending a new indent does not redirect the floor receipt; repeat receipt is blocked",
+      "status": "passed"
+    },
+    {
+      "name": "Zero floor receipt is retained with a discrepancy reason",
+      "status": "passed"
+    },
+    {
+      "name": "Receipt draft with textual reference never computes a NaN amount",
+      "status": "passed"
+    },
+    {
+      "name": "Page-specific generic draft is visible and remains a draft despite typed status",
+      "status": "passed"
+    },
+    {
+      "name": "POS underpayment preserves basket; valid payment clears basket and shows exact change",
+      "status": "passed"
+    },
+    {
+      "name": "Numeric markup permits zero counts and paise amounts; absent money is a dash",
+      "status": "passed"
+    },
+    {
+      "name": "Record note and selected customer are visibly retained within the session",
+      "status": "passed"
+    }
+  ],
+  "result": "passed"
+}

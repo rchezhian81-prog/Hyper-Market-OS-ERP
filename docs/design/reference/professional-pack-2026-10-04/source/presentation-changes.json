@@ -1,0 +1,37 @@
+[
+  {
+    "file": "source/app.js",
+    "before": "A clear view of your store.",
+    "after": "Store overview"
+  },
+  {
+    "file": "source/app.js",
+    "before": "Good morning. Here’s what needs your attention ${state.range.toLowerCase()}.",
+    "after": "Operational snapshot · ${state.range.toLowerCase()}"
+  },
+  {
+    "file": "source/app.js",
+    "before": "Your work, clearly organised.",
+    "after": "My workspace"
+  },
+  {
+    "file": "source/app.js",
+    "before": "The right tools for your next handover.",
+    "after": "Tasks and handovers"
+  },
+  {
+    "file": "source/app.js",
+    "before": "CLOSE WITH CONFIDENCE",
+    "after": "CASH & DAY CLOSE"
+  },
+  {
+    "file": "source/app.js",
+    "before": "Every rupee accounted for.",
+    "after": "Cash reconciliation"
+  },
+  {
+    "file": "source/index.template.html",
+    "before": "Your store, in one place.",
+    "after": "Store operations workspace"
+  }
+]

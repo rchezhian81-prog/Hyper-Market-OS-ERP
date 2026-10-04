@@ -19,6 +19,11 @@ export default tseslint.config(
       // Worse, it makes `pnpm check` pass or fail depending on whether somebody has run a build.
       'apps/*/web/*.bundle.js',
       'apps/*/web/*.bundle.js.map',
+      // Design references the owner sent (docs/design/reference/<pack>/): kept byte-for-byte as evidence of
+      // what was decided from, with their own build and check scripts. They are records, not this product's
+      // code — nothing imports them and nothing ships them — so linting them reports on somebody else's
+      // prototype and would push us to edit the evidence to quiet the linter.
+      'docs/design/reference/**',
     ],
   },
   js.configs.recommended,
