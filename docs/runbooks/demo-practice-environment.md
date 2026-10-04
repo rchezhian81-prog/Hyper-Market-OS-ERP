@@ -195,11 +195,28 @@ EDGE_DEVICE_PORT=8092
 EDGE_DEVICE_HOST=<the store PC's address on the staff wifi>
 ```
 
-### 4.3 The practice store pack (`till/store-pack.json` on the store PC)
+### 4.3 The practice store pack (`till/store-pack.json` on the store PC) — BUILT since DF-2 (4 Oct 2026), not typed
 
 The box pulls the **catalogue** (products, prices, barcodes) from the demo box's published pack. Everything else a
 screen needs — which store this is, who is on which screen, the handheld assignment, the picker's wave, the driver's
-route, the handheld fleet — comes from this file, which the store PC keeps. A starting file:
+route, the handheld fleet — comes from this file. **Since DF-2 (OB-12) a person builds it instead of typing it**, from
+the seed dataset, the cloud's role catalogue and the cloud's own purchase orders, invoices, pending approvals and
+count records (one commerce truth, P-02):
+
+```
+# on the demo box (writes /etc/sre-pilot/store-pack/store-pack.json, then restart the edge)
+sudo -u deploy pnpm run demo:store-pack -- --operator "<your name>"
+docker restart sre-pilot-edge-1
+# on a store PC (writes the practice file the till reads at EDGE_PACK_FILE)
+pnpm run demo:store-pack -- --operator "<your name>" --out till/store-pack.json
+```
+
+The runner says what it wrote (products, people, screens with a named viewer, approvals waiting, orders, receipts,
+invoices, count records, the practice delivery / wave / route) and names any section it **left out because the cloud
+read did not answer** — that screen then says it was not told, which is true; nothing is invented. The builder is
+`db/seed/pilot/store-pack.ts`, proven through the box's own reader and screen payloads in
+`tests/unit/demo-store-pack-builds-the-whole-practice-pack.test.ts`. The shape it writes, for the record (the values
+below are the kind it fills in; the file on disk is the truth):
 
 ```json
 {
@@ -238,7 +255,11 @@ route, the handheld fleet — comes from this file, which the store PC keeps. A 
 ```
 
 The ids above are the seeded demo tenant's (branch `pilot-demo-branch`, back store `pilot-demo-wh`, products
-`prod-rice`, `prod-soap`, bin `bin-demo-a1`, from `db/seed/pilot/dataset.ts`). The ERP screens on this PC run **as the
+`prod-rice`, `prod-soap`, bin `bin-demo-a1`, from `db/seed/pilot/dataset.ts`). The builder also writes `roles` and
+`roleAssignments` (the cloud's catalogue and the seeded people — what lets the store computer draw each person's
+menu), `buyingPolicy` / `pricingPolicy` / every `<screen>Policy` with the practice script's cast (§7) and that
+person's permissions, `approvals` (the cloud's pending ones), `purchaseOrders` / `receipts` / `supplierInvoices`
+(the cloud's), `countsQueue`, a five-item day-close `checklist` and `lossPreventionRules`, all marked (demo). The ERP screens on this PC run **as the
 person the pack names** (`managerPolicy.userId` — there is no interactive staff sign-in on the ERP screens in this
 release, KL-01); the warehouse, picker and driver screens act as the named worker, picker and driver. `pilot-manager`
 holds the store-manager role, which carries the rights each of those needs. Other per-screen policies (buying,
@@ -344,6 +365,10 @@ Cross-cutting, once per person: the DEMO banner is visible; a refused action say
   request that records the session.
 
 ## 9. Known limitations of this practice environment
+
+- The warehouse pack section's `ordered[].quantityMinor` is shown by the handheld as WHOLE UNITS, while the receiving
+  service's quantities are in thousandths (the seeded receipt's `100_000` = 100 units). The DF-2 builder writes whole
+  units for the handheld, as the hand-written file did. DF-3 must settle ONE scale for every pack section (found 4 Oct 2026).
 
 - The demo box is still on the 28 September release until §2 is done; this document is written for the release at `0bf098a` (PR #671) or later.
 - The ERP screens have no interactive staff sign-in: the pack names one person per screen (KL-01, OA-4). The till

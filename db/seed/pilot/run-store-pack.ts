@@ -1,18 +1,20 @@
-// Operator entry point: build the DEMO store pack for the demo store box (ADR-0016) from what the cloud has
-// published, and write it where the demo edge reads it at boot. A PERSON runs it (it delivers the published
-// prices to the demo lanes); bundled and run by scripts/demo-store-pack.mjs. Read-only against the API —
-// it changes nothing in the cloud. Refuses anything but the synthetic demo tenant, a production-marked
-// environment, or an anonymous operator. Never prints a secret.
+// Operator entry point: build the DEMO store pack for the demo store box (ADR-0016 · OB-12 DF-2) from what the
+// cloud has published and recorded plus the seed dataset, and write it where the demo edge reads it at boot.
+// A PERSON runs it (it delivers prices and a day's practice work to the demo lanes); bundled and run by
+// scripts/demo-store-pack.mjs. Read-only against the API — it changes nothing in the cloud. Refuses anything but
+// the synthetic demo tenant, a production-marked environment, or an anonymous operator. Never prints a secret.
 //
-//   pnpm run demo:store-pack -- --operator "<your name>"      (then restart the demo store box)
+//   pnpm run demo:store-pack -- --operator "<your name>"                    (then restart the demo store box)
+//   pnpm run demo:store-pack -- --operator "<your name>" --out till/store-pack.json   (a store PC's practice file)
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { InMemoryEventStore } from '../../../packages/persistence/src/event-store';
 import type { CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
+import { ROLE_CATALOGUE } from '../../../services/api/src/roles';
 import { hostedSeedClient, hostedSeedRefusals } from './hosted';
-import { buildDemoStorePack } from './store-pack';
-import { PILOT_DEMO_TENANT, PILOT_FOUNDATION } from './dataset';
+import { buildDemoStorePack, type CloudApprovalRow, type CloudPurchaseOrder, type CloudSupplierInvoiceRow } from './store-pack';
+import { PILOT_CATALOGUE, PILOT_DEMO_TENANT, PILOT_DEMO_WAREHOUSE, PILOT_FOUNDATION, PILOT_TRADING_PARTNERS, PILOT_TRANSACTIONS } from './dataset';
 
 const arg = (name: string): string | undefined => {
   const i = process.argv.indexOf(`--${name}`);
@@ -36,7 +38,7 @@ async function main(): Promise<number> {
   });
   if (refusals.length > 0) {
     for (const r of refusals) console.error(`REFUSED — ${r}`);
-    console.error('Usage: pnpm run demo:store-pack -- --operator "<your name>"');
+    console.error('Usage: pnpm run demo:store-pack -- --operator "<your name>" [--out <file>]');
     return 2;
   }
   const client = hostedSeedClient({
@@ -60,10 +62,35 @@ async function main(): Promise<number> {
     return 1;
   }
 
+  // The cloud's own records. A read that does not answer leaves its section OUT of the pack (the screen then says it
+  // was not told), and is said here — never a quietly empty list.
+  const leftOut: string[] = [];
+  const optional = async <T>(section: string, path: string, pick: (body: unknown) => T): Promise<T | null> => {
+    const res = await get(path);
+    if (res.status === 200) return pick(res.body);
+    leftOut.push(`${section} — HTTP ${res.status} from ${path}`);
+    return null;
+  };
+  const purchaseOrders = await optional('purchaseOrders + receipts', '/v1/purchase/orders', (b) => (b as { orders: CloudPurchaseOrder[] }).orders);
+  const supplierInvoices = await optional('supplierInvoices', '/v1/purchase/invoices', (b) => (b as { invoices: CloudSupplierInvoiceRow[] }).invoices);
+  const approvalDecisions = await optional('approvals', '/v1/approvals/decisions', (b) => (b as { decisions: CloudApprovalRow[] }).decisions);
+  // Count records are per product and location: the demo products at the seeded back store, in one list.
+  let counts: unknown[] | null = [];
+  for (const p of PILOT_CATALOGUE.products) {
+    const rows = await optional('countsQueue', `/v1/inventory/counts?productId=${encodeURIComponent(p.productId)}&locationId=${encodeURIComponent(PILOT_DEMO_WAREHOUSE)}`, (b) => (b as { counts: unknown[] }).counts);
+    if (rows === null) { counts = null; break; }
+    counts.push(...rows);
+  }
+
   const storePack = buildDemoStorePack({
     snapshot: (pack.body as { snapshot: CatalogueSnapshot }).snapshot,
     master: (master.body as { products: [] }).products,
     availability: (stock.body as { rows: [] }).rows,
+    foundation: PILOT_FOUNDATION,
+    trading: PILOT_TRADING_PARTNERS,
+    transactions: PILOT_TRANSACTIONS,
+    roles: ROLE_CATALOGUE,
+    cloud: { purchaseOrders, supplierInvoices, approvalDecisions, counts },
     builtBy: operator,
     builtAt: new Date().toISOString(),
   });
@@ -72,14 +99,24 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  // Atomic replace in a directory the edge mounts read-only. The pack holds demo prices, no secret.
-  mkdirSync(dirname(DEMO_STORE_PACK_FILE), { recursive: true, mode: 0o755 });
-  const tmp = `${DEMO_STORE_PACK_FILE}.tmp`;
+  // Atomic replace in a directory the edge mounts read-only. The pack holds demo prices and practice work, no secret.
+  const out = arg('out') ?? DEMO_STORE_PACK_FILE;
+  mkdirSync(dirname(out), { recursive: true, mode: 0o755 });
+  const tmp = `${out}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(storePack, null, 2)}\n`, { mode: 0o644 });
-  renameSync(tmp, DEMO_STORE_PACK_FILE);
-  console.log(`GREEN — demo store pack v${storePack.version} written with ${storePack.products.length} products (from the published price list).`);
+  renameSync(tmp, out);
+
+  const count = (section: string): string => {
+    const v = storePack[section];
+    return Array.isArray(v) ? `${v.length}` : v === undefined ? 'left out' : 'yes';
+  };
+  console.log(`GREEN — demo store pack v${storePack.version} written to ${out} with ${storePack.products.length} products (from the published price list).`);
   for (const p of storePack.products) console.log(`   ${String(p['productId'])}  ${String(p['name'])}  ₹${(Number(p['unitPriceMinor']) / 100).toFixed(2)}  on hand ${String(p['availableMinor'])}`);
-  console.log('Next: the demo store box reads its pack at start-up — ask Claude to restart it (or: docker restart sre-pilot-edge-1).');
+  console.log(`   people: ${count('roles')} roles, ${count('roleAssignments')} assignments · manager ${String((storePack['managerPolicy'] as { userId: string }).userId)} · screens with a named viewer: ${Object.keys(storePack).filter((k) => k.endsWith('Policy')).length}`);
+  console.log(`   approvals waiting: ${count('approvals')} · purchase orders: ${count('purchaseOrders')} · receipts: ${count('receipts')} · supplier invoices: ${count('supplierInvoices')} · count records: ${count('countsQueue')}`);
+  console.log(`   practice: checklist ${count('checklist')} items · delivery ${String((storePack['warehouse'] as { grnId: string }).grnId)} · wave ${String((storePack['wave'] as { waveId: string }).waveId)} · route ${String((storePack['route'] as { routeId: string }).routeId)}`);
+  for (const why of leftOut) console.log(`   left out: ${why} (that screen will say it was not told)`);
+  console.log('Next: the demo store box reads its pack at start-up — restart it (docker restart sre-pilot-edge-1), then open /store/manager/.');
   return 0;
 }
 

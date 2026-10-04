@@ -5,6 +5,42 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## DF-2 — the demo store box gets the whole practice pack, built from what exists (4 October 2026)
+
+- **Owner's word:** *"go ahead with DF-2"* after UX-1a deployed. OB-12's second piece.
+- **What changed:** `demo:store-pack` (`db/seed/pilot/store-pack.ts`, `run-store-pack.ts`) writes the WHOLE pack the box's
+  screens read, not the products section alone: `policies` (seeded branch and back store, seeded tolerances), `roles` +
+  `roleAssignments` (the cloud's own role catalogue and the seeded people — the store computer can now draw every
+  person's menu, so the OB-13 rail appears on every box screen), `managerPolicy` + `buyingPolicy` + `pricingPolicy` +
+  38 `<screen>Policy` sections with the practice script's cast (manager on the floor, accountant on the cash office and
+  the books, owner on the controls) and each person's permissions from the catalogue, `approvals` (the cloud's PENDING
+  requests, real ids), `purchaseOrders` + `receipts` + `supplierInvoices` + `countsQueue` (the cloud's own records), a
+  five-item day-close `checklist`, `lossPreventionRules`, and ONE practice `warehouse` delivery, `wave` and `route` from
+  the published products, the seeded bins and the seeded costs. A cloud read that does not answer leaves its section out
+  and the runner says so. `--out <file>` writes a store PC's practice file. The runner stays read-only against the API.
+- **Proof:** `tests/unit/demo-store-pack-builds-the-whole-practice-pack.test.ts` (9 tests) runs the built pack through the
+  box's own `readPack` and the box's own `managerPayload`, `ownerPayload`, `buyingPayload`, `countsPayload`,
+  `checklistPayload`, `warehousePayload`, `pickerPayload`, `driverPayload` and `navigationPayload` — the manager named,
+  one pending approval shaped as Money, the orders and what was received on them, the invoice, the count record, the
+  delivery at the seeded cost, the wave at published prices, the route's cash on delivery equal to the wave, the rail's
+  groups with the served screen current, every viewer a seeded person with the catalogue's permissions, sections left out
+  when the cloud is silent, known-empty when it says nothing waits; `tests/integration/pilot-seed-hosted.test.ts` builds it
+  from the REAL API's reads. Gate: see the PR.
+- **Found on the way (not fixed here, named for DF-3):** the warehouse pack section's `quantityMinor` is shown by the
+  handheld as whole units while the receiving service counts thousandths — one scale for every section is DF-3's to
+  settle (runbook §9). The pack file's hand-written `wave` / `route` override head office's assignment (HA-1) on the
+  picker and driver screens; the screen says which source it holds.
+- **Not done by this slice:** nothing is on the box until the owner runs it. The handheld screens (`/store/warehouse/`,
+  `/store/picker/`, `/store/driver/`) on the hosted demo still ask for a device enrolment code first (runbook §4.4).
+  Shelf maps, delivery slots, dispatch, finance ledgers and the migration register stay "not told". DF-3 (head office
+  builds and delivers the pack to every box) is the product's answer and the next piece.
+- **Owner to run, on the box (a named person, hard rule #5):**
+  `cd /opt/sre/app && sudo -u deploy pnpm run demo:store-pack -- --operator "Chezhian" && docker restart sre-pilot-edge-1`
+  then sign in and open `/store/manager/` (named manager, approvals, checklist, no "Not known" tiles except what the box
+  itself has not been told), `/store/buying/`, `/store/counts/`, `/store/owner/`. Send the runner's printed summary.
+
+---
+
 ## UX-1a — the back office wears the owner's look: light set, rail, 49 pages, no feature changes (4 October 2026)
 
 - **Owner's word:** *"A 1"* — the light look everywhere (A), back-office chrome first, then DF-2, then the till and the
