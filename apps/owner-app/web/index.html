@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -17,6 +17,7 @@
       the till and the manager screen: it is one product.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 48px; }
       body {
@@ -42,19 +43,19 @@
         min-height: var(--tap); padding: 0 14px; border: 0; border-radius: 10px;
         background: var(--line); color: var(--ink); font-size: 15px; font-weight: 600; white-space: nowrap;
       }
-      .branches button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+      .branches button[aria-current='page'] { background: var(--ink); color: var(--bg); }
       .branches button .age { display: block; font-size: 11px; font-weight: 400; opacity: .75; }
 
       /* Sample-data warning. Only ever shown when the tested model is NOT loaded. */
-      .sample { background: var(--warn); color: #451a03; padding: 10px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample { background: var(--warn); color: var(--on-warn); padding: 10px 16px; font-weight: 600; font-size: 15px; margin: 0; }
       .sample[hidden] { display: none; }
       /* Served from this device's cache because the store box could not be reached. It says WHEN,
          because a page from this morning shown as this minute's is the fault this product exists
          to refuse (P-08). */
-      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info, #38bdf8); }
+      .stale { background: var(--info-surface); color: var(--on-info-surface); padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
       .stale[hidden] { display: none; }
       /* Something the phone could not save. Never swallowed (P-08). */
-      .queue-problem { background: var(--danger); color: #fff; padding: 10px 16px; font-size: 15px; margin: 0; }
+      .queue-problem { background: var(--danger-surface); color: var(--on-danger); padding: 10px 16px; font-size: 15px; margin: 0; }
       .queue-problem[hidden] { display: none; }
 
       main { padding: 0 16px; }
@@ -99,9 +100,9 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: #052e16; }
-      button.danger { background: var(--danger); color: #fff; }
-      button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+      button.primary { background: var(--good); color: var(--on-accent); }
+      button.danger { background: var(--danger-surface); color: var(--on-danger); }
+      button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .wide { width: 100%; }
 
       /* Queued decisions waiting to be sent, and the ones that went out of date (§31.1). */
@@ -111,7 +112,7 @@
 
       /* ── Panels ─────────────────────────────────────────────────────────── */
       .sheet {
-        position: fixed; inset: 0; background: rgba(2, 6, 23, .85);
+        position: fixed; inset: 0; background: var(--scrim);
         display: grid; place-items: end center; z-index: 20;
       }
       .sheet[hidden] { display: none; }
@@ -122,28 +123,28 @@
       .sheet h3 { margin: 0; font-size: 19px; }
       .sheet .note { color: var(--muted); font-size: 14px; margin: 0; }
       /* The staleness warning inside the approve panel — the point of the extra tap. */
-      .sheet .stale-warn { background: #78350f; color: #fff7ed; border-radius: 12px; padding: 12px 14px; font-size: 15px; }
+      .sheet .stale-warn { background: var(--warn-surface); color: var(--on-warn-surface); border-radius: 12px; padding: 12px 14px; font-size: 15px; }
       .sheet .stale-warn[hidden] { display: none; }
       .choices { display: grid; gap: 10px; }
       .choices button { text-align: left; padding: 0 16px; font-size: 16px; }
       .drill-lines { display: grid; gap: 6px; max-height: 44dvh; overflow-y: auto; }
       .drill-line {
         display: grid; grid-template-columns: 1fr auto; gap: 10px; font-size: 15px;
-        padding: 10px 12px; background: #0b1220; border-radius: 10px; font-variant-numeric: tabular-nums;
+        padding: 10px 12px; background: var(--panel-2); border-radius: 10px; font-variant-numeric: tabular-nums;
       }
       .drill-total { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; }
 
       /* The banner. No timer, and never colour alone. */
       .banner {
         position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
-        background: var(--danger); color: #fff; display: grid; gap: 10px;
+        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
       }
       .banner[hidden] { display: none; }
-      .banner.good { background: var(--good); color: #052e16; }
+      .banner.good { background: var(--good); color: var(--on-accent); }
       .banner strong { font-size: 20px; }
       .banner p { margin: 0; font-size: 16px; }
-      .banner button { background: #7f1d1d; color: #fff; }
-      .banner.good button { background: #052e16; color: #ecfdf5; }
+      .banner button { background: var(--panel); color: var(--danger-text); }
+      .banner.good button { background: var(--panel); color: var(--ok); }
     </style>
   </head>
   <body>

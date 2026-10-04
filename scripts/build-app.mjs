@@ -23,7 +23,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Every build refreshes the shared stylesheet copies first, so a screen is never built against a stale look
 // (packages/ui/web/sre-foundation.css is the source; apps/<app>/web/sre-foundation.css are its tracked copies).
 const refreshed = syncFoundation();
-if (refreshed.length > 0) console.log(`${FOUNDATION_FILE} refreshed in: ${refreshed.map((a) => `apps/${a}/web`).join(', ')}`);
+if (refreshed.length > 0) console.log(`shared copies refreshed (${FOUNDATION_FILE}, sre-update.js): ${refreshed.join(', ')}`);
 // …and every service worker's cache name follows its shell (RL-1), so the build that changed a screen also changes
 // the name the browser keys the old shell under.
 const stamped = stampServiceWorkers();

@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-14 recorded; UX-1b — the till, the handhelds and the portals take the light look (4 October 2026)
+
+- **The owner's answer to the plan's three options:** *"c"* — the look first. Recorded as **OB-14** in
+  `docs/registers/decisions.md`; the repair plan now states the execution order 0 → 1½ (UX-1b) → 1¾ (UX-1c) → 1 → 2 →
+  … → 8, keeping the audit's step numbers so every finding stays traceable. The cost he accepted when choosing: the
+  critical double-spend and identity fixes (Wave 2) start after the look; a page may be touched twice.
+- **UX-1b (this slice, palette only):** the ten pages outside the back office — the till and its concession tag, the
+  picker, driver and warehouse handhelds, the owner, customer (2), B2B and supplier shells — leave the dark pin and take
+  the light default. Their own literal colours became tokens (the owner app had nineteen); the signal red is never a
+  surface under words anywhere (a red button or banner is `--danger-surface`, 6.5:1 under white); layouts and the
+  shells' own targets (56 / 60 / 64 / 48 px) are untouched and now pinned by a guardrail. Two small things the light
+  set exposed and this slice fixed: the till had no heading at all (its lane-and-cashier line is now its `h1`, same
+  size), and the customer app's privacy caveat was amber on the grey line surface at 4.35:1 (now the dark amber).
+- **The "new version" strip on every shell:** `packages/ui/web/sre-update.js`, one shared script synced byte-for-byte
+  to the eight apps by the same script that syncs the foundation (`scripts/sync-ui-foundation.mjs`, now a list of
+  shared files; `--check` covers both), precached in each worker's SHELL so the strip opens with no network, and
+  carrying the chrome's exact words in English and Tamil. The back office keeps the same strip in `sre-chrome.js`;
+  a guardrail holds the words identical and refuses a second implementation.
+- **Proof:** static — `tests/guardrails/every-shell-outside-the-back-office-wears-the-look.test.ts` (inclusion once,
+  copies identical, workers precache, the script's behaviour, the three-reds rule on every page with a tripwire, the
+  targets) and the flipped rules in `every-screen-shares-the-foundation.test.ts` (no page pins a set; no page names a
+  literal colour). Rendered — `tests/e2e/the-shells-wear-the-look-and-say-a-new-version.e2e.ts`: the till at 1024×768
+  and the picker at 360×640 on the light canvas, WCAG AA clean at their own target bars before and with the strip; no
+  strip on the first controller, the strip on the second, Tamil on the language flip, reload only on the button. The
+  existing handheld, customer-app and till browser specs re-audited every view on the light set. Screenshots of all
+  eight shells were looked at (till, picker, driver, warehouse, owner, customer, B2B, supplier).
+- **Not done:** nobody from the store has held a phone with it (SP-10 stays PENDING); the owner's own look at the
+  deployed till and phones is the acceptance of this slice.
+- **Next:** UX-1c (Wave 1¾) — the page anatomy on the back office's module landings and work pages; then Wave 1.
+- **Owner:** after this deploys, open the till (`/pos/`) and a handheld from the demo home: light canvas, same buttons
+  in the same places, same sizes. If a phone still shows the dark look, open it once in a private window.
+
+---
+
 ## RL-2 + GT-10 — the recording's breakages fixed; the audit received; the repair plan written (4 October 2026)
 
 - **What the owner sent:** a screen recording of the demo (13:06) and an independent repository audit

@@ -38,6 +38,10 @@ roadmap IDs and the audit's finding IDs.
 
 ## The sequence
 
+**Execution order chosen by the owner (OB-14, 4 Oct 2026, Option C: "the look first"):** 0 → 1½ → 1¾ → 1 → 2 → 3 → 4 → 5
+→ 6 → 7 → 8. The wave numbers keep the audit's step numbers so every finding stays traceable; the order above is the
+order of work.
+
 Sizes are relative (S half a session, M one to two sessions, L several sessions, XL a run of sessions), not dates.
 Waves run in order; inside a wave the slices are independent unless marked. Every slice is a PR with the full gate.
 
@@ -53,10 +57,15 @@ RL-1, RL-2, GT-10 as above. DF-2 delivered and run by the owner.
   never again mean a stub-cloud browser test.
 - Owner sees: the merged run's job list shows the browser and performance jobs green.
 
-### Wave 1½ — the till and handhelds take the look (OB-13 UX-1b) · size S
-Palette only, layouts and 56 px targets unchanged; the pins come off; a "new version" strip on each. **Recommended
-here** because it is cheap, the owner judges the product by what he sees, and nothing after it touches the look.
-(The owner's "A 1" put it after DF-2; this is after DF-2.)
+### Wave 1½ — the till and handhelds take the look (OB-13 UX-1b) · size S — FIRST after Wave 0 (OB-14)
+Palette only, layouts and 56 px targets unchanged; the pins come off; a "new version" strip on each. The owner chose
+this before Wave 1 (OB-14, Option C, 4 Oct 2026).
+
+### Wave 1¾ — the page anatomy (OB-13 UX-1c) · size M — SECOND after Wave 0 (OB-14)
+Module landings and work pages in the owner's structure: purpose line, one primary action, summary panels, subpage
+tiles, register + record drawer. Moved here from Wave 5 by the owner's choice (OB-14, Option C): he sees the finished
+look first; the screens that waves 2–5 later prove keep the anatomy they get here. The cost, stated when he chose:
+the critical fixes of Wave 2 start that much later, and a page may be touched twice (anatomy here, logic later).
 
 ### Wave 2 — close authority and competing-write gaps (audit step 2) · size L — the critical wave
 One shared primitive first: **conditional append with an expected version per key** on the SQL event store, with a
@@ -104,8 +113,7 @@ real-PostgreSQL concurrency test harness (two distinct requests, one must lose b
   from governed records; the store-core report producers first.
 - Then **one connected proof on the real stack**: purchase → receipt → put-away → indent → independent floor receipt →
   sale → return → cash → day book → owner report, with a restart and a network cut in the middle.
-- **UX-1c** (OB-13 page anatomy — purpose line, one primary action, summary panels, tiles, record drawer) is done
-  **alongside this wave**, page family by page family as each screen is proven, so no screen is restyled twice.
+- **UX-1c** (the page anatomy) was done in Wave 1¾ by the owner's choice (OB-14); a screen proven here keeps it.
 - Owner sees: the whole day on the demo, start to finish, in the final look.
 
 ### Wave 6 — finish enabled departments and channels (audit step 6) · size XL, staged by what is switched on
@@ -138,16 +146,17 @@ identity, hardware, hosted recovery evidence. **PA-13** (commercial platform, R8
 | Item | Wave |
 |---|---|
 | DF-3 head-office pack delivery | 4 (as PA-06), not before 2 — delivery must bind served operations to a person |
-| UX-1b till and handhelds look | 1½ (recommended) |
-| UX-1c page anatomy | 5, alongside the core-day proof |
+| UX-1b till and handhelds look | 1½ — first after Wave 0 (OB-14) |
+| UX-1c page anatomy | 1¾ — second after Wave 0 (OB-14; was 5) |
 | Handheld enrolment on the hosted demo | 1½ (a demo device code for the practice phones) |
 | Quantity scale across pack sections | 4, with DF-3 |
 | SP-10 register | 8 |
 
 ## What the owner decides or provides, and when
 
-- **Now:** confirm this order, or move UX-1b / UX-1c. No commercial decision is needed to start waves 1–6 (the audit
-  says the same).
+- **Now — DECIDED (OB-14, 4 Oct 2026):** the owner answered *"c"* to the three options (A confirm · B look later ·
+  C look first): the look first, then the audit's order. No commercial decision is needed to start waves 1–6 (the
+  audit says the same).
 - **Before wave 7:** off-site backup destination and custodians; lawful legacy data access; migration witnesses.
 - **Before wave 8:** staff time, the store PC, scanner, printer and phones, a date.
 - **Separately, at their own gates:** providers, certificates, a real domain, production identity.

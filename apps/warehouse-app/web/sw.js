@@ -25,10 +25,10 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-warehouse-shell-ee4110ad8f52';
+const CACHE = 'sre-warehouse-shell-fe91c95257af';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
-const SHELL = ['./sre-foundation.css', './app.js', './manifest.webmanifest'];
+const SHELL = ['./sre-foundation.css', './sre-update.js', './app.js', './manifest.webmanifest'];
 
 /** Build artefacts. Added tolerantly: `addAll` is all-or-nothing and a missing build must not
  *  stop the rest of the shell being cached. Without the bundle the screen opens into its SAMPLE

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -21,6 +21,7 @@
       Framework-free and static, so it opens with the shop's wifi down.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 64px; }
       body {
@@ -88,7 +89,7 @@
       .wide { grid-column: 1 / -1; }
 
       /* Waiting for a scan — there is deliberately no text box to type into. */
-      .sheet { position: fixed; inset: 0; background: rgba(2, 6, 23, .86); display: grid; place-items: end center; z-index: 20; }
+      .sheet { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: end center; z-index: 20; }
       .sheet[hidden] { display: none; }
       .sheet-inner {
         width: min(560px, 100%); background: var(--panel); padding: 18px;
