@@ -30,6 +30,7 @@ CLAUDE.md (Technology baseline, roadmap §19) requires: **"Any substitution requ
 | [0016](./0016-demo-store-edge-on-the-hosted-demo.md) | A demo store edge on the hosted demo server, reached through a demo-only relay behind the demo sign-in (synthetic data only; production edge unchanged) | Accepted — DEMO ONLY (owner-directed, 28 Sep 2026) |
 | [0017](./0017-automatic-deployment-of-merged-releases.md) | Automatic deployment of merged releases to the single box — push over a forced-command SSH key, proven rollback, environments carry the trust (Stage F) | Accepted (owner program directive, 29 Sep 2026) |
 | [0018](./0018-one-public-origin.md) | One public https origin: the customer app, the API and sign-in on one address; staff screens off it until a sign-in gate exists (Stage F) | Accepted (owner program directive, 29 Sep 2026) |
+| [0019](./0019-self-hosted-identity-server.md) | A self-hosted open-source identity server (Keycloak) signs people in; the product never holds a password; tenants map to realms; the login page is ours in look | Accepted (owner decision OB-15 "A 1", 4 Oct 2026) |
 | [0019](./0019-handhelds-reach-the-box-through-an-authenticated-device-socket.md) | Handhelds reach the store box over the shop network through an authenticated DEVICE socket — enrolled once with a one-time code from head office, per-device credential, loopback by default, handheld screens only (SP-3a) | Accepted (owner program directive, 30 Sep 2026) |
 
 Further de-facto and proposed decisions (transaction boundaries, Postgres RLS, SHA-256 audit chain,

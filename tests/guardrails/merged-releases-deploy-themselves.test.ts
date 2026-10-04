@@ -6,7 +6,7 @@ import { readFileSync, statSync } from 'node:fs';
  *
  * The pipeline's `release` job and the on-box script are production code that runs unattended. This guardrail
  * pins the properties that make that safe: the job runs only for pushes to main, only after the three
- * verification jobs passed on the same commit, in the `demo` environment, queued never cancelled; it pins the
+ * verification jobs (five since GT-01: the browser and performance suites included) passed on the same commit, in the `demo` environment, queued never cancelled; it pins the
  * box's host key and never echoes the key; the script refuses anything but a 40-hex commit on origin/main,
  * rolls back, never tears volumes down and never traces; the key example is a forced command; the runbook
  * names every secret and records no server address.
@@ -21,9 +21,9 @@ const RUNBOOK = readFileSync('docs/runbooks/automatic-deployment.md', 'utf8');
 const releaseJob = CI.slice(CI.indexOf('\n  release:\n'));
 
 describe('the release job deploys only a merged, verified main commit', () => {
-  it('exists, needs all three verification jobs, and runs only for a push to main', () => {
+  it('exists, needs all five verification jobs — including the browser and performance suites (GT-01) — and runs only for a push to main', () => {
     expect(CI.indexOf('\n  release:\n')).toBeGreaterThan(0);
-    expect(releaseJob).toMatch(/needs:\s*\[verify, integration, deploy\]/);
+    expect(releaseJob).toMatch(/needs:\s*\[verify, integration, deploy, browser, performance\]/);
     expect(releaseJob).toMatch(/if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
     expect(releaseJob).toMatch(/environment: demo/);
   });

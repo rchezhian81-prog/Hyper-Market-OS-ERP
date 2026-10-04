@@ -5,6 +5,7 @@ import { startScreenServer, SCREEN_HOST, type ScreenServer } from '../../edge/st
 import { emptyPack } from '../../edge/store-edge/src/store-pack';
 import type { ScreenInput } from '../../edge/store-edge/src/screen-data';
 import { SyncOutbox } from '../../packages/sync/src/index';
+import { expectNetworkCut } from './lib/offline';
 
 /**
  * **Every screen opens with the network cut** (SYNC-06 / TEST-02, P-01, hard rule #1).
@@ -94,7 +95,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
 
       // It is genuinely offline, the shell rendered (a real page, not the browser's error), and the
       // copy came from the service-worker cache (stamped), never a live fetch that cannot have happened.
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine), `${screen} was not offline`).toBe(false);
+      await expectNetworkCut(page, screen);
       expect((await page.title()).trim().length, `${screen} showed no page offline`).toBeGreaterThan(0);
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string'), `${screen} was not served from cache`).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length, `${screen} rendered an empty body`).toBeGreaterThan(0);
@@ -119,7 +120,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await page.reload({ waitUntil: 'domcontentloaded' });
 
       // Offline, opened from cache, and not empty.
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('GST reconciliation');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -161,7 +162,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Category rules');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -201,7 +202,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('GST returns');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -241,7 +242,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Waste');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -287,7 +288,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Record a loss');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -330,7 +331,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Stock counts');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -370,7 +371,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Products to publish');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -410,7 +411,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Data quality');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -450,7 +451,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Investigations');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -494,7 +495,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Refund exceptions');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -539,7 +540,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('self-service');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -584,7 +585,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Devices');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -629,7 +630,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Import');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -668,7 +669,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Over / short');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -708,7 +709,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Risk acceptance');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -748,7 +749,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Reopen');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -788,7 +789,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Stock health');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
@@ -828,7 +829,7 @@ describe.skipIf(!HAVE_BROWSER)('every screen opens with the network cut (SYNC-06
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserWindow).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Goods receipt review');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserWindow).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
