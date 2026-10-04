@@ -19,10 +19,7 @@ import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import {
   applyPilotFoundation, applyPilotCatalogue, applyPilotTradingPartners, applyPilotTransactions,
 } from '../../db/seed/pilot/apply';
-import {
-  PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_TRANSACTIONS, PILOT_DEMO_TENANT,
-  PILOT_DEMO_SUPPLIER_LOGIN, PILOT_DEMO_BRANCH,
-} from '../../db/seed/pilot/dataset';
+import { PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_TRANSACTIONS, PILOT_DEMO_TENANT, PILOT_DEMO_SUPPLIER_LOGIN, PILOT_DEMO_BRANCH } from '../../db/seed/pilot/dataset';
 
 // Constructed, never a literal, so the secret scanner does not trip on obviously-fake test material.
 const IDP = {
@@ -140,10 +137,20 @@ describe('demo price list for the demo store box (ADR-0016)', () => {
     const get = (path: string) => client.request({ method: 'GET', path, userId: OWNER, tenantId: PILOT_DEMO_TENANT });
     const [pack, master, stock] = [await get('/v1/catalogue/pack'), await get('/v1/catalogue/products'), await get('/v1/inventory/availability')];
     expect([pack.status, master.status, stock.status]).toEqual([200, 200, 200]);
+    // DF-2: the cloud's own records feed the rest of the pack — read exactly as the runner reads them.
+    const [orders, invoices, decisions] = [await get('/v1/purchase/orders'), await get('/v1/purchase/invoices'), await get('/v1/approvals/decisions')];
+    expect([orders.status, invoices.status, decisions.status]).toEqual([200, 200, 200]);
     const built = buildDemoStorePack({
       snapshot: (pack.body as { snapshot: CatalogueSnapshot }).snapshot,
       master: (master.body as { products: [] }).products,
       availability: (stock.body as { rows: [] }).rows,
+      foundation: PILOT_FOUNDATION, trading: PILOT_TRADING_PARTNERS, transactions: PILOT_TRANSACTIONS, roles: ROLE_CATALOGUE,
+      cloud: {
+        purchaseOrders: (orders.body as { orders: [] }).orders,
+        supplierInvoices: (invoices.body as { invoices: [] }).invoices,
+        approvalDecisions: (decisions.body as { decisions: [] }).decisions,
+        counts: [],
+      },
       builtBy: 'test-operator', builtAt: '2026-09-28T10:00:00.000Z',
     });
 
@@ -156,10 +163,15 @@ describe('demo price list for the demo store box (ADR-0016)', () => {
     const byId = new Map(products.map((p) => [p.productId, p.unitPriceMinor] as const));
     for (const p of PILOT_CATALOGUE.products) expect(byId.get(p.productId)).toBe(p.price.priceMinor);
 
-    // Honest gaps: no cost (the published pack carries none) and no other section was invented.
+    // Honest gaps: no cost (the published pack carries none). DF-2: the rest of the practice pack is BUILT, and every
+    // section the box reads back is one it can use — the manager is named, the buyer sees the cloud's orders, the
+    // approvals are the cloud's pending ones (known, even when none wait), the people are the cloud's role catalogue.
     for (const p of built.products) expect(p).not.toHaveProperty('unitCostMinor');
-    expect(Object.keys(built).sort()).toEqual(['_comment', 'products', 'version']);
-    expect(edgePack.approvals.known).toBe(false);
+    expect(edgePack.approvals.known).toBe(true);
+    expect(edgePack.purchaseOrders.known).toBe(true);
+    expect(edgePack.roles.known && edgePack.roleAssignments.known && edgePack.managerPolicy.known).toBe(true);
+    expect(edgePack.managerPolicy.known && edgePack.managerPolicy.value.userId).toBe('pilot-manager');
+    expect(edgePack.warehouse.known && edgePack.wave.known && edgePack.route.known && edgePack.checklist.known).toBe(true);
     // Categories come from the product master, not a guess; stock from the ledger (the seeded receipt).
     expect(built.products.every((p) => p['categoryId'] !== 'uncategorised')).toBe(true);
     expect(built.products.some((p) => Number(p['availableMinor']) > 0)).toBe(true);
