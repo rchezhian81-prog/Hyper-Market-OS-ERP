@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Floor indents</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Floor indents — the sales floor's face for the indent chain (SP-8b, F08, WF-06, WF-07, M09-FR-03, M08-FR-02, §28,
       §31, P-01, P-03, P-08). Every rule lives in the tested session model (apps/web-erp/src/indents-session.ts),
@@ -29,7 +29,7 @@
       .asof { color:var(--muted); font-size:14px; } .summary { font-size:15px; font-weight:600; }
       button.refresh, button.act, button.minor { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
       button.act { background:var(--accent, var(--line)); }
-      button:focus-visible, .lang:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      button:focus-visible, .lang:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
       li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
@@ -58,10 +58,10 @@
       ul.saved { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
       li.saved { background:var(--panel); border-radius:12px; padding:10px 14px; display:grid; gap:4px; }
       li.saved .what { font-weight:600; } li.saved .detail { font-size:13px; color:var(--muted); }
-      li.saved .pill { font-size:13px; font-weight:600; } li.saved .why { font-size:13px; color:var(--danger-text, #fecaca); }
+      li.saved .pill { font-size:13px; font-weight:600; } li.saved .why { font-size:13px; color:var(--danger-text, var(--danger-text)); }
       p.result, p.state { margin:0; padding:12px 16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon, p.state .icon { font-size:18px; }
-      p.result.tone-error, p.state.tone-error { color:var(--danger-text, #fecaca); }
+      p.result.tone-error, p.state.tone-error { color:var(--danger-text, var(--danger-text)); }
       p.result.tone-ok { color:var(--ink); }
       [hidden] { display:none !important; }
     </style>

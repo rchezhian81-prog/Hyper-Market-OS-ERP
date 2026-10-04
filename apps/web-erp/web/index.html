@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Store Manager</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Store manager shell (docs/design/screens/store-manager.md). The floor is run BY
       EXCEPTION (P-03): the home screen is four figures — approvals, exceptions, unsent
@@ -72,9 +72,9 @@
       .blocked { color: var(--warn); font-size: 15px; font-weight: 600; }
       /* Where a decision has got to (SP-2a): one pill per state word; refused is loud, posted is calm. */
       .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--line); color: var(--ink); justify-self: start; }
-      .pill.posted { background: var(--ok); color: var(--bg); }
-      .pill.refused { background: var(--danger); color: var(--bg); }
-      .pill.retrying { background: var(--warn); color: var(--bg); }
+      .pill.posted { background: var(--ok); color: var(--on-accent); }
+      .pill.refused { background: var(--danger-surface); color: var(--on-danger); }
+      .pill.retrying { background: var(--warn); color: var(--on-warn); }
       h3 { font-size: 18px; margin: 20px 0 4px; }
       .empty { color: var(--muted); padding: 24px 4px; }
 
@@ -115,7 +115,7 @@
 
       /* ── Panels and the banner: same behaviour as the till ─────────────── */
       .sheet {
-        position: fixed; inset: 0; background: rgba(2, 6, 23, .82);
+        position: fixed; inset: 0; background: var(--scrim);
         display: grid; place-items: center; z-index: 20; padding: 16px;
       }
       .sheet[hidden] { display: none; }
@@ -148,8 +148,8 @@
       .banner.good { background: var(--accent); color: var(--on-accent); }
       .banner strong { font-size: 22px; }
       .banner p { margin: 0; font-size: 17px; line-height: 1.45; }
-      .banner button { background: #7f1d1d; color: var(--on-danger); }
-      .banner.good button { background: var(--on-accent); color: #ecfdf5; }
+      .banner button { background: var(--danger-surface); color: var(--on-danger); }
+      .banner.good button { background: var(--on-accent); color: var(--on-ok-surface); }
     </style>
   </head>
   <body>

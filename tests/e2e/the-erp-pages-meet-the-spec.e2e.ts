@@ -199,32 +199,48 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
   it('the menu: a button that says what it opens, the person\'s screens grouped, the served screen current, keyboard-closable, audited open at a desk and on a phone, in Tamil too', async () => {
     for (const device of [DESK, PHONE]) {
       const page = await open('counts.html', device, undefined, { sreNavigation: MENU });
-      expect(await page.textContent('#sre-menu-button')).toBe('☰ Screens');
-      expect(await page.getAttribute('#sre-menu-button', 'aria-expanded')).toBe('false');
-      expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(true);
+      const desk = device === DESK;
+      if (desk) {
+        // At a desk the rail of the owner's look stands open beside the page (OB-13, UX-1a): nothing to press,
+        // nothing to dismiss, the page wrapped once beside it.
+        expect(await page.evaluate('document.getElementById("sre-menu-button").hidden')).toBe(true);
+        expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(false);
+        expect(await page.evaluate('document.body.classList.contains("sre-shell")')).toBe(true);
+        expect(await page.evaluate('document.body.firstElementChild.id')).toBe('sre-menu');
+        expect(await page.evaluate('document.getElementById("sre-page").contains(document.querySelector("main"))')).toBe(true);
+      } else {
+        expect(await page.textContent('#sre-menu-button')).toBe('☰ Screens');
+        expect(await page.getAttribute('#sre-menu-button', 'aria-expanded')).toBe('false');
+        expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(true);
+        await page.click('#sre-menu-button');
+        expect(await page.getAttribute('#sre-menu-button', 'aria-expanded')).toBe('true');
+        expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(false);
+      }
       expect(await page.getAttribute('#sre-menu', 'aria-label')).toBe('Screens');
-
-      await page.click('#sre-menu-button');
-      expect(await page.getAttribute('#sre-menu-button', 'aria-expanded')).toBe('true');
-      expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(false);
       expect(await page.textContent('#sre-menu .who-can')).toBe('Screens for u-mgr');
+      expect(await page.textContent('#sre-menu .brand small')).toBe('Store workspace');
       expect(await texts(page, '#sre-menu .group')).toEqual(['Overview', 'Inventory', 'Administration']);
       expect(await texts(page, '#sre-menu a')).toEqual(['Dashboard', 'Stock counts', 'Stock health', 'Users & roles', 'Audit log']);
       expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['Stock counts']);
       expect(await page.getAttribute('#sre-menu a[aria-current="page"]', 'href')).toMatch(/\/counts\/$/);
-      // Opening put focus on the current screen's link; Escape closes and hands focus back to the button.
-      expect(await page.evaluate('document.activeElement.textContent')).toBe('Stock counts');
+      // On a phone, opening put focus on the current screen's link; Escape closes and hands focus back to the button.
+      if (!desk) expect(await page.evaluate('document.activeElement.textContent')).toBe('Stock counts');
       const withMenuOpen = await auditPage(page, { expectLang: 'en' });
       expect(withMenuOpen, `menu open at ${device.viewport.width}`).toEqual([]);
-      await page.keyboard.press('Escape');
-      expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(true);
-      expect(await page.evaluate('document.activeElement.id')).toBe('sre-menu-button');
+      if (!desk) {
+        await page.keyboard.press('Escape');
+        expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(true);
+        expect(await page.evaluate('document.activeElement.id')).toBe('sre-menu-button');
+      }
 
       await page.click('#lang');
       await page.waitForFunction('document.documentElement.lang === "ta"');
-      expect(await page.textContent('#sre-menu-button')).toBe('☰ திரைகள்');
-      await page.click('#sre-menu-button');
+      if (!desk) {
+        expect(await page.textContent('#sre-menu-button')).toBe('☰ திரைகள்');
+        await page.click('#sre-menu-button');
+      }
       expect(await page.textContent('#sre-menu .who-can')).toBe('இவருக்கான திரைகள் u-mgr');
+      expect(await page.textContent('#sre-menu .brand small')).toBe('கடை பணியிடம்');
       expect(await texts(page, '#sre-menu .group')).toEqual(['கண்ணோட்டம்', 'சரக்கு', 'நிர்வாகம்']);
       expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['சரக்கு எண்ணிக்கை']);
       expect(await auditPage(page, { expectLang: 'ta' }), `menu open in Tamil at ${device.viewport.width}`).toEqual([]);
@@ -233,7 +249,7 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
 
   it('the menu says why it is empty — nobody named, or no role register — and draws nothing at all off the box', async () => {
     const nobody = await open('waste.html', DESK, undefined, { sreNavigation: { userId: null, branchId: 'b1', why: 'no_user', groups: [] } });
-    await nobody.click('#sre-menu-button');
+    // a desk's rail is open already; the reason stands where the screens would
     expect(await nobody.textContent('#sre-menu .who-can')).toBe('Nobody is named on this screen, so no other screens can be offered.');
     expect(await nobody.$$('#sre-menu a')).toEqual([]);
     await nobody.click('#lang');
@@ -258,7 +274,6 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
     const bothCurrent = { ...MENU, groups: [{ group: MENU.groups[2]!.group, items: MENU.groups[2]!.items.map((i) => ({ ...i, current: true })) }] };
     const admin = await open('admin.html?tab=records', DESK, undefined, { sreNavigation: bothCurrent });
     expect(await admin.getAttribute('#tab-records', 'aria-current')).toBe('page');
-    await admin.click('#sre-menu-button');
     expect(await texts(admin, '#sre-menu a[aria-current="page"]')).toEqual(['Audit log']);
   });
 
@@ -283,7 +298,8 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
     await page.goto(`http://${SCREEN_HOST}:${box.port}/counts/`, { waitUntil: 'load' });
     await page.waitForFunction('globalThis.sreChrome !== undefined', undefined, { timeout: 15_000 });
 
-    await page.click('#sre-menu-button');
+    // At a desk the rail stands open (OB-13): the person's screens are simply there.
+    expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(false);
     expect(await page.textContent('#sre-menu .who-can')).toBe('Screens for u-mgr');
     // SP-8c-ii: "Products nobody can sell" is gated on the same availability read as stock health, so this reader sees it too.
     expect(await texts(page, '#sre-menu a')).toEqual(['Goods receipt review', 'Stock counts', 'Stock health', 'Products nobody can sell', 'Warehouse']);
@@ -292,7 +308,6 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
     await page.click('#sre-menu a:has-text("Stock health")');
     await page.waitForURL(/\/stock-health\/$/);
     await page.waitForFunction('globalThis.sreChrome !== undefined', undefined, { timeout: 15_000 });
-    await page.click('#sre-menu-button');
     expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['Stock health']);
     expect(await auditPage(page, { expectLang: 'en' })).toEqual([]);
     expect(errors).toEqual([]);

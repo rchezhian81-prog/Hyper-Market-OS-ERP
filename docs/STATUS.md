@@ -5,6 +5,45 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## UX-1a — the back office wears the owner's look: light set, rail, 49 pages, no feature changes (4 October 2026)
+
+- **Owner's word:** *"A 1"* — the light look everywhere (A), back-office chrome first, then DF-2, then the till and the
+  handhelds (1). Recorded on OB-13.
+- **What changed (code):** `packages/ui/web/sre-foundation.css` now carries TWO token sets — the light set is the default
+  (canvas `#f3f5f4`, white surfaces, emerald `#16614d`, amber `#8a5e1b`, forest rail `#192f27`, radius 6/8, no shadows,
+  tiles with a 3px top stripe) and the old dark set lives under `:root[data-theme="dark"]`; every tinted panel is a
+  surface + words PAIR (`--ok-surface/--on-ok-surface`, `--error-surface`, `--demo-surface/--on-demo`, `--field`,
+  `--on-idle`, `--on-info`, `--scrim`, the rail tokens). `apps/web-erp/web/sre-chrome.js` draws the real menu
+  (`window.sreNavigation`) as the RAIL: first in `<body>`, the page wrapped once in `.sre-page`, open at a desk (≥ 1000px,
+  no button), a ☰ drawer with a scrim on a phone; brand block, "Screens for <person>", groups, current screen marked.
+  The 47 ERP pages that named dark literals (367 of them — `#fecaca`, `#0b1220`, `#052e16`, `#93c5fd`…) now name tokens
+  only; `theme-color` and the ERP manifest follow the rail. The ten shells outside the back office (till, concession
+  tag, picker, delivery, owner, warehouse, supplier, B2B, customer ×2) pin `data-theme="dark"` on `<html>` and look
+  exactly as before — UX-1b lifts the pin after DF-2, in the owner's order.
+- **Proof:** `tests/unit/ui-foundation.test.ts` proves 30 text pairs and 7 non-text pairs AA in BOTH sets and keeps the
+  three-reds tripwire in both; `tests/guardrails/every-screen-shares-the-foundation.test.ts` adds the pin (every shell
+  outside web-erp dark, no `data-theme` in the back office), both sets present, no `prefers-color-scheme`, and no colour
+  literal left in any ERP page; `tests/guardrails/every-erp-page-shares-the-chrome.test.ts` pins the rail's shape;
+  `tests/e2e/the-erp-pages-meet-the-spec.e2e.ts` audits all 49 pages at 1280 and 360, English and Tamil, with the rail
+  open at the desk and the drawer on the phone — **zero findings** on the rendered pages, including the REAL store
+  computer serving `/counts/` and `/stock-health/`. Static pair check over 363 page rules under the light set: the six
+  below 4.5:1 were muted-on-line disabled buttons, fixed by darkening `--muted` to `#53625a` (4.9:1 on `--line`).
+  Found and fixed on the way: a translucent rail highlight the audit reads as white-on-white (now an opaque `--rail-2`),
+  and the payroll practice banner's striped gradient with no colour under it (now `var(--demo-surface)` beneath).
+- **Honest scope:** the rail appears wherever the store computer serves a page and names the person — on the hosted
+  demo that is the `/store/…` screens (manager, counts, stock health…); the `/erp/…` bridged pages are served by the web
+  front with no store computer behind them, so they take the light look and the header but have no rail, exactly as
+  they had no menu before. DF-2/DF-3 move more of the demo onto the box. Page anatomy (purpose line, one primary action,
+  summary panels, tiles from the catalogue) is UX-1c; the manager's tiles still carry their 6px left edge until then.
+  No icons, breadcrumbs or search from the reference — not asked for by any requirement ID. Nobody from the store has
+  seen the live result yet.
+- **Owner to check after the deploy:** sign in at `/login/`, open the store computer's screens — `/store/manager/` and
+  `/store/counts/` — and look for the dark-green rail with your screens on the left, the white header with the sync
+  badge and தமிழ், and white tiles on a light canvas. Narrow the window below 1000px: the rail becomes a ☰ drawer. Open
+  `/erp/operations.html`: the new look, no rail (no store computer behind it). The till at `/store/pos/` is unchanged.
+
+---
+
 ## OB-13 — the look is decided: the owner's professional reference, with the design-system gaps fixed (4 October 2026)
 
 - **What the owner sent:** `SRE-Hypermarket-ERP-Professional.html`, then the pack behind it (sources, a 31 KB design handover,
@@ -36,9 +75,9 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   budgets re-run on every view. All through the shared foundation; no feature changes; every guardrail that holds the
   foundation (`tests/guardrails/every-screen-shares-the-foundation.test.ts`, `tests/unit/ui-foundation.test.ts`) extended
   to the light set.
-- **Owner decisions open (OB-13):** theme scope **A** light everywhere (recommended) or **B** light back office, dark till;
-  order **UX-1a → DF-2 → UX-1b** (recommended) or DF-2 first as OB-12 ordered. Until he answers, UX-1a is prepared and
-  not merged.
+- **Owner answered the same day: "A 1"** — the light look everywhere (A), back-office chrome first, then DF-2, then the
+  till and handhelds (1). UX-1a is under way; the shells outside the back office are pinned to the dark set until UX-1b
+  so the screens change in the order he chose.
 - **Pending, unchanged:** his browser-check run; `/store/pos/` after the relay fix; H-13/H-14 on the till; SP-10 UAT;
   store PC and phones; 28 September items.
 

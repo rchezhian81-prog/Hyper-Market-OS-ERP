@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE GST returns</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       GST returns — the filing-status operator view (owner directive item 3, the 4th UI domain; API-09; M23).
       Every rule lives in the tested session model (apps/web-erp/src/gst-returns-session.ts), attached as
@@ -23,7 +23,7 @@
       .summary { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
       .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); }
       .filter { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; }
-      .filter[aria-pressed='true'] { background:var(--ink); color:#0f172a; }
+      .filter[aria-pressed='true'] { background:var(--ink); color:var(--bg); }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
       li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
@@ -34,14 +34,14 @@
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
       .action { color:var(--ink); font-size:15px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
       .action .do { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
-      .do-btn { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; background:var(--info); color:#0f172a; font-size:15px; font-weight:600; cursor:pointer; }
+      .do-btn { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; background:var(--info); color:var(--on-info); font-size:15px; font-weight:600; cursor:pointer; }
       .do-btn:disabled { background:var(--line); color:var(--muted); cursor:default; }
       .do-note { font-size:13px; color:var(--muted); }
       .who-line { color:var(--muted); font-size:13px; display:flex; gap:14px; flex-wrap:wrap; }
       .row .detail { font-size:13px; color:var(--muted); }
-      li.row.tone-error .detail { color:#fecaca; }
+      li.row.tone-error .detail { color:var(--danger-text); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
     </style>
   </head>
   <body>

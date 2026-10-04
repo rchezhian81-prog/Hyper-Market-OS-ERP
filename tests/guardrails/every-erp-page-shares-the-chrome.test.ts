@@ -143,6 +143,21 @@ describe('the one menu (Stage G slice 5b · §27 role surfaces · P-07 · P-04)'
     }
   });
 
+  it('draws the menu as the rail of the owner\'s look (OB-13 · UX-1a): the page wrapped once, the rail first in <body>, open at a desk, a ☰ drawer on a phone', () => {
+    expect(CHROME).toMatch(/page\.id = 'sre-page'/);
+    expect(CHROME).toMatch(/document\.body\.classList\.add\('sre-shell'\)/);
+    expect(CHROME).toMatch(/if \(child === panel \|\| child\.tagName === 'SCRIPT'\) continue;/);
+    expect(CHROME).toMatch(/window\.matchMedia\('\(min-width: 1000px\)'\)/);
+    expect(CHROME).toMatch(/if \(desk\.matches\) \{\n\s+panel\.hidden = false;\n\s+button\.hidden = true;/);
+    expect(CHROME).toMatch(/what\.textContent = t\('workspace'\)/);
+    expect(CHROME).toMatch(/el\.setAttribute\('aria-label', t\('closeScreens'\)\)/);
+    const css = readFileSync('packages/ui/web/sre-foundation.css', 'utf8');
+    expect(css).toMatch(/body\.sre-shell \{ display: grid; grid-template-columns: var\(--rail-width\) minmax\(0, 1fr\);/);
+    expect(css).toMatch(/\.sre-page \{ min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; \}/);
+    expect(css).toMatch(/@media \(max-width: 999px\) \{\n\s+body\.sre-shell \{ display: block; \}/);
+    expect(css).toMatch(/\.sre-menu :focus-visible \{ outline-color: var\(--rail-accent\); \}/);
+  });
+
   it('the foundation styles the menu at the touch target, and the copies agree', () => {
     const css = readFileSync('packages/ui/web/sre-foundation.css', 'utf8');
     expect(css).toMatch(/\.sre-menu-button \{ min-height: var\(--tap\); min-width: var\(--tap\);/);

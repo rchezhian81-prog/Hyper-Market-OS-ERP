@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Record a loss</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Write-off CAPTURE desk — the shop-floor "record a loss" screen (M28-FR-01, API-04, §28, P-02, P-03).
       Every rule lives in the tested session model (apps/web-erp/src/write-off-capture-session.ts), attached as
@@ -30,21 +30,21 @@
       fieldset { border:0; margin:0; padding:0; }
       .chips { display:flex; gap:8px; flex-wrap:wrap; }
       button.chip { min-height:var(--tap); padding:0 16px; border:2px solid var(--line); border-radius:999px; font-size:15px; font-weight:600; background:var(--bg); color:var(--ink); }
-      button.chip.chosen { border-color:var(--info); background:#0b2942; color:#e0f2fe; }
+      button.chip.chosen { border-color:var(--info); background:var(--info-surface); color:var(--on-info-surface); }
       button.chip.chosen::before { content:'✓ '; }
       .material-hint { margin:0; padding:10px 12px; border-radius:10px; background:var(--bg); font-size:14px; display:inline-flex; gap:8px; align-items:center; }
       .material-hint .icon { font-size:16px; }
       .material-hint.tone-degraded { border-left:4px solid var(--degraded); } .material-hint.tone-idle { border-left:4px solid var(--idle); color:var(--muted); }
       .material-hint[hidden] { display:none; }
       .threshold { font-size:13px; color:var(--muted); }
-      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:#451a03; }
-      button.act:focus-visible, button.chip:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:var(--on-warn); }
+      button.act:focus-visible, button.chip:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
       p.result[hidden] { display:none; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
     </style>
   </head>

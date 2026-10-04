@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Import &amp; export</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Data import & export console — the operator's screen (M30-FR-01/02/03, API-03, §28, P-06). Every rule
       lives in the tested session model (apps/web-erp/src/data-io-session.ts), attached as window.dataIoSession
@@ -27,18 +27,18 @@
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--bg); border-radius:12px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-left:5px solid var(--line); }
       li.row .what { display:grid; gap:2px; } li.row .what small { color:var(--muted); font-size:13px; }
-      .tag { background:#3f2d12; color:#fde68a; border-radius:999px; padding:1px 8px; font-size:12px; margin-left:6px; }
+      .tag { background:var(--warn-surface); color:var(--on-warn-surface); border-radius:999px; padding:1px 8px; font-size:12px; margin-left:6px; }
       label { display:block; margin:8px 0 4px; font-size:14px; color:var(--muted); }
       select, input, textarea { width:100%; min-height:var(--tap); padding:8px 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
       textarea { min-height:120px; font-family:ui-monospace,Menlo,Consolas,monospace; }
       .row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--info); color:#042f2e; }
-      button.act.primary { background:var(--good,#22c55e); color:#052e16; }
-      button.act.small { min-height: var(--tap); font-size:14px; background:var(--info); color:#042f2e; }
-      button.act:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--info); color:var(--on-info); }
+      button.act.primary { background:var(--good); color:var(--on-accent); }
+      button.act.small { min-height: var(--tap); font-size:14px; background:var(--info); color:var(--on-info); }
+      button.act:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       .preview { background:var(--bg); border-radius:12px; padding:12px 14px; font-size:14px; display:grid; gap:6px; }
       .preview.ready { border-left:5px solid var(--ok); } .preview.notready { border-left:5px solid var(--error); }
-      .preview .errline { color:#fecaca; font-size:13px; }
+      .preview .errline { color:var(--danger-text); font-size:13px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--bg); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }

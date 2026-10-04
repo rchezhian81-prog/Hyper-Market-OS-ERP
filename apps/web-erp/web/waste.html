@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Waste &amp; write-off</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Waste & write-off review — the shrinkage triage view (M28-FR-01). Every rule lives in the tested session
       model (apps/web-erp/src/waste-review-session.ts), attached as window.wasteSession and built on the shared
@@ -24,7 +24,7 @@
       .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); }
       .summary .total { color:var(--muted); font-size:15px; } .summary .total b { color:var(--ink); font-variant-numeric:tabular-nums; }
       .filter { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; }
-      .filter[aria-pressed='true'] { background:var(--ink); color:#0f172a; }
+      .filter[aria-pressed='true'] { background:var(--ink); color:var(--bg); }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
       li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
@@ -36,9 +36,9 @@
       .meta { color:var(--muted); font-size:14px; display:flex; gap:14px; flex-wrap:wrap; }
       .badges { display:flex; gap:8px; flex-wrap:wrap; }
       .badges b { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--line); color:var(--ink); font-weight:600; }
-      .badges b.warn { background:#3f2d12; color:#fde68a; } .badges b.muted { background:#0b1220; color:var(--muted); font-weight:500; }
+      .badges b.warn { background:var(--warn-surface); color:var(--on-warn-surface); } .badges b.muted { background:var(--panel-2); color:var(--muted); font-weight:500; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
     </style>
   </head>
   <body>

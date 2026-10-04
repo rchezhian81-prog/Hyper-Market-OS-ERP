@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Refund exceptions</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Refund-exceptions review screen — the owner/manager/accountant's control-by-exception surface
       (M13-FR-01/03, M17, API-05, P-03, P-08, hard rule #10). Every rule lives in the tested session model
@@ -36,11 +36,11 @@
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
       .row .flags { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; }
       .row .flags-label { color:var(--muted); font-weight:600; }
-      .row .chip { background:#3f2d12; color:#fde68a; border:1px solid var(--degraded); border-radius:999px; padding:2px 10px; font-size:12px; font-weight:600; }
+      .row .chip { background:var(--warn-surface); color:var(--on-warn-surface); border:1px solid var(--degraded); border-radius:999px; padding:2px 10px; font-size:12px; font-weight:600; }
       .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
-      .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       [hidden] { display:none !important; }
     </style>
   </head>
