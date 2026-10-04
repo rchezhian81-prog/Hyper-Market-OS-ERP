@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -17,6 +17,7 @@
       has to work for.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-update.js" defer></script>
     <style>
       :root { --tap: 48px; }
       body {
@@ -35,7 +36,7 @@
       #conn-text.off { color: var(--warn); font-weight: 600; }
 
       .notice { padding: 10px 16px; margin: 0; font-size: 15px; }
-      .notice.sample { background: var(--warn); color: #451a03; font-weight: 600; }
+      .notice.sample { background: var(--warn); color: var(--on-warn); font-weight: 600; }
       .notice.problem { background: var(--danger-surface); color: var(--on-danger); }
       .notice[hidden] { display: none; }
 
@@ -102,7 +103,7 @@
       .switch[aria-checked='true'] { background: var(--good); color: var(--on-accent); border-color: var(--good); }
       .rights { display: grid; gap: 10px; }
       .rights button { text-align: left; padding: 12px 14px; min-height: var(--tap); }
-      .rights .caveat { display: block; font-size: 14px; font-weight: 400; color: var(--warn); margin-top: 4px; }
+      .rights .caveat { display: block; font-size: 14px; font-weight: 400; color: var(--on-warn-surface); margin-top: 4px; } /* amber words on the --line surface: --warn is 4.35:1 there at 14px; the dark amber is 7.3:1 */
 
       /* The banner. No timer, never colour alone. */
       .banner {

@@ -2,12 +2,14 @@
 // Copy the ONE visual foundation to every app that serves screens — and stamp every service worker's cache name
 // with what its shell actually contains, so a deploy reaches the browser.
 //
-// Source of truth: packages/ui/web/sre-foundation.css. Each `apps/<app>/web/` that holds a screen gets a
+// Source of truth: packages/ui/web/sre-foundation.css (the look) and packages/ui/web/sre-update.js (the "new version"
+// strip for the shells outside the back office, UX-1b). Each `apps/<app>/web/` that holds a screen gets a
 // byte-identical, TRACKED copy, because every screen is served from its own folder — by the store box's
-// screen socket, by the nginx shell container, by the public proxy — and each one precaches `./sre-foundation.css`
-// in its service worker so a lane opens with the right look and no network (P-01). One file, nine copies,
-// and this script is the only thing that writes them; the guardrail
-// tests/guardrails/every-screen-shares-the-foundation.test.ts fails the build if any copy drifts.
+// screen socket, by the nginx shell container, by the public proxy — and each one precaches the copies in its service
+// worker so a lane opens with the right look and no network (P-01). One source each, one copy per app, and this script
+// is the only thing that writes them; the guardrail tests/guardrails/every-screen-shares-the-foundation.test.ts fails
+// the build if any copy drifts. The back office (web-erp) draws its strip from sre-chrome.js and takes no copy of the
+// update script.
 //
 // THE STAMP (RL-1, 4 Oct 2026). Each `apps/<app>/web/sw.js` serves its committed shell files cache-first under a
 // named cache, and drops every other cache when a worker with a NEW name activates. The name used to be a number a
@@ -31,9 +33,18 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const FOUNDATION_SOURCE = 'packages/ui/web/sre-foundation.css';
 export const FOUNDATION_FILE = 'sre-foundation.css';
+export const UPDATE_SOURCE = 'packages/ui/web/sre-update.js';
+export const UPDATE_FILE = 'sre-update.js';
+export const BACK_OFFICE = 'web-erp';
 export const NOT_A_SCREEN = new Set(['site']);
 export const WORKER_FILE = 'sw.js';
 const CACHE_LINE = /^const CACHE = '(sre-[a-z0-9-]+-shell)-[0-9a-z]+';$/m;
+
+/** The shared files, and which apps take a copy of each. */
+export const SHARED_FILES = [
+  { source: FOUNDATION_SOURCE, file: FOUNDATION_FILE, takes: () => true },
+  { source: UPDATE_SOURCE, file: UPDATE_FILE, takes: (app) => app !== BACK_OFFICE },
+];
 
 /** Every `apps/<app>/web` folder that holds at least one screen (an .html page), the marketing site excepted. */
 export function screenAppDirs(root = ROOT) {
@@ -46,16 +57,23 @@ export function screenAppDirs(root = ROOT) {
     .sort();
 }
 
-/** Compare (and optionally write) every copy. Returns the apps whose copy was missing or different. */
+/** The copies an app must carry, as `apps/<app>/web/<file>` paths. */
+export function copiesOf(app) {
+  return SHARED_FILES.filter((s) => s.takes(app)).map((s) => `apps/${app}/web/${s.file}`);
+}
+
+/** Compare (and optionally write) every copy. Returns the copies (`apps/<app>/web/<file>`) that were missing or different. */
 export function syncFoundation({ root = ROOT, write = true } = {}) {
-  const source = readFileSync(join(root, FOUNDATION_SOURCE));
   const drifted = [];
   for (const app of screenAppDirs(root)) {
-    const target = join(root, 'apps', app, 'web', FOUNDATION_FILE);
-    const same = existsSync(target) && readFileSync(target).equals(source);
-    if (same) continue;
-    drifted.push(app);
-    if (write) writeFileSync(target, source);
+    for (const shared of SHARED_FILES) {
+      if (!shared.takes(app)) continue;
+      const source = readFileSync(join(root, shared.source));
+      const target = join(root, 'apps', app, 'web', shared.file);
+      if (existsSync(target) && readFileSync(target).equals(source)) continue;
+      drifted.push(`apps/${app}/web/${shared.file}`);
+      if (write) writeFileSync(target, source);
+    }
   }
   return drifted;
 }
@@ -114,7 +132,7 @@ if (isMain) {
   const check = process.argv.includes('--check');
   const drifted = syncFoundation({ write: !check });
   if (check && drifted.length > 0) {
-    console.error(`sre-foundation.css differs from ${FOUNDATION_SOURCE} in: ${drifted.map((a) => `apps/${a}/web`).join(', ')} — run: node scripts/sync-ui-foundation.mjs`);
+    console.error(`a shared copy differs from its source in packages/ui/web: ${drifted.join(', ')} — run: node scripts/sync-ui-foundation.mjs`);
     process.exit(1);
   }
   const stale = stampServiceWorkers({ write: !check });
@@ -123,9 +141,9 @@ if (isMain) {
     process.exit(1);
   }
   console.log(check
-    ? `every apps/*/web/${FOUNDATION_FILE} matches ${FOUNDATION_SOURCE}; every apps/*/web/${WORKER_FILE} cache name matches its shell`
+    ? `every apps/*/web/${FOUNDATION_FILE} and ${UPDATE_FILE} matches packages/ui/web; every apps/*/web/${WORKER_FILE} cache name matches its shell`
     : drifted.length === 0
-      ? `every apps/*/web/${FOUNDATION_FILE} was already current`
-      : `${FOUNDATION_FILE} written to: ${drifted.map((a) => `apps/${a}/web`).join(', ')}`);
+      ? `every shared copy was already current`
+      : `shared copies written: ${drifted.join(', ')}`);
   if (!check) console.log(stale.length === 0 ? `every apps/*/web/${WORKER_FILE} cache name was already current` : `${WORKER_FILE} cache name stamped in: ${stale.map((a) => `apps/${a}/web`).join(', ')}`);
 }

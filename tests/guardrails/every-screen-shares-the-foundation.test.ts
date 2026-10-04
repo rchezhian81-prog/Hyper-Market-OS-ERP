@@ -80,7 +80,7 @@ describe('the copies are the source, byte for byte', () => {
   it('the sync script agrees, in --check mode, without writing anything', () => {
     const before = apps.map((a) => statSync(`apps/${a}/web/sre-foundation.css`).mtimeMs);
     const out = execFileSync(process.execPath, ['scripts/sync-ui-foundation.mjs', '--check'], { encoding: 'utf8' });
-    expect(out).toMatch(/matches packages\/ui\/web\/sre-foundation\.css/);
+    expect(out).toMatch(/sre-foundation\.css and sre-update\.js matches packages\/ui\/web/);
     expect(apps.map((a) => statSync(`apps/${a}/web/sre-foundation.css`).mtimeMs)).toEqual(before);
   });
 
@@ -135,11 +135,11 @@ describe('a page owns its touch target and nothing else the foundation owns', ()
     }
   });
 
-  it('until UX-1b, every shell outside the back office pins the dark set, so the screens change in the order the owner chose (OB-13: "A 1")', () => {
+  it('no page pins a set — the light default everywhere, the back office since UX-1a and every other shell since UX-1b (OB-13 "A", OB-14 "c")', () => {
     const outside = pages.filter((p) => !p.startsWith('apps/web-erp/'));
     expect(outside.length).toBeGreaterThanOrEqual(10);
-    for (const p of outside) expect(read(p), `${p} has left the dark set before its own slice`).toMatch(/<html lang="en" data-theme="dark">/);
-    for (const p of pages.filter((p) => p.startsWith('apps/web-erp/'))) expect(read(p), `${p} pins a set; the back office is the light default`).not.toMatch(/data-theme=/);
+    for (const p of pages) expect(read(p), `${p} pins a set; the light default is the look everywhere`).not.toMatch(/data-theme=/);
+    for (const p of pages) expect(read(p)).toMatch(/<html lang="en">/);
   });
 
   it('the foundation carries both sets — the light default and the dark set under data-theme — and no media query chooses for a screen', () => {
@@ -147,8 +147,9 @@ describe('a page owns its touch target and nothing else the foundation owns', ()
     expect(css).toMatch(/\n:root \{/);
     expect(css).toMatch(/\n:root\[data-theme="dark"\] \{/);
     expect(css).not.toMatch(/prefers-color-scheme/);
-    // the dark-theme literals the pages grew up with are gone from the back office: every colour is a token
-    for (const p of pages.filter((p) => p.startsWith('apps/web-erp/'))) {
+    // the dark-theme literals the pages grew up with are gone from every screen (the back office in UX-1a, the rest in
+    // UX-1b): every colour is a token, so one set serves them all
+    for (const p of pages) {
       expect(styleOf(read(p)), `${p} still names a colour of its own`).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
     }
   });

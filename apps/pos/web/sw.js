@@ -27,10 +27,10 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-pos-shell-3e0e2d395027';
+const CACHE = 'sre-pos-shell-9baef642eb5b';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
-const SHELL = ['./sre-foundation.css', './app.js', './manifest.webmanifest'];
+const SHELL = ['./sre-foundation.css', './sre-update.js', './app.js', './manifest.webmanifest'];
 
 /** Build artefacts. Added tolerantly: `addAll` is all-or-nothing and a missing build must not
  *  stop the rest of the shell being cached. Without the bundle the screen opens into its SAMPLE
