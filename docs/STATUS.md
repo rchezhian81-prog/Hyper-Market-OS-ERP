@@ -22,6 +22,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   tearing down the stub server before the browser context and never closing keep-alive sockets; every browser suite
   now closes the client first and closes lingering connections (49 files touched by the same two lines), and the
   guardrail refuses the old pattern.
+- **What the first real run found (PR #697, the browser job on a GitHub runner):** Chromium installed, the database
+  migrated, 186 of 212 browser tests passed, and 26 failed on one and the same line — `navigator.onLine` expected
+  false after the network cut, true on the runner — while every page still opened from its cache. The flag is a hint
+  about the OS, not proof about the page. The twenty assertions (two suites) now PROVE the cut instead: a write to the
+  page's own address, which no service worker intercepts, must fail (`tests/e2e/lib/offline.ts`,
+  `expectNetworkCut`); online it would be answered. Passes here and on the runner.
 - **ADR-0019 written:** the owner's "A" — a self-hosted open-source identity server (Keycloak) — against offline,
   support, security, cost, portability and maintainability; tenants map to realms; the login page is ours in look.
 - **Proof:** `tests/guardrails/the-automatic-build-proves-the-browser-and-performance-suites.test.ts`;

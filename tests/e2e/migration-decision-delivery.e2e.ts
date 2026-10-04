@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
+import { expectNetworkCut } from './lib/offline';
 
 /**
  * **The operator decides about the old shop's data, in a real browser (MG-04 · MG-06 · MG-11 · §31/§34).**
@@ -293,7 +294,7 @@ describe.skipIf(!HAVE_BROWSER)('the operator settles an exception, end to end in
       await context.setOffline(true);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      expect(await page.evaluate(() => (globalThis as unknown as BrowserGlobals).navigator.onLine)).toBe(false);
+      await expectNetworkCut(page);
       expect(await page.title()).toContain('Moving from the old');
       expect(await page.evaluate(() => typeof (globalThis as unknown as BrowserGlobals).shellCachedAt === 'string')).toBe(true);
       expect(((await page.textContent('body')) ?? '').trim().length).toBeGreaterThan(0);
