@@ -5,6 +5,45 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-13 — the look is decided: the owner's professional reference, with the design-system gaps fixed (4 October 2026)
+
+- **What the owner sent:** `SRE-Hypermarket-ERP-Professional.html`, then the pack behind it (sources, a 31 KB design handover,
+  `architecture.json`): 15 modules, 147 destinations, every one of the current 53 navigation items mapped (the pack's copy of
+  `apps/web-erp/src/navigation.ts` is byte-identical to ours bar a newline), eight retired aliases kept, requirement anchors
+  per module, and cross-cutting rules that match `CLAUDE.md` (one stock truth, maker-checker, queued ≠ confirmed, unknown
+  handling stays unknown). Honest about itself: no backend, illustrative data, English only, browser rendering never checked
+  by its author; its own 13 logic checks pass. His words: *"we want like this. if you notice any gap fix it. or else do you
+  have anything better … give me your opinion about this"*.
+- **Opinion given (plain words in the reply; the record is OB-13):** the structure and the look are right and current —
+  this is the shape the best back-office products have, and it is better than the three looks of 3 Oct because it was built
+  from our own catalogue and keeps our rules. The gaps are not taste, they are the design system's rules, and they were
+  measured, not guessed: 129 of the home page's 147 texts under 14px (down to 9px); the status strip's grey at 3.47:1;
+  three controls under 44px; no Tamil anywhere; no freshness on any figure and no "Not known" state; the 147-destination
+  owner preview must not become the product's menu; the role switcher is a preview device.
+- **Done:** a two-file fix layer over the owner's untouched sources (`sre-gap-fixes.css`, `sre-gap-fixes.js`) and a second
+  build script, so the owner's file stays hash-identical (`python3 source/build.py` reproduces `a6e11174…`) and the fixed
+  file is built beside it. After the layer, measured in headless Chromium: texts under 14px 14 of 152 (logo, initials, ⌘K);
+  controls under 44px 0; strip 14px at 6.9:1; an English / தமிழ் toggle in the header (chrome, menu, roles, strip and the
+  home page flip; page titles stay English in the preview and the strip says so); every figure carries where-and-when, and
+  with the preview's own connection set to offline every figure reads "last known 10:32 am" and stock availability says
+  **Not known** with the reason. Pack + layer kept at `docs/design/reference/professional-pack-2026-10-04/` (README there);
+  OB-13 recorded; design system §3.2 carries the tokens and the rules; the fixed page was published to the owner as an
+  artifact with before/after screenshots. **No product screen has changed yet.** Not viewed by any member of staff.
+- **UX-1 re-scoped (replaces "Look 3 with strips"):** **UX-1a** the back-office chrome — the foundation gains the light
+  token set; `sre-chrome.js` draws the real menu (`window.sreNavigation`) as the rail and the real session as the header
+  with language, sync badge and the person; module landings with tiles from the real catalogue (served screens only).
+  **UX-1b** the till and the handhelds take the palette only, layouts and 56px targets unchanged. **UX-1c** the a11y audit
+  budgets re-run on every view. All through the shared foundation; no feature changes; every guardrail that holds the
+  foundation (`tests/guardrails/every-screen-shares-the-foundation.test.ts`, `tests/unit/ui-foundation.test.ts`) extended
+  to the light set.
+- **Owner decisions open (OB-13):** theme scope **A** light everywhere (recommended) or **B** light back office, dark till;
+  order **UX-1a → DF-2 → UX-1b** (recommended) or DF-2 first as OB-12 ordered. Until he answers, UX-1a is prepared and
+  not merged.
+- **Pending, unchanged:** his browser-check run; `/store/pos/` after the relay fix; H-13/H-14 on the till; SP-10 UAT;
+  store PC and phones; 28 September items.
+
+---
+
 ## OB-12 — the demo's staff experience: front door first, then a full demo pack, then head-office pack delivery (3 October 2026, night)
 
 - **What the owner saw (screen recording, frames extracted and read by the build session):** after signing in he landed on

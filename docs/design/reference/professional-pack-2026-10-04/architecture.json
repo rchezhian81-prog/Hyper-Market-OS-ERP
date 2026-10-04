@@ -1,0 +1,5409 @@
+{
+  "meta": {
+    "product": "SRE Hyper Market ERP",
+    "artifact": "Proposed page, panel and tile architecture",
+    "date": "2026-10-04",
+    "moduleCount": 15,
+    "pageCount": 147,
+    "existingNavigationItemsMapped": 53,
+    "retiredAliasesMapped": 8,
+    "scope": "Interactive design specification, not a statement of implemented features.",
+    "navigationSource": "design-reference/navigation.ts; retained original full-model design snapshot, not re-audited for this professional restyle",
+    "requirementsSource": "hypermarket-audit/docs/requirements/index.md and M01–M36; retained original audit references, not re-audited for this professional restyle",
+    "countMeaning": "Design destinations are screen, workspace or tab concepts. Counts are not new requirements or completion percentages.",
+    "rolePreviewCounts": {
+      "owner": 147,
+      "manager": 101,
+      "buyer": 41,
+      "warehouse": 48,
+      "floor": 19,
+      "cashier": 21,
+      "finance": 53
+    }
+  },
+  "modules": [
+    {
+      "id": "overview",
+      "title": "Today",
+      "description": "Your store, priorities and decisions in one place.",
+      "icon": "layout-dashboard",
+      "roles": [
+        "owner",
+        "manager",
+        "buyer",
+        "warehouse",
+        "floor",
+        "cashier",
+        "finance"
+      ],
+      "sourceRequirementRefs": [
+        "M02",
+        "M29"
+      ],
+      "pages": [
+        {
+          "id": "dashboard",
+          "title": "Store overview",
+          "description": "Sales, stock, cash and fulfilment with clear data freshness.",
+          "icon": "layout-dashboard",
+          "type": "workspace",
+          "existingPaths": [
+            "/manager/"
+          ],
+          "fields": [
+            "Trading day",
+            "Branch",
+            "Sales",
+            "Gross margin",
+            "Exceptions",
+            "Last updated"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M02",
+            "M29"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "my-work",
+          "title": "My work",
+          "description": "Assigned tasks and due actions for the current role.",
+          "icon": "check-square",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Task",
+            "Due",
+            "Priority",
+            "Assigned by",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M02",
+            "M29"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse",
+            "floor",
+            "cashier",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "approval-inbox",
+          "title": "Approval inbox",
+          "description": "Review requests with evidence, value and the correct authority.",
+          "icon": "check-circle",
+          "type": "workspace",
+          "existingPaths": [
+            "/manager/"
+          ],
+          "fields": [
+            "Request",
+            "Raised by",
+            "Amount",
+            "Reason",
+            "Evidence",
+            "Due"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M02",
+            "M29"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "exceptions",
+          "title": "Exceptions",
+          "description": "Act on stock, money and service problems that need attention.",
+          "icon": "alert-triangle",
+          "type": "workspace",
+          "existingPaths": [
+            "/manager/"
+          ],
+          "fields": [
+            "Exception",
+            "Area",
+            "Impact",
+            "Owner",
+            "Age",
+            "Next action"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M02",
+            "M29"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse",
+            "floor",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "branch-comparison",
+          "title": "Branch comparison",
+          "description": "Compare comparable sales, availability and service measures.",
+          "icon": "building",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Branch",
+            "Period",
+            "Net sales",
+            "Availability",
+            "Variance",
+            "Data age"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M02",
+            "M29"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "daily-briefing",
+          "title": "Daily briefing",
+          "description": "Read the operational summary with links to supporting records.",
+          "icon": "sparkles",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Trading day",
+            "Summary",
+            "Evidence",
+            "Pending decisions",
+            "Generated at"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M02",
+            "M29"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "products",
+      "title": "Products & pricing",
+      "description": "Maintain clean products, publish prices and manage offers.",
+      "icon": "package",
+      "roles": [
+        "owner",
+        "manager",
+        "buyer",
+        "warehouse"
+      ],
+      "sourceRequirementRefs": [
+        "M03",
+        "M05",
+        "M30"
+      ],
+      "pages": [
+        {
+          "id": "product-catalogue",
+          "title": "Product catalogue",
+          "description": "Search and maintain items, variants and selling status.",
+          "icon": "package",
+          "type": "register",
+          "existingPaths": [
+            "/products"
+          ],
+          "fields": [
+            "Item code",
+            "Product",
+            "Barcode",
+            "Department",
+            "Unit",
+            "Status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M03",
+            "M05",
+            "M30"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "categories",
+          "title": "Categories & brands",
+          "description": "Maintain department, category, brand and attribute structure.",
+          "icon": "layers",
+          "type": "settings",
+          "existingPaths": [],
+          "fields": [
+            "Department",
+            "Category",
+            "Subcategory",
+            "Brand",
+            "Attributes"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M03",
+            "M05",
+            "M30"
+          ],
+          "roles": [
+            "owner",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "units-barcodes",
+          "title": "Units & barcodes",
+          "description": "Manage units, case conversions and variable-weight barcode rules.",
+          "icon": "barcode",
+          "type": "settings",
+          "existingPaths": [],
+          "fields": [
+            "Product",
+            "Base unit",
+            "Purchase unit",
+            "Conversion",
+            "Barcode",
+            "Weight rule"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M03",
+            "M05",
+            "M30"
+          ],
+          "roles": [
+            "owner",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "handling-attributes",
+          "title": "Product handling",
+          "description": "Maintain allergens, shelf life, storage and cold-chain classification.",
+          "icon": "thermometer",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Product",
+            "Handling class",
+            "Storage requirement",
+            "Shelf life",
+            "Allergens",
+            "Review status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M03",
+            "M05",
+            "M30"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "category-rules",
+          "title": "Category rules",
+          "description": "Review inherited rules and explicit product overrides.",
+          "icon": "sliders",
+          "type": "settings",
+          "existingPaths": [
+            "/category-policy"
+          ],
+          "fields": [
+            "Category",
+            "Rule",
+            "Inherited from",
+            "Override",
+            "Effective date",
+            "Approver"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M03",
+            "M05",
+            "M30"
+          ],
+          "roles": [
+            "owner",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "price-lists",
+          "title": "Price lists",
+          "description": "Schedule branch and channel prices with margin and MRP controls.",
+          "icon": "tag",
+          "type": "register",
+          "existingPaths": [
+            "/pricing"
+          ],
+          "fields": [
+            "Product",
+            "MRP",
+            "Selling price",
+            "Margin",
+            "Effective date",
+            "Approval"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M03",
+            "M05",
+            "M30"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "promotions",
+          "title": "Promotions & coupons",
+          "description": "Plan offers, stacking rules and supplier-funded promotions.",
+          "icon": "percent",
+          "type": "workspace",
+          "existingPaths": [
+            "/promotions"
+          ],
+          "fields": [
+            "Offer",
+            "Eligibility",
+            "Mechanic",
+            "Funding",
+            "Starts",
+            "Ends"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M03",
+            "M05",
+            "M30"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "promotion-simulator",
+          "title": "Offer simulator",
+          "description": "Preview basket prices and identify conflicting offers before publishing.",
+          "icon": "calculator",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Test basket",
+            "Applied offers",
+            "Savings",
+            "Margin",
+            "Conflicts"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M03",
+            "M05",
+            "M30"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "markdowns",
+          "title": "Markdowns & clearance",
+          "description": "Schedule controlled reductions for ageing or end-of-range stock.",
+          "icon": "arrow-down",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Product",
+            "Batch",
+            "Reason",
+            "Current price",
+            "Proposed price",
+            "Approval"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M03",
+            "M05",
+            "M30"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "publish-review",
+          "title": "Products to publish",
+          "description": "Review complete, approved product and price changes before release.",
+          "icon": "upload",
+          "type": "workspace",
+          "existingPaths": [
+            "/product-publish-review"
+          ],
+          "fields": [
+            "Release",
+            "Changed items",
+            "Validation",
+            "Approver",
+            "Target branches",
+            "Status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M03",
+            "M05",
+            "M30"
+          ],
+          "roles": [
+            "owner",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "data-quality",
+          "title": "Data quality",
+          "description": "Resolve duplicate items, missing barcodes, missing prices and invalid masters.",
+          "icon": "shield-check",
+          "type": "workspace",
+          "existingPaths": [
+            "/data-quality"
+          ],
+          "fields": [
+            "Issue",
+            "Product",
+            "Severity",
+            "Suggested correction",
+            "Owner",
+            "Status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M03",
+            "M05",
+            "M30"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "purchase",
+      "title": "Purchase",
+      "description": "Plan buying and follow every supplier commitment through receipt.",
+      "icon": "shopping-cart",
+      "roles": [
+        "owner",
+        "manager",
+        "buyer",
+        "warehouse",
+        "finance"
+      ],
+      "sourceRequirementRefs": [
+        "M06",
+        "M24"
+      ],
+      "pages": [
+        {
+          "id": "purchase-orders",
+          "title": "Purchase orders",
+          "description": "Create, approve and track orders, amendments and remaining quantities.",
+          "icon": "shopping-cart",
+          "type": "register",
+          "existingPaths": [
+            "/buying/"
+          ],
+          "fields": [
+            "PO number",
+            "Supplier",
+            "Expected date",
+            "Order value",
+            "Received",
+            "Status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M06",
+            "M24"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "purchase-requests",
+          "title": "Purchase requests",
+          "description": "Consolidate department needs and reorder proposals into buying requests.",
+          "icon": "clipboard",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Request",
+            "Department",
+            "Requested by",
+            "Needed by",
+            "Quantity",
+            "Approval"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M06",
+            "M24"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "quotation-comparison",
+          "title": "Enquiries & quotations",
+          "description": "Compare supplier quotations, lead times and landed costs.",
+          "icon": "scale",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Enquiry",
+            "Supplier",
+            "Quoted price",
+            "Freight",
+            "Lead time",
+            "Selected"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M06",
+            "M24"
+          ],
+          "roles": [
+            "owner",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "supplier-register",
+          "title": "Suppliers",
+          "description": "Manage supplier identities, documents, bank-change checks and eligibility.",
+          "icon": "truck",
+          "type": "register",
+          "existingPaths": [
+            "/suppliers"
+          ],
+          "fields": [
+            "Supplier",
+            "Contact",
+            "Tax registration",
+            "Payment terms",
+            "Bank verification",
+            "Status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M06",
+            "M24"
+          ],
+          "roles": [
+            "owner",
+            "buyer",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "supplier-contracts",
+          "title": "Contracts & schemes",
+          "description": "Track supply terms, quantity breaks, funding, rebates and expiry.",
+          "icon": "file-text",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Contract",
+            "Supplier",
+            "Scheme",
+            "Period",
+            "Commitment",
+            "Accrual"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M06",
+            "M24"
+          ],
+          "roles": [
+            "owner",
+            "buyer",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "purchase-budget",
+          "title": "Buying budget",
+          "description": "Compare category budgets, commitments and approved spending.",
+          "icon": "wallet",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Category",
+            "Budget",
+            "Committed",
+            "Received value",
+            "Available",
+            "Variance"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M06",
+            "M24"
+          ],
+          "roles": [
+            "owner",
+            "buyer",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "supplier-invoices",
+          "title": "Supplier invoices",
+          "description": "Capture invoice evidence and follow matching and payable status.",
+          "icon": "file-text",
+          "type": "workspace",
+          "existingPaths": [
+            "/buying/"
+          ],
+          "fields": [
+            "Invoice",
+            "Supplier",
+            "PO",
+            "GRN",
+            "Invoice amount",
+            "Match status"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M06",
+            "M24"
+          ],
+          "roles": [
+            "owner",
+            "buyer",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "supplier-claims",
+          "title": "Supplier returns & claims",
+          "description": "Track return requests, collections and credit-note recovery.",
+          "icon": "rotate-ccw",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Claim",
+            "Supplier",
+            "Receipt",
+            "Reason",
+            "Claim value",
+            "Credit status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M06",
+            "M24"
+          ],
+          "roles": [
+            "owner",
+            "buyer",
+            "warehouse",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "supplier-portal",
+          "title": "Supplier portal desk",
+          "description": "Review acknowledgements, ASNs, documents and partner submissions.",
+          "icon": "external-link",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Supplier",
+            "Submission",
+            "Related order",
+            "Submitted at",
+            "Owner",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M06",
+            "M24"
+          ],
+          "roles": [
+            "owner",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "receiving",
+      "title": "Receiving & QC",
+      "description": "Receive the right quantity, verify quality and release stock safely.",
+      "icon": "package-check",
+      "roles": [
+        "owner",
+        "manager",
+        "buyer",
+        "warehouse",
+        "finance"
+      ],
+      "sourceRequirementRefs": [
+        "M07",
+        "M10"
+      ],
+      "pages": [
+        {
+          "id": "expected-deliveries",
+          "title": "Expected deliveries",
+          "description": "Plan dock arrivals from purchase orders, ASNs and direct deliveries.",
+          "icon": "calendar",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Supplier",
+            "PO or ASN",
+            "Arrival slot",
+            "Lines",
+            "Dock",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M07",
+            "M10"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "goods-receipts",
+          "title": "Goods receipts",
+          "description": "Count items against the order and record batch, expiry and condition.",
+          "icon": "package-check",
+          "type": "register",
+          "existingPaths": [
+            "/goods-receipt"
+          ],
+          "fields": [
+            "GRN",
+            "Supplier",
+            "PO",
+            "Received quantity",
+            "Accepted quantity",
+            "Status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M07",
+            "M10"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "quality-checks",
+          "title": "Quality checks",
+          "description": "Capture sampling, temperature and required receipt evidence.",
+          "icon": "clipboard-check",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Receipt",
+            "Product",
+            "Check",
+            "Expected condition",
+            "Observed result",
+            "Decision"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M07",
+            "M10"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "receipt-discrepancies",
+          "title": "Receipt differences",
+          "description": "Resolve shortages, excess, damage and rejected quantities with approval.",
+          "icon": "alert-triangle",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "GRN",
+            "Difference",
+            "Quantity",
+            "Value",
+            "Owner",
+            "Decision"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M07",
+            "M10"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "quarantine",
+          "title": "Quarantine & release",
+          "description": "Hold affected stock until an authorized quality decision is recorded.",
+          "icon": "shield",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Hold reference",
+            "Product",
+            "Batch",
+            "Quantity",
+            "Reason",
+            "Release status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M07",
+            "M10"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "three-way-match",
+          "title": "PO · receipt · invoice match",
+          "description": "Compare authoritative order, receipt and invoice quantities and values.",
+          "icon": "git-merge",
+          "type": "workspace",
+          "existingPaths": [
+            "/buying/"
+          ],
+          "fields": [
+            "PO",
+            "GRN",
+            "Invoice",
+            "Quantity difference",
+            "Value difference",
+            "Disposition"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M07",
+            "M10"
+          ],
+          "roles": [
+            "owner",
+            "buyer",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "putaway-handoff",
+          "title": "Put-away handoff",
+          "description": "Send accepted stock to the correct backstore location with a receipt trail.",
+          "icon": "arrow-right",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Receipt",
+            "Product",
+            "Batch",
+            "Destination bin",
+            "Quantity",
+            "Task status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M07",
+            "M10"
+          ],
+          "roles": [
+            "owner",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "inventory",
+      "title": "Inventory & backstore",
+      "description": "Know where stock is, who owns it and what is available to sell.",
+      "icon": "warehouse",
+      "roles": [
+        "owner",
+        "manager",
+        "buyer",
+        "warehouse",
+        "finance"
+      ],
+      "sourceRequirementRefs": [
+        "M08",
+        "M09",
+        "M10",
+        "M28"
+      ],
+      "pages": [
+        {
+          "id": "stock-on-hand",
+          "title": "Stock on hand",
+          "description": "View available, reserved, held and in-transit stock by location and batch.",
+          "icon": "boxes",
+          "type": "register",
+          "existingPaths": [
+            "/stock-health"
+          ],
+          "fields": [
+            "Product",
+            "Location",
+            "On hand",
+            "Reserved",
+            "Available",
+            "Stock status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "stock-ledger",
+          "title": "Stock movement ledger",
+          "description": "Trace every receipt, transfer, adjustment, sale and return.",
+          "icon": "list",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Movement",
+            "Product",
+            "From",
+            "To",
+            "Quantity",
+            "Source document"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "bins-putaway",
+          "title": "Bins & put-away",
+          "description": "Manage bin capacity and outstanding placement tasks.",
+          "icon": "warehouse",
+          "type": "workspace",
+          "existingPaths": [
+            "/warehouse-supervisor/"
+          ],
+          "fields": [
+            "Bin",
+            "Capacity",
+            "Occupied",
+            "Product",
+            "Task",
+            "Owner"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "stock-transfers",
+          "title": "Stock transfers",
+          "description": "Move stock between bins, stores and warehouses with issue and receipt.",
+          "icon": "arrow-left-right",
+          "type": "register",
+          "existingPaths": [
+            "/warehouse-supervisor/"
+          ],
+          "fields": [
+            "Transfer",
+            "From",
+            "To",
+            "Issued",
+            "Received",
+            "Status"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "reservations",
+          "title": "Reservations",
+          "description": "Inspect stock allocated to orders, production and pending movements.",
+          "icon": "lock",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Reservation",
+            "Product",
+            "Location",
+            "Quantity",
+            "Source",
+            "Expires"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "reorder-planning",
+          "title": "Reorder planning",
+          "description": "Review min-max levels, safety stock and demand-led suggestions.",
+          "icon": "repeat",
+          "type": "workspace",
+          "existingPaths": [
+            "/warehouse-supervisor/"
+          ],
+          "fields": [
+            "Product",
+            "Available",
+            "Minimum",
+            "Lead time",
+            "Suggested quantity",
+            "Decision"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "stock-counts",
+          "title": "Stock counts",
+          "description": "Plan blind or cycle counts, recount differences and authorize correction.",
+          "icon": "scan",
+          "type": "workspace",
+          "existingPaths": [
+            "/counts"
+          ],
+          "fields": [
+            "Count session",
+            "Area",
+            "Counter",
+            "Counted quantity",
+            "Variance",
+            "Approval"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "adjustments",
+          "title": "Stock adjustments",
+          "description": "Apply reasoned and approved corrections through the shared ledger.",
+          "icon": "sliders",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Adjustment",
+            "Product",
+            "Quantity",
+            "Value",
+            "Reason",
+            "Approver"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "batch-traceability",
+          "title": "Batch traceability",
+          "description": "Follow a lot from supplier receipt to transfer, sale or disposal.",
+          "icon": "git-branch",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Batch",
+            "Supplier",
+            "Receipts",
+            "Current locations",
+            "Sales links",
+            "Disposition"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "expiry-recalls",
+          "title": "Expiry & recalls",
+          "description": "Act on expiry risk and recall affected stock with closure evidence.",
+          "icon": "clock",
+          "type": "workspace",
+          "existingPaths": [
+            "/expiry/"
+          ],
+          "fields": [
+            "Product",
+            "Batch",
+            "Expiry",
+            "Affected quantity",
+            "Action",
+            "Recall status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "waste-writeoffs",
+          "title": "Waste & write-offs",
+          "description": "Record damage, expiry, donation and destruction with approval and evidence.",
+          "icon": "trash",
+          "type": "workspace",
+          "existingPaths": [
+            "/waste",
+            "/write-off-capture"
+          ],
+          "fields": [
+            "Product",
+            "Batch",
+            "Quantity",
+            "Reason",
+            "Value",
+            "Evidence"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "unsellable-products",
+          "title": "Products nobody can sell",
+          "description": "Resolve missing prices, unpublished items, holds and other sale blocks.",
+          "icon": "alert-circle",
+          "type": "workspace",
+          "existingPaths": [
+            "/unsellable"
+          ],
+          "fields": [
+            "Product",
+            "Available stock",
+            "Block reason",
+            "Affected branch",
+            "Owner",
+            "Action"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "stock-ownership",
+          "title": "Ownership & consignment",
+          "description": "Distinguish owned, supplier and concession stock and liabilities.",
+          "icon": "layers",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Product",
+            "Owner",
+            "Location",
+            "Quantity",
+            "Agreement",
+            "Settlement basis"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M08",
+            "M09",
+            "M10",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "floor",
+      "title": "Shop floor",
+      "description": "Turn shelf gaps into tracked backstore issues and floor receipts.",
+      "icon": "layout-grid",
+      "roles": [
+        "owner",
+        "manager",
+        "buyer",
+        "warehouse",
+        "floor"
+      ],
+      "sourceRequirementRefs": [
+        "M04",
+        "M09"
+      ],
+      "pages": [
+        {
+          "id": "floor-indents",
+          "title": "Floor indents",
+          "description": "Request items for a department and track approved, issued and received quantities.",
+          "icon": "clipboard-list",
+          "type": "workspace",
+          "existingPaths": [
+            "/indents"
+          ],
+          "fields": [
+            "Indent",
+            "Department",
+            "Product",
+            "Requested",
+            "Issued",
+            "Received"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M04",
+            "M09"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse",
+            "floor"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "backstore-issue",
+          "title": "Backstore issue",
+          "description": "Pick approved indents, record partial issues and hand over stock.",
+          "icon": "package-minus",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Indent",
+            "Source bin",
+            "Product",
+            "Batch",
+            "Issued quantity",
+            "Handover"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M04",
+            "M09"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "floor-receiving",
+          "title": "Floor receiving",
+          "description": "Confirm what arrived on the floor and record shortage, damage or refusal.",
+          "icon": "package-plus",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Indent",
+            "Product",
+            "Issued",
+            "Received",
+            "Difference reason",
+            "Received by"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M04",
+            "M09"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "floor"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "refill-tasks",
+          "title": "Shelf refill tasks",
+          "description": "Prioritize empty shelves and follow replenishment to completion.",
+          "icon": "repeat",
+          "type": "workspace",
+          "existingPaths": [
+            "/merchandising/"
+          ],
+          "fields": [
+            "Aisle",
+            "Shelf",
+            "Product",
+            "Shelf gap",
+            "Priority",
+            "Assigned to"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M04",
+            "M09"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse",
+            "floor"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "shelf-counts",
+          "title": "Shelf counts",
+          "description": "Capture shelf quantities and send them into the approved count workflow.",
+          "icon": "scan-line",
+          "type": "workspace",
+          "existingPaths": [
+            "/merchandising/"
+          ],
+          "fields": [
+            "Shelf",
+            "Product",
+            "Counted quantity",
+            "Counter",
+            "Count time",
+            "Sync state"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M04",
+            "M09"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "floor"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "space-planograms",
+          "title": "Shelves & planograms",
+          "description": "Map aisles, bays, capacity and product positions.",
+          "icon": "layout",
+          "type": "workspace",
+          "existingPaths": [
+            "/merchandising/"
+          ],
+          "fields": [
+            "Department",
+            "Aisle",
+            "Bay",
+            "Shelf",
+            "Product",
+            "Capacity"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M04",
+            "M09"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "floor"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "assortment-range",
+          "title": "Range & assortment",
+          "description": "Review which products belong in each branch, season and department.",
+          "icon": "grid",
+          "type": "workspace",
+          "existingPaths": [
+            "/merchandising/"
+          ],
+          "fields": [
+            "Branch",
+            "Category",
+            "Product",
+            "Range status",
+            "Season",
+            "Review decision"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M04",
+            "M09"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "price-labels",
+          "title": "Shelf labels & price checks",
+          "description": "Print approved shelf prices and investigate shelf-to-till differences.",
+          "icon": "tag",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Product",
+            "Shelf price",
+            "Till price",
+            "Effective date",
+            "Label task",
+            "Check result"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M04",
+            "M09"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "floor"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "display-contracts",
+          "title": "Display-space contracts",
+          "description": "Track supplier display commitments, locations and evidence.",
+          "icon": "image",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Supplier",
+            "Display area",
+            "Period",
+            "Fee",
+            "Compliance",
+            "Evidence"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M04",
+            "M09"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "sales",
+      "title": "Sales & service",
+      "description": "Fast billing, controlled returns and a clear trail for every transaction.",
+      "icon": "scan-line",
+      "roles": [
+        "owner",
+        "manager",
+        "cashier",
+        "finance"
+      ],
+      "sourceRequirementRefs": [
+        "M12",
+        "M13",
+        "M14",
+        "M15",
+        "M21",
+        "M27"
+      ],
+      "pages": [
+        {
+          "id": "point-of-sale",
+          "title": "Point of sale",
+          "description": "Scan, weigh, price and tender a sale in the dedicated till workspace.",
+          "icon": "scan-line",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Till",
+            "Cashier",
+            "Customer",
+            "Basket",
+            "Tender",
+            "Receipt"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M12",
+            "M13",
+            "M14",
+            "M15",
+            "M21",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "sales-register",
+          "title": "Sales register",
+          "description": "Find bills, tender details, source lanes and authorized receipt copies.",
+          "icon": "receipt",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Bill number",
+            "Date",
+            "Till",
+            "Cashier",
+            "Net total",
+            "Tender status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M12",
+            "M13",
+            "M14",
+            "M15",
+            "M21",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "held-bills",
+          "title": "Held bills & quotations",
+          "description": "Resume suspended baskets or turn an approved quotation into a sale.",
+          "icon": "pause-circle",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Reference",
+            "Customer",
+            "Items",
+            "Total",
+            "Held by",
+            "Age"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M12",
+            "M13",
+            "M14",
+            "M15",
+            "M21",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "returns-exchanges",
+          "title": "Returns & exchanges",
+          "description": "Process eligible receipt or controlled no-receipt returns and exchanges.",
+          "icon": "rotate-ccw",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Original bill",
+            "Item",
+            "Quantity",
+            "Condition",
+            "Disposition",
+            "Refund method"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M12",
+            "M13",
+            "M14",
+            "M15",
+            "M21",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "service-desk",
+          "title": "Service desk",
+          "description": "Work complaints, enquiries, warranty cases and compensation requests.",
+          "icon": "headphones",
+          "type": "workspace",
+          "existingPaths": [
+            "/service/"
+          ],
+          "fields": [
+            "Case",
+            "Customer",
+            "Reason",
+            "Priority",
+            "Owner",
+            "Due"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M12",
+            "M13",
+            "M14",
+            "M15",
+            "M21",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "refund-exceptions",
+          "title": "Refund exceptions",
+          "description": "Review approval breaches, refund mismatches and outstanding reversals.",
+          "icon": "alert-circle",
+          "type": "workspace",
+          "existingPaths": [
+            "/return-governance"
+          ],
+          "fields": [
+            "Refund",
+            "Related bill",
+            "Exception",
+            "Amount",
+            "Owner",
+            "Resolution"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M12",
+            "M13",
+            "M14",
+            "M15",
+            "M21",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "till-sessions",
+          "title": "Till sessions",
+          "description": "Assign lanes, open shifts and follow each cashier's trading session.",
+          "icon": "monitor",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Till",
+            "Cashier",
+            "Opened",
+            "Opening float",
+            "State",
+            "Last sync"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M12",
+            "M13",
+            "M14",
+            "M15",
+            "M21",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "cash-movements",
+          "title": "Float, pickups & safe drops",
+          "description": "Track cash custody between tills, supervisors and the safe.",
+          "icon": "wallet",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Movement",
+            "Till",
+            "From custodian",
+            "To custodian",
+            "Amount",
+            "Acknowledgement"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M12",
+            "M13",
+            "M14",
+            "M15",
+            "M21",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "shift-close",
+          "title": "Shift close",
+          "description": "Capture blind counts, reconcile takings and submit differences for approval.",
+          "icon": "lock",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Shift",
+            "Expected cash",
+            "Counted cash",
+            "Card total",
+            "UPI total",
+            "Difference"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M12",
+            "M13",
+            "M14",
+            "M15",
+            "M21",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "concession-counters",
+          "title": "Concession counters",
+          "description": "Review counter sales with the correct owner and settlement agreement.",
+          "icon": "store",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Counter",
+            "Concessionaire",
+            "Trading day",
+            "Sales",
+            "Share due",
+            "Settlement"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M12",
+            "M13",
+            "M14",
+            "M15",
+            "M21",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "orders",
+      "title": "Orders & delivery",
+      "description": "Coordinate customer orders from promise to delivery and cash settlement.",
+      "icon": "truck",
+      "roles": [
+        "owner",
+        "manager",
+        "buyer",
+        "warehouse",
+        "floor",
+        "cashier",
+        "finance"
+      ],
+      "sourceRequirementRefs": [
+        "M18",
+        "M19",
+        "M20",
+        "M22"
+      ],
+      "pages": [
+        {
+          "id": "all-orders",
+          "title": "All orders",
+          "description": "Follow online, pickup, delivery and B2B orders in one lifecycle.",
+          "icon": "shopping-bag",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Order",
+            "Channel",
+            "Customer",
+            "Branch",
+            "Promise time",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M18",
+            "M19",
+            "M20",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "serviceability-slots",
+          "title": "Service areas & slots",
+          "description": "Manage approved coverage, capacity, slot promises and fulfilment fees.",
+          "icon": "map-pin",
+          "type": "settings",
+          "existingPaths": [],
+          "fields": [
+            "Area",
+            "Branch",
+            "Slot",
+            "Capacity",
+            "Cutoff",
+            "Fee"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M18",
+            "M19",
+            "M20",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "picking-waves",
+          "title": "Picking waves",
+          "description": "Group orders, assign pickers and track lines, weights and short picks.",
+          "icon": "layers",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Wave",
+            "Orders",
+            "Picker",
+            "Lines",
+            "Short picks",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M18",
+            "M19",
+            "M20",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse",
+            "floor"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "packing-manifests",
+          "title": "Packing & manifests",
+          "description": "Reconcile per-order packed items, crates and handling requirements.",
+          "icon": "package",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Order",
+            "Crate",
+            "Packed quantity",
+            "Handling class",
+            "Quality check",
+            "Dispatch"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M18",
+            "M19",
+            "M20",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse",
+            "floor"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "route-assignment",
+          "title": "Routes & assignments",
+          "description": "Assign routes and stops to drivers with controlled reassignment.",
+          "icon": "map",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Run",
+            "Route",
+            "Driver",
+            "Device",
+            "Stops",
+            "Assignment state"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M18",
+            "M19",
+            "M20",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "driver-stops",
+          "title": "Driver stops",
+          "description": "Record delivery quantities, proof, failed attempts and actual reasons.",
+          "icon": "navigation",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Run",
+            "Stop",
+            "Order",
+            "Delivery outcome",
+            "Proof",
+            "Payment outcome"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M18",
+            "M19",
+            "M20",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "floor"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "delivery-reconciliation",
+          "title": "Run reconciliation",
+          "description": "Reconcile delivered and returned items with expected and collected cash.",
+          "icon": "calculator",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Run",
+            "Driver",
+            "Delivered",
+            "Returned",
+            "Expected cash",
+            "Collected cash"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M18",
+            "M19",
+            "M20",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "substitutions-exceptions",
+          "title": "Substitutions & exceptions",
+          "description": "Resolve substitution choices, price adjustments and late or failed orders.",
+          "icon": "alert-triangle",
+          "type": "workspace",
+          "existingPaths": [
+            "/substitution-exceptions"
+          ],
+          "fields": [
+            "Order",
+            "Line",
+            "Exception",
+            "Customer preference",
+            "Amount impact",
+            "Owner"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M18",
+            "M19",
+            "M20",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "pickup-desk",
+          "title": "Customer pickup",
+          "description": "Verify pickup, handover packed orders and retain collection evidence.",
+          "icon": "hand",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Order",
+            "Customer",
+            "Pickup slot",
+            "Verification",
+            "Crates",
+            "Collected at"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M18",
+            "M19",
+            "M20",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "floor",
+            "cashier"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "storefront-control",
+          "title": "Online storefront",
+          "description": "Manage channel catalogue, content, availability and service notices.",
+          "icon": "globe",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Channel",
+            "Category",
+            "Published range",
+            "Availability",
+            "Content quality",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M18",
+            "M19",
+            "M20",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "b2b-orders",
+          "title": "B2B & recurring orders",
+          "description": "Track quotes, contracts, schedules, proformas, challans and invoices.",
+          "icon": "building",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Account",
+            "Quote or order",
+            "Contract price",
+            "Credit status",
+            "Schedule",
+            "Invoice"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M18",
+            "M19",
+            "M20",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "finance",
+      "title": "Cash & finance",
+      "description": "Reconcile money, post accounts and close each trading period.",
+      "icon": "wallet",
+      "roles": [
+        "owner",
+        "manager",
+        "finance"
+      ],
+      "sourceRequirementRefs": [
+        "M14",
+        "M17",
+        "M22",
+        "M23",
+        "M27"
+      ],
+      "pages": [
+        {
+          "id": "cash-office",
+          "title": "Cash office",
+          "description": "Review safe balances, deposits and cashier handovers.",
+          "icon": "wallet",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Trading day",
+            "Safe",
+            "Opening balance",
+            "Cash in",
+            "Cash out",
+            "Closing balance"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "over-short-approval",
+          "title": "Over / short sign-off",
+          "description": "Investigate till differences and record accountable sign-off.",
+          "icon": "check-circle",
+          "type": "workspace",
+          "existingPaths": [
+            "/cash-office"
+          ],
+          "fields": [
+            "Shift",
+            "Cashier",
+            "Expected",
+            "Counted",
+            "Difference",
+            "Decision"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "day-close",
+          "title": "Day close & reopen",
+          "description": "Complete branch close checks, lock the day and govern any reopening.",
+          "icon": "lock",
+          "type": "workspace",
+          "existingPaths": [
+            "/day-reopen",
+            "/manager/"
+          ],
+          "fields": [
+            "Trading day",
+            "Branch",
+            "Open exceptions",
+            "Reconciled total",
+            "Sign-off",
+            "Lock state"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "reconciliation",
+          "title": "Bank & payment reconciliation",
+          "description": "Match bank deposits, card, UPI, gateway settlements and fees.",
+          "icon": "arrow-left-right",
+          "type": "workspace",
+          "existingPaths": [
+            "/reconciliation"
+          ],
+          "fields": [
+            "Settlement date",
+            "Tender",
+            "Sales total",
+            "Settled amount",
+            "Fees",
+            "Difference"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "day-book",
+          "title": "Day book",
+          "description": "Review sales, returns and takings posted into balanced journal entries.",
+          "icon": "book-open",
+          "type": "workspace",
+          "existingPaths": [
+            "/day-book"
+          ],
+          "fields": [
+            "Trading day",
+            "Source",
+            "Debit",
+            "Credit",
+            "Posting status",
+            "Exception"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "supplier-payables",
+          "title": "Supplier payables",
+          "description": "Follow matched invoices, advances, due dates and payment approvals.",
+          "icon": "file-minus",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Supplier",
+            "Invoice",
+            "Due date",
+            "Invoice value",
+            "Paid",
+            "Outstanding"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "customer-receivables",
+          "title": "Customer receivables",
+          "description": "Track credit balances, ageing and collections against invoices.",
+          "icon": "file-plus",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Account",
+            "Invoice",
+            "Due date",
+            "Outstanding",
+            "Credit limit",
+            "Collection"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "journals-ledger",
+          "title": "Journals & ledger mapping",
+          "description": "Maintain posting maps, cost centres and controlled adjustments.",
+          "icon": "book",
+          "type": "workspace",
+          "existingPaths": [
+            "/finance"
+          ],
+          "fields": [
+            "Journal",
+            "Source",
+            "Ledger",
+            "Debit",
+            "Credit",
+            "Approval"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "gst-reconciliation",
+          "title": "GST document reconciliation",
+          "description": "Review invoice, e-invoice and e-way document exceptions and evidence.",
+          "icon": "file-check",
+          "type": "workspace",
+          "existingPaths": [
+            "/gst-reconciliation"
+          ],
+          "fields": [
+            "Document",
+            "Type",
+            "Taxable value",
+            "Tax",
+            "External status",
+            "Exception"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "gst-returns",
+          "title": "GST returns",
+          "description": "Prepare return evidence and track filing queue and authorized outcomes.",
+          "icon": "file-text",
+          "type": "workspace",
+          "existingPaths": [
+            "/gst-returns"
+          ],
+          "fields": [
+            "Period",
+            "Return type",
+            "Prepared totals",
+            "Validation",
+            "Submission status",
+            "Evidence"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "tally-bridge",
+          "title": "Tally bridge",
+          "description": "Inspect export or connector batches, retries and accounting control totals.",
+          "icon": "link",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Batch",
+            "Period",
+            "Records",
+            "Control total",
+            "Sync state",
+            "Exception"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "period-close",
+          "title": "Period close",
+          "description": "Reconcile subledgers, valuation and tax before period sign-off.",
+          "icon": "calendar-check",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Period",
+            "Ledger checks",
+            "Stock value",
+            "Open items",
+            "Approver",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "concession-settlement",
+          "title": "Concession settlement",
+          "description": "Reconcile counter sales, rent, revenue share, deposits and utilities.",
+          "icon": "store",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Concessionaire",
+            "Period",
+            "Sales",
+            "Deductions",
+            "Amount due",
+            "Settlement"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "credit-notes",
+          "title": "Credit & debit notes",
+          "description": "Link authorized supplier and customer adjustments to source documents.",
+          "icon": "receipt",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Note",
+            "Counterparty",
+            "Source invoice",
+            "Reason",
+            "Tax impact",
+            "Amount"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M14",
+            "M17",
+            "M22",
+            "M23",
+            "M27"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "customers",
+      "title": "Customers & loyalty",
+      "description": "Serve customers with a consistent profile, consent and value balance.",
+      "icon": "users",
+      "roles": [
+        "owner",
+        "manager",
+        "cashier",
+        "finance"
+      ],
+      "sourceRequirementRefs": [
+        "M16",
+        "M17",
+        "M21",
+        "M22"
+      ],
+      "pages": [
+        {
+          "id": "customer-directory",
+          "title": "Customer directory",
+          "description": "View verified profiles, households, purchase history and service context.",
+          "icon": "users",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Customer",
+            "Phone",
+            "Membership",
+            "Last visit",
+            "Consent",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M16",
+            "M17",
+            "M21",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "loyalty-memberships",
+          "title": "Loyalty & membership",
+          "description": "Review tiers, points, expiry, reversals and membership eligibility.",
+          "icon": "award",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Customer",
+            "Tier",
+            "Points",
+            "Expiring points",
+            "Liability",
+            "Membership"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M16",
+            "M17",
+            "M21",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "store-credit-vouchers",
+          "title": "Store credit & vouchers",
+          "description": "Track gift value, store credit, redemptions and outstanding liability.",
+          "icon": "ticket",
+          "type": "register",
+          "existingPaths": [
+            "/stored-value/"
+          ],
+          "fields": [
+            "Instrument",
+            "Customer",
+            "Issued value",
+            "Balance",
+            "Expiry",
+            "Status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M16",
+            "M17",
+            "M21",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "segments",
+          "title": "Customer segments",
+          "description": "Review governed segment definitions and supporting customer evidence.",
+          "icon": "filter",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Segment",
+            "Criteria",
+            "Members",
+            "Source freshness",
+            "Owner",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M16",
+            "M17",
+            "M21",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "campaigns",
+          "title": "Campaigns & offers",
+          "description": "Prepare consent-aware campaigns with frequency and cost controls.",
+          "icon": "megaphone",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Campaign",
+            "Audience",
+            "Channel",
+            "Consent check",
+            "Budget",
+            "Schedule"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M16",
+            "M17",
+            "M21",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "consent-preferences",
+          "title": "Consent & preferences",
+          "description": "Manage communication purpose, channel choice and withdrawal history.",
+          "icon": "shield-check",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Customer",
+            "Purpose",
+            "Channel",
+            "Preference",
+            "Recorded at",
+            "Evidence"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M16",
+            "M17",
+            "M21",
+            "M22"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "privacy-requests",
+          "title": "Privacy requests",
+          "description": "Track access, correction, export and erasure requests with retention decisions.",
+          "icon": "fingerprint",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Request",
+            "Customer",
+            "Request type",
+            "Due date",
+            "Retention decision",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M16",
+            "M17",
+            "M21",
+            "M22"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "feedback-cases",
+          "title": "Feedback & service history",
+          "description": "Follow customer feedback, complaints, resolution and satisfaction.",
+          "icon": "message-circle",
+          "type": "workspace",
+          "existingPaths": [
+            "/service/"
+          ],
+          "fields": [
+            "Customer",
+            "Case",
+            "Category",
+            "Owner",
+            "Resolution",
+            "Satisfaction"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M16",
+            "M17",
+            "M21",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "cashier"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "business-accounts",
+          "title": "Business accounts",
+          "description": "Maintain institutional contracts, credit controls and account contacts.",
+          "icon": "building",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Account",
+            "Contact",
+            "Price contract",
+            "Credit limit",
+            "Terms",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M16",
+            "M17",
+            "M21",
+            "M22"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "production",
+      "title": "Fresh food & café",
+      "description": "Plan batches, control ingredients and account for yield and finished goods.",
+      "icon": "chef-hat",
+      "roles": [
+        "owner",
+        "manager",
+        "warehouse",
+        "floor",
+        "cashier"
+      ],
+      "sourceRequirementRefs": [
+        "M11",
+        "M28"
+      ],
+      "pages": [
+        {
+          "id": "production-plan",
+          "title": "Production plan",
+          "description": "Schedule bakery, kitchen and fresh-food output from demand and stock.",
+          "icon": "calendar",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Plan",
+            "Department",
+            "Recipe",
+            "Planned quantity",
+            "Date",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M11",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "recipes-bom",
+          "title": "Recipes & ingredients",
+          "description": "Maintain approved recipes, yields, allergens and component quantities.",
+          "icon": "notebook",
+          "type": "settings",
+          "existingPaths": [],
+          "fields": [
+            "Recipe",
+            "Version",
+            "Ingredients",
+            "Standard yield",
+            "Allergens",
+            "Approval"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M11",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "material-issue",
+          "title": "Ingredient issue",
+          "description": "Issue traceable raw materials to a production batch.",
+          "icon": "package-minus",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Batch",
+            "Ingredient",
+            "Lot",
+            "Planned quantity",
+            "Issued quantity",
+            "Location"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M11",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "production-batches",
+          "title": "Production batches",
+          "description": "Record output, yield, variable weight, process losses and cost.",
+          "icon": "factory",
+          "type": "workspace",
+          "existingPaths": [
+            "/production/"
+          ],
+          "fields": [
+            "Batch",
+            "Recipe",
+            "Input quantity",
+            "Output quantity",
+            "Yield",
+            "Cost"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M11",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "repack-labels",
+          "title": "Repacking & labels",
+          "description": "Convert bulk stock into traceable packs with approved weights and labels.",
+          "icon": "barcode",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Source batch",
+            "Pack product",
+            "Pack size",
+            "Output quantity",
+            "Label version",
+            "Expiry"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M11",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "quality-release",
+          "title": "Finished-goods release",
+          "description": "Release finished batches after required quality and shelf-life checks.",
+          "icon": "badge-check",
+          "type": "workspace",
+          "existingPaths": [
+            "/production/"
+          ],
+          "fields": [
+            "Batch",
+            "Checks",
+            "Shelf life",
+            "Hold reason",
+            "Released by",
+            "Decision"
+          ],
+          "designStatus": "proposed task or tab using existing screen",
+          "sourceRequirementRefs": [
+            "M11",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "cafe-service",
+          "title": "Café service",
+          "description": "Manage café orders, preparation tickets and links to recipes and billing.",
+          "icon": "coffee",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Ticket",
+            "Service mode",
+            "Items",
+            "Kitchen status",
+            "Bill",
+            "Payment state"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M11",
+            "M28"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "floor",
+            "cashier"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "people",
+      "title": "People & tasks",
+      "description": "Help each staff member complete their shift with the right access and guidance.",
+      "icon": "contact",
+      "roles": [
+        "owner",
+        "manager",
+        "buyer",
+        "warehouse",
+        "floor",
+        "cashier",
+        "finance"
+      ],
+      "sourceRequirementRefs": [
+        "M25"
+      ],
+      "pages": [
+        {
+          "id": "staff-directory",
+          "title": "Staff directory",
+          "description": "Maintain employee assignments, departments and operational contacts.",
+          "icon": "contact",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Employee",
+            "Department",
+            "Role",
+            "Branch",
+            "Supervisor",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M25"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "roster-attendance",
+          "title": "Rosters & attendance",
+          "description": "Plan shifts, review coverage and follow attendance exceptions.",
+          "icon": "calendar",
+          "type": "workspace",
+          "existingPaths": [
+            "/rostering/"
+          ],
+          "fields": [
+            "Employee",
+            "Shift",
+            "Department",
+            "Attendance",
+            "Coverage",
+            "Exception"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M25"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "daily-checklists",
+          "title": "Opening & closing checklists",
+          "description": "Complete department, hygiene and handover checks with evidence.",
+          "icon": "clipboard-check",
+          "type": "workspace",
+          "existingPaths": [
+            "/checklist/"
+          ],
+          "fields": [
+            "Checklist",
+            "Department",
+            "Due",
+            "Assigned to",
+            "Evidence",
+            "Completion"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M25"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse",
+            "floor",
+            "cashier",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "staff-tasks",
+          "title": "Staff tasks",
+          "description": "Assign work, escalate overdue actions and verify completion.",
+          "icon": "check-square",
+          "type": "workspace",
+          "existingPaths": [
+            "/workforce"
+          ],
+          "fields": [
+            "Task",
+            "Assignee",
+            "Department",
+            "Priority",
+            "Due",
+            "Status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M25"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse",
+            "floor",
+            "cashier",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "training-sop",
+          "title": "Training & SOP centre",
+          "description": "Find role-specific instructions and record competency acknowledgements.",
+          "icon": "graduation-cap",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "SOP",
+            "Role",
+            "Version",
+            "Required training",
+            "Acknowledgement",
+            "Expiry"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M25"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse",
+            "floor",
+            "cashier",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "payroll",
+          "title": "Payroll workspace",
+          "description": "Review authorized payroll records, exceptions and statutory outputs.",
+          "icon": "banknote",
+          "type": "workspace",
+          "existingPaths": [
+            "/payroll"
+          ],
+          "fields": [
+            "Pay period",
+            "Employee",
+            "Gross pay",
+            "Deductions",
+            "Net pay",
+            "Approval"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M25"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "my-self-service",
+          "title": "My self-service",
+          "description": "Let staff see only their own rota, tasks and payslip records.",
+          "icon": "user",
+          "type": "workspace",
+          "existingPaths": [
+            "/my-payslip",
+            "/ess"
+          ],
+          "fields": [
+            "My shifts",
+            "My tasks",
+            "Pay period",
+            "My payslip",
+            "Acknowledgements"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M25"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse",
+            "floor",
+            "cashier",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "handover-log",
+          "title": "Shift handover",
+          "description": "Pass open issues, custody items and unfinished tasks between shifts.",
+          "icon": "arrow-right",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "From shift",
+            "To shift",
+            "Open issue",
+            "Custody item",
+            "Acknowledged by",
+            "Time"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M25"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse",
+            "floor",
+            "cashier",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "operations",
+      "title": "Store operations",
+      "description": "Keep equipment, compliance, incidents and recovery under control.",
+      "icon": "settings-2",
+      "roles": [
+        "owner",
+        "manager",
+        "warehouse",
+        "floor",
+        "finance"
+      ],
+      "sourceRequirementRefs": [
+        "M15",
+        "M26",
+        "M27",
+        "M28",
+        "M33",
+        "M34",
+        "M35"
+      ],
+      "pages": [
+        {
+          "id": "operations-inbox",
+          "title": "Operations inbox",
+          "description": "Own incidents, failed connections and stuck queues with runbook links.",
+          "icon": "activity",
+          "type": "workspace",
+          "existingPaths": [
+            "/operations"
+          ],
+          "fields": [
+            "Incident",
+            "Service",
+            "Impact",
+            "Owner",
+            "Age",
+            "Next action"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M15",
+            "M26",
+            "M27",
+            "M28",
+            "M33",
+            "M34",
+            "M35"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "loss-prevention",
+          "title": "Loss prevention",
+          "description": "Investigate suspicious voids, discounts, refunds and custody differences.",
+          "icon": "shield-alert",
+          "type": "workspace",
+          "existingPaths": [
+            "/loss-prevention"
+          ],
+          "fields": [
+            "Case",
+            "Signal",
+            "Value at risk",
+            "Evidence",
+            "Investigator",
+            "Outcome"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M15",
+            "M26",
+            "M27",
+            "M28",
+            "M33",
+            "M34",
+            "M35"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "assets-maintenance",
+          "title": "Assets & maintenance",
+          "description": "Track warranties, service schedules, spares and downtime.",
+          "icon": "wrench",
+          "type": "register",
+          "existingPaths": [
+            "/facilities/"
+          ],
+          "fields": [
+            "Asset",
+            "Location",
+            "Warranty or AMC",
+            "Next service",
+            "Downtime",
+            "Status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M15",
+            "M26",
+            "M27",
+            "M28",
+            "M33",
+            "M34",
+            "M35"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "cold-chain",
+          "title": "Cold-chain monitoring",
+          "description": "Review temperature evidence, breaches and product-specific handling limits.",
+          "icon": "thermometer",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "Location or shipment",
+            "Sensor",
+            "Allowed range",
+            "Reading",
+            "Breach",
+            "Action"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M15",
+            "M26",
+            "M27",
+            "M28",
+            "M33",
+            "M34",
+            "M35"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse",
+            "floor"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "safety-compliance",
+          "title": "Safety & compliance",
+          "description": "Track licences, metrology, food safety, pest control and required renewals.",
+          "icon": "shield-check",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Requirement",
+            "Location",
+            "Evidence",
+            "Valid until",
+            "Owner",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M15",
+            "M26",
+            "M27",
+            "M28",
+            "M33",
+            "M34",
+            "M35"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "concessions-contracts",
+          "title": "Concessions & shop-in-shop",
+          "description": "Manage operator agreements, ownership rules and document expiry.",
+          "icon": "store",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Operator",
+            "Counter",
+            "Agreement",
+            "Stock owner",
+            "Settlement terms",
+            "Expiry"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M15",
+            "M26",
+            "M27",
+            "M28",
+            "M33",
+            "M34",
+            "M35"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "incident-register",
+          "title": "Incidents & lost property",
+          "description": "Record injuries, emergencies, security events and lost-and-found custody.",
+          "icon": "alert-triangle",
+          "type": "register",
+          "existingPaths": [],
+          "fields": [
+            "Incident",
+            "Location",
+            "Reported by",
+            "Severity",
+            "Action",
+            "Closure"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M15",
+            "M26",
+            "M27",
+            "M28",
+            "M33",
+            "M34",
+            "M35"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "waste-sustainability",
+          "title": "Waste & sustainability",
+          "description": "Review donation, recycling, packaging use and energy performance.",
+          "icon": "leaf",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Period",
+            "Department",
+            "Waste quantity",
+            "Recovery",
+            "Packaging",
+            "Energy"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M15",
+            "M26",
+            "M27",
+            "M28",
+            "M33",
+            "M34",
+            "M35"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "backup-recovery",
+          "title": "Backup & recovery",
+          "description": "Track backup evidence, restore rehearsals and continuity actions.",
+          "icon": "database-backup",
+          "type": "workspace",
+          "existingPaths": [],
+          "fields": [
+            "System",
+            "Last backup",
+            "Off-site copy",
+            "Restore test",
+            "Recovery target",
+            "Status"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M15",
+            "M26",
+            "M27",
+            "M28",
+            "M33",
+            "M34",
+            "M35"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "risk-register",
+          "title": "Risks & corrective actions",
+          "description": "Record risk ownership, controls, remediation and evidence-based acceptance.",
+          "icon": "clipboard",
+          "type": "register",
+          "existingPaths": [
+            "/risk-acceptance"
+          ],
+          "fields": [
+            "Risk",
+            "Impact",
+            "Control",
+            "Owner",
+            "Due date",
+            "Acceptance"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M15",
+            "M26",
+            "M27",
+            "M28",
+            "M33",
+            "M34",
+            "M35"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "reports",
+      "title": "Reports",
+      "description": "Find trusted reports with their source period, freshness and drill-through.",
+      "icon": "chart-column",
+      "roles": [
+        "owner",
+        "manager",
+        "buyer",
+        "warehouse",
+        "finance"
+      ],
+      "sourceRequirementRefs": [
+        "M29",
+        "D13"
+      ],
+      "pages": [
+        {
+          "id": "report-centre",
+          "title": "Report centre",
+          "description": "Browse authorized report families, saved views and export history.",
+          "icon": "chart-column",
+          "type": "workspace",
+          "existingPaths": [
+            "/reporting/"
+          ],
+          "fields": [
+            "Report",
+            "Family",
+            "Period",
+            "Scope",
+            "Freshness",
+            "Export"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M29",
+            "D13"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "warehouse",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "sales-performance",
+          "title": "Sales & margin",
+          "description": "Review hourly sales, baskets, tenders, departments and margin.",
+          "icon": "chart-line",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Period",
+            "Branch",
+            "Net sales",
+            "Gross margin",
+            "Bills",
+            "Average basket"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M29",
+            "D13"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "purchase-performance",
+          "title": "Purchase & suppliers",
+          "description": "Compare commitments, fulfilment, cost changes and supplier performance.",
+          "icon": "shopping-cart",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Supplier",
+            "Ordered",
+            "Received",
+            "On-time rate",
+            "Price variance",
+            "Claims"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M29",
+            "D13"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "buyer",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "stock-valuation",
+          "title": "Stock & valuation",
+          "description": "Reconcile physical availability, ownership, ageing and inventory value.",
+          "icon": "boxes",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Location",
+            "Stock quantity",
+            "Available",
+            "Ageing",
+            "Valuation",
+            "Variance"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M29",
+            "D13"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "shrinkage-expiry",
+          "title": "Shrinkage, expiry & waste",
+          "description": "Understand stock loss by reason, lot, department and responsibility.",
+          "icon": "trending-down",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Period",
+            "Department",
+            "Reason",
+            "Quantity",
+            "Value",
+            "Recovery"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M29",
+            "D13"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "cash-settlements",
+          "title": "Cash & settlement reports",
+          "description": "Trace takings through till close, deposit and bank settlement.",
+          "icon": "wallet",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Trading day",
+            "Tender",
+            "Expected",
+            "Deposited",
+            "Settled",
+            "Difference"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M29",
+            "D13"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "customer-insights",
+          "title": "Customer & loyalty reports",
+          "description": "Review repeat visits, loyalty liability, consent and service outcomes.",
+          "icon": "users",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Period",
+            "Segment",
+            "Repeat rate",
+            "Points liability",
+            "Campaign result",
+            "Service SLA"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M29",
+            "D13"
+          ],
+          "roles": [
+            "owner",
+            "manager"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "fulfilment-performance",
+          "title": "Order & delivery reports",
+          "description": "Review fulfilment time, substitutions, failures and contribution.",
+          "icon": "truck",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Channel",
+            "Orders",
+            "On-time rate",
+            "Substitutions",
+            "Failures",
+            "Contribution"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M29",
+            "D13"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "warehouse",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "finance-profitability",
+          "title": "Finance & profitability",
+          "description": "View accounting balances, tax evidence and comparable profit measures.",
+          "icon": "landmark",
+          "type": "report",
+          "existingPaths": [],
+          "fields": [
+            "Period",
+            "Cost centre",
+            "Revenue",
+            "Cost",
+            "Margin",
+            "Reconciliation"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M29",
+            "D13"
+          ],
+          "roles": [
+            "owner",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "scheduled-reports",
+          "title": "Scheduled reports",
+          "description": "Manage role-scoped report delivery, recipients and audit history.",
+          "icon": "clock",
+          "type": "settings",
+          "existingPaths": [],
+          "fields": [
+            "Report",
+            "Scope",
+            "Schedule",
+            "Recipient role",
+            "Delivery status",
+            "Last run"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M29",
+            "D13"
+          ],
+          "roles": [
+            "owner",
+            "manager",
+            "finance"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    },
+    {
+      "id": "admin",
+      "title": "Administration",
+      "description": "Configure identity, data, devices and governed platform controls.",
+      "icon": "settings",
+      "roles": [
+        "owner"
+      ],
+      "sourceRequirementRefs": [
+        "M01",
+        "M02",
+        "M30",
+        "M31",
+        "M32",
+        "M33",
+        "M34",
+        "M35",
+        "M36"
+      ],
+      "pages": [
+        {
+          "id": "organization-setup",
+          "title": "Company & store setup",
+          "description": "Maintain organizations, branches, departments, calendars and number series.",
+          "icon": "building",
+          "type": "settings",
+          "existingPaths": [
+            "/admin/setup"
+          ],
+          "fields": [
+            "Company",
+            "Branch",
+            "Department",
+            "Trading calendar",
+            "Number series",
+            "Lifecycle"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "users-roles",
+          "title": "Users & permissions",
+          "description": "Manage authentication, scoped roles, sessions and joiner-mover-leaver actions.",
+          "icon": "key-round",
+          "type": "settings",
+          "existingPaths": [
+            "/admin/?tab=people"
+          ],
+          "fields": [
+            "User",
+            "Role",
+            "Branch scope",
+            "Department",
+            "Permission",
+            "Session"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "approval-rules",
+          "title": "Approval rules",
+          "description": "Configure value thresholds, delegation and maker-checker policies.",
+          "icon": "git-branch",
+          "type": "settings",
+          "existingPaths": [],
+          "fields": [
+            "Workflow",
+            "Trigger",
+            "Threshold",
+            "Approver",
+            "Delegation",
+            "Escalation"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "devices-sync",
+          "title": "Tills, devices & sync",
+          "description": "Inspect enrolled devices, software versions and local-to-cloud queue health.",
+          "icon": "monitor-smartphone",
+          "type": "workspace",
+          "existingPaths": [
+            "/fleet/"
+          ],
+          "fields": [
+            "Device",
+            "Assigned role",
+            "Branch",
+            "Version",
+            "Last contact",
+            "Sync state"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "integrations",
+          "title": "Connections & APIs",
+          "description": "Manage approved connector health, service identities, webhooks and retries.",
+          "icon": "plug",
+          "type": "workspace",
+          "existingPaths": [
+            "/integration-health/"
+          ],
+          "fields": [
+            "Connection",
+            "Environment",
+            "Health",
+            "Last contact",
+            "Retry queue",
+            "Owner"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "support-access",
+          "title": "Outside support access",
+          "description": "Approve time-bound support sessions with clear scope and audit evidence.",
+          "icon": "life-buoy",
+          "type": "workspace",
+          "existingPaths": [
+            "/admin/?tab=support"
+          ],
+          "fields": [
+            "Request",
+            "Provider",
+            "Scope",
+            "Approved by",
+            "Expires",
+            "Session record"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "ai-governance",
+          "title": "AI controls & proposals",
+          "description": "Review agent suggestions, approvals, budgets, outcomes and stop controls.",
+          "icon": "sparkles",
+          "type": "workspace",
+          "existingPaths": [
+            "/ai/"
+          ],
+          "fields": [
+            "Agent",
+            "Proposal",
+            "Evidence",
+            "Approver",
+            "Budget",
+            "Enabled state"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "migration",
+          "title": "Migration & parallel run",
+          "description": "Review mappings, imports, history, control totals and cutover evidence.",
+          "icon": "database",
+          "type": "workspace",
+          "existingPaths": [
+            "/migration/"
+          ],
+          "fields": [
+            "Batch",
+            "Source",
+            "Mapping",
+            "Control total",
+            "Parallel-run result",
+            "Decision"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "import-export",
+          "title": "Import & export",
+          "description": "Validate, preview and approve imports; export authorized records with history.",
+          "icon": "arrow-up-down",
+          "type": "workspace",
+          "existingPaths": [
+            "/data-io"
+          ],
+          "fields": [
+            "Job",
+            "Domain",
+            "Template",
+            "Valid rows",
+            "Errors",
+            "Status"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "documents-notifications",
+          "title": "Documents & notifications",
+          "description": "Govern templates, records, message consent, delivery status and retries.",
+          "icon": "files",
+          "type": "workspace",
+          "existingPaths": [
+            "/document-templates"
+          ],
+          "fields": [
+            "Template",
+            "Version",
+            "Approver",
+            "Channel",
+            "Delivery state",
+            "Retention"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "audit-retention",
+          "title": "Audit & retention",
+          "description": "Search immutable action history and manage retention and legal holds.",
+          "icon": "history",
+          "type": "workspace",
+          "existingPaths": [
+            "/admin/?tab=records"
+          ],
+          "fields": [
+            "Actor",
+            "Action",
+            "Record",
+            "Before and after",
+            "Timestamp",
+            "Retention"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "configuration",
+          "title": "Settings & feature controls",
+          "description": "Review configuration changes, feature flags, environment and release compatibility.",
+          "icon": "sliders",
+          "type": "settings",
+          "existingPaths": [
+            "/admin/settings"
+          ],
+          "fields": [
+            "Setting",
+            "Scope",
+            "Current value",
+            "Change",
+            "Approver",
+            "Version"
+          ],
+          "designStatus": "mapped existing navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        },
+        {
+          "id": "tenants-entitlements",
+          "title": "Tenants & entitlements",
+          "description": "Manage tenant boundaries, plans, metering, white-label settings and closure.",
+          "icon": "blocks",
+          "type": "settings",
+          "existingPaths": [],
+          "fields": [
+            "Tenant",
+            "Plan",
+            "Entitlement",
+            "Usage",
+            "Branding",
+            "Lifecycle"
+          ],
+          "designStatus": "proposed navigation",
+          "sourceRequirementRefs": [
+            "M01",
+            "M02",
+            "M30",
+            "M31",
+            "M32",
+            "M33",
+            "M34",
+            "M35",
+            "M36"
+          ],
+          "roles": [
+            "owner"
+          ],
+          "rolePreviewOnly": true
+        }
+      ]
+    }
+  ],
+  "existingNavigationMapping": [
+    {
+      "existingId": "dashboard",
+      "existingLabel": "Dashboard",
+      "existingPath": "/manager/",
+      "existingGroup": "Overview",
+      "existingPermission": "till.dayclose.read",
+      "sourceServedState": "box",
+      "moduleId": "overview",
+      "pageId": "dashboard",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "products",
+      "existingLabel": "Products",
+      "existingPath": "/products",
+      "existingGroup": "Catalogue",
+      "existingPermission": "catalogue.pack.read",
+      "sourceServedState": "box",
+      "moduleId": "products",
+      "pageId": "product-catalogue",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "pricing",
+      "existingLabel": "Pricing",
+      "existingPath": "/pricing",
+      "existingGroup": "Catalogue",
+      "existingPermission": "price.change.propose",
+      "sourceServedState": "box",
+      "moduleId": "products",
+      "pageId": "price-lists",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "promotions",
+      "existingLabel": "Promotions",
+      "existingPath": "/promotions",
+      "existingGroup": "Catalogue",
+      "existingPermission": "promotion.launch",
+      "sourceServedState": "box",
+      "moduleId": "products",
+      "pageId": "promotions",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "category-policy",
+      "existingLabel": "Category rules",
+      "existingPath": "/category-policy",
+      "existingGroup": "Catalogue",
+      "existingPermission": "catalogue.pack.read",
+      "sourceServedState": "box",
+      "moduleId": "products",
+      "pageId": "category-rules",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "product-publish-review",
+      "existingLabel": "Products to publish",
+      "existingPath": "/product-publish-review",
+      "existingGroup": "Catalogue",
+      "existingPermission": "catalogue.pack.publish",
+      "sourceServedState": "box",
+      "moduleId": "products",
+      "pageId": "publish-review",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "data-quality",
+      "existingLabel": "Data quality",
+      "existingPath": "/data-quality",
+      "existingGroup": "Catalogue",
+      "existingPermission": "ai.proposal.read",
+      "sourceServedState": "box",
+      "moduleId": "products",
+      "pageId": "data-quality",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "buying",
+      "existingLabel": "Buying",
+      "existingPath": "/buying/",
+      "existingGroup": "Purchasing",
+      "existingPermission": "purchase.commitment.read",
+      "sourceServedState": "box",
+      "moduleId": "purchase",
+      "pageId": "purchase-orders",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "suppliers",
+      "existingLabel": "Suppliers",
+      "existingPath": "/suppliers",
+      "existingGroup": "Purchasing",
+      "existingPermission": "supplier.view",
+      "sourceServedState": "box",
+      "moduleId": "purchase",
+      "pageId": "supplier-register",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "goods-receipt",
+      "existingLabel": "Goods receipt review",
+      "existingPath": "/goods-receipt",
+      "existingGroup": "Purchasing",
+      "existingPermission": "inventory.availability.read",
+      "sourceServedState": "box",
+      "moduleId": "receiving",
+      "pageId": "goods-receipts",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "indents",
+      "existingLabel": "Floor indents",
+      "existingPath": "/indents",
+      "existingGroup": "Inventory",
+      "existingPermission": "inventory.indent.read",
+      "sourceServedState": "box",
+      "moduleId": "floor",
+      "pageId": "floor-indents",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "counts",
+      "existingLabel": "Stock counts",
+      "existingPath": "/counts",
+      "existingGroup": "Inventory",
+      "existingPermission": "count.view",
+      "sourceServedState": "box",
+      "moduleId": "inventory",
+      "pageId": "stock-counts",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "waste",
+      "existingLabel": "Waste & write-off",
+      "existingPath": "/waste",
+      "existingGroup": "Inventory",
+      "existingPermission": "waste.view",
+      "sourceServedState": "box",
+      "moduleId": "inventory",
+      "pageId": "waste-writeoffs",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "write-off-capture",
+      "existingLabel": "Record a write-off",
+      "existingPath": "/write-off-capture",
+      "existingGroup": "Inventory",
+      "existingPermission": "inventory.movement.append",
+      "sourceServedState": "box",
+      "moduleId": "inventory",
+      "pageId": "waste-writeoffs",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "stock-health",
+      "existingLabel": "Stock health",
+      "existingPath": "/stock-health",
+      "existingGroup": "Inventory",
+      "existingPermission": "inventory.availability.read",
+      "sourceServedState": "box",
+      "moduleId": "inventory",
+      "pageId": "stock-on-hand",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "unsellable",
+      "existingLabel": "Products nobody can sell",
+      "existingPath": "/unsellable",
+      "existingGroup": "Inventory",
+      "existingPermission": "inventory.availability.read",
+      "sourceServedState": "box",
+      "moduleId": "inventory",
+      "pageId": "unsellable-products",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "merchandising",
+      "existingLabel": "Shelves & space",
+      "existingPath": "/merchandising/",
+      "existingGroup": "Inventory",
+      "existingPermission": "merchandising.range.read",
+      "sourceServedState": "box",
+      "moduleId": "floor",
+      "pageId": "space-planograms",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "expiry",
+      "existingLabel": "Expiry & recalls",
+      "existingPath": "/expiry/",
+      "existingGroup": "Inventory",
+      "existingPermission": "quality.recall.read",
+      "sourceServedState": "box",
+      "moduleId": "inventory",
+      "pageId": "expiry-recalls",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "production",
+      "existingLabel": "Production",
+      "existingPath": "/production/",
+      "existingGroup": "Inventory",
+      "existingPermission": "production.read",
+      "sourceServedState": "box",
+      "moduleId": "production",
+      "pageId": "production-batches",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "warehouse-supervisor",
+      "existingLabel": "Warehouse",
+      "existingPath": "/warehouse-supervisor/",
+      "existingGroup": "Inventory",
+      "existingPermission": "inventory.availability.read",
+      "sourceServedState": "box",
+      "moduleId": "inventory",
+      "pageId": "bins-putaway",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "finance",
+      "existingLabel": "Finance",
+      "existingPath": "/finance",
+      "existingGroup": "Finance",
+      "existingPermission": "finance.period.read",
+      "sourceServedState": "box",
+      "moduleId": "finance",
+      "pageId": "journals-ledger",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "day-book",
+      "existingLabel": "Day book",
+      "existingPath": "/day-book",
+      "existingGroup": "Finance",
+      "existingPermission": "finance.period.read",
+      "sourceServedState": "box",
+      "moduleId": "finance",
+      "pageId": "day-book",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "reconciliation",
+      "existingLabel": "Reconciliation",
+      "existingPath": "/reconciliation",
+      "existingGroup": "Finance",
+      "existingPermission": "reconciliation.view",
+      "sourceServedState": "unbuilt",
+      "moduleId": "finance",
+      "pageId": "reconciliation",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "gst-reconciliation",
+      "existingLabel": "GST reconciliation",
+      "existingPath": "/gst-reconciliation",
+      "existingGroup": "Finance",
+      "existingPermission": "finance.einvoice.read",
+      "sourceServedState": "box",
+      "moduleId": "finance",
+      "pageId": "gst-reconciliation",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "gst-returns",
+      "existingLabel": "GST returns",
+      "existingPath": "/gst-returns",
+      "existingGroup": "Finance",
+      "existingPermission": "finance.gstr.read",
+      "sourceServedState": "box",
+      "moduleId": "finance",
+      "pageId": "gst-returns",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "payroll",
+      "existingLabel": "Payroll",
+      "existingPath": "/payroll",
+      "existingGroup": "Payroll",
+      "existingPermission": "payroll.statutory.read",
+      "sourceServedState": "unserved",
+      "moduleId": "people",
+      "pageId": "payroll",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "my-payslip",
+      "existingLabel": "My payslip",
+      "existingPath": "/my-payslip",
+      "existingGroup": "Payroll",
+      "existingPermission": "payroll.ess.self",
+      "sourceServedState": "unserved",
+      "moduleId": "people",
+      "pageId": "my-self-service",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "ess",
+      "existingLabel": "My self-service",
+      "existingPath": "/ess",
+      "existingGroup": "Payroll",
+      "existingPermission": "payroll.ess.self",
+      "sourceServedState": "box",
+      "moduleId": "people",
+      "pageId": "my-self-service",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "rostering",
+      "existingLabel": "Rota",
+      "existingPath": "/rostering/",
+      "existingGroup": "Staff",
+      "existingPermission": "workforce.roster.read",
+      "sourceServedState": "box",
+      "moduleId": "people",
+      "pageId": "roster-attendance",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "checklist",
+      "existingLabel": "Checklists",
+      "existingPath": "/checklist/",
+      "existingGroup": "Staff",
+      "existingPermission": "workforce.checklist.read",
+      "sourceServedState": "box",
+      "moduleId": "people",
+      "pageId": "daily-checklists",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "users",
+      "existingLabel": "Users & roles",
+      "existingPath": "/admin/?tab=people",
+      "existingGroup": "Administration",
+      "existingPermission": "identity.role.read",
+      "sourceServedState": "box",
+      "moduleId": "admin",
+      "pageId": "users-roles",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "support-access",
+      "existingLabel": "Outside access",
+      "existingPath": "/admin/?tab=support",
+      "existingGroup": "Administration",
+      "existingPermission": "platform.support.read",
+      "sourceServedState": "box",
+      "moduleId": "admin",
+      "pageId": "support-access",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "fleet",
+      "existingLabel": "Tills & devices",
+      "existingPath": "/fleet/",
+      "existingGroup": "Administration",
+      "existingPermission": "platform.health.read",
+      "sourceServedState": "box",
+      "moduleId": "admin",
+      "pageId": "devices-sync",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "integration-health",
+      "existingLabel": "Connections",
+      "existingPath": "/integration-health/",
+      "existingGroup": "Administration",
+      "existingPermission": "platform.health.read",
+      "sourceServedState": "box",
+      "moduleId": "admin",
+      "pageId": "integrations",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "facilities",
+      "existingLabel": "Facilities",
+      "existingPath": "/facilities/",
+      "existingGroup": "Administration",
+      "existingPermission": "facilities.overdue.read",
+      "sourceServedState": "box",
+      "moduleId": "operations",
+      "pageId": "assets-maintenance",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "ai",
+      "existingLabel": "AI control",
+      "existingPath": "/ai/",
+      "existingGroup": "Administration",
+      "existingPermission": "ai.budget.read",
+      "sourceServedState": "box",
+      "moduleId": "admin",
+      "pageId": "ai-governance",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "migration",
+      "existingLabel": "Migration",
+      "existingPath": "/migration/",
+      "existingGroup": "Administration",
+      "existingPermission": "migration.cleaning.read",
+      "sourceServedState": "box",
+      "moduleId": "admin",
+      "pageId": "migration",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "store-setup",
+      "existingLabel": "Store setup",
+      "existingPath": "/admin/setup",
+      "existingGroup": "Administration",
+      "existingPermission": "platform.setup.read",
+      "sourceServedState": "unserved",
+      "moduleId": "admin",
+      "pageId": "organization-setup",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "document-templates",
+      "existingLabel": "Document templates",
+      "existingPath": "/document-templates",
+      "existingGroup": "Administration",
+      "existingPermission": "platform.setup.read",
+      "sourceServedState": "box",
+      "moduleId": "admin",
+      "pageId": "documents-notifications",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "settings",
+      "existingLabel": "Settings",
+      "existingPath": "/admin/settings",
+      "existingGroup": "Administration",
+      "existingPermission": "admin.settings.manage",
+      "sourceServedState": "unbuilt",
+      "moduleId": "admin",
+      "pageId": "configuration",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "audit",
+      "existingLabel": "Audit log",
+      "existingPath": "/admin/?tab=records",
+      "existingGroup": "Administration",
+      "existingPermission": "audit.retention.read",
+      "sourceServedState": "box",
+      "moduleId": "admin",
+      "pageId": "audit-retention",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "operations",
+      "existingLabel": "Operations",
+      "existingPath": "/operations",
+      "existingGroup": "Administration",
+      "existingPermission": "ai.proposal.read",
+      "sourceServedState": "box",
+      "moduleId": "operations",
+      "pageId": "operations-inbox",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "loss-prevention",
+      "existingLabel": "Investigations",
+      "existingPath": "/loss-prevention",
+      "existingGroup": "Administration",
+      "existingPermission": "lp.case.read",
+      "sourceServedState": "box",
+      "moduleId": "operations",
+      "pageId": "loss-prevention",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "reporting",
+      "existingLabel": "Reports",
+      "existingPath": "/reporting/",
+      "existingGroup": "Trading",
+      "existingPermission": "reporting.report.read",
+      "sourceServedState": "box",
+      "moduleId": "reports",
+      "pageId": "report-centre",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "service",
+      "existingLabel": "Service desk",
+      "existingPath": "/service/",
+      "existingGroup": "Trading",
+      "existingPermission": "service.case.read",
+      "sourceServedState": "box",
+      "moduleId": "sales",
+      "pageId": "service-desk",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "stored-value",
+      "existingLabel": "Store credit & vouchers",
+      "existingPath": "/stored-value/",
+      "existingGroup": "Trading",
+      "existingPermission": "lp.case.read",
+      "sourceServedState": "box",
+      "moduleId": "customers",
+      "pageId": "store-credit-vouchers",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "substitution-exceptions",
+      "existingLabel": "Delivery exceptions",
+      "existingPath": "/substitution-exceptions",
+      "existingGroup": "Trading",
+      "existingPermission": "order.read",
+      "sourceServedState": "box",
+      "moduleId": "orders",
+      "pageId": "substitutions-exceptions",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "return-governance",
+      "existingLabel": "Refund exceptions",
+      "existingPath": "/return-governance",
+      "existingGroup": "Administration",
+      "existingPermission": "lp.case.read",
+      "sourceServedState": "box",
+      "moduleId": "sales",
+      "pageId": "refund-exceptions",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "cash-office",
+      "existingLabel": "Over / short sign-off",
+      "existingPath": "/cash-office",
+      "existingGroup": "Administration",
+      "existingPermission": "till.shift.read",
+      "sourceServedState": "box",
+      "moduleId": "finance",
+      "pageId": "over-short-approval",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "risk-acceptance",
+      "existingLabel": "Risk acceptance",
+      "existingPath": "/risk-acceptance",
+      "existingGroup": "Administration",
+      "existingPermission": "compliance.risk.read",
+      "sourceServedState": "box",
+      "moduleId": "operations",
+      "pageId": "risk-register",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "day-reopen",
+      "existingLabel": "Reopen a locked day",
+      "existingPath": "/day-reopen",
+      "existingGroup": "Administration",
+      "existingPermission": "till.dayclose.read",
+      "sourceServedState": "box",
+      "moduleId": "finance",
+      "pageId": "day-close",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "data-io",
+      "existingLabel": "Import & export",
+      "existingPath": "/data-io",
+      "existingGroup": "Administration",
+      "existingPermission": "export.read",
+      "sourceServedState": "box",
+      "moduleId": "admin",
+      "pageId": "import-export",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    },
+    {
+      "existingId": "workforce",
+      "existingLabel": "Workforce",
+      "existingPath": "/workforce",
+      "existingGroup": "Staff",
+      "existingPermission": "ai.proposal.read",
+      "sourceServedState": "box",
+      "moduleId": "people",
+      "pageId": "staff-tasks",
+      "note": "Source navigation state only; not an independent verification of UI or end-to-end completion."
+    }
+  ],
+  "retiredNavigationMapping": [
+    {
+      "existingRetiredId": "approvals",
+      "sourceReplacementId": "dashboard",
+      "moduleId": "overview",
+      "pageId": "approval-inbox",
+      "implementationRule": "Keep existing route or tab as the entry point; do not restore a duplicate backend or bypass its permission gate."
+    },
+    {
+      "existingRetiredId": "exceptions",
+      "sourceReplacementId": "dashboard",
+      "moduleId": "overview",
+      "pageId": "exceptions",
+      "implementationRule": "Keep existing route or tab as the entry point; do not restore a duplicate backend or bypass its permission gate."
+    },
+    {
+      "existingRetiredId": "cash",
+      "sourceReplacementId": "dashboard",
+      "moduleId": "finance",
+      "pageId": "day-close",
+      "implementationRule": "Keep existing route or tab as the entry point; do not restore a duplicate backend or bypass its permission gate."
+    },
+    {
+      "existingRetiredId": "purchase-orders",
+      "sourceReplacementId": "buying",
+      "moduleId": "purchase",
+      "pageId": "purchase-orders",
+      "implementationRule": "Keep existing route or tab as the entry point; do not restore a duplicate backend or bypass its permission gate."
+    },
+    {
+      "existingRetiredId": "receiving",
+      "sourceReplacementId": "goods-receipt",
+      "moduleId": "receiving",
+      "pageId": "goods-receipts",
+      "implementationRule": "Keep existing route or tab as the entry point; do not restore a duplicate backend or bypass its permission gate."
+    },
+    {
+      "existingRetiredId": "stock",
+      "sourceReplacementId": "stock-health",
+      "moduleId": "inventory",
+      "pageId": "stock-on-hand",
+      "implementationRule": "Keep existing route or tab as the entry point; do not restore a duplicate backend or bypass its permission gate."
+    },
+    {
+      "existingRetiredId": "sales",
+      "sourceReplacementId": "reporting",
+      "moduleId": "reports",
+      "pageId": "sales-performance",
+      "implementationRule": "Keep existing route or tab as the entry point; do not restore a duplicate backend or bypass its permission gate."
+    },
+    {
+      "existingRetiredId": "returns",
+      "sourceReplacementId": "service",
+      "moduleId": "sales",
+      "pageId": "returns-exchanges",
+      "implementationRule": "Keep existing route or tab as the entry point; do not restore a duplicate backend or bypass its permission gate."
+    }
+  ],
+  "crossCutting": {
+    "globalControls": [
+      "Company and branch",
+      "Trading day",
+      "Role preview in prototype; actual permissions in product",
+      "Global search",
+      "Language English / Tamil",
+      "Online / store-local / queued state",
+      "Notifications",
+      "Help and own profile"
+    ],
+    "pageAnatomy": [
+      "Breadcrumb and clear title",
+      "Scope and data freshness",
+      "One primary action",
+      "Actionable summary panels",
+      "Search, filters and saved views",
+      "Work table or task board",
+      "Record detail drawer with timeline and evidence",
+      "Visible empty, loading, error and permission states"
+    ],
+    "sharedPanels": [
+      "Approval evidence and decision",
+      "Quantity and money reconciliation",
+      "Activity and immutable audit trail",
+      "Related documents and source transaction",
+      "Assignments and due time",
+      "Sync and replay status",
+      "Attachments and print/export",
+      "Exceptions and recovery action"
+    ],
+    "rolesRule": "All page.roles values are illustrative preview filters, not authorization. Owner mode exposes the whole proposed architecture for design review; this does not grant a production owner unrestricted data access. Production navigation and actions must derive from existing server-enforced permissions, branch/department scope, value/state rules and maker-checker authority. Filter each page, not only the module.",
+    "payrollRule": "Payroll is an independently restricted page even inside People. Own self-service stays own-record scoped. Forbid casual owner/manager/employee role fallbacks.",
+    "dataRules": [
+      "Show synthetic-data marker on prototype.",
+      "Always distinguish a missing value from zero.",
+      "Show source timestamp on KPIs.",
+      "Separate physical quantity, available quantity and reservation.",
+      "Separate delivery outcome, payment outcome and cash reconciliation.",
+      "Keep unknown handling classification visible.",
+      "Keep unsynced operations visible and never label them completed merely because they were queued."
+    ],
+    "reuseRule": "One authoritative stock ledger, order lifecycle, customer profile and finance record. Multiple role-specific screens are views or tasks over the same records, not parallel implementations.",
+    "deploymentRule": "Mapped source served-state is the catalogue declaration only. Verify actual runtime routes before implementation or any deployment claim.",
+    "specialSurfaces": [
+      "POS has a focused till layout with scan input, basket, tender and peripheral state.",
+      "Floor, backstore, picker and driver handhelds use task-first mobile layouts with large targets and persistent sync state.",
+      "Owner sees cross-branch decision summaries; each operator sees their assigned scope.",
+      "Customer web/app, supplier portal and B2B portal are separate external experiences; these ERP tiles manage them without pretending to design every external page."
+    ],
+    "rolePreviewDefinitions": {
+      "owner": "Design-review mode showing the complete architecture; not unrestricted real account access.",
+      "manager": "Store-management work; payroll, private rights requests and privileged administration hidden.",
+      "buyer": "Buying, catalogue and supplier work; operational and financial links only where needed.",
+      "warehouse": "Receiving, backstore, stock and fulfilment tasks; no general finance or administration.",
+      "floor": "Floor work and illustrative handheld fulfilment tasks; real picker/driver permissions remain separate.",
+      "cashier": "Till, returns, pickup and limited customer-service work, plus own staff tasks.",
+      "finance": "Accounting, reconciliation, payables, authorized payroll and financial reporting; actual grants still required."
+    },
+    "ownProfileRule": "Profile access belongs to the global header and is own-account only. It is not permission to enter Administration. My self-service remains own-record scoped."
+  }
+}

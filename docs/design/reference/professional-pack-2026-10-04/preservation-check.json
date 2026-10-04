@@ -1,0 +1,21 @@
+{
+  "sourceUpload": "SRE-Hypermarket-ERP-Design(1).html",
+  "sourceUploadSha256": "cc866cc18d6dcad57fa24d0dcbc27b00d012b580e7afd855cdba71f0e5118502",
+  "modules": 15,
+  "pageDestinations": 147,
+  "architectureOutsideMetaUnchanged": true,
+  "interactionCodeUnchangedExceptRecordedPresentationText": true,
+  "iconsUnchanged": true,
+  "baseStylesheetUnchanged": true,
+  "shellControlsAndAccessibilityLabelsUnchanged": true,
+  "externalRuntimeResources": [],
+  "browserValidated": false,
+  "staticStyleReview": "Source-level cascade and selected text-contrast review completed; focused fixes applied. Browser visual verification remains pending.",
+  "artifacts": {
+    "SRE-Hypermarket-ERP-Professional.html": "a6e111749ea8219d946b607ec7d87b97873e8cd900ba4dae0dba375d237cdb0b",
+    "source/app.js": "028d6056d1a0c79f9ae647433381224beef3e504670334b0ee05c9c28574ea97",
+    "source/base.css": "b96a0a1df1f684d2318374dac68f264b02decac99dbff12d720a1924fba8d487",
+    "source/professional.css": "ea0425472367ccd8dabd32a2ee06c88a7c7c3751b59334973cdb7a08c105ba08",
+    "architecture.json": "adccdbe520132a4e0aad0a2a44e41a399afc7205142e4b33a49a6c34f72a480f"
+  }
+}

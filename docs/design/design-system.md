@@ -54,6 +54,43 @@ reason on the record. Every text pair is proven AA in
 `tests/unit/ui-foundation.test.ts`; `tests/guardrails/every-screen-shares-the-foundation.test.ts` keeps every page on
 the one file. Components (§4) ship namespaced as `.sre-*` and the screens move onto them slice by slice (G2–G5).
 
+### 3.2 The look the owner chose (OB-13, 4 October 2026) — tokens, and the rules it keeps
+The owner's reference (`reference/professional-pack-2026-10-04/`, README there) sets the visual language from here on:
+a dark-forest navigation rail, white work surfaces on a cool neutral canvas, one emerald primary action, fine edge
+stripes on tiles, compact panels, status as words with amber and red kept for exceptions. Contrast is against white
+unless said.
+
+| Token (light set) | Value | Use | Contrast |
+| --- | --- | --- | --- |
+| `--rail` | `#192F27` | navigation rail ground | white on it 14.2:1 |
+| `--accent` | `#16614D` | the one primary action, links, the live dot, active rail item | 7.4:1 |
+| `--canvas` | `#F3F5F4` | page ground | — |
+| `--surface` | `#FFFFFF` | panels, tiles, tables, inputs | — |
+| `--ink` | `#25362E` | headings, figures | 12.8:1 |
+| `--text` | `#34443B` | body | 10.3:1 |
+| `--muted` | `#617068` | secondary words — never under 14px | 5.2:1 (4.8:1 on canvas) |
+| `--strip-ink` | `#4F5E56` | the status strip and figure captions | 7.6:1 (6.9:1 on canvas) |
+| `--line` | `#DCE3DE` | borders, tile stripes at rest | — |
+| `--mint` | `#EBF3EE` | selection, pale badges | accent on it 6.5:1 |
+| `--warn` | `#8A5E1B` | pending · degraded · **not known** | 5.7:1 |
+| `--error` | `#A03E36` | error · short · destructive | 6.5:1 |
+| `--focus` | `#0F4C3A` | 3px focus ring, offset 2px | — |
+| shape | radius 6px, no shadow, tile top stripe 3px | | |
+
+**Rules the look keeps — the design system's, so not negotiable (QG-02, §27.1, NFR-07/08, P-08):** §1 rules 4, 6 and 7
+as written; base 16px with nothing a person must read under 14px (uppercase letter-spaced labels ≥ 12.5px; the logo
+mark, avatar initials and a keyboard hint are the only exceptions); controls ≥ 44px on the back-office desktop, 48px for
+the primary action, 56px on the till and the handhelds; every word in English and Tamil; status as word + icon, never
+colour alone; a freshness line on every figure, and **Not known** in `--warn` with the reason instead of a zero; the
+sample-data strip at 14px; the system font stack with the Tamil faces before Arial; one primary action per screen.
+The handhelds keep their task-first layouts and take only the palette.
+
+**How it reaches the product (UX-1, through the shared foundation only, no feature changes):** `packages/ui/web/sre-foundation.css`
+gains this light token set and the ERP's one chrome (`apps/web-erp/web/sre-chrome.js`) draws the real menu as the rail
+and the real session as the header; the dark set stays for whichever surfaces the owner keeps dark — theme scope is the
+open question in OB-13. Measured on the reference, as sent vs with the fix layer (headless Chromium, 1366×820 home):
+texts under 14px 129 of 147 → 14 of 152; controls under 44px 3 → 0; strip 10px at 3.47:1 → 14px at 6.9:1.
+
 ## 4. Core components (implemented later in `packages/ui`)
 | Component | Rules |
 | --- | --- |
