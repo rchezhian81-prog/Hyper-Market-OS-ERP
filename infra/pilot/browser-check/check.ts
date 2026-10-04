@@ -122,7 +122,10 @@ async function main(): Promise<number> {
       const page = await ctx.newPage();
       await page.goto(`${base}/erp/`);
       await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
-      general['noSessionApiStatus'] = await page.evaluate(async () => (await fetch('/v1/identity/me', { credentials: 'same-origin' })).status);
+      // Since the staff gate (3 Oct 2026) `/erp/` lands a visitor without a session on the sign-in page, whose strict
+      // content-security policy forbids page scripts to fetch anything — so this probe is made by the context's own
+      // request client (same cookies, no page policy), and a failure is a recorded -1, never an uncaught crash.
+      general['noSessionApiStatus'] = await ctx.request.get(`${base}/v1/identity/me`).then((r) => r.status()).catch(() => -1);
       await page.goto(`${base}/login/`);
       await page.fill('#login', 'check.nobody');
       await page.fill('#password', 'definitely-wrong');
