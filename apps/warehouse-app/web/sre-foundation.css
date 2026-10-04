@@ -290,3 +290,33 @@ body.sre-shell { display: grid; grid-template-columns: var(--rail-width) minmax(
   :root[data-theme="dark"] { --line: #64748b; --line-strong: #94a3b8; --muted: #cbd5e1; }
   :focus-visible { outline-width: 4px; }
 }
+
+/* ── The page anatomy (OB-13 · UX-1c · OB-14): head, tile strip, register, record drawer ───────────────────────
+   Drawn by apps/web-erp/web/sre-chrome.js on every back-office page from what the page already has: the chrome
+   marks the head (`[data-sre-head]`: the module's name above the title, the purpose line under it), turns the
+   page's own tab buttons into subpage tiles (title, the subpage's purpose, a live count), classes every table a
+   register, and the page's sheet opens as a record drawer at a desk. Nothing a person must read is under 14px.
+   Scoped to `body.sre-shell` (the back office) where it would otherwise reach the till's sheets. */
+[data-sre-head] > .sre-eyebrow { margin: 0 0 2px; font-size: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+[data-sre-head] > h2 { margin: 0; font-size: 24px; line-height: 1.2; font-weight: 600; text-wrap: balance; }
+[data-sre-head] > p.lead { margin: 4px 0 0; color: var(--muted); font-size: 16px; max-width: 70ch; }
+.sre-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr); gap: 10px; padding: 12px 16px; background: transparent; overflow-x: auto; }
+.sre-tab { text-align: left; background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--line-strong); border-radius: var(--radius-lg); padding: 10px 14px; min-height: var(--tap); display: grid; align-content: start; gap: 2px; color: var(--ink); font: inherit; font-size: 16px; cursor: pointer; }
+.sre-tab[aria-current="page"] { border-top-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--ink); background: var(--panel); }
+.sre-tab .t { font-size: 16px; font-weight: 600; }
+.sre-tab .d { color: var(--muted); font-size: 14px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sre-tab .c { color: var(--accent); font-size: 14px; font-weight: 600; }
+.sre-tab .d[hidden], .sre-tab .c[hidden] { display: none; }
+.sre-register { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); font-size: 15px; }
+.sre-register th { text-align: left; background: var(--panel-2); color: var(--muted); font-size: 14px; font-weight: 600; letter-spacing: .02em; padding: 10px 12px; border-top: 0; }
+.sre-register td { padding: 10px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+.sre-register tbody tr:hover > td { background: var(--panel-2); }
+body.sre-shell .sheet, body.sre-shell .sre-sheet { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 20; padding: var(--pad); }
+body.sre-shell .sheet[hidden], body.sre-shell .sre-sheet[hidden] { display: none; }
+body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sheet > .card { width: min(560px, 100%); max-width: none; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 20px; display: grid; gap: 12px; align-content: start; max-height: 90dvh; overflow-y: auto; }
+@media (min-width: 1000px) {
+  /* the record drawer: at a desk the sheet is a panel on the right, the page still visible behind the scrim */
+  body.sre-shell .sheet, body.sre-shell .sre-sheet { place-items: stretch end; padding: 0; }
+  body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sheet > .card { width: min(600px, 100%); height: 100%; max-height: none; border-radius: 0; border-width: 0 0 0 1px; padding: 24px; }
+}
+

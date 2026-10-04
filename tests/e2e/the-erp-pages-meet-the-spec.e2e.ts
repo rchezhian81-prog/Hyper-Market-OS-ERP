@@ -277,6 +277,86 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
     expect(await texts(admin, '#sre-menu a[aria-current="page"]')).toEqual(['Audit log']);
   });
 
+  it('the owner\'s page anatomy (OB-13 · UX-1c): the module above the title, the subpages as tiles that say their purpose and their live count, a tile named exactly as its label, the sheet a drawer at a desk — in Tamil too', async () => {
+    const home = { ...MENU, groups: MENU.groups.map((g) => ({ ...g, items: g.items.map((i) => ({ ...i, current: i.id === 'dashboard' })) })) };
+    for (const device of [DESK, PHONE]) {
+      const desk = device === DESK;
+      // a single-view page: the head is marked, the module is its eyebrow
+      const counts = await open('counts.html', device, undefined, { sreNavigation: MENU });
+      expect(await texts(counts, 'main .sre-eyebrow')).toEqual(['Inventory']);
+      expect(await counts.evaluate('document.querySelector("[data-sre-head] > h2") !== null && document.querySelector("[data-sre-head] > p.lead") !== null')).toBe(true);
+      expect(await counts.evaluate('document.querySelector(".sre-eyebrow").nextElementSibling.tagName')).toBe('H2');
+      expect(await auditPage(counts, { expectLang: 'en' }), `counts anatomy at ${device.viewport.width}`).toEqual([]);
+
+      // a tabbed page: the tabs are tiles — name, purpose, count — and still the page's own buttons
+      const page = await open('index.html', device, undefined, { sreNavigation: home });
+      expect(await texts(page, 'main .sre-eyebrow')).toEqual(['Overview']);
+      expect(await page.evaluate('document.getElementById("tabs").classList.contains("sre-tabs")')).toBe(true);
+      const tiles = await page.evaluate(`[...document.querySelectorAll('#tabs button')].map((b) => ({
+        id: b.id, name: b.getAttribute('aria-label'), label: b.querySelector('.t').textContent, tile: b.classList.contains('sre-tab'),
+        purpose: b.querySelector('.d').textContent, lead: (document.getElementById('view-' + b.id.slice(4))?.querySelector(':scope > p.lead')?.textContent ?? '').trim().split(/(?<=[.!?])\\s/)[0],
+        count: b.querySelector('.c').hidden, described: b.getAttribute('aria-describedby') }))`) as { id: string; name: string; label: string; tile: boolean; purpose: string; lead: string; count: boolean; described: string }[];
+      expect(tiles.length).toBeGreaterThanOrEqual(4);
+      for (const tile of tiles) {
+        expect(tile.tile, tile.id).toBe(true);
+        expect(tile.name, `${tile.id} is named exactly as its label`).toBe(tile.label);
+        expect(tile.purpose, `${tile.id} says the subpage's purpose`).toBe(tile.lead.length > 90 ? `${tile.lead.slice(0, 88)}…` : tile.lead);
+        expect(tile.count, `${tile.id} shows no count while its list is empty`).toBe(true);
+        expect(tile.described).toBe(`${tile.id}-d ${tile.id}-c`);
+      }
+      expect(await auditPage(page, { expectLang: 'en' }), `home anatomy at ${device.viewport.width}`).toEqual([]);
+
+      // the page paints two rows into a subpage: its tile says so, live; the tile opens the subpage; the head follows
+      await page.evaluate('const ul = document.createElement("ul"); ul.className = "rows"; ul.innerHTML = "<li>a</li><li>b</li>"; document.getElementById("view-approvals").append(ul)');
+      await expect.poll(() => page.textContent('#tab-approvals .c')).toBe('2 in the list');
+      expect(await page.evaluate('document.getElementById("tab-approvals").querySelector(".c").hidden')).toBe(false);
+      await page.click('#tab-approvals');
+      expect(await page.evaluate('document.getElementById("view-approvals").hidden')).toBe(false);
+      await expect.poll(() => page.evaluate('document.querySelector("[data-sre-head]")?.id ?? null')).toBe('view-approvals');
+      expect(await texts(page, 'main .sre-eyebrow')).toEqual(['Overview']);
+
+      // the language switch: the page rewrites its labels, the chrome re-decorates; the count and the module follow
+      await page.click('#lang');
+      await page.waitForFunction('document.documentElement.lang === "ta"', undefined, { timeout: 5_000 });
+      await expect.poll(() => page.textContent('#tab-approvals .c')).toBe('பட்டியலில் 2');
+      expect(await texts(page, 'main .sre-eyebrow')).toEqual(['கண்ணோட்டம்']);
+      expect(await page.evaluate('[...document.querySelectorAll("#tabs button")].every((b) => b.getAttribute("aria-label") === b.querySelector(".t").textContent && b.classList.contains("sre-tab"))')).toBe(true);
+      expect(await auditPage(page, { expectLang: 'ta' }), `home anatomy in Tamil at ${device.viewport.width}`).toEqual([]);
+
+      // the sheet: a record drawer on the right at a desk, a centred sheet on a phone
+      await page.evaluate('document.getElementById("sheet").hidden = false');
+      const box = (await page.locator('#sheet .sheet-inner').boundingBox())!;
+      if (desk) {
+        expect(Math.round(box.x + box.width), 'the drawer sits on the right edge').toBe(device.viewport.width);
+        expect(Math.round(box.height), 'the drawer is the full height').toBe(device.viewport.height);
+        expect(box.width).toBeLessThanOrEqual(600);
+      } else {
+        expect(box.x).toBeGreaterThan(0);
+        expect(box.width).toBeLessThanOrEqual(device.viewport.width - 32);
+        expect(box.height).toBeLessThan(device.viewport.height);
+      }
+    }
+  }, 120_000);
+
+  it('one primary action at a time, on every page, at a desk and on a phone (design system §1 rule 3)', async () => {
+    const offenders: string[] = [];
+    for (const device of [DESK, PHONE]) {
+      const srv = await serve();
+      const context = await browser.newContext(device);
+      for (const file of PAGES) {
+        const page = await context.newPage();
+        await page.goto(`${srv.base}/${file}`, { waitUntil: 'load' });
+        await page.waitForFunction('globalThis.sreChrome !== undefined', undefined, { timeout: 15_000 });
+        const n = await page.evaluate('[...document.querySelectorAll("main .primary, main .sre-btn-primary")].filter((b) => b.closest("[hidden]") === null && !b.hidden && getComputedStyle(b).display !== "none").length') as number;
+        if (n > 1) offenders.push(`${file}@${device.viewport.width}: ${n} primary actions visible at once`);
+        await page.close();
+      }
+      await context.close();
+      await srv.stop();
+    }
+    expect(offenders).toEqual([]);
+  }, 300_000);
+
   it('on the REAL store computer: the box works the menu out from its role register, a link opens a served screen, and that screen\'s menu marks itself current', async () => {
     const policies: StorePack['policies'] = known({ storeId: 'store-1', branchId: 'b1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' });
     const pack: StorePack = {

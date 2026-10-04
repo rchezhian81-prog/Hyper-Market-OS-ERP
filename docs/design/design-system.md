@@ -93,7 +93,14 @@ look first"):** no shell pins a set any more — the till, the concession tag, t
 the owner, customer, B2B and supplier shells take the light default with their layouts and 56/60/64 px targets
 unchanged; their own literal colours became tokens; the signal red is never a surface under words; each carries the
 shared "new version" strip (`packages/ui/web/sre-update.js`, synced and precached like the foundation; the back office
-has the same strip in its chrome). Extra tokens the light set needed, present
+has the same strip in its chrome). **UX-1c IMPLEMENTED (4 Oct 2026, Wave 1¾ by OB-14):** the page anatomy is drawn
+by the chrome on every back-office page from what the page already has — the head (`[data-sre-head]`: the module's
+name from the rail above the title, the purpose line under it), the page's own tab buttons as subpage tiles (title,
+the subpage's purpose from its lead, a live count of the rows in its list, the accessible name exactly the label),
+every table a register (`.sre-register`), and the page's sheet as a record drawer on the right at ≥ 1000px (scoped to
+`body.sre-shell`, so the till's sheets keep their layout). Summary panels are the 22 pages' existing summary strips and
+the manager's figure tiles; no figure is invented. One primary action at a time is now checked on every rendered page.
+Nothing a person must read in the anatomy is under 14px. Extra tokens the light set needed, present
 in both sets: `--field`, `--on-idle`, `--on-info`, `--ok-surface/--on-ok-surface`, `--error-surface`,
 `--demo-surface/--demo-surface-2/--on-demo`, `--scrim`, `--rail/--rail-2/--on-rail/--on-rail-muted/--rail-accent/--rail-line`.
 The three-reds rule holds in both sets (the light signal red `#e04e48` fails as words on purpose). Measured on the reference, as sent vs with the fix layer (headless Chromium, 1366×820 home):
