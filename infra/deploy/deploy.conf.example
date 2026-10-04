@@ -20,6 +20,9 @@ SRE_BUILD_ENV="PILOT_DEMO_BANNER=1 PILOT_DEMO_LANE_BASE=/store-lane"
 # Tool bundles built from the checkout on every release: the DEMO-ONLY sign-in the pilot overlay runs. Harmless on
 # a stack that never starts that service; set it EMPTY to skip.
 SRE_BUILD_TOOLS="demo-login"
+# Services that share another container's network namespace (the demo relay rides inside the edge's). Compose does not
+# recreate them when that container is recreated, so the release does, every time. Empty on a stack without one.
+SRE_RECREATE_SERVICES="edge-relay"
 # Where the API answers on this box, how long to wait for READY, and how often to ask.
 SRE_API_URL=http://127.0.0.1:8081
 # The public front, checked after the stand-up check (which looks at loopback ports only, so a proxy that refuses to
