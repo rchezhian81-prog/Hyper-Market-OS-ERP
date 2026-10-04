@@ -50,7 +50,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
   }, 90_000);
   afterAll(async () => { await browser?.close(); });
   afterEach(async () => {
-    for (const stop of stops.splice(0)) await stop();
+    for (const stop of stops.splice(0).reverse()) await stop();
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
   });
 

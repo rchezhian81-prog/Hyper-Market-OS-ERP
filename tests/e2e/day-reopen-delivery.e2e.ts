@@ -73,7 +73,7 @@ async function startShell(dayReopenData: Record<string, unknown>, laneWriteBase:
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
-      resolve({ base: `http://127.0.0.1:${port}`, stop: () => new Promise((done) => { server.close(() => { done(); }); }) });
+      resolve({ base: `http://127.0.0.1:${port}`, stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }) });
     });
   });
 }
@@ -93,7 +93,7 @@ describe.skipIf(!HAVE_BROWSER)('an accountant/owner reopens a locked day, end to
 
   afterAll(async () => { await browser?.close(); });
   afterEach(async () => {
-    for (const stop of stops.splice(0)) await stop();
+    for (const stop of stops.splice(0).reverse()) await stop();
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
   });
 

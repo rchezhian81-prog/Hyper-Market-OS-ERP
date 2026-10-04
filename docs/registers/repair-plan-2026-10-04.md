@@ -49,9 +49,10 @@ Waves run in order; inside a wave the slices are independent unless marked. Ever
 RL-1, RL-2, GT-10 as above. DF-2 delivered and run by the owner.
 
 ### Wave 1 — make the release evidence dependable (audit step 1 · GT-01, GT-08, GT-09, PF-15) · size M
-- **GT-01:** CI runs the browser suite (Chromium provisioned on the runner, 60 e2e files) and the performance suite on
-  the exact merge SHA as **required, non-skipping** jobs; a run with a skipped browser suite fails. Today both run only
-  in the build session's own gate.
+- **GT-01 — DONE 4 Oct 2026:** CI runs the browser suite (Chromium provisioned on the runner, 62 e2e files) and the
+  performance suite on the exact merge SHA as **required, non-skipping** jobs; a run with a skipped browser suite
+  fails (`scripts/assert-suite-ran.mjs`, `browser-required-in-ci.e2e.ts`); the release job needs them. Left for the
+  owner/administrator: tick the two checks in GitHub branch protection.
 - **GT-09 / GT-08 / PF-15:** one versioned test-scope statement in the completion ledger, with separate columns for
   unit, integration, real-PostgreSQL, browser, device and staff-UAT evidence per requirement, so an "E2E" label can
   never again mean a stub-cloud browser test.
@@ -67,7 +68,12 @@ tiles, register + record drawer. Moved here from Wave 5 by the owner's choice (O
 look first; the screens that waves 2–5 later prove keep the anatomy they get here. The cost, stated when he chose:
 the critical fixes of Wave 2 start that much later, and a page may be touched twice (anatomy here, logic later).
 
-### Wave 2 — close authority and competing-write gaps (audit step 2) · size L — the critical wave
+### Wave 2 — close authority and competing-write gaps (audit step 2) · size L — the critical wave, now also the owner's "all in one" block (OB-15, "A 1")
+The owner's direction of 4 Oct 2026 (OB-15) rides this wave because it is the same code: the command-centre home on
+`/manager/` from real reads; the M02 create-and-assign screen flow (users, roles, scope, joiner/mover/leaver) on the
+repaired identity code of PF-02 / PA-01 / PA-02 / PA-03; the login page through the OIDC port with the self-hosted
+identity server (ADR-0019), the demo-login retiring; then, as Wave 2's tail, the platform-admin tenant console
+(M36-FR-01: create tenant → plan → entitlements, cross-tenant isolation proven) on `packages/tenant` and M33 self-setup.
 One shared primitive first: **conditional append with an expected version per key** on the SQL event store, with a
 real-PostgreSQL concurrency test harness (two distinct requests, one must lose by name). Then, on it:
 - **PF-01** refunds, gift value and loyalty: read-check-append atomic per sale / instrument / customer.

@@ -78,7 +78,7 @@ describe.skipIf(!HAVE_BROWSER)('the spec\'s interaction budget, counted on the s
   }, 180_000);
   afterAll(async () => { await browser?.close(); });
   afterEach(async () => {
-    for (const stop of stops.splice(0)) await stop();
+    for (const stop of stops.splice(0).reverse()) await stop();
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
   });
 

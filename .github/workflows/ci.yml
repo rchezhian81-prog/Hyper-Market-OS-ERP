@@ -307,17 +307,89 @@ jobs:
         if: always()
         run: cd infra/compose && docker compose -f docker-compose.yml -f docker-compose.pilot.yml down -v --remove-orphans && rm -f .env
 
+  browser:
+    name: Browser suites (real Chromium) — required, never skip
+    # GT-01 (independent audit, 4 Oct 2026): until this job existed the automatic build ran no browser suite at
+    # all — sixty-two files of Playwright proof ran only in the build session's own gate, and every one of them
+    # SKIPS itself when no Chromium is present. A required job that could skip them all and go green would be a
+    # claim, not a control (hard rule #9, P-08). So: the exact Chromium this playwright-core expects is installed
+    # from its own registry; BROWSER_TESTS_REQUIRED makes tests/e2e/browser-required-in-ci.e2e.ts fail by name
+    # if the browser is missing; and scripts/assert-suite-ran.mjs refuses the run unless every test ran and
+    # nothing was skipped. The one connected browser suite (the store trades a day) needs a real database too,
+    # so this job carries the same throwaway PostgreSQL as the stage-gate job.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sre
+          POSTGRES_DB: sre_core
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install the Chromium this Playwright expects (from playwright-core's own registry, with its system libraries)
+        run: pnpm exec playwright-core install --with-deps chromium
+
+      - name: Migrate the database the connected browser suite trades against
+        env:
+          DATABASE_URL: postgres://sre@localhost:5432/sre_core
+        run: pnpm db:migrate
+
+      - name: Browser suites (real Chromium) — required, never skip
+        env:
+          DATABASE_URL: postgres://sre@localhost:5432/sre_core
+          BROWSER_TESTS_REQUIRED: '1'
+          DB_TESTS_REQUIRED: '1'
+        run: |
+          export PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(node -e "console.log(require('playwright-core').chromium.executablePath())")"
+          test -x "$PLAYWRIGHT_CHROMIUM_EXECUTABLE" \
+            || (echo "::error::no Chromium at $PLAYWRIGHT_CHROMIUM_EXECUTABLE — the browser suites would silently skip" && exit 1)
+          pnpm run test:e2e --reporter=default --reporter=json --outputFile=/tmp/e2e.json
+          node scripts/assert-suite-ran.mjs /tmp/e2e.json --min-files 60 --min-tests 200
+
+  performance:
+    name: Performance suites — required, never skip
+    # GT-01: the performance suite measures ratios (how a read scales from 200 to 20,000 rows; rows read per
+    # request), not absolute times, so it is meaningful on a shared runner. It ran only in the build session
+    # until now. One file at a time, one process, nothing else competing (vitest.perf.config.ts); the same
+    # refusal of a quiet green as the browser job.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Performance suites — required, never skip
+        run: |
+          pnpm run test:perf --reporter=default --reporter=json --outputFile=/tmp/perf.json
+          node scripts/assert-suite-ran.mjs /tmp/perf.json --min-files 3 --min-tests 30
+
   release:
     name: Deploy the merged release to the demo box (rolls back if it does not come up)
     # Stage F: a commit that reached main did so through a pull request whose checks were green (branch
-    # protection, hard rule #8) — that IS the approval (AID-08). The three jobs above must pass on THIS
+    # protection, hard rule #8) — that IS the approval (AID-08). The five jobs above must pass on THIS
     # commit first; then the box is told to deploy exactly this SHA. The SSH key can run one command on the
     # box — infra/deploy/release.sh — and nothing else (a forced command); the script refuses any commit
     # not on origin/main, and puts the previous release back if the new one does not come up READY.
     # Deploys never cancel each other: they queue (a half-applied release is worse than a late one).
     # When the 'demo' environment carries no deploy secrets, the job says so and deploys nothing — a
     # fork or a fresh clone cannot deploy anywhere by accident. docs/runbooks/automatic-deployment.md.
-    needs: [verify, integration, deploy]
+    needs: [verify, integration, deploy, browser, performance]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: demo

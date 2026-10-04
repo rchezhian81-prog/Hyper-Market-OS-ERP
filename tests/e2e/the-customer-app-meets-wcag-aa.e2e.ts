@@ -67,7 +67,7 @@ async function serve(): Promise<{ base: string; stop: () => Promise<void> }> {
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
-      resolve({ base: `http://127.0.0.1:${port}`, stop: () => new Promise((done) => { server.close(() => { done(); }); }) });
+      resolve({ base: `http://127.0.0.1:${port}`, stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }) });
     });
   });
 }
@@ -81,7 +81,7 @@ describe.skipIf(!HAVE_BROWSER)('the customer app, audited on the rendered page',
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
   }, 120_000);
   afterAll(async () => { await browser?.close(); });
-  afterEach(async () => { for (const stop of stops.splice(0)) await stop(); });
+  afterEach(async () => { for (const stop of stops.splice(0).reverse()) await stop(); });
 
   async function open(): Promise<Page> {
     const { base, stop } = await serve();

@@ -56,7 +56,7 @@ describe.skipIf(!HAVE_BROWSER)('a browser till commits cross-origin to the lane 
   beforeAll(async () => { browser = await chromium.launch({ headless: true, executablePath: CHROMIUM }); }, 60_000);
   afterAll(async () => { await browser?.close(); });
   afterEach(async () => {
-    for (const stop of stops.splice(0)) await stop();
+    for (const stop of stops.splice(0).reverse()) await stop();
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
   });
 

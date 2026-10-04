@@ -157,7 +157,7 @@ async function startBackend(): Promise<Backend> {
       const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
       resolve({
         base: `http://127.0.0.1:${port}`,
-        stop: () => new Promise((done) => { server.close(() => { done(); }); }),
+        stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }),
       });
     });
   });

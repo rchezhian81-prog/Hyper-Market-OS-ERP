@@ -142,7 +142,7 @@ async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string;
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
-      resolve({ base: `http://127.0.0.1:${port}`, sms, stop: () => new Promise((done) => { server.close(() => { done(); }); }) });
+      resolve({ base: `http://127.0.0.1:${port}`, sms, stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }) });
     });
   });
 }

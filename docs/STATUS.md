@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## GT-01 — the automatic build proves the browser and performance suites; a release waits for them (4 October 2026, Wave 1)
+
+- **The finding (independent audit, GT-01), confirmed:** `.github/workflows/ci.yml` ran `pnpm run test` and
+  `pnpm run test:db` only. The 62 browser files (Playwright, real Chromium) and the 3 performance files ran only in
+  the build session's own gate; every browser file skips itself without a Chromium, so a job could have run them
+  all, skipped them all, and gone green.
+- **Fix:** two required jobs. **Browser suites (real Chromium) — required, never skip:** installs the exact Chromium
+  this playwright-core expects from its own registry (with system libraries), carries a throwaway PostgreSQL for the
+  one connected browser suite, sets `BROWSER_TESTS_REQUIRED=1` and `DB_TESTS_REQUIRED=1`, runs the suite with a JSON
+  report, and ends with `scripts/assert-suite-ran.mjs` at a floor of 60 files and 200 tests. **Performance suites —
+  required, never skip:** the same for the ratio-based performance suite (floor 3 files, 30 tests). The release job
+  now `needs` all five jobs. The guard on the guard, `tests/e2e/browser-required-in-ci.e2e.ts`, fails by name when
+  the flag is set and the browser is missing or will not launch (the twin of the database one).
+- **The one flake, fixed at its cause:** the customer-app browser suite's hook timeout in full runs came from
+  tearing down the stub server before the browser context and never closing keep-alive sockets; every browser suite
+  now closes the client first and closes lingering connections (49 files touched by the same two lines), and the
+  guardrail refuses the old pattern.
+- **ADR-0019 written:** the owner's "A" — a self-hosted open-source identity server (Keycloak) — against offline,
+  support, security, cost, portability and maintainability; tenants map to realms; the login page is ours in look.
+- **Proof:** `tests/guardrails/the-automatic-build-proves-the-browser-and-performance-suites.test.ts`;
+  `tests/unit/assert-suite-ran.test.ts` (passes a full run; refuses skipped, too-few, failed and no-success runs by
+  name); the release guardrail updated to the five jobs; the verify set, the performance suite and the browser
+  suite run on this machine exactly as the jobs run them, through the JSON report and the no-skip script.
+- **Needs the owner (or the administrator) once, in GitHub:** branch protection on `main` must tick the two new
+  checks as required (the exact names are in `docs/runbooks/branch-protection.md`). The build session cannot
+  change repository settings. Until ticked, the deploy still waits for them (the job's `needs`), but a merge
+  could in principle be made before they finish.
+- **Next:** GT-09 / GT-08 / PF-15 — the test-scope ledger (Wave 1's second slice); then Wave 2.
+
+---
+
 ## OB-15 — the owner's "all in one" direction: command-centre home, users/roles/permissions, login, super admin, tenants — CAN; two choices put (4 October 2026)
 
 - **What the owner sent:** a dashboard composition from his reference pack ("A clear view of your store": sales, open
@@ -23,6 +54,10 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   criticals, then the tenant console · 2 this block first · 3 the home and the login look now, the rest later;
   recommendation 1). Nothing starts on this until the letters arrive; Wave 1 (GT-01) continues meanwhile.
 - **The image** is kept with the reference pack (`owner-direction-2026-10-04-command-centre.png`).
+- **DECIDED, the same day — *"A 1"*:** the identity provider is a self-hosted open-source identity server (Keycloak)
+  inside our own stack (ADR-0019 records the choice against offline, support, security, cost, portability and
+  maintainability); the order is Wave 1 first, then the all-in-one block as Wave 2 with the identity criticals, then
+  the tenant console. Wave 1 starts now with GT-01.
 
 ---
 

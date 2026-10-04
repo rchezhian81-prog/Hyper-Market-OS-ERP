@@ -12,8 +12,11 @@ In GitHub: **Settings → Branches → Add branch ruleset** (or "Add rule") for 
 branch `main`, and enable:
 
 - **Require a pull request before merging.** No direct pushes to `main`.
-- **Require status checks to pass before merging**, and select the CI check
-  **"Type check, lint, tests, secret & dependency scan"** (from `.github/workflows/ci.yml`).
+- **Require status checks to pass before merging**, and select ALL FIVE CI checks (from `.github/workflows/ci.yml`):
+  **"Type check, lint, tests, secret & dependency scan"**, **"Stage gate suites (real PostgreSQL)"**,
+  **"The container builds, starts, and refuses a bad configuration"**, **"Browser suites (real Chromium) — required, never skip"**
+  and **"Performance suites — required, never skip"**. The last two exist since GT-01 (4 Oct 2026): before that the
+  automatic build ran no browser or performance suite at all, and the deploy job did not wait for them.
 - **Require branches to be up to date before merging.**
 - **Require conversation resolution before merging.**
 - **Require review from Code Owners.** The owner is named in `.github/CODEOWNERS`

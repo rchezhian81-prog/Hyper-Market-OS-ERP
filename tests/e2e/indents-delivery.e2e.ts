@@ -166,7 +166,7 @@ async function startShellCloudAndSocket(rec: Recorder): Promise<{ base: string; 
       const addr = server.address();
       const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
       base = `http://127.0.0.1:${port}`;
-      resolve({ base, stop: () => new Promise((done) => { server.close(() => { done(); }); }) });
+      resolve({ base, stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }) });
     });
   });
 }
