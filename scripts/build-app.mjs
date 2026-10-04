@@ -16,7 +16,7 @@ import { build, context } from 'esbuild';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { syncFoundation, FOUNDATION_FILE } from './sync-ui-foundation.mjs';
+import { syncFoundation, stampServiceWorkers, FOUNDATION_FILE, WORKER_FILE } from './sync-ui-foundation.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -24,6 +24,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // (packages/ui/web/sre-foundation.css is the source; apps/<app>/web/sre-foundation.css are its tracked copies).
 const refreshed = syncFoundation();
 if (refreshed.length > 0) console.log(`${FOUNDATION_FILE} refreshed in: ${refreshed.map((a) => `apps/${a}/web`).join(', ')}`);
+// …and every service worker's cache name follows its shell (RL-1), so the build that changed a screen also changes
+// the name the browser keys the old shell under.
+const stamped = stampServiceWorkers();
+if (stamped.length > 0) console.log(`${WORKER_FILE} cache name stamped in: ${stamped.map((a) => `apps/${a}/web`).join(', ')}`);
 
 const app = process.argv[2];
 if (!app || app.startsWith('--')) {

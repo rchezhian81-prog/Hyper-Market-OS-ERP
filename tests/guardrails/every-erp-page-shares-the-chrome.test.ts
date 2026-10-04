@@ -158,6 +158,18 @@ describe('the one menu (Stage G slice 5b · §27 role surfaces · P-07 · P-04)'
     expect(css).toMatch(/\.sre-menu :focus-visible \{ outline-color: var\(--rail-accent\); \}/);
   });
 
+  it('says when a deploy has reached this browser and offers the reload — never a silent swap, never a silent stale (RL-1)', () => {
+    expect(CHROME).toMatch(/navigator\.serviceWorker\.addEventListener\('controllerchange'/);
+    expect(CHROME).toMatch(/if \(hadController\) \{ updateReady = true; paintUpdate\(\); \}/); // the first install is not news
+    expect(CHROME).toMatch(/strip\.id = 'sre-update'/);
+    expect(CHROME).toMatch(/strip\.setAttribute\('role', 'status'\)/);
+    expect(CHROME).toMatch(/button\.addEventListener\('click', \(\) => window\.location\.reload\(\)\)/);
+    expect(CHROME).toMatch(/t\('newVersion'\)/);
+    expect(CHROME).toMatch(/t\('reload'\)/);
+    const css = readFileSync('packages/ui/web/sre-foundation.css', 'utf8');
+    expect(css).toMatch(/\.sre-update \{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; \}/);
+  });
+
   it('the foundation styles the menu at the touch target, and the copies agree', () => {
     const css = readFileSync('packages/ui/web/sre-foundation.css', 'utf8');
     expect(css).toMatch(/\.sre-menu-button \{ min-height: var\(--tap\); min-width: var\(--tap\);/);

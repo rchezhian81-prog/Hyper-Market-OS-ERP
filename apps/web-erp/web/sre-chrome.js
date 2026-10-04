@@ -33,6 +33,7 @@
       cloudNotSetUp: 'No head office link on this store computer', cloudUnknown: 'Head office not checked yet',
       lastContact: 'last contact', switchLanguage: 'Switch language', otherLanguage: 'தமிழ்',
       screens: 'Screens', screensFor: 'Screens for', workspace: 'Store workspace', closeScreens: 'Close the screens list',
+      newVersion: 'A newer version of this screen has arrived. Reload when you are ready.', reload: 'Reload',
       noUser: 'Nobody is named on this screen, so no other screens can be offered.',
       noRoles: 'This store computer has no role register, so no screens can be offered.',
     },
@@ -44,6 +45,7 @@
       cloudNotSetUp: 'இந்தக் கடை கணினியில் தலைமை அலுவலக இணைப்பு இல்லை', cloudUnknown: 'தலைமை அலுவலகம் இன்னும் சரிபார்க்கப்படவில்லை',
       lastContact: 'கடைசித் தொடர்பு', switchLanguage: 'மொழியை மாற்று', otherLanguage: 'English',
       screens: 'திரைகள்', screensFor: 'இவருக்கான திரைகள்', workspace: 'கடை பணியிடம்', closeScreens: 'திரைகள் பட்டியலை மூடு',
+      newVersion: 'இந்தத் திரையின் புதிய பதிப்பு வந்துள்ளது. தயாரானதும் மீண்டும் ஏற்றவும்.', reload: 'மீண்டும் ஏற்று',
       noUser: 'இந்தத் திரையில் யாரும் பெயரிடப்படவில்லை, எனவே வேறு திரைகள் வழங்க முடியாது.',
       noRoles: 'இந்தக் கடை கணினியில் பங்கு பதிவேடு இல்லை, எனவே திரைகள் வழங்க முடியாது.',
     },
@@ -334,7 +336,39 @@
     if (tab && tab.getAttribute('aria-current') !== 'page') tab.click();
   }
 
-  function repaint() { paintToggle(); paintStale(); paintBadge(); paintMenu(); }
+  // ── A deploy reached this browser (RL-1, P-08): say so and offer the reload — never a silent swap, never a silent stale ──
+  // The worker activates the new shell on the next visit; the page already open keeps the files it loaded. So when
+  // the controller changes under an open page, a strip says a newer version has arrived and a button reloads it.
+  // Only a CHANGE of controller counts: the first install, on a page that had none, is not news.
+  let updateReady = false;
+  function paintUpdate() {
+    let strip = byId('sre-update');
+    if (!updateReady) { if (strip) strip.remove(); return; }
+    if (!strip) {
+      strip = document.createElement('p');
+      strip.id = 'sre-update';
+      strip.className = 'stale sre-update';
+      strip.setAttribute('role', 'status');
+      const words = document.createElement('span');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'sre-btn';
+      button.addEventListener('click', () => window.location.reload());
+      strip.append(words, button);
+      (byId('sre-page') ?? document.body).prepend(strip);
+    }
+    strip.firstElementChild.textContent = t('newVersion');
+    strip.lastElementChild.textContent = t('reload');
+  }
+  if ('serviceWorker' in navigator) {
+    let hadController = navigator.serviceWorker.controller !== null;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController) { updateReady = true; paintUpdate(); }
+      hadController = true;
+    });
+  }
+
+  function repaint() { paintToggle(); paintStale(); paintBadge(); paintMenu(); paintUpdate(); }
 
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   repaint();

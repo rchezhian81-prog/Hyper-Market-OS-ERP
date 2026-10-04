@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## RL-1 — a release reaches the browser: the owner saw "still the old UI" after UX-1a and DF-2 (4 October 2026)
+
+- **What the owner saw and sent:** after UX-1a deployed and he ran DF-2's pack (printout: 5 products, 9 roles, 7
+  assignments, manager `pilot-manager`, 41 screens with a named viewer, 0 approvals / orders / receipts / invoices /
+  count records from the cloud, checklist 5, delivery `practice-grn-20261004`, wave and route, edge restarted), the
+  demo still looked exactly as before. He is right; the pack loaded; the look never reached his browser.
+- **Why (the defect, mine):** every screen's service worker serves its committed shell files (`sre-foundation.css`,
+  `sre-chrome.js`, the page scripts) CACHE-FIRST under a named cache, and drops the old cache only when a worker with a
+  NEW name activates. The name was a number a person bumps by hand (`sre-erp-shell-v39`). UX-1a changed the whole look
+  and did not change the number, so the deploy reached the box and not one browser that had ever opened a page: the
+  page HTML came fresh (network-first), the stylesheet and the chrome came from the old cache. The sign-in page
+  (`/login/`) is served by the demo sign-in service and was never restyled at all.
+- **Fix (this slice):** `scripts/sync-ui-foundation.mjs` now stamps every `apps/*/web/sw.js` cache name with a digest
+  of its SHELL files and its own code (`sre-<app>-shell-<12 hex>`); `--check` refuses a stale stamp, every build runs
+  it (`scripts/build-app.mjs`), and `tests/guardrails/every-screen-opens-without-a-network.test.ts` pins both the shape
+  and the check. BUILT bundles (produced on the box at each deploy under a fixed name) are now asked for network-first
+  with the cache as the offline fallback. The ERP chrome shows a strip with a Reload button when a new worker takes
+  over an open page (never a silent swap, never a silent stale; P-08). The demo sign-in and home take the OB-13 look
+  and, since DF-2 feeds the store computer, list its screens FIRST (`/store/manager/`, `/store/counts/`, buying, stock
+  health, goods receipt, checklist, cash office, expiry, indents, suppliers, operations, owner), then the till and the
+  head-office pages, then what is not on the demo yet (the web front's shells with no store computer; the handhelds,
+  which ask for a device enrolment code). `safeNext` admits any `/store/` screen.
+- **For a browser that already holds the old worker** (the owner's): ONCE, open the demo in a private window, or clear
+  the site's data for the demo address and reload. From this release on, a new version announces itself.
+- **Proof:** see the PR — the stamp tripwire by hand (a byte in the chrome moves the ERP cache name; `--check` refuses
+  it), the guardrails, the demo-login unit tests, the ERP e2e audit with the chrome.
+- **Not done:** the till and handhelds' own "new version" strip is UX-1b's (their stamps already move, so the next
+  visit after a deploy is fresh); nobody from the store has used it.
+
+---
+
 ## DF-2 — the demo store box gets the whole practice pack, built from what exists (4 October 2026)
 
 - **Owner's word:** *"go ahead with DF-2"* after UX-1a deployed. OB-12's second piece.
@@ -34,7 +65,10 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   `/store/picker/`, `/store/driver/`) on the hosted demo still ask for a device enrolment code first (runbook §4.4).
   Shelf maps, delivery slots, dispatch, finance ledgers and the migration register stay "not told". DF-3 (head office
   builds and delivers the pack to every box) is the product's answer and the next piece.
-- **Owner to run, on the box (a named person, hard rule #5):**
+- **Owner RAN it the same evening** (printout above in RL-1): the pack is on the box; what he then saw was the old look,
+  which is RL-1's defect, not the pack's. The cloud held no purchase orders, invoices, pending approvals or count records
+  for the demo tenant at that moment, so those four sections are KNOWN empty — the screens say "none", not "not known".
+- **Owner to run, on the box (a named person, hard rule #5) — done 4 Oct, repeat after any re-seed:**
   `cd /opt/sre/app && sudo -u deploy pnpm run demo:store-pack -- --operator "Chezhian" && docker restart sre-pilot-edge-1`
   then sign in and open `/store/manager/` (named manager, approvals, checklist, no "Not known" tiles except what the box
   itself has not been told), `/store/buying/`, `/store/counts/`, `/store/owner/`. Send the runner's printed summary.

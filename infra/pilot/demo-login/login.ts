@@ -194,8 +194,7 @@ const SHELLS: ReadonlyArray<readonly [string, string]> = [
   ['/warehouse/', 'Warehouse'], ['/picker/', 'Picker'], ['/delivery/', 'Delivery'],
   ['/customer/', 'Customer'], ['/supplier/', 'Supplier portal'],
   // The DEMO store box (ADR-0016): screens served by the demo store edge itself.
-  ['/store/pos/', 'Demo store box — till'], ['/store/manager/', 'Demo store box — manager day'],
-  ['/store/owner/', 'Demo store box — owner'],
+  ['/store/', 'Demo store box — any screen it serves'],
 ];
 
 /** Where a sign-in lands when nothing asked for a particular screen: the demo home below, never an empty shell. */
@@ -203,13 +202,30 @@ export const DEMO_HOME = '/login/';
 
 /**
  * The demo home (owner instruction, 3 Oct 2026, after the first sign-in landed on the Store manager shell — which is
- * fed by the store computer and on this demo shows "Not known" everywhere). Two honest lists, nothing else:
- *   LIVE_PAGES — pages that work on this demo today: the bridged pages that read their own data from /v1 as the
- *                signed-in person (screen-bridge.ts), the demo store box's till, the customer app;
- *   NEEDS_BOX  — shells that only come alive when a store computer feeds them; on this demo they say "Not known"
- *                until the demo store box's pack carries their sections (the next slice, DF-2).
+ * fed by the store computer and on this demo said "Not known" everywhere). Since DF-2 (4 Oct 2026) the demo store
+ * box carries a whole practice pack, so the product's own screens come FIRST. Four honest lists, nothing else:
+ *   STORE_SCREENS — the demo store computer's screens, the product as it runs in a shop: fed by its pack, run as the
+ *                   person the pack names for that screen (KL-01), the rail of OB-13 down the left;
+ *   LIVE_PAGES    — head-office pages served by the web front that read their own data from /v1 as the signed-in
+ *                   person (screen-bridge.ts), the demo store box's till, the customer app;
+ *   NEEDS_BOX     — shells served by the web front with no store computer behind them (they say "Not known"), and
+ *                   the handhelds, which ask for a device enrolment code first (runbook §4.4).
  * What a page lets a person DO is still decided by the API on every call; a page outside the person's role says so.
  */
+export const STORE_SCREENS: ReadonlyArray<readonly [string, string]> = [
+  ['/store/manager/', 'Store manager — today, approvals, receive, count, close the day'],
+  ['/store/counts/', 'Stock counts'],
+  ['/store/buying/', 'Buying — purchase orders, receipts, supplier invoices'],
+  ['/store/stock-health', 'Stock health'],
+  ['/store/goods-receipt', 'Goods receipt review'],
+  ['/store/checklist/', 'Opening and closing checklist'],
+  ['/store/cash-office', 'Cash office — over / short sign-off'],
+  ['/store/expiry/', 'Expiry and recalls'],
+  ['/store/indents', 'Floor indents'],
+  ['/store/suppliers', 'Suppliers'],
+  ['/store/operations', 'Operations inbox'],
+  ['/store/owner/', 'Owner — the day in figures'],
+];
 export const LIVE_PAGES: ReadonlyArray<readonly [string, string]> = [
   ['/store/pos/', 'Till — the demo store box (scan, price, sell; a sale reaches the books)'],
   ['/erp/operations.html', 'Operations inbox'],
@@ -234,10 +250,12 @@ export const LIVE_PAGES: ReadonlyArray<readonly [string, string]> = [
   ['/customer/', 'Customer app (public)'],
 ];
 export const NEEDS_BOX: ReadonlyArray<readonly [string, string]> = [
-  ['/erp/', 'Store manager — today, approvals, receive, count, close the day'],
-  ['/store/manager/', 'Demo store box — manager day'],
-  ['/store/owner/', 'Demo store box — owner'],
-  ['/owner/', 'Owner'], ['/warehouse/', 'Warehouse'], ['/picker/', 'Picker'], ['/delivery/', 'Delivery'],
+  ['/erp/', 'Store manager served by the web front — no store computer behind it; use the store computer\'s manager above'],
+  ['/store/warehouse/', 'Warehouse handheld — asks for a device enrolment code first'],
+  ['/store/picker/', 'Picker handheld — asks for a device enrolment code first'],
+  ['/store/delivery/', 'Delivery handheld — asks for a device enrolment code first'],
+  ['/owner/', 'Owner served by the web front'], ['/warehouse/', 'Warehouse served by the web front'],
+  ['/picker/', 'Picker served by the web front'], ['/delivery/', 'Delivery served by the web front'],
   ['/pos/', 'Till served by the cloud (use the demo store box till above)'],
 ];
 
@@ -245,12 +263,15 @@ function homePage(who: string): string {
   const li = (pages: ReadonlyArray<readonly [string, string]>): string =>
     pages.map(([p, label]) => `<li><a href="${p}">${esc(label)}</a> <span class="path">${esc(p)}</span></li>`).join('');
   return page('Demo home', `<h1>Signed in as ${esc(who)}</h1>
-<h2>Live on this demo</h2>
+<section><h2>The store computer's screens</h2>
+<p class="muted">The product as it runs in a shop: fed by the demo store computer's pack, with the person named for each screen and the screens that person may open down the left.</p>
+<ul>${li(STORE_SCREENS)}</ul></section>
+<section><h2>Live on this demo — the till and head-office pages</h2>
 <p class="muted">These pages read real (made-up) data as you. A page outside your role says so when you open it.</p>
-<ul>${li(LIVE_PAGES)}</ul>
-<h2>Needs the store computer</h2>
-<p class="muted">These screens come alive only when a store computer feeds them. On this demo they say "Not known" until the demo store box's pack carries their sections.</p>
-<ul>${li(NEEDS_BOX)}</ul>
+<ul>${li(LIVE_PAGES)}</ul></section>
+<section><h2>Not on this demo yet</h2>
+<p class="muted">Shells served by the web front with no store computer behind them say "Not known"; the handhelds ask for a device enrolment code first.</p>
+<ul>${li(NEEDS_BOX)}</ul></section>
 <form method="post" action="/login/logout"><button type="submit">Sign out</button></form>`);
 }
 
@@ -268,14 +289,18 @@ function page(title: string, inner: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} — SRE demo</title>
 <style>
-body{margin:0;font:16px/1.5 system-ui,sans-serif;background:#f6f6f4;color:#1b1b1b}
-.demo{background:#ffd23f;color:#1b1b1b;font-weight:700;text-align:center;padding:.5rem 1rem}
-main{max-width:26rem;margin:2rem auto;padding:0 1rem}
-h1{font-size:1.4rem}label{display:block;margin:.8rem 0 .2rem;font-weight:600}
-input{width:100%;box-sizing:border-box;padding:.7rem;font-size:1rem;border:1px solid #888;border-radius:.4rem}
-button{margin-top:1.2rem;width:100%;padding:.8rem;font-size:1rem;font-weight:700;border:0;border-radius:.4rem;background:#1f5f99;color:#fff}
-.err{background:#fde2e1;border-left:4px solid #b3261e;padding:.6rem .8rem}
-ul{padding-left:1.1rem}a{color:#1f5f99}h2{font-size:1.1rem;margin:1.4rem 0 .2rem}.muted{color:#555;margin:.2rem 0 .6rem}.path{color:#777;font-size:.85rem}
+:root{--bg:#f3f5f4;--panel:#fff;--line:#dce3de;--ink:#25362e;--muted:#53625a;--accent:#16614d;--warn:#8a5e1b;--error:#a03e36;--error-surface:#fbe9e7;--tap:48px}
+body{margin:0;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Tamil","Nirmala UI","Latha",sans-serif;background:var(--bg);color:var(--ink)}
+.demo{background:var(--warn);color:#fff;font-weight:700;text-align:center;padding:.5rem 1rem}
+main{max-width:40rem;margin:1.5rem auto;padding:0 1rem}
+h1{font-size:1.5rem;margin:.6rem 0 1rem}h2{font-size:1.05rem;margin:0 0 .2rem}
+section{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--accent);border-radius:8px;padding:1rem 1.1rem;margin:0 0 1rem}
+label{display:block;margin:.8rem 0 .2rem;font-weight:600}
+input{width:100%;box-sizing:border-box;min-height:var(--tap);padding:.6rem .8rem;font-size:1rem;border:1px solid #aebbb3;border-radius:6px;background:var(--panel);color:var(--ink)}
+button{margin-top:1rem;width:100%;min-height:var(--tap);padding:.6rem;font-size:1rem;font-weight:700;border:0;border-radius:6px;background:var(--accent);color:#fff}
+.err{background:var(--error-surface);color:var(--error);border-left:4px solid var(--error);padding:.6rem .8rem;border-radius:6px}
+ul{padding-left:1.1rem;margin:.4rem 0 0}li{margin:.35rem 0}a{color:var(--accent)}.muted{color:var(--muted);margin:.2rem 0 .4rem;font-size:15px}.path{color:var(--muted);font-size:14px}
+:focus-visible{outline:3px solid #0f4c3a;outline-offset:2px}
 </style></head><body>
 <div class="demo" role="alert">${esc(DEMO_BANNER_TEXT_EN)}<br>${esc(DEMO_BANNER_TEXT_TA)}</div>
 <main>${inner}</main></body></html>`;
