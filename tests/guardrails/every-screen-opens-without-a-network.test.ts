@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 /**
@@ -206,10 +207,31 @@ describe('what is cached, and what is never answered with a page', () => {
     for (const { dir } of SCREENS) {
       const sw = workerFor(dir);
       expect(sw).toMatch(/caches\.delete\(k\)/);
-      // A cache name that never changes means yesterday's shell is served after a deploy. The
-      // VERSION is not pinned to a number here — apps are edited at different times and pinning it
-      // would make every shell change a two-file edit, with this file the one people forget.
-      expect(sw, `apps/${dir} has no versioned cache name`).toMatch(/const CACHE = 'sre-[a-z-]+-shell-v\d+'/);
+      // A cache name that never changes means yesterday's shell is served after a deploy — which is exactly what
+      // happened on 4 Oct 2026 (RL-1): the whole look changed, the number did not, and no browser saw it. The name
+      // is now a DIGEST of the shell's content, written by scripts/sync-ui-foundation.mjs, never a number a person
+      // remembers to bump.
+      expect(sw, `apps/${dir} has no content-stamped cache name`).toMatch(/const CACHE = 'sre-[a-z0-9-]+-shell-[0-9a-f]{12}'/);
+    }
+  });
+
+  it('the cache name is the digest of the shell it serves — change a shell file and the name must move (RL-1)', () => {
+    const out = execFileSync('node', ['scripts/sync-ui-foundation.mjs', '--check'], { encoding: 'utf8' });
+    expect(out).toMatch(/cache name matches its shell/);
+    for (const { dir } of SCREENS) {
+      const sw = workerFor(dir);
+      // and the digest covers the foundation and the chrome, the two files every deploy of the look changes
+      expect(sw).toMatch(/const SHELL = \[[^\]]*'\.\/sre-foundation\.css'/);
+    }
+  });
+
+  it('a BUILT file is asked for on the network first and kept only as the offline fallback; a committed file stays cache-first', () => {
+    for (const { dir } of SCREENS) {
+      const sw = workerFor(dir);
+      expect(sw, `apps/${dir} serves the bundle cache-first`).toMatch(/BUILT\.some\(\(p\) => request\.url\.endsWith\(p\.slice\(1\)\)\) \? networkFirst\(request\) : cacheFirst\(request\)/);
+      expect(sw).toMatch(/const cacheFirst = \(request\) => caches\.match\(request\)\.then\(\(cached\) => cached \?\? fetch\(request\)/);
+      expect(sw).toMatch(/const networkFirst = \(request\) => fetch\(request\)/);
+      expect(sw).toMatch(/\.catch\(async \(\) => \(await caches\.match\(request\)\) \?\? Response\.error\(\)\)/);
     }
   });
 

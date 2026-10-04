@@ -94,11 +94,15 @@ describe('demo sign-in — a good sign-in', () => {
     const home = handle({ method: 'GET', url: '/login/', body: '', headers: { cookie: `a=b; ${COOKIE_NAME}=${token}` } });
     expect(home.status).toBe(200);
     expect(home.body).toContain('Signed in as pilot-cashier');
-    // The demo home: what works on this demo first, the store-computer-fed shells named as such — never an empty shell.
-    expect(home.body.indexOf('Live on this demo')).toBeLessThan(home.body.indexOf('Needs the store computer'));
+    // The demo home: the store computer's screens first (DF-2 feeds them), then what else is live, then what is not —
+    // the shells the web front serves with no store computer behind them, named as such — never an empty shell.
+    expect(home.body.indexOf('The store computer')).toBeLessThan(home.body.indexOf('Live on this demo'));
+    expect(home.body.indexOf('Live on this demo')).toBeLessThan(home.body.indexOf('Not on this demo yet'));
+    expect(home.body).toMatch(/The store computer[\s\S]*href="\/store\/manager\/"[\s\S]*href="\/store\/counts\/"[\s\S]*Live on this demo/);
     expect(home.body).toContain('href="/store/pos/"');
     expect(home.body).toContain('href="/erp/cash-office.html"');
-    expect(home.body).toMatch(/Needs the store computer[\s\S]*href="\/erp\/"/);
+    expect(home.body).toMatch(/Not on this demo yet[\s\S]*href="\/erp\/"/);
+    expect(home.body).toMatch(/Not on this demo yet[\s\S]*href="\/store\/picker\/"[^<]*<\/a>/);
     const out = handle({ method: 'POST', url: '/login/logout', body: '', headers: { host: HOST, origin: `https://${HOST}` } });
     expect(out.status).toBe(303);
     expect(String(out.headers['set-cookie'])).toMatch(/Max-Age=0/);

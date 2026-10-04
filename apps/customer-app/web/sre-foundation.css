@@ -188,6 +188,9 @@ h1.who { margin:0; font-size:17px; }
 .stale { background:var(--info-surface); color:var(--on-info-surface); border-bottom:2px solid var(--info); font-weight:400; }
 .nobody { background:var(--nobody-surface); color:var(--on-nobody-surface); border-bottom:2px solid var(--degraded); }
 .sample[hidden],.stale[hidden],.nobody[hidden] { display:none; }
+/* A deploy that reached this browser (RL-1): the cache strip's colours, the words and a real button to reload. */
+.sre-update { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.sre-update .sre-btn { font-size:15px; }
 
 /* ── Namespaced components — screens adopt these slice by slice (G2–G5); nothing here targets a bare tag ── */
 .sre-btn { min-height: var(--tap); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-size: 17px; font-weight: 600; padding: 0 16px; }

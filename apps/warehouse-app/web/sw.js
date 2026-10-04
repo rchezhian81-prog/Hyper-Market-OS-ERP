@@ -25,7 +25,7 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-warehouse-shell-v3';
+const CACHE = 'sre-warehouse-shell-ee4110ad8f52';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
 const SHELL = ['./sre-foundation.css', './app.js', './manifest.webmanifest'];
@@ -94,8 +94,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Everything else is a static file that only changes on a deploy.
-  event.respondWith(
-    caches.match(request).then((cached) => cached ?? fetch(request).catch(() => Response.error())),
-  );
+  // A COMMITTED file (SHELL) changes only with a deploy, and a deploy changes CACHE (its name is a digest of the
+  // shell, scripts/sync-ui-foundation.mjs) — so it is served from the cache, instantly. A BUILT file is produced on
+  // the box at each deploy and keeps its name, so it is asked for on the network first and the cached copy is only
+  // the fallback for a lane with no network. Found 4 Oct 2026 (RL-1): a new look reached the box and not one
+  // browser, because the shell was cache-first under a name nobody had changed.
+  event.respondWith(BUILT.some((p) => request.url.endsWith(p.slice(1))) ? networkFirst(request) : cacheFirst(request));
 });
+
+const cacheFirst = (request) => caches.match(request).then((cached) => cached ?? fetch(request).catch(() => Response.error()));
+const networkFirst = (request) => fetch(request)
+  .then((response) => {
+    if (response.ok) { const copy = response.clone(); caches.open(CACHE).then((cache) => cache.put(request, copy)).catch(() => undefined); }
+    return response;
+  })
+  .catch(async () => (await caches.match(request)) ?? Response.error());
