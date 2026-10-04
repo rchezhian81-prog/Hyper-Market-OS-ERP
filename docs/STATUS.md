@@ -5,6 +5,27 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-15 — the owner's "all in one" direction: command-centre home, users/roles/permissions, login, super admin, tenants — CAN; two choices put (4 October 2026)
+
+- **What the owner sent:** a dashboard composition from his reference pack ("A clear view of your store": sales, open
+  orders, indents, stock attention, a purchase-to-shelf strip, workspace tiles, "needs your attention", cash & close)
+  with: *"before doing next, make sure and commit this, we want like this our ERP all in one, with user creation roles
+  and permissions. need a proper login page, super admin and tenant creation everything. conform me can or can't please"*.
+- **Answer: can.** Every piece is already in the roadmap; nothing is invented. Recorded as **OB-15** in
+  `docs/registers/decisions.md` with the exact mapping: the home → M02/M29 `/manager/`, figures from real reads only;
+  user creation, roles, scope, MFA readiness, sessions, joiner/mover/leaver → M02-FR-01/02/04 (R1; engine built, the
+  create-and-assign screen flow is the gap, same code as the audit's PF-02/PA-01/02/03); the login page → a
+  standards-based identity provider through the existing OIDC port, the provider being the owner's open choice OA-4;
+  super admin + tenant creation → M36-FR-01 (R8) on `packages/tenant`, with M33 tenant self-setup already E2E verified
+  and the plans decided (OA-12).
+- **Two choices put, as letters:** the identity provider (A self-hosted Keycloak · B a cloud provider · C our own
+  identity service; recommendation A) and the order (1 Wave 1 first, then this block as Wave 2 with the identity
+  criticals, then the tenant console · 2 this block first · 3 the home and the login look now, the rest later;
+  recommendation 1). Nothing starts on this until the letters arrive; Wave 1 (GT-01) continues meanwhile.
+- **The image** is kept with the reference pack (`owner-direction-2026-10-04-command-centre.png`).
+
+---
+
 ## UX-1c — every back-office page in the owner's structure, drawn by the one chrome (4 October 2026)
 
 - **Owner:** *"go ahead with UX-1c"* (after OB-14, the look first). Wave 1¾ of the repair plan.
