@@ -129,7 +129,7 @@ describe('the DEMO store box relay (ADR-0016) is pilot-only and gated', () => {
     expect(lane).toMatch(/auth_request \/_auth\/verify-sell;/);
     for (const block of [store, lane]) expect(block).toMatch(/proxy_pass http:\/\/\$sre_relay;/);
     // Nothing else in the front talks to the relay.
-    expect(NGINX.split("\n").filter((l) => !l.trim().startsWith("#") && l.includes("edge:8096"))).toHaveLength(2);
+    expect(NGINX.split("\n").filter((l) => !l.trim().startsWith("#") && l.includes("edge:8096"))).toHaveLength(3); // /store/, the status read, /store-lane/
     expect(NGINX).toMatch(/location = \/_auth\/verify \{\s*internal;/);
     expect(NGINX).toMatch(/location = \/_auth\/verify-sell \{\s*internal;/);
   });
@@ -150,5 +150,27 @@ describe('the DEMO store box pack + day-close redirect (ADR-0016)', () => {
     expect(RELAY.match(/sub_filter '/g)).toHaveLength(1);
     // The lane path it points at is gated for sellers only.
     expect(/location \/store-lane\/ \{([^}]*)\}/.exec(NGINX)?.[1] ?? '').toMatch(/auth_request \/_auth\/verify-sell;/);
+  });
+
+  it('the front takes the /store-lane prefix OFF and puts nothing on — the till asks for <base>/lane/sales, the box answers /lane/sales (RL-2)', () => {
+    // 4 Oct 2026: it was rewritten to /lane/$1, so /store-lane/lane/sales arrived as /lane/lane/sales, which no route
+    // answers — no sale, day close or status read ever reached the demo store box through the front.
+    const lane = /location \/store-lane\/ \{([^}]*)\}/.exec(NGINX)?.[1] ?? '';
+    expect(lane).toMatch(/rewrite \^\/store-lane\/\(\.\*\)\$ \/\$1 break;/);
+    expect(NGINX).not.toMatch(/\/lane\/\$1/);
+  });
+
+  it('the lane\'s status read is open to any signed-in person, the writes to sellers only — a manager\'s badge must not say "not answering" because they cannot sell', () => {
+    const status = /location = \/store-lane\/lane\/sync-status \{([^}]*)\}/.exec(NGINX)?.[1] ?? '';
+    expect(status).toMatch(/auth_request \/_auth\/verify;/);
+    expect(status).not.toMatch(/verify-sell/);
+    expect(status).toMatch(/rewrite \^\/store-lane\/\(\.\*\)\$ \/\$1 break;/);
+    expect(status).toMatch(/proxy_pass http:\/\/\$sre_relay;/);
+  });
+
+  it('the relay tells the screen server the prefix it is mounted under, so the menu\'s links point where the browser can go', () => {
+    // The block nests one `limit_except GET { deny all; }`, so one level of braces is stepped over.
+    const store = /location \/store\/ \{((?:[^{}]|\{[^{}]*\})*)\}/.exec(RELAY)?.[1] ?? '';
+    expect(store).toMatch(/proxy_set_header X-Forwarded-Prefix \/store;/);
   });
 });

@@ -284,6 +284,8 @@ jobs:
           test "$code" = "401" || fail "/v1 without a cookie still goes straight to the API and is refused (got $code)"
           code=$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{}' https://127.0.0.1/store-lane/lane/sale)
           test "$code" = "401" || fail "the demo box's lane must refuse a sale without a selling session (got $code)"
+          code=$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1/store-lane/lane/sync-status)
+          test "$code" = "401" || fail "the demo box's status read must refuse a visitor with no session (got $code)"
           curl -sk https://127.0.0.1/customer/ | grep -q 'customer-app.bundle.js' || fail "the customer app must still be served from the edge with the gate on"
           curl -skI https://127.0.0.1/login/ | grep -qi '^strict-transport-security' || fail "no HSTS header on the sign-in page"
           if curl -skI https://127.0.0.1/login/ | grep -qi '^server:'; then fail "the Server header is exposed on the sign-in page"; fi

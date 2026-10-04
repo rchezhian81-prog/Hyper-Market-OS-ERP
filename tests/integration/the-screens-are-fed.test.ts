@@ -2751,6 +2751,27 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
     }
   });
 
+  it('through a front that mounts this box under a prefix (X-Forwarded-Prefix: /store), every link the menu offers carries the prefix — and a malformed header is ignored (RL-2)', async () => {
+    const base = await serve(snapshotOf({ pack: pack(FLOOR) }));
+    const under = async (prefix: string | undefined): Promise<{ id: string; path: string; current: boolean }[]> => {
+      const response = await fetch(`${base}/counts/`, prefix === undefined ? {} : { headers: { 'x-forwarded-prefix': prefix } });
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      const menu = JSON.parse(/<script>window\.sreNavigation = ([\s\S]*?);<\/script>/.exec(html)![1]!) as { groups: { items: { id: string; path: string; current: boolean }[] }[] };
+      return menu.groups.flatMap((g) => g.items);
+    };
+    const plain = await under(undefined);
+    const mounted = await under('/store');
+    expect(mounted.map((i) => i.path)).toEqual(plain.map((i) => `/store${i.path}`));
+    expect(mounted.filter((i) => i.current).map((i) => i.id)).toEqual(['counts']); // "current" is decided on the box's own path, before the prefix
+    expect(mounted.find((i) => i.id === 'counts')!.path).toBe('/store/counts'); // the box answers /counts with its redirect to /counts/, which the relay's proxy_redirect maps under /store
+    // A trailing slash is tolerated; anything that is not one plain path segment is not a prefix at all.
+    expect((await under('/store/')).map((i) => i.path)).toEqual(mounted.map((i) => i.path));
+    for (const bad of ['https://evil.example', '//evil', '/a b', '/store?x=1', '/store/../', 'store', '/Store', '/st.ore']) {
+      expect((await under(bad)).map((i) => i.path), `header ${JSON.stringify(bad)} must not become a prefix`).toEqual(plain.map((i) => i.path));
+    }
+  });
+
   it('a screen whose payload names nobody gets no sections and the reason — the manager\'s, when the pack names no manager', async () => {
     const base = await serve(snapshotOf({ pack: pack({ ...FLOOR, managerPolicy: notKnown('no manager named in this pack') }) }));
     const menu = await menuFromScreen(base, '/manager/');
