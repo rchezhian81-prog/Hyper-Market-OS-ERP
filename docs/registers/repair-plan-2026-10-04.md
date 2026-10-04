@@ -61,7 +61,7 @@ RL-1, RL-2, GT-10 as above. DF-2 delivered and run by the owner.
 Palette only, layouts and 56 px targets unchanged; the pins come off; a "new version" strip on each. The owner chose
 this before Wave 1 (OB-14, Option C, 4 Oct 2026).
 
-### Wave 1¾ — the page anatomy (OB-13 UX-1c) · size M — SECOND after Wave 0 (OB-14)
+### Wave 1¾ — the page anatomy (OB-13 UX-1c) · size M — SECOND after Wave 0 (OB-14) — DONE 4 Oct 2026
 Module landings and work pages in the owner's structure: purpose line, one primary action, summary panels, subpage
 tiles, register + record drawer. Moved here from Wave 5 by the owner's choice (OB-14, Option C): he sees the finished
 look first; the screens that waves 2–5 later prove keep the anatomy they get here. The cost, stated when he chose:
@@ -146,8 +146,8 @@ identity, hardware, hosted recovery evidence. **PA-13** (commercial platform, R8
 | Item | Wave |
 |---|---|
 | DF-3 head-office pack delivery | 4 (as PA-06), not before 2 — delivery must bind served operations to a person |
-| UX-1b till and handhelds look | 1½ — first after Wave 0 (OB-14) |
-| UX-1c page anatomy | 1¾ — second after Wave 0 (OB-14; was 5) |
+| UX-1b till and handhelds look | 1½ — done 4 Oct 2026 (#694) |
+| UX-1c page anatomy | 1¾ — done 4 Oct 2026 |
 | Handheld enrolment on the hosted demo | 1½ (a demo device code for the practice phones) |
 | Quantity scale across pack sections | 4, with DF-3 |
 | SP-10 register | 8 |

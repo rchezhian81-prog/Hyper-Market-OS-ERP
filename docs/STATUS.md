@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## UX-1c — every back-office page in the owner's structure, drawn by the one chrome (4 October 2026)
+
+- **Owner:** *"go ahead with UX-1c"* (after OB-14, the look first). Wave 1¾ of the repair plan.
+- **What the anatomy is, in this product:** the module landing and the work page of the owner's reference map onto
+  what every one of the 49 office pages already has — a title and a purpose line, a strip of subpages (11 pages have
+  tabs), tables and lists, and a sheet for a record's decision (6 pages). So nothing moved and no page's logic changed:
+  `sre-chrome.js` now marks the head (the module's name from the rail above the title, the purpose line under it),
+  turns the page's own tab buttons into subpage tiles (the label, the subpage's purpose from its lead, a live count of
+  the rows in its list — "3 in the list" / "பட்டியலில் 3"), classes every table a register, and the foundation opens
+  the page's sheet as a record drawer on the right at a desk (centred sheet on a phone). The chrome follows the page's
+  own repaints (rows painted, a section switched, labels rewritten on a language switch) and writes only what changed.
+- **Honest limits:** a tile's name stays exactly the label the page wrote (tests, screen readers and people agree);
+  summary panels are the 22 pages' existing summary strips and the manager's figure tiles — no figure is invented;
+  filters and saved views (the reference's work-page extras) are features, not structure, and are not in this slice.
+- **Two things the structure exposed:** the setup page had no heading at all (its readiness verdict is now its `h2`);
+  six pages each carried their own copy of the sheet's placement — lifted into the foundation once, scoped to the
+  back office so the till's sheets keep their layout (UX-1b).
+- **Proof:** `tests/guardrails/every-erp-page-has-the-owners-anatomy.test.ts` (the foundation's rules and their 14px
+  floor, the chrome's painter and its no-loop discipline, every page has a title, every tab names a section, no page
+  keeps a sheet rule, the six sheets marked as the drawer expects, the till's sheet untouched);
+  `tests/e2e/the-erp-pages-meet-the-spec.e2e.ts` gains two tests — the anatomy on a single-view page and a tabbed page
+  at a desk and on a phone (eyebrow, head, tiles named as their labels with their purposes, the live count appearing
+  when two rows are painted, the tile opening its subpage with the head following, Tamil on the switch, WCAG AA with the
+  tiles, the drawer on the right edge at full height at a desk and centred on a phone), and one primary action at a
+  time on every page at both sizes. Screenshots of buying (desk and phone), the manager's home with the drawer open,
+  and the cash office on a phone were looked at.
+- **Next:** Wave 1 — GT-01 (the automatic build runs the browser and performance suites), then GT-09/08/PF-15.
+- **Owner:** after this deploys, open any office page: the module's name sits above the title; on Buying the three
+  sections are tiles that say what each is for; open an approval on the manager's home at a desk and the decision
+  opens in a panel on the right.
+
+---
+
 ## OB-14 recorded; UX-1b — the till, the handhelds and the portals take the light look (4 October 2026)
 
 - **The owner's answer to the plan's three options:** *"c"* — the look first. Recorded as **OB-14** in

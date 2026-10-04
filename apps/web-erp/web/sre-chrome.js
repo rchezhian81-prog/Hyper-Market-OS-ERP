@@ -36,6 +36,7 @@
       newVersion: 'A newer version of this screen has arrived. Reload when you are ready.', reload: 'Reload',
       noUser: 'Nobody is named on this screen, so no other screens can be offered.',
       noRoles: 'This store computer has no role register, so no screens can be offered.',
+      inList: '{n} in the list',
     },
     ta: {
       staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
@@ -48,6 +49,7 @@
       newVersion: 'இந்தத் திரையின் புதிய பதிப்பு வந்துள்ளது. தயாரானதும் மீண்டும் ஏற்றவும்.', reload: 'மீண்டும் ஏற்று',
       noUser: 'இந்தத் திரையில் யாரும் பெயரிடப்படவில்லை, எனவே வேறு திரைகள் வழங்க முடியாது.',
       noRoles: 'இந்தக் கடை கணினியில் பங்கு பதிவேடு இல்லை, எனவே திரைகள் வழங்க முடியாது.',
+      inList: 'பட்டியலில் {n}',
     },
   };
   const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
@@ -368,10 +370,87 @@
     });
   }
 
-  function repaint() { paintToggle(); paintStale(); paintBadge(); paintMenu(); paintUpdate(); }
+  // ── The page anatomy (OB-13 · UX-1c · OB-14): the head's eyebrow, the tab strip as subpage tiles, every table a register ──
+  // Nothing moves and nothing is renamed. The chrome marks what the page already has — its title and purpose line
+  // become the head with the module's name above them; its own tab buttons become tiles that say what each subpage
+  // is for and how many things are in its list right now; its tables take the register look; its sheet opens as a
+  // record drawer at a desk (the foundation does that part). The page's scripts keep writing the labels, the leads
+  // and the rows; the chrome re-decorates whenever they do, and only writes what changed, so nothing loops.
+  const visible = (el) => el !== null && el !== undefined && el.closest('[hidden]') === null;
+  const firstSentence = (text) => { const one = text.trim().split(/(?<=[.!?।])\s/)[0] ?? ''; return one.length > 90 ? `${one.slice(0, 88)}…` : one; };
+  const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+  function currentGroup() {
+    const nav = navigation();
+    if (!nav || !Array.isArray(nav.groups)) return null;
+    const group = nav.groups.find((g) => (g.items ?? []).some((item) => isCurrent(item)));
+    if (!group) return null;
+    const label = group.group;
+    return typeof label === 'object' && label !== null ? String(label[lang()] ?? label.en ?? '') : String(label ?? '');
+  }
+  function paintHead() {
+    const main = document.querySelector('main');
+    if (!main) return;
+    const h2 = [...main.querySelectorAll('h2')].find((el) => visible(el) && el.closest('.sheet, .sre-sheet, [role="dialog"]') === null) ?? null;
+    for (const old of main.querySelectorAll('.sre-eyebrow')) if (h2 === null || old.nextElementSibling !== h2) old.remove();
+    for (const marked of main.querySelectorAll('[data-sre-head]')) if (h2 === null || marked !== h2.parentElement) marked.removeAttribute('data-sre-head');
+    if (h2 === null) return;
+    h2.parentElement.setAttribute('data-sre-head', '');
+    const group = currentGroup();
+    const before = h2.previousElementSibling;
+    let eyebrow = before && before.classList.contains('sre-eyebrow') ? before : null;
+    if (!group) { if (eyebrow) eyebrow.remove(); return; }
+    if (!eyebrow) { eyebrow = document.createElement('p'); eyebrow.className = 'sre-eyebrow'; h2.before(eyebrow); }
+    setText(eyebrow, group);
+  }
+  // A subpage that is not open is hidden as a whole; its list still counts. Only a row hidden WITHIN the section is skipped.
+  const shownWithin = (el, root) => { for (let n = el; n && n !== root; n = n.parentElement) if (n.hidden) return false; return true; };
+  const countIn = (section) => (section ? [...section.querySelectorAll('tbody > tr, .rows > li, .sre-rows > li, .sre-row')].filter((row) => shownWithin(row, section)).length : 0);
+  function paintTabs() {
+    const tabs = byId('tabs');
+    if (!tabs) return;
+    tabs.classList.add('sre-tabs');
+    for (const button of tabs.querySelectorAll('button')) {
+      const section = button.id.startsWith('tab-') ? byId(`view-${button.id.slice(4)}`) : null;
+      let title = button.querySelector(':scope > .t');
+      if (!title) {
+        // a bare label: the page's first paint, or its own repaint (a language switch) — wrap it
+        const label = button.textContent.trim();
+        button.replaceChildren();
+        title = document.createElement('span'); title.className = 't'; title.textContent = label;
+        const d = document.createElement('span'); d.className = 'd'; d.id = `${button.id}-d`;
+        const c = document.createElement('span'); c.className = 'c'; c.id = `${button.id}-c`;
+        button.append(title, d, c);
+        button.classList.add('sre-tab');
+        button.setAttribute('aria-describedby', `${d.id} ${c.id}`);
+      }
+      // the accessible name stays exactly the label the page wrote — a test, a screen reader and a person agree
+      if (button.getAttribute('aria-label') !== title.textContent) button.setAttribute('aria-label', title.textContent);
+      const lead = section ? section.querySelector(':scope > p.lead') : null;
+      const d = button.querySelector(':scope > .d');
+      setText(d, lead ? firstSentence(lead.textContent) : '');
+      d.hidden = d.textContent === '';
+      const n = countIn(section);
+      const c = button.querySelector(':scope > .c');
+      setText(c, n > 0 ? t('inList').replace('{n}', String(n)) : '');
+      c.hidden = n === 0;
+    }
+  }
+  function paintRegisters() {
+    for (const table of document.querySelectorAll('main table')) table.classList.add('sre-register');
+  }
+  function paintAnatomy() { paintHead(); paintTabs(); paintRegisters(); }
+  let anatomyQueued = false;
+  const scheduleAnatomy = () => { if (anatomyQueued) return; anatomyQueued = true; requestAnimationFrame(() => { anatomyQueued = false; paintAnatomy(); }); };
+
+  function repaint() { paintToggle(); paintStale(); paintBadge(); paintMenu(); paintUpdate(); paintAnatomy(); }
 
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   repaint();
+  // the page paints its rows, switches its sections and rewrites its labels in its own time — follow it
+  const mainEl = document.querySelector('main');
+  if (mainEl) new MutationObserver(scheduleAnatomy).observe(mainEl, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+  const tabsEl = byId('tabs');
+  if (tabsEl) new MutationObserver(scheduleAnatomy).observe(tabsEl, { childList: true, subtree: true });
   openAskedTab();
   void refreshBadge();
   setInterval(() => { void refreshBadge(); }, 10_000);

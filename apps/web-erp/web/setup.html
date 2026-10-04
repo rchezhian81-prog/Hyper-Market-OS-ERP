@@ -35,7 +35,7 @@
       .headline { border-radius: 14px; padding: 16px; display: grid; gap: 8px; }
       .headline.good { background: var(--ok-surface); color: var(--on-ok-surface); border: 2px solid var(--good); }
       .headline.warn { background: var(--warn-surface); color: var(--on-warn-surface); border: 2px solid var(--warn); }
-      .headline strong { font-size: 20px; }
+      .headline h2 { margin: 0; font-size: 20px; } /* the readiness verdict is this page's heading (UX-1c: every page has one) */
       .headline small { font-size: 15px; opacity: 0.9; }
       .bar { background: var(--panel-2); border-radius: 999px; height: 12px; overflow: hidden; }
       .bar > i { display: block; height: 100%; background: var(--good); }
@@ -94,7 +94,7 @@
 
     <main>
       <div class="headline" id="headline">
-        <strong id="headline-text">—</strong>
+        <h2 id="headline-text">—</h2>
         <small id="headline-sub"></small>
         <div class="bar"><i id="bar-fill" style="width: 0%"></i></div>
       </div>
