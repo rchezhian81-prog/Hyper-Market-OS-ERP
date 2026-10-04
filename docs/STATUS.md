@@ -37,7 +37,9 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   summary panels, tiles from the catalogue) is UX-1c; the manager's tiles still carry their 6px left edge until then.
   No icons, breadcrumbs or search from the reference — not asked for by any requirement ID. Nobody from the store has
   seen the live result yet.
-- **Owner to check after the deploy:** sign in at `/login/`, open the store computer's screens — `/store/manager/` and
+- **MERGED and DEPLOYED:** PR #690 → `d05e4cf`; CI green; the merged run (37181485898) deployed itself to the demo box, deploy
+  job success. The box now serves the light back office.
+- **Owner to check now:** sign in at `/login/`, open the store computer's screens — `/store/manager/` and
   `/store/counts/` — and look for the dark-green rail with your screens on the left, the white header with the sync
   badge and தமிழ், and white tiles on a light canvas. Narrow the window below 1000px: the rail becomes a ☰ drawer. Open
   `/erp/operations.html`: the new look, no rail (no store computer behind it). The till at `/store/pos/` is unchanged.
