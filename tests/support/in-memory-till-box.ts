@@ -27,13 +27,18 @@ export interface InMemoryTillBox {
   plug(): void;
 }
 
-export function inMemoryTillBox(input: { readonly laneId: string; readonly tradingDayCutoff?: string; readonly toleranceMinor?: number | undefined } = { laneId: 'lane-1' }): InMemoryTillBox {
+/**
+ * `timeZone` is the STORE's zone, the one a trading day is reckoned in (packages/calendar). Left out, the box dates
+ * a moment by the machine's own clock — right on a store computer in the shop, wrong on a test runner in another
+ * zone (GT-10, 4 Oct 2026: two till tests passed in UTC and failed in Asia/Kolkata). A test states its zone.
+ */
+export function inMemoryTillBox(input: { readonly laneId: string; readonly tradingDayCutoff?: string; readonly toleranceMinor?: number | undefined; readonly timeZone?: string } = { laneId: 'lane-1' }): InMemoryTillBox {
   const records: TillCashRecord[] = [];
   const sales: unknown[] = [];
   const returns: unknown[] = [];
   let plugged = true;
   const rule = makeTradingDayRule(input.tradingDayCutoff ?? '00:00');
-  const dayOf = (at: string): string => tradingDate(wallClockIn(at), rule);
+  const dayOf = (at: string): string => tradingDate(wallClockIn(at, input.timeZone), rule);
   const refuseCash = (why: TillCashRefusal): CashMovementOutcome => ({ committed: false, refusedBecause: why, laneMessage: TILL_CASH_WORDS[why] });
   const refuseClose = (why: TillCashRefusal, varianceMinor?: number): ShiftCloseOutcome =>
     ({ closed: false, refusedBecause: why, laneMessage: TILL_CASH_WORDS[why], ...(varianceMinor === undefined ? {} : { varianceMinor }) });

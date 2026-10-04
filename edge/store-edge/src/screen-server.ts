@@ -29,7 +29,7 @@ import { createServer, type Server, type ServerResponse, type IncomingMessage } 
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, posLanePayload, posRefundPolicyPayload, type ScreenInput, type ScreenName } from './screen-data';
-import { navigationPayload } from './screen-navigation';
+import { navigationPayload, type NavigationPayload } from './screen-navigation';
 
 /**
  * The address this listens on unless told otherwise — loopback, so on a shop PC nothing on the shop network
@@ -228,6 +228,26 @@ export function redirectFor(url: string): string | null {
 }
 
 /** Which screen a menu path opens on this box — through its redirects — or null when it opens nothing here. */
+/**
+ * The public prefix this box is mounted under, when a front says so (`X-Forwarded-Prefix: /store` — the hosted demo's
+ * relay, ADR-0016). A page's menu is drawn with the box's own paths; through such a front the browser must be sent to
+ * `/store/counts/`, not `/counts/`, so the prefix is put on every link the menu offers (RL-2, 4 Oct 2026). Only a plain
+ * absolute path segment counts — nothing with a scheme, a host, a query, a dot or a second slash — and an absent or
+ * malformed header means no prefix, exactly as in a store.
+ */
+export function forwardedPrefix(header: string | string[] | undefined): string {
+  const raw = Array.isArray(header) ? header[0] : header;
+  if (raw === undefined) return '';
+  const value = raw.trim().replace(/\/+$/, '');
+  return /^\/[a-z0-9-]+$/.test(value) ? value : '';
+}
+
+/** The menu with every link under the public prefix; untouched when there is none. */
+export function withPublicPrefix(navigation: NavigationPayload, prefix: string): NavigationPayload {
+  if (prefix === '') return navigation;
+  return { ...navigation, groups: navigation.groups.map((g) => ({ ...g, items: g.items.map((item) => ({ ...item, path: `${prefix}${item.path}` })) })) };
+}
+
 export function screenOfPath(path: string): ScreenName | null {
   const target = redirectFor(path) ?? path;
   const route = routeOf(target);
@@ -338,7 +358,7 @@ export function startScreenServer(input: {
       // from the pack's role register and the screen's named viewer (Stage G slice 5b · §27 · P-07). Only the ERP:
       // the till, the handhelds and the apps are one job each and have no menu to draw.
       const navigation = APP_SHELL[route.screen].dir === 'web-erp'
-        ? navigationPayload({ screen: route.screen, pack: snap.pack, payload, screenOf: screenOfPath })
+        ? withPublicPrefix(navigationPayload({ screen: route.screen, pack: snap.pack, payload, screenOf: screenOfPath }), forwardedPrefix(req.headers['x-forwarded-prefix']))
         : undefined;
       send(res, 200, type, injectPayload(
         body.toString('utf8'), GLOBAL_FOR[route.screen], payload,

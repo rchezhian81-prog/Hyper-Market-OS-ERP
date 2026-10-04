@@ -19,13 +19,25 @@ const CONFIG: TillConfig = { laneId: 'lane-1', cashierId: 'u-meena', tradingDay:
 // suite below for the refused case).
 const okDurable: DurableReturnWrite = async () => ({ committed: true, durable: true, detail: 'on disk', laneMessage: 'ok' });
 
-const newTill = (durableReturn: DurableReturnWrite = okDurable, box = inMemoryTillBox({ laneId: 'lane-1', toleranceMinor: 10_000 })) => {
+// The moments in this file are written in UTC and the fixture's box dates them in UTC, explicitly — so the suite says the
+// same thing on a laptop in Chennai and a runner in Dublin (GT-10). The zone a REAL store reckons its day in is its own.
+const newTill = (durableReturn: DurableReturnWrite = okDurable, box = inMemoryTillBox({ laneId: 'lane-1', toleranceMinor: 10_000, timeZone: 'UTC' })) => {
   const outbox = new SyncOutbox();
   const stock = new Ledger(new InMemoryLedgerStore());
   return { till: createTillSession(CONFIG, stock, outbox, { durableReturn, ...box.ports }), outbox, box };
 };
 
 const AT = '2026-08-05T19:00:00Z';
+
+describe('the box dates a movement in the STORE\'s zone, never the host\'s (GT-10)', () => {
+  it('19:00Z on 5 August is the 5th in UTC and already the 6th in Asia/Kolkata — the same moment, said by the zone the box is given', async () => {
+    for (const [timeZone, day] of [['UTC', '2026-08-05'], ['Asia/Kolkata', '2026-08-06']] as const) {
+      const { till } = newTill(okDurable, inMemoryTillBox({ laneId: 'lane-1', toleranceMinor: 10_000, timeZone }));
+      const opened = await till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: AT });
+      expect(opened, timeZone).toMatchObject({ committed: true, tradingDay: day });
+    }
+  });
+});
 
 describe('counting the drawer', () => {
   it('adds up a denomination count exactly, in paise', () => {

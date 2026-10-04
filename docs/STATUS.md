@@ -5,6 +5,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## RL-2 + GT-10 — the recording's breakages fixed; the audit received; the repair plan written (4 October 2026)
+
+- **What the owner sent:** a screen recording of the demo (13:06) and an independent repository audit
+  (`docs/audit/repository-audit-2026-10-04.html`, 74 findings in `…-findings.tsv`), with: *"Done, not satisfied. take a
+  look the audit report as well. plan the work and prioritize the sequence."*
+- **What the recording showed:** the new look IS live and the manager's page IS fed from DF-2 (manager named, checklist
+  5, approvals 0). But every link in the left rail opened raw error text (`not_on_the_public_origin`), and every page's
+  badge said "Store computer not answering". Stock counts said "no counts yet" (honest — nobody has counted).
+- **Cause 1 — menu links (mine):** the store computer draws its menu with its own paths (`/counts/`, `/buying/`). On
+  the demo it is mounted under `/store` by the relay, and nobody told it; the browser was sent to `/counts/` on the
+  public origin, where that page does not exist.
+- **Cause 2 — "not answering" (mine, and worse than it looked):** the front rewrote `/store-lane/lane/sync-status` to
+  `/lane/lane/sync-status`, which no route answers; the same rewrite applied to the till's `/store-lane/lane/sales` and
+  the manager's `/store-lane/lane/day-close`, so **no sale, day close or status read has ever reached the demo store
+  box through the front** — the box worked; the path to it did not. Separately the status read sat behind the "may
+  sell" gate, which a manager does not pass, so even a correct path would have said "not answering" to a manager.
+- **Fix (this PR, RL-2):** the relay sends `X-Forwarded-Prefix: /store`; the screen server prefixes every menu link
+  with a validated single-segment prefix (a malformed or hostile header is ignored, `current` is still decided on the
+  box's own path); the front's `/store-lane/` rewrite takes the prefix off and adds nothing; the status read is its
+  own location open to any signed-in person, writes stay seller-only; the CI deploy gate asserts the status read is
+  behind the sign-in. Proof: `tests/integration/the-screens-are-fed.test.ts` (prefix applied, trailing slash
+  tolerated, nine bad headers ignored), `tests/guardrails/demo-login-is-pilot-only.test.ts` (rewrite, status
+  location, relay header).
+- **GT-10 (audit, fixed here):** two till tests passed in UTC and failed in Asia/Kolkata because the in-memory test box
+  dated moments by the host clock. The fixture now takes an explicit `timeZone` (the real box already takes its zone
+  from the pack); the suite states UTC; a new test proves 19:00Z on 5 Aug is the 5th in UTC and the 6th in
+  Asia/Kolkata. Verified under both `TZ` values: 23/23.
+- **The audit, in one line:** code snapshot `d05e4cf`; weighted score 57.9 %; 19 of 36 modules E2E-labelled, 0 staff
+  UAT, 0 production-verified; 3 critical (PF-01 double spend/refund under concurrency, PF-02 typed staff id as identity,
+  PF-03 age-restriction ignored at commit), 45 high, 25 medium, 1 low; "substantial software is built; full store
+  end-to-end completion is not yet proven"; the repairs are buildable software. GT-01 (CI runs no browser or
+  performance suite) and GT-10 were reproduced here and are true.
+- **The plan:** `docs/registers/repair-plan-2026-10-04.md` — the audit's eight-step order kept, with today's open
+  items placed in it: Wave 0 today (RL-1, RL-2, GT-10, DF-2) · Wave 1 release evidence (GT-01, test-scope ledger) ·
+  Wave 1½ UX-1b till/handheld look (recommended, cheap) · Wave 2 authority and competing writes (the three criticals,
+  on one conditional-append primitive) · Wave 3 stock path · Wave 4 saved changes → trading incl. DF-3 as PA-06 ·
+  Wave 5 the core store day proof, UX-1c alongside · Wave 6 enabled departments and channels · Wave 7 migration and
+  recovery · Wave 8 SP-10 staff/device UAT then providers. Every wave ends with something the owner can see on the demo.
+- **Next:** Wave 1 — GT-01, a CI job that runs the browser and performance suites as required, non-skipping checks.
+- **Owner:** confirm the order (or move UX-1b/1c); after this deploy, on the demo: open `/store/manager/`, click a
+  rail link (a page, not error text), watch the badge (a time, not "not answering"), make one ₹ sale on the till and
+  see it in the sync status. No decision or purchase is needed to start waves 1–6.
+
+---
+
 ## RL-1 — a release reaches the browser: the owner saw "still the old UI" after UX-1a and DF-2 (4 October 2026)
 
 - **What the owner saw and sent:** after UX-1a deployed and he ran DF-2's pack (printout: 5 products, 9 roles, 7
