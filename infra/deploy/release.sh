@@ -50,6 +50,7 @@ if [ -f "$CONF" ]; then . "$CONF"; fi
 : "${SRE_BUILD_SHELLS:=pos owner-app web-erp picker-app delivery-app customer-app warehouse-app}"
 : "${SRE_BUILD_ENV:=}"
 : "${SRE_BUILD_TOOLS:=demo-login}"
+: "${SRE_RECREATE_SERVICES:=edge-relay}"
 : "${SRE_API_URL:=http://127.0.0.1:8081}"
 : "${SRE_FRONT_URL:=https://127.0.0.1}"
 : "${SRE_WEB_URL:=http://127.0.0.1:8080}"
@@ -136,6 +137,14 @@ bring_up() {
   done
   say "bringing the stack up (migrations run first, idempotently)…"
   compose up -d --build || return 1
+  # A service that SHARES another container's network namespace (the demo relay: `network_mode: service:edge`) is
+  # not recreated by compose when that container is — it stays attached to the old, dead network. On 4 Oct 2026
+  # the relay answered 502 for every demo store box screen after a release had rebuilt the edge. Recreate such
+  # services on every release; a stack without the service (a store) says so and carries on.
+  for svc in $SRE_RECREATE_SERVICES; do
+    say "recreating the $svc service so it follows the container whose network it shares…"
+    compose up -d --force-recreate --no-deps "$svc" >/dev/null 2>&1 || say "  (no $svc service in this stack — nothing to recreate)"
+  done
   # A tool bundle runs from a folder MOUNTED into its container (the demo sign-in: ../pilot/demo-login/dist → /app).
   # Rebuilding the file changes nothing compose can see, so `up` leaves the container running the old code — the
   # demo home shipped on 3 Oct 2026 did not appear until the container was restarted by hand. Restart each tool's
