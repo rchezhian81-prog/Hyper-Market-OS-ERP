@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Checklists</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Manager checklists — the "did the shift open/close, and what is still outstanding" screen (M25-FR-02,
       API-11, P-03, P-04, P-05, P-08). Every rule lives in the tested session model
@@ -43,14 +43,14 @@
       ul.items .blk { color:var(--danger-text); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
       ul.items li.done { color:var(--muted); text-decoration:line-through; }
       .signedby { font-size:13px; color:var(--muted); }
-      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:#451a03; justify-self:start; }
-      button.act:focus-visible, .lang:focus-visible, ul.items input:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:var(--on-warn); justify-self:start; }
+      button.act:focus-visible, .lang:focus-visible, ul.items input:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
       p.result[hidden] { display:none; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
     </style>
   </head>

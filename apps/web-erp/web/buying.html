@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Buying — Supplier invoices</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Buyer's surface (docs/design/screens/purchase-receiving.md). A SEPARATE shell from
       the manager's, because a buyer is a different role doing a different job (P-07):
@@ -27,15 +27,15 @@
            counted in rows would shift the layout every time one of them was hidden. */
         min-height: 100dvh; display: flex; flex-direction: column;
       }
-      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
       .sample[hidden] { display: none; }
       /* Served from this device's cache because the store box could not be reached. It says WHEN,
          because a page from this morning shown as this minute's is the fault this product exists
          to refuse (P-08). */
-      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info, #38bdf8); }
+      .stale { background: var(--info-surface); color: var(--on-info-surface); padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info, var(--info)); }
       .stale[hidden] { display: none; }
       /* What the store box did not tell this screen, said out loud rather than left to be guessed. */
-      .gaps { background: #422006; color: #fde68a; padding: 10px 16px; margin: 0; font-size: 15px; }
+      .gaps { background: var(--warn-surface); color: var(--on-warn-surface); padding: 10px 16px; margin: 0; font-size: 15px; }
       .gaps[hidden] { display: none; }
       .gaps strong { display: block; margin-bottom: 4px; color: var(--warn); }
       .gaps ul { margin: 0; padding-left: 20px; }
@@ -45,7 +45,7 @@
         min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;
         background: var(--line); color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap;
       }
-      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+      nav button[aria-current='page'] { background: var(--ink); color: var(--bg); }
 
       main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
       section[hidden] { display: none; }
@@ -55,7 +55,7 @@
       .field { display: grid; gap: 6px; margin-bottom: 12px; }
       .field label { color: var(--muted); font-size: 15px; }
       .field input, .field textarea {
-        background: #0b1220; color: var(--ink); border: 1px solid var(--line);
+        background: var(--field); color: var(--ink); border: 1px solid var(--line);
         border-radius: 12px; padding: 10px 14px; font-size: 16px; width: 100%;
       }
       .field input { min-height: var(--tap); }
@@ -65,9 +65,9 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: #052e16; font-size: 18px; }
+      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
       button:disabled { opacity: .45; }
-      button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+      button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .wide { width: 100%; }
 
       /* ── The preview, which is the product ─────────────────────────────── */
@@ -80,7 +80,7 @@
       .verdict .totals { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
       /* The two figures that must agree, side by side and large. */
       .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 6px; }
-      .compare div { background: #0b1220; border-radius: 12px; padding: 10px 14px; }
+      .compare div { background: var(--panel-2); border-radius: 12px; padding: 10px 14px; }
       .compare .label { color: var(--muted); font-size: 13px; display: block; }
       .compare .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
       .compare .value.off { color: var(--danger-text); }
@@ -102,7 +102,7 @@
 
       /* Panels and the banner — same behaviour as every other screen here. */
       .sheet {
-        position: fixed; inset: 0; background: rgba(2, 6, 23, .85);
+        position: fixed; inset: 0; background: var(--scrim);
         display: grid; place-items: center; z-index: 20; padding: 16px;
       }
       .sheet[hidden] { display: none; }
@@ -119,19 +119,19 @@
         background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
       }
       .banner[hidden] { display: none; }
-      .banner.good { background: var(--good); color: #052e16; }
+      .banner.good { background: var(--good); color: var(--on-accent); }
       .banner strong { font-size: 20px; }
       .banner p { margin: 0; font-size: 16px; }
-      .banner button { background: #7f1d1d; color: #fff; }
-      .banner.good button { background: #052e16; color: #ecfdf5; }
+      .banner button { background: var(--danger-surface); color: var(--on-danger); }
+      .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
       /* SP-7a: where each saved invoice has got to — the five shared state words as pills, the foundation's colours. */
       .saved { display: grid; gap: 6px; padding: 12px 14px; margin-bottom: 10px; background: var(--panel); border-radius: 12px; }
       .saved .what { font-size: 16px; }
       .saved .why { color: var(--danger-text); font-size: 14px; }
       .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--line); color: var(--ink); justify-self: start; }
-      .pill.posted { background: var(--ok); color: var(--bg); }
-      .pill.refused { background: var(--danger); color: var(--bg); }
-      .pill.retrying { background: var(--warn); color: var(--bg); }
+      .pill.posted { background: var(--ok); color: var(--on-accent); }
+      .pill.refused { background: var(--danger-surface); color: var(--on-danger); }
+      .pill.retrying { background: var(--warn); color: var(--on-warn); }
     </style>
   </head>
   <body>

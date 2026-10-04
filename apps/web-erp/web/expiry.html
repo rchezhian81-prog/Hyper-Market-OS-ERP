@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Expiry and recall</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Expiry and recall (M10-FR-01..04 / D05 / FSSAI 9.3 / API-04 / API-06).
       A seventh shell in this folder, sharing the one bundle.
@@ -25,8 +25,8 @@
         min-height: 100dvh; display: flex; flex-direction: column;
       }
 
-      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
-      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
+      .sample { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .stale { background: var(--info-surface); color: var(--on-info-surface); padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
       /* Nobody named at the desk. Nothing can be committed, and it says so at the top. */
 
       nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
@@ -34,7 +34,7 @@
         min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;
         background: var(--line); color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap;
       }
-      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+      nav button[aria-current='page'] { background: var(--ink); color: var(--bg); }
 
       main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
       section[hidden] { display: none; }
@@ -45,17 +45,17 @@
       label { display: block; margin: 12px 0 4px; font-size: 15px; color: var(--muted); }
       input, select, textarea {
         width: 100%; min-height: var(--tap); border-radius: 12px; border: 2px solid var(--line);
-        background: #0b1220; color: var(--ink); font-size: 17px; padding: 0 12px;
+        background: var(--field); color: var(--ink); font-size: 17px; padding: 0 12px;
       }
       textarea { min-height: 80px; padding: 10px 12px; font-family: inherit; }
       input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
-        outline: 3px solid #93c5fd; outline-offset: 2px;
+        outline: 3px solid var(--focus); outline-offset: 2px;
       }
       button {
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: #052e16; font-size: 18px; }
+      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
       button.danger { background: var(--danger-surface); color: var(--on-danger); }
       .wide { width: 100%; }
       .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -68,11 +68,11 @@
       .row .what small { color: var(--muted); font-size: 14px; }
       /* Expired: dispose. Near expiry: mark down. Colour AND words, always. */
       .row.expired { border-left: 5px solid var(--danger); }
-      .row.expired .what small { color: #fca5a5; }
+      .row.expired .what small { color: var(--danger-text); }
       .row.near_expiry { border-left: 5px solid var(--warn); }
-      .row.near_expiry .what small { color: #fde68a; }
+      .row.near_expiry .what small { color: var(--on-warn-surface); }
       /* An OPEN recall. The loudest thing this product draws. */
-      .row.open { border-left: 6px solid var(--danger); background: #450a0a; }
+      .row.open { border-left: 6px solid var(--danger); background: var(--error-surface); }
       .row.closed { border-left: 5px solid var(--line); opacity: 0.8; }
 
       /* The SLA colours. Never colour alone — every one of these also says it in words. */
@@ -85,7 +85,7 @@
       .bill .big { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
       .bill small { color: var(--muted); font-size: 14px; }
       /* More came back than went out. Should be impossible, so it is loud. */
-      .overreturned { background: #450a0a; border: 2px solid var(--danger); border-radius: 12px; padding: 12px 14px; color: #fecaca; font-size: 15px; }
+      .overreturned { background: var(--error-surface); border: 2px solid var(--danger); border-radius: 12px; padding: 12px 14px; color: var(--danger-text); font-size: 15px; }
       .overreturned[hidden] { display: none; }
 
       .qty { display: flex; align-items: center; gap: 8px; }
@@ -97,11 +97,11 @@
         background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
       }
       .banner[hidden] { display: none; }
-      .banner.good { background: var(--good); color: #052e16; }
+      .banner.good { background: var(--good); color: var(--on-accent); }
       .banner strong { font-size: 20px; }
       .banner p { margin: 0; font-size: 16px; }
-      .banner button { background: #7f1d1d; color: #fff; }
-      .banner.good button { background: #052e16; color: #ecfdf5; }
+      .banner button { background: var(--danger-surface); color: var(--on-danger); }
+      .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
     </style>
   </head>
   <body>

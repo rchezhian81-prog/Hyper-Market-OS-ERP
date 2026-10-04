@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Goods receipt review</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Goods receipt review — the manager's READ-ONLY view of what came in the back door (M07-FR-02/03, API-04,
       P-03, P-08). Every rule lives in the tested session model (apps/web-erp/src/goods-receipt-session.ts),
@@ -28,7 +28,7 @@
       .bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; justify-content:space-between; }
       .asof { color:var(--muted); font-size:14px; } .summary { font-size:15px; font-weight:600; }
       button.refresh { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
-      button.refresh:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      button.refresh:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
       li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
@@ -42,7 +42,7 @@
       li.diff { font-size:13px; display:flex; gap:10px; flex-wrap:wrap; align-items:baseline; }
       li.diff .d-word { font-weight:600; } li.diff .d-val { font-variant-numeric:tabular-nums; } li.diff .d-detail { color:var(--muted); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       [hidden] { display:none !important; }
     </style>
   </head>

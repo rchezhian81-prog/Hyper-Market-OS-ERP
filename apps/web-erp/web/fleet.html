@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Devices</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Device fleet manager — M33-FR-02/04 · A-10. Every rule lives in the tested session model
       (apps/web-erp/src/fleet-session.ts), attached as window.fleetSession and built on the shared
@@ -18,7 +18,7 @@
     <style>
       body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
       .sample,.stale,.nobody,.manage { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
-      .manage { background:#0b1220; color:var(--muted); font-weight:500; border-bottom:1px solid var(--line); }
+      .manage { background:var(--panel-2); color:var(--muted); font-weight:500; border-bottom:1px solid var(--line); }
       .sample[hidden],.stale[hidden],.nobody[hidden],.manage[hidden] { display:none; }
       main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:900px; width:100%; }
       h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
@@ -29,7 +29,7 @@
       .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
       .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); }
       .filter { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; }
-      .filter[aria-pressed='true'] { background:var(--ink); color:#0f172a; }
+      .filter[aria-pressed='true'] { background:var(--ink); color:var(--bg); }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
       li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
@@ -40,26 +40,26 @@
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
       .meta { color:var(--muted); font-size:14px; display:flex; gap:14px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
-      .pending { background:#1e3a5f; color:#dbeafe; border-bottom:2px solid var(--info); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      .pending { background:var(--info-surface); color:var(--on-info-surface); border-bottom:2px solid var(--info); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
       .pending[hidden] { display:none; }
-      .send { min-height:36px; padding:0 16px; border:0; border-radius:10px; background:var(--info); color:#04283a; font-size:14px; font-weight:700; }
+      .send { min-height:36px; padding:0 16px; border:0; border-radius:10px; background:var(--info); color:var(--on-info); font-size:14px; font-weight:700; }
       .send:disabled { opacity:.6; } .send[hidden] { display:none; }
       #deliver-msg { color:var(--muted); font-size:14px; }
       .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:2px; }
       .act { min-height: var(--tap); padding:0 16px; border:0; border-radius:10px; background:var(--line); color:var(--ink); font-size:15px; font-weight:600; }
       .act:disabled { opacity:.5; }
-      .act-block { background:#7f1d1d; color:#fee2e2; } .act-retire { background:#3f2d12; color:#fde68a; } .act-reinstate { background:#14532d; color:#dcfce7; }
+      .act-block { background:var(--danger-surface); color:var(--on-danger); } .act-retire { background:var(--warn-surface); color:var(--on-warn-surface); } .act-reinstate { background:var(--ok-surface); color:var(--on-ok-surface); }
       .act-note { color:var(--muted); font-size:13px; }
-      .sheet { position:fixed; inset:0; background:rgba(2,6,23,.72); display:flex; align-items:center; justify-content:center; padding:16px; z-index:10; }
+      .sheet { position:fixed; inset:0; background:var(--scrim); display:flex; align-items:center; justify-content:center; padding:16px; z-index:10; }
       .sheet[hidden] { display:none; }
       .sheet .card { background:var(--panel); border-radius:14px; padding:18px; width:100%; max-width:440px; display:grid; gap:12px; }
       .sheet h3 { margin:0; font-size:18px; } .sheet p { margin:0; color:var(--muted); font-size:14px; }
       .sheet input { min-height:44px; padding:0 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font-size:16px; }
-      .sheet .msg { color:#fecaca; min-height:1.2em; }
+      .sheet .msg { color:var(--danger-text); min-height:1.2em; }
       .sheet .row2 { display:flex; gap:10px; justify-content:flex-end; }
       .sheet button { min-height:44px; padding:0 18px; border:0; border-radius:10px; font-size:15px; font-weight:600; }
-      .sheet .primary { background:var(--info); color:#04283a; } .sheet .ghost { background:var(--line); color:var(--ink); }
+      .sheet .primary { background:var(--info); color:var(--on-info); } .sheet .ghost { background:var(--line); color:var(--ink); }
     </style>
   </head>
   <body>

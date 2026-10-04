@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Day book</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Day book — the accountant's posting screen (M23-FR-01, API-09, P-03, P-08, §28). Every rule lives in the
       tested session model (apps/web-erp/src/day-book-session.ts), attached as window.dayBookSession and built on
@@ -29,10 +29,10 @@
       .picker label { font-size:14px; color:var(--muted); display:grid; gap:4px; }
       .picker input { min-height:var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
       button.quiet { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
-      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:#451a03; }
-      button:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:var(--on-warn); }
+      button:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
-      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:#fecaca; }
+      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--danger-text); }
       .summary .fig { font-size:15px; color:var(--muted); font-variant-numeric:tabular-nums; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
@@ -53,7 +53,7 @@
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); } p.result.tone-idle { border-left:6px solid var(--idle); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       p.muted { margin:0; color:var(--muted); font-size:14px; }
       [hidden] { display:none !important; }
     </style>

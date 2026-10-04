@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Reports</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Reporting (D13 / M29-FR-01/02 / API-10). A fifth shell in this folder, sharing
       the one bundle.
@@ -23,24 +23,24 @@
         min-height: 100dvh; display: flex; flex-direction: column;
       }
 
-      .sample { background: var(--warn); color: #451a03; padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
+      .sample { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; font-size: 15px; margin: 0; }
       .sample[hidden] { display: none; }
-      .stale { background: #1e3a5f; color: #dbeafe; padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
+      .stale { background: var(--info-surface); color: var(--on-info-surface); padding: 8px 14px; font-size: 15px; margin: 0; border-bottom: 2px solid var(--info); }
       .stale[hidden] { display: none; }
       /*
         How current everything on this screen is. It sits at the very top because a
         number quoted three hours after the sync stopped looks exactly like a live one.
       */
-      .freshness { padding: 8px 16px; margin: 0; font-size: 15px; background: #0b1220; color: var(--muted); }
-      .freshness.stale { background: #422006; color: #fde68a; }
-      .freshness.missing { background: #422006; color: #fde68a; font-weight: 600; }
+      .freshness { padding: 8px 16px; margin: 0; font-size: 15px; background: var(--panel-2); color: var(--muted); }
+      .freshness.stale { background: var(--warn-surface); color: var(--on-warn-surface); }
+      .freshness.missing { background: var(--warn-surface); color: var(--on-warn-surface); font-weight: 600; }
 
       nav { display: flex; gap: 8px; padding: 8px 16px; background: var(--panel); overflow-x: auto; }
       nav button {
         min-height: var(--tap); padding: 0 18px; border: 0; border-radius: 12px;
         background: var(--line); color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap;
       }
-      nav button[aria-current='page'] { background: var(--ink); color: #0f172a; }
+      nav button[aria-current='page'] { background: var(--ink); color: var(--bg); }
 
       main { flex: 1; padding: 16px; display: grid; gap: 16px; align-content: start; max-width: 900px; }
       section[hidden] { display: none; }
@@ -52,8 +52,8 @@
         min-height: var(--tap); border-radius: 12px; border: 0; font-size: 16px; font-weight: 600;
         background: var(--line); color: var(--ink);
       }
-      button.primary { background: var(--good); color: #052e16; font-size: 18px; }
-      button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+      button.primary { background: var(--good); color: var(--on-accent); font-size: 18px; }
+      button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
       .wide { width: 100%; }
 
       .row {
@@ -65,10 +65,10 @@
       .row.ready { border-left: 5px solid var(--good); }
       /* A report nobody can run yet. Listed, never hidden. */
       .row.blocked { border-left: 5px solid var(--warn); }
-      .row.blocked .what small { color: #fde68a; }
+      .row.blocked .what small { color: var(--on-warn-surface); }
       /* Waiting on US, not on the shop — a different colour so the two are never read as one job. */
       .row.ours { border-left: 5px solid var(--info); }
-      .row.ours .what small { color: #bae6fd; }
+      .row.ours .what small { color: var(--info); }
 
       /* One figure. The value is large; the as-at sits under it, always. */
       .figure {
@@ -93,11 +93,11 @@
         background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
       }
       .banner[hidden] { display: none; }
-      .banner.good { background: var(--good); color: #052e16; }
+      .banner.good { background: var(--good); color: var(--on-accent); }
       .banner strong { font-size: 20px; }
       .banner p { margin: 0; font-size: 16px; }
-      .banner button { background: #7f1d1d; color: #fff; }
-      .banner.good button { background: #052e16; color: #ecfdf5; }
+      .banner button { background: var(--danger-surface); color: var(--on-danger); }
+      .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
     </style>
   </head>
   <body>

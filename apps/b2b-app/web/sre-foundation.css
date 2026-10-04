@@ -1,65 +1,94 @@
 /*
-  SRE Retail OS — the ONE visual foundation every screen imports (Stage G slice 1).
+  SRE Retail OS — the ONE visual foundation every screen imports (Stage G slice 1 · OB-13 look, UX-1a).
 
   Source of truth: packages/ui/web/sre-foundation.css. Every apps/<app>/web/sre-foundation.css is a byte-identical
   copy written by `node scripts/sync-ui-foundation.mjs` (which every `scripts/build-app.mjs` build also runs) and
   pinned by tests/guardrails/every-screen-shares-the-foundation.test.ts. Edit THIS file; never a copy.
 
-  What it holds (docs/design/design-system.md §1 hard rules, §3 foundations, §4 components; QG-02; NFR-07/08; P-07):
+  What it holds (docs/design/design-system.md §1 hard rules, §3 foundations, §3.2 the owner's look, §4 components;
+  QG-02; NFR-07/08; P-07):
     • one palette with ONE meaning per colour everywhere — green ok · amber degraded/pending · red error/destructive ·
       grey idle — and colour is never the only signal (a word and an icon ride with it);
+    • TWO token sets for that one palette. The LIGHT set is the default from UX-1a on: the owner's professional
+      reference (decision OB-13, 4 Oct 2026) — a dark-forest rail, white work surfaces on a cool neutral canvas, one
+      emerald primary action, fine stripes on tiles, status as words with amber and red kept for exceptions. The DARK
+      set is what every screen looked like before, kept under `:root[data-theme="dark"]` so a shell outside the back
+      office stays exactly as it was until its own slice (UX-1b) brings it over: the owner chose the order the
+      screens change in. A screen's look is a product decision, never the operating system's — no media query picks.
     • one type stack that renders Tamil and Latin cleanly, from the system, with the line-height Tamil glyphs need;
     • touch targets of at least 48px (a screen may raise `--tap` in its own :root — gloves, glare, a doorstep);
     • the fixtures every screen carries: the sync badge, the language toggle, the sample / cached / nobody strips;
-    • the namespaced `sre-*` components the screens move onto slice by slice (tiles, rows, chips, sheets, keypads).
+    • the back office's shell — the rail the ERP's one chrome draws from the real menu (UX-1a) — and the namespaced
+      `sre-*` components the screens move onto slice by slice (tiles, rows, chips, sheets, keypads).
   What it is NOT: a framework, a download, a build step. Static CSS a lane serves from its own cache (P-01).
 
   Both token dialects the screens grew up with resolve here to the same value, so `var(--good)` and `var(--ok)`
   cannot drift apart again: --ok/--good/--accent · --degraded/--warn · --error/--danger · --idle.
 
-  Contrast (WCAG 2.2 AA, proven pair by pair in tests/unit/ui-foundation.test.ts with packages/a11y): no single red
-  can be BOTH readable text on a dark panel AND a surface under white text, so red is three tokens —
-  --error/--danger  #ef4444  the signal colour: dots, borders, icons (non-text, ≥ 3:1)
-  --danger-text     #fca5a5  red WORDS on a dark surface (7.7:1 on a panel)
-  --danger-surface  #b91c1c  a red BUTTON or banner under white words (6.5:1)
+  Contrast (WCAG 2.2 AA, proven pair by pair, in BOTH sets, in tests/unit/ui-foundation.test.ts with packages/a11y):
+  no single red can be BOTH readable text on its surface AND a surface under white text, so red is three tokens —
+  --error/--danger  the signal colour: dots, borders, icons (non-text, ≥ 3:1 on a panel; fails as words on purpose)
+  --danger-text     red WORDS on a panel or the page
+  --danger-surface  a red BUTTON or banner under --on-danger
+  — and every tinted panel is a PAIR, surface + words: --ok-surface/--on-ok-surface, --warn-surface/--on-warn-surface,
+  --info-surface/--on-info-surface, --error-surface (its words are --danger-text), --demo-surface/--on-demo.
 */
 
 :root {
+  /* ── The light set — the owner's look (design system §3.2) ─────────────────────────────────────── */
   /* Surfaces */
-  --bg: #0f172a;
-  --panel: #1e293b;
-  --panel-2: #0b1220;
-  --line: #334155;
-  --line-strong: #475569;
+  --bg: #f3f5f4;            /* the canvas */
+  --panel: #ffffff;         /* panels, tiles, tables, the header */
+  --panel-2: #eef2ef;       /* chips, bars, tags, a secondary surface */
+  --field: #ffffff;         /* an input */
+  --line: #dce3de;          /* borders, dividers, plain buttons */
+  --line-strong: #aebbb3;   /* a tile's resting stripe, a stronger border */
 
   /* Text */
-  --ink: #f8fafc;
-  --muted: #94a3b8;
-  --on-accent: #052e16;
-  --on-warn: #451a03;
+  --ink: #25362e;
+  --muted: #53625a;         /* 6.4:1 on white, 5.9:1 on the canvas, 5.7:1 on --panel-2, 4.9:1 on --line — never under 14px */
+  --on-accent: #ffffff;
+  --on-warn: #ffffff;       /* words on the amber strip (--degraded as a surface) */
   --on-danger: #ffffff;
-  --on-info: #0f172a;
+  --on-info: #ffffff;       /* words on a blue button (--info as a surface) */
+  --on-idle: #ffffff;
 
   /* Tones — one meaning everywhere; both dialects */
-  --ok: #22c55e;
+  --ok: #16614d;            /* the emerald: the one primary action, links, the live dot, green words (7.4:1) */
   --good: var(--ok);
   --accent: var(--ok);
   --accent-ink: var(--on-accent);
-  --degraded: #f59e0b;
+  --degraded: #8a5e1b;      /* amber: pending · degraded · NOT KNOWN (5.7:1) */
   --warn: var(--degraded);
-  --error: #ef4444;
+  --error: #e04e48;         /* the signal red: 3.9:1 on white — a dot or an edge, never words */
   --danger: var(--error);
-  --danger-text: #fca5a5;
-  --danger-surface: #b91c1c;
-  --idle: #64748b;
-  --info: #38bdf8;
-  --info-surface: #1e3a5f;
-  --on-info-surface: #dbeafe;
-  --warn-surface: #3f2d12;
-  --on-warn-surface: #fde68a;
+  --danger-text: #a03e36;   /* red words: 6.5:1 on white */
+  --danger-surface: #a03e36;/* a red button or banner under white words: 6.5:1 */
+  --idle: #6b7a72;
+  --info: #1d5fa6;
+  --info-surface: #dce9f7;
+  --on-info-surface: #0f3c6e;
+  --warn-surface: #f6e7c8;
+  --on-warn-surface: #5a3e0c;
   --nobody-surface: var(--warn-surface);
   --on-nobody-surface: var(--on-warn-surface);
-  --focus: #93c5fd;
+  --ok-surface: #e3f1ea;
+  --on-ok-surface: #0f4c3a;
+  --error-surface: #fbe9e7; /* a red-tinted panel; its words are --danger-text (5.5:1) */
+  --demo-surface: #7c2d12;  /* the practice-data banner's stripes, the same in both sets */
+  --demo-surface-2: #9a3412;
+  --on-demo: #ffffff;
+  --scrim: rgba(20, 32, 27, .55);
+  --focus: #0f4c3a;
+
+  /* The rail (the back office's shell, UX-1a) */
+  --rail: #192f27;
+  --on-rail: #f3f5f4;       /* 13:1 */
+  --on-rail-muted: #a9b8ae; /* 6.9:1 */
+  --rail-accent: #7fd1ae;   /* the current screen's mark and the focus ring inside the rail: 7.9:1 non-text */
+  --rail-2: #24403a;        /* the current screen and a hovered one: an opaque step up from the rail, 11:1 under --on-rail */
+  --rail-line: #2a423a;
+  --rail-width: 248px;
 
   /* Type — system faces only (nothing to download on a shop line); the Tamil-capable faces are named so a Tamil
      screen never falls back to boxes on Windows or Android. */
@@ -68,12 +97,56 @@
   --text: 16px;
   --leading: 1.5;
 
-  /* Size and shape */
+  /* Size and shape — compact corners, no shadows (the owner's reference) */
   --tap: 48px;
-  --radius: 12px;
-  --radius-lg: 16px;
+  --radius: 6px;
+  --radius-lg: 8px;
   --gap: 12px;
   --pad: 16px;
+}
+
+/* ── The dark set — every screen's look before OB-13, kept for the shells UX-1b has not brought over yet ── */
+:root[data-theme="dark"] {
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --panel-2: #0b1220;
+  --field: #0b1220;
+  --line: #334155;
+  --line-strong: #475569;
+  --ink: #f8fafc;
+  --muted: #94a3b8;
+  --on-accent: #052e16;
+  --on-warn: #451a03;
+  --on-danger: #ffffff;
+  --on-info: #0f172a;
+  --on-idle: #f8fafc;
+  --ok: #22c55e;
+  --degraded: #f59e0b;
+  --error: #ef4444;
+  --danger-text: #fca5a5;
+  --danger-surface: #b91c1c;
+  --idle: #64748b;
+  --info: #38bdf8;
+  --info-surface: #1e3a5f;
+  --on-info-surface: #dbeafe;
+  --warn-surface: #3f2d12;
+  --on-warn-surface: #fde68a;
+  --ok-surface: #052e16;
+  --on-ok-surface: #bbf7d0;
+  --error-surface: #450a0a;
+  --demo-surface: #7c2d12;
+  --demo-surface-2: #9a3412;
+  --on-demo: #ffffff;
+  --scrim: rgba(2, 6, 23, .82);
+  --focus: #93c5fd;
+  --rail: #0b1220;
+  --on-rail: #f8fafc;
+  --on-rail-muted: #94a3b8;
+  --rail-accent: #22c55e;
+  --rail-2: #1e293b;
+  --rail-line: #1e293b;
+  --radius: 12px;
+  --radius-lg: 16px;
 }
 
 /* ── Base ─────────────────────────────────────────────────────────────────────────────────────────── */
@@ -94,7 +167,9 @@ button:disabled { cursor: not-allowed; }
 .skip:focus { left: 0; }
 
 /* ── The fixtures every screen carries (design system §1 rules 4 and 6, §7) ───────────────────────── */
-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); flex-wrap:wrap; }
+/* The header is the top bar of the owner's look: a white line with the page's name, the person, the badge and the
+   toggle; a hairline under it separates it from the canvas. */
+header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
 .who { font-weight:600; }
 .who small { display:block; color:var(--muted); font-weight:400; font-size:14px; }
 /* The page's one heading is the header line (Stage G slice 5a): an h1 styled as the line it is, not a headline. */
@@ -106,7 +181,7 @@ h1.who { margin:0; font-size:17px; }
 .dot.error { background: var(--error); }
 .dot.idle { background: var(--idle); }
 /* The per-user English / Tamil toggle — a real target (design system §1: ≥ 44px; this codebase's bar is --tap, 48px). */
-.lang { background:var(--line); color:var(--ink); min-height:var(--tap); padding:0 14px; font-size:15px; border:0; border-radius:10px; }
+.lang { background:var(--line); color:var(--ink); min-height:var(--tap); padding:0 14px; font-size:15px; border:0; border-radius:var(--radius); }
 /* The strips: sample data · served from cache (and WHEN) · nobody signed in. None fades; none is colour alone. */
 .sample,.stale,.nobody { margin:0; padding:10px 16px; font-size:15px; font-weight:600; }
 .sample { background:var(--degraded); color:var(--on-warn); }
@@ -115,26 +190,28 @@ h1.who { margin:0; font-size:17px; }
 .sample[hidden],.stale[hidden],.nobody[hidden] { display:none; }
 
 /* ── Namespaced components — screens adopt these slice by slice (G2–G5); nothing here targets a bare tag ── */
-.sre-btn { min-height: var(--tap); border: 0; border-radius: var(--radius); background: var(--line); color: var(--ink); font-size: 17px; font-weight: 600; padding: 0 16px; }
-.sre-btn-primary { background: var(--accent); color: var(--on-accent); font-size: 20px; }
-.sre-btn-danger { background: var(--danger-surface); color: var(--on-danger); }
-.sre-btn-quiet { background: transparent; color: var(--muted); }
+.sre-btn { min-height: var(--tap); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-size: 17px; font-weight: 600; padding: 0 16px; }
+.sre-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-size: 20px; }
+.sre-btn-danger { background: var(--danger-surface); border-color: var(--danger-surface); color: var(--on-danger); }
+.sre-btn-quiet { background: transparent; border-color: transparent; color: var(--muted); }
 .sre-btn:disabled { opacity: .55; }
 .sre-btn[aria-pressed="true"] { outline: 3px solid var(--accent); }
 
 /* Wide content — a table, a code block — scrolls in its own box; the page never scrolls sideways (1.4.10). */
 .sre-scroll-x { overflow-x: auto; max-width: 100%; }
 
+/* A tile: white, a hairline all round, a fine stripe along the top that carries the tone (the owner's "tile strips"). */
 .sre-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--gap); }
-.sre-tile { background: var(--panel); border-radius: var(--radius-lg); padding: var(--pad); min-height: 120px; display: grid; align-content: start; gap: 4px; border-left: 6px solid var(--line); }
-.sre-tile[data-tone="degraded"] { border-left-color: var(--degraded); }
-.sre-tile[data-tone="error"] { border-left-color: var(--error); }
+.sre-tile { background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--line-strong); border-radius: var(--radius-lg); padding: var(--pad); min-height: 120px; display: grid; align-content: start; gap: 4px; }
+.sre-tile[data-tone="ok"] { border-top-color: var(--ok); }
+.sre-tile[data-tone="degraded"] { border-top-color: var(--degraded); }
+.sre-tile[data-tone="error"] { border-top-color: var(--error); }
 .sre-tile .n { font-size: 44px; font-weight: 700; }
 .sre-tile .n.unknown { font-size: 24px; color: var(--degraded); }
 .sre-tile .label, .sre-tile .note { color: var(--muted); font-size: 15px; }
 
 .sre-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.sre-row { background: var(--panel); border-radius: 14px; padding: 14px var(--pad); display: grid; gap: 10px; border-left: 6px solid var(--idle); }
+.sre-row { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--idle); border-radius: var(--radius-lg); padding: 14px var(--pad); display: grid; gap: 10px; }
 .sre-row[data-tone="ok"] { border-left-color: var(--ok); }
 .sre-row[data-tone="degraded"], .sre-row[data-tone="pending"] { border-left-color: var(--degraded); }
 .sre-row[data-tone="error"] { border-left-color: var(--error); }
@@ -152,14 +229,14 @@ h1.who { margin:0; font-size:17px; }
 
 .sre-field { display: grid; gap: 6px; }
 .sre-field > label { color: var(--muted); font-size: 15px; }
-.sre-input { min-height: var(--tap); background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 0 14px; font-size: 17px; }
+.sre-input { min-height: var(--tap); background: var(--field); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 0 14px; font-size: 17px; }
 .sre-input::placeholder { color: var(--idle); }
 .sre-hint { color: var(--muted); font-size: 15px; min-height: 22px; }
 .sre-hint[data-tone="error"] { color: var(--danger-text); font-weight: 600; }
 
 /* The on-screen sheet (never a browser prompt) and its keypad. */
-.sre-sheet { position: fixed; inset: 0; background: rgba(2, 6, 23, .82); display: grid; place-items: center; z-index: 20; padding: var(--pad); }
-.sre-sheet-inner { width: min(560px, 100%); background: var(--panel); padding: 20px; border-radius: 20px; display: grid; gap: 14px; max-height: 90dvh; overflow-y: auto; }
+.sre-sheet { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 20; padding: var(--pad); }
+.sre-sheet-inner { width: min(560px, 100%); background: var(--panel); border: 1px solid var(--line); padding: 20px; border-radius: var(--radius-lg); display: grid; gap: 14px; max-height: 90dvh; overflow-y: auto; }
 .sre-entry { font-size: 44px; font-weight: 700; text-align: right; padding: 10px 16px; background: var(--panel-2); border-radius: var(--radius); min-height: 68px; font-variant-numeric: tabular-nums; }
 .sre-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .sre-keypad .sre-btn { font-size: 22px; }
@@ -168,30 +245,45 @@ h1.who { margin:0; font-size:17px; }
 .sre-banner { position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 20px; background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px; }
 .sre-banner strong { font-size: 24px; }
 .sre-banner p { margin: 0; font-size: 18px; line-height: 1.45; }
-.sre-banner .sre-btn { background: #7f1d1d; color: #fef2f2; }
+.sre-banner .sre-btn { background: var(--on-danger); border-color: var(--on-danger); color: var(--danger-surface); }
 .sre-banner[data-tone="ok"] { background: var(--accent); color: var(--on-accent); }
-.sre-banner[data-tone="ok"] .sre-btn { background: var(--on-accent); color: #ecfdf5; }
+.sre-banner[data-tone="ok"] .sre-btn { background: var(--on-accent); border-color: var(--on-accent); color: var(--accent); }
 
-/* ── The ERP's one menu (Stage G slice 5b · §27 role surfaces · P-07) ─────────────────────────────── */
-/* Rendered by sre-chrome.js from what the store computer says this person may open — never a hand-kept list. The
-   button sits first in the header; the panel drops below it, full width, and stacks on a phone. */
-.sre-menu-button { min-height: var(--tap); min-width: var(--tap); padding: 0 14px; border: 0; border-radius: 10px; background: var(--line); color: var(--ink); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
+/* ── The ERP's one menu, drawn as the back office's rail (Stage G slice 5b · OB-13 UX-1a · §27 · P-07) ── */
+/* Rendered by sre-chrome.js from what the store computer says this person may open — never a hand-kept list.
+   On a desk (≥ 1000px) it is the rail down the left of every back-office page, always open; on a phone it is a
+   drawer the ☰ button in the header opens and Escape closes. Opened off the box, there is no rail at all. */
+body.sre-shell { display: grid; grid-template-columns: var(--rail-width) minmax(0, 1fr); align-items: stretch; min-height: 100dvh; padding: 0; }
+.sre-page { min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; }
+.sre-menu-button { min-height: var(--tap); min-width: var(--tap); padding: 0 14px; border: 0; border-radius: var(--radius); background: var(--line); color: var(--ink); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
 .sre-menu-button[aria-expanded="true"] { background: var(--ink); color: var(--bg); }
-.sre-menu { background: var(--panel); border-bottom: 2px solid var(--line); padding: 8px 16px 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 24px; }
+.sre-menu-button[hidden] { display: none; }
+.sre-menu { background: var(--rail); color: var(--on-rail); margin: 0; padding: 14px 12px 20px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100dvh; overflow: hidden auto; border: 0; scrollbar-width: thin; }
 .sre-menu[hidden] { display: none; }
-.sre-menu .group { margin: 0; padding: 12px 0 4px; color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.sre-menu .brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px 14px; }
+.sre-menu .brand .mark { width: 40px; height: 40px; flex: none; border-radius: var(--radius-lg); background: var(--rail-accent); color: var(--rail); font-weight: 800; font-size: 15px; letter-spacing: .02em; display: grid; place-items: center; }
+.sre-menu .brand b { display: block; font-size: 15px; letter-spacing: .04em; }
+.sre-menu .brand small { display: block; color: var(--on-rail-muted); font-size: 14px; }
+.sre-menu .group { margin: 0; padding: 14px 10px 4px; color: var(--on-rail-muted); font-size: 12.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .sre-menu ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.sre-menu a { display: flex; align-items: center; min-height: var(--tap); padding: 0 12px; border-radius: 10px; color: var(--ink); text-decoration: none; font-size: 16px; }
-.sre-menu a:hover { background: var(--panel-2); }
-.sre-menu a[aria-current="page"] { background: var(--panel-2); font-weight: 700; box-shadow: inset 4px 0 0 var(--accent); }
-.sre-menu .who-can { margin: 0; padding: 12px 0 0; color: var(--muted); font-size: 15px; grid-column: 1 / -1; }
-.sre-menu .who-can b { color: var(--ink); }
+.sre-menu a { display: flex; align-items: center; min-height: var(--tap); padding: 0 10px 0 12px; border-radius: var(--radius); color: var(--on-rail); text-decoration: none; font-size: 15px; }
+.sre-menu a:hover { background: var(--rail-2); }
+.sre-menu a[aria-current="page"] { background: var(--rail-2); font-weight: 700; box-shadow: inset 3px 0 0 var(--rail-accent); }
+.sre-menu .who-can { margin: 0 0 6px; padding: 10px; border: 1px solid var(--rail-line); border-radius: var(--radius); color: var(--on-rail-muted); font-size: 14px; }
+.sre-menu .who-can b { color: var(--on-rail); }
+.sre-menu :focus-visible { outline-color: var(--rail-accent); }
+.sre-scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 39; border: 0; padding: 0; margin: 0; }
+@media (max-width: 999px) {
+  body.sre-shell { display: block; }
+  .sre-menu { position: fixed; inset: 0 auto 0 0; width: min(320px, 86vw); height: 100dvh; z-index: 40; box-shadow: 8px 0 24px var(--scrim); }
+}
 
 /* ── What the browser tells us about the person ──────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 @media (prefers-contrast: more) {
-  :root { --line: #64748b; --line-strong: #94a3b8; --muted: #cbd5e1; }
+  :root { --line: #8e9c94; --line-strong: #56655d; --muted: #34443b; }
+  :root[data-theme="dark"] { --line: #64748b; --line-strong: #94a3b8; --muted: #cbd5e1; }
   :focus-visible { outline-width: 4px; }
 }

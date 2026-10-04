@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Products to publish</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Products waiting to publish — the operator screen (ADR-0013 slice 4, M03-FR-01/03). Every rule lives in
       the tested session model (apps/web-erp/src/product-publish-review-session.ts), attached as
@@ -32,19 +32,19 @@
       .row .by { font-weight:600; } .row .when { color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; }
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; }
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
-      .row .detail { font-size:13px; color:#fecaca; }
+      .row .detail { font-size:13px; color:var(--danger-text); }
       button.deliver {
-        min-height:var(--tap); padding:0 18px; border:0; border-radius:12px; background:var(--ok); color:#052e16;
+        min-height:var(--tap); padding:0 18px; border:0; border-radius:12px; background:var(--ok); color:var(--on-accent);
         font-size:18px; font-weight:700; justify-self:start;
       }
       button.deliver:disabled { background:var(--line); color:var(--muted); }
-      button.deliver:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      button.deliver:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); }
       p.result.tone-error { border-left:6px solid var(--error); } p.result.tone-idle { border-left:6px solid var(--idle); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
     </style>
   </head>
   <body>

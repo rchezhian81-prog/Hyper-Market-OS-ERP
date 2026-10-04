@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE GST reconciliation</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       GST e-invoice / e-way-bill reconciliation — the operator triage view (item 3 inc2; API-09; A20/A23).
       Every rule lives in the tested session model (apps/web-erp/src/gst-reconciliation-session.ts), attached
@@ -30,7 +30,7 @@
       .summary .count { font-size: 18px; font-weight: 700; }
       .summary .count.attention { color: var(--degraded); }
       .filter { min-height: var(--tap); padding: 0 14px; border: 0; border-radius: 10px; background: var(--line); color: var(--ink); font-size: 15px; }
-      .filter[aria-pressed='true'] { background: var(--ink); color: #0f172a; }
+      .filter[aria-pressed='true'] { background: var(--ink); color: var(--bg); }
 
       ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
       li.row { background: var(--panel); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border-left: 6px solid var(--idle); }
@@ -46,14 +46,14 @@
       .action .permit { font-size: 13px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted); }
       .action .permit.ok { color: var(--ink); }
       .action .do { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-      .do-btn { min-height: var(--tap); padding: 0 16px; border: 0; border-radius: 10px; background: var(--info); color: #0f172a; font-size: 15px; font-weight: 600; cursor: pointer; }
+      .do-btn { min-height: var(--tap); padding: 0 16px; border: 0; border-radius: 10px; background: var(--info); color: var(--on-info); font-size: 15px; font-weight: 600; cursor: pointer; }
       .do-btn:disabled { background: var(--line); color: var(--muted); cursor: default; }
       .do-note { font-size: 13px; color: var(--muted); }
-      .row .mismatch { font-size: 14px; color: #fecaca; }
+      .row .mismatch { font-size: 14px; color: var(--danger-text); }
       .row .detail { font-size: 13px; color: var(--muted); }
       p.state { margin: 0; padding: 16px; background: var(--panel); border-radius: 12px; color: var(--muted); font-size: 15px; display: inline-flex; gap: 8px; align-items: center; }
       p.state .icon { font-size: 18px; }
-      p.state.tone-error { color: #fecaca; }
+      p.state.tone-error { color: var(--danger-text); }
     </style>
   </head>
   <body>

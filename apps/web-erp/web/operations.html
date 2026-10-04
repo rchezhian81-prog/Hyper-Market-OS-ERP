@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Operations</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Operations recommendations inbox — the operator's screen (A06, API-13, §7.1, P-05). Every rule lives in
       the tested session model (apps/web-erp/src/operations-inbox-session.ts), attached as
@@ -35,18 +35,18 @@
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
       .row .detail { font-size:14px; color:var(--muted); }
       .row .runbook { font-size:13px; color:var(--info); font-weight:600; }
-      .row .why { font-size:13px; color:#fde68a; }
+      .row .why { font-size:13px; color:var(--on-warn-surface); }
       .row .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:4px; }
       .row .reason { flex:1; min-width:180px; min-height:var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
       button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:15px; font-weight:700; }
-      button.act.dismiss { background:var(--degraded); color:#451a03; } button.act.reopen { background:var(--line); color:var(--ink); }
-      button.act:focus-visible, .reason:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      button.act.dismiss { background:var(--degraded); color:var(--on-warn); } button.act.reopen { background:var(--line); color:var(--ink); }
+      button.act:focus-visible, .reason:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
       p.result[hidden] { display:none; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
     </style>
   </head>
   <body>

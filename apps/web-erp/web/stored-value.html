@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Stored-value oversight</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Stored-value oversight — the manager / accountant's READ-ONLY control-by-exception view of the money the
       shop owes on gift cards and store credit (M17-FR-03/04, API-06, P-03, P-04, hard rule #10). Every rule
@@ -31,9 +31,9 @@
       .asof { color:var(--muted); font-size:14px; }
       form.ask { display:flex; gap:8px; flex-wrap:wrap; align-items:end; background:var(--panel); border-radius:12px; padding:12px 14px; }
       form.ask label { display:grid; gap:4px; font-size:13px; color:var(--muted); }
-      form.ask input { min-height: var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:#0b1220; color:var(--ink); font-variant-numeric:tabular-nums; }
+      form.ask input { min-height: var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--field); color:var(--ink); font-variant-numeric:tabular-nums; }
       button { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
-      button:focus-visible, .lang:focus-visible, input:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      button:focus-visible, .lang:focus-visible, input:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
       li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
@@ -48,7 +48,7 @@
       .gap .figs { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
       .gap .fig { display:grid; gap:2px; } .gap .f-label { font-size:13px; color:var(--muted); } .gap .f-value { font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       .muted { color:var(--muted); font-size:14px; margin:0; }
       [hidden] { display:none !important; }
     </style>

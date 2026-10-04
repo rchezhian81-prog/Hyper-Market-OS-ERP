@@ -85,10 +85,14 @@ colour alone; a freshness line on every figure, and **Not known** in `--warn` wi
 sample-data strip at 14px; the system font stack with the Tamil faces before Arial; one primary action per screen.
 The handhelds keep their task-first layouts and take only the palette.
 
-**How it reaches the product (UX-1, through the shared foundation only, no feature changes):** `packages/ui/web/sre-foundation.css`
-gains this light token set and the ERP's one chrome (`apps/web-erp/web/sre-chrome.js`) draws the real menu as the rail
-and the real session as the header; the dark set stays for whichever surfaces the owner keeps dark — theme scope is the
-open question in OB-13. Measured on the reference, as sent vs with the fix layer (headless Chromium, 1366×820 home):
+**How it reaches the product (UX-1, through the shared foundation only, no feature changes) — UX-1a IMPLEMENTED (4 Oct 2026):**
+`packages/ui/web/sre-foundation.css` carries this light set as the default and the former dark set under
+`:root[data-theme="dark"]`; `apps/web-erp/web/sre-chrome.js` draws the real menu as the rail (open at ≥ 1000px, a ☰ drawer
+below) and the page's header is the top bar. The owner chose A (light everywhere) in the order 1a → DF-2 → 1b: until
+UX-1b every shell outside the back office pins the dark set on its `<html>`. Extra tokens the light set needed, present
+in both sets: `--field`, `--on-idle`, `--on-info`, `--ok-surface/--on-ok-surface`, `--error-surface`,
+`--demo-surface/--demo-surface-2/--on-demo`, `--scrim`, `--rail/--rail-2/--on-rail/--on-rail-muted/--rail-accent/--rail-line`.
+The three-reds rule holds in both sets (the light signal red `#e04e48` fails as words on purpose). Measured on the reference, as sent vs with the fix layer (headless Chromium, 1366×820 home):
 texts under 14px 129 of 147 → 14 of 152; controls under 44px 3 → 0; strip 10px at 3.47:1 → 14px at 6.9:1.
 
 ## 4. Core components (implemented later in `packages/ui`)

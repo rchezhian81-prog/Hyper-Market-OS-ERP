@@ -135,6 +135,24 @@ describe('a page owns its touch target and nothing else the foundation owns', ()
     }
   });
 
+  it('until UX-1b, every shell outside the back office pins the dark set, so the screens change in the order the owner chose (OB-13: "A 1")', () => {
+    const outside = pages.filter((p) => !p.startsWith('apps/web-erp/'));
+    expect(outside.length).toBeGreaterThanOrEqual(10);
+    for (const p of outside) expect(read(p), `${p} has left the dark set before its own slice`).toMatch(/<html lang="en" data-theme="dark">/);
+    for (const p of pages.filter((p) => p.startsWith('apps/web-erp/'))) expect(read(p), `${p} pins a set; the back office is the light default`).not.toMatch(/data-theme=/);
+  });
+
+  it('the foundation carries both sets — the light default and the dark set under data-theme — and no media query chooses for a screen', () => {
+    const css = read('packages/ui/web/sre-foundation.css');
+    expect(css).toMatch(/\n:root \{/);
+    expect(css).toMatch(/\n:root\[data-theme="dark"\] \{/);
+    expect(css).not.toMatch(/prefers-color-scheme/);
+    // the dark-theme literals the pages grew up with are gone from the back office: every colour is a token
+    for (const p of pages.filter((p) => p.startsWith('apps/web-erp/'))) {
+      expect(styleOf(read(p)), `${p} still names a colour of its own`).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+    }
+  });
+
   it('red words use the readable red; the signal red is for dots, borders and icons', () => {
     const offenders = pages.filter((p) => /(?<![a-z-])color:\s*var\(--(danger|error)\)/.test(styleOf(read(p))));
     expect(offenders, 'pages that still write text in the signal red').toEqual([]);

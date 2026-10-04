@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SRE Delivery exceptions</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#192f27" />
     <!--
       Delivery-substitution exception inbox — the queue member's screen (M19-FR-01, Item 2, API-07, P-03, §28).
       Every rule lives in the tested session model (apps/web-erp/src/substitution-exception-inbox-session.ts),
@@ -27,7 +27,7 @@
       h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
       h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
       .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
-      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); } .summary .count.breached { color:#fecaca; }
+      .summary .count { font-size:18px; font-weight:700; } .summary .count.attention { color:var(--degraded); } .summary .count.breached { color:var(--danger-text); }
       .summary .exposure { font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; }
       ul.queues { list-style:none; margin:0; padding:0; display:flex; gap:10px; flex-wrap:wrap; }
       ul.queues li { background:var(--panel); border-radius:999px; padding:4px 12px; font-size:14px; color:var(--muted); }
@@ -41,21 +41,21 @@
       .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
       .status .icon { font-size:18px; width:1.4em; text-align:center; }
       .row .facts { font-size:13px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
-      .row .facts .mine { color:#bbf7d0; font-weight:600; }
+      .row .facts .mine { color:var(--on-ok-surface); font-weight:600; }
       .row .acts { display:flex; gap:10px; flex-wrap:wrap; }
-      button.claim { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--info); color:#082f49; }
+      button.claim { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--info); color:var(--on-info); }
       .worker { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
       .worker label { font-size:14px; color:var(--muted); }
       .worker select, .worker input { width:100%; min-height:var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
       .worker .buttons { display:flex; gap:10px; flex-wrap:wrap; }
-      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:#451a03; }
+      button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--degraded); color:var(--on-warn); }
       button.act.quiet { background:var(--line); color:var(--ink); }
-      button:focus-visible, select:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+      button:focus-visible, select:focus-visible, input:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }
       p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
-      p.state .icon { font-size:18px; } p.state.tone-error { color:#fecaca; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
       p.nothing { margin:0; color:var(--muted); font-size:14px; }
       [hidden] { display:none !important; }
     </style>
