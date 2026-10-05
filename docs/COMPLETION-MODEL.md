@@ -96,6 +96,15 @@ Scores 3–6 are monotone "at least" thresholds, so they never exceed score 2 an
 Each item's `label` is sourced **conservatively** from `docs/traceability.md` — when the evidence is
 ambiguous, the **lower** maturity is chosen. `evidence` cites the RTM.
 
+## The evidence behind a label (from 5 October 2026 — TEST-SCOPE v1)
+
+A label is a claim; `docs/evidence/TEST-SCOPE.md` §4 states what kind of proof each claim needs, and
+`scripts/evidence-ledger.mjs` derives the kinds every item actually has (unit · integration · real PostgreSQL ·
+browser stub · browser connected · device · staff UAT) from the test tree and the SP-10 register, into
+`docs/evidence/evidence-ledger.md`. CI fails when the ledger is stale or a label outruns its proof. The first
+application re-rated M11 and M30 from E2E_VERIFIED to INTEGRATION_TESTED (57.9 % → 57.7 %); labels rise again only
+when the proof exists.
+
 ## Governance — no silent drift
 
 - **The denominator (104) and the weights are fixed.** They may only change through a **documented,

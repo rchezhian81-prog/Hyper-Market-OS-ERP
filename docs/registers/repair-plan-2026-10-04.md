@@ -53,9 +53,10 @@ RL-1, RL-2, GT-10 as above. DF-2 delivered and run by the owner.
   performance suite on the exact merge SHA as **required, non-skipping** jobs; a run with a skipped browser suite
   fails (`scripts/assert-suite-ran.mjs`, `browser-required-in-ci.e2e.ts`); the release job needs them. Left for the
   owner/administrator: tick the two checks in GitHub branch protection.
-- **GT-09 / GT-08 / PF-15:** one versioned test-scope statement in the completion ledger, with separate columns for
-  unit, integration, real-PostgreSQL, browser, device and staff-UAT evidence per requirement, so an "E2E" label can
-  never again mean a stub-cloud browser test.
+- **GT-09 / GT-08 / PF-15 — DONE 5 Oct 2026:** `docs/evidence/TEST-SCOPE.md` v1 and the generated
+  `docs/evidence/evidence-ledger.md` with separate columns for unit, integration, real-PostgreSQL, browser (stub),
+  browser (connected), device and staff-UAT evidence per requirement; CI refuses a stale ledger or a label that
+  outruns its proof. M11 and M30 re-rated on the rule (57.9 % → 57.7 %). **Wave 1 is closed.**
 - Owner sees: the merged run's job list shows the browser and performance jobs green.
 
 ### Wave 1½ — the till and handhelds take the look (OB-13 UX-1b) · size S — FIRST after Wave 0 (OB-14)

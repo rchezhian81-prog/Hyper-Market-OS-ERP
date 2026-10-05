@@ -1,5 +1,10 @@
 # Core store operations — requirement status matrix (30 September 2026)
 
+> **Superseded for status (5 October 2026, PF-15).** This is the record of 30 September 2026 and is kept unchanged.
+> Current maturity per requirement is `docs/completion-status.json`; what kind of proof stands behind each label is
+> `docs/evidence/evidence-ledger.md`, under the rules of `docs/evidence/TEST-SCOPE.md`.
+
+
 **Baseline:** `main` = `8f4f6c5a62cffda0bae838cc7fde1196cf8135e3` (PR #641, W1 merged). The independent store audit
 (handover package *Hyper-Market-Store-E2E-Handover.zip*, 30 Sep 2026) was pinned to this same commit, so nothing has
 drifted between the audit and this matrix. **All 12 audit observation tests reproduce at this commit** (re-run here:

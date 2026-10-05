@@ -1,0 +1,4059 @@
+{
+  "scopeVersion": "v1",
+  "sources": {
+    "ledger": "docs/completion-status.json",
+    "register": "docs/registers/sp10-staff-uat.md",
+    "scope": "docs/evidence/TEST-SCOPE.md"
+  },
+  "testFiles": 891,
+  "sessions": {
+    "total": 0,
+    "pass": 0,
+    "onDevice": 0
+  },
+  "labels": {
+    "WIRED": 11,
+    "INTEGRATION_TESTED": 16,
+    "E2E_VERIFIED": 24,
+    "PARTIALLY_WIRED": 52,
+    "ENGINE_ONLY": 1
+  },
+  "totals": {
+    "unit": 81,
+    "integration": 78,
+    "realDb": 53,
+    "browser": 44,
+    "connected": 2,
+    "device": 0,
+    "uat": 0
+  },
+  "notHolding": [],
+  "items": [
+    {
+      "id": "M01",
+      "label": "WIRED",
+      "counts": {
+        "unit": 18,
+        "integration": 10,
+        "realDb": 2,
+        "browser": 2,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/config.test.ts",
+          "tests/unit/document-templates-session.test.ts",
+          "tests/unit/document-templates.test.ts",
+          "tests/unit/durable-tenant-settings.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-admin-session.test.ts",
+          "tests/unit/number-series-store.test.ts",
+          "tests/unit/numbering.test.ts",
+          "tests/unit/org-branch-lifecycle.test.ts",
+          "tests/unit/org-hierarchy.test.ts",
+          "tests/unit/persistence-config-store.test.ts",
+          "tests/unit/pos-receipt-numbering.test.ts",
+          "tests/unit/published-templates-pull.test.ts",
+          "tests/unit/receipt.test.ts",
+          "tests/unit/reporting-consolidation.test.ts",
+          "tests/unit/reporting-kpis-run-on-the-engine.test.ts",
+          "tests/unit/tenant-setup.test.ts",
+          "tests/unit/trading-day.test.ts"
+        ],
+        "integration": [
+          "tests/integration/branch-lifecycle.test.ts",
+          "tests/integration/document-templates.test.ts",
+          "tests/integration/number-series.test.ts",
+          "tests/integration/org-structure.test.ts",
+          "tests/integration/reporting-consolidation.test.ts",
+          "tests/integration/store-pack-policy.test.ts",
+          "tests/integration/the-published-receipt-template-reaches-the-till-through-the-edge.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/trading-day-cutoff.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/number-series.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/company-report.e2e.ts",
+          "tests/e2e/document-template-publish-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M02",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 16,
+        "integration": 12,
+        "realDb": 1,
+        "browser": 2,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/approvals-delegation.test.ts",
+          "tests/unit/approvals.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-admin-session.test.ts",
+          "tests/unit/erp-manager-session.test.ts",
+          "tests/unit/identity-access-binding.test.ts",
+          "tests/unit/identity-account.test.ts",
+          "tests/unit/identity-lifecycle.test.ts",
+          "tests/unit/identity-org-membership.test.ts",
+          "tests/unit/identity-otp.test.ts",
+          "tests/unit/identity-session-revocation.test.ts",
+          "tests/unit/identity-test-idp.test.ts",
+          "tests/unit/identity-token.test.ts",
+          "tests/unit/owner-session.test.ts",
+          "tests/unit/rbac.test.ts",
+          "tests/unit/service-store-core.test.ts"
+        ],
+        "integration": [
+          "tests/integration/access-durability.test.ts",
+          "tests/integration/access-lifecycle.test.ts",
+          "tests/integration/approval-decide.test.ts",
+          "tests/integration/approval-decision-synced-route.test.ts",
+          "tests/integration/approval-delegation.test.ts",
+          "tests/integration/authorization-is-enforced.test.ts",
+          "tests/integration/emergency-access.test.ts",
+          "tests/integration/manager-decisions-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/the-till-names-its-operator.test.ts",
+          "tests/integration/trusted-approvals.test.ts",
+          "tests/security/separation-of-duties.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/authorization-is-enforced.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/customer-login.e2e.ts",
+          "tests/e2e/manager-decisions-survive-reload.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "M03",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 16,
+        "integration": 13,
+        "realDb": 0,
+        "browser": 2,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/catalogue-preview.test.ts",
+          "tests/unit/catalogue-snapshot-builder.test.ts",
+          "tests/unit/catalogue.test.ts",
+          "tests/unit/erp-catalogue-publish-command.test.ts",
+          "tests/unit/erp-catalogue-session.test.ts",
+          "tests/unit/erp-category-policy-session.test.ts",
+          "tests/unit/erp-product-publish-review-session.test.ts",
+          "tests/unit/erp-unsellable-session.test.ts",
+          "tests/unit/import.test.ts",
+          "tests/unit/product-data-quality.test.ts",
+          "tests/unit/product-duplicates.test.ts",
+          "tests/unit/product-master.test.ts",
+          "tests/unit/product-pack.test.ts",
+          "tests/unit/screen-router.test.ts",
+          "tests/unit/service-catalogue.test.ts",
+          "tests/unit/service-pos.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-data-quality-worklist.test.ts",
+          "tests/integration/ai-data-quality.test.ts",
+          "tests/integration/barcode-register.test.ts",
+          "tests/integration/catalogue-pack-preview.test.ts",
+          "tests/integration/catalogue-pack-publish.test.ts",
+          "tests/integration/catalogue-product-duplicates.test.ts",
+          "tests/integration/pack-hierarchy.test.ts",
+          "tests/integration/product-master-durability.test.ts",
+          "tests/integration/product-master.test.ts",
+          "tests/integration/product-merge.test.ts",
+          "tests/integration/step-up-payroll-and-publish.test.ts",
+          "tests/integration/tax-class-rates.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [],
+        "browser": [
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/unsellable-screen.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "M04",
+      "label": "WIRED",
+      "counts": {
+        "unit": 7,
+        "integration": 7,
+        "realDb": 0,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-catalogue-session.test.ts",
+          "tests/unit/erp-merchandising-session.test.ts",
+          "tests/unit/merchandising-assortment.test.ts",
+          "tests/unit/merchandising-shelf-count.test.ts",
+          "tests/unit/merchandising-shelf.test.ts",
+          "tests/unit/merchandising-space.test.ts",
+          "tests/unit/planogram-store-route.test.ts"
+        ],
+        "integration": [
+          "tests/integration/assortment.test.ts",
+          "tests/integration/floor-indents.test.ts",
+          "tests/integration/planogram-compliance.test.ts",
+          "tests/integration/planogram-store.test.ts",
+          "tests/integration/shelf-count.test.ts",
+          "tests/integration/space-and-display.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [],
+        "browser": [
+          "tests/e2e/merchandising-count-and-refill.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M05",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 11,
+        "integration": 11,
+        "realDb": 2,
+        "browser": 3,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/catalogue-snapshot-builder.test.ts",
+          "tests/unit/erp-catalogue-boot.test.ts",
+          "tests/unit/erp-catalogue-session.test.ts",
+          "tests/unit/price-guard.test.ts",
+          "tests/unit/price-list.test.ts",
+          "tests/unit/promotion-simulation.test.ts",
+          "tests/unit/promotions.test.ts",
+          "tests/unit/quotations.test.ts",
+          "tests/unit/rate.test.ts",
+          "tests/unit/screen-router.test.ts",
+          "tests/unit/service-catalogue.test.ts"
+        ],
+        "integration": [
+          "tests/integration/catalogue-pack-preview.test.ts",
+          "tests/integration/catalogue-pack-publish.test.ts",
+          "tests/integration/one-customer.test.ts",
+          "tests/integration/price-change.test.ts",
+          "tests/integration/price-list-effective-dating.test.ts",
+          "tests/integration/promotion-abuse-check.test.ts",
+          "tests/integration/promotion-catalogue.test.ts",
+          "tests/integration/promotion-effectiveness.test.ts",
+          "tests/integration/promotion-governance.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/the-store-trades-a-day.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/one-customer.test.ts",
+          "tests/integration/the-store-trades-a-day.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/catalogue-price-change-delivery.e2e.ts",
+          "tests/e2e/catalogue-promotion-launch-delivery.e2e.ts",
+          "tests/e2e/pricing-promotions-menu-links.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M06",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 10,
+        "integration": 11,
+        "realDb": 1,
+        "browser": 2,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/bank-controls.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-buying-boot.test.ts",
+          "tests/unit/erp-buying-session.test.ts",
+          "tests/unit/erp-manager-session.test.ts",
+          "tests/unit/erp-suppliers-session.test.ts",
+          "tests/unit/goods-receipt-order-fold.test.ts",
+          "tests/unit/purchasing.test.ts",
+          "tests/unit/rfq.test.ts",
+          "tests/unit/supplier-performance.test.ts"
+        ],
+        "integration": [
+          "tests/integration/duplicate-bank.test.ts",
+          "tests/integration/goods-receipt-assembled.test.ts",
+          "tests/integration/purchase-capture-match.test.ts",
+          "tests/integration/purchase-orders.test.ts",
+          "tests/integration/purchase-tenant-isolation.test.ts",
+          "tests/integration/rebates.test.ts",
+          "tests/integration/rfq.test.ts",
+          "tests/integration/supplier-master.test.ts",
+          "tests/integration/supplier-scorecard.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-store-buys-what-it-sells.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/buying-po-delivery.e2e.ts",
+          "tests/e2e/suppliers-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M07",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 9,
+        "integration": 17,
+        "realDb": 1,
+        "browser": 4,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-buying-session.test.ts",
+          "tests/unit/erp-goods-receipt-session.test.ts",
+          "tests/unit/erp-manager-session.test.ts",
+          "tests/unit/goods-in.test.ts",
+          "tests/unit/goods-receipt-assembly.test.ts",
+          "tests/unit/goods-receipt-order-fold.test.ts",
+          "tests/unit/purchase-match-lines.test.ts",
+          "tests/unit/receiving-asn.test.ts",
+          "tests/unit/supplier-account-fold.test.ts"
+        ],
+        "integration": [
+          "tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/goods-receipt-assembled.test.ts",
+          "tests/integration/goods-receipt-disposition.test.ts",
+          "tests/integration/goods-receipt-synced-route.test.ts",
+          "tests/integration/goods-receipt.test.ts",
+          "tests/integration/inventory-asn-dock.test.ts",
+          "tests/integration/manager-receipts-and-counts-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/purchase-capture-match.test.ts",
+          "tests/integration/purchase-invoice-reconcile.test.ts",
+          "tests/integration/receipt-excess-held.test.ts",
+          "tests/integration/supplier-account.test.ts",
+          "tests/integration/supplier-master.test.ts",
+          "tests/integration/supplier-portal.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/warehouse-synced-routes.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-store-buys-what-it-sells.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/goods-receipt-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/warehouse-handheld-delivery.e2e.ts",
+          "tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M08",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 13,
+        "integration": 27,
+        "realDb": 4,
+        "browser": 3,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/concession-store-valuation.test.ts",
+          "tests/unit/edge-cloud-return.test.ts",
+          "tests/unit/erp-indents-session.test.ts",
+          "tests/unit/erp-inventory-health-session.test.ts",
+          "tests/unit/floor-indents-engine.test.ts",
+          "tests/unit/inventory-postings.test.ts",
+          "tests/unit/ledger.test.ts",
+          "tests/unit/sale-stock.test.ts",
+          "tests/unit/stock-ageing-source.test.ts",
+          "tests/unit/stock-metrics.test.ts",
+          "tests/unit/stock-position.test.ts",
+          "tests/unit/stock-valuation.test.ts",
+          "tests/unit/warehouse-handheld-count-and-adjust.test.ts"
+        ],
+        "integration": [
+          "tests/integration/adjustment-requests.test.ts",
+          "tests/integration/bin-counts-synced-route.test.ts",
+          "tests/integration/concession-store-valuation.test.ts",
+          "tests/integration/concession-write-off-guard.test.ts",
+          "tests/integration/counts-synced-route.test.ts",
+          "tests/integration/exchanges.test.ts",
+          "tests/integration/floor-indents-handheld-issue.test.ts",
+          "tests/integration/floor-indents-synced.test.ts",
+          "tests/integration/floor-indents.test.ts",
+          "tests/integration/inventory-ageing.test.ts",
+          "tests/integration/inventory-availability.test.ts",
+          "tests/integration/inventory-near-expiry.test.ts",
+          "tests/integration/inventory-performance.test.ts",
+          "tests/integration/inventory-stockout-impact.test.ts",
+          "tests/integration/inventory-valuation.test.ts",
+          "tests/integration/no-receipt-returns.test.ts",
+          "tests/integration/production.test.ts",
+          "tests/integration/sale-reduces-stock.test.ts",
+          "tests/integration/the-edge-stamps-the-sale-location.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/the-till-exchanges.test.ts",
+          "tests/integration/the-till-returns-without-a-receipt.test.ts",
+          "tests/integration/trusted-approvals.test.ts",
+          "tests/integration/warehouse-counts.test.ts",
+          "tests/integration/warehouse-durability.test.ts",
+          "tests/integration/warehouse-synced-routes.test.ts",
+          "tests/integration/warehouse-transfers.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/floor-indents-handheld-issue.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/the-till-exchanges.test.ts",
+          "tests/integration/the-till-returns-without-a-receipt.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/indents-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/stock-health-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M09",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 12,
+        "integration": 20,
+        "realDb": 2,
+        "browser": 6,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/counts.test.ts",
+          "tests/unit/demand-sales-history.test.ts",
+          "tests/unit/erp-counts-session.test.ts",
+          "tests/unit/erp-indents-session.test.ts",
+          "tests/unit/erp-manager-session.test.ts",
+          "tests/unit/floor-indents-engine.test.ts",
+          "tests/unit/inventory-postings.test.ts",
+          "tests/unit/replenishment.test.ts",
+          "tests/unit/warehouse-handheld-count-and-adjust.test.ts",
+          "tests/unit/warehouse-handheld-issues-to-floor.test.ts",
+          "tests/unit/warehouse-movements.test.ts",
+          "tests/unit/warehouse-transfers.test.ts"
+        ],
+        "integration": [
+          "tests/integration/bin-counts-synced-route.test.ts",
+          "tests/integration/counts-synced-route.test.ts",
+          "tests/integration/floor-indents-handheld-issue.test.ts",
+          "tests/integration/floor-indents-synced.test.ts",
+          "tests/integration/floor-indents.test.ts",
+          "tests/integration/manager-receipts-and-counts-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/replenishment.test.ts",
+          "tests/integration/sales-history.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/trusted-approvals.test.ts",
+          "tests/integration/warehouse-bins.test.ts",
+          "tests/integration/warehouse-counts.test.ts",
+          "tests/integration/warehouse-durability.test.ts",
+          "tests/integration/warehouse-fed-from-pack.test.ts",
+          "tests/integration/warehouse-handheld-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/warehouse-screen-fed.test.ts",
+          "tests/integration/warehouse-supervisor-fed.test.ts",
+          "tests/integration/warehouse-synced-routes.test.ts",
+          "tests/integration/warehouse-transfers.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/floor-indents-handheld-issue.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/indents-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/warehouse-handheld-delivery.e2e.ts",
+          "tests/e2e/warehouse-handheld-issues-to-floor.e2e.ts",
+          "tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts",
+          "tests/e2e/warehouse-supervisor-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M10",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 19,
+        "integration": 16,
+        "realDb": 1,
+        "browser": 3,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/catalogue-snapshot-builder.test.ts",
+          "tests/unit/catalogue.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-expiry-session.test.ts",
+          "tests/unit/erp-unsellable-session.test.ts",
+          "tests/unit/fefo-assign-batches.test.ts",
+          "tests/unit/fefo-attribute-sales.test.ts",
+          "tests/unit/fefo-near-expiry.test.ts",
+          "tests/unit/fefo.test.ts",
+          "tests/unit/fulfilment-packing.test.ts",
+          "tests/unit/goods-in.test.ts",
+          "tests/unit/product-master.test.ts",
+          "tests/unit/quality-cold-chain.test.ts",
+          "tests/unit/quality-hold.test.ts",
+          "tests/unit/quality-lot-trace.test.ts",
+          "tests/unit/returns.test.ts",
+          "tests/unit/service-catalogue.test.ts",
+          "tests/unit/service-pos.test.ts",
+          "tests/unit/traceability.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-inventory-agent.test.ts",
+          "tests/integration/facilities-monitoring.test.ts",
+          "tests/integration/fulfilment-packing.test.ts",
+          "tests/integration/goods-receipt-synced-route.test.ts",
+          "tests/integration/goods-receipt.test.ts",
+          "tests/integration/inventory-expiry-actions.test.ts",
+          "tests/integration/inventory-fefo-allocation.test.ts",
+          "tests/integration/inventory-near-expiry.test.ts",
+          "tests/integration/lot-trace.test.ts",
+          "tests/integration/production.test.ts",
+          "tests/integration/quality-cold-chain.test.ts",
+          "tests/integration/quality-hold.test.ts",
+          "tests/integration/recall.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/warehouse-screen-fed.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-store-buys-what-it-sells.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/expiry-recall-delivery.e2e.ts",
+          "tests/e2e/unsellable-screen.e2e.ts",
+          "tests/e2e/warehouse-handheld-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M11",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 4,
+        "integration": 4,
+        "realDb": 0,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-production-session.test.ts",
+          "tests/unit/production-weighed.test.ts",
+          "tests/unit/production.test.ts"
+        ],
+        "integration": [
+          "tests/integration/production-durability.test.ts",
+          "tests/integration/production.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/weighed-costing.test.ts"
+        ],
+        "realDb": [],
+        "browser": [
+          "tests/e2e/production-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "M12",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 12,
+        "integration": 12,
+        "realDb": 3,
+        "browser": 5,
+        "connected": 1,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/catalogue-preview.test.ts",
+          "tests/unit/catalogue.test.ts",
+          "tests/unit/edge-cloud-sale.test.ts",
+          "tests/unit/evidence-ledger.test.ts",
+          "tests/unit/pending-recovery.test.ts",
+          "tests/unit/pos-lane-guards.test.ts",
+          "tests/unit/pos-session.test.ts",
+          "tests/unit/quotations.test.ts",
+          "tests/unit/receipt.test.ts",
+          "tests/unit/service-pos.test.ts",
+          "tests/unit/suspended-bills.test.ts",
+          "tests/unit/tender.test.ts"
+        ],
+        "integration": [
+          "tests/integration/catalogue-pack-preview.test.ts",
+          "tests/integration/pending-tender-recovery.test.ts",
+          "tests/integration/product-master.test.ts",
+          "tests/integration/quotations.test.ts",
+          "tests/integration/restricted-sales.test.ts",
+          "tests/integration/self-checkout-decisions.test.ts",
+          "tests/integration/step-up-payroll-and-publish.test.ts",
+          "tests/integration/suspended-bills.test.ts",
+          "tests/integration/the-shop-reaches-the-cloud.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/the-store-trades-a-day.test.ts",
+          "tests/integration/the-till-names-its-operator.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-shop-reaches-the-cloud.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/the-store-trades-a-day.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/core-one-lane.test.ts",
+          "tests/e2e/the-served-till-closes.e2e.ts",
+          "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
+          "tests/e2e/the-served-till-takes-a-sale.e2e.ts",
+          "tests/e2e/the-store-trades-a-day.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/the-store-trades-a-day.e2e.ts"
+        ],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in ONE connected run"
+    },
+    {
+      "id": "M13",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 21,
+        "integration": 16,
+        "realDb": 3,
+        "browser": 3,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/assess-return.test.ts",
+          "tests/unit/catalogue.test.ts",
+          "tests/unit/edge-cloud-return.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/edge-receipt-lookup.test.ts",
+          "tests/unit/erp-return-governance-session.test.ts",
+          "tests/unit/erp-service-session.test.ts",
+          "tests/unit/exchange-engine.test.ts",
+          "tests/unit/exchanges-route.test.ts",
+          "tests/unit/lane-lookup-route.test.ts",
+          "tests/unit/lane-server-cors.test.ts",
+          "tests/unit/loyalty-stored-value.test.ts",
+          "tests/unit/no-receipt-returns-route.test.ts",
+          "tests/unit/pos-refund-view.test.ts",
+          "tests/unit/pos-refund-wiring.test.ts",
+          "tests/unit/pos-till-session.test.ts",
+          "tests/unit/return-eligibility.test.ts",
+          "tests/unit/returns-register.test.ts",
+          "tests/unit/returns.test.ts",
+          "tests/unit/reversal.test.ts",
+          "tests/unit/sync-http-transport.test.ts"
+        ],
+        "integration": [
+          "tests/integration/exchanges.test.ts",
+          "tests/integration/lane-receipt-lookup.test.ts",
+          "tests/integration/no-receipt-returns.test.ts",
+          "tests/integration/offline-returns-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/offline-returns-reach-the-cloud.test.ts",
+          "tests/integration/offline-store-credit-reaches-the-cloud.test.ts",
+          "tests/integration/pending-tender-recovery.test.ts",
+          "tests/integration/returns-eligibility.test.ts",
+          "tests/integration/returns-guard-the-refund.test.ts",
+          "tests/integration/returns-reconcile-on-sync.test.ts",
+          "tests/integration/store-credit-cap.test.ts",
+          "tests/integration/store-credit-refund.test.ts",
+          "tests/integration/the-lane-reaches-its-disk.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/the-till-exchanges.test.ts",
+          "tests/integration/the-till-returns-without-a-receipt.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/returns-guard-the-refund.test.ts",
+          "tests/integration/the-till-exchanges.test.ts",
+          "tests/integration/the-till-returns-without-a-receipt.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/return-governance-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-served-till-takes-a-refund.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "M14",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 17,
+        "integration": 12,
+        "realDb": 1,
+        "browser": 5,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/assess-cash.test.ts",
+          "tests/unit/assess-shift.test.ts",
+          "tests/unit/cash.test.ts",
+          "tests/unit/day-close.test.ts",
+          "tests/unit/denominations.test.ts",
+          "tests/unit/edge-till-cash.test.ts",
+          "tests/unit/erp-cash-office-session.test.ts",
+          "tests/unit/erp-manager-boot.test.ts",
+          "tests/unit/erp-manager-session.test.ts",
+          "tests/unit/evidence-ledger.test.ts",
+          "tests/unit/lane-server-day-close.test.ts",
+          "tests/unit/lane-server-day-reopen.test.ts",
+          "tests/unit/lane-server-till-cash.test.ts",
+          "tests/unit/over-short-review.test.ts",
+          "tests/unit/pos-till-session.test.ts",
+          "tests/unit/settlement.test.ts",
+          "tests/unit/till.test.ts"
+        ],
+        "integration": [
+          "tests/integration/day-close-honestly.test.ts",
+          "tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/day-close-reaches-the-cloud.test.ts",
+          "tests/integration/day-close-reconcile-on-sync.test.ts",
+          "tests/integration/manager-decisions-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/refund-exceptions.test.ts",
+          "tests/integration/settlement-cash-office.test.ts",
+          "tests/integration/settlement-investigations.test.ts",
+          "tests/integration/shift-close.test.ts",
+          "tests/integration/the-till-closes-through-the-box.test.ts",
+          "tests/integration/till-cash-reaches-the-cloud.test.ts",
+          "tests/integration/till-cash.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/day-close-honestly.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/cash-office-signoff-delivery.e2e.ts",
+          "tests/e2e/day-reopen-delivery.e2e.ts",
+          "tests/e2e/manager-day-close-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-served-till-closes.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M15",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 13,
+        "integration": 11,
+        "realDb": 1,
+        "browser": 3,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/auto-open-from-shortage.test.ts",
+          "tests/unit/bank-controls.test.ts",
+          "tests/unit/erp-loss-prevention-inbox-session.test.ts",
+          "tests/unit/erp-manager-session.test.ts",
+          "tests/unit/fraud-signals.test.ts",
+          "tests/unit/loss-prevention.test.ts",
+          "tests/unit/lp-cases.test.ts",
+          "tests/unit/lp-worklist.test.ts",
+          "tests/unit/no-receipt-returns-route.test.ts",
+          "tests/unit/pos-session.test.ts",
+          "tests/unit/pos-till-session.test.ts",
+          "tests/unit/service-pos.test.ts",
+          "tests/unit/settlement.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-security-agent.test.ts",
+          "tests/integration/day-close-honestly.test.ts",
+          "tests/integration/duplicate-bank.test.ts",
+          "tests/integration/fraud-signals.test.ts",
+          "tests/integration/loss-prevention-cases.test.ts",
+          "tests/integration/loss-prevention-rules.test.ts",
+          "tests/integration/no-receipt-returns.test.ts",
+          "tests/integration/self-checkout-decisions.test.ts",
+          "tests/integration/shift-close.test.ts",
+          "tests/integration/supplier-master.test.ts",
+          "tests/integration/suspended-bills.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/day-close-honestly.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/loss-prevention-close-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-served-till-takes-a-refund.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M16",
+      "label": "WIRED",
+      "counts": {
+        "unit": 8,
+        "integration": 9,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/customer-app.test.ts",
+          "tests/unit/customer-data-rights.test.ts",
+          "tests/unit/customer-erasure-executor.test.ts",
+          "tests/unit/customer-privacy-centre.test.ts",
+          "tests/unit/customer-segments.test.ts",
+          "tests/unit/customer.test.ts",
+          "tests/unit/loyalty-coupons.test.ts",
+          "tests/unit/storefront-browse.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-marketing-agent.test.ts",
+          "tests/integration/coupons.test.ts",
+          "tests/integration/customer-duplicates.test.ts",
+          "tests/integration/customer-segment-policy.test.ts",
+          "tests/integration/customer-segments-stateful.test.ts",
+          "tests/integration/customer-segments.test.ts",
+          "tests/integration/data-rights.test.ts",
+          "tests/integration/lot-trace.test.ts",
+          "tests/integration/one-customer.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/one-customer.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M17",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 6,
+        "integration": 8,
+        "realDb": 2,
+        "browser": 3,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/assess-points.test.ts",
+          "tests/unit/erp-return-governance-session.test.ts",
+          "tests/unit/erp-stored-value-session.test.ts",
+          "tests/unit/loyalty-coupons.test.ts",
+          "tests/unit/loyalty-stored-value.test.ts",
+          "tests/unit/loyalty.test.ts"
+        ],
+        "integration": [
+          "tests/integration/coupons.test.ts",
+          "tests/integration/household-pooling.test.ts",
+          "tests/integration/loyalty-durability.test.ts",
+          "tests/integration/loyalty-points.test.ts",
+          "tests/integration/store-credit-cap.test.ts",
+          "tests/integration/store-credit-refund.test.ts",
+          "tests/integration/stored-value-liability.test.ts",
+          "tests/integration/stored-value.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/household-pooling.test.ts",
+          "tests/integration/stored-value-liability.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/return-governance-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/stored-value-oversight-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M18",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 9,
+        "integration": 7,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/fulfilment-serviceability-simulator.test.ts",
+          "tests/unit/order-payment-refund-routes.test.ts",
+          "tests/unit/order-payment-refunds.test.ts",
+          "tests/unit/orders-amendments.test.ts",
+          "tests/unit/orders-backorder.test.ts",
+          "tests/unit/orders-fulfilment-plan.test.ts",
+          "tests/unit/orders-substitution-exceptions.test.ts",
+          "tests/unit/orders.test.ts",
+          "tests/unit/storefront-serviceability-schedule.test.ts"
+        ],
+        "integration": [
+          "tests/integration/order-channel-reconcile.test.ts",
+          "tests/integration/order-payments-and-refunds.test.ts",
+          "tests/integration/order-substitution.test.ts",
+          "tests/integration/orders-backorder.test.ts",
+          "tests/integration/orders-lifecycle.test.ts",
+          "tests/integration/serviceability-config.test.ts",
+          "tests/integration/storefront-orders.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M19",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 18,
+        "integration": 10,
+        "realDb": 0,
+        "browser": 5,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/assignments-feed-pull.test.ts",
+          "tests/unit/delivery-route.test.ts",
+          "tests/unit/dispatch-routing.test.ts",
+          "tests/unit/erp-substitution-exception-inbox-session.test.ts",
+          "tests/unit/fulfilment-assignments.test.ts",
+          "tests/unit/fulfilment-driver-runs-synced.test.ts",
+          "tests/unit/fulfilment-packing.test.ts",
+          "tests/unit/fulfilment-waves-synced.test.ts",
+          "tests/unit/fulfilment.test.ts",
+          "tests/unit/handheld-work-queues.test.ts",
+          "tests/unit/orders-substitution-exception-ownership.test.ts",
+          "tests/unit/orders-substitution-exceptions.test.ts",
+          "tests/unit/orders-substitution-messages.test.ts",
+          "tests/unit/orders-substitution-money.test.ts",
+          "tests/unit/orders-substitution-policy.test.ts",
+          "tests/unit/picker-session.test.ts",
+          "tests/unit/product-master.test.ts",
+          "tests/unit/substitution-exception-ownership-routes.test.ts"
+        ],
+        "integration": [
+          "tests/integration/cod-reconciliation.test.ts",
+          "tests/integration/delivery-state.test.ts",
+          "tests/integration/dispatch.test.ts",
+          "tests/integration/driver-handheld-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/fulfilment-packing.test.ts",
+          "tests/integration/order-substitution.test.ts",
+          "tests/integration/picker-handheld-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/substitution-exception-ownership.test.ts",
+          "tests/integration/substitution-exceptions.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [],
+        "browser": [
+          "tests/e2e/delivery-route-partial-delivery.e2e.ts",
+          "tests/e2e/driver-handheld-syncs-through-the-box.e2e.ts",
+          "tests/e2e/picker-handheld-syncs-through-the-box.e2e.ts",
+          "tests/e2e/picker-substitution-delivery.e2e.ts",
+          "tests/e2e/substitution-exception-claim-resolve.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M20",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 18,
+        "integration": 7,
+        "realDb": 0,
+        "browser": 3,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/api-stream-names.test.ts",
+          "tests/unit/customer-app-places-through-the-shop.test.ts",
+          "tests/unit/customer-app.test.ts",
+          "tests/unit/customer-erasure-executor.test.ts",
+          "tests/unit/customer-erasure-governance.test.ts",
+          "tests/unit/customer-processor-erasure-notice.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/identity-access-binding.test.ts",
+          "tests/unit/identity-org-membership.test.ts",
+          "tests/unit/identity-otp.test.ts",
+          "tests/unit/identity-session-revocation.test.ts",
+          "tests/unit/identity-test-idp.test.ts",
+          "tests/unit/order-payment-refund-routes.test.ts",
+          "tests/unit/order-payment-refunds.test.ts",
+          "tests/unit/shop-transport.test.ts",
+          "tests/unit/storefront-browse.test.ts",
+          "tests/unit/storefront-checkout.test.ts",
+          "tests/unit/storefront-scope.test.ts"
+        ],
+        "integration": [
+          "tests/integration/data-rights.test.ts",
+          "tests/integration/erasure-execution.test.ts",
+          "tests/integration/order-payments-and-refunds.test.ts",
+          "tests/integration/promotion-abuse-check.test.ts",
+          "tests/integration/promotion-governance.test.ts",
+          "tests/integration/storefront-orders.test.ts",
+          "tests/integration/the-app-orders-through-the-cloud.test.ts"
+        ],
+        "realDb": [],
+        "browser": [
+          "tests/e2e/customer-login.e2e.ts",
+          "tests/e2e/customer-order-delivery.e2e.ts",
+          "tests/e2e/erasure-console.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M21",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 4,
+        "integration": 11,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-service-session.test.ts",
+          "tests/unit/service-desk-campaigns.test.ts",
+          "tests/unit/service-desk-cases.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-service-agent.test.ts",
+          "tests/integration/campaign-consent.test.ts",
+          "tests/integration/campaign-journeys.test.ts",
+          "tests/integration/exchanges.test.ts",
+          "tests/integration/no-receipt-returns.test.ts",
+          "tests/integration/returns-guard-the-refund.test.ts",
+          "tests/integration/service-ai-drafts.test.ts",
+          "tests/integration/service-cases.test.ts",
+          "tests/integration/service-compensation.test.ts",
+          "tests/integration/service-csat.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/returns-guard-the-refund.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "M22",
+      "label": "WIRED",
+      "counts": {
+        "unit": 9,
+        "integration": 8,
+        "realDb": 1,
+        "browser": 2,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/b2b-collections.test.ts",
+          "tests/unit/b2b-documents.test.ts",
+          "tests/unit/b2b-portal-session.test.ts",
+          "tests/unit/b2b.test.ts",
+          "tests/unit/identity-access-binding.test.ts",
+          "tests/unit/identity-org-membership.test.ts",
+          "tests/unit/identity-otp.test.ts",
+          "tests/unit/identity-session-revocation.test.ts",
+          "tests/unit/identity-test-idp.test.ts"
+        ],
+        "integration": [
+          "tests/integration/b2b-collections.test.ts",
+          "tests/integration/b2b-commission.test.ts",
+          "tests/integration/b2b-credit.test.ts",
+          "tests/integration/b2b-documents-chain-2.test.ts",
+          "tests/integration/b2b-documents-chain.test.ts",
+          "tests/integration/b2b-portal.test.ts",
+          "tests/integration/b2b-reconcile-ar.test.ts",
+          "tests/integration/quotations.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/b2b-reconcile-ar.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/b2b-portal-delivery.e2e.ts",
+          "tests/e2e/customer-login.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M23",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 19,
+        "integration": 17,
+        "realDb": 5,
+        "browser": 3,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/api-manifest.test.ts",
+          "tests/unit/b2b-collections.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-day-book-session.test.ts",
+          "tests/unit/erp-finance-session.test.ts",
+          "tests/unit/erp-suppliers-session.test.ts",
+          "tests/unit/finance-credit-notes.test.ts",
+          "tests/unit/finance-day-book-routes.test.ts",
+          "tests/unit/finance-day-book.test.ts",
+          "tests/unit/finance-payables.test.ts",
+          "tests/unit/finance-posting.test.ts",
+          "tests/unit/fulfilment-driver-runs-synced.test.ts",
+          "tests/unit/loyalty-stored-value.test.ts",
+          "tests/unit/merchandising-space.test.ts",
+          "tests/unit/migration-sign-route.test.ts",
+          "tests/unit/period-close.test.ts",
+          "tests/unit/rate.test.ts",
+          "tests/unit/reconciliation.test.ts",
+          "tests/unit/supplier-account-fold.test.ts"
+        ],
+        "integration": [
+          "tests/integration/b2b-reconcile-ar.test.ts",
+          "tests/integration/cod-reconciliation.test.ts",
+          "tests/integration/credit-note-reconciliation.test.ts",
+          "tests/integration/day-book-posts-the-day.test.ts",
+          "tests/integration/day-close-reconcile-on-sync.test.ts",
+          "tests/integration/driver-handheld-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/period-evidence.test.ts",
+          "tests/integration/period-reopen.test.ts",
+          "tests/integration/rebates.test.ts",
+          "tests/integration/space-and-display.test.ts",
+          "tests/integration/stored-value-liability.test.ts",
+          "tests/integration/supplier-account.test.ts",
+          "tests/integration/supplier-master.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/the-till-exchanges.test.ts",
+          "tests/security/separation-of-duties.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/b2b-reconcile-ar.test.ts",
+          "tests/integration/credit-note-reconciliation.test.ts",
+          "tests/integration/stored-value-liability.test.ts",
+          "tests/integration/the-store-buys-what-it-sells.test.ts",
+          "tests/integration/the-till-exchanges.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/day-book-post-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/suppliers-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M24",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 2,
+        "integration": 7,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/supplier-portal-session.test.ts",
+          "tests/unit/supplier-portal.test.ts"
+        ],
+        "integration": [
+          "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/supplier-portal-compliance.test.ts",
+          "tests/integration/supplier-portal-durability.test.ts",
+          "tests/integration/supplier-portal-probing.test.ts",
+          "tests/integration/supplier-portal-scoping.test.ts",
+          "tests/integration/supplier-portal-statement.test.ts",
+          "tests/integration/supplier-portal.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/beyond-the-till.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/supplier-portal-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M25",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 8,
+        "integration": 16,
+        "realDb": 1,
+        "browser": 3,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/cloud-completion.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-checklist-session.test.ts",
+          "tests/unit/erp-ess-session.test.ts",
+          "tests/unit/erp-rostering-session.test.ts",
+          "tests/unit/erp-workforce-inbox-session.test.ts",
+          "tests/unit/sync-http-transport.test.ts",
+          "tests/unit/workforce.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-workforce-guidance.test.ts",
+          "tests/integration/ai-workforce-worklist.test.ts",
+          "tests/integration/attendance-store.test.ts",
+          "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/cert-store.test.ts",
+          "tests/integration/checklist-store.test.ts",
+          "tests/integration/offline-completion-sync-routes.test.ts",
+          "tests/integration/offline-completions-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/payslip-store.test.ts",
+          "tests/integration/roster-store.test.ts",
+          "tests/integration/sop-store.test.ts",
+          "tests/integration/task-store.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/workforce-labour-cost.test.ts",
+          "tests/integration/workforce-roster.test.ts",
+          "tests/integration/workforce-tenant-isolation.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/beyond-the-till.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/checklist-delivery.e2e.ts",
+          "tests/e2e/rostering-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M26",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 2,
+        "integration": 6,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-facilities-session.test.ts",
+          "tests/unit/facilities.test.ts"
+        ],
+        "integration": [
+          "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/facilities-assets.test.ts",
+          "tests/integration/facilities-durability.test.ts",
+          "tests/integration/facilities-incidents.test.ts",
+          "tests/integration/facilities-monitoring.test.ts",
+          "tests/integration/facilities-schedules.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/beyond-the-till.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/facilities-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M27",
+      "label": "WIRED",
+      "counts": {
+        "unit": 6,
+        "integration": 5,
+        "realDb": 0,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/concession-store-valuation.test.ts",
+          "tests/unit/concession-tag-routes.test.ts",
+          "tests/unit/concession-tag-synced-route.test.ts",
+          "tests/unit/concession-tagging.test.ts",
+          "tests/unit/concession.test.ts",
+          "tests/unit/lane-server-concession-tags.test.ts"
+        ],
+        "integration": [
+          "tests/integration/concession-store-valuation.test.ts",
+          "tests/integration/concession-tags-reach-settlement.test.ts",
+          "tests/integration/concession-write-off-guard.test.ts",
+          "tests/integration/concession.test.ts",
+          "tests/integration/till-concession-tags-reach-the-cloud-through-the-edge.test.ts"
+        ],
+        "realDb": [],
+        "browser": [
+          "tests/e2e/till-concession-tag-through-the-box.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M28",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 4,
+        "integration": 7,
+        "realDb": 2,
+        "browser": 2,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-waste-review-session.test.ts",
+          "tests/unit/erp-write-off-capture-session.test.ts",
+          "tests/unit/waste-sustainability.test.ts",
+          "tests/unit/waste.test.ts"
+        ],
+        "integration": [
+          "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/packaging.test.ts",
+          "tests/integration/physical-to-system.test.ts",
+          "tests/integration/scrap.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/waste-reporting.test.ts",
+          "tests/integration/waste-write-off.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/physical-to-system.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/write-off-capture-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M29",
+      "label": "WIRED",
+      "counts": {
+        "unit": 10,
+        "integration": 6,
+        "realDb": 0,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-reporting-session.test.ts",
+          "tests/unit/owner-alerts-inbox.test.ts",
+          "tests/unit/owner-brief.test.ts",
+          "tests/unit/owner-drill-through.test.ts",
+          "tests/unit/owner-scheduled-brief.test.ts",
+          "tests/unit/owner-session.test.ts",
+          "tests/unit/reporting-catalogue-route.test.ts",
+          "tests/unit/reporting-consolidation.test.ts",
+          "tests/unit/reporting-kpis-run-on-the-engine.test.ts",
+          "tests/unit/reporting.test.ts"
+        ],
+        "integration": [
+          "tests/integration/day-close-reconcile-on-sync.test.ts",
+          "tests/integration/owner-alerts.test.ts",
+          "tests/integration/owner-drill-through.test.ts",
+          "tests/integration/reporting-consolidation.test.ts",
+          "tests/integration/scheduled-brief.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [],
+        "browser": [
+          "tests/e2e/company-report.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M30",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 9,
+        "integration": 4,
+        "realDb": 0,
+        "browser": 3,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/data-export-routes.test.ts",
+          "tests/unit/erp-buying-session.test.ts",
+          "tests/unit/erp-data-io-session.test.ts",
+          "tests/unit/export.test.ts",
+          "tests/unit/import-job-history.test.ts",
+          "tests/unit/import-mapping-quality.test.ts",
+          "tests/unit/import.test.ts",
+          "tests/unit/reporting-catalogue-route.test.ts",
+          "tests/unit/reporting-consolidation.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-mapping-quality.test.ts",
+          "tests/integration/data-export.test.ts",
+          "tests/integration/data-import.test.ts",
+          "tests/integration/import-quality.test.ts"
+        ],
+        "realDb": [],
+        "browser": [
+          "tests/e2e/company-report.e2e.ts",
+          "tests/e2e/data-io-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "M31",
+      "label": "WIRED",
+      "counts": {
+        "unit": 4,
+        "integration": 5,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/documents-templates.test.ts",
+          "tests/unit/notifications.test.ts",
+          "tests/unit/receipt-presets.test.ts",
+          "tests/unit/receipt.test.ts"
+        ],
+        "integration": [
+          "tests/integration/document-issue.test.ts",
+          "tests/integration/documents-retention.test.ts",
+          "tests/integration/documents-templates.test.ts",
+          "tests/integration/notification-guard.test.ts",
+          "tests/integration/notification-queue.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M32",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 8,
+        "integration": 9,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/customer-processor-erasure-notice.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-ai-session.test.ts",
+          "tests/unit/erp-integration-health-session.test.ts",
+          "tests/unit/integration-adapters.test.ts",
+          "tests/unit/integration-api-gateway.test.ts",
+          "tests/unit/integration-connector.test.ts",
+          "tests/unit/integration-secrets.test.ts"
+        ],
+        "integration": [
+          "tests/integration/connector-delivery.test.ts",
+          "tests/integration/connector-mapping.test.ts",
+          "tests/integration/integration-gateway.test.ts",
+          "tests/integration/managed-secrets-tenant-isolation.test.ts",
+          "tests/integration/managed-secrets.test.ts",
+          "tests/integration/observed-health.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/the-seams-hold.test.ts",
+          "tests/integration/webhooks.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-seams-hold.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/integration-health-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M33",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 20,
+        "integration": 18,
+        "realDb": 2,
+        "browser": 2,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/background-jobs-projection.test.ts",
+          "tests/unit/device-registry-projection.test.ts",
+          "tests/unit/durable-tenant-settings.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-admin-session.test.ts",
+          "tests/unit/erp-fleet-device-command.test.ts",
+          "tests/unit/erp-fleet-device-delivery.test.ts",
+          "tests/unit/erp-fleet-session.test.ts",
+          "tests/unit/erp-setup-editing.test.ts",
+          "tests/unit/erp-setup-session.test.ts",
+          "tests/unit/licences.test.ts",
+          "tests/unit/platform-admin-devices.test.ts",
+          "tests/unit/platform-admin-support.test.ts",
+          "tests/unit/platform-setup-routes.test.ts",
+          "tests/unit/remote-sessions.test.ts",
+          "tests/unit/service-requests.test.ts",
+          "tests/unit/support-access-lifecycle-projection.test.ts",
+          "tests/unit/tenant-setup-concurrency.test.ts",
+          "tests/unit/tenant-setup.test.ts",
+          "tests/unit/version-policy-projection.test.ts"
+        ],
+        "integration": [
+          "tests/integration/background-jobs.test.ts",
+          "tests/integration/config-rollback.test.ts",
+          "tests/integration/licence-expiry.test.ts",
+          "tests/integration/platform-device-enrolment.test.ts",
+          "tests/integration/platform-device-registry.test.ts",
+          "tests/integration/platform-devices.test.ts",
+          "tests/integration/platform-version-policy.test.ts",
+          "tests/integration/remote-sessions.test.ts",
+          "tests/integration/service-requests.test.ts",
+          "tests/integration/setup-surface.test.ts",
+          "tests/integration/status-centre.test.ts",
+          "tests/integration/store-pack-policy.test.ts",
+          "tests/integration/support-access-lifecycle.test.ts",
+          "tests/integration/the-fleet-change-reaches-the-registry.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/two-shops-one-system.test.ts",
+          "tests/migration/tenants-register.test.ts",
+          "tests/security/the-platform-admin-cannot-post-a-business-transaction.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/two-shops-one-system.test.ts",
+          "tests/migration/tenants-register.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/fleet-change-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M34",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 8,
+        "integration": 9,
+        "realDb": 1,
+        "browser": 2,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/audit-retention-schedule.test.ts",
+          "tests/unit/audit.test.ts",
+          "tests/unit/compliance-obligations.test.ts",
+          "tests/unit/compliance-risk.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-admin-session.test.ts",
+          "tests/unit/erp-risk-acceptance-session.test.ts",
+          "tests/unit/legal-holds.test.ts"
+        ],
+        "integration": [
+          "tests/integration/audit-search.test.ts",
+          "tests/integration/audit-trail-store.test.ts",
+          "tests/integration/compliance-obligation-lifecycle.test.ts",
+          "tests/integration/compliance-obligations.test.ts",
+          "tests/integration/legal-holds.test.ts",
+          "tests/integration/physical-to-system.test.ts",
+          "tests/integration/risk-followthrough.test.ts",
+          "tests/integration/risk-register.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/physical-to-system.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/risk-acceptance-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "M35",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 4,
+        "integration": 7,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/alert-lifecycle.test.ts",
+          "tests/unit/observed-health-routes.test.ts",
+          "tests/unit/ops-backup.test.ts",
+          "tests/unit/ops-health.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-operations-agent.test.ts",
+          "tests/integration/ai-operations-worklist.test.ts",
+          "tests/integration/alert-lifecycle.test.ts",
+          "tests/integration/backup-verification.test.ts",
+          "tests/integration/dr-readiness.test.ts",
+          "tests/integration/observed-health.test.ts",
+          "tests/integration/operational-health.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "M36",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 11,
+        "integration": 26,
+        "realDb": 3,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/api-manifest.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-ai-session.test.ts",
+          "tests/unit/persistence-event-store.test.ts",
+          "tests/unit/platform-branding.test.ts",
+          "tests/unit/platform-lifecycle.test.ts",
+          "tests/unit/platform-partner.test.ts",
+          "tests/unit/platform-plans.test.ts",
+          "tests/unit/production.test.ts",
+          "tests/unit/receipt-presets.test.ts",
+          "tests/unit/service-kernel-entitlement.test.ts"
+        ],
+        "integration": [
+          "tests/integration/api-manifest.test.ts",
+          "tests/integration/b2b-collections.test.ts",
+          "tests/integration/b2b-commission.test.ts",
+          "tests/integration/b2b-credit.test.ts",
+          "tests/integration/b2b-documents-chain-2.test.ts",
+          "tests/integration/b2b-documents-chain.test.ts",
+          "tests/integration/b2b-reconcile-ar.test.ts",
+          "tests/integration/cod-reconciliation.test.ts",
+          "tests/integration/concession-store-valuation.test.ts",
+          "tests/integration/concession.test.ts",
+          "tests/integration/coupons.test.ts",
+          "tests/integration/delivery-state.test.ts",
+          "tests/integration/dispatch.test.ts",
+          "tests/integration/documents-templates.test.ts",
+          "tests/integration/driver-handheld-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/it-remembers.test.ts",
+          "tests/integration/partner-access-control.test.ts",
+          "tests/integration/partner-certification.test.ts",
+          "tests/integration/partner-sandbox.test.ts",
+          "tests/integration/picker-handheld-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/production.test.ts",
+          "tests/integration/tenant-branding.test.ts",
+          "tests/integration/tenant-entitlements.test.ts",
+          "tests/integration/tenant-export.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/migration/tenants-register.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/b2b-reconcile-ar.test.ts",
+          "tests/integration/it-remembers.test.ts",
+          "tests/migration/tenants-register.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D01",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 2,
+        "integration": 1,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-catalogue-session.test.ts",
+          "tests/unit/storefront-browse.test.ts"
+        ],
+        "integration": [
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D02",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 2,
+        "integration": 4,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-merchandising-session.test.ts",
+          "tests/unit/merchandising-space.test.ts"
+        ],
+        "integration": [
+          "tests/integration/assortment.test.ts",
+          "tests/integration/promotion-effectiveness.test.ts",
+          "tests/integration/space-and-display.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D03",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 2,
+        "integration": 3,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-buying-session.test.ts",
+          "tests/unit/goods-in.test.ts"
+        ],
+        "integration": [
+          "tests/integration/goods-receipt.test.ts",
+          "tests/integration/purchase-invoice-reconcile.test.ts",
+          "tests/integration/rebates.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D04",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 3,
+        "integration": 2,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/evidence-ledger.test.ts",
+          "tests/unit/pending-recovery.test.ts",
+          "tests/unit/self-checkout.test.ts"
+        ],
+        "integration": [
+          "tests/integration/pending-tender-recovery.test.ts",
+          "tests/integration/self-checkout-decisions.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D05",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 1,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/goods-in.test.ts"
+        ],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D06",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 3,
+        "integration": 2,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/customer-app.test.ts",
+          "tests/unit/erp-catalogue-session.test.ts",
+          "tests/unit/self-checkout.test.ts"
+        ],
+        "integration": [
+          "tests/integration/price-integrity.test.ts",
+          "tests/integration/promotion-effectiveness.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D07",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 1,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/customer-privacy-centre.test.ts"
+        ],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D08",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 5,
+        "integration": 1,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/customer-app.test.ts",
+          "tests/unit/dispatch-routing.test.ts",
+          "tests/unit/fulfilment-serviceability-simulator.test.ts",
+          "tests/unit/storefront-checkout.test.ts",
+          "tests/unit/storefront-serviceability-schedule.test.ts"
+        ],
+        "integration": [
+          "tests/integration/serviceability-config.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D09",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 8,
+        "integration": 3,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/delivery-route.test.ts",
+          "tests/unit/dispatch-routing.test.ts",
+          "tests/unit/fulfilment-packing.test.ts",
+          "tests/unit/fulfilment-serviceability-simulator.test.ts",
+          "tests/unit/fulfilment-waves-synced.test.ts",
+          "tests/unit/orders-fulfilment-plan.test.ts",
+          "tests/unit/orders-substitution-exception-ownership.test.ts",
+          "tests/unit/picker-session.test.ts"
+        ],
+        "integration": [
+          "tests/integration/fulfilment-packing.test.ts",
+          "tests/integration/pick-to-doorstep.test.ts",
+          "tests/integration/picker-handheld-reaches-the-cloud-through-the-edge.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/pick-to-doorstep.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/picker-handheld-syncs-through-the-box.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D10",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D11",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D12",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 1,
+        "integration": 1,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-admin-session.test.ts"
+        ],
+        "integration": [
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D13",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 5,
+        "integration": 2,
+        "realDb": 0,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-reporting-session.test.ts",
+          "tests/unit/owner-session.test.ts",
+          "tests/unit/reporting-catalogue-route.test.ts",
+          "tests/unit/reporting-consolidation.test.ts"
+        ],
+        "integration": [
+          "tests/integration/reporting-consolidation.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [],
+        "browser": [
+          "tests/e2e/company-report.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "D14",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 2,
+        "integration": 1,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/facilities.test.ts",
+          "tests/unit/self-checkout.test.ts"
+        ],
+        "integration": [
+          "tests/integration/price-integrity.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "A01",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 8,
+        "integration": 5,
+        "realDb": 2,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/ai-agents-catalogue-route.test.ts",
+          "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-evaluation.test.ts",
+          "tests/unit/ai-gateway.test.ts",
+          "tests/unit/api-manifest.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-ai-session.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/it-remembers.test.ts",
+          "tests/integration/scheduled-brief.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/security/separation-of-duties.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/it-remembers.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "A02",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 6,
+        "integration": 4,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/ai-agents-catalogue-route.test.ts",
+          "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-budget.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-ai-session.test.ts",
+          "tests/unit/service-governance.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-governance.test.ts",
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/security/separation-of-duties.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "A03",
+      "label": "WIRED",
+      "counts": {
+        "unit": 5,
+        "integration": 5,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-gateway.test.ts",
+          "tests/unit/erp-ai-session.test.ts",
+          "tests/unit/fefo-near-expiry.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-inventory-agent.test.ts",
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/inventory-near-expiry.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/security/separation-of-duties.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "A04",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 7,
+        "integration": 3,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-budget.test.ts",
+          "tests/unit/erp-ai-session.test.ts",
+          "tests/unit/fulfilment.test.ts",
+          "tests/unit/orders-amendments.test.ts",
+          "tests/unit/orders-substitution-policy.test.ts",
+          "tests/unit/picker-session.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/security/separation-of-duties.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/picker-substitution-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "A05",
+      "label": "WIRED",
+      "counts": {
+        "unit": 2,
+        "integration": 3,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-budget.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/ai-service-agent.test.ts",
+          "tests/security/separation-of-duties.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "A06",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 5,
+        "integration": 3,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-budget.test.ts",
+          "tests/unit/erp-operations-inbox-session.test.ts",
+          "tests/unit/evidence-ledger.test.ts",
+          "tests/unit/ops-operations-advisor.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-operations-agent.test.ts",
+          "tests/integration/ai-operations-worklist.test.ts",
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/operations-dismiss-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "A07",
+      "label": "WIRED",
+      "counts": {
+        "unit": 5,
+        "integration": 2,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-budget.test.ts",
+          "tests/unit/erp-ai-session.test.ts",
+          "tests/unit/lp-worklist.test.ts",
+          "tests/unit/service-governance.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/ai-security-agent.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "A08",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 6,
+        "integration": 5,
+        "realDb": 1,
+        "browser": 2,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-budget.test.ts",
+          "tests/unit/data-quality-worklist.test.ts",
+          "tests/unit/erp-data-quality-inbox-session.test.ts",
+          "tests/unit/import-mapping-quality.test.ts",
+          "tests/unit/product-data-quality.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-data-quality-worklist.test.ts",
+          "tests/integration/ai-data-quality.test.ts",
+          "tests/integration/ai-governance.test.ts",
+          "tests/integration/ai-mapping-quality.test.ts",
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/data-quality-dismiss-delivery.e2e.ts",
+          "tests/e2e/screens-open-offline.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "A09",
+      "label": "WIRED",
+      "counts": {
+        "unit": 3,
+        "integration": 2,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-budget.test.ts",
+          "tests/unit/customer-segments.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-marketing-agent.test.ts",
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "A10",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 9,
+        "integration": 5,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/ai-authority.test.ts",
+          "tests/unit/ai-budget.test.ts",
+          "tests/unit/api-manifest.test.ts",
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-ai-session.test.ts",
+          "tests/unit/erp-workforce-inbox-session.test.ts",
+          "tests/unit/finance-inclusive-tax.test.ts",
+          "tests/unit/merchandising-shelf.test.ts",
+          "tests/unit/workforce.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/ai-workforce-guidance.test.ts",
+          "tests/integration/ai-workforce-worklist.test.ts",
+          "tests/integration/tax-from-mrp.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-proposes-people-decide.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/workforce-dismiss-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "WF-01",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-02",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-03",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-04",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-05",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-06",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 4,
+        "integration": 3,
+        "realDb": 1,
+        "browser": 3,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-indents-session.test.ts",
+          "tests/unit/erp-merchandising-session.test.ts",
+          "tests/unit/floor-indents-engine.test.ts",
+          "tests/unit/warehouse-handheld-issues-to-floor.test.ts"
+        ],
+        "integration": [
+          "tests/integration/floor-indents-handheld-issue.test.ts",
+          "tests/integration/floor-indents-synced.test.ts",
+          "tests/integration/floor-indents.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/floor-indents-handheld-issue.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/indents-delivery.e2e.ts",
+          "tests/e2e/merchandising-count-and-refill.e2e.ts",
+          "tests/e2e/warehouse-handheld-issues-to-floor.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-07",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 2,
+        "integration": 2,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-indents-session.test.ts",
+          "tests/unit/floor-indents-engine.test.ts"
+        ],
+        "integration": [
+          "tests/integration/floor-indents-handheld-issue.test.ts",
+          "tests/integration/floor-indents.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/floor-indents-handheld-issue.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/indents-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-08",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-09",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-10",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 1,
+        "integration": 3,
+        "realDb": 2,
+        "browser": 2,
+        "connected": 1,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/evidence-ledger.test.ts"
+        ],
+        "integration": [
+          "tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/the-shop-reaches-the-cloud.test.ts",
+          "tests/integration/the-store-trades-a-day.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-shop-reaches-the-cloud.test.ts",
+          "tests/integration/the-store-trades-a-day.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/the-served-till-takes-a-sale.e2e.ts",
+          "tests/e2e/the-store-trades-a-day.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/the-store-trades-a-day.e2e.ts"
+        ],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in ONE connected run"
+    },
+    {
+      "id": "WF-11",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-12",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-13",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-14",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-15",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-16",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-17",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-18",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-19",
+      "label": "ENGINE_ONLY",
+      "counts": {
+        "unit": 1,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-migration-session.test.ts"
+        ],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "WF-20",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "QG-01",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 1,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [
+          "tests/integration/risk-register.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "QG-02",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 3,
+        "integration": 1,
+        "realDb": 0,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/customer-app-boot.test.ts",
+          "tests/unit/owner-session.test.ts",
+          "tests/unit/ui-foundation.test.ts"
+        ],
+        "integration": [
+          "tests/integration/risk-register.test.ts"
+        ],
+        "realDb": [],
+        "browser": [
+          "tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "QG-03",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 1,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [
+          "tests/integration/risk-register.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "QG-04",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 1,
+        "integration": 1,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-risk-acceptance-session.test.ts"
+        ],
+        "integration": [
+          "tests/integration/offline-sync-slice.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/offline-sync-slice.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/risk-acceptance-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "QG-05",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 1,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/evidence-ledger.test.ts"
+        ],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "QG-06",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 1,
+        "integration": 1,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/compliance-risk.test.ts"
+        ],
+        "integration": [
+          "tests/integration/risk-register.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "QG-07",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 12,
+        "integration": 10,
+        "realDb": 3,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-finance-session.test.ts",
+          "tests/unit/erp-migration-session.test.ts",
+          "tests/unit/erp-risk-acceptance-session.test.ts",
+          "tests/unit/finance-payables.test.ts",
+          "tests/unit/migration-cutover-checklist.test.ts",
+          "tests/unit/migration-opening-delta-route.test.ts",
+          "tests/unit/migration-reconcile.test.ts",
+          "tests/unit/migration-trial-reconcile-route.test.ts",
+          "tests/unit/migration-verification-report.test.ts",
+          "tests/unit/migration-witness-route.test.ts",
+          "tests/unit/period-close.test.ts",
+          "tests/unit/service-commerce.test.ts"
+        ],
+        "integration": [
+          "tests/integration/every-figure-has-a-witness-through-the-api.test.ts",
+          "tests/integration/migration-decisions-through-the-api.test.ts",
+          "tests/integration/offline-sync-slice.test.ts",
+          "tests/integration/period-evidence.test.ts",
+          "tests/integration/risk-register.test.ts",
+          "tests/integration/supplier-account.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/we-get-it-out-ourselves.test.ts",
+          "tests/security/separation-of-duties.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/offline-sync-slice.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/we-get-it-out-ourselves.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "QG-08",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 1,
+        "integration": 2,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/compliance-risk.test.ts"
+        ],
+        "integration": [
+          "tests/integration/risk-followthrough.test.ts",
+          "tests/integration/risk-register.test.ts"
+        ],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "QG-09",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 1,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-risk-acceptance-session.test.ts"
+        ],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "QG-10",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "QG-11",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "QG-12",
+      "label": "PARTIALLY_WIRED",
+      "counts": {
+        "unit": 0,
+        "integration": 0,
+        "realDb": 0,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [],
+        "integration": [],
+        "realDb": [],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file)"
+    },
+    {
+      "id": "MG-01",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 7,
+        "integration": 3,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-migration-session.test.ts",
+          "tests/unit/migration-completeness.test.ts",
+          "tests/unit/migration-discovery-route.test.ts",
+          "tests/unit/migration-discovery.test.ts",
+          "tests/unit/migration-extraction.test.ts",
+          "tests/unit/migration-report-parser.test.ts"
+        ],
+        "integration": [
+          "tests/integration/migration-pipeline.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "MG-02",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 5,
+        "integration": 3,
+        "realDb": 2,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/migration-discovery.test.ts",
+          "tests/unit/migration-extraction.test.ts",
+          "tests/unit/migration-load-command.test.ts",
+          "tests/unit/migration-load.test.ts",
+          "tests/unit/migration-preservation-route.test.ts"
+        ],
+        "integration": [
+          "tests/integration/migration-pipeline.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/we-get-it-out-ourselves.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/we-get-it-out-ourselves.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "MG-03",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 3,
+        "integration": 2,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/migration-cleaning.test.ts",
+          "tests/unit/migration-mapping-route.test.ts",
+          "tests/unit/migration-mapping.test.ts"
+        ],
+        "integration": [
+          "tests/integration/migration-pipeline.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "MG-04",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 10,
+        "integration": 6,
+        "realDb": 2,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/evidence-ledger.test.ts",
+          "tests/unit/migration-cleaning-route.test.ts",
+          "tests/unit/migration-cleaning.test.ts",
+          "tests/unit/migration-decisions-route.test.ts",
+          "tests/unit/migration-feed-pull.test.ts",
+          "tests/unit/migration-load-command.test.ts",
+          "tests/unit/migration-load.test.ts",
+          "tests/unit/migration-report-parser.test.ts",
+          "tests/unit/migration-screen-route.test.ts",
+          "tests/unit/sync-http-transport.test.ts"
+        ],
+        "integration": [
+          "tests/integration/migration-decisions-reach-the-cloud.test.ts",
+          "tests/integration/migration-decisions-through-the-api.test.ts",
+          "tests/integration/migration-pipeline.test.ts",
+          "tests/integration/the-box-pulls-its-migration-register.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/migration/schema-migrations.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/migration/schema-migrations.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/migration-decision-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "MG-05",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 6,
+        "integration": 4,
+        "realDb": 2,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/migration-completeness.test.ts",
+          "tests/unit/migration-extraction.test.ts",
+          "tests/unit/migration-load-command.test.ts",
+          "tests/unit/migration-load.test.ts",
+          "tests/unit/migration-trial-reconcile-route.test.ts",
+          "tests/unit/migration-trial.test.ts"
+        ],
+        "integration": [
+          "tests/integration/migration-load.test.ts",
+          "tests/integration/migration-pipeline.test.ts",
+          "tests/integration/the-load-command-runs.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-load-command-runs.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "MG-06",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 17,
+        "integration": 8,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/migration-banking-verification.test.ts",
+          "tests/unit/migration-books-verification.test.ts",
+          "tests/unit/migration-count-verification.test.ts",
+          "tests/unit/migration-decisions-route.test.ts",
+          "tests/unit/migration-extraction.test.ts",
+          "tests/unit/migration-feed-pull.test.ts",
+          "tests/unit/migration-loyalty-verification.test.ts",
+          "tests/unit/migration-reconcile.test.ts",
+          "tests/unit/migration-screen-route.test.ts",
+          "tests/unit/migration-sign-route.test.ts",
+          "tests/unit/migration-supplier-reconciliation.test.ts",
+          "tests/unit/migration-tax-verification.test.ts",
+          "tests/unit/migration-trial-reconcile-route.test.ts",
+          "tests/unit/migration-verification-report.test.ts",
+          "tests/unit/migration-witness-route.test.ts",
+          "tests/unit/service-commerce.test.ts",
+          "tests/unit/sync-http-transport.test.ts"
+        ],
+        "integration": [
+          "tests/integration/every-figure-has-a-witness-through-the-api.test.ts",
+          "tests/integration/migration-decisions-reach-the-cloud.test.ts",
+          "tests/integration/migration-decisions-through-the-api.test.ts",
+          "tests/integration/migration-load.test.ts",
+          "tests/integration/migration-pipeline.test.ts",
+          "tests/integration/the-box-pulls-its-migration-register.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/security/separation-of-duties.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/migration-decision-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "MG-07",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 2,
+        "integration": 3,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/erp-migration-session.test.ts",
+          "tests/unit/migration-history.test.ts"
+        ],
+        "integration": [
+          "tests/integration/migration-history-exclusions.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/security/separation-of-duties.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "MG-08",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 2,
+        "integration": 2,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/migration-opening-delta-route.test.ts",
+          "tests/unit/migration-reconcile.test.ts"
+        ],
+        "integration": [
+          "tests/integration/migration-pipeline.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "MG-09",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 3,
+        "integration": 2,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/migration-extraction.test.ts",
+          "tests/unit/migration-opening-delta-route.test.ts",
+          "tests/unit/migration-trial.test.ts"
+        ],
+        "integration": [
+          "tests/integration/migration-pipeline.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "MG-10",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 5,
+        "integration": 4,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/migration-cutover-route.test.ts",
+          "tests/unit/migration-cutover.test.ts",
+          "tests/unit/migration-feed-pull.test.ts",
+          "tests/unit/migration-parallel-run-route.test.ts",
+          "tests/unit/migration-screen-route.test.ts"
+        ],
+        "integration": [
+          "tests/integration/migration-screen-through-the-api.test.ts",
+          "tests/integration/parallel-run-through-the-api.test.ts",
+          "tests/integration/the-box-pulls-its-migration-register.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    },
+    {
+      "id": "MG-11",
+      "label": "E2E_VERIFIED",
+      "counts": {
+        "unit": 2,
+        "integration": 2,
+        "realDb": 1,
+        "browser": 1,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/migration-cutover-checklist.test.ts",
+          "tests/unit/migration-cutover.test.ts"
+        ],
+        "integration": [
+          "tests/integration/migration-pipeline.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/migration-decision-delivery.e2e.ts"
+        ],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+    },
+    {
+      "id": "MG-12",
+      "label": "INTEGRATION_TESTED",
+      "counts": {
+        "unit": 4,
+        "integration": 3,
+        "realDb": 1,
+        "browser": 0,
+        "connected": 0,
+        "device": 0,
+        "uat": 0
+      },
+      "files": {
+        "unit": [
+          "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-migration-session.test.ts",
+          "tests/unit/migration-cutover.test.ts",
+          "tests/unit/migration-history.test.ts"
+        ],
+        "integration": [
+          "tests/integration/migration-retirement.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-screens-are-fed.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/the-old-shop-arrives-whole.test.ts"
+        ],
+        "browser": [],
+        "connected": [],
+        "device": [],
+        "uat": []
+      },
+      "holds": true,
+      "why": "an integration test cites it"
+    }
+  ]
+}
