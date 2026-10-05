@@ -5,6 +5,52 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2a-ii — the same guard on the stock, on the promises and on the audit chain: SF-04, FUL-02 and PA-11 closed, on the API surface AND on real PostgreSQL (5 October 2026)
+
+- **The findings (audit, 4 Oct 2026):** **SF-04** (HIGH) two transfers of 70 against 100, dispatched at the same
+  moment, both returned 200 — the source went to −40 and two transit records existed. **FUL-02** (HIGH) the last unit
+  was promised to two orders, and a basket naming one product twice ("4 + 4") was promised 8 and held 4. **PA-11**
+  (MEDIUM) two API instances writing the audit chain forked it (sequence gap, broken link). Each is the same shape
+  as PF-01: a read, a decision, an append — with nothing stopping a second request deciding on the same read.
+- **What changed (pull request #702) — the Wave 2a-i write guard, three more keys:**
+  - **Transfers** (`services/inventory/src/warehouse-transfers.ts`, `transfersAdapter`): the dispatch reads the
+    source location's stock guard (`stock:<locationId>` — per location, deliberately coarser than per product: one
+    transfer carries many lines) BEFORE head office's stock figure, and appends the dispatch and its movements under
+    it. The loser is **409 `concurrent_change`** ("the stock at WH") with nothing moved; retried, it is judged on the
+    true figure (70 against 30 → 422 `transfer_refused`).
+  - **Promises** (`services/orders/src/index.ts`: `promiseAndHold`, `normaliseOrderLines`; the storefront's place
+    route uses the same; `ordersAdapter`): one order line per product with the quantities summed (4 + 4 is one line
+    of 8 — promised 5, held 5); a line that is not a positive whole quantity makes the basket unreadable — **400
+    `not_readable_as_order_lines`**, nothing reserved. The holds of one promise are ONE batch (all land or none;
+    before, each hold was its own append and a race could land half an order), under the location's promise guard
+    (`reservation:<locationId>`). A lost race re-reads and promises what is truly left — up to three rounds, then a
+    named 409 — so two orders for the last unit are both answered 200: one `promised`, one `cannot_promise`, one hold.
+  - **The audit chain** (`auditTrailAdapter`): the tail is folded and the seal appended under the tenant's chain guard
+    (`audit-chain`). A second instance that sealed over the same tail a moment earlier has moved the version; this
+    append is refused and the chain is folded again over the new tail — with a short random pause between rounds,
+    because on PostgreSQL two instances retrying in lockstep lost to each other nine rounds running (32 rounds, then
+    a named failure). Never two records with one sequence, never a fork; a restarted instance continues the one chain.
+- **Proved** (`tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts`): the three races on the API surface
+  over the in-memory store — and the SAME three on **real PostgreSQL** through the transactional pool client (the
+  wiring `main.ts` uses), the last-unit race the audit asked for on the database. On the database the transfer's
+  loser is the guard's 409 or, when the first transaction committed before the second read the stock, the plain 422
+  on the true figure; either way the source holds 30 and one transfer is in transit. Twenty concurrent audit records
+  from two instances plus one from a restarted third: 21 unique sequences, the chain verified intact. Every
+  transfer, order, storefront, fulfilment, audit and write-guard suite green (47 files); full gate green locally.
+- **What the database run taught (why the audit insisted on it):** both PostgreSQL-only findings were real. The
+  transfer race resolves differently there (a commit can land between the two reads, so the loser's refusal names the
+  figure, not the guard) — the proof now accepts either named answer and holds the invariant. And the audit writer's
+  fixed retry budget starved one instance on the database until jitter was added. Neither showed in memory.
+- **Not yet:** PA-11's second half — a command's business append and its audit record are two appends (the route
+  appends the command, then calls `recordAudit`); an audit append that fails after the command committed is a logged
+  error, not a rollback. That is designed together with PA-03's approval objects in **Wave 2b**, where the record and
+  the thing it records must land together. SF-03 (one availability projection, Wave 3) is unchanged: the dispatch still
+  reads `availableAt`; the guard makes that read safe against a competing dispatch, not against the other movements
+  SF-03 names. **Wave 2a is closed** (PF-01 #701; SF-04, FUL-02, PA-11 #702). Next: Wave 2b, the identity criticals
+  (PF-02, PA-03, PF-03, PA-01/EA-03, PA-02) — the code the OB-15 user/role/login block is built on.
+
+---
+
 ## Wave 2a-i — two different requests can no longer spend the same balance twice: write guards on the event store; PF-01 closed for refunds, gift value and points (5 October 2026)
 
 - **The finding (audit PF-01, CRITICAL):** two refunds of one sale with two different ids, fired at the same
@@ -40,7 +86,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Not yet (Wave 2a-ii/iii, next):** SF-04 two transfers out of the same stock; FUL-02 the last unit reserved
   twice and duplicate lines; PA-11 the audit chain forking under two writers — the same guard, keyed per stock
   location/product, per reservation key and per tenant chain. Then Wave 2b (the identity criticals) and the
-  OB-15 block.
+  OB-15 block. **Done the same day in Wave 2a-ii (#702, the section above) — keyed per source location, per location's
+  promises and per tenant chain.**
 
 ---
 
