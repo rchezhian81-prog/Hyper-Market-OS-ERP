@@ -13,6 +13,9 @@ import { Pool } from 'pg';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { startApi, type RunningApi } from '../../services/api/src/main';
+import { SqlEventStore } from '../../packages/persistence/src/event-store';
+import { seedInitialAdmins } from '../../services/api/src/access';
+import { OWNER_ROLE_ID, STORE_MANAGER_ROLE_ID } from '../../services/api/src/roles';
 import { TEST_IDP } from './api-harness';
 import { ensureAppRole, asRole } from './db-app-role';
 
@@ -43,8 +46,8 @@ export interface RealCloud {
   token(userId: string): string;
   request(input: RealCloudRequest): Promise<RealCloudReply>;
   /**
-   * Grant `roleId` to `userId` the way the product does: requested by one person, approved by another who already holds
-   * every permission the role carries (the owner, here), through `POST /v1/identity/grants`.
+   * Grant `roleId` to `userId` the way the product does: REQUESTED by one signed-in person (`u-hr`, the second initial
+   * admin) and APPROVED by another who already holds every permission the role carries (the owner) — two acts.
    */
   grant(userId: string, roleId: string, requestedBy?: string): Promise<void>;
   /** Everything the API printed — the boot lines, the structured request log, every refusal. */
@@ -64,6 +67,9 @@ export interface RealCloudInput {
  * Migrate the database, make sure the application role exists, and start the production API assembly as that role on an
  * ephemeral port, with the test identity provider's policy as its token configuration and the genesis owner seeded.
  */
+/** The second initial admin: the person who may ASK for roles; the owner approves (Wave 2b · PA-03). */
+const REQUESTER = 'u-hr';
+
 export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> {
   const platform = new Pool({ connectionString: input.databaseUrl, max: 2, options: '-c app.tenant_id=*' });
   try {
@@ -71,6 +77,11 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
     await runMigrations(pgPoolClient(platform), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
     await ensureAppRole(platform, CONNECTED_APP_ROLE);
+    // The initial admin SET (Wave 2b · PA-03): a role grant is two people's acts, so a shop starts with two — the owner
+    // and an HR / store-manager who may REQUEST roles — laid down once by the operator, exactly as
+    // `scripts/bootstrap-tenant.ts --admin` does. The API's own genesis step below then finds the tenant bootstrapped.
+    await seedInitialAdmins(new SqlEventStore(pgPoolClient(platform)), input.tenantId,
+      [{ userId: input.owner, roleId: OWNER_ROLE_ID }, { userId: REQUESTER, roleId: STORE_MANAGER_ROLE_ID }], 'tests/real-store', new Date().toISOString());
   } finally {
     await platform.end();
   }
@@ -119,11 +130,15 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
     said,
     token,
     request,
-    grant: async (userId, roleId, requestedBy = 'u-hr') => {
-      const reply = await request({
-        method: 'POST', path: '/v1/identity/grants', userId: input.owner, idempotencyKey: `grant-${userId}-${roleId}`,
-        body: { grantId: `grant-${userId}-${roleId}`, userId, roleId, branchScope: 'all', requestedBy, approvedBy: input.owner, requestedAt: new Date().toISOString() },
+    grant: async (userId, roleId, requestedBy = REQUESTER) => {
+      // Two acts (Wave 2b · PA-03): the requester asks under their own sign-in, the owner approves under theirs.
+      const grantId = `grant-${userId}-${roleId}`;
+      const asked = await request({
+        method: 'POST', path: '/v1/identity/grants', userId: requestedBy, idempotencyKey: `${grantId}-ask`,
+        body: { grantId, userId, roleId, branchScope: 'all', reason: 'the practice cast' },
       });
+      if (asked.status !== 202) throw new Error(`requesting ${roleId} for ${userId} failed: ${asked.status} ${JSON.stringify(asked.body)}`);
+      const reply = await request({ method: 'POST', path: `/v1/identity/grants/${grantId}/approve`, userId: input.owner, idempotencyKey: `${grantId}-approve`, body: {} });
       if (reply.status !== 201) throw new Error(`granting ${roleId} to ${userId} failed: ${reply.status} ${JSON.stringify(reply.body)}`);
     },
     stop: () => running.stop(),

@@ -101,7 +101,7 @@ import type { PackagingDeps, PackagingItem, PackagingMovement } from '../../inve
 import type { ComplianceDeps, Obligation } from '../../compliance/src/index';
 import type { RiskRegisterDeps, Risk, Control, Incident, Remediation, Attestation } from '../../compliance/src/risk';
 import type { DocumentsDeps, TemplateVersion, IssuedDocument } from '../../platform/src/documents';
-import type { DocumentDisposal } from '../../../packages/documents/src/index';
+import type { DocumentDisposal, TemplateDraft } from '../../../packages/documents/src/index';
 import type { SuspendedBillsDeps, SuspendedBill } from '../../pos/src/suspended-bills';
 import type { QuotationsDeps } from '../../pos/src/quotations';
 import type { Quotation } from '../../../packages/suspended-sales/src/index';
@@ -239,10 +239,10 @@ import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQ
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { WaveSyncDeps, WaveLineOutcome, WavePackRecord } from '../../fulfilment/src/waves';
 import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord } from '../../fulfilment/src/driver-runs';
-import type { IdentityDeps } from '../../identity/src/index';
+import type { IdentityDeps, GrantRequestRecord, PendingGrantRequest, GrantRejection } from '../../identity/src/index';
 import type { TokenRevocation, TokenRevocationStore } from '../../identity/src/revocation';
 import type { AccessLifecycleDeps, LifecycleChange } from '../../identity/src/access-lifecycle';
-import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
+import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } from '../../platform/src/index';
 import { inMemorySettings } from '../../platform/src/index';
 import { buildTenantExport } from '../../../packages/platform/src/lifecycle';
@@ -562,6 +562,20 @@ export function documentsAdapter(input: {
     versions: async (tenantId, templateId) => {
       const all = await allOf<TemplateVersion>(input.store, tenantId, STREAM.documents, 'TemplateVersionPublished');
       return all.filter((v) => v.templateId === templateId);
+    },
+
+    // Drafts (Wave 2b · PA-03): the maker's act, append-only; the checker's approval becomes the published version.
+    drafts: async (tenantId, templateId) =>
+      (await allOf<TemplateDraft>(input.store, tenantId, STREAM.documents, 'TemplateVersionDrafted')).filter((d) => d.templateId === templateId),
+    recordDraft: async (tenantId, draft) => {
+      await input.store.append(tenantId, STREAM.documents, makeEvent({
+        id: `doc-tmpl-draft-${draft.templateId}-v${draft.version}`,
+        type: 'TemplateVersionDrafted',
+        occurredAt: draft.createdAt,
+        idempotencyKey: `doc-tmpl-draft-${tenantId}-${draft.templateId}-v${draft.version}`,
+        source: 'api/platform',
+        payload: draft,
+      }));
     },
 
     recordPublish: async (tenantId, template) => {
@@ -4005,6 +4019,12 @@ export function delegationAdapter(input: {
 }): DelegationDeps {
   return {
     now: input.now,
+    // WHERE a person holds an authority (Wave 2b · PA-03): the branches of the grants that carry it.
+    branchScopeOfUser: async (tenantId, userId, permission) => {
+      const grants = await effectiveGrants(input.store, tenantId);
+      if (!grants.some((g) => g.userId === userId)) return undefined;
+      return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, permission);
+    },
     // Folded latest-per-delegationId by append order — a revocation (a re-record with revokedOn) supersedes.
     delegations: async (tenantId) => {
       const all = await allOf<Delegation>(input.store, tenantId, DELEGATION_STREAM, 'DelegationRecorded');
@@ -4256,6 +4276,13 @@ export function approvalDecisionAdapter(input: {
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       if (roleIds.size === 0) return undefined;
       return [...new Set(ROLE_CATALOGUE.filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
+    },
+    // WHERE the decider holds the authority (Wave 2b · PA-03 / PA-01): the branches of the grants that carry it — a
+    // manager of br-1 deciding br-2's refund is flagged, not applied. `undefined` when they hold no grant at all.
+    branchScopeOfUser: async (tenantId, userId, permission) => {
+      const grants = await effectiveGrants(input.store, tenantId);
+      if (!grants.some((g) => g.userId === userId)) return undefined;
+      return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, permission);
     },
   };
 }
@@ -8149,6 +8176,49 @@ export function identityAdapter(input: {
       const codes = held.flatMap((a) =>
         input.roleCatalogue.find((r) => r.id === a.roleId)?.permissions ?? []);
       return [...new Set(codes)].sort();
+    },
+
+    // Grant requests and what became of them (Wave 2b · PA-03): asked (RoleGrantRequested), then granted (the RoleGranted
+    // that carries the same grantId) or rejected (RoleGrantRejected) — one fold, in append order.
+    grantRequests: async (tenantId) => {
+      const events = await input.store.readStream(tenantId, STREAM.identity);
+      const byId = new Map<string, GrantRequestRecord>();
+      for (const e of events) {
+        if (e.event.type === 'RoleGrantRequested') {
+          const r = payloadOf<PendingGrantRequest>(e);
+          byId.set(r.grantId, { ...r, state: 'pending' });
+        } else if (e.event.type === ROLE_GRANTED) {
+          const g = payloadOf<{ request?: { grantId?: string; approvedBy?: string } }>(e);
+          const id = g.request?.grantId;
+          const r = id === undefined ? undefined : byId.get(id);
+          if (id !== undefined && r !== undefined) byId.set(id, { ...r, state: 'granted', decidedBy: g.request?.approvedBy ?? '', decidedAt: e.event.occurredAt });
+        } else if (e.event.type === 'RoleGrantRejected') {
+          const x = payloadOf<GrantRejection>(e);
+          const r = byId.get(x.grantId);
+          if (r !== undefined) byId.set(x.grantId, { ...r, state: 'rejected', decidedBy: x.rejectedBy, decidedAt: x.at });
+        }
+      }
+      return [...byId.values()];
+    },
+    recordGrantRequest: async (tenantId, request) => {
+      await input.store.append(tenantId, STREAM.identity, makeEvent({
+        id: `grant-request-${request.grantId}`,
+        type: 'RoleGrantRequested',
+        occurredAt: request.requestedAt,
+        idempotencyKey: `grant-request-${tenantId}-${request.grantId}`,
+        source: 'api/identity',
+        payload: request,
+      }));
+    },
+    recordGrantRejection: async (tenantId, rejection) => {
+      await input.store.append(tenantId, STREAM.identity, makeEvent({
+        id: `grant-rejection-${rejection.grantId}`,
+        type: 'RoleGrantRejected',
+        occurredAt: rejection.at,
+        idempotencyKey: `grant-rejection-${tenantId}-${rejection.grantId}`,
+        source: 'api/identity',
+        payload: rejection,
+      }));
     },
 
     recordGrant: async (tenantId, assignment, request) => {

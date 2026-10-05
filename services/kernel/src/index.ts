@@ -12,6 +12,7 @@ export {
 
 export {
   scopeOf, branchInScope, assertBranchInScope, narrowScope, withinScope, outsideBranchScope, scopeNotHeld,
+  actorIsTheCaller, requireActorIsCaller, secondPersonIsASeparateAct,
 } from './scope';
 
 export {

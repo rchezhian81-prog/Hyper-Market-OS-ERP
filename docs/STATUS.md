@@ -5,6 +5,56 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-iii-a — every "second person" is a separate authenticated act: role grants, template approvals, a decider's branch, a lender's own authority (5 October 2026)
+
+- **The finding (audit PA-03, HIGH):** several completed controls accepted TYPED NAMES as evidence of a second person.
+  The audit executed them: a role granted with a nonexistent requester and "approvedBy" whoever the body said (201);
+  a template version published with an unprovisioned author and reviewer (201); a facilities verification with two
+  unprovisioned names (200). A name in a body is a claim; a sign-in is a fact.
+- **The rule, once** (`services/kernel/src/scope.ts`): the person acting is the caller. A body field that names the
+  acting person must name the caller or be absent (**400 `actor_is_the_caller`**); a body field that names the second
+  person is refused outright (**400 `second_person_is_a_separate_act`**) — that person acts through their own route,
+  under their own sign-in.
+- **What changed (pull request #705):**
+  - **A role grant is two acts.** `POST /v1/identity/grants` is the MAKER's: who asks is the caller (new permission
+    `identity.role.request`, held by the owner and the store manager); it records `RoleGrantRequested` and answers
+    202 pending — nothing is granted. `POST /v1/identity/grants/:grantId/approve` is the CHECKER's (`identity.role.grant`,
+    MFA re-auth): the engine's §28 rules now run with the REAL two people — the approver cannot be the requester, and
+    cannot hand out a permission they do not hold; only then `RoleGranted`. `…/reject` records a rejection that stays;
+    `GET /v1/identity/grants/pending` lists what waits. Both acts are sealed into the audit trail, each attributed to
+    the person who acted. Consequence, by design: a shop starts with TWO initial admins (the operator's
+    `scripts/bootstrap-tenant.ts --admin`, the product's existing initial-admin set) — a single owner cannot grant alone.
+  - **A template version is drafted by one person and approved by another** (`services/platform/src/documents.ts`,
+    `packages/documents/src/templates.ts`: `draftTemplateVersion`, `approveTemplateVersion`, `TemplateDraft`):
+    `POST …/templates/:id/versions` drafts as the caller (not in force); `POST …/versions/:v/approve` approves as the
+    caller, refused when it is the author (`self_approved`). The one-shot publish route that took both names is gone.
+  - **A relayed store decision is checked for WHERE the decider holds the authority**, not only whether: a br-1
+    manager's decision on a br-2 request is recorded and flagged **`decider_outside_branch`**, never applied
+    (`approval-decisions.ts`, via the Wave 2b-ii `branchScopeOf`).
+  - **A delegation's approver records are the right people's and their scope is the server's**: the granter record
+    must name the lender (a body cannot lend somebody else's authority), a decider's `own` record must be their own,
+    and both records' branch scope is derived from the person's grants for the subject types in question — a person
+    who holds nothing can lend nothing (`widens_branch_scope`). The authority LIMIT still comes from the record (there is
+    no approval-limit register yet — see "Not yet").
+- **Proved:** `tests/integration/second-person-is-a-separate-act.test.ts` — the audit's reproductions inverted: the
+  fabricated grant and the fabricated template approval are refused by name and nobody's access or layout changed; HR
+  asks and the owner approves; HR alone cannot approve; the same person asking and approving is refused at the
+  approval; a rejected request cannot be approved; a draft is not in force until a different person approves; the
+  br-1 manager's br-2 decision is flagged and not applied while the same manager at br-1 and the owner anywhere are
+  clean; a granter record naming somebody other than the lender, and a borrowed `own` record, are refused by name.
+  The authorization, access-durability, audit-trail (two sealed records, each to its actor), document, approval and
+  delegation suites rewritten to drive two people; the real-store support boots the initial admin set and grants in
+  two acts. Full gate green.
+- **Not yet (Wave 2b-iii-b, next):** the FACILITIES task completion and verification and the incident close still take
+  `completedBy` / `verifiedBy` / `closedBy` from the body — the ERP facilities screen posts them and the box relays
+  offline completions, so the screen, the relay and the browser proof move together in the next slice. An
+  **approval-limit register** (the pack's `managerPolicy.approvalLimitMinor` is the only source of a person's value
+  limit today) so a delegation's and a decider's limit can be the server's too. Emergency access keeps a descriptive
+  `requestedBy` (a one-person emergency grant, reviewed afterwards) and says so. No people screen yet — the OB-15 M02
+  create-and-assign screen is the first UI on the two-act grants.
+
+---
+
 ## Wave 2b-ii — branch scope is the server's: derived from the person's grants on every request; reads narrowed to it, writes outside it refused by name (5 October 2026)
 
 - **The findings (audit EA-03 HIGH, PA-01 HIGH):** a manager signed in for br-1 with a grant for [br-1] read BOTH

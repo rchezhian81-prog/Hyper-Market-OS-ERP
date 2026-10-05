@@ -16,11 +16,16 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-const AT = '2026-08-07T10:00:00.000Z';
 const day = (n: number): string => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
-const grantBody = (o: { grantId: string; userId: string; requestedBy: string; approvedBy: string }): Record<string, unknown> =>
-  ({ grantId: o.grantId, userId: o.userId, roleId: 'cashier', branchScope: 'all', requestedBy: o.requestedBy, approvedBy: o.approvedBy, requestedAt: AT });
+/** A role grant as the product now records it (Wave 2b · PA-03): the REQUESTER asks under their own sign-in, the
+ *  APPROVER approves under theirs — two calls, two people, no names in a body. */
+async function grantInTwoActs(h: ApiHarness, o: { grantId: string; userId: string; requestedBy: string; approvedBy: string; key: string; tenantId?: string }) {
+  const tenantId = o.tenantId ?? A;
+  const asked = await h.request({ method: 'POST', path: '/v1/identity/grants', userId: o.requestedBy, tenantId, idempotencyKey: `${o.key}-ask`, body: { grantId: o.grantId, userId: o.userId, roleId: 'cashier', branchScope: 'all', reason: 'test cast' } });
+  if (asked.status !== 202) return asked;
+  return h.request({ method: 'POST', path: `/v1/identity/grants/${o.grantId}/approve`, userId: o.approvedBy, tenantId, idempotencyKey: `${o.key}-approve`, body: {} });
+}
 
 const me = (h: ApiHarness, userId: string, tenantId = A) =>
   h.request({ method: 'GET', path: '/v1/identity/me', userId, tenantId });
@@ -31,10 +36,7 @@ describe('M02 access surface rebuilds and keeps enforcing after a restart (durab
     await h.provisionOwner(A, 'u-owner-1');
     await h.provisionOwner(A, 'u-owner-2');
     // A cashier granted through the REAL maker-checker route (two separate owners), not seeded directly.
-    const granted = await h.request({
-      method: 'POST', path: '/v1/identity/grants', userId: 'u-owner-1', tenantId: A, idempotencyKey: 'k-cash',
-      body: grantBody({ grantId: 'g-cash', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2' }),
-    });
+    const granted = await grantInTwoActs(h, { grantId: 'g-cash', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2', key: 'k-cash' });
     expect(granted.status).toBe(201);
 
     // Cold restart: a brand-new surface over the same event store.
@@ -53,7 +55,7 @@ describe('M02 access surface rebuilds and keeps enforcing after a restart (durab
     // And it still ENFORCES after the restart: the cashier cannot grant a role.
     const denied = await restarted.request({
       method: 'POST', path: '/v1/identity/grants', userId: 'u-cash', tenantId: A, idempotencyKey: 'k-x',
-      body: grantBody({ grantId: 'g-x', userId: 'u-y', requestedBy: 'u-cash', approvedBy: 'u-owner-2' }),
+      body: { grantId: 'g-x', userId: 'u-y', roleId: 'cashier', branchScope: 'all' },
     });
     expect(denied.status).toBe(403);
   });
@@ -72,11 +74,9 @@ describe('M02 access surface rebuilds and keeps enforcing after a restart (durab
     const h = apiHarness();
     await h.provisionOwner(A, 'u-owner-1');
     await h.provisionOwner(A, 'u-owner-2');
+    await h.provisionRole(A, 'u-boss', 'store_manager', ['b1']); // the lender must hold what they lend (Wave 2b · PA-03)
     // A role grant (maker-checker), a delegation, and an emergency grant — three different record kinds.
-    await h.request({
-      method: 'POST', path: '/v1/identity/grants', userId: 'u-owner-1', tenantId: A, idempotencyKey: 'k-cash2',
-      body: grantBody({ grantId: 'g-cash2', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2' }),
-    });
+    await grantInTwoActs(h, { grantId: 'g-cash2', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2', key: 'k-cash2' });
     await h.request({
       method: 'POST', path: '/v1/access/delegations/d1', userId: 'u-owner-1', tenantId: A, idempotencyKey: 'k-d1',
       body: { fromUserId: 'u-boss', toUserId: 'u-deputy', fromDate: day(0), untilDate: day(10), subjectTypes: ['refund'], reason: 'annual leave', granter: { userId: 'u-boss', branchScope: ['b1'], authorityLimit: { minor: 50000, currency: 'INR' } }, valueCap: { minor: 30000, currency: 'INR' }, branchScope: ['b1'] },

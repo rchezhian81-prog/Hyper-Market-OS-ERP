@@ -58,6 +58,8 @@ export const SUBJECT_AUTHORITY: Readonly<Record<string, string>> = Object.freeze
 /** The flags this route can raise — a value, so a screen can have words for every one. */
 export const DECISION_FLAGS = Object.freeze([
   'self_approval', 'decider_unknown', 'decider_lacks_authority', 'authority_unverified',
+  // Wave 2b · PA-03 / PA-01: the decider holds the authority, but not at the branch the request belongs to.
+  'decider_outside_branch',
 ] as const);
 export type DecisionFlag = (typeof DECISION_FLAGS)[number];
 
@@ -99,6 +101,8 @@ export interface ApprovalDecisionDeps {
    * grant at all (an unknown name). From the grants and the role catalogue, never from the body.
    */
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+  /** WHERE the decider holds a permission (Wave 2b · PA-03): 'all', the branch ids, or undefined for an unknown name. Optional on a stub. */
+  readonly branchScopeOfUser?: (tenantId: string, userId: string, permission: string) => Promise<readonly string[] | 'all' | undefined> | readonly string[] | 'all' | undefined;
   /** Seal the decision into the domain audit trail (M34-FR-01). Optional — a bare deps stub may omit it. */
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
@@ -187,6 +191,12 @@ export function approvalDecisionRoutes(deps: ApprovalDecisionDeps): readonly Rou
         if (permissions === undefined) flags.push('decider_unknown');
         else if (required === undefined) flags.push('authority_unverified');
         else if (!permissions.includes(required)) flags.push('decider_lacks_authority');
+        else if (d.branchId !== null && deps.branchScopeOfUser !== undefined) {
+          // Holding the authority somewhere is not holding it HERE (PA-03 / PA-01): a br-1 manager's decision on a
+          // br-2 request is recorded and flagged, never applied.
+          const where = await deps.branchScopeOfUser(ctx.tenantId, d.decidedBy, required);
+          if (where !== undefined && where !== 'all' && !where.includes(d.branchId)) flags.push('decider_outside_branch');
+        }
 
         const record: ApprovalDecisionRecord = {
           ...d, relayedBy: ctx.userId, recordedAt: deps.now(), governanceFlags: flags,

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 902,
+  "testFiles": 903,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -96,7 +96,7 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 18,
-        "integration": 13,
+        "integration": 14,
         "realDb": 3,
         "browser": 3,
         "connected": 0,
@@ -134,6 +134,7 @@
           "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/emergency-access.test.ts",
           "tests/integration/manager-decisions-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/second-person-is-a-separate-act.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-till-names-its-operator.test.ts",
           "tests/integration/trusted-approvals.test.ts",
@@ -1458,7 +1459,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 2,
-        "integration": 6,
+        "integration": 7,
         "realDb": 1,
         "browser": 1,
         "connected": 0,
@@ -1476,7 +1477,8 @@
           "tests/integration/facilities-durability.test.ts",
           "tests/integration/facilities-incidents.test.ts",
           "tests/integration/facilities-monitoring.test.ts",
-          "tests/integration/facilities-schedules.test.ts"
+          "tests/integration/facilities-schedules.test.ts",
+          "tests/integration/second-person-is-a-separate-act.test.ts"
         ],
         "realDb": [
           "tests/integration/beyond-the-till.test.ts"
@@ -1670,7 +1672,7 @@
       "label": "WIRED",
       "counts": {
         "unit": 4,
-        "integration": 5,
+        "integration": 6,
         "realDb": 0,
         "browser": 0,
         "connected": 0,
@@ -1689,7 +1691,8 @@
           "tests/integration/documents-retention.test.ts",
           "tests/integration/documents-templates.test.ts",
           "tests/integration/notification-guard.test.ts",
-          "tests/integration/notification-queue.test.ts"
+          "tests/integration/notification-queue.test.ts",
+          "tests/integration/second-person-is-a-separate-act.test.ts"
         ],
         "realDb": [],
         "browser": [],

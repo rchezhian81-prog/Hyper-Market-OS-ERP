@@ -175,6 +175,92 @@ export function publishTemplateVersion(input: {
   };
 }
 
+/**
+ * A template version one signed-in person has DRAFTED and nobody has yet approved (Wave 2b · audit PA-03). It carries
+ * the next version number, so the numbering is decided at the draft and a competing draft is visible as a gap; it is
+ * not in force — `currentVersion` reads approved versions only.
+ */
+export interface TemplateDraft {
+  readonly templateId: string;
+  readonly version: number;
+  readonly tenantId: string;
+  readonly kind: DocumentKind;
+  readonly body: string;
+  readonly branding?: Readonly<Record<string, string>>;
+  readonly language?: 'en' | 'ta';
+  readonly createdBy: string;
+  readonly createdAt: string;
+  readonly changeNote: string;
+}
+
+export type DraftRefusal = 'drafted' | 'empty_body' | 'no_change_note' | 'wrong_tenant';
+
+export interface DraftResult {
+  readonly templateId: string;
+  readonly drafted: boolean;
+  readonly outcome: DraftRefusal;
+  readonly detail: string;
+  readonly draft?: TemplateDraft;
+}
+
+/**
+ * The MAKER's act: draft a template change as the next version. Validates what the maker alone can be judged on —
+ * a body, a change note, the right tenant. Approval is the checker's separate act (`approveTemplateVersion`).
+ */
+export function draftTemplateVersion(input: {
+  readonly templateId: string;
+  readonly tenantId: string;
+  readonly kind: DocumentKind;
+  readonly body: string;
+  readonly branding?: Readonly<Record<string, string>>;
+  readonly language?: 'en' | 'ta';
+  readonly createdBy: string;
+  readonly changeNote: string;
+  readonly at: string;
+  /** Every version already published AND every draft already made for this template — the next number follows both. */
+  readonly existing: readonly { templateId: string; tenantId: string; version: number }[];
+}): DraftResult {
+  const base = { templateId: input.templateId };
+  const mine = input.existing.filter((v) => v.templateId === input.templateId);
+  if (input.body.trim() === '') return { ...base, drafted: false, outcome: 'empty_body', detail: 'a template version needs a body' };
+  if (input.changeNote.trim() === '') {
+    return { ...base, drafted: false, outcome: 'no_change_note', detail: 'a template change needs a note saying what changed — an invoice layout carries the shop\'s legal identity' };
+  }
+  const foreign = mine.find((v) => v.tenantId !== input.tenantId);
+  if (foreign !== undefined) return { ...base, drafted: false, outcome: 'wrong_tenant', detail: `template ${input.templateId} belongs to ${foreign.tenantId}` };
+  const version = mine.reduce((max, v) => Math.max(max, v.version), 0) + 1;
+  const draft: TemplateDraft = {
+    templateId: input.templateId, version, tenantId: input.tenantId, kind: input.kind, body: input.body,
+    ...(input.branding === undefined ? {} : { branding: input.branding }),
+    ...(input.language === undefined ? {} : { language: input.language }),
+    createdBy: input.createdBy, createdAt: input.at, changeNote: input.changeNote,
+  };
+  return { ...base, drafted: true, outcome: 'drafted', detail: `${input.templateId} v${version} drafted by ${input.createdBy}, awaiting a second person`, draft };
+}
+
+/**
+ * The CHECKER's act: approve a draft under their own name — a different person from the maker (§28). The approved
+ * version is in force from `at`; every document issued under an earlier version keeps its layout.
+ */
+export function approveTemplateVersion(input: {
+  readonly draft: TemplateDraft;
+  readonly approvedBy: string;
+  readonly at: string;
+}): PublishResult {
+  const base = { templateId: input.draft.templateId };
+  if (input.approvedBy.trim() === '') return { ...base, published: false, outcome: 'not_approved', detail: 'a template change needs an approver (§28)' };
+  if (input.approvedBy === input.draft.createdBy) {
+    return { ...base, published: false, outcome: 'self_approved', detail: 'the person who changed the template cannot be the one who approves it (§28)' };
+  }
+  const template: TemplateVersion = { ...input.draft, approvedBy: input.approvedBy, approvedAt: input.at };
+  return {
+    ...base, published: true, outcome: 'published', version: template.version, template,
+    detail: template.version === 1
+      ? `${template.templateId} v1 published`
+      : `${template.templateId} v${template.version} published — v${template.version - 1} is kept, and every document issued under it keeps its original layout`,
+  };
+}
+
 /** The version in force at a given instant — used at issue, never at re-render. */
 export function currentVersion(
   versions: readonly TemplateVersion[],

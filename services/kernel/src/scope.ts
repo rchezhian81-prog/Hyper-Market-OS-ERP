@@ -61,3 +61,30 @@ export function narrowScope(ctx: Scoped, requested?: BranchScope): BranchScope {
 export function withinScope<T extends { readonly branchId: string }>(scope: BranchScope, rows: readonly T[]): readonly T[] {
   return scope === 'all' ? rows : rows.filter((r) => scope.includes(r.branchId));
 }
+
+// ── Who acts is the sign-in's answer (Wave 2b · audit PA-03 · §28 · hard rule #4) ──────────────────────────────
+// The audit executed routes that accepted two typed names as evidence of two people: an unprovisioned "completedBy"
+// and "verifiedBy", a grant "requestedBy" a nonexistent person and "approvedBy" whoever the body said. A name in a
+// body is a claim; a sign-in is a fact. These helpers make the rule one sentence: the person acting is the caller,
+// and a second person's act is their own call, under their own sign-in.
+
+export const actorIsTheCaller = (field: string, named: string, caller: string): ApiError => apiError(400, {
+  code: 'actor_is_the_caller',
+  whatHappened: `"${field}" names ${named}, but the person doing this is ${caller} — who acts is taken from the sign-in, never from the request (§28).`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: `Leave ${field} out, or name yourself. A second person's part is their own call, under their own sign-in. Nothing was changed.`,
+});
+
+/** A body field that names the ACTING person must name the caller, or be absent. */
+export function requireActorIsCaller(ctx: Pick<RequestContext, 'userId'>, body: Record<string, unknown>, field: string): void {
+  const v = body[field];
+  if (v !== undefined && v !== ctx.userId) throw actorIsTheCaller(field, String(v), ctx.userId);
+}
+
+/** A body field that names the SECOND person is refused outright: that person acts through their own route. */
+export const secondPersonIsASeparateAct = (field: string, route: string): ApiError => apiError(400, {
+  code: 'second_person_is_a_separate_act',
+  whatHappened: `"${field}" cannot be named here: the second person acts under their own sign-in, through ${route}.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: `Send this without ${field}; then have the second person call ${route}. Nothing was changed.`,
+});
