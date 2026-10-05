@@ -141,7 +141,8 @@ describe.skipIf(!HAVE_BROWSER)('the till asks the age question on the served scr
     for (const l of cigLines) expect(l.ageCheck).toMatchObject({ minimumAge: 18, confirmedAtLeast: 18, confirmedBy: 'u-lanecash' });
     expect(saved.lines.find((l) => l.productId === 'P1')?.ageCheck).toBeUndefined();
     expect(saved.ageAnswers.map((a) => [a.outcome, a.minimumAge, a.by])).toEqual([['refused', 18, 'u-lanecash'], ['confirmed', 18, 'u-lanecash']]);
-    expect(edge.outbox.unsentCount()).toBe(1);
+    // Queued for head office too — the box queues it a moment AFTER the disk write the poll above saw, so wait for it.
+    await expect.poll(() => edge.outbox.unsentCount(), { timeout: 10_000 }).toBe(1);
   });
 
   it('the question is in Tamil when the till is, and Cancel adds nothing and records nothing', async () => {
