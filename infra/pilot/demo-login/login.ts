@@ -26,7 +26,7 @@
 import { randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
 import { LocalIdp } from '../../../tests/support/local-idp';
 import { verifyToken } from '../../../services/identity/src/token';
-import { DEMO_BANNER_TEXT_EN, DEMO_BANNER_TEXT_TA } from '../../../packages/ui/src/demo-banner';
+import { LOGIN_COPY, LOGIN_CSS, LOGIN_CSS_PATH, LOGIN_JS, LOGIN_JS_PATH, renderAccount, renderPlain, renderSignIn } from './ui';
 import { PILOT_DEMO_TENANT, PILOT_MACHINE_USERS } from '../../../db/seed/pilot/dataset';
 
 /** The synthetic demo tenant — the SAME id the seed lays down (a UUID; see db/seed/pilot/dataset.ts). */
@@ -34,6 +34,12 @@ export const DEMO_TENANT = PILOT_DEMO_TENANT;
 export const COOKIE_NAME = 'sre_demo_session';
 /** One shift. Short enough that a forgotten sign-out expires the same day. */
 export const SESSION_SECONDS = 8 * 60 * 60;
+/**
+ * The cookie outlives the token by this much, so that the NEXT visit still carries the (useless, expired) token and the
+ * sign-in page can say truthfully "your session has ended" — and clear it. The token itself is dead at SESSION_SECONDS:
+ * the API verifies expiry on every call, and the sign-in's own gate refuses it, so the grace changes nothing anyone can do.
+ */
+export const COOKIE_GRACE_SECONDS = 24 * 60 * 60;
 
 // ── Credentials ──────────────────────────────────────────────────────────────
 
@@ -203,12 +209,9 @@ export const DEMO_HOME = '/login/';
 export const LANDING = '/store/manager/';
 
 
+/** The account page for a signed-in visitor (OB-16): who you are, the ONE way into the product, sign out. */
 export function homePage(who: string): string {
-  // The account page, not a list of shells (OB-16): who you are signed in as, the one way into the product, sign out.
-  return page('Your account', authFrame(`<h1>Signed in as ${esc(who)}</h1>
-<p class="muted">The product is one workspace: every screen you may open is in its left-hand rail, and the till and the handhelds are under <b>Devices</b> there.</p>
-<p><a class="primary" href="${LANDING}">Open the store workspace</a></p>
-<form method="post" action="/login/logout"><button type="submit">Sign out</button></form>`), true);
+  return renderAccount(who, LANDING);
 }
 
 /** Only a same-origin path to one of the shells (or the demo home) is a valid place to go back to (no open redirect). */
@@ -218,43 +221,24 @@ export function safeNext(next: string | undefined): string {
   return next === DEMO_HOME || SHELLS.some(([p]) => next.startsWith(p)) ? next : LANDING;
 }
 
-const esc = (s: string): string =>
-  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-
-function page(title: string, inner: string, wide = false): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} — SRE Retail OS</title>
-<style>
-:root{--bg:#f3f5f4;--panel:#fff;--line:#dce3de;--ink:#25362e;--muted:#53625a;--accent:#16614d;--warn:#8a5e1b;--error:#a03e36;--error-surface:#fbe9e7;--tap:48px}
-body{margin:0;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Tamil","Nirmala UI","Latha",sans-serif;background:var(--bg);color:var(--ink)}
-.strip{background:var(--warn);color:#fff;font-weight:700;text-align:center;padding:.5rem 1rem}
-main{max-width:40rem;margin:1.5rem auto;padding:0 1rem}main.wide{max-width:64rem}
-.auth{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:0;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:var(--panel)}
-.brand{background:#192f27;color:#fff;padding:2.2rem 2rem;display:grid;gap:.6rem;align-content:start}
-.brand .mark{width:52px;height:52px;border-radius:14px;background:#2fbf8f;color:#0f2e24;font-weight:800;font-size:17px;display:grid;place-items:center;letter-spacing:.03em}
-.brand h2{margin:.4rem 0 0;font-size:1.5rem}.brand .tag{margin:0;color:#cfe3da;font-size:1.05rem}
-.brand ul{margin:.6rem 0 0;padding-left:1.1rem;color:#cfe3da}.brand li{margin:.45rem 0}
-.auth .card{padding:2rem 1.6rem;display:grid;gap:.4rem;align-content:start}.auth .card h1{margin:0}.auth .card form{margin-top:.4rem}.help{color:var(--muted);font-size:14px;margin:.8rem 0 0}
-@media (max-width:860px){.auth{grid-template-columns:1fr}.brand{padding:1.4rem 1.2rem}.auth .card{padding:1.4rem 1.2rem}}
-h1{font-size:1.5rem;margin:.6rem 0 1rem}h2{font-size:1.05rem;margin:0 0 .2rem}
-section{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--accent);border-radius:8px;padding:1rem 1.1rem;margin:0 0 1rem}
-label{display:block;margin:.8rem 0 .2rem;font-weight:600}
-input{width:100%;box-sizing:border-box;min-height:var(--tap);padding:.6rem .8rem;font-size:1rem;border:1px solid #aebbb3;border-radius:6px;background:var(--panel);color:var(--ink)}
-button{margin-top:1rem;width:100%;min-height:var(--tap);padding:.6rem;font-size:1rem;font-weight:700;border:0;border-radius:6px;background:var(--accent);color:#fff}
-a.primary{display:block;box-sizing:border-box;width:100%;min-height:var(--tap);padding:.7rem;font-size:1rem;font-weight:700;text-align:center;text-decoration:none;border-radius:6px;background:var(--accent);color:#fff}
-form button{background:var(--panel);color:var(--accent);border:1px solid var(--accent)}
-.err{background:var(--error-surface);color:var(--error);border-left:4px solid var(--error);padding:.6rem .8rem;border-radius:6px}
-ul{padding-left:1.1rem;margin:.4rem 0 0}li{margin:.35rem 0}a{color:var(--accent)}.muted{color:var(--muted);margin:.2rem 0 .4rem;font-size:15px}.path{color:var(--muted);font-size:14px}
-:focus-visible{outline:3px solid #0f4c3a;outline-offset:2px}
-</style></head><body>
-<div class="strip" role="alert">${esc(DEMO_BANNER_TEXT_EN)}<br>${esc(DEMO_BANNER_TEXT_TA)}</div>
-<main${wide ? ' class="wide"' : ''}>${inner}</main></body></html>`;
+/**
+ * The sign-in page in the owner's approved design (UX-3 · OB-18; markup, styles, script and words in ./ui.ts). `error` is
+ * one of OUR generic sentences — never anything the request carried. `expired` is the server's own observation: a session
+ * cookie arrived that no longer verifies.
+ */
+export function formPage(next: string, error?: string, expired = false): string {
+  return renderSignIn({ next, error, expired });
 }
+
+/** ONE sentence for a wrong password AND an unknown login (no user enumeration) — the design's words, translated by the page's language switch. */
+export const WRONG_CREDENTIALS = LOGIN_COPY.en.invalid;
 
 const SECURITY_HEADERS = {
   'content-type': 'text/html; charset=utf-8',
   'cache-control': 'no-store',
-  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+  // Nothing inline: the page's stylesheet and script are served by this same service (below) under a content hash, so the
+  // policy names no 'unsafe-inline' anywhere. Nothing is fetched from anywhere else (icons are inline SVG, fonts the system's).
+  'content-security-policy': "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
   'x-content-type-options': 'nosniff',
   // NOT 'no-referrer': under it Chrome sends `Origin: null` on the sign-in form's POST, which the
   // cross-site check (rightly) refuses — every real browser sign-in failed 403 on the demo box, 28 Sep
@@ -262,37 +246,16 @@ const SECURITY_HEADERS = {
   'referrer-policy': 'same-origin',
 };
 
-export function formPage(next: string, error?: string): string {
-  return page('Sign in', authFrame(`<h1>Welcome back</h1>
-<p class="muted">Sign in to your store workspace.</p>
-${error === undefined ? '' : `<p class="err" role="alert">${esc(error)}</p>`}
-<form method="post" action="/login/">
-<input type="hidden" name="next" value="${esc(next)}">
-<label for="login">Login</label><input id="login" name="login" autocomplete="username" autocapitalize="none" required>
-<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
-<button type="submit">Sign in</button></form>
-<p class="help">Your login is personal. Do not share it. This trial copy runs on practice data, not the store's real figures.</p>`), true);
-}
-
-/**
- * The frame every sign-in screen shares (UX-2b, the pattern the owner chose): the product's panel on the left — the
- * mark, the name, what it is — and the card beside it; stacked on a phone. No image, no script, nothing fetched.
- */
-function authFrame(card: string): string {
-  return `<div class="auth">
-<aside class="brand" aria-label="SRE Retail OS">
-<div class="mark" aria-hidden="true">SRE</div>
-<h2>SRE Retail OS</h2>
-<p class="tag">One commerce truth for the whole store.</p>
-<ul>
-<li>One sign-in, every screen you may open — till, back office, warehouse, delivery.</li>
-<li>Every figure from a real record, or honestly “Not known”.</li>
-<li>Trades on with no internet; syncs when it returns.</li>
-</ul>
-</aside>
-<section class="card">${card}</section>
-</div>`;
-}
+/** The page's own two assets. Their address carries a content hash (`?v=`), so a release moves the address and the copy a browser keeps can be long-lived. */
+const ASSETS: Readonly<Record<string, { readonly type: string; readonly body: string }>> = {
+  [LOGIN_CSS_PATH]: { type: 'text/css; charset=utf-8', body: LOGIN_CSS },
+  [LOGIN_JS_PATH]: { type: 'text/javascript; charset=utf-8', body: LOGIN_JS },
+};
+const ASSET_HEADERS = {
+  'cache-control': 'public, max-age=31536000, immutable',
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'same-origin',
+};
 
 export function cookieOf(headers: LoginRequest['headers']): string | undefined {
   const raw = headers['cookie'];
@@ -305,7 +268,7 @@ export function cookieOf(headers: LoginRequest['headers']): string | undefined {
 }
 
 const sessionCookie = (token: string): string =>
-  `${COOKIE_NAME}=${token}; Path=/; Max-Age=${SESSION_SECONDS}; HttpOnly; Secure; SameSite=Strict`;
+  `${COOKIE_NAME}=${token}; Path=/; Max-Age=${SESSION_SECONDS + COOKIE_GRACE_SECONDS}; HttpOnly; Secure; SameSite=Strict`;
 const clearedCookie = `${COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`;
 
 /** A cross-site form post is refused: if the browser says where the form came from, it must be us. */
@@ -328,17 +291,22 @@ export function createDemoLoginHandler(deps: DemoLoginDeps): (req: LoginRequest)
     const path = url.pathname;
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
 
+    const asset = req.method === 'GET' ? ASSETS[path] : undefined;
+    if (asset !== undefined) return { status: 200, headers: { ...ASSET_HEADERS, 'content-type': asset.type }, body: asset.body };
+
     if (req.method === 'GET' && (path === '/login/' || path === '/login')) {
       const token = cookieOf(req.headers);
       const verdict = token === undefined ? undefined : verifyToken(token, deps.idp, deps.now());
       if (verdict?.ok === true && verdict.principal !== undefined) {
         return html(200, homePage(verdict.principal.userId));
       }
-      return html(200, formPage(safeNext(url.searchParams.get('next') ?? undefined)));
+      // A session cookie that no longer verifies IS the session having ended: say so, once, and drop the dead cookie.
+      const expired = token !== undefined;
+      return html(200, formPage(safeNext(url.searchParams.get('next') ?? undefined), undefined, expired), expired ? { 'set-cookie': clearedCookie } : {});
     }
 
     if (req.method === 'POST' && (path === '/login/' || path === '/login')) {
-      if (crossSite(req)) return html(403, page('Refused', '<p class="err">This sign-in did not come from this site, so it was refused.</p>'));
+      if (crossSite(req)) return html(403, renderPlain('Refused', 'This sign-in did not come from this site, so it was refused.'));
       const form = new URLSearchParams(req.body);
       const login = (form.get('login') ?? '').trim().toLowerCase();
       const password = form.get('password') ?? '';
@@ -358,7 +326,7 @@ export function createDemoLoginHandler(deps: DemoLoginDeps): (req: LoginRequest)
         deps.throttle.fail(`ip:${ip}`, nowMs);
         deps.throttle.fail(`login:${login}`, nowMs);
         deps.audit({ event: 'demo_login_failed', login, ip });
-        return html(401, formPage(next, 'That login and password do not match.'));
+        return html(401, formPage(next, WRONG_CREDENTIALS));
       }
 
       deps.throttle.succeed(`ip:${ip}`);
@@ -369,11 +337,11 @@ export function createDemoLoginHandler(deps: DemoLoginDeps): (req: LoginRequest)
     }
 
     if (req.method === 'POST' && path === '/login/logout') {
-      if (crossSite(req)) return html(403, page('Refused', '<p class="err">Refused.</p>'));
+      if (crossSite(req)) return html(403, renderPlain('Refused', 'This request did not come from this site, so it was refused.'));
       deps.audit({ event: 'demo_logout', ip });
       return redirect('/login/', clearedCookie);
     }
 
-    return html(404, page('Not found', '<p>Not found. <a href="/login/">Sign in</a></p>'));
+    return html(404, renderPlain('Not found', 'There is no such page here.'));
   };
 }

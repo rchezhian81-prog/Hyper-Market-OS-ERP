@@ -1,0 +1,46 @@
+{
+  "brand": "SRE Hyper Market",
+  "appearance": "light",
+  "colors": {
+    "canvas": "#f5f7f2",
+    "surface": "#ffffff",
+    "text": "#193b31",
+    "secondaryText": "#586e61",
+    "primary": "#17654f",
+    "deepGreen": "#143f32",
+    "sage": "#eaf0e1",
+    "border": "#dce4d9",
+    "inputBorder": "#819483",
+    "input": "#fcfdfb",
+    "warning": "#86571b",
+    "warningSurface": "#fbf4e7",
+    "error": "#a13932",
+    "errorSurface": "#fcf0ec"
+  },
+  "fontStack": "Inter, Segoe UI, Noto Sans Tamil, Nirmala UI, Arial, sans-serif",
+  "fonts": "System fonts only. Bundle approved Latin/Tamil fonts locally if exact rendering is required.",
+  "dimensionsPx": {
+    "cardMaxWidth": 451,
+    "inputHeight": 53,
+    "primaryButtonMinHeight": 53,
+    "minimumButtonHeight": 44,
+    "cardRadius": 19,
+    "inputRadius": 8
+  },
+  "breakpointsPx": {
+    "compactDesktop": 900,
+    "singleColumn": 720,
+    "smallPhone": 390
+  },
+  "states": [
+    "connected",
+    "offline-eligible",
+    "offline-blocked",
+    "store-unavailable",
+    "online",
+    "invalid",
+    "expired"
+  ],
+  "stripe": "3px above the login card; 68% forest green, 22% sage, 10% pale sage",
+  "credentials": "Preview only. No authentication, storage, transmission or account creation."
+}

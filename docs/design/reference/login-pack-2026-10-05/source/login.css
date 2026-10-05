@@ -1,0 +1,116 @@
+#sre-login-design{--sre-canvas:#f5f7f2;--sre-surface:#ffffff;--sre-ink:#193b31;--sre-muted:#586e61;--sre-green:#17654f;--sre-deep:#143f32;--sre-sage:#eaf0e1;--sre-border:#dce4d9;--sre-field:#fcfdfb;--sre-amber:#86571b;--sre-amber-bg:#fbf4e7;--sre-red:#a13932;--sre-red-bg:#fcf0ec;color-scheme:light;font:16px/1.55 Inter,"Segoe UI","Noto Sans Tamil","Nirmala UI",Arial,sans-serif;color:var(--sre-ink);background:var(--sre-canvas);width:100%;isolation:isolate}
+    #sre-login-design *{box-sizing:border-box}
+    #sre-login-design h1,#sre-login-design h2,#sre-login-design h3,#sre-login-design p{margin:0}
+    #sre-login-design button,#sre-login-design input,#sre-login-design select{font:inherit}
+    #sre-login-design button{color:inherit}
+    #sre-login-design button,#sre-login-design summary,#sre-login-design select{touch-action:manipulation}
+    #sre-login-design button:disabled{cursor:not-allowed}
+    #sre-login-design [hidden]{display:none!important}
+    #sre-login-design svg{width:20px;height:20px;stroke-width:1.65;flex-shrink:0}
+    #sre-login-design i[data-lucide]{display:inline-block;width:20px;height:20px;flex-shrink:0}
+    #sre-login-design .sl-topbar{max-width:1400px;margin:auto;padding:29px 54px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+    #sre-login-design .sl-brand{display:flex;align-items:center;gap:13px;text-decoration:none;color:var(--sre-ink)}
+    #sre-login-design .sl-mark{width:47px;height:47px;border-radius:13px;display:flex;align-items:center;justify-content:center;background:var(--sre-deep);color:#fff;font:750 31px/1 "Segoe UI",Arial,sans-serif;position:relative;padding-right:4px;flex-shrink:0}
+    #sre-login-design .sl-mark span{position:absolute;right:7px;top:7px;font-size:12px;font-weight:600;color:#ccdda5}
+    #sre-login-design .sl-brand-name{font-size:22px;line-height:1.1;font-weight:750;letter-spacing:.4px}
+    #sre-login-design .sl-brand-name small{display:block;margin-top:7px;font-size:11px;font-weight:700;letter-spacing:1.8px;color:var(--sre-muted)}
+    #sre-login-design .sl-top-actions{display:flex;align-items:center;gap:25px}
+    #sre-login-design .sl-language{display:flex;align-items:center;padding:3px;border:1px solid var(--sre-border);border-radius:9px;background:#edf1e8}
+    #sre-login-design .sl-language button{border:0;background:transparent;min-height:44px;padding:7px 13px;font-size:13px;color:var(--sre-muted);border-radius:6px}
+    #sre-login-design .sl-language button[aria-pressed="true"]{background:#fff;color:var(--sre-deep);font-weight:650;box-shadow:0 1px 4px #193b3112}
+    #sre-login-design .sl-text-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:0;min-height:44px;font-size:14px;padding:8px 0;color:var(--sre-green);text-align:center;text-decoration:none}
+    #sre-login-design .sl-top-help{color:var(--sre-muted)}
+    #sre-login-design .sl-main{max-width:1236px;margin:auto;display:grid;grid-template-columns:minmax(0,1.02fr) minmax(330px,.98fr);gap:76px;align-items:center;padding:49px 54px 66px}
+    #sre-login-design .sl-intro{max-width:490px;padding:13px 0}
+    #sre-login-design .sl-eyebrow{display:flex;align-items:center;gap:10px;font-size:11px;letter-spacing:2px;font-weight:700;color:#5e7452;text-transform:uppercase;margin-bottom:23px}
+    #sre-login-design .sl-eyebrow:before{content:"";width:24px;height:2px;background:#8da578}
+    #sre-login-design .sl-intro h1{font-size:clamp(38px,4.4vw,58px);font-weight:650;letter-spacing:-2.5px;line-height:1.12;max-width:480px}
+    #sre-login-design .sl-intro h1 span{display:block;color:#68825b;margin-top:5px}
+    #sre-login-design .sl-intro-copy{margin-top:23px;font-size:17px;line-height:1.75;color:var(--sre-muted);max-width:385px}
+    #sre-login-design .sl-illustration{margin-top:43px;width:min(100%,410px);position:relative;padding:0 0 20px 15px}
+    #sre-login-design .sl-illustration:before{content:"";position:absolute;inset:19px 16px 0 0;border:1px solid #d6dfce;border-radius:17px;background:#e8efdf}
+    #sre-login-design .sl-workspace{position:relative;background:#fff;border:1px solid #d8e2d4;border-radius:16px;overflow:hidden;box-shadow:0 15px 40px -28px #28413145}
+    #sre-login-design .sl-workspace-head{display:flex;align-items:center;gap:11px;padding:19px 20px;border-bottom:1px solid #e7ece2}
+    #sre-login-design .sl-workspace-icon{width:39px;height:39px;border-radius:10px;display:grid;place-items:center;background:#eef3e9;color:var(--sre-green)}
+    #sre-login-design .sl-workspace-head strong{display:block;font-size:14px;font-weight:650}
+    #sre-login-design .sl-workspace-head small{display:block;color:var(--sre-muted);font-size:12px;margin-top:1px}
+    #sre-login-design .sl-three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:22px 12px 24px;gap:6px}
+    #sre-login-design .sl-three div{display:flex;align-items:center;flex-direction:column;gap:11px;color:var(--sre-green);text-align:center}
+    #sre-login-design .sl-three div+div{border-left:1px solid #e4eadd}
+    #sre-login-design .sl-three span{font-size:12px;color:#496551;font-weight:550;line-height:1.35}
+    #sre-login-design .sl-illustration-label{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#586e47;padding:15px 10px 0}
+    #sre-login-design .sl-illustration-label svg{width:16px;height:16px}
+    #sre-login-design .sl-login-area{width:100%;max-width:451px;justify-self:end}
+    #sre-login-design .sl-login-card{background:#fff;border:1px solid #dbe3d7;border-radius:19px;padding:31px 34px 26px;box-shadow:0 14px 48px -30px #203c313b;position:relative;overflow:hidden}
+    #sre-login-design .sl-login-card:before{content:"";height:3px;position:absolute;top:0;left:34px;right:34px;background:linear-gradient(90deg,#1b6551 0%,#1b6551 68%,#b8cba1 68%,#b8cba1 90%,#e6eddd 90%);border-radius:0 0 5px 5px}
+    #sre-login-design .sl-login-kicker{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:650;letter-spacing:1.6px;text-transform:uppercase;color:#667d5a;margin-bottom:17px}
+    #sre-login-design .sl-login-kicker svg{width:16px;height:16px}
+    #sre-login-design .sl-login-card h2{font-size:30px;line-height:1.2;font-weight:650;letter-spacing:-.8px}
+    #sre-login-design .sl-subtitle{color:var(--sre-muted);font-size:14px;margin-top:10px;line-height:1.6}
+    #sre-login-design .sl-store{display:flex;align-items:center;gap:12px;padding:13px 14px;border:1px solid #e2e8dc;border-radius:9px;background:#f7f9f3;margin:23px 0}
+    #sre-login-design .sl-store>svg,#sre-login-design .sl-store>i{width:22px;height:22px;color:var(--sre-green)}
+    #sre-login-design .sl-store strong{font-size:14px;font-weight:650;display:block}
+    #sre-login-design .sl-store small{font-size:12px;color:var(--sre-muted);display:block;margin-top:2px}
+    #sre-login-design .sl-store .sl-mode{margin-left:auto;color:#5e7052;background:#eaf0e2;border-radius:5px;padding:3px 7px;font-size:11px;white-space:nowrap;align-self:flex-start}
+    #sre-login-design .sl-field{margin-top:18px}
+    #sre-login-design .sl-field label{display:block;font-size:14px;font-weight:600;margin-bottom:8px}
+    #sre-login-design .sl-input-wrap{position:relative}
+    #sre-login-design .sl-input-wrap>svg,#sre-login-design .sl-input-wrap>i{position:absolute;left:14px;top:17px;color:#6d8174;width:18px;height:18px;pointer-events:none}
+    #sre-login-design input[type="text"],#sre-login-design input[type="password"]{display:block;appearance:none;width:100%;height:53px;border:1px solid #819483;border-radius:8px;background:var(--sre-field);color:var(--sre-ink);padding:12px 43px;font-size:16px;line-height:1.4;box-shadow:none;min-width:0}
+    #sre-login-design input::placeholder{color:#586e61;opacity:1;font-size:14px}
+    #sre-login-design input:disabled{background:#f1f3ee;color:#6c776b}
+    #sre-login-design input[aria-invalid="true"]{border-color:var(--sre-red)}
+    #sre-login-design .sl-password{padding-right:68px!important}
+    #sre-login-design .sl-reveal{position:absolute;right:4px;top:4px;height:45px;min-width:55px;display:flex;align-items:center;justify-content:center;gap:6px;border:0;background:transparent;color:var(--sre-green);font-size:12px;font-weight:600;border-radius:5px}
+    #sre-login-design .sl-caps{font-size:12px;color:var(--sre-amber);margin-top:7px}
+    #sre-login-design .sl-submit{display:flex;align-items:center;justify-content:center;gap:11px;width:100%;min-height:53px;border:1px solid var(--sre-green);border-radius:8px;background:var(--sre-green);color:#fff;font-size:15px;font-weight:650;margin-top:25px;padding:13px 17px;box-shadow:0 3px 6px -4px #0c443160}
+    #sre-login-design .sl-submit:hover:not(:disabled){background:#104d3c;border-color:#104d3c}
+    #sre-login-design .sl-submit:disabled{background:#dfe6dc;border-color:#dfe6dc;color:#56674f;box-shadow:none}
+    #sre-login-design .sl-submit svg{width:18px;height:18px}
+    #sre-login-design .sl-help-row{display:flex;justify-content:center;margin-top:10px}
+    #sre-login-design .sl-help-row button{font-size:13px;min-height:44px}
+    #sre-login-design .sl-personal{border-top:1px solid #e6eadf;margin-top:15px;padding-top:18px;display:flex;align-items:flex-start;gap:9px;color:var(--sre-muted);font-size:12px;line-height:1.6}
+    #sre-login-design .sl-personal svg{width:16px;height:16px;margin-top:2px;flex-shrink:0}
+    #sre-login-design .sl-status{margin:17px 2px 0;display:flex;align-items:center;gap:9px;justify-content:center;flex-wrap:wrap;color:#506a53;font-size:12px;line-height:1.5;text-align:center}
+    #sre-login-design .sl-status button{display:inline-flex;align-items:center;justify-content:center;gap:6px;color:inherit;border:0;background:transparent;font-size:12px;text-decoration:underline;text-underline-offset:4px;min-height:44px;padding:4px}
+    #sre-login-design .sl-status .sl-dot{width:6px;height:6px;border-radius:50%;background:#62805b;flex-shrink:0}
+    #sre-login-design .sl-status[data-tone="amber"]{color:var(--sre-amber)}
+    #sre-login-design .sl-status[data-tone="amber"] .sl-dot{background:var(--sre-amber)}
+    #sre-login-design .sl-status[data-tone="red"]{color:var(--sre-red)}
+    #sre-login-design .sl-status[data-tone="red"] .sl-dot{background:var(--sre-red)}
+    #sre-login-design .sl-notice{display:flex;gap:9px;align-items:flex-start;font-size:13px;line-height:1.6;padding:12px;border-radius:8px;border:1px solid #d7e3d1;background:#f1f7eb;color:#31563b;margin-bottom:17px}
+    #sre-login-design .sl-notice svg{width:17px;height:17px;margin-top:2px}
+    #sre-login-design .sl-notice[data-tone="amber"]{background:var(--sre-amber-bg);border-color:#e8d7b8;color:#704b1d}
+    #sre-login-design .sl-notice[data-tone="red"]{background:var(--sre-red-bg);border-color:#e5c7c1;color:var(--sre-red)}
+    #sre-login-design .sl-message{font-size:13px;line-height:1.6;background:#f0f5ed;border:1px solid #d6e3ce;border-radius:8px;padding:12px;margin-top:17px;color:#31563b}
+    #sre-login-design .sl-message[data-tone="red"]{background:var(--sre-red-bg);color:var(--sre-red);border-color:#e5c7c1}
+    #sre-login-design .sl-footer{border-top:1px solid #e0e7d8;max-width:1292px;margin:0 auto;padding:22px 30px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:13px;color:#627257;font-size:12px}
+    #sre-login-design .sl-footer>span{display:flex;gap:9px;align-items:center}
+    #sre-login-design .sl-footer svg{width:16px;height:16px}
+    #sre-login-design .sl-preview{margin:0;border-top:1px solid #dce4d9;background:#edf1e7;padding:0 28px;color:#4a604e;font-size:12px}
+    #sre-login-design .sl-preview summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:10px 0;list-style:none;font-size:12px;font-weight:500}
+    #sre-login-design .sl-preview summary::-webkit-details-marker{display:none}
+    #sre-login-design .sl-preview summary span:last-child{display:flex;align-items:center;gap:7px;white-space:nowrap}
+    #sre-login-design .sl-preview summary svg{width:15px;height:15px}
+    #sre-login-design .sl-preview[open] summary svg{transform:rotate(180deg)}
+    #sre-login-design .sl-preview-body{display:flex;align-items:flex-end;flex-wrap:wrap;gap:13px 24px;padding:10px 0 23px}
+    #sre-login-design .sl-preview-body label{font-size:12px;display:grid;gap:6px;font-weight:600}
+    #sre-login-design .sl-preview select{max-width:100%;border:1px solid #a9bba4;color:#264631;background:white;border-radius:6px;min-height:44px;padding:8px 11px;font-size:13px}
+    #sre-login-design .sl-preview-body p{flex:1;min-width:180px;max-width:590px;font-size:12px;line-height:1.6}
+    #sre-login-design .sl-dialog-host{position:absolute;inset:0;background:#19382f6b;z-index:30;display:flex;align-items:center;justify-content:center;padding:26px}
+    #sre-login-design .sl-product{position:relative;overflow:hidden}
+    #sre-login-design .sl-dialog{width:min(460px,100%);max-height:calc(100dvh - 52px);overflow:auto;overscroll-behavior:contain;border:1px solid #d7e1d2;background:white;color:var(--sre-ink);border-radius:15px;padding:27px;box-shadow:0 20px 90px #1c3b2b24}
+    #sre-login-design .sl-dialog-head{display:flex;gap:15px;align-items:start;justify-content:space-between;margin-bottom:15px}
+    #sre-login-design .sl-dialog h3{font-size:21px;font-weight:650;line-height:1.4;letter-spacing:-.3px}
+    #sre-login-design .sl-dialog .sl-close{width:44px;height:44px;border:1px solid var(--sre-border);border-radius:7px;background:#f5f8f0;display:grid;place-items:center;flex-shrink:0;margin-top:-8px;margin-right:-8px}
+    #sre-login-design .sl-dialog p{font-size:14px;line-height:1.75;color:var(--sre-muted);white-space:pre-line}
+    #sre-login-design .sl-dialog .sl-submit{margin-top:22px}
+    #sre-login-design:lang(ta) .sl-intro h1{font-size:clamp(29px,3.1vw,42px);letter-spacing:-.3px;line-height:1.5}
+    #sre-login-design:lang(ta) .sl-login-card h2{font-size:25px;line-height:1.5;letter-spacing:0}
+    #sre-login-design:lang(ta) .sl-eyebrow,#sre-login-design:lang(ta) .sl-login-kicker{letter-spacing:0;line-height:1.7;font-size:12px}
+    #sre-login-design:lang(ta) .sl-intro-copy{font-size:15px;line-height:1.95}
+    @media(min-width:1300px){#sre-login-design .sl-main{gap:115px;padding-top:64px;padding-bottom:78px}}
+    @media(max-width:900px){#sre-login-design .sl-topbar{padding:23px 30px}#sre-login-design .sl-main{padding:35px 30px 46px;gap:35px;grid-template-columns:minmax(0,1fr) minmax(318px,1fr)}#sre-login-design .sl-login-card{padding:28px}#sre-login-design .sl-intro h1{font-size:42px;letter-spacing:-1.6px}#sre-login-design .sl-intro-copy{font-size:15px}#sre-login-design .sl-workspace-head{padding:16px}#sre-login-design .sl-three{padding:18px 8px}#sre-login-design .sl-illustration{padding-left:9px}}
+    @media(max-width:720px){#sre-login-design .sl-topbar{padding:22px 22px 20px}#sre-login-design .sl-top-actions{gap:12px}#sre-login-design .sl-top-help{display:none}#sre-login-design .sl-main{display:block;padding:22px 22px 37px;max-width:490px}#sre-login-design .sl-intro{display:none}#sre-login-design .sl-login-area{max-width:none}#sre-login-design .sl-login-card{padding:29px 28px 24px}#sre-login-design .sl-footer{margin:0 22px;padding:18px 0;justify-content:center;text-align:center;flex-direction:column;gap:6px}#sre-login-design .sl-preview{padding:0 20px}#sre-login-design .sl-preview summary{align-items:flex-start}#sre-login-design .sl-preview summary span:first-child{max-width:210px}#sre-login-design .sl-preview summary span:last-child{padding-top:1px}#sre-login-design .sl-preview-body{align-items:stretch;flex-direction:column;gap:12px}}
+    @media(max-width:390px){#sre-login-design .sl-topbar{padding:19px 15px;gap:10px}#sre-login-design .sl-mark{width:39px;height:39px;font-size:26px;border-radius:10px}#sre-login-design .sl-brand{gap:8px}#sre-login-design .sl-brand-name{font-size:19px}#sre-login-design .sl-brand-name small{font-size:9px;letter-spacing:1.2px}#sre-login-design .sl-language button{padding:7px 9px;min-height:44px;font-size:12px}#sre-login-design .sl-main{padding:12px 14px 27px}#sre-login-design .sl-login-card{padding:25px 21px 21px}#sre-login-design .sl-login-card h2{font-size:28px}#sre-login-design .sl-store{padding:12px 10px;gap:8px}#sre-login-design .sl-store .sl-mode{display:none}#sre-login-design .sl-preview summary{font-size:11px;gap:8px}#sre-login-design .sl-preview{padding:0 14px}}
+    @media(prefers-reduced-motion:reduce){#sre-login-design *{scroll-behavior:auto!important}}

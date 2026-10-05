@@ -106,6 +106,23 @@ in both sets: `--field`, `--on-idle`, `--on-info`, `--ok-surface/--on-ok-surface
 The three-reds rule holds in both sets (the light signal red `#e04e48` fails as words on purpose). Measured on the reference, as sent vs with the fix layer (headless Chromium, 1366×820 home):
 texts under 14px 129 of 147 → 14 of 152; controls under 44px 3 → 0; strip 10px at 3.47:1 → 14px at 6.9:1.
 
+### 3.3 The sign-in (OB-18, 5 October 2026) — the owner's approved design, on the real entry point
+The owner's login design (`reference/login-pack-2026-10-05/`, README there) is the sign-in's look from here on — on the
+hosted copy's sign-in today (`infra/pilot/demo-login/ui.ts`) and on the Keycloak login of ADR-0019 when it is built. Its
+own token set, used only on that page: canvas `#F5F7F2`, surface white, ink `#193B31`, secondary `#586E61`, primary
+`#17654F`, deep green `#143F32` (the S+ mark), sage `#EAF0E1`, border `#DCE4D9`, input border `#819483`, field `#FCFDFB`,
+amber `#86571B` on `#FBF4E7`, red `#A13932` on `#FCF0EC`; card 451 px, radius 19, a 3 px stripe (68 % forest, 22 % sage,
+10 % pale sage); inputs 53 px; buttons ≥ 44 px; breakpoints 1300 / 900 / 720 / 390 (below 720 the decorative panel
+goes); the system stack with the Tamil faces. **What this document's rules add to it, and the page keeps:** one h1
+(the hero line is a tagline); one primary action; the practice strip at 14 px; nothing a person must read under 14 px and
+uppercase labels ≥ 12.5 px (the pack's 11–12 px lifted — the one visible change from what was sent); English and Tamil
+on every word, switchable, the choice remembered; the 3 px focus ring; no inline style or script (the policy is
+`self` only, the assets served by the page's own service under a content hash); the connection line says only what the
+server knows (§1 rule 4 is met honestly: this is the ONLINE sign-in; the store computer's state is shown inside the
+workspace after sign-in); errors generic for credentials, named for everything else; no sample state, no preview, no
+*Remember me*, no role selector. Verified in headless Chromium at 1280 / 390 / 320, EN and TA, with the §5.1 audit
+(`tests/e2e/sign-in-page.e2e.ts`).
+
 ## 4. Core components (implemented later in `packages/ui`)
 | Component | Rules |
 | --- | --- |
