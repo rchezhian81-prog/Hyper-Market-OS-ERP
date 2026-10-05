@@ -5,6 +5,45 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2a-i — two different requests can no longer spend the same balance twice: write guards on the event store; PF-01 closed for refunds, gift value and points (5 October 2026)
+
+- **The finding (audit PF-01, CRITICAL):** two refunds of one sale with two different ids, fired at the same
+  moment, both returned 201 — each read "nothing refunded yet", each appended. The same for a gift card's value
+  and a customer's points. Idempotency stops the SAME command twice; it never stopped two DIFFERENT ones.
+- **The shared primitive (pull request #701):** a **write guard** — an expected-version compare-and-append per
+  business key — on the event store (`packages/persistence/src/event-store.ts`: `WriteGuard`, `AppendOptions`,
+  `guardVersion`, `ConcurrencyConflictError`; migration `0014_write_guards.sql`, tenant-isolated and keyed to the
+  tenant register like every other table). A command reads the key's version BEFORE its authoritative read and
+  appends under it; the append bumps the version in the SAME transaction (`UPDATE … WHERE version = $expected`
+  takes the row lock, so two competitors serialise; the second finds the version moved, updates nothing, and its
+  whole batch rolls back). One lands; the other is a NAMED loss, never silent last-write-wins (hard rule #10). A
+  batch that dedups entirely never touches the guard, so a lane retrying a lost reply still gets its idempotent
+  answer. Without a transactional client the SQL store refuses a guarded append by name rather than appending
+  unguarded. The in-memory store (the edge's, and the reference) does the compare and the append in one
+  synchronous pass.
+- **Applied to the three balances the audit named:** the desk refund route reads the sale's guard
+  (`refund:<saleId>`) before the history and appends under it; the loser gets **409 `concurrent_change`** (the
+  kernel's new three-part error: nothing saved, read the sale again). The lane's synced refund — money already
+  gone — appends under the same guard and, when IT loses, re-reads and lands (never refused; the register's flags
+  say what it did). Gift-card redemption (`stored-value:<instrumentId>`) and points burn (`points:<customerId>`)
+  the same way.
+- **Proved:** unit (`tests/unit/write-guards.test.ts`: version 0, bump, named conflict with nothing kept, loser
+  re-reads and lands, keys independent, per tenant, whole-batch replay untouched, partial replay refused,
+  unguarded appends unchanged); **real PostgreSQL** (`tests/integration/write-guards-on-postgresql.test.ts`: two
+  competitors through the transactional pool — one lands, one `ConcurrencyConflictError`, exactly the winner's
+  events on the ledger, the loser's rolled back; stale version refused alone; replay dedups; keys and tenants
+  independent); the API surface (`tests/integration/concurrent-refunds-cannot-double-spend.test.ts`: two full
+  refunds / two full redemptions / two full burns at the same moment → exactly one success and one named 409, a
+  third refused on fresh figures, replays idempotent, sequences land, the synced refund never refused); the
+  migration proofs now list `write_guards` among the row-level-secured, tenant-keyed tables; every existing
+  refund, loyalty and stored-value suite still green.
+- **Not yet (Wave 2a-ii/iii, next):** SF-04 two transfers out of the same stock; FUL-02 the last unit reserved
+  twice and duplicate lines; PA-11 the audit chain forking under two writers — the same guard, keyed per stock
+  location/product, per reservation key and per tenant chain. Then Wave 2b (the identity criticals) and the
+  OB-15 block.
+
+---
+
 ## UX-2b — the Today command centre, the rail's icons, the sign-in frame; OB-17 recorded (5 October 2026)
 
 - **Why:** the owner's 5 October directions (OB-17): finish the software end to end before any hardware talk; English

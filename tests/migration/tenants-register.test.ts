@@ -82,7 +82,7 @@ describeOrSkip('the tenants register and its foreign keys (migration 0013)', () 
       `SELECT conrelid::regclass::text AS tbl, convalidated FROM pg_constraint WHERE conname LIKE '%_tenant_fk' ORDER BY 1`,
     );
     const byTable = new Map(r.rows.map((row) => [String(row['tbl']), Boolean(row['convalidated'])]));
-    for (const t of ['event_ledger', 'sync_outbox', 'config_versions', 'idempotency_keys', 'number_series']) {
+    for (const t of ['event_ledger', 'sync_outbox', 'config_versions', 'idempotency_keys', 'number_series', 'write_guards']) {
       expect(byTable.get(t), `${t} carries a validated tenant FK`).toBe(true);
     }
     expect(byTable.has('audit_log')).toBe(false);

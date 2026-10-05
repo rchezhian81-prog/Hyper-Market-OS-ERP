@@ -150,6 +150,20 @@ export const idempotencyKeyReused = (): ApiError => apiError(409, {
   nextSafeAction: 'Check what was saved under this key. If the new request is genuinely different, send it under a new key.',
 });
 
+/**
+ * Two different requests raced for the same balance and this one lost (Wave 2a · audit PF-01 / SF-04 / FUL-02).
+ *
+ * Not an idempotent replay (that is answered with the first result) and not a refusal of the request's content:
+ * the other request landed a moment earlier, so the figures this one was decided on are no longer true. Nothing
+ * was saved; the caller re-reads and decides again. Named, so a loss is never a silent last-write-wins (hard rule #10).
+ */
+export const concurrentChange = (what: string): ApiError => apiError(409, {
+  code: 'concurrent_change',
+  whatHappened: `Another change to ${what} was recorded a moment ago, so this one was not applied — the two cannot both be right.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: `Read ${what} again and send this again if it is still due. Nothing was changed by this request.`,
+});
+
 export const notFound = (what: string): ApiError => apiError(404, {
   code: 'not_found',
   whatHappened: `There is no ${what} here.`,

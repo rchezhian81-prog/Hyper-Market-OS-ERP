@@ -7,7 +7,7 @@
 export {
   ApiError, apiError, unauthenticated, forbidden, featureNotEntitled, idempotencyKeyMissing, idempotencyKeyReused,
   notFound, reauthenticationRequired,
-  type SavedState, type ApiErrorBody, type ErrorRefusal,
+  type SavedState, type ApiErrorBody, type ErrorRefusal, concurrentChange,
 } from './errors';
 
 export {

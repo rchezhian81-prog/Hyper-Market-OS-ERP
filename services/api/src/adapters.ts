@@ -2427,6 +2427,9 @@ export function salesHistoryAdapter(input: { readonly store: EventStore; readonl
   };
 }
 
+/** The write-guard key for everything that refunds against one sale (Wave 2a · PF-01). */
+export const refundGuardKey = (saleId: string): string => `refund:${saleId}`;
+
 export function returnsAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -2469,7 +2472,11 @@ export function returnsAdapter(input: {
         returnId: r.returnId, originalSaleId: r.originalSaleId, refundMinor: r.refundMinor,
       })),
 
-    recordReturn: async (tenantId, saleId, record, storeCredit) => {
+    // The sale's refund guard (Wave 2a · PF-01): one version per sale, read before the history and bumped by every
+    // return that lands against it, on whichever path — desk, online or synced from a lane.
+    refundVersion: (tenantId, saleId) => input.store.guardVersion(tenantId, refundGuardKey(saleId)),
+
+    recordReturn: async (tenantId, saleId, record, storeCredit, expectedVersion) => {
       // The register entry and its reporting projection are ONE atomic batch (audit FND-01). Before,
       // the projection was a second, additive append that a crash could drop — leaving the money and
       // the per-sale register correct but the tenant-wide returns-netting report short one return.
@@ -2492,7 +2499,11 @@ export function returnsAdapter(input: {
       const stockMovements = originalSale === undefined
         ? []
         : returnStockMovements(record, resolveSaleStockLocation(originalSale, await storeOfPack(input.store, tenantId, originalSale.packVersion)));
-      await input.store.appendBatch(tenantId, returnBatchEvents(tenantId, saleId, record, storeCredit, stockMovements));
+      await input.store.appendBatch(
+        tenantId,
+        returnBatchEvents(tenantId, saleId, record, storeCredit, stockMovements),
+        expectedVersion === undefined ? undefined : { guard: { key: refundGuardKey(saleId), expectedVersion } },
+      );
     },
 
     // The tenant's refund approval threshold (M13-FR-03) — tenant-wide config, append-only (latest wins).
@@ -6976,8 +6987,12 @@ export function customerAdapter(input: {
       (await allOf<RecordedPointsMovement>(input.store, tenantId, forCustomerPoints(customerId), 'PointsMovement'))
         .map((m): StoredPointsMovement => ({ movementId: m.movementId, customerId: m.customerId, delta: m.delta })),
 
-    recordPointsMovement: async (tenantId, customerId, m) => {
-      await input.store.append(tenantId, forCustomerPoints(customerId), makeEvent({
+    // The customer's points write guard (Wave 2a · PF-01): one version per customer, read before the balance and
+    // bumped by every movement that lands.
+    pointsVersion: (tenantId, customerId) => input.store.guardVersion(tenantId, `points:${customerId}`),
+
+    recordPointsMovement: async (tenantId, customerId, m, expectedVersion) => {
+      await input.store.appendBatch(tenantId, [{ stream: forCustomerPoints(customerId), event: makeEvent({
         id: `points-${m.movementId}`,
         type: 'PointsMovement',
         occurredAt: m.at,
@@ -6986,7 +7001,7 @@ export function customerAdapter(input: {
         idempotencyKey: `points-${tenantId}-${m.movementId}`,
         source: 'api/customer',
         payload: m,
-      }));
+      }) }], expectedVersion === undefined ? undefined : { guard: { key: `points:${customerId}`, expectedVersion } });
     },
   };
 }
@@ -7291,8 +7306,12 @@ export function storedValueAdapter(input: {
       }));
     },
 
-    recordMovement: async (tenantId, instrumentId, m) => {
-      await input.store.append(tenantId, forInstrument(instrumentId), makeEvent({
+    // The instrument's write guard (Wave 2a · PF-01): one version per card, read before the balance and bumped by
+    // every movement that lands on it.
+    instrumentVersion: (tenantId, instrumentId) => input.store.guardVersion(tenantId, `stored-value:${instrumentId}`),
+
+    recordMovement: async (tenantId, instrumentId, m, expectedVersion) => {
+      await input.store.appendBatch(tenantId, [{ stream: forInstrument(instrumentId), event: makeEvent({
         id: `sv-mv-${m.movementId}`,
         type: 'StoredValueMovement',
         occurredAt: m.at,
@@ -7301,7 +7320,7 @@ export function storedValueAdapter(input: {
         idempotencyKey: `sv-mv-${tenantId}-${m.movementId}`,
         source: 'api/customer',
         payload: m,
-      }));
+      }) }], expectedVersion === undefined ? undefined : { guard: { key: `stored-value:${instrumentId}`, expectedVersion } });
     },
   };
 }

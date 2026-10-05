@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 892,
+  "testFiles": 895,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -21,7 +21,7 @@
   "totals": {
     "unit": 81,
     "integration": 78,
-    "realDb": 53,
+    "realDb": 54,
     "browser": 44,
     "connected": 2,
     "device": 0,
@@ -420,9 +420,9 @@
       "id": "M08",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
-        "integration": 27,
-        "realDb": 4,
+        "unit": 14,
+        "integration": 28,
+        "realDb": 5,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -442,7 +442,8 @@
           "tests/unit/stock-metrics.test.ts",
           "tests/unit/stock-position.test.ts",
           "tests/unit/stock-valuation.test.ts",
-          "tests/unit/warehouse-handheld-count-and-adjust.test.ts"
+          "tests/unit/warehouse-handheld-count-and-adjust.test.ts",
+          "tests/unit/write-guards.test.ts"
         ],
         "integration": [
           "tests/integration/adjustment-requests.test.ts",
@@ -471,13 +472,15 @@
           "tests/integration/warehouse-counts.test.ts",
           "tests/integration/warehouse-durability.test.ts",
           "tests/integration/warehouse-synced-routes.test.ts",
-          "tests/integration/warehouse-transfers.test.ts"
+          "tests/integration/warehouse-transfers.test.ts",
+          "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "realDb": [
           "tests/integration/floor-indents-handheld-issue.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
           "tests/integration/the-till-exchanges.test.ts",
-          "tests/integration/the-till-returns-without-a-receipt.test.ts"
+          "tests/integration/the-till-returns-without-a-receipt.test.ts",
+          "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "browser": [
           "tests/e2e/indents-delivery.e2e.ts",
@@ -728,9 +731,9 @@
       "id": "M13",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 21,
-        "integration": 16,
-        "realDb": 3,
+        "unit": 22,
+        "integration": 18,
+        "realDb": 4,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -758,9 +761,11 @@
           "tests/unit/returns-register.test.ts",
           "tests/unit/returns.test.ts",
           "tests/unit/reversal.test.ts",
-          "tests/unit/sync-http-transport.test.ts"
+          "tests/unit/sync-http-transport.test.ts",
+          "tests/unit/write-guards.test.ts"
         ],
         "integration": [
+          "tests/integration/concurrent-refunds-cannot-double-spend.test.ts",
           "tests/integration/exchanges.test.ts",
           "tests/integration/lane-receipt-lookup.test.ts",
           "tests/integration/no-receipt-returns.test.ts",
@@ -776,12 +781,14 @@
           "tests/integration/the-lane-reaches-its-disk.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-till-exchanges.test.ts",
-          "tests/integration/the-till-returns-without-a-receipt.test.ts"
+          "tests/integration/the-till-returns-without-a-receipt.test.ts",
+          "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "realDb": [
           "tests/integration/returns-guard-the-refund.test.ts",
           "tests/integration/the-till-exchanges.test.ts",
-          "tests/integration/the-till-returns-without-a-receipt.test.ts"
+          "tests/integration/the-till-returns-without-a-receipt.test.ts",
+          "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "browser": [
           "tests/e2e/return-governance-delivery.e2e.ts",
@@ -963,9 +970,9 @@
       "id": "M17",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 6,
-        "integration": 8,
-        "realDb": 2,
+        "unit": 7,
+        "integration": 10,
+        "realDb": 3,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -978,9 +985,11 @@
           "tests/unit/erp-stored-value-session.test.ts",
           "tests/unit/loyalty-coupons.test.ts",
           "tests/unit/loyalty-stored-value.test.ts",
-          "tests/unit/loyalty.test.ts"
+          "tests/unit/loyalty.test.ts",
+          "tests/unit/write-guards.test.ts"
         ],
         "integration": [
+          "tests/integration/concurrent-refunds-cannot-double-spend.test.ts",
           "tests/integration/coupons.test.ts",
           "tests/integration/household-pooling.test.ts",
           "tests/integration/loyalty-durability.test.ts",
@@ -988,11 +997,13 @@
           "tests/integration/store-credit-cap.test.ts",
           "tests/integration/store-credit-refund.test.ts",
           "tests/integration/stored-value-liability.test.ts",
-          "tests/integration/stored-value.test.ts"
+          "tests/integration/stored-value.test.ts",
+          "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "realDb": [
           "tests/integration/household-pooling.test.ts",
-          "tests/integration/stored-value-liability.test.ts"
+          "tests/integration/stored-value-liability.test.ts",
+          "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "browser": [
           "tests/e2e/return-governance-delivery.e2e.ts",
@@ -1010,9 +1021,9 @@
       "id": "M18",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 9,
-        "integration": 7,
-        "realDb": 0,
+        "unit": 10,
+        "integration": 8,
+        "realDb": 1,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -1028,7 +1039,8 @@
           "tests/unit/orders-fulfilment-plan.test.ts",
           "tests/unit/orders-substitution-exceptions.test.ts",
           "tests/unit/orders.test.ts",
-          "tests/unit/storefront-serviceability-schedule.test.ts"
+          "tests/unit/storefront-serviceability-schedule.test.ts",
+          "tests/unit/write-guards.test.ts"
         ],
         "integration": [
           "tests/integration/order-channel-reconcile.test.ts",
@@ -1037,9 +1049,12 @@
           "tests/integration/orders-backorder.test.ts",
           "tests/integration/orders-lifecycle.test.ts",
           "tests/integration/serviceability-config.test.ts",
-          "tests/integration/storefront-orders.test.ts"
+          "tests/integration/storefront-orders.test.ts",
+          "tests/integration/write-guards-on-postgresql.test.ts"
         ],
-        "realDb": [],
+        "realDb": [
+          "tests/integration/write-guards-on-postgresql.test.ts"
+        ],
         "browser": [],
         "connected": [],
         "device": [],

@@ -93,8 +93,10 @@ repaired identity code of PF-02 / PA-01 / PA-02 / PA-03; the login page through 
 identity server (ADR-0019), the demo-login retiring; then, as Wave 2's tail, the platform-admin tenant console
 (M36-FR-01: create tenant → plan → entitlements, cross-tenant isolation proven) on `packages/tenant` and M33 self-setup.
 One shared primitive first: **conditional append with an expected version per key** on the SQL event store, with a
-real-PostgreSQL concurrency test harness (two distinct requests, one must lose by name). Then, on it:
-- **PF-01** refunds, gift value and loyalty: read-check-append atomic per sale / instrument / customer.
+real-PostgreSQL concurrency test harness (two distinct requests, one must lose by name) — **DONE 5 Oct 2026 (#701):**
+the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), proven on PostgreSQL and in memory. Then, on it:
+- **PF-01** refunds, gift value and loyalty: read-check-append atomic per sale / instrument / customer — **DONE 5 Oct 2026
+  (#701)**; the loser is a named `concurrent_change` 409.
 - **SF-04** two transfers cannot spend the same stock; **FUL-02** reservations cannot promise the last unit twice,
   duplicate lines refused; **PA-11** the audit chain cannot fork across two writers.
 - **PF-02** the till operator is a verified, offline-capable credential; a manager approval is a separate

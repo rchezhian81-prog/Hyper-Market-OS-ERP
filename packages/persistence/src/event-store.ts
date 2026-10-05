@@ -51,6 +51,34 @@ export interface BatchEntry {
   readonly event: DomainEvent;
 }
 
+/**
+ * An expected-version guard on a batch (Wave 2a · audit PF-01 / SF-04 / FUL-02 / PA-11 · hard rule #10).
+ *
+ * Idempotency stops the SAME command landing twice; it does not stop two DIFFERENT commands — two refunds of
+ * one sale with two ids, two transfers out of one stock — each reading the same balance and each appending.
+ * The guard is a version per business `key` ('refund:<saleId>', 'stock:<location>:<product>', …): the writer
+ * reads it (`guardVersion`) before it decides, and the append succeeds only while it still holds; the append
+ * then bumps it. Two competitors read the same version; one lands and bumps it; the other's append is refused
+ * by name (`ConcurrencyConflictError`) and its whole batch is rolled back — never silent last-write-wins.
+ */
+export interface WriteGuard {
+  readonly key: string;
+  /** The version the writer read; 0 for a key nobody has written under yet. */
+  readonly expectedVersion: number;
+}
+
+export interface AppendOptions {
+  readonly guard?: WriteGuard;
+}
+
+/** The named loss of a compare-and-append: the key's version moved between the read and the write. */
+export class ConcurrencyConflictError extends Error {
+  constructor(readonly key: string, readonly expectedVersion: number) {
+    super(`Concurrent change on "${key}": expected version ${expectedVersion} but it has moved — this write was not applied.`);
+    this.name = 'ConcurrencyConflictError';
+  }
+}
+
 /** The durable, append-only, tenant-scoped event store. */
 export interface EventStore {
   /** Append an event to a tenant's logical stream; idempotent on its idempotency key. */
@@ -67,7 +95,13 @@ export interface EventStore {
    * that cannot (an embedded engine, a fake) writes sequentially, which is still idempotent but no
    * longer crash-atomic — the SQL adapter is the one that guarantees the boundary.
    */
-  appendBatch(tenantId: string, entries: readonly BatchEntry[]): Promise<readonly AppendResult[]>;
+  appendBatch(tenantId: string, entries: readonly BatchEntry[], options?: AppendOptions): Promise<readonly AppendResult[]>;
+  /**
+   * The current version of a write guard's key — 0 until something has been appended under it. A command
+   * reads this BEFORE its authoritative read and passes it back as `expectedVersion`; if anything under the
+   * key landed in between, the append is refused by name (`ConcurrencyConflictError`).
+   */
+  guardVersion(tenantId: string, key: string): Promise<number>;
   /** Find an event by its idempotency key within a tenant (dedupe lookup). */
   findByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<PersistedEvent | undefined>;
   /**
@@ -128,13 +162,19 @@ export class InMemoryEventStore implements EventStore {
    * tests: this is the store the edge runs on.
    */
   private readonly byStream = new Map<string, PersistedEvent[]>();
+  /** The write guards (Wave 2a): one version per (tenant, key), bumped by every guarded append that lands. */
+  private readonly guards = new Map<string, number>();
   private seq = 0;
 
   append(tenantId: string, stream: string, event: DomainEvent): Promise<AppendResult> {
     return this.appendBatch(tenantId, [{ stream, event }]).then((r) => r[0]!);
   }
 
-  appendBatch(tenantId: string, entries: readonly BatchEntry[]): Promise<readonly AppendResult[]> {
+  guardVersion(tenantId: string, key: string): Promise<number> {
+    return Promise.resolve(this.guards.get(tenantKey(tenantId, key)) ?? 0);
+  }
+
+  appendBatch(tenantId: string, entries: readonly BatchEntry[], options?: AppendOptions): Promise<readonly AppendResult[]> {
     // All-or-nothing without a database: STAGE every entry (resolving dedups against both the
     // committed store and earlier entries in this same batch), then apply the staged records in one
     // mutation pass. Single-threaded JS has no await points here, so the batch is atomic by
@@ -155,6 +195,16 @@ export class InMemoryEventStore implements EventStore {
       staged.push(record);
       stagedByKey.set(key, record);
       results.push({ record, deduped: false });
+    }
+    // The guard (Wave 2a): checked and bumped in this same synchronous pass, so the compare and the append are one
+    // step — the audit's double-spend (two requests awaiting between read and append) meets a version that has
+    // moved. A batch that dedups ENTIRELY is a replay of a command that already landed: it never touches the guard,
+    // so a lane retrying a lost reply with the version it first read still gets its idempotent answer.
+    if (options?.guard !== undefined && staged.length > 0) {
+      const gkey = tenantKey(tenantId, options.guard.key);
+      const current = this.guards.get(gkey) ?? 0;
+      if (current !== options.guard.expectedVersion) return Promise.reject(new ConcurrencyConflictError(options.guard.key, options.guard.expectedVersion));
+      this.guards.set(gkey, current + 1);
     }
     // Commit — one pass, no interleaving, so either every staged record lands or (on no staging) none.
     for (const record of staged) {
@@ -255,20 +305,36 @@ export class SqlEventStore implements EventStore {
     return (await this.appendBatch(tenantId, [{ stream, event }]))[0]!;
   }
 
-  appendBatch(tenantId: string, entries: readonly BatchEntry[]): Promise<readonly AppendResult[]> {
+  appendBatch(tenantId: string, entries: readonly BatchEntry[], options?: AppendOptions): Promise<readonly AppendResult[]> {
     // A batch of two or more runs in ONE transaction when the client offers one, so a crash between
     // two events of a command leaves the ledger with all of them or none (FND-01). A single event is
     // already atomic on its own — a lone INSERT needs no transaction, so the common single-append
     // path pays no BEGIN/COMMIT overhead. A client without a transaction primitive (an embedded
     // engine, a fake) falls back to sequential appends: still idempotent, but the atomicity of a
     // multi-event batch then rests on the SQL adapter, as the contract says.
-    const run = (client: SqlClient): Promise<AppendResult[]> => this.appendAllWith(client, tenantId, entries);
+    //
+    // A GUARDED batch (Wave 2a) always runs in a transaction: the inserts, then the guard's compare-and-bump
+    // on the same connection, so a lost compare rolls every insert back. Without a transaction primitive the
+    // guard cannot be honoured, and it fails closed by name rather than appending unguarded (hard rule #10).
+    const guard = options?.guard;
+    const run = (client: SqlClient): Promise<AppendResult[]> => this.appendAllWith(client, tenantId, entries, guard);
     // Row-level security (migration 0012): the statements run on the tenant's scoped view, so the database
     // itself refuses a row for any other tenant — even if a bug here ever bound the wrong id.
     const scoped = scopedTo(this.client, tenantId);
-    return entries.length > 1 && scoped.transaction
+    if (guard !== undefined && scoped.transaction === undefined) {
+      return Promise.reject(new Error(`A guarded append ("${guard.key}") needs a transactional SQL client; this one offers none, so the write was refused rather than made unguarded.`));
+    }
+    return (entries.length > 1 || guard !== undefined) && scoped.transaction
       ? scoped.transaction(run)
       : run(scoped);
+  }
+
+  async guardVersion(tenantId: string, key: string): Promise<number> {
+    const rows = await scopedTo(this.client, tenantId).query<{ version: number | string }>(
+      'SELECT version FROM write_guards WHERE tenant_id = $1 AND key = $2',
+      [tenantId, key],
+    );
+    return rows.length === 0 ? 0 : Number(rows[0]!.version);
   }
 
   /**
@@ -277,7 +343,7 @@ export class SqlEventStore implements EventStore {
    * own uncommitted inserts; using `this.client` (a different pool connection) would not.
    */
   private async appendAllWith(
-    client: SqlClient, tenantId: string, entries: readonly BatchEntry[],
+    client: SqlClient, tenantId: string, entries: readonly BatchEntry[], guard?: WriteGuard,
   ): Promise<AppendResult[]> {
     const results: AppendResult[] = [];
     for (const { stream, event } of entries) {
@@ -318,6 +384,22 @@ export class SqlEventStore implements EventStore {
         throw new Error(`Append for "${event.idempotencyKey}" conflicted but no row was found.`);
       }
       results.push({ record: rowToPersisted(existing[0]!), deduped: true });
+    }
+    // The guard (Wave 2a), after the inserts and on the SAME connection. A batch that deduped entirely is a replay
+    // of a command that already landed and never touches the guard. Otherwise: make sure the key's row exists,
+    // then bump it ONLY if it still holds the version the writer read. The UPDATE takes the row lock, so two
+    // competing transactions serialise on it; the second re-evaluates the WHERE after the first commits, finds
+    // the version moved, updates no row — and this whole transaction rolls back with the conflict named.
+    if (guard !== undefined && results.some((r) => !r.deduped)) {
+      await client.query(
+        'INSERT INTO write_guards (tenant_id, key, version) VALUES ($1, $2, 0) ON CONFLICT (tenant_id, key) DO NOTHING',
+        [tenantId, guard.key],
+      );
+      const bumped = await client.query(
+        'UPDATE write_guards SET version = version + 1, updated_at = now() WHERE tenant_id = $1 AND key = $2 AND version = $3 RETURNING version',
+        [tenantId, guard.key, guard.expectedVersion],
+      );
+      if (bumped.length === 0) throw new ConcurrencyConflictError(guard.key, guard.expectedVersion);
     }
     return results;
   }
