@@ -12,7 +12,7 @@
 // thing this service will not do is let one person widen their own authority.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, notFound, requireActorIsCaller, secondPersonIsASeparateAct } from '../../kernel/src/index';
 import type { Permission, Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
 import { formatNumber, type NumberFormat } from '../../../packages/numbering/src/numbering';
 import type { AuditEntry } from '../../../packages/audit/src/index';
@@ -44,6 +44,34 @@ export interface GrantRequest {
   readonly requestedBy: string;
   readonly approvedBy?: string;
   readonly requestedAt: string;
+}
+
+/** A role asked for by one signed-in person, awaiting another (Wave 2b · audit PA-03). */
+export interface PendingGrantRequest {
+  readonly grantId: string;
+  readonly userId: string;
+  readonly roleId: string;
+  readonly branchScope: readonly string[] | 'all';
+  /** The caller who asked — never a name from the body. */
+  readonly requestedBy: string;
+  readonly requestedAt: string;
+  readonly reason: string;
+}
+
+export interface GrantRejection {
+  readonly grantId: string;
+  readonly rejectedBy: string;
+  readonly reason: string;
+  readonly at: string;
+}
+
+export type GrantRequestState = 'pending' | 'granted' | 'rejected';
+
+/** A request with what became of it, folded from the ledger. */
+export interface GrantRequestRecord extends PendingGrantRequest {
+  readonly state: GrantRequestState;
+  readonly decidedBy?: string;
+  readonly decidedAt?: string;
 }
 
 export type GrantRefusal =
@@ -114,6 +142,10 @@ export interface IdentityDeps {
   readonly roles: (tenantId: string) => Promise<readonly Role[]> | readonly Role[];
   readonly permissionsOf: (tenantId: string, userId: string) => Promise<readonly Permission[]> | readonly Permission[];
   readonly recordGrant: (tenantId: string, a: RoleAssignment, g: GrantRequest) => Promise<void> | void;
+  /** Every grant request the tenant has seen, with its state (Wave 2b · PA-03). */
+  readonly grantRequests: (tenantId: string) => Promise<readonly GrantRequestRecord[]> | readonly GrantRequestRecord[];
+  readonly recordGrantRequest: (tenantId: string, request: PendingGrantRequest) => Promise<void> | void;
+  readonly recordGrantRejection: (tenantId: string, rejection: GrantRejection) => Promise<void> | void;
   /**
    * Seal this privilege change into the tamper-evident domain audit trail (M34-FR-01), attributed to the
    * acting user. Optional — the running system provides it; a bare deps stub may omit it. The actor is
@@ -169,31 +201,100 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
       handler: async (ctx) => ({ status: 200, body: { branches: await deps.branches(ctx.tenantId) } }),
     },
     {
+      // THE MAKER's act (Wave 2b · audit PA-03 · §28): ask for a role for somebody else. Who asks is the caller — a
+      // body that names a different requester, or names an approver at all, is refused by name: the second person
+      // acts under their OWN sign-in through …/approve. Nothing is granted here; the request waits. Sensitive
+      // (SEC-03): a recent MFA re-authentication is required at the boundary (GAP-SEC-06).
       api: 'API-01', method: 'POST', path: '/v1/identity/grants',
-      permission: 'identity.role.grant', idempotent: true,
-      // A privilege grant is a §28 sensitive action (SEC-03): it requires a RECENT re-authentication
-      // with a second factor, enforced at the API boundary so a direct call cannot bypass it
-      // (GAP-SEC-06). Maker-checker still applies on top; this adds "and the person doing it
-      // authenticated strongly, recently".
+      permission: 'identity.role.request', idempotent: true,
       reauth: { withinSeconds: 300, amr: ['mfa'] },
       handler: async (ctx) => {
-        const request = ctx.body as GrantRequest;
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (b['approvedBy'] !== undefined) throw secondPersonIsASeparateAct('approvedBy', 'POST /v1/identity/grants/:grantId/approve');
+        requireActorIsCaller(ctx, b, 'requestedBy');
+        const scope = b['branchScope'] === 'all'
+          ? ('all' as const)
+          : Array.isArray(b['branchScope']) && (b['branchScope'] as unknown[]).every((x) => typeof x === 'string') ? (b['branchScope'] as string[]) : undefined;
+        if (!isStr(b['grantId']) || !isStr(b['userId']) || !isStr(b['roleId']) || scope === undefined || (b['reason'] !== undefined && typeof b['reason'] !== 'string')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_grant_request',
+            whatHappened: 'A grant request needs { grantId, userId, roleId, branchScope ("all" or branch ids), reason? }. Who asks is taken from your sign-in.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send who should hold which role, where. Nothing was requested.',
+          });
+        }
+        const grantId = b['grantId'] as string; const userId = b['userId'] as string; const roleId = b['roleId'] as string;
+        const roles = await deps.roles(ctx.tenantId);
+        if (!roles.some((r) => r.id === roleId)) {
+          throw apiError(422, { code: 'unknown_role', whatHappened: `There is no role "${roleId}" in this product's catalogue.`, wasItSaved: 'not_saved', nextSafeAction: 'Name a role from GET /v1/identity/roles. Nothing was requested.' });
+        }
+        if (userId === ctx.userId) {
+          throw apiError(422, {
+            code: 'granting_to_yourself',
+            whatHappened: `${ctx.userId} is requesting a role for themselves. Widening your own authority is the shortest path to every other control in this product.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Have somebody else request it. Nothing was requested.',
+          });
+        }
+        const existing = (await deps.grantRequests(ctx.tenantId)).find((g) => g.grantId === grantId);
+        if (existing !== undefined) {
+          return { status: 202, body: { grantId, state: existing.state, requestedBy: existing.requestedBy, alreadyRequested: true } };
+        }
+        const request: PendingGrantRequest = {
+          grantId, userId, roleId, branchScope: scope, requestedBy: ctx.userId, requestedAt: deps.now(),
+          reason: typeof b['reason'] === 'string' ? b['reason'] : '',
+        };
+        await deps.recordGrantRequest(ctx.tenantId, request);
+        await deps.recordAudit?.(ctx.tenantId, {
+          actorId: ctx.userId, action: 'role.grant.request', objectType: 'user', objectId: userId,
+          at: request.requestedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
+          before: null,
+          after: { roleId, branchScope: scope === 'all' ? 'all' : scope.join(','), reason: request.reason },
+          correlationId: grantId,
+        });
+        return { status: 202, body: { grantId, state: 'pending', requestedBy: ctx.userId } };
+      },
+    },
+    {
+      // THE CHECKER's act: approve a pending request under your own sign-in. The engine's §28 rules now run with the
+      // REAL two people — the approver cannot be the requester, and cannot hand out a permission they do not hold.
+      api: 'API-01', method: 'POST', path: '/v1/identity/grants/:grantId/approve',
+      permission: 'identity.role.grant', idempotent: true,
+      reauth: { withinSeconds: 300, amr: ['mfa'] },
+      handler: async (ctx) => {
+        const grantId = (ctx.params['grantId'] ?? '').trim();
+        const pending = (await deps.grantRequests(ctx.tenantId)).find((g) => g.grantId === grantId);
+        if (pending === undefined) throw notFound(`grant request ${grantId}`);
+        if (pending.state === 'granted') {
+          return { status: 201, body: { granted: `already granted, approved by ${pending.decidedBy ?? 'a second person'}`, alreadyGranted: true } };
+        }
+        if (pending.state === 'rejected') {
+          throw apiError(422, {
+            code: 'grant_request_rejected',
+            whatHappened: `Grant request ${grantId} was rejected${pending.decidedBy === undefined ? '' : ` by ${pending.decidedBy}`}; a rejected request is not revived.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Have the role requested again as a new request. Nothing changed.',
+          });
+        }
+        const request: GrantRequest = {
+          grantId, userId: pending.userId, roleId: pending.roleId, branchScope: pending.branchScope,
+          requestedBy: pending.requestedBy, approvedBy: ctx.userId, requestedAt: pending.requestedAt,
+        };
         const result = grantRole({
           request,
           roles: await deps.roles(ctx.tenantId),
-          approverPermissions: await deps.permissionsOf(ctx.tenantId, request?.approvedBy ?? ''),
+          approverPermissions: await deps.permissionsOf(ctx.tenantId, ctx.userId),
         });
         if (!result.ok) {
           throw apiError(422, {
             code: result.refusedBecause!,
             whatHappened: result.detail,
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Nobody\'s access changed. Have the grant requested and approved by two different people, one of whom already holds what is being granted.',
+            nextSafeAction: 'Nobody\'s access changed. The approver must be a different person from the requester and must already hold what is being granted.',
           });
         }
         await deps.recordGrant(ctx.tenantId, result.assignment!, request);
-        // Seal the privilege change into the audit trail — who was given what, by whom, approved by whom
-        // (§28). Attributed to the acting user; the roles list is not a secret, so it is recorded in full.
+        // Seal the privilege change into the audit trail — who was given what, asked by whom, approved by whom (§28).
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: ctx.userId, action: 'role.grant', objectType: 'user', objectId: request.userId,
           at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
@@ -202,12 +303,35 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
             roleId: request.roleId,
             branchScope: typeof request.branchScope === 'string' ? request.branchScope : request.branchScope.join(','),
             requestedBy: request.requestedBy,
-            approvedBy: request.approvedBy ?? '',
+            approvedBy: ctx.userId,
           },
-          correlationId: request.grantId,
+          correlationId: grantId,
         });
         return { status: 201, body: { granted: result.detail } };
       },
+    },
+    {
+      // Refuse a pending request under your own sign-in, with a reason. A rejection is a fact that stays, not a deletion.
+      api: 'API-01', method: 'POST', path: '/v1/identity/grants/:grantId/reject',
+      permission: 'identity.role.grant', idempotent: true,
+      handler: async (ctx) => {
+        const grantId = (ctx.params['grantId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isStr(b['reason'])) {
+          throw apiError(400, { code: 'rejection_needs_reason', whatHappened: 'Rejecting a grant request needs a reason.', wasItSaved: 'not_saved', nextSafeAction: 'Say why. Nothing changed.' });
+        }
+        const pending = (await deps.grantRequests(ctx.tenantId)).find((g) => g.grantId === grantId);
+        if (pending === undefined) throw notFound(`grant request ${grantId}`);
+        if (pending.state !== 'pending') return { status: 200, body: { grantId, state: pending.state, alreadyDecided: true } };
+        await deps.recordGrantRejection(ctx.tenantId, { grantId, rejectedBy: ctx.userId, reason: b['reason'] as string, at: deps.now() });
+        return { status: 200, body: { grantId, state: 'rejected', rejectedBy: ctx.userId } };
+      },
+    },
+    {
+      // What is waiting for a second person.
+      api: 'API-01', method: 'GET', path: '/v1/identity/grants/pending',
+      permission: 'identity.role.read',
+      handler: async (ctx) => ({ status: 200, body: { requests: (await deps.grantRequests(ctx.tenantId)).filter((g) => g.state === 'pending') } }),
     },
     {
       // Allocate the next gap-free document number for a type (M01-FR-02). Idempotent: a retry under

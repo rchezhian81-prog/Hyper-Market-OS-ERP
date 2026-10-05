@@ -10,9 +10,15 @@ const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 
-const publish = (h: ApiHarness, u: string, templateId: string, body: string, over: Record<string, unknown> = {}, key?: string) =>
-  h.request({ method: 'POST', path: `/v1/documents/templates/${templateId}/publish`, userId: u, tenantId: A, idempotencyKey: key ?? `pub-${templateId}-${body.length}`,
-    body: { kind: 'tax_invoice', body, createdBy: 'u-owner', approvedBy: 'u-checker', changeNote: 'x', ...over } });
+// Two acts (Wave 2b · PA-03): the author drafts under their sign-in, a different person approves under theirs.
+const publish = async (h: ApiHarness, _u: string, templateId: string, body: string, over: Record<string, unknown> = {}, key?: string) => {
+  const k = key ?? `pub-${templateId}-${body.length}`;
+  const { createdBy, approvedBy, ...rest } = { kind: 'tax_invoice', body, createdBy: 'u-owner', approvedBy: 'u-checker', changeNote: 'x', ...over } as Record<string, unknown>;
+  const drafted = await h.request({ method: 'POST', path: `/v1/documents/templates/${templateId}/versions`, userId: String(createdBy), tenantId: A, idempotencyKey: `${k}-draft`, body: rest });
+  if (drafted.status !== 201) return drafted;
+  const version = (drafted.body as { version: number }).version;
+  return h.request({ method: 'POST', path: `/v1/documents/templates/${templateId}/versions/${version}/approve`, userId: String(approvedBy), tenantId: A, idempotencyKey: `${k}-approve`, body: { ...(typeof rest['at'] === 'string' ? { at: rest['at'] } : {}) } });
+};
 
 const issue = (h: ApiHarness, u: string, templateId: string, body: unknown, key = 'iss-1') =>
   h.request({ method: 'POST', path: `/v1/documents/templates/${templateId}/issue`, userId: u, tenantId: A, idempotencyKey: key, body });
@@ -24,6 +30,7 @@ describe('document issue/reproduce write path (M31-FR-02)', () => {
   it('issues a document — renders the template with the data and freezes it under the current version', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-checker', 'store_manager'); // approves the owner's draft under their own sign-in (Wave 2b · PA-03)
     await publish(h, 'u-owner', 'inv', 'Invoice for {{customer}} — amount {{amount}}');
     const res = await issue(h, 'u-owner', 'inv', { documentId: 'doc-1', kind: 'tax_invoice', subjectRef: 'sale-1', data: { customer: 'Asha', amount: 'Rs 1,234' } });
     expect(res.status).toBe(201);
@@ -36,6 +43,7 @@ describe('document issue/reproduce write path (M31-FR-02)', () => {
   it('reproduces the EXACT bytes issued — and never re-renders from a newer template version', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-checker', 'store_manager'); // approves the owner's draft under their own sign-in (Wave 2b · PA-03)
     await publish(h, 'u-owner', 'inv', 'JULY LAYOUT: {{customer}}');
     await issue(h, 'u-owner', 'inv', { documentId: 'doc-2', kind: 'tax_invoice', subjectRef: 'sale-2', data: { customer: 'Bala' } });
     // The template changes — a new version is published.
@@ -50,6 +58,7 @@ describe('document issue/reproduce write path (M31-FR-02)', () => {
   it('is idempotent on the document id — a re-issue returns the same frozen document, not a second copy', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-checker', 'store_manager'); // approves the owner's draft under their own sign-in (Wave 2b · PA-03)
     await publish(h, 'u-owner', 'inv', 'V1: {{customer}}');
     await issue(h, 'u-owner', 'inv', { documentId: 'doc-3', kind: 'tax_invoice', subjectRef: 'sale-3', data: { customer: 'Deepa' } }, 'iss-3a');
     await publish(h, 'u-owner', 'inv', 'V2: {{customer}}', {}, 'pub-inv-v2');
@@ -64,6 +73,7 @@ describe('document issue/reproduce write path (M31-FR-02)', () => {
   it('refuses to issue when no approved template version exists, and when the render is empty', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-checker', 'store_manager'); // approves the owner's draft under their own sign-in (Wave 2b · PA-03)
     const noTemplate = await issue(h, 'u-owner', 'never-published', { documentId: 'doc-4', kind: 'tax_invoice', subjectRef: 's', data: {} }, 'iss-4');
     expect(noTemplate.status).toBe(422);
     expect(codeOf(noTemplate)).toBe('no_template');
@@ -77,6 +87,7 @@ describe('document issue/reproduce write path (M31-FR-02)', () => {
   it('refuses a malformed issue, and gates issue on document.issue and reproduce on document.template.read', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-checker', 'store_manager'); // approves the owner's draft under their own sign-in (Wave 2b · PA-03)
     await h.provisionRole(A, 'u-cash', 'cashier');
     await publish(h, 'u-owner', 'inv', 'X: {{customer}}');
     const bad = await issue(h, 'u-owner', 'inv', { kind: 'tax_invoice', subjectRef: 's', data: {} }, 'iss-6'); // no documentId

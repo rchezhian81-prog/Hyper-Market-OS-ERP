@@ -32,6 +32,8 @@ async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // approvals.delegation.read
+  // Wave 2b · PA-03: a lender must genuinely HOLD the authority they lend — the server derives their scope from their grants.
+  await h.provisionRole(A, 'u-boss', 'store_manager', ['b1']);
   await h.provisionRole(A, 'u-cash', 'cashier');       // neither
   return h;
 }

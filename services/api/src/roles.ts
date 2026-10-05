@@ -33,7 +33,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     id: OWNER_ROLE_ID,
     name: 'Owner',
     permissions: [
-      'identity.self.read', 'identity.role.read', 'identity.role.grant', 'identity.session.revoke', 'org.branch.read',
+      'identity.self.read', 'identity.role.read', 'identity.role.request', 'identity.role.grant', 'identity.session.revoke', 'org.branch.read',
       'documents.number.allocate',
       'catalogue.pack.read', 'catalogue.pack.publish',
       'catalogue.merge.propose', 'catalogue.merge.approve',
@@ -156,7 +156,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       // M27-FR-03 / Item 3: record a concession docket line at the till; corrections are the engine's SoD call.
       'concession.tag.record',
-      'identity.self.read', 'org.branch.read', 'payroll.ess.self',
+      'identity.self.read', 'identity.role.request', 'org.branch.read', 'payroll.ess.self',
       'catalogue.pack.read',
       'catalogue.merge.propose',
       'ai.proposal.read', 'ai.suggestion.dismiss',

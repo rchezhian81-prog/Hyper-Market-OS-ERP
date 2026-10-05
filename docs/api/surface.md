@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 810 | 497 | 497 | 64 | 275 |
+| 13 | 814 | 500 | 500 | 64 | 276 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -35,7 +35,10 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/access/lifecycle/:requestId` | `identity.role.grant` | core | yes |
 | GET | `/v1/approvals/decisions` | `approvals.delegation.read` | core | — |
 | POST | `/v1/approvals/decisions/:id/synced` | `approvals.decision.sync` | core | yes |
-| POST | `/v1/identity/grants` | `identity.role.grant` | core | yes |
+| POST | `/v1/identity/grants` | `identity.role.request` | core | yes |
+| POST | `/v1/identity/grants/:grantId/approve` | `identity.role.grant` | core | yes |
+| POST | `/v1/identity/grants/:grantId/reject` | `identity.role.grant` | core | yes |
+| GET | `/v1/identity/grants/pending` | `identity.role.read` | core | — |
 | GET | `/v1/identity/me` | `identity.self.read` | core | — |
 | POST | `/v1/identity/number-series/:docType` | `documents.number.allocate` | core | yes |
 | GET | `/v1/identity/roles` | `identity.role.read` | core | — |
@@ -681,7 +684,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/documents/retention/templates` | `document.template.read` | core | — |
 | GET | `/v1/documents/templates/:templateId/current` | `document.template.read` | core | — |
 | POST | `/v1/documents/templates/:templateId/issue` | `document.issue` | core | yes |
-| POST | `/v1/documents/templates/:templateId/publish` | `document.template.manage` | core | yes |
+| POST | `/v1/documents/templates/:templateId/versions` | `document.template.manage` | core | yes |
+| POST | `/v1/documents/templates/:templateId/versions/:version/approve` | `document.template.manage` | core | yes |
 | POST | `/v1/facilities/assets/:assetId` | `facilities.asset.manage` | core | yes |
 | POST | `/v1/facilities/assets/:assetId/downtime/:eventId` | `facilities.asset.manage` | core | yes |
 | POST | `/v1/facilities/assets/:assetId/services/:serviceId` | `facilities.asset.manage` | core | yes |

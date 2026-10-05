@@ -20,7 +20,8 @@
 // `approvals.delegation.read` to review and to read effective authority.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, actorIsTheCaller } from '../../kernel/src/index';
+import { SUBJECT_AUTHORITY } from './approval-decisions';
 import {
   grantDelegation, effectiveAuthority, reviewDelegations, decideWithDelegation,
   type Delegation, type Approver, type DelegationRefusal,
@@ -89,7 +90,29 @@ export interface DelegationDeps {
   /** Every delegation recorded for the tenant — folded latest-per-delegationId (a revocation supersedes). */
   readonly delegations: (tenantId: string) => Promise<readonly Delegation[]> | readonly Delegation[];
   readonly recordDelegation: (tenantId: string, delegation: Delegation, key: string) => Promise<void> | void;
+  /** WHERE a person holds a permission (Wave 2b · PA-03): the server's branch scope for an approver record; undefined when unknown. Optional on a stub. */
+  readonly branchScopeOfUser?: (tenantId: string, userId: string, permission: string) => Promise<readonly string[] | 'all' | undefined> | readonly string[] | 'all' | undefined;
   readonly now: () => string;
+}
+
+/**
+ * The branch scope the SERVER gives an approver record (Wave 2b · PA-03 / PA-01): the union of where the person's grants
+ * carry the authority of the subject types in question — 'all' as soon as one is company-wide. A body's own idea of its
+ * scope is replaced, never trusted; where the server cannot say (no mapping, no dep), the record's own scope stands.
+ */
+async function serverScope(
+  deps: Pick<DelegationDeps, 'branchScopeOfUser'>, tenantId: string, approver: Approver, subjectTypes: readonly string[],
+): Promise<Approver> {
+  if (deps.branchScopeOfUser === undefined) return approver;
+  const permissions = subjectTypes.map((t) => SUBJECT_AUTHORITY[t]).filter((p): p is string => p !== undefined);
+  if (permissions.length === 0) return approver;
+  const branches = new Set<string>();
+  for (const permission of permissions) {
+    const where = await deps.branchScopeOfUser(tenantId, approver.userId, permission);
+    if (where === 'all') return { ...approver, branchScope: 'all' };
+    for (const b of where ?? []) branches.add(b);
+  }
+  return { ...approver, branchScope: [...branches].sort() };
 }
 
 export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
@@ -135,6 +158,9 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
           || (b['maximumDays'] !== undefined && (!isInt(b['maximumDays']) || (b['maximumDays'] as number) <= 0))) {
           throw apiError(400, { code: 'not_readable_as_a_delegation', whatHappened: 'A delegation needs a delegationId in the path and { fromUserId, toUserId, fromDate, untilDate (YYYY-MM-DD), subjectTypes[], reason, granter (the fromUser\'s approver record), valueCap?, branchScope?, maximumDays? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send whose authority, to whom, for what and until when. Who authorises it is taken from your login.' });
         }
+        // The granter record is the LENDER's own (PA-03): it must name the fromUser, and its branch scope is the server's.
+        if (granter.userId !== (b['fromUserId'] as string)) throw actorIsTheCaller('granter.userId', granter.userId, `the lender ${b['fromUserId'] as string}`);
+        const grantedBy = await serverScope(deps, ctx.tenantId, granter, subjectTypes);
         const delegation: Delegation = {
           delegationId, fromUserId: b['fromUserId'] as string, toUserId: b['toUserId'] as string,
           fromDate: b['fromDate'] as string, untilDate: b['untilDate'] as string, subjectTypes,
@@ -143,7 +169,7 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
           ...(branchScope !== undefined ? { branchScope } : {}),
         };
         const result = grantDelegation({
-          delegation, granter, existing: await deps.delegations(ctx.tenantId), today: deps.now().slice(0, 10),
+          delegation, granter: grantedBy, existing: await deps.delegations(ctx.tenantId), today: deps.now().slice(0, 10),
           ...(isInt(b['maximumDays']) ? { maximumDays: b['maximumDays'] as number } : {}),
         });
         if (!result.created) {
@@ -207,11 +233,15 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
           || (b['own'] !== undefined && own === undefined) || (b['onDate'] !== undefined && !isDate(b['onDate']))) {
           throw apiError(400, { code: 'not_readable_as_a_decision', whatHappened: 'A delegated decision needs { request { id, subjectType, subjectRef, requestedBy, branchId|null, value {minor,currency}|null }, decision (approved|rejected), reason, own? (the decider\'s own approver record), onDate? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the request, your decision and a reason. Who decides is taken from your login, never the body.' });
         }
+        // The decider's own record is the CALLER's (PA-03) — a body cannot lend somebody else's authority to this sign-in —
+        // and its branch scope is the server's.
+        if (own !== undefined && own.userId !== ctx.userId) throw actorIsTheCaller('own.userId', own.userId, ctx.userId);
+        const ownScoped = own === undefined ? undefined : await serverScope(deps, ctx.tenantId, own, [request.subjectType]);
         const authority = effectiveAuthority({
           userId: ctx.userId, subjectType: request.subjectType,
           delegations: await deps.delegations(ctx.tenantId),
           today: isDate(b['onDate']) ? b['onDate'] as string : deps.now().slice(0, 10),
-          ...(own !== undefined ? { own } : {}),
+          ...(ownScoped !== undefined ? { own: ownScoped } : {}),
         });
         const outcome = decideWithDelegation({
           request, decidedBy: ctx.userId, decision: b['decision'] as Decision,

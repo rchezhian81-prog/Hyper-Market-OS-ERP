@@ -6,7 +6,7 @@ import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
-import { apiHarness, TEST_IDP } from '../support/api-harness';
+import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import { LocalIdp, tamperSignature } from '../support/local-idp';
 import { STREAM } from '../../services/api/src/adapters';
 
@@ -25,8 +25,14 @@ import { STREAM } from '../../services/api/src/adapters';
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const P = TEST_IDP.policy();
-const grantBody = (o: { grantId: string; userId: string; requestedBy: string; approvedBy: string }): Record<string, unknown> =>
-  ({ grantId: o.grantId, userId: o.userId, roleId: 'cashier', branchScope: 'all', requestedBy: o.requestedBy, approvedBy: o.approvedBy, requestedAt: '2026-08-07T10:00:00.000Z' });
+/** A role grant as the product now records it (Wave 2b · PA-03): the REQUESTER asks under their own sign-in, the
+ *  APPROVER approves under theirs — two calls, two people, no names in a body. */
+async function grantInTwoActs(h: ApiHarness, o: { grantId: string; userId: string; requestedBy: string; approvedBy: string; key: string; tenantId?: string }) {
+  const tenantId = o.tenantId ?? A;
+  const asked = await h.request({ method: 'POST', path: '/v1/identity/grants', userId: o.requestedBy, tenantId, idempotencyKey: `${o.key}-ask`, body: { grantId: o.grantId, userId: o.userId, roleId: 'cashier', branchScope: 'all', reason: 'test cast' } });
+  if (asked.status !== 202) return asked;
+  return h.request({ method: 'POST', path: `/v1/identity/grants/${o.grantId}/approve`, userId: o.approvedBy, tenantId, idempotencyKey: `${o.key}-approve`, body: {} });
+}
 
 describe('authorization is enforced on the real API surface (in-memory)', () => {
   it('a genesis-seeded owner performs an authenticated + authorized request (200)', async () => {
@@ -41,16 +47,13 @@ describe('authorization is enforced on the real API surface (in-memory)', () => 
     const h = apiHarness();
     await h.provisionOwner(A, 'u-owner-1');
     await h.provisionOwner(A, 'u-owner-2');
-    const granted = await h.request({
-      method: 'POST', path: '/v1/identity/grants', userId: 'u-owner-1', tenantId: A, idempotencyKey: 'k-g1',
-      body: grantBody({ grantId: 'g1', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2' }),
-    });
+    const granted = await grantInTwoActs(h, { grantId: 'g1', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2', key: 'k-g1' });
     expect(granted.status).toBe(201);
 
-    // The cashier does not hold identity.role.grant → forbidden, before the body is even read.
+    // The cashier does not hold identity.role.request → forbidden, before the body is even read.
     const denied = await h.request({
       method: 'POST', path: '/v1/identity/grants', userId: 'u-cash', tenantId: A, idempotencyKey: 'k-g2',
-      body: grantBody({ grantId: 'g2', userId: 'u-x', requestedBy: 'u-cash', approvedBy: 'u-owner-2' }),
+      body: { grantId: 'g2', userId: 'u-x', roleId: 'cashier', branchScope: 'all' },
     });
     expect(denied.status).toBe(403);
   });
@@ -83,16 +86,11 @@ describe('authorization is enforced on the real API surface (in-memory)', () => 
     await h.provisionOwner(A, 'u-owner-1');
     await h.provisionOwner(A, 'u-owner-2');
 
-    const selfApproved = await h.request({
-      method: 'POST', path: '/v1/identity/grants', userId: 'u-owner-1', tenantId: A, idempotencyKey: 'k-self',
-      body: grantBody({ grantId: 'gs', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-1' }),
-    });
+    // The same person asking and approving is refused at the approval (§28) — and nobody's access changed.
+    const selfApproved = await grantInTwoActs(h, { grantId: 'gs', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-1', key: 'k-self' });
     expect(selfApproved.status).toBe(422);
 
-    const twoPerson = await h.request({
-      method: 'POST', path: '/v1/identity/grants', userId: 'u-owner-1', tenantId: A, idempotencyKey: 'k-ok',
-      body: grantBody({ grantId: 'gok', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2' }),
-    });
+    const twoPerson = await grantInTwoActs(h, { grantId: 'gok', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2', key: 'k-ok' });
     expect(twoPerson.status).toBe(201);
   });
 
@@ -128,10 +126,7 @@ describe.skipIf(!DATABASE_URL)('authorization end-to-end: app → API → author
     await h.provisionOwner(DB_TENANT, 'u-owner-1');
     await h.provisionOwner(DB_TENANT, 'u-owner-2');
 
-    const ok = await h.request({
-      method: 'POST', path: '/v1/identity/grants', userId: 'u-owner-1', tenantId: DB_TENANT, idempotencyKey: 'k-db-ok',
-      body: grantBody({ grantId: 'db-ok', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2' }),
-    });
+    const ok = await grantInTwoActs(h, { grantId: 'db-ok', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2', key: 'k-db-ok', tenantId: DB_TENANT });
     expect(ok.status).toBe(201);
 
     const grants = await h.store.readStream(DB_TENANT, STREAM.identity, { type: 'RoleGranted' });
@@ -140,7 +135,7 @@ describe.skipIf(!DATABASE_URL)('authorization end-to-end: app → API → author
     const before = grants.length;
     const denied = await h.request({
       method: 'POST', path: '/v1/identity/grants', userId: 'u-cash', tenantId: DB_TENANT, idempotencyKey: 'k-db-x',
-      body: grantBody({ grantId: 'db-x', userId: 'u-y', requestedBy: 'u-cash', approvedBy: 'u-owner-2' }),
+      body: { grantId: 'db-x', userId: 'u-y', roleId: 'cashier', branchScope: 'all' },
     });
     expect(denied.status).toBe(403);
     expect((await h.store.readStream(DB_TENANT, STREAM.identity, { type: 'RoleGranted' })).length).toBe(before);

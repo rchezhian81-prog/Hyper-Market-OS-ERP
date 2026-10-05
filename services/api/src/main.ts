@@ -396,6 +396,7 @@ export function buildSurface(deps: {
     ...identityRoutes({
       ...(store === undefined ? {
         roles: empty([]), permissionsOf: empty([]), recordGrant: () => {},
+        grantRequests: empty([]), recordGrantRequest: () => {}, recordGrantRejection: () => {},
         branches: empty([]), allocateNumber: () => Promise.resolve(1), now,
       } : { ...identityAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE, numberSeries: deps.numberSeries }), recordAudit: auditTrail?.recordAudit }),
       // Token revocation (GAP-SEC-05): the routes record into the SAME list the authenticator reads.
@@ -926,7 +927,7 @@ export function buildSurface(deps: {
       : notificationQueueAdapter({ store, now })),
     // Versioned document templates (M31-FR-01/M36-FR-02) — append-only publish; a change is a new version.
     ...documentsRoutes(store === undefined ? {
-      versions: empty([]), recordPublish: () => {}, issued: empty(undefined), recordIssued: () => {},
+      versions: empty([]), recordPublish: () => {}, drafts: empty([]), recordDraft: () => {}, issued: empty(undefined), recordIssued: () => {},
       allVersions: empty([]), allIssued: empty([]), disposals: empty([]), recordDisposal: () => {}, now,
     } : documentsAdapter({ store, now })),
     // Suspended (parked) bills (M15-FR-01/M12-FR-02) — park/resume/abandon; a recall is a claim, once.

@@ -11,8 +11,14 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 
-const publish = (h: ApiHarness, u: string, templateId: string, body: unknown, key: string) =>
-  h.request({ method: 'POST', path: `/v1/documents/templates/${templateId}/publish`, userId: u, tenantId: A, idempotencyKey: key, body });
+// Two acts (Wave 2b · PA-03): the author drafts under their sign-in, a different person approves under theirs.
+const publish = async (h: ApiHarness, _u: string, templateId: string, body: unknown, key: string) => {
+  const { createdBy, approvedBy, ...rest } = body as Record<string, unknown>;
+  const drafted = await h.request({ method: 'POST', path: `/v1/documents/templates/${templateId}/versions`, userId: String(createdBy ?? 'u-designer'), tenantId: A, idempotencyKey: `${key}-draft`, body: rest });
+  if (drafted.status !== 201) return drafted;
+  const version = (drafted.body as { version: number }).version;
+  return h.request({ method: 'POST', path: `/v1/documents/templates/${templateId}/versions/${version}/approve`, userId: String(approvedBy ?? 'u-owner'), tenantId: A, idempotencyKey: `${key}-approve`, body: { ...(typeof rest['at'] === 'string' ? { at: rest['at'] } : {}) } });
+};
 const issue = (h: ApiHarness, u: string, templateId: string, body: unknown, key: string) =>
   h.request({ method: 'POST', path: `/v1/documents/templates/${templateId}/issue`, userId: u, tenantId: A, idempotencyKey: key, body });
 const retTemplates = (h: ApiHarness, u: string) =>
@@ -29,6 +35,7 @@ const RCPT_V1 = { kind: 'receipt', body: 'RCPT {{total}}', createdBy: 'u-designe
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');                // document.template.manage/.read + document.issue
+  await h.provisionRole(A, 'u-designer', 'store_manager'); // the author drafts under their own sign-in (Wave 2b · PA-03)
   await h.provisionRole(A, 'u-cash', 'cashier');  // none
   return h;
 }

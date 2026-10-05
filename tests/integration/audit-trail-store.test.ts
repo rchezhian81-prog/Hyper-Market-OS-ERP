@@ -23,10 +23,14 @@ const verify = (h: ApiHarness, u: string) =>
   h.request({ method: 'GET', path: '/v1/audit/trail/verify', userId: u, tenantId: A });
 const reconstruct = (h: ApiHarness, u: string, query: Record<string, string>) =>
   h.request({ method: 'GET', path: '/v1/audit/trail/reconstruct', userId: u, tenantId: A, query });
-const grantBody = (o: { grantId: string; userId: string; requestedBy: string; approvedBy: string }) =>
-  ({ grantId: o.grantId, userId: o.userId, roleId: 'cashier', branchScope: 'all', requestedBy: o.requestedBy, approvedBy: o.approvedBy, requestedAt: '2026-09-16T10:00:00.000Z' });
-const grant = (h: ApiHarness, actor: string, body: Record<string, unknown>, key: string) =>
-  h.request({ method: 'POST', path: '/v1/identity/grants', userId: actor, tenantId: A, idempotencyKey: key, body });
+/** A role grant as the product now records it (Wave 2b · PA-03): the REQUESTER asks under their own sign-in, the
+ *  APPROVER approves under theirs — two calls, two people, no names in a body. */
+async function grantInTwoActs(h: ApiHarness, o: { grantId: string; userId: string; requestedBy: string; approvedBy: string; key: string; tenantId?: string }) {
+  const tenantId = o.tenantId ?? A;
+  const asked = await h.request({ method: 'POST', path: '/v1/identity/grants', userId: o.requestedBy, tenantId, idempotencyKey: `${o.key}-ask`, body: { grantId: o.grantId, userId: o.userId, roleId: 'cashier', branchScope: 'all', reason: 'test cast' } });
+  if (asked.status !== 202) return asked;
+  return h.request({ method: 'POST', path: `/v1/identity/grants/${o.grantId}/approve`, userId: o.approvedBy, tenantId, idempotencyKey: `${o.key}-approve`, body: {} });
+}
 
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
@@ -312,16 +316,19 @@ describe('the audit trail spans producers — a role grant (privilege change) is
     await h.provisionOwner(A, 'u-owner-1');    // requester/actor — holds identity.role.grant + audit.retention.read
     await h.provisionOwner(A, 'u-owner-2');    // the second person who approves (§28)
 
-    const g = await grant(h, 'u-owner-1', grantBody({ grantId: 'g1', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2' }), 'kg1');
+    const g = await grantInTwoActs(h, { grantId: 'g1', userId: 'u-cash', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2', key: 'kg1' });
     expect(g.status).toBe(201);
 
+    // Two acts, two sealed records (Wave 2b · PA-03): the request by the requester, the grant by the approver — each
+    // attributed to the person who ACTED, never to a name in a body.
     const body = (await trail(h, 'u-owner-1', { objectType: 'user', objectId: 'u-cash' })).body as { matches: Rec[]; total: number };
-    expect(body.total).toBe(1);
-    const rec = body.matches[0]!;
-    // Attributed to the user who executed the grant — never a client-supplied actor.
-    expect(rec).toMatchObject({ action: 'role.grant', objectType: 'user', objectId: 'u-cash', actorId: 'u-owner-1' });
-    // The §28 evidence — what was granted, by whom, approved by whom — is on the record.
+    expect(body.total).toBe(2);
+    const asked = body.matches.find((r) => r.action === 'role.grant.request')!;
+    expect(asked).toMatchObject({ objectType: 'user', objectId: 'u-cash', actorId: 'u-owner-1' });
+    const rec = body.matches.find((r) => r.action === 'role.grant')!;
+    expect(rec).toMatchObject({ objectType: 'user', objectId: 'u-cash', actorId: 'u-owner-2' });
+    // The §28 evidence — what was granted, asked by whom, approved by whom — is on the record.
     expect(rec.after).toMatchObject({ roleId: 'cashier', requestedBy: 'u-owner-1', approvedBy: 'u-owner-2' });
-    expect((await verify(h, 'u-owner-1')).body).toMatchObject({ intact: true, recordsChecked: 1 });
+    expect((await verify(h, 'u-owner-1')).body).toMatchObject({ intact: true, recordsChecked: 2 });
   });
 });

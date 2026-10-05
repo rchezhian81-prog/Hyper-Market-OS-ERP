@@ -19,9 +19,9 @@
 // idempotent on the document id: a re-issue returns what was already issued, never a second, different copy.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, requireActorIsCaller, secondPersonIsASeparateAct } from '../../kernel/src/index';
 import {
-  publishTemplateVersion, currentVersion, issueDocument, reproduceDocument,
+  draftTemplateVersion, approveTemplateVersion, type TemplateDraft, currentVersion, issueDocument, reproduceDocument,
   assessTemplateRetention, planDocumentRetention, decideDisposal,
   type TemplateVersion, type DocumentKind, type IssuedDocument, type DocumentDisposal,
 } from '../../../packages/documents/src/index';
@@ -50,6 +50,10 @@ export interface DocumentsDeps {
   readonly versions: (tenantId: string, templateId: string) => Promise<readonly TemplateVersion[]> | readonly TemplateVersion[];
   /** Append a newly published version. Idempotent on templateId+version. */
   readonly recordPublish: (tenantId: string, template: TemplateVersion) => Promise<void> | void;
+  /** Every DRAFT of one template (Wave 2b · PA-03) — the maker's act, awaiting the checker's. */
+  readonly drafts: (tenantId: string, templateId: string) => Promise<readonly TemplateDraft[]> | readonly TemplateDraft[];
+  /** Append a draft. Idempotent on templateId+version. */
+  readonly recordDraft: (tenantId: string, draft: TemplateDraft) => Promise<void> | void;
   /** A previously issued document by its id — for the idempotency check and for reproduction. */
   readonly issued: (tenantId: string, documentId: string) => Promise<IssuedDocument | undefined> | IssuedDocument | undefined;
   /** Store an issued document with its FROZEN content, append-only. Idempotent on the document id. */
@@ -68,43 +72,63 @@ export interface DocumentsDeps {
 export function documentsRoutes(deps: DocumentsDeps): readonly Route[] {
   return [
     {
-      // Publish a template change AS A NEW VERSION — append-only, needs a change note and a separate approver.
-      api: 'API-11', method: 'POST', path: '/v1/documents/templates/:templateId/publish',
+      // THE MAKER's act (Wave 2b · audit PA-03): draft a template change as the next version. The author is the caller
+      // — a body that names a different author, or names an approver at all, is refused by name; the approver acts
+      // under their own sign-in through …/versions/:version/approve. A draft is not in force.
+      api: 'API-11', method: 'POST', path: '/v1/documents/templates/:templateId/versions',
       permission: 'document.template.manage', idempotent: true,
       handler: async (ctx) => {
         const templateId = ctx.params['templateId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (!KINDS.includes(b['kind'] as DocumentKind) || typeof b['body'] !== 'string' || typeof b['createdBy'] !== 'string' || typeof b['approvedBy'] !== 'string' || typeof b['changeNote'] !== 'string') {
+        if (b['approvedBy'] !== undefined) throw secondPersonIsASeparateAct('approvedBy', 'POST /v1/documents/templates/:templateId/versions/:version/approve');
+        requireActorIsCaller(ctx, b, 'createdBy');
+        if (!KINDS.includes(b['kind'] as DocumentKind) || typeof b['body'] !== 'string' || typeof b['changeNote'] !== 'string') {
           throw apiError(400, {
-            code: 'template_needs_kind_body_people_note',
-            whatHappened: 'Publishing a template version needs a valid kind, a body, createdBy, approvedBy and a changeNote.',
+            code: 'template_needs_kind_body_note',
+            whatHappened: 'Drafting a template version needs a valid kind, a body and a changeNote. Who drafts it is taken from your sign-in.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send the template’s kind, layout body, who wrote it, who approves it (a different person, §28) and what changed.',
+            nextSafeAction: 'Send the template’s kind, layout body and what changed; a second person then approves it under their own sign-in.',
           });
         }
         if (b['language'] !== undefined && !LANGS.includes(b['language'] as typeof LANGS[number])) {
           throw apiError(400, { code: 'template_language_invalid', whatHappened: 'language, if given, must be "en" or "ta".', wasItSaved: 'not_saved', nextSafeAction: 'Send a supported language or omit it.' });
         }
-        const existing = await deps.versions(ctx.tenantId, templateId);
-        const result = publishTemplateVersion({
-          templateId,
-          tenantId: ctx.tenantId,
-          kind: b['kind'] as DocumentKind,
-          body: b['body'],
+        const existing = [...await deps.versions(ctx.tenantId, templateId), ...await deps.drafts(ctx.tenantId, templateId)];
+        const result = draftTemplateVersion({
+          templateId, tenantId: ctx.tenantId, kind: b['kind'] as DocumentKind, body: b['body'],
           ...(typeof b['branding'] === 'object' && b['branding'] !== null ? { branding: b['branding'] as Record<string, string> } : {}),
           ...(b['language'] !== undefined ? { language: b['language'] as 'en' | 'ta' } : {}),
-          createdBy: b['createdBy'],
-          approvedBy: b['approvedBy'],
-          changeNote: b['changeNote'],
-          at: typeof b['at'] === 'string' ? b['at'] : deps.now(),
-          existing,
+          createdBy: ctx.userId, changeNote: b['changeNote'], at: typeof b['at'] === 'string' ? b['at'] : deps.now(), existing,
         });
+        if (!result.drafted || result.draft === undefined) {
+          throw apiError(422, { code: result.outcome, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'Fix the named problem and draft again — a template change is always a new version.' });
+        }
+        await deps.recordDraft(ctx.tenantId, result.draft);
+        return { status: 201, body: { templateId, version: result.draft.version, kind: result.draft.kind, state: 'draft', createdBy: ctx.userId } };
+      },
+    },
+    {
+      // THE CHECKER's act: approve a draft under your own sign-in — a different person from its author (§28). From
+      // then the version is in force; a document already issued under an earlier version keeps its layout.
+      api: 'API-11', method: 'POST', path: '/v1/documents/templates/:templateId/versions/:version/approve',
+      permission: 'document.template.manage', idempotent: true,
+      handler: async (ctx) => {
+        const templateId = ctx.params['templateId'] ?? '';
+        const version = Number(ctx.params['version']);
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        requireActorIsCaller(ctx, b, 'approvedBy');
+        const published = (await deps.versions(ctx.tenantId, templateId)).find((v) => v.version === version);
+        if (published !== undefined) {
+          return { status: 201, body: { templateId, version, kind: published.kind, outcome: 'published', approvedBy: published.approvedBy, alreadyApproved: true } };
+        }
+        const draft = (await deps.drafts(ctx.tenantId, templateId)).find((d) => d.version === version);
+        if (draft === undefined) throw notFound(`draft v${ctx.params['version'] ?? ''} of template ${templateId}`);
+        const result = approveTemplateVersion({ draft, approvedBy: ctx.userId, at: typeof b['at'] === 'string' ? b['at'] : deps.now() });
         if (!result.published || result.template === undefined) {
-          // A governance refusal (empty body / no change note / not- or self-approved / wrong tenant).
-          throw apiError(422, { code: result.outcome, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'Fix the named problem and publish again — a template change is always a new version.' });
+          throw apiError(422, { code: result.outcome, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'Have a different person approve the draft. Nothing changed.' });
         }
         await deps.recordPublish(ctx.tenantId, result.template);
-        return { status: 201, body: { templateId, version: result.version, kind: result.template.kind, outcome: result.outcome } };
+        return { status: 201, body: { templateId, version: result.version, kind: result.template.kind, outcome: result.outcome, approvedBy: ctx.userId } };
       },
     },
     {
