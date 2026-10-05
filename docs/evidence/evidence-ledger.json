@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 898,
+  "testFiles": 902,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -21,7 +21,7 @@
   "totals": {
     "unit": 81,
     "integration": 78,
-    "realDb": 55,
+    "realDb": 56,
     "browser": 44,
     "connected": 2,
     "device": 0,
@@ -34,8 +34,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 18,
-        "integration": 10,
-        "realDb": 2,
+        "integration": 11,
+        "realDb": 3,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -64,6 +64,7 @@
         ],
         "integration": [
           "tests/integration/branch-lifecycle.test.ts",
+          "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/document-templates.test.ts",
           "tests/integration/number-series.test.ts",
           "tests/integration/org-structure.test.ts",
@@ -75,6 +76,7 @@
           "tests/integration/trading-day-cutoff.test.ts"
         ],
         "realDb": [
+          "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/number-series.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
@@ -94,8 +96,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 18,
-        "integration": 12,
-        "realDb": 2,
+        "integration": 13,
+        "realDb": 3,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -129,6 +131,7 @@
           "tests/integration/approval-decision-synced-route.test.ts",
           "tests/integration/approval-delegation.test.ts",
           "tests/integration/authorization-is-enforced.test.ts",
+          "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/emergency-access.test.ts",
           "tests/integration/manager-decisions-reach-the-cloud-through-the-edge.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
@@ -138,7 +141,8 @@
         ],
         "realDb": [
           "tests/integration/access-lifecycle.test.ts",
-          "tests/integration/authorization-is-enforced.test.ts"
+          "tests/integration/authorization-is-enforced.test.ts",
+          "tests/integration/branch-scope-is-the-servers.test.ts"
         ],
         "browser": [
           "tests/e2e/customer-login.e2e.ts",
@@ -1396,8 +1400,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
-        "integration": 16,
-        "realDb": 1,
+        "integration": 17,
+        "realDb": 2,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -1419,6 +1423,7 @@
           "tests/integration/ai-workforce-worklist.test.ts",
           "tests/integration/attendance-store.test.ts",
           "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/cert-store.test.ts",
           "tests/integration/checklist-store.test.ts",
           "tests/integration/offline-completion-sync-routes.test.ts",
@@ -1433,7 +1438,8 @@
           "tests/integration/workforce-tenant-isolation.test.ts"
         ],
         "realDb": [
-          "tests/integration/beyond-the-till.test.ts"
+          "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/branch-scope-is-the-servers.test.ts"
         ],
         "browser": [
           "tests/e2e/checklist-delivery.e2e.ts",
@@ -1572,8 +1578,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 11,
-        "integration": 6,
-        "realDb": 0,
+        "integration": 7,
+        "realDb": 1,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -1594,6 +1600,7 @@
           "tests/unit/reporting.test.ts"
         ],
         "integration": [
+          "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/day-close-reconcile-on-sync.test.ts",
           "tests/integration/owner-alerts.test.ts",
           "tests/integration/owner-drill-through.test.ts",
@@ -1601,7 +1608,9 @@
           "tests/integration/scheduled-brief.test.ts",
           "tests/integration/the-screens-are-fed.test.ts"
         ],
-        "realDb": [],
+        "realDb": [
+          "tests/integration/branch-scope-is-the-servers.test.ts"
+        ],
         "browser": [
           "tests/e2e/company-report.e2e.ts",
           "tests/e2e/the-erp-pages-meet-the-spec.e2e.ts"

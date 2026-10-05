@@ -8,13 +8,13 @@
 // exact same idempotency/supersede/refuse-stale rules a fresh ingest would — one resolution path.
 //
 // Ingestion is gated `reporting.consolidation.manage` (a head-office/branch-feed write); reads are
-// `reporting.report.read`. RBAC branch visibility (§28): a company-wide reader passes no scope and sees
-// all; a branch-scoped reader passes `?scope=br-1,br-2` (in production the gateway injects this from the
-// principal — provider-neutral here) and the total is recomputed to those branches, the rest named as
-// withheld.
+// `reporting.report.read`. RBAC branch visibility (§28 · Wave 2b · audit EA-03): the reader's scope is the
+// SERVER's — the branches where their grants hold the permission (`ctx.scope`), narrowed to `?scope=` when they
+// ask for less; a branch they do not hold is refused by name, never widened. The total is recomputed to the
+// visible branches, the rest named as withheld. A contribution or membership names a branch the writer holds.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertBranchInScope, narrowScope } from '../../kernel/src/index';
 import {
   ingestContribution,
   consolidate,
@@ -84,6 +84,7 @@ export function consolidationRoutes(deps: ConsolidationDeps): readonly Route[] {
           lastRefreshAt: (b['lastRefreshAt'] as string | null) ?? null,
           revision: b['revision'] as number,
         };
+        assertBranchInScope(ctx, incoming.branchId); // a branch feed writes its own branch (PA-01)
         const current = await deps.contributions(ctx.tenantId);
         const result = ingestContribution(current, incoming);
         // Only a real state change is written; a duplicate or a stale arrival appends nothing (append-only,
@@ -114,13 +115,14 @@ export function consolidationRoutes(deps: ConsolidationDeps): readonly Route[] {
           from: b['from'] as string,
           to: isDate(b['to']) ? (b['to'] as string) : null,
         };
+        assertBranchInScope(ctx, membership.branchId);
         await deps.recordMembership(ctx.tenantId, membership, ctx.idempotencyKey ?? `${membership.branchId}-${membership.from}`);
         return { status: 201, body: { membership } };
       },
     },
     {
       // Roll a family up to a node for a period. ?node=&family=&period= required; ?asOf= (ISO, defaults now),
-      // ?staleAfterSeconds= (default a day), ?scope= (comma branch ids; absent = company-wide 'all', §28).
+      // ?staleAfterSeconds= (default a day), ?scope= (comma branch ids within the caller's own scope; absent = everything they hold, §28).
       api: 'API-10', method: 'GET', path: '/v1/consolidation',
       permission: 'reporting.report.read',
       handler: async (ctx) => {
@@ -134,9 +136,10 @@ export function consolidationRoutes(deps: ConsolidationDeps): readonly Route[] {
           });
         }
         const scopeQ = ctx.query['scope'];
-        const scope: ReportScope = isStr(scopeQ)
-          ? { userId: ctx.userId, branchScope: scopeQ.split(',').map((s) => s.trim()).filter((s) => s !== '') }
-          : { userId: ctx.userId, branchScope: 'all' };
+        const requested = isStr(scopeQ) ? scopeQ.split(',').map((s) => s.trim()).filter((s) => s !== '') : undefined;
+        // The viewer's scope is the SERVER's answer (Wave 2b · EA-03): what their grants cover, narrowed to what they
+        // asked for; a branch they do not hold is refused by name, never silently widened to the company.
+        const scope: ReportScope = { userId: ctx.userId, branchScope: narrowScope(ctx, requested) };
         const staleQ = Number(ctx.query['staleAfterSeconds']);
         const report = consolidate({
           nodeId: node,

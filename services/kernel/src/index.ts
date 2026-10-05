@@ -11,13 +11,17 @@ export {
 } from './errors';
 
 export {
+  scopeOf, branchInScope, assertBranchInScope, narrowScope, withinScope, outsideBranchScope, scopeNotHeld,
+} from './scope';
+
+export {
   evaluateStepUp, requireStepUp,
   type ReauthRequirement, type ReauthEvidence, type ReauthShortfall, type ReauthDecision,
 } from './step-up';
 
 export {
   Router, buildRouter, isWrite, WRITE_METHODS,
-  type Method, type ApiId, type RequestContext, type HandlerResult, type Handler,
+  type Method, type ApiId, type RequestContext, type BranchScope, type HandlerResult, type Handler,
   type Route, type RouteRefusal, type RegisterResult, type Matched,
 } from './router';
 
