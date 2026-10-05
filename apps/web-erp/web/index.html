@@ -57,6 +57,49 @@
       .tile .label { color: var(--muted); font-size: 15px; }
       .tile .note { font-size: 14px; color: var(--muted); }
 
+      /* ── Today (UX-2b): the command centre — the figures on a dark band, the cards below ── */
+      #view-home { background: var(--rail); color: var(--on-rail); border-radius: 20px; padding: 20px 20px 22px; display: grid; gap: 12px; }
+      #view-home .sre-eyebrow, #view-home p.lead { color: var(--on-rail-muted); }
+      #view-home h2 { color: var(--on-rail); font-size: 26px; }
+      #view-home .tiles { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+      #view-home .tile { background: var(--rail-2); color: var(--on-rail); border-left: 0; border: 1px solid var(--rail-line); border-radius: 14px; min-height: 112px; gap: 6px; }
+      #view-home .tile.attention { box-shadow: inset 4px 0 0 var(--on-rail-warn); padding-left: 20px; }
+      #view-home .tile.unknown { box-shadow: inset 4px 0 0 var(--on-rail-danger); padding-left: 20px; }
+      #view-home .tile .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+      #view-home .tile .chip { width: 30px; height: 30px; border-radius: 9px; background: var(--rail); color: var(--rail-accent); display: grid; place-items: center; flex: none; }
+      #view-home .tile .chip svg { width: 16px; height: 16px; }
+      #view-home .tile .n { font-size: 34px; color: var(--on-rail); }
+      #view-home .tile .n.unknown { font-size: 20px; color: var(--on-rail-warn); }
+      #view-home .tile .label { color: var(--on-rail-muted); font-size: 12.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+      #view-home .tile .note { color: var(--on-rail-muted); }
+      #view-home .tile[role="button"]:hover { background: var(--rail-line); }
+      #view-home .primary.wide { margin-top: 4px; }
+      .dash { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+      .card h3 { margin: 0; font-size: 17px; }
+      .attention { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      .attention li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--panel-2); border-left: 5px solid var(--line); font-size: 15px; }
+      .attention li.attention { border-left-color: var(--warn); }
+      .attention li.unknown { border-left-color: var(--danger); }
+      .attention li.quiet { background: transparent; border-left-color: transparent; color: var(--muted); padding-left: 0; }
+      .attention li .text { flex: 1; min-width: 0; }
+      .attention li .text .n { font-size: 20px; font-variant-numeric: tabular-nums; margin-right: 4px; }
+      .go { min-height: 44px; padding: 0 14px; border-radius: 10px; font-size: 15px; font-weight: 600; background: var(--line); color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; border: 0; }
+      .flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+      .flow li, .ops .op { background: var(--panel-2); border-radius: 12px; padding: 12px; display: grid; gap: 4px; align-content: start; color: inherit; text-decoration: none; }
+      .flow li .n, .ops .op .n { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .flow li .n.unknown, .ops .op .n.unknown { font-size: 16px; color: var(--warn); }
+      .flow li .l, .ops .op .l { font-size: 14px; font-weight: 600; }
+      .flow li .note, .ops .op .note { font-size: 13px; color: var(--muted); }
+      .flow li .go, .ops .op .go { margin-top: 4px; justify-self: start; }
+      .ops { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+      .ws { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+      .ws a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--panel-2); color: var(--ink); text-decoration: none; min-height: 48px; }
+      .ws a .ic { width: 32px; height: 32px; border-radius: 9px; background: var(--line); color: var(--accent); display: grid; place-items: center; flex: none; }
+      .ws a .ic svg { width: 16px; height: 16px; }
+      .ws a b { display: block; font-size: 14.5px; }
+      .ws a small { display: block; color: var(--muted); font-size: 13px; }
+
       /* ── Lists ─────────────────────────────────────────────────────────── */
       .rows { display: grid; gap: 10px; }
       .row {
@@ -146,7 +189,7 @@
   <body>
     <header>
       <h1 class="who" id="who">
-        Store manager
+        Store workspace
         <span class="day" id="day">Trading day —</span>
         <small id="whoami"></small>
       </h1>
@@ -176,13 +219,21 @@
     </nav>
 
     <main>
-      <!-- Live trading (home): the floor by exception, four figures and nothing else. -->
+      <!-- Today (UX-2b · OB-15/OB-16): the command centre. A dark band of the day's figures — takings, approvals,
+           exceptions, unsent, tasks — every one allowed to say "not known"; then the cards: what needs you, the
+           purchase-to-shelf flow, the store today, and the workspaces of the rail. -->
       <section id="view-home">
         <h2 id="home-title">Today</h2>
         <p class="lead" id="home-lead">Tap a figure to go to it.</p>
         <div class="tiles" id="tiles"></div>
         <!-- The ONE primary action (store-manager.md): shown only when there is an approval this manager may clear. -->
         <button id="next-approval" type="button" class="primary wide" hidden>Clear the next approval</button>
+      </section>
+      <section id="view-home-dash" class="dash" aria-label="Today's cards">
+        <section class="card" id="attention-card" aria-labelledby="attention-title"><h3 id="attention-title">Needs attention</h3><ul class="attention" id="attention"></ul></section>
+        <section class="card" id="flow-card" aria-labelledby="flow-title"><h3 id="flow-title">Purchase to shelf</h3><ol class="flow" id="flow"></ol></section>
+        <section class="card" id="ops-card" aria-labelledby="ops-title"><h3 id="ops-title">Store today</h3><div class="ops" id="ops"></div></section>
+        <section class="card" id="ws-card" aria-labelledby="ws-title" hidden><h3 id="ws-title">Workspaces</h3><div class="ws" id="workspaces"></div></section>
       </section>
 
       <!-- Approval inbox: ordered by value; a row you cannot decide says why. -->

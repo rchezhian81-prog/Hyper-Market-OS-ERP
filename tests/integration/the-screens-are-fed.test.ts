@@ -2858,4 +2858,17 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
     const base = await serve(snapshotOf({ pack: pack(FLOOR) }));
     expect((await menuFromScreen(base, '/counts/', { 'x-sre-user': 'u-owner' }))!['userId']).toBe('u-mgr');
   });
+
+  it('the manager payload carries the Today figures (UX-2b): takings from the box\'s own log, the rest from the pack or said to be not known', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ ...FLOOR, purchaseOrders: notKnown('never pulled') }) }));
+    const payload = await payloadFromScreen(base, 'manager');
+    const today = payload!['today'] as Record<string, { known: boolean; value?: number; why?: string; unit?: string }>;
+    expect(today['salesToday']).toMatchObject({ known: true, unit: 'inr', value: SALE.total });
+    for (const figure of Object.values(today)) {
+      expect(typeof figure.known).toBe('boolean');
+      if (figure.known) expect(typeof figure.value).toBe('number'); else expect(figure.why).toMatch(/^the /);
+    }
+    // a register this box was never given is said so, by name — never a zero
+    expect(today['purchaseOrdersOpen']).toEqual({ known: false, why: 'the store computer has not been given the purchase orders' });
+  });
 });

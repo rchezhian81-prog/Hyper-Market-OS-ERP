@@ -380,6 +380,92 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
  *
  * The other two come from the pack, and stay absent when the pack has not carried them.
  */
+/**
+ * One figure on the Today page (OB-15/OB-16 · UX-2b · P-08): the box's own count, or WHY it does not know. Never a
+ * reassuring zero for a register the box has not been given — "Not known — the store computer has not been given
+ * the purchase orders" is the honest reading, and the only one a manager can act on.
+ */
+export type TodayFigure =
+  | { readonly known: true; readonly value: number; readonly unit?: 'inr'; readonly note?: string }
+  | { readonly known: false; readonly why: string };
+
+const notGiven = (what: string): TodayFigure => ({ known: false, why: `the store computer has not been given ${what}` });
+const dateOf = (v: unknown): string | null => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null);
+const daysBetween = (fromDay: string, toDay: string): number => Math.round((Date.parse(`${toDay}T00:00:00Z`) - Date.parse(`${fromDay}T00:00:00Z`)) / 86_400_000);
+
+/**
+ * The Today page's figures, each from the pack or from this box's own log — the command centre of the owner's
+ * composition (OB-15), every number real or said to be not known (P-08). Pure: the same pack and log give the same
+ * figures; a section the pack does not carry gives `known: false` with the reason, never zero.
+ */
+export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
+  const pack = input.pack;
+  const day = salesOn(input.sales, input.tradingDay);
+  const takings = day.sales.reduce((sum, sale) => sum + (sale.total ?? 0), 0);
+  const salesToday: TodayFigure = {
+    known: true, value: takings, unit: 'inr',
+    note: `${day.sales.length} ${day.sales.length === 1 ? 'sale' : 'sales'} on this box${day.undated > 0 ? ` · ${day.undated} undated, in nobody's figures` : ''}`,
+  };
+
+  let purchaseOrdersOpen: TodayFigure;
+  if (!pack.purchaseOrders.known) purchaseOrdersOpen = notGiven('the purchase orders');
+  else {
+    const received = new Map<string, Map<string, number>>();
+    if (pack.receipts.known) {
+      for (const r of pack.receipts.value) {
+        const byProduct = received.get(r.poId) ?? new Map<string, number>();
+        for (const line of r.lines) byProduct.set(line.productId, (byProduct.get(line.productId) ?? 0) + line.qty);
+        received.set(r.poId, byProduct);
+      }
+    }
+    const open = pack.purchaseOrders.value.filter((po) => po.lines.some((line) => line.qty > (received.get(po.poId)?.get(line.productId) ?? 0)));
+    purchaseOrdersOpen = { known: true, value: open.length, note: pack.receipts.known ? `of ${pack.purchaseOrders.value.length} on the box, still awaiting goods` : 'receipts not given — every order counted as open' };
+  }
+
+  const receiptsRecorded: TodayFigure = pack.receipts.known ? { known: true, value: pack.receipts.value.length, note: 'against open orders' } : notGiven('the goods receipts');
+
+  const CLOSED = new Set(['received', 'closed', 'cancelled', 'rejected', 'fulfilled', 'done']);
+  const indentsOpen: TodayFigure = pack.floorIndents.known
+    ? { known: true, value: pack.floorIndents.value.indents.filter((i) => !CLOSED.has(String(i.state).toLowerCase())).length, note: 'shelf requests the back store has not finished' }
+    : notGiven('the floor indents');
+
+  let countsAwaitingApproval: TodayFigure;
+  if (!pack.countsQueue.known) countsAwaitingApproval = notGiven('the stock counts');
+  else {
+    const rows = pack.countsQueue.value.filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null);
+    const waiting = rows.filter((r) => r['approvedBy'] === null || r['approvedBy'] === undefined || r['status'] === 'pending');
+    countsAwaitingApproval = { known: true, value: waiting.length, note: `of ${rows.length} counted` };
+  }
+
+  let expiringSoon: TodayFigure;
+  if (!pack.batches.known) expiringSoon = notGiven('the batch register');
+  else if (!pack.expiryPolicy.known) expiringSoon = notGiven('the expiry policy');
+  else {
+    const window = pack.expiryPolicy.value.nearExpiryDays;
+    const rows = pack.batches.value.filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null);
+    const dated = rows.map((r) => dateOf(r['expiresOn'] ?? r['expiryDate'] ?? r['bestBefore'] ?? r['useBy'] ?? r['expiresAt'])).filter((d): d is string => d !== null);
+    expiringSoon = rows.length > 0 && dated.length === 0
+      ? { known: false, why: 'the batch records carry no expiry date' }
+      : { known: true, value: dated.filter((d) => daysBetween(input.tradingDay, d) <= window).length, note: `within ${window} days, of ${rows.length} batches` };
+  }
+
+  const recallsOpen: TodayFigure = pack.recalls.known ? { known: true, value: pack.recalls.value.length, note: 'recall notices on the box' } : notGiven('the recall notices');
+
+  let checklistOpen: TodayFigure;
+  if (!pack.checklist.known) checklistOpen = notGiven('the day\'s checklist');
+  else {
+    const open = pack.checklist.value.filter((i) => !i.done);
+    const blocking = open.filter((i) => i.blocking).length;
+    checklistOpen = { known: true, value: open.length, note: blocking > 0 ? `${blocking} must be done before the day closes` : 'none holds the day close' };
+  }
+
+  const deliveriesToday: TodayFigure = pack.deliveries.known
+    ? { known: true, value: pack.deliveries.value.filter((d) => dateOf(d.slotStartsAt) === input.tradingDay).length, note: 'customer deliveries in today\'s slots' }
+    : notGiven('the delivery slots');
+
+  return { salesToday, purchaseOrdersOpen, receiptsRecorded, indentsOpen, countsAwaitingApproval, expiringSoon, recallsOpen, checklistOpen, deliveriesToday };
+}
+
 export function managerPayload(input: ScreenInput): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
 
@@ -401,6 +487,8 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   }
   // The shop's own trading day, not the browser's clock (the same rule the catalogue screen follows).
   payload['tradingDay'] = input.tradingDay;
+  // The Today page (UX-2b): every figure from the pack or this box's log, or said to be not known (P-08).
+  payload['today'] = todayFigures(input);
 
   // Every pending item, whatever it is. The manager's screen lists them, so a sale and a stock
   // adjustment both belong here — "3 things have not reached the cloud" is the honest count.

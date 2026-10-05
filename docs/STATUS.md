@@ -5,6 +5,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## UX-2b — the Today command centre, the rail's icons, the sign-in frame; OB-17 recorded (5 October 2026)
+
+- **Why:** the owner's 5 October directions (OB-17): finish the software end to end before any hardware talk; English
+  is enough now; the pattern is RMC-PRO (Mix Nova); he is not satisfied with the UI/UX; he will register a domain.
+  And OB-16's second half: the home must be the command centre of his composition, not a manager's four tiles.
+- **What changed (pull request #700):**
+  - **The store computer computes the Today figures** (`todayFigures` in `edge/store-edge/src/screen-data.ts`,
+    carried as `managerData.today`): sales today from the box's own log (takings, count, undated named), purchase
+    orders open (a line still awaiting goods; receipts close them line by line), receipts recorded, floor indents
+    open, counts awaiting approval, batches expiring within the policy window, recall notices, checklist items open
+    (and how many hold the day close), deliveries in today's slots. A section the pack does not carry is
+    `known: false` **with the register it lacks** — never a zero (P-08).
+  - **The Today page** (`apps/web-erp/web/index.html`, `app.js`) in the RMC pattern: a dark band with five figures
+    (sales today as money, approvals, exceptions, unsent, tasks — each with an icon, each able to say "Not known"
+    and why), the one primary action under it; then four cards — *Needs attention* (number first, a way in where the
+    person holds the screen, a figure the box lacks says why), *Purchase to shelf* (orders → receipts → counts →
+    indents), *Store today* (deliveries, checklist, expiring, recalls, tasks), *Workspaces* (the rail's own groups,
+    each a link). The cards hide with the band on the other tabs. English and Tamil words; the box's reasons in
+    English (OB-17).
+  - **Icons in the rail:** one small inline set (24-grid, round strokes) keyed by workspace name — drawn in the
+    chrome, nothing fetched, so the shell still opens offline; the Today page takes the same set
+    (`window.sreChrome.icon`), and listens for the chrome so its first paint gets them.
+  - **The sign-in and the account page wear the product's frame:** a brand panel (mark, name, what it is) beside
+    the card; "Welcome back — Sign in to your store workspace"; stacked on a phone; no "demo".
+  - **Stock counts:** a count the box holds without a money value now says *Value not known* on its row, and the
+    total reads `₹x · n without a value` (or *Value not known*) — never `₹NaN.NaN`.
+- **Proved:** unit (`tests/unit/edge-today-figures.test.ts` — every rule above incl. the not-known reasons; counts
+  without a value; the sign-in frame), integration on the real screen server (the manager payload carries `today`;
+  takings equal the box's sale; the missing register named), browser (the Today page at a desk and on a phone, in
+  Tamil, accessibility audit clean; an unfed page says "Not known" everywhere with the reason; the earlier manager,
+  interaction-budget and decisions-survive-reload suites still pass), guardrails (manager screen, chrome on every
+  page, offline cache names). **Not yet:** the owner's own look at it on the hosted copy; staff acceptance stays
+  PENDING (unasked, OB-17).
+- **Honest limits:** the figures are the pack's and the box's — the practice pack carries no batches, recalls or
+  floor indents, so those say "Not known" on the hosted copy until the pack (DF-3) carries them; sales today is
+  the box's own till log (₹0 until a sale is rung through the store's till); no charts yet (the RMC pattern's
+  funnel and sparklines need day-over-day reads the box does not keep — a later slice, with the reporting module).
+- **OB-17 recorded:** software first, English now (Tamil deferred to Wave 8, nothing removed), the RMC pattern, the
+  owner's domain (he gives the name; `SRE_PUBLIC_HOST` / `SRE_TLS` do the rest).
+- **Next:** Wave 2 (tasks #32/#33/#40) — the OB-15 block (user creation with roles, the login through the
+  self-hosted identity server, the tenant console) with the identity criticals; the domain step when the name
+  arrives.
+
+---
+
 ## UX-2a — ONE application: the sign-in lands in the store workspace, the rail names the shop and the person, the screens run as whoever signed in (5 October 2026, OB-16)
 
 - **Why:** the owner signed in to the hosted copy and landed on a list page with three boxes of links, and refused to

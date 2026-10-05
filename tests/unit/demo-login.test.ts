@@ -145,6 +145,18 @@ describe('demo sign-in — refusals', () => {
     expect(safeNext(undefined)).toBe('/store/manager/');
   });
 
+  it('the sign-in and the account page wear the product\'s frame (UX-2b): the brand panel beside the card, one form, no word "demo"', () => {
+    const form = setup().handle({ method: 'GET', url: '/login/', body: '', headers: {} });
+    expect(form.body).toContain('<aside class="brand" aria-label="SRE Retail OS">');
+    expect(form.body).toContain('<h2>SRE Retail OS</h2>');
+    expect(form.body).toContain('<h1>Welcome back</h1>');
+    expect(form.body).toContain('action="/login/"');
+    expect(form.body).toContain('<main class="wide">');
+    expect(form.body).not.toMatch(/demo/i);
+    const refused = setup().handle(post({ login: 'ravi.cashier', password: PASSWORD }, { origin: 'https://evil.example' }));
+    expect(refused.body).not.toContain('class="brand"'); // a refusal is a plain page
+  });
+
   it('escapes what it echoes back into the page', () => {
     const { handle } = setup();
     const res = handle({ method: 'GET', url: '/login/?next=/erp/%22%3E%3Cscript%3E', body: '', headers: {} });

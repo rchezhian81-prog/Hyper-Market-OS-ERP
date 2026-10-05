@@ -314,7 +314,9 @@
       section.className = 'group-section';
       const title = document.createElement('p');
       title.className = 'group';
-      title.textContent = word(group.group);
+      const mark = icon(group.group && typeof group.group === 'object' ? group.group.en : group.group);
+      if (mark) title.append(mark);
+      title.append(document.createTextNode(word(group.group)));
       const list = document.createElement('ul');
       for (const item of group.items ?? []) {
         const li = document.createElement('li');
@@ -333,6 +335,50 @@
     layout();
     const current = scroller.querySelector('a[aria-current="page"]');
     if (current && typeof current.scrollIntoView === 'function') current.scrollIntoView({ block: 'nearest' });
+  }
+
+
+  // ── Icons (UX-2b): one small, consistent set — 24-grid, 2px round strokes — keyed by the workspace's English name
+  // and a few figure names. Drawn here, not fetched: the shell must open with no network (P-01).
+  const ICON_PATHS = {
+    'Today': '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+    'Products & pricing': '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
+    'Purchase': '<circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M1 2h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/>',
+    'Receiving & QC': '<path d="M21 10V7.5L12 3 3 7.5v9L12 21l3-1.5"/><path d="M3 7.5l9 4.5 9-4.5"/><path d="M12 12v9"/><path d="M16 17l2 2 4-4"/>',
+    'Inventory & backstore': '<path d="M3 21V8l9-4 9 4v13"/><path d="M3 21h18"/><rect x="7" y="13" width="4" height="4"/><rect x="13" y="13" width="4" height="4"/><rect x="10" y="17" width="4" height="4"/>',
+    'Shop floor': '<path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 11v10h14V11"/><path d="M9 21v-6h6v6"/>',
+    'Sales & service': '<path d="M5 2h14v20l-2.5-1.5L14 22l-2-1.5L10 22l-2.5-1.5L5 22z"/><path d="M9 7h6"/><path d="M9 11h6"/><path d="M9 15h4"/>',
+    'Orders & delivery': '<path d="M1 4h14v12H1z"/><path d="M15 9h4l4 4v3h-8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>',
+    'Cash & finance': '<path d="M6 3h12"/><path d="M6 8h12"/><path d="M6 13l8.5 8"/><path d="M6 13h3a5 5 0 0 0 0-10"/>',
+    'Customers & loyalty': '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/>',
+    'Fresh food & café': '<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><path d="M6 1v3"/><path d="M10 1v3"/><path d="M14 1v3"/>',
+    'People & tasks': '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
+    'Store operations': '<path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/>',
+    'Reports': '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+    'Administration': '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
+    'Devices': '<path d="M18 8V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h8"/><path d="M10 19v-4"/><path d="M7 19h5"/><rect x="16" y="12" width="6" height="10" rx="2"/>',
+    // figures
+    'rupee': '<path d="M6 3h12"/><path d="M6 8h12"/><path d="M6 13l8.5 8"/><path d="M6 13h3a5 5 0 0 0 0-10"/>',
+    'check': '<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>',
+    'alert': '<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    'cloud': '<path d="M17.5 19a4.5 4.5 0 0 0 .5-9 7 7 0 0 0-13.4 2A4 4 0 0 0 6 19z"/><path d="M12 12v6"/><path d="M9 15l3-3 3 3"/>',
+    'list': '<path d="M9 6h12"/><path d="M9 12h12"/><path d="M9 18h12"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/>',
+  };
+  function icon(name) {
+    const d = ICON_PATHS[name];
+    if (!d) return null;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    svg.classList.add('sre-icon');
+    svg.innerHTML = d;
+    return svg;
   }
 
   // ── The branch and the person (OB-16): the rail names the shop and the person, as head office named them ──
@@ -581,5 +627,7 @@
   void refreshBadge();
   setInterval(() => { void refreshBadge(); }, 10_000);
 
-  window.sreChrome = { repaint, badge: { refresh: refreshBadge, state: () => box }, menu: { toggle: toggleMenu, open: () => !byId('sre-menu')?.hidden } };
+  window.sreChrome = { repaint, icon, badge: { refresh: refreshBadge, state: () => box }, menu: { toggle: toggleMenu, open: () => !byId('sre-menu')?.hidden } };
+  // A page that paints before the chrome loaded (its own script runs first) may now take the icons: it listens for this.
+  document.dispatchEvent(new Event('sre:chrome'));
 })();

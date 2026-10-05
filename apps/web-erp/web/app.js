@@ -40,7 +40,7 @@ const inr = (minor) =>
 // half-translated screen reads as unfinished exactly where somebody is relying on it.
 const WORDS = {
   en: {
-    manager: 'Store manager', tradingDay: 'Trading day', today: 'Today', approvals: 'Approvals',
+    manager: 'Store workspace', tradingDay: 'Trading day', today: 'Today', approvals: 'Approvals',
     nobodyNamed: 'Nobody is named for this screen on the store computer. What is waiting is shown; nothing can be decided, received, counted or closed until a manager is named.',
     runningAs: 'Running as',
     // The badge's states from the BOX (design system §1 rule 4): connection · last contact.
@@ -50,6 +50,12 @@ const WORDS = {
     tapAFigure: 'Tap a figure to go to it.', waiting: 'waiting', youCanClear: 'you can clear',
     exceptionsLabel: 'Exceptions open', unsentLabel: 'Not yet sent to cloud', tasksLabel: 'Tasks today',
     approvalsLabel: 'Approvals waiting', notKnown: 'Not known', nothingWaiting: 'Nothing is waiting.',
+    // The Today command centre (UX-2b · OB-15/OB-16).
+    salesTodayLabel: 'Sales today', boxSilent: 'the store computer has not said',
+    needsAttention: 'Needs attention', nothingNeedsYou: 'Nothing needs you right now.', purchaseToShelf: 'Purchase to shelf', storeToday: 'Store today', workspaces: 'Workspaces', screensWord: 'screens', open: 'Open',
+    poOpen: 'Purchase orders open', receiptsRecorded: 'Receipts recorded', countsAwaiting: 'Counts awaiting approval', indentsOpen: 'Floor indents open',
+    deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices',
+    attnApprovals: 'approvals you can clear', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval',
     biggestFirst: 'Biggest first.', approve: 'Approve', reject: 'Reject', cancel: 'Cancel', ok: 'OK',
     whyApprove: 'Why are you approving this?', whyReject: 'Why are you rejecting this?',
     decided: 'Decided', requestedBy: 'asked for by', noValue: 'no value',
@@ -80,7 +86,7 @@ const WORDS = {
     countedSoFar: 'Counted', item: 'Item',
   },
   ta: {
-    manager: 'கடை மேலாளர்', tradingDay: 'வியாபார நாள்', today: 'இன்று', approvals: 'ஒப்புதல்கள்',
+    manager: 'கடை பணியிடம்', tradingDay: 'வியாபார நாள்', today: 'இன்று', approvals: 'ஒப்புதல்கள்',
     nobodyNamed: 'இந்தத் திரைக்கு கடை கணினியில் யாரும் பெயரிடப்படவில்லை. காத்திருப்பவை காட்டப்படுகின்றன; மேலாளர் பெயரிடப்படும் வரை எதையும் முடிவு செய்ய, பெற, எண்ண அல்லது மூட முடியாது.',
     runningAs: 'இயங்குவது',
     nextApproval: 'அடுத்த ஒப்புதலை முடிக்க',
@@ -89,6 +95,11 @@ const WORDS = {
     youCanClear: 'நீங்கள் முடிக்கக்கூடியவை', exceptionsLabel: 'திறந்த விதிவிலக்குகள்',
     unsentLabel: 'கிளௌடுக்கு அனுப்பப்படாதவை', tasksLabel: 'இன்றைய பணிகள்',
     approvalsLabel: 'காத்திருக்கும் ஒப்புதல்கள்', notKnown: 'தெரியவில்லை',
+    salesTodayLabel: 'இன்றைய விற்பனை', boxSilent: 'கடை கணினி சொல்லவில்லை',
+    needsAttention: 'கவனம் தேவை', nothingNeedsYou: 'இப்போது உங்களுக்கு எதுவும் தேவையில்லை.', purchaseToShelf: 'கொள்முதலிலிருந்து அலமாரிக்கு', storeToday: 'இன்று கடை', workspaces: 'பணியிடங்கள்', screensWord: 'திரைகள்', open: 'திற',
+    poOpen: 'திறந்த கொள்முதல் ஆணைகள்', receiptsRecorded: 'பதிவான பெறுதல்கள்', countsAwaiting: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', indentsOpen: 'திறந்த தளக் கோரிக்கைகள்',
+    deliveriesToday: 'இன்றைய டெலிவரிகள்', checklistOpen: 'முடிக்காத சரிபார்ப்புகள்', expiringSoon: 'விரைவில் காலாவதி', recallsOpen: 'திரும்பப்பெறல் அறிவிப்புகள்',
+    attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்',
     nothingWaiting: 'எதுவும் காத்திருக்கவில்லை.', biggestFirst: 'பெரியது முதலில்.',
     approve: 'ஒப்புதல்', reject: 'மறு', cancel: 'ரத்து', ok: 'சரி',
     whyApprove: 'ஏன் ஒப்புதல் அளிக்கிறீர்கள்?', whyReject: 'ஏன் மறுக்கிறீர்கள்?',
@@ -408,6 +419,7 @@ function show(next) {
     el(`view-${name}`).hidden = name !== next;
     el(`tab-${name}`).setAttribute('aria-current', name === next ? 'page' : 'false');
   }
+  el('view-home-dash').hidden = next !== 'home';
   if (next === 'home') renderHome();
   if (next === 'approvals') renderApprovals();
   if (next === 'close') resetClose();
@@ -417,14 +429,16 @@ for (const name of VIEWS) el(`tab-${name}`).addEventListener('click', () => show
 // ── Home: four figures, and every one may say it does not know ──────────────
 
 /** A figure that could not be read is not a zero, and it is not painted like one. */
-function tile({ figure, label, note, goTo, attentionWhen }) {
+function tile({ figure, label, note, goTo, attentionWhen, iconName, money }) {
   const box = document.createElement('div');
   box.className = 'tile';
   const n = document.createElement('div');
   n.className = 'n';
+  // A floor figure says `count`; a Today figure from the box says `value` (UX-2b). Either way: known, or why not.
+  const amount = figure.known ? (figure.count ?? figure.value ?? 0) : null;
   if (figure.known) {
-    n.textContent = String(figure.count);
-    if (attentionWhen && attentionWhen(figure.count)) box.classList.add('attention');
+    n.textContent = money ? inr(amount) : String(amount);
+    if (attentionWhen && attentionWhen(amount)) box.classList.add('attention');
   } else {
     n.classList.add('unknown');
     n.textContent = t('notKnown');
@@ -433,11 +447,16 @@ function tile({ figure, label, note, goTo, attentionWhen }) {
   const caption = document.createElement('div');
   caption.className = 'label';
   caption.textContent = label;
+  const top = document.createElement('div');
+  top.className = 'top';
+  top.append(caption);
+  const mark = iconName ? icon(iconName) : null;
+  if (mark) { const chip = document.createElement('span'); chip.className = 'chip'; chip.setAttribute('aria-hidden', 'true'); chip.append(mark); top.append(chip); }
   const small = document.createElement('div');
   small.className = 'note';
   // The reason it does not know, in the model's own words — it is the only place that knows.
-  small.textContent = figure.known ? (note ?? '') : figure.why;
-  box.append(n, caption, small);
+  small.textContent = figure.known ? (note ?? figure.note ?? '') : figure.why;
+  box.append(top, n, small);
   if (goTo) {
     box.tabIndex = 0;
     box.setAttribute('role', 'button');
@@ -445,6 +464,118 @@ function tile({ figure, label, note, goTo, attentionWhen }) {
     box.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') show(goTo); });
   }
   return box;
+}
+
+// ── Today (UX-2b · OB-15/OB-16): the figures the store computer sent with this screen, the rail's own workspaces ──
+// Every figure comes from `window.managerData.today` — built on the store computer from its pack and its own log —
+// or says it is not known. The page invents nothing: no figure, no name, no screen it was not given.
+const todayFigures = () => (window.managerData && window.managerData.today && typeof window.managerData.today === 'object' ? window.managerData.today : null);
+const figureOf = (key) => { const all = todayFigures(); const f = all ? all[key] : undefined; return f && typeof f === 'object' && typeof f.known === 'boolean' ? f : { known: false, why: t('boxSilent') }; };
+const amountOf = (figure) => (figure.known ? (figure.count ?? figure.value ?? 0) : null);
+const railItems = () => { const nav = window.sreNavigation; return nav && Array.isArray(nav.groups) ? nav.groups.flatMap((g) => g.items ?? []) : []; };
+const railItem = (id) => railItems().find((i) => i && i.id === id) ?? null;
+const icon = (name) => (window.sreChrome && typeof window.sreChrome.icon === 'function' ? window.sreChrome.icon(name) : null);
+
+/** A way to act on a row: a view of this page, or a rail link the person holds — nothing when they hold neither. */
+function goLink(target) {
+  if (!target) return null;
+  if (target.view) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'go'; b.textContent = t('open');
+    b.addEventListener('click', () => show(target.view));
+    return b;
+  }
+  const item = railItem(target.rail);
+  if (!item) return null;
+  const a = document.createElement('a');
+  a.className = 'go'; a.href = item.path; a.textContent = t('open');
+  return a;
+}
+
+function renderAttention(floor, today) {
+  const rows = [];
+  // A row is the number first, then what it is — "3 approvals you can clear" — grammatical at one as at many.
+  const add = (figure, labelKey, phraseKey, target) => {
+    if (!figure.known) { rows.push({ tone: 'unknown', n: null, text: `${t(labelKey)}: ${t('notKnown')} — ${figure.why}`, target: null }); return; }
+    const n = amountOf(figure);
+    if (n > 0) rows.push({ tone: 'attention', n, text: t(phraseKey), target });
+  };
+  add(floor.approvalsIcanClear, 'approvalsLabel', 'attnApprovals', { view: 'approvals' });
+  add(floor.exceptions, 'exceptionsLabel', 'attnExceptions', { view: 'close' });
+  add(floor.unsent, 'unsentLabel', 'attnUnsent', { view: 'close' });
+  add(today.recalls, 'recallsOpen', 'attnRecalls', { rail: 'expiry' });
+  add(today.expiring, 'expiringSoon', 'attnExpiring', { rail: 'expiry' });
+  add(today.checklist, 'checklistOpen', 'attnChecklist', { rail: 'checklist' });
+  add(today.counts, 'countsAwaiting', 'attnCounts', { rail: 'counts' });
+  const list = el('attention');
+  list.replaceChildren(...(rows.length === 0 ? [quiet(t('nothingNeedsYou'))] : rows.map((row) => {
+    const li = document.createElement('li');
+    li.className = row.tone;
+    const text = document.createElement('span'); text.className = 'text';
+    if (row.n !== null) { const b = document.createElement('b'); b.className = 'n'; b.textContent = String(row.n); text.append(b, document.createTextNode(` ${row.text}`)); } else text.textContent = row.text;
+    li.append(text);
+    const go = goLink(row.target);
+    if (go) li.append(go);
+    return li;
+  })));
+}
+function quiet(text) { const li = document.createElement('li'); li.className = 'quiet'; li.textContent = text; return li; }
+
+/** A small figure box: the number (or "Not known" and why), its label, its note, and a way in when there is one. */
+function figureBox(tag, figure, label, target) {
+  const box = document.createElement(tag);
+  if (tag !== 'li') box.className = 'op';
+  const n = document.createElement('b'); n.className = 'n';
+  if (figure.known) n.textContent = String(amountOf(figure)); else { n.textContent = t('notKnown'); n.classList.add('unknown'); }
+  const l = document.createElement('span'); l.className = 'l'; l.textContent = label;
+  const note = document.createElement('span'); note.className = 'note'; note.textContent = figure.known ? (figure.note ?? '') : figure.why;
+  box.append(n, l, note);
+  const go = goLink(target);
+  if (go) box.append(go);
+  return box;
+}
+function renderFlow(today) {
+  el('flow').replaceChildren(
+    figureBox('li', today.po, t('poOpen'), { rail: 'buying' }),
+    figureBox('li', today.receipts, t('receiptsRecorded'), { rail: 'goods-receipt' }),
+    figureBox('li', today.counts, t('countsAwaiting'), { rail: 'counts' }),
+    figureBox('li', today.indents, t('indentsOpen'), { rail: 'indents' }),
+  );
+}
+function renderOps(floor, today) {
+  el('ops').replaceChildren(
+    figureBox('div', today.deliveries, t('deliveriesToday'), null),
+    figureBox('div', today.checklist, t('checklistOpen'), { rail: 'checklist' }),
+    figureBox('div', today.expiring, t('expiringSoon'), { rail: 'expiry' }),
+    figureBox('div', today.recalls, t('recallsOpen'), { rail: 'expiry' }),
+    figureBox('div', floor.tasks, t('tasksLabel'), null),
+  );
+}
+function renderWorkspaces() {
+  const nav = window.sreNavigation;
+  const groups = nav && Array.isArray(nav.groups) ? nav.groups.filter((g) => Array.isArray(g.items) && g.items.length > 0) : [];
+  el('ws-card').hidden = groups.length === 0;
+  const lang = document.documentElement.lang === 'ta' ? 'ta' : 'en';
+  const word = (pair) => (pair && typeof pair === 'object' ? (pair[lang] ?? pair.en ?? '') : String(pair ?? ''));
+  el('workspaces').replaceChildren(...groups.map((g) => {
+    const a = document.createElement('a');
+    a.href = g.items[0].path;
+    const ic = document.createElement('span'); ic.className = 'ic'; ic.setAttribute('aria-hidden', 'true');
+    const mark = icon(g.group && typeof g.group === 'object' ? g.group.en : g.group);
+    if (mark) ic.append(mark);
+    const words = document.createElement('span');
+    const b = document.createElement('b'); b.textContent = word(g.group);
+    const small = document.createElement('small'); small.textContent = `${g.items.length} ${t('screensWord')}`;
+    words.append(b, small);
+    a.append(ic, words);
+    return a;
+  }));
+}
+function paintTodayWords() {
+  el('attention-title').textContent = t('needsAttention');
+  el('flow-title').textContent = t('purchaseToShelf');
+  el('ops-title').textContent = t('storeToday');
+  el('ws-title').textContent = t('workspaces');
 }
 
 function renderHome() {
@@ -457,22 +588,34 @@ function renderHome() {
   el('nobody').hidden = floor.manager !== null;
   el('nobody').textContent = floor.manager === null ? t('nobodyNamed') : '';
   const clearable = floor.approvalsIcanClear;
+  const today = {
+    sales: figureOf('salesToday'), po: figureOf('purchaseOrdersOpen'), receipts: figureOf('receiptsRecorded'), indents: figureOf('indentsOpen'),
+    counts: figureOf('countsAwaitingApproval'), expiring: figureOf('expiringSoon'), recalls: figureOf('recallsOpen'), checklist: figureOf('checklistOpen'), deliveries: figureOf('deliveriesToday'),
+  };
   el('tiles').replaceChildren(
+    // The takings first (OB-15: "sales today") — the box's own log, never a guess; its note says how many sales.
+    tile({ figure: today.sales, label: t('salesTodayLabel'), money: true, iconName: 'rupee' }),
     tile({
       figure: floor.approvalsWaiting,
       label: t('approvalsLabel'),
       note: clearable.known ? `${clearable.count} ${t('youCanClear')}` : '',
       goTo: 'approvals',
       attentionWhen: (n) => n > 0,
+      iconName: 'check',
     }),
-    tile({ figure: floor.exceptions, label: t('exceptionsLabel'), goTo: 'close', attentionWhen: (n) => n > 0 }),
+    tile({ figure: floor.exceptions, label: t('exceptionsLabel'), goTo: 'close', attentionWhen: (n) => n > 0, iconName: 'alert' }),
     tile({
-      figure: floor.unsent, label: t('unsentLabel'), goTo: 'close', attentionWhen: (n) => n > 0,
+      figure: floor.unsent, label: t('unsentLabel'), goTo: 'close', attentionWhen: (n) => n > 0, iconName: 'cloud',
       // How many of those are still only on this screen (SP-2a) — a fact the store computer cannot show.
       ...(floor.heldHere > 0 ? { note: `${floor.heldHere} ${t('heldHere')}` } : {}),
     }),
-    tile({ figure: floor.tasks, label: t('tasksLabel') }),
+    tile({ figure: floor.tasks, label: t('tasksLabel'), iconName: 'list' }),
   );
+  paintTodayWords();
+  renderAttention(floor, today);
+  renderFlow(today);
+  renderOps(floor, today);
+  renderWorkspaces();
   // The one primary action on the home screen (store-manager.md: "clear the next approval or exception"). Shown
   // only when there IS one this manager may clear — a primary button that leads nowhere teaches people to ignore
   // primary buttons. From here a decision is three taps: this, Approve (or Reject), the reason.
@@ -941,6 +1084,8 @@ el('sample').hidden = real !== undefined;
 paintChrome();
 renderLines();
 show('home');
+// The chrome (sre-chrome.js) loads after this script; once it is there, the Today page takes its icons.
+document.addEventListener('sre:chrome', () => { if (view === 'home') renderHome(); });
 
 // The device queue's own honesty (SP-2a · P-08): if this browser's storage refused, the manager is told so
 // before deciding anything — a decision that will not survive a reload is not "saved".

@@ -69,7 +69,7 @@ tiles, register + record drawer. Moved here from Wave 5 by the owner's choice (O
 look first; the screens that waves 2–5 later prove keep the anatomy they get here. The cost, stated when he chose:
 the critical fixes of Wave 2 start that much later, and a page may be touched twice (anatomy here, logic later).
 
-### Wave 1⅞ — ONE application (OB-16 UX-2a) · size M — DONE 5 Oct 2026 (#699); UX-2b (the *Today* page) follows, then Wave 2
+### Wave 1⅞ — ONE application (OB-16 UX-2a, #699) and the Today command centre (UX-2b, #700) · size M — DONE 5 Oct 2026; Wave 2 next
 The owner signed in to the hosted copy, landed on a list page of links, and refused to go on (5 Oct 2026, OB-16: *"i
 don't want this type of UI … with out this done we don't want move further"*; *"continuously telling demo version and
 only manager roll … please complete this as full product"*). Done: the sign-in lands in the store computer's workspace;
@@ -80,6 +80,11 @@ the hosted overlay); "demo" left the product's words. **UX-2b next:** `/manager/
 his composition — sales today, purchase orders open, indents, stock attention, purchase-to-shelf, needs-attention, cash
 and close — every figure from a real read or said to be "Not known" (P-08). Wave 2 starts when the owner says the look
 is right. Open to him: a written *"GO real data"* before the store trial runs on the shop's own products and prices.
+**UX-2b done the same day:** the Today page in the RMC-PRO pattern the owner chose (OB-17) — a band of figures with
+icons, *Needs attention*, *Purchase to shelf*, *Store today*, *Workspaces* — every figure computed on the store computer
+or "Not known" with the reason; icons in the rail; the sign-in in the product's frame. **OB-17 also rules from here:**
+software first (no hardware asks until the software is complete), English now (Tamil deferred to Wave 8), the owner
+registers a domain and gives only its name.
 
 ### Wave 2 — close authority and competing-write gaps (audit step 2) · size L — the critical wave, now also the owner's "all in one" block (OB-15, "A 1")
 The owner's direction of 4 Oct 2026 (OB-15) rides this wave because it is the same code: the command-centre home on
@@ -168,7 +173,7 @@ identity, hardware, hosted recovery evidence. **PA-13** (commercial platform, R8
 | UX-1b till and handhelds look | 1½ — done 4 Oct 2026 (#694) |
 | UX-1c page anatomy | 1¾ — done 4 Oct 2026 |
 | UX-2a one application (OB-16) | 1⅞ — done 5 Oct 2026 (#699) |
-| UX-2b the *Today* command centre (OB-15/OB-16) | 1⅞ — next, before Wave 2 |
+| UX-2b the *Today* command centre, rail icons, sign-in frame (OB-15/OB-16/OB-17) | 1⅞ — done 5 Oct 2026 (#700) |
 | Handheld enrolment on the hosted demo | 1½ (a demo device code for the practice phones) |
 | Quantity scale across pack sections | 4, with DF-3 |
 | SP-10 register | 8 |

@@ -131,3 +131,16 @@ describe('the copy is complete in both languages', () => {
     expect(gaps.ta, `Tamil missing: ${gaps.ta.join(', ')}`).toEqual([]);
   });
 });
+
+describe('a count the box holds WITHOUT a money value (UX-2b · P-08)', () => {
+  const NO_VALUE = { id: 'c-novalue', productId: 'GHEE', expectedMinor: 5, countedMinor: 4, varianceMinor: -1, uom: 'ea', requiredApproval: false, adjusted: true } as unknown as CountRow;
+  it('says "Value not known" on the row and keeps the total honest — never ₹NaN.NaN, never summed as zero', () => {
+    const view = session({ rows: () => [...ROWS, NO_VALUE] }).view('en');
+    expect(view.rows.find((r) => r.id === 'c-novalue')!.value).toBe('Value not known');
+    expect(view.totalValue).toBe('₹3,500.00 · 1 without a value');
+    expect(view.totalValue).not.toContain('NaN');
+    const onlyUnvalued = session({ rows: () => [NO_VALUE] }).view('en');
+    expect(onlyUnvalued.totalValue).toBe('Value not known');
+    expect(session({ rows: () => [NO_VALUE] }).view('ta').totalValue).toBe('மதிப்பு தெரியவில்லை');
+  });
+});
