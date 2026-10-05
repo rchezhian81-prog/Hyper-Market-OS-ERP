@@ -22,7 +22,7 @@
 // compensating document, never an edit (hard rule #2). There is no function here that changes a
 // sale, and a test reads the module's exports to prove it.
 
-import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
+import { minimumAgeOf, type CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 
 export interface IncomingSaleLine {
   readonly productId: string;
@@ -45,6 +45,17 @@ export interface IncomingSaleLine {
   readonly hsnCode?: string;
   /** The GST rate (basis points) the lane charged, frozen at the time of supply. Used with `hsnCode`. */
   readonly taxRateBps?: number;
+  /**
+   * The age check behind an age-restricted line (M12-FR-04 · Wave 2b audit PF-03): the age the line needed, the age the
+   * customer was confirmed to be, and the signed-in person who checked and when. A record, never a control here — the
+   * till refuses the sale without it; head office flags a restricted line that arrives without it (below).
+   */
+  readonly ageCheck?: {
+    readonly minimumAge?: number;
+    readonly confirmedAtLeast?: number;
+    readonly confirmedBy?: string;
+    readonly confirmedAt?: string;
+  };
 }
 
 export interface IncomingTender {
@@ -89,6 +100,8 @@ export type SaleExceptionKind =
   | 'batch_tracked_sold_without_batch'
   /** A line's captured batch was PAST its use-by date on the day it sold. **Critical**: a food-safety breach. */
   | 'sold_expired_batch'
+  /** An age-restricted product was sold with no confirmed age check covering it (PF-03). **Critical**: possibly a minor. */
+  | 'age_restricted_sold_without_check'
   /** The tenders do not add up to the total. Somebody's day will not balance. */
   | 'tender_does_not_sum_to_total'
   /** Priced from a pack far behind the current one. */
@@ -278,6 +291,27 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
         `${product.sku} batch ${line.batchId ?? '(unnamed)'} expired on ${line.batchExpiry} and was sold on ${sale.tradingDay} — past-use-by stock`,
         `ACT NOW: expired stock reached a customer. Check whether the receipt identifies them, pull the batch from the shelf, and find why the lane did not block it at scan.`,
         { productId: line.productId });
+    }
+
+    // An AGE-RESTRICTED product sold with no confirmed check covering its age (M12-FR-04 · Wave 2b audit PF-03). The till
+    // refuses such a sale before the money; this is head office's backstop for anything that slipped it — an old till, a
+    // product restricted after the lane's pack was built, an answer for a lower age. The sale stands (the goods are gone,
+    // hard rule #1), so it is surfaced CRITICAL, ranked with a recall: a minor may have been sold alcohol or tobacco.
+    const requiredAge = minimumAgeOf(product);
+    if (requiredAge !== undefined) {
+      const check = line.ageCheck;
+      const confirmedAge = typeof check?.confirmedAtLeast === 'number' ? check.confirmedAtLeast : 0;
+      const confirmer = typeof check?.confirmedBy === 'string' ? check.confirmedBy.trim() : '';
+      if (confirmedAge < requiredAge || confirmer === '') {
+        add('age_restricted_sold_without_check', 'critical',
+          check === undefined
+            ? `${product.sku} is restricted to ${requiredAge}+ and was sold with no age check recorded`
+            : confirmer === ''
+              ? `${product.sku} is restricted to ${requiredAge}+ and its age check names nobody`
+              : `${product.sku} is restricted to ${requiredAge}+ but the customer was only confirmed ${confirmedAge}+`,
+          'ACT NOW: an age-restricted item may have been sold to someone under age. Ask the cashier on that bill what was checked, and find why the till did not stop the sale (an old till, or a pack that predates the restriction).',
+          { productId: line.productId });
+      }
     }
 
     // Charged ABOVE the printed MRP (B1 / M03·M12). MRP is a LEGAL CEILING in India, not a shop policy,

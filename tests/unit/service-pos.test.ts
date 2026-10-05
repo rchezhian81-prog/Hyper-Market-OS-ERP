@@ -20,6 +20,7 @@ const CATALOGUE = new Map<string, CatalogueProduct>([
   ['P2', product('P2', { unitPriceMinor: 2_500 })],
   ['P3', product('P3', { recallBlock: true })],
   ['P4', product('P4', { batchTracked: true })], // perishable/lot-tracked: a sale must carry its batch
+  ['P5', product('P5', { regulatedFlags: { minimumAge: 21 } })], // age-restricted (PF-03)
 ]);
 
 const sale = (over: Partial<IncomingSale> = {}): IncomingSale => ({
@@ -184,6 +185,37 @@ describe('a sale of an expired batch is a food-safety breach (B8 / M10·M12)', (
     const r = acceptSale(sale({ lines: [line('2026-08-01')], tenders: [{ kind: 'cash', amountMinor: 4_900 }] }), ctx());
     expect(r.exceptions[0]?.kind).toBe('sold_expired_batch');
     expect(r.exceptions[0]?.severity).toBe('critical');
+  });
+});
+
+describe('an age-restricted item sold with no confirmed check is a critical breach (M12-FR-04 · Wave 2b PF-03)', () => {
+  const line = (ageCheck?: Record<string, unknown>) => ({ productId: 'P5', quantityMinor: 1, uom: 'each', unitPriceMinor: 5_000, lineTotalMinor: 5_000, ...(ageCheck === undefined ? {} : { ageCheck }) });
+  const confirmed = { minimumAge: 21, confirmedAtLeast: 21, confirmedBy: 'u-meena', confirmedAt: '2026-08-07T09:59:00Z' };
+
+  it('no check recorded: CRITICAL, banked, and the owner is told what to do', () => {
+    const r = acceptSale(sale({ lines: [line()] }), ctx());
+    expect(r.banked).toBe(true); // the goods are gone — the sale stands (hard rule #1)
+    const e = r.exceptions.find((x) => x.kind === 'age_restricted_sold_without_check')!;
+    expect(e).toMatchObject({ severity: 'critical', productId: 'P5' });
+    expect(e.detail).toContain('no age check recorded');
+    expect(e.ownerAction).toContain('ACT NOW');
+  });
+
+  it('a check for a LOWER age, or one that names nobody, is no check', () => {
+    const lower = acceptSale(sale({ lines: [line({ ...confirmed, confirmedAtLeast: 18 })] }), ctx()).exceptions.find((x) => x.kind === 'age_restricted_sold_without_check');
+    expect(lower?.detail).toContain('only confirmed 18+');
+    const nobody = acceptSale(sale({ lines: [line({ ...confirmed, confirmedBy: '  ' })] }), ctx()).exceptions.find((x) => x.kind === 'age_restricted_sold_without_check');
+    expect(nobody?.detail).toContain('names nobody');
+  });
+
+  it('a confirmed check covering the age is clean; an unrestricted product is never asked about', () => {
+    expect(kinds(acceptSale(sale({ lines: [line(confirmed)] }), ctx()).exceptions)).not.toContain('age_restricted_sold_without_check');
+    expect(kinds(acceptSale(sale(), ctx()).exceptions)).not.toContain('age_restricted_sold_without_check');
+  });
+
+  it('ranks the breach first, above a tender mismatch', () => {
+    const r = acceptSale(sale({ lines: [line()], tenders: [{ kind: 'cash', amountMinor: 4_900 }] }), ctx());
+    expect(r.exceptions[0]?.kind).toBe('age_restricted_sold_without_check');
   });
 });
 

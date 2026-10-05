@@ -11,7 +11,8 @@ import type { CatalogueProduct } from '../../packages/catalogue/src/catalogue';
  *
  *   1. **a recalled product sold** — it is in a customer's hands (M10-FR-04);
  *   2. **a charge above MRP** — a legal ceiling in India, a prosecution risk (B1 / M03·M12);
- *   3. **an expired batch sold** — past-use-by food, an FSSAI breach (B8 / M10·M12).
+ *   3. **an expired batch sold** — past-use-by food, an FSSAI breach (B8 / M10·M12);
+ *   4. **an age-restricted item sold with no confirmed age check** — possibly to a minor (M12-FR-04 · Wave 2b PF-03).
  *
  * Each is banked (the money is in the drawer, hard rule #1) but must be surfaced **critical** and ranked
  * **ahead of** any money-variance finding, because a customer outranks a number. This guardrail locks that
@@ -26,6 +27,7 @@ const product = (id: string, over: Partial<CatalogueProduct> = {}): CataloguePro
 const CATALOGUE = new Map<string, CatalogueProduct>([
   ['RECALLED', product('RECALLED', { recallBlock: true })],
   ['NORMAL', product('NORMAL')],
+  ['BEER', product('BEER', { regulatedFlags: { minimumAge: 21 } })],
 ]);
 const AT = '2026-08-07';
 const ctx = (): IntakeContext => ({
@@ -44,10 +46,11 @@ const BREACHES: Readonly<Record<string, IncomingSale>> = {
   sold_a_recalled_product: sale({ lines: [line({ productId: 'RECALLED' })] }),
   sold_above_mrp: sale({ totalMinor: 9_500, lines: [line({ unitPriceMinor: 9_500, lineTotalMinor: 9_500 })], tenders: [{ kind: 'cash', amountMinor: 9_500 }] }),
   sold_expired_batch: sale({ lines: [line({ batchId: 'LOT-1', batchExpiry: '2026-08-01' })] }),
+  age_restricted_sold_without_check: sale({ lines: [line({ productId: 'BEER' })] }),
 };
 
 describe('the till surfaces every critical breach', () => {
-  it('flags each of the three as CRITICAL, and banks the sale', () => {
+  it('flags each of the four as CRITICAL, and banks the sale', () => {
     for (const [kind, s] of Object.entries(BREACHES)) {
       const r = acceptSale(s, ctx());
       expect(r.banked, `${kind} was not banked`).toBe(true);
@@ -67,13 +70,16 @@ describe('the till surfaces every critical breach', () => {
     }
   });
 
-  it('TRIPWIRE — a clean sale raises none of the three (the guard is not passing vacuously)', () => {
+  it('TRIPWIRE — a clean sale raises none of the four (the guard is not passing vacuously)', () => {
     const r = acceptSale(sale({ lines: [line({ batchId: 'LOT-9', batchExpiry: '2026-12-31' })] }), ctx());
+    // …and a restricted line WITH its confirmed check is clean too.
+    const checked = acceptSale(sale({ lines: [line({ productId: 'BEER', ageCheck: { minimumAge: 21, confirmedAtLeast: 21, confirmedBy: 'u-meena', confirmedAt: `${AT}T09:59:00Z` } })] }), ctx());
+    expect(checked.exceptions.filter((e) => e.severity === 'critical')).toEqual([]);
     const criticalKinds = r.exceptions.filter((e) => e.severity === 'critical').map((e) => e.kind);
     expect(criticalKinds).toEqual([]);
   });
 
-  it('the three breach kinds are all declared critical in the source (a downgrade fails here)', () => {
+  it('the four breach kinds are all declared critical in the source (a downgrade fails here)', () => {
     // A behavioural test can be deleted; this reads the module so a silent severity change is caught too.
     const src = readFileSync(new URL('../../services/pos/src/sale-intake.ts', import.meta.url).pathname, 'utf8');
     for (const kind of Object.keys(BREACHES)) {
