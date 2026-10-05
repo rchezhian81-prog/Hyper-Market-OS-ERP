@@ -56,6 +56,10 @@ export interface ScanInput {
   readonly hsnCode?: string;
   /** Optional promotion grouping tag (mix-match). */
   readonly group?: string;
+  /** The product's minimum age in whole years, from the pack (`regulatedFlags.minimumAge`) — absent when unrestricted.
+   *  A restricted item joins the basket only once the basket holds a CONFIRMED answer for at least this age
+   *  (M12-FR-04 · Wave 2b audit PF-03). */
+  readonly minimumAge?: number;
 }
 
 /** A basket line as the cashier sees it. */
@@ -70,8 +74,25 @@ export interface BasketEntry {
   /** The HSN / tax-class code the line was priced under (frozen at supply for the GST return, A5). */
   readonly hsnCode?: string;
   readonly group?: string;
+  /** The minimum age this line needs, when it is age-restricted (PF-03). */
+  readonly minimumAge?: number;
   readonly voided: boolean;
   readonly voidReason?: string;
+}
+
+/**
+ * One answer to the age question, kept in the basket (Wave 2b · audit PF-03). The question is about the CUSTOMER — "is the
+ * customer 18 or over?" — so one confirmed answer covers every item in this basket that needs that age or less; a 21+
+ * item needs its own question. A refusal is kept too: "warned and NOT sold" is the evidence loss prevention reads (M15).
+ */
+export interface AgeAnswer {
+  readonly minimumAge: number;
+  readonly outcome: 'confirmed' | 'refused';
+  /** The signed-in person who checked the identification. */
+  readonly by: string;
+  readonly at: string;
+  /** The item the question was asked for. */
+  readonly productId?: string;
 }
 
 export type PosState = 'idle' | 'selling' | 'tendering' | 'committed' | 'suspended';
@@ -148,6 +169,35 @@ export class NoOperatorError extends Error {
   }
 }
 
+/**
+ * An age-restricted item was scanned and this basket holds no confirmed answer for that age (M12-FR-04 · Wave 2b PF-03).
+ * The line is NOT added — "warned and sold" is the outcome to prevent — so the till asks the question and, on a yes,
+ * scans again. Thrown, not returned, so a screen that has not learned to ask still refuses rather than sells.
+ */
+export class AgeCheckRequiredError extends Error {
+  readonly laneMessage: string;
+  constructor(public readonly productId: string, public readonly description: string, public readonly minimumAge: number) {
+    super(`${description} is age restricted (${minimumAge}+) and the customer's age has not been checked.`);
+    this.name = 'AgeCheckRequiredError';
+    this.laneMessage = `${description} is age restricted. Check the customer's identification: they must be ${minimumAge} or over.`;
+  }
+}
+
+/**
+ * The commit's own check found an age-restricted line with no confirmed answer covering it (Wave 2b PF-03). Refused BEFORE
+ * the disk and before the money — a second gate, because a rule enforced only at the door is a rule one new door away
+ * from not being enforced at all.
+ */
+export class AgeCheckNotDoneError extends Error {
+  readonly laneMessage: string;
+  constructor(public readonly saleId: string, public readonly unchecked: readonly { readonly productId: string; readonly description: string; readonly minimumAge: number }[]) {
+    super(`sale ${saleId}: ${unchecked.length} age-restricted line(s) have no confirmed age check.`);
+    this.name = 'AgeCheckNotDoneError';
+    const first = unchecked[0];
+    this.laneMessage = `Do not take payment. ${first?.description ?? 'An item'} is age restricted and the customer's age has not been checked. Check their identification, or remove the item.`;
+  }
+}
+
 /** This till has no lane id — the store box was never told which lane it is (SP-4b · F09). Refused before the money. */
 export class NoLaneError extends Error {
   readonly laneMessage = 'This till has no lane id. Do not take money — ask the installer to set the lane on this store computer.';
@@ -165,6 +215,8 @@ export class PosSession {
   private promotions: readonly Promotion[] = [];
   /** The cashier who signed in at this till (SP-4b) — over the configured one, when both exist. */
   private operatorId: string | undefined;
+  /** Every answer to the age question for THIS basket, in order (PF-03). Cleared with the basket, kept across hold/recall. */
+  private readonly ageAnswerLog: AgeAnswer[] = [];
   /** Evaluation instant for effective-dated promotions; set by the caller (no clock). */
   private nowRef = '1970-01-01T00:00:00Z';
 
@@ -220,6 +272,11 @@ export class PosSession {
     if (this.state === 'committed' || this.state === 'suspended') {
       throw new SessionStateError('scan', this.state);
     }
+    // An age-restricted item joins the basket only behind a confirmed answer for at least its age (PF-03).
+    const minimumAge = validAge(input.minimumAge);
+    if (minimumAge !== undefined && this.ageConfirmedAtLeast() < minimumAge) {
+      throw new AgeCheckRequiredError(input.productId, input.description, minimumAge);
+    }
     this.seq += 1;
     const entry: BasketEntry = Object.freeze({
       lineId: `L${this.seq}`,
@@ -231,11 +288,55 @@ export class PosSession {
       taxRate: input.taxRate ?? this.config.defaultTaxRate,
       ...(input.hsnCode !== undefined ? { hsnCode: input.hsnCode } : {}),
       group: input.group,
+      ...(minimumAge === undefined ? {} : { minimumAge }),
       voided: false,
     });
     this.lines.push(entry);
     this.state = 'selling';
     return entry;
+  }
+
+  /**
+   * The cashier checked the customer's identification and they ARE at least `minimumAge` (PF-03). Recorded in the
+   * basket in the signed-in person's name; refused when nobody is signed in — an answer in nobody's name is no answer.
+   */
+  confirmAge(minimumAge: number, atIsoUtc: string, productId?: string): AgeAnswer {
+    return this.answerAge('confirmed', minimumAge, atIsoUtc, productId);
+  }
+
+  /** The customer could not show they are old enough: the item is NOT sold, and that is kept as evidence (PF-03, M15). */
+  refuseAge(minimumAge: number, atIsoUtc: string, productId?: string): AgeAnswer {
+    return this.answerAge('refused', minimumAge, atIsoUtc, productId);
+  }
+
+  private answerAge(outcome: AgeAnswer['outcome'], minimumAge: number, atIsoUtc: string, productId?: string): AgeAnswer {
+    if (this.state === 'committed' || this.state === 'suspended') {
+      throw new SessionStateError('answer the age check', this.state);
+    }
+    const age = validAge(minimumAge);
+    if (age === undefined) throw new RangeError(`A minimum age must be a positive whole number of years, got ${minimumAge}.`);
+    const by = this.operator();
+    if (by === undefined) throw new NoOperatorError('answer the age check');
+    const answer: AgeAnswer = Object.freeze({ minimumAge: age, outcome, by, at: atIsoUtc, ...(productId === undefined ? {} : { productId }) });
+    this.ageAnswerLog.push(answer);
+    return answer;
+  }
+
+  /** The highest age this basket's customer has been CONFIRMED to be — 0 when nobody has checked (PF-03). */
+  ageConfirmedAtLeast(): number {
+    return this.ageAnswerLog.reduce((most, a) => (a.outcome === 'confirmed' && a.minimumAge > most ? a.minimumAge : most), 0);
+  }
+
+  /** Every age answer given for this basket, in order. */
+  ageAnswers(): readonly AgeAnswer[] {
+    return this.ageAnswerLog.slice();
+  }
+
+  /** The confirmed answer that covers a line needing `minimumAge` — the lowest confirmed age at or above it. */
+  private confirmationFor(minimumAge: number): AgeAnswer | undefined {
+    return this.ageAnswerLog
+      .filter((a) => a.outcome === 'confirmed' && a.minimumAge >= minimumAge)
+      .sort((a, b) => a.minimumAge - b.minimumAge)[0];
   }
 
   /** The basket as shown on screen (voided lines retained, marked — never erased). */
@@ -448,6 +549,13 @@ export class PosSession {
     if (laneId === undefined) throw new NoLaneError();
 
     const active = this.activeLines();
+    // **The age gate, again, at the moment it matters** (PF-03): every age-restricted line still in the basket must be
+    // covered by a confirmed answer. The scan already refuses an unanswered one; this second gate is the one the audit
+    // found missing, and it is what makes any other way onto the bill unable to sell to a minor.
+    const unchecked = active
+      .filter((l) => l.minimumAge !== undefined && this.confirmationFor(l.minimumAge) === undefined)
+      .map((l) => ({ productId: l.productId, description: l.description, minimumAge: l.minimumAge as number }));
+    if (unchecked.length > 0) throw new AgeCheckNotDoneError(saleId, unchecked);
     const input = {
         id: saleId,
         number,
@@ -486,6 +594,9 @@ export class PosSession {
         lineTotalMinor: lineTotalMinor - (perLineDiscount.get(l.lineId) ?? 0),
         taxRateBps: l.taxRate.bps,
         ...(l.hsnCode !== undefined ? { hsnCode: l.hsnCode } : {}),
+        // The evidence for a restricted line: what age it needed, and who confirmed it when (PF-03) — so head office can
+        // see the check was made, and flag any restricted line that arrives without one.
+        ...(l.minimumAge === undefined ? {} : { ageCheck: ageEvidence(l.minimumAge, this.confirmationFor(l.minimumAge)) }),
       };
     });
     // The record's net and GST are the sum of what is INSIDE each line as actually charged — after the attributed
@@ -543,6 +654,8 @@ export class PosSession {
       netMinor: inside.net,
       taxMinor: inside.tax,
       currency: totals.payable.currency,
+      // Every answer to the age question on this bill, refusals included (PF-03 · M15 loss prevention).
+      ...(this.ageAnswerLog.length === 0 ? {} : { ageAnswers: this.ageAnswerLog.slice() }),
     }));
     if (!outcome.committed) throw new LocalCommitRefusedError(saleId, outcome.laneMessage);
 
@@ -575,8 +688,26 @@ export class PosSession {
   newSale(): void {
     this.lines.length = 0;
     this.seq = 0;
+    // A new basket is a new customer: no age answer carries over (PF-03).
+    this.ageAnswerLog.length = 0;
     this.state = 'idle';
   }
+}
+
+/** A positive whole number of years, or undefined — the only shape an age restriction takes (`minimumAgeOf`). */
+function validAge(age: number | undefined): number | undefined {
+  return typeof age === 'number' && Number.isInteger(age) && age > 0 ? age : undefined;
+}
+
+/** The age evidence a sale record carries for one restricted line. `confirmation` is always present here — the commit
+ *  gate refused the sale otherwise. */
+function ageEvidence(minimumAge: number, confirmation: AgeAnswer | undefined): { minimumAge: number; confirmedAtLeast: number; confirmedBy: string; confirmedAt: string } {
+  return {
+    minimumAge,
+    confirmedAtLeast: confirmation?.minimumAge ?? 0,
+    confirmedBy: confirmation?.by ?? '',
+    confirmedAt: confirmation?.at ?? '',
+  };
 }
 
 /** Convenience: a tax rate from a percentage (e.g. 18 → 18%). */

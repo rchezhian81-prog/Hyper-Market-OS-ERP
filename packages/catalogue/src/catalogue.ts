@@ -130,6 +130,20 @@ export interface ScanResult {
   readonly priceOverrideMinor?: number;
   /** True when the lane must prompt for age before selling (M12-FR-04). */
   readonly requiresAgeCheck: boolean;
+  /** The minimum age in whole years when `requiresAgeCheck` — the number the question asks and the basket must hold
+   *  a confirmed answer for (Wave 2b · audit PF-03). Absent for an unrestricted product. */
+  readonly minimumAge?: number;
+}
+
+/**
+ * A product's minimum age in whole years, or `undefined` when it is not age-restricted (M12-FR-04 · Wave 2b PF-03). The ONE
+ * reading of `regulatedFlags.minimumAge` — the lane's scan, the till's basket and head office's intake all ask this, so
+ * a product cannot be "restricted" in one place and not in another. Only a positive whole number is a restriction (the
+ * product master refuses anything else before it publishes — `regulatedFlagsFor`).
+ */
+export function minimumAgeOf(product: Pick<CatalogueProduct, 'regulatedFlags'>): number | undefined {
+  const minimumAge = product.regulatedFlags?.['minimumAge'];
+  return typeof minimumAge === 'number' && Number.isInteger(minimumAge) && minimumAge > 0 ? minimumAge : undefined;
 }
 
 export class UnknownBarcodeError extends Error {
@@ -316,8 +330,13 @@ export class CatalogueCache {
   }
 
   private ageCheck(product: CatalogueProduct): boolean {
-    const minimumAge = product.regulatedFlags?.['minimumAge'];
-    return typeof minimumAge === 'number' && minimumAge > 0;
+    return minimumAgeOf(product) !== undefined;
+  }
+
+  /** The age fields of a scan result — `requiresAgeCheck` and, when restricted, the `minimumAge` the lane must ask. */
+  private age(product: CatalogueProduct): { requiresAgeCheck: boolean; minimumAge?: number } {
+    const minimumAge = minimumAgeOf(product);
+    return minimumAge === undefined ? { requiresAgeCheck: false } : { requiresAgeCheck: true, minimumAge };
   }
 
   /**
@@ -345,7 +364,7 @@ export class CatalogueCache {
         product,
         barcodeKind: direct.kind,
         quantityMinor: 1,
-        requiresAgeCheck: this.ageCheck(product),
+        ...this.age(product),
       };
     }
 
@@ -365,7 +384,7 @@ export class CatalogueCache {
           // item is refused at the lane, offline — no manual date entry.
           const barcodeExpiry = parseGs1Date(embedded.valueDigits);
           this.assertNotExpired(product, { asOf: batch?.asOf, ...(barcodeExpiry === undefined ? {} : { batchExpiry: barcodeExpiry }) });
-          return { product, barcodeKind: 'standard', quantityMinor: 1, requiresAgeCheck: this.ageCheck(product) };
+          return { product, barcodeKind: 'standard', quantityMinor: 1, ...this.age(product) };
         }
         this.assertNotExpired(product, batch); // an explicit batch context still applies to weight/price scans
         const isWeight = embedded.rule.valueKind === 'weight';
@@ -375,7 +394,7 @@ export class CatalogueCache {
           // A weight barcode carries the quantity; a price barcode is one unit at that price.
           quantityMinor: isWeight ? embedded.value : 1,
           priceOverrideMinor: isWeight ? undefined : embedded.value,
-          requiresAgeCheck: this.ageCheck(product),
+          ...this.age(product),
         };
       }
     }

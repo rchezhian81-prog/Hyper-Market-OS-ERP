@@ -9,7 +9,7 @@ import { money, type CurrencyCode } from '../../../packages/contracts/src/money'
 import type { Uom } from '../../../packages/contracts/src/quantity';
 import { rate } from '../../../packages/contracts/src/rate';
 import type { Tender } from '../../../packages/tender/src/tender';
-import type { CatalogueCache, ScanBatchContext } from '../../../packages/catalogue/src/catalogue';
+import { minimumAgeOf, type CatalogueCache, type ScanBatchContext } from '../../../packages/catalogue/src/catalogue';
 import type { PosSession, SyncBadge } from './session';
 import { presentSyncBadge, type StatusPresentation } from '../../../packages/a11y/src/signals';
 
@@ -42,6 +42,17 @@ export interface ScanOutcome {
   readonly amountMinor: number;
   /** The lane must prompt for age before completing this sale (M12-FR-04). */
   readonly requiresAgeCheck: boolean;
+  /** The age that was asked for, when the item is age-restricted (PF-03). */
+  readonly minimumAge?: number;
+}
+
+/** One age answer as the view shows it (PF-03). */
+export interface ViewAgeAnswer {
+  readonly minimumAge: number;
+  readonly outcome: 'confirmed' | 'refused';
+  readonly by: string;
+  readonly at: string;
+  readonly productId?: string;
 }
 
 /** The surface `web/app.js` binds to (attached as `window.posSession`). */
@@ -115,6 +126,17 @@ export interface PosView {
     readonly outcome: 'approved' | 'declined' | 'no_answer';
   }): Promise<string>;
 
+  /**
+   * The cashier checked identification: the customer IS at least `minimumAge` (M12-FR-04 · Wave 2b PF-03). Recorded in the
+   * basket in the signed-in person's name, so the next scan of an item needing that age or less goes on. Throws when
+   * nobody is signed in (`NoOperatorError`, with `laneMessage`).
+   */
+  confirmAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer;
+  /** The customer could not show they are old enough: the item is not sold, and the refusal is kept as evidence. */
+  refuseAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer;
+  /** The highest age this basket's customer has been confirmed to be (0 = not checked). */
+  ageConfirmedAtLeast(): number;
+
   /** Park the basket for later — the customer forgot something, or is fetching their card. */
   suspend(): void;
   /** Bring a parked basket back. */
@@ -136,12 +158,17 @@ export function createPosView(
 ): PosView {
   return {
     scan(input: ViewScan): void {
+      // A line added by id still carries the product's age restriction from this lane's catalogue — no way onto the bill
+      // skips the question (PF-03).
+      const known = catalogue?.findByProductId(input.productId);
+      const minimumAge = known === undefined ? undefined : minimumAgeOf(known);
       session.scan({
         productId: input.productId,
         description: input.description,
         unitPrice: money(input.unitPriceMinor, currency),
         quantityMinor: input.qty,
         uom: (input.uom ?? 'ea') as Uom,
+        ...(minimumAge === undefined ? {} : { minimumAge }),
       });
     },
 
@@ -160,6 +187,8 @@ export function createPosView(
       // The catalogue refuses an unknown code, a non-sellable status, a recalled item, or — when the
       // lane passes the scanned batch's use-by date and today — an expired batch (offline included, B8).
       // The error surfaces to the cashier unchanged.
+      // An age-restricted item with no confirmed answer in this basket is refused by the session with
+      // `AgeCheckRequiredError` — the line is NOT added; the screen asks, and scans again on a yes (PF-03).
       const hit = catalogue.scan(code, batch);
       // A price-embedded barcode carries the line price for one unit; otherwise the
       // catalogue's unit price applies to the scanned quantity.
@@ -173,6 +202,7 @@ export function createPosView(
         taxRate: rate(hit.product.taxBps),
         // Freeze the HSN the lane priced under (from the pack), for the GST return (A5). Record only.
         ...(hit.product.hsnCode !== undefined ? { hsnCode: hit.product.hsnCode } : {}),
+        ...(hit.minimumAge === undefined ? {} : { minimumAge: hit.minimumAge }),
       });
       return {
         lineId: entry.lineId,
@@ -180,7 +210,20 @@ export function createPosView(
         qty: entry.quantityMinor,
         amountMinor: unitPriceMinor,
         requiresAgeCheck: hit.requiresAgeCheck,
+        ...(hit.minimumAge === undefined ? {} : { minimumAge: hit.minimumAge }),
       };
+    },
+
+    confirmAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer {
+      return session.confirmAge(minimumAge, atIsoUtc, productId);
+    },
+
+    refuseAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer {
+      return session.refuseAge(minimumAge, atIsoUtc, productId);
+    },
+
+    ageConfirmedAtLeast(): number {
+      return session.ageConfirmedAtLeast();
     },
 
     setQuantity(lineId: string, qty: number): void {

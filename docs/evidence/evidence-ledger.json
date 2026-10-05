@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 904,
+  "testFiles": 907,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -680,10 +680,10 @@
       "id": "M12",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 12,
-        "integration": 12,
+        "unit": 13,
+        "integration": 13,
         "realDb": 3,
-        "browser": 5,
+        "browser": 6,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -695,6 +695,7 @@
           "tests/unit/edge-cloud-sale.test.ts",
           "tests/unit/evidence-ledger.test.ts",
           "tests/unit/pending-recovery.test.ts",
+          "tests/unit/pos-age-check-is-enforced-at-commit.test.ts",
           "tests/unit/pos-lane-guards.test.ts",
           "tests/unit/pos-session.test.ts",
           "tests/unit/quotations.test.ts",
@@ -704,6 +705,7 @@
           "tests/unit/tender.test.ts"
         ],
         "integration": [
+          "tests/integration/an-age-restricted-sale-reaches-head-office-with-its-check.test.ts",
           "tests/integration/catalogue-pack-preview.test.ts",
           "tests/integration/pending-tender-recovery.test.ts",
           "tests/integration/product-master.test.ts",
@@ -727,7 +729,8 @@
           "tests/e2e/the-served-till-closes.e2e.ts",
           "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
           "tests/e2e/the-served-till-takes-a-sale.e2e.ts",
-          "tests/e2e/the-store-trades-a-day.e2e.ts"
+          "tests/e2e/the-store-trades-a-day.e2e.ts",
+          "tests/e2e/the-till-asks-the-age-question.e2e.ts"
         ],
         "connected": [
           "tests/e2e/the-store-trades-a-day.e2e.ts"
@@ -880,7 +883,7 @@
       "id": "M15",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 13,
+        "unit": 14,
         "integration": 11,
         "realDb": 1,
         "browser": 3,
@@ -899,6 +902,7 @@
           "tests/unit/lp-cases.test.ts",
           "tests/unit/lp-worklist.test.ts",
           "tests/unit/no-receipt-returns-route.test.ts",
+          "tests/unit/pos-age-check-is-enforced-at-commit.test.ts",
           "tests/unit/pos-session.test.ts",
           "tests/unit/pos-till-session.test.ts",
           "tests/unit/service-pos.test.ts",

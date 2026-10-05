@@ -39,6 +39,12 @@ const WORDS = {
   en: {
     staleShell: 'No connection to the store computer. Billing still works. This price list is what this lane was last given, at',
     scanToBegin: 'Scan an item to begin.', qty: 'Qty', void: 'Void', tender: 'Tender',
+    // The age question (M12-FR-04 · Wave 2b PF-03): asked BEFORE the item joins the bill, answered in the signed-in
+    // cashier's name. {item} and {age} are filled in from the product the till just scanned.
+    ageQuestion: '{item} is age restricted. Check the customer\'s identification. Is the customer {age} or over?',
+    ageYes: 'Yes — ID checked, {age} or over', ageNo: 'No — do not sell',
+    ageNotSoldTitle: 'Item not sold',
+    ageNotSold: 'The customer could not show they are {age} or over, so {item} was not added to the bill. Nothing else changes.',
     // Who is on the till (SP-4b · F09): the lane the box said it is, and the cashier who signed in — or nobody.
     lane: 'Lane', noLane: 'No lane set on this till', notSignedIn: 'Nobody signed in',
     signIn: 'Sign in', signOut: 'Sign out', signInTitle: 'Your staff code',
@@ -139,6 +145,10 @@ const WORDS = {
   ta: {
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. பில் போடுவது வேலை செய்யும். இந்த விலைப் பட்டியல் இந்த லேனுக்குக் கடைசியாகக் கொடுக்கப்பட்டது:',
     scanToBegin: 'தொடங்க ஒரு பொருளை ஸ்கேன் செய்யவும்.', qty: 'எண்ணிக்கை', void: 'நீக்கு',
+    ageQuestion: '{item} வயது வரம்புள்ள பொருள். வாடிக்கையாளரின் அடையாள அட்டையைச் சரிபார்க்கவும். வாடிக்கையாளருக்கு {age} வயது அல்லது அதற்கு மேல் ஆகிறதா?',
+    ageYes: 'ஆம் — அடையாளம் சரிபார்க்கப்பட்டது, {age} அல்லது அதற்கு மேல்', ageNo: 'இல்லை — விற்க வேண்டாம்',
+    ageNotSoldTitle: 'பொருள் விற்கப்படவில்லை',
+    ageNotSold: 'வாடிக்கையாளர் {age} வயது அல்லது அதற்கு மேல் என்று காட்ட முடியவில்லை, எனவே {item} பில்லில் சேர்க்கப்படவில்லை. வேறு எதுவும் மாறவில்லை.',
     lane: 'லேன்', noLane: 'இந்த கவுண்டருக்கு லேன் அமைக்கப்படவில்லை', notSignedIn: 'யாரும் உள்நுழையவில்லை',
     signIn: 'உள்நுழை', signOut: 'வெளியேறு', signInTitle: 'உங்கள் பணியாளர் குறியீடு',
     signInHint: 'உங்கள் பேட்ஜை ஸ்கேன் செய்யவும் அல்லது பணியாளர் குறியீட்டை உள்ளிட்டு சரி அழுத்தவும். ஒவ்வொரு விற்பனையும் யார் செய்தார் என்பதைக் குறிக்கும்.',
@@ -287,6 +297,9 @@ function demoSession() {
     syncBadge: () => ({ connection: 'online', unsentCount: 0 }),
     scanBarcode() { throw new Error('No price list on this lane.'); },
     hasCatalogue: () => false,
+    // No catalogue, so nothing restricted can be scanned; the age answers exist so the shell never calls a missing method.
+    confirmAge() { throw new Error('No price list on this lane.'); }, refuseAge() { throw new Error('No price list on this lane.'); },
+    ageConfirmedAtLeast: () => 0,
     // No identity without the bundle either — the stand-in says so rather than inventing a lane or a cashier.
     signIn() {}, signOut() {}, operator: () => undefined,
     lane: () => ({ laneId: null, tradingDayCutoff: '00:00', tradingDayAt: (at) => at.slice(0, 10) }),
@@ -1339,6 +1352,36 @@ el('unsent').addEventListener('click', () => {
 // last tapped, which at a till is a quantity field, and a barcode typed into a quantity is a sale
 // of nine hundred million units. Digits are collected globally and flushed on Enter.
 let scanBuffer = '';
+
+/**
+ * Ask the age question (M12-FR-04 · Wave 2b audit PF-03) on the big-button panel — two answers, nothing else on screen.
+ * The item is NOT on the bill while this is open: the session refused it. "Yes" records the answer in the signed-in
+ * cashier's name and scans the item again; "No" records the refusal (loss-prevention evidence) and says the item was not
+ * sold; Cancel adds nothing and records nothing. The commit checks the answer again before the money is taken.
+ */
+async function askAge(refusal, retry) {
+  const fill = (words) => words.replace('{item}', refusal.description).replace(/\{age\}/g, String(refusal.minimumAge));
+  const answer = await choose(fill(t('ageQuestion')), [
+    { label: fill(t('ageYes')), value: 'yes' },
+    { label: t('ageNo'), value: 'no' },
+  ]);
+  if (answer === null) return; // backed out: nothing added, nothing recorded
+  const at = new Date().toISOString();
+  try {
+    if (answer === 'yes') {
+      session.confirmAge(refusal.minimumAge, at, refusal.productId);
+      retry();
+      render();
+      return;
+    }
+    session.refuseAge(refusal.minimumAge, at, refusal.productId);
+  } catch (e) {
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+    return;
+  }
+  render();
+  tell(t('ageNotSoldTitle'), fill(t('ageNotSold')));
+}
 window.addEventListener('keydown', (event) => {
   // A panel is open; the scan is not for us.
   if (!el('sheet').hidden || !el('pay').hidden || !el('count').hidden || !el('refusal').hidden) return;
@@ -1346,11 +1389,17 @@ window.addEventListener('keydown', (event) => {
     const code = scanBuffer;
     scanBuffer = '';
     if (code.length < 6) return; // a person pressing Enter, not a scanner
+    // A scanner ends every code with Enter, and Enter on a FOCUSED button presses it: the button last tapped — the
+    // language toggle, Void, Tender — would be pressed by the next scan. The Enter belongs to the scan, so it stops here.
+    event.preventDefault();
     if (!session.hasCatalogue()) { tell(t('read'), t('noCatalogue')); return; }
     try {
       session.scanBarcode(code);
       render();
     } catch (e) {
+      // An age-restricted item with no confirmed answer in this basket: the session refused to add it (PF-03). Ask, and
+      // scan again only on a yes.
+      if (e && e.name === 'AgeCheckRequiredError') { void askAge(e, () => session.scanBarcode(code)); return; }
       tell(t('read'), String(e && e.message ? e.message : e));
     }
     return;

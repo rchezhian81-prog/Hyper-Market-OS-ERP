@@ -109,7 +109,9 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
   drafted and approved by two people, the decider's branch checked, a lender's scope the server's; a facilities check
   is completed by one signed-in person and verified by another with their own Verify, an incident is closed by the
   signed-in person and never by whoever recorded or reported a serious one; **PF-03** the age-restriction
-  answer is kept in the basket and enforced at commit.
+  answer is kept in the basket and enforced at commit — **DONE 5 Oct 2026 (#708, 2b-iv)**: the till asks before a
+  restricted item joins the bill, the answer is the signed-in cashier's, the commit checks again before the disk, the
+  record carries the evidence, head office flags any restricted line without it CRITICAL.
 - **PA-01 / EA-03** branch and resource scope derived on the server from the person's grants — **DONE 5 Oct 2026 (#704)**:
   `ctx.scope` from the grants on every request, the kernel's `narrowScope` / `assertBranchInScope`, applied to the
   consolidation, drill-through and roster routes the audit executed (the other fifteen branch-keyed route files
@@ -191,7 +193,7 @@ identity, hardware, hosted recovery evidence. **PA-13** (commercial platform, R8
 | UX-2b the *Today* command centre, rail icons, sign-in frame (OB-15/OB-16/OB-17) | 1⅞ — done 5 Oct 2026 (#700) |
 | UX-3 the sign-in page in the owner's approved design (OB-18) | between 2b-iii-a and 2b-iii-b, at the owner's word — done 5 Oct 2026 (#706) |
 | Wave 2a write guards — PF-01 refunds/gift/points; SF-04 transfers; FUL-02 promises; PA-11 audit chain | 2 — done 5 Oct 2026 (#701, #702) |
-| Wave 2b identity criticals — PA-02 leaver; PA-01/EA-03 scope; PA-03 second person; PF-03 age check; PF-02 till credential | 2 — PA-02 done 5 Oct 2026 (#703); PA-01/EA-03 done 5 Oct 2026 (#704); PA-03 done 5 Oct 2026 (#705 grants/templates/decisions/delegations, #707 facilities); PF-03 and PF-02 next, in order |
+| Wave 2b identity criticals — PA-02 leaver; PA-01/EA-03 scope; PA-03 second person; PF-03 age check; PF-02 till credential | 2 — PA-02 done 5 Oct 2026 (#703); PA-01/EA-03 done 5 Oct 2026 (#704); PA-03 done 5 Oct 2026 (#705 grants/templates/decisions/delegations, #707 facilities); PF-03 done 5 Oct 2026 (#708); PF-02 next |
 | Handheld enrolment on the hosted demo | 1½ (a demo device code for the practice phones) |
 | Quantity scale across pack sections | 4, with DF-3 |
 | SP-10 register | 8 |

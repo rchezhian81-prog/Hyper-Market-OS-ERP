@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { PosSession, taxRateFromPercent, createPosView, type PosView } from '../../apps/pos/src/index';
+import { AgeCheckRequiredError } from '../../apps/pos/src/session';
 import { CatalogueCache, RecalledItemError, ExpiredItemError, UnknownBarcodeError } from '../../packages/catalogue/src/index';
 import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/index';
 import { SyncOutbox } from '../../packages/sync/src/index';
@@ -65,9 +66,15 @@ describe('POS barcode scanning', () => {
     expect(view.payableMinor()).toBe(98_72); // 1.234 × ₹80, exact
   });
 
-  it('flags an age-restricted item for the lane to prompt', () => {
+  it('an age-restricted item is NOT added until the age question is answered (PF-03); then it is, and says what was asked', () => {
     const { view } = newLane();
-    expect(view.scanBarcode('8901234500003').requiresAgeCheck).toBe(true);
+    expect(() => view.scanBarcode('8901234500003')).toThrow(AgeCheckRequiredError);
+    expect(view.basket()).toHaveLength(0); // "warned and sold" is the outcome prevented: nothing on the bill
+    view.confirmAge(21, AT, 'p3');
+    const outcome = view.scanBarcode('8901234500003');
+    expect(outcome.requiresAgeCheck).toBe(true);
+    expect(outcome.minimumAge).toBe(21);
+    expect(view.basket()).toHaveLength(1);
   });
 
   it('refuses a recalled item at the scan — even offline', () => {

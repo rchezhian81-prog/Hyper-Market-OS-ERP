@@ -5,6 +5,53 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-iv — the age answer lives in the basket and is enforced at commit, on the till and at head office (5 October 2026)
+
+- **The finding (audit PF-03, CRITICAL):** the audit booted the real till with a product flagged 18+. The scan answered
+  "age check required", the served scan handler threw that answer away, nothing at the commit looked, and the sale went
+  through with no question asked.
+- **What changed (pull request #708):**
+  - **The till asks before the item joins the bill.** `apps/pos/src/session.ts`: a restricted item is refused by the
+    basket (`AgeCheckRequiredError`, nothing added) until the basket holds a CONFIRMED answer for at least its age. The
+    answer (`confirmAge` / `refuseAge`) is given by the signed-in cashier — nobody signed in, no answer — and is kept in
+    the basket (`AgeAnswer`). The question is about the customer, so one "yes, 18 or over" covers every 18+ item on that
+    bill; a 21+ item is asked separately. A refusal adds nothing and is kept as loss-prevention evidence. A quantity
+    change keeps the answer; hold and recall keep it; a new basket starts with none.
+  - **The commit checks again, before the disk** (`AgeCheckNotDoneError`, the cashier's words: "Do not take payment…").
+    The scan already refuses; this second gate is the one the audit found missing, so no other way onto the bill can
+    sell to a minor.
+  - **The record carries the evidence:** each restricted line has `ageCheck` {age needed, age confirmed, who, when}, and
+    the sale carries every answer (`ageAnswers`), refusals included. It travels unchanged through the store computer.
+  - **The screen asks** (`apps/pos/web/app.js`): the big-button panel — "Cigarettes 10s is age restricted. Check the
+    customer's identification. Is the customer 18 or over?" — **Yes — ID checked** / **No — do not sell** / Cancel, in
+    English and Tamil. Yes records and scans again; No records the refusal and says the item was not sold; Cancel adds
+    nothing and records nothing. The minimum age reaches the till from the product master (`minimumAgeOf`, one reading
+    for the lane, the basket and head office), and a line added by product id is asked too.
+  - **Head office's backstop** (`services/pos/src/sale-intake.ts`): a restricted line that arrives without a confirmed
+    check covering its age — an old till, a pack built before the restriction, a check for a lower age, one naming
+    nobody — is banked (the goods are gone, hard rule #1) and raised **CRITICAL** `age_restricted_sold_without_check`,
+    ranked with a recall, on the exceptions register.
+  - **A till defect found in passing and fixed:** a barcode scanner ends every code with Enter, and Enter on a focused
+    button presses it — so the next scan after tapping the language button flipped the till back to English, and after
+    tapping Void would have pressed Void. The scan now keeps its Enter.
+  - Only `minimumAge` exists on the product master today; quantity limits and prescription items have no data source, so
+    they are not invented here (the lane-guards engine already handles them when one exists).
+- **Proved:** `tests/unit/pos-age-check-is-enforced-at-commit.test.ts` (the audit's reproduction inverted on `bootPos`:
+  not on the bill without an answer; the line added by id asked too; no answer with nobody signed in; 18 does not cover
+  21; a refusal kept; quantity, hold/recall, new basket; the commit's own gate with a smuggled line, a lower answer, then
+  the right one); `tests/unit/pos-barcode-scan.test.ts` (rewritten — it had encoded the defect);
+  `tests/unit/service-pos.test.ts` and the critical-breach guardrail (four breaches now);
+  `tests/integration/an-age-restricted-sale-reaches-head-office-with-its-check.test.ts` (the real till's record through
+  the store computer's mapping to head office's API: clean with the check, CRITICAL first without it, on the register);
+  `tests/e2e/the-till-asks-the-age-question.e2e.ts` (a real browser on the served till and a real store computer: the
+  question, No, Yes, a second pack not asked again, cash, the record on the box's disk with its evidence and the
+  refusal; Tamil; accessibility audit clean). Full gate green locally.
+- **Not yet / honest limits:** the answer is as strong as the till sign-in, which is still a typed staff code until
+  PF-02 (the next slice); the practice data has no age-restricted product, so the question cannot be seen on the hosted
+  copy until one is added; staff UAT (SP-10, pending, unasked).
+- **Next:** Wave 2b-v — PF-02, the till operator as a verified, offline-capable credential and a manager approval as the
+  manager's own one-use act (needs an ADR first). Then the OB-15 block.
+
 ## Wave 2b-iii-b — a facilities check is verified by a second signed-in person; an incident is closed by the signed-in person (5 October 2026)
 
 - **The finding (audit PA-03, HIGH), the part left after #705:** the audit verified a facilities task with two
@@ -42,7 +89,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **PA-03 is closed.** **Not yet:** an approval-limit register (a delegation's value limit still comes from the
   record); the OB-15 people screen (the first UI on the two-act grants); staff UAT (SP-10, pending, unasked).
 - **Next:** Wave 2b-iv — PF-03, the age-restriction answer kept in the basket and enforced at commit, on the till and
-  on the cloud intake. Then 2b-v (PF-02, the till credential; needs an ADR), then the OB-15 block.
+  on the cloud intake (done the same day, #708). Then 2b-v (PF-02, the till credential; needs an ADR), then the OB-15 block.
 
 ## UX-3 — the sign-in page in the owner's approved design (5 October 2026)
 
