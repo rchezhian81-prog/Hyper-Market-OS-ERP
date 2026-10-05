@@ -1,0 +1,86 @@
+<div id="sre-login-design" lang="en">
+  <div class="sl-product">
+    <header class="sl-topbar">
+      <div class="sl-brand" aria-label="SRE Hyper Market">
+        <div class="sl-mark" aria-hidden="true">S<span>+</span></div>
+        <div class="sl-brand-name">SRE<small>HYPER MARKET</small></div>
+      </div>
+      <div class="sl-top-actions">
+        <div class="sl-language" role="group" aria-label="Language" data-copy-aria="languageLabel">
+          <button type="button" class="cursor-interaction" data-language="en" lang="en" aria-pressed="true">English</button>
+          <button type="button" class="cursor-interaction" data-language="ta" lang="ta" aria-pressed="false">தமிழ்</button>
+        </div>
+        <button class="sl-text-button sl-top-help cursor-interaction" data-open="help" type="button"><i data-lucide="circle-help" aria-hidden="true"></i><span data-copy="help">Help</span></button>
+      </div>
+    </header>
+    <main class="sl-main">
+      <section class="sl-intro" aria-label="SRE store workspace" data-copy-aria="workspaceLabel">
+        <div class="sl-eyebrow" data-copy="eyebrow">YOUR EVERYDAY STORE WORKSPACE</div>
+        <h1><span data-copy="hero1" style="color:var(--sre-ink);margin:0">Your store.</span><span data-copy="hero2">One workspace.</span></h1>
+        <p class="sl-intro-copy" data-copy="heroCopy">From the first delivery to the last bill. Bring your team and your store day together.</p>
+        <div class="sl-illustration" aria-hidden="true">
+          <div class="sl-workspace">
+            <div class="sl-workspace-head"><div class="sl-workspace-icon"><i data-lucide="store"></i></div><div><strong>SRE Hyper Market</strong><small data-copy="workspace">Store workspace</small></div></div>
+            <div class="sl-three">
+              <div><i data-lucide="shopping-cart"></i><span data-copy="purchase">Purchase</span></div>
+              <div><i data-lucide="boxes"></i><span data-copy="inventory">Inventory</span></div>
+              <div><i data-lucide="receipt-text"></i><span data-copy="sales">Sales &amp; cash</span></div>
+            </div>
+          </div>
+          <div class="sl-illustration-label"><i data-lucide="monitor"></i><span data-copy="storeDesktop">Store desktop</span><span>·</span><i data-lucide="cloud"></i><span data-copy="onlineWorkspace">Online workspace</span></div>
+        </div>
+      </section>
+      <section class="sl-login-area" aria-labelledby="sl-welcome">
+        <div class="sl-login-card">
+          <div class="sl-login-kicker"><i data-lucide="log-in" aria-hidden="true"></i><span data-copy="staffAccess">STAFF ACCESS</span></div>
+          <h2 id="sl-welcome" data-copy="welcome">Welcome back.</h2>
+          <p class="sl-subtitle" data-copy="subtitle">Sign in to your store workspace.</p>
+          <div class="sl-store">
+            <i data-lucide="store" aria-hidden="true"></i>
+            <div><strong id="sl-context-name">Main store</strong><small id="sl-context-sub">This store computer</small></div>
+            <span class="sl-mode" id="sl-context-mode">LOCAL</span>
+          </div>
+          <div id="sl-state-notice" class="sl-notice" data-tone="amber" hidden><i data-lucide="info" aria-hidden="true"></i><span id="sl-state-text"></span></div>
+          <form id="sl-form" novalidate>
+            <div class="sl-field">
+              <label for="sl-user" data-copy="staffId">Staff ID or work email</label>
+              <div class="sl-input-wrap"><i data-lucide="user-round" aria-hidden="true"></i><input id="sl-user" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Enter your staff ID" aria-describedby="sl-preview-disclaimer sl-form-message" required></div>
+            </div>
+            <div class="sl-field">
+              <label for="sl-password" data-copy="password">Password</label>
+              <div class="sl-input-wrap"><i data-lucide="lock-keyhole" aria-hidden="true"></i><input id="sl-password" class="sl-password" type="password" autocomplete="current-password" placeholder="Enter your password" aria-describedby="sl-preview-disclaimer sl-caps sl-form-message" required><button id="sl-reveal" class="sl-reveal cursor-interaction" type="button" aria-label="Show password" aria-pressed="false" data-copy="show">Show</button></div>
+              <p id="sl-caps" class="sl-caps" hidden data-copy="caps">Caps Lock is on.</p>
+            </div>
+            <div id="sl-form-message" class="sl-message" role="status" aria-live="polite" hidden></div>
+            <button id="sl-submit" class="sl-submit cursor-interaction" type="submit" disabled><span id="sl-submit-text">Sign in</span><i data-lucide="arrow-right" aria-hidden="true"></i></button>
+          </form>
+          <div class="sl-help-row"><button type="button" data-open="help" class="sl-text-button cursor-interaction" data-copy="needHelp">Need help signing in?</button></div>
+          <div class="sl-personal"><i data-lucide="user-round-check" aria-hidden="true"></i><span data-copy="personal">Use your own staff account. Sign out when you finish.</span></div>
+        </div>
+        <div class="sl-status" id="sl-connection-status" data-tone="green"><span class="sl-dot" aria-hidden="true"></span><span id="sl-connection-text">Store computer ready · Internet available</span><button type="button" data-open="connection" class="cursor-interaction" data-copy="details">Details</button></div>
+      </section>
+    </main>
+    <footer class="sl-footer"><span><i data-lucide="leaf" aria-hidden="true"></i><span data-copy="footer">A clear start to every store day.</span></span><span>SRE Hyper Market<span aria-hidden="true">·</span><span data-copy="retailWorkspace">Retail workspace</span></span></footer>
+    <div id="sl-dialog-host" class="sl-dialog-host" hidden>
+      <section class="sl-dialog" role="dialog" aria-modal="true" aria-labelledby="sl-dialog-title" aria-describedby="sl-dialog-copy">
+        <div class="sl-dialog-head"><h3 id="sl-dialog-title"></h3><button id="sl-dialog-close" type="button" class="sl-close cursor-interaction" aria-label="Close"><i data-lucide="x" aria-hidden="true"></i></button></div>
+        <p id="sl-dialog-copy"></p><button id="sl-dialog-done" class="sl-submit cursor-interaction" type="button" data-copy="gotIt">Got it</button>
+      </section>
+    </div>
+  </div>
+  <details class="sl-preview">
+    <summary class="cursor-interaction"><span id="sl-preview-disclaimer" data-copy="preview">Design preview · sample status · no real credentials</span><span><span data-copy="explore">Explore states</span><i data-lucide="chevron-down" aria-hidden="true"></i></span></summary>
+    <div class="sl-preview-body">
+      <label><span data-copy="previewState">Preview state</span><select id="sl-state" class="cursor-interaction" aria-label="Preview state">
+        <option value="connected" data-copy="optConnected">Store · connected</option>
+        <option value="offline-eligible" data-copy="optOffline">Store · offline access available</option>
+        <option value="offline-blocked" data-copy="optBlocked">Store · offline access unavailable</option>
+        <option value="store-unavailable" data-copy="optUnavailable">Store computer unavailable</option>
+        <option value="online" data-copy="optOnline">Online workspace</option>
+        <option value="invalid" data-copy="optInvalid">Incorrect sign-in details</option>
+        <option value="expired" data-copy="optExpired">Session expired</option>
+      </select></label>
+      <p data-copy="previewNote">These are sample connection and account states. The design does not contact an account service, save credentials or sign anyone in.</p>
+    </div>
+  </details>
+</div>

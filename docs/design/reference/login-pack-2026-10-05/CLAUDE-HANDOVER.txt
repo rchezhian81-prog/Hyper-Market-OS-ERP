@@ -1,0 +1,64 @@
+Implement this approved-direction SRE Hyper Market staff login in the existing
+Hyper-Market-OS-ERP application. Use the included HTML as the visual reference.
+This is a staff login for the hybrid store/online ERP, not a customer login.
+
+1. Start from the current repository and its instructions. Read the current
+STATUS and design decisions before editing. Locate the actual staff login
+entry point and the shared design system. In the audited checkout, relevant
+starting points included infra/pilot/demo-login/login.ts and main.ts, with
+tests/unit/demo-login.test.ts and tests/guardrails/shared-login.test.ts. Verify
+their present responsibilities; do not assume pilot code is production auth.
+Reuse existing primitives, routes and authentication integration. Do not create
+a parallel login app or duplicate existing work. Preserve unrelated changes.
+
+2. Preserve the chosen light sage / forest-green design direction. Use the S+
+brand mark, restrained top stripe, white panel, labelled inputs and one primary
+Sign in action. Carry the same design tokens into the existing UI layer. The
+current design is responsive at 900, 720 and 390px. Below 720px the decorative
+left panel disappears while all sign-in and help functions remain available.
+Use existing local fonts; ensure Tamil glyph coverage without a CDN dependency.
+
+3. Retain English and Tamil, show/hide password, keyboard submission, visible
+native focus, accessible labels, generic credential errors, expired-session
+guidance and local help. Keep the store identity read-only on a provisioned
+store device. Resolve authorised branch access after identity verification
+where the real product requires it. Never offer a role selector before login.
+No Remember me option on shared tills; avoid shared staff credentials.
+
+4. Use the project's existing Keycloak/authentication decision and approved
+flow. Do not implement authentication by copying the prototype handler. That
+handler intentionally never contacts a server. If the approved auth flow uses
+an identity-provider redirect, theme the correct login surface and preserve
+its security fields, session handling, MFA, CSRF and failure behavior. Do not
+invent a password endpoint or custom password cache. Server-side permissions
+and store/device/account authorisation must remain authoritative.
+
+5. Bind local store service health, internet reachability and sync state to
+separate real signals. Internet availability does not prove completed sync.
+“Offline access available” may appear only after the local auth service has
+confirmed that this device/account can authenticate offline under the agreed
+policy. A cached browser page or installed PWA is not proof of that ability.
+When unsupported or expired, explain the block; do not silently allow access.
+If the store service is unavailable, do not imply sales can be recorded.
+
+6. Replace all sample values. Remove the design-state picker, preview disclaimer
+and simulated-success behavior from production. Drive the rendered states from
+the application. Add real pending-submit feedback and duplicate-submit handling
+using the existing authentication flow. Preserve useful actionable failures
+without disclosing whether a staff account exists. No passwords in logs, URLs,
+analytics, localStorage or sessionStorage. Use approved session storage only.
+
+7. Verify the finished integration where it actually runs: the deployed staff
+login and installed/local entry point. Check keyboard-only use, password
+manager compatibility, 320/390/720/1024px layouts, short screens, 200% zoom,
+English/Tamil content, contrast, screen-reader errors and focus restoration.
+Exercise success, failure, loading, repeated submission, expired session,
+unavailable local service and offline allowed/denied/expired cases. Reconnect
+must not bypass authentication or duplicate work. Test role and branch access
+server-side using the existing meaningful tests. Do not claim pilot readiness
+from a screenshot or from the prototype's sample statuses.
+
+8. Report exact changes, evidence and remaining dependencies. Update the
+existing canonical status record so the next session can continue without
+repeating the audit or rebuilding the same page. Do not deploy or alter real
+store data as part of this design integration unless separately authorised.

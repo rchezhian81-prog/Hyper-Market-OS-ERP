@@ -84,7 +84,9 @@ is right. Open to him: a written *"GO real data"* before the store trial runs on
 icons, *Needs attention*, *Purchase to shelf*, *Store today*, *Workspaces* — every figure computed on the store computer
 or "Not known" with the reason; icons in the rail; the sign-in in the product's frame. **OB-17 also rules from here:**
 software first (no hardware asks until the software is complete), English now (Tamil deferred to Wave 8), the owner
-registers a domain and gives only its name.
+registers a domain and gives only its name. **UX-3 (OB-18, 5 Oct 2026, #706):** between Wave 2b-iii-a and 2b-iii-b the owner sent a
+finished login design and asked for it before the next slice; the real sign-in now wears it (unit + browser-verified,
+no sample state, honest connection line), the pack kept under `docs/design/reference/login-pack-2026-10-05/`.
 
 ### Wave 2 — close authority and competing-write gaps (audit step 2) · size L — the critical wave, now also the owner's "all in one" block (OB-15, "A 1")
 The owner's direction of 4 Oct 2026 (OB-15) rides this wave because it is the same code: the command-centre home on
@@ -186,6 +188,7 @@ identity, hardware, hosted recovery evidence. **PA-13** (commercial platform, R8
 | UX-1c page anatomy | 1¾ — done 4 Oct 2026 |
 | UX-2a one application (OB-16) | 1⅞ — done 5 Oct 2026 (#699) |
 | UX-2b the *Today* command centre, rail icons, sign-in frame (OB-15/OB-16/OB-17) | 1⅞ — done 5 Oct 2026 (#700) |
+| UX-3 the sign-in page in the owner's approved design (OB-18) | between 2b-iii-a and 2b-iii-b, at the owner's word — done 5 Oct 2026 (#706) |
 | Wave 2a write guards — PF-01 refunds/gift/points; SF-04 transfers; FUL-02 promises; PA-11 audit chain | 2 — done 5 Oct 2026 (#701, #702) |
 | Wave 2b identity criticals — PA-02 leaver; PA-01/EA-03 scope; PA-03 second person; PF-03 age check; PF-02 till credential | 2 — PA-02 done 5 Oct 2026 (#703); PA-01/EA-03 done 5 Oct 2026 (#704); PA-03 half done 5 Oct 2026 (#705, grants/templates/decisions/delegations — facilities next); the rest in order |
 | Handheld enrolment on the hosted demo | 1½ (a demo device code for the practice phones) |

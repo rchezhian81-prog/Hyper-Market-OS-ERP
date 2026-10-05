@@ -5,6 +5,48 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## UX-3 — the sign-in page in the owner's approved design (5 October 2026)
+
+- **The ask (OB-18):** the owner sent a finished design (`SRE-Hypermarket-Login-Design-Pack.zip`) and wrote *"Before going
+  ahead with the next slice, the login page wants to look like this while you are doing this page"*. The pack's own brief
+  asked for exactly what this slice does: carry it onto the existing sign-in entry point (no second login app), remove
+  the sample states, bind the connection line to real signals, keep the project's auth decision, verify in a browser.
+- **What changed (pull request #706):**
+  - `infra/pilot/demo-login/ui.ts` (new) carries the design: the markup, the scoped stylesheet, the script and every word
+    in English and Tamil (key parity is a test). The pale sage canvas, the S+ mark, the three-part stripe over the white
+    card, labelled inputs, ONE primary *Sign in*, show/hide password, the Caps Lock hint, the help and connection
+    dialogs (focus trapped, Escape closes, focus returns), two columns at a desk and the card alone below 720 px.
+    The form works with no script at all; the script adds the language switch (remembered as `sre.lang`, the only
+    thing it stores), the required-field messages, and the pending-submit guard (a second click sends nothing).
+  - `infra/pilot/demo-login/login.ts`: the page renders through `ui.ts`; the policy is now
+    `default-src 'none'; style-src 'self'; script-src 'self'; …` — **nothing inline**; the stylesheet and the script are
+    served by the service itself at `/login/login.css` and `/login/login.js` under a content hash with a year's
+    immutable cache; a session cookie that no longer verifies is met with *Your session has ended* once and the dead
+    cookie is dropped (`COOKIE_GRACE_SECONDS`: the cookie outlives the 8-hour token by a day so the next visit can say
+    so — the token is dead at 8 hours regardless); the wrong-credentials sentence is the design's ONE generic sentence
+    (`WRONG_CREDENTIALS`, marked for the language switch); a refusal or a miss is a plain page in the same shell.
+  - **Honest signals only:** the connection line reads *Online sign-in available* — what this server knows — and never
+    "offline access available" or that a store computer is running (that is read inside the workspace after sign-in).
+  - **Lifted to the design system's own floor (§3.2):** nothing a person must read under 14 px; uppercase labels
+    ≥ 12.5 px; the practice strip at 14 px (the pack used 11–12 px in places). Otherwise as sent.
+  - The pack is kept at `docs/design/reference/login-pack-2026-10-05/` (README there); design-system §3.3; register OB-18.
+- **Proved:** `tests/unit/demo-login.test.ts` (29 — the design's markup, nothing inline, the assets served and cached,
+  the honest line, no sample state, the script stores only the language, EN/TA parity, the expired notice once, the
+  generic error with the password never echoed, plain refusals, the account page, the size floor);
+  `tests/e2e/sign-in-page.e2e.ts` (3, headless Chromium against the REAL handler: desk / phone / 320 px, WCAG 2.2 AA
+  audit clean in English and Tamil, the switch remembered on reload, show/hide, the help dialog's focus, an empty submit
+  stopped in the browser with the field named, a wrong password as one alert from the server with the password never in
+  the page, a right one landing in the workspace with the HttpOnly / Secure / SameSite=Strict cookie, a second click
+  while pending sending nothing, *your session has ended* after the shift — no policy violation, no script error).
+  Full gate green locally.
+- **Not yet / honest limits:** the owner has not yet seen it on the hosted copy (it deploys with the merge — open
+  `/login/`); the Tamil is the pack's draft wording (OB-17 — staff review in Wave 8); the Keycloak login (ADR-0019,
+  OB-15 block) will take this same look when it is built — this slice is the hosted copy's sign-in; nobody has yet run it
+  with a password manager or a screen reader (SP-10, pending, unasked); 200 % zoom is not measured by the suite (the
+  320 px width stands in for it).
+- **Next:** Wave 2b-iii-b (facilities verification as the verifier's own act), then 2b-iv (PF-03), 2b-v (PF-02), the
+  OB-15 block.
+
 ## Wave 2b-iii-a — every "second person" is a separate authenticated act: role grants, template approvals, a decider's branch, a lender's own authority (5 October 2026)
 
 - **The finding (audit PA-03, HIGH):** several completed controls accepted TYPED NAMES as evidence of a second person.
