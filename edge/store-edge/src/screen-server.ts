@@ -29,7 +29,7 @@ import { createServer, type Server, type ServerResponse, type IncomingMessage } 
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, posLanePayload, posRefundPolicyPayload, type ScreenInput, type ScreenName } from './screen-data';
-import { navigationPayload, type NavigationPayload } from './screen-navigation';
+import { navigationPayload, type NavigationPayload, asSignedInPerson } from './screen-navigation';
 
 /**
  * The address this listens on unless told otherwise — loopback, so on a shop PC nothing on the shop network
@@ -235,6 +235,13 @@ export function redirectFor(url: string): string | null {
  * absolute path segment counts — nothing with a scheme, a host, a query, a dot or a second slash — and an absent or
  * malformed header means no prefix, exactly as in a store.
  */
+/** The person the relay says signed in — one plain id, or null for anything else (absent, several, odd characters). */
+export function forwardedUser(header: string | string[] | undefined): string | null {
+  if (typeof header !== 'string') return null;
+  const id = header.trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$/.test(id) ? id : null;
+}
+
 export function forwardedPrefix(header: string | string[] | undefined): string {
   const raw = Array.isArray(header) ? header[0] : header;
   if (raw === undefined) return '';
@@ -292,6 +299,13 @@ export function startScreenServer(input: {
   readonly laneWriteBase?: string;
   /** Which LANE this box is (`EDGE_LANE_ID`, SP-4b · F09) — told to the served till so every sale names it. */
   readonly laneId?: string;
+  /**
+   * Run the ERP screens as the person the relay's `X-Sre-User` header names (OB-16). ONLY a deployment whose screens
+   * are reached solely through a front that authenticates every request and sets this header itself
+   * (`infra/compose/nginx.pilot.conf`, behind the sign-in) may turn this on — `EDGE_SCREEN_TRUST_FORWARDED_USER=1`.
+   * A store box, whose screens are loopback-only with nobody in front, leaves it off and the header is ignored.
+   */
+  readonly trustForwardedUser?: boolean;
 }): Promise<ScreenServer> {
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
@@ -343,7 +357,12 @@ export function startScreenServer(input: {
       // o'clock's exceptions, not the ones this process saw when it started. The pack-age badge
       // (SYNC-01) rides alongside it on every screen, from the same one snapshot.
       const snap = input.snapshot();
-      const payload = payloadFor(route.screen, snap);
+      const built = payloadFor(route.screen, snap);
+      // OB-16: behind the authenticated relay the ERP screens run as the person who SIGNED IN — their id, their
+      // permissions from this box's role register — never as whoever the pack named for the screen. The till and
+      // the handhelds are untouched: the person signs in at the device itself.
+      const signedIn = input.trustForwardedUser === true && APP_SHELL[route.screen].dir === 'web-erp' ? forwardedUser(req.headers['x-sre-user']) : null;
+      const payload = signedIn === null ? built : asSignedInPerson(built, signedIn, snap.pack);
       // The till alone also gets the receipt template head office published, when this box has pulled one
       // (M01-FR-02): its own global beside the catalogue, so a bill printed offline carries the words and the
       // version. Absent when none has reached this box — the till prints with its defaults and stamps nothing.
@@ -358,7 +377,7 @@ export function startScreenServer(input: {
       // from the pack's role register and the screen's named viewer (Stage G slice 5b · §27 · P-07). Only the ERP:
       // the till, the handhelds and the apps are one job each and have no menu to draw.
       const navigation = APP_SHELL[route.screen].dir === 'web-erp'
-        ? withPublicPrefix(navigationPayload({ screen: route.screen, pack: snap.pack, payload, screenOf: screenOfPath }), forwardedPrefix(req.headers['x-forwarded-prefix']))
+        ? withPublicPrefix(navigationPayload({ screen: route.screen, pack: snap.pack, payload: payload ?? (signedIn === null ? null : { userId: signedIn }), screenOf: screenOfPath }), forwardedPrefix(req.headers['x-forwarded-prefix']))
         : undefined;
       send(res, 200, type, injectPayload(
         body.toString('utf8'), GLOBAL_FOR[route.screen], payload,

@@ -186,7 +186,10 @@ describe('the screen runs as the person the store named — and says so when it 
   });
 
   it('paints both from the model\'s `floor().manager`, never from a name of its own', () => {
-    expect(code(APP)).toMatch(/el\('whoami'\)\.textContent = floor\.manager === null \? '' : `\$\{t\('runningAs'\)\} \$\{floor\.manager\}`/);
+    // OB-16: the NAME the store sent with the menu (`sreNavigation.person`) may stand in for the id — only when the
+    // menu's userId is the very person the store named for this screen; still never a name of the screen's own.
+    expect(code(APP)).toMatch(/const named = globalThis\.sreNavigation && globalThis\.sreNavigation\.person && typeof globalThis\.sreNavigation\.person\.name === 'string' && globalThis\.sreNavigation\.userId === floor\.manager \? globalThis\.sreNavigation\.person\.name : null;/);
+    expect(code(APP)).toMatch(/el\('whoami'\)\.textContent = floor\.manager === null \? '' : `\$\{t\('runningAs'\)\} \$\{named \?\? floor\.manager\}`/);
     expect(code(APP)).toMatch(/el\('nobody'\)\.hidden = floor\.manager !== null/);
     expect(code(APP)).not.toMatch(/'manager'\s*[,}]/); // no stand-in identity anywhere on the page
   });

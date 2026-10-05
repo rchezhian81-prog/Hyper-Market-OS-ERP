@@ -320,3 +320,23 @@ body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sh
   body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sheet > .card { width: min(600px, 100%); height: 100%; max-height: none; border-radius: 0; border-width: 0 0 0 1px; padding: 24px; }
 }
 
+/* ── The rail names the shop and the person; the header says where you are and finds any screen (OB-16, 5 Oct 2026) ──
+   The rail is a column: brand, the branch card, the groups, then the person at the foot. The top line sits above the
+   page's own header row: the breadcrumb read off the rail, and a search that filters the rail's links. */
+.sre-menu { display: flex; flex-direction: column; overflow: hidden; }
+.sre-menu .groups { flex: 1 1 auto; min-height: 0; overflow: hidden auto; scrollbar-width: thin; margin: 0 -4px; padding: 0 4px 8px; }
+.sre-menu .branch { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 10px; border: 1px solid var(--rail-line); border-radius: var(--radius-lg); background: var(--rail-2); color: var(--on-rail); }
+.sre-menu .branch .mark { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: var(--radius); background: var(--rail); color: var(--rail-accent); font-size: 18px; }
+.sre-menu .branch b { display: block; font-size: 15px; }
+.sre-menu .branch small { display: block; color: var(--on-rail-muted); font-size: 14px; }
+.sre-menu .branch .dot { width: 8px; height: 8px; margin-left: auto; border-radius: 50%; background: var(--rail-accent); }
+.sre-menu .group-section[hidden], .sre-menu li[hidden] { display: none; }
+.sre-menu .person { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 12px 8px 4px; border-top: 1px solid var(--rail-line); color: var(--on-rail); }
+.sre-menu .person .avatar { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--rail-2); color: var(--on-rail); font-weight: 700; font-size: 14px; }
+.sre-menu .person b { display: block; font-size: 15px; }
+.sre-menu .person small { display: block; color: var(--on-rail-muted); font-size: 14px; }
+.sre-topline { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sre-crumbs { margin: 0; color: var(--muted); font-size: 14px; }
+.sre-find { min-height: var(--tap); width: min(320px, 100%); padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--field); color: var(--ink); font: inherit; font-size: 15px; }
+.sre-find[hidden] { display: none; }
+

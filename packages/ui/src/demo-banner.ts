@@ -1,4 +1,4 @@
-// The "DEMO / PILOT — NOT PRODUCTION" banner (Option 1 hosted-demo requirement).
+// The practice-data banner — "TRIAL COPY · PRACTICE DATA — not the store's real figures" (Option 1 hosted-demo requirement).
 //
 // A hosted demo runs the REAL software against SYNTHETIC data, which is exactly the situation where a
 // person can forget which one they are looking at — and a screen that looks production-real is how a
@@ -10,8 +10,9 @@
 // The decision is a pure function (unit-tested); the DOM insertion is a thin shell over it that runs
 // only in a browser, so importing this module never requires a DOM.
 
-export const DEMO_BANNER_TEXT_EN = 'DEMO / PILOT — NOT PRODUCTION · synthetic data only';
-export const DEMO_BANNER_TEXT_TA = 'டெமோ / பைலட் — உண்மைச் சூழல் அல்ல · போலித் தரவு மட்டும்';
+// Reworded 5 Oct 2026 (OB-16): the owner's word for this copy is "trial"; the strip says what the data IS, and nothing else.
+export const DEMO_BANNER_TEXT_EN = 'TRIAL COPY · PRACTICE DATA — not the store\'s real figures';
+export const DEMO_BANNER_TEXT_TA = 'சோதனைப் பிரதி · பயிற்சித் தரவு — கடையின் உண்மை எண்கள் அல்ல';
 export const DEMO_BANNER_ELEMENT_ID = 'demo-pilot-banner';
 
 export interface DemoBannerModel {

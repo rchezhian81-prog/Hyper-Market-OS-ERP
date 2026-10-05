@@ -41,14 +41,16 @@ describe('role-scoped navigation', () => {
     const nav = navigationFor(access, { userId: 'cash-1', branchId: 'b1' });
     const labels = nav.flatMap((g) => g.items.map((i) => i.label));
     // The day-close read also opens "Reopen a locked day" — same permission, same people (accountant / owner).
-    expect(labels).toEqual(['Dashboard', 'Reports', 'Over / short sign-off', 'Reopen a locked day']);
+    // OB-16 workspaces: Cash & finance stands before Reports in the rail.
+    expect(labels).toEqual(['Today', 'Over / short sign-off', 'Reopen a locked day', 'Reports']);
     expect(labels).not.toContain('Users & roles'); // not their job
     expect(labels).not.toContain('Stock counts');
   });
 
   it('gives a manager their wider menu, grouped for the sidebar', () => {
     const nav = navigationFor(access, { userId: 'mgr-1', branchId: 'b1' });
-    expect(nav.map((g) => g.group)).toEqual(['Overview', 'Purchasing', 'Inventory', 'Trading', 'Administration']);
+    // OB-16: the owner's workspaces, in the rail's fixed order — the same screens, regrouped.
+    expect(nav.map((g) => g.group)).toEqual(['Today', 'Receiving', 'Inventory', 'Sales', 'Finance', 'Reports']);
     expect(nav[0]?.items.map((i) => i.id)).toEqual(['dashboard']);
     expect(nav[2]?.items.map((i) => i.id)).toEqual(['counts', 'stock-health', 'unsellable', 'warehouse-supervisor']);
   });

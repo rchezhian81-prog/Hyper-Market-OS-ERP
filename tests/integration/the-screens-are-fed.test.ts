@@ -179,6 +179,7 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
     permissions: ['reporting.sales.export', 'reporting.operations.export'],
   }]),
   roleAssignments: known([{ userId: 'u-report', roleId: 'analyst', branchScope: ['b1'] }]),
+  people: notKnown('not pulled'),
   reportingPolicy: known({ laggingAfterMinutes: 5, staleAfterMinutes: 60, userId: 'u-report' }),
   // Who runs the manager screen on this box (Stage G slice 5c).
   managerPolicy: known({ userId: 'u-mgr', approvalLimitMinor: 500_000 }),
@@ -377,8 +378,8 @@ const servers: ScreenServer[] = [];
 afterAll(async () => { for (const s of servers) await s.stop(); });
 
 /** Start the real server against the real `apps/` folder on disk. */
-async function serve(snapshot: () => ScreenInput): Promise<string> {
-  const server = await startScreenServer({ port: 0, appsDir: 'apps', snapshot });
+async function serve(snapshot: () => ScreenInput, trustForwardedUser = false): Promise<string> {
+  const server = await startScreenServer({ port: 0, appsDir: 'apps', snapshot, ...(trustForwardedUser ? { trustForwardedUser } : {}) });
   servers.push(server);
   return `http://${SCREEN_HOST}:${server.port}`;
 }
@@ -389,8 +390,8 @@ const snapshotOf = (over: Partial<ScreenInput> = {}): (() => ScreenInput) => () 
 });
 
 /** Fetch a screen and pull the payload the box injected out of its HTML. */
-async function payloadFromScreen(base: string, screen: ScreenName): Promise<Record<string, unknown> | null> {
-  const response = await fetch(`${base}/${screen}`);
+async function payloadFromScreen(base: string, screen: ScreenName, headers: Record<string, string> = {}): Promise<Record<string, unknown> | null> {
+  const response = await fetch(`${base}/${screen}`, { headers });
   expect(response.status, `${screen} did not serve`).toBe(200);
   const html = await response.text();
   const global = GLOBAL_FOR[screen];
@@ -843,7 +844,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       displayContracts: notKnown('never'), fundingReceivedMinor: notKnown('never'),
       stillOccupying: notKnown('never'), merchandisingPolicy: notKnown('never'),
       reportingRecords: notKnown('never'), roles: notKnown('never'), managerPolicy: notKnown('never'),
-      roleAssignments: notKnown('never'), reportingPolicy: notKnown('never'),
+      roleAssignments: notKnown('never'), people: notKnown('never'), reportingPolicy: notKnown('never'),
       returnHistory: notKnown('never'), serviceCases: notKnown('never'),
       satisfaction: notKnown('never'), slaPolicy: notKnown('never'),
       servicePolicy: notKnown('never'),
@@ -2704,8 +2705,8 @@ describe('admin and security, fed by the box', () => {
 });
 
 /** Pull the menu (`window.sreNavigation`) the box injected out of a screen's HTML — null when it carries none. */
-async function menuFromScreen(base: string, path: string): Promise<Record<string, unknown> | null> {
-  const response = await fetch(`${base}${path}`);
+async function menuFromScreen(base: string, path: string, headers: Record<string, string> = {}): Promise<Record<string, unknown> | null> {
+  const response = await fetch(`${base}${path}`, { headers });
   expect(response.status, `${path} did not serve`).toBe(200);
   const html = await response.text();
   const match = /<script>window\.sreNavigation = ([\s\S]*?);<\/script>/.exec(html);
@@ -2727,7 +2728,7 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
     expect(menu!['branchId']).toBe('b1');
     expect(menu!['why']).toBeNull();
     const groups = menu!['groups'] as { group: { en: string; ta: string }; items: { id: string; path: string; current: boolean; label: { en: string; ta: string } }[] }[];
-    expect(groups.map((g) => g.group.en)).toEqual(['Overview', 'Purchasing', 'Inventory', 'Administration']);
+    expect(groups.map((g) => g.group.en)).toEqual(['Today', 'Receiving & QC', 'Inventory & backstore', 'Cash & finance']); // OB-16 workspaces
     const items = groups.flatMap((g) => g.items);
     expect(items.map((i) => i.id)).toEqual(['dashboard', 'goods-receipt', 'counts', 'stock-health', 'unsellable', 'warehouse-supervisor', 'day-reopen']);
     expect(items.filter((i) => i.current).map((i) => i.id)).toEqual(['counts']);
@@ -2775,7 +2776,7 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
   it('a screen whose payload names nobody gets no sections and the reason — the manager\'s, when the pack names no manager', async () => {
     const base = await serve(snapshotOf({ pack: pack({ ...FLOOR, managerPolicy: notKnown('no manager named in this pack') }) }));
     const menu = await menuFromScreen(base, '/manager/');
-    expect(menu).toEqual({ userId: null, branchId: 'b1', why: 'no_user', groups: [] });
+    expect(menu).toEqual({ userId: null, branchId: 'b1', person: null, branch: { name: 'SRE Hyper Market' }, why: 'no_user', groups: [] });
   });
 
   it('the manager\'s screen names its manager from the pack (Stage G slice 5c), and so gets a menu', async () => {
@@ -2790,14 +2791,14 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
   it('a box with no role register gets no sections and THAT reason — never a guessed menu', async () => {
     const base = await serve(snapshotOf({ pack: pack({ roles: notKnown('never pulled'), roleAssignments: notKnown('never pulled') }) }));
     const menu = await menuFromScreen(base, '/counts/');
-    expect(menu).toEqual({ userId: 'u-mgr', branchId: 'b1', why: 'no_roles', groups: [] });
+    expect(menu).toEqual({ userId: 'u-mgr', branchId: 'b1', person: null, branch: { name: 'SRE Hyper Market' }, why: 'no_roles', groups: [] });
   });
 
   it('a named viewer with no grants gets an empty list and no reason — there is nothing wrong, they may open nothing', async () => {
     const base = await serve(snapshotOf({ pack: pack(FLOOR) }));
     // The service desk names u-desk, who holds no role on this box.
     const menu = await menuFromScreen(base, '/service/');
-    expect(menu).toEqual({ userId: 'u-desk', branchId: 'b1', why: null, groups: [] });
+    expect(menu).toEqual({ userId: 'u-desk', branchId: 'b1', person: null, branch: { name: 'SRE Hyper Market' }, why: null, groups: [] });
   });
 
   it('the till, the handhelds and the apps carry no menu — one job each', async () => {
@@ -2805,5 +2806,56 @@ describe('every ERP page carries its menu — the screens THIS viewer may open o
     for (const path of ['/pos/', '/picker/', '/warehouse/', '/customer/', '/owner/']) {
       expect(await menuFromScreen(base, path), `${path} carries a menu`).toBeNull();
     }
+  });
+
+  it('names the person and the branch for the rail when the pack carries them (OB-16) — a name where a name is known, the id otherwise', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ ...FLOOR, people: known([{ userId: 'u-mgr', displayName: 'Meena Raghavan', roleId: 'floor' }]) }) }));
+    const menu = await menuFromScreen(base, '/counts/');
+    expect(menu!['person']).toEqual({ name: 'Meena Raghavan', role: 'Floor manager' });
+    expect(menu!['branch']).toEqual({ name: 'SRE Hyper Market' });
+    expect((await menuFromScreen(await serve(snapshotOf({ pack: pack(FLOOR) })), '/counts/'))!['person']).toBeNull();
+  });
+
+  it('behind the authenticated relay (OB-16) the screen runs as the person who SIGNED IN — their id, their permissions from the register, their rail — and the pack\'s named person steps aside', async () => {
+    const two = pack({
+      roles: known([
+        { id: 'floor', name: 'Floor manager', permissions: ['count.view', 'inventory.availability.read', 'till.dayclose.read'] },
+        { id: 'owner', name: 'Owner', permissions: ['count.view'] },
+      ]),
+      roleAssignments: known([{ userId: 'u-mgr', roleId: 'floor', branchScope: ['b1'] }, { userId: 'u-owner', roleId: 'owner', branchScope: 'all' }]),
+      people: known([{ userId: 'u-owner', displayName: 'The Owner', roleId: 'owner' }]),
+    });
+    const base = await serve(snapshotOf({ pack: two }), true);
+    const menu = await menuFromScreen(base, '/counts/', { 'x-sre-user': 'u-owner' });
+    expect(menu!['userId']).toBe('u-owner');
+    expect(menu!['person']).toEqual({ name: 'The Owner', role: 'Owner' });
+    const ids = (menu!['groups'] as { items: { id: string }[] }[]).flatMap((g) => g.items.map((i) => i.id));
+    expect(ids).toContain('counts');
+    expect(ids).not.toContain('stock-health'); // the owner role above holds no availability read
+    const payload = await payloadFromScreen(base, 'counts', { 'x-sre-user': 'u-owner' });
+    expect(payload!['userId']).toBe('u-owner');
+    expect(payload!['permissions']).toEqual(['count.view']);
+    // a signed-in person the register does not know: their own empty rail, no permissions — nothing guessed
+    expect(await menuFromScreen(base, '/counts/', { 'x-sre-user': 'u-nobody' })).toMatchObject({ userId: 'u-nobody', person: null, why: null, groups: [] });
+    expect((await payloadFromScreen(base, 'counts', { 'x-sre-user': 'u-nobody' }))!['permissions']).toEqual([]);
+    // an odd header names nobody: the pack's named person stands
+    expect((await menuFromScreen(base, '/counts/', { 'x-sre-user': 'u-owner, u-mgr' }))!['userId']).toBe('u-mgr');
+    expect((await menuFromScreen(base, '/counts/'))!['userId']).toBe('u-mgr');
+    // the till is not re-addressed: the cashier signs in at the till itself
+    const till = await fetch(`${base}/pos/`, { headers: { 'x-sre-user': 'u-owner' } });
+    expect(till.status).toBe(200);
+    expect(await till.text()).not.toContain('"userId":"u-owner"');
+  });
+
+  it('a screen the pack had nothing for still gives the signed-in person their rail (OB-16): the page says not known, the person is not lost', async () => {
+    const base = await serve(snapshotOf({ pack: pack({ ...FLOOR, managerPolicy: notKnown('no manager named in this pack') }) }), true);
+    const menu = await menuFromScreen(base, '/manager/', { 'x-sre-user': 'u-mgr' });
+    expect(menu).toMatchObject({ userId: 'u-mgr', why: null });
+    expect((menu!['groups'] as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it('a box that does not trust the relay ignores the header — a store box, where nobody authenticates in front of the screens', async () => {
+    const base = await serve(snapshotOf({ pack: pack(FLOOR) }));
+    expect((await menuFromScreen(base, '/counts/', { 'x-sre-user': 'u-owner' }))!['userId']).toBe('u-mgr');
   });
 });

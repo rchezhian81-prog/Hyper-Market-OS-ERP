@@ -171,6 +171,8 @@ export function buildDemoStorePack(input: DemoStorePackInput): DemoStorePack {
     branchScope: u.userId === input.foundation.genesisOwner.userId ? ('all' as const) : [branch.nodeId],
   }));
   const viewer = (userId: string) => ({ userId, permissions: permissionsOf(userId) });
+  // Names, so the rail says "Pilot Store Manager (demo) · Store manager", never "u-mgr" (OB-16). The seed's own display names.
+  const peopleSection = people.map((u) => ({ userId: u.userId, displayName: u.displayName, roleId: u.role }));
 
   // ── the store: seeded branch and back store; tolerances the seed set through the real policy routes ──────────
   const shiftTolerance = input.transactions.shiftCloses[0]?.toleranceMinor ?? 10_000;
@@ -265,6 +267,7 @@ export function buildDemoStorePack(input: DemoStorePackInput): DemoStorePack {
     policies,
     roles: input.roles,
     roleAssignments,
+    people: peopleSection,
     managerPolicy: { userId: CAST.manager, approvalLimitMinor: 500_000 },
     buyingPolicy: { buyerId: CAST.manager, approvers: [CAST.owner], quantityToleranceBps: input.trading.receiptPolicy.excessToleranceBp, priceToleranceBps: 500, immaterialMinor: 10_000 },
     pricingPolicy: { userId: CAST.manager, approvers: [CAST.owner], marginFloorBps: 2000 },

@@ -52,11 +52,11 @@ describe('demo sign-in — a good sign-in', () => {
     for (const attr of ['HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/', `Max-Age=${SESSION_SECONDS}`]) expect(cookie).toContain(attr);
   });
 
-  it('with no screen asked for, lands on the demo home — not on a shell that shows "Not known" without a store computer', () => {
+  it('with no screen asked for, lands IN the product — the store workspace — never on a list of shells (OB-16)', () => {
     const { handle } = setup();
     const res = handle(post({ login: 'ravi.cashier', password: PASSWORD }));
     expect(res.status).toBe(303);
-    expect(res.headers['location']).toBe('/login/');
+    expect(res.headers['location']).toBe('/store/manager/');
   });
 
   it('mints a token the REAL API verifier accepts, as the mapped synthetic user in the demo tenant', () => {
@@ -94,15 +94,13 @@ describe('demo sign-in — a good sign-in', () => {
     const home = handle({ method: 'GET', url: '/login/', body: '', headers: { cookie: `a=b; ${COOKIE_NAME}=${token}` } });
     expect(home.status).toBe(200);
     expect(home.body).toContain('Signed in as pilot-cashier');
-    // The demo home: the store computer's screens first (DF-2 feeds them), then what else is live, then what is not —
-    // the shells the web front serves with no store computer behind them, named as such — never an empty shell.
-    expect(home.body.indexOf('The store computer')).toBeLessThan(home.body.indexOf('Live on this demo'));
-    expect(home.body.indexOf('Live on this demo')).toBeLessThan(home.body.indexOf('Not on this demo yet'));
-    expect(home.body).toMatch(/The store computer[\s\S]*href="\/store\/manager\/"[\s\S]*href="\/store\/counts\/"[\s\S]*Live on this demo/);
-    expect(home.body).toContain('href="/store/pos/"');
-    expect(home.body).toContain('href="/erp/cash-office.html"');
-    expect(home.body).toMatch(/Not on this demo yet[\s\S]*href="\/erp\/"/);
-    expect(home.body).toMatch(/Not on this demo yet[\s\S]*href="\/store\/picker\/"[^<]*<\/a>/);
+    // The account page (OB-16): who you are, ONE way into the product, sign out — no list of shells, no second world.
+    expect(home.body).toContain('href="/store/manager/"');
+    expect(home.body).toContain('Open the store workspace');
+    expect(home.body).not.toContain('Live on this demo');
+    expect(home.body).not.toContain('Not on this demo yet');
+    expect(home.body).not.toContain('href="/erp/');
+    expect(home.body).not.toMatch(/demo/i);
     const out = handle({ method: 'POST', url: '/login/logout', body: '', headers: { host: HOST, origin: `https://${HOST}` } });
     expect(out.status).toBe(303);
     expect(String(out.headers['set-cookie'])).toMatch(/Max-Age=0/);
@@ -139,12 +137,12 @@ describe('demo sign-in — refusals', () => {
 
   it('never redirects off-site (no open redirect)', () => {
     for (const bad of ['https://evil.example/', '//evil.example/', '/\\evil.example', 'javascript:alert(1)', '/v1/identity/grants']) {
-      expect(safeNext(bad)).toBe('/login/');
+      expect(safeNext(bad)).toBe('/store/manager/');
     }
     expect(safeNext('/supplier/')).toBe('/supplier/');
     expect(safeNext('/login/')).toBe('/login/');
-    // No particular screen asked for → the demo home, never the Store manager shell (empty without a store computer).
-    expect(safeNext(undefined)).toBe('/login/');
+    // No particular screen asked for → the product itself: the store computer's workspace (OB-16).
+    expect(safeNext(undefined)).toBe('/store/manager/');
   });
 
   it('escapes what it echoes back into the page', () => {

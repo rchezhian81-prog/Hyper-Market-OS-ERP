@@ -1112,6 +1112,8 @@ export interface StorePack {
   /** The shop's own roles and who holds them, so an export runs the SAME default-deny check. */
   readonly roles: Register<readonly unknown[]>;
   readonly roleAssignments: Register<readonly unknown[]>;
+  /** The people head office named for this store — `{ userId, displayName, roleId }` — so a screen can say a NAME, never an id (OB-16). */
+  readonly people: Register<readonly unknown[]>;
   /** Reporting freshness thresholds (§32), per-tenant. */
   readonly reportingPolicy: Register<PackReportingPolicy>;
   /** Who runs the manager screen on this box (Stage G slice 5c). */
@@ -1371,6 +1373,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     reportingRecords: notKnown(why),
     roles: notKnown(why),
     roleAssignments: notKnown(why),
+    people: notKnown(why),
     reportingPolicy: notKnown(why),
     managerPolicy: notKnown(why),
     returnHistory: notKnown(why),
@@ -1508,6 +1511,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     reportingRecords: section<readonly string[]>('reportingRecords'),
     roles: section<readonly unknown[]>('roles'),
     roleAssignments: section<readonly unknown[]>('roleAssignments'),
+    people: section<readonly unknown[]>('people'),
     reportingPolicy: section<PackReportingPolicy>('reportingPolicy'),
     managerPolicy: section<PackManagerPolicy>('managerPolicy'),
     returnHistory: section<readonly unknown[]>('returnHistory'),

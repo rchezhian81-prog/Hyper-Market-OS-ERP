@@ -277,9 +277,20 @@ jobs:
           for i in $(seq 1 60); do curl -fskS https://127.0.0.1/readyz >/dev/null 2>&1 && break; sleep 1; done
           curl -fskS https://127.0.0.1/readyz | grep -q '"ready":true' || fail "the API's readiness did not come through the proxy with the overlay on"
           for i in $(seq 1 30); do [ "$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1/login/)" = "200" ] && break; sleep 1; done
-          for p in /pos/ /erp/ /owner/ /picker/ /store/pos/; do
+          for p in /store/pos/ /store/manager/ /store/owner/ /supplier/; do
             out=$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' "https://127.0.0.1$p")
             test "$out" = "302 https://127.0.0.1/login/?next=$p" || fail "$p must send a visitor without a demo session to the sign-in (got: $out)"
+          done
+          # ONE application (OB-16): the old shell addresses go to the store computer's own screens, signed in or not.
+          for p in pos owner picker warehouse; do
+            out=$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' "https://127.0.0.1/$p/")
+            test "$out" = "302 https://127.0.0.1/store/$p/" || fail "/$p/ must go to the store computer's screen (got: $out)"
+          done
+          out=$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' https://127.0.0.1/delivery/)
+          test "$out" = "302 https://127.0.0.1/store/driver/" || fail "/delivery/ must go to the store computer's driver screen (got: $out)"
+          for p in /erp/ /erp/cash-office.html; do
+            out=$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' "https://127.0.0.1$p")
+            test "$out" = "302 https://127.0.0.1/store/manager/" || fail "$p must go to the store workspace (got: $out)"
           done
           curl -sk https://127.0.0.1/login/ | grep -q 'action="/login/"' || fail "the demo sign-in page is not served at /login/"
           curl -skI https://127.0.0.1/login/ | grep -qi '^referrer-policy: same-origin' || fail "the sign-in page must keep its own Referrer-Policy (same-origin), or the browser posts the form with Origin: null"

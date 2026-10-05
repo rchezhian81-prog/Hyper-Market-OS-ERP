@@ -451,7 +451,9 @@ function renderHome() {
   const floor = session.floor();
   el('day').textContent = `${t('tradingDay')} ${floor.tradingDay}`;
   // Who this screen runs as, said in the header; and when the store named nobody, the strip says so (hard rule #4).
-  el('whoami').textContent = floor.manager === null ? '' : `${t('runningAs')} ${floor.manager}`;
+  // OB-16: the person's NAME when the store computer sent one with the menu (the rail says the same); the id otherwise.
+  const named = globalThis.sreNavigation && globalThis.sreNavigation.person && typeof globalThis.sreNavigation.person.name === 'string' && globalThis.sreNavigation.userId === floor.manager ? globalThis.sreNavigation.person.name : null;
+  el('whoami').textContent = floor.manager === null ? '' : `${t('runningAs')} ${named ?? floor.manager}`;
   el('nobody').hidden = floor.manager !== null;
   el('nobody').textContent = floor.manager === null ? t('nobodyNamed') : '';
   const clearable = floor.approvalsIcanClear;

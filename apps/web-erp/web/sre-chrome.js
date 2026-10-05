@@ -37,6 +37,7 @@
       noUser: 'Nobody is named on this screen, so no other screens can be offered.',
       noRoles: 'This store computer has no role register, so no screens can be offered.',
       inList: '{n} in the list',
+      workspaceWord: 'Workspace', branchWorkspace: 'Branch workspace', findScreen: 'Find a screen', noScreenMatches: 'No screen matches',
     },
     ta: {
       staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:',
@@ -50,6 +51,7 @@
       noUser: 'இந்தத் திரையில் யாரும் பெயரிடப்படவில்லை, எனவே வேறு திரைகள் வழங்க முடியாது.',
       noRoles: 'இந்தக் கடை கணினியில் பங்கு பதிவேடு இல்லை, எனவே திரைகள் வழங்க முடியாது.',
       inList: 'பட்டியலில் {n}',
+      workspaceWord: 'பணியிடம்', branchWorkspace: 'கிளைப் பணியிடம்', findScreen: 'ஒரு திரையைத் தேடு', noScreenMatches: 'பொருந்தும் திரை இல்லை',
     },
   };
   const lang = () => (document.documentElement.lang === 'ta' ? 'ta' : 'en');
@@ -301,15 +303,15 @@
       layout();
       return;
     }
-    const who = document.createElement('p');
-    who.className = 'who-can';
-    who.textContent = `${t('screensFor')} `;
-    const name = document.createElement('b');
-    name.textContent = String(nav.userId ?? '');
-    who.append(name);
-    panel.append(who);
+    if (nav.branch && typeof nav.branch.name === 'string' && nav.branch.name !== '') panel.append(branchCard(nav.branch.name));
+    // The groups scroll on their own between the branch card and the person, so the person is always in view at the
+    // foot however long the list (OB-16); the current link is scrolled into view.
+    const scroller = document.createElement('div');
+    scroller.className = 'groups';
+    panel.append(scroller);
     for (const group of groups) {
       const section = document.createElement('div');
+      section.className = 'group-section';
       const title = document.createElement('p');
       title.className = 'group';
       title.textContent = word(group.group);
@@ -324,9 +326,133 @@
         list.append(li);
       }
       section.append(title, list);
-      panel.append(section);
+      scroller.append(section);
     }
+    panel.append(personCard(nav));
+    filterMenu(byId('sre-find')?.value ?? '');
     layout();
+    const current = scroller.querySelector('a[aria-current="page"]');
+    if (current && typeof current.scrollIntoView === 'function') current.scrollIntoView({ block: 'nearest' });
+  }
+
+  // ── The branch and the person (OB-16): the rail names the shop and the person, as head office named them ──
+  // The pack carries the branch's name and, when head office sent one, the person's name and role. Without them the
+  // rail still says WHO by id — never a blank, never an invented name.
+  function branchCard(name) {
+    const card = document.createElement('div');
+    card.className = 'branch';
+    const mark = document.createElement('span');
+    mark.className = 'mark';
+    mark.setAttribute('aria-hidden', 'true');
+    mark.textContent = '⌂';
+    const words = document.createElement('span');
+    const b = document.createElement('b');
+    b.textContent = name;
+    const small = document.createElement('small');
+    small.textContent = t('branchWorkspace');
+    words.append(b, small);
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.setAttribute('aria-hidden', 'true');
+    card.append(mark, words, dot);
+    return card;
+  }
+  function personCard(nav) {
+    const person = nav.person && typeof nav.person.name === 'string' && nav.person.name !== '' ? nav.person : null;
+    if (!person) {
+      const who = document.createElement('p');
+      who.className = 'who-can';
+      who.textContent = `${t('screensFor')} `;
+      const name = document.createElement('b');
+      name.textContent = String(nav.userId ?? '');
+      who.append(name);
+      return who;
+    }
+    const card = document.createElement('div');
+    card.className = 'person';
+    const avatar = document.createElement('span');
+    avatar.className = 'avatar';
+    avatar.setAttribute('aria-hidden', 'true');
+    avatar.textContent = person.name.split(/\s+/).filter((w) => /^[A-Za-z\u0B80-\u0BFF]/.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '•';
+    const words = document.createElement('span');
+    const b = document.createElement('b');
+    b.textContent = person.name;
+    const small = document.createElement('small');
+    small.textContent = person.role ?? String(nav.userId ?? '');
+    words.append(b, small);
+    card.append(avatar, words);
+    return card;
+  }
+
+  // ── The top line (OB-16): where you are, and a way to find any screen you may open ──────────────────────
+  // The breadcrumb is read off the rail — the group and the item that are current — never typed on a page. The search
+  // filters the rail's own links as you type (a screen you may not open is not in the rail, so it cannot be found);
+  // Enter opens the first match; on a phone, typing opens the drawer so the matches are seen.
+  function currentPlace(nav) {
+    for (const group of nav?.groups ?? []) for (const item of group.items ?? []) if (isCurrent(item)) return { group, item };
+    return null;
+  }
+  function filterMenu(query) {
+    const panel = byId('sre-menu');
+    if (!panel) return;
+    const q = String(query ?? '').trim().toLowerCase();
+    let any = false;
+    for (const section of panel.querySelectorAll('.group-section')) {
+      // a workspace's name counts too: "cash" finds every screen under Cash & finance
+      const groupHit = q !== '' && (section.querySelector('.group')?.textContent ?? '').toLowerCase().includes(q);
+      let hit = false;
+      for (const li of section.querySelectorAll('li')) {
+        const match = q === '' || groupHit || li.textContent.toLowerCase().includes(q);
+        li.hidden = !match;
+        hit = hit || match;
+      }
+      section.hidden = !hit;
+      any = any || hit;
+    }
+    let none = byId('sre-find-none');
+    if (q !== '' && !any) {
+      if (!none) { none = document.createElement('p'); none.id = 'sre-find-none'; none.className = 'who-can'; (panel.querySelector('.groups') ?? panel).append(none); }
+      setText(none, t('noScreenMatches'));
+    } else if (none) none.remove();
+    if (q !== '' && !desk.matches && byId('sre-menu')?.hidden) toggleMenu(true);
+  }
+  function paintTopline() {
+    const header = document.querySelector('header');
+    if (!header) return;
+    const nav = navigation();
+    let line = byId('sre-topline');
+    if (!line) {
+      line = document.createElement('div');
+      line.id = 'sre-topline';
+      line.className = 'sre-topline';
+      const crumbs = document.createElement('p');
+      crumbs.id = 'sre-crumbs';
+      crumbs.className = 'sre-crumbs';
+      const find = document.createElement('input');
+      find.type = 'search';
+      find.id = 'sre-find';
+      find.className = 'sre-find';
+      find.autocomplete = 'off';
+      find.addEventListener('input', () => filterMenu(find.value));
+      find.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { const first = byId('sre-menu')?.querySelector('li:not([hidden]) a'); if (first) { e.preventDefault(); first.click(); } }
+        if (e.key === 'Escape') { find.value = ''; filterMenu(''); }
+      });
+      line.append(crumbs, find);
+      header.prepend(line);
+    }
+    const place = nav ? currentPlace(nav) : null;
+    const parts = [t('workspaceWord')];
+    if (place) {
+      parts.push(word(place.group.group));
+      const leaf = word(place.item.label);
+      if (leaf !== parts[parts.length - 1]) parts.push(leaf);
+    }
+    setText(byId('sre-crumbs'), parts.join(' › '));
+    const find = byId('sre-find');
+    find.setAttribute('aria-label', t('findScreen'));
+    find.placeholder = t('findScreen');
+    find.hidden = !nav || (nav.groups ?? []).length === 0;
   }
 
   // ── A menu link may name a tab: /manager/?tab=approvals opens the manager on Approvals ─────────────
@@ -442,7 +568,7 @@
   let anatomyQueued = false;
   const scheduleAnatomy = () => { if (anatomyQueued) return; anatomyQueued = true; requestAnimationFrame(() => { anatomyQueued = false; paintAnatomy(); }); };
 
-  function repaint() { paintToggle(); paintStale(); paintBadge(); paintMenu(); paintUpdate(); paintAnatomy(); }
+  function repaint() { paintToggle(); paintStale(); paintBadge(); paintMenu(); paintTopline(); paintUpdate(); paintAnatomy(); }
 
   new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
   repaint();

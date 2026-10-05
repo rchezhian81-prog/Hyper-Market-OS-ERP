@@ -150,6 +150,7 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
     permissions: ['reporting.sales.export', 'reporting.operations.export'],
   }]),
   roleAssignments: known([{ userId: 'u-report', roleId: 'analyst', branchScope: ['b1'] }]),
+  people: notKnown('not pulled'),
   reportingPolicy: known({ laggingAfterMinutes: 5, staleAfterMinutes: 60, userId: 'u-report' }),
   // Who runs the manager screen on this box (Stage G slice 5c).
   managerPolicy: known({ userId: 'u-mgr', approvalLimitMinor: 500_000 }),
