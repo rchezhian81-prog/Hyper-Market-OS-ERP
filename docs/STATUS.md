@@ -36,7 +36,10 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   loser is the guard's 409 or, when the first transaction committed before the second read the stock, the plain 422
   on the true figure; either way the source holds 30 and one transfer is in transit. Twenty concurrent audit records
   from two instances plus one from a restarted third: 21 unique sequences, the chain verified intact. Every
-  transfer, order, storefront, fulfilment, audit and write-guard suite green (47 files); full gate green locally.
+  transfer, order, storefront, fulfilment, audit and write-guard suite green (47 files). The full gate found three
+  more real-PostgreSQL suites (authorization end-to-end, the handheld floor issue, "the API remembers") built on the
+  query-only `pg` client — now that every route's audit record is a guarded append, they failed closed by name; they
+  use the transactional pool client, as the three in #701 do. Full gate green locally after that.
 - **What the database run taught (why the audit insisted on it):** both PostgreSQL-only findings were real. The
   transfer race resolves differently there (a commit can land between the two reads, so the loser's refusal names the
   figure, not the guard) — the proof now accepts either named answer and holds the invariant. And the audit writer's

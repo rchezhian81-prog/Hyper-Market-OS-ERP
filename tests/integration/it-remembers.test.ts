@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Client } from 'pg';
-import { pgClient } from '../../packages/persistence/src/pg-client';
+import { Pool } from 'pg';
+import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest } from '../../services/kernel/src/index';
@@ -80,7 +80,7 @@ const ACCESS = new AccessControl(
 );
 
 describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
-  let client: Client;
+  let client: Pool;
   let store: SqlEventStore;
   let kernel: Parameters<typeof handle>[0];
 
@@ -91,9 +91,10 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     req({ method: 'POST', path, body, headers: { authorization: 'Bearer good', 'idempotency-key': key } });
 
   beforeAll(async () => {
-    client = new Client({ connectionString: DATABASE_URL, options: '-c app.tenant_id=*' });
-    await client.connect();
-    const sql = pgClient(client);
+    // The TRANSACTIONAL pool client — the wiring main.ts uses. Wave 2a's write guards (the audit chain's among them) run inside
+    // the append's own transaction, and the store refuses a guarded append on a client that offers none (fail closed, by name).
+    client = new Pool({ connectionString: DATABASE_URL, max: 4, options: '-c app.tenant_id=*' });
+    const sql = pgPoolClient(client);
     const dir = 'db/migrations';
     await runMigrations(sql, readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
