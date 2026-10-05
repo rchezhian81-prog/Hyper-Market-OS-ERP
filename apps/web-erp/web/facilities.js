@@ -2,9 +2,10 @@
 // session model (apps/web-erp/src/facilities-session.ts), attached as window.facilitiesSession, built on
 // packages/ui over the cloud's overdue list. This file only draws what the session hands it: the overdue checks
 // (worst first, each with its category, was-due date, how late, who it escalated to and why it matters), and a
-// "Mark done" control per row — with optional evidence + second-verifier inputs. Marking done is a HUMAN
-// decision that runs ONLY on an explicit click, never on load; on success the board is re-read (a GET) so a
-// done check drops off. No prompt/confirm/alert.
+// "Mark done" control per row — with an optional evidence reference. A safety check that needs a second person
+// then WAITS, showing who did it; a DIFFERENT signed-in person is offered "Verify" (Wave 2b · PA-03 — there is no
+// box to type a second person's name). Both are HUMAN decisions that run ONLY on an explicit click, never on load;
+// on success the board is re-read (a GET) so a finished check drops off. No prompt/confirm/alert.
 
 const el = (id) => document.getElementById(id);
 let lang = 'en';
@@ -23,8 +24,10 @@ function sampleSession() {
       complianceWord: 'Compliance risk', escalatedWord: 'Escalated', overdueWord: 'Overdue', dueWord: 'Due today',
       dueTodayText: 'due today', daysLateText: 'day(s) late',
       completeBtn: 'Mark done', completeHint: 'Marking a check done records it in your name.',
-      evidenceLabel: 'Evidence reference (photo / certificate)', verifierLabel: 'Verified by (a second person)',
-      completeRecorded: 'Marked done and recorded.', completeRefused: 'Not accepted — this check needs its evidence attached, or a second person to verify it, or you do not have permission.', completeLostLink: 'No connection — not saved. Try again.',
+      evidenceLabel: 'Evidence reference (photo / certificate)',
+      completeRecorded: 'Marked done and recorded.', completeAwaiting: 'Recorded in your name. It now waits for a second person to verify it.', completeRefused: 'Not accepted — this check needs its evidence attached, or you do not have permission.', completeLostLink: 'No connection — not saved. Try again.',
+      awaitingWord: 'Waiting for a second person', doneByLabel: 'Done by', verifyBtn: 'Verify', verifyHint: 'Verifying records, in your name, that you checked this work.',
+      cannotVerifyOwn: 'You did this check, so a different person must verify it.', verifyRecorded: 'Verified and recorded in your name.', verifyRefused: 'Not accepted.', verifyLostLink: 'No connection — not saved. Try again.',
       scrReady: 'Showing the overdue checks', scrEmpty: 'Nothing overdue — every scheduled check is up to date.',
       stateNotPermitted: 'You do not have permission to see maintenance and compliance.', noComplete: 'You can see the overdue checks, but marking one done needs the facilities-record permission.',
       nobodyNamed: 'This store computer has not been told who is using this screen.',
@@ -41,8 +44,10 @@ function sampleSession() {
       complianceWord: 'இணக்க அபாயம்', escalatedWord: 'மேலிடம்', overdueWord: 'தாமதம்', dueWord: 'இன்று',
       dueTodayText: 'இன்று செய்ய வேண்டியது', daysLateText: 'நாள் தாமதம்',
       completeBtn: 'முடிந்ததெனக் குறி', completeHint: 'ஒரு சோதனையை முடிந்ததெனக் குறித்தல் அதை உங்கள் பெயரில் பதிவு செய்கிறது.',
-      evidenceLabel: 'ஆதாரக் குறிப்பு (புகைப்படம் / சான்றிதழ்)', verifierLabel: 'சரிபார்த்தவர் (இரண்டாம் நபர்)',
-      completeRecorded: 'முடிந்ததெனக் குறிக்கப்பட்டு பதிவு செய்யப்பட்டது.', completeRefused: 'ஏற்கப்படவில்லை — ஆதாரம் அல்லது இரண்டாம் நபர் தேவை, அல்லது அனுமதி இல்லை.', completeLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
+      evidenceLabel: 'ஆதாரக் குறிப்பு (புகைப்படம் / சான்றிதழ்)',
+      completeRecorded: 'முடிந்ததெனக் குறிக்கப்பட்டு பதிவு செய்யப்பட்டது.', completeAwaiting: 'உங்கள் பெயரில் பதிவு செய்யப்பட்டது. இப்போது இரண்டாம் நபரின் சரிபார்ப்புக்காகக் காத்திருக்கிறது.', completeRefused: 'ஏற்கப்படவில்லை — ஆதாரம் தேவை, அல்லது அனுமதி இல்லை.', completeLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
+      awaitingWord: 'இரண்டாம் நபருக்காகக் காத்திருக்கிறது', doneByLabel: 'செய்தவர்', verifyBtn: 'சரிபார்', verifyHint: 'சரிபார்த்தல் உங்கள் பெயரில் பதிவு செய்யப்படும்.',
+      cannotVerifyOwn: 'இந்தச் சோதனையை நீங்கள் செய்தீர்கள், எனவே வேறொருவர் சரிபார்க்க வேண்டும்.', verifyRecorded: 'சரிபார்க்கப்பட்டு உங்கள் பெயரில் பதிவு செய்யப்பட்டது.', verifyRefused: 'ஏற்கப்படவில்லை.', verifyLostLink: 'இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
       scrReady: 'தாமதமான சோதனைகளைக் காட்டுகிறது', scrEmpty: 'தாமதம் எதுவும் இல்லை — ஒவ்வொரு சோதனையும் புதுப்பித்த நிலையில்.',
       stateNotPermitted: 'பராமரிப்பு & இணக்கத்தைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.', noComplete: 'தாமதமான சோதனைகளைப் பார்க்கலாம், ஆனால் ஒன்றை முடிந்ததெனக் குறிக்க facilities-record அனுமதி தேவை.',
       nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
@@ -56,7 +61,7 @@ function sampleSession() {
     detail: l === 'ta' ? 'ஒழுங்குமுறை அதிகாரி கவலைப்படுவார்' : 'a regulator would care — escalated to owner',
     escalateTo: 'owner', complianceLinked: true, severityWord: l === 'ta' ? 'இணக்க அபாயம்' : 'Compliance risk',
     status: { tone: 'error', icon: '✕', label: (l === 'ta' ? 'இணக்க அபாயம்' : 'Compliance risk') + ' · fire', announcement: 'compliance risk', needsAttention: true },
-    needsAttention: true,
+    needsAttention: true, awaitingVerification: false, completedBy: null, mayVerify: false, ownCompletion: false,
   });
   return {
     text: (l, key) => CHROME[l]?.[key] ?? CHROME.en[key] ?? key,
@@ -65,6 +70,8 @@ function sampleSession() {
       tasks: [sampleTask(l)], overdueCount: 1, complianceRiskCount: 1, nobodyNamed: false, mayComplete: true,
     }),
     complete: async () => 'lost_link',
+    verify: async () => 'lost_link',
+    presentVerifyResult: (l, result) => ({ tone: result === 'verified' ? 'ok' : result === 'refused' ? 'error' : 'degraded', icon: result === 'verified' ? '✓' : result === 'refused' ? '✕' : '⚠', label: CHROME[l]?.[result === 'verified' ? 'verifyRecorded' : result === 'refused' ? 'verifyRefused' : 'verifyLostLink'] ?? '', announcement: '', needsAttention: result !== 'verified' }),
     presentCompleteResult: (l, result) => ({ tone: result === 'completed' ? 'ok' : result === 'refused' ? 'error' : 'degraded', icon: result === 'completed' ? '✓' : result === 'refused' ? '✕' : '⚠', label: '', announcement: '', needsAttention: result !== 'completed' }),
   };
 }
@@ -118,13 +125,30 @@ function rowNode(r) {
   const detail = document.createElement('div'); detail.className = 'detail'; detail.textContent = r.detail;
   li.append(detail);
 
-  // The one decision — only for an operator who holds facilities.task.record. Optional evidence + a second
-  // verifier ride with it; the server refuses a completion with no required evidence or a self-verified safety
-  // check (§28), and the screen surfaces that refusal rather than faking a success.
+  // A check already done and waiting for a second person: who did it, and — only for a DIFFERENT signed-in person
+  // the tested session allows — the Verify button. The completer is told why there is none for them (§28).
+  if (r.awaitingVerification) {
+    facts.append(fact(t('doneByLabel'), r.completedBy ?? ''));
+    const waiting = document.createElement('div'); waiting.className = 'awaiting';
+    waiting.textContent = r.ownCompletion ? `${t('awaitingWord')} — ${t('cannotVerifyOwn')}` : t('awaitingWord');
+    li.append(waiting);
+    if (r.mayVerify) {
+      const actions = document.createElement('div'); actions.className = 'actions';
+      const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = t('verifyHint');
+      const verify = document.createElement('button'); verify.className = 'act verify'; verify.type = 'button'; verify.dataset.taskId = r.taskId; verify.textContent = t('verifyBtn');
+      actions.append(hint, verify);
+      li.append(actions);
+    }
+    return li;
+  }
+
+  // The one decision — only for an operator who holds facilities.task.record. Optional evidence rides with it; the
+  // server refuses a completion with no required evidence, and a safety check comes back WAITING for a second
+  // person — the screen surfaces both rather than faking a success.
   if (canCompleteNow) {
     const actions = document.createElement('div'); actions.className = 'actions';
     const fields = document.createElement('div'); fields.className = 'fields';
-    fields.append(labelledInput(t('evidenceLabel'), 'evidence'), labelledInput(t('verifierLabel'), 'verifier'));
+    fields.append(labelledInput(t('evidenceLabel'), 'evidence'));
     const complete = document.createElement('button'); complete.className = 'act complete'; complete.type = 'button'; complete.dataset.taskId = r.taskId; complete.textContent = t('completeBtn');
     actions.append(fields, complete);
     li.append(actions);
@@ -179,16 +203,28 @@ function paintResult(presentation) {
 // from the list so there is one handler; on success the board is re-read (a GET) so a done check drops off. The
 // server enforces the evidence/verification rules; the screen never fakes a success it did not get (P-08).
 el('rows').addEventListener('click', (ev) => {
-  const btn = ev.target instanceof Element ? ev.target.closest('button.complete') : null;
+  const target = ev.target instanceof Element ? ev.target : null;
+  const verifyBtn = target ? target.closest('button.verify') : null;
+  if (verifyBtn) {
+    // The SECOND person's act — no name is sent; the server takes it from this person's sign-in.
+    const taskId = verifyBtn.dataset.taskId;
+    verifyBtn.disabled = true;
+    void (async () => {
+      const result = await session.verify(taskId);
+      paintResult(session.presentVerifyResult(lang, result));
+      if (result === 'verified') { await refresh(); } else { verifyBtn.disabled = false; }
+    })();
+    return;
+  }
+  const btn = target ? target.closest('button.complete') : null;
   if (!btn) return;
   const li = btn.closest('li.row');
   const taskId = btn.dataset.taskId;
   const evidenceRef = li?.querySelector('input.evidence')?.value ?? '';
-  const verifiedBy = li?.querySelector('input.verifier')?.value ?? '';
   void (async () => {
-    const result = await session.complete(taskId, { evidenceRef, verifiedBy });
+    const result = await session.complete(taskId, { evidenceRef });
     paintResult(session.presentCompleteResult(lang, result));
-    if (result === 'completed') { await refresh(); }
+    if (result === 'completed' || result === 'awaiting_verification') { await refresh(); }
   })();
 });
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });

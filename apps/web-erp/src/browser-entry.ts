@@ -162,6 +162,7 @@ import {
   createFacilitiesSession,
   type FacilitiesPorts, type FacilitiesSession, type FacilitiesData, type OverdueTask,
   type CompletePort, type CompleteResult,
+  type VerifyPort as FacilitiesVerifyPort, type VerifyResult as FacilitiesVerifyResult,
 } from './facilities-session';
 import {
   createCashOfficeSession,
@@ -1754,11 +1755,13 @@ const FACILITIES_READ_PERMISSION = 'facilities.overdue.read';
 const FACILITIES_COMPLETE_PERMISSION = 'facilities.task.record';
 const EMPTY_FACILITIES: FacilitiesData = Object.freeze({ overdue: [] });
 const NOOP_COMPLETE_PORT: CompletePort = { post: async () => 'lost_link' };
+const NOOP_VERIFY_PORT: FacilitiesVerifyPort = { post: async () => 'lost_link' };
 
 export function facilitiesPortsFromData(
   data: FacilitiesScreenData | undefined,
   worklist?: FacilitiesData,
   completePort: CompletePort = NOOP_COMPLETE_PORT,
+  verifyPort: FacilitiesVerifyPort = NOOP_VERIFY_PORT,
 ): FacilitiesPorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -1767,6 +1770,7 @@ export function facilitiesPortsFromData(
     mayRead: () => held.has(FACILITIES_READ_PERMISSION),
     mayComplete: () => held.has(FACILITIES_COMPLETE_PERMISSION),
     completePort: () => completePort,
+    verifyPort: () => verifyPort,
   };
 }
 
@@ -1775,11 +1779,12 @@ export function bootFacilities(
   data: FacilitiesScreenData | undefined,
   worklist?: FacilitiesData,
   completePort?: CompletePort,
+  verifyPort?: FacilitiesVerifyPort,
 ): FacilitiesSession | null {
   if (data === undefined) return null;
   return createFacilitiesSession(
     { userId: data.userId === undefined ? null : data.userId },
-    facilitiesPortsFromData(data, worklist, completePort),
+    facilitiesPortsFromData(data, worklist, completePort, verifyPort),
   );
 }
 
@@ -1791,7 +1796,7 @@ export function bootFacilities(
  *  a refusal the screen surfaces rather than fakes (P-08). */
 function openCompletePort(): CompletePort {
   return {
-    post: async ({ taskId, completedBy, evidenceRefs, verifiedBy, note }): Promise<CompleteResult> => {
+    post: async ({ taskId, completedBy, evidenceRefs, note }): Promise<CompleteResult> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
       if (fetchFn === undefined) return 'lost_link';
       const key = globalThis.crypto?.randomUUID?.() ?? `complete-${taskId}-${completedBy}`;
@@ -1803,12 +1808,35 @@ function openCompletePort(): CompletePort {
           body: JSON.stringify({
             completedBy,
             ...(evidenceRefs === undefined ? {} : { evidenceRefs }),
-            ...(verifiedBy === undefined ? {} : { verifiedBy }),
             ...(note === undefined ? {} : { note }),
           }),
         });
         if (res.status < 200 || res.status >= 300) return 'refused';
-        return 'completed';
+        // 202 is the honest middle: recorded in the completer's name, NOT accepted until a second person verifies it.
+        return res.status === 202 ? 'awaiting_verification' : 'completed';
+      } catch {
+        return 'lost_link';
+      }
+    },
+  };
+}
+
+/** The authenticated POST of a SECOND person's verification — their own session cookie, an empty body: the server
+ *  takes the verifier from the sign-in and refuses the person who did the check (Wave 2b · PA-03, §28). */
+function openFacilitiesVerifyPort(): FacilitiesVerifyPort {
+  return {
+    post: async ({ taskId }): Promise<FacilitiesVerifyResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return 'lost_link';
+      const key = globalThis.crypto?.randomUUID?.() ?? `verify-${taskId}-${Date.now()}`;
+      try {
+        const res = await fetchFn(`/v1/facilities/tasks/${encodeURIComponent(taskId)}/verify`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: '{}',
+        });
+        return res.status >= 200 && res.status < 300 ? 'verified' : 'refused';
       } catch {
         return 'lost_link';
       }
@@ -5026,14 +5054,15 @@ if (browserWindow !== undefined) {
   // required evidence or a self-verified safety check (§28), which the screen never fakes (P-08).
   const facilitiesData = browserWindow.facilitiesData;
   const completePort = openCompletePort();
-  const facilities = bootFacilities(facilitiesData, undefined, completePort);
+  const facilitiesVerifyPort = openFacilitiesVerifyPort();
+  const facilities = bootFacilities(facilitiesData, undefined, completePort, facilitiesVerifyPort);
   if (facilities !== null) {
     browserWindow.facilitiesSession = facilities;
     browserWindow.facilities = {
       refresh: fetchFacilitiesBoard,
       present: (worklist) => createFacilitiesSession(
         { userId: facilitiesData?.userId === undefined ? null : facilitiesData.userId },
-        facilitiesPortsFromData(facilitiesData, worklist, completePort),
+        facilitiesPortsFromData(facilitiesData, worklist, completePort, facilitiesVerifyPort),
       ),
     };
   }

@@ -45,29 +45,40 @@ describe('facilities incidents & evidence: a close needs an action, a pack must 
   it('refuses to close on no action, no evidence, a self-close, or an unreported reportable', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    // Who closes is the CALLER (Wave 2b · PA-03): the manager and the reporter each act under their own sign-in.
+    await h.provisionRole(A, 'u-mgr', 'store_manager');
+    await h.provisionRole(A, 'u-floor', 'store_manager');
     await raise(h, A, 'u-owner', 'inc-serious', serious());
     await raise(h, A, 'u-owner', 'inc-noevid', serious({ evidenceRefs: [] }));
     await raise(h, A, 'u-owner', 'inc-report', serious({ severity: 'reportable' }));
     await raise(h, A, 'u-owner', 'inc-minor', serious({ severity: 'minor', evidenceRefs: [] }));
 
     // No corrective action → refused as a business outcome, not just malformed.
-    expect(codeOf(await close(h, A, 'u-owner', 'inc-serious', { closedBy: 'u-mgr', actionTaken: '' }, 'c1'))).toBe('no_action_recorded');
+    expect(codeOf(await close(h, A, 'u-mgr', 'inc-serious', { actionTaken: '' }, 'c1'))).toBe('no_action_recorded');
     // A serious incident cannot close on a description alone.
-    expect(codeOf(await close(h, A, 'u-owner', 'inc-noevid', { closedBy: 'u-mgr', actionTaken: 'Dried the aisle and put out signage' }, 'c2'))).toBe('no_evidence');
+    expect(codeOf(await close(h, A, 'u-mgr', 'inc-noevid', { actionTaken: 'Dried the aisle and put out signage' }, 'c2'))).toBe('no_evidence');
     // The reporter cannot sign off their own serious incident (§28).
-    expect(codeOf(await close(h, A, 'u-owner', 'inc-serious', { closedBy: 'u-floor', actionTaken: 'Dried the aisle' }, 'c3'))).toBe('self_closed');
+    expect(codeOf(await close(h, A, 'u-floor', 'inc-serious', { actionTaken: 'Dried the aisle' }, 'c3'))).toBe('self_closed');
+    // Whoever RECORDED a serious incident cannot close it either — naming somebody else as the reporter is no way round §28.
+    await raise(h, A, 'u-mgr', 'inc-proxy', serious({ reportedBy: 'a customer at the deli counter' }));
+    expect(codeOf(await close(h, A, 'u-mgr', 'inc-proxy', { actionTaken: 'Dried the aisle' }, 'c3p'))).toBe('self_closed');
+    expect((await close(h, A, 'u-owner', 'inc-proxy', { actionTaken: 'Dried the aisle' }, 'c3q')).status).toBe(200);
+    // and the recorder is the sign-in, never a body field
+    expect(codeOf(await raise(h, A, 'u-mgr', 'inc-ghost', serious({ recordedBy: 'u-owner' })))).toBe('actor_is_the_caller');
+    // a body that names a different closer is refused by name — who closes is the sign-in
+    expect(codeOf(await close(h, A, 'u-owner', 'inc-serious', { closedBy: 'u-mgr', actionTaken: 'Dried the aisle' }, 'c3b'))).toBe('actor_is_the_caller');
     // A reportable incident cannot close with no statutory notification on file.
-    expect(codeOf(await close(h, A, 'u-owner', 'inc-report', { closedBy: 'u-mgr', actionTaken: 'Evacuated and ventilated' }, 'c4'))).toBe('not_reported_to_authority');
+    expect(codeOf(await close(h, A, 'u-mgr', 'inc-report', { actionTaken: 'Evacuated and ventilated' }, 'c4'))).toBe('not_reported_to_authority');
 
     // A minor incident closes on an action alone, even by its own reporter.
-    const minor = await close(h, A, 'u-owner', 'inc-minor', { closedBy: 'u-floor', actionTaken: 'Mopped it' }, 'c5');
+    const minor = await close(h, A, 'u-floor', 'inc-minor', { actionTaken: 'Mopped it' }, 'c5');
     expect(minor.status).toBe(200);
     // The serious one closes properly: action + evidence + a different person.
-    const ok = await close(h, A, 'u-owner', 'inc-serious', { closedBy: 'u-mgr', actionTaken: 'Non-slip matting laid; toolbox talk held' }, 'c6');
+    const ok = await close(h, A, 'u-mgr', 'inc-serious', { actionTaken: 'Non-slip matting laid; toolbox talk held' }, 'c6');
     expect(ok.status).toBe(200);
     expect((ok.body as { closed: boolean }).closed).toBe(true);
     // The reportable one closes once the authority notification is on file.
-    const reported = await close(h, A, 'u-owner', 'inc-report', { closedBy: 'u-mgr', actionTaken: 'Evacuated and ventilated', authorityNotifiedOn: '2026-08-11' }, 'c7');
+    const reported = await close(h, A, 'u-mgr', 'inc-report', { actionTaken: 'Evacuated and ventilated', authorityNotifiedOn: '2026-08-11' }, 'c7');
     expect(reported.status).toBe(200);
   });
 
@@ -84,7 +95,9 @@ describe('facilities incidents & evidence: a close needs an action, a pack must 
     expect(p.gaps.some((g) => g.includes('Fire extinguisher check'))).toBe(true);
 
     // Do it properly (evidence + a second verifier) → the gap closes and the pack can be handed over.
-    await complete(h, A, 'u-owner', 'tfire', { completedBy: 'u-cleaner', evidenceRefs: ['ext.jpg'], verifiedBy: 'u-mgr' });
+    await h.provisionRole(A, 'u-mgr', 'store_manager');
+    await complete(h, A, 'u-owner', 'tfire', { evidenceRefs: ['ext.jpg'] });
+    await h.request({ method: 'POST', path: '/v1/facilities/tasks/tfire/verify', userId: 'u-mgr', tenantId: A, idempotencyKey: 'fv-tfire', body: {} });
     p = (await evidence(h, A, 'u-owner', 'BR1', '2026-08-01', '2026-08-31')).body as Pack;
     expect(p.presentable).toBe(true);
     expect(p.tasksEvidenced).toBe(1);
@@ -99,7 +112,7 @@ describe('facilities incidents & evidence: a close needs an action, a pack must 
     expect(p.gaps.some((g) => g.includes('serious injury still open'))).toBe(true);
 
     // Close it → the pack is presentable once more.
-    await close(h, A, 'u-owner', 'inc-open', { closedBy: 'u-mgr', actionTaken: 'Non-slip matting laid' });
+    await close(h, A, 'u-mgr', 'inc-open', { actionTaken: 'Non-slip matting laid' });
     p = (await evidence(h, A, 'u-owner', 'BR1', '2026-08-01', '2026-08-31')).body as Pack;
     expect(p.presentable).toBe(true);
     expect(p.openIncidents).toBe(0);
@@ -112,7 +125,7 @@ describe('facilities incidents & evidence: a close needs an action, a pack must 
     await raise(h, A, 'u-owner', 'inc-1', serious());
 
     expect((await raise(h, A, 'u-cash', 'inc-x', serious())).status).toBe(403);
-    expect((await close(h, A, 'u-owner', 'GHOST', { closedBy: 'u-mgr', actionTaken: 'x' })).status).toBe(404);
+    expect((await close(h, A, 'u-owner', 'GHOST', { actionTaken: 'x' })).status).toBe(404);
     expect((await raise(h, A, 'u-owner', 'inc-bad', serious({ severity: 'catastrophic' }))).status).toBe(400);
 
     await h.seedOwner(B, 'u-owner-b');

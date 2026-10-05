@@ -24,6 +24,9 @@ const raiseTask = (h: ApiHarness, tenantId: string, userId: string, schedId: str
 
 const complete = (h: ApiHarness, tenantId: string, userId: string, taskId: string, body: Record<string, unknown>, key?: string) =>
   h.request({ method: 'POST', path: `/v1/facilities/tasks/${taskId}/complete`, userId, tenantId, idempotencyKey: key ?? `fc-${taskId}`, body });
+// The second person's own act (Wave 2b · PA-03): verify under THEIR sign-in.
+const verify = (h: ApiHarness, tenantId: string, userId: string, taskId: string, key?: string) =>
+  h.request({ method: 'POST', path: `/v1/facilities/tasks/${taskId}/verify`, userId, tenantId, idempotencyKey: key ?? `fv-${taskId}-${userId}`, body: {} });
 
 const overdue = (h: ApiHarness, tenantId: string, userId: string, asOf: string) =>
   h.request({ method: 'GET', path: '/v1/facilities/overdue', userId, tenantId, query: { asOf } });
@@ -33,19 +36,34 @@ interface Overdue { overdue: { taskId: string; level: string }[]; complianceRisk
 const levelOf = (r: Overdue, id: string) => r.overdue.find((o) => o.taskId === id)?.level;
 
 describe('facilities schedules: a hollow tick is refused, a compliance miss escalates itself (M26-FR-03)', () => {
-  it('refuses a completion with no evidence, no verifier, or a self-verified safety check', async () => {
+  it('refuses a hollow tick; a safety check waits for a DIFFERENT signed-in person to verify it — the completer cannot, a typed name cannot (Wave 2b · PA-03)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'store_manager'); // facilities.task.record — the second person
     await defineSched(h, A, 'u-owner', 'sched-fire');
     await raiseTask(h, A, 'u-owner', 'sched-fire', 't1', '2026-08-05');
 
-    expect(codeOf(await complete(h, A, 'u-owner', 't1', { completedBy: 'u-cleaner' }, 'c-a'))).toBe('evidence_missing');
-    expect(codeOf(await complete(h, A, 'u-owner', 't1', { completedBy: 'u-cleaner', evidenceRefs: ['photo.jpg'] }, 'c-b'))).toBe('not_verified');
-    expect(codeOf(await complete(h, A, 'u-owner', 't1', { completedBy: 'u-cleaner', evidenceRefs: ['photo.jpg'], verifiedBy: 'u-cleaner' }, 'c-c'))).toBe('self_verified');
-    // Evidence attached and a DIFFERENT person verified → accepted.
-    const ok = await complete(h, A, 'u-owner', 't1', { completedBy: 'u-cleaner', evidenceRefs: ['photo.jpg'], verifiedBy: 'u-mgr' }, 'c-d');
+    // who did it is the caller: a body naming somebody else, or naming the verifier at all, is refused by name
+    expect(codeOf(await complete(h, A, 'u-owner', 't1', { completedBy: 'u-cleaner', evidenceRefs: ['photo.jpg'] }, 'c-0'))).toBe('actor_is_the_caller');
+    expect(codeOf(await complete(h, A, 'u-owner', 't1', { evidenceRefs: ['photo.jpg'], verifiedBy: 'u-mgr' }, 'c-1'))).toBe('second_person_is_a_separate_act');
+    expect(codeOf(await complete(h, A, 'u-owner', 't1', {}, 'c-a'))).toBe('evidence_missing');
+    // evidence attached, verification required: done and recorded, WAITING — not accepted
+    const waiting = await complete(h, A, 'u-owner', 't1', { evidenceRefs: ['photo.jpg'] }, 'c-b');
+    expect(waiting.status).toBe(202);
+    expect(waiting.body).toMatchObject({ accepted: false, outcome: 'not_verified', awaitingVerification: true, completedBy: 'u-owner' });
+    const listed = (await overdue(h, A, 'u-owner', '2026-08-10')).body as Overdue & { overdue: { awaitingVerification?: boolean; completedBy?: string }[] };
+    expect(listed.overdue.find((o) => o.taskId === 't1')).toMatchObject({ awaitingVerification: true, completedBy: 'u-owner' });
+    // the completer cannot verify their own check (§28); a body naming a verifier is refused
+    expect(codeOf(await verify(h, A, 'u-owner', 't1'))).toBe('self_verified');
+    expect(codeOf(await h.request({ method: 'POST', path: '/v1/facilities/tasks/t1/verify', userId: 'u-mgr', tenantId: A, idempotencyKey: 'fv-named', body: { verifiedBy: 'u-owner' } }))).toBe('actor_is_the_caller');
+    // a DIFFERENT signed-in person verifies → accepted
+    const ok = await verify(h, A, 'u-mgr', 't1');
     expect(ok.status).toBe(200);
-    expect((ok.body as { accepted: boolean }).accepted).toBe(true);
+    expect(ok.body).toMatchObject({ accepted: true, verifiedBy: 'u-mgr' });
+    expect((await verify(h, A, 'u-mgr', 't1', 'fv-again')).body).toMatchObject({ alreadyVerified: true });
+    // nothing to verify on a task nobody marked done
+    await raiseTask(h, A, 'u-owner', 'sched-fire', 't2', '2026-08-05');
+    expect(codeOf(await verify(h, A, 'u-mgr', 't2'))).toBe('nothing_to_verify');
   });
 
   it('escalates a compliance-linked miss by itself, but never buries it among cleaning alerts', async () => {
@@ -67,7 +85,9 @@ describe('facilities schedules: a hollow tick is refused, a compliance miss esca
     await h.seedOwner(A, 'u-owner');
     await defineSched(h, A, 'u-owner', 'sched-fire');
     await raiseTask(h, A, 'u-owner', 'sched-fire', 't1', '2026-08-01');
-    await complete(h, A, 'u-owner', 't1', { completedBy: 'u-cleaner', evidenceRefs: ['photo.jpg'], verifiedBy: 'u-mgr' });
+    await h.provisionRole(A, 'u-mgr', 'store_manager');
+    await complete(h, A, 'u-owner', 't1', { evidenceRefs: ['photo.jpg'] });
+    await verify(h, A, 'u-mgr', 't1');
 
     expect((await overdue(h, A, 'u-owner', '2026-08-10')).body as Overdue).toMatchObject({ overdue: [] });
   });
@@ -79,7 +99,7 @@ describe('facilities schedules: a hollow tick is refused, a compliance miss esca
     await defineSched(h, A, 'u-owner', 'sched-fire');
 
     expect((await defineSched(h, A, 'u-cash', 'sched-x')).status).toBe(403);
-    expect((await complete(h, A, 'u-owner', 'GHOST', { completedBy: 'u-cleaner' })).status).toBe(404);
+    expect((await complete(h, A, 'u-owner', 'GHOST', { evidenceRefs: ['x.jpg'] })).status).toBe(404);
     expect((await defineSched(h, A, 'u-owner', 'sched-bad', fire({ category: 'nonsense' }))).status).toBe(400);
 
     await h.seedOwner(B, 'u-owner-b');

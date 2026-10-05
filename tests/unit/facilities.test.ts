@@ -407,6 +407,25 @@ describe('a missed compliance task escalates by ITSELF (M26-FR-03, P-03)', () =>
     expect(overdue[0]?.detail).toContain('it was ticked, but with no evidence');
   });
 
+  it('a check done and waiting for a second person says so — who did it, and that it waits (Wave 2b · PA-03)', () => {
+    const [waiting] = findOverdue({
+      schedules: [schedule({})],
+      tasks: [task({ dueOn: '2026-08-04', completedBy: 'u-raj', completedOn: '2026-08-04', verifiedBy: undefined })],
+      asAt: '2026-08-04',
+    });
+    expect(waiting?.awaitingVerification).toBe(true);
+    expect(waiting?.completedBy).toBe('u-raj');
+    expect(waiting?.completedOn).toBe('2026-08-04');
+    expect(waiting?.detail).toContain('done by u-raj, awaiting a second person');
+    const [notDone] = findOverdue({
+      schedules: [schedule({})],
+      tasks: [task({ dueOn: '2026-08-04', completedOn: undefined, completedBy: undefined })],
+      asAt: '2026-08-04',
+    });
+    expect(notDone?.awaitingVerification).toBe(false);
+    expect(notDone?.completedBy).toBeUndefined();
+  });
+
   it('says nothing about a task that is not yet due', () => {
     expect(findOverdue({
       schedules: [schedule({})],
@@ -456,6 +475,16 @@ describe('an incident cannot be closed into silence (M26-FR-04)', () => {
 
   it('refuses to let the reporter close their own serious incident', () => {
     expect(close({ closedBy: 'u-raj' }).outcome).toBe('self_closed');
+  });
+
+  it('refuses to let the person who RECORDED it close it either, whoever they named as reporter (Wave 2b · PA-03)', () => {
+    const recorded = incident({ reportedBy: 'a customer', recordedBy: 'u-manager' });
+    const result = close({ incident: recorded });
+    expect(result.outcome).toBe('self_closed');
+    expect(result.detail).toContain('recorded and closed');
+    expect(close({ incident: recorded, closedBy: 'u-owner' }).closed).toBe(true);
+    // a minor one still closes on its own recorder's action
+    expect(close({ incident: { ...recorded, severity: 'minor' } }).closed).toBe(true);
   });
 
   it('will not close a REPORTABLE incident with no statutory notification', () => {

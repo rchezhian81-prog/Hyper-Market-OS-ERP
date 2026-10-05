@@ -8,7 +8,7 @@
 // / `findOverdue` in `packages/facilities` — another complete engine nothing fed on the cloud.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, requireActorIsCaller, secondPersonIsASeparateAct } from '../../kernel/src/index';
 import {
   assessCompletion, findOverdue, closeIncident, buildComplianceEvidence,
   type MaintenanceSchedule, type ScheduledTask, type ScheduleCategory, type ScheduleFrequency,
@@ -31,6 +31,8 @@ export interface FacilitiesDeps {
   readonly recordSchedule: (tenantId: string, schedule: MaintenanceSchedule) => Promise<void> | void;
   readonly recordTaskDue: (tenantId: string, task: { taskId: string; scheduleId: string; dueOn: string }) => Promise<void> | void;
   readonly recordTaskCompleted: (tenantId: string, task: ScheduledTask) => Promise<void> | void;
+  /** The second person's verification of a completed check (Wave 2b · PA-03) — its own fact, under their own sign-in. */
+  readonly recordTaskVerified: (tenantId: string, verification: { readonly taskId: string; readonly verifiedBy: string; readonly at: string }) => Promise<void> | void;
   readonly incidents: (tenantId: string) => Promise<readonly SafetyIncident[]> | readonly SafetyIncident[];
   readonly recordIncident: (tenantId: string, incident: SafetyIncident) => Promise<void> | void;
   readonly now: () => string;
@@ -87,16 +89,18 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
       },
     },
     {
-      // Complete a task. A tick without required evidence, or a safety check nobody else verified, is
-      // REFUSED — because an accepted-with-a-note task shows green, and green is what everybody reads.
+      // Complete a task — THE COMPLETER's act (Wave 2b · audit PA-03): who did it is the caller, never a name in the body;
+      // a second person's verification is THEIR act, through …/verify, under their own sign-in. A tick without
+      // required evidence is REFUSED (an accepted-with-a-note task shows green, and green is what everybody reads);
+      // a safety check that needs verifying is recorded as done and WAITS — not accepted until a different person
+      // verifies it.
       api: 'API-11', method: 'POST', path: '/v1/facilities/tasks/:taskId/complete',
       permission: 'facilities.task.record', idempotent: true,
       handler: async (ctx) => {
         const taskId = ctx.params['taskId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (typeof b['completedBy'] !== 'string' || (b['completedBy'] as string).trim() === '') {
-          throw apiError(400, { code: 'completion_needs_who_did_it', whatHappened: 'Completing a task needs who did it (completedBy), and evidence/verification where the schedule demands them.', wasItSaved: 'not_saved', nextSafeAction: 'Send completedBy and any evidence. Nothing was completed.' });
-        }
+        requireActorIsCaller(ctx, b, 'completedBy');
+        if (b['verifiedBy'] !== undefined) throw secondPersonIsASeparateAct('verifiedBy', 'POST /v1/facilities/tasks/:taskId/verify');
         const due = (await deps.tasks(ctx.tenantId)).find((t) => t.taskId === taskId);
         if (due === undefined) throw notFound(`facilities task ${taskId}`);
         const schedule = (await deps.schedules(ctx.tenantId)).find((s) => s.scheduleId === due.scheduleId);
@@ -104,23 +108,65 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
 
         const task: ScheduledTask = {
           taskId, scheduleId: due.scheduleId, dueOn: due.dueOn,
-          completedBy: b['completedBy'] as string,
+          completedBy: ctx.userId,
           completedOn: isDate((b['completedOn'] as string ?? '').slice(0, 10)) ? (b['completedOn'] as string).slice(0, 10) : deps.now().slice(0, 10),
           ...(Array.isArray(b['evidenceRefs']) ? { evidenceRefs: (b['evidenceRefs'] as unknown[]).filter((r): r is string => typeof r === 'string') } : {}),
-          ...(typeof b['verifiedBy'] === 'string' ? { verifiedBy: b['verifiedBy'] } : {}),
           ...(typeof b['note'] === 'string' ? { note: b['note'] } : {}),
         };
+        const result = assessCompletion({ schedule, task });
+        if (!result.accepted && result.outcome === 'not_verified') {
+          // Done and recorded in the completer's name; accepted only when a DIFFERENT signed-in person verifies it.
+          await deps.recordTaskCompleted(ctx.tenantId, task);
+          return { status: 202, body: { taskId, scheduleId: due.scheduleId, accepted: false, outcome: result.outcome, awaitingVerification: true, completedBy: ctx.userId } };
+        }
+        if (!result.accepted) {
+          throw apiError(422, {
+            code: result.outcome,
+            whatHappened: result.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'The task is not accepted as done. Attach the evidence the schedule requires; a safety check is then verified by a second person under their own sign-in.',
+          });
+        }
+        await deps.recordTaskCompleted(ctx.tenantId, task);
+        return { status: 200, body: { taskId, scheduleId: due.scheduleId, accepted: true, outcome: result.outcome } };
+      },
+    },
+    {
+      // THE SECOND PERSON's act (Wave 2b · audit PA-03): verify a safety check somebody else completed, under your own
+      // sign-in. The engine's rule still decides — the verifier cannot be the completer (§28), the evidence must be there.
+      api: 'API-11', method: 'POST', path: '/v1/facilities/tasks/:taskId/verify',
+      permission: 'facilities.task.record', idempotent: true,
+      handler: async (ctx) => {
+        const taskId = ctx.params['taskId'] ?? '';
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        requireActorIsCaller(ctx, b, 'verifiedBy');
+        const stored = (await deps.tasks(ctx.tenantId)).find((t) => t.taskId === taskId);
+        if (stored === undefined) throw notFound(`facilities task ${taskId}`);
+        const schedule = (await deps.schedules(ctx.tenantId)).find((s) => s.scheduleId === stored.scheduleId);
+        if (schedule === undefined) throw notFound(`facilities schedule ${stored.scheduleId}`);
+        if (stored.completedOn === undefined || (stored.completedBy ?? '').trim() === '') {
+          throw apiError(422, {
+            code: 'nothing_to_verify',
+            whatHappened: `"${schedule.title}" has not been marked done yet — there is nothing to verify.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'The person who did the check marks it done first; then a second person verifies it.',
+          });
+        }
+        if (stored.verifiedBy !== undefined) {
+          return { status: 200, body: { taskId, scheduleId: stored.scheduleId, accepted: true, outcome: 'complete', verifiedBy: stored.verifiedBy, alreadyVerified: true } };
+        }
+        const task: ScheduledTask = { ...stored, verifiedBy: ctx.userId };
         const result = assessCompletion({ schedule, task });
         if (!result.accepted) {
           throw apiError(422, {
             code: result.outcome,
             whatHappened: result.detail,
             wasItSaved: 'not_saved',
-            nextSafeAction: 'The task is not accepted as done. Attach the evidence the schedule requires and have a second person verify a safety check.',
+            nextSafeAction: 'A safety check is verified by a DIFFERENT person from the one who did it, with its evidence attached.',
           });
         }
-        await deps.recordTaskCompleted(ctx.tenantId, task);
-        return { status: 200, body: { taskId, scheduleId: due.scheduleId, accepted: true, outcome: result.outcome } };
+        await deps.recordTaskVerified(ctx.tenantId, { taskId, verifiedBy: ctx.userId, at: deps.now() });
+        return { status: 200, body: { taskId, scheduleId: stored.scheduleId, accepted: true, outcome: result.outcome, verifiedBy: ctx.userId } };
       },
     },
     {
@@ -142,6 +188,7 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
       handler: async (ctx) => {
         const incidentId = ctx.params['incidentId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
+        requireActorIsCaller(ctx, b, 'recordedBy');
         if (!isStr(b['branchId']) || !INCIDENT_KINDS.includes(b['kind'] as IncidentKind) || !INCIDENT_SEVERITIES.includes(b['severity'] as IncidentSeverity)
           || !isDateTime(b['occurredAt']) || !isDateTime(b['reportedAt']) || !isStr(b['reportedBy']) || !isStr(b['description'])
           || (b['assetId'] !== undefined && !isStr(b['assetId']))) {
@@ -156,7 +203,8 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
           incidentId, tenantId: ctx.tenantId, branchId: b['branchId'] as string,
           kind: b['kind'] as IncidentKind, severity: b['severity'] as IncidentSeverity,
           occurredAt: b['occurredAt'] as string, reportedAt: b['reportedAt'] as string,
-          reportedBy: b['reportedBy'] as string, description: b['description'] as string,
+          // reportedBy is who reported it (may hold no login); recordedBy is the caller — never a name in the body (PA-03).
+          reportedBy: b['reportedBy'] as string, recordedBy: ctx.userId, description: b['description'] as string,
           ...(Array.isArray(b['evidenceRefs']) ? { evidenceRefs: (b['evidenceRefs'] as unknown[]).filter((r): r is string => typeof r === 'string') } : {}),
           ...(isStr(b['assetId']) ? { assetId: b['assetId'] } : {}),
         };
@@ -173,18 +221,18 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
       handler: async (ctx) => {
         const incidentId = ctx.params['incidentId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        // closedBy must name a person; actionTaken must be a string but MAY be empty, so the engine can
-        // refuse a close with no corrective action as the business outcome `no_action_recorded` (422)
-        // rather than this boundary masking it as merely malformed.
-        if (!isStr(b['closedBy']) || typeof b['actionTaken'] !== 'string'
-          || (b['authorityNotifiedOn'] !== undefined && !isDate(b['authorityNotifiedOn']))) {
-          throw apiError(400, { code: 'close_needs_who_and_what', whatHappened: 'Closing an incident needs who closed it (closedBy) and the corrective action taken (actionTaken, which may be blank but must be present).', wasItSaved: 'not_saved', nextSafeAction: 'Send closedBy and actionTaken. Nothing was closed.' });
+        // Who closes is the CALLER (Wave 2b · PA-03) — a body naming somebody else is refused by name. actionTaken must be
+        // a string but MAY be empty, so the engine can refuse a close with no corrective action as the business outcome
+        // `no_action_recorded` (422) rather than this boundary masking it as merely malformed.
+        requireActorIsCaller(ctx, b, 'closedBy');
+        if (typeof b['actionTaken'] !== 'string' || (b['authorityNotifiedOn'] !== undefined && !isDate(b['authorityNotifiedOn']))) {
+          throw apiError(400, { code: 'close_needs_what', whatHappened: 'Closing an incident needs the corrective action taken (actionTaken, which may be blank but must be present). Who closes it is taken from your sign-in.', wasItSaved: 'not_saved', nextSafeAction: 'Send actionTaken. Nothing was closed.' });
         }
         const incident = (await deps.incidents(ctx.tenantId)).find((i) => i.incidentId === incidentId);
         if (incident === undefined) throw notFound(`facilities incident ${incidentId}`);
         const at = deps.now();
         const result = closeIncident({
-          incident, closedBy: b['closedBy'] as string, actionTaken: b['actionTaken'] as string, at,
+          incident, closedBy: ctx.userId, actionTaken: b['actionTaken'] as string, at,
           ...(isDate(b['authorityNotifiedOn']) ? { authorityNotifiedOn: b['authorityNotifiedOn'] } : {}),
         });
         if (!result.closed) {
@@ -195,7 +243,7 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
             nextSafeAction: 'The incident stays open. Record the corrective action, attach evidence for a serious incident, have a second person close it, and file the statutory notification for a reportable one.',
           });
         }
-        const closed: SafetyIncident = { ...incident, actionTaken: b['actionTaken'] as string, closedAt: at, closedBy: b['closedBy'] as string };
+        const closed: SafetyIncident = { ...incident, actionTaken: b['actionTaken'] as string, closedAt: at, closedBy: ctx.userId };
         await deps.recordIncident(ctx.tenantId, closed);
         return { status: 200, body: { incidentId, closed: true, outcome: result.outcome } };
       },
