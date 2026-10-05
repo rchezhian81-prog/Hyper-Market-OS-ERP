@@ -31,7 +31,8 @@
 // draw the same stock twice. A destination head office has no record of is refused by name (`unknown_location`).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, concurrentChange, notFound } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
   dispatchTransfer, receiveTransfer, proposeAllocation, TransferRefusedError,
   type Transfer, type TransferLine, type TransferApproval, type AvailableLot, type AllocationNeed,
@@ -59,7 +60,10 @@ export interface TransfersDeps {
    * atomic write, each movement idempotent on its own id — a crash between the two must never leave a transfer in
    * transit whose stock is still on the source's shelf, or the reverse.
    */
-  readonly recordDispatched: (tenantId: string, transfer: Transfer, movements: readonly StockMovement[], posted: readonly Movement[]) => Promise<void> | void;
+  /** The source location's stock write-guard version (Wave 2a · audit SF-04): read BEFORE `availableAt`, passed back to
+   *  `recordDispatched`; two transfers that both read the same stock cannot both leave — the second is refused by name. */
+  readonly stockVersion?: (tenantId: string, locationId: string) => Promise<number> | number;
+  readonly recordDispatched: (tenantId: string, transfer: Transfer, movements: readonly StockMovement[], posted: readonly Movement[], expectedVersion?: number) => Promise<void> | void;
   /** SP-5 (F05): the received aggregate AND its `transferred_in` movements at the destination, atomically. */
   readonly recordReceived: (tenantId: string, transfer: Transfer, movements: readonly StockMovement[], discrepancies: unknown, posted: readonly Movement[]) => Promise<void> | void;
   /**
@@ -180,6 +184,8 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         const transfer = await deps.transfer(ctx.tenantId, transferId);
         if (transfer === undefined) throw notFound(`transfer ${transferId}`);
         const approval: TransferApproval = { subjectRef: transferId, status: 'approved', decidedBy: ctx.userId };
+        // The guard version first, then the stock it protects (Wave 2a · SF-04).
+        const expectedVersion = deps.stockVersion === undefined ? undefined : await Promise.resolve(deps.stockVersion(ctx.tenantId, transfer.fromLocationId));
         const available = await deps.availableAt(ctx.tenantId, transfer.fromLocationId, transfer.lines);
         try {
           const result = dispatchTransfer({ transfer, approval, available, at: deps.now() });
@@ -189,10 +195,13 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
           for (const line of transfer.lines) lineCostsMinor.push((await deps.unitCostAt(ctx.tenantId, transfer.fromLocationId, line.productId)) ?? null);
           const dispatched: Transfer = { ...result.transfer, lineCostsMinor };
           const posted = dispatchPostings(dispatched, result.movements, ctx.userId);
-          await deps.recordDispatched(ctx.tenantId, dispatched, result.movements, posted);
+          await deps.recordDispatched(ctx.tenantId, dispatched, result.movements, posted, expectedVersion);
           return { status: 200, body: { transferId, state: dispatched.state, approvedBy: dispatched.approvedBy, movements: result.movements.length, posted: posted.map((m) => m.movementId), lineCostsMinor, availableChecked: available.map((l) => ({ productId: l.productId, batchId: l.batchId, quantityMinor: l.quantityMinor, state: l.state, recalled: l.recalled === true })) } };
         } catch (e) {
           if (e instanceof TransferRefusedError) refused(e.why);
+          // Another movement out of this stock landed first (Wave 2a · SF-04): this dispatch was decided on a figure that
+          // is no longer true — nothing moved; the approver re-reads. Never two transfers of the same stock.
+          if (e instanceof ConcurrencyConflictError) throw concurrentChange(`the stock at ${transfer.fromLocationId}`);
           throw e;
         }
       },

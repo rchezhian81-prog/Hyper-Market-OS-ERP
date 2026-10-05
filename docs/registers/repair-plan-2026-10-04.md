@@ -98,7 +98,9 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
 - **PF-01** refunds, gift value and loyalty: read-check-append atomic per sale / instrument / customer — **DONE 5 Oct 2026
   (#701)**; the loser is a named `concurrent_change` 409.
 - **SF-04** two transfers cannot spend the same stock; **FUL-02** reservations cannot promise the last unit twice,
-  duplicate lines refused; **PA-11** the audit chain cannot fork across two writers.
+  duplicate lines refused; **PA-11** the audit chain cannot fork across two writers — **DONE 5 Oct 2026 (#702)**: the
+  same guard keyed per source location, per location's promises and per tenant chain; proven on the API surface and
+  on real PostgreSQL (the last-unit race on the database, as the audit asked). Wave 2a closed.
 - **PF-02** the till operator is a verified, offline-capable credential; a manager approval is a separate
   authenticated, transaction-bound, one-use record; **PA-03** every "second person" field becomes an authenticated
   approval object; **PF-03** the age-restriction answer is kept in the basket and enforced at commit.
@@ -176,6 +178,7 @@ identity, hardware, hosted recovery evidence. **PA-13** (commercial platform, R8
 | UX-1c page anatomy | 1¾ — done 4 Oct 2026 |
 | UX-2a one application (OB-16) | 1⅞ — done 5 Oct 2026 (#699) |
 | UX-2b the *Today* command centre, rail icons, sign-in frame (OB-15/OB-16/OB-17) | 1⅞ — done 5 Oct 2026 (#700) |
+| Wave 2a write guards — PF-01 refunds/gift/points; SF-04 transfers; FUL-02 promises; PA-11 audit chain | 2 — done 5 Oct 2026 (#701, #702) |
 | Handheld enrolment on the hosted demo | 1½ (a demo device code for the practice phones) |
 | Quantity scale across pack sections | 4, with DF-3 |
 | SP-10 register | 8 |

@@ -20,7 +20,7 @@ import {
 import {
   looksLikeCardNumber, paymentPosition, refundPosition, type OrderPayment, type PaymentResult,
 } from '../../../packages/orders/src/payment-refunds';
-import { promise, type OrdersDeps, type PlacedOrder, type Reservation } from './index';
+import { promiseAndHold, type OrdersDeps, type PlacedOrder } from './index';
 import type { PaymentRefundDeps } from './payments';
 
 export interface StorefrontDeps {
@@ -120,18 +120,10 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
           const own = await ownOrRefused(ctx.tenantId, ctx.userId, orderId, 'place');
           return { status: 200, body: { ...(await view(ctx.tenantId, own)), alreadyPlaced: true } };
         }
-        const lines = b['lines'] as { productId: string; quantityMinor: number }[];
         const locationId = b['locationId'] as string;
-        const result = promise({
-          orderId, lines,
-          onHand: await deps.onHand(ctx.tenantId, locationId),
-          outstanding: await deps.outstanding(ctx.tenantId, locationId),
-          locationId,
-          heldUntil: new Date(Date.parse(deps.now()) + deps.holdMinutes * 60_000).toISOString(),
-          reservationIdFor: (o, p) => `${o}${p}`,
-        });
-        const reservations: readonly Reservation[] = result.lines.flatMap((l) => (l.reservation === undefined ? [] : [l.reservation]));
-        if (reservations.length > 0) await deps.holdReservations(ctx.tenantId, reservations);
+        // Promised and held under the location's guard (Wave 2a · FUL-02), the lines one per product.
+        const held = await promiseAndHold(deps, { tenantId: ctx.tenantId, orderId, lines: b['lines'], locationId });
+        const { result, lines } = held;
         const placedAt = deps.now();
         // Who placed it is the authenticated subject — the one fact every later scope decision rests on.
         await deps.recordPlaced(ctx.tenantId, { orderId, locationId, lines, state: 'placed', placedAt, customerRef: ctx.userId });

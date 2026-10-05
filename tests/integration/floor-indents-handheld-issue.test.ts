@@ -4,10 +4,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Client } from 'pg';
+import { Pool } from 'pg';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import { SqlIdempotencyStore, type HttpRequest } from '../../services/kernel/src/index';
-import { pgClient } from '../../packages/persistence/src/pg-client';
+import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
@@ -152,17 +152,18 @@ async function cloudAndBox(h: ApiHarness, t: string): Promise<{ start: () => Pro
 
 // ── the backings: the in-memory store always; real PostgreSQL where the gate provides one ─────────────────────────
 const DATABASE_URL = process.env['DATABASE_URL'];
-let client: Client | undefined;
+let client: Pool | undefined;
 beforeAll(async () => {
   if (DATABASE_URL === undefined) return;
-  client = new Client({ connectionString: DATABASE_URL, options: '-c app.tenant_id=*' });
-  await client.connect();
+  // The TRANSACTIONAL pool client — the wiring main.ts uses. Wave 2a's write guards (the audit chain's among them) run inside
+  // the append's own transaction, and the store refuses a guarded append on a client that offers none (fail closed, by name).
+  client = new Pool({ connectionString: DATABASE_URL, max: 4, options: '-c app.tenant_id=*' });
   const dir = 'db/migrations';
-  await runMigrations(pgClient(client), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort().map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
+  await runMigrations(pgPoolClient(client), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort().map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
 });
 afterAll(async () => { await client?.end(); });
 const backings: { name: string; harness: () => ApiHarness }[] = [{ name: 'the in-memory event store', harness: () => apiHarness() }];
-if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness: () => { const sql = pgClient(client!); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); } });
+if (DATABASE_URL !== undefined) backings.push({ name: 'real PostgreSQL', harness: () => { const sql = pgPoolClient(client!); return apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) }); } });
 
 describe.each(backings)('the back store issues on the handheld and the chain reconciles — on $name (SP-8c · F08)', ({ harness }) => {
   it('ask → approve → handheld issue through the box (once, bin lowered in the same write, lost reply → one dispatch, duplicate after a restart) → count in with damage → the figures reconcile → the shelf sells', async () => {

@@ -13,7 +13,8 @@
 // when the driver arrives has been let down.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, concurrentChange } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import type { OrderState, OrderEvent } from '../../../packages/orders/src/lifecycle';
 import { transitionOrder, canTransition, isTerminal } from '../../../packages/orders/src/lifecycle';
 import { applySubstitution, reconcileChannel, type SubstitutionOffer, type SubstitutionDecision, type SubstitutionOutcome, type ChannelOrder } from '../../../packages/orders/src/amendments';
@@ -243,10 +244,71 @@ export function planBackorder(input: {
   };
 }
 
+
+/** One order line per product, quantities summed (Wave 2a · FUL-02 — the audit's "4 + 4 of the same product promised 8,
+ *  held 4"); a line that is not a positive whole quantity makes the whole basket unreadable. */
+export function normaliseOrderLines(raw: unknown): readonly { productId: string; quantityMinor: number }[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const byProduct = new Map<string, number>();
+  for (const l of raw) {
+    if (l === null || typeof l !== 'object') return undefined;
+    const { productId, quantityMinor } = l as { productId?: unknown; quantityMinor?: unknown };
+    if (typeof productId !== 'string' || productId.trim() === '' || !Number.isInteger(quantityMinor) || (quantityMinor as number) <= 0) return undefined;
+    byProduct.set(productId, (byProduct.get(productId) ?? 0) + (quantityMinor as number));
+  }
+  return [...byProduct].map(([productId, quantityMinor]) => ({ productId, quantityMinor }));
+}
+
+/**
+ * Promise an order and hold its stock under the location's write guard (Wave 2a · audit FUL-02). The guard's version
+ * is read before the stock and the outstanding holds; the holds are appended under it in ONE batch. Two orders for the
+ * last unit at the same moment: one holds it; the other's append is refused by name, so it re-reads (up to three
+ * times) and is promised what is truly left — which may be nothing, said truthfully. A race that will not settle is
+ * a named 409, never two holds on one unit.
+ */
+export async function promiseAndHold(
+  deps: Pick<OrdersDeps, 'onHand' | 'outstanding' | 'holdReservations' | 'reservationVersion' | 'holdMinutes' | 'now'>,
+  input: { readonly tenantId: string; readonly orderId: string; readonly lines: unknown; readonly locationId: string },
+): Promise<{ readonly result: ReturnType<typeof promise>; readonly lines: readonly { productId: string; quantityMinor: number }[]; readonly reservations: readonly Reservation[] }> {
+  const lines = normaliseOrderLines(input.lines);
+  if (lines === undefined) {
+    throw apiError(400, {
+      code: 'not_readable_as_order_lines',
+      whatHappened: 'Each order line needs a productId and a positive whole quantityMinor; the same product twice is one line.',
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Nothing was reserved. Send the lines as the basket shows them.',
+    });
+  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const expectedVersion = deps.reservationVersion === undefined ? undefined : await Promise.resolve(deps.reservationVersion(input.tenantId, input.locationId));
+    const result = promise({
+      orderId: input.orderId, lines,
+      onHand: await deps.onHand(input.tenantId, input.locationId),
+      outstanding: await deps.outstanding(input.tenantId, input.locationId),
+      locationId: input.locationId,
+      heldUntil: new Date(Date.parse(deps.now()) + deps.holdMinutes * 60_000).toISOString(),
+      reservationIdFor: (o, p) => `${o}${p}`,
+    });
+    const reservations = result.lines.flatMap((l) => (l.reservation === undefined ? [] : [l.reservation]));
+    if (reservations.length === 0) return { result, lines, reservations };
+    try {
+      await deps.holdReservations(input.tenantId, reservations, expectedVersion);
+      return { result, lines, reservations };
+    } catch (err) {
+      if (!(err instanceof ConcurrencyConflictError)) throw err;
+    }
+  }
+  throw concurrentChange(`the stock promises at ${input.locationId}`);
+}
+
 export interface OrdersDeps {
   readonly onHand: (tenantId: string, locationId: string) => Promise<ReadonlyMap<string, number>> | ReadonlyMap<string, number>;
   readonly outstanding: (tenantId: string, locationId: string) => Promise<readonly Reservation[]> | readonly Reservation[];
-  readonly holdReservations: (tenantId: string, rs: readonly Reservation[]) => Promise<void> | void;
+  /** The location's promise write-guard version (Wave 2a · audit FUL-02): read before the stock and the outstanding
+   *  holds, passed back to `holdReservations`; two promises of the last unit cannot both hold it. Optional on a stub. */
+  readonly reservationVersion?: (tenantId: string, locationId: string) => Promise<number> | number;
+  /** Hold every reservation of one promise in ONE atomic batch, under the location's guard when `expectedVersion` is given. */
+  readonly holdReservations: (tenantId: string, rs: readonly Reservation[], expectedVersion?: number) => Promise<void> | void;
   readonly holdMinutes: number;
   readonly now: () => string;
   // Lifecycle (M18-FR-01) and cancellation-releases-reservation (M18-FR-04).
@@ -348,24 +410,17 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
           });
         }
         const orderId = ctx.params['orderId'] ?? '';
-        const result = promise({
-          orderId, lines: body.lines,
-          onHand: await deps.onHand(ctx.tenantId, body.locationId),
-          outstanding: await deps.outstanding(ctx.tenantId, body.locationId),
-          locationId: body.locationId,
-          heldUntil: new Date(Date.parse(deps.now()) + deps.holdMinutes * 60_000).toISOString(),
-          reservationIdFor: (o, p) => `${o}${p}`,
-        });
-        const reservations = result.lines.flatMap((l) => (l.reservation === undefined ? [] : [l.reservation]));
-        if (reservations.length > 0) await deps.holdReservations(ctx.tenantId, reservations);
+        // Promised and held under the location's guard (Wave 2a · FUL-02): the lines normalised (one per product), the
+        // holds one atomic batch, a lost race re-read and promised again on what is truly left.
+        const held = await promiseAndHold(deps, { tenantId: ctx.tenantId, orderId, lines: body.lines, locationId: body.locationId });
         // The order now exists in the system — record it (idempotent on the order id) so it can
         // be read and moved through its lifecycle, and cancelled to give its stock back. A promise
         // that reserved nothing is still a placed order the customer is owed an answer on.
         await deps.recordPlaced(ctx.tenantId, {
-          orderId, locationId: body.locationId, lines: body.lines, state: 'placed', placedAt: deps.now(),
+          orderId, locationId: body.locationId, lines: held.lines, state: 'placed', placedAt: deps.now(),
         });
         // 200 even when short: the answer is a truthful promise, not a failure.
-        return { status: 200, body: result };
+        return { status: 200, body: held.result };
       },
     },
     {

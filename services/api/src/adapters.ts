@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
   foldBilling,
   type BillingEvent, type BillingSnapshot, type BillingRail, type DunningPolicy, type Mandate,
@@ -2429,6 +2430,10 @@ export function salesHistoryAdapter(input: { readonly store: EventStore; readonl
 
 /** The write-guard key for everything that refunds against one sale (Wave 2a · PF-01). */
 export const refundGuardKey = (saleId: string): string => `refund:${saleId}`;
+/** The write-guard key for everything that leaves one location's stock by transfer (Wave 2a · SF-04). */
+export const stockGuardKey = (locationId: string): string => `stock:${locationId}`;
+/** The write-guard key for every promise held at one location (Wave 2a · FUL-02). */
+export const reservationGuardKey = (locationId: string): string => `reservation:${locationId}`;
 
 export function returnsAdapter(input: {
   readonly store: EventStore;
@@ -3686,6 +3691,11 @@ export interface AuditTrailDeps {
   readonly recordAudit: (tenantId: string, entry: AuditEntry) => Promise<AuditRecord>;
 }
 
+/** The write-guard key of a tenant's domain audit chain (Wave 2a · PA-11): one chain, one key, however many API instances. */
+const AUDIT_CHAIN_GUARD = 'audit-chain';
+/** How many lost rounds one audit write tolerates before it is reported as a named concurrency failure. */
+const AUDIT_CHAIN_RETRIES = 32;
+
 export function auditTrailAdapter(input: { readonly store: EventStore }): AuditTrailDeps {
   const records = (tenantId: string) =>
     allOf<AuditRecord>(input.store, tenantId, AUDIT_TRAIL_STREAM, 'AuditRecordSealed');
@@ -3701,21 +3711,36 @@ export function auditTrailAdapter(input: { readonly store: EventStore }): AuditT
   return {
     records,
     recordAudit: (tenantId, entry) => serialiseByTenant(tenantId, async () => {
-      const seed = new InMemoryAuditStore();
-      for (const r of await records(tenantId)) seed.append(r);
-      // The engine validates the entry (an unattributable record is refused) and seals it over the tail.
-      const sealed = new AuditTrail(seed).record(entry);
-      await input.store.append(tenantId, AUDIT_TRAIL_STREAM, makeEvent({
-        id: `audit-${sealed.sequence}-${sealed.hash}`,
-        type: 'AuditRecordSealed',
-        occurredAt: sealed.at,
-        // One record per (sequence, hash): the seal is unique, so an identical re-send collapses and a
-        // genuinely new action is a new fact. Never overwritten, never folded away (hard rule #6).
-        idempotencyKey: `audit-${tenantId}-${sealed.sequence}-${sealed.hash}`,
-        source: 'api/audit',
-        payload: sealed,
-      }));
-      return sealed;
+      // Across INSTANCES (Wave 2a · audit PA-11): the promise chain above serialises one process; the tenant's chain
+      // guard serialises them all. The tail is folded and the seal appended under the guard's version; a second API
+      // instance that sealed over the same tail a moment earlier has moved it, this append is refused by name, and
+      // the chain is folded again over the new tail — never two records with one sequence, never a fork.
+      for (let attempt = 0; ; attempt += 1) {
+        const expectedVersion = await input.store.guardVersion(tenantId, AUDIT_CHAIN_GUARD);
+        const seed = new InMemoryAuditStore();
+        for (const r of await records(tenantId)) seed.append(r);
+        // The engine validates the entry (an unattributable record is refused) and seals it over the tail.
+        const sealed = new AuditTrail(seed).record(entry);
+        try {
+          await input.store.appendBatch(tenantId, [{ stream: AUDIT_TRAIL_STREAM, event: makeEvent({
+            id: `audit-${sealed.sequence}-${sealed.hash}`,
+            type: 'AuditRecordSealed',
+            occurredAt: sealed.at,
+            // One record per (sequence, hash): the seal is unique, so an identical re-send collapses and a
+            // genuinely new action is a new fact. Never overwritten, never folded away (hard rule #6).
+            idempotencyKey: `audit-${tenantId}-${sealed.sequence}-${sealed.hash}`,
+            source: 'api/audit',
+            payload: sealed,
+          }) }], { guard: { key: AUDIT_CHAIN_GUARD, expectedVersion } });
+          return sealed;
+        } catch (err) {
+          if (!(err instanceof ConcurrencyConflictError) || attempt >= AUDIT_CHAIN_RETRIES) throw err;
+          // A short random pause before folding again. Two instances that lose and retry in lockstep would otherwise
+          // keep losing to each other (seen on PostgreSQL: one writer lost nine rounds running); the jitter breaks
+          // the step, so each round has a winner AND the loser wins soon after.
+          await new Promise<void>((resolve) => setTimeout(resolve, Math.floor(Math.random() * 8 * (attempt + 1))));
+        }
+      }
     }),
   };
 }
@@ -4642,9 +4667,18 @@ export function transfersAdapter(input: {
       await input.store.append(tenantId, transfersStream, transferProposedEvent(tenantId, transfer, input.now()));
     },
 
-    // SP-5 (F05): the dispatched aggregate and its `transferred_out` movements at the source commit together, or not at all.
-    recordDispatched: async (tenantId, transfer, movements, posted) => {
-      await input.store.appendBatch(tenantId, transferBatch(tenantId, transferDispatchedEvent(tenantId, transfer, movements, posted, input.now()), posted));
+    // The source location's stock guard (Wave 2a · SF-04): one version per location, read before the stock and bumped by
+    // every dispatch that leaves it.
+    stockVersion: (tenantId, locationId) => input.store.guardVersion(tenantId, stockGuardKey(locationId)),
+
+    // SP-5 (F05): the dispatched aggregate and its `transferred_out` movements at the source commit together, or not at all —
+    // under the source's stock guard when the route read one (Wave 2a · SF-04).
+    recordDispatched: async (tenantId, transfer, movements, posted, expectedVersion) => {
+      await input.store.appendBatch(
+        tenantId,
+        transferBatch(tenantId, transferDispatchedEvent(tenantId, transfer, movements, posted, input.now()), posted),
+        expectedVersion === undefined ? undefined : { guard: { key: stockGuardKey(transfer.fromLocationId), expectedVersion } },
+      );
     },
 
     // SP-5 (F05): the received aggregate and its `transferred_in` movements at the destination, atomically.
@@ -7417,17 +7451,22 @@ export function ordersAdapter(input: {
       return held.filter((r) => !released.has(r.reservationId) && !lapsed.has(r.reservationId));
     },
 
-    holdReservations: async (tenantId, rs) => {
-      for (const r of rs) {
-        await input.store.append(tenantId, forLocation(r.locationId), makeEvent({
-          id: `res-${r.reservationId}`,
-          type: 'ReservationHeld',
-          occurredAt: input.now(),
-          idempotencyKey: `res-${tenantId}-${r.reservationId}`,
-          source: 'api/orders',
-          payload: r,
-        }));
-      }
+    // The location's promise guard (Wave 2a · FUL-02): one version per location, read before the stock and the holds.
+    reservationVersion: (tenantId, locationId) => input.store.guardVersion(tenantId, reservationGuardKey(locationId)),
+
+    // One promise's holds are ONE atomic batch (all land or none), under the location's guard when the route read one
+    // (Wave 2a · FUL-02) — before, each hold was its own append and a race could land half an order's holds.
+    holdReservations: async (tenantId, rs, expectedVersion) => {
+      if (rs.length === 0) return;
+      const locationId = rs[0]!.locationId;
+      await input.store.appendBatch(tenantId, rs.map((r) => ({ stream: forLocation(r.locationId), event: makeEvent({
+        id: `res-${r.reservationId}`,
+        type: 'ReservationHeld',
+        occurredAt: input.now(),
+        idempotencyKey: `res-${tenantId}-${r.reservationId}`,
+        source: 'api/orders',
+        payload: r,
+      }) })), expectedVersion === undefined ? undefined : { guard: { key: reservationGuardKey(locationId), expectedVersion } });
     },
 
     /**

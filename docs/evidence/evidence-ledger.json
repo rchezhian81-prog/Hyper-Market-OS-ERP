@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 895,
+  "testFiles": 896,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -21,7 +21,7 @@
   "totals": {
     "unit": 81,
     "integration": 78,
-    "realDb": 54,
+    "realDb": 55,
     "browser": 44,
     "connected": 2,
     "device": 0,
@@ -421,8 +421,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 28,
-        "realDb": 5,
+        "integration": 29,
+        "realDb": 6,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -450,6 +450,7 @@
           "tests/integration/bin-counts-synced-route.test.ts",
           "tests/integration/concession-store-valuation.test.ts",
           "tests/integration/concession-write-off-guard.test.ts",
+          "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/counts-synced-route.test.ts",
           "tests/integration/exchanges.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
@@ -476,6 +477,7 @@
           "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "realDb": [
+          "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
           "tests/integration/the-till-exchanges.test.ts",
@@ -499,8 +501,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 12,
-        "integration": 20,
-        "realDb": 2,
+        "integration": 21,
+        "realDb": 3,
         "browser": 6,
         "connected": 0,
         "device": 0,
@@ -523,6 +525,7 @@
         ],
         "integration": [
           "tests/integration/bin-counts-synced-route.test.ts",
+          "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/counts-synced-route.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
           "tests/integration/floor-indents-synced.test.ts",
@@ -544,6 +547,7 @@
           "tests/integration/warehouse-transfers.test.ts"
         ],
         "realDb": [
+          "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
@@ -1022,8 +1026,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 10,
-        "integration": 8,
-        "realDb": 1,
+        "integration": 9,
+        "realDb": 2,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -1043,6 +1047,7 @@
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
+          "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/order-channel-reconcile.test.ts",
           "tests/integration/order-payments-and-refunds.test.ts",
           "tests/integration/order-substitution.test.ts",
@@ -1053,6 +1058,7 @@
           "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "realDb": [
+          "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "browser": [],
@@ -1128,8 +1134,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 18,
-        "integration": 7,
-        "realDb": 0,
+        "integration": 8,
+        "realDb": 1,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -1157,6 +1163,7 @@
           "tests/unit/storefront-scope.test.ts"
         ],
         "integration": [
+          "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/data-rights.test.ts",
           "tests/integration/erasure-execution.test.ts",
           "tests/integration/order-payments-and-refunds.test.ts",
@@ -1165,7 +1172,9 @@
           "tests/integration/storefront-orders.test.ts",
           "tests/integration/the-app-orders-through-the-cloud.test.ts"
         ],
-        "realDb": [],
+        "realDb": [
+          "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts"
+        ],
         "browser": [
           "tests/e2e/customer-login.e2e.ts",
           "tests/e2e/customer-order-delivery.e2e.ts",
@@ -1802,8 +1811,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
-        "integration": 9,
-        "realDb": 1,
+        "integration": 10,
+        "realDb": 2,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -1825,6 +1834,7 @@
           "tests/integration/audit-trail-store.test.ts",
           "tests/integration/compliance-obligation-lifecycle.test.ts",
           "tests/integration/compliance-obligations.test.ts",
+          "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/legal-holds.test.ts",
           "tests/integration/physical-to-system.test.ts",
           "tests/integration/risk-followthrough.test.ts",
@@ -1832,6 +1842,7 @@
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
+          "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/physical-to-system.test.ts"
         ],
         "browser": [
