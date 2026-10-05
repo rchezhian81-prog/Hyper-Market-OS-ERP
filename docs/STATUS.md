@@ -5,6 +5,47 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-i — a leaver's access actually ends: grants minus revocations on every reader of authority, and the joiner/mover/leaver route is a durable command that cuts the live session (5 October 2026)
+
+- **The finding (audit PA-02, HIGH):** the lifecycle route answered `applied: true, grants: [], closeSessions: true`
+  for a leaver and changed nothing — the "current grants" it folded came from the request body, no event was
+  appended, no session was closed, and the leaver's very next request was 200. Underneath it, no event anywhere
+  could take a grant away: every reader of authority folded `RoleGranted` alone, so a grant could never shrink.
+- **What changed (pull request #703):**
+  - **`RoleRevoked`, and ONE fold — `effectiveGrants`** (`services/api/src/adapters.ts`): every `RoleGranted` on the
+    identity stream minus every `RoleRevoked` that followed it for the same person, role and scope, in append order (a
+    role granted again afterwards stands). The kernel's access resolver (`services/api/src/access.ts`) and the 16
+    "does this person hold…" readers in the adapters — the refund, day-reopen and price approvers, `permissionsHeldBy`
+    behind every synced route's re-verification, the two `rolesOf`, the identity adapter's own `permissionsOf` — all go
+    through it. The genesis and bootstrap checks still look at grant HISTORY, deliberately (a tenant that ever had a
+    grant is bootstrapped).
+  - **The lifecycle route is a command** (`services/identity/src/access-lifecycle.ts`, `accessLifecycleAdapter`): what
+    the person holds is read from the ledger — a body that carries `currentGrants` is **400
+    `current_grants_are_the_servers`**; an applied decision is ONE batch (a `RoleRevoked` per grant removed, a
+    `RoleGranted` per grant added, each with lifecycle provenance: request, requester, approver, reason); a decision
+    that closes sessions revokes every token of the person issued up to that moment THROUGH the same
+    `TokenRevocationList` the authenticator consults (reason `admin_revoked`), so the next request with the old token
+    is 401; the approver cannot grant a role whose permissions they do not themselves hold (**422
+    `escalates_beyond_the_approver`** — the grant route's rule; without it this route was the way round it); an
+    unknown role is 422; a session-closing change on a deployment with no revocation store is **503 and records
+    nothing**; a blocked decision records nothing; the change is sealed into the audit trail as `access.<event>`.
+- **Proved:** `tests/integration/access-lifecycle.test.ts` — the audit's reproduction inverted: the leaver's token is
+  **401 on the very next request**, a fresh token holds nothing (403), a restart over the same store agrees; a mover
+  from cashier to store manager: old token 401, fresh token holds exactly the manager's permissions, never the union;
+  a joiner holds exactly the cashier's permissions in their branch and nothing company-wide; blocked while owning
+  open items — nothing recorded, they still work; every refusal by name; **and the leaver on real PostgreSQL**, with a
+  second API instance over the same database agreeing. `tests/unit/effective-grants.test.ts` (grant / revoke /
+  re-grant, scope-specific revocation, other people untouched, per tenant). `tests/unit/access-lifecycle-route.test.ts`
+  (the escalation refusal, the 503 that records nothing, the recorded diff and the revocation moment). 153 suites
+  across identity, access, approvals, returns, day close, pricing, security and guardrails green; full gate green.
+- **Not yet:** a leaver's **owned open items** still come from the request — the product has no single register of
+  who owns which open purchase order, exception or approval, so the engine blocks on what it is told; recorded for
+  Wave 2b-iii (PA-03), where approval objects get an owner the server can read. The joiner/mover/leaver has no
+  **screen** yet; it arrives with the OB-15 people screen (M02 create-and-assign) on this route. Next: **Wave 2b-ii**
+  — branch scope derived on the server from the person's grants (PA-01 / EA-03).
+
+---
+
 ## Wave 2a-ii — the same guard on the stock, on the promises and on the audit chain: SF-04, FUL-02 and PA-11 closed, on the API surface AND on real PostgreSQL (5 October 2026)
 
 - **The findings (audit, 4 Oct 2026):** **SF-04** (HIGH) two transfers of 70 against 100, dispatched at the same
