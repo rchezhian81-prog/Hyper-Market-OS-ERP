@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 891,
+  "testFiles": 892,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -93,10 +93,10 @@
       "id": "M02",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 16,
+        "unit": 17,
         "integration": 12,
         "realDb": 1,
-        "browser": 2,
+        "browser": 3,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -106,6 +106,7 @@
           "tests/unit/approvals-delegation.test.ts",
           "tests/unit/approvals.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/edge-today-figures.test.ts",
           "tests/unit/erp-admin-session.test.ts",
           "tests/unit/erp-manager-session.test.ts",
           "tests/unit/identity-access-binding.test.ts",
@@ -139,7 +140,8 @@
         ],
         "browser": [
           "tests/e2e/customer-login.e2e.ts",
-          "tests/e2e/manager-decisions-survive-reload.e2e.ts"
+          "tests/e2e/manager-decisions-survive-reload.e2e.ts",
+          "tests/e2e/the-erp-pages-meet-the-spec.e2e.ts"
         ],
         "connected": [],
         "device": [],
@@ -1543,16 +1545,17 @@
       "id": "M29",
       "label": "WIRED",
       "counts": {
-        "unit": 10,
+        "unit": 11,
         "integration": 6,
         "realDb": 0,
-        "browser": 1,
+        "browser": 2,
         "connected": 0,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/edge-today-figures.test.ts",
           "tests/unit/erp-reporting-session.test.ts",
           "tests/unit/owner-alerts-inbox.test.ts",
           "tests/unit/owner-brief.test.ts",
@@ -1574,7 +1577,8 @@
         ],
         "realDb": [],
         "browser": [
-          "tests/e2e/company-report.e2e.ts"
+          "tests/e2e/company-report.e2e.ts",
+          "tests/e2e/the-erp-pages-meet-the-spec.e2e.ts"
         ],
         "connected": [],
         "device": [],

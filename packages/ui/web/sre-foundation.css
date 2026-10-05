@@ -86,6 +86,8 @@
   --on-rail: #f3f5f4;       /* 13:1 */
   --on-rail-muted: #a9b8ae; /* 6.9:1 */
   --rail-accent: #7fd1ae;   /* the current screen's mark and the focus ring inside the rail: 7.9:1 non-text */
+  --on-rail-warn: #ffd166; /* a figure that needs looking at, on the rail's dark surface (UX-2b) */
+  --on-rail-danger: #ff9e94; /* a figure the box does not know, on the rail's dark surface */
   --rail-2: #24403a;        /* the current screen and a hovered one: an opaque step up from the rail, 11:1 under --on-rail */
   --rail-line: #2a423a;
   --rail-width: 248px;
@@ -143,6 +145,8 @@
   --on-rail: #f8fafc;
   --on-rail-muted: #94a3b8;
   --rail-accent: #22c55e;
+  --on-rail-warn: #ffd166; /* a figure that needs looking at, on the rail's dark surface (UX-2b) */
+  --on-rail-danger: #ff9e94; /* a figure the box does not know, on the rail's dark surface */
   --rail-2: #1e293b;
   --rail-line: #1e293b;
   --radius: 12px;
