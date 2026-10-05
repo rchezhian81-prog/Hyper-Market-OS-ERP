@@ -26,11 +26,17 @@ Rules (owner, 1 October 2026):
 
 ## Sessions
 
-Copy the block below for each session. One block per session, newest last.
+Copy the block below for each session. One block per session, newest last. The three bold lines are read by
+`scripts/evidence-ledger.mjs`: a PASS session is staff-UAT evidence for the requirements it covers, and device
+evidence too when **Device** names real hardware (docs/evidence/TEST-SCOPE.md §2). Nothing else turns a label to
+UAT VERIFIED.
 
 ```
 ### UAT-S-<n> — <date> — store PC <commit> / demo box <commit>
 Who: <name> as <role>            Device: <store PC / phone model / scanner>
+**Covers:** <requirement IDs the session exercised, e.g. M12, M14>
+**Device:** <the real hardware, e.g. Posiflex store PC + Zebra DS2208 scanner — or none>
+**Outcome:** <PASS | FAIL>
 Script followed: docs/runbooks/demo-practice-environment.md §7, row <#>, role "<role>"
 | Step | Expected | Seen | Result (pass / fail / defect ref) |
 |---|---|---|---|
