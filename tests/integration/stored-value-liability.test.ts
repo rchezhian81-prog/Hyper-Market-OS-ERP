@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Client } from 'pg';
+import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
-import { pgClient } from '../../packages/persistence/src/pg-client';
+import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
@@ -157,20 +157,21 @@ const RUN = `r${Date.now().toString(36)}`;
 const E2E_TENANT = `e${Date.now().toString(16).slice(-7)}-eeee-4eee-8eee-${'e'.repeat(12)}`;
 
 describe.skipIf(!DATABASE_URL)('stored-value liability + velocity, end to end on real PostgreSQL (M17-FR-03 / M23, API-06)', () => {
-  let client: Client;
+  let pool: Pool;
 
   beforeAll(async () => {
-    client = new Client({ connectionString: DATABASE_URL, options: '-c app.tenant_id=*' });
-    await client.connect();
-    const sql = pgClient(client);
+    // The TRANSACTIONAL pool client — the wiring main.ts uses. Wave 2a's write guards run inside the append's own
+    // transaction, and the store refuses a guarded append on a client that offers none (fail closed, by name).
+    pool = new Pool({ connectionString: DATABASE_URL, max: 4, options: '-c app.tenant_id=*' });
+    const sql = pgPoolClient(pool);
     const dir = 'db/migrations';
     await runMigrations(sql, readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
   });
-  afterAll(async () => { await client.end(); });
+  afterAll(async () => { await pool.end(); });
 
   it('reconciles a signed liability gap, flags fast redemptions, and holds RBAC, on real PostgreSQL', async () => {
-    const sql = pgClient(client);
+    const sql = pgPoolClient(pool);
     const h = apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) });
     await h.seedOwner(E2E_TENANT, 'u-owner');
     await h.provisionRole(E2E_TENANT, 'u-cash', 'cashier');

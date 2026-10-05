@@ -10,7 +10,8 @@
 // shape either way, and there is no extra step on the way out.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, concurrentChange } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { assessPointsMovement, type PointsKind, type StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
 import { assessChildDataProcessing, type ChildDataActivity } from '../../../packages/customer/src/child-data-guard';
 import { assessBreachNotification, InvalidBreachInputError, type BreachInput } from '../../../packages/customer/src/breach-notification';
@@ -126,7 +127,10 @@ export interface CustomerDeps {
   /** Every points movement for a customer, for the burn guard (the balance is their sum). */
   readonly pointsMovements: (tenantId: string, customerId: string) => Promise<readonly StoredPointsMovement[]> | readonly StoredPointsMovement[];
   /** Append a points movement. Idempotent on the movement id. */
-  readonly recordPointsMovement: (tenantId: string, customerId: string, m: RecordedPointsMovement) => Promise<void> | void;
+  /** The customer's points write-guard version (Wave 2a · audit PF-01): read before `pointsMovements`, passed back
+   *  to `recordPointsMovement`; two distinct burns that both read the same balance cannot both land. Optional on a stub. */
+  readonly pointsVersion?: (tenantId: string, customerId: string) => Promise<number> | number;
+  readonly recordPointsMovement: (tenantId: string, customerId: string, m: RecordedPointsMovement, expectedVersion?: number) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -391,6 +395,8 @@ export function customerRoutes(deps: CustomerDeps): readonly Route[] {
         }
 
         const request = { movementId: b.movementId, customerId, kind: b.kind as PointsKind, points: b.points };
+        // The guard version first, then the balance it protects (Wave 2a · PF-01).
+        const expectedVersion = deps.pointsVersion === undefined ? undefined : await Promise.resolve(deps.pointsVersion(ctx.tenantId, customerId));
         const assessment = assessPointsMovement({ priorMovements: await deps.pointsMovements(ctx.tenantId, customerId), request });
         if (!assessment.ok) {
           throw apiError(422, {
@@ -401,10 +407,16 @@ export function customerRoutes(deps: CustomerDeps): readonly Route[] {
           });
         }
 
-        await deps.recordPointsMovement(ctx.tenantId, customerId, {
-          movementId: request.movementId, customerId, delta: assessment.delta, reason: request.kind,
-          sourceRef: typeof b.sourceRef === 'string' ? b.sourceRef : null, at: deps.now(),
-        });
+        try {
+          await deps.recordPointsMovement(ctx.tenantId, customerId, {
+            movementId: request.movementId, customerId, delta: assessment.delta, reason: request.kind,
+            sourceRef: typeof b.sourceRef === 'string' ? b.sourceRef : null, at: deps.now(),
+          }, expectedVersion);
+        } catch (err) {
+          // Another movement on this customer's points landed first (Wave 2a · PF-01): nothing moved, re-read.
+          if (err instanceof ConcurrencyConflictError) throw concurrentChange(`the points of customer ${customerId}`);
+          throw err;
+        }
         return { status: 201, body: { movementId: request.movementId, delta: assessment.delta, reason: request.kind, balance: assessment.balanceAfter } };
       },
     },

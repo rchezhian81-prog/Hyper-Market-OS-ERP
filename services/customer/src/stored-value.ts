@@ -8,7 +8,8 @@
 // another complete engine nothing fed on the cloud — this feeds it.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, concurrentChange, notFound } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
   redeemValue, balanceOf, householdBalance, findDoubleSpends, reconcileLiability, flagVelocity,
   type Instrument, type ValueMovement, type ValueKind, type DoubleSpend,
@@ -28,7 +29,13 @@ export interface StoredValueDeps {
   /** Issue an instrument and its opening value in one step. Idempotent on the instrument id. */
   readonly recordIssue: (tenantId: string, instrument: Instrument, opening: ValueMovement) => Promise<void> | void;
   /** Append a movement (a redemption). Idempotent on the movement id. */
-  readonly recordMovement: (tenantId: string, instrumentId: string, m: ValueMovement) => Promise<void> | void;
+  /**
+   * The instrument's write-guard version (Wave 2a · audit PF-01): read BEFORE `movements`, passed back to
+   * `recordMovement` as `expectedVersion`, so two distinct redemptions that both read the same balance cannot
+   * both land — the second is refused by name and re-reads. Optional on a bare stub; the running system provides it.
+   */
+  readonly instrumentVersion?: (tenantId: string, instrumentId: string) => Promise<number> | number;
+  readonly recordMovement: (tenantId: string, instrumentId: string, m: ValueMovement, expectedVersion?: number) => Promise<void> | void;
   /** Every instrument a household/owner holds — the shared index filtered by ownerRef (M17-FR-04). */
   readonly instrumentsForOwner: (tenantId: string, ownerRef: string) => Promise<readonly Instrument[]> | readonly Instrument[];
   /** Every movement across all of that household's instruments (for the pooled balance + double-spend). */
@@ -109,6 +116,8 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
           ...(typeof b.saleId === 'string' ? { saleId: b.saleId } : {}),
           ...(typeof b.customerRef === 'string' ? { customerRef: b.customerRef } : {}),
         };
+        // The guard version first, then the balance it protects (Wave 2a · PF-01).
+        const expectedVersion = deps.instrumentVersion === undefined ? undefined : await Promise.resolve(deps.instrumentVersion(ctx.tenantId, instrumentId));
         const result = redeemValue({ instrument, movements: await deps.movements(ctx.tenantId, instrumentId), movement });
 
         // A duplicate is not a failure — the money already moved once, correctly. Answer idempotently.
@@ -124,7 +133,14 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
           });
         }
 
-        await deps.recordMovement(ctx.tenantId, instrumentId, movement);
+        try {
+          await deps.recordMovement(ctx.tenantId, instrumentId, movement, expectedVersion);
+        } catch (err) {
+          // Another movement on this card landed first: this redemption was decided on a balance that is no longer
+          // true — nothing was taken, the till re-reads (Wave 2a · PF-01; never two spends of the same value).
+          if (err instanceof ConcurrencyConflictError) throw concurrentChange(`stored-value instrument ${instrumentId}`);
+          throw err;
+        }
         return { status: 200, body: { instrumentId, amountMinor: result.amountMinor, balanceMinor: result.balanceAfterMinor } };
       },
     },

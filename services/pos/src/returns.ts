@@ -10,7 +10,8 @@
 // the identical one; this module is the HTTP skin and the persistence wiring around it.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, concurrentChange, notFound } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
   assessReturn, crossLaneRefundFindings, DEFAULT_REFUND_THRESHOLD_MINOR, readRefundThreshold, refundGovernanceFindings,
   type ReturnRequest, type ReturnRequestLine, type RefundGovernanceFinding,
@@ -104,10 +105,18 @@ export interface ReturnsDeps {
   readonly priorReturns: (tenantId: string, saleId: string) => Promise<readonly RecordedReturn[]> | readonly RecordedReturn[];
   /** Every refund already given against this bill (for the money cap). */
   readonly priorRefunds: (tenantId: string, saleId: string) => Promise<readonly RecordedRefund[]> | readonly RecordedRefund[];
+  /**
+   * The sale's refund-guard version (Wave 2a · audit PF-01): read BEFORE `priorRefunds`, passed back to
+   * `recordReturn` as `expectedVersion`. Two distinct refunds of the same sale that both read the same history
+   * cannot both land: the first bumps the version, the second is refused by name (`ConcurrencyConflictError`)
+   * and the desk re-reads. Optional on a bare deps stub; the running system provides it.
+   */
+  readonly refundVersion?: (tenantId: string, saleId: string) => Promise<number> | number;
   /** Append the accepted return. Idempotent on the return id. When `storeCredit` is present (a
    *  store-credit refund), its instrument + `refund_to_credit` movement are appended in the SAME atomic
-   *  batch, so the return and the spendable credit land together or not at all (M13-FR-03). */
-  readonly recordReturn: (tenantId: string, saleId: string, record: ReturnRecord, storeCredit?: StoreCreditIssue) => Promise<void> | void;
+   *  batch, so the return and the spendable credit land together or not at all (M13-FR-03). With
+   *  `expectedVersion`, the batch is a compare-and-append on the sale's refund guard (Wave 2a). */
+  readonly recordReturn: (tenantId: string, saleId: string, record: ReturnRecord, storeCredit?: StoreCreditIssue, expectedVersion?: number) => Promise<void> | void;
   /** The tenant's refund approval threshold (M13-FR-03) — `undefined` means none set, so the default
    *  (0 — every refund needs a §28 approver) applies. Sourced SERVER-SIDE: the caller cannot declare
    *  their own threshold in the body and call a refund "immaterial". */
@@ -303,6 +312,9 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         const sale = await deps.originalSale(ctx.tenantId, saleId);
         if (sale === undefined) throw notFound(`sale ${saleId}`);
 
+        // The guard version FIRST, then the history it protects (Wave 2a · PF-01): whatever lands against this
+        // sale between here and the append moves the version, and the append below is then refused by name.
+        const expectedVersion = deps.refundVersion === undefined ? undefined : await Promise.resolve(deps.refundVersion(ctx.tenantId, saleId));
         const [priorReturns, priorRefunds] = await Promise.all([
           Promise.resolve(deps.priorReturns(ctx.tenantId, saleId)),
           Promise.resolve(deps.priorRefunds(ctx.tenantId, saleId)),
@@ -430,13 +442,20 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           creditBalanceMinor = issue.balanceAfterMinor;
         }
 
-        await deps.recordReturn(ctx.tenantId, saleId, {
-          returnId: request.returnId, number: request.number, originalSaleId: saleId,
-          processedBy: request.processedBy, processedAt, reasonCode: request.reasonCode,
-          refundMinor: request.refundMinor, refundTender: request.refundTender,
-          refundStatus: assessment.refundStatus, lines: request.lines,
-          ...(storeCredit === undefined ? {} : { customerRef: readCustomerRef(ctx.body) }),
-        }, storeCredit);
+        try {
+          await deps.recordReturn(ctx.tenantId, saleId, {
+            returnId: request.returnId, number: request.number, originalSaleId: saleId,
+            processedBy: request.processedBy, processedAt, reasonCode: request.reasonCode,
+            refundMinor: request.refundMinor, refundTender: request.refundTender,
+            refundStatus: assessment.refundStatus, lines: request.lines,
+            ...(storeCredit === undefined ? {} : { customerRef: readCustomerRef(ctx.body) }),
+          }, storeCredit, expectedVersion);
+        } catch (err) {
+          // The other refund of this sale landed first (Wave 2a · PF-01): this one was decided on figures that are no
+          // longer true, nothing was saved, and the desk re-reads — never two refunds of the same remaining money.
+          if (err instanceof ConcurrencyConflictError) throw concurrentChange(`sale ${saleId}`);
+          throw err;
+        }
         // Seal the refund fact — how much, why, its status and the §28 approver — attributed to the
         // authenticated processor. NO tender instrument is recorded (hard rule #3): refundTender is omitted.
         await deps.recordAudit?.(ctx.tenantId, {
@@ -717,7 +736,18 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           // The returning half of a till exchange keeps its settlement (SP-9b-ii) — the day book clears the credit.
           ...(s.exchange === undefined ? {} : { exchange: s.exchange }),
         };
-        await deps.recordReturn(ctx.tenantId, saleId, record, storeCredit);
+        // Under the sale's refund guard too (Wave 2a), so a desk refund racing this synced one sees the version move.
+        // This route never refuses — the money already left the lane — so when IT loses the race it re-reads the
+        // version and appends again; the record is a fact, and the register's flags (below) say what it did.
+        for (let attempt = 0; ; attempt += 1) {
+          const version = deps.refundVersion === undefined ? undefined : await Promise.resolve(deps.refundVersion(ctx.tenantId, saleId));
+          try {
+            await deps.recordReturn(ctx.tenantId, saleId, record, storeCredit, version);
+            break;
+          } catch (err) {
+            if (!(err instanceof ConcurrencyConflictError) || attempt >= 4) throw err;
+          }
+        }
         // Seal the refund fact for the offline lane refund too — attributed to the lane's recorded
         // processor (the same trusted identity on the return record), marked captured-offline so it is
         // never read as a live cloud session. NO tender instrument is recorded (hard rule #3).

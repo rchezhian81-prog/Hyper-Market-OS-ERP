@@ -87,7 +87,8 @@ class CountingStore implements EventStore {
   rowsRead = 0;
   constructor(private readonly inner: InMemoryEventStore) {}
   append: EventStore['append'] = (t, s, e) => this.inner.append(t, s, e);
-  appendBatch: EventStore['appendBatch'] = (t, entries) => this.inner.appendBatch(t, entries);
+  appendBatch: EventStore['appendBatch'] = (t, entries, options) => this.inner.appendBatch(t, entries, options);
+  guardVersion: EventStore['guardVersion'] = (t, k) => this.inner.guardVersion(t, k);
   findByIdempotencyKey: EventStore['findByIdempotencyKey'] = (t, k) => this.inner.findByIdempotencyKey(t, k);
   latestOfType: EventStore['latestOfType'] = (t, s, ty) => this.inner.latestOfType(t, s, ty);
   exportTenant: EventStore['exportTenant'] = (t) => this.inner.exportTenant(t);

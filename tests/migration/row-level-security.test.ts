@@ -136,7 +136,7 @@ describeOrSkip('row-level security isolates tenants in the database itself (migr
        WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY c.relname`,
     );
     const byTable = new Map(r.rows.map((row) => [String(row['relname']), { rls: Boolean(row['rls']), forced: Boolean(row['forced']) }]));
-    for (const t of ['event_ledger', 'sync_outbox', 'config_versions', 'idempotency_keys', 'number_series', 'audit_log', 'projection_snapshot']) {
+    for (const t of ['event_ledger', 'sync_outbox', 'config_versions', 'idempotency_keys', 'number_series', 'audit_log', 'projection_snapshot', 'write_guards']) {
       expect(byTable.get(t), t).toEqual({ rls: true, forced: true });
     }
     expect(byTable.get('schema_migrations')).toEqual({ rls: false, forced: false }); // carries no tenant
