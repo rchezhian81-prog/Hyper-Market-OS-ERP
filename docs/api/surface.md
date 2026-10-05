@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 814 | 500 | 500 | 64 | 276 |
+| 13 | 815 | 501 | 501 | 64 | 276 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -707,6 +707,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/facilities/schedules/:scheduleId` | `facilities.schedule.manage` | core | yes |
 | POST | `/v1/facilities/schedules/:scheduleId/tasks/:taskId` | `facilities.task.record` | core | yes |
 | POST | `/v1/facilities/tasks/:taskId/complete` | `facilities.task.record` | core | yes |
+| POST | `/v1/facilities/tasks/:taskId/verify` | `facilities.task.record` | core | yes |
 | GET | `/v1/hr/workforce/attendance` | `workforce.roster.read` | core | — |
 | POST | `/v1/hr/workforce/attendance/:employeeId/:date` | `workforce.roster.manage` | core | yes |
 | GET | `/v1/hr/workforce/certifications` | `workforce.roster.read` | core | — |

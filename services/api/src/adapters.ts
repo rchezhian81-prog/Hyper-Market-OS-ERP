@@ -3245,6 +3245,11 @@ export function facilitiesAdapter(input: {
         } else if (e.event.type === 'FacilitiesTaskCompleted') {
           const id = p['taskId'] as string;
           byId.set(id, { ...(byId.get(id) ?? { taskId: id, scheduleId: p['scheduleId'] as string, dueOn: p['dueOn'] as string }), ...(p as unknown as ScheduledTask) });
+        } else if (e.event.type === 'FacilitiesTaskVerified') {
+          // The second person's act (Wave 2b · PA-03) lands on the completion it verifies.
+          const id = p['taskId'] as string;
+          const current = byId.get(id);
+          if (current !== undefined) byId.set(id, { ...current, verifiedBy: p['verifiedBy'] as string });
         }
       }
       return [...byId.values()];
@@ -3270,6 +3275,18 @@ export function facilitiesAdapter(input: {
         idempotencyKey: `fac-task-due-${tenantId}-${task.taskId}`,
         source: 'api/platform',
         payload: task,
+      }));
+    },
+
+    recordTaskVerified: async (tenantId, verification) => {
+      await input.store.append(tenantId, STREAM.facilities, makeEvent({
+        id: `fac-task-verified-${verification.taskId}`,
+        type: 'FacilitiesTaskVerified',
+        occurredAt: verification.at,
+        // One verification per task — a re-send collapses; a different verifier after the first changes nothing.
+        idempotencyKey: `fac-task-verified-${tenantId}-${verification.taskId}`,
+        source: 'api/platform',
+        payload: verification,
       }));
     },
 

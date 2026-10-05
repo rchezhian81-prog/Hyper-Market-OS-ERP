@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   createFacilitiesSession, FACILITIES_COPY, COPY_KEYS,
-  type FacilitiesPorts, type FacilitiesData, type OverdueTask, type CompleteResult,
+  type FacilitiesPorts, type FacilitiesData, type OverdueTask, type CompleteResult, type VerifyResult,
 } from '../../apps/web-erp/src/facilities-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
 
@@ -10,8 +10,9 @@ import { bilingualGaps } from '../../packages/ui/src/index';
  *
  * The rules live here, DOM-free: worst-first ordering with a compliance risk shouting loudest, a word beside
  * every colour, a completion that refuses locally before any POST without the record permission / a named user /
- * a task the board holds, and the completion POSTed in the completer's own name with any evidence + second
- * verifier attached (the server re-checks and refuses a self-verified safety check — §28).
+ * a task the board holds, and the completion POSTed in the completer's own name with any evidence. A second person
+ * is never a typed name (Wave 2b · audit PA-03): a check that waits is verified by a DIFFERENT signed-in person
+ * with their own Verify — the completer is not offered it, and the model refuses it before any POST (§28).
  */
 
 const task = (over: Partial<OverdueTask> & Pick<OverdueTask, 'taskId'>): OverdueTask => ({
@@ -29,12 +30,15 @@ const board: FacilitiesData = {
 };
 
 let lastPost: Parameters<ReturnType<FacilitiesPorts['completePort']>['post']>[0] | undefined;
+let lastVerify: Parameters<ReturnType<FacilitiesPorts['verifyPort']>['post']>[0] | undefined;
 
 const session = (ports: Partial<FacilitiesPorts> = {}, userId: string | null = 'u-fm') => {
   lastPost = undefined;
+  lastVerify = undefined;
   return createFacilitiesSession({ userId }, {
     worklist: () => board, mayRead: () => true, mayComplete: () => true,
     completePort: () => ({ post: async (input) => { lastPost = input; return 'completed' as CompleteResult; } }),
+    verifyPort: () => ({ post: async (input) => { lastVerify = input; return 'verified' as VerifyResult; } }),
     ...ports,
   });
 };
@@ -112,22 +116,79 @@ describe('completion refuses locally before any POST, then reaches the port in t
     expect(lastPost).toBeUndefined();
   });
 
-  it('a permitted manager marking a held task done reaches the port with their own name + evidence + verifier', async () => {
+  it('a permitted manager marking a held task done reaches the port with their own name + evidence — never a second person\'s name', async () => {
     const s = session();
-    expect(await s.complete('t-fire', { evidenceRef: 'photo-123', verifiedBy: 'u-manager', note: '  extinguisher swapped  ' })).toBe('completed');
-    expect(lastPost).toEqual({ taskId: 't-fire', completedBy: 'u-fm', evidenceRefs: ['photo-123'], verifiedBy: 'u-manager', note: 'extinguisher swapped' });
+    expect(await s.complete('t-fire', { evidenceRef: 'photo-123', note: '  extinguisher swapped  ' })).toBe('completed');
+    expect(lastPost).toEqual({ taskId: 't-fire', completedBy: 'u-fm', evidenceRefs: ['photo-123'], note: 'extinguisher swapped' });
+    expect(Object.keys(lastPost ?? {})).not.toContain('verifiedBy');
   });
 
   it('omits empty optional fields rather than sending blanks', async () => {
-    await session().complete('t-clean', { evidenceRef: '   ', verifiedBy: '' });
+    await session().complete('t-clean', { evidenceRef: '   ' });
     expect(lastPost).toEqual({ taskId: 't-clean', completedBy: 'u-fm' });
   });
 
-  it('surfaces a server refusal (no evidence / self-verified) and a lost link honestly', async () => {
+  it('surfaces a server refusal (no evidence) and a lost link honestly', async () => {
     const refuse = session({ completePort: () => ({ post: async () => 'refused' as CompleteResult }) });
     expect(await refuse.complete('t-fire')).toBe('refused');
     const lost = session({ completePort: () => ({ post: async () => 'lost_link' as CompleteResult }) });
     expect(await lost.complete('t-fire')).toBe('lost_link');
+  });
+});
+
+describe('a safety check waits for a SECOND signed-in person, who verifies it with their own click (Wave 2b · PA-03)', () => {
+  const waiting: FacilitiesData = {
+    overdue: [task({ taskId: 't-fire', level: 'due', category: 'fire_safety', complianceLinked: true, daysOverdue: 0, awaitingVerification: true, completedBy: 'u-fm', completedOn: '2026-09-22' })],
+  };
+  const as = (userId: string | null, ports: Partial<FacilitiesPorts> = {}) => session({ worklist: () => waiting, ...ports }, userId);
+
+  it('the completer sees it waiting, with no Verify for their own work and no second Mark done', async () => {
+    const mine = as('u-fm');
+    const row = mine.view('en').tasks[0]!;
+    expect(row.awaitingVerification).toBe(true);
+    expect(row.completedBy).toBe('u-fm');
+    expect(row.ownCompletion).toBe(true);
+    expect(row.mayVerify).toBe(false);
+    expect(await mine.verify('t-fire')).toBe('refused');
+    expect(lastVerify, 'the completer never reaches the verify POST').toBeUndefined();
+    expect(await mine.complete('t-fire', { evidenceRef: 'again.jpg' })).toBe('refused');
+    expect(lastPost, 'a waiting check is not ticked twice').toBeUndefined();
+  });
+
+  it('a different permitted person is offered Verify, and it reaches the port with NO name in it', async () => {
+    const other = as('u-manager');
+    const row = other.view('en').tasks[0]!;
+    expect(row.mayVerify).toBe(true);
+    expect(row.ownCompletion).toBe(false);
+    expect(await other.verify('t-fire')).toBe('verified');
+    expect(lastVerify).toEqual({ taskId: 't-fire' }); // who verifies is the sign-in, never the body
+  });
+
+  it('nobody named, no permission, or a check that is not waiting: refused before any POST', async () => {
+    expect(await as(null).verify('t-fire')).toBe('refused');
+    expect(as(null).view('en').tasks[0]!.mayVerify).toBe(false);
+    expect(await as('u-manager', { mayComplete: () => false }).verify('t-fire')).toBe('refused');
+    expect(as('u-manager', { mayComplete: () => false }).view('en').tasks[0]!.mayVerify).toBe(false);
+    expect(await session({}, 'u-manager').verify('t-clean')).toBe('refused'); // not done yet — nothing to verify
+    expect(await session({}, 'u-manager').verify('t-nope')).toBe('refused');
+    expect(lastVerify).toBeUndefined();
+    expect(session().view('en').tasks.every((r) => !r.awaitingVerification && !r.mayVerify && r.completedBy === null)).toBe(true);
+  });
+
+  it('the server\'s refusal and a lost link are said, not faked; each outcome presents in both languages', async () => {
+    expect(await as('u-manager', { verifyPort: () => ({ post: async () => 'refused' as VerifyResult }) }).verify('t-fire')).toBe('refused');
+    expect(await as('u-manager', { verifyPort: () => ({ post: async () => 'lost_link' as VerifyResult }) }).verify('t-fire')).toBe('lost_link');
+    const s = as('u-manager');
+    expect(s.presentVerifyResult('en', 'verified')).toMatchObject({ tone: 'ok', label: FACILITIES_COPY.en.verifyRecorded, needsAttention: false });
+    expect(s.presentVerifyResult('ta', 'refused')).toMatchObject({ tone: 'error', label: FACILITIES_COPY.ta.verifyRefused });
+    expect(s.presentVerifyResult('en', 'lost_link').tone).toBe('degraded');
+    // The completer's own outcome when the server answers 202: recorded, and waiting — never "done".
+    expect(s.presentCompleteResult('en', 'awaiting_verification')).toMatchObject({ label: FACILITIES_COPY.en.completeAwaiting, needsAttention: true });
+    expect(s.presentCompleteResult('en', 'awaiting_verification').tone).not.toBe('ok');
+  });
+
+  it('the copy offers no "verified by" box any more', () => {
+    expect(Object.keys(FACILITIES_COPY.en)).not.toContain('verifierLabel');
   });
 });
 

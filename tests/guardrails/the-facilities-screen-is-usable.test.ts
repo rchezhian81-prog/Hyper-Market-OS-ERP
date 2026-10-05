@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   FACILITIES_COPY, COPY_KEYS, createFacilitiesSession,
-  type FacilitiesPorts, type FacilitiesData, type OverdueTask, type CompleteResult,
+  type FacilitiesPorts, type FacilitiesData, type OverdueTask, type CompleteResult, type VerifyResult,
 } from '../../apps/web-erp/src/facilities-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
 
@@ -25,7 +25,8 @@ const board: FacilitiesData = { overdue: [task({ taskId: 't-fire', level: 'compl
 const session = (ports: Partial<FacilitiesPorts> = {}) =>
   createFacilitiesSession({ userId: 'u-fm' }, {
     worklist: () => board, mayRead: () => true, mayComplete: () => true,
-    completePort: () => ({ post: async () => 'completed' as CompleteResult }), ...ports,
+    completePort: () => ({ post: async () => 'completed' as CompleteResult }),
+    verifyPort: () => ({ post: async () => 'verified' as VerifyResult }), ...ports,
   });
 
 describe('the facilities copy is complete in both languages', () => {
@@ -62,7 +63,7 @@ describe('an unpermitted operator is offered no mark-done action', () => {
     // A task the board does not hold is refused locally too.
     expect(await session().complete('t-nope')).toBe('refused');
     // A permitted operator marking a held task done reaches the port (which records it; the server re-checks evidence/§28).
-    expect(await session().complete('t-fire', { evidenceRef: 'photo-1', verifiedBy: 'u-two' })).toBe('completed');
+    expect(await session().complete('t-fire', { evidenceRef: 'photo-1' })).toBe('completed');
   });
 });
 
@@ -77,6 +78,14 @@ describe('the view defers to the model, uses no browser dialogs, and only writes
   it('renders from the bundled session rather than re-deciding what to show', () => {
     expect(VIEW).toMatch(/window\.facilitiesSession/);
     expect(VIEW).toMatch(/session\.view\(/);
+  });
+
+  it('there is no box to TYPE a second person\'s name — the second person verifies under their own sign-in (Wave 2b · PA-03)', () => {
+    expect(VIEW).not.toMatch(/verifierLabel|input\.verifier|verifiedBy/);
+    const verifyIdx = VIEW.indexOf('session.verify(');
+    expect(verifyIdx, 'session.verify( is not present').toBeGreaterThan(-1);
+    expect(verifyIdx, 'session.verify( runs outside a click handler').toBeGreaterThan(VIEW.indexOf("addEventListener('click'"));
+    expect(VIEW).toMatch(/r\.mayVerify/); // the button is offered only where the tested session says so
   });
 
   it('completes ONLY from an explicit click — session.complete never runs at load (P-05)', () => {

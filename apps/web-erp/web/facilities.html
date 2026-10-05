@@ -43,6 +43,10 @@
       .actions input { min-height: var(--tap); padding:0 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--field); color:var(--ink); }
       button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:15px; font-weight:700; justify-self:start; }
       button.complete { background:var(--ok); color:var(--on-accent); }
+      button.verify { background:var(--accent); color:var(--on-accent); }
+      button.act:disabled { opacity:.6; }
+      .row .awaiting { font-size:14px; font-weight:600; color:var(--ink); }
+      .actions .hint { margin:0; font-size:14px; color:var(--muted); }
       button.act:focus-visible, .lang:focus-visible, .actions input:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.result .icon { font-size:18px; }

@@ -7,26 +7,24 @@ import { join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
 
 /**
- * **The facilities manager marks an overdue check done, in a real browser (M26-FR-03 · API-11 · §28 — the E2E matrix).**
+ * **A safety check is done by one person and verified by ANOTHER, each in a real browser under their own sign-in
+ * (M26-FR-03 · API-11 · §28 · Wave 2b audit PA-03 — the E2E matrix).**
  *
- * Every layer of the facilities desk — the tested `findOverdue` fold, the session model, the complete port — is
- * unit- and integration-tested. The one thing units cannot prove is that a facilities manager, in an ACTUAL
- * browser, seeing an overdue compliance check and clicking **"Mark done"** (with the evidence + a second verifier
- * they typed in), makes that decision reach the cloud under their OWN session, and that the check then drops off
- * the overdue list. This drives headless Chromium against a stub cloud to prove exactly that end to end:
+ * The audit executed a facilities verification with two typed, unprovisioned names and got 200: a name in a body is
+ * a claim, a sign-in is a fact. The cloud now takes the completer and the verifier from the sign-in, and refuses a
+ * body that names anyone. This drives headless Chromium against a stub cloud to prove the screen follows:
  *
- *   • an authorised manager (facilities.overdue.read + facilities.task.record) → filling the evidence + verifier
- *     and clicking Mark done POSTs { completedBy, evidenceRefs, verifiedBy } to
- *     /v1/facilities/tasks/:taskId/complete under their own session; the check then drops off once the overdue
- *     list is re-READ (the server re-derives it — a completed check is no longer overdue — never a client shuffle);
- *   • a read-only user (facilities.overdue.read only) → sees the overdue list but is offered NO mark-done button,
- *     so no write can even be started (P-04 least privilege: the server re-checks too, but the screen never even
- *     offers it).
+ *   • the facilities manager (u-fm) fills the evidence and clicks **Mark done** → the POST carries
+ *     { completedBy: 'u-fm', evidenceRefs } and NO verifiedBy (there is no box to type one); the cloud answers 202
+ *     "waiting for a second person"; the screen says so, re-reads, and the row shows "Done by u-fm" with NO Verify
+ *     button for its own completer — and no second Mark done;
+ *   • a DIFFERENT manager (u-manager) opens the same screen under their own sign-in → the row offers **Verify**; the
+ *     click POSTs an EMPTY body to /v1/facilities/tasks/:taskId/verify (the verifier is the sign-in), and the check
+ *     drops off once the overdue list is re-READ (a server re-derive, never a client shuffle);
+ *   • a read-only user (facilities.overdue.read only) sees the list and is offered neither action, so nothing is sent.
  *
- * A tick is worth nothing at an inspection; the server refuses a completion with no required evidence or a
- * self-verified safety check (§28), which this screen never fakes. The overdue list is read live from a single
- * GET (/v1/facilities/overdue?asOf=), exactly as in production. The browser binary is the environment's
- * pre-installed Chromium; where none is present the suite SKIPS rather than failing, like the sibling suites.
+ * The overdue list is read live from a single GET (/v1/facilities/overdue?asOf=), exactly as in production. The
+ * browser binary is the environment's pre-installed Chromium; where none is present the suite SKIPS rather than failing.
  */
 
 const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-browsers/chromium';
@@ -48,37 +46,45 @@ const TASK = {
   detail: '"Fire extinguisher check" is 9 day(s) overdue and a regulator would care — escalated to owner',
 };
 
+type TaskState = 'open' | 'awaiting' | 'done';
 interface Recorder {
   facilitiesData: Record<string, unknown>;
-  completeStatus: number;
-  done: boolean;
+  state: TaskState;
   readonly requests: { method: string; path: string; body: unknown }[];
 }
 
-/** A server that BOTH serves the shell (GET, manager context injected) AND answers the two routes the desk
- *  touches — the complete POST (taskId in the URL) and the read-only overdue GET (/v1/facilities/overdue) — on
- *  the SAME origin, so `credentials: 'same-origin'` and a relative `/v1/...` reach it exactly as in production.
- *  Once a completion is recorded, the overdue list comes back empty, so a done check drops off on re-read (a
- *  server re-derive, never a client-side shuffle). */
+/** A server that BOTH serves the shell (GET, the signed-in person's context injected) AND answers the three routes
+ *  the desk touches — complete, verify, and the read-only overdue GET — on the SAME origin, so
+ *  `credentials: 'same-origin'` and a relative `/v1/...` reach it exactly as in production. Its state follows the
+ *  cloud's rule: a safety check marked done WAITS (202) until a second person verifies it; only then is it no longer
+ *  overdue. The state is shared between the two people's sessions, as the cloud's is. */
 async function startShellAndCloud(rec: Recorder): Promise<{ base: string; stop: () => Promise<void> }> {
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       const [path = '/'] = (req.url ?? '/').split('?');
-      if (req.method === 'POST' && path.startsWith('/v1/facilities/tasks/') && path.endsWith('/complete')) {
+      const json = (status: number, body: unknown): void => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+      if (req.method === 'POST' && path.startsWith('/v1/facilities/tasks/')) {
         const chunks: Buffer[] = [];
         for await (const c of req) chunks.push(c as Buffer);
         const raw = Buffer.concat(chunks).toString('utf8');
         rec.requests.push({ method: 'POST', path, body: raw === '' ? undefined : JSON.parse(raw) });
-        if (rec.completeStatus >= 200 && rec.completeStatus < 300) rec.done = true;
-        res.writeHead(rec.completeStatus, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ taskId: TASK_ID, scheduleId: TASK.scheduleId, accepted: rec.done, outcome: rec.done ? 'complete' : 'evidence_missing' }));
-        return;
+        if (path.endsWith('/complete')) {
+          rec.state = 'awaiting';
+          json(202, { taskId: TASK_ID, scheduleId: TASK.scheduleId, accepted: false, outcome: 'not_verified', awaitingVerification: true, completedBy: 'u-fm' });
+          return;
+        }
+        if (path.endsWith('/verify')) {
+          rec.state = 'done';
+          json(200, { taskId: TASK_ID, scheduleId: TASK.scheduleId, accepted: true, outcome: 'complete', verifiedBy: 'u-manager' });
+          return;
+        }
       }
       if (req.method === 'GET' && path === '/v1/facilities/overdue') {
         rec.requests.push({ method: 'GET', path, body: undefined });
-        const overdue = rec.done ? [] : [TASK];
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ overdue, complianceRisks: overdue.length, asAt: '2026-09-22T00:00:00.000Z' }));
+        const overdue = rec.state === 'done' ? [] : rec.state === 'awaiting'
+          ? [{ ...TASK, awaitingVerification: true, completedBy: 'u-fm', completedOn: '2026-09-22' }]
+          : [{ ...TASK, awaitingVerification: false }];
+        json(200, { overdue, complianceRisks: overdue.length, asAt: '2026-09-22T00:00:00.000Z' });
         return;
       }
       const file = path === '/' || path === '/facilities' ? 'facilities.html' : path.replace(/^\//, '');
@@ -111,7 +117,11 @@ const manager = (userId: string, permissions: readonly string[]): Record<string,
   userId, permissions,
 });
 
-describe.skipIf(!HAVE_BROWSER)('the facilities manager marks an overdue check done, end to end in a real browser (M26-FR-03)', () => {
+const RECORD = ['facilities.overdue.read', 'facilities.task.record'];
+/** Runs INSIDE the page — it may use only its argument (the browser sees no test-side variable). */
+const rowsAre = (expected: number): boolean => (globalThis as unknown as BrowserGlobals).document.querySelectorAll('#rows .row').length === expected;
+
+describe.skipIf(!HAVE_BROWSER)('a safety check is done by one person and verified by another, end to end in a real browser (M26-FR-03 · PA-03)', () => {
   let browser: Browser;
 
   beforeAll(async () => {
@@ -124,58 +134,73 @@ describe.skipIf(!HAVE_BROWSER)('the facilities manager marks an overdue check do
     await browser?.close();
   });
 
-  const openScreen = async (rec: Recorder) => {
-    const srv = await startShellAndCloud(rec);
+  /** Open the screen as one signed-in person, on a server whose state the recorder holds. */
+  const openAs = async (base: string, rec: Recorder, userId: string, permissions: readonly string[]) => {
+    rec.facilitiesData = manager(userId, permissions);
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(`${srv.base}/`, { waitUntil: 'load' });
+    await page.goto(`${base}/`, { waitUntil: 'load' });
     // The overdue list is read live on load (one GET), so the check only appears once the read resolves.
-    await page.waitForFunction(() => (globalThis as unknown as BrowserGlobals).document.querySelectorAll('#rows .row').length > 0, undefined, { timeout: 10_000 });
-    return { srv, context, page, teardown: async () => { await context.close(); await srv.stop(); } };
+    await page.waitForFunction(rowsAre, 1, { timeout: 10_000 });
+    return { page, close: () => context.close() };
   };
 
-  it('an authorised manager: filling evidence + verifier and clicking Mark done POSTs it, and the check drops off', async () => {
-    const rec: Recorder = { facilitiesData: manager('u-fm', ['facilities.overdue.read', 'facilities.task.record']), completeStatus: 200, done: false, requests: [] };
-    const { page, teardown } = await openScreen(rec);
+  it('the facilities manager marks it done and sees it WAITING — no typed verifier, no Verify on their own work; a different manager verifies it and it drops off', async () => {
+    const rec: Recorder = { facilitiesData: {}, state: 'open', requests: [] };
+    const srv = await startShellAndCloud(rec);
     try {
-      expect(await page.locator('#rows .row').count()).toBe(1);
-      // The mark-done control is offered (the manager holds facilities.task.record).
-      expect(await page.locator('#rows button.complete').count()).toBe(1);
+      // ── the first person: the one who did the check ─────────────────────────────────────────────────────────
+      const fm = await openAs(srv.base, rec, 'u-fm', RECORD);
+      expect(await fm.page.locator('#rows button.complete').count()).toBe(1);
+      expect(await fm.page.locator('#rows input.verifier').count(), 'there is no box to type a second person').toBe(0);
+      expect(await fm.page.locator('#rows button.verify').count()).toBe(0);
+      await fm.page.fill('#rows input.evidence', 'photo-123');
+      await fm.page.click('#rows button.complete');
+      await fm.page.waitForFunction(() => (globalThis as unknown as { document: { querySelector(s: string): { textContent: string | null } | null } }).document.querySelector('#rows .awaiting') !== null, undefined, { timeout: 10_000 });
 
-      await page.fill('#rows input.evidence', 'photo-123');
-      await page.fill('#rows input.verifier', 'u-manager');
-      await page.click('#rows button.complete');
-
-      // The check drops off because the overdue list was re-READ (server re-derive), not shuffled client-side.
-      await page.waitForFunction(
-        () => (globalThis as unknown as BrowserGlobals).document.querySelectorAll('#rows .row').length === 0,
-        undefined, { timeout: 10_000 },
-      );
       const post = rec.requests.find((r) => r.method === 'POST' && r.path === `/v1/facilities/tasks/${TASK_ID}/complete`);
       expect(post, 'the completion was not POSTed to the task/complete URL').toBeDefined();
-      const body = post!.body as { completedBy?: string; evidenceRefs?: string[]; verifiedBy?: string };
-      expect(body.completedBy).toBe('u-fm'); // recorded in the manager's OWN name, never a body-supplied value
-      expect(body.evidenceRefs).toEqual(['photo-123']);
-      expect(body.verifiedBy).toBe('u-manager');
+      expect(post!.body).toEqual({ completedBy: 'u-fm', evidenceRefs: ['photo-123'] }); // never a verifiedBy
+      // The screen says it was recorded and now waits — never "done".
+      expect(await fm.page.locator('#result-text').textContent()).toContain('waits for a second person');
+      // Re-read: the row stays, shows who did it, offers the completer no Verify and no second Mark done.
+      expect(await fm.page.locator('#rows .row').count()).toBe(1);
+      expect(await fm.page.locator('#rows .facts').textContent()).toContain('Done by: u-fm');
+      expect(await fm.page.locator('#rows .awaiting').textContent()).toContain('a different person must verify it');
+      expect(await fm.page.locator('#rows button.verify').count()).toBe(0);
+      expect(await fm.page.locator('#rows button.complete').count()).toBe(0);
+      await fm.close();
 
-      // The overdue read runs at least twice: once on load, once after the completion to re-derive.
-      expect(rec.requests.filter((r) => r.method === 'GET' && r.path === '/v1/facilities/overdue').length).toBeGreaterThanOrEqual(2);
-      expect(await page.locator('#rows .row').count()).toBe(0);
-      expect(await page.locator('#result').getAttribute('hidden')).toBeNull();
+      // ── the second person: a different manager, under their own sign-in ─────────────────────────────────────
+      const second = await openAs(srv.base, rec, 'u-manager', RECORD);
+      expect(await second.page.locator('#rows .facts').textContent()).toContain('Done by: u-fm');
+      expect(await second.page.locator('#rows button.verify').count()).toBe(1);
+      await second.page.click('#rows button.verify');
+      await second.page.waitForFunction(rowsAre, 0, { timeout: 10_000 });
+      const verify = rec.requests.find((r) => r.method === 'POST' && r.path === `/v1/facilities/tasks/${TASK_ID}/verify`);
+      expect(verify, 'the verification was not POSTed to the task/verify URL').toBeDefined();
+      expect(verify!.body).toEqual({}); // who verifies is the sign-in — the body names nobody
+      expect(await second.page.locator('#result-text').textContent()).toContain('Verified and recorded in your name');
+      // The overdue read ran on each load and after each act — the list is re-derived, never shuffled client-side.
+      expect(rec.requests.filter((r) => r.method === 'GET' && r.path === '/v1/facilities/overdue').length).toBeGreaterThanOrEqual(4);
+      await second.close();
     } finally {
-      await teardown();
+      await srv.stop();
     }
   });
 
-  it('a read-only user sends NOTHING — no mark-done button is rendered', async () => {
-    const rec: Recorder = { facilitiesData: manager('u-readonly', ['facilities.overdue.read']), completeStatus: 200, done: false, requests: [] };
-    const { page, teardown } = await openScreen(rec);
+  it('a read-only user sends NOTHING — neither Mark done nor Verify is rendered, even on a check that waits', async () => {
+    const rec: Recorder = { facilitiesData: {}, state: 'awaiting', requests: [] };
+    const srv = await startShellAndCloud(rec);
     try {
-      expect(await page.locator('#rows .row').count()).toBe(1); // they can see the overdue list
-      expect(await page.locator('#rows button.complete').count()).toBe(0); // but no way to mark done
+      const viewer = await openAs(srv.base, rec, 'u-readonly', ['facilities.overdue.read']);
+      expect(await viewer.page.locator('#rows .row').count()).toBe(1); // they can see the overdue list
+      expect(await viewer.page.locator('#rows button.complete').count()).toBe(0);
+      expect(await viewer.page.locator('#rows button.verify').count()).toBe(0);
       expect(rec.requests.some((r) => r.method === 'POST')).toBe(false);
+      await viewer.close();
     } finally {
-      await teardown();
+      await srv.stop();
     }
   });
 });

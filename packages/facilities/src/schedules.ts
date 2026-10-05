@@ -152,6 +152,10 @@ export interface OverdueTask {
   /** True when a regulator would care. Cleaning is never this. */
   readonly complianceLinked: boolean;
   readonly detail: string;
+  /** Wave 2b · PA-03: the check was done and recorded, and now waits for a DIFFERENT signed-in person to verify it. */
+  readonly awaitingVerification: boolean;
+  readonly completedBy?: string;
+  readonly completedOn?: string;
 }
 
 const DAY_MS = 86_400_000;
@@ -213,8 +217,13 @@ export function findOverdue(input: {
           : 'overdue';
 
     const escalated = level === 'escalated' || level === 'compliance_risk';
+    const awaitingVerification = done.outcome === 'not_verified';
+    const awaitingNote = awaitingVerification ? ` — done by ${task.completedBy ?? 'somebody'}, awaiting a second person's verification` : '';
 
     overdue.push({
+      awaitingVerification,
+      ...(task.completedBy === undefined ? {} : { completedBy: task.completedBy }),
+      ...(task.completedOn === undefined ? {} : { completedOn: task.completedOn }),
       taskId: task.taskId,
       scheduleId: schedule.scheduleId,
       title: schedule.title,
@@ -230,8 +239,8 @@ export function findOverdue(input: {
           : level === 'escalated'
             ? `"${schedule.title}" is ${daysOverdue} day(s) overdue — escalated to ${schedule.escalatesTo}`
             : level === 'due'
-              ? `"${schedule.title}" is due today`
-              : `"${schedule.title}" is ${daysOverdue} day(s) late`,
+              ? `"${schedule.title}" is due today${awaitingNote}`
+              : `"${schedule.title}" is ${daysOverdue} day(s) late${awaitingNote}`,
     });
   }
 
@@ -256,7 +265,10 @@ export interface SafetyIncident {
   readonly severity: IncidentSeverity;
   readonly occurredAt: string;
   readonly reportedAt: string;
+  /** Who reported it — descriptive: a customer, a contractor or staff without a login may be the reporter. */
   readonly reportedBy: string;
+  /** Who RECORDED it — the signed-in person (Wave 2b · PA-03); like the reporter, they cannot close a serious incident. */
+  readonly recordedBy?: string;
   readonly description: string;
   readonly evidenceRefs?: readonly string[];
   readonly assetId?: string;
@@ -316,12 +328,12 @@ export function closeIncident(input: {
       detail: `a ${input.incident.severity} incident cannot be closed on a description alone — evidence is retained and never deleted (#6)`,
     };
   }
-  if (input.closedBy === input.incident.reportedBy && input.incident.severity !== 'minor') {
+  if ((input.closedBy === input.incident.reportedBy || input.closedBy === input.incident.recordedBy) && input.incident.severity !== 'minor') {
     return {
       ...base,
       closed: false,
       outcome: 'self_closed',
-      detail: `${input.closedBy} both reported and closed this — a serious incident needs a second person (§28)`,
+      detail: `${input.closedBy} both ${input.closedBy === input.incident.reportedBy ? 'reported' : 'recorded'} and closed this — a serious incident needs a second person (§28)`,
     };
   }
   if (input.incident.severity === 'reportable' && input.authorityNotifiedOn === undefined) {

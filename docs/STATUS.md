@@ -5,6 +5,45 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-iii-b — a facilities check is verified by a second signed-in person; an incident is closed by the signed-in person (5 October 2026)
+
+- **The finding (audit PA-03, HIGH), the part left after #705:** the audit verified a facilities task with two
+  unprovisioned names typed into the body and got 200. The completion took `completedBy` and `verifiedBy` from the
+  body, and the incident close took `closedBy` from the body.
+- **What changed (pull request #707):**
+  - **Completing a check is the completer's act** (`POST /v1/facilities/tasks/:taskId/complete`): who did it is the
+    caller (a body naming somebody else: 400 `actor_is_the_caller`); a body carrying `verifiedBy` is refused
+    (400 `second_person_is_a_separate_act`). A safety check that needs verifying is RECORDED in the completer's name
+    and answered **202 — waiting for a second person**; it stays on the overdue list, now saying who did it.
+  - **Verifying is the second person's act** — new `POST /v1/facilities/tasks/:taskId/verify`: the verifier is the
+    caller; the engine's rule still decides (the verifier cannot be the completer: 422 `self_verified`; nothing marked
+    done yet: 422 `nothing_to_verify`); recorded as its own fact (`FacilitiesTaskVerified`), after which the check is
+    accepted and drops off.
+  - **Closing an incident is the closer's act:** the closer is the caller. **And a loophole closed in the same rule:**
+    an incident now records who ENTERED it (`recordedBy`, from the sign-in) beside the descriptive `reportedBy` (a
+    customer or a contractor may be the reporter); whoever recorded a serious incident cannot close it either — naming
+    somebody else as the reporter is no way round §28.
+  - **The facilities screen** (`apps/web-erp/web/facilities.js`, `facilities-session.ts`, `browser-entry.ts`): the
+    "Verified by" box is gone. A check that waits shows "Done by …" and "Waiting for a second person"; a DIFFERENT
+    signed-in person with the record permission is offered **Verify** (an empty POST — the server takes the verifier
+    from the sign-in); the completer is told a different person must verify it and is offered neither Verify nor a
+    second Mark done. English and Tamil.
+  - Correction to the note under 2b-iii-a: the store computer does NOT relay facilities work (its completion relay is
+    the workforce checklists'); the facilities screen writes to head office online, so no relay changed.
+  - The document-template screen already took every person from the sign-in (`/v1/org/document-templates`); no change.
+- **Proved:** `tests/integration/facilities-schedules.test.ts` and `facilities-incidents.test.ts` (complete → 202
+  waiting → a second user verifies → accepted; a typed completer, verifier, closer and recorder each refused by name;
+  the completer cannot verify; the recorder cannot close a serious incident they recorded; the evidence pack becomes
+  presentable only after the second person's act); `tests/unit/facilities.test.ts` (the waiting fields; the recorder
+  rule); `tests/unit/erp-facilities-session.test.ts` and the screen guardrail (Verify offered only to a different
+  permitted person; every refusal before any POST; no "verified by" box); `tests/e2e/facilities-delivery.e2e.ts`
+  (headless Chromium, two people: u-fm marks done and sees it waiting with no Verify; u-manager verifies with an
+  empty body; it drops off on re-read; a read-only user sends nothing). Full gate green locally.
+- **PA-03 is closed.** **Not yet:** an approval-limit register (a delegation's value limit still comes from the
+  record); the OB-15 people screen (the first UI on the two-act grants); staff UAT (SP-10, pending, unasked).
+- **Next:** Wave 2b-iv — PF-03, the age-restriction answer kept in the basket and enforced at commit, on the till and
+  on the cloud intake. Then 2b-v (PF-02, the till credential; needs an ADR), then the OB-15 block.
+
 ## UX-3 — the sign-in page in the owner's approved design (5 October 2026)
 
 - **The ask (OB-18):** the owner sent a finished design (`SRE-Hypermarket-Login-Design-Pack.zip`) and wrote *"Before going
@@ -44,8 +83,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   OB-15 block) will take this same look when it is built — this slice is the hosted copy's sign-in; nobody has yet run it
   with a password manager or a screen reader (SP-10, pending, unasked); 200 % zoom is not measured by the suite (the
   320 px width stands in for it).
-- **Next:** Wave 2b-iii-b (facilities verification as the verifier's own act), then 2b-iv (PF-03), 2b-v (PF-02), the
-  OB-15 block.
+- **Next:** Wave 2b-iii-b (facilities verification as the verifier's own act — done the same day, #707), then 2b-iv
+  (PF-03), 2b-v (PF-02), the OB-15 block.
 
 ## Wave 2b-iii-a — every "second person" is a separate authenticated act: role grants, template approvals, a decider's branch, a lender's own authority (5 October 2026)
 
@@ -87,9 +126,9 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   The authorization, access-durability, audit-trail (two sealed records, each to its actor), document, approval and
   delegation suites rewritten to drive two people; the real-store support boots the initial admin set and grants in
   two acts. Full gate green.
-- **Not yet (Wave 2b-iii-b, next):** the FACILITIES task completion and verification and the incident close still take
-  `completedBy` / `verifiedBy` / `closedBy` from the body — the ERP facilities screen posts them and the box relays
-  offline completions, so the screen, the relay and the browser proof move together in the next slice. An
+- **Not yet (Wave 2b-iii-b, next — DONE the same day, #707, see above):** the FACILITIES task completion and
+  verification and the incident close still take `completedBy` / `verifiedBy` / `closedBy` from the body — the ERP
+  facilities screen posts them, so the screen and the browser proof move together in the next slice. An
   **approval-limit register** (the pack's `managerPolicy.approvalLimitMinor` is the only source of a person's value
   limit today) so a delegation's and a decider's limit can be the server's too. Emergency access keeps a descriptive
   `requestedBy` (a one-person emergency grant, reviewed afterwards) and says so. No people screen yet — the OB-15 M02

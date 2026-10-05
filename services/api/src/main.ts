@@ -889,7 +889,7 @@ export function buildSurface(deps: {
       scrapSales: empty([]), recordScrapSale: () => {}, recordPosted: () => {}, now,
     } : scrapAdapter({ store, now })),
     ...facilitiesRoutes(store === undefined ? {
-      schedules: empty([]), tasks: empty([]), recordSchedule: () => {}, recordTaskDue: () => {}, recordTaskCompleted: () => {},
+      schedules: empty([]), tasks: empty([]), recordSchedule: () => {}, recordTaskDue: () => {}, recordTaskCompleted: () => {}, recordTaskVerified: () => {},
       incidents: empty([]), recordIncident: () => {}, now,
     } : facilitiesAdapter({ store, now })),
     ...facilitiesAssetsRoutes(store === undefined ? {
