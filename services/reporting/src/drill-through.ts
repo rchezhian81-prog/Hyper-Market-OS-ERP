@@ -17,8 +17,8 @@
 // services-run-on-their-tested-engine guardrail). Drill and compare are pure computes over the supplied
 // source transactions; the drill records an append-only audit. Gated `owner.kpi.read`.
 
-import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import type { Route, RequestContext } from '../../kernel/src/index';
+import { apiError, narrowScope } from '../../kernel/src/index';
 import {
   drillThrough, compareBy, auditDrill,
   type SourceTransaction, type Dimension, type DataScope, type DrillAudit,
@@ -48,11 +48,13 @@ function readTxns(v: unknown): readonly SourceTransaction[] | undefined {
   const out = v.map(readTxn);
   return out.some((t) => t === undefined) ? undefined : (out as SourceTransaction[]);
 }
-// The viewer's data scope — userId is the authenticated caller (§28), branchScope 'all' or a branch list.
-const scopeFor = (userId: string, raw: unknown): DataScope | undefined => {
-  if (raw === undefined || raw === 'all') return { userId, branchScope: 'all' };
-  const list = strArray(raw);
-  return list === undefined ? undefined : { userId, branchScope: list };
+// The viewer's data scope — userId is the authenticated caller (§28); the branches are the SERVER's answer (Wave 2b ·
+// PA-01): what the caller's grants cover, narrowed to the `branchScope` they asked for ('all' or a list); a branch
+// they do not hold is refused by name, never widened by a body. Malformed → undefined.
+const scopeFor = (ctx: RequestContext, raw: unknown): DataScope | undefined => {
+  const requested = raw === undefined ? undefined : raw === 'all' ? ('all' as const) : strArray(raw);
+  if (requested === undefined && raw !== undefined) return undefined;
+  return { userId: ctx.userId, branchScope: narrowScope(ctx, requested) };
 };
 
 export interface DrillThroughDeps {
@@ -71,7 +73,7 @@ export function drillThroughRoutes(deps: DrillThroughDeps): readonly Route[] {
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const transactions = readTxns(b['transactions']);
-        const scope = scopeFor(ctx.userId, b['branchScope']);
+        const scope = scopeFor(ctx, b['branchScope']);
         if (!isStr(b['metric']) || !isInt(b['kpiValueMinor']) || transactions === undefined || scope === undefined) {
           throw apiError(400, { code: 'not_readable_as_a_drill', whatHappened: 'A drill needs { metric, kpiValueMinor (whole), transactions[] (each { transactionId, at, branchId, amountMinor, description, categoryId?, vendorId?, staffId? }), branchScope? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the figure and the transactions behind it.' });
         }
@@ -92,7 +94,7 @@ export function drillThroughRoutes(deps: DrillThroughDeps): readonly Route[] {
       handler: (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const transactions = readTxns(b['transactions']);
-        const scope = scopeFor(ctx.userId, b['branchScope']);
+        const scope = scopeFor(ctx, b['branchScope']);
         if (!DIMENSIONS.includes(b['dimension'] as Dimension) || !isStr(b['metric']) || transactions === undefined || scope === undefined
           || (b['labels'] !== undefined && !isLabelMap(b['labels']))) {
           throw apiError(400, { code: 'not_readable_as_a_comparison', whatHappened: 'A comparison needs { dimension (branch/category/vendor/staff), metric, transactions[], branchScope?, labels? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the dimension to rank by and the transactions.' });

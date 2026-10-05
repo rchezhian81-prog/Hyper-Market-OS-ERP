@@ -89,6 +89,22 @@ export class AccessControl {
     return false;
   }
 
+  /**
+   * WHERE this user may exercise `permission` (Wave 2b · audit PA-01 / EA-03): 'all' when any role granting it is
+   * company-wide, otherwise the union of the branch ids of the grants that carry it — [] when none. The server's own
+   * answer to "which branches may this person see or change", derived from the grants and never from the request.
+   */
+  branchScopeOf(userId: string, permission: Permission): readonly string[] | 'all' {
+    const branches = new Set<string>();
+    for (const assignment of this.assignmentsByUser.get(userId) ?? []) {
+      const role = this.rolesById.get(assignment.roleId);
+      if (!role || !role.permissions.includes(permission)) continue;
+      if (assignment.branchScope === 'all') return 'all';
+      for (const b of assignment.branchScope) branches.add(b);
+    }
+    return [...branches].sort();
+  }
+
   /** Throws AccessDeniedError if the user may not perform the action. */
   assertCan(query: AccessQuery): void {
     if (!this.can(query)) {

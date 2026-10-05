@@ -16,12 +16,15 @@
 //     SAME shape. A leaver still on the grid is not cover; a shift with nobody rostered for a required role is the
 //     unstaffed-critical exception, surfaced separately (P-03).
 //
-// Writes are gated `workforce.roster.manage` (a manager within scope — §28, P-04 least privilege); reads are
-// `workforce.roster.read`. Nothing here rosters anybody automatically — it records what a manager decided and
+// Writes are gated `workforce.roster.manage` (a manager WITHIN SCOPE — §28, P-04 least privilege, Wave 2b · audit
+// PA-01: the branch a record names, and the branch the stored record already belongs to, must both lie in the
+// caller's scope — a br-1 manager can neither write br-2's pay rate nor pull br-2's employee into br-1); reads are
+// `workforce.roster.read`, narrowed to the caller's branches when no branch is asked for, refused by name when a
+// branch they do not hold is. Nothing here rosters anybody automatically — it records what a manager decided and
 // reports, by exception, what the roster is short. Co-located with `workforce.ts` and `pay-run-store.ts` under `/v1/hr`.
 
-import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import type { Route, RequestContext } from '../../kernel/src/index';
+import { apiError, assertBranchInScope, scopeOf, withinScope } from '../../kernel/src/index';
 import {
   rosterGaps,
   type ShiftRequirement, type ShiftAssignment, type Employee,
@@ -80,6 +83,23 @@ const readShift = (shiftId: string, b: Record<string, unknown>): ShiftRequiremen
   };
 };
 
+/**
+ * The stored roster as THIS caller may see it (Wave 2b · PA-01): one branch when asked for — and it must be theirs —
+ * otherwise everything their scope covers; a company-wide reader sees the whole grid. Assignments follow their shifts.
+ */
+async function scopedRoster(deps: RosterStoreDeps, ctx: RequestContext, branchId: string | undefined): Promise<StoredRoster> {
+  if (branchId !== undefined) {
+    assertBranchInScope(ctx, branchId);
+    return deps.roster(ctx.tenantId, branchId);
+  }
+  const whole = await deps.roster(ctx.tenantId);
+  const scope = scopeOf(ctx);
+  if (scope === 'all') return whole;
+  const shifts = withinScope(scope, whole.shifts);
+  const shiftIds = new Set(shifts.map((x) => x.shiftId));
+  return { employees: withinScope(scope, whole.employees), shifts, assignments: whole.assignments.filter((a) => shiftIds.has(a.shiftId)) };
+}
+
 export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
   return [
     {
@@ -97,6 +117,10 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
             nextSafeAction: 'Send the staff record. A leaver is recorded with active:false — it is kept, never deleted.',
           });
         }
+        // The branch named, AND the branch the record is already in (a direct id outside my scope stays outside it).
+        assertBranchInScope(ctx, employee.branchId);
+        const existing = (await deps.roster(ctx.tenantId)).employees.find((e) => e.employeeId === employeeId);
+        if (existing !== undefined) assertBranchInScope(ctx, existing.branchId);
         await deps.putEmployee(ctx.tenantId, employee, ctx.idempotencyKey ?? `emp-${employeeId}-${deps.now()}`);
         return { status: 200, body: { employee } };
       },
@@ -116,6 +140,9 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
             nextSafeAction: 'Send the shift and the roles it cannot run without.',
           });
         }
+        assertBranchInScope(ctx, shift.branchId);
+        const existingShift = (await deps.roster(ctx.tenantId)).shifts.find((x) => x.shiftId === shiftId);
+        if (existingShift !== undefined) assertBranchInScope(ctx, existingShift.branchId);
         await deps.putShift(ctx.tenantId, shift, ctx.idempotencyKey ?? `shift-${shiftId}-${deps.now()}`);
         return { status: 200, body: { shift } };
       },
@@ -137,6 +164,9 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
           });
         }
         const assignment: ShiftAssignment = { shiftId, employeeId, role: b['role'] };
+        // The shift's branch decides whose roster this is; a shift the store knows outside my scope is refused by name.
+        const known = (await deps.roster(ctx.tenantId)).shifts.find((x) => x.shiftId === shiftId);
+        if (known !== undefined) assertBranchInScope(ctx, known.branchId);
         await deps.putAssignment(ctx.tenantId, assignment, ctx.idempotencyKey ?? `asg-${shiftId}-${employeeId}-${deps.now()}`);
         return { status: 200, body: { assignment } };
       },
@@ -147,7 +177,7 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
       permission: 'workforce.roster.read',
       handler: async (ctx) => {
         const branchId = typeof ctx.query['branchId'] === 'string' && ctx.query['branchId'] !== '' ? ctx.query['branchId'] : undefined;
-        const r = await deps.roster(ctx.tenantId, branchId);
+        const r = await scopedRoster(deps, ctx, branchId);
         return {
           status: 200,
           body: { employees: r.employees, shifts: r.shifts, assignments: r.assignments, ...(branchId === undefined ? {} : { branchId }) },
@@ -160,7 +190,7 @@ export function rosterStoreRoutes(deps: RosterStoreDeps): readonly Route[] {
       permission: 'workforce.roster.read',
       handler: async (ctx) => {
         const branchId = typeof ctx.query['branchId'] === 'string' && ctx.query['branchId'] !== '' ? ctx.query['branchId'] : undefined;
-        const r = await deps.roster(ctx.tenantId, branchId);
+        const r = await scopedRoster(deps, ctx, branchId);
         const gaps = rosterGaps({ shifts: r.shifts, assignments: r.assignments, employees: r.employees });
         const unstaffed = gaps.filter((g) => g.assigned === 0).length;
         return {

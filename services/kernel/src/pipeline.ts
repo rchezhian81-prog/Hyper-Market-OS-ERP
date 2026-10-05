@@ -474,6 +474,8 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       tenantId: principal.tenantId,
       userId: principal.userId,
       branchId: principal.branchId,
+      // Where the caller holds this route's permission — the ledger's answer, never the request's (PA-01 / EA-03).
+      scope: access.branchScopeOf(principal.userId, route.permission),
       params,
       query: request.query ?? {},
       body: request.body,

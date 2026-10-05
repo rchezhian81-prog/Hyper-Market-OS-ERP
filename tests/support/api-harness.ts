@@ -38,14 +38,15 @@ export const TEST_IDP = new LocalIdp({
 const AT = '2026-08-07T10:00:00.000Z';
 
 /** Provision a role directly into the ledger, the way tenant provisioning seeds the initial admins. */
-async function appendGrant(store: EventStore, tenant: string, userId: string, roleId: string): Promise<void> {
+async function appendGrant(store: EventStore, tenant: string, userId: string, roleId: string, branchScope: readonly string[] | 'all' = 'all'): Promise<void> {
   await store.registerTenant(tenant, 'test/provision'); // the tenant exists before its first grant (db/migrations/0013)
+  const at = branchScope === 'all' ? '' : `@${[...branchScope].join('+')}`;
   await store.append(tenant, STREAM.identity, makeEvent({
-    id: `grant-${roleId}-${userId}`, type: 'RoleGranted', occurredAt: AT,
-    idempotencyKey: `grant-${tenant}-${roleId}-${userId}`, source: 'test/provision',
+    id: `grant-${roleId}-${userId}${at}`, type: 'RoleGranted', occurredAt: AT,
+    idempotencyKey: `grant-${tenant}-${roleId}-${userId}${at}`, source: 'test/provision',
     payload: {
-      userId, roleId, branchScope: 'all',
-      request: { grantId: `${roleId}-${userId}`, userId, roleId, branchScope: 'all', requestedBy: 'test', approvedBy: 'test', requestedAt: AT },
+      userId, roleId, branchScope,
+      request: { grantId: `${roleId}-${userId}${at}`, userId, roleId, branchScope, requestedBy: 'test', approvedBy: 'test', requestedAt: AT },
     },
   }));
 }
@@ -79,8 +80,8 @@ export interface ApiHarness {
   seedOwner(tenantId: string, userId: string): Promise<void>;
   /** Provision an owner directly (as tenant provisioning would seed the initial admin set). */
   provisionOwner(tenantId: string, userId: string): Promise<void>;
-  /** Provision any catalogue role directly, for setting up a scenario's cast. */
-  provisionRole(tenantId: string, userId: string, roleId: string): Promise<void>;
+  /** Provision any catalogue role directly, for setting up a scenario's cast — company-wide, or for named branches. */
+  provisionRole(tenantId: string, userId: string, roleId: string, branchScope?: readonly string[] | 'all'): Promise<void>;
   /** Turn an optional/paid feature on for a tenant, so routes tagged with it (M36-FR-01) are reachable. */
   enableFeature(tenantId: string, feature: string): Promise<void>;
 }
@@ -134,7 +135,7 @@ export function apiHarness(opts: {
       handle(kernel, { method, path, body, ...(query === undefined ? {} : { query }), headers: headers(token, idempotencyKey, extra) }),
     seedOwner: async (tenantId, userId) => { await seedGenesisOwner(store, OWNER_ROLE_ID, tenantId, userId, AT); },
     provisionOwner: (tenantId, userId) => appendGrant(store, tenantId, userId, OWNER_ROLE_ID),
-    provisionRole: (tenantId, userId, roleId) => appendGrant(store, tenantId, userId, roleId),
+    provisionRole: (tenantId, userId, roleId, branchScope) => appendGrant(store, tenantId, userId, roleId, branchScope),
     enableFeature: (tenantId, feature) => appendEntitlement(store, tenantId, feature, true),
   };
 }

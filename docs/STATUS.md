@@ -5,6 +5,50 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-ii — branch scope is the server's: derived from the person's grants on every request; reads narrowed to it, writes outside it refused by name (5 October 2026)
+
+- **The findings (audit EA-03 HIGH, PA-01 HIGH):** a manager signed in for br-1 with a grant for [br-1] read BOTH
+  branches' consolidation with no `?scope=` (200), read br-2 with `?scope=br-2` (200), and wrote another branch's
+  pay rate (200). The routes trusted the request's idea of scope — the consolidation header even said "in production
+  the gateway injects this", and no such gateway existed — or had none at all; the kernel compared only the token's
+  branch with the grant, never the record's.
+- **What changed (pull request #704):**
+  - **`AccessControl.branchScopeOf(userId, permission)`** (`packages/rbac/src/rbac.ts`): 'all' when any grant carrying
+    the permission is company-wide, otherwise the union of its branches, [] when none.
+  - **`ctx.scope` on every request** (`services/kernel/src/router.ts`, `pipeline.ts`): the pipeline derives the
+    caller's scope for THIS route's permission from the ledger's grants — through the Wave 2b-i fold, so a revoked
+    branch is gone at once — and puts it on the context. Never from the body or the query.
+  - **The kernel's helpers** (`services/kernel/src/scope.ts`): `narrowScope` — what is held, narrowed to what was
+    asked for; a branch, or "everything", that is not held is **403 `scope_not_held`**; nothing asked for → exactly
+    what is held; `assertBranchInScope` — **403 `outside_your_branch_scope`**; `withinScope`. A handler run outside
+    the pipeline holds nothing (fail closed).
+  - **Applied to the routes the audit executed:** `GET /v1/consolidation` and the drill-through `/drill` and `/compare`
+    read under the server's scope (the engine already names the rest as withheld); consolidation contributions and
+    memberships must name a branch the writer holds; the roster's employee, shift and assignment writes require BOTH
+    the branch named AND the branch the stored record already belongs to (a direct id outside my scope stays outside
+    it — the br-1 manager can neither write br-2's pay rate nor pull br-2's employee into br-1); roster reads narrow
+    to the caller's branches when no branch is asked for and refuse a branch they do not hold.
+  - The test harness provisions a role for named branches (`provisionRole(…, ['br-1'])`), so every proof is driven AS
+    the branch-limited manager, never as an owner simulating one (the audit's own requirement).
+- **Proved:** `tests/integration/branch-scope-is-the-servers.test.ts` — the audit's three reproductions inverted, as the
+  br-1 manager: no scope → br-1 only, br-2 NAMED as withheld; `?scope=br-2` → 403 by name; br-2's pay rate cannot be
+  written by naming br-2 nor by re-homing its employee into br-1; br-2's grid cannot be read; br-2's own manager and
+  the owner still see the truth; a restart agrees; the drill cannot widen its scope by body; **and the same on real
+  PostgreSQL** with a second API instance agreeing. `tests/unit/rbac-branch-scope.test.ts`,
+  `tests/unit/kernel-scope.test.ts`, `tests/unit/consolidation-write-scope.test.ts` (only the owner holds
+  `reporting.consolidation.manage`, so the write rule is pinned at the handler). 67 suites across reporting, roster,
+  workforce, payroll, kernel, RBAC, access and authorization green; full gate green.
+- **Not yet:** the scope is on the context for EVERY route, but only the routes the audit executed read it so far.
+  Fifteen other route files take a `branchId` from a body or a query (attendance, checklists, tasks, concession,
+  scrap, waste, packaging, facilities, device registry, approval decisions, price integrity, obligations, workforce
+  what-ifs) and still rely on the token's branch alone; Wave 2b-iii takes approval decisions (its decider's scope is
+  the same question), and the rest are taken family by family as Wave 3 touches them, with a guardrail to count them
+  down. The token still carries `branch_id` from the IdP; with Keycloak (ADR-0019, OB-15) the branch becomes a claim
+  the identity server derives from the same grants. Next: **Wave 2b-iii** — every "second person" a separate
+  authenticated act (PA-03).
+
+---
+
 ## Wave 2b-i — a leaver's access actually ends: grants minus revocations on every reader of authority, and the joiner/mover/leaver route is a durable command that cuts the live session (5 October 2026)
 
 - **The finding (audit PA-02, HIGH):** the lifecycle route answered `applied: true, grants: [], closeSessions: true`

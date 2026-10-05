@@ -23,12 +23,23 @@ export type ApiId =
   | 'API-01' | 'API-02' | 'API-03' | 'API-04' | 'API-05' | 'API-06' | 'API-07'
   | 'API-08' | 'API-09' | 'API-10' | 'API-11' | 'API-12' | 'API-13';
 
+/** Where a caller may act: company-wide, or a list of branch ids (Wave 2b · PA-01 / EA-03). */
+export type BranchScope = readonly string[] | 'all';
+
 export interface RequestContext {
   /** The top isolation boundary (OB-01). Every read and write is inside exactly one of these. */
   readonly tenantId: string;
   readonly userId: string;
   /** The branch the action targets; null for a company-wide action. */
   readonly branchId: string | null;
+  /**
+   * The branches where the caller holds THIS route's permission (Wave 2b · audit PA-01 / EA-03): 'all' for
+   * company-wide authority, otherwise the branch ids from their grants — derived by the pipeline from the ledger,
+   * never from the request. A handler that reads or writes BY BRANCH narrows to it or refuses by name
+   * (`narrowScope`, `assertBranchInScope`). Absent only when a handler is called outside the pipeline, and the
+   * helpers then allow nothing (fail closed).
+   */
+  readonly scope?: BranchScope;
   readonly params: Readonly<Record<string, string>>;
   readonly query: Readonly<Record<string, string>>;
   readonly body: unknown;
