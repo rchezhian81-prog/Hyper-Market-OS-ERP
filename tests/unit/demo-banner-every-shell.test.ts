@@ -1,4 +1,4 @@
-// The DEMO / PILOT — NOT PRODUCTION banner is on EVERY shell of the hosted demo, not just the ERP
+// The practice-data banner ("TRIAL COPY · PRACTICE DATA") is on EVERY shell of the hosted demo, not just the ERP
 // (owner instruction 27 Sep 2026, defect H-04). Proves each shell's entry mounts it from the build flag,
 // and that each shell's real browser bundle, built exactly as `scripts/build-app.mjs` builds it, carries
 // the banner when PILOT_DEMO_BANNER=1 and bakes the flag OFF when it is unset (production).
@@ -32,8 +32,8 @@ describe('every shell mounts the demo banner', () => {
     it(`${app}: the demo build carries the banner; the production build bakes the flag off`, async () => {
       const demo = await bundle(app, '1');
       // esbuild escapes non-ASCII (the em dash), so match the plain-ASCII parts of the English text.
-      expect(demo).toContain('DEMO / PILOT');
-      expect(demo).toContain('NOT PRODUCTION');
+      expect(demo).toContain('TRIAL COPY');
+      expect(demo).toContain('PRACTICE DATA');
       expect(mountCall(demo)).toContain('"1"');
       // Production: the constant is baked to '' — the call can only ever pass an empty flag.
       const prod = await bundle(app, '');

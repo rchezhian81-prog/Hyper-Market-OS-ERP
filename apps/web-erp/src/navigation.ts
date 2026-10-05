@@ -38,15 +38,24 @@ export interface NavItem {
 
 /** The group headings in both languages, keyed by the `group` an item declares. */
 export const NAV_GROUP_LABELS: Readonly<Record<string, { readonly en: string; readonly ta: string }>> = Object.freeze({
-  Overview: { en: 'Overview', ta: 'கண்ணோட்டம்' },
-  Catalogue: { en: 'Catalogue', ta: 'பொருள் பட்டியல்' },
-  Purchasing: { en: 'Purchasing', ta: 'கொள்முதல்' },
-  Inventory: { en: 'Inventory', ta: 'சரக்கு' },
-  Trading: { en: 'Trading', ta: 'வர்த்தகம்' },
-  Finance: { en: 'Finance', ta: 'நிதி' },
-  Payroll: { en: 'Payroll', ta: 'ஊதியம்' },
-  Staff: { en: 'Staff', ta: 'பணியாளர்கள்' },
+  // The owner's fifteen workspaces (OB-13 reference, OB-16 "one application", 5 Oct 2026), in the order the rail shows them,
+  // then the device apps the store computer serves. A group appears only when the person may open something in it.
+  Today: { en: 'Today', ta: 'இன்று' },
+  Products: { en: 'Products & pricing', ta: 'பொருட்களும் விலையும்' },
+  Purchase: { en: 'Purchase', ta: 'கொள்முதல்' },
+  Receiving: { en: 'Receiving & QC', ta: 'பெறுதலும் தரச்சோதனையும்' },
+  Inventory: { en: 'Inventory & backstore', ta: 'சரக்கும் பின்கடையும்' },
+  Floor: { en: 'Shop floor', ta: 'கடைத் தளம்' },
+  Sales: { en: 'Sales & service', ta: 'விற்பனையும் சேவையும்' },
+  Orders: { en: 'Orders & delivery', ta: 'ஆர்டர்களும் டெலிவரியும்' },
+  Finance: { en: 'Cash & finance', ta: 'பணமும் நிதியும்' },
+  Customers: { en: 'Customers & loyalty', ta: 'வாடிக்கையாளர்களும் விசுவாசமும்' },
+  Production: { en: 'Fresh food & café', ta: 'புதிய உணவும் கஃபேவும்' },
+  People: { en: 'People & tasks', ta: 'பணியாளர்களும் பணிகளும்' },
+  Operations: { en: 'Store operations', ta: 'கடை செயல்பாடுகள்' },
+  Reports: { en: 'Reports', ta: 'அறிக்கைகள்' },
   Administration: { en: 'Administration', ta: 'நிர்வாகம்' },
+  Devices: { en: 'Devices', ta: 'சாதனங்கள்' },
 });
 
 /**
@@ -54,35 +63,35 @@ export const NAV_GROUP_LABELS: Readonly<Record<string, { readonly en: string; re
  * modules already built, so the menu grows with the system rather than ahead of it.
  */
 export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
-  { id: 'dashboard', label: 'Dashboard', labelTa: 'முகப்பு', path: '/manager/', requires: 'till.dayclose.read', group: 'Overview' },
+  { id: 'dashboard', label: 'Today', labelTa: 'இன்று', path: '/manager/', requires: 'till.dayclose.read', group: 'Today' },
   // Every item below names the permission the SCREEN ITSELF checks (its browser-entry gate) or, for a screen fed
   // only by the store pack, the permission its own cloud read route checks — never a word nobody enforces (Stage G
   // slice 5b reconciled eighteen such words; docs/STATUS.md). Paths are the store computer's routes; `?tab=` opens a
   // tab of a screen, which the shared chrome does on arrival.
 
-  { id: 'products', label: 'Products', labelTa: 'பொருட்கள்', path: '/products', requires: 'catalogue.pack.read', group: 'Catalogue' },
-  { id: 'pricing', label: 'Pricing', labelTa: 'விலை நிர்ணயம்', path: '/pricing', requires: 'price.change.propose', group: 'Catalogue' },
-  { id: 'promotions', label: 'Promotions', labelTa: 'சலுகைகள்', path: '/promotions', requires: 'promotion.launch', group: 'Catalogue' },
+  { id: 'products', label: 'Products', labelTa: 'பொருட்கள்', path: '/products', requires: 'catalogue.pack.read', group: 'Products' },
+  { id: 'pricing', label: 'Pricing', labelTa: 'விலை நிர்ணயம்', path: '/pricing', requires: 'price.change.propose', group: 'Products' },
+  { id: 'promotions', label: 'Promotions', labelTa: 'சலுகைகள்', path: '/promotions', requires: 'promotion.launch', group: 'Products' },
   // Category rules — gated on the SAME permission the resolve route checks (`catalogue.pack.read`), so the
   // menu never offers a screen the server would refuse (M03-FR-01·CAT-POLICY).
-  { id: 'category-policy', label: 'Category rules', labelTa: 'வகை விதிகள்', path: '/category-policy', requires: 'catalogue.pack.read', group: 'Catalogue' },
+  { id: 'category-policy', label: 'Category rules', labelTa: 'வகை விதிகள்', path: '/category-policy', requires: 'catalogue.pack.read', group: 'Products' },
   // Products waiting to publish — the operator delivers a queued product publish, as themselves (ADR-0013).
   // Gated on the SAME authority the publish route checks (`catalogue.pack.publish`), so the menu never offers
   // it to someone the server would refuse — it is the publisher's action screen (M03-FR-01/03).
-  { id: 'product-publish-review', label: 'Products to publish', labelTa: 'வெளியிட வேண்டிய பொருட்கள்', path: '/product-publish-review', requires: 'catalogue.pack.publish', group: 'Catalogue' },
+  { id: 'product-publish-review', label: 'Products to publish', labelTa: 'வெளியிட வேண்டிய பொருட்கள்', path: '/product-publish-review', requires: 'catalogue.pack.publish', group: 'Products' },
   // Data quality — the A08 steward inbox (missing barcodes, duplicate records, missing prices). Gated on the
   // SAME permission the worklist route checks (`ai.proposal.read`), so the menu never offers a screen the
   // server would refuse (A08 · API-13).
-  { id: 'data-quality', label: 'Data quality', labelTa: 'தரவுத் தரம்', path: '/data-quality', requires: 'ai.proposal.read', group: 'Catalogue' },
+  { id: 'data-quality', label: 'Data quality', labelTa: 'தரவுத் தரம்', path: '/data-quality', requires: 'ai.proposal.read', group: 'Products' },
 
   // Buying — the buyer's one screen: supplier invoices, matching against the order, raising an order (M06).
   // Gated on the purchase-commitment read the order list checks (`purchase.commitment.read`); the propose action
   // needs `purchase.order.propose`, which the route enforces.
-  { id: 'buying', label: 'Buying', labelTa: 'வாங்குதல்', path: '/buying/', requires: 'purchase.commitment.read', group: 'Purchasing' },
-  { id: 'suppliers', label: 'Suppliers', labelTa: 'விநியோகஸ்தர்கள்', path: '/suppliers', requires: 'supplier.view', group: 'Purchasing' },
-  { id: 'goods-receipt', label: 'Goods receipt review', labelTa: 'சரக்கு வரவு ஆய்வு', path: '/goods-receipt', requires: 'inventory.availability.read', group: 'Purchasing' },
+  { id: 'buying', label: 'Buying', labelTa: 'வாங்குதல்', path: '/buying/', requires: 'purchase.commitment.read', group: 'Purchase' },
+  { id: 'suppliers', label: 'Suppliers', labelTa: 'விநியோகஸ்தர்கள்', path: '/suppliers', requires: 'supplier.view', group: 'Purchase' },
+  { id: 'goods-receipt', label: 'Goods receipt review', labelTa: 'சரக்கு வரவு ஆய்வு', path: '/goods-receipt', requires: 'inventory.availability.read', group: 'Receiving' },
 
-  { id: 'indents', label: 'Floor indents', labelTa: 'தளக் கோரிக்கைகள்', path: '/indents', requires: 'inventory.indent.read', group: 'Inventory' },
+  { id: 'indents', label: 'Floor indents', labelTa: 'தளக் கோரிக்கைகள்', path: '/indents', requires: 'inventory.indent.read', group: 'Floor' },
   { id: 'counts', label: 'Stock counts', labelTa: 'சரக்கு எண்ணிக்கை', path: '/counts', requires: 'count.view', group: 'Inventory' },
   { id: 'waste', label: 'Waste & write-off', labelTa: 'வீணானவை மற்றும் தள்ளுபடி', path: '/waste', requires: 'waste.view', group: 'Inventory' },
   // Record a write-off from the shop floor — the WRITE sibling of the read-only /waste review. Gated on the
@@ -95,12 +104,12 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'unsellable', label: 'Products nobody can sell', labelTa: 'யாரும் விற்க முடியாத பொருட்கள்', path: '/unsellable', requires: 'inventory.availability.read', group: 'Inventory' },
   // Shelves and space — counts on the shelf, refills, the range, the planogram (M04). Gated on the range read
   // (`merchandising.range.read`) the assortment route checks.
-  { id: 'merchandising', label: 'Shelves & space', labelTa: 'அடுக்குகளும் இடமும்', path: '/merchandising/', requires: 'merchandising.range.read', group: 'Inventory' },
+  { id: 'merchandising', label: 'Shelves & space', labelTa: 'அடுக்குகளும் இடமும்', path: '/merchandising/', requires: 'merchandising.range.read', group: 'Floor' },
   // Expiry and recalls (M10) — gated on the recall read (`quality.recall.read`); starting or closing a recall needs
   // `quality.recall.initiate`, which the route enforces.
   { id: 'expiry', label: 'Expiry & recalls', labelTa: 'காலாவதி மற்றும் திரும்பப்பெறல்', path: '/expiry/', requires: 'quality.recall.read', group: 'Inventory' },
   // Production runs and QC release (M11) — gated on `production.read`; release needs `production.release`.
-  { id: 'production', label: 'Production', labelTa: 'உற்பத்தி', path: '/production/', requires: 'production.read', group: 'Inventory' },
+  { id: 'production', label: 'Production', labelTa: 'உற்பத்தி', path: '/production/', requires: 'production.read', group: 'Production' },
   // Warehouse oversight — occupancy, stock, §28 approvals, transfers, tasks (M09). Gated on the availability read
   // the bin and transfer routes check (`inventory.availability.read`).
   { id: 'warehouse-supervisor', label: 'Warehouse', labelTa: 'கிடங்கு', path: '/warehouse-supervisor/', requires: 'inventory.availability.read', group: 'Inventory' },
@@ -122,18 +131,18 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Payroll — its OWN group, gated on the payroll permission the server enforces (`payroll.statutory.read`),
   // so cashier/warehouse/floor/ordinary-manager roles never see it and the menu can never offer a screen the
   // server would refuse (owner directive; §27 least-privilege surfaces).
-  { id: 'payroll', label: 'Payroll', labelTa: 'ஊதியப் பட்டியல்', path: '/payroll', requires: 'payroll.statutory.read', group: 'Payroll', served: 'unserved' },
+  { id: 'payroll', label: 'Payroll', labelTa: 'ஊதியப் பட்டியல்', path: '/payroll', requires: 'payroll.statutory.read', group: 'People', served: 'unserved' },
   // Employee self-service — own payslip only. Gated on `payroll.ess.self`, which ordinary staff MAY hold for
   // themselves (it is own-record only; the engine refuses any other employee), so it is a separate item.
-  { id: 'my-payslip', label: 'My payslip', labelTa: 'என் சம்பளச் சீட்டு', path: '/my-payslip', requires: 'payroll.ess.self', group: 'Payroll', served: 'unserved' },
+  { id: 'my-payslip', label: 'My payslip', labelTa: 'என் சம்பளச் சீட்டு', path: '/my-payslip', requires: 'payroll.ess.self', group: 'People', served: 'unserved' },
   // Employee self-service — my rota + my payslip on one screen. Same own-record grant `payroll.ess.self`.
-  { id: 'ess', label: 'My self-service', labelTa: 'என் சுய சேவை', path: '/ess', requires: 'payroll.ess.self', group: 'Payroll' },
+  { id: 'ess', label: 'My self-service', labelTa: 'என் சுய சேவை', path: '/ess', requires: 'payroll.ess.self', group: 'People' },
 
   // Rota — the manager's rostering screen (M25-FR-01). Gated on the roster read (`workforce.roster.read`);
   // assigning a shift needs `workforce.roster.manage`, which the route enforces.
-  { id: 'rostering', label: 'Rota', labelTa: 'பணி முறை', path: '/rostering/', requires: 'workforce.roster.read', group: 'Staff' },
+  { id: 'rostering', label: 'Rota', labelTa: 'பணி முறை', path: '/rostering/', requires: 'workforce.roster.read', group: 'People' },
   // Checklists — the day's opening, closing and hygiene checks (M25-FR-02). Gated on `workforce.checklist.read`.
-  { id: 'checklist', label: 'Checklists', labelTa: 'சரிபார்ப்புப் பட்டியல்கள்', path: '/checklist/', requires: 'workforce.checklist.read', group: 'Staff' },
+  { id: 'checklist', label: 'Checklists', labelTa: 'சரிபார்ப்புப் பட்டியல்கள்', path: '/checklist/', requires: 'workforce.checklist.read', group: 'People' },
   { id: 'users', label: 'Users & roles', labelTa: 'பயனர்களும் பங்குகளும்', path: '/admin/?tab=people', requires: 'identity.role.read', group: 'Administration' },
   // Outside access — the admin screen on its "Outside access" tab: support sessions granted and expiring (M02 /
   // M36). Gated on the support-session read (`platform.support.read`).
@@ -145,7 +154,7 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // permission its route checks (`platform.health.read`).
   { id: 'integration-health', label: 'Connections', labelTa: 'இணைப்புகள்', path: '/integration-health/', requires: 'platform.health.read', group: 'Administration' },
   // Facilities — overdue maintenance and compliance tasks (M26). Gated on `facilities.overdue.read`.
-  { id: 'facilities', label: 'Facilities', labelTa: 'வசதிகள்', path: '/facilities/', requires: 'facilities.overdue.read', group: 'Administration' },
+  { id: 'facilities', label: 'Facilities', labelTa: 'வசதிகள்', path: '/facilities/', requires: 'facilities.overdue.read', group: 'Operations' },
   // AI control — the kill switch, agents, the proposal queue, cost (A01–A10 governance). Gated on the budget read
   // (`ai.budget.read`), the owner's permission; the switches need `ai.killswitch.set` / `ai.budget.set` /
   // `ai.agent.enable`, which the routes enforce.
@@ -164,11 +173,11 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Operations — the A06 incident inbox (a stuck sync queue, a growing dead-letter pile, an unwell
   // connection, each with its runbook). Gated on the SAME permission the worklist route checks
   // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A06 · API-13).
-  { id: 'operations', label: 'Operations', labelTa: 'செயல்பாடுகள்', path: '/operations', requires: 'ai.proposal.read', group: 'Administration' },
+  { id: 'operations', label: 'Operations', labelTa: 'செயல்பாடுகள்', path: '/operations', requires: 'ai.proposal.read', group: 'Operations' },
   // Loss prevention — the M15 investigations inbox (a till short, a run of voids, a suspicious refund, each an
   // open case with the money at stake). Gated on the SAME permission the worklist route checks (`lp.case.read`),
   // so the menu never offers a screen the server would refuse (M15-FR-04).
-  { id: 'loss-prevention', label: 'Investigations', labelTa: 'விசாரணைகள்', path: '/loss-prevention', requires: 'lp.case.read', group: 'Administration' },
+  { id: 'loss-prevention', label: 'Investigations', labelTa: 'விசாரணைகள்', path: '/loss-prevention', requires: 'lp.case.read', group: 'Operations' },
   // Delivery exceptions — the M19 substitution-exception inbox (a swap that left a refund due, an adjustment to
   // collect, a charge above the cap, a short-picked line — each owned by a queue with an SLA clock). Gated on the
   // SAME permission the worklist route checks (`order.read`), so the menu never offers a screen the server would
@@ -176,24 +185,24 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Reports — the reporting screen (D13): sales by day, what cannot be run yet, what to record next. Gated on the
   // report read the catalogue and report routes check (`reporting.report.read`); an export is checked on the box
   // against the pack's own roles per family.
-  { id: 'reporting', label: 'Reports', labelTa: 'அறிக்கைகள்', path: '/reporting/', requires: 'reporting.report.read', group: 'Trading' },
+  { id: 'reporting', label: 'Reports', labelTa: 'அறிக்கைகள்', path: '/reporting/', requires: 'reporting.report.read', group: 'Reports' },
   // Service desk — returns taken and cases worked (M13 / M21). Gated on the case read (`service.case.read`).
-  { id: 'service', label: 'Service desk', labelTa: 'சேவை மேசை', path: '/service/', requires: 'service.case.read', group: 'Trading' },
+  { id: 'service', label: 'Service desk', labelTa: 'சேவை மேசை', path: '/service/', requires: 'service.case.read', group: 'Sales' },
   // Store credit and vouchers — liability, velocity, double spends (M17). Gated on the SAME permission its three
   // read routes check (`lp.case.read`): it is loss-prevention oversight of stored value.
-  { id: 'stored-value', label: 'Store credit & vouchers', labelTa: 'கடை கடன் மற்றும் வவுச்சர்கள்', path: '/stored-value/', requires: 'lp.case.read', group: 'Trading' },
-  { id: 'substitution-exceptions', label: 'Delivery exceptions', labelTa: 'டெலிவரி விதிவிலக்குகள்', path: '/substitution-exceptions', requires: 'order.read', group: 'Trading' },
+  { id: 'stored-value', label: 'Store credit & vouchers', labelTa: 'கடை கடன் மற்றும் வவுச்சர்கள்', path: '/stored-value/', requires: 'lp.case.read', group: 'Customers' },
+  { id: 'substitution-exceptions', label: 'Delivery exceptions', labelTa: 'டெலிவரி விதிவிலக்குகள்', path: '/substitution-exceptions', requires: 'order.read', group: 'Orders' },
   // Refund exceptions — the M13/M17 governance surface: refunds that reconciled with a rule broken (store credit
   // over the owner's cap, a credit with no customer, a §28 approval breach, more sent back than the bill sold or
   // was paid). Gated on the SAME permission the exceptions route checks (`lp.case.read`), so the menu never offers
   // a screen the server would refuse (P-03 control-by-exception, P-08 no silent failure).
-  { id: 'return-governance', label: 'Refund exceptions', labelTa: 'பணத்திருப்ப விதிவிலக்குகள்', path: '/return-governance', requires: 'lp.case.read', group: 'Administration' },
-  { id: 'cash-office', label: 'Over / short sign-off', labelTa: 'கூடுதல் / குறைவு ஒப்புதல்', path: '/cash-office', requires: 'till.shift.read', group: 'Administration' },
-  { id: 'risk-acceptance', label: 'Risk acceptance', labelTa: 'இடர் ஏற்பு', path: '/risk-acceptance', requires: 'compliance.risk.read', group: 'Administration' },
+  { id: 'return-governance', label: 'Refund exceptions', labelTa: 'பணத்திருப்ப விதிவிலக்குகள்', path: '/return-governance', requires: 'lp.case.read', group: 'Sales' },
+  { id: 'cash-office', label: 'Over / short sign-off', labelTa: 'கூடுதல் / குறைவு ஒப்புதல்', path: '/cash-office', requires: 'till.shift.read', group: 'Finance' },
+  { id: 'risk-acceptance', label: 'Risk acceptance', labelTa: 'இடர் ஏற்பு', path: '/risk-acceptance', requires: 'compliance.risk.read', group: 'Operations' },
   // Reopen a locked day — the controlled, audited unlock (M14-FR-04 / §28). Gated on `till.dayclose.read` (the
   // permission the locked-day list checks); the reopen itself needs `till.dayclose.approve`, which the box and
   // cloud enforce, and the screen offers the form only to a holder. Accountant/owner work.
-  { id: 'day-reopen', label: 'Reopen a locked day', labelTa: 'மூடிய நாளை மீண்டும் திற', path: '/day-reopen', requires: 'till.dayclose.read', group: 'Administration' },
+  { id: 'day-reopen', label: 'Reopen a locked day', labelTa: 'மூடிய நாளை மீண்டும் திற', path: '/day-reopen', requires: 'till.dayclose.read', group: 'Finance' },
   // Data import & export — the M30 console (take data out to an open CSV with an audit trail; bring data in
   // under §28 maker-checker). Gated on `export.read`, the permission the export catalogue/log checks; the import
   // routes additionally enforce their own permissions server-side (M30-FR-01/02/03).
@@ -201,7 +210,14 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Workforce — the A10 guidance inbox (the day's late staff tasks, a critical overdue one escalated to the
   // manager on duty, each with the recommended action). Gated on the SAME permission the worklist route checks
   // (`ai.proposal.read`), so the menu never offers a screen the server would refuse (A10 · API-13).
-  { id: 'workforce', label: 'Workforce', labelTa: 'பணியாளர்கள்', path: '/workforce', requires: 'ai.proposal.read', group: 'Staff' },
+  { id: 'workforce', label: 'Workforce', labelTa: 'பணியாளர்கள்', path: '/workforce', requires: 'ai.proposal.read', group: 'People' },
+  // The device apps the store computer serves (OB-16, "one application"): the till, the owner's figures and the three
+  // handhelds open from the same rail. Each is gated on the permission its own gate checks; the box serves all five.
+  { id: 'till', label: 'Till', labelTa: 'கல்லா', path: '/pos/', requires: 'pos.sale.read', group: 'Devices' },
+  { id: 'owner-figures', label: 'Owner — the day in figures', labelTa: 'உரிமையாளர் — நாளின் எண்கள்', path: '/owner/', requires: 'owner.kpi.read', group: 'Devices' },
+  { id: 'warehouse-handheld', label: 'Warehouse handheld', labelTa: 'கிடங்கு கைக்கருவி', path: '/warehouse/', requires: 'inventory.movement.append', group: 'Devices' },
+  { id: 'picker-handheld', label: 'Picker handheld', labelTa: 'பிக்கர் கைக்கருவி', path: '/picker/', requires: 'fulfilment.assignment.read', group: 'Devices' },
+  { id: 'driver-handheld', label: 'Delivery handheld', labelTa: 'டெலிவரி கைக்கருவி', path: '/driver/', requires: 'fulfilment.assignment.read', group: 'Devices' },
 ]);
 
 /** An item retired from the catalogue, with the reason and where its job lives now — never a silent drop. */
@@ -262,7 +278,11 @@ export function navigationFor(
       (existing.items as NavItem[]).push(item);
     }
   }
-  return groups;
+  // The rail's order is the order of NAV_GROUP_LABELS (the owner's workspaces, OB-16), never the order items happen
+  // to be declared in; a group the labels do not know comes last, in declaration order.
+  const order = Object.keys(NAV_GROUP_LABELS);
+  const rank = (g: string): number => { const i = order.indexOf(g); return i === -1 ? order.length : i; };
+  return groups.map((g, i) => ({ g, i })).sort((a, b) => rank(a.g.group) - rank(b.g.group) || a.i - b.i).map(({ g }) => g);
 }
 
 /** True if the user may open this path — the same check the server must apply. */

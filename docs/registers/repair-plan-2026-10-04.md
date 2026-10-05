@@ -69,6 +69,18 @@ tiles, register + record drawer. Moved here from Wave 5 by the owner's choice (O
 look first; the screens that waves 2–5 later prove keep the anatomy they get here. The cost, stated when he chose:
 the critical fixes of Wave 2 start that much later, and a page may be touched twice (anatomy here, logic later).
 
+### Wave 1⅞ — ONE application (OB-16 UX-2a) · size M — DONE 5 Oct 2026 (#699); UX-2b (the *Today* page) follows, then Wave 2
+The owner signed in to the hosted copy, landed on a list page of links, and refused to go on (5 Oct 2026, OB-16: *"i
+don't want this type of UI … with out this done we don't want move further"*; *"continuously telling demo version and
+only manager roll … please complete this as full product"*). Done: the sign-in lands in the store computer's workspace;
+every old shell address redirects into it; the rail names the branch and the signed-in person and carries the devices
+under *Devices*; the groups are his 16 workspaces in a fixed order; the header has the breadcrumb and the screen search;
+the screens run as the person who signed in (the sign-in names them, the front copies it, the box trusts it only under
+the hosted overlay); "demo" left the product's words. **UX-2b next:** `/manager/` becomes the *Today* command centre of
+his composition — sales today, purchase orders open, indents, stock attention, purchase-to-shelf, needs-attention, cash
+and close — every figure from a real read or said to be "Not known" (P-08). Wave 2 starts when the owner says the look
+is right. Open to him: a written *"GO real data"* before the store trial runs on the shop's own products and prices.
+
 ### Wave 2 — close authority and competing-write gaps (audit step 2) · size L — the critical wave, now also the owner's "all in one" block (OB-15, "A 1")
 The owner's direction of 4 Oct 2026 (OB-15) rides this wave because it is the same code: the command-centre home on
 `/manager/` from real reads; the M02 create-and-assign screen flow (users, roles, scope, joiner/mover/leaver) on the
@@ -155,6 +167,8 @@ identity, hardware, hosted recovery evidence. **PA-13** (commercial platform, R8
 | DF-3 head-office pack delivery | 4 (as PA-06), not before 2 — delivery must bind served operations to a person |
 | UX-1b till and handhelds look | 1½ — done 4 Oct 2026 (#694) |
 | UX-1c page anatomy | 1¾ — done 4 Oct 2026 |
+| UX-2a one application (OB-16) | 1⅞ — done 5 Oct 2026 (#699) |
+| UX-2b the *Today* command centre (OB-15/OB-16) | 1⅞ — next, before Wave 2 |
 | Handheld enrolment on the hosted demo | 1½ (a demo device code for the practice phones) |
 | Quantity scale across pack sections | 4, with DF-3 |
 | SP-10 register | 8 |

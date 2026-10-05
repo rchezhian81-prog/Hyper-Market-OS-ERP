@@ -50,6 +50,9 @@ services:
       # person: `pnpm run demo:store-pack`. A directory mount, so a rebuilt pack is seen on restart. A box without one
       # starts anyway and tells every screen it has not been told (edge/store-edge/src/main.ts says so in its log).
       EDGE_PACK_FILE: /etc/store-pack/store-pack.json
+      # OB-16: the screens are reached ONLY through the relay behind the sign-in (nginx.pilot.conf sets X-Sre-User from
+      # the gate's answer), so the box runs each ERP screen as the person who signed in. Never set on a store box.
+      EDGE_SCREEN_TRUST_FORWARDED_USER: '1'
     volumes:
       - ${DEMO_STORE_PACK_DIR:-/etc/sre-pilot/store-pack}:/etc/store-pack:ro
 
@@ -66,14 +69,9 @@ services:
       - migrate
       - api
       - demo-login
+    # OB-16: only the two shells this front still serves itself; every other address redirects into the store box.
     volumes: !override
-      - ../../apps/pos/web:/usr/share/nginx/html/pos:ro
-      - ../../apps/owner-app/web:/usr/share/nginx/html/owner:ro
-      - ../../apps/web-erp/web:/usr/share/nginx/html/erp:ro
-      - ../../apps/picker-app/web:/usr/share/nginx/html/picker:ro
-      - ../../apps/delivery-app/web:/usr/share/nginx/html/delivery:ro
       - ../../apps/customer-app/web:/usr/share/nginx/html/customer:ro
-      - ../../apps/warehouse-app/web:/usr/share/nginx/html/warehouse:ro
       - ../../apps/supplier-app/web:/usr/share/nginx/html/supplier:ro
       - ./nginx.pilot.conf:/etc/nginx/conf.d/default.conf:ro
 

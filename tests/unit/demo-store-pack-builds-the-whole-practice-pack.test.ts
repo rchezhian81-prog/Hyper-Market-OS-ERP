@@ -145,6 +145,14 @@ describe('DF-2 — the whole practice pack, from what exists', () => {
 
     const counts = navigationPayload({ screen: 'counts', pack: box.pack, payload: countsPayload(box), screenOf: screenOfPath });
     expect(counts.groups.flatMap((g) => g.items).filter((i) => i.current).map((i) => i.id)).toEqual(['counts']);
+
+    // OB-16: the pack NAMES its people, so the rail says a name and a role — the seed's own display names, the
+    // catalogue's own role names — and the branch.
+    const people = (box.pack.people.known ? box.pack.people.value : []) as Array<{ userId: string; displayName: string; roleId: string }>;
+    expect(people.map((p) => p.userId).sort()).toEqual([PILOT_FOUNDATION.genesisOwner, ...PILOT_FOUNDATION.users].map((u) => u.userId).sort());
+    expect(people.find((p) => p.userId === 'pilot-manager')).toEqual({ userId: 'pilot-manager', displayName: PILOT_FOUNDATION.users.find((u) => u.userId === 'pilot-manager')!.displayName, roleId: 'store_manager' });
+    expect(nav.person).toEqual({ name: PILOT_FOUNDATION.users.find((u) => u.userId === 'pilot-manager')!.displayName, role: ROLE_CATALOGUE.find((r) => r.id === 'store_manager')!.name });
+    expect(nav.branch).toEqual({ name: box.pack.policies.known ? box.pack.policies.value.branchName : '(unknown)' });
   });
 
   it('every screen with a named viewer names a SEEDED person with that person\'s permissions from the catalogue — never a stand-in, never the box\'s machine identity', () => {

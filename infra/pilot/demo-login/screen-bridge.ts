@@ -151,20 +151,24 @@ export function createScreenBridgeHandler(deps: ScreenBridgeDeps): (req: LoginRe
 // Called by the HTTPS front's `auth_request` before it forwards anything to the demo store edge. A valid
 // demo session is enough to SEE the edge's screens; writing to its lane (a sale) also needs the API to
 // say the person may sell (`pos.sale.sync`). Answers only 204 (go on), 401 (no session) or 403 (not
-// allowed) — no body, nothing about the person leaks.
+// allowed) — no body. A 204 carries the person's id in `X-Sre-User` for the front to hand to the store box (OB-16).
 
 export const SELL_PERMISSION = 'pos.sale.sync';
 
 export function createSessionGateHandler(deps: Omit<ScreenBridgeDeps, 'pages'>): (req: LoginRequest) => Promise<LoginResponse> {
-  const plain = (status: number): LoginResponse => ({ status, headers: { 'cache-control': 'no-store' }, body: '' });
+  const plain = (status: number, who?: string): LoginResponse => ({ status, headers: { 'cache-control': 'no-store', ...(who === undefined ? {} : { 'x-sre-user': who }) }, body: '' });
   return async (req) => {
     const path = new URL(req.url, 'https://demo.invalid').pathname;
     const token = cookieOf(req.headers);
-    if (token === undefined || !verifyToken(token, deps.idp, deps.now()).ok) return plain(401);
-    if (path !== '/login/verify-sell') return plain(204);
+    const verdict = token === undefined ? undefined : verifyToken(token, deps.idp, deps.now());
+    if (token === undefined || verdict?.ok !== true) return plain(401);
+    // OB-16: a "go on" also NAMES the person, in a header the front copies to the store box (`X-Sre-User`) so the
+    // screens run as the one who signed in. Never a body; the id is the one the token already carries.
+    const who = verdict.principal?.userId;
+    if (path !== '/login/verify-sell') return plain(204, who);
     const res = await deps.fetchMe(token, req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown');
     if (res.status === 401) return plain(401);
     const perms = (res.body as { permissions?: unknown } | undefined)?.permissions;
-    return res.status === 200 && Array.isArray(perms) && perms.includes(SELL_PERMISSION) ? plain(204) : plain(403);
+    return res.status === 200 && Array.isArray(perms) && perms.includes(SELL_PERMISSION) ? plain(204, who) : plain(403);
   };
 }

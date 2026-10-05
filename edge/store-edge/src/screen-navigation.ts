@@ -32,6 +32,10 @@ export interface NavigationPayload {
   /** Who the screen's payload named, or null when it named nobody. */
   readonly userId: string | null;
   readonly branchId: string | null;
+  /** The person's name and role as the pack's `people` section and role catalogue say them — null when the pack carries none (the rail then shows the id). */
+  readonly person: { readonly name: string; readonly role: string | null } | null;
+  /** The branch's name from the pack's policies — null when the pack carries none. */
+  readonly branch: { readonly name: string } | null;
   /** Why `groups` is empty, when it is. Null when there is a list (which may still be empty for a user with no grants). */
   readonly why: 'no_user' | 'no_roles' | null;
   readonly groups: readonly NavigationGroup[];
@@ -50,6 +54,77 @@ export function rolesFrom(rows: readonly unknown[]): Role[] {
     roles.push({ id, name, permissions });
   }
   return roles;
+}
+
+/** The pack's untyped `people` rows, kept only where they name a person: `{ userId, displayName, roleId? }`. */
+export function peopleFrom(rows: readonly unknown[]): { userId: string; displayName: string; roleId: string | null }[] {
+  const people: { userId: string; displayName: string; roleId: string | null }[] = [];
+  for (const row of rows) {
+    if (!isRecord(row)) continue;
+    const { userId, displayName, roleId } = row;
+    if (typeof userId !== 'string' || userId === '' || typeof displayName !== 'string' || displayName.trim() === '') continue;
+    people.push({ userId, displayName: displayName.trim(), roleId: typeof roleId === 'string' && roleId !== '' ? roleId : null });
+  }
+  return people;
+}
+
+/** The name and role of the person the screen named, when the pack carries them. */
+export function personOf(userId: string | null, pack: StorePack): NavigationPayload['person'] {
+  if (userId === null || !pack.people.known) return null;
+  const me = peopleFrom(pack.people.value).find((p) => p.userId === userId);
+  if (me === undefined) return null;
+  const roles = pack.roles.known ? rolesFrom(pack.roles.value) : [];
+  const assigned = pack.roleAssignments.known ? assignmentsFrom(pack.roleAssignments.value).find((a) => a.userId === userId)?.roleId ?? null : null;
+  const roleId = me.roleId ?? assigned;
+  const role = roleId === null ? null : roles.find((r) => r.id === roleId)?.name ?? null;
+  return { name: me.displayName, role };
+}
+
+/** The branch's name from the pack's policies, when the pack carries one. */
+export function branchOf(pack: StorePack): NavigationPayload['branch'] {
+  if (!pack.policies.known) return null;
+  const name = (pack.policies.value as { branchName?: unknown }).branchName;
+  return typeof name === 'string' && name.trim() !== '' ? { name: name.trim() } : null;
+}
+
+/**
+ * The permissions this box's role register gives a person on this branch — the union of every role assigned to them
+ * here (or everywhere) — or null when the box has no role register to ask. Nothing is guessed: no register, no answer.
+ */
+export function permissionsOf(userId: string, pack: StorePack): readonly string[] | null {
+  if (!pack.roles.known || !pack.roleAssignments.known) return null;
+  const branchId = pack.policies.known ? pack.policies.value.branchId : null;
+  const roles = new Map(rolesFrom(pack.roles.value).map((r) => [r.id, r.permissions] as const));
+  const held = new Set<string>();
+  for (const a of assignmentsFrom(pack.roleAssignments.value)) {
+    if (a.userId !== userId) continue;
+    if (a.branchScope !== 'all' && (branchId === null || !a.branchScope.includes(branchId))) continue;
+    for (const permission of roles.get(a.roleId) ?? []) held.add(permission);
+  }
+  return [...held].sort();
+}
+
+/**
+ * A screen's payload re-addressed to the person who SIGNED IN (OB-16, 5 Oct 2026). Behind the authenticated relay the
+ * ERP screens run as that person — their id, the permissions this box's register gives them — not as whoever the
+ * pack happened to name for the screen. The rule is narrow and stated: the payload's own `userId` and, where it
+ * carries one, its `permissions`; the same for a direct child that carries BOTH (the floor's `indents` block). A
+ * child that names a person without permissions (the warehouse `supervisor`, whose authority limit is their own)
+ * is left as the pack said it. A screen the pack had nothing for stays nothing — the person still gets their rail.
+ */
+export function asSignedInPerson(payload: Record<string, unknown> | null, userId: string, pack: StorePack): Record<string, unknown> | null {
+  if (payload === null) return null;
+  const permissions = permissionsOf(userId, pack) ?? [];
+  const readdress = (o: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = { ...o, userId };
+    if (Array.isArray(o['permissions'])) out['permissions'] = permissions;
+    return out;
+  };
+  const out = readdress(payload);
+  for (const [key, value] of Object.entries(payload)) {
+    if (isRecord(value) && typeof value['userId'] === 'string' && Array.isArray(value['permissions'])) out[key] = readdress(value);
+  }
+  return out;
 }
 
 /** The pack's untyped `roleAssignments` rows, kept only where they are whole. */
@@ -90,15 +165,19 @@ export function navigationPayload(input: {
   readonly catalogue?: readonly NavItem[];
 }): NavigationPayload {
   const branchId = input.pack.policies.known ? input.pack.policies.value.branchId : null;
+  const branch = branchOf(input.pack);
   const userId = viewerOf(input.payload);
-  if (userId === null) return { userId: null, branchId, why: 'no_user', groups: [] };
-  if (!input.pack.roles.known || !input.pack.roleAssignments.known) return { userId, branchId, why: 'no_roles', groups: [] };
+  if (userId === null) return { userId: null, branchId, person: null, branch, why: 'no_user', groups: [] };
+  const person = personOf(userId, input.pack);
+  if (!input.pack.roles.known || !input.pack.roleAssignments.known) return { userId, branchId, person, branch, why: 'no_roles', groups: [] };
 
   const access = new AccessControl(rolesFrom(input.pack.roles.value), assignmentsFrom(input.pack.roleAssignments.value));
   const groups = navigationFor(access, { userId, branchId }, boxServedItems(input.catalogue ?? ERP_NAVIGATION));
   return {
     userId,
     branchId,
+    person,
+    branch,
     why: null,
     groups: groups.map((g) => ({
       group: NAV_GROUP_LABELS[g.group] ?? { en: g.group, ta: g.group },

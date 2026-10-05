@@ -22,7 +22,7 @@ import { WarehouseSession, type WarehouseAssignment } from './warehouse-session'
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
-// The "DEMO / PILOT — NOT PRODUCTION" strip, exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
+// The practice-data strip ("TRIAL COPY · PRACTICE DATA"), exactly as the ERP shell mounts it. `PILOT_DEMO_BANNER` is a
 // build-time constant baked in by esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty
 // in production. `typeof` guards the unbundled case (identifier absent) and a non-browser import.
 declare const PILOT_DEMO_BANNER: string;

@@ -5,6 +5,61 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## UX-2a — ONE application: the sign-in lands in the store workspace, the rail names the shop and the person, the screens run as whoever signed in (5 October 2026, OB-16)
+
+- **Why:** the owner signed in to the hosted copy and landed on a list page with three boxes of links, and refused to
+  go on: *"i don't want this type of UI … with out this done we don't want move further"*; then, the same day:
+  *"you are continuously telling demo version and only manager roll … please complete this as full product after
+  that i will use in our store as a trail"*. Recorded as OB-16. Wave 2 waits for his word on the look.
+- **What changed (pull request #699):**
+  - **One way in.** A sign-in with no screen asked for lands on `/store/manager/` — the store computer's workspace.
+    `/login/` when signed in is a small account page (who you are · *Open the store workspace* · sign out). The lists
+    of shells are gone from the code.
+  - **One application.** The front redirects every old shell address into the store computer's own screen (`/pos/`
+    → `/store/pos/`, `/owner/`, `/picker/`, `/warehouse/`, `/delivery/` → `/store/driver/`, `/erp/…` →
+    `/store/manager/`, `/` → the workspace); the six dead shell mounts left the hosted overlay; the supplier portal
+    and the customer app stay as they were. CI's deploy gate asserts each redirect and that the store paths still
+    go to the sign-in unsigned.
+  - **The person, not an id.** The store pack carries a `people` section (built by `demo:store-pack` from the seed's
+    own names); the menu payload now carries `person {name, role}` and `branch {name}`; the rail shows a branch card
+    at the top and the person (initials, name, role) at the foot — the id only when the pack names nobody.
+  - **The owner's workspaces.** The 58 catalogue items are regrouped into his 16 workspaces, in a fixed rail order;
+    the home item is *Today*; the till and the four handhelds are items under *Devices*.
+  - **Where you are, and find a screen.** A top line in the header: the breadcrumb read off the rail (*Workspace ›
+    Inventory & backstore › Stock counts*; *Workspace › Today*), and a search that filters the rail's own links as
+    you type (Enter opens the first match, Escape clears, "No screen matches" when none; on a phone typing opens the
+    drawer). English and Tamil.
+  - **The screens run as the person who signed in** (the owner's "only manager role" — the box used to run every
+    screen as the person its practice pack named). The sign-in's "go on" now names the person in a header; the front
+    copies it to the box from the gate's answer only (a visitor's own header is overwritten); the box believes it only
+    where the hosted overlay sets `EDGE_SCREEN_TRUST_FORWARDED_USER=1` (a store box never does). The ERP screen's
+    payload is re-addressed to that person — their id and the permissions the box's role register gives them (and the
+    same for a child block that carries both, like the floor's indents); a person the register does not know gets
+    an empty rail and no permissions; the till and the handhelds are untouched (the person signs in at the device).
+  - **No "demo" in the product's words.** The strip reads *TRIAL COPY · PRACTICE DATA — not the store's real
+    figures* (Tamil too); the sign-in page says *SRE Retail OS*. The bundles were rebuilt. The practice people keep
+    "(demo)" after their names so nobody mistakes them for staff — real staff come with user creation (Wave 2).
+- **Proved:** unit (catalogue groups and order; `peopleFrom` / `personOf` / `branchOf` / `permissionsOf` /
+  `asSignedInPerson` — including no invented names and no mutation; the landing and the account page; the seed's
+  pack names its people), integration on the real screen server (person and branch in the menu; the forwarded
+  person's id, permissions and rail; a stranger's empty rail; an odd header names nobody; the till not re-addressed;
+  a screen the pack had nothing for still gives the person their rail; a box that does not trust the relay ignores
+  the header), browser (branch and person cards, breadcrumb, search filter and empty state, at a desk and on a
+  phone, in Tamil, accessibility audit clean; the real box's rail), guardrails (the redirects and `X-Sre-User` from
+  the gate only; the trust flag pilot-only; the CI strings). **Not yet:** the owner's own sign-in on the hosted
+  copy after this deploy — that is what he checks; staff/device UAT (SP-10) still PENDING.
+- **Honest limits:** re-addressing covers the payload's own person and permissions (a child naming a person
+  without permissions — the warehouse supervisor's authority limit — stays as the pack said; the API decides every
+  write regardless); the *Today* page is still the manager screen's present content — UX-2b makes it the command
+  centre; the hosted copy carries practice data until the owner's written GO.
+- **Owner decision open:** real data for the store trial — see OB-16. **Next:** UX-2b, then Wave 2 (tasks
+  #32/#33/#40).
+- **Found while shooting the screens, not fixed here:** the Stock counts page on the practice pack shows
+  `₹NaN.NaN` for "Value at variance today" — the practice count carries no unit value. Fix with UX-2b (a figure the
+  box does not know must say "Not known", P-08).
+
+---
+
 ## GT-09 / GT-08 / PF-15 — one test-scope statement, and an evidence ledger that says what KIND of proof each requirement has (5 October 2026, Wave 1 closed)
 
 - **The findings:** the test and gate documentation had drifted (GT-09); some "E2E" labels proved a browser boundary

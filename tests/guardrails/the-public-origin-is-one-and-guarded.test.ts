@@ -168,8 +168,13 @@ describe('CI proves the public origin over TLS on every run', () => {
     expect(CI).toContain('EDGE_TENANT_ID=de300000-0000-4000-8000-000000000001'); // the demo sign-in serves only the synthetic demo tenant
     expect(CI).toContain('node scripts/build-service.mjs demo-login');
     expect(CI).toContain("sed -i 's/^SRE_STAFF_ROUTE=.*/SRE_STAFF_ROUTE=staff-demo-gate/' .env"); // the CI .env comes from .env.example (gate off)
-    expect(CI).toContain('for p in /pos/ /erp/ /owner/ /picker/ /store/pos/');
+    expect(CI).toContain('for p in /store/pos/ /store/manager/ /store/owner/ /supplier/');
     expect(CI).toContain('302 https://127.0.0.1/login/?next=$p');
+    // ONE application (OB-16): the old shell addresses go to the store computer's screens, the back office to the workspace
+    expect(CI).toContain('302 https://127.0.0.1/store/$p/');
+    expect(CI).toContain('302 https://127.0.0.1/store/driver/');
+    expect(CI).toContain('for p in /erp/ /erp/cash-office.html');
+    expect(CI).toContain('302 https://127.0.0.1/store/manager/');
     expect(CI).toContain("'^referrer-policy: same-origin'");
     expect(CI).toContain("'^referrer-policy: no-referrer'");
     expect(CI).toContain("'Cookie: sre_demo_session=not-a-token'");

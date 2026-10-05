@@ -180,10 +180,10 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
   // ── The menu (Stage G slice 5b · §27 role surfaces · P-07) ────────────────────────────────────────────────────
   /** What the store computer would inject for a floor manager on the counts screen. */
   const MENU = {
-    userId: 'u-mgr', branchId: 'b1', why: null,
+    userId: 'u-mgr', branchId: 'b1', person: { name: 'Meena Raghavan', role: 'Floor manager' }, branch: { name: 'Main store' }, why: null,
     groups: [
-      { group: { en: 'Overview', ta: 'கண்ணோட்டம்' }, items: [{ id: 'dashboard', label: { en: 'Dashboard', ta: 'முகப்பு' }, path: '/manager/', current: false }] },
-      { group: { en: 'Inventory', ta: 'சரக்கு' }, items: [
+      { group: { en: 'Today', ta: 'இன்று' }, items: [{ id: 'dashboard', label: { en: 'Today', ta: 'இன்று' }, path: '/manager/', current: false }] },
+      { group: { en: 'Inventory & backstore', ta: 'சரக்கும் பின்கடையும்' }, items: [
         { id: 'counts', label: { en: 'Stock counts', ta: 'சரக்கு எண்ணிக்கை' }, path: '/counts/', current: true },
         { id: 'stock-health', label: { en: 'Stock health', ta: 'சரக்கு நிலை' }, path: '/stock-health/', current: false },
       ] },
@@ -217,14 +217,38 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
         expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(false);
       }
       expect(await page.getAttribute('#sre-menu', 'aria-label')).toBe('Screens');
-      expect(await page.textContent('#sre-menu .who-can')).toBe('Screens for u-mgr');
+      // OB-16: the rail names the shop and the PERSON — their name and role, not an id — the person at its foot.
+      expect(await page.textContent('#sre-menu .branch b')).toBe('Main store');
+      expect(await page.textContent('#sre-menu .branch small')).toBe('Branch workspace');
+      expect(await page.textContent('#sre-menu .person b')).toBe('Meena Raghavan');
+      expect(await page.textContent('#sre-menu .person small')).toBe('Floor manager');
+      expect(await page.textContent('#sre-menu .person .avatar')).toBe('MR');
+      expect(await page.$('#sre-menu .who-can')).toBeNull();
+      expect(await page.evaluate('document.getElementById("sre-menu").lastElementChild.className')).toBe('person');
       expect(await page.textContent('#sre-menu .brand small')).toBe('Store workspace');
-      expect(await texts(page, '#sre-menu .group')).toEqual(['Overview', 'Inventory', 'Administration']);
-      expect(await texts(page, '#sre-menu a')).toEqual(['Dashboard', 'Stock counts', 'Stock health', 'Users & roles', 'Audit log']);
+      expect(await texts(page, '#sre-menu .group')).toEqual(['Today', 'Inventory & backstore', 'Administration']);
+      expect(await texts(page, '#sre-menu a')).toEqual(['Today', 'Stock counts', 'Stock health', 'Users & roles', 'Audit log']);
       expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['Stock counts']);
       expect(await page.getAttribute('#sre-menu a[aria-current="page"]', 'href')).toMatch(/\/counts\/$/);
       // On a phone, opening put focus on the current screen's link; Escape closes and hands focus back to the button.
       if (!desk) expect(await page.evaluate('document.activeElement.textContent')).toBe('Stock counts');
+      // The top line (OB-16): where you are, read off the rail — and a way to find any screen you may open.
+      expect(await page.textContent('#sre-crumbs')).toBe('Workspace › Inventory & backstore › Stock counts');
+      expect(await page.getAttribute('#sre-find', 'aria-label')).toBe('Find a screen');
+      await page.fill('#sre-find', 'audit');
+      expect(await texts(page, '#sre-menu li:not([hidden]) a')).toEqual(['Audit log']);
+      expect(await texts(page, '#sre-menu .group-section:not([hidden]) .group')).toEqual(['Administration']);
+      await page.fill('#sre-find', 'backstore'); // a workspace's name finds every screen under it
+      expect(await texts(page, '#sre-menu li:not([hidden]) a')).toEqual(['Stock counts', 'Stock health']);
+      if (!desk) expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(false); // typing opened the drawer
+      await page.fill('#sre-find', 'zzz');
+      expect(await page.textContent('#sre-find-none')).toBe('No screen matches');
+      await page.press('#sre-find', 'Escape');
+      expect(await page.inputValue('#sre-find')).toBe('');
+      expect(await page.$('#sre-find-none')).toBeNull();
+      expect(await texts(page, '#sre-menu li:not([hidden]) a')).toHaveLength(5);
+      // the search took the focus; on a phone hand it back to the current link so Escape below still closes the drawer
+      if (!desk) await page.focus('#sre-menu a[aria-current="page"]');
       const withMenuOpen = await auditPage(page, { expectLang: 'en' });
       expect(withMenuOpen, `menu open at ${device.viewport.width}`).toEqual([]);
       if (!desk) {
@@ -239,9 +263,12 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
         expect(await page.textContent('#sre-menu-button')).toBe('☰ திரைகள்');
         await page.click('#sre-menu-button');
       }
-      expect(await page.textContent('#sre-menu .who-can')).toBe('இவருக்கான திரைகள் u-mgr');
+      expect(await page.textContent('#sre-menu .branch small')).toBe('கிளைப் பணியிடம்');
+      expect(await page.textContent('#sre-menu .person b')).toBe('Meena Raghavan');
       expect(await page.textContent('#sre-menu .brand small')).toBe('கடை பணியிடம்');
-      expect(await texts(page, '#sre-menu .group')).toEqual(['கண்ணோட்டம்', 'சரக்கு', 'நிர்வாகம்']);
+      expect(await texts(page, '#sre-menu .group')).toEqual(['இன்று', 'சரக்கும் பின்கடையும்', 'நிர்வாகம்']);
+      expect(await page.textContent('#sre-crumbs')).toBe('பணியிடம் › சரக்கும் பின்கடையும் › சரக்கு எண்ணிக்கை');
+      expect(await page.getAttribute('#sre-find', 'aria-label')).toBe('ஒரு திரையைத் தேடு');
       expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['சரக்கு எண்ணிக்கை']);
       expect(await auditPage(page, { expectLang: 'ta' }), `menu open in Tamil at ${device.viewport.width}`).toEqual([]);
     }
@@ -283,14 +310,14 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       const desk = device === DESK;
       // a single-view page: the head is marked, the module is its eyebrow
       const counts = await open('counts.html', device, undefined, { sreNavigation: MENU });
-      expect(await texts(counts, 'main .sre-eyebrow')).toEqual(['Inventory']);
+      expect(await texts(counts, 'main .sre-eyebrow')).toEqual(['Inventory & backstore']);
       expect(await counts.evaluate('document.querySelector("[data-sre-head] > h2") !== null && document.querySelector("[data-sre-head] > p.lead") !== null')).toBe(true);
       expect(await counts.evaluate('document.querySelector(".sre-eyebrow").nextElementSibling.tagName')).toBe('H2');
       expect(await auditPage(counts, { expectLang: 'en' }), `counts anatomy at ${device.viewport.width}`).toEqual([]);
 
       // a tabbed page: the tabs are tiles — name, purpose, count — and still the page's own buttons
       const page = await open('index.html', device, undefined, { sreNavigation: home });
-      expect(await texts(page, 'main .sre-eyebrow')).toEqual(['Overview']);
+      expect(await texts(page, 'main .sre-eyebrow')).toEqual(['Today']);
       expect(await page.evaluate('document.getElementById("tabs").classList.contains("sre-tabs")')).toBe(true);
       const tiles = await page.evaluate(`[...document.querySelectorAll('#tabs button')].map((b) => ({
         id: b.id, name: b.getAttribute('aria-label'), label: b.querySelector('.t').textContent, tile: b.classList.contains('sre-tab'),
@@ -313,13 +340,13 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       await page.click('#tab-approvals');
       expect(await page.evaluate('document.getElementById("view-approvals").hidden')).toBe(false);
       await expect.poll(() => page.evaluate('document.querySelector("[data-sre-head]")?.id ?? null')).toBe('view-approvals');
-      expect(await texts(page, 'main .sre-eyebrow')).toEqual(['Overview']);
+      expect(await texts(page, 'main .sre-eyebrow')).toEqual(['Today']);
 
       // the language switch: the page rewrites its labels, the chrome re-decorates; the count and the module follow
       await page.click('#lang');
       await page.waitForFunction('document.documentElement.lang === "ta"', undefined, { timeout: 5_000 });
       await expect.poll(() => page.textContent('#tab-approvals .c')).toBe('பட்டியலில் 2');
-      expect(await texts(page, 'main .sre-eyebrow')).toEqual(['கண்ணோட்டம்']);
+      expect(await texts(page, 'main .sre-eyebrow')).toEqual(['இன்று']);
       expect(await page.evaluate('[...document.querySelectorAll("#tabs button")].every((b) => b.getAttribute("aria-label") === b.querySelector(".t").textContent && b.classList.contains("sre-tab"))')).toBe(true);
       expect(await auditPage(page, { expectLang: 'ta' }), `home anatomy in Tamil at ${device.viewport.width}`).toEqual([]);
 
@@ -380,7 +407,8 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
 
     // At a desk the rail stands open (OB-13): the person's screens are simply there.
     expect(await page.evaluate('document.getElementById("sre-menu").hidden')).toBe(false);
-    expect(await page.textContent('#sre-menu .who-can')).toBe('Screens for u-mgr');
+    expect(await page.textContent('#sre-menu .who-can')).toBe('Screens for u-mgr'); // this pack names no people: the id, never an invented name
+    expect(await page.textContent('#sre-menu .branch b')).toBe('Main');
     // SP-8c-ii: "Products nobody can sell" is gated on the same availability read as stock health, so this reader sees it too.
     expect(await texts(page, '#sre-menu a')).toEqual(['Goods receipt review', 'Stock counts', 'Stock health', 'Products nobody can sell', 'Warehouse']);
     expect(await texts(page, '#sre-menu a[aria-current="page"]')).toEqual(['Stock counts']);

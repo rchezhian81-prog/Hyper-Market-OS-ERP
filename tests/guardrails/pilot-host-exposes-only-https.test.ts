@@ -127,17 +127,36 @@ describe('the demo front behind the proxy', () => {
     expect(NGINX).toMatch(/location @sre_sign_in \{ return 302 \/login\/\?next=\$uri; \}/);
   });
 
-  it('serves every shell the overlay mounts — the staff ones behind the demo sign-in, the customer app open', () => {
+  it('serves every shell the overlay mounts — the supplier portal behind the demo sign-in, the customer app open — and nothing it does not mount', () => {
     const mounted = [...serviceBlock(PILOT, 'web').matchAll(/:\/usr\/share\/nginx\/html\/([a-z]+):ro/g)].map((m) => m[1]!);
-    expect(mounted.length).toBeGreaterThanOrEqual(8);
+    expect([...mounted].sort()).toEqual(['customer', 'supplier']);
     const routed = [...NGINX.matchAll(/location ~ \^\/\(([a-z|]+)\)\//g)].flatMap((m) => m[1]!.split('|'));
     expect([...routed].sort()).toEqual([...mounted].sort());
-    const staff = location('location ~ ^/(pos|owner|erp|picker|delivery|warehouse|supplier)/');
+    const staff = location('location ~ ^/(supplier)/');
     expect(staff).toMatch(/auth_request \/_auth\/verify;/);
     expect(staff).toMatch(/error_page 401 = @sre_sign_in;/);
     const customer = location('location ~ ^/(customer)/');
     expect(customer).not.toBe('');
     expect(customer).not.toMatch(/auth_request/);
+  });
+
+  it('is ONE application (OB-16): every old shell address goes to the store computer\'s own screen, and the root to the workspace', () => {
+    expect(NGINX).toMatch(/location = \/ \{ return 302 \/store\/manager\/; \}/);
+    expect(NGINX).toMatch(/location ~ \^\/\(pos\|owner\|picker\|warehouse\)\(\/\.\*\)\?\$ \{ return 302 \/store\/\$1\/; \}/);
+    expect(NGINX).toMatch(/location ~ \^\/delivery\(\/\.\*\)\?\$ \{ return 302 \/store\/driver\/; \}/); // the box names the delivery screen /driver/
+    expect(NGINX).toMatch(/location ~ \^\/erp\(\/\.\*\)\?\$ \{ return 302 \/store\/manager\/; \}/);
+    // The box's own per-app mounts are gone with their routes: a shell nobody is routed to is not served either.
+    for (const gone of ['pos', 'owner', 'erp', 'picker', 'delivery', 'warehouse']) expect(serviceBlock(PILOT, 'web')).not.toContain(`/usr/share/nginx/html/${gone}:ro`);
+  });
+
+  it('hands the store box the signed-in person from the gate\'s answer — never from the visitor\'s own header (OB-16)', () => {
+    const store = location('location /store/');
+    expect(store).toMatch(/auth_request \/_auth\/verify;/);
+    expect(store).toMatch(/auth_request_set \$sre_user \$upstream_http_x_sre_user;/);
+    expect(store).toMatch(/proxy_set_header X-Sre-User \$sre_user;/);
+    // and the box only believes it because the overlay says so — a store box never sets this
+    expect(serviceBlock(PILOT, 'edge')).toMatch(/EDGE_SCREEN_TRUST_FORWARDED_USER: '1'/);
+    expect(readFileSync('infra/compose/docker-compose.yml', 'utf8')).not.toContain('EDGE_SCREEN_TRUST_FORWARDED_USER');
   });
 
   it('routes /v1/ to the API with the cookie-or-header authorization and the real client address', () => {

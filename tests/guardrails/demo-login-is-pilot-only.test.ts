@@ -65,7 +65,7 @@ describe('the demo sign-in is pilot-only', () => {
     expect(serviceBlock(BASE, 'proxy')).toContain('SRE_STAFF_ROUTE: ${SRE_STAFF_ROUTE:-staff-not-public}');
     expect(serviceBlock(PILOT, 'proxy')).toContain('SRE_STAFF_ROUTE: ${SRE_STAFF_ROUTE:-staff-demo-gate}');
     // The staff shells themselves are behind the sign-in on the demo front (ADR-0018 §2), not merely their data.
-    expect(NGINX).toMatch(/location ~ \^\/\(pos\|owner\|erp\|picker\|delivery\|warehouse\|supplier\)\/ \{\s*auth_request \/_auth\/verify;/);
+    expect(NGINX).toMatch(/location ~ \^\/\(supplier\)\/ \{\s*auth_request \/_auth\/verify;/); // OB-16: the other shells redirect into the store box (pilot-host guardrail)
   });
 
   it('the identity bridge is injected only by the pilot front, with a whitelisted page path', () => {

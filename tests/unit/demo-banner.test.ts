@@ -1,4 +1,4 @@
-// The DEMO / PILOT banner (Option 1 hosted-demo requirement). Proves it shows ONLY on an explicit
+// The practice-data banner ("TRIAL COPY · PRACTICE DATA"; Option 1 hosted-demo requirement). Proves it shows ONLY on an explicit
 // opt-in (so production never carries it), is bilingual, and inserts once at the top of the body.
 
 import { describe, it, expect } from 'vitest';

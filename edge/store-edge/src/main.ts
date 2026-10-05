@@ -1139,6 +1139,8 @@ export async function startEdge(
     // The manager's day close (M14-FR-04) posts to this box's lane socket — tell the screen where it is.
     // Only when this box actually serves a lane; otherwise the screen stays read-only (a local preview).
     ...(lane === null ? {} : { laneWriteBase: `http://${LANE_HOST}:${lane.port}` }),
+    // Behind the hosted front's authenticated relay only (OB-16): the ERP screens run as the person who signed in.
+    ...(settings['EDGE_SCREEN_TRUST_FORWARDED_USER'] === '1' ? { trustForwardedUser: true } : {}),
   });
   if (screens !== null) {
     say(screens.host === SCREEN_HOST || screens.host === 'localhost'

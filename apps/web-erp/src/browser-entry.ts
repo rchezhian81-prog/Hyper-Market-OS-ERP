@@ -258,7 +258,7 @@ import type { AuditRecord, LegalHold, RetentionPolicy } from '../../../packages/
 import type { Producer } from '../../../packages/reporting/src/index';
 import { mountDemoBanner } from '../../../packages/ui/src/demo-banner';
 
-// The "DEMO / PILOT — NOT PRODUCTION" strip. `PILOT_DEMO_BANNER` is a build-time constant baked in by
+// The practice-data strip ("TRIAL COPY · PRACTICE DATA"). `PILOT_DEMO_BANNER` is a build-time constant baked in by
 // esbuild (`scripts/build-app.mjs`): '1' in the hosted-demo build, empty in production. `typeof` guards
 // both the unbundled case (identifier absent → 'undefined', no throw) and a non-browser import.
 declare const PILOT_DEMO_BANNER: string;

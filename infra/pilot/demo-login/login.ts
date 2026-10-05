@@ -199,87 +199,23 @@ const SHELLS: ReadonlyArray<readonly [string, string]> = [
 
 /** Where a sign-in lands when nothing asked for a particular screen: the demo home below, never an empty shell. */
 export const DEMO_HOME = '/login/';
+/** Where a sign-in lands when nothing was asked for: the product — the store computer's workspace, not a list of shells (OB-16). */
+export const LANDING = '/store/manager/';
 
-/**
- * The demo home (owner instruction, 3 Oct 2026, after the first sign-in landed on the Store manager shell — which is
- * fed by the store computer and on this demo said "Not known" everywhere). Since DF-2 (4 Oct 2026) the demo store
- * box carries a whole practice pack, so the product's own screens come FIRST. Four honest lists, nothing else:
- *   STORE_SCREENS — the demo store computer's screens, the product as it runs in a shop: fed by its pack, run as the
- *                   person the pack names for that screen (KL-01), the rail of OB-13 down the left;
- *   LIVE_PAGES    — head-office pages served by the web front that read their own data from /v1 as the signed-in
- *                   person (screen-bridge.ts), the demo store box's till, the customer app;
- *   NEEDS_BOX     — shells served by the web front with no store computer behind them (they say "Not known"), and
- *                   the handhelds, which ask for a device enrolment code first (runbook §4.4).
- * What a page lets a person DO is still decided by the API on every call; a page outside the person's role says so.
- */
-export const STORE_SCREENS: ReadonlyArray<readonly [string, string]> = [
-  ['/store/manager/', 'Store manager — today, approvals, receive, count, close the day'],
-  ['/store/counts/', 'Stock counts'],
-  ['/store/buying/', 'Buying — purchase orders, receipts, supplier invoices'],
-  ['/store/stock-health', 'Stock health'],
-  ['/store/goods-receipt', 'Goods receipt review'],
-  ['/store/checklist/', 'Opening and closing checklist'],
-  ['/store/cash-office', 'Cash office — over / short sign-off'],
-  ['/store/expiry/', 'Expiry and recalls'],
-  ['/store/indents', 'Floor indents'],
-  ['/store/suppliers', 'Suppliers'],
-  ['/store/operations', 'Operations inbox'],
-  ['/store/owner/', 'Owner — the day in figures'],
-];
-export const LIVE_PAGES: ReadonlyArray<readonly [string, string]> = [
-  ['/store/pos/', 'Till — the demo store box (scan, price, sell; a sale reaches the books)'],
-  ['/erp/operations.html', 'Operations inbox'],
-  ['/erp/checklist.html', 'Opening and closing checklist'],
-  ['/erp/cash-office.html', 'Cash office'],
-  ['/erp/goods-receipt.html', 'Goods receipt'],
-  ['/erp/stock-health.html', 'Stock health'],
-  ['/erp/loss-prevention.html', 'Loss prevention inbox'],
-  ['/erp/data-quality.html', 'Data quality inbox'],
-  ['/erp/return-governance.html', 'Return governance'],
-  ['/erp/day-reopen.html', 'Day reopen'],
-  ['/erp/rostering.html', 'Rostering'],
-  ['/erp/workforce.html', 'Workforce'],
-  ['/erp/ess.html', 'Employee self-service'],
-  ['/erp/production.html', 'Production (cafe and fresh)'],
-  ['/erp/facilities.html', 'Facilities'],
-  ['/erp/stored-value.html', 'Stored value and gift cards'],
-  ['/erp/risk-acceptance.html', 'Risk acceptance'],
-  ['/erp/integration-health.html', 'Integration health'],
-  ['/erp/data-io.html', 'Data import and export'],
-  ['/supplier/', 'Supplier portal (as a supplier login)'],
-  ['/customer/', 'Customer app (public)'],
-];
-export const NEEDS_BOX: ReadonlyArray<readonly [string, string]> = [
-  ['/erp/', 'Store manager served by the web front — no store computer behind it; use the store computer\'s manager above'],
-  ['/store/warehouse/', 'Warehouse handheld — asks for a device enrolment code first'],
-  ['/store/picker/', 'Picker handheld — asks for a device enrolment code first'],
-  ['/store/delivery/', 'Delivery handheld — asks for a device enrolment code first'],
-  ['/owner/', 'Owner served by the web front'], ['/warehouse/', 'Warehouse served by the web front'],
-  ['/picker/', 'Picker served by the web front'], ['/delivery/', 'Delivery served by the web front'],
-  ['/pos/', 'Till served by the cloud (use the demo store box till above)'],
-];
 
 function homePage(who: string): string {
-  const li = (pages: ReadonlyArray<readonly [string, string]>): string =>
-    pages.map(([p, label]) => `<li><a href="${p}">${esc(label)}</a> <span class="path">${esc(p)}</span></li>`).join('');
-  return page('Demo home', `<h1>Signed in as ${esc(who)}</h1>
-<section><h2>The store computer's screens</h2>
-<p class="muted">The product as it runs in a shop: fed by the demo store computer's pack, with the person named for each screen and the screens that person may open down the left.</p>
-<ul>${li(STORE_SCREENS)}</ul></section>
-<section><h2>Live on this demo — the till and head-office pages</h2>
-<p class="muted">These pages read real (made-up) data as you. A page outside your role says so when you open it.</p>
-<ul>${li(LIVE_PAGES)}</ul></section>
-<section><h2>Not on this demo yet</h2>
-<p class="muted">Shells served by the web front with no store computer behind them say "Not known"; the handhelds ask for a device enrolment code first.</p>
-<ul>${li(NEEDS_BOX)}</ul></section>
+  // The account page, not a list of shells (OB-16): who you are signed in as, the one way into the product, sign out.
+  return page('Your account', `<h1>Signed in as ${esc(who)}</h1>
+<p class="muted">The product is one workspace: every screen you may open is in its left-hand rail, and the till and the handhelds are under <b>Devices</b> there.</p>
+<p><a class="primary" href="${LANDING}">Open the store workspace</a></p>
 <form method="post" action="/login/logout"><button type="submit">Sign out</button></form>`);
 }
 
 /** Only a same-origin path to one of the shells (or the demo home) is a valid place to go back to (no open redirect). */
 export function safeNext(next: string | undefined): string {
-  if (next === undefined) return DEMO_HOME;
-  if (!next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return DEMO_HOME;
-  return next === DEMO_HOME || SHELLS.some(([p]) => next.startsWith(p)) ? next : DEMO_HOME;
+  if (next === undefined) return LANDING;
+  if (!next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return LANDING;
+  return next === DEMO_HOME || SHELLS.some(([p]) => next.startsWith(p)) ? next : LANDING;
 }
 
 const esc = (s: string): string =>
@@ -287,22 +223,24 @@ const esc = (s: string): string =>
 
 function page(title: string, inner: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} — SRE demo</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} — SRE Retail OS</title>
 <style>
 :root{--bg:#f3f5f4;--panel:#fff;--line:#dce3de;--ink:#25362e;--muted:#53625a;--accent:#16614d;--warn:#8a5e1b;--error:#a03e36;--error-surface:#fbe9e7;--tap:48px}
 body{margin:0;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Tamil","Nirmala UI","Latha",sans-serif;background:var(--bg);color:var(--ink)}
-.demo{background:var(--warn);color:#fff;font-weight:700;text-align:center;padding:.5rem 1rem}
+.strip{background:var(--warn);color:#fff;font-weight:700;text-align:center;padding:.5rem 1rem}
 main{max-width:40rem;margin:1.5rem auto;padding:0 1rem}
 h1{font-size:1.5rem;margin:.6rem 0 1rem}h2{font-size:1.05rem;margin:0 0 .2rem}
 section{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--accent);border-radius:8px;padding:1rem 1.1rem;margin:0 0 1rem}
 label{display:block;margin:.8rem 0 .2rem;font-weight:600}
 input{width:100%;box-sizing:border-box;min-height:var(--tap);padding:.6rem .8rem;font-size:1rem;border:1px solid #aebbb3;border-radius:6px;background:var(--panel);color:var(--ink)}
 button{margin-top:1rem;width:100%;min-height:var(--tap);padding:.6rem;font-size:1rem;font-weight:700;border:0;border-radius:6px;background:var(--accent);color:#fff}
+a.primary{display:block;box-sizing:border-box;width:100%;min-height:var(--tap);padding:.7rem;font-size:1rem;font-weight:700;text-align:center;text-decoration:none;border-radius:6px;background:var(--accent);color:#fff}
+form button{background:var(--panel);color:var(--accent);border:1px solid var(--accent)}
 .err{background:var(--error-surface);color:var(--error);border-left:4px solid var(--error);padding:.6rem .8rem;border-radius:6px}
 ul{padding-left:1.1rem;margin:.4rem 0 0}li{margin:.35rem 0}a{color:var(--accent)}.muted{color:var(--muted);margin:.2rem 0 .4rem;font-size:15px}.path{color:var(--muted);font-size:14px}
 :focus-visible{outline:3px solid #0f4c3a;outline-offset:2px}
 </style></head><body>
-<div class="demo" role="alert">${esc(DEMO_BANNER_TEXT_EN)}<br>${esc(DEMO_BANNER_TEXT_TA)}</div>
+<div class="strip" role="alert">${esc(DEMO_BANNER_TEXT_EN)}<br>${esc(DEMO_BANNER_TEXT_TA)}</div>
 <main>${inner}</main></body></html>`;
 }
 
@@ -318,14 +256,14 @@ const SECURITY_HEADERS = {
 };
 
 function formPage(next: string, error?: string): string {
-  return page('Sign in', `<h1>Sign in to the demo</h1>
+  return page('Sign in', `<h1>Sign in to SRE Retail OS</h1>
 ${error === undefined ? '' : `<p class="err" role="alert">${esc(error)}</p>`}
 <form method="post" action="/login/">
 <input type="hidden" name="next" value="${esc(next)}">
 <label for="login">Login</label><input id="login" name="login" autocomplete="username" autocapitalize="none" required>
 <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
 <button type="submit">Sign in</button></form>
-<p>Your login is personal. Do not share it. This is a demo with made-up data.</p>`);
+<p>Your login is personal. Do not share it. This trial copy runs on practice data, not the store's real figures.</p>`);
 }
 
 export function cookieOf(headers: LoginRequest['headers']): string | undefined {
@@ -372,7 +310,7 @@ export function createDemoLoginHandler(deps: DemoLoginDeps): (req: LoginRequest)
     }
 
     if (req.method === 'POST' && (path === '/login/' || path === '/login')) {
-      if (crossSite(req)) return html(403, page('Refused', '<p class="err">This sign-in did not come from the demo site, so it was refused.</p>'));
+      if (crossSite(req)) return html(403, page('Refused', '<p class="err">This sign-in did not come from this site, so it was refused.</p>'));
       const form = new URLSearchParams(req.body);
       const login = (form.get('login') ?? '').trim().toLowerCase();
       const password = form.get('password') ?? '';
