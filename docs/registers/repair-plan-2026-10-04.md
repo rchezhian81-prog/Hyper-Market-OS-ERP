@@ -105,7 +105,9 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
   authenticated, transaction-bound, one-use record; **PA-03** every "second person" field becomes an authenticated
   approval object; **PF-03** the age-restriction answer is kept in the basket and enforced at commit.
 - **PA-01 / EA-03** branch and resource scope derived on the server from the person's grants; **PA-02** a leaver's
-  revocation takes effect on the existing session.
+  revocation takes effect on the existing session — **PA-02 DONE 5 Oct 2026 (#703)**: `RoleRevoked` on the ledger, one
+  grants-minus-revocations fold under every reader, the lifecycle route a durable command that cuts the live session;
+  proven in memory and on real PostgreSQL.
 - Owner sees: on the demo, a second refund of the same sale is refused by name; a manager approval needs the
   manager's own sign-in; the owner's report cannot be widened to another branch by editing the address.
 
@@ -179,6 +181,7 @@ identity, hardware, hosted recovery evidence. **PA-13** (commercial platform, R8
 | UX-2a one application (OB-16) | 1⅞ — done 5 Oct 2026 (#699) |
 | UX-2b the *Today* command centre, rail icons, sign-in frame (OB-15/OB-16/OB-17) | 1⅞ — done 5 Oct 2026 (#700) |
 | Wave 2a write guards — PF-01 refunds/gift/points; SF-04 transfers; FUL-02 promises; PA-11 audit chain | 2 — done 5 Oct 2026 (#701, #702) |
+| Wave 2b identity criticals — PA-02 leaver; PA-01/EA-03 scope; PA-03 second person; PF-03 age check; PF-02 till credential | 2 — PA-02 done 5 Oct 2026 (#703); the rest in order |
 | Handheld enrolment on the hosted demo | 1½ (a demo device code for the practice phones) |
 | Quantity scale across pack sections | 4, with DF-3 |
 | SP-10 register | 8 |

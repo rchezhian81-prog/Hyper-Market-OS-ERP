@@ -12,25 +12,15 @@
 // once and can never widen anyone thereafter. It is an audited `RoleGranted` event like any other,
 // not a bypass of the authorization check.
 
-import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
+import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import { makeEvent } from '../../../packages/contracts/src/event';
-import { STREAM } from './adapters';
-
-interface GrantPayload {
-  readonly userId: string;
-  readonly roleId: string;
-  readonly branchScope: readonly string[] | 'all';
-}
-
-function assignmentOf(e: PersistedEvent): RoleAssignment {
-  const p = e.event.payload as GrantPayload;
-  return { userId: p.userId, roleId: p.roleId, branchScope: p.branchScope };
-}
+import { STREAM, effectiveGrants } from './adapters';
 
 /**
- * A per-tenant access resolver for the kernel. Reads the tenant's `RoleGranted` events and folds
- * them into a default-deny `AccessControl` over the given role catalogue.
+ * A per-tenant access resolver for the kernel. Reads the tenant's `RoleGranted` events, takes away every
+ * `RoleRevoked` that followed (`effectiveGrants`), and folds what is left into a default-deny `AccessControl`
+ * over the given role catalogue.
  *
  * Read every request, deliberately: authority must reflect the current grants, a stale cache is a
  * revoked administrator who still has the keys. The identity stream is small (role changes are rare
@@ -41,8 +31,9 @@ export function tenantAccessResolver(
   roleCatalogue: readonly Role[],
 ): (tenantId: string) => Promise<AccessControl> {
   return async (tenantId) => {
-    const grants = await store.readStream(tenantId, STREAM.identity, { type: 'RoleGranted' });
-    return new AccessControl(roleCatalogue, grants.map(assignmentOf));
+    // Grants MINUS revocations (Wave 2b · PA-02): a leaver's or a mover's old authority is gone on the next request.
+    const grants = await effectiveGrants(store, tenantId);
+    return new AccessControl(roleCatalogue, grants);
   };
 }
 

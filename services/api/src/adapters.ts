@@ -22,7 +22,7 @@
 import { createHash } from 'node:crypto';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
-import type { EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
+import type { BatchEntry, EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
   foldBilling,
@@ -241,6 +241,7 @@ import type { WaveSyncDeps, WaveLineOutcome, WavePackRecord } from '../../fulfil
 import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord } from '../../fulfilment/src/driver-runs';
 import type { IdentityDeps } from '../../identity/src/index';
 import type { TokenRevocation, TokenRevocationStore } from '../../identity/src/revocation';
+import type { AccessLifecycleDeps, LifecycleChange } from '../../identity/src/access-lifecycle';
 import type { Role, RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } from '../../platform/src/index';
 import { inMemorySettings } from '../../platform/src/index';
@@ -348,6 +349,91 @@ async function allOf<T>(
 ): Promise<readonly T[]> {
   const events = await store.readStream(tenantId, stream, { type });
   return events.map((e) => payloadOf<T>(e));
+}
+
+/** The event that gives a role, and the event that takes it away again (Wave 2b · audit PA-02). */
+export const ROLE_GRANTED = 'RoleGranted';
+export const ROLE_REVOKED = 'RoleRevoked';
+
+/** One grant's identity for the fold: who, which role, which scope. */
+export function assignmentKey(a: RoleAssignment): string {
+  return `${a.userId}\u0000${a.roleId}\u0000${a.branchScope === 'all' ? 'all' : [...a.branchScope].sort().join(',')}`;
+}
+
+/**
+ * The grants a tenant's people hold NOW (Wave 2b · audit PA-02): every `RoleGranted` on the identity stream MINUS every
+ * `RoleRevoked` that followed it for the same person, role and scope — folded in append order, so a role granted again
+ * after a revocation stands. Before this, every reader folded `RoleGranted` alone and no grant could ever shrink: a
+ * leaver kept their authority until somebody remembered to cut their token. Every reader of authority — the kernel's
+ * resolver, every "does this approver hold…" check, every synced route's re-verification — goes through this ONE fold.
+ */
+export async function effectiveGrants(store: EventStore, tenantId: string): Promise<readonly RoleAssignment[]> {
+  const events = await store.readStream(tenantId, STREAM.identity);
+  const live = new Map<string, RoleAssignment[]>();
+  for (const e of events) {
+    if (e.event.type !== ROLE_GRANTED && e.event.type !== ROLE_REVOKED) continue;
+    const a = payloadOf<RoleAssignment>(e);
+    const k = assignmentKey(a);
+    if (e.event.type === ROLE_GRANTED) live.set(k, [...(live.get(k) ?? []), { userId: a.userId, roleId: a.roleId, branchScope: a.branchScope }]);
+    else live.delete(k);
+  }
+  return [...live.values()].flat();
+}
+
+/**
+ * The joiner / mover / leaver command's store (Wave 2b · audit PA-02). What the person holds NOW is read from the
+ * ledger, never from the request; the change is ONE batch — a `RoleRevoked` per grant removed, a `RoleGranted` per grant
+ * added — so a mover never holds the union of old and new for even a moment, and a leaver's authority ends on the very
+ * ledger every reader folds. Idempotent on the request id.
+ */
+export function accessLifecycleAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly roleCatalogue: readonly Role[];
+}): Omit<AccessLifecycleDeps, 'revocations' | 'recordAudit'> {
+  return {
+    now: input.now,
+    roles: () => input.roleCatalogue,
+    currentGrants: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId),
+    permissionsOf: async (tenantId, userId) => {
+      const held = (await effectiveGrants(input.store, tenantId)).filter((a) => a.userId === userId);
+      return [...new Set(held.flatMap((a) => input.roleCatalogue.find((r) => r.id === a.roleId)?.permissions ?? []))].sort();
+    },
+    recordChange: async (tenantId, change: LifecycleChange) => {
+      const at = input.now();
+      const provenance = {
+        kind: 'lifecycle', requestId: change.requestId, event: change.event,
+        requestedBy: change.requestedBy, approvedBy: change.approvedBy, reason: change.reason,
+      };
+      const entries: BatchEntry[] = [
+        ...change.removed.map((a, i) => ({ stream: STREAM.identity, event: makeEvent({
+          id: `revoke-lifecycle-${change.requestId}-${i}`,
+          type: ROLE_REVOKED,
+          occurredAt: at,
+          idempotencyKey: `revoke-${tenantId}-lifecycle-${change.requestId}-${i}`,
+          source: 'api/identity',
+          payload: { userId: a.userId, roleId: a.roleId, branchScope: a.branchScope, provenance },
+        }) })),
+        ...change.added.map((a, i) => ({ stream: STREAM.identity, event: makeEvent({
+          id: `grant-lifecycle-${change.requestId}-${i}`,
+          type: ROLE_GRANTED,
+          occurredAt: at,
+          idempotencyKey: `grant-${tenantId}-lifecycle-${change.requestId}-${i}`,
+          source: 'api/identity',
+          // The same shape every other grant records: the assignment RBAC reads, plus who asked and who approved.
+          payload: {
+            userId: a.userId, roleId: a.roleId, branchScope: a.branchScope,
+            request: {
+              grantId: `lifecycle-${change.requestId}-${i}`, userId: a.userId, roleId: a.roleId, branchScope: a.branchScope,
+              requestedBy: change.requestedBy, approvedBy: change.approvedBy, requestedAt: at,
+            },
+            provenance,
+          },
+        }) })),
+      ];
+      if (entries.length > 0) await input.store.appendBatch(tenantId, entries);
+    },
+  };
 }
 
 /**
@@ -2569,7 +2655,7 @@ export function returnsAdapter(input: {
     // The §28 authority to approve a refund (M13-FR-03) — pos.return.approve, held by a supervisor/manager
     // (owner + store_manager), above the cashier. A named approver who does not hold it does not count.
     canApproveRefund: async (tenantId, userId) => {
-      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('pos.return.approve'));
     },
@@ -2806,7 +2892,7 @@ export function shiftAdapter(input: {
     openInvestigationOnShortage: async (tenantId, record) => {
       // "The store manager" is a role, not a person — resolve who holds it from the tenant's own grants
       // (the authoritative source, the same one the kernel authorizes against), never from the request.
-      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const grants = await effectiveGrants(input.store, tenantId);
       const storeManagers = [...new Set(grants.filter((g) => g.roleId === STORE_MANAGER_ROLE_ID).map((g) => g.userId))];
 
       const plan = planInvestigationFromShortage({ shift: record, storeManagers });
@@ -2902,7 +2988,7 @@ export function dayCloseAdapter(input: {
     // The §28 authority to APPROVE a day-close reopen (till.dayclose.approve) — resolved from the
     // tenant's own grants (the authoritative source the kernel authorizes against), never the request.
     canApproveDayReopen: async (tenantId, userId) => {
-      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('till.dayclose.approve'));
     },
@@ -3948,7 +4034,7 @@ const APPROVAL_DECISIONS_STREAM = streamName(STREAM.identity, 'approval-decision
  * `undefined` when they hold no grant at all (an unknown name), which the synced routes record as its own flag (§28).
  */
 async function permissionsHeldBy(store: EventStore, tenantId: string, userId: string): Promise<readonly string[] | undefined> {
-  const grants = await allOf<RoleAssignment>(store, tenantId, STREAM.identity, 'RoleGranted');
+  const grants = await effectiveGrants(store, tenantId);
   const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
   if (roleIds.size === 0) return undefined;
   return [...new Set(ROLE_CATALOGUE.filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
@@ -4166,7 +4252,7 @@ export function approvalDecisionAdapter(input: {
     // The decider's REAL authority, from their grants and the role catalogue — never from the body (§28). No grant
     // at all → undefined (an unknown name), which the route records as its own flag.
     permissionsOfUser: async (tenantId, userId) => {
-      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       if (roleIds.size === 0) return undefined;
       return [...new Set(ROLE_CATALOGUE.filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
@@ -4982,7 +5068,7 @@ export function writeOffAdapter(input: {
     // store_manager hold inventory.movement.append, so this identifies a Manager/Owner; a named approver
     // who does not hold it does not count (the same check as the other §28 approvals).
     canApproveWriteOff: async (tenantId, userId) => {
-      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('inventory.movement.append'));
     },
@@ -6827,7 +6913,7 @@ export function financeAdapter(input: {
     // the owner and the accountant (the CA/books person the roadmap has sign the control totals). A named
     // signer/approver who does not hold it does not count (the same check as the other §28 approvals).
     canSignPeriod: async (tenantId, userId) => {
-      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('finance.period.sign'));
     },
@@ -7205,7 +7291,7 @@ export function serviceCaseAdapter(input: {
     // The §28 authority to approve an over-limit compensation — service.compensation.approve, owner-only by
     // default. A named approver who does not hold it does not count (the same check as price-change approval).
     canApproveCompensation: async (tenantId, userId) => {
-      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('service.compensation.approve'));
     },
@@ -7603,8 +7689,7 @@ export function ordersAdapter(input: {
     /** The catalogue roles the caller holds here, from the append-only grant history — which exception
      *  queues they staff is decided from this, never from what the request says about itself. */
     rolesOf: async (tenantId, userId) =>
-      (await input.store.readStream(tenantId, STREAM.identity, { type: 'RoleGranted' }))
-        .map((e) => payloadOf<{ userId: string; roleId: string }>(e))
+      (await effectiveGrants(input.store, tenantId))
         .filter((g) => g.userId === userId)
         .map((g) => g.roleId),
 
@@ -7674,7 +7759,7 @@ export function ordersAdapter(input: {
     },
     // Whether the named approver genuinely holds the permission — from their grants and the role catalogue, never the body.
     holdsPermission: async (tenantId, userId, permission) => {
-      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes(permission));
     },
@@ -8050,7 +8135,7 @@ export function identityAdapter(input: {
   readonly numberSeries?: NumberSeriesStore;
 }): IdentityDeps {
   const assignments = (tenantId: string) =>
-    allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+    effectiveGrants(input.store, tenantId);
   const numberSeries = input.numberSeries ?? new InMemoryNumberSeriesStore();
 
   return {
@@ -8094,7 +8179,7 @@ export function pricingAdapter(input: {
     // same authoritative source the kernel authorizes against. A named approver who cannot approve
     // prices is not an approval (§28).
     canApprove: async (tenantId, userId) => {
-      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('price.change.approve'));
     },
@@ -8124,7 +8209,7 @@ export function priceListAdapter(input: {
     // The §28 approver of a below-cost/floor price-list entry must genuinely hold price.change.approve —
     // the same authoritative grant source the kernel authorizes against, identical to the governed change.
     canApprove: async (tenantId, userId) => {
-      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('price.change.approve'));
     },
@@ -8156,7 +8241,7 @@ export function promotionAdapter(input: {
     // A margin-losing promotion is a below-cost pricing decision, so its §28 approver must genuinely hold
     // `price.change.approve` — the same authoritative grant source the price change and price list check.
     canApprove: async (tenantId, userId) => {
-      const grants = await allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+      const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
       return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('price.change.approve'));
     },
@@ -8903,7 +8988,7 @@ export function migrationAdapter(input: {
   readonly ownerRoleId: string;
 }): MigrationDeps {
   const grants = (tenantId: string) =>
-    allOf<RoleAssignment>(input.store, tenantId, STREAM.identity, 'RoleGranted');
+    effectiveGrants(input.store, tenantId);
 
   return {
     now: input.now,
@@ -9767,8 +9852,7 @@ export function concessionTagsAdapter(input: { readonly store: EventStore; reado
       }));
     },
     rolesOf: async (tenantId, userId) =>
-      (await input.store.readStream(tenantId, STREAM.identity, { type: 'RoleGranted' }))
-        .map((e) => payloadOf<{ userId: string; roleId: string }>(e))
+      (await effectiveGrants(input.store, tenantId))
         .filter((g) => g.userId === userId)
         .map((g) => g.roleId),
   };
