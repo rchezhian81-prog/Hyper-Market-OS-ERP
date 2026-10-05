@@ -274,6 +274,81 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
     }
   }, 60_000);
 
+  // ── Today: the command centre (UX-2b · OB-15 · OB-16 · M02 · M29 · P-03 · P-08) ────────────────────────────────
+  /** What the store computer injects for the manager's screen: the floor's registers and the Today figures. */
+  const TODAY = {
+    salesToday: { known: true, value: 1_234_500, unit: 'inr', note: '41 sales on this box' },
+    purchaseOrdersOpen: { known: true, value: 2, note: 'of 3 on the box, still awaiting goods' },
+    receiptsRecorded: { known: true, value: 1, note: 'against open orders' },
+    indentsOpen: { known: false, why: 'the store computer has not been given the floor indents' },
+    countsAwaitingApproval: { known: true, value: 1, note: 'of 3 counted' },
+    expiringSoon: { known: true, value: 4, note: 'within 7 days, of 20 batches' },
+    recallsOpen: { known: true, value: 0, note: 'recall notices on the box' },
+    checklistOpen: { known: true, value: 2, note: '1 must be done before the day closes' },
+    deliveriesToday: { known: true, value: 3, note: 'customer deliveries in today\'s slots' },
+  };
+  const MANAGER_DATA = {
+    userId: 'u-mgr', approvalLimitMinor: null, storeId: 'store-1', branchId: 'b1', tradingDay: '2026-10-05', tradingDayCutoff: '02:00', warehouseId: 'wh-1',
+    approvals: [{ id: 'a1', subjectType: 'price_change', subjectRef: 'Toor dal 1kg', requestedBy: 'u-buyer', branchId: 'b1', value: { minor: 45_000, currency: 'INR' }, status: 'pending' }],
+    openExceptions: [], unsentItems: [], tasks: [{ id: 't1', what: 'Open the safe' }],
+    today: TODAY,
+  };
+  const home = { ...MENU, groups: MENU.groups.map((g) => ({ ...g, items: g.items.map((i) => ({ ...i, current: i.id === 'dashboard' })) })) };
+
+  it('the Today page is the command centre: the takings and the four floor figures on the band, what needs you, purchase-to-shelf, the store today, the workspaces — every figure real or "Not known", at a desk and on a phone, in Tamil, audit clean', async () => {
+    for (const device of [DESK, PHONE]) {
+      const desk = device === DESK;
+      const page = await open('index.html', device, undefined, { sreNavigation: home, managerData: MANAGER_DATA });
+      // the band: sales first, as money, with its note; then the floor's four
+      expect(await texts(page, '#tiles .tile .label')).toEqual(['Sales today', 'Approvals waiting', 'Exceptions open', 'Not yet sent to cloud', 'Tasks today']);
+      expect(await texts(page, '#tiles .tile .n')).toEqual(['₹12,345.00', '1', '0', '0', '1']);
+      expect(await page.textContent('#tiles .tile:first-child .note')).toBe('41 sales on this box');
+      expect(await page.evaluate('document.querySelectorAll("#tiles .tile .chip svg").length')).toBe(5); // an icon on each
+      // what needs you: the number first, then the words; a way in where the person holds one; a figure the box lacks says why
+      const rows = await texts(page, '#attention li');
+      expect(rows[0]).toMatch(/^1 approvals you can clear\s*Open$/);
+      expect(rows).toContainEqual(expect.stringMatching(/^4 batches expiring soon$/)); // no "Open": this rail has no Expiry screen
+      expect(rows).toContainEqual(expect.stringMatching(/^1 counts awaiting approval\s*Open$/)); // the rail has Stock counts
+      expect(rows.some((r) => /recall/i.test(r))).toBe(false); // zero recalls is not a worry
+      expect(await page.getAttribute('#attention li a.go', 'href')).toMatch(/\/counts\/$/);
+      // purchase to shelf: four steps, one honestly not known with the reason
+      expect(await texts(page, '#flow li .l')).toEqual(['Purchase orders open', 'Receipts recorded', 'Counts awaiting approval', 'Floor indents open']);
+      expect(await texts(page, '#flow li .n')).toEqual(['2', '1', '1', 'Not known']);
+      expect(await page.textContent('#flow li:last-child .note')).toBe('the store computer has not been given the floor indents');
+      // the store today
+      expect(await texts(page, '#ops .op .l')).toEqual(['Deliveries today', 'Checklist items open', 'Expiring soon', 'Recall notices', 'Tasks today']);
+      expect(await texts(page, '#ops .op .n')).toEqual(['3', '2', '4', '0', '1']);
+      // the workspaces: the rail's own groups, each a link to its first screen
+      expect(await texts(page, '#workspaces a b')).toEqual(['Today', 'Inventory & backstore', 'Administration']);
+      expect(await texts(page, '#workspaces a small')).toEqual(['1 screens', '2 screens', '2 screens']);
+      expect(await page.getAttribute('#workspaces a:nth-child(2)', 'href')).toMatch(/\/counts\/$/);
+      // the one primary action still stands, and the tabs' tiles still say their purpose
+      expect(await page.textContent('#next-approval')).toBe('Clear the next approval (1)');
+      expect(await page.evaluate('document.getElementById("tab-home").classList.contains("sre-tab")')).toBe(true);
+      expect(await auditPage(page, { expectLang: 'en' }), `Today at ${device.viewport.width}`).toEqual([]);
+      // the approvals subpage hides the cards with the band
+      await page.click('#tab-approvals');
+      expect(await page.evaluate('document.getElementById("view-home-dash").hidden')).toBe(true);
+      await page.click('#tab-home');
+      expect(await page.evaluate('document.getElementById("view-home-dash").hidden')).toBe(false);
+      if (desk) {
+        await page.click('#lang');
+        await page.waitForFunction('document.documentElement.lang === "ta"');
+        expect(await texts(page, '#tiles .tile .label')).toEqual(['இன்றைய விற்பனை', 'காத்திருக்கும் ஒப்புதல்கள்', 'திறந்த விதிவிலக்குகள்', 'கிளௌடுக்கு அனுப்பப்படாதவை', 'இன்றைய பணிகள்']);
+        expect(await page.textContent('#attention-title')).toBe('கவனம் தேவை');
+        expect(await auditPage(page, { expectLang: 'ta' }), 'Today in Tamil').toEqual([]);
+      }
+    }
+  }, 90_000);
+
+  it('a Today page the store computer has not fed says "Not known" for every figure it was not given — and why', async () => {
+    const page = await open('index.html', DESK, undefined, { sreNavigation: home });
+    expect(await texts(page, '#tiles .tile .n')).toContain('Not known');
+    expect(await texts(page, '#flow li .n')).toEqual(['Not known', 'Not known', 'Not known', 'Not known']);
+    expect(await texts(page, '#flow li .note')).toEqual(Array(4).fill('the store computer has not said'));
+    expect(await auditPage(page, { expectLang: 'en' })).toEqual([]);
+  });
+
   it('the menu says why it is empty — nobody named, or no role register — and draws nothing at all off the box', async () => {
     const nobody = await open('waste.html', DESK, undefined, { sreNavigation: { userId: null, branchId: 'b1', why: 'no_user', groups: [] } });
     // a desk's rail is open already; the reason stands where the screens would

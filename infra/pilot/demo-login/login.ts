@@ -203,12 +203,12 @@ export const DEMO_HOME = '/login/';
 export const LANDING = '/store/manager/';
 
 
-function homePage(who: string): string {
+export function homePage(who: string): string {
   // The account page, not a list of shells (OB-16): who you are signed in as, the one way into the product, sign out.
-  return page('Your account', `<h1>Signed in as ${esc(who)}</h1>
+  return page('Your account', authFrame(`<h1>Signed in as ${esc(who)}</h1>
 <p class="muted">The product is one workspace: every screen you may open is in its left-hand rail, and the till and the handhelds are under <b>Devices</b> there.</p>
 <p><a class="primary" href="${LANDING}">Open the store workspace</a></p>
-<form method="post" action="/login/logout"><button type="submit">Sign out</button></form>`);
+<form method="post" action="/login/logout"><button type="submit">Sign out</button></form>`), true);
 }
 
 /** Only a same-origin path to one of the shells (or the demo home) is a valid place to go back to (no open redirect). */
@@ -221,14 +221,21 @@ export function safeNext(next: string | undefined): string {
 const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-function page(title: string, inner: string): string {
+function page(title: string, inner: string, wide = false): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} — SRE Retail OS</title>
 <style>
 :root{--bg:#f3f5f4;--panel:#fff;--line:#dce3de;--ink:#25362e;--muted:#53625a;--accent:#16614d;--warn:#8a5e1b;--error:#a03e36;--error-surface:#fbe9e7;--tap:48px}
 body{margin:0;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Tamil","Nirmala UI","Latha",sans-serif;background:var(--bg);color:var(--ink)}
 .strip{background:var(--warn);color:#fff;font-weight:700;text-align:center;padding:.5rem 1rem}
-main{max-width:40rem;margin:1.5rem auto;padding:0 1rem}
+main{max-width:40rem;margin:1.5rem auto;padding:0 1rem}main.wide{max-width:64rem}
+.auth{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:0;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:var(--panel)}
+.brand{background:#192f27;color:#fff;padding:2.2rem 2rem;display:grid;gap:.6rem;align-content:start}
+.brand .mark{width:52px;height:52px;border-radius:14px;background:#2fbf8f;color:#0f2e24;font-weight:800;font-size:17px;display:grid;place-items:center;letter-spacing:.03em}
+.brand h2{margin:.4rem 0 0;font-size:1.5rem}.brand .tag{margin:0;color:#cfe3da;font-size:1.05rem}
+.brand ul{margin:.6rem 0 0;padding-left:1.1rem;color:#cfe3da}.brand li{margin:.45rem 0}
+.auth .card{padding:2rem 1.6rem;display:grid;gap:.4rem;align-content:start}.auth .card h1{margin:0}.auth .card form{margin-top:.4rem}.help{color:var(--muted);font-size:14px;margin:.8rem 0 0}
+@media (max-width:860px){.auth{grid-template-columns:1fr}.brand{padding:1.4rem 1.2rem}.auth .card{padding:1.4rem 1.2rem}}
 h1{font-size:1.5rem;margin:.6rem 0 1rem}h2{font-size:1.05rem;margin:0 0 .2rem}
 section{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--accent);border-radius:8px;padding:1rem 1.1rem;margin:0 0 1rem}
 label{display:block;margin:.8rem 0 .2rem;font-weight:600}
@@ -241,7 +248,7 @@ ul{padding-left:1.1rem;margin:.4rem 0 0}li{margin:.35rem 0}a{color:var(--accent)
 :focus-visible{outline:3px solid #0f4c3a;outline-offset:2px}
 </style></head><body>
 <div class="strip" role="alert">${esc(DEMO_BANNER_TEXT_EN)}<br>${esc(DEMO_BANNER_TEXT_TA)}</div>
-<main>${inner}</main></body></html>`;
+<main${wide ? ' class="wide"' : ''}>${inner}</main></body></html>`;
 }
 
 const SECURITY_HEADERS = {
@@ -255,15 +262,36 @@ const SECURITY_HEADERS = {
   'referrer-policy': 'same-origin',
 };
 
-function formPage(next: string, error?: string): string {
-  return page('Sign in', `<h1>Sign in to SRE Retail OS</h1>
+export function formPage(next: string, error?: string): string {
+  return page('Sign in', authFrame(`<h1>Welcome back</h1>
+<p class="muted">Sign in to your store workspace.</p>
 ${error === undefined ? '' : `<p class="err" role="alert">${esc(error)}</p>`}
 <form method="post" action="/login/">
 <input type="hidden" name="next" value="${esc(next)}">
 <label for="login">Login</label><input id="login" name="login" autocomplete="username" autocapitalize="none" required>
 <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
 <button type="submit">Sign in</button></form>
-<p>Your login is personal. Do not share it. This trial copy runs on practice data, not the store's real figures.</p>`);
+<p class="help">Your login is personal. Do not share it. This trial copy runs on practice data, not the store's real figures.</p>`), true);
+}
+
+/**
+ * The frame every sign-in screen shares (UX-2b, the pattern the owner chose): the product's panel on the left — the
+ * mark, the name, what it is — and the card beside it; stacked on a phone. No image, no script, nothing fetched.
+ */
+function authFrame(card: string): string {
+  return `<div class="auth">
+<aside class="brand" aria-label="SRE Retail OS">
+<div class="mark" aria-hidden="true">SRE</div>
+<h2>SRE Retail OS</h2>
+<p class="tag">One commerce truth for the whole store.</p>
+<ul>
+<li>One sign-in, every screen you may open — till, back office, warehouse, delivery.</li>
+<li>Every figure from a real record, or honestly “Not known”.</li>
+<li>Trades on with no internet; syncs when it returns.</li>
+</ul>
+</aside>
+<section class="card">${card}</section>
+</div>`;
 }
 
 export function cookieOf(headers: LoginRequest['headers']): string | undefined {

@@ -339,4 +339,8 @@ body.sre-shell .sheet-inner, body.sre-shell .sre-sheet-inner, body.sre-shell .sh
 .sre-crumbs { margin: 0; color: var(--muted); font-size: 14px; }
 .sre-find { min-height: var(--tap); width: min(320px, 100%); padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--field); color: var(--ink); font: inherit; font-size: 15px; }
 .sre-find[hidden] { display: none; }
+/* The workspace icons in the rail (UX-2b): small, before the group's name, never carrying meaning alone. */
+.sre-menu .group { display: flex; align-items: center; gap: 8px; }
+.sre-menu .group .sre-icon { width: 15px; height: 15px; flex: none; opacity: .85; }
+.sre-icon { display: inline-block; vertical-align: middle; }
 

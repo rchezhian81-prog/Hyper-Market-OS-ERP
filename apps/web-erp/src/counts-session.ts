@@ -74,7 +74,8 @@ export type CopyKey =
   | 'countedLabel' | 'expectedLabel'
   | 'totalVariance' | 'attentionCount' | 'allClear'
   | 'stateReady' | 'stateEmpty' | 'stateNotPermitted'
-  | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'nobodyNamed' | 'staleShell' | 'sampleData'
+  | 'valueNotKnown' | 'withoutValue';
 
 export const COUNTS_REVIEW_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -89,6 +90,8 @@ export const COUNTS_REVIEW_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'You do not have permission to review stock counts.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+    // A count the box holds without a money value (UX-2b, P-08): said, never summed as zero or shown as NaN.
+    valueNotKnown: 'Value not known', withoutValue: 'without a value',
   },
   ta: {
     title: 'சரக்கு எண்ணிக்கை', langName: 'English',
@@ -102,6 +105,7 @@ export const COUNTS_REVIEW_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'சரக்கு எண்ணிக்கைகளைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    valueNotKnown: 'மதிப்பு தெரியவில்லை', withoutValue: 'மதிப்பு இல்லாதவை',
   },
 };
 
@@ -163,6 +167,9 @@ export function formatMoney(minor: number, currency = 'INR'): string {
   return `${negative ? '-' : ''}${symbol}${grouped}.${paise}`;
 }
 
+/** A row carries a money value only when the box gave it one as a finite number — the pack's count records may not. */
+const hasValue = (row: CountRow): boolean => typeof row.valueMinor === 'number' && Number.isFinite(row.valueMinor);
+
 /** A quantity with its unit, "12 ea". A signed one carries the direction for a variance. */
 const qty = (n: number, uom?: string, signed = false): string =>
   `${signed && n > 0 ? '+' : ''}${n}${uom ? ` ${uom}` : ''}`;
@@ -184,7 +191,7 @@ export function createCountsReviewSession(config: CountsReviewConfig, ports: Cou
       status: presentStatus({ tone, icon: face.icon, label, announcement: `${row.productId}: ${label}`, needsAttention }),
       needsAttention,
       variance: qty(row.varianceMinor, row.uom, true),
-      value: formatMoney(row.valueMinor, row.currency ?? 'INR'),
+      value: hasValue(row) ? formatMoney(row.valueMinor, row.currency ?? 'INR') : t('valueNotKnown'),
       counted: qty(row.countedMinor, row.uom),
       expected: qty(row.expectedMinor, row.uom),
       neededApproval: row.requiredApproval,
@@ -207,7 +214,7 @@ export function createCountsReviewSession(config: CountsReviewConfig, ports: Cou
       const raw = ports.rows();
       const rows = raw.map((r) => present(lang, r));
       // Material variances (needed approval) first; within each, the larger value first, then a stable id order.
-      const valueOf = new Map(raw.map((r) => [r.id, Math.abs(r.valueMinor)] as const));
+      const valueOf = new Map(raw.map((r) => [r.id, hasValue(r) ? Math.abs(r.valueMinor) : 0] as const));
       const ordered = [...rows].sort((a, b) => {
         if (a.needsAttention !== b.needsAttention) return a.needsAttention ? -1 : 1;
         const va = valueOf.get(a.id) ?? 0;
@@ -216,14 +223,20 @@ export function createCountsReviewSession(config: CountsReviewConfig, ports: Cou
         return a.id.localeCompare(b.id);
       });
       const attentionCount = rows.filter((r) => r.needsAttention).length;
-      const totalMinor = raw.reduce((sum, r) => sum + Math.abs(r.valueMinor), 0);
+      // Only the counts that carry a value are summed; the rest are SAID, never summed as zero (P-08). Before this a
+      // row without a value made the total `₹NaN.NaN` on the screen.
+      const valued = raw.filter(hasValue);
+      const totalMinor = valued.reduce((sum, r) => sum + Math.abs(r.valueMinor), 0);
+      const totalValue = valued.length === raw.length ? formatMoney(totalMinor)
+        : valued.length === 0 ? t('valueNotKnown')
+        : `${formatMoney(totalMinor)} · ${raw.length - valued.length} ${t('withoutValue')}`;
       const state = rows.length === 0 ? 'empty' : 'ready';
       return {
         screenState: presentScreenState({ state, label: t(state === 'empty' ? 'stateEmpty' : 'stateReady') }),
         rows: ordered,
         attentionCount,
         total: rows.length,
-        totalValue: formatMoney(totalMinor),
+        totalValue,
         nobodyNamed: config.userId === null,
       };
     },
