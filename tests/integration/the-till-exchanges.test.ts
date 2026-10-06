@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
-import { addTillPeople, signInTill } from '../support/till-operator';
+import { addTillPeople, signInTill, managerApprovesOn } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
@@ -110,7 +110,7 @@ describeOrSkip('the till exchanges goods — credit at the bill\'s own price, th
       lossPreventionRules: [],
     }), 'utf8');
     // The pack also names the cashier with till authority, and her till PIN is issued on this box (ADR-0020).
-    await addTillPeople(packFile, dataDir, KEY, [{ userId: CASHIER, displayName: 'Meena' }]);
+    await addTillPeople(packFile, dataDir, KEY, [{ userId: CASHIER, displayName: 'Meena' }, { userId: MANAGER, displayName: 'Manager', manager: true }]);
     const edge = (await startEdge({
       EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: cloud.tenantId, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_LANE_ID: LANE, EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
@@ -180,12 +180,19 @@ describeOrSkip('the till exchanges goods — credit at the bill\'s own price, th
     expect((await billB.exchange.complete(drafted())).kind).toBe('approval_required');
     expect((await billB.exchange.complete(drafted({ approval: { by: CASHIER, reason: 'mine' } }))).kind).toBe('approval_required');
     expect(await readLog(edge.returnsLog.path)).toHaveLength(1);
-    const b = await billB.exchange.complete(drafted({ approval: { by: MANAGER, reason: 'checked the goods' } }));
+    // A manager's name typed in is not an approval any more (ADR-0021): the store computer refuses it, nothing written.
+    const typed = await billB.exchange.complete(drafted({ approval: { by: MANAGER, reason: 'checked the goods' } }));
+    expect(typed.kind).not.toBe('done');
+    expect(typed.laneMessage).toMatch(/needs a manager's approval on this till/);
+    expect(await readLog(edge.returnsLog.path)).toHaveLength(1);
+    // The manager approves with their own PIN, for this bill and this ₹40 — then it goes through.
+    const approval = await managerApprovesOn(till, MANAGER, { kind: 'exchange_refund', billRef: 'S-2', valueMinor: 4_000, reason: 'checked the goods' });
+    const b = await billB.exchange.complete(drafted({ approval }));
     expect(b).toMatchObject({ kind: 'done', balance: 'refund', balanceMinor: 4_000, refundStatus: 'settled' });
     till.newSale();
     // The same exchange again: the credit is refused as a reused id (RR-F03) BEFORE any sale half — refunded and sold once.
     till.scanBarcode(SMALL.barcode);
-    expect((await billB.exchange.complete(drafted({ approval: { by: MANAGER, reason: 'checked the goods' } }))).kind).toBe('conflict');
+    expect((await billB.exchange.complete(drafted({ approval }))).kind).toBe('conflict');
     till.newSale();
 
     // ── 5. On the box's disk: two credits (tender "exchange", each naming its replacement) and two replacement sales

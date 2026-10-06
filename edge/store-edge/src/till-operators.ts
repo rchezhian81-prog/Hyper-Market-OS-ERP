@@ -37,13 +37,14 @@ export const OPERATOR_HEADER = HEADER;
 /** How the session was opened: the person's own PIN at this till, or the hosted copy's verified sign-in (ADR-0020 §6). */
 export type SignInVia = 'pin' | 'verified_sign_in';
 
-export type SignInRefusal = 'wrong_staff_id_or_pin' | 'locked' | 'no_till_authority' | 'no_people_register' | 'lane_locked' | 'not_readable' | 'no_lane';
+export type SignInRefusal = 'wrong_staff_id_or_pin' | 'locked' | 'no_till_authority' | 'no_approval_authority' | 'no_people_register' | 'lane_locked' | 'not_readable' | 'no_lane';
 
 /** The words a cashier reads, per refusal — the screen shows these as they are. */
 const WORDS: Readonly<Record<SignInRefusal, string>> = {
   wrong_staff_id_or_pin: 'That staff ID and PIN do not match. Try again, or ask the manager to reissue your till PIN.',
   locked: 'Too many wrong PINs for this staff ID. Wait fifteen minutes, or ask the manager.',
   no_till_authority: 'This person is not allowed to work a till in this shop. Ask the manager.',
+  no_approval_authority: 'This person is not allowed to approve refunds in this shop. Ask a manager who is.',
   no_people_register: 'This store computer has not been told who works here, so nobody can sign in at the till. Ask the manager.',
   lane_locked: 'Too many failed sign-ins on this till. Wait fifteen minutes, or ask the manager.',
   not_readable: 'Scan your staff badge or key your staff ID, then key your six-digit till PIN.',
@@ -193,29 +194,48 @@ export class TillOperators {
     return { signedIn: true, token, userId, displayName: this.displayNameOf(userId), expiresAt, via };
   }
 
-  /** Sign a person in at a till with their staff ID and till PIN. The PIN is checked here and forgotten. */
-  async signIn(input: { readonly staffId: string; readonly pin: string; readonly laneId: string }): Promise<SignInOutcome> {
+  /**
+   * Is this the person, by their staff ID and till PIN? The ONE place a PIN is checked — at sign-in and when a manager
+   * approves at the till (ADR-0021) — so both doors share the same guess limits and the same log. `authority` is the
+   * permission the person must hold in the pack for what they are about to do. The PIN is checked here and forgotten.
+   */
+  async verifyPerson(input: { readonly staffId: string; readonly pin: string; readonly laneId: string; readonly authority: string }): Promise<
+    | { readonly ok: true; readonly userId: string; readonly displayName: string }
+    | { readonly ok: false; readonly refusedBecause: SignInRefusal; readonly laneMessage: string }
+  > {
     const nowMs = Date.parse(this.deps.now());
     const staffId = input.staffId.trim();
     const laneId = input.laneId;
+    const no = (o: SignInOutcome) => (o.signedIn ? { ok: false as const, refusedBecause: 'not_readable' as const, laneMessage: WORDS.not_readable } : { ok: false as const, refusedBecause: o.refusedBecause, laneMessage: o.laneMessage });
     // A box that was never told which till it is signs nobody in: a session must belong to a lane (ADR-0020 §4).
-    if (laneId.trim() === '') return { signedIn: false, refusedBecause: 'no_lane', laneMessage: WORDS.no_lane };
+    if (laneId.trim() === '') return { ok: false, refusedBecause: 'no_lane', laneMessage: WORDS.no_lane };
     if (this.recent(this.refusedByLane, laneId, nowMs).length >= MAX_REFUSED_PER_LANE) {
-      return { signedIn: false, refusedBecause: 'lane_locked', laneMessage: WORDS.lane_locked };
+      return { ok: false, refusedBecause: 'lane_locked', laneMessage: WORDS.lane_locked };
     }
-    if (staffId === '' || !isTillPin(input.pin)) return this.refuse(staffId || '(none)', laneId, 'not_readable', nowMs);
-    if (this.recent(this.wrongByPerson, staffId, nowMs).length >= MAX_WRONG_PER_PERSON) return this.refuse(staffId, laneId, 'locked', nowMs);
+    if (staffId === '' || !isTillPin(input.pin)) return no(await this.refuse(staffId || '(none)', laneId, 'not_readable', nowMs));
+    if (this.recent(this.wrongByPerson, staffId, nowMs).length >= MAX_WRONG_PER_PERSON) return no(await this.refuse(staffId, laneId, 'locked', nowMs));
     const people = this.deps.pack.people();
-    if (people === null || this.deps.pack.permissionsOf(staffId) === null) return this.refuse(staffId, laneId, 'no_people_register', nowMs);
+    if (people === null || this.deps.pack.permissionsOf(staffId) === null) return no(await this.refuse(staffId, laneId, 'no_people_register', nowMs));
     const credential = (await this.deps.credentials()).get(staffId);
     // Unknown person, no credential, revoked credential, wrong PIN — ONE answer, so nobody learns which staff IDs exist.
     const known = people.some((p) => p.userId === staffId);
     if (!known || credential === undefined || !tillPinMatches(input.pin, credential, this.deps.key)) {
-      return this.refuse(staffId, laneId, 'wrong_staff_id_or_pin', nowMs, true);
+      return no(await this.refuse(staffId, laneId, 'wrong_staff_id_or_pin', nowMs, true));
     }
-    if (this.holdsTillAuthority(staffId) !== true) return this.refuse(staffId, laneId, 'no_till_authority', nowMs);
+    const permissions = this.deps.pack.permissionsOf(staffId) ?? [];
+    if (!permissions.includes(input.authority)) {
+      const reason: SignInRefusal = input.authority === TILL_AUTHORITY ? 'no_till_authority' : 'no_approval_authority';
+      return no(await this.refuse(staffId, laneId, reason, nowMs));
+    }
     this.wrongByPerson.delete(staffId);
-    return this.open(staffId, laneId, 'pin', nowMs);
+    return { ok: true, userId: staffId, displayName: this.displayNameOf(staffId) };
+  }
+
+  /** Sign a person in at a till with their staff ID and till PIN. The PIN is checked here and forgotten. */
+  async signIn(input: { readonly staffId: string; readonly pin: string; readonly laneId: string }): Promise<SignInOutcome> {
+    const verified = await this.verifyPerson({ ...input, authority: TILL_AUTHORITY });
+    if (!verified.ok) return { signedIn: false, refusedBecause: verified.refusedBecause, laneMessage: verified.laneMessage };
+    return this.open(verified.userId, input.laneId, 'pin', Date.parse(this.deps.now()));
   }
 
   /**

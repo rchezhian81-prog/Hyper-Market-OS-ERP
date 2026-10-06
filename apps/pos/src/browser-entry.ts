@@ -198,6 +198,51 @@ export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort
   };
 }
 
+/** What a manager's approval at the till is for (ADR-0021): the kind, the bill (not for a no-receipt return) and the amount. */
+export type TillApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund';
+export interface TillApprovalRequest {
+  readonly managerId: string;
+  readonly pin: string;
+  readonly kind: TillApprovalKind;
+  readonly billRef?: string;
+  readonly valueMinor: number;
+  readonly reason: string;
+}
+export type TillApprovalOutcome =
+  | { readonly approved: true; readonly approvalId: string; readonly approvedBy: string; readonly displayName: string; readonly expiresAt: string }
+  | { readonly approved: false; readonly refusedBecause?: string; readonly laneMessage: string };
+/** The till's approval call to its box (injectable for tests). */
+export interface TillApprovalPort {
+  grant(request: TillApprovalRequest): Promise<TillApprovalOutcome>;
+}
+
+const UNREACHABLE_APPROVAL = 'This till cannot reach its store computer, so a manager cannot approve here. Do not give money back — tell the manager.';
+
+/**
+ * A manager approves at this till (ADR-0021): the manager's staff ID and their own till PIN go to the store computer,
+ * which checks them itself and issues an approval bound to this one refund. The cashier's session goes with it — the
+ * box issues approvals only to a till someone is signed in at, and never to that same person.
+ */
+export function laneApprovals(port: number = DEFAULT_LANE_PORT): TillApprovalPort {
+  return {
+    grant: async (request) => {
+      try {
+        const response = await fetch(`${laneBase(port)}/lane/approvals`, {
+          method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(request),
+        });
+        const front = FRONT_REFUSED[response.status];
+        if (front !== undefined) return { approved: false, ...front };
+        const body = await response.json() as { approved?: boolean; refusedBecause?: string; laneMessage?: string };
+        return body.approved === true
+          ? body as unknown as TillApprovalOutcome
+          : { approved: false, ...(typeof body.refusedBecause === 'string' ? { refusedBecause: body.refusedBecause } : {}), laneMessage: body.laneMessage ?? UNREACHABLE_APPROVAL };
+      } catch {
+        return { approved: false, refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_APPROVAL };
+      }
+    },
+  };
+}
+
 export type DurableWrite = (saleId: string, record: string) => Promise<CommitOutcome>;
 
 /**
@@ -369,7 +414,8 @@ export interface RefundDraftInput {
   readonly refundMinor: number;
   readonly refundTender: TenderKind;
   readonly noReceipt?: boolean;
-  readonly approval?: { readonly by: string; readonly reason: string };
+  /** The manager's approval: who and why, and the approval the store computer issued for it (ADR-0021). */
+  readonly approval?: { readonly by: string; readonly reason: string; readonly approvalId?: string };
   /** The customer a store-credit refund is issued to (M13-FR-03 / §31), so an offline store-credit
    *  refund can issue the credit to them when it reconciles at the cloud. */
   readonly customerRef?: string;
@@ -411,7 +457,7 @@ export interface ExchangeDraftInput {
     /** How the customer pays the balance, when they owe one. Card/UPI carry what the terminal said (M12-FR-03). */
     readonly topUp?: { readonly kind: 'cash' | 'card' | 'upi'; readonly outcome?: 'approved' | 'declined' | 'no_answer' };
   };
-  readonly approval?: { readonly by: string; readonly reason: string };
+  readonly approval?: { readonly by: string; readonly reason: string; readonly approvalId?: string };
 }
 
 /**
@@ -514,6 +560,8 @@ export function bootPos(config?: {
   laneLookup?: LaneLookup;
   /** The till's operator calls to its box (ADR-0020). Overridable for tests; production asks this till's own edge. */
   operatorPort?: TillOperatorPort;
+  /** The till's manager-approval call to its box (ADR-0021). Overridable for tests; production asks this till's own edge. */
+  approvalPort?: TillApprovalPort;
 }): PosView & {
   readonly till: ReturnType<typeof createTillSession>;
   /** The next receipt number for this lane — gap-free within its reserved range. Throws when the
@@ -547,6 +595,11 @@ export function bootPos(config?: {
   readonly tillSignInBy: () => Promise<'pin' | 'verified_sign_in' | null>;
   /** The session token this tab holds, for the page to keep across a reload (never the PIN). */
   readonly operatorToken: () => string | undefined;
+  /**
+   * A manager approves here, with their own till PIN, for exactly this refund (ADR-0021). The store computer checks the
+   * PIN and the manager's authority and issues the approval the refund then carries; refused in the cashier's words.
+   */
+  readonly approveAtTill: (request: TillApprovalRequest) => Promise<TillApprovalOutcome>;
   readonly signOut: () => void;
   /** Who is at the till now, or undefined when nobody is signed in. */
   readonly operator: () => string | undefined;
@@ -622,10 +675,11 @@ export function bootPos(config?: {
   // A manager's lane approval, as the §28 `DecidedRequest` the engine checks (decidedBy ≠ processedBy; the cloud
   // re-verifies the approver truly holds the authority on sync). Shared by the receipted and the no-receipt return.
   const decidedAtTheLane = (
-    draft: { readonly returnId: string; readonly refundMinor: number; readonly approval?: { readonly by: string; readonly reason: string } },
+    draft: { readonly returnId: string; readonly refundMinor: number; readonly approval?: { readonly by: string; readonly reason: string; readonly approvalId?: string } },
     cashierId: string,
   ): DecidedRequest | undefined => (draft.approval === undefined ? undefined : {
-    id: `ovr-${draft.returnId}`, subjectType: 'pos.return', subjectRef: draft.returnId,
+    // The store computer's approval id when it issued one (ADR-0021) — the record carries it and the box spends it.
+    id: draft.approval.approvalId ?? `ovr-${draft.returnId}`, subjectType: 'pos.return', subjectRef: draft.returnId,
     requestedBy: cashierId, branchId: null, value: money(draft.refundMinor, 'INR'),
     status: 'approved', decidedBy: draft.approval.by, reason: draft.approval.reason,
     decidedAt: new Date().toISOString(),
@@ -836,13 +890,19 @@ export function bootPos(config?: {
   };
   const tillSignInBy = async (): Promise<'pin' | 'verified_sign_in' | null> => (await operators.status(undefined))?.signInBy ?? null;
   const operatorToken = (): string | undefined => tillOperatorSession.token;
+  const approvals = config?.approvalPort ?? laneApprovals(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const approveAtTill = async (request: TillApprovalRequest): Promise<TillApprovalOutcome> => {
+    // Nobody signed in → no cashier to ask for it; the box would refuse too, this says so without a round trip.
+    if (session.operator() === undefined) return { approved: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('ask for an approval').laneMessage };
+    return approvals.grant(request);
+  };
   const lane = () => ({
     laneId: session.laneId() ?? null,
     tradingDayCutoff: config?.tradingDayCutoff ?? '00:00',
     tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
   });
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken });
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

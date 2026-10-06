@@ -6,7 +6,7 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos, laneDurable, laneDurableReturn, laneLookup, laneCashMovement, laneShiftClose, laneTillCash } from '../../apps/pos/src/browser-entry';
 import { readTillCashRecord } from '../../edge/store-edge/src/till-cash';
-import { prepareTillBox, holdSignedInAt } from '../support/till-operator';
+import { prepareTillBox, holdSignedInAt, managerApprovesOn } from '../support/till-operator';
 
 /**
  * **The till's float, pickups and close live on the store BOX — durable, restart-safe, one effect per act (SP-4c · audit
@@ -42,7 +42,7 @@ const startBox = async (opts: { readonly dir?: string; readonly lane?: string; r
   // false` is a pack that names the people but no policies — so no cash tolerance.
   const tillReady = await prepareTillBox({
     dir, key: KEY, pack: opts.withPack === false ? {} : PACK, laneId: opts.lane ?? null,
-    people: [{ userId: 'u-meena', displayName: 'Meena' }, { userId: 'u-ravi', displayName: 'Ravi' }],
+    people: [{ userId: 'u-meena', displayName: 'Meena' }, { userId: 'u-ravi', displayName: 'Ravi' }, { userId: 'u-manager', displayName: 'Manager', manager: true }],
   });
   const edge = (await startEdge({
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
@@ -57,7 +57,7 @@ const tillOn = async (edge: EdgeProcess, cashierId = 'u-meena') => {
   const port = edge.lane!.port;
   // Tax-free items, so the rupee arithmetic below reads plainly (a hand-scanned item otherwise carries the default 18%).
   const view = bootPos({
-    laneId: 'lane-1', taxPercent: 0, durable: laneDurable(port), durableReturn: laneDurableReturn(port), laneLookup: laneLookup(port),
+    laneId: 'lane-1', taxPercent: 0, lanePort: port, durable: laneDurable(port), durableReturn: laneDurableReturn(port), laneLookup: laneLookup(port),
     cashMovement: laneCashMovement(port), shiftClose: laneShiftClose(port), tillCash: laneTillCash(port),
   });
   await holdSignedInAt(port, cashierId);
@@ -139,9 +139,11 @@ describe('a shift on the served till: float → sales → pickup → blind count
     // A ₹100 cash refund on that bill goes through the box's return route — and out of the drawer.
     const bill = await till.lookupRefund('R-S-1');
     expect(bill).not.toBeNull();
+    // The manager approves with their own PIN, for this bill and this amount (ADR-0021).
+    const approval = await managerApprovesOn(till, 'u-manager', { kind: 'refund', billRef: bill!.sale.saleId, valueMinor: 10_000 });
     const refund = await bill!.submit({
       returnId: 'RET-1', number: 'RET-0001', reasonCode: 'damaged', refundMinor: 10_000, refundTender: 'cash',
-      lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'damaged' }], approval: { by: 'u-manager', reason: 'damaged' },
+      lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'damaged' }], approval,
     });
     expect(refund.kind).toBe('settled');
 

@@ -119,10 +119,13 @@ const WORDS = {
     refundCondition: 'What condition is the item in?',
     dispResell: 'Good — back on the shelf',
     dispDamaged: 'Damaged — not for sale',
-    refundManagerId: 'Manager: scan your badge or key your staff code',
+    refundManagerId: 'Manager: scan your badge or key your staff ID',
     refundManagerHint: 'A different person from the cashier must approve a refund',
     refundNeedManager: 'A manager must approve this refund. Ask a manager — not yourself.',
     refundApproveReason: 'Manager: why is this refund approved?',
+    // The manager's own PIN (ADR-0021): checked by the store computer, for this one refund only.
+    managerPinTitle: 'Manager: your till PIN', managerPinHint: 'The manager keys their own six-digit till PIN. It is never shown, and approves this refund only.',
+    approvalRefused: 'Not approved',
     refundDone: 'Refund recorded',
     refundPending: 'Refund pending',
     refundStop: 'Do not hand over cash',
@@ -225,6 +228,8 @@ const WORDS = {
     refundManagerHint: 'திரும்பப் பணத்தை காசாளர் அல்லாத வேறு ஒருவர் அனுமதிக்க வேண்டும்',
     refundNeedManager: 'இந்த திரும்பப் பணத்தை ஒரு மேலாளர் அனுமதிக்க வேண்டும். உங்களை அல்ல — ஒரு மேலாளரிடம் கேளுங்கள்.',
     refundApproveReason: 'மேலாளர்: இந்த திரும்பப் பணம் ஏன் அனுமதிக்கப்படுகிறது?',
+    managerPinTitle: 'மேலாளர்: உங்கள் கல்லா PIN', managerPinHint: 'மேலாளர் தனது ஆறு இலக்க கல்லா PIN-ஐ உள்ளிடுகிறார். அது ஒருபோதும் காட்டப்படாது; இந்த ஒரு திரும்பப் பணத்திற்கு மட்டுமே அனுமதி.',
+    approvalRefused: 'அனுமதிக்கப்படவில்லை',
     refundDone: 'திரும்பப் பணம் பதிவு செய்யப்பட்டது',
     refundPending: 'திரும்பப் பணம் நிலுவையில்',
     refundStop: 'பணத்தைக் கொடுக்க வேண்டாம்',
@@ -963,6 +968,25 @@ function askScanOrKey({ title, hint = '' }) {
 }
 
 /**
+ * A MANAGER approves, here, for this one refund (ADR-0021 · §28): their badge or staff ID, their OWN six-digit till PIN
+ * (masked, never kept), and why. The store computer checks the PIN and the manager's authority, refuses the cashier
+ * approving themselves, and issues an approval bound to this kind, bill, amount and cashier, used once. Resolves the
+ * approval for the refund to carry, or `null` once the cashier has been told why not.
+ */
+async function managerApproves({ kind, billRef, valueMinor, hint }) {
+  if (!session.approveAtTill) { tell(t('read'), t('noStoreBox')); return null; }
+  const by = await askScanOrKey({ title: t('refundManagerId'), hint });
+  if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager')); return null; }
+  const pin = await ask({ title: t('managerPinTitle'), mode: 'number', hint: t('managerPinHint'), initial: '', mask: true });
+  if (pin === null || pin === '') { tell(t('read'), t('refundNeedManager')); return null; }
+  const reason = await ask({ title: t('refundApproveReason'), mode: 'choice', choices: REFUND_REASONS });
+  if (!reason) return null;
+  const outcome = await session.approveAtTill({ managerId: String(by), pin: String(pin), kind, ...(billRef ? { billRef } : {}), valueMinor, reason });
+  if (!outcome.approved) { tell(t('approvalRefused'), outcome.laneMessage); return null; }
+  return { by: outcome.approvedBy, reason, approvalId: outcome.approvalId };
+}
+
+/**
  * The refund. Money leaves the drawer, so honesty beats speed at every step and every rule is
  * enforced behind this view (M13). This file assembles the cashier's answers and shows the outcome —
  * it decides nothing: `lookupRefund` reads the bill from this lane's own disk, and `submit` runs the
@@ -1045,11 +1069,8 @@ async function startRefund() {
   // enforces and the cloud re-verifies on sync.
   let approval;
   if (bill.needsApproval(refundMinor)) {
-    const by = await askScanOrKey({ title: t('refundManagerId'), hint: t('refundManagerHint') });
-    if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager')); return; }
-    const approveReason = await ask({ title: t('refundApproveReason'), mode: 'choice', choices: REFUND_REASONS });
-    if (!approveReason) return;
-    approval = { by: String(by), reason: approveReason };
+    approval = await managerApproves({ kind: 'refund', billRef: bill.sale.saleId, valueMinor: refundMinor, hint: t('refundManagerHint') });
+    if (approval === null) return;
   }
 
   // 6. The refund's own document number, from this lane's gap-free range, and its operation identity
@@ -1182,11 +1203,8 @@ async function startExchange() {
       settlement.customerRef = String(who);
     }
     if (quote.needsApproval) {
-      const by = await askScanOrKey({ title: t('refundManagerId'), hint: t('refundManagerHint') });
-      if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager')); return; }
-      const approveReason = await ask({ title: t('refundApproveReason'), mode: 'choice', choices: REFUND_REASONS });
-      if (!approveReason) return;
-      approval = { by: String(by), reason: approveReason };
+      approval = await managerApproves({ kind: 'exchange_refund', billRef: bill.sale.saleId, valueMinor: quote.balanceMinor, hint: t('refundManagerHint') });
+      if (approval === null) return;
     }
   }
 
@@ -1286,12 +1304,10 @@ async function startNoReceiptReturn() {
     customerRef = String(who);
   }
 
-  // 5. A manager, ALWAYS (§28) — scanned badge or keyed staff code, a different person from the cashier; the engine
-  // enforces the difference and the cloud re-verifies the authority on sync.
-  const by = await askScanOrKey({ title: t('refundManagerId'), hint: t('noReceiptManagerHint') });
-  if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager')); return; }
-  const approveReason = await ask({ title: t('refundApproveReason'), mode: 'choice', choices: REFUND_REASONS });
-  if (!approveReason) return;
+  // 5. A manager, ALWAYS (§28) — their badge or staff ID AND their own till PIN, checked by the store computer, which
+  // issues an approval for this one return (ADR-0021); the cloud re-verifies the authority on sync.
+  const approval = await managerApproves({ kind: 'no_receipt_return', valueMinor: refundMinor, hint: t('noReceiptManagerHint') });
+  if (approval === null) return;
 
   // 6. The document number from this lane's gap-free range, and the operation identity (idempotency key, RR-F03).
   let number;
@@ -1309,7 +1325,7 @@ async function startNoReceiptReturn() {
       returnId, number, reasonCode: reason, noReceipt: true,
       lines: [{ productId: item.productId, uom: item.uom, quantityMinor: qty, disposition }],
       refundMinor, refundTender,
-      approval: { by: String(by), reason: approveReason },
+      approval,
       ...(customerRef ? { customerRef } : {}),
     });
   } catch (e) {

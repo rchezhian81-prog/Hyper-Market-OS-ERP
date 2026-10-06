@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
-import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
+import { prepareTillBox, signInThroughScreen, pinOf } from '../support/till-operator';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
 import { startRealCloud, type RealCloud } from '../support/real-store';
@@ -53,6 +53,7 @@ interface PosWindow {
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
     newSale(): void;
     lookupRefund(receipt: string): Promise<RefundLookup | null>;
+    approveAtTill(r: { managerId: string; pin: string; kind: 'refund'; billRef: string; valueMinor: number; reason: string }): Promise<{ approved: boolean; approvalId?: string; laneMessage?: string }>;
   };
 }
 
@@ -102,7 +103,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     if (dir === undefined) dirs.push(dataDir);
     // The policies, and the cashier named with till authority — her till PIN issued on this box (ADR-0020).
     const { EDGE_PACK_FILE: packFile } = await prepareTillBox({
-      dir: dataDir, key: KEY, people: [{ userId: CASHIER, displayName: 'Meena' }],
+      dir: dataDir, key: KEY, people: [{ userId: CASHIER, displayName: 'Meena' }, { userId: MANAGER, displayName: 'Manager', manager: true }],
       pack: {
         policies: { storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
         lossPreventionRules: [],
@@ -189,16 +190,19 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     expect(await onHandAt(STORE)).toBe(9);
 
     // The refund through the shell's own refund surface: the bill from this box, a manager's approval, cash back.
-    const refunded = await page.evaluate(async ([manager]) => {
+    // The manager approves at the till with their own PIN, for this bill and this amount (ADR-0021).
+    const refunded = await page.evaluate(async ([manager, managerPin]) => {
       const w = globalThis as unknown as PosWindow;
       const bill = await w.posSession!.lookupRefund('R-S-1');
       if (bill === null) return { kind: 'not_found' } as RefundOutcome;
+      const approved = await w.posSession!.approveAtTill({ managerId: manager!, pin: managerPin!, kind: 'refund', billRef: 'S-1', valueMinor: 48_000, reason: 'checked the goods' });
+      if (!approved.approved) return { kind: 'approval_refused', laneMessage: approved.laneMessage } as unknown as RefundOutcome;
       return bill.submit({
         returnId: 'RT-1', number: 'RT-0001', reasonCode: 'changed_mind',
         lines: [{ productId: 'p-rice', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
-        refundMinor: 48_000, refundTender: 'cash', approval: { by: manager, reason: 'checked the goods' },
+        refundMinor: 48_000, refundTender: 'cash', approval: { by: manager!, reason: 'checked the goods', approvalId: approved.approvalId },
       });
-    }, [MANAGER]);
+    }, [MANAGER, pinOf(MANAGER)]);
     expect(refunded).toMatchObject({ kind: 'settled', refundMinor: PRICE });
     expect(await edge.syncOnce!()).toMatchObject({ dead: 0, remaining: 0 });
     expect(await onHandAt(STORE)).toBe(10);

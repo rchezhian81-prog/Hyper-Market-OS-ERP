@@ -38,7 +38,12 @@ const startLane = async () => {
   const dir = await mkdtemp(join(tmpdir(), 'rrf02-')); dirs.push(dir);
   const edge = (await startEdge({
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
-    ...await prepareTillBox({ dir, key: KEY, people: [{ userId: 'u-meena', displayName: 'Meena' }] }),
+    // The shop's approval threshold sits above these small refunds, so no manager is needed — the subject here is the
+    // lost reply, not the approval (ADR-0021 has its own proof).
+    ...await prepareTillBox({
+      dir, key: KEY, people: [{ userId: 'u-meena', displayName: 'Meena' }],
+      pack: { servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 1_000_000, noReceiptCapMinor: 0, agentAuthorityMinor: 0, compensationCapMinor: 0 } },
+    }),
   }, () => {}))!;
   stops.push(() => edge.stop());
   // The person processing the refund is signed in at this till (ADR-0020) — the record names her.

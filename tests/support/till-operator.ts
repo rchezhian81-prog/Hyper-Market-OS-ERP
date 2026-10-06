@@ -21,15 +21,18 @@ export interface TillPerson {
   readonly till?: boolean;
   /** false = no till PIN issued on this box. Default true. */
   readonly pin?: boolean;
+  /** true = a manager who may also approve refunds at the till (`pos.return.approve`, ADR-0021). */
+  readonly manager?: boolean;
 }
 
 /** The pack sections that name people and give them till authority (`pos.sale.sync`). */
 export function tillPeoplePack(people: readonly TillPerson[]): { people: unknown[]; roles: unknown[]; roleAssignments: unknown[] } {
-  const roleOf = (p: TillPerson) => (p.till === false ? 'role-floor' : 'role-cashier');
+  const roleOf = (p: TillPerson) => (p.manager === true ? 'role-manager' : p.till === false ? 'role-floor' : 'role-cashier');
   return {
     people: people.map((p) => ({ userId: p.userId, displayName: p.displayName ?? p.userId, roleId: roleOf(p) })),
     roles: [
       { id: 'role-cashier', name: 'Cashier', permissions: ['pos.sale.sync', 'pos.return.process'] },
+      { id: 'role-manager', name: 'Store manager', permissions: ['pos.sale.sync', 'pos.return.process', 'pos.return.approve'] },
       { id: 'role-floor', name: 'Floor staff', permissions: ['pos.exception.read'] },
     ],
     roleAssignments: people.map((p) => ({ userId: p.userId, roleId: roleOf(p), branchScope: 'all' })),
@@ -152,4 +155,33 @@ export async function signInTill(
 ): Promise<void> {
   const outcome = await till.signInAtTill({ staffId, pin: pinOf(staffId) });
   if (!outcome.signedIn) throw new Error(`sign-in refused for ${staffId}: ${outcome.laneMessage ?? ''}`);
+}
+
+/**
+ * A manager approves a refund on a `bootPos` till with their own PIN (ADR-0021) — the page's own `approveAtTill`.
+ * Resolves the approval for the refund draft to carry, or throws with the box's words.
+ */
+export async function managerApprovesOn(
+  till: { approveAtTill(r: { managerId: string; pin: string; kind: 'refund' | 'no_receipt_return' | 'exchange_refund'; billRef?: string; valueMinor: number; reason: string }): Promise<{ approved: boolean; approvalId?: string; approvedBy?: string; laneMessage?: string }> },
+  managerId: string,
+  request: { readonly kind: 'refund' | 'no_receipt_return' | 'exchange_refund'; readonly billRef?: string; readonly valueMinor: number; readonly reason?: string },
+): Promise<{ by: string; reason: string; approvalId: string }> {
+  const reason = request.reason ?? 'damaged';
+  const outcome = await till.approveAtTill({ managerId, pin: pinOf(managerId), kind: request.kind, ...(request.billRef === undefined ? {} : { billRef: request.billRef }), valueMinor: request.valueMinor, reason });
+  if (!outcome.approved || outcome.approvalId === undefined || outcome.approvedBy === undefined) throw new Error(`approval refused for ${managerId}: ${outcome.laneMessage ?? ''}`);
+  return { by: outcome.approvedBy, reason, approvalId: outcome.approvalId };
+}
+
+/** The same approval asked directly of a box's lane socket, with the cashier's session — for a test posting records itself. */
+export async function approvalFromLane(
+  port: number, cashierToken: string, managerId: string,
+  request: { readonly kind: 'refund' | 'no_receipt_return' | 'exchange_refund'; readonly billRef?: string; readonly valueMinor: number; readonly reason?: string },
+): Promise<string> {
+  const res = await fetch(`http://127.0.0.1:${port}/lane/approvals`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-sre-operator': cashierToken },
+    body: JSON.stringify({ managerId, pin: pinOf(managerId), reason: request.reason ?? 'damaged', ...request }),
+  });
+  const body = await res.json() as { approved?: boolean; approvalId?: string; laneMessage?: string };
+  if (body.approved !== true || typeof body.approvalId !== 'string') throw new Error(`approval refused: ${body.laneMessage ?? res.status}`);
+  return body.approvalId;
 }

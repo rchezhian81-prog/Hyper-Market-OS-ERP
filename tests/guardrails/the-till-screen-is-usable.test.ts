@@ -246,11 +246,16 @@ describe('the refund screen gives money back, safely', () => {
     expect(code(APP)).toMatch(/if \(refundMinor > desk\.capMinor\) \{ tell\(t\('read'\), `\$\{t\('noReceiptOverCap'\)\}/);
     // No "if needsApproval" branch here: the manager is asked UNCONDITIONALLY, and the flow stops without one.
     const flow = code(APP).slice(code(APP).indexOf('async function startNoReceiptReturn()'), code(APP).indexOf('function showRefundOutcome('));
-    expect(flow).toContain("t('refundManagerId')");
     expect(flow).toContain("t('noReceiptManagerHint')");
-    expect(flow).toContain("t('refundNeedManager')");
     expect(flow).not.toMatch(/needsApproval\(/);
-    expect(flow).toMatch(/approval: \{ by: String\(by\), reason: approveReason \}/);
+    // ADR-0021: the manager's own PIN, checked by the store computer, for this one return — and nothing without it.
+    expect(flow).toMatch(/const approval = await managerApproves\(\{ kind: 'no_receipt_return', valueMinor: refundMinor, hint: t\('noReceiptManagerHint'\) \}\);\s*if \(approval === null\) return;/);
+    const asks = code(APP).slice(code(APP).indexOf('async function managerApproves('), code(APP).indexOf('async function managerApproves(') + 1600);
+    expect(asks).toContain("t('refundManagerId')");
+    expect(asks).toContain("t('refundNeedManager')");
+    expect(asks).toMatch(/ask\(\{ title: t\('managerPinTitle'\), mode: 'number', hint: t\('managerPinHint'\), initial: '', mask: true \}\)/);
+    expect(asks).toMatch(/session\.approveAtTill\(/);
+    expect(asks).toMatch(/return \{ by: outcome\.approvedBy, reason, approvalId: outcome\.approvalId \};/);
     // And it is submitted as a no-receipt return against no bill, through the tested surface, outcome in the model's words.
     expect(flow).toMatch(/desk\.submit\(\{/);
     expect(flow).toContain('noReceipt: true');

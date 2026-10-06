@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
-import { addTillPeople, signInTill } from '../support/till-operator';
+import { addTillPeople, signInTill, managerApprovesOn } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
@@ -101,7 +101,7 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
       lossPreventionRules: [],
     }), 'utf8');
     // The pack also names the cashier with till authority, and her till PIN is issued on this box (ADR-0020).
-    await addTillPeople(packFile, dataDir, KEY, [{ userId: CASHIER, displayName: 'Meena' }]);
+    await addTillPeople(packFile, dataDir, KEY, [{ userId: CASHIER, displayName: 'Meena' }, { userId: MANAGER, displayName: 'Manager', manager: true }]);
     const edge = (await startEdge({
       EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: cloud.tenantId, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_LANE_ID: LANE, EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
@@ -196,10 +196,12 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     // ── The refund, on the till: the bill looked up on this box, a manager's approval, cash back; synced, the stock returns.
     const bill = (await till.lookupRefund('R-S-1'))!;
     expect(bill).toMatchObject({ sale: { saleId: 'S-1', totalMinor: PRICE }, maxRefundMinor: PRICE }); // what was paid: the ₹480 shelf price
+    // The manager approves with their own till PIN, for this bill and this amount (ADR-0021).
+    const approval = await managerApprovesOn(till, MANAGER, { kind: 'refund', billRef: 'S-1', valueMinor: PRICE, reason: 'checked the goods' });
     const refunded = await bill.submit({
       returnId: 'RT-1', number: 'RT-0001', reasonCode: 'changed_mind',
       lines: [{ productId: PRODUCT, uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
-      refundMinor: PRICE, refundTender: 'cash', approval: { by: MANAGER, reason: 'checked the goods' },
+      refundMinor: PRICE, refundTender: 'cash', approval,
     });
     expect(refunded).toMatchObject({ kind: 'settled', refundMinor: PRICE });
     const pass2 = await edge.syncOnce!();

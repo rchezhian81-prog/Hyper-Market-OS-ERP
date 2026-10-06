@@ -113,15 +113,21 @@ Nobody can take money at a till until the store computer knows them. Two things 
   shows as dots. Five wrong PINs lock that staff ID for fifteen minutes; twenty failed sign-ins lock that till's sign-in
   for fifteen minutes. A sign-in lasts the shift (twelve hours at most) or until **Sign out**; reloading the page keeps
   it, restarting the store computer keeps it.
-- **What the store computer keeps:** every sign-in, refusal and sign-out in `till-operators.log` (never a PIN), and on
-  every sale and refund the person it verified (`operatorVerified`).
+- **Managers who approve refunds** need a till PIN too, issued the same way, and a role that may approve refunds
+  (`pos.return.approve`, as the Store manager and Owner roles have). At the till the manager keys their own PIN after
+  their badge; the store computer issues an approval for that one refund only, for five minutes (ADR-0021). On the
+  hosted copy a manager who is to approve refunds needs a PIN issued on that box (the containers command above).
+- **What the store computer keeps:** every sign-in, refusal and sign-out in `till-operators.log` (never a PIN); every
+  manager approval given and used in `till-approvals.log`; and on every sale and refund the person it verified
+  (`operatorVerified`) and, on a refund, the approval it spent (`approvalVerified`).
 
 ## Step 3 — Prove it before the pilot
 
 Two checks, both worth doing in front of staff:
 
 0. **Only a real cashier can sell.** Tap Sign in, key a staff ID and a WRONG PIN: it says the ID and PIN do not match,
-   and nobody is signed in. Then sign in properly (Step 2b).
+   and nobody is signed in. Then sign in properly (Step 2b). For a refund, let the cashier try to approve it with their
+   own badge and PIN: it says **Not approved**; then the manager approves it with theirs.
 1. **A sale saves.** Ring an item, take cash, complete the sale. It completes and the receipt number
    appears — the sale is now durably on this PC's disk.
 2. **It keeps selling with no internet.** Disconnect the network and ring another sale. It still
