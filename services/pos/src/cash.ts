@@ -106,6 +106,22 @@ export function cashRoutes(deps: CashDeps): readonly Route[] {
           });
         }
 
+        // Who did it is the signed-in caller (audit PF-02 · M14-FR-01), never a body value. A till is put in the name of a
+        // person head office knows who holds till authority — a name alone is not a person who holds the till. Every later
+        // movement must name the CURRENT holder (the chain below), so a float can still come back from someone who has
+        // since left.
+        const custodian = b.kind !== 'float_issue' ? []
+          : await personFindings(deps, ctx.tenantId, b.custodianId, 'custodian_unknown', 'custodian_lacks_authority');
+        if (custodian.length > 0) {
+          throw apiError(422, {
+            code: custodian[0]!,
+            whatHappened: custodian[0] === 'custodian_unknown'
+              ? `Head office does not know ${b.custodianId}, so the till cannot be put in their name.`
+              : `${b.custodianId} is not allowed to hold a till.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing moved. Name the cashier who holds this till.',
+          });
+        }
         const request = { movementId: b.movementId, tillId, kind: b.kind as CashMovementKind, amountMinor: b.amountMinor as number, custodianId: b.custodianId };
         const assessment = assessCashMovement({ priorMovements: await deps.tillMovements(ctx.tenantId, tillId), request });
         if (!assessment.ok) {
@@ -120,7 +136,7 @@ export function cashRoutes(deps: CashDeps): readonly Route[] {
         await deps.recordCashMovement(ctx.tenantId, tillId, {
           movementId: request.movementId, tillId, kind: request.kind, deltaMinor: assessment.deltaMinor,
           currency: typeof b.currency === 'string' ? b.currency : 'INR', custodianId: request.custodianId,
-          tradingDay: b.tradingDay, at: deps.now(),
+          tradingDay: b.tradingDay, at: deps.now(), performedBy: ctx.userId,
         });
         return { status: 201, body: { movementId: request.movementId, tillId, kind: request.kind, balanceMinor: assessment.balanceAfterMinor, custodian: assessment.custodianAfter } };
       },

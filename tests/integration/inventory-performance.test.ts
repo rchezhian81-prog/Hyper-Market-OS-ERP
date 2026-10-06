@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { withApprovals } from '../support/refund-approval';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 
@@ -63,8 +64,9 @@ const seedCatalogue = (h: ApiHarness, tenantId: string, products: { productId: s
   }));
 
 // Record a return against a banked sale, through the real API (which appends the returns projection).
-const recordReturn = (h: ApiHarness, tenantId: string, saleId: string, ret: Record<string, unknown>) =>
-  h.request({ method: 'POST', path: `/v1/sales/${saleId}/returns`, userId: 'u-owner', tenantId, idempotencyKey: `ret-${ret['returnId']}`, body: ret });
+// u-mgr approves in their own session (ADR-0022); the refund names that approval.
+const recordReturn = async (h: ApiHarness, tenantId: string, saleId: string, ret: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: `/v1/sales/${saleId}/returns`, userId: 'u-owner', tenantId, idempotencyKey: `ret-${ret['returnId']}`, body: await withApprovals(h, tenantId, 'u-owner', saleId, ret) });
 
 const returnOf = (returnId: string, refundMinor: number, lines: { productId: string; quantityMinor: number; disposition: string }[]) => ({
   // The processor is the caller (server-side); the threshold is the tenant policy (default 0, so every

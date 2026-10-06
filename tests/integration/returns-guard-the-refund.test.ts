@@ -8,6 +8,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
+import { giveRefundApproval, withApprovals } from '../support/refund-approval';
 
 // Returns and refunds, end to end through the real API (M13-FR-01/FR-03, M21, API-05). A refund is
 // where money leaves the till, so the cloud is the authoritative guard: it sees every return against
@@ -33,8 +34,12 @@ const sale = (over: Record<string, unknown> = {}) => ({
 const bank = (h: ApiHarness, tenantId: string, userId: string, body = sale()) =>
   h.request({ method: 'POST', path: '/v1/sales', userId, tenantId, idempotencyKey: `bank-${(body as { saleId: string }).saleId}`, body });
 
-const ret = (h: ApiHarness, tenantId: string, userId: string, saleId: string, body: Record<string, unknown>) =>
+// The body as the desk sends it: a named `approvedBy` becomes the approval that person gives in their own session
+// (ADR-0022); `retNamed` sends the name as written — the audit's PF-02 reproduction.
+const retNamed = (h: ApiHarness, tenantId: string, userId: string, saleId: string, body: Record<string, unknown>) =>
   h.request({ method: 'POST', path: `/v1/sales/${saleId}/returns`, userId, tenantId, idempotencyKey: `ret-${body['returnId']}`, body });
+const ret = async (h: ApiHarness, tenantId: string, userId: string, saleId: string, body: Record<string, unknown>) =>
+  retNamed(h, tenantId, userId, saleId, await withApprovals(h, tenantId, userId, saleId, body));
 
 // A return of `qty` units of P1, refunding `refundMinor`, resold. The refund threshold defaults to 0
 // (every refund is material and needs a §28 approver), so `req` carries a genuine approver — `u-mgr`, a
@@ -103,12 +108,14 @@ describe('a refund is guarded where the whole history lives (M13/M21, API-05)', 
 
     // At the default 0 threshold every refund is material. No approver → refused.
     expect(codeOf(await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RM1', approvedBy: undefined })))).toBe('needs_a_second_person');
-    // The processor cannot approve their own refund (the caller u-owner IS processedBy).
-    expect(codeOf(await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RM2', approvedBy: 'u-owner' })))).toBe('approved_by_the_person_processing_it');
-    // A named approver who does NOT hold pos.return.approve does not count — a cashier, or a made-up name.
-    expect(codeOf(await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RM3', approvedBy: 'u-cash' })))).toBe('approver_may_not_approve');
-    expect(codeOf(await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RM4', approvedBy: 'u-nobody' })))).toBe('approver_may_not_approve');
-    // A genuine supervisor (store_manager), different from the processor → allowed.
+    // The audit's PF-02 reproduction: the body NAMES a genuine manager who never approved — refused, nothing moved.
+    expect(codeOf(await retNamed(h, A, 'u-owner', 'S1', req({ returnId: 'RM2', approvedBy: 'u-mgr' })))).toBe('approver_named_without_approval');
+    // The processor cannot approve their own refund (§28) — refused when the approval is asked for.
+    expect(codeOf(await giveRefundApproval(h, A, 'u-owner', { saleId: 'S1', valueMinor: 5000, requestedBy: 'u-owner' }))).toBe('self_approval');
+    // A person who does NOT hold pos.return.approve cannot give one — a cashier, or a made-up name.
+    expect((await giveRefundApproval(h, A, 'u-cash', { saleId: 'S1', valueMinor: 5000, requestedBy: 'u-owner' })).status).toBe(403);
+    expect((await giveRefundApproval(h, A, 'u-nobody', { saleId: 'S1', valueMinor: 5000, requestedBy: 'u-owner' })).status).toBe(403);
+    // A genuine supervisor (store_manager), different from the processor, approving in their own session → allowed.
     expect((await ret(h, A, 'u-owner', 'S1', req({ returnId: 'RM5', approvedBy: 'u-mgr' }))).status).toBe(201);
   });
 
@@ -173,11 +180,11 @@ describe('a refund is guarded where the whole history lives (M13/M21, API-05)', 
     await h.provisionRole(A, 'u-acct', 'accountant'); // an accountant holds no POS return permission
     await bank(h, A, 'u-owner');
 
-    expect((await ret(h, A, 'u-acct', 'S1', req({ returnId: 'RA1' }))).status).toBe(403);
+    expect((await ret(h, A, 'u-acct', 'S1', req({ returnId: 'RA1', approvedBy: undefined }))).status).toBe(403);
 
     // Tenant B never banked S1, so B returning against it finds nothing — A's sale did not leak.
     await h.seedOwner(B, 'u-owner-b');
-    expect((await ret(h, B, 'u-owner-b', 'S1', req({ returnId: 'RB1' }))).status).toBe(404);
+    expect((await ret(h, B, 'u-owner-b', 'S1', req({ returnId: 'RB1', approvedBy: undefined }))).status).toBe(404);
   });
 
   it('refuses an empty or unreadable return without moving money', async () => {

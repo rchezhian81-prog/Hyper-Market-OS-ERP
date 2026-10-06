@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { withApprovals } from '../support/refund-approval';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 
@@ -37,16 +38,17 @@ const fromSales = (h: ApiHarness, u: string, body: unknown, key: string) =>
   h.request({ method: 'POST', path: '/v1/finance/gstr1/from-sales/table-12', userId: u, tenantId: A, idempotencyKey: key, body });
 
 // Record a return against a banked sale, through the real API (which appends the returns projection).
-const recordReturn = (h: ApiHarness, u: string, saleId: string, returnId: string, productId: string, quantityMinor: number, refundMinor: number, processedAt: string) =>
+const recordReturn = async (h: ApiHarness, u: string, saleId: string, returnId: string, productId: string, quantityMinor: number, refundMinor: number, processedAt: string) =>
   h.request({
     method: 'POST', path: `/v1/sales/${saleId}/returns`, userId: u, tenantId: A, idempotencyKey: `ret-${returnId}`,
-    body: {
+    // u-mgr approves in their own session (ADR-0022); the refund names that approval.
+    body: await withApprovals(h, A, u, saleId, {
       // The processor is the caller (server-side); the threshold is the tenant policy (default 0, so every
       // refund needs a §28 approver). u-mgr (store_manager) holds pos.return.approve and differs from u-owner.
       returnId, number: returnId, reasonCode: 'changed_mind', refundMinor, refundTender: 'cash',
       approvedBy: 'u-mgr', processedAt,
       lines: [{ productId, quantityMinor, uom: 'each', disposition: 'resell' }],
-    },
+    }),
   });
 
 interface Row { hsnCode: string; rateBps: number; taxableMinor: number; cgstMinor: number; sgstMinor: number; igstMinor: number; b2cTaxableMinor: number }

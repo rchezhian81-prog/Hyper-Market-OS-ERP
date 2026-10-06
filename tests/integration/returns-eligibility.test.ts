@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { giveRefundApproval, withApprovals } from '../support/refund-approval';
 
 // Return eligibility end to end through the real API (M13-FR-02, API-05, §28). A shop takes goods back
 // only within its return WINDOW. This proves the wired desk guard + the owner's window config against
@@ -33,8 +34,12 @@ const req = (over: Record<string, unknown>) => ({
   refundMinor: 5000, refundTender: 'cash', approvedBy: 'u-mgr', ...over,
 });
 
-const ret = (h: ApiHarness, userId: string, body: Record<string, unknown>) =>
+// A named approver becomes the approval that person gives in their own session (ADR-0022); `retNamed` sends the
+// names as written — the audit's PF-02 reproduction.
+const retNamed = (h: ApiHarness, userId: string, body: Record<string, unknown>) =>
   h.request({ method: 'POST', path: '/v1/sales/S1/returns', userId, tenantId: A, idempotencyKey: `ret-${body['returnId']}`, body });
+const ret = async (h: ApiHarness, userId: string, body: Record<string, unknown>) =>
+  retNamed(h, userId, await withApprovals(h, A, userId, 'S1', body));
 
 const getWindow = (h: ApiHarness, userId: string) =>
   h.request({ method: 'GET', path: '/v1/pos/return-window', userId, tenantId: A });
@@ -101,15 +106,20 @@ describe('a return is accepted only within the shop\'s window (M13-FR-02, API-05
     expect((await setWindow(h, 'u-owner', { returnWindowDays: 7 }, 'w')).status).toBe(200);
     const late = { processedAt: '2026-08-20T10:00:00.000Z' }; // 13 days → out of window
 
+    // A NAME is not an authorisation (audit PF-02): a genuine manager named in the body who never approved — refused.
+    expect(codeOf(await retNamed(h, 'u-owner', req({ returnId: 'RS0', ...late, approvedBy: undefined, outOfWindowApprovedBy: 'u-mgr' }))))
+      .toBe('approver_named_without_approval');
     // The processor cannot authorise their own out-of-window return.
-    expect(codeOf(await ret(h, 'u-owner', req({ returnId: 'RS1', ...late, outOfWindowApprovedBy: 'u-owner' }))))
-      .toBe('out_of_window_self_authorised');
-    // A named authoriser who does not hold refund-approval authority does not count (a cashier, or a made-up name).
-    expect(codeOf(await ret(h, 'u-owner', req({ returnId: 'RS2', ...late, outOfWindowApprovedBy: 'u-cash' }))))
-      .toBe('out_of_window_approver_may_not_authorise');
-    expect(codeOf(await ret(h, 'u-owner', req({ returnId: 'RS3', ...late, outOfWindowApprovedBy: 'u-nobody' }))))
-      .toBe('out_of_window_approver_may_not_authorise');
-    // A genuine supervisor (store_manager), different from the processor → allowed.
+    const ask = { kind: 'out_of_window' as const, saleId: 'S1', valueMinor: 5000, requestedBy: 'u-owner' };
+    expect(codeOf(await giveRefundApproval(h, A, 'u-owner', ask))).toBe('self_approval');
+    // A person who does not hold refund-approval authority cannot give one (a cashier, or a made-up name).
+    expect((await giveRefundApproval(h, A, 'u-cash', ask)).status).toBe(403);
+    expect((await giveRefundApproval(h, A, 'u-nobody', ask)).status).toBe(403);
+    // An approval of the REFUND does not authorise the WINDOW — each approval is for one kind of exception.
+    const wrongKind = await withApprovals(h, A, 'u-owner', 'S1', req({ returnId: 'RS3', ...late }));
+    expect(codeOf(await retNamed(h, 'u-owner', { ...wrongKind, outOfWindowApprovalId: wrongKind['approvalId'] })))
+      .toBe('approval_does_not_match');
+    // A genuine supervisor (store_manager), different from the processor, in their own session → allowed.
     expect((await ret(h, 'u-owner', req({ returnId: 'RS4', ...late, outOfWindowApprovedBy: 'u-mgr' }))).status).toBe(201);
   });
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { giveRefundApproval, refundApprovalId } from '../support/refund-approval';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 
@@ -108,8 +109,19 @@ describe('exchanges through the real API (M13-FR-03) — a return and a replacem
     const cheaper = { saleId: 'S1-X2', receiptNumber: 'R-2X', lines: [out('P3', 1, 3000)] };
     expect(codeOf(await exchange(h, 'u-cash', body({ exchangeId: 'X2', replacement: cheaper })))).toBe('refund_tender_required');
     expect(codeOf(await exchange(h, 'u-cash', body({ exchangeId: 'X2', replacement: cheaper, settlement: { refundTender: 'cash' } })))).toBe('needs_a_second_person');
-    expect(codeOf(await exchange(h, 'u-cash', body({ exchangeId: 'X2', replacement: cheaper, settlement: { refundTender: 'cash' }, approvedBy: 'u-cash' })))).toBe('approved_by_the_person_processing_it');
-    const ok = await exchange(h, 'u-cash', body({ exchangeId: 'X2', replacement: cheaper, settlement: { refundTender: 'cash' }, approvedBy: 'u-mgr' }));
+    // A genuine manager NAMED in the body who never approved (the audit's PF-02 reproduction) — refused; a cashier
+    // cannot give an approval at all.
+    expect(codeOf(await exchange(h, 'u-cash', body({ exchangeId: 'X2', replacement: cheaper, settlement: { refundTender: 'cash' }, approvedBy: 'u-mgr' })))).toBe('approver_named_without_approval');
+    const ask = { kind: 'exchange_refund' as const, saleId: 'S1', valueMinor: 2000, requestedBy: 'u-cash' };
+    expect((await giveRefundApproval(h, A, 'u-cash', ask)).status).toBe(403);
+    // An approval is for one kind and one amount: a plain refund approval, or one for a different balance, does not pay it.
+    const plain = await refundApprovalId(h, A, 'u-mgr', { ...ask, kind: 'refund' });
+    expect(codeOf(await exchange(h, 'u-cash', body({ exchangeId: 'X2', replacement: cheaper, settlement: { refundTender: 'cash' }, approvalId: plain })))).toBe('approval_does_not_match');
+    const other = await refundApprovalId(h, A, 'u-mgr', { ...ask, valueMinor: 2500 });
+    expect(codeOf(await exchange(h, 'u-cash', body({ exchangeId: 'X2', replacement: cheaper, settlement: { refundTender: 'cash' }, approvalId: other })))).toBe('approval_does_not_match');
+    // The manager approves THIS balance, in their own session — then it lands, naming who approved.
+    const approvalId = await refundApprovalId(h, A, 'u-mgr', ask);
+    const ok = await exchange(h, 'u-cash', body({ exchangeId: 'X2', replacement: cheaper, settlement: { refundTender: 'cash' }, approvalId }));
     expect(ok.status).toBe(201);
     expect(ok.body).toMatchObject({ balance: { kind: 'refund', amountMinor: 2000, tender: 'cash', refundStatus: 'settled' } });
 

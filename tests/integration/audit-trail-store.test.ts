@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { withApprovals } from '../support/refund-approval';
 
 // M34-FR-01 — the domain audit trail is now PRODUCED, durable and verifiable, not just readable over a
 // supplied export. A sensitive action (slice 1: the credential lifecycle) seals a record into a
@@ -107,8 +108,9 @@ const saleBody = () => ({
 });
 const bankSale = (h: ApiHarness, u: string) =>
   h.request({ method: 'POST', path: '/v1/sales', userId: u, tenantId: A, idempotencyKey: 'bank-S1', body: saleBody() });
-const doReturn = (h: ApiHarness, u: string, body: Record<string, unknown>) =>
-  h.request({ method: 'POST', path: '/v1/sales/S1/returns', userId: u, tenantId: A, idempotencyKey: `ret-${body['returnId']}`, body });
+// A named approver approves in their own session (ADR-0022); the refund names that approval.
+const doReturn = async (h: ApiHarness, u: string, body: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: '/v1/sales/S1/returns', userId: u, tenantId: A, idempotencyKey: `ret-${body['returnId']}`, body: await withApprovals(h, A, u, 'S1', body) });
 
 const settlementBatchBody = () => ({
   batchId: 'BATCH-1', providerId: 'pinelabs', currency: 'INR', settlementDate: '2026-09-16',

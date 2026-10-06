@@ -6,6 +6,7 @@ import type { CatalogueProduct } from '../../packages/catalogue/src/catalogue';
 import type { OriginalSale, RecordedReturn } from '../../packages/returns/src/return-register';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 import type { AuditEntry } from '../../packages/audit/src/index';
+import type { ApprovalUse, RefundApprovalKind, RefundApprovalState } from '../../services/pos/src/refund-approvals';
 
 /**
  * **M13-FR-03 — exchanges on the cloud (un-parks the second half of CH-01).** Route-level with stubbed
@@ -37,14 +38,18 @@ interface Rec {
   threshold: number | undefined; window: number | undefined; scCap: number | undefined;
   approvers: Set<string>; catalogue: Map<string, CatalogueProduct>; bankedIds: Set<string>;
   prior: RecordedReturn[]; refunds: { returnId: string; originalSaleId: string | null; refundMinor: number }[];
-  exchanges: { record: ReturnRecord; replacement: IncomingSale; storeCredit: StoreCreditIssue | undefined }[];
+  exchanges: { record: ReturnRecord; replacement: IncomingSale; storeCredit: StoreCreditIssue | undefined; uses: readonly ApprovalUse[] }[];
   exceptions: SaleException[]; audits: AuditEntry[];
+  /** Approvals head office gave (ADR-0022), by id — and the exchange that spent each. */
+  approvals: Map<string, RefundApprovalState>;
 }
+/** Each stub's approval register, reachable from its routes so `post` can have the named approver give one. */
+const approvalsOf = new WeakMap<readonly Route[], Map<string, RefundApprovalState>>();
 function stub(over: Partial<Rec> = {}) {
   const rec: Rec = {
     threshold: undefined, window: undefined, scCap: undefined, approvers: new Set(['u-mgr']),
     catalogue: new Map<string, CatalogueProduct>([['P1', { productId: 'P1', sku: 'P1', name: 'P1', unitPriceMinor: 5000, taxBps: 500, status: 'active', uom: 'each' } as unknown as CatalogueProduct], ['P3', { productId: 'P3', sku: 'P3', name: 'P3', unitPriceMinor: 5000, taxBps: 500, status: 'active', uom: 'each' } as unknown as CatalogueProduct]]),
-    bankedIds: new Set(['S1']), prior: [], refunds: [], exchanges: [], exceptions: [], audits: [], ...over,
+    bankedIds: new Set(['S1']), prior: [], refunds: [], exchanges: [], exceptions: [], audits: [], approvals: new Map(), ...over,
   };
   const deps: ExchangeDeps = {
     originalSale: (_t, saleId) => (saleId === 'S1' ? original : undefined),
@@ -55,16 +60,20 @@ function stub(over: Partial<Rec> = {}) {
     catalogue: () => rec.catalogue, currentPackVersion: () => 7,
     saleHoldingReceipt: () => undefined, isBanked: (_t, id) => rec.bankedIds.has(id),
     recordExceptions: (_t, ex) => { rec.exceptions.push(...ex); },
-    recordExchange: (_t, _sale, record, replacement, storeCredit) => {
-      rec.exchanges.push({ record, replacement, storeCredit });
+    recordExchange: (_t, _sale, record, replacement, storeCredit, _version, uses = []) => {
+      rec.exchanges.push({ record, replacement, storeCredit, uses });
+      for (const u of uses) rec.approvals.set(u.approvalId, { ...rec.approvals.get(u.approvalId)!, usedBy: u.usedBy });
       rec.prior.push({ returnId: record.returnId, originalSaleId: record.originalSaleId, processedAt: record.processedAt, lines: record.lines });
       rec.refunds.push({ returnId: record.returnId, originalSaleId: record.originalSaleId, refundMinor: record.refundMinor });
       rec.bankedIds.add(replacement.saleId);
     },
     recordAudit: (_t, e) => { rec.audits.push(e); },
+    refundApproval: (_t, id) => rec.approvals.get(id),
     now: () => NOW,
   };
-  return { rec, routes: exchangeRoutes(deps) };
+  const routes = exchangeRoutes(deps);
+  approvalsOf.set(routes, rec.approvals);
+  return { rec, routes };
 }
 const ctx = (over: Partial<RequestContext>): RequestContext =>
   ({ tenantId: T, userId: 'u-cash', branchId: null, params: { saleId: 'S1' }, query: {}, body: undefined, traceId: 't', ...over });
@@ -85,8 +94,29 @@ const body = (over: Record<string, unknown> = {}) => ({
   replacement: { saleId: 'S1-X1', receiptNumber: 'R-1X', lines: [out('P3', 1, 5000)] },
   ...over,
 });
-const post = (routes: readonly Route[], b: unknown, over: Partial<RequestContext> = {}) =>
+/** The route as the desk calls it — the body's `approvedBy` / `outOfWindowApprovedBy` having approved in their own
+ *  session first (the route that gives an approval is proven in refund-approvals.test.ts), so the body names those
+ *  approvals (ADR-0022): the balance refunded (₹20 for the `cheaper` replacement) and the value coming back (₹50).
+ *  `postNamed` sends the body as written — the audit's PF-02 reproduction. */
+const postNamed = (routes: readonly Route[], b: unknown, over: Partial<RequestContext> = {}) =>
   routeFor(routes, 'POST', '/v1/sales/:saleId/exchanges').handler(ctx({ body: b, ...over }));
+const post = (routes: readonly Route[], b: Record<string, unknown>, over: Partial<RequestContext> = {}, values = { balanceMinor: 2000, returnedMinor: 5000 }) => {
+  const { approvedBy, outOfWindowApprovedBy, ...rest } = b;
+  const register = approvalsOf.get(routes)!;
+  const give = (kind: RefundApprovalKind, approver: string, valueMinor: number): string => {
+    const approvalId = `rap-${kind}-${String(b['exchangeId'])}-${approver}`;
+    register.set(approvalId, { approval: {
+      approvalId, kind, saleId: over.params?.['saleId'] ?? 'S1', valueMinor, requestedBy: over.userId ?? 'u-cash', approvedBy: approver,
+      reason: 'test', givenAt: NOW, expiresAt: '2026-10-06T10:15:00.000Z',
+    } });
+    return approvalId;
+  };
+  return postNamed(routes, {
+    ...rest,
+    ...(typeof approvedBy === 'string' ? { approvalId: give('exchange_refund', approvedBy, values.balanceMinor) } : {}),
+    ...(typeof outOfWindowApprovedBy === 'string' ? { outOfWindowApprovalId: give('out_of_window', outOfWindowApprovedBy, values.returnedMinor) } : {}),
+  }, over);
+};
 
 describe('an even exchange — no money moves, no approver needed (M13-FR-03)', () => {
   it('credits the bill at the ORIGINAL price and banks the replacement as a real sale paid by exchange credit, in one call', async () => {
@@ -153,13 +183,19 @@ describe('a refund of the balance — the refund\'s own rules (M13-FR-03, §28)'
     const { routes, rec } = stub();
     expect((await thrown(() => post(routes, body({ replacement: cheaper })))).body.code).toBe('refund_tender_required');
     expect((await thrown(() => post(routes, body({ replacement: cheaper, settlement: { refundTender: 'cash' } })))).body.code).toBe('needs_a_second_person');
-    expect((await thrown(() => post(routes, body({ replacement: cheaper, settlement: { refundTender: 'cash' }, approvedBy: 'u-cash' })))).body.code).toBe('approved_by_the_person_processing_it');
+    // The audit's PF-02 reproduction: a genuine manager NAMED in the body, who never approved — refused.
+    expect((await thrown(() => postNamed(routes, body({ replacement: cheaper, settlement: { refundTender: 'cash' }, approvedBy: 'u-mgr' })))).body.code).toBe('approver_named_without_approval');
     expect((await thrown(() => post(routes, body({ replacement: cheaper, settlement: { refundTender: 'cash' }, approvedBy: 'u-nobody' })))).body.code).toBe('approver_may_not_approve');
+    // An approval for a different balance does not pay this one.
+    expect((await thrown(() => post(routes, body({ replacement: cheaper, settlement: { refundTender: 'cash' }, approvedBy: 'u-mgr' }), {}, { balanceMinor: 2500, returnedMinor: 5000 }))).body.code).toBe('approval_does_not_match');
     expect((await thrown(() => post(routes, body({ replacement: cheaper, settlement: { refundTender: 'cash', topUpTenders: [{ kind: 'cash', amountMinor: 1 }] }, approvedBy: 'u-mgr' })))).body.code).toBe('top_up_not_owed');
     const res = await post(routes, body({ replacement: cheaper, settlement: { refundTender: 'cash' }, approvedBy: 'u-mgr' }));
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ balance: { kind: 'refund', amountMinor: 2000, tender: 'cash', refundStatus: 'settled' } });
-    expect(rec.exchanges[0]?.record).toMatchObject({ refundMinor: 5000, approvedBy: 'u-mgr', exchange: { balance: 'refund', balanceMinor: 2000, balanceTender: 'cash', appliedMinor: 3000 } });
+    expect(rec.exchanges[0]?.record).toMatchObject({ refundMinor: 5000, approvedBy: 'u-mgr', approvalId: 'rap-exchange_refund-X1-u-mgr', exchange: { balance: 'refund', balanceMinor: 2000, balanceTender: 'cash', appliedMinor: 3000 } });
+    // Spent in the same record call — one approval pays one exchange.
+    expect(rec.exchanges[0]?.uses).toEqual([{ approvalId: 'rap-exchange_refund-X1-u-mgr', usedBy: 'X1' }]);
+    expect((await thrown(() => postNamed(routes, body({ exchangeId: 'X9', replacement: { ...cheaper, saleId: 'S1-X9' }, settlement: { refundTender: 'cash' }, approvalId: 'rap-exchange_refund-X1-u-mgr' })))).body.code).toBe('approval_already_used');
     expect(rec.exchanges[0]?.replacement.tenders).toEqual([{ kind: EXCHANGE_CREDIT_TENDER, amountMinor: 3000 }]);
   });
   it('below the owner\'s threshold no approver is needed; a card balance is PENDING (M13-FR-04)', async () => {
@@ -206,8 +242,9 @@ describe('the bill, the window and the ids', () => {
     const { routes, rec } = stub({ window: 0 }); // same-day only; the exchange is a day later
     const e = await thrown(() => post(routes, body()));
     expect(e.status).toBe(422);
-    expect((await thrown(() => post(routes, body({ outOfWindowApprovedBy: 'u-cash' })))).body.code).toBe('out_of_window_self_authorised');
-    expect((await thrown(() => post(routes, body({ outOfWindowApprovedBy: 'u-nobody' })))).body.code).toBe('out_of_window_approver_may_not_authorise');
+    expect((await thrown(() => postNamed(routes, body({ outOfWindowApprovedBy: 'u-mgr' })))).body.code).toBe('approver_named_without_approval');
+    expect((await thrown(() => post(routes, body({ outOfWindowApprovedBy: 'u-nobody' })))).body.code).toBe('approver_may_not_approve');
+    expect((await thrown(() => post(routes, body({ outOfWindowApprovedBy: 'u-mgr' }), {}, { balanceMinor: 2000, returnedMinor: 4000 }))).body.code).toBe('approval_does_not_match');
     expect((await post(routes, body({ outOfWindowApprovedBy: 'u-mgr' }))).status).toBe(201);
     expect(rec.audits[0]?.after).toMatchObject({ outOfWindowApprovedBy: 'u-mgr' });
   });

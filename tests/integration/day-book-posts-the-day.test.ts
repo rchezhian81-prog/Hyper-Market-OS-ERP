@@ -4,6 +4,7 @@
 // takes nothing (the day posts to the next open period carrying its real date).
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { withApprovals } from '../support/refund-approval';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
@@ -32,13 +33,14 @@ const bankSale = (h: ApiHarness, saleId: string, productId: string, lineTotalMin
       tenders: [{ kind: tender, amountMinor: lineTotalMinor }],
     },
   });
-const recordReturn = (h: ApiHarness, saleId: string, returnId: string, productId: string, refundMinor: number, processedAt = `${DAY}T12:00:00Z`) =>
+// u-mgr approves in their own session (ADR-0022); the refund names that approval.
+const recordReturn = async (h: ApiHarness, saleId: string, returnId: string, productId: string, refundMinor: number, processedAt = `${DAY}T12:00:00Z`) =>
   h.request({
     method: 'POST', path: `/v1/sales/${saleId}/returns`, userId: OWNER, tenantId: A, idempotencyKey: `ret-${returnId}`,
-    body: {
+    body: await withApprovals(h, A, OWNER, saleId, {
       returnId, number: returnId, reasonCode: 'changed_mind', refundMinor, refundTender: 'cash', approvedBy: 'u-mgr', processedAt,
       lines: [{ productId, quantityMinor: 1, uom: 'each', disposition: 'resell' }],
-    },
+    }),
   });
 const put = (h: ApiHarness, path: string, u: string, key: string, body: unknown) =>
   h.request({ method: 'PUT', path, userId: u, tenantId: A, idempotencyKey: key, body });

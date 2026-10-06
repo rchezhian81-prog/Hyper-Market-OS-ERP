@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { withApprovals } from '../support/refund-approval';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 
@@ -153,15 +154,16 @@ describe('a banked sale reduces on-hand stock (M08-FR-01, H-13)', () => {
   });
 });
 
-/** A return against a banked sale, through the real desk route (u-mgr approves; u-owner processes). */
-const returnAgainst = (h: ApiHarness, tenantId: string, saleId: string, returnId: string, qty: number, disposition: string, key: string) =>
+/** A return against a banked sale, through the real desk route (u-mgr approves in their own session — ADR-0022; u-owner
+ *  processes and names that approval). */
+const returnAgainst = async (h: ApiHarness, tenantId: string, saleId: string, returnId: string, qty: number, disposition: string, key: string) =>
   h.request({
     method: 'POST', path: `/v1/sales/${saleId}/returns`, userId: 'u-owner', tenantId, idempotencyKey: key,
-    body: {
+    body: await withApprovals(h, tenantId, 'u-owner', saleId, {
       returnId, number: returnId, reasonCode: 'changed_mind', refundMinor: qty * 2500, refundTender: 'cash', approvedBy: 'u-mgr',
       processedAt: '2026-09-29T11:00:00.000Z',
       lines: [{ productId: 'MILK', quantityMinor: qty, uom: 'each', disposition }],
-    },
+    }),
   });
 
 const returnedMovementsOf = async (h: ApiHarness, tenantId: string, returnId: string) =>

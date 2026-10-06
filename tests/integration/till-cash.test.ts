@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { cashAdapter } from '../../services/api/src/adapters';
 
 // Till cash movements, end to end through the real API (M14-FR-01, API-05). Float, loans, pickups and
 // safe drops are append-only; the drawer balance and the current custodian are PROJECTED from them,
@@ -19,13 +20,20 @@ const cash = (h: ApiHarness, tenantId: string, userId: string, tillId: string) =
 
 const mv = (movementId: string, kind: string, amountMinor: number, custodianId = 'cashier-1') => ({ movementId, kind, amountMinor, custodianId, tradingDay: DAY });
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
+/** A tenant whose owner moves the cash, and two cashiers head office knows a till can be put in the name of. */
+async function cast(tenantId = A): Promise<ApiHarness> {
+  const h = apiHarness();
+  await h.seedOwner(tenantId, 'u-owner');
+  await h.provisionRole(tenantId, 'cashier-1', 'cashier');
+  await h.provisionRole(tenantId, 'cashier-2', 'cashier');
+  return h;
+}
 interface Cash { custodian: string | null; balanceMinor: number }
 interface Move { balanceMinor: number; custodian: string | null }
 
 describe('till cash is one custodian, no overdraw, projected (M14-FR-01, API-05)', () => {
   it('issues a float, tracks the balance and the custodian, and closes custody on return', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
 
     expect(((await move(h, A, 'u-owner', 'T1', mv('m1', 'float_issue', 50_000))).body as Move)).toMatchObject({ balanceMinor: 50_000, custodian: 'cashier-1' });
     expect(((await move(h, A, 'u-owner', 'T1', mv('m2', 'loan', 20_000))).body as Move).balanceMinor).toBe(70_000);
@@ -39,9 +47,22 @@ describe('till cash is one custodian, no overdraw, projected (M14-FR-01, API-05)
     expect((await move(h, A, 'u-owner', 'T1', mv('m5', 'float_issue', 30_000, 'cashier-2'))).status).toBe(201);
   });
 
+  it('a till is put only in the name of a known person with till authority; who moved it is the signed-in caller (PF-02)', async () => {
+    const h = await cast();
+    await h.provisionRole(A, 'u-acct', 'accountant'); // known, but holds no till authority
+    expect(codeOf(await move(h, A, 'u-owner', 'T1', mv('n1', 'float_issue', 10_000, 'cashier-9')))).toBe('custodian_unknown');
+    expect(codeOf(await move(h, A, 'u-owner', 'T1', mv('n2', 'float_issue', 10_000, 'u-acct')))).toBe('custodian_lacks_authority');
+    expect((await cash(h, A, 'u-owner', 'T1')).body as Cash).toMatchObject({ custodian: null, balanceMinor: 0 }); // nothing moved
+
+    // A body cannot say who did it: the movement records the signed-in caller, whatever the body claims.
+    expect((await move(h, A, 'u-owner', 'T1', { ...mv('n3', 'float_issue', 10_000), performedBy: 'cashier-2' })).status).toBe(201);
+    // Read back through the same adapter the route writes with.
+    const recorded = await cashAdapter({ store: h.store, now: () => DAY }).tillMovements(A, 'T1');
+    expect(recorded.map((m) => m.performedBy)).toEqual(['u-owner']);
+  });
+
   it('refuses issuing a till that is already held', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await move(h, A, 'u-owner', 'T1', mv('m1', 'float_issue', 50_000));
     const clash = await move(h, A, 'u-owner', 'T1', mv('m2', 'float_issue', 10_000, 'cashier-2'));
     expect(clash.status).toBe(422);
@@ -49,11 +70,10 @@ describe('till cash is one custodian, no overdraw, projected (M14-FR-01, API-05)
   });
 
   it('refuses a movement on a till not held by the named custodian, and any overdraw', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await move(h, A, 'u-owner', 'T1', mv('m1', 'float_issue', 50_000)); // held by cashier-1
 
-    expect(codeOf(await move(h, A, 'u-owner', 'T1', mv('m2', 'pickup', 10_000, 'cashier-9')))).toBe('till_not_held_by_this_custodian');
+    expect(codeOf(await move(h, A, 'u-owner', 'T1', mv('m2', 'pickup', 10_000, 'cashier-2')))).toBe('till_not_held_by_this_custodian');
     // Taking out more than the drawer holds is refused.
     const over = await move(h, A, 'u-owner', 'T1', mv('m3', 'pickup', 60_000));
     expect(over.status).toBe(422);
@@ -63,8 +83,7 @@ describe('till cash is one custodian, no overdraw, projected (M14-FR-01, API-05)
   });
 
   it('is idempotent on the movement id — a retry does not move the drawer twice', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await move(h, A, 'u-owner', 'T1', mv('m1', 'float_issue', 50_000));
 
     // Same pickup id resent under different transport keys — both succeed, one effect.
@@ -74,8 +93,7 @@ describe('till cash is one custodian, no overdraw, projected (M14-FR-01, API-05)
   });
 
   it('is authorized and per-tenant, and refuses a malformed movement', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    const h = await cast();
     await h.provisionRole(A, 'u-acct', 'accountant'); // an accountant does not handle till cash
     await move(h, A, 'u-owner', 'T1', mv('m1', 'float_issue', 50_000));
 

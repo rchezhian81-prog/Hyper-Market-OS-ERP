@@ -61,6 +61,7 @@ import type { NearExpiryDeps } from '../../inventory/src/near-expiry';
 import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedReturn, StoreCreditIssue } from '../../pos/src/returns';
 import type { ExchangeDeps } from '../../pos/src/exchanges';
 import type { NoReceiptReturnsDeps } from '../../pos/src/no-receipt-returns';
+import type { ApprovalUse, RefundApproval, RefundApprovalDeps, RefundApprovalState } from '../../pos/src/refund-approvals';
 import type { RefusedDecision } from '../../migration/src/decisions';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { ControlTotal, TotalSignature } from '../../../packages/migration/src/reconcile';
@@ -2535,6 +2536,60 @@ export const stockGuardKey = (locationId: string): string => `stock:${locationId
 /** The write-guard key for every promise held at one location (Wave 2a · FUL-02). */
 export const reservationGuardKey = (locationId: string): string => `reservation:${locationId}`;
 
+/** The write-guard key of one head-office refund approval (ADR-0022): a return with no bill spends it under this. */
+export const refundApprovalGuardKey = (approvalId: string): string => `refund-approval:${approvalId}`;
+const REFUND_APPROVALS = 'pos-refund-approvals';
+
+/** An approval head office gave and, once spent, the refund that spent it — found by its own keys, never a scan. */
+async function readRefundApproval(store: EventStore, tenantId: string, approvalId: string): Promise<RefundApprovalState | undefined> {
+  const given = await store.findByIdempotencyKey(tenantId, `refund-approval-${tenantId}-${approvalId}`);
+  if (given === undefined) return undefined;
+  const used = await store.findByIdempotencyKey(tenantId, `refund-approval-used-${tenantId}-${approvalId}`);
+  const usedBy = (used?.event.payload as { usedBy?: unknown } | undefined)?.usedBy;
+  return { approval: given.event.payload as RefundApproval, ...(typeof usedBy === 'string' ? { usedBy } : {}) };
+}
+
+/** The spending of approvals, as entries for the refund's OWN atomic batch (ADR-0022): one approval, one refund. */
+function approvalUseEntries(tenantId: string, uses: readonly ApprovalUse[] | undefined, at: string): BatchEntry[] {
+  return (uses ?? []).map((u) => ({
+    stream: REFUND_APPROVALS,
+    event: makeEvent({
+      // The id names the USE (approval + the refund spending it); the idempotency key names the APPROVAL. Two refunds
+      // spending one approval at the same moment then collide only on the key — which the store resolves by waiting
+      // for the winner and deduping — and the loser's guard refuses it by name (409), never a raw duplicate-id error.
+      id: `refund-approval-used-${u.approvalId}-by-${u.usedBy}`,
+      type: 'RefundApprovalUsed',
+      occurredAt: at,
+      idempotencyKey: `refund-approval-used-${tenantId}-${u.approvalId}`,
+      source: 'api/pos',
+      payload: { approvalId: u.approvalId, usedBy: u.usedBy },
+    }),
+  }));
+}
+
+/** Head office's refund approvals (ADR-0022): given by the approver in their own session; read by id. */
+export function refundApprovalsAdapter(input: { readonly store: EventStore; readonly now: () => string }): RefundApprovalDeps & {
+  readonly refundApproval: (tenantId: string, approvalId: string) => Promise<RefundApprovalState | undefined>;
+  readonly approvalVersion: (tenantId: string, approvalId: string) => Promise<number>;
+} {
+  return {
+    now: input.now,
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    recordRefundApproval: async (tenantId, approval) => {
+      await input.store.append(tenantId, REFUND_APPROVALS, makeEvent({
+        id: `refund-approval-${approval.approvalId}`,
+        type: 'RefundApprovalGiven',
+        occurredAt: approval.givenAt,
+        idempotencyKey: `refund-approval-${tenantId}-${approval.approvalId}`,
+        source: 'api/pos',
+        payload: approval,
+      }));
+    },
+    refundApproval: (tenantId, approvalId) => readRefundApproval(input.store, tenantId, approvalId),
+    approvalVersion: (tenantId, approvalId) => input.store.guardVersion(tenantId, refundApprovalGuardKey(approvalId)),
+  };
+}
+
 export function returnsAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -2581,7 +2636,9 @@ export function returnsAdapter(input: {
     // return that lands against it, on whichever path — desk, online or synced from a lane.
     refundVersion: (tenantId, saleId) => input.store.guardVersion(tenantId, refundGuardKey(saleId)),
 
-    recordReturn: async (tenantId, saleId, record, storeCredit, expectedVersion) => {
+    refundApproval: (tenantId, approvalId) => readRefundApproval(input.store, tenantId, approvalId),
+
+    recordReturn: async (tenantId, saleId, record, storeCredit, expectedVersion, approvalUses) => {
       // The register entry and its reporting projection are ONE atomic batch (audit FND-01). Before,
       // the projection was a second, additive append that a crash could drop — leaving the money and
       // the per-sale register correct but the tenant-wide returns-netting report short one return.
@@ -2604,9 +2661,10 @@ export function returnsAdapter(input: {
       const stockMovements = originalSale === undefined
         ? []
         : returnStockMovements(record, resolveSaleStockLocation(originalSale, await storeOfPack(input.store, tenantId, originalSale.packVersion)));
+      // A desk refund's approval (ADR-0022) is spent in this SAME batch, under the sale's guard: one approval, one refund.
       await input.store.appendBatch(
         tenantId,
-        returnBatchEvents(tenantId, saleId, record, storeCredit, stockMovements),
+        [...returnBatchEvents(tenantId, saleId, record, storeCredit, stockMovements), ...approvalUseEntries(tenantId, approvalUses, record.processedAt)],
         expectedVersion === undefined ? undefined : { guard: { key: refundGuardKey(saleId), expectedVersion } },
       );
     },
@@ -2732,9 +2790,13 @@ export function noReceiptReturnsAdapter(input: {
       return events.some((e) => payloadOf<{ productId: string }>(e).productId === productId);
     },
 
-    recordNoReceiptReturn: async (tenantId, record, storeCredit, location) => {
+    refundApproval: (tenantId, approvalId) => readRefundApproval(input.store, tenantId, approvalId),
+    approvalVersion: (tenantId, approvalId) => input.store.guardVersion(tenantId, refundApprovalGuardKey(approvalId)),
+    recordNoReceiptReturn: async (tenantId, record, storeCredit, location, approvalUse) => {
       const stockMovements = location === undefined ? [] : returnStockMovements(record, location);
       await input.store.appendBatch(tenantId, [
+        // The approval it spends (ADR-0022), in this same batch, under that approval's own guard.
+        ...approvalUseEntries(tenantId, approvalUse === undefined ? undefined : [approvalUse.use], record.processedAt),
         {
           stream: NO_RECEIPT_RETURNS,
           event: makeEvent({
@@ -2793,7 +2855,7 @@ export function noReceiptReturnsAdapter(input: {
             payload: m,
           }),
         })),
-      ]);
+      ], approvalUse === undefined ? undefined : { guard: { key: refundApprovalGuardKey(approvalUse.use.approvalId), expectedVersion: approvalUse.expectedVersion } });
     },
 
     // The no-receipt register, one record per return id (latest wins on a re-sync).
@@ -2829,10 +2891,12 @@ export function exchangesAdapter(input: {
     originalSale: returns.originalSale, priorReturns: returns.priorReturns, priorRefunds: returns.priorRefunds,
     refundThreshold: returns.refundThreshold, returnWindow: returns.returnWindow, storeCreditCap: returns.storeCreditCap,
     canApproveRefund: returns.canApproveRefund,
+    refundVersion: returns.refundVersion!,
+    refundApproval: (tenantId, approvalId) => readRefundApproval(input.store, tenantId, approvalId),
     catalogue: pos.catalogue, currentPackVersion: pos.currentPackVersion, saleHoldingReceipt: pos.saleHoldingReceipt,
     isBanked: pos.isBanked, recordExceptions: pos.recordExceptions,
     bankedSale,
-    recordExchange: async (tenantId, originalSaleId, record, replacement, storeCredit) => {
+    recordExchange: async (tenantId, originalSaleId, record, replacement, storeCredit, expectedVersion, approvalUses) => {
       // Returned units go back to the location the ORIGINAL sale drew from (the same rule as a plain return);
       // the replacement leaves from the location it declares (the route defaults it to the original's).
       const original = await bankedSale(tenantId, originalSaleId);
@@ -2840,10 +2904,12 @@ export function exchangesAdapter(input: {
         ? []
         : returnStockMovements(record, resolveSaleStockLocation(original, await storeOfPack(input.store, tenantId, original.packVersion)));
       const soldMovements = saleStockMovements(replacement, resolveSaleStockLocation(replacement, await storeOfPack(input.store, tenantId, replacement.packVersion)));
+      // Under the bill's refund guard (Wave 2a), with the approval it spends (ADR-0022), in ONE batch.
       await input.store.appendBatch(tenantId, [
         ...returnBatchEvents(tenantId, originalSaleId, record, storeCredit, returnedMovements),
         ...saleBatchEvents(tenantId, replacement, soldMovements),
-      ]);
+        ...approvalUseEntries(tenantId, approvalUses, record.processedAt),
+      ], expectedVersion === undefined ? undefined : { guard: { key: refundGuardKey(originalSaleId), expectedVersion } });
     },
   };
 }
