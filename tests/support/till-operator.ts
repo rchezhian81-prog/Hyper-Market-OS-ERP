@@ -137,3 +137,19 @@ export async function signInThroughScreen(page: import('playwright-core').Page, 
     throw new Error(`the till did not sign ${staffId} in: ${said} (${e instanceof Error ? e.message : String(e)})`);
   }
 }
+
+/** Give a box whose pack FILE is already written its till people (merged into that pack) and their PINs. */
+export async function addTillPeople(packFile: string, dataDir: string, packSigningKey: string, people: readonly TillPerson[]): Promise<void> {
+  const pack = JSON.parse(await readFile(packFile, 'utf8')) as Record<string, unknown>;
+  await writeFile(packFile, JSON.stringify(withTillPeople(pack, people)), 'utf8');
+  await issueTillPins(dataDir, packSigningKey, people.filter((p) => p.pin !== false).map((p) => p.userId));
+}
+
+/** Sign a person in on a `bootPos` till through its box — the page's own `signInAtTill` — or throw with the box's words. */
+export async function signInTill(
+  till: { signInAtTill(input: { staffId?: string; pin?: string }): Promise<{ signedIn: boolean; laneMessage?: string }> },
+  staffId: string,
+): Promise<void> {
+  const outcome = await till.signInAtTill({ staffId, pin: pinOf(staffId) });
+  if (!outcome.signedIn) throw new Error(`sign-in refused for ${staffId}: ${outcome.laneMessage ?? ''}`);
+}

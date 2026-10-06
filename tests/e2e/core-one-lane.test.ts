@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { prepareTillBox, holdSignedInAt } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos, laneDurable } from '../../apps/pos/src/browser-entry';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
@@ -83,7 +84,10 @@ describe('the core, on one lane, end to end', () => {
     edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
+      // The cashier is named with till authority and has a till PIN on this box (ADR-0020).
+      ...await prepareTillBox({ dir, key: KEY, people: [{ userId: 'cashier', displayName: 'Cashier' }] }),
     }, () => {}))!;
+    await holdSignedInAt(edge.lane!.port, 'cashier');
 
     h = apiHarness();
     // One principal that both syncs a sale (pos.sale.sync) and reads the owner dashboard

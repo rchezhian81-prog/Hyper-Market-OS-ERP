@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { addTillPeople, signInTill } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
@@ -100,6 +101,8 @@ describeOrSkip('the till returns without a receipt — cap, item, manager at the
       servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: LANE_CAP, agentAuthorityMinor: 0, compensationCapMinor: 0 },
       lossPreventionRules: [],
     }), 'utf8');
+    // The pack also names the cashier with till authority, and her till PIN is issued on this box (ADR-0020).
+    await addTillPeople(packFile, dataDir, KEY, [{ userId: CASHIER, displayName: 'Meena' }]);
     const edge = (await startEdge({
       EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: cloud.tenantId, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_LANE_ID: LANE, EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
@@ -136,7 +139,7 @@ describeOrSkip('the till returns without a receipt — cap, item, manager at the
 
     // ── 3. The till — the real `bootPos`, exactly as the served page boots it (catalogue, lane, policy, this box's socket).
     const till = bootPos({ laneId: LANE, catalogue: catalogue!, lanePort: edge.lane!.port, refundPolicy: policy! });
-    till.signIn(CASHIER);
+    await signInTill(till, CASHIER);
     const desk = till.noReceiptReturn();
     expect(desk).not.toBeNull();
     expect(desk!.capMinor).toBe(LANE_CAP);

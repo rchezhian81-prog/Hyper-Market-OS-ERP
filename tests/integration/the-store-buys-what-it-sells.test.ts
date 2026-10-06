@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { addTillPeople, signInTill } from '../support/till-operator';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
@@ -127,6 +128,8 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
       policies: { storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: BACK, tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
       lossPreventionRules: [],
     }), 'utf8');
+    // The pack also names the cashier with till authority, and her till PIN is issued on this box (ADR-0020).
+    await addTillPeople(packFile, dataDir, KEY, [{ userId: CASHIER, displayName: 'Meena' }]);
     const edge = (await startEdge({
       EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: cloud.tenantId, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_LANE_ID: opts.laneId ?? LANE, EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
@@ -260,7 +263,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     expect(served).toMatchObject({ source: 'head_office', version: 1 });
     expect(served.products.map((p) => p.productId)).toEqual([PRODUCT]);
     const till = bootPos({ laneId: LANE, catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
-    till.signIn(CASHIER);
+    await signInTill(till, CASHIER);
     const soldAt = new Date().toISOString();
     const tradingDay = tradingDateOf(soldAt, makeTradingDayRule('00:00'));
     expect(till.scanBarcode(BARCODE)).toMatchObject({ amountMinor: PRICE });
@@ -316,7 +319,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
       const served = (await servedTillCatalogue(edge))!;
       expect(served).toMatchObject({ source: 'head_office', version: 1 });
       const till = bootPos({ laneId, catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
-      till.signIn(CASHIER);
+      await signInTill(till, CASHIER);
       till.scanBarcode(BARCODE);
       expect(await till.tenderCash(saleId, receipt, new Date().toISOString())).toBe(receipt);
     };

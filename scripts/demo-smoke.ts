@@ -33,6 +33,7 @@ import { execFileSync } from 'node:child_process';
 import { Pool } from 'pg';
 import { startEdge, type EdgeProcess } from '../edge/store-edge/src/main';
 import { bootPos } from '../apps/pos/src/browser-entry';
+import { issueTillCredential, newTillPin, tillPinKey } from '../packages/identity/src/till-pin';
 import type { CatalogueSnapshot } from '../packages/catalogue/src/catalogue';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../packages/calendar/src/trading-day';
@@ -153,6 +154,7 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
     const match = /<script>window\.posCatalogue = ([\s\S]*?);<\/script>/.exec(html);
     return match === null ? undefined : JSON.parse(match[1]!) as CatalogueSnapshot & { source?: string };
   };
+  const smokePin = newTillPin();
   const startBox = async (): Promise<EdgeProcess> => {
     const dataDir = await mkdtemp(join(tmpdir(), 'sre-demo-smoke-'));
     dirs.push(dataDir);
@@ -161,7 +163,16 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
       version: 1,
       policies: { storeId: STORE, branchId: STORE, branchName: 'Smoke store', warehouseId: BACK, tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
       lossPreventionRules: [],
+      // The smoke's cashier, with till authority, so the box signs them in (ADR-0020) — the same role head office gives.
+      people: [{ userId: cast.cashier, displayName: 'Smoke cashier', roleId: 'smoke-cashier' }],
+      roles: [{ id: 'smoke-cashier', name: 'Cashier', permissions: ['pos.sale.sync', 'pos.return.process'] }],
+      roleAssignments: [{ userId: cast.cashier, roleId: 'smoke-cashier', branchScope: 'all' }],
     }), 'utf8');
+    // The cashier's till PIN, issued on this in-process box exactly as the till-pin command does — made at random for
+    // this run, held in memory, never printed or written anywhere but as its verifier.
+    await writeFile(join(dataDir, 'till-credentials.json'), JSON.stringify({ version: 1, credentials: [
+      issueTillCredential({ userId: cast.cashier, pin: smokePin, key: tillPinKey(input.packSigningKey), issuedAt: new Date().toISOString(), issuedBy: 'demo-smoke' }),
+    ] }), { mode: 0o600 });
     const edge = await startEdge({
       EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: input.tenantId, PACK_SIGNING_KEY: input.packSigningKey, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_LANE_ID: LANE, EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: input.appsDir ?? 'apps', EDGE_PACK_FILE: packFile,
@@ -298,7 +309,8 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
       return `pack version ${pulled.heldVersion ?? '?'} pulled; the till prices from head office`;
     });
     await step('the cashier takes the float and SELLS one by barcode; the sale is on the box\'s disk, then banks, and the shelf falls by ONE', async () => {
-      till!.signIn(cast.cashier);
+      const signedIn = await till!.signInAtTill({ staffId: cast.cashier, pin: smokePin });
+      must(signedIn.signedIn, `the box did not sign the cashier in: ${signedIn.signedIn ? '' : signedIn.laneMessage}`);
       const T0 = Date.now();
       const at = (minutes: number): string => new Date(T0 + minutes * 60_000).toISOString();
       tradingDay = tradingDateOf(at(0), makeTradingDayRule('00:00'), zone);

@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { addTillPeople, signInTill } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
@@ -99,6 +100,8 @@ describeOrSkip('the store trades a day, connected: real API Â· real PostgreSQL Â
       policies: { storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: BACK, tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
       lossPreventionRules: [],
     }), 'utf8');
+    // The pack also names the cashier with till authority, and her till PIN is issued on this box (ADR-0020).
+    await addTillPeople(packFile, dataDir, KEY, [{ userId: CASHIER, displayName: 'Meena' }]);
     const edge = (await startEdge({
       EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: cloud.tenantId, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_LANE_ID: LANE, EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
@@ -159,7 +162,7 @@ describeOrSkip('the store trades a day, connected: real API Â· real PostgreSQL Â
     // â”€â”€ The till: the shell's own session model, booted the way the served page boots it, posting to this box's lane socket.
     const port = edge.lane!.port;
     const till = bootPos({ laneId: LANE, catalogue: served, lanePort: port, tradingDayCutoff: '00:00' });
-    till.signIn(CASHIER);
+    await signInTill(till, CASHIER);
     const T0 = Date.now();
     const at = (minutes: number): string => new Date(T0 + minutes * 60_000).toISOString();
     const tradingDay = tradingDateOf(at(0), makeTradingDayRule('00:00'));
@@ -254,13 +257,13 @@ describeOrSkip('the store trades a day, connected: real API Â· real PostgreSQL Â
     await edge.refreshPack!();
     const served = (await servedTillCatalogue(edge))!;
     const till = bootPos({ laneId: LANE, catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
-    till.signIn(CASHIER);
+    await signInTill(till, CASHIER);
     till.scanBarcode(BARCODE);
     const when = new Date().toISOString();
     expect(await till.tenderCash('S-2', 'R-S-2', when)).toBe('R-S-2');
     // The shell's retry shape: the SAME record posted again to the box's lane socket. One sale on the disk, one in the queue.
     const record = (await readLog(edge.log.path)).map((r) => (r as { record: string }).record)[0]!;
-    const again = await (await fetch(`http://127.0.0.1:${edge.lane!.port}/lane/sales`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: record })).json() as { committed: boolean };
+    const again = await (await fetch(`http://127.0.0.1:${edge.lane!.port}/lane/sales`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-sre-operator': till.operatorToken()! }, body: record })).json() as { committed: boolean };
     expect(again.committed).toBe(true);
     expect((await readLog(edge.log.path))).toHaveLength(1);
     expect(edge.outbox.unsentCount()).toBe(1);
@@ -280,7 +283,7 @@ describeOrSkip('the store trades a day, connected: real API Â· real PostgreSQL Â
     expect((await stranger.refreshPack!()).status).toBe('offline');
     expect(await servedTillCatalogue(stranger)).toBeUndefined();
     const blind = bootPos({ laneId: LANE, catalogue: served, lanePort: stranger.lane!.port, tradingDayCutoff: '00:00' });
-    blind.signIn(CASHIER);
+    await signInTill(blind, CASHIER);
     blind.scanBarcode(BARCODE);
     expect(await blind.tenderCash('S-3', 'R-S-3', new Date().toISOString())).toBe('R-S-3');
     const refused = await stranger.syncOnce!();
