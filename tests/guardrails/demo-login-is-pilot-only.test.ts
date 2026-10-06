@@ -129,7 +129,9 @@ describe('the DEMO store box relay (ADR-0016) is pilot-only and gated', () => {
     expect(lane).toMatch(/auth_request \/_auth\/verify-sell;/);
     for (const block of [store, lane]) expect(block).toMatch(/proxy_pass http:\/\/\$sre_relay;/);
     // Nothing else in the front talks to the relay.
-    expect(NGINX.split("\n").filter((l) => !l.trim().startsWith("#") && l.includes("edge:8096"))).toHaveLength(3); // /store/, the status read, /store-lane/
+    expect(NGINX.split("\n").filter((l) => !l.trim().startsWith("#") && l.includes("edge:8096"))).toHaveLength(4); // /store/, the status read, the till's sign-in mode, /store-lane/
+    // The till's sign-in mode is a read any signed-in person may make; it is exactly that one path, never a prefix.
+    expect(/location = \/store-lane\/lane\/operator \{([^}]*)\}/.exec(NGINX)?.[1] ?? '').toMatch(/auth_request \/_auth\/verify;/);
     expect(NGINX).toMatch(/location = \/_auth\/verify \{\s*internal;/);
     expect(NGINX).toMatch(/location = \/_auth\/verify-sell \{\s*internal;/);
   });

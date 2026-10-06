@@ -158,6 +158,11 @@ export interface TillOperatorPort {
 }
 
 const UNREACHABLE_SIGN_IN = 'This till cannot reach its store computer, so nobody can sign in. Tell the manager.';
+/** The hosted copy's front answers for itself before the box is asked: no sign-in, or a person who may not sell. */
+const FRONT_REFUSED: Readonly<Record<number, { readonly refusedBecause: string; readonly laneMessage: string }>> = {
+  401: { refusedBecause: 'not_signed_in', laneMessage: 'Your sign-in has ended. Sign in again, then come back to the till.' },
+  403: { refusedBecause: 'no_till_authority', laneMessage: 'This person is not allowed to work a till in this shop. Ask the manager.' },
+};
 
 /** The operator calls over this till's own lane socket (or the hosted copy's same-origin base). */
 export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort {
@@ -175,6 +180,8 @@ export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort
           method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ ...(input.staffId === undefined ? {} : { staffId: input.staffId }), ...(input.pin === undefined ? {} : { pin: input.pin }) }),
         });
+        const front = FRONT_REFUSED[response.status];
+        if (front !== undefined) return { signedIn: false, ...front };
         const body = await response.json() as { signedIn?: boolean; refusedBecause?: string; laneMessage?: string };
         return body.signedIn === true ? body as unknown as TillSignInOutcome : { signedIn: false, ...(typeof body.refusedBecause === 'string' ? { refusedBecause: body.refusedBecause } : {}), laneMessage: body.laneMessage ?? UNREACHABLE_SIGN_IN };
       } catch {

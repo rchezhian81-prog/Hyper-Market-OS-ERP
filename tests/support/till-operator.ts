@@ -123,7 +123,7 @@ export async function signInThroughScreen(page: import('playwright-core').Page, 
   await page.waitForSelector('#sheet:not([hidden]) #entry:not([aria-label])'); // the staff-ID prompt is open
   await page.keyboard.type(staffId);
   await page.keyboard.press('Enter');
-  await page.waitForFunction(() => document.getElementById('sheet')?.hidden === false && document.getElementById('entry')?.getAttribute('aria-label') !== null, undefined, { timeout: 5_000 }); // the PIN panel (masked), not the staff-ID one
+  await page.waitForSelector('#sheet:not([hidden]) #entry[aria-label]', { timeout: 5_000 }); // the PIN panel (masked), not the staff-ID one
   await page.keyboard.type(pinOf(staffId));
   await page.keyboard.press('Enter');
   try {
@@ -133,7 +133,7 @@ export async function signInThroughScreen(page: import('playwright-core').Page, 
     );
   } catch (e) {
     // Say what the till said, not just that it timed out.
-    const said = await page.evaluate(() => [document.getElementById('refusal-title')?.textContent, document.getElementById('refusal-text')?.textContent].join(' — '));
+    const said = `${await page.textContent('#refusal-title') ?? ''} — ${await page.textContent('#refusal-text') ?? ''}`;
     throw new Error(`the till did not sign ${staffId} in: ${said} (${e instanceof Error ? e.message : String(e)})`);
   }
 }

@@ -140,12 +140,12 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
     await page.waitForSelector('#sheet:not([hidden]) #entry:not([aria-label])'); // the staff-ID prompt is open
     await page.keyboard.type('u-lanecash');
     await page.keyboard.press('Enter');
-    await page.waitForFunction(() => document.getElementById('sheet')?.hidden === false && document.getElementById('entry')?.getAttribute('aria-label') !== null, undefined, { timeout: 5_000 }); // the PIN panel (masked), not the staff-ID one
+    await page.waitForSelector('#sheet:not([hidden]) #entry[aria-label]', { timeout: 5_000 }); // the PIN panel (masked), not the staff-ID one
     await page.keyboard.type(wrong);
     // The PIN is never on the screen: one dot per digit.
     expect(await page.locator('#entry').textContent()).toBe('••••••');
     await page.keyboard.press('Enter');
-    await page.waitForFunction(() => document.getElementById('refusal')?.hidden === false, undefined, { timeout: 5_000 });
+    await page.waitForSelector('#refusal:not([hidden])', { timeout: 5_000 });
     expect(await page.locator('#refusal-text').textContent()).toMatch(/do not match/);
     expect(await page.evaluate(() => (globalThis as unknown as PosWindow).posSession!.operator())).toBeUndefined();
     await page.click('#refusal-ok');
@@ -156,7 +156,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
     await page.waitForSelector('#sheet:not([hidden]) #entry:not([aria-label])'); // the staff-ID prompt is open
     await page.keyboard.type('u-lanecash');
     await page.keyboard.press('Enter');
-    await page.waitForFunction(() => document.getElementById('sheet')?.hidden === false && document.getElementById('entry')?.getAttribute('aria-label') !== null, undefined, { timeout: 5_000 }); // the PIN panel (masked), not the staff-ID one
+    await page.waitForSelector('#sheet:not([hidden]) #entry[aria-label]', { timeout: 5_000 }); // the PIN panel (masked), not the staff-ID one
     await page.keyboard.type(pin);
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession!.operator() === 'u-lanecash', undefined, { timeout: 5_000 });

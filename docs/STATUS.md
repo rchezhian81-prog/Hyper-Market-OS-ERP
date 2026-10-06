@@ -36,7 +36,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
     shift (the screen spec's budget is updated and still counted in the browser).
   - **The hosted copy:** the front passes the person its password sign-in verified to the till socket, and only the
     hosted overlay lets the box believe it (`EDGE_LANE_TRUST_FORWARDED_USER=1`, held by a guardrail; a store box never
-    sets it). There, Sign in is one tap, no PIN; the sale is stamped `verified_sign_in`.
+    sets it). There, Sign in is one tap, no PIN; the sale is stamped `verified_sign_in`. A signed-in person who may not
+    sell (the accountant) is told "not allowed to work a till", not "cannot reach the store computer".
 - **Found and fixed on the way:**
   - **The hosted copy's screens were NOT running as the signed-in person.** `EDGE_SCREEN_TRUST_FORWARDED_USER` (OB-16,
     #699) was set in the overlay but never declared to the box's settings loader, which keeps only declared
