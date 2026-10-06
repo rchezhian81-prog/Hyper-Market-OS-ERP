@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { prepareTillBox, signInOnPage } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 
 /**
@@ -103,6 +104,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      ...await prepareTillBox({ dir, key: KEY }),
     }, () => {}))!;
     stops.push(() => edge.stop());
     expect(edge.lane?.port).toBe(8090);
@@ -113,10 +115,10 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
 
+    await signInOnPage(page); // staff ID + till PIN, checked by the box (ADR-0020)
     const result = await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
       // Ring one item and take cash — a bill to refund against.
-      w.posSession!.signIn('u-lanecash'); // the cashier signs in first (SP-4b · F09)
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
       await w.posSession!.tenderCash('S-1', 'R-0001', '2026-08-28T10:00:00Z');
 
@@ -176,6 +178,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      ...await prepareTillBox({ dir, key: KEY }),
     }, () => {}))!;
     stops.push(() => edge.stop());
 
@@ -185,9 +188,9 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
 
+    await signInOnPage(page); // staff ID + till PIN, checked by the box (ADR-0020)
     const result = await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
-      w.posSession!.signIn('u-lanecash'); // the cashier signs in first (SP-4b · F09)
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
       await w.posSession!.tenderCash('S-3', 'R-0003', '2026-08-28T10:10:00Z');
       const bill = await w.posSession!.lookupRefund('R-0003');
@@ -226,6 +229,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
+      ...await prepareTillBox({ dir, key: KEY, pack: PACK_FILE_WITH_CAP }),
     }, () => {}))!;
     stops.push(() => edge.stop());
 
@@ -236,9 +240,9 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
 
     // The box told the till its policy, and the till therefore offers the return — the cap is the pack's, never a guess.
+    await signInOnPage(page); // staff ID + till PIN, checked by the box (ADR-0020)
     const given = await page.evaluate(() => {
       const w = globalThis as unknown as PosWindow;
-      w.posSession!.signIn('u-lanecash'); // the cashier signs in first (SP-4b · F09)
       return { policy: w.posRefundPolicy, offered: w.posSession!.noReceiptReturn() };
     });
     expect(given.policy).toEqual({ approvalThresholdMinor: 0, noReceiptCapMinor: 100_000 });
@@ -318,6 +322,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
+      ...await prepareTillBox({ dir, key: KEY, pack: PACK_FILE_WITH_CAP }),
     }, () => {}))!;
     stops.push(() => edge.stop());
 
@@ -328,9 +333,9 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
 
     // Yesterday's bill: one ₹640 tin, paid in cash — the bill the customer brings back.
+    await signInOnPage(page); // staff ID + till PIN, checked by the box (ADR-0020)
     await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
-      w.posSession!.signIn('u-lanecash');
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
       await w.posSession!.tenderCash('S-1', 'R-0001', '2026-08-28T10:00:00Z');
       w.posSession!.newSale(); // the shell clears the bill after every sale; done here because the sale was rung from the test
@@ -406,6 +411,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      ...await prepareTillBox({ dir, key: KEY }),
     }, () => {}))!;
     stops.push(() => edge.stop());
     const context = await browser.newContext();
@@ -430,6 +436,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      ...await prepareTillBox({ dir, key: KEY }),
     }, () => {}))!;
     stops.push(() => edge.stop());
 
@@ -439,9 +446,9 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
 
+    await signInOnPage(page); // staff ID + till PIN, checked by the box (ADR-0020)
     const outcome = await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
-      w.posSession!.signIn('u-lanecash'); // the cashier signs in first (SP-4b · F09)
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
       await w.posSession!.tenderCash('S-2', 'R-0002', '2026-08-28T10:05:00Z');
       const bill = await w.posSession!.lookupRefund('R-0002');

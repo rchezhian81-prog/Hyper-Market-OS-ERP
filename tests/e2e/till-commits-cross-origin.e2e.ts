@@ -7,6 +7,7 @@ import { createServer, type Server } from 'node:http';
 import { chromium, type Browser } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
+import { prepareTillBox, signInAtLane } from '../support/till-operator';
 
 /**
  * **A real browser till posts its sale to the till's socket, cross-origin, and it lands on the disk.**
@@ -25,12 +26,15 @@ const CHROMIUM = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] ?? '/opt/pw-brows
 const HAVE_BROWSER = existsSync(CHROMIUM);
 const KEY = ['till', 'cross', 'origin', 'signing', 'key'].join('-').padEnd(48, '0');
 
-/** A page on ITS OWN loopback origin that posts one sale to the lane socket and shows the result. */
-function pageServer(laneUrl: string): Promise<{ origin: string; stop: () => Promise<void> }> {
+/**
+ * A page on ITS OWN loopback origin that posts one sale to the lane socket and shows the result. It carries the shift
+ * session in `X-Sre-Operator` (ADR-0020) — a non-simple header, so the browser's preflight must allow it too.
+ */
+function pageServer(laneUrl: string, operatorToken: string): Promise<{ origin: string; stop: () => Promise<void> }> {
   const html = `<!doctype html><html><body><pre id="out">…</pre><script>
     fetch(${JSON.stringify(laneUrl)} + '/lane/sales', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: 'S-BROWSER', number: 'R-BROWSER', total: 100, currency: 'INR', lines: [], tenders: [] }),
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-sre-operator': ${JSON.stringify(operatorToken)} },
+      body: JSON.stringify({ id: 'S-BROWSER', number: 'R-BROWSER', total: 100, currency: 'INR', cashierId: 'u-lanecash', lines: [], tenders: [] }),
     }).then(function (r) { return r.json(); })
       .then(function (b) { document.getElementById('out').textContent = 'OK:' + b.committed; })
       .catch(function (e) { document.getElementById('out').textContent = 'ERR:' + e; });
@@ -66,10 +70,11 @@ describe.skipIf(!HAVE_BROWSER)('a browser till commits cross-origin to the lane 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
+      ...await prepareTillBox({ dir, key: KEY }),
     }, () => {}))!;
     stops.push(() => edge.stop());
 
-    const page = await pageServer(`http://127.0.0.1:${edge.lane!.port}`);
+    const page = await pageServer(`http://127.0.0.1:${edge.lane!.port}`, await signInAtLane(edge.lane!.port, 'u-lanecash'));
     stops.push(page.stop);
 
     const context = await browser.newContext();

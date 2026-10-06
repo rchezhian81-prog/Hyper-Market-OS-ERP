@@ -37,6 +37,15 @@ describe('the till lane base', () => {
     expect(js).toMatch(/DEMO_LANE_BASE = true \? "\/store-lane" : ""/);
   });
 
+  it('EVERY till call to its box goes through the one base — sales, refunds, cash, the close, sign-in — never a hard-wired loopback', () => {
+    // Found in Wave 2b-v: the cash ports wrote to `http://127.0.0.1:<port>` directly, so on the hosted copy the float,
+    // the pickups and the close went to the tester's own computer and never reached the store box.
+    const source = readFileSync('apps/pos/src/browser-entry.ts', 'utf8');
+    const fetches = source.match(/fetch\(`[^`]*`/g) ?? [];
+    expect(fetches.length).toBeGreaterThan(5);
+    for (const f of fetches) expect(f, f).toMatch(/^fetch\(`\$\{(laneBase\(port\)|base)\}/);
+  });
+
   it('only the till knows about the demo lane base', () => {
     for (const app of ['web-erp', 'owner-app', 'picker-app', 'delivery-app', 'customer-app', 'warehouse-app', 'supplier-app']) {
       expect(readFileSync(`apps/${app}/src/browser-entry.ts`, 'utf8')).not.toContain('PILOT_DEMO_LANE_BASE');

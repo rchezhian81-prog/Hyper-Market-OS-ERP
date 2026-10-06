@@ -7,6 +7,7 @@ import { LANE_HOST } from '../../edge/store-edge/src/lane-server';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos, laneDurable, laneDurableReturn } from '../../apps/pos/src/browser-entry';
 import { money } from '../../packages/contracts/src/money';
+import { prepareTillBox, holdSignedInAt } from '../support/till-operator';
 
 /**
  * **The till's screen reaches the till's disk.**
@@ -45,11 +46,15 @@ const envFor = (dataDir: string, lanePort: string) => ({
   EDGE_LANE_PORT: lanePort,
 });
 
-/** Start an edge with a lane socket on an ephemeral port, and remember to stop it. */
+/**
+ * Start an edge with a lane socket on an ephemeral port, told which lane it is and who works its till (ADR-0020), with
+ * the cashier signed in — and remember to stop it.
+ */
 const startLane = async () => {
   const dir = await tempDir();
-  const edge = (await startEdge(envFor(dir, '0'), () => {}))!;
+  const edge = (await startEdge({ ...envFor(dir, '0'), ...await prepareTillBox({ dir, key: KEY }) }, () => {}))!;
   stops.push(() => edge.stop());
+  await holdSignedInAt(edge.lane!.port, 'u-lanecash');
   return edge;
 };
 

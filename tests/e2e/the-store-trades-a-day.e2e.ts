@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
 import { startRealCloud, type RealCloud } from '../support/real-store';
@@ -99,12 +100,14 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
   async function startBox(dir?: string): Promise<EdgeProcess> {
     const dataDir = dir ?? await mkdtemp(join(tmpdir(), 'sre-browser-trades-'));
     if (dir === undefined) dirs.push(dataDir);
-    const packFile = join(dataDir, 'store-pack.json');
-    await writeFile(packFile, JSON.stringify({
-      version: 1,
-      policies: { storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
-      lossPreventionRules: [],
-    }), 'utf8');
+    // The policies, and the cashier named with till authority — her till PIN issued on this box (ADR-0020).
+    const { EDGE_PACK_FILE: packFile } = await prepareTillBox({
+      dir: dataDir, key: KEY, people: [{ userId: CASHIER, displayName: 'Meena' }],
+      pack: {
+        policies: { storeId: STORE, branchId: STORE, branchName: 'SRE Hyper Market', warehouseId: 'S1-BACK', tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
+        lossPreventionRules: [],
+      },
+    });
     const edge = (await startEdge({
       EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: cloud.tenantId, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '8090', EDGE_LANE_ID: LANE, EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
@@ -157,10 +160,7 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     expect(await page.evaluate(() => { const c = (globalThis as unknown as PosWindow).posCatalogue!; return { version: c.version, source: c.source, products: c.products.map((p) => p.productId) }; }))
       .toEqual({ version: 1, source: 'head_office', products: [PRODUCT] });
 
-    await page.click('#signin');
-    await page.keyboard.type(CASHIER);
-    await page.keyboard.press('Enter');
-    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession!.operator() === 'u-meena');
+    await signInThroughScreen(page, CASHIER); // staff ID, then the till PIN — checked by the box (ADR-0020)
 
     // Float, then the sale by barcode — keystrokes and Enter, as a scanner does — then exact cash.
     expect(await moreOffers(page)).toEqual(['Take float (open the till)', 'Refund', 'Exchange']);

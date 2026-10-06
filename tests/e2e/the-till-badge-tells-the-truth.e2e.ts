@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { prepareTillBox, signInOnPage } from '../support/till-operator';
 
 /**
  * **The till's sync badge tells the truth, in a real browser, from the real box (Stage G slice 2 · design
@@ -61,6 +62,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till\'s sync badge shows what the box
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      ...await prepareTillBox({ dir, key: KEY }),
     }, () => {}))!;
     stops.push(() => edge.stop());
 
@@ -83,9 +85,9 @@ describe.skipIf(!HAVE_BROWSER)('the served till\'s sync badge shows what the box
     expect(await page.getAttribute('#conn-dot', 'class')).toContain('degraded');
 
     // Ring a sale through the shell's own surface: it lands on the BOX, and the box's count is what the badge shows.
+    await signInOnPage(page); // staff ID + till PIN, checked by the box (ADR-0020)
     await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
-      w.posSession!.signIn('u-lanecash'); // the cashier signs in first (SP-4b · F09)
       w.posSession!.scan({ productId: 'P1', description: 'Aachi Sambar Powder 200g', unitPriceMinor: 6_500, qty: 1 });
       await w.posSession!.tenderCash('S-1', 'R-0001', '2026-09-29T10:00:00Z');
     });

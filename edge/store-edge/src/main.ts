@@ -72,6 +72,9 @@ import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-st
 import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-server';
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
+import { TillOperators, loadTillCredentials } from './till-operators';
+import { peopleFrom, permissionsOf } from './screen-navigation';
+import { tillPinKey } from '../../../packages/identity/src/till-pin';
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
 import { managerPayload, type ScreenInput } from './screen-data';
@@ -89,6 +92,7 @@ import {
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { makeTradingDayRule, tradingDate, wallClockIn, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 /** The returns pipeline's own cursor file, so the sale and refund logs advance independently. */
 const RETURNS_CURSOR = 'sync-cursor-returns';
@@ -1043,10 +1047,39 @@ export async function startEdge(
   };
 
   const lanePort = settings['EDGE_LANE_PORT'];
+  // WHO IS AT THE TILL (ADR-0020): the box verifies each cashier's till PIN itself, offline, against the verifiers its
+  // administrator issued on this box, and binds every money write to the shift session. The people and their till
+  // authority are read from the CURRENT pack at each decision, so a leaver's session ends at their next write.
+  const credentialsFile = settings['EDGE_TILL_CREDENTIALS_FILE'] ?? join(settings['EDGE_DATA_DIR']!, 'till-credentials.json');
+  const trustForwardedTillUser = settings['EDGE_LANE_TRUST_FORWARDED_USER'] === '1';
+  const tillOperators = lanePort === undefined ? null : await TillOperators.open({
+    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    key: tillPinKey(settings['PACK_SIGNING_KEY']!),
+    credentials: () => loadTillCredentials(credentialsFile),
+    pack: {
+      people: () => (pack.people.known ? peopleFrom(pack.people.value) : null),
+      permissionsOf: (userId) => permissionsOf(userId, pack),
+    },
+  });
+  if (tillOperators !== null) {
+    say(trustForwardedTillUser
+      ? 'till sign-in: the person the hosted sign-in names (EDGE_LANE_TRUST_FORWARDED_USER) — only right behind the hosted front.'
+      : `till sign-in: staff ID and till PIN, checked on this box (${tillOperators.live().length} session(s) still open).`);
+  }
   const lane = lanePort === undefined ? null : await startLaneServer({
     node,
     port: Number(lanePort),
     syncStatus,
+    ...(tillOperators === null ? {} : {
+      operators: {
+        laneId: laneIdOfThisBox() ?? '',
+        trustForwardedUser: trustForwardedTillUser,
+        signIn: (i) => tillOperators.signIn(i),
+        signInVerified: (i) => tillOperators.signInVerified(i),
+        check: (token, laneId) => tillOperators.check(token, laneId),
+        signOut: (token) => tillOperators.signOut(token),
+      },
+    }),
     // The till's cash lives on this box (SP-4c · F10): the float, the pickups and the close come in here, durably.
     recordCashMovement,
     closeShift,

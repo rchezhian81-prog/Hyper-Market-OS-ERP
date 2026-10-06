@@ -162,7 +162,7 @@ export class LocalCommitRefusedError extends Error {
  * asked about, so it is refused BEFORE the money is taken — with the cashier's words, like every lane refusal.
  */
 export class NoOperatorError extends Error {
-  readonly laneMessage = 'Nobody is signed in at this till. Sign in with your staff code before taking payment.';
+  readonly laneMessage = 'Nobody is signed in at this till. Sign in with your staff ID and till PIN before taking payment.';
   constructor(action = 'take payment') {
     super(`Cannot ${action}: nobody is signed in at this till.`);
     this.name = 'NoOperatorError';

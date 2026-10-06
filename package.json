@@ -25,6 +25,7 @@
     "completion": "node scripts/completion-report.mjs",
     "standup:check": "node scripts/standup-check.mjs",
     "till:install": "node scripts/install-till.mjs",
+    "till:pin": "node edge/store-edge/dist/start.js till-pin",
     "token:store": "node scripts/issue-store-token.mjs",
     "seed:pilot": "node scripts/seed-pilot-hosted.mjs",
     "demo:publish-pack": "node scripts/demo-publish-pack.mjs",

@@ -323,7 +323,7 @@ the screens in a browser — those are SP-10 (§7).
 | What | Where | Who / how |
 |---|---|---|
 | Public origin (customer app, guest; the API) | `https://<the box>` — the address is in the owner's own records and in the GitHub `demo` environment, never in the repository | anyone; browse as a guest; the DEMO banner shows |
-| Till | `http://127.0.0.1:8091/pos/` on the store PC | the cashier signs in by **staff code** = the demo user id (`pilot-cashier`); the till identifies, it does not authenticate (GAP-POS-LOGIN-01) |
+| Till | `http://127.0.0.1:8091/pos/` on the store PC | the cashier signs in with **staff ID** = the demo user id (`pilot-cashier`) **and their till PIN**, issued once on the store PC by the administrator (`till/start-till.sh till-pin --user pilot-cashier --by "<name>"`, in-store-install Step 2b); the store PC checks it (ADR-0020) |
 | ERP screens (manager, buying, goods receipt, indents, cash office, day book, suppliers, …) | `http://127.0.0.1:8091/<screen>/` on the store PC | run as the person the pack names (`pilot-manager`), see §4.3 |
 | Handhelds | `http://<store PC>:8092/warehouse/`, `/picker/`, `/driver/` on the staff wifi | enrolled by device code, §4.4 |
 | Demo accounts (synthetic) | `pilot-owner`, `pilot-manager`, `pilot-cashier`, `pilot-accountant`, `pilot-ca`, `pilot-platform-admin`, `pilot-supplier` | seeded by `db/seed/pilot`; roles as in `db/seed/pilot/dataset.ts` |
@@ -344,7 +344,7 @@ Run each on a different day or in sequence; each row names what the person shoul
 | 2 | Receiver (`pilot-manager`) | Warehouse phone | Receive the delivery by scanning the barcode; mark two damaged; tap "Delivery complete". Put away the good stock. | each scan "saved here" → "with the store computer" → "posted"; head office's goods receipt shows 10 sellable, 2 held |
 | 3 | QC / checker (`pilot-manager` on a second screen, or the owner) | ERP `/goods-receipt/` | Decide the damaged line: return to supplier. Try as the receiver first. | the receiver's own decision is refused; the checker's is recorded once |
 | 4 | Floor staff (`pilot-cashier`) + manager + back store | ERP `/indents/` and the warehouse phone | Raise an indent for the shelf; manager approves; back store issues by scanning bin and item; the floor counts it in. | requested / approved / issued (in transit) / received shown separately; the shelf stock appears only after the floor receipt |
-| 5 | Cashier (`pilot-cashier`) | Till | Sign in by staff code; take the float; scan and sell; pull the network cable and sell again; reconnect. | both sales complete; the unsent counter rises then falls; stock at head office falls by two |
+| 5 | Cashier (`pilot-cashier`) | Till | Sign in with staff ID and till PIN (try a wrong PIN first); take the float; scan and sell; pull the network cable and sell again; reconnect. | the wrong PIN signs nobody in; both sales complete; the unsent counter rises then falls; stock at head office falls by two |
 | 6 | Cashier + manager | Till | Return one item with the receipt (manager approves); try a return without a receipt; an exchange. | refund settled; stock back; the no-receipt and exchange flows follow the prompts |
 | 7 | Cashier + cash office (`pilot-accountant`) | Till, ERP `/cash-office/` | Bank a pickup; close the till blind; sign off the over/short. | the count sheet shows no expected figure; the cash office sees the chain |
 | 8 | Picker (`pilot-manager`) | Picker phone | Scan the bin, scan the item, confirm; flag a quality fail; pack the crate. | each line listed with its state; head office's wave shows the lines and the pack with no flags |
@@ -371,8 +371,9 @@ Cross-cutting, once per person: the DEMO banner is visible; a refused action say
   units for the handheld, as the hand-written file did. DF-3 must settle ONE scale for every pack section (found 4 Oct 2026).
 
 - The demo box is still on the 28 September release until §2 is done; this document is written for the release at `0bf098a` (PR #671) or later.
-- The ERP screens have no interactive staff sign-in: the pack names one person per screen (KL-01, OA-4). The till
-  identifies the cashier by staff code without authenticating them (GAP-POS-LOGIN-01).
+- The ERP screens have no interactive staff sign-in on a store PC: the pack names one person per screen (KL-01, OA-4).
+  The till authenticates the cashier with a staff ID and till PIN the store PC verifies (ADR-0020, closes
+  GAP-POS-LOGIN-01); a manager's approval at the till is still a scanned or keyed staff ID until Wave 2b-v-b.
 - The box signs in to head office as `pilot-cashier` for the demo; a dedicated `store-edge` login is a go-live step (UAT-05).
 - Head office assigns waves and routes to phones since 3 Oct 2026 (HA-1: `POST /v1/fulfilment/waves/:waveId/assignment`, `POST /v1/delivery/routes/:routeId/assignment`; the box pulls the open ones). The pack file's `wave` / `route` sections below are the hand-written override and still work for a first practice session; the screen says which source it is holding. A head-office screen for assigning is not built yet — the two routes are called through the API.
 - No TLS on the shop-network leg to the phones (OA-16: staff-only wifi is the control).

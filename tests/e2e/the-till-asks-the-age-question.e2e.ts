@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { auditPage } from './lib/a11y-audit';
 
@@ -72,6 +73,7 @@ describe.skipIf(!HAVE_BROWSER)('the till asks the age question on the served scr
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_PACK_FILE: packFile,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1',
+      ...await prepareTillBox({ dir, key: KEY, pack: JSON.parse(PACK) as Record<string, unknown> }),
     }, () => {}))!;
     stops.push(() => edge.stop());
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -80,10 +82,7 @@ describe.skipIf(!HAVE_BROWSER)('the till asks the age question on the served scr
     await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
     await page.waitForFunction(() => { const w = globalThis as unknown as PosWindow; return w.posSession !== undefined && w.posSession.hasCatalogue(); }, undefined, { timeout: 15_000 });
     // The cashier signs in for the shift (SP-4b): the answer to the age question is given in their name.
-    await page.click('#signin');
-    await page.keyboard.type('u-lanecash');
-    await page.keyboard.press('Enter');
-    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession?.operator() === 'u-lanecash');
+    await signInThroughScreen(page); // staff ID, then the till PIN — checked by the box (ADR-0020)
     return { edge, page };
   }
   const scan = async (page: Page, code: string): Promise<void> => { await page.keyboard.type(code); await page.keyboard.press('Enter'); };

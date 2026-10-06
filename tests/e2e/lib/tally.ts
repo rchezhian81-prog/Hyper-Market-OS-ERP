@@ -13,5 +13,7 @@ export class Tally {
   async tap(selector: string): Promise<void> { this.count += 1; await this.page.click(selector); }
   async type(selector: string, text: string): Promise<void> { this.count += 1; await this.page.fill(selector, text); }
   async scan(code: string): Promise<void> { this.count += 1; await this.page.keyboard.type(code); await this.page.keyboard.press('Enter'); }
+  /** A keyed entry finished with Enter — a till PIN on the keypad or keyboard. One field, one act. */
+  async key(text: string): Promise<void> { this.count += 1; await this.page.keyboard.type(text); await this.page.keyboard.press('Enter'); }
   reset(): number { const n = this.count; this.count = 0; return n; }
 }

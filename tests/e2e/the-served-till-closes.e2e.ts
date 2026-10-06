@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { prepareTillBox, signInThroughScreen } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { readTillCashRecord } from '../../edge/store-edge/src/till-cash';
 
@@ -100,6 +101,8 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till takes its float, pickup and blin
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_PACK_FILE: packFile,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      // The pack also names the cashier with till authority, and her till PIN is issued on this box (ADR-0020).
+      ...await prepareTillBox({ dir, key: KEY, pack: JSON.parse(PACK) as Record<string, unknown> }),
     }, () => {}))!;
     stops.push(() => edge.stop());
 
@@ -114,10 +117,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till takes its float, pickup and blin
       }, undefined, { timeout: 15_000 });
     };
     await open();
-    await page.click('#signin');
-    await page.keyboard.type('u-lanecash');
-    await page.keyboard.press('Enter');
-    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession!.operator() === 'u-lanecash');
+    await signInThroughScreen(page); // staff ID, then the till PIN — checked by the box (ADR-0020)
 
     // No float out: the till offers to take one, and not a pickup or a close.
     expect(await moreOffers(page)).toEqual(['Take float (open the till)', 'Refund', 'Exchange']);

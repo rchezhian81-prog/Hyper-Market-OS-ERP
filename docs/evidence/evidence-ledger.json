@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 907,
+  "testFiles": 911,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -95,8 +95,8 @@
       "id": "M02",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 18,
-        "integration": 14,
+        "unit": 19,
+        "integration": 15,
         "realDb": 3,
         "browser": 3,
         "connected": 0,
@@ -122,7 +122,8 @@
           "tests/unit/identity-token.test.ts",
           "tests/unit/owner-session.test.ts",
           "tests/unit/rbac.test.ts",
-          "tests/unit/service-store-core.test.ts"
+          "tests/unit/service-store-core.test.ts",
+          "tests/unit/till-operators.test.ts"
         ],
         "integration": [
           "tests/integration/access-durability.test.ts",
@@ -137,6 +138,7 @@
           "tests/integration/second-person-is-a-separate-act.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-till-names-its-operator.test.ts",
+          "tests/integration/the-till-signs-its-operator-in.test.ts",
           "tests/integration/trusted-approvals.test.ts",
           "tests/security/separation-of-duties.test.ts"
         ],
@@ -681,7 +683,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 13,
-        "integration": 13,
+        "integration": 14,
         "realDb": 3,
         "browser": 6,
         "connected": 1,
@@ -717,7 +719,8 @@
           "tests/integration/the-shop-reaches-the-cloud.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
           "tests/integration/the-store-trades-a-day.test.ts",
-          "tests/integration/the-till-names-its-operator.test.ts"
+          "tests/integration/the-till-names-its-operator.test.ts",
+          "tests/integration/the-till-signs-its-operator-in.test.ts"
         ],
         "realDb": [
           "tests/integration/the-shop-reaches-the-cloud.test.ts",

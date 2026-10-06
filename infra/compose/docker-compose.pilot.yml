@@ -53,6 +53,12 @@ services:
       # OB-16: the screens are reached ONLY through the relay behind the sign-in (nginx.pilot.conf sets X-Sre-User from
       # the gate's answer), so the box runs each ERP screen as the person who signed in. Never set on a store box.
       EDGE_SCREEN_TRUST_FORWARDED_USER: '1'
+      # ADR-0020 §6: the same for the TILL — behind the sign-in, the person who signed in with their password is the
+      # person the box signs in at the hosted till (no till PIN here; a store box never sets this and asks for one).
+      EDGE_LANE_TRUST_FORWARDED_USER: '1'
+      # Which till this box is (SP-4b · F09). Without it the served till refuses to take payment, as it should on a box
+      # nobody has told; the hosted copy is one till.
+      EDGE_LANE_ID: lane-1
     volumes:
       - ${DEMO_STORE_PACK_DIR:-/etc/sre-pilot/store-pack}:/etc/store-pack:ro
 

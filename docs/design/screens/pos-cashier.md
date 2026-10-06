@@ -14,9 +14,14 @@ Close · Offline/sync health. Each handles the §27.1 universal states.
 ## Login / who is on the till (SP-4b · F09 · §28 · hard rule #4)
 - The header always names **which lane** this till is and **who is signed in** — or says "Nobody signed in". Neither is
   ever a stand-in: the lane is the store computer's own setting (`EDGE_LANE_ID`), the cashier is the person who signed in.
-- **Sign in** (top right): scan your badge or key your staff code, then OK — one panel, the same scan-or-key control the
-  refund approval uses. **Sign out** is the same button. A reload of this browser session keeps the sign-in; closing the
-  browser does not (a till left open overnight starts with nobody).
+- **Sign in** (top right): scan your badge or key your staff ID, then OK — the same scan-or-key control the refund
+  approval uses — and then key your six-digit **till PIN** on the keypad (or keyboard). The PIN shows as dots, never
+  digits, and the panel forgets it when it closes. The **store computer** checks it, offline (ADR-0020): a wrong ID and a
+  wrong PIN get the same answer; five wrong PINs lock that staff ID for fifteen minutes. **Sign out** is the same button
+  and ends the session on the store computer too. A reload of this browser session keeps the sign-in (the tab keeps the
+  store computer's session, never the PIN, and asks the computer whether it is still live); closing the browser does not
+  (a till left open overnight starts with nobody). On the hosted copy, where the person already signed in with their
+  password, Sign in takes them straight from that sign-in — no PIN.
 - With **nobody signed in**, or **no lane set**, Tender, refunds, cash movements and Close are refused in words — the
   money is never taken first.
 - Every sale, refund, cash movement and close names the signed-in cashier, the lane and the **trading day worked out at
@@ -57,7 +62,7 @@ Close · Offline/sync health. Each handles the §27.1 universal states.
   | Go to tender | 1 (Tender) |
   | Take cash payment | ≤ 3 (Tender → Cash → confirm) |
   | Suspend / recall | ≤ 3 |
-  | Sign in for the shift (once a shift, not per sale) | 2 (Sign in → badge scan) |
+  | Sign in for the shift (once a shift, not per sale) | 3 (Sign in → badge scan → till PIN) |
 - **Exceptions to ≤3 (justified):** first-time customer capture and age-verification prompts add a step **by design** (legal/consent) — listed here explicitly, not hidden behind "where feasible".
 
 ## Offline & state behaviour (§31 / hard rule #1)
@@ -109,7 +114,8 @@ Migration · AI control.
   inverted (`tests/audit-observations/pos.test.ts`). That browser test also found that the keypad stayed on screen above
   the reason chips (an author `display: grid` beat the browser's `[hidden]`), pushing OK below a 720px viewport on every
   reason sheet — the till's hidden panels now hide (`apps/pos/web/index.html`).
-- Signing in costs two acts (Sign in → badge scan), counted on the served screen
-  (`tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts`). That browser test also found that a scanner's
+- Signing in costs three acts since Wave 2b-v (Sign in → badge scan → till PIN; two before the PIN existed), counted on
+  the served screen (`tests/e2e/the-till-and-manager-meet-the-interaction-budget.e2e.ts`). A wrong PIN through the
+  screen signs nobody in and says so (`tests/e2e/the-served-till-takes-a-sale.e2e.ts`). That browser test also found that a scanner's
   closing Enter, landing on the still-focused Sign in button, re-clicked it and signed the cashier straight back out; every
   scan-or-key prompt now drops the opener's focus first (`askScanOrKey` in `apps/pos/web/app.js`).

@@ -39,7 +39,7 @@ describe('audit observations: the served POS configuration and close call', () =
     session.scan({ productId: 'AUDIT-P1', description: 'Audit item', unitPriceMinor: 100, qty: 1 });
     // Nobody signed in → refused in the cashier's words, nothing written.
     await expect(session.tenderCash('AUDIT-S1', 'AUDIT-R1', '2026-09-30T10:00:00.000Z'))
-      .rejects.toMatchObject({ laneMessage: expect.stringContaining('Sign in with your staff code') });
+      .rejects.toMatchObject({ laneMessage: expect.stringContaining('Sign in with your staff ID and till PIN') });
     expect(written).toBeUndefined();
     // The real cashier signs in: the record names them, the box's lane, and the day worked out at the moment of sale.
     session.signIn('u-meena');

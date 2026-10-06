@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge } from '../../edge/store-edge/src/main';
 import { bootPos, laneDurable, laneCashMovement, laneShiftClose, laneTillCash } from '../../apps/pos/src/browser-entry';
+import { prepareTillBox, holdSignedInAt } from '../support/till-operator';
 
 /**
  * **The till's cash reaches head office and is RE-VERIFIED there — never refused, always said (SP-4c · F10 · M14-FR-01 ·
@@ -166,11 +167,14 @@ describe('the till\'s cash reaches the cloud through the REAL edge, and is not r
       return new Response(JSON.stringify(res.body), { status: res.status });
     }) as unknown as typeof globalThis.fetch;
     dir = await mkdtemp(join(tmpdir(), 'sre-till-cash-cloud-'));
-    await writeFile(join(dir, 'store-pack.json'), JSON.stringify({
-      version: 1,
-      policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
-      lossPreventionRules: [],
-    }), 'utf8');
+    // The pack names Meena with till authority and her till PIN is issued on this box (ADR-0020).
+    await prepareTillBox({
+      dir, key: KEY, people: [{ userId: 'u-meena', displayName: 'Meena' }],
+      pack: {
+        policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
+        lossPreventionRules: [],
+      },
+    });
   });
   afterAll(async () => {
     globalThis.fetch = savedFetch;
@@ -189,6 +193,7 @@ describe('the till\'s cash reaches the cloud through the REAL edge, and is not r
     const edge = (await startEdge(env(), () => {}))!;
     const port = edge.lane!.port;
     const till = bootPos({ laneId: 'lane-1', taxPercent: 0, durable: laneDurable(port), cashMovement: laneCashMovement(port), shiftClose: laneShiftClose(port), tillCash: laneTillCash(port) });
+    await holdSignedInAt(port, 'u-meena');
     till.signIn('u-meena');
     expect(await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: AT, movementId: 'cm-edge-float' })).toMatchObject({ committed: true });
     till.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 48_000, qty: 1 });

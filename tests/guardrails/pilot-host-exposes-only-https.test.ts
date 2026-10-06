@@ -159,6 +159,18 @@ describe('the demo front behind the proxy', () => {
     expect(readFileSync('infra/compose/docker-compose.yml', 'utf8')).not.toContain('EDGE_SCREEN_TRUST_FORWARDED_USER');
   });
 
+  it('hands the hosted TILL the signed-in person the same way — from the gate\'s answer, and only where the overlay says the box may believe it (ADR-0020 §6)', () => {
+    const lane = location('location /store-lane/');
+    expect(lane).toMatch(/auth_request \/_auth\/verify-sell;/);
+    expect(lane).toMatch(/auth_request_set \$sre_user \$upstream_http_x_sre_user;/);
+    expect(lane).toMatch(/proxy_set_header X-Sre-User \$sre_user;/);
+    expect(serviceBlock(PILOT, 'edge')).toMatch(/EDGE_LANE_TRUST_FORWARDED_USER: '1'/);
+    // A store box never believes a header for who is at the till: it asks for the staff ID and till PIN.
+    for (const file of ['infra/compose/docker-compose.yml', 'scripts/install-till.mjs']) {
+      expect(readFileSync(file, 'utf8'), file).not.toContain('EDGE_LANE_TRUST_FORWARDED_USER');
+    }
+  });
+
   it('routes /v1/ to the API with the cookie-or-header authorization and the real client address', () => {
     const v1 = location('location /v1/');
     expect(v1).toMatch(/proxy_pass http:\/\/api:8081;/);
