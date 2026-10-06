@@ -134,8 +134,10 @@ export class TillApprovals {
 
   private fold(r: LogRecord): void {
     if (r.kind === 'granted') {
-      const { kind: _k, subjectKind, ...rest } = r;
-      this.granted.set(r.approvalId, { ...rest, kind: subjectKind });
+      this.granted.set(r.approvalId, {
+        approvalId: r.approvalId, kind: r.subjectKind, billRef: r.billRef, valueMinor: r.valueMinor, requestedBy: r.requestedBy,
+        approvedBy: r.approvedBy, laneId: r.laneId, reason: r.reason, at: r.at, expiresAt: r.expiresAt,
+      });
     } else if (!this.usedBy.has(r.approvalId)) this.usedBy.set(r.approvalId, r.usedBy);
   }
 
