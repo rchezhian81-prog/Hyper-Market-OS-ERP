@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
-import { addTillPeople, signInTill } from '../support/till-operator';
+import { addTillPeople, signInTill, managerApprovesOn } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
@@ -102,7 +102,7 @@ describeOrSkip('the till returns without a receipt — cap, item, manager at the
       lossPreventionRules: [],
     }), 'utf8');
     // The pack also names the cashier with till authority, and her till PIN is issued on this box (ADR-0020).
-    await addTillPeople(packFile, dataDir, KEY, [{ userId: CASHIER, displayName: 'Meena' }]);
+    await addTillPeople(packFile, dataDir, KEY, [{ userId: CASHIER, displayName: 'Meena' }, { userId: MANAGER, displayName: 'Manager', manager: true }]);
     const edge = (await startEdge({
       EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: cloud.tenantId, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_LANE_ID: LANE, EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
@@ -159,16 +159,26 @@ describeOrSkip('the till returns without a receipt — cap, item, manager at the
     expect((await desk!.submit(draft('RT-NR-0', 'RT-0000', 50_000, { approval: undefined }))).kind).toBe('approval_required');
     // The cashier cannot approve their own.
     expect((await desk!.submit(draft('RT-NR-0', 'RT-0000', 50_000, { approval: { by: CASHIER, reason: 'mine' } }))).kind).toBe('approval_required');
+    // A manager's name typed in, with no approval from the store computer behind it, is refused by the box (ADR-0021).
+    const typed = await desk!.submit(draft('RT-NR-0', 'RT-0000', 50_000));
+    expect(typed.kind).not.toBe('settled');
+    expect((typed as { laneMessage: string }).laneMessage).toMatch(/needs a manager's approval on this till/);
     expect(await readLog(edge.returnsLog.path)).toHaveLength(0);
 
-    // ── 4. The return: ₹500 back in cash for one tin, approved by the manager. Settled at the lane = on THIS box's disk.
-    const first = await desk!.submit(draft('RT-NR-1', 'RT-0001', 50_000));
+    // ── 4. The return: ₹500 back in cash for one tin, approved by the manager with their own PIN. Settled at the lane = on
+    //      THIS box's disk.
+    const a1 = await managerApprovesOn(till, MANAGER, { kind: 'no_receipt_return', valueMinor: 50_000, reason: 'checked the goods' });
+    const first = await desk!.submit(draft('RT-NR-1', 'RT-0001', 50_000, { approval: a1 }));
     expect(first.kind).toBe('settled');
     // The same return again: refunded ONCE (RR-F03) — the reused id is a conflict, never a second payout.
-    expect((await desk!.submit(draft('RT-NR-1', 'RT-0001', 50_000))).kind).toBe('conflict');
+    expect((await desk!.submit(draft('RT-NR-1', 'RT-0001', 50_000, { approval: a1 }))).kind).toBe('conflict');
+    // The same approval for ANOTHER return is refused by the box: one approval, one refund.
+    const reused = await desk!.submit(draft('RT-NR-9', 'RT-0009', 50_000, { approval: a1 }));
+    expect((reused as { laneMessage: string }).laneMessage).toMatch(/already used for another refund/);
     // And one the LANE's pack allows (₹1,200 < ₹1,500) but head office's cap does not (> ₹1,000): the lane settles it —
     // its policy is the one it was given — and head office must then SAY so, not lose it.
-    expect((await desk!.submit(draft('RT-NR-2', 'RT-0002', 120_000))).kind).toBe('settled');
+    const a2 = await managerApprovesOn(till, MANAGER, { kind: 'no_receipt_return', valueMinor: 120_000, reason: 'checked the goods' });
+    expect((await desk!.submit(draft('RT-NR-2', 'RT-0002', 120_000, { approval: a2 }))).kind).toBe('settled');
     // Above even the lane's cap: refused before anything is written.
     expect((await desk!.submit(draft('RT-NR-3', 'RT-0003', 160_000))).kind).toBe('invalid');
 

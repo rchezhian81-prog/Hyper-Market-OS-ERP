@@ -345,7 +345,7 @@ Run each on a different day or in sequence; each row names what the person shoul
 | 3 | QC / checker (`pilot-manager` on a second screen, or the owner) | ERP `/goods-receipt/` | Decide the damaged line: return to supplier. Try as the receiver first. | the receiver's own decision is refused; the checker's is recorded once |
 | 4 | Floor staff (`pilot-cashier`) + manager + back store | ERP `/indents/` and the warehouse phone | Raise an indent for the shelf; manager approves; back store issues by scanning bin and item; the floor counts it in. | requested / approved / issued (in transit) / received shown separately; the shelf stock appears only after the floor receipt |
 | 5 | Cashier (`pilot-cashier`) | Till | Sign in with staff ID and till PIN (try a wrong PIN first); take the float; scan and sell; pull the network cable and sell again; reconnect. | the wrong PIN signs nobody in; both sales complete; the unsent counter rises then falls; stock at head office falls by two |
-| 6 | Cashier + manager | Till | Return one item with the receipt (manager approves); try a return without a receipt; an exchange. | refund settled; stock back; the no-receipt and exchange flows follow the prompts |
+| 6 | Cashier + manager | Till | Return one item with the receipt (the manager approves with their own badge and till PIN; first let the cashier try to approve it herself); try a return without a receipt; an exchange. | the cashier's own approval says Not approved; with the manager's PIN the refund settles; stock back; the no-receipt and exchange flows follow the prompts |
 | 7 | Cashier + cash office (`pilot-accountant`) | Till, ERP `/cash-office/` | Bank a pickup; close the till blind; sign off the over/short. | the count sheet shows no expected figure; the cash office sees the chain |
 | 8 | Picker (`pilot-manager`) | Picker phone | Scan the bin, scan the item, confirm; flag a quality fail; pack the crate. | each line listed with its state; head office's wave shows the lines and the pack with no flags |
 | 9 | Driver (`pilot-manager`) | Driver phone | Deliver one stop with proof and cash; fail the other back to the store; end of shift: count and hand over. | seven items listed "with the store computer"; the order's journey at head office matches |
@@ -373,7 +373,8 @@ Cross-cutting, once per person: the DEMO banner is visible; a refused action say
 - The demo box is still on the 28 September release until §2 is done; this document is written for the release at `0bf098a` (PR #671) or later.
 - The ERP screens have no interactive staff sign-in on a store PC: the pack names one person per screen (KL-01, OA-4).
   The till authenticates the cashier with a staff ID and till PIN the store PC verifies (ADR-0020, closes
-  GAP-POS-LOGIN-01); a manager's approval at the till is still a scanned or keyed staff ID until Wave 2b-v-b.
+  GAP-POS-LOGIN-01); a manager's approval at the till is the manager's own PIN, checked by the store PC, for that one
+  refund (ADR-0021) — so `pilot-manager` needs a till PIN on the store PC too.
 - The box signs in to head office as `pilot-cashier` for the demo; a dedicated `store-edge` login is a go-live step (UAT-05).
 - Head office assigns waves and routes to phones since 3 Oct 2026 (HA-1: `POST /v1/fulfilment/waves/:waveId/assignment`, `POST /v1/delivery/routes/:routeId/assignment`; the box pulls the open ones). The pack file's `wave` / `route` sections below are the hand-written override and still work for a first practice session; the screen says which source it is holding. A head-office screen for assigning is not built yet — the two routes are called through the API.
 - No TLS on the shop-network leg to the phones (OA-16: staff-only wifi is the control).

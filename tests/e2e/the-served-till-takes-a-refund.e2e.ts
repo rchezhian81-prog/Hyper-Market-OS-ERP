@@ -6,7 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
-import { prepareTillBox, signInOnPage } from '../support/till-operator';
+import { prepareTillBox, signInOnPage, pinOf } from '../support/till-operator';
+
+/** The cashier, and the manager who approves refunds at the till with their own PIN (ADR-0021). */
+const TILL_PEOPLE = [{ userId: 'u-lanecash', displayName: 'Lane cashier' }, { userId: 'u-manager', displayName: 'Manager', manager: true }];
 import { readLog } from '../../edge/store-edge/src/file-log';
 
 /**
@@ -53,6 +56,7 @@ interface PosWindow {
     newSale(): void;
     lookupRefund(receipt: string): Promise<RefundLookup | null>;
     noReceiptReturn(): { capMinor: number } | null;
+    approveAtTill(r: { managerId: string; pin: string; kind: 'refund' | 'no_receipt_return' | 'exchange_refund'; billRef?: string; valueMinor: number; reason: string }): Promise<{ approved: boolean; approvalId?: string; approvedBy?: string; laneMessage?: string }>;
   };
   readonly posRefundPolicy?: { approvalThresholdMinor: number; noReceiptCapMinor: number };
 }
@@ -104,7 +108,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
-      ...await prepareTillBox({ dir, key: KEY }),
+      ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE }),
     }, () => {}))!;
     stops.push(() => edge.stop());
     expect(edge.lane?.port).toBe(8090);
@@ -116,7 +120,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
 
     await signInOnPage(page); // staff ID + till PIN, checked by the box (ADR-0020)
-    const result = await page.evaluate(async () => {
+    const result = await page.evaluate(async (managerPin) => {
       const w = globalThis as unknown as PosWindow;
       // Ring one item and take cash — a bill to refund against.
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
@@ -132,8 +136,13 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
         // The whole bill back: the amount actually paid — the ₹640 shelf price, the 18% GST INSIDE it (A9; F15 fixed) —
         // which is what the screen offers as the ceiling.
         refundMinor: 64_000, refundTender: 'cash',
-        // Threshold defaults to 0 → every refund needs a manager (a DIFFERENT person, §28).
-        approval: { by: 'u-manager', reason: 'checked the goods' },
+        // Threshold defaults to 0 → every refund needs a manager (a DIFFERENT person, §28) — who approves at this till with
+        // their own PIN, for this bill and this amount (ADR-0021).
+        approval: await (async () => {
+          const a = await w.posSession!.approveAtTill({ managerId: 'u-manager', pin: managerPin, kind: 'refund', billRef: 'S-1', valueMinor: 64_000, reason: 'checked the goods' });
+          if (!a.approved) throw new Error(a.laneMessage);
+          return { by: 'u-manager', reason: 'checked the goods', approvalId: a.approvalId };
+        })(),
       };
       const first = await bill.submit(draft);
       // Submit the SAME refund id a second time. The money must go back ONCE: the edge refuses the
@@ -148,7 +157,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
         maxRefundMinor: bill.maxRefundMinor,
         first, retry,
       } as const;
-    });
+    }, pinOf('u-manager'));
 
     expect(result.found).toBe(true);
     if (!result.found) return;
@@ -178,7 +187,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
-      ...await prepareTillBox({ dir, key: KEY }),
+      ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE }),
     }, () => {}))!;
     stops.push(() => edge.stop());
 
@@ -189,7 +198,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
 
     await signInOnPage(page); // staff ID + till PIN, checked by the box (ADR-0020)
-    const result = await page.evaluate(async () => {
+    const result = await page.evaluate(async (managerPin) => {
       const w = globalThis as unknown as PosWindow;
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
       await w.posSession!.tenderCash('S-3', 'R-0003', '2026-08-28T10:10:00Z');
@@ -201,11 +210,15 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
         returnId: 'RT-3', number: 'RT-0003', reasonCode: 'customer_changed_mind',
         lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
         refundMinor: 64_000, refundTender: 'store_credit',
-        approval: { by: 'u-manager', reason: 'checked the goods' },
+        approval: await (async () => {
+          const a = await w.posSession!.approveAtTill({ managerId: 'u-manager', pin: managerPin, kind: 'refund', billRef: 'S-3', valueMinor: 64_000, reason: 'checked the goods' });
+          if (!a.approved) throw new Error(a.laneMessage);
+          return { by: 'u-manager', reason: 'checked the goods', approvalId: a.approvalId };
+        })(),
         customerRef: 'c-asha',
       });
       return { found: true, out } as const;
-    });
+    }, pinOf('u-manager'));
 
     expect(result.found).toBe(true);
     if (!result.found) return;
@@ -229,7 +242,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
-      ...await prepareTillBox({ dir, key: KEY, pack: PACK_FILE_WITH_CAP }),
+      ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE, pack: PACK_FILE_WITH_CAP }),
     }, () => {}))!;
     stops.push(() => edge.stop());
 
@@ -248,46 +261,74 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     expect(given.policy).toEqual({ approvalThresholdMinor: 0, noReceiptCapMinor: 100_000 });
     expect(given.offered).toEqual({ capMinor: 100_000 });
 
-    // ── The cashier's own steps, on the real screen. More → "Return without receipt".
-    await page.click('#more');
-    await panelTitled(page, 'More');
-    const offers = await page.$$eval('#pay-kinds button', (b) => b.map((x) => x.textContent ?? ''));
-    expect(offers).toContain('Return without receipt');
-    expect(offers).toContain('Refund');
-    await page.click('#pay-kinds button:text-is("Return without receipt")');
+    // ── The cashier's own steps, on the real screen, up to the manager — taken twice below.
+    const throughToTheManager = async (): Promise<void> => {
+      // ── The cashier's own steps, on the real screen. More → "Return without receipt".
+      await page.click('#more');
+      await panelTitled(page, 'More');
+      const offers = await page.$$eval('#pay-kinds button', (b) => b.map((x) => x.textContent ?? ''));
+      expect(offers).toContain('Return without receipt');
+      expect(offers).toContain('Refund');
+      await page.click('#pay-kinds button:text-is("Return without receipt")');
 
-    // The item is the evidence: the scanner types the barcode and presses Enter (the shell listens on the window).
-    await sheetTitled(page, 'Scan the item coming back');
-    await page.keyboard.type('8901234567890');
+      // The item is the evidence: the scanner types the barcode and presses Enter (the shell listens on the window).
+      await sheetTitled(page, 'Scan the item coming back');
+      await page.keyboard.type('8901234567890');
+      await page.keyboard.press('Enter');
+
+      // Named from the lane's own price list; one is coming back.
+      await sheetTitled(page, 'How many are coming back? — Amul Ghee Gold 1L');
+      expect(await page.textContent('#entry')).toBe('1');
+      await page.click('#sheet-ok');
+
+      // Why (a chosen reason, M15), and in what condition (M13-FR-02).
+      await sheetTitled(page, 'Why is it coming back?');
+      await page.click('#reasons button:text-is("Damaged / faulty")');
+      await page.click('#sheet-ok');
+      await panelTitled(page, 'What condition is the item in?');
+      await page.click('#pay-kinds button:text-is("Good — back on the shelf")');
+
+      // How much — shown against the no-receipt limit, not against any bill. ₹500, under the ₹1,000 cap.
+      await sheetTitled(page, 'How much to refund?');
+      expect(await page.textContent('#entry-hint')).toBe('No-receipt limit: ₹1,000.00');
+      for (const digit of '500') await page.click(`#keypad button:text-is("${digit}")`);
+      expect(await page.textContent('#entry-hint')).toBe('Refunding: ₹500.00');
+      await page.click('#sheet-ok');
+
+      // Given back as cash.
+      await panelTitled(page, 'How is the refund given?');
+      await page.click('#pay-kinds button:text-is("Cash")');
+    };
+
+    // First the cashier tries to approve it HERSELF, with her own PIN: the store computer refuses (§28 · ADR-0021) — the
+    // screen says so, and nothing is recorded.
+    await throughToTheManager();
+    await sheetTitled(page, 'Manager: scan your badge or key your staff ID');
+    await page.keyboard.type('u-lanecash');
     await page.keyboard.press('Enter');
-
-    // Named from the lane's own price list; one is coming back.
-    await sheetTitled(page, 'How many are coming back? — Amul Ghee Gold 1L');
-    expect(await page.textContent('#entry')).toBe('1');
-    await page.click('#sheet-ok');
-
-    // Why (a chosen reason, M15), and in what condition (M13-FR-02).
-    await sheetTitled(page, 'Why is it coming back?');
+    await sheetTitled(page, 'Manager: your till PIN');
+    await page.keyboard.type(pinOf('u-lanecash'));
+    await page.keyboard.press('Enter');
+    await sheetTitled(page, 'Manager: why is this refund approved?');
     await page.click('#reasons button:text-is("Damaged / faulty")');
     await page.click('#sheet-ok');
-    await panelTitled(page, 'What condition is the item in?');
-    await page.click('#pay-kinds button:text-is("Good — back on the shelf")');
+    await page.waitForSelector('#refusal:not([hidden])', { timeout: 15_000 });
+    expect(await page.textContent('#refusal-title')).toBe('Not approved');
+    expect(await page.textContent('#refusal-text')).toMatch(/not the person at the till/);
+    await page.click('#refusal-ok');
+    expect(await readLog(edge.returnsLog.path)).toHaveLength(0);
 
-    // How much — shown against the no-receipt limit, not against any bill. ₹500, under the ₹1,000 cap.
-    await sheetTitled(page, 'How much to refund?');
-    expect(await page.textContent('#entry-hint')).toBe('No-receipt limit: ₹1,000.00');
-    for (const digit of '500') await page.click(`#keypad button:text-is("${digit}")`);
-    expect(await page.textContent('#entry-hint')).toBe('Refunding: ₹500.00');
-    await page.click('#sheet-ok');
-
-    // Given back as cash.
-    await panelTitled(page, 'How is the refund given?');
-    await page.click('#pay-kinds button:text-is("Cash")');
-
+    // Then properly.
+    await throughToTheManager();
     // A manager, ALWAYS — scanned badge or keyed staff code — then why they approve.
-    await sheetTitled(page, 'Manager: scan your badge or key your staff code');
+    await sheetTitled(page, 'Manager: scan your badge or key your staff ID');
     expect(await page.textContent('#entry-hint')).toContain('Every return without a receipt needs a manager');
     await page.keyboard.type('u-manager');
+    await page.keyboard.press('Enter');
+    // …then their OWN till PIN, masked, checked by the store computer for this one return (ADR-0021).
+    await sheetTitled(page, 'Manager: your till PIN');
+    await page.keyboard.type(pinOf('u-manager'));
+    expect(await page.locator('#entry').textContent()).toBe('••••••');
     await page.keyboard.press('Enter');
     await sheetTitled(page, 'Manager: why is this refund approved?');
     await page.click('#reasons button:text-is("Damaged / faulty")');
@@ -322,7 +363,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
-      ...await prepareTillBox({ dir, key: KEY, pack: PACK_FILE_WITH_CAP }),
+      ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE, pack: PACK_FILE_WITH_CAP }),
     }, () => {}))!;
     stops.push(() => edge.stop());
 
@@ -411,7 +452,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
-      ...await prepareTillBox({ dir, key: KEY }),
+      ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE }),
     }, () => {}))!;
     stops.push(() => edge.stop());
     const context = await browser.newContext();
@@ -436,7 +477,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
-      ...await prepareTillBox({ dir, key: KEY }),
+      ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE }),
     }, () => {}))!;
     stops.push(() => edge.stop());
 

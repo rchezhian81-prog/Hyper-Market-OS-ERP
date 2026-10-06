@@ -259,6 +259,8 @@ export function createTillSession(
     laneId: full.laneId,
     processedBy: full.processedBy,
     ...(full.approval?.decidedBy === undefined ? {} : { approvedBy: full.approval.decidedBy }),
+    // The approval the store computer issued for this refund (ADR-0021) — the box spends it, once, before the disk.
+    ...(full.approval?.decidedBy !== undefined && full.approval.id.startsWith('apr-') ? { approvalId: full.approval.id } : {}),
     // The customer a store-credit refund belongs to (M13-FR-03 / §31) — carried onto the edge record so
     // `toCloudReturn` forwards it and the cloud issues the credit to them when the refund reconciles.
     ...(full.customerRef === undefined ? {} : { customerRef: full.customerRef }),

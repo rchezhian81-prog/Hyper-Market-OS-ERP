@@ -52,7 +52,12 @@ const envFor = (dataDir: string, lanePort: string) => ({
  */
 const startLane = async () => {
   const dir = await tempDir();
-  const edge = (await startEdge({ ...envFor(dir, '0'), ...await prepareTillBox({ dir, key: KEY }) }, () => {}))!;
+  // The box holds the shop's approval threshold (₹1,000) — the same the till's refund below is judged by, so a ₹50 refund
+  // needs no manager on either side (ADR-0021).
+  const edge = (await startEdge({ ...envFor(dir, '0'), ...await prepareTillBox({
+    dir, key: KEY,
+    pack: { servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 100_000, noReceiptCapMinor: 0, agentAuthorityMinor: 0, compensationCapMinor: 0 } },
+  }) }, () => {}))!;
   stops.push(() => edge.stop());
   await holdSignedInAt(edge.lane!.port, 'u-lanecash');
   return edge;

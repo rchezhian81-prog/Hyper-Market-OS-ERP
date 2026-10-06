@@ -73,6 +73,7 @@ import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-serv
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
 import { TillOperators, loadTillCredentials } from './till-operators';
+import { TillApprovals } from './till-approvals';
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
 import { readSales } from './read-model';
@@ -1061,6 +1062,13 @@ export async function startEdge(
       permissionsOf: (userId) => permissionsOf(userId, pack),
     },
   });
+  // A MANAGER'S APPROVAL at the till (ADR-0021): issued here against the manager's own PIN, spent once by the refund it
+  // was given for. The threshold is the CURRENT pack's; a box with no service policy treats every refund as needing one.
+  const tillApprovals = tillOperators === null ? null : await TillApprovals.open({
+    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    operators: tillOperators,
+    approvalThresholdMinor: () => (pack.servicePolicy.known ? pack.servicePolicy.value.approvalThresholdMinor : null),
+  });
   if (tillOperators !== null) {
     say(trustForwardedTillUser
       ? 'till sign-in: the person the hosted sign-in names (EDGE_LANE_TRUST_FORWARDED_USER) — only right behind the hosted front.'
@@ -1078,6 +1086,12 @@ export async function startEdge(
         signInVerified: (i) => tillOperators.signInVerified(i),
         check: (token, laneId) => tillOperators.check(token, laneId),
         signOut: (token) => tillOperators.signOut(token),
+      },
+    }),
+    ...(tillApprovals === null ? {} : {
+      approvals: {
+        grant: (i) => tillApprovals.grant(i),
+        checkReturn: (i) => tillApprovals.checkReturn(i),
       },
     }),
     // The till's cash lives on this box (SP-4c · F10): the float, the pickups and the close come in here, durably.

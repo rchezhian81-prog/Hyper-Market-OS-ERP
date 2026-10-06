@@ -5,6 +5,42 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-v-b — a manager's approval at the till is the manager's own act, for one refund, used once (6 October 2026)
+
+- **The finding (audit PF-02, CRITICAL), the manager half:** wherever the till needed a manager — a refund at or above
+  the shop's threshold, every return without a receipt, an exchange's refunded difference — the screen took a scanned
+  or typed staff code as the "approval". Nothing proved the manager was there, and one name could be written onto any
+  number of refunds.
+- **The decision (ADR-0021, new):** the manager proves themselves with their own till PIN, to the store computer, at the
+  till; only the store computer issues an approval, bound to one refund and used once.
+- **What changed (pull request #710):**
+  - **The store computer's approval register** (`edge/store-edge/src/till-approvals.ts`, `POST /lane/approvals`): it
+    refuses unless a cashier is signed in at this till and asking, the manager is someone else (§28), the manager's PIN
+    matches — checked by the SAME code as sign-in, so wrong PINs count towards the same lockouts — and the manager holds
+    `pos.return.approve` in the pack. It issues an approval bound to the kind (a refund on a bill, a return without a
+    receipt, an exchange's refunded difference), the bill, the amount, the cashier and the till, for five minutes. It is
+    NOT tied to the refund's number, so a refused approval never leaves a gap in the till's numbering.
+  - **Spent once, before the disk** (`edge/store-edge/src/lane-server.ts`): a refund that needs an approval (the pack's
+    threshold; a box with no service policy treats every refund as needing one, as the till does) or that names an
+    approver must carry an approval this box issued and that matches it; the box spends it, writes the approver it
+    verified and stamps `approvalVerified`. A typed approver, a reused, expired, mismatched or unknown approval are
+    refused, nothing written. The same refund re-sent after a lost reply is the same use.
+  - **The till screen** (`apps/pos/web/app.js`): in the refund, the exchange and the return-without-receipt flows the
+    manager scans their badge (or keys their staff ID), keys **their own** six-digit PIN (dots), and chooses why. A
+    refused approval says **Not approved** with the reason, and nothing is recorded.
+  - Every approval given and used is on an fsync'd log (`till-approvals.log`), folded at start; no PIN is ever written.
+- **Proved:** `tests/unit/till-approvals.test.ts` (11), `tests/integration/the-manager-approves-at-the-till.test.ts`
+  (5, a real store computer with no cloud), and in a real browser `tests/e2e/the-served-till-takes-a-refund.e2e.ts`
+  (the cashier's own approval refused on screen and nothing recorded; the manager's masked PIN approves a return without
+  a receipt). The connected proofs (store trades a day, exchanges, no-receipt returns), the deployment smoke and the
+  screen guardrail now approve with a manager's PIN made at run time. Full gate green locally.
+- **Not yet / honest limits:** head office still checks only that the approver's NAME holds the authority — treating it
+  as an approval object and flagging a synced refund without the box's stamp is 2b-v-c (next); there is no
+  approval-limit register yet (how much each manager may approve); head office's own service-desk approvals and the
+  manager screen's day-reopen approval are separate; on the hosted copy a manager who is to approve refunds needs a till
+  PIN issued on that box (runbook Step 2b); staff UAT (SP-10, pending, unasked).
+- **Next:** Wave 2b-v-c (head office's side of PF-02), then the OB-15 block.
+
 ## Wave 2b-v-a — the person on a sale is a person the store computer verified, offline (6 October 2026)
 
 - **The finding (audit PF-02, CRITICAL), the till half:** the till wrote whatever staff code was typed as the cashier on

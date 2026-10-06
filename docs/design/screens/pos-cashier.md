@@ -24,6 +24,12 @@ Close · Offline/sync health. Each handles the §27.1 universal states.
   password, Sign in takes them straight from that sign-in — no PIN.
 - With **nobody signed in**, or **no lane set**, Tender, refunds, cash movements and Close are refused in words — the
   money is never taken first.
+- **A manager's approval** (a refund at or above the shop's threshold, every return without a receipt, an exchange's
+  refunded difference — §28): the manager scans their badge or keys their staff ID, then keys **their own** six-digit
+  till PIN (dots, never digits), then chooses why. The **store computer** checks it and issues an approval for exactly
+  that refund — that bill, that amount, that cashier — valid five minutes and used once (ADR-0021). A cashier cannot
+  approve their own ("…approved by a manager who is not the person at the till"); a person without the authority is told
+  so; a refused approval says **Not approved** and records nothing. One more act than before: the manager's PIN.
 - Every sale, refund, cash movement and close names the signed-in cashier, the lane and the **trading day worked out at
   that moment** from the shop's cut-off (M01-FR-02) — so a till left open past the cut-off moves to the new day by itself.
 - Head office re-verifies the cashier a sale names against their grants; an unknown or unauthorised name is a finding on

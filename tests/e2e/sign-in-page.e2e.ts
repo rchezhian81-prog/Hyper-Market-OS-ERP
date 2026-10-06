@@ -45,7 +45,8 @@ interface Stand {
   readonly base: string;
   readonly posts: () => number;
   readonly advance: (ms: number) => void;
-  readonly delayPosts: (ms: number) => void;
+  /** Hold every sign-in POST until the returned release is called — the "slow server", without racing a clock. */
+  readonly holdPosts: () => () => void;
   readonly stop: () => Promise<void>;
 }
 
@@ -53,7 +54,7 @@ interface Stand {
 function stand(): Promise<Stand> {
   let now = Date.parse('2026-10-05T09:00:00Z');
   let posts = 0;
-  let delay = 0;
+  let held: (() => void)[] | null = null;
   const handle = createDemoLoginHandler({ logins: () => FILE, idp: IDP, throttle: new FailureThrottle(), now: () => now, audit: () => {} });
   const server: Server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -74,7 +75,7 @@ function stand(): Promise<Stand> {
         const out = handle(request);
         res.writeHead(out.status, out.headers).end(out.body);
       };
-      if (request.method === 'POST' && delay > 0) setTimeout(answer, delay); else answer();
+      if (request.method === 'POST' && held !== null) held.push(answer); else answer();
     });
   });
   return new Promise((resolve) => {
@@ -86,7 +87,10 @@ function stand(): Promise<Stand> {
         base: `http://localhost:${port}`,
         posts: () => posts,
         advance: (ms) => { now += ms; },
-        delayPosts: (ms) => { delay = ms; },
+        holdPosts: () => {
+          held = [];
+          return () => { const waiting = held ?? []; held = null; for (const go of waiting) go(); };
+        },
         stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }),
       });
     });
@@ -261,8 +265,9 @@ describe.skipIf(!HAVE_BROWSER)('the sign-in page, in a real browser (UX-3 · OB-
       expect(await page.textContent('#sl-form-message')).toBe(LOGIN_COPY.ta.invalid);
       await page.click('[data-language="en"]');
 
-      // The right password, with the server slow: the button goes busy and says so, a second click sends nothing.
-      s.delayPosts(600);
+      // The right password, with the server slow (its answer held until the test lets it go — no clock to race): the button
+      // goes busy and says so, a second click sends nothing.
+      const release = s.holdPosts();
       await page.fill('#login', 'ravi.cashier');
       await page.fill('#password', PASSWORD);
       const landed = page.waitForNavigation({ waitUntil: 'load' });
@@ -271,6 +276,7 @@ describe.skipIf(!HAVE_BROWSER)('the sign-in page, in a real browser (UX-3 · OB-
       expect(await page.textContent('#sl-submit-text')).toBe(LOGIN_COPY.en.signingIn);
       // The second click is dispatched inside the page: a tester's finger does not wait for the navigation the way the automation's click would.
       await page.evaluate('document.getElementById("sl-submit").click()');
+      release();
       await landed;
       expect(s.posts()).toBe(2); // the wrong one and the right one — the second click sent nothing
       expect(await page.textContent('#workspace')).toBe('WORKSPACE');
@@ -279,7 +285,6 @@ describe.skipIf(!HAVE_BROWSER)('the sign-in page, in a real browser (UX-3 · OB-
       expect(cookie?.httpOnly).toBe(true);
       expect(cookie?.secure).toBe(true);
       expect(cookie?.sameSite).toBe('Strict');
-      s.delayPosts(0);
 
       // Signed in, the sign-in address is the account page.
       await page.goto(`${s.base}/login/`, { waitUntil: 'load' });

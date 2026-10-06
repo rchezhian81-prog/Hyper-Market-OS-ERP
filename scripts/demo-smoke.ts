@@ -155,6 +155,7 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
     return match === null ? undefined : JSON.parse(match[1]!) as CatalogueSnapshot & { source?: string };
   };
   const smokePin = newTillPin();
+  const smokeManagerPin = newTillPin();
   const startBox = async (): Promise<EdgeProcess> => {
     const dataDir = await mkdtemp(join(tmpdir(), 'sre-demo-smoke-'));
     dirs.push(dataDir);
@@ -164,14 +165,19 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
       policies: { storeId: STORE, branchId: STORE, branchName: 'Smoke store', warehouseId: BACK, tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 0 },
       lossPreventionRules: [],
       // The smoke's cashier, with till authority, so the box signs them in (ADR-0020) — the same role head office gives.
-      people: [{ userId: cast.cashier, displayName: 'Smoke cashier', roleId: 'smoke-cashier' }],
-      roles: [{ id: 'smoke-cashier', name: 'Cashier', permissions: ['pos.sale.sync', 'pos.return.process'] }],
-      roleAssignments: [{ userId: cast.cashier, roleId: 'smoke-cashier', branchScope: 'all' }],
+      // …and its manager, who approves the refund with their own PIN (ADR-0021).
+      people: [{ userId: cast.cashier, displayName: 'Smoke cashier', roleId: 'smoke-cashier' }, { userId: cast.manager, displayName: 'Smoke manager', roleId: 'smoke-manager' }],
+      roles: [
+        { id: 'smoke-cashier', name: 'Cashier', permissions: ['pos.sale.sync', 'pos.return.process'] },
+        { id: 'smoke-manager', name: 'Store manager', permissions: ['pos.sale.sync', 'pos.return.process', 'pos.return.approve'] },
+      ],
+      roleAssignments: [{ userId: cast.cashier, roleId: 'smoke-cashier', branchScope: 'all' }, { userId: cast.manager, roleId: 'smoke-manager', branchScope: 'all' }],
     }), 'utf8');
     // The cashier's till PIN, issued on this in-process box exactly as the till-pin command does — made at random for
     // this run, held in memory, never printed or written anywhere but as its verifier.
     await writeFile(join(dataDir, 'till-credentials.json'), JSON.stringify({ version: 1, credentials: [
       issueTillCredential({ userId: cast.cashier, pin: smokePin, key: tillPinKey(input.packSigningKey), issuedAt: new Date().toISOString(), issuedBy: 'demo-smoke' }),
+      issueTillCredential({ userId: cast.manager, pin: smokeManagerPin, key: tillPinKey(input.packSigningKey), issuedAt: new Date().toISOString(), issuedBy: 'demo-smoke' }),
     ] }), { mode: 0o600 });
     const edge = await startEdge({
       EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: input.tenantId, PACK_SIGNING_KEY: input.packSigningKey, EDGE_CAPACITY_BYTES: '10485760',
@@ -335,10 +341,14 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
     await step('an eligible RESALE return (manager-approved) refunds the cash and puts the unit back on the shelf', async () => {
       const bill = await till!.lookupRefund(`${run}-R-S-1`);
       must(bill !== null && bill.maxRefundMinor === PRICE, 'the bill was not found on the box or allows the wrong refund');
+      // The manager approves at the till with their own PIN, for this bill and this amount (ADR-0021).
+      const approved = await till!.approveAtTill({ managerId: cast.manager, pin: smokeManagerPin, kind: 'refund', billRef: `${run}-S-1`, valueMinor: PRICE, reason: 'checked the goods' });
+      must(approved.approved, `the box did not give the manager's approval: ${approved.approved ? '' : approved.laneMessage}`);
       const refunded = await bill!.submit({
         returnId: `${run}-RT-1`, number: `${run}-RT-0001`, reasonCode: 'changed_mind',
         lines: [{ productId: PRODUCT, uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
-        refundMinor: PRICE, refundTender: 'cash', approval: { by: cast.manager, reason: 'checked the goods' },
+        refundMinor: PRICE, refundTender: 'cash',
+        approval: { by: cast.manager, reason: 'checked the goods', ...(approved.approved ? { approvalId: approved.approvalId } : {}) },
       });
       must(refunded.kind === 'settled', `the refund was ${refunded.kind}: ${refunded.laneMessage}`);
       const pass = await edge!.syncOnce!();

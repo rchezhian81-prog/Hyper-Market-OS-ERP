@@ -66,6 +66,7 @@ import type {
 } from './till-cash';
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { OPERATOR_HEADER, type CheckOutcome, type SignInOutcome } from './till-operators';
+import type { GrantOutcome, ReturnCheck } from './till-approvals';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -143,6 +144,20 @@ const LANE_TILL_CASH_ROUTE = '/lane/till-cash';
 const LANE_OPERATOR_ROUTE = '/lane/operator';
 const LANE_OPERATOR_SIGN_IN_ROUTE = '/lane/operator/sign-in';
 const LANE_OPERATOR_SIGN_OUT_ROUTE = '/lane/operator/sign-out';
+/**
+ * A MANAGER'S APPROVAL at this till (ADR-0021): `POST /lane/approvals` with the manager's staff ID and own till PIN and
+ * what it is for. The box issues an approval bound to that refund — and spends it when the refund reaches the disk.
+ */
+const LANE_APPROVALS_ROUTE = '/lane/approvals';
+
+/** The approval register this socket asks (`TillApprovals`). */
+export interface LaneApprovalPort {
+  grant(input: {
+    readonly token: string | undefined; readonly laneId: string; readonly managerId: string; readonly pin: string;
+    readonly kind: unknown; readonly billRef: unknown; readonly valueMinor: unknown; readonly reason: unknown;
+  }): Promise<GrantOutcome>;
+  checkReturn(input: { readonly record: unknown; readonly requestedBy: string; readonly laneId: string; readonly returnId: string }): Promise<ReturnCheck>;
+}
 
 /** The till-operator register this socket asks (`TillOperators`), with the lane this box IS and how it signs people in. */
 export interface LaneOperatorPort {
@@ -322,6 +337,11 @@ export function startLaneServer(input: {
    * session for the person they name. Absent only where a test drives this socket alone.
    */
   readonly operators?: LaneOperatorPort;
+  /**
+   * The manager-approval register (ADR-0021). Wired beside `operators` on every store box: the approval route answers,
+   * and a refund is refused before the disk unless it needs no approval or carries one this box issued for it.
+   */
+  readonly approvals?: LaneApprovalPort;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -471,6 +491,32 @@ export function startLaneServer(input: {
           const outcome = verifiedUser !== '' && pin === ''
             ? await ops.signInVerified({ userId: verifiedUser, laneId: ops.laneId })
             : await ops.signIn({ staffId, pin, laneId: ops.laneId });
+          send(res, 200, outcome, { ...cors, 'cache-control': 'no-store' });
+        } catch (e) {
+          send(res, 200, refused(e instanceof Error ? e.message : String(e)), cors);
+        }
+      })();
+      return;
+    }
+
+    // A manager approves at this till (ADR-0021). The cashier's session asks; the manager's own PIN answers.
+    if (req.method === 'POST' && pathname === LANE_APPROVALS_ROUTE) {
+      const ops = input.operators;
+      const approvals = input.approvals;
+      const refused = (laneMessage: string) => ({ approved: false, refusedBecause: 'approval_not_readable', laneMessage });
+      if (ops === undefined || approvals === undefined) { send(res, 404, refused('this box does not give approvals at the till'), cors); req.resume(); return; }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) { send(res, authRefusal.status, refused(authRefusal.reason), cors); req.resume(); return; }
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, refused);
+        if (body === undefined) return;
+        const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+        try {
+          const outcome = await approvals.grant({
+            token: operatorTokenOf(req), laneId: ops.laneId,
+            managerId: typeof b['managerId'] === 'string' ? b['managerId'] : '', pin: typeof b['pin'] === 'string' ? b['pin'] : '',
+            kind: b['kind'], billRef: b['billRef'], valueMinor: b['valueMinor'], reason: b['reason'],
+          });
           send(res, 200, outcome, { ...cors, 'cache-control': 'no-store' });
         } catch (e) {
           send(res, 200, refused(e instanceof Error ? e.message : String(e)), cors);
@@ -821,14 +867,15 @@ export function startLaneServer(input: {
     // only for a loopback origin; anything else gets no allow header and the browser refuses the POST.
     if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE || pathname === LANE_SYNC_STATUS_ROUTE || pathname === LANE_DEVICE_OUTBOX_ROUTE || pathname === LANE_DEVICE_OUTBOX_STATUS_ROUTE
       || pathname === LANE_CASH_MOVEMENTS_ROUTE || pathname === LANE_SHIFT_CLOSE_ROUTE || pathname === LANE_TILL_CASH_ROUTE
-      || pathname === LANE_OPERATOR_ROUTE || pathname === LANE_OPERATOR_SIGN_IN_ROUTE || pathname === LANE_OPERATOR_SIGN_OUT_ROUTE)) {
+      || pathname === LANE_OPERATOR_ROUTE || pathname === LANE_OPERATOR_SIGN_IN_ROUTE || pathname === LANE_OPERATOR_SIGN_OUT_ROUTE
+      || pathname === LANE_APPROVALS_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`, `POST ${LANE_APPROVALS_ROUTE}`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }
@@ -899,6 +946,16 @@ export function startLaneServer(input: {
           // The stamp is the person and the way they signed in — never a clock reading: a till re-sending the SAME sale after
           // a lost reply must hash the same, or the box would call its own replay a conflict (GAP-SALE-IDEMPOTENCY-01).
           if (who !== undefined) parsed = { ...(parsed as Record<string, unknown>), operatorVerified: { ...who.verified } };
+          // A refund's manager approval (ADR-0021): needed by the shop's threshold, or named on the record, it must be one
+          // THIS box issued for exactly this refund — spent here, once. The box writes the approver it verified.
+          if (isReturn && who !== undefined && input.approvals !== undefined && input.operators !== undefined) {
+            const approval = await input.approvals.checkReturn({ record: parsed, requestedBy: who.verified.userId, laneId: input.operators.laneId, returnId: id });
+            if (!approval.ok) {
+              send(res, 200, { committed: false, refusedBecause: approval.refusedBecause, laneMessage: approval.laneMessage }, cors);
+              return;
+            }
+            if (approval.stamp !== undefined) parsed = { ...(parsed as Record<string, unknown>), approvedBy: approval.stamp.approvedBy, approvalVerified: { ...approval.stamp } };
+          }
         }
 
         try {

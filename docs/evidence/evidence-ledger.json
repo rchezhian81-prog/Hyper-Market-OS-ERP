@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 912,
+  "testFiles": 914,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -749,7 +749,7 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 22,
-        "integration": 18,
+        "integration": 19,
         "realDb": 4,
         "browser": 3,
         "connected": 0,
@@ -796,6 +796,7 @@
           "tests/integration/store-credit-cap.test.ts",
           "tests/integration/store-credit-refund.test.ts",
           "tests/integration/the-lane-reaches-its-disk.test.ts",
+          "tests/integration/the-manager-approves-at-the-till.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-till-exchanges.test.ts",
           "tests/integration/the-till-returns-without-a-receipt.test.ts",
