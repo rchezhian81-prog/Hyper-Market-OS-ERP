@@ -51,6 +51,7 @@ import { priceIntegrityRoutes } from '../../pricing/src/price-integrity';
 import { posRoutes } from '../../pos/src/index';
 import { returnsRoutes } from '../../pos/src/returns';
 import { noReceiptReturnRoutes } from '../../pos/src/no-receipt-returns';
+import { refundApprovalRoutes } from '../../pos/src/refund-approvals';
 import { exchangeRoutes } from '../../pos/src/exchanges';
 import { cashRoutes } from '../../pos/src/cash';
 import { supplierPortalRoutes } from '../../purchase/src/supplier-portal';
@@ -218,7 +219,7 @@ import { syncedDriverRunRoutes } from '../../fulfilment/src/driver-runs';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
+  dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter,
 } from './adapters';
@@ -674,6 +675,10 @@ export function buildSurface(deps: {
       storeCreditCap: () => undefined, recordStoreCreditCap: () => {},
       flaggedReturns: empty([]), now,
     } : { ...returnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    // Refund approvals at head office (ADR-0022): the approver gives one in their own session; a refund names it.
+    ...refundApprovalRoutes(store === undefined
+      ? { recordRefundApproval: () => {}, permissionsOfUser: () => undefined, now }
+      : refundApprovalsAdapter({ store, now })),
     // Controlled no-receipt returns (M13-FR-01, CH-01 un-parked): the owner's cap, the desk + synced routes, the report.
     ...noReceiptReturnRoutes(store === undefined ? {
       noReceiptCap: () => undefined, recordNoReceiptCap: () => {}, knownProduct: () => false,

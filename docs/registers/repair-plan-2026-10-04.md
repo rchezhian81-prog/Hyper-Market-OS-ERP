@@ -118,9 +118,17 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
   names is the person signed in, and the box stamps who it verified. **PF-02, the manager half — DONE 6 Oct 2026 (#710,
   2b-v-b, ADR-0021):** a manager approves at the till with their own PIN; the store computer issues an approval bound to
   the kind, bill, amount, cashier and till, five minutes, and spends it once when the refund reaches the disk; a typed
-  approver, a self-approval, a reused or mismatched approval are refused before the disk. **Still open in PF-02:** head
-  office's desk refund approver as an approval object and a flag on a synced sale or refund without the box's stamp
-  (2b-v-c).
+  approver, a self-approval, a reused or mismatched approval are refused before the disk. **PF-02, head office's desk —
+  DONE 6 Oct 2026 (2b-v-c, ADR-0022):** the audit's reproduction (a refund body naming a provisioned manager who never
+  approved) is refused by name; a manager approves in their own session (`POST /v1/pos/refund-approvals`) for one kind,
+  bill, amount and processor, fifteen minutes; the refund, exchange, no-receipt and out-of-window routes spend it once in
+  the refund's own guarded batch (one lands under a race on real PostgreSQL); a leaver's approval no longer counts;
+  head-office cash records the signed-in person and puts a till only in a known cashier's name. **Still open in PF-02:**
+  the box's stamps signed and carried on synced sales and refunds, and head office flagging a synced fact without them
+  (2b-v-d). **Found during 2b-v-c (same pattern, pricing — PA-03 family), scheduled as 2b-vi:** a below-cost price
+  change (`approval.decidedBy`, `services/pricing/src/index.ts`) and a margin-losing promotion launch (`approvedBy`,
+  `services/pricing/src/promotions.ts`) at head office still accept a typed approver's name checked only for authority;
+  they get the same approval object (the approver's own act, bound, one use).
 - **PA-01 / EA-03** branch and resource scope derived on the server from the person's grants — **DONE 5 Oct 2026 (#704)**:
   `ctx.scope` from the grants on every request, the kernel's `narrowScope` / `assertBranchInScope`, applied to the
   consolidation, drill-through and roster routes the audit executed (the other fifteen branch-keyed route files
@@ -202,7 +210,7 @@ identity, hardware, hosted recovery evidence. **PA-13** (commercial platform, R8
 | UX-2b the *Today* command centre, rail icons, sign-in frame (OB-15/OB-16/OB-17) | 1⅞ — done 5 Oct 2026 (#700) |
 | UX-3 the sign-in page in the owner's approved design (OB-18) | between 2b-iii-a and 2b-iii-b, at the owner's word — done 5 Oct 2026 (#706) |
 | Wave 2a write guards — PF-01 refunds/gift/points; SF-04 transfers; FUL-02 promises; PA-11 audit chain | 2 — done 5 Oct 2026 (#701, #702) |
-| Wave 2b identity criticals — PA-02 leaver; PA-01/EA-03 scope; PA-03 second person; PF-03 age check; PF-02 till credential | 2 — PA-02 done 5 Oct 2026 (#703); PA-01/EA-03 done 5 Oct 2026 (#704); PA-03 done 5 Oct 2026 (#705 grants/templates/decisions/delegations, #707 facilities); PF-03 done 5 Oct 2026 (#708); PF-02 till half done 6 Oct 2026 (#709); PF-02 manager approval at the till done 6 Oct 2026 (#710); head-office approver and stamp check (2b-v-c) next |
+| Wave 2b identity criticals — PA-02 leaver; PA-01/EA-03 scope; PA-03 second person; PF-03 age check; PF-02 till credential | 2 — PA-02 done 5 Oct 2026 (#703); PA-01/EA-03 done 5 Oct 2026 (#704); PA-03 done 5 Oct 2026 (#705 grants/templates/decisions/delegations, #707 facilities); PF-03 done 5 Oct 2026 (#708); PF-02 till half done 6 Oct 2026 (#709); PF-02 manager approval at the till done 6 Oct 2026 (#710); PF-02 head-office desk approval objects done 6 Oct 2026 (2b-v-c); signed store stamps and synced-fact flags (2b-v-d) next; pricing approvers as approval objects (2b-vi, found 6 Oct) after |
 | Handheld enrolment on the hosted demo | 1½ (a demo device code for the practice phones) |
 | Quantity scale across pack sections | 4, with DF-3 |
 | SP-10 register | 8 |

@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 815 | 501 | 501 | 64 | 276 |
+| 13 | 816 | 502 | 502 | 64 | 277 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -318,6 +318,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/pos/quotations/:quotationId/convert` | `pos.quotation.write` | core | yes |
 | POST | `/v1/pos/quotations/:quotationId/withdraw` | `pos.quotation.write` | core | yes |
 | GET | `/v1/pos/quotations/follow-up` | `pos.quotation.read` | core | — |
+| POST | `/v1/pos/refund-approvals` | `pos.return.approve` | core | yes |
 | GET | `/v1/pos/refund-threshold` | `pos.return.record` | core | — |
 | POST | `/v1/pos/refund-threshold` | `pos.return.threshold.set` | core | yes |
 | POST | `/v1/pos/restricted-sale/check` | `pos.restricted.check` | core | yes |

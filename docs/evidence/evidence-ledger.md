@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 914. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 916. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 78 · Real PostgreSQL 56 · Browser (stub cloud) 44 · Browser (connected) 2 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 24 · ENGINE_ONLY 1 · INTEGRATION_TESTED 16 · PARTIALLY_WIRED 52 · WIRED 11.
 - Labels that do NOT hold: none.
@@ -39,8 +39,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M10 | E2E_VERIFIED | 19 | 16 | 1 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M11 | INTEGRATION_TESTED | 4 | 4 | · | 1 | · | · | · | ✓ an integration test cites it |
 | M12 | E2E_VERIFIED | 13 | 14 | 3 | 6 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| M13 | INTEGRATION_TESTED | 22 | 19 | 4 | 3 | · | · | · | ✓ an integration test cites it |
-| M14 | E2E_VERIFIED | 17 | 12 | 1 | 5 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M13 | INTEGRATION_TESTED | 23 | 20 | 5 | 3 | · | · | · | ✓ an integration test cites it |
+| M14 | E2E_VERIFIED | 17 | 13 | 2 | 5 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M15 | E2E_VERIFIED | 14 | 11 | 1 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M16 | WIRED | 8 | 9 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M17 | E2E_VERIFIED | 7 | 10 | 3 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
@@ -148,8 +148,8 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **M10** — browser: `expiry-recall-delivery.e2e.ts`, `unsellable-screen.e2e.ts`, `warehouse-handheld-delivery.e2e.ts` · real PostgreSQL: `the-store-buys-what-it-sells.test.ts`
 - **M11** — browser: `production-delivery.e2e.ts`
 - **M12** — browser: `core-one-lane.test.ts`, `the-served-till-closes.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts`, `the-served-till-takes-a-sale.e2e.ts`, `the-store-trades-a-day.e2e.ts`, `the-till-asks-the-age-question.e2e.ts` · connected: `the-store-trades-a-day.e2e.ts` · real PostgreSQL: `the-shop-reaches-the-cloud.test.ts`, `the-store-buys-what-it-sells.test.ts`, `the-store-trades-a-day.test.ts`
-- **M13** — browser: `return-governance-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts` · real PostgreSQL: `returns-guard-the-refund.test.ts`, `the-till-exchanges.test.ts`, `the-till-returns-without-a-receipt.test.ts`, `write-guards-on-postgresql.test.ts`
-- **M14** — browser: `cash-office-signoff-delivery.e2e.ts`, `day-reopen-delivery.e2e.ts`, `manager-day-close-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-closes.e2e.ts` · real PostgreSQL: `day-close-honestly.test.ts`
+- **M13** — browser: `return-governance-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts` · real PostgreSQL: `refund-approval-is-the-approvers-own-act.test.ts`, `returns-guard-the-refund.test.ts`, `the-till-exchanges.test.ts`, `the-till-returns-without-a-receipt.test.ts`, `write-guards-on-postgresql.test.ts`
+- **M14** — browser: `cash-office-signoff-delivery.e2e.ts`, `day-reopen-delivery.e2e.ts`, `manager-day-close-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-closes.e2e.ts` · real PostgreSQL: `day-close-honestly.test.ts`, `refund-approval-is-the-approvers-own-act.test.ts`
 - **M15** — browser: `loss-prevention-close-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts` · real PostgreSQL: `day-close-honestly.test.ts`
 - **M17** — browser: `return-governance-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `stored-value-oversight-delivery.e2e.ts` · real PostgreSQL: `household-pooling.test.ts`, `stored-value-liability.test.ts`, `write-guards-on-postgresql.test.ts`
 - **M19** — browser: `delivery-route-partial-delivery.e2e.ts`, `driver-handheld-syncs-through-the-box.e2e.ts`, `picker-handheld-syncs-through-the-box.e2e.ts`, `picker-substitution-delivery.e2e.ts`, `substitution-exception-claim-resolve.e2e.ts`

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { withApprovals } from '../support/refund-approval';
 
 // A refund issued as store credit becomes a real, spendable balance end to end (M13-FR-03 / M17,
 // API-05/06). Store credit is the shop taking on a liability, so it is capped by the owner, issued to a
@@ -25,8 +26,9 @@ const scReq = (over: Record<string, unknown> = {}) => ({
   lines: [{ productId: 'P1', uom: 'each', quantityMinor: 1, disposition: 'resell' as const }],
   refundMinor: 5000, refundTender: 'store_credit', approvedBy: 'u-mgr', customerRef: 'c-asha', ...over,
 });
-const ret = (h: ApiHarness, userId: string, body: Record<string, unknown>) =>
-  h.request({ method: 'POST', path: '/v1/sales/S1/returns', userId, tenantId: A, idempotencyKey: `ret-${body['returnId']}`, body });
+// u-mgr approves in their own session (ADR-0022); the refund names that approval.
+const ret = async (h: ApiHarness, userId: string, body: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: '/v1/sales/S1/returns', userId, tenantId: A, idempotencyKey: `ret-${body['returnId']}`, body: await withApprovals(h, A, userId, 'S1', body) });
 
 const setCap = (h: ApiHarness, userId: string, capMinor: number, key: string) =>
   h.request({ method: 'POST', path: '/v1/pos/store-credit-cap', userId, tenantId: A, idempotencyKey: key, body: { capMinor } });

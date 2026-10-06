@@ -5,6 +5,47 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-v-c — a refund approval at head office is the approver's own act, for one refund, spent once (6 October 2026)
+
+- **The finding (audit PF-02, CRITICAL), head office's half — the audit's own reproduction:** "Refund body named a
+  provisioned manager who never authenticated or approved; both requests settled. Cloud role lookup proves that name has
+  authority, not that the person approved this action." The same pattern stood on every head-office route that pays
+  money back: a refund on a bill, a return past the shop's window, a return without a receipt, and an exchange's refunded
+  difference.
+- **The decision (ADR-0022, new):** an approval at head office is an object the approver gives in their own signed-in
+  session, bound to one refund, and spent once in the same write as the refund.
+- **What changed:**
+  - **The approval** (`services/pos/src/refund-approvals.ts`, `POST /v1/pos/refund-approvals`, needs
+    `pos.return.approve`): the approver is the signed-in caller; it names one kind (refund on a bill, an exchange's
+    refunded difference, a return without a receipt, a return past the window), one bill, one amount and the one person
+    who will process it; never the approver themselves (§28), never a person head office does not know or who may not
+    process refunds; it lasts fifteen minutes.
+  - **The refund routes** (`returns.ts`, `exchanges.ts`, `no-receipt-returns.ts`): they read `approvalId` /
+    `outOfWindowApprovalId`. A body that only NAMES an approver is refused (`approver_named_without_approval`) and nothing
+    moves. An unknown, mismatched (kind, bill, amount, processor), expired or already-spent approval is refused, and so is
+    one whose approver no longer holds the authority (a leaver). The approval is spent in the SAME batch as the refund,
+    under the bill's refund guard (a return without a receipt: the approval's own guard), so two refunds racing on one
+    approval cannot both land. The record carries who approved (from the approval) and the approval's id.
+  - **Head-office till cash** (`cash.ts`): the movement records the signed-in person who did it, never a body value, and
+    a till is put only in the name of a person head office knows who holds till authority.
+  - **A database race fixed on the way:** two refunds spending one approval at the same moment could hit a raw
+    duplicate-id error (a 500) one time in three on PostgreSQL; the spend record's id now names the refund, so the loser is
+    refused by name instead. Twenty races after the fix, none failed.
+- **Proved:** `tests/unit/refund-approvals.test.ts` (15), the no-receipt and exchange route tests with an approval
+  register (unknown, mismatched, expired, spent, approver lost authority), `tests/integration/refund-approval-is-the-approvers-own-act.test.ts`
+  (9: the audit's body refused, the manager's own approval settles and is spent, one approval one refund, a leaver's
+  approval refused, a cashier cannot approve, self-approval refused, a replay is the same approval, a no-receipt approval
+  spent once, cash records the signed-in person; two races on real PostgreSQL — exactly one lands each time). Every test
+  that refunded at head office now gets its approval through the real route (`tests/support/refund-approval.ts`). Full
+  suite green locally with the real database: 9,867 tests.
+- **Not yet / honest limits:** the store computer's stamps are not yet signed and carried on synced sales and refunds,
+  and head office does not yet flag a synced one without them (2b-v-d, next); **found during this slice:** a below-cost
+  price change and a margin-losing promotion launch at head office still accept a typed approver's name (the same
+  pattern, pricing) — scheduled as its own slice 2b-vi; there is no head-office desk-refund screen yet (the route is
+  API-only, used by integrations and tests); no approval-limit register; staff UAT (SP-10, pending, unasked).
+- **Next:** 2b-v-d (signed store stamps + head-office flags), 2b-vi (pricing approvers as approval objects), then the
+  OB-15 block.
+
 ## Wave 2b-v-b — a manager's approval at the till is the manager's own act, for one refund, used once (6 October 2026)
 
 - **The finding (audit PF-02, CRITICAL), the manager half:** wherever the till needed a manager — a refund at or above

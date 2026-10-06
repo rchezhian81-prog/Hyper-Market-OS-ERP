@@ -18,7 +18,9 @@
 // each reconciling on sync through its own route.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, concurrentChange, notFound } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
+import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse } from './refund-approvals';
 import type { ReturnRequestLine } from '../../../packages/returns/src/assess-return';
 import { DEFAULT_REFUND_THRESHOLD_MINOR } from '../../../packages/returns/src/assess-return';
 import { assessExchange, type ReplacementLine } from '../../../packages/returns/src/exchange';
@@ -36,7 +38,7 @@ const SETTLED_AT_DESK: ReadonlySet<string> = new Set(['cash', 'store_credit']);
 export const EXCHANGE_CREDIT_TENDER = 'exchange_credit';
 
 export interface ExchangeDeps extends
-  Pick<ReturnsDeps, 'originalSale' | 'priorReturns' | 'priorRefunds' | 'refundThreshold' | 'returnWindow' | 'storeCreditCap' | 'canApproveRefund' | 'recordAudit' | 'now'>,
+  Pick<ReturnsDeps, 'originalSale' | 'priorReturns' | 'priorRefunds' | 'refundThreshold' | 'returnWindow' | 'storeCreditCap' | 'canApproveRefund' | 'recordAudit' | 'now' | 'refundVersion' | 'refundApproval'>,
   Pick<PosDeps, 'catalogue' | 'currentPackVersion' | 'saleHoldingReceipt' | 'isBanked' | 'recordExceptions'> {
   /** The banked original as the lane sent it — for the replacement's defaults (currency, location, lane). */
   readonly bankedSale: (tenantId: string, saleId: string) => Promise<IncomingSale | undefined> | IncomingSale | undefined;
@@ -47,6 +49,10 @@ export interface ExchangeDeps extends
    */
   readonly recordExchange: (
     tenantId: string, originalSaleId: string, record: ReturnRecord, replacement: IncomingSale, storeCredit: StoreCreditIssue | undefined,
+    /** With it, the batch is a compare-and-append on the bill's refund guard (Wave 2a), as a plain return's is. */
+    expectedVersion?: number,
+    /** The approvals (ADR-0022) this exchange spends — appended in the same batch. */
+    approvalUses?: readonly ApprovalUse[],
   ) => Promise<void> | void;
 }
 
@@ -214,8 +220,23 @@ export function exchangeRoutes(deps: ExchangeDeps): readonly Route[] {
 
         const processedAt = req.processedAt ?? deps.now();
 
+        // ADR-0022: an approver is the approval OBJECT they gave in their own session — never a name in this body.
+        const approvalId = approvalIdIn(ctx.body);
+        if (approvalId === undefined && req.approvedBy !== undefined) throw namedApproverRefusal(req.approvedBy, 'approvedBy');
+        const approvalUses: ApprovalUse[] = [];
+        const take = async (id: string, kind: 'exchange_refund' | 'out_of_window', valueMinor: number) => {
+          const state = deps.refundApproval === undefined ? undefined : await Promise.resolve(deps.refundApproval(ctx.tenantId, id));
+          const approval = await takeRefundApproval({
+            state, kind, saleId, valueMinor, processedBy: ctx.userId, returnId: req.exchangeId, now: deps.now(),
+            canApprove: (u) => deps.canApproveRefund(ctx.tenantId, u),
+          });
+          approvalUses.push({ approvalId: id, usedBy: req.exchangeId });
+          return approval;
+        };
+
         // Return eligibility (M13-FR-02) — the same window and supervisor override as a plain return.
         let outOfWindowApprovedBy: string | undefined;
+        let oowApprovalId: string | undefined;
         const returnWindowDays = await deps.returnWindow(ctx.tenantId);
         if (returnWindowDays !== undefined) {
           const elig = assessReturnEligibility({ soldAt: sale.committedAt, returnedAt: processedAt, returnWindowDays });
@@ -223,21 +244,19 @@ export function exchangeRoutes(deps: ExchangeDeps): readonly Route[] {
             if (isDataFault(elig.status)) {
               throw apiError(422, { code: elig.status, whatHappened: elig.detail, wasItSaved: 'not_saved', nextSafeAction: 'No money has moved. The sale or exchange date looks wrong — fix the record rather than authorise it.' });
             }
-            const overrideBy = req.outOfWindowApprovedBy;
-            if (overrideBy === undefined) {
-              throw apiError(422, { code: elig.status, whatHappened: elig.detail, wasItSaved: 'not_saved', nextSafeAction: 'Have a supervisor/manager authorise this out-of-window exchange (send outOfWindowApprovedBy), or it cannot be taken. No money has moved.' });
+            // A supervisor/manager authorises it with their OWN approval object (ADR-0022) — taken below, once the value
+            // credited is known; a name in the body is not an authorisation.
+            oowApprovalId = approvalIdIn(ctx.body, 'outOfWindowApprovalId');
+            if (oowApprovalId === undefined) {
+              if (req.outOfWindowApprovedBy !== undefined) throw namedApproverRefusal(req.outOfWindowApprovedBy, 'outOfWindowApprovedBy');
+              throw apiError(422, { code: elig.status, whatHappened: elig.detail, wasItSaved: 'not_saved', nextSafeAction: 'Have a supervisor/manager authorise this out-of-window exchange in their own session (POST /v1/pos/refund-approvals, kind out_of_window, for the value coming back) and send outOfWindowApprovalId, or it cannot be taken. No money has moved.' });
             }
-            if (overrideBy === ctx.userId) {
-              throw apiError(422, { code: 'out_of_window_self_authorised', whatHappened: `${ctx.userId} cannot authorise their own out-of-window exchange (§28).`, wasItSaved: 'not_saved', nextSafeAction: 'A different supervisor/manager must authorise it. No money has moved.' });
-            }
-            if (!(await deps.canApproveRefund(ctx.tenantId, overrideBy))) {
-              throw apiError(422, { code: 'out_of_window_approver_may_not_authorise', whatHappened: `${overrideBy} does not hold the authority to authorise an out-of-window exchange.`, wasItSaved: 'not_saved', nextSafeAction: 'A supervisor/manager (one who can approve refunds) must authorise it. No money has moved.' });
-            }
-            outOfWindowApprovedBy = overrideBy;
           }
         }
 
-        // The arithmetic and the two register rules, against the whole history of the bill.
+        // The arithmetic and the two register rules, against the whole history of the bill — under the bill's refund guard
+        // (Wave 2a), read FIRST, so an exchange racing a refund of the same bill (or spending the same approval) is refused.
+        const expectedVersion = deps.refundVersion === undefined ? undefined : await Promise.resolve(deps.refundVersion(ctx.tenantId, saleId));
         const [priorReturns, priorRefunds] = await Promise.all([
           Promise.resolve(deps.priorReturns(ctx.tenantId, saleId)),
           Promise.resolve(deps.priorRefunds(ctx.tenantId, saleId)),
@@ -249,6 +268,8 @@ export function exchangeRoutes(deps: ExchangeDeps): readonly Route[] {
         if (!assessment.ok) {
           throw apiError(422, { code: assessment.refusedBecause!, whatHappened: assessment.detail, wasItSaved: 'not_saved', nextSafeAction: 'No money has moved and no stock has changed. Fix the exchange and send it again.' });
         }
+        if (oowApprovalId !== undefined) outOfWindowApprovedBy = (await take(oowApprovalId, 'out_of_window', assessment.returnedValueMinor)).approvedBy;
+        let approvedBy: string | undefined;
 
         // Settle the balance by the refund's own rules (M13-FR-03, §28).
         const thresholdMinor = (await deps.refundThreshold(ctx.tenantId)) ?? DEFAULT_REFUND_THRESHOLD_MINOR;
@@ -272,15 +293,12 @@ export function exchangeRoutes(deps: ExchangeDeps): readonly Route[] {
           }
           const material = refundMinor > 0 && refundMinor >= thresholdMinor;
           if (material) {
-            if (req.approvedBy === undefined) {
-              throw apiError(422, { code: 'needs_a_second_person', whatHappened: `A balance refund of ${refundMinor} paise is at or above this shop's approval threshold (${thresholdMinor}) and needs a second person (§28).`, wasItSaved: 'not_saved', nextSafeAction: 'Have a supervisor/manager approve it (send approvedBy). No money has moved.' });
+            if (approvalId === undefined) {
+              throw apiError(422, { code: 'needs_a_second_person', whatHappened: `A balance refund of ${refundMinor} paise is at or above this shop's approval threshold (${thresholdMinor}) and needs a second person (§28).`, wasItSaved: 'not_saved', nextSafeAction: 'Have a supervisor/manager approve it in their own session (POST /v1/pos/refund-approvals, kind exchange_refund, for the balance) and send approvalId. No money has moved.' });
             }
-            if (req.approvedBy === ctx.userId) {
-              throw apiError(422, { code: 'approved_by_the_person_processing_it', whatHappened: `${ctx.userId} cannot approve their own balance refund (§28).`, wasItSaved: 'not_saved', nextSafeAction: 'A different supervisor/manager must approve it. No money has moved.' });
-            }
-            if (!(await deps.canApproveRefund(ctx.tenantId, req.approvedBy))) {
-              throw apiError(422, { code: 'approver_may_not_approve', whatHappened: `${req.approvedBy} does not hold the authority to approve a refund, so their approval of this balance does not count.`, wasItSaved: 'not_saved', nextSafeAction: 'Have a supervisor/manager (one who can approve refunds) approve it. No money has moved.' });
-            }
+            // Bound to the balance refunded, the bill and this processor; the approver never the processor (§28) — checked
+            // when it was given, and again here that they still hold the authority.
+            approvedBy = (await take(approvalId, 'exchange_refund', refundMinor)).approvedBy;
           }
           refundStatus = SETTLED_AT_DESK.has(tender) ? 'settled' : 'pending';
           if (tender === 'store_credit') {
@@ -352,11 +370,17 @@ export function exchangeRoutes(deps: ExchangeDeps): readonly Route[] {
           // The value credited against the bill — what the register and the refund cap see (M13-FR-03).
           refundMinor: assessment.returnedValueMinor, refundTender: 'exchange', refundStatus,
           lines: req.returnLines,
-          ...(req.approvedBy === undefined ? {} : { approvedBy: req.approvedBy }),
+          ...(approvedBy === undefined ? {} : { approvedBy }),
+          ...(approvedBy === undefined || approvalId === undefined ? {} : { approvalId }),
           ...(storeCredit === undefined ? {} : { customerRef: req.settlement.customerRef }),
           exchange: settlement,
         };
-        await deps.recordExchange(ctx.tenantId, saleId, record, replacement, storeCredit);
+        try {
+          await deps.recordExchange(ctx.tenantId, saleId, record, replacement, storeCredit, expectedVersion, approvalUses);
+        } catch (err) {
+          if (err instanceof ConcurrencyConflictError) throw concurrentChange(`sale ${saleId}`);
+          throw err;
+        }
         if (!intake.alreadyBanked && intake.exceptions.length > 0) await deps.recordExceptions(ctx.tenantId, intake.exceptions);
 
         // Seal the fact (M34-FR-01): what came back, what went out, how the balance moved, who approved. No
@@ -369,7 +393,7 @@ export function exchangeRoutes(deps: ExchangeDeps): readonly Route[] {
             exchangeId: req.exchangeId, replacementSaleId: replacement.saleId,
             returnedValueMinor: String(assessment.returnedValueMinor), replacementTotalMinor: String(assessment.replacementTotalMinor),
             balance: assessment.balance, balanceMinor: String(assessment.balanceMinor),
-            reasonCode: req.reasonCode, refundStatus, approvedBy: req.approvedBy ?? '',
+            reasonCode: req.reasonCode, refundStatus, approvedBy: approvedBy ?? '',
             ...(outOfWindowApprovedBy === undefined ? {} : { outOfWindowApprovedBy }),
             ...(storeCredit === undefined ? {} : { storeCreditInstrumentId: storeCredit.movement.instrumentId }),
           },

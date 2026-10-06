@@ -4,6 +4,7 @@ import type { ReturnRecord, StoreCreditIssue } from '../../services/pos/src/retu
 import type { SaleStockLocation } from '../../services/pos/src/sale-stock';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 import type { AuditEntry } from '../../packages/audit/src/index';
+import type { ApprovalUse, RefundApproval, RefundApprovalState } from '../../services/pos/src/refund-approvals';
 
 /**
  * **M13-FR-01 — controlled no-receipt returns on the cloud (un-parks the no-receipt half of CH-01).**
@@ -22,23 +23,37 @@ interface Rec {
   scCap: number | undefined;
   known: Set<string>;
   approvers: Set<string>;
-  recorded: { record: ReturnRecord; storeCredit: StoreCreditIssue | undefined; location: SaleStockLocation | undefined }[];
+  recorded: { record: ReturnRecord; storeCredit: StoreCreditIssue | undefined; location: SaleStockLocation | undefined; use?: ApprovalUse }[];
   audits: AuditEntry[];
+  /** Approvals head office gave (ADR-0022), by id — and the return that spent each. */
+  approvals: Map<string, RefundApprovalState>;
 }
+/** Each stub's approval register, reachable from its routes so `desk` can have the named approver give one. */
+const approvalsOf = new WeakMap<readonly Route[], Map<string, RefundApprovalState>>();
 function stub(over: Partial<Rec> = {}) {
-  const rec: Rec = { cap: undefined, scCap: undefined, known: new Set(['P1', 'P2']), approvers: new Set(['u-mgr']), recorded: [], audits: [], ...over };
+  const rec: Rec = { cap: undefined, scCap: undefined, known: new Set(['P1', 'P2']), approvers: new Set(['u-mgr']), recorded: [], audits: [], approvals: new Map(), ...over };
   const deps: NoReceiptReturnsDeps = {
     noReceiptCap: () => rec.cap,
     recordNoReceiptCap: (_t, capMinor) => { rec.cap = capMinor; },
     knownProduct: (_t, productId) => rec.known.has(productId),
     canApproveRefund: (_t, userId) => rec.approvers.has(userId),
     storeCreditCap: () => rec.scCap,
-    recordNoReceiptReturn: (_t, record, storeCredit, location) => { rec.recorded.push({ record, storeCredit, location }); },
+    recordNoReceiptReturn: (_t, record, storeCredit, location, approvalUse) => {
+      rec.recorded.push({ record, storeCredit, location, ...(approvalUse === undefined ? {} : { use: approvalUse.use }) });
+      if (approvalUse !== undefined) {
+        const state = rec.approvals.get(approvalUse.use.approvalId)!;
+        rec.approvals.set(approvalUse.use.approvalId, { ...state, usedBy: approvalUse.use.usedBy });
+      }
+    },
+    refundApproval: (_t, approvalId) => rec.approvals.get(approvalId),
+    approvalVersion: () => 0,
     noReceiptReturns: () => rec.recorded.map((r) => r.record),
     recordAudit: (_t, entry) => { rec.audits.push(entry); },
     now: () => NOW,
   };
-  return { rec, routes: noReceiptReturnRoutes(deps) };
+  const routes = noReceiptReturnRoutes(deps);
+  approvalsOf.set(routes, rec.approvals);
+  return { rec, routes };
 }
 const ctx = (over: Partial<RequestContext>): RequestContext =>
   ({ tenantId: T, userId: 'u-cash', branchId: null, params: {}, query: {}, body: undefined, traceId: 't', ...over });
@@ -58,8 +73,22 @@ const body = (over: Record<string, unknown> = {}) => ({
   returnId: 'NR-1', reasonCode: 'no_receipt_damaged_pack', lines: [line()], refundMinor: 5000, refundTender: 'cash',
   approvedBy: 'u-mgr', locationId: 'store-main', ...over,
 });
-const desk = (routes: readonly Route[], b: unknown, userId = 'u-cash') =>
+/** An approval as head office would hold it after `approvedBy` gave it in their own session (the route that gives it
+ *  is proven in refund-approvals.test.ts). */
+const approval = (over: Partial<RefundApproval> & { approvalId: string; approvedBy: string; requestedBy: string; valueMinor: number }): RefundApproval => ({
+  kind: 'no_receipt_return', saleId: null, reason: 'test', givenAt: NOW, expiresAt: '2026-10-06T10:15:00.000Z', ...over,
+});
+/** The desk route as it is called — the body's `approvedBy` having approved in their own session first, so the body
+ *  names that approval (ADR-0022). `deskNamed` sends the body as written — the audit's PF-02 reproduction. */
+const deskNamed = (routes: readonly Route[], b: unknown, userId = 'u-cash') =>
   routeFor(routes, 'POST', '/v1/returns/no-receipt').handler(ctx({ body: b, userId }));
+const desk = (routes: readonly Route[], b: Record<string, unknown>, userId = 'u-cash') => {
+  const { approvedBy, ...rest } = b;
+  if (typeof approvedBy !== 'string') return deskNamed(routes, b, userId);
+  const approvalId = `rap-${String(b['returnId'])}-${approvedBy}`;
+  approvalsOf.get(routes)!.set(approvalId, { approval: approval({ approvalId, approvedBy, requestedBy: userId, valueMinor: b['refundMinor'] as number }) });
+  return deskNamed(routes, { ...rest, approvalId }, userId);
+};
 const synced = (routes: readonly Route[], b: unknown) =>
   routeFor(routes, 'POST', '/v1/returns/no-receipt/synced').handler(ctx({ body: b, userId: 'u-sync' }));
 const setCap = (routes: readonly Route[], capMinor: unknown) =>
@@ -100,9 +129,37 @@ describe('the desk no-receipt return refuses before money moves (M13-FR-01, §28
   it('ALWAYS needs a second, genuinely-authorised person — whatever the amount', async () => {
     const { routes, rec } = stub({ cap: 100000 });
     expect((await thrown(() => desk(routes, body({ approvedBy: undefined, refundMinor: 100 })))).body.code).toBe('needs_a_second_person');
-    expect((await thrown(() => desk(routes, body({ approvedBy: 'u-cash' })))).body.code).toBe('approved_by_the_person_processing_it');
+    // The audit's PF-02 reproduction: a genuine manager NAMED in the body, who never approved — refused.
+    expect((await thrown(() => deskNamed(routes, body()))).body.code).toBe('approver_named_without_approval');
+    // An approval from someone who does not (or no longer) hold the authority does not count.
     expect((await thrown(() => desk(routes, body({ approvedBy: 'u-nobody' })))).body.code).toBe('approver_may_not_approve');
     expect(rec.recorded).toHaveLength(0);
+  });
+  it('an approval pays one return: this kind, this amount, this processor, unexpired, unspent (ADR-0022)', async () => {
+    const { routes, rec } = stub({ cap: 100000 });
+    const give = (approvalId: string, over: Partial<RefundApproval> = {}) =>
+      rec.approvals.set(approvalId, { approval: approval({ approvalId, approvedBy: 'u-mgr', requestedBy: 'u-cash', valueMinor: 5000, ...over }) });
+    const named = (approvalId: string, over: Record<string, unknown> = {}) => deskNamed(routes, { ...body({ approvedBy: undefined, ...over }), approvalId });
+
+    expect((await thrown(() => named('rap-never'))).body.code).toBe('approval_unknown');
+    give('rap-amount', { valueMinor: 4000 });
+    expect((await thrown(() => named('rap-amount'))).body.code).toBe('approval_does_not_match');
+    give('rap-other-person', { requestedBy: 'u-cash2' });
+    expect((await thrown(() => named('rap-other-person'))).body.code).toBe('approval_does_not_match');
+    give('rap-bill', { kind: 'refund', saleId: 'S1' });
+    expect((await thrown(() => named('rap-bill'))).body.code).toBe('approval_does_not_match');
+    give('rap-old', { expiresAt: NOW });
+    expect((await thrown(() => named('rap-old'))).body.code).toBe('approval_expired');
+    expect(rec.recorded).toHaveLength(0);
+
+    give('rap-ok');
+    const ok = await named('rap-ok');
+    expect(ok.status).toBe(201);
+    expect(rec.recorded[0]?.record).toMatchObject({ approvedBy: 'u-mgr', approvalId: 'rap-ok' });
+    expect(rec.recorded[0]?.use).toEqual({ approvalId: 'rap-ok', usedBy: 'NR-1' });
+    // Spent: a second return cannot use it again.
+    expect((await thrown(() => named('rap-ok', { returnId: 'NR-2' }))).body.code).toBe('approval_already_used');
+    expect(rec.recorded).toHaveLength(1);
   });
   it('a resold unit must say where it goes back — there is no bill to take the shelf from', async () => {
     const { routes, rec } = stub({ cap: 100000 });

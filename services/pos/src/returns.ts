@@ -28,6 +28,7 @@ import {
   issueRefundCredit, type Instrument, type ValueMovement,
 } from '../../../packages/loyalty/src/stored-value';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse, type RefundApprovalState } from './refund-approvals';
 
 /** A store-credit issuance to persist ATOMICALLY with a return (M13-FR-03) — the fresh instrument (when
  *  one was opened) and the `refund_to_credit` movement, both landing in the return's own append batch so
@@ -91,8 +92,11 @@ export interface ReturnRecord {
    *  the breach is recorded as a visible exception (hard rule #10), never a rejection. Absent on a clean
    *  refund and on every desk-guarded (front-door) refund. */
   readonly governanceFlags?: readonly RefundGovernanceFinding[];
-  /** Who approved it at the lane, carried on a synced refund so the exception names the claimed approver. */
+  /** Who approved it: at the lane (carried on a synced refund so the exception names the claimed approver), or at the
+   *  desk — the approver of the approval object the refund spent (ADR-0022). */
   readonly approvedBy?: string;
+  /** The approval a desk refund spent (ADR-0022) — the object, not a name. */
+  readonly approvalId?: string;
   /** The customer the refund belongs to — required for a store-credit refund (the credit is issued to
    *  them), carried on the record for reporting. Absent for cash/card refunds. */
   readonly customerRef?: string;
@@ -116,7 +120,10 @@ export interface ReturnsDeps {
    *  store-credit refund), its instrument + `refund_to_credit` movement are appended in the SAME atomic
    *  batch, so the return and the spendable credit land together or not at all (M13-FR-03). With
    *  `expectedVersion`, the batch is a compare-and-append on the sale's refund guard (Wave 2a). */
-  readonly recordReturn: (tenantId: string, saleId: string, record: ReturnRecord, storeCredit?: StoreCreditIssue, expectedVersion?: number) => Promise<void> | void;
+  readonly recordReturn: (tenantId: string, saleId: string, record: ReturnRecord, storeCredit?: StoreCreditIssue, expectedVersion?: number, approvalUses?: readonly ApprovalUse[]) => Promise<void> | void;
+  /** An approval head office gave (ADR-0022) and, once spent, the refund that spent it. Optional on a bare stub (then
+   *  every approval is unknown); the running system provides it. */
+  readonly refundApproval?: (tenantId: string, approvalId: string) => Promise<RefundApprovalState | undefined> | RefundApprovalState | undefined;
   /** The tenant's refund approval threshold (M13-FR-03) — `undefined` means none set, so the default
    *  (0 — every refund needs a §28 approver) applies. Sourced SERVER-SIDE: the caller cannot declare
    *  their own threshold in the body and call a refund "immaterial". */
@@ -326,7 +333,24 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         // so a governance failure is refused here rather than recorded.
         const thresholdMinor = (await deps.refundThreshold(ctx.tenantId)) ?? DEFAULT_REFUND_THRESHOLD_MINOR;
         const processedAt = parsed.processedAt === '' ? deps.now() : parsed.processedAt;
-        const request: ReturnRequest = { ...parsed, processedBy: ctx.userId, approvalThresholdMinor: thresholdMinor, processedAt };
+        // ADR-0022: an approver is the approval OBJECT they gave in their own session — never a name in this body.
+        const namedApprover = typeof parsed.approvedBy === 'string' && parsed.approvedBy.trim() !== '' ? parsed.approvedBy : undefined;
+        const approvalId = approvalIdIn(ctx.body);
+        if (approvalId === undefined && namedApprover !== undefined) throw namedApproverRefusal(namedApprover, 'approvedBy');
+        const approvalUses: ApprovalUse[] = [];
+        const take = async (id: string, kind: 'refund' | 'out_of_window') => {
+          const state = deps.refundApproval === undefined ? undefined : await Promise.resolve(deps.refundApproval(ctx.tenantId, id));
+          const approval = await takeRefundApproval({
+            state, kind, saleId, valueMinor: parsed.refundMinor, processedBy: ctx.userId, returnId: parsed.returnId, now: deps.now(),
+            canApprove: (u) => deps.canApproveRefund(ctx.tenantId, u),
+          });
+          approvalUses.push({ approvalId: id, usedBy: parsed.returnId });
+          return approval;
+        };
+        const approvedBy = approvalId === undefined ? undefined : (await take(approvalId, 'refund')).approvedBy;
+        const { approvedBy: _named, ...unnamed } = parsed;
+        void _named;
+        const request: ReturnRequest = { ...unnamed, processedBy: ctx.userId, approvalThresholdMinor: thresholdMinor, processedAt, ...(approvedBy === undefined ? {} : { approvedBy }) };
 
         // Return eligibility (M13-FR-02): the shop takes goods back only within its return window. The
         // window is the OWNER's policy (AVR-07) — enforced only once it is set; until then a return is not
@@ -347,33 +371,20 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
                 nextSafeAction: 'No money has moved. The sale or return date looks wrong — fix the record rather than authorise it.',
               });
             }
-            // Past the window — a supervisor/manager may authorise the exception (§28).
-            const overrideBy = readOverrideApprover(ctx.body);
-            if (overrideBy === undefined) {
+            // Past the window — a supervisor/manager may authorise the exception (§28), with their OWN approval object
+            // (ADR-0022): a name in the body is not an authorisation.
+            const oowApprovalId = approvalIdIn(ctx.body, 'outOfWindowApprovalId');
+            if (oowApprovalId === undefined) {
+              const named = readOverrideApprover(ctx.body);
+              if (named !== undefined) throw namedApproverRefusal(named, 'outOfWindowApprovedBy');
               throw apiError(422, {
                 code: elig.status,
                 whatHappened: elig.detail,
                 wasItSaved: 'not_saved',
-                nextSafeAction: 'Have a supervisor/manager authorise this out-of-window return (send outOfWindowApprovedBy), or it cannot be taken. No money has moved.',
+                nextSafeAction: 'Have a supervisor/manager authorise this out-of-window return in their own session (POST /v1/pos/refund-approvals, kind out_of_window) and send outOfWindowApprovalId, or it cannot be taken. No money has moved.',
               });
             }
-            if (overrideBy === ctx.userId) {
-              throw apiError(422, {
-                code: 'out_of_window_self_authorised',
-                whatHappened: `${ctx.userId} cannot authorise their own out-of-window return (§28).`,
-                wasItSaved: 'not_saved',
-                nextSafeAction: 'A different supervisor/manager must authorise it. No money has moved.',
-              });
-            }
-            if (!(await deps.canApproveRefund(ctx.tenantId, overrideBy))) {
-              throw apiError(422, {
-                code: 'out_of_window_approver_may_not_authorise',
-                whatHappened: `${overrideBy} does not hold the authority to authorise an out-of-window return.`,
-                wasItSaved: 'not_saved',
-                nextSafeAction: 'A supervisor/manager (one who can approve refunds) must authorise it. No money has moved.',
-              });
-            }
-            outOfWindowApprovedBy = overrideBy; // recorded on the audit trail below
+            outOfWindowApprovedBy = (await take(oowApprovalId, 'out_of_window')).approvedBy; // recorded on the audit trail below
           }
         }
 
@@ -448,8 +459,10 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
             processedBy: request.processedBy, processedAt, reasonCode: request.reasonCode,
             refundMinor: request.refundMinor, refundTender: request.refundTender,
             refundStatus: assessment.refundStatus, lines: request.lines,
+            ...(request.approvedBy === undefined ? {} : { approvedBy: request.approvedBy }),
+            ...(approvalId === undefined ? {} : { approvalId }),
             ...(storeCredit === undefined ? {} : { customerRef: readCustomerRef(ctx.body) }),
-          }, storeCredit, expectedVersion);
+          }, storeCredit, expectedVersion, approvalUses);
         } catch (err) {
           // The other refund of this sale landed first (Wave 2a · PF-01): this one was decided on figures that are no
           // longer true, nothing was saved, and the desk re-reads — never two refunds of the same remaining money.

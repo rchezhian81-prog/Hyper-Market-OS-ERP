@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { giveRefundApproval, withApprovals } from '../support/refund-approval';
 
 /**
  * **Controlled no-receipt returns through the real API (M13-FR-01, §28, M15, M08-FR-01) — CH-01 un-parked.**
@@ -32,8 +33,12 @@ const req = (over: Record<string, unknown> = {}) => ({
   returnId: 'NR-1', reasonCode: 'no_receipt_wrong_item', lines: [line()], refundMinor: 5000, refundTender: 'cash',
   approvedBy: 'u-mgr', locationId: 'store-main', ...over,
 });
-const take = (h: ApiHarness, userId: string, body: Record<string, unknown>, tenantId = A) =>
+// A named approver approves in their own session (ADR-0022) and the return names that approval; `takeNamed` sends the
+// name as written — the audit's PF-02 reproduction.
+const takeNamed = (h: ApiHarness, userId: string, body: Record<string, unknown>, tenantId = A) =>
   h.request({ method: 'POST', path: '/v1/returns/no-receipt', userId, tenantId, idempotencyKey: `nr-${body['returnId']}`, body });
+const take = async (h: ApiHarness, userId: string, body: Record<string, unknown>, tenantId = A) =>
+  takeNamed(h, userId, await withApprovals(h, tenantId, userId, null, body, { refundKind: 'no_receipt_return' }), tenantId);
 const sync = (h: ApiHarness, userId: string, body: Record<string, unknown>) =>
   h.request({ method: 'POST', path: '/v1/returns/no-receipt/synced', userId, tenantId: A, idempotencyKey: `nrs-${body['returnId']}`, body });
 const report = (h: ApiHarness, userId: string, tenantId = A) =>
@@ -72,8 +77,14 @@ describe('controlled no-receipt returns (M13-FR-01) — real API, real RBAC, app
     const h = await cast();
     await setCap(h, 'u-owner', 6000, 'cap-1');
     expect(codeOf(await take(h, 'u-cash', req({ approvedBy: undefined })))).toBe('needs_a_second_person');
-    expect(codeOf(await take(h, 'u-cash', req({ approvedBy: 'u-cash' })))).toBe('approved_by_the_person_processing_it');
-    expect(codeOf(await take(h, 'u-cash', req({ approvedBy: 'u-nobody' })))).toBe('approver_may_not_approve');
+    // A genuine manager NAMED in the body who never approved (the audit's PF-02 reproduction) — refused.
+    expect(codeOf(await takeNamed(h, 'u-cash', req({ returnId: 'NR-NAMED' })))).toBe('approver_named_without_approval');
+    // A person without the authority cannot approve at all — the cashier (even their own return), or a made-up name;
+    // and a manager cannot approve a return they will process themselves (§28).
+    const ask = { kind: 'no_receipt_return' as const, valueMinor: 5000, requestedBy: 'u-cash' };
+    expect((await giveRefundApproval(h, A, 'u-cash', ask)).status).toBe(403);
+    expect((await giveRefundApproval(h, A, 'u-nobody', ask)).status).toBe(403);
+    expect(codeOf(await giveRefundApproval(h, A, 'u-mgr', { ...ask, requestedBy: 'u-mgr' }))).toBe('self_approval');
     expect(codeOf(await take(h, 'u-cash', req({ refundMinor: 6001 })))).toBe('no_receipt_over_cap');
     expect(codeOf(await take(h, 'u-cash', req({ lines: [line({ productId: 'P-NOT-SOLD' })] })))).toBe('product_not_in_catalogue');
 

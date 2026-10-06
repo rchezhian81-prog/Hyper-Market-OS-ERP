@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { withApprovals } from '../support/refund-approval';
 
 /**
  * **PF-01 — two distinct refunds of the same sale, at the same moment, cannot both land (Wave 2a · audit PF-01 ·
@@ -25,12 +26,14 @@ const sale = (units: number, totalMinor: number) => ({
 const bank = (h: ApiHarness, units: number, totalMinor: number) =>
   h.request({ method: 'POST', path: '/v1/sales', userId: 'u-owner', tenantId: A, idempotencyKey: 'bank-S1', body: sale(units, totalMinor) });
 const line = (qty: number) => ({ productId: 'P1', uom: 'each', quantityMinor: qty, disposition: 'resell' as const });
-/** A refund at the desk — the authenticated owner processes it, a genuine approver (store manager) approves it. */
-const deskRefund = (h: ApiHarness, id: string, refundMinor: number, qty = 1) =>
-  h.request({
-    method: 'POST', path: '/v1/sales/S1/returns', userId: 'u-owner', tenantId: A, idempotencyKey: `desk-${id}`,
-    body: { returnId: id, number: id, reasonCode: 'damaged', refundMinor, refundTender: 'cash', lines: [line(qty)], processedAt: AT, approvedBy: 'u-mgr' },
-  });
+/** A refund at the desk — the authenticated owner processes it, a genuine approver (store manager) approves it in their
+ *  own session (ADR-0022) and the refund names that approval. `deskBody` gets the approval; `sendDesk` sends the refund,
+ *  so a race fires the refunds themselves at the same moment. */
+const deskBody = (h: ApiHarness, id: string, refundMinor: number, qty = 1) => withApprovals(h, A, 'u-owner', 'S1',
+  { returnId: id, number: id, reasonCode: 'damaged', refundMinor, refundTender: 'cash', lines: [line(qty)], processedAt: AT, approvedBy: 'u-mgr' });
+const sendDesk = (h: ApiHarness, id: string, body: Record<string, unknown>) =>
+  h.request({ method: 'POST', path: '/v1/sales/S1/returns', userId: 'u-owner', tenantId: A, idempotencyKey: `desk-${id}`, body });
+const deskRefund = async (h: ApiHarness, id: string, refundMinor: number, qty = 1) => sendDesk(h, id, await deskBody(h, id, refundMinor, qty));
 const syncedRefund = (h: ApiHarness, id: string, refundMinor: number, qty = 1) =>
   h.request({
     method: 'POST', path: '/v1/sales/S1/returns/synced', userId: 'u-owner', tenantId: A, idempotencyKey: `sync-${id}`,
@@ -53,7 +56,8 @@ describe('PF-01 — concurrent distinct refunds of one sale', () => {
   it('two full refunds fired at the same moment: exactly one 201, the other a named 409 with nothing saved; a third is refused as over-refund', async () => {
     const h = await cast();
     expect((await bank(h, 1, 5000)).status).toBe(202); // accepted into the ledger
-    const [a, b] = await Promise.all([deskRefund(h, 'RT-1', 5000), deskRefund(h, 'RT-2', 5000)]);
+    const [ba, bb] = [await deskBody(h, 'RT-1', 5000), await deskBody(h, 'RT-2', 5000)];
+    const [a, b] = await Promise.all([sendDesk(h, 'RT-1', ba), sendDesk(h, 'RT-2', bb)]);
     const statuses = [a.status, b.status].sort();
     expect(statuses).toEqual([201, 409]);
     const loser = a.status === 409 ? a : b;
@@ -88,7 +92,8 @@ describe('PF-01 — concurrent distinct refunds of one sale', () => {
   it('a lane\'s synced refund racing a desk refund is never refused — it lands under the same guard and the register flags what it did', async () => {
     const h = await cast();
     await bank(h, 1, 5000);
-    const [desk, synced] = await Promise.all([deskRefund(h, 'RT-desk', 5000), syncedRefund(h, 'RT-lane', 5000)]);
+    const deskApproved = await deskBody(h, 'RT-desk', 5000);
+    const [desk, synced] = await Promise.all([sendDesk(h, 'RT-desk', deskApproved), syncedRefund(h, 'RT-lane', 5000)]);
     expect(synced.status).toBe(202);                       // the money already left the lane: recorded, flagged, never refused
     expect([201, 409]).toContain(desk.status);             // the desk either won or lost the race by name
     if (desk.status === 409) expect(problem(desk.body).code).toBe('concurrent_change');

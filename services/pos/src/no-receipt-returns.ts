@@ -22,13 +22,15 @@
 // agreed with the customer, within the cap.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, concurrentChange } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { noReceiptGovernanceFindings, type ReturnRequestLine, type RefundGovernanceFinding } from '../../../packages/returns/src/assess-return';
 import type { RefundStatus } from '../../../packages/returns/src/returns';
 import { issueRefundCredit } from '../../../packages/loyalty/src/stored-value';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { ReturnRecord, StoreCreditIssue } from './returns';
 import type { SaleStockLocation } from './sale-stock';
+import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse, type RefundApprovalState } from './refund-approvals';
 
 const DISPOSITIONS: ReadonlySet<string> = new Set(['resell', 'quarantine', 'damaged', 'scrap']);
 /** Cash and store credit settle at the desk; card/UPI is a provider reversal, pending until reconciled (M13-FR-04). */
@@ -52,7 +54,14 @@ export interface NoReceiptReturnsDeps {
    *  Idempotent on the return id. */
   readonly recordNoReceiptReturn: (
     tenantId: string, record: ReturnRecord, storeCredit: StoreCreditIssue | undefined, location: SaleStockLocation | undefined,
+    /** The approval this return spends (ADR-0022) and the version of that approval's guard read before deciding — so two
+     *  returns spending one approval at once cannot both land. Absent on the synced path. */
+    approvalUse?: { readonly use: ApprovalUse; readonly expectedVersion: number },
   ) => Promise<void> | void;
+  /** An approval head office gave (ADR-0022) and, once spent, the refund that spent it. Optional on a bare stub. */
+  readonly refundApproval?: (tenantId: string, approvalId: string) => Promise<RefundApprovalState | undefined> | RefundApprovalState | undefined;
+  /** The version of an approval's own guard — read before the approval is judged, passed back to the append. */
+  readonly approvalVersion?: (tenantId: string, approvalId: string) => Promise<number> | number;
   /** Every no-receipt return recorded, tenant-wide — the report (M13-FR-01 "no-receipt-return reports", M15). */
   readonly noReceiptReturns: (tenantId: string) => Promise<readonly ReturnRecord[]> | readonly ReturnRecord[];
   /** Seal the refund fact into the domain audit trail (M34-FR-01). Optional; a bare stub may omit it. */
@@ -279,31 +288,26 @@ export function noReceiptReturnRoutes(deps: NoReceiptReturnsDeps): readonly Rout
           }
         }
 
-        // §28: a no-receipt return ALWAYS needs a second, authorised person — whatever the amount.
-        if (req.approvedBy === undefined) {
+        // §28: a no-receipt return ALWAYS needs a second, authorised person — whatever the amount — and that person's
+        // approval is the OBJECT they gave in their own session, never a name in this body (ADR-0022).
+        const approvalId = approvalIdIn(ctx.body);
+        if (approvalId === undefined) {
+          if (req.approvedBy !== undefined) throw namedApproverRefusal(req.approvedBy, 'approvedBy');
           throw apiError(422, {
             code: 'needs_a_second_person',
             whatHappened: 'A no-receipt return always needs a supervisor/manager to approve it — there is no bill to bound it.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Have a supervisor/manager approve it (send approvedBy). No money has moved.',
+            nextSafeAction: 'Have a supervisor/manager approve it in their own session (POST /v1/pos/refund-approvals, kind no_receipt_return) and send approvalId. No money has moved.',
           });
         }
-        if (req.approvedBy === ctx.userId) {
-          throw apiError(422, {
-            code: 'approved_by_the_person_processing_it',
-            whatHappened: `${ctx.userId} cannot approve their own no-receipt return (§28).`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'A different supervisor/manager must approve it. No money has moved.',
-          });
-        }
-        if (!(await deps.canApproveRefund(ctx.tenantId, req.approvedBy))) {
-          throw apiError(422, {
-            code: 'approver_may_not_approve',
-            whatHappened: `${req.approvedBy} does not hold the authority to approve a refund, so their approval of this no-receipt return does not count.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Have a supervisor/manager (one who can approve refunds) approve it. No money has moved.',
-          });
-        }
+        // The approval's own guard FIRST (there is no bill to guard on), then the approval it protects.
+        const approvalVersion = deps.approvalVersion === undefined ? 0 : await Promise.resolve(deps.approvalVersion(ctx.tenantId, approvalId));
+        const approval = await takeRefundApproval({
+          state: deps.refundApproval === undefined ? undefined : await Promise.resolve(deps.refundApproval(ctx.tenantId, approvalId)),
+          kind: 'no_receipt_return', saleId: null, valueMinor: req.refundMinor, processedBy: ctx.userId, returnId: req.returnId,
+          now: deps.now(), canApprove: (u) => deps.canApproveRefund(ctx.tenantId, u),
+        });
+        const approvedBy = approval.approvedBy;
 
         // A resold unit re-enters stock somewhere (M08-FR-01). There is no bill to take the location from, so
         // the desk must say — a shelf count that quietly drifts is exactly what P-08 forbids.
@@ -355,11 +359,16 @@ export function noReceiptReturnRoutes(deps: NoReceiptReturnsDeps): readonly Rout
           returnId: req.returnId, number: req.number, originalSaleId: null, noReceipt: true,
           processedBy: ctx.userId, processedAt, reasonCode: req.reasonCode,
           refundMinor: req.refundMinor, refundTender: req.refundTender, refundStatus, lines: req.lines,
-          approvedBy: req.approvedBy,
+          approvedBy, approvalId,
           ...(req.customerRef === undefined ? {} : { customerRef: req.customerRef }),
           ...(req.locationId === undefined ? {} : { locationId: req.locationId }),
         };
-        await deps.recordNoReceiptReturn(ctx.tenantId, record, storeCredit, location);
+        try {
+          await deps.recordNoReceiptReturn(ctx.tenantId, record, storeCredit, location, { use: { approvalId, usedBy: req.returnId }, expectedVersion: approvalVersion });
+        } catch (err) {
+          if (err instanceof ConcurrencyConflictError) throw concurrentChange(`approval ${approvalId}`);
+          throw err;
+        }
         // Seal the refund FACT (M34-FR-01) — amount, reason, status, approver, that it was without a bill. No
         // tender instrument is recorded (hard rule #3).
         await deps.recordAudit?.(ctx.tenantId, {
@@ -368,7 +377,7 @@ export function noReceiptReturnRoutes(deps: NoReceiptReturnsDeps): readonly Rout
           before: null,
           after: {
             returnId: req.returnId, noReceipt: 'yes', refundMinor: String(req.refundMinor), capMinor: String(capMinor),
-            reasonCode: req.reasonCode, refundStatus, approvedBy: req.approvedBy,
+            reasonCode: req.reasonCode, refundStatus, approvedBy,
             ...(req.locationId === undefined ? {} : { locationId: req.locationId }),
             ...(storeCredit === undefined ? {} : { storeCreditInstrumentId: storeCredit.movement.instrumentId }),
           },

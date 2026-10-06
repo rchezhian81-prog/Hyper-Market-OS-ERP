@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 914,
+  "testFiles": 916,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -748,9 +748,9 @@
       "id": "M13",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 22,
-        "integration": 19,
-        "realDb": 4,
+        "unit": 23,
+        "integration": 20,
+        "realDb": 5,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -774,6 +774,7 @@
           "tests/unit/pos-refund-view.test.ts",
           "tests/unit/pos-refund-wiring.test.ts",
           "tests/unit/pos-till-session.test.ts",
+          "tests/unit/refund-approvals.test.ts",
           "tests/unit/return-eligibility.test.ts",
           "tests/unit/returns-register.test.ts",
           "tests/unit/returns.test.ts",
@@ -790,6 +791,7 @@
           "tests/integration/offline-returns-reach-the-cloud.test.ts",
           "tests/integration/offline-store-credit-reaches-the-cloud.test.ts",
           "tests/integration/pending-tender-recovery.test.ts",
+          "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/returns-eligibility.test.ts",
           "tests/integration/returns-guard-the-refund.test.ts",
           "tests/integration/returns-reconcile-on-sync.test.ts",
@@ -803,6 +805,7 @@
           "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "realDb": [
+          "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/returns-guard-the-refund.test.ts",
           "tests/integration/the-till-exchanges.test.ts",
           "tests/integration/the-till-returns-without-a-receipt.test.ts",
@@ -825,8 +828,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 17,
-        "integration": 12,
-        "realDb": 1,
+        "integration": 13,
+        "realDb": 2,
         "browser": 5,
         "connected": 0,
         "device": 0,
@@ -858,6 +861,7 @@
           "tests/integration/day-close-reaches-the-cloud.test.ts",
           "tests/integration/day-close-reconcile-on-sync.test.ts",
           "tests/integration/manager-decisions-reach-the-cloud-through-the-edge.test.ts",
+          "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/refund-exceptions.test.ts",
           "tests/integration/settlement-cash-office.test.ts",
           "tests/integration/settlement-investigations.test.ts",
@@ -867,7 +871,8 @@
           "tests/integration/till-cash.test.ts"
         ],
         "realDb": [
-          "tests/integration/day-close-honestly.test.ts"
+          "tests/integration/day-close-honestly.test.ts",
+          "tests/integration/refund-approval-is-the-approvers-own-act.test.ts"
         ],
         "browser": [
           "tests/e2e/cash-office-signoff-delivery.e2e.ts",
