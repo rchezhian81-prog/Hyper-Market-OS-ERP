@@ -218,6 +218,22 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
   /** Where `apps/` lives on this box, so the screens can be served from disk. */
   { key: 'EDGE_APPS_DIR', optional: true },
   /**
+   * Run the ERP screens as the person the hosted front's sign-in names (`X-Sre-User`, OB-16). Set to `1` by the PILOT
+   * overlay alone, behind its authenticating front; a store box never sets it. Declared here because the loader keeps
+   * only declared settings — undeclared, it was silently never read (found 6 Oct 2026, Wave 2b-v).
+   */
+  { key: 'EDGE_SCREEN_TRUST_FORWARDED_USER', optional: true, oneOf: ['0', '1'] },
+  /**
+   * Open a till session for the person the hosted front's sign-in names, without a till PIN (ADR-0020 §6). The PILOT
+   * overlay alone sets `1`; a store box never does — its cashiers sign in with their own till PIN.
+   */
+  { key: 'EDGE_LANE_TRUST_FORWARDED_USER', optional: true, oneOf: ['0', '1'] },
+  /**
+   * The box's till-credentials file (ADR-0020): the PIN verifiers the `till-pin` command writes, owner-only. Absent → the
+   * file `till-credentials.json` in the data directory.
+   */
+  { key: 'EDGE_TILL_CREDENTIALS_FILE', optional: true },
+  /**
    * The pack the cloud last sent: products and costs, approvals, today's checklist, the assigned
    * wave and route, slots, and the store's own thresholds.
    *

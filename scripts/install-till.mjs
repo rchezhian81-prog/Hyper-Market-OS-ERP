@@ -182,7 +182,8 @@ export function renderStartScript(platform, input) {
       'rem SRE Retail OS — start this till (the store edge: the save socket + the screens). Written by till:install.',
       'rem Loads till.env from this folder, then runs the built edge. Leave this window open while the shop trades.',
       'for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%~dp0till.env") do set "%%A=%%B"',
-      `node "${entry}"`,
+      'rem With arguments it runs an administrator command instead, e.g. issuing a till PIN: start-till.cmd till-pin --user <staff id> --by "<name>"',
+      `node "${entry}" %*`,
       'pause',
       '',
     ].join('\r\n');
@@ -194,7 +195,8 @@ export function renderStartScript(platform, input) {
     'set -e',
     'HERE="$(cd "$(dirname "$0")" && pwd)"',
     'set -a; . "$HERE/till.env"; set +a',
-    `exec node "${entry}"`,
+    '# With arguments it runs an administrator command instead, e.g. issuing a till PIN: start-till.sh till-pin --user <staff id> --by "<name>"',
+    `exec node "${entry}" "$@"`,
     '',
   ].join('\n');
 }

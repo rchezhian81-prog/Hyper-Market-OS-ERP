@@ -5,6 +5,63 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-v-a — the person on a sale is a person the store computer verified, offline (6 October 2026)
+
+- **The finding (audit PF-02, CRITICAL), the till half:** the till wrote whatever staff code was typed as the cashier on
+  every sale, refund and cash movement, and the store computer committed it. A name identified; nothing authenticated
+  (recorded since SP-4b as GAP-POS-LOGIN-01).
+- **The decision (ADR-0020, new):** the store computer itself verifies the cashier, offline. Head office's sign-in
+  (ADR-0019) cannot be asked with the cable out, and a sale must never depend on the network (hard rule #1).
+- **What changed (pull request #709):**
+  - **A till PIN, kept only as a fingerprint.** `packages/identity/src/till-pin.ts`: six digits; the computer keeps a
+    slow, salted verifier keyed with its own pack signing key — never the PIN, and useless on another computer.
+  - **The administrator issues it on the store computer:** `till/start-till.sh till-pin --user <staff id> --by "<name>"`
+    (Windows: `start-till.cmd`; the containers: `docker compose exec edge … till-pin`). It prints the PIN once; reissue
+    replaces it, `--revoke` ends it; appended, never edited (`edge/store-edge/src/till-pin-command.ts`; runbook
+    `in-store-install.md` Step 2b).
+  - **The store computer decides who signs in** (`edge/store-edge/src/till-operators.ts`): the person must be in the
+    pack with till authority (`pos.sale.sync`), hold a PIN issued on this computer, and key it right. A wrong staff ID
+    and a wrong PIN get the same answer; five wrong PINs lock that staff ID for fifteen minutes; twenty failed sign-ins
+    lock that till's sign-in for fifteen minutes; a pack with no people register signs nobody in. Success opens a shift
+    session bound to that till: it ends at Sign out, after twelve hours, or the moment the person loses till authority
+    in the pack; a restart keeps it. Every sign-in, refusal and sign-out is on an fsync'd log — never a PIN or a token.
+  - **Every money write is bound to the session** (`edge/store-edge/src/lane-server.ts`): a sale (cashier), a refund
+    (who processed it), a cash movement (who holds the till) and a till close are refused **before the disk** unless
+    that person is the one signed in at this till. The box stamps the record with who it verified and how
+    (`operatorVerified`) — with no clock reading, so a till re-sending the same sale after a lost reply is still "already
+    recorded", never a conflict. A box never told which till it is takes no money at all.
+  - **The till screen** (`apps/pos/web/app.js`): Sign in → scan the badge or key the staff ID → key the six-digit PIN.
+    The PIN shows as dots, the panel forgets it when it closes; a refusal is said in the cashier's words. A reload keeps
+    the sign-in by asking the store computer whether the session is still live. Sign-in now costs three acts, once a
+    shift (the screen spec's budget is updated and still counted in the browser).
+  - **The hosted copy:** the front passes the person its password sign-in verified to the till socket, and only the
+    hosted overlay lets the box believe it (`EDGE_LANE_TRUST_FORWARDED_USER=1`, held by a guardrail; a store box never
+    sets it). There, Sign in is one tap, no PIN; the sale is stamped `verified_sign_in`. A signed-in person who may not
+    sell (the accountant) is told "not allowed to work a till", not "cannot reach the store computer".
+- **Found and fixed on the way:**
+  - **The hosted copy's screens were NOT running as the signed-in person.** `EDGE_SCREEN_TRUST_FORWARDED_USER` (OB-16,
+    #699) was set in the overlay but never declared to the box's settings loader, which keeps only declared
+    settings — so the box never saw it. Declared now, and a test proves it reaches the box (it fails without the fix).
+  - **The hosted box had no lane**, so its till refused to take payment; the overlay now names it `lane-1`.
+  - **The hosted till's float, pickups and close** were posted to the tester's own computer instead of the store box;
+    they now use the same address as sales (a test checks every till call goes through the one address).
+  - **A badge scanned the instant Sign in was tapped lost its first characters** while the till asked the store
+    computer how to sign people in; the mode is now learned at start-up and the prompt opens at once.
+- **Proved:** `tests/unit/till-pin.test.ts` (8), `tests/unit/till-operators.test.ts` (13: one answer for every wrong
+  guess, no authority, no register, no lane, lockouts per person and per till, lane binding, expiry, sign-out, a leaver's
+  next write, restart, a log with no PIN or token, the hosted sign-in), `tests/unit/till-pin-command.test.ts` (3),
+  `tests/integration/the-till-signs-its-operator-in.test.ts` (11, a real store computer with no cloud), and in a real
+  browser `tests/e2e/the-served-till-takes-a-sale.e2e.ts` (a wrong PIN refused, the dots, staff ID + PIN, reload keeps
+  it, the hosted one-tap sign-in). Every existing till test — unit, integration and browser — now signs in with a PIN
+  made at run time (`tests/support/till-operator.ts`; no PIN is in the repository). Full gate green locally.
+- **Not yet / honest limits:** a manager's approval at the till is still a scanned or keyed staff ID — the next slice
+  (2b-v-b) makes it the manager's own PIN, once, for that one transaction; head office does not yet flag a synced sale
+  that lacks the box's stamp, and its desk refund approver is not yet an approval object (2b-v-c); PINs are issued on
+  the store computer until head office's people screen exists (OB-15); the partner-counter line is not bound to the
+  session; staff UAT (SP-10, pending, unasked).
+- **Next:** Wave 2b-v-b (the manager's one-use, transaction-bound approval at the till), then 2b-v-c, then the OB-15
+  block.
+
 ## Wave 2b-iv — the age answer lives in the basket and is enforced at commit, on the till and at head office (5 October 2026)
 
 - **The finding (audit PF-03, CRITICAL):** the audit booted the real till with a product flagged 18+. The scan answered
@@ -50,7 +107,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   PF-02 (the next slice); the practice data has no age-restricted product, so the question cannot be seen on the hosted
   copy until one is added; staff UAT (SP-10, pending, unasked).
 - **Next:** Wave 2b-v — PF-02, the till operator as a verified, offline-capable credential and a manager approval as the
-  manager's own one-use act (needs an ADR first). Then the OB-15 block.
+  manager's own one-use act (needs an ADR first; the till half done 6 Oct 2026, #709, ADR-0020). Then the OB-15 block.
 
 ## Wave 2b-iii-b — a facilities check is verified by a second signed-in person; an incident is closed by the signed-in person (5 October 2026)
 

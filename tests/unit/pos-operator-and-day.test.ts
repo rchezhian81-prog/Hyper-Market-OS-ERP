@@ -27,7 +27,7 @@ describe('who, where and which day on every sale', () => {
     const view = bootPos({ laneId: 'lane-7', tradingDayCutoff: '02:00', durable });
     expect(view.operator()).toBeUndefined();
     await expect(ring(view, 'S-1', '2026-09-30T10:00:00.000Z')).rejects.toBeInstanceOf(NoOperatorError);
-    await expect(ring(view, 'S-1', '2026-09-30T10:00:00.000Z')).rejects.toMatchObject({ laneMessage: expect.stringContaining('Sign in with your staff code') });
+    await expect(ring(view, 'S-1', '2026-09-30T10:00:00.000Z')).rejects.toMatchObject({ laneMessage: expect.stringContaining('Sign in with your staff ID and till PIN') });
     expect(written).toHaveLength(0);
 
     view.signIn('u-meena');

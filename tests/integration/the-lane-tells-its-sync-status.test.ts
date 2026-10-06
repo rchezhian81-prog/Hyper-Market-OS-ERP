@@ -6,6 +6,7 @@ import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import type { LaneSyncStatus } from '../../edge/store-edge/src/sync-status';
+import { prepareTillBox, signInAtLane, operatorHeader } from '../support/till-operator';
 
 /** The literal path — the edge exports no name for it on purpose (hard rule #1, tests/unit/store-edge.test.ts). */
 const LANE_SYNC_STATUS_ROUTE = '/lane/sync-status';
@@ -44,6 +45,7 @@ async function standaloneLane(): Promise<EdgeProcess> {
   cleanups.push(async () => { await rm(dir, { recursive: true, force: true }); });
   const edge = (await startEdge({
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
+    ...await prepareTillBox({ dir, key: KEY }),
   }, () => {}))!;
   cleanups.push(async () => { await edge.stop(); });
   return edge;
@@ -102,8 +104,9 @@ describe('a box with no cloud says so, and counts what it holds', () => {
 
   it('a sale saved on the lane raises the count the badge shows — the BOX\'s outbox, not the browser\'s', async () => {
     const edge = await standaloneLane();
+    const who = operatorHeader(await signInAtLane(edge.lane!.port, 'u-lanecash'));
     const saved = await savedFetch(`http://127.0.0.1:${edge.lane!.port}/lane/sales`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'S-1', total: 1 }),
+      method: 'POST', headers: { 'content-type': 'application/json', ...who }, body: JSON.stringify({ id: 'S-1', total: 1, cashierId: 'u-lanecash' }),
     });
     expect((await saved.json() as { committed: boolean }).committed).toBe(true);
     const { body } = await statusOf(edge);

@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { addTillPeople, signInTill } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
@@ -108,6 +109,8 @@ describeOrSkip('the till exchanges goods — credit at the bill\'s own price, th
       servicePolicy: { returnWindowDays: 30, approvalThresholdMinor: 0, noReceiptCapMinor: 100_000, agentAuthorityMinor: 0, compensationCapMinor: 0 },
       lossPreventionRules: [],
     }), 'utf8');
+    // The pack also names the cashier with till authority, and her till PIN is issued on this box (ADR-0020).
+    await addTillPeople(packFile, dataDir, KEY, [{ userId: CASHIER, displayName: 'Meena' }]);
     const edge = (await startEdge({
       EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: cloud.tenantId, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_LANE_ID: LANE, EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
@@ -136,7 +139,7 @@ describeOrSkip('the till exchanges goods — credit at the bill\'s own price, th
     const policy = (await servedGlobal<{ approvalThresholdMinor: number; noReceiptCapMinor: number }>(edge, 'posRefundPolicy'))!;
     expect(policy.approvalThresholdMinor).toBe(0);
     const till = bootPos({ laneId: LANE, catalogue, lanePort: edge.lane!.port, refundPolicy: policy });
-    till.signIn(CASHIER);
+    await signInTill(till, CASHIER);
 
     // ── 2. Two customers buy a tin of ghee each, by barcode, in cash. Banked at head office.
     for (const [saleId, receipt] of [['S-1', 'R-0001'], ['S-2', 'R-0002']] as const) {

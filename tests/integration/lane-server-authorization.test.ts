@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { startEdge } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { isJsonContentType, laneCallRefusal, isLoopbackOrigin } from '../../edge/store-edge/src/lane-server';
+import { prepareTillBox, signInAtLane, operatorHeader } from '../support/till-operator';
 
 /**
  * **RR-F01 — an untrusted request must not mutate the lane's durable log.**
@@ -31,6 +32,7 @@ const startLane = async () => {
   const edge = (await startEdge({
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
     EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
+    ...await prepareTillBox({ dir, key: KEY }),
   }, () => {}))!;
   stops.push(() => edge.stop());
   return edge;
@@ -87,19 +89,20 @@ describe('RR-F01 — the lane socket authorizes before it writes', () => {
     expect(await readLog(edge.log.path)).toHaveLength(0);
   });
 
-  it('AUTHORIZED offline operation is preserved: application/json, no foreign origin, commits', async () => {
+  it('AUTHORIZED offline operation is preserved: application/json, no foreign origin, the signed-in cashier, commits', async () => {
     const edge = await startLane();
+    const who = operatorHeader(await signInAtLane(edge.lane!.port, 'u-lanecash'));
     // No Origin (a non-browser/same-origin call) — the authorized lane path.
     const res1 = await fetch(`http://127.0.0.1:${edge.lane!.port}/lane/sales`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'S-ok', total: 1 }),
+      method: 'POST', headers: { 'content-type': 'application/json', ...who }, body: JSON.stringify({ id: 'S-ok', total: 1, cashierId: 'u-lanecash' }),
     });
     expect(res1.status).toBe(200);
     expect((await res1.json() as { committed: boolean }).committed).toBe(true);
     // A loopback Origin (the till's own screen on another port) — also authorized.
     const res2 = await fetch(`http://127.0.0.1:${edge.lane!.port}/lane/sales`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json; charset=utf-8', origin: `http://127.0.0.1:${edge.lane!.port}` },
-      body: JSON.stringify({ id: 'S-ok-2', total: 1 }),
+      headers: { 'content-type': 'application/json; charset=utf-8', origin: `http://127.0.0.1:${edge.lane!.port}`, ...who },
+      body: JSON.stringify({ id: 'S-ok-2', total: 1, cashierId: 'u-lanecash' }),
     });
     expect(res2.status).toBe(200);
     expect(await readLog(edge.log.path)).toHaveLength(2);

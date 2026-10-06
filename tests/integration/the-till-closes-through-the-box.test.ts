@@ -1,11 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos, laneDurable, laneDurableReturn, laneLookup, laneCashMovement, laneShiftClose, laneTillCash } from '../../apps/pos/src/browser-entry';
 import { readTillCashRecord } from '../../edge/store-edge/src/till-cash';
+import { prepareTillBox, holdSignedInAt } from '../support/till-operator';
 
 /**
  * **The till's float, pickups and close live on the store BOX — durable, restart-safe, one effect per act (SP-4c · audit
@@ -28,7 +29,7 @@ afterEach(async () => {
 });
 
 /** A store pack naming the shop's cut-off and cash tolerance (₹100), as head office publishes one. */
-const PACK = JSON.stringify({
+const PACK = ({
   version: 1,
   policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
   lossPreventionRules: [],
@@ -37,24 +38,29 @@ const PACK = JSON.stringify({
 const startBox = async (opts: { readonly dir?: string; readonly lane?: string; readonly withPack?: boolean } = {}): Promise<EdgeProcess> => {
   const dir = opts.dir ?? await mkdtemp(join(tmpdir(), 'sre-till-cash-'));
   if (opts.dir === undefined) dirs.push(dir);
-  const packFile = join(dir, 'store-pack.json');
-  if (opts.withPack !== false) await writeFile(packFile, PACK, 'utf8');
+  // The pack names the two cashiers with till authority and their PINs are issued on this box (ADR-0020); `withPack:
+  // false` is a pack that names the people but no policies — so no cash tolerance.
+  const tillReady = await prepareTillBox({
+    dir, key: KEY, pack: opts.withPack === false ? {} : PACK, laneId: opts.lane ?? null,
+    people: [{ userId: 'u-meena', displayName: 'Meena' }, { userId: 'u-ravi', displayName: 'Ravi' }],
+  });
   const edge = (await startEdge({
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
-    EDGE_LANE_PORT: '0', ...(opts.lane === undefined ? {} : { EDGE_LANE_ID: opts.lane }), ...(opts.withPack === false ? {} : { EDGE_PACK_FILE: packFile }),
+    EDGE_LANE_PORT: '0', ...tillReady,
   }, () => {}))!;
   stops.push(() => edge.stop());
   return edge;
 };
 
-/** The till exactly as the served page boots it, on this box's lane socket, with a cashier signed in. */
-const tillOn = (edge: EdgeProcess, cashierId = 'u-meena') => {
+/** The till exactly as the served page boots it, on this box's lane socket, with a cashier signed in AT THE BOX (ADR-0020). */
+const tillOn = async (edge: EdgeProcess, cashierId = 'u-meena') => {
   const port = edge.lane!.port;
   // Tax-free items, so the rupee arithmetic below reads plainly (a hand-scanned item otherwise carries the default 18%).
   const view = bootPos({
     laneId: 'lane-1', taxPercent: 0, durable: laneDurable(port), durableReturn: laneDurableReturn(port), laneLookup: laneLookup(port),
     cashMovement: laneCashMovement(port), shiftClose: laneShiftClose(port), tillCash: laneTillCash(port),
   });
+  await holdSignedInAt(port, cashierId);
   view.signIn(cashierId);
   return view;
 };
@@ -71,7 +77,7 @@ const ring = async (view: ReturnType<typeof bootPos>, saleId: string, at: string
 describe('a shift on the served till: float → sales → pickup → blind count, all on the box (F10)', () => {
   it('records the float durably, refuses what the chain refuses, and closes on the box\'s own figures', async () => {
     const edge = await startBox({ lane: 'lane-1' });
-    const till = tillOn(edge);
+    const till = await tillOn(edge);
 
     // Nothing out yet: the box says so, and a pickup with no float is refused in words — nothing written.
     expect(await till.till.tillCash()).toMatchObject({ tillId: 'lane-1', laneId: 'lane-1', custodian: null, shiftOpen: false });
@@ -127,7 +133,7 @@ describe('a shift on the served till: float → sales → pickup → blind count
     const T = Date.now();
     const minutesFromNow = (m: number) => new Date(T + m * 60_000).toISOString();
     const edge = await startBox({ lane: 'lane-1' });
-    const till = tillOn(edge);
+    const till = await tillOn(edge);
     await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: minutesFromNow(-60) });
     await ring(till, 'S-1', minutesFromNow(-30), 48_000);
     // A ₹100 cash refund on that bill goes through the box's return route — and out of the drawer.
@@ -150,18 +156,20 @@ describe('a shift on the served till: float → sales → pickup → blind count
 
   it('only the cashier who took the float closes; a till with no float has no shift to close', async () => {
     const edge = await startBox({ lane: 'lane-1' });
-    const meena = tillOn(edge, 'u-meena');
+    const meena = await tillOn(edge, 'u-meena');
     expect(await meena.till.close({ shiftId: 'sh-0', closedAt: '2026-09-30T20:00:00.000Z', countedMinor: 0 })).toMatchObject({ closed: false, refusedBecause: 'no_open_shift' });
     await meena.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: '2026-09-30T09:00:00.000Z' });
-    const ravi = tillOn(edge, 'u-ravi');
+    const ravi = await tillOn(edge, 'u-ravi');
     expect(await ravi.till.close({ shiftId: 'sh-3', closedAt: '2026-09-30T20:00:00.000Z', countedMinor: 200_000 })).toMatchObject({ closed: false, refusedBecause: 'not_the_custodian' });
     expect(await ravi.till.moveCash({ kind: 'pickup', amountMinor: 1_000, at: '2026-09-30T12:00:00.000Z' })).toMatchObject({ committed: false, refusedBecause: 'till_not_held_by_this_custodian' });
+    // Ravi signed in at this till after her; Meena signs back in to close her own shift.
+    await holdSignedInAt(edge.lane!.port, 'u-meena');
     expect(await meena.till.close({ shiftId: 'sh-3', closedAt: '2026-09-30T20:00:00.000Z', countedMinor: 200_000 })).toMatchObject({ closed: true, varianceMinor: 0 });
   });
 
   it('the same movement id and the same shift id re-sent are ONE effect — a reply lost on the wire is resolved, never doubled (§31.1)', async () => {
     const edge = await startBox({ lane: 'lane-1' });
-    const till = tillOn(edge);
+    const till = await tillOn(edge);
     const first = await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: '2026-09-30T09:00:00.000Z', movementId: 'cm-same' });
     const again = await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: '2026-09-30T09:00:00.000Z', movementId: 'cm-same' });
     expect(first).toMatchObject({ committed: true });
@@ -178,7 +186,7 @@ describe('a shift on the served till: float → sales → pickup → blind count
     const dir = await mkdtemp(join(tmpdir(), 'sre-till-cash-restart-'));
     dirs.push(dir);
     const first = await startBox({ dir, lane: 'lane-1' });
-    const till1 = tillOn(first);
+    const till1 = await tillOn(first);
     await till1.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: '2026-09-30T09:00:00.000Z', movementId: 'cm-f' });
     await till1.till.moveCash({ kind: 'pickup', amountMinor: 50_000, at: '2026-09-30T12:00:00.000Z', movementId: 'cm-p' });
     await first.stop();
@@ -190,7 +198,7 @@ describe('a shift on the served till: float → sales → pickup → blind count
     // No cloud was configured, so the two records are still to send — re-queued from the disk, said out loud.
     expect(said.join('\n')).toContain('2 till cash record(s) from before are still to send');
     expect(second.tillCashOutbox.unsentCount()).toBe(2);
-    const till2 = tillOn(second);
+    const till2 = await tillOn(second);
     expect(await till2.till.tillCash()).toMatchObject({ custodian: 'u-meena', shiftOpen: true, openedAt: '2026-09-30T09:00:00.000Z' });
     expect(await till2.till.moveCash({ kind: 'pickup', amountMinor: 50_000, at: '2026-09-30T12:00:00.000Z', movementId: 'cm-p' })).toMatchObject({ committed: true, alreadyRecorded: true });
     expect(await till2.till.close({ shiftId: 'sh-r', closedAt: '2026-09-30T20:00:00.000Z', countedMinor: 150_000 })).toMatchObject({ closed: true, varianceMinor: 0 });
@@ -206,7 +214,7 @@ describe('a shift on the served till: float → sales → pickup → blind count
 
   it('a pack that names no cash tolerance: the box applies its default AND says so on the record', async () => {
     const edge = await startBox({ lane: 'lane-1', withPack: false });
-    const till = tillOn(edge);
+    const till = await tillOn(edge);
     await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: '2026-09-30T09:00:00.000Z' });
     expect(await till.till.close({ shiftId: 'sh-d', closedAt: '2026-09-30T20:00:00.000Z', countedMinor: 200_000 })).toMatchObject({ closed: true });
     expect((await cashLog(edge)).at(-1)).toMatchObject({ kind: 'close', toleranceMinor: 10_000, toleranceKnown: false });

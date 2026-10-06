@@ -90,6 +90,10 @@ describe('install-till — the files it writes', () => {
     expect(cmd).toContain('%~dp0till.env');
     expect(cmd).toContain('eol=#');
     expect(cmd).toContain('node "C:\\repo/edge/store-edge/dist/start.js"'.replace('C:\\repo/edge/store-edge/dist/start.js', cmd.match(/node "([^"]+)"/)![1]!));
+    // With arguments the same scripts run an administrator command with the till's own settings — issuing a till PIN
+    // (ADR-0020 §2): `start-till.sh till-pin --user <staff id> --by "<name>"`.
+    expect(sh).toContain('exec node "/repo/edge/store-edge/dist/start.js" "$@"');
+    expect(cmd).toMatch(/node "[^"]+" %\*/);
     const unit = renderSystemdUnit({ installDir: '/shop/till', repoRoot: '/repo' });
     expect(unit).toContain('EnvironmentFile=/shop/till/till.env');
     expect(unit).toContain('ExecStart=/usr/bin/env node /repo/edge/store-edge/dist/start.js');

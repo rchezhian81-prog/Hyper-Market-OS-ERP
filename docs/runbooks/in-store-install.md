@@ -44,7 +44,7 @@ pnpm run till:install -- --tenant <your tenant id> --lane <this till's lane, e.g
 ```
 
 **`--lane` names which lane THIS PC is** (SP-4b). Every sale the till rings carries that lane, and the cashier signs in
-with their staff code before the first sale, so every sale names who rang it and where. Give each till PC its own lane
+with their staff ID and their own till PIN before the first sale (Step 2b), so every sale names who rang it and where. Give each till PC its own lane
 name; a re-run keeps the lane an earlier install wrote.
 
 **If the cloud runs on this PC** and you have already filled `infra/compose/.env` (see
@@ -87,10 +87,41 @@ Then, in a browser **on this PC**:
 
 The Sale screen opens. Scanning is keyboard-driven, exactly as a real hand scanner behaves.
 
+## Step 2b — Give each cashier a till PIN (ADR-0020)
+
+Nobody can take money at a till until the store computer knows them. Two things must be true for each cashier:
+
+1. **The store pack names them with till authority** — head office's people and role register (a person whose role
+   holds `pos.sale.sync`, as every Cashier role does). A pack with no people register signs nobody in.
+2. **They have a till PIN issued on THIS store computer.** You, the administrator, run on the store computer, in your
+   own terminal (never through a chat or a remote-support tool, so the PIN is never copied anywhere):
+
+   - **Mac/Linux:** `till/start-till.sh till-pin --user <their staff id> --by "<your name>"`
+   - **Windows:** `till\start-till.cmd till-pin --user <their staff id> --by "<your name>"`
+   - **The hosted copy's box (containers):** `docker compose exec edge node edge/store-edge/dist/start.js till-pin --user
+     <staff id> --by "<your name>"` — only needed if that box ever asks for a PIN; the hosted copy normally signs the
+     person in from their password sign-in.
+
+   It prints the six-digit PIN **once**. Give it to the person face to face; it is not stored anywhere, and the screen
+   will not show it again. Only a fingerprint of it is kept, in `till-credentials.json` beside the sales on disk, and
+   that fingerprint is useless on any other computer.
+
+- **Forgotten PIN:** run the same command again — the new PIN replaces the old one at once.
+- **Someone leaves, or a PIN may be known to someone else:** add `--revoke`. Their next sign-in is refused; a till
+  they are still signed in at refuses their next sale as soon as head office removes their role from the pack.
+- **At the till:** tap **Sign in**, scan the badge (or key the staff ID), OK, then key the six-digit PIN and OK. The PIN
+  shows as dots. Five wrong PINs lock that staff ID for fifteen minutes; twenty failed sign-ins lock that till's sign-in
+  for fifteen minutes. A sign-in lasts the shift (twelve hours at most) or until **Sign out**; reloading the page keeps
+  it, restarting the store computer keeps it.
+- **What the store computer keeps:** every sign-in, refusal and sign-out in `till-operators.log` (never a PIN), and on
+  every sale and refund the person it verified (`operatorVerified`).
+
 ## Step 3 — Prove it before the pilot
 
 Two checks, both worth doing in front of staff:
 
+0. **Only a real cashier can sell.** Tap Sign in, key a staff ID and a WRONG PIN: it says the ID and PIN do not match,
+   and nobody is signed in. Then sign in properly (Step 2b).
 1. **A sale saves.** Ring an item, take cash, complete the sale. It completes and the receipt number
    appears — the sale is now durably on this PC's disk.
 2. **It keeps selling with no internet.** Disconnect the network and ring another sale. It still

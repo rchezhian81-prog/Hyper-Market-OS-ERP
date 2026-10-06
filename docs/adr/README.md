@@ -32,6 +32,7 @@ CLAUDE.md (Technology baseline, roadmap §19) requires: **"Any substitution requ
 | [0018](./0018-one-public-origin.md) | One public https origin: the customer app, the API and sign-in on one address; staff screens off it until a sign-in gate exists (Stage F) | Accepted (owner program directive, 29 Sep 2026) |
 | [0019](./0019-self-hosted-identity-server.md) | A self-hosted open-source identity server (Keycloak) signs people in; the product never holds a password; tenants map to realms; the login page is ours in look | Accepted (owner decision OB-15 "A 1", 4 Oct 2026) |
 | [0019](./0019-handhelds-reach-the-box-through-an-authenticated-device-socket.md) | Handhelds reach the store box over the shop network through an authenticated DEVICE socket — enrolled once with a one-time code from head office, per-device credential, loopback by default, handheld screens only (SP-3a) | Accepted (owner program directive, 30 Sep 2026) |
+| [0020](./0020-the-till-operator-is-verified-by-the-store-computer.md) | The till operator is verified by the store computer: a personal till PIN checked offline (salted scrypt verifier keyed by the box), a lane-bound shift session, every sale, refund and till-cash write bound to it before the disk; the hosted copy uses its verified sign-in (Wave 2b-v · audit PF-02) | Accepted (owner program directive; ADR-0019's offline identity shape) |
 
 Further de-facto and proposed decisions (transaction boundaries, Postgres RLS, SHA-256 audit chain,
 observability exporters, OpenAPI, DSR API, hosting/IaC/CD) are catalogued as recommendations in

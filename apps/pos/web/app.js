@@ -47,8 +47,12 @@ const WORDS = {
     ageNotSold: 'The customer could not show they are {age} or over, so {item} was not added to the bill. Nothing else changes.',
     // Who is on the till (SP-4b · F09): the lane the box said it is, and the cashier who signed in — or nobody.
     lane: 'Lane', noLane: 'No lane set on this till', notSignedIn: 'Nobody signed in',
-    signIn: 'Sign in', signOut: 'Sign out', signInTitle: 'Your staff code',
-    signInHint: 'Scan your badge or key your staff code, then OK. Every sale names who rang it.',
+    signIn: 'Sign in', signOut: 'Sign out', signInTitle: 'Your staff ID',
+    signInHint: 'Scan your badge or key your staff ID, then OK. Next you key your till PIN.',
+    // The till PIN (ADR-0020 · PF-02): checked by the store computer, never shown, never kept on this screen.
+    noStoreBox: 'This till is not connected to its store computer, so nobody can sign in. Tell the manager.',
+    pinTitle: 'Your till PIN', pinHint: 'Key your six-digit till PIN, then OK. It is never shown. Forgotten it? Ask the manager.',
+    signInRefused: 'Not signed in',
     signedInAs: 'Signed in',
     cancel: 'Cancel', ok: 'OK', quantity: 'Quantity', cashReceived: 'Cash received',
     changeDue: 'Change due', online: 'Online', offline: 'Offline', unsent: 'Unsent',
@@ -151,7 +155,10 @@ const WORDS = {
     ageNotSold: 'வாடிக்கையாளர் {age} வயது அல்லது அதற்கு மேல் என்று காட்ட முடியவில்லை, எனவே {item} பில்லில் சேர்க்கப்படவில்லை. வேறு எதுவும் மாறவில்லை.',
     lane: 'லேன்', noLane: 'இந்த கவுண்டருக்கு லேன் அமைக்கப்படவில்லை', notSignedIn: 'யாரும் உள்நுழையவில்லை',
     signIn: 'உள்நுழை', signOut: 'வெளியேறு', signInTitle: 'உங்கள் பணியாளர் குறியீடு',
-    signInHint: 'உங்கள் பேட்ஜை ஸ்கேன் செய்யவும் அல்லது பணியாளர் குறியீட்டை உள்ளிட்டு சரி அழுத்தவும். ஒவ்வொரு விற்பனையும் யார் செய்தார் என்பதைக் குறிக்கும்.',
+    signInHint: 'உங்கள் பேட்ஜை ஸ்கேன் செய்யவும் அல்லது பணியாளர் எண்ணை உள்ளிட்டு சரி அழுத்தவும். அடுத்து உங்கள் கல்லா PIN-ஐ உள்ளிடுவீர்கள்.',
+    noStoreBox: 'இந்தக் கல்லா அதன் கடை கணினியுடன் இணைக்கப்படவில்லை, எனவே யாரும் உள்நுழைய முடியாது. மேலாளரிடம் சொல்லுங்கள்.',
+    pinTitle: 'உங்கள் கல்லா PIN', pinHint: 'ஆறு இலக்க கல்லா PIN-ஐ உள்ளிட்டு சரி அழுத்தவும். அது ஒருபோதும் காட்டப்படாது. மறந்துவிட்டீர்களா? மேலாளரிடம் கேளுங்கள்.',
+    signInRefused: 'உள்நுழையவில்லை',
     signedInAs: 'உள்நுழைந்தவர்',
     tender: 'பணம் பெறு', cancel: 'ரத்து', ok: 'சரி', quantity: 'எண்ணிக்கை',
     cashReceived: 'பெற்ற பணம்', changeDue: 'மீதம் தர வேண்டியது', online: 'இணைப்பில்',
@@ -330,10 +337,15 @@ let selectedLineId = null;
 // ── Who is on the till (SP-4b · F09) ────────────────────────────────────────
 //
 // The header names the LANE the store box said this till is and the CASHIER who signed in — never a stand-in.
-// A cashier signs in with their staff code (scanned or keyed) and is kept across a reload on THIS till only
+// A cashier signs in with their staff ID (scanned or keyed) and their till PIN, checked by the store computer, and is kept
+// across a reload on THIS till only
 // (sessionStorage: it dies with the browser session, so a till left open overnight still starts with nobody).
 // With nobody signed in, or no lane, the model refuses to take payment in its own words; the header says why.
-const OPERATOR_KEY = 'sre-pos-operator';
+// The tab keeps the SESSION the store computer minted (ADR-0020), never the PIN and never a typed name; a reload asks the
+// box whether it is still live.
+const OPERATOR_KEY = 'sre-pos-operator-session';
+/** How this till's store computer signs a person in ('pin' or 'verified_sign_in'), learned once at start-up. */
+let tillSignInMode = null;
 function rememberedOperator() {
   try { return window.sessionStorage.getItem(OPERATOR_KEY) || null; } catch { return null; }
 }
@@ -351,15 +363,30 @@ function paintOperator() {
 }
 async function toggleSignIn() {
   if (session.operator && session.operator()) {
-    session.signOut();
+    if (session.signOutAtTill) await session.signOutAtTill(); else session.signOut();
     rememberOperator(null);
     paintOperator();
     return;
   }
-  const code = await askScanOrKey({ title: t('signInTitle'), hint: t('signInHint') });
-  if (code === null || code === '' || code === '0') return;
-  session.signIn(String(code));
-  rememberOperator(String(code));
+  // The stand-in (no bundle) has no store computer to ask: it cannot sign anybody in.
+  if (!session.signInAtTill) { tell(t('read'), t('noStoreBox')); return; }
+  // On the hosted copy the person already signed in with their password; the store computer takes them from that sign-in.
+  // The way this box signs people in is learned once at start-up (below) — never awaited here, because a badge scanned
+  // the instant Sign in is tapped must land in an OPEN prompt (found by the PF-02 browser test: the first keystrokes were
+  // lost while the till was still asking, and the box was sent a truncated staff ID).
+  const by = tillSignInMode ?? await session.tillSignInBy();
+  let outcome;
+  if (by === 'verified_sign_in') {
+    outcome = await session.signInAtTill({});
+  } else {
+    const staffId = await askScanOrKey({ title: t('signInTitle'), hint: t('signInHint') });
+    if (staffId === null || staffId === '' || staffId === '0') return;
+    const pin = await ask({ title: t('pinTitle'), mode: 'number', hint: t('pinHint'), initial: '', mask: true });
+    if (pin === null || pin === '') return;
+    outcome = await session.signInAtTill({ staffId: String(staffId), pin: String(pin) });
+  }
+  if (!outcome.signedIn) { tell(t('signInRefused'), outcome.laneMessage); paintOperator(); return; }
+  rememberOperator(session.operatorToken());
   paintOperator();
 }
 
@@ -386,6 +413,32 @@ el('refusal-ok').addEventListener('click', () => { el('refusal').hidden = true; 
 let sheetResolve = null;
 let onEntryChange = null;
 let chosen = null;
+// What the keypad holds. For a PIN it is MASKED: the screen shows one dot per digit, the digits live only here, and they
+// are gone the moment the panel closes (ADR-0020 — never shown, never stored).
+let entryValue = '0';
+let entryMasked = false;
+const PIN_DIGITS = 6;
+function paintEntry() {
+  el('entry').textContent = entryMasked ? '•'.repeat(entryValue.length) : entryValue;
+  if (entryMasked) el('entry').setAttribute('aria-label', `${entryValue.length} / ${PIN_DIGITS}`); else el('entry').removeAttribute('aria-label');
+}
+function typeIntoEntry(key) {
+  const current = entryValue;
+  const next = entryMasked
+    ? (key === 'C' ? '' : key === '⌫' ? current.slice(0, -1) : (current.length < PIN_DIGITS ? current + key : current))
+    : (key === 'C' ? '0' : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0') : (current === '0' ? key : current + key));
+  entryValue = next;
+  paintEntry();
+  if (!entryMasked && onEntryChange) el('entry-hint').textContent = onEntryChange(Number(next));
+}
+// A till with a keyboard: a masked PIN may be keyed there too. Captured while the PIN panel is open, and only then.
+function onPinKey(event) {
+  if (!entryMasked || el('sheet').hidden) return;
+  if (/^[0-9]$/.test(event.key)) { event.preventDefault(); event.stopPropagation(); typeIntoEntry(event.key); return; }
+  if (event.key === 'Backspace') { event.preventDefault(); event.stopPropagation(); typeIntoEntry('⌫'); return; }
+  if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); closeSheet(entryValue); }
+}
+window.addEventListener('keydown', onPinKey, true);
 
 /**
  * Ask the cashier something, on screen.
@@ -393,10 +446,12 @@ let chosen = null;
  * Resolves with the answer, or `null` if cancelled. `mode` is `'number'` (keypad) or `'choice'`
  * (preset buttons) — the two shapes every question at a till actually takes.
  */
-function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [] }) {
+function ask({ title, mode, hint = '', initial = '0', onChange = null, choices = VOID_REASONS, quick = [], mask = false }) {
   el('sheet-title').textContent = title;
   el('entry-hint').textContent = hint;
-  el('entry').textContent = initial;
+  entryValue = initial;
+  entryMasked = mask === true;
+  paintEntry();
   el('entry').hidden = mode !== 'number';
   el('keypad').hidden = mode !== 'number';
   el('reasons').hidden = mode !== 'choice';
@@ -439,6 +494,10 @@ function ask({ title, mode, hint = '', initial = '0', onChange = null, choices =
 function closeSheet(answer) {
   el('sheet').hidden = true;
   onEntryChange = null;
+  // A PIN leaves this screen with the answer and nowhere else.
+  entryMasked = false;
+  entryValue = '0';
+  el('entry').textContent = '';
   const resolve = sheetResolve;
   sheetResolve = null;
   if (resolve) resolve(answer);
@@ -450,20 +509,13 @@ el('keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C
   const button = document.createElement('button');
   button.type = 'button';
   button.textContent = key;
-  button.addEventListener('click', () => {
-    const current = el('entry').textContent;
-    const next = key === 'C' ? '0'
-      : key === '⌫' ? (current.length > 1 ? current.slice(0, -1) : '0')
-        : (current === '0' ? key : current + key);
-    el('entry').textContent = next;
-    if (onEntryChange) el('entry-hint').textContent = onEntryChange(Number(next));
-  });
+  button.addEventListener('click', () => { typeIntoEntry(key); });
   return button;
 }));
 
 el('sheet-cancel').addEventListener('click', () => { closeSheet(null); });
 el('sheet-ok').addEventListener('click', () => {
-  closeSheet(el('reasons').hidden ? el('entry').textContent : chosen);
+  closeSheet(el('reasons').hidden ? entryValue : chosen);
 });
 
 /**
@@ -1337,7 +1389,11 @@ el('signin').addEventListener('click', () => { void toggleSignIn(); });
 // A reload keeps the cashier who signed in on THIS till (F09 reload test) — re-applied to the real session before paint.
 {
   const remembered = rememberedOperator();
-  if (remembered && session.signIn && !(session.operator && session.operator())) session.signIn(remembered);
+  if (session.tillSignInBy) void session.tillSignInBy().then((mode) => { tillSignInMode = mode; });
+  // Ask the store computer whether the session this tab kept is still live; a session it no longer knows signs nobody in.
+  if (remembered && session.resumeAtTill && !(session.operator && session.operator())) {
+    void session.resumeAtTill(remembered).then((live) => { if (!live) rememberOperator(null); paintOperator(); render(); });
+  }
 }
 
 el('unsent').addEventListener('click', () => {

@@ -10,6 +10,7 @@ import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { money } from '../../packages/contracts/src/money';
 import type { CommitOutcome } from '../../edge/store-edge/src/durability';
+import { prepareTillBox, holdSignedInAt } from '../support/till-operator';
 
 /**
  * **RR-F02 — a lost reply is not a definite failure.**
@@ -37,8 +38,11 @@ const startLane = async () => {
   const dir = await mkdtemp(join(tmpdir(), 'rrf02-')); dirs.push(dir);
   const edge = (await startEdge({
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
+    ...await prepareTillBox({ dir, key: KEY, people: [{ userId: 'u-meena', displayName: 'Meena' }] }),
   }, () => {}))!;
   stops.push(() => edge.stop());
+  // The person processing the refund is signed in at this till (ADR-0020) — the record names her.
+  await holdSignedInAt(edge.lane!.port, 'u-meena');
   return edge;
 };
 const refundRecord = (id: string) => JSON.stringify({

@@ -65,6 +65,7 @@ import type {
   CashMovementRequest, CashMovementOutcome, ShiftCloseRequest, ShiftCloseOutcome, TillCashStatus, CountedDenomination,
 } from './till-cash';
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
+import { OPERATOR_HEADER, type CheckOutcome, type SignInOutcome } from './till-operators';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -131,6 +132,28 @@ const LANE_DEVICE_OUTBOX_STATUS_ROUTE: string = DEVICE_OUTBOX_STATUS_PATH;
 const LANE_CASH_MOVEMENTS_ROUTE = '/lane/cash-movements';
 const LANE_SHIFT_CLOSE_ROUTE = '/lane/shift-close';
 const LANE_TILL_CASH_ROUTE = '/lane/till-cash';
+
+/**
+ * WHO IS AT THE TILL (ADR-0020 · Wave 2b · audit PF-02). `GET /lane/operator` says how this box signs a person in and
+ * whether the session the till holds is live; `POST /lane/operator/sign-in` takes a staff ID and a till PIN (or, on the
+ * hosted copy only, the verified sign-in the front passes on) and answers with a session; `POST /lane/operator/sign-out`
+ * ends it. Every money write below then carries the session in `X-Sre-Operator`, and the box refuses it BEFORE the disk
+ * unless the session is live and names the person the record names.
+ */
+const LANE_OPERATOR_ROUTE = '/lane/operator';
+const LANE_OPERATOR_SIGN_IN_ROUTE = '/lane/operator/sign-in';
+const LANE_OPERATOR_SIGN_OUT_ROUTE = '/lane/operator/sign-out';
+
+/** The till-operator register this socket asks (`TillOperators`), with the lane this box IS and how it signs people in. */
+export interface LaneOperatorPort {
+  readonly laneId: string;
+  /** True only on the hosted copy, behind its own sign-in (`EDGE_LANE_TRUST_FORWARDED_USER=1`, ADR-0020 §6). */
+  readonly trustForwardedUser: boolean;
+  signIn(input: { readonly staffId: string; readonly pin: string; readonly laneId: string }): Promise<SignInOutcome>;
+  signInVerified(input: { readonly userId: string; readonly laneId: string }): Promise<SignInOutcome>;
+  check(token: string | undefined, laneId: string): CheckOutcome;
+  signOut(token: string | undefined): Promise<boolean>;
+}
 
 /** What the box does when the manager asks to close the day — the authoritative `EdgeProcess.closeDay`. */
 export type LaneDayCloseHandler = (
@@ -232,7 +255,7 @@ function corsHeadersFor(origin: string | undefined): Record<string, string> {
   return {
     'access-control-allow-origin': origin!,
     'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'content-type, idempotency-key',
+    'access-control-allow-headers': `content-type, idempotency-key, ${OPERATOR_HEADER}`,
     'access-control-max-age': '600',
     // The allowed origin depends on the request, so caches must key on it.
     vary: 'Origin',
@@ -293,8 +316,42 @@ export function startLaneServer(input: {
   readonly recordCashMovement?: LaneCashMovementHandler;
   readonly closeShift?: LaneShiftCloseHandler;
   readonly tillCash?: LaneTillCashHandler;
+  /**
+   * The till-operator register (ADR-0020). Present on every store box (`main.ts` always wires it): the sign-in routes
+   * answer, and a sale, a refund, a cash movement and a till close are refused before the disk unless they carry a live
+   * session for the person they name. Absent only where a test drives this socket alone.
+   */
+  readonly operators?: LaneOperatorPort;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
+
+  /** The session the till sent with this request, if any (never logged, never echoed). */
+  const operatorTokenOf = (req: IncomingMessage): string | undefined => {
+    const v = req.headers[OPERATOR_HEADER];
+    const token = Array.isArray(v) ? v[0] : v;
+    return typeof token === 'string' && token !== '' ? token : undefined;
+  };
+
+  /**
+   * Is the person this money write NAMES the person signed in at this till? (ADR-0020 §5.) `undefined` = go on (and the
+   * verified person, to stamp); otherwise the refusal in the cashier's words. With no register wired (a test of this
+   * socket alone) there is nothing to check against and the write goes on unstamped.
+   */
+  const operatorRefusal = (req: IncomingMessage, named: unknown): { readonly refusedBecause: string; readonly laneMessage: string } | { readonly verified: { readonly userId: string; readonly via: string } } | undefined => {
+    const ops = input.operators;
+    if (ops === undefined) return undefined;
+    // A box that was never told which till it is takes no money at all — the same refusal its cash routes give.
+    if (ops.laneId.trim() === '') return { refusedBecause: 'no_lane', laneMessage: 'This store computer has not been told which till it is. Nothing was saved — tell the manager.' };
+    const check = ops.check(operatorTokenOf(req), ops.laneId);
+    if (!check.ok) return { refusedBecause: check.refusedBecause, laneMessage: check.laneMessage };
+    if (typeof named !== 'string' || named.trim() !== check.userId) {
+      return {
+        refusedBecause: 'operator_not_the_one_named',
+        laneMessage: `${check.displayName} is signed in at this till, but this names ${typeof named === 'string' && named.trim() !== '' ? named : 'nobody'}. Nothing was saved — sign in as yourself.`,
+      };
+    }
+    return { verified: { userId: check.userId, via: check.via } };
+  };
 
   /**
    * Read a bounded JSON body, or answer for the caller and resolve `undefined`: 413 when it is too large (the request
@@ -369,6 +426,54 @@ export function startLaneServer(input: {
           send(res, 200, result === undefined ? { found: false } : { found: true, ...result }, cors);
         } catch (e) {
           send(res, 200, { found: false, detail: e instanceof Error ? e.message : String(e) }, cors);
+        }
+      })();
+      return;
+    }
+
+    // WHO IS AT THE TILL (ADR-0020): how this box signs people in, and whether the till's session is live. A foreign origin
+    // is refused — who is signed in at a till is the shop's business.
+    if (req.method === 'GET' && pathname === LANE_OPERATOR_ROUTE) {
+      if (typeof req.headers.origin === 'string' && req.headers.origin !== '' && !isLoopbackOrigin(req.headers.origin)) {
+        send(res, 403, { error: 'this request did not come from this till' }, cors);
+        return;
+      }
+      const ops = input.operators;
+      if (ops === undefined) { send(res, 404, { error: 'this box does not sign till operators in' }, cors); return; }
+      const signInBy = ops.trustForwardedUser ? 'verified_sign_in' : 'pin';
+      const check = ops.check(operatorTokenOf(req), ops.laneId);
+      send(res, 200, check.ok
+        ? { signInBy, signedIn: true, userId: check.userId, displayName: check.displayName, via: check.via, expiresAt: check.expiresAt }
+        : { signInBy, signedIn: false }, { ...cors, 'cache-control': 'no-store' });
+      return;
+    }
+
+    if (req.method === 'POST' && (pathname === LANE_OPERATOR_SIGN_IN_ROUTE || pathname === LANE_OPERATOR_SIGN_OUT_ROUTE)) {
+      const ops = input.operators;
+      const refused = (laneMessage: string) => ({ signedIn: false, refusedBecause: 'not_readable', laneMessage });
+      if (ops === undefined) { send(res, 404, refused('this box does not sign till operators in'), cors); req.resume(); return; }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) { send(res, authRefusal.status, refused(authRefusal.reason), cors); req.resume(); return; }
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, refused);
+        if (body === undefined) return;
+        if (pathname === LANE_OPERATOR_SIGN_OUT_ROUTE) {
+          send(res, 200, { signedOut: await ops.signOut(operatorTokenOf(req)) }, { ...cors, 'cache-control': 'no-store' });
+          return;
+        }
+        const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+        const staffId = typeof b['staffId'] === 'string' ? b['staffId'] : '';
+        const pin = typeof b['pin'] === 'string' ? b['pin'] : '';
+        // The hosted copy ONLY (ADR-0020 §6): the front's sign-in already verified this person and set X-Sre-User itself.
+        const forwarded = req.headers['x-sre-user'];
+        const verifiedUser = ops.trustForwardedUser && typeof forwarded === 'string' ? forwarded.trim() : '';
+        try {
+          const outcome = verifiedUser !== '' && pin === ''
+            ? await ops.signInVerified({ userId: verifiedUser, laneId: ops.laneId })
+            : await ops.signIn({ staffId, pin, laneId: ops.laneId });
+          send(res, 200, outcome, { ...cors, 'cache-control': 'no-store' });
+        } catch (e) {
+          send(res, 200, refused(e instanceof Error ? e.message : String(e)), cors);
         }
       })();
       return;
@@ -647,6 +752,9 @@ export function startLaneServer(input: {
           send(res, 400, refused('a cash movement needs a movement id, a kind, a whole amount, a moment, and who holds the till'), cors);
           return;
         }
+        // The person who holds the till is the person signed in at it (ADR-0020 §5) — refused before anything is written.
+        const who = operatorRefusal(req, custodianId);
+        if (who !== undefined && !('verified' in who)) { send(res, 200, { committed: false, ...who }, cors); return; }
         try {
           send(res, 200, await record({ movementId, movementKind: movementKind as CashMovementKind, amountMinor, at, custodianId, performedBy }), cors);
         } catch (e) {
@@ -693,6 +801,9 @@ export function startLaneServer(input: {
           send(res, 400, refused('closing the till needs a shift id, a moment, who is closing, and the counted cash as a whole amount'), cors);
           return;
         }
+        // The person closing is the person signed in at the till (ADR-0020 §5).
+        const who = operatorRefusal(req, cashierId);
+        if (who !== undefined && !('verified' in who)) { send(res, 200, { closed: false, ...who }, cors); return; }
         try {
           send(res, 200, await close({
             shiftId, closedAt, cashierId, countedMinor,
@@ -709,14 +820,15 @@ export function startLaneServer(input: {
     // The browser's preflight for the cross-origin POST from the till's or manager's screen. Answered
     // only for a loopback origin; anything else gets no allow header and the browser refuses the POST.
     if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE || pathname === LANE_SYNC_STATUS_ROUTE || pathname === LANE_DEVICE_OUTBOX_ROUTE || pathname === LANE_DEVICE_OUTBOX_STATUS_ROUTE
-      || pathname === LANE_CASH_MOVEMENTS_ROUTE || pathname === LANE_SHIFT_CLOSE_ROUTE || pathname === LANE_TILL_CASH_ROUTE)) {
+      || pathname === LANE_CASH_MOVEMENTS_ROUTE || pathname === LANE_SHIFT_CLOSE_ROUTE || pathname === LANE_TILL_CASH_ROUTE
+      || pathname === LANE_OPERATOR_ROUTE || pathname === LANE_OPERATOR_SIGN_IN_ROUTE || pathname === LANE_OPERATOR_SIGN_OUT_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }
@@ -772,6 +884,21 @@ export function startLaneServer(input: {
         if (typeof id !== 'string' || id === '') {
           send(res, 400, refusal(noun), cors);
           return;
+        }
+
+        // WHO rang it (ADR-0020 §5): a sale names its cashier, a refund the person processing it — and that person must be
+        // the one signed in at this till. Refused BEFORE the disk; on success the box stamps who it verified and how.
+        // (A partner-counter line is not money and is recorded by its own page; it is not gated here yet.)
+        if (!isTag) {
+          const named = isReturn ? (parsed as { processedBy?: unknown } | null)?.processedBy : (parsed as { cashierId?: unknown } | null)?.cashierId;
+          const who = operatorRefusal(req, named);
+          if (who !== undefined && !('verified' in who)) {
+            send(res, 200, { committed: false, ...who }, cors);
+            return;
+          }
+          // The stamp is the person and the way they signed in — never a clock reading: a till re-sending the SAME sale after
+          // a lost reply must hash the same, or the box would call its own replay a conflict (GAP-SALE-IDEMPOTENCY-01).
+          if (who !== undefined) parsed = { ...(parsed as Record<string, unknown>), operatorVerified: { ...who.verified } };
         }
 
         try {

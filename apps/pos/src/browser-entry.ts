@@ -120,6 +120,84 @@ interface PosWindow {
 /** Where this till's edge listens. Loopback only — see ADR-0004 and `edge/store-edge/src/lane-server.ts`. */
 export const DEFAULT_LANE_PORT = 8090;
 
+/**
+ * The till's SHIFT SESSION on its store computer (ADR-0020 · Wave 2b · audit PF-02): the token the box minted when the
+ * cashier signed in with their staff ID and till PIN. Every money write carries it in `X-Sre-Operator`; the box refuses
+ * the write before its disk unless it is live and names the person the record names. Held in memory here; the page keeps
+ * it in the tab's session storage so a reload keeps the cashier — never the PIN, never anywhere else.
+ */
+const tillOperatorSession: { token: string | undefined } = { token: undefined };
+const OPERATOR_HEADER = 'x-sre-operator';
+const operatorHeaders = (): Record<string, string> => (tillOperatorSession.token === undefined ? {} : { [OPERATOR_HEADER]: tillOperatorSession.token });
+
+/**
+ * Hold (or forget) the shift session this page's lane writes carry. `bootPos`'s sign-in and resume call it; a caller that
+ * drives the lane ports directly (the integration tests) signs in at the box and hands the token here.
+ */
+export function holdTillOperatorSession(token: string | undefined): void {
+  tillOperatorSession.token = token === '' ? undefined : token;
+}
+
+/** How the box signs a cashier in, and who (if anyone) the session this till holds belongs to. */
+export interface TillOperatorStatus {
+  readonly signInBy: 'pin' | 'verified_sign_in';
+  readonly signedIn: boolean;
+  readonly userId?: string;
+  readonly displayName?: string;
+  readonly expiresAt?: string;
+}
+export type TillSignInOutcome =
+  | { readonly signedIn: true; readonly token: string; readonly userId: string; readonly displayName: string; readonly expiresAt: string }
+  | { readonly signedIn: false; readonly refusedBecause?: string; readonly laneMessage: string };
+
+/** The till's three operator calls to its box (injectable for tests). */
+export interface TillOperatorPort {
+  status(token: string | undefined): Promise<TillOperatorStatus | null>;
+  signIn(input: { readonly staffId?: string; readonly pin?: string }): Promise<TillSignInOutcome>;
+  signOut(token: string | undefined): Promise<void>;
+}
+
+const UNREACHABLE_SIGN_IN = 'This till cannot reach its store computer, so nobody can sign in. Tell the manager.';
+/** The hosted copy's front answers for itself before the box is asked: no sign-in, or a person who may not sell. */
+const FRONT_REFUSED: Readonly<Record<number, { readonly refusedBecause: string; readonly laneMessage: string }>> = {
+  401: { refusedBecause: 'not_signed_in', laneMessage: 'Your sign-in has ended. Sign in again, then come back to the till.' },
+  403: { refusedBecause: 'no_till_authority', laneMessage: 'This person is not allowed to work a till in this shop. Ask the manager.' },
+};
+
+/** The operator calls over this till's own lane socket (or the hosted copy's same-origin base). */
+export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort {
+  return {
+    status: async (token) => {
+      try {
+        const response = await fetch(`${laneBase(port)}/lane/operator`, { headers: token === undefined ? {} : { [OPERATOR_HEADER]: token } });
+        if (!response.ok) return null;
+        return await response.json() as TillOperatorStatus;
+      } catch { return null; }
+    },
+    signIn: async (input) => {
+      try {
+        const response = await fetch(`${laneBase(port)}/lane/operator/sign-in`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...(input.staffId === undefined ? {} : { staffId: input.staffId }), ...(input.pin === undefined ? {} : { pin: input.pin }) }),
+        });
+        const front = FRONT_REFUSED[response.status];
+        if (front !== undefined) return { signedIn: false, ...front };
+        const body = await response.json() as { signedIn?: boolean; refusedBecause?: string; laneMessage?: string };
+        return body.signedIn === true ? body as unknown as TillSignInOutcome : { signedIn: false, ...(typeof body.refusedBecause === 'string' ? { refusedBecause: body.refusedBecause } : {}), laneMessage: body.laneMessage ?? UNREACHABLE_SIGN_IN };
+      } catch {
+        return { signedIn: false, refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_SIGN_IN };
+      }
+    },
+    signOut: async (token) => {
+      try {
+        await fetch(`${laneBase(port)}/lane/operator/sign-out`, {
+          method: 'POST', headers: { 'content-type': 'application/json', ...(token === undefined ? {} : { [OPERATOR_HEADER]: token }) }, body: '{}',
+        });
+      } catch { /* the box will end the session at its expiry; the till forgets it now */ }
+    },
+  };
+}
+
 export type DurableWrite = (saleId: string, record: string) => Promise<CommitOutcome>;
 
 /**
@@ -173,7 +251,8 @@ function laneDurableTo(
       try {
         const response = await fetch(`${laneBase(port)}${path}`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          // The shift session (ADR-0020): the box writes nothing a signed-in cashier did not send.
+          headers: { 'content-type': 'application/json', ...operatorHeaders() },
           body: record,
         });
         return await response.json() as CommitOutcome;
@@ -242,8 +321,10 @@ function laneCashTo<TReq, TOut>(
   return async (req) => {
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        const response = await fetch(`http://127.0.0.1:${port}${path}`, {
-          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req),
+        // The same base a sale uses: the store's loopback, or the hosted copy's signed-in `/store-lane` (it was the loopback
+        // only, so the hosted till's float and close never reached its box).
+        const response = await fetch(`${laneBase(port)}${path}`, {
+          method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(req),
         });
         return await response.json() as TOut;
       } catch {
@@ -268,7 +349,7 @@ export function laneShiftClose(port: number = DEFAULT_LANE_PORT): ShiftCloseWrit
 export function laneTillCash(port: number = DEFAULT_LANE_PORT): TillCashRead {
   return async () => {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/lane/till-cash`);
+      const response = await fetch(`${laneBase(port)}/lane/till-cash`);
       if (!response.ok) return null;
       return await response.json() as TillCashStatus;
     } catch {
@@ -431,6 +512,8 @@ export function bootPos(config?: {
   refundPolicy?: RefundPolicy;
   /** Look up a bill for a refund. Overridable for tests; production reads this till's own edge. */
   laneLookup?: LaneLookup;
+  /** The till's operator calls to its box (ADR-0020). Overridable for tests; production asks this till's own edge. */
+  operatorPort?: TillOperatorPort;
 }): PosView & {
   readonly till: ReturnType<typeof createTillSession>;
   /** The next receipt number for this lane — gap-free within its reserved range. Throws when the
@@ -448,8 +531,22 @@ export function bootPos(config?: {
   /** The receipt template this lane prints with — header, footer and the version to stamp — or `null` when none
    *  has reached this box (print with defaults, stamp nothing). Read from the box's pack, never fetched at print time. */
   readonly receiptTemplate: () => PosReceiptTemplate | null;
-  /** A cashier signs in with their staff code (SP-4b · F09): the sale session AND the till name them from here on. */
+  /**
+   * Name the person at the till in the MODEL (the sale session and the till). The screen never calls this with a typed
+   * code: it calls `signInAtTill`, which calls this only with the person the store computer verified (ADR-0020). Kept for
+   * the model's own tests, whose durable write is a double rather than a box.
+   */
   readonly signIn: (cashierId: string) => void;
+  /** Sign in through the store computer: staff ID + till PIN (or, on the hosted copy, the verified sign-in). */
+  readonly signInAtTill: (input: { readonly staffId?: string; readonly pin?: string }) => Promise<TillSignInOutcome>;
+  /** After a reload: ask the box whether the session this tab kept is still live, and name its person if so. */
+  readonly resumeAtTill: (token: string) => Promise<boolean>;
+  /** End the session on the box and forget it here. */
+  readonly signOutAtTill: () => Promise<void>;
+  /** How this box signs a cashier in — `pin`, or the hosted copy's `verified_sign_in`; `null` when the box did not answer. */
+  readonly tillSignInBy: () => Promise<'pin' | 'verified_sign_in' | null>;
+  /** The session token this tab holds, for the page to keep across a reload (never the PIN). */
+  readonly operatorToken: () => string | undefined;
   readonly signOut: () => void;
   /** Who is at the till now, or undefined when nobody is signed in. */
   readonly operator: () => string | undefined;
@@ -710,13 +807,42 @@ export function bootPos(config?: {
   const signIn = (cashierId: string): void => { session.signIn(cashierId); till.signIn(cashierId); };
   const signOut = (): void => { session.signOut(); till.signOut(); };
   const operator = (): string | undefined => session.operator();
+
+  // WHO IS AT THE TILL, verified by the store computer (ADR-0020). The model is told the person only once the box has
+  // said who they are; the box then binds every money write to the session.
+  const operators = config?.operatorPort ?? laneOperator(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const signInAtTill = async (input: { readonly staffId?: string; readonly pin?: string }): Promise<TillSignInOutcome> => {
+    const outcome = await operators.signIn(input);
+    if (outcome.signedIn) {
+      tillOperatorSession.token = outcome.token;
+      signIn(outcome.userId);
+    }
+    return outcome;
+  };
+  const resumeAtTill = async (token: string): Promise<boolean> => {
+    const status = await operators.status(token);
+    if (status?.signedIn === true && typeof status.userId === 'string') {
+      tillOperatorSession.token = token;
+      signIn(status.userId);
+      return true;
+    }
+    return false;
+  };
+  const signOutAtTill = async (): Promise<void> => {
+    const token = tillOperatorSession.token;
+    tillOperatorSession.token = undefined;
+    signOut();
+    await operators.signOut(token);
+  };
+  const tillSignInBy = async (): Promise<'pin' | 'verified_sign_in' | null> => (await operators.status(undefined))?.signInBy ?? null;
+  const operatorToken = (): string | undefined => tillOperatorSession.token;
   const lane = () => ({
     laneId: session.laneId() ?? null,
     tradingDayCutoff: config?.tradingDayCutoff ?? '00:00',
     tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
   });
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane });
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

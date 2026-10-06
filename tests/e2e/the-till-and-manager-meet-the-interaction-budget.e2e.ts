@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { Tally } from './lib/tally';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { prepareTillBox, pinOf } from '../support/till-operator';
 
 /**
  * **The till and the manager meet the spec's interaction budget — measured, in a real browser (Stage G slice 2b ·
@@ -88,9 +89,12 @@ describe.skipIf(!HAVE_BROWSER)('the spec\'s interaction budget, counted on the s
     dirs.push(dir);
     const packFile = join(dir, 'store-pack.json');
     await writeFile(packFile, pack, 'utf8');
+    // A till box also names its cashier with till authority and has her PIN issued (ADR-0020); the manager box is left
+    // exactly as its pack says, so its named manager keeps the authority the pack gives.
+    const till = extra['EDGE_LANE_ID'] === undefined ? {} : await prepareTillBox({ dir, key: KEY, pack: JSON.parse(pack) as Record<string, unknown>, laneId: extra['EDGE_LANE_ID'] });
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_PACK_FILE: packFile,
-      EDGE_CAPACITY_BYTES: '10485760', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', ...extra,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', ...extra, ...till,
     }, () => {}))!;
     stops.push(() => edge.stop());
     return edge;
@@ -113,16 +117,19 @@ describe.skipIf(!HAVE_BROWSER)('the spec\'s interaction budget, counted on the s
     return page;
   }
 
-  it('till: sign in 2 · scan 1 · quantity 3 · tender 1 · cash 3 · hold 1 · recall 1 — and the sale lands on the box', async () => {
+  it('till: sign in 3 · scan 1 · quantity 3 · tender 1 · cash 3 · hold 1 · recall 1 — and the sale lands on the box', async () => {
     const edge = await box(TILL_PACK, { EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1' });
     const page = await open('/pos/', 'till', edge.screens!.port);
     const taps = new Tally(page);
 
-    // Sign in for the shift (SP-4b · F09): tap Sign in, scan the staff badge — two acts, once a shift, never per sale.
+    // Sign in for the shift (SP-4b · F09 · ADR-0020): tap Sign in, scan the staff badge, key the till PIN — three acts, once a
+    // shift, never per sale. The PIN is what makes the name on every sale a person the box verified (audit PF-02).
     await taps.tap('#signin');
     await taps.scan('u-lanecash');
+    await page.waitForSelector('#sheet:not([hidden]) #entry[aria-label]'); // the PIN panel (masked), not the staff-ID one
+    await taps.key(pinOf('u-lanecash'));
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession?.operator() === 'u-lanecash');
-    expect(taps.reset(), 'sign in for the shift').toBeLessThanOrEqual(2);
+    expect(taps.reset(), 'sign in for the shift').toBeLessThanOrEqual(3);
 
     // Scan an item — one act, no target to find. The catalogue the box trusted prices it.
     await taps.scan('8901234567890');
