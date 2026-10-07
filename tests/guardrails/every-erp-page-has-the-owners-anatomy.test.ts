@@ -130,6 +130,8 @@ describe('every page gives the chrome what it needs', () => {
       expect(html, `${f}`).toMatch(/class="sheet"[^>]*role="dialog"/);
       expect(html, `${f}`).toMatch(/class="(sheet-inner|card)"/);
     }
-    expect(sheets).toBe(6);
+    // Five since 2b-vi-b: the Products & prices page lost its approver-picking sheet — a second person now approves
+    // a loss-making price on their own Approvals page (ADR-0024), so that page has no sheet at all.
+    expect(sheets).toBe(5);
   });
 });

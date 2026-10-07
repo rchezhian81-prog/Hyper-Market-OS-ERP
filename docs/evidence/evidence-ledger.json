@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 922,
+  "testFiles": 924,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -268,7 +268,7 @@
       "id": "M05",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 11,
+        "unit": 12,
         "integration": 11,
         "realDb": 2,
         "browser": 3,
@@ -279,6 +279,7 @@
       "files": {
         "unit": [
           "tests/unit/catalogue-snapshot-builder.test.ts",
+          "tests/unit/erp-catalogue-approvals.test.ts",
           "tests/unit/erp-catalogue-boot.test.ts",
           "tests/unit/erp-catalogue-session.test.ts",
           "tests/unit/price-guard.test.ts",

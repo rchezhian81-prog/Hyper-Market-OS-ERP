@@ -585,15 +585,16 @@ describe('a promotion launch is recorded at head office, honestly', () => {
     expect(outcome).toEqual({ launched: true, verdict: 'improves_margin', approvedBy: null });
   });
 
-  it('carries the §28 approver alongside a margin-losing offer, and reports whom the cloud accepted', async () => {
+  it('carries only an approval\'s id alongside a margin-losing offer — never a typed name — and reports whom the cloud accepted', async () => {
     const office = cloud({ launched: true, verdict: 'below_floor', approvedBy: 'u-owner' });
     const s = session({ launchPromotion: office.launchPromotion });
-    const withApprover: PromotionLaunchInput = {
+    const withApproval: PromotionLaunchInput = {
       input: { ...launchInput.input, promoPrice: money(80_00, 'INR') },
-      approval: { approvedBy: 'u-owner', rationale: 'footfall driver for Pongal' },
+      approvalId: 'areq-1',
     };
-    const outcome = await s.launchToCloud(withApprover);
-    expect(office.calls[0]?.approval).toEqual({ approvedBy: 'u-owner', rationale: 'footfall driver for Pongal' });
+    const outcome = await s.launchToCloud(withApproval);
+    expect(office.calls[0]).toEqual(withApproval);
+    expect(office.calls[0]).not.toHaveProperty('approval');
     expect(outcome).toEqual({ launched: true, verdict: 'below_floor', approvedBy: 'u-owner' });
   });
 
@@ -672,15 +673,13 @@ describe('a price change is recorded at head office, honestly (M05-FR-02)', () =
     expect(outcome.reason).toMatch(/no MRP/i);
   });
 
-  it('carries the §28 approver alongside a below-cost price, and reports whom the cloud accepted', async () => {
-    const office = priceCloud({ saved: true, verdict: 'below_cost', approvedBy: 'u-owner' });
+  it('never carries an approver of any kind — a price that needs one goes through the two-person flow instead', async () => {
+    const office = priceCloud({ saved: false, reason: 'below cost and no approval', code: 'price_below_cost' });
     const s = session({ changePrice: office.changePrice });
-    const outcome = await s.changePriceInCloud({
-      productId: 'p1', priceMinor: 90_00,
-      approval: { approvedBy: 'u-owner', rationale: 'clearing short-dated stock before it is written off' },
-    });
-    expect(office.calls[0]?.approval).toEqual({ approvedBy: 'u-owner', rationale: 'clearing short-dated stock before it is written off' });
-    expect(outcome).toEqual({ saved: true, verdict: 'below_cost', approvedBy: 'u-owner' });
+    // A typed approver cannot even be expressed: the input is the product and the price, nothing else.
+    const outcome = await s.changePriceInCloud({ productId: 'p1', priceMinor: 90_00 });
+    expect(office.calls[0]).toEqual({ productId: 'p1', priceMinor: 90_00, mrpMinor: 160_00, costMinor: 100_00, currency: 'INR', marginFloorBps: 2000 });
+    expect(outcome).toEqual({ saved: false, reason: 'below cost and no approval', code: 'price_below_cost' });
   });
 
   it('surfaces the cloud’s refusal verbatim — the screen never overrides an above-MRP or below-floor refusal', async () => {

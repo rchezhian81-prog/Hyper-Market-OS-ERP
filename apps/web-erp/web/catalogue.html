@@ -117,9 +117,15 @@
       .row.stopped { border-left: 5px solid var(--danger); }
       .empty { color: var(--muted); padding: 20px 4px; }
 
-      .sheet h3 { margin: 0; font-size: 19px; }
-      .choices { display: grid; gap: 10px; }
-      .choices button { text-align: left; padding: 0 16px; min-height: var(--tap); }
+      /* ── A second person's approval: a reason the approver reads, then ask (ADR-0024) ── */
+      .approval {
+        background: var(--panel); border-radius: 14px; padding: 14px 16px; margin: 12px 0;
+        border-left: 6px solid var(--warn); display: grid; gap: 10px;
+      }
+      .approval[hidden] { display: none; }
+      .approval p.lead { margin: 0; }
+      .approval .field { margin-bottom: 0; }
+      #save-price, #launch { margin-top: 12px; }
 
       .banner {
         position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
@@ -127,10 +133,12 @@
       }
       .banner[hidden] { display: none; }
       .banner.good { background: var(--good); color: var(--on-accent); }
+      .banner.pending { background: var(--warn-surface); color: var(--on-warn-surface); }
       .banner strong { font-size: 20px; }
       .banner p { margin: 0; font-size: 16px; }
       .banner button { background: var(--danger-surface); color: var(--on-danger); }
       .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
+      .banner.pending button { background: var(--on-warn-surface); color: var(--warn-surface); }
     </style>
   </head>
   <body>
@@ -222,7 +230,20 @@
         <button id="check-price" class="primary wide" type="button">Check this price</button>
 
         <div id="price-verdict" hidden></div>
-        <button id="save-price" class="primary wide" type="button" hidden>Send for approval and save</button>
+        <!--
+          A price below cost or below the margin floor needs a SECOND person (ADR-0024 · §28). Nobody's name is
+          typed or picked here: the setter writes why and asks; someone else who may approve prices approves it on
+          their own Approvals page; then "Save it" sends the change naming that approval.
+        -->
+        <div class="approval" id="price-approval" hidden>
+          <p class="lead" id="price-approval-lead">This price needs a second person. Write why and press “Ask for approval”; once someone else who may approve prices approves it on their Approvals page, press “Save it”.</p>
+          <div class="field">
+            <label for="price-why" id="price-why-label">Why this is needed (the person approving reads it)</label>
+            <textarea id="price-why" maxlength="300"></textarea>
+          </div>
+          <button id="ask-price" class="primary wide" type="button">Ask for approval</button>
+        </div>
+        <button id="save-price" class="primary wide" type="button" hidden>Save this price</button>
 
         <h3 id="history-title">What this item has been priced at</h3>
         <div id="price-history"></div>
@@ -305,23 +326,18 @@
 
         <button id="simulate" class="primary wide" type="button">Work out what it costs</button>
         <div id="promo-verdict" hidden></div>
+        <!-- An offer that loses margin needs a SECOND person's own approval, asked for here (ADR-0024 · §28). -->
+        <div class="approval" id="promo-approval" hidden>
+          <p class="lead" id="promo-approval-lead">This offer loses margin, so it needs a second person. Write why and press “Ask for approval”; once someone else who may approve prices approves it on their Approvals page, press “Start this offer”.</p>
+          <div class="field">
+            <label for="promo-why" id="promo-why-label">Why this is needed (the person approving reads it)</label>
+            <textarea id="promo-why" maxlength="300"></textarea>
+          </div>
+          <button id="ask-launch" class="primary wide" type="button">Ask for approval</button>
+        </div>
         <button id="launch" class="primary wide" type="button" hidden>Start this offer</button>
       </section>
     </main>
-
-    <!-- Every question is an on-screen panel, never a browser prompt. -->
-    <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-      <div class="sheet-inner">
-        <h3 id="sheet-title">—</h3>
-        <p class="lead" id="sheet-note"></p>
-        <div class="field" id="sheet-reason-wrap" hidden>
-          <label for="sheet-reason" id="sheet-reason-label">Why</label>
-          <textarea id="sheet-reason"></textarea>
-        </div>
-        <div class="choices" id="choices"></div>
-        <button id="sheet-cancel" type="button">Cancel</button>
-      </div>
-    </div>
 
     <div class="banner" id="banner" hidden role="alert">
       <strong id="banner-title">—</strong>

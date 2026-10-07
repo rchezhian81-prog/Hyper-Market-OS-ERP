@@ -33,6 +33,7 @@
 // nobody is sent to fix a record that may already be finished.
 
 import { money, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
+import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
 import {
@@ -553,11 +554,13 @@ export interface CatalogueSession {
   }): PriceProposal;
 
   /**
-   * Turn a CLEAN proposal into a price in this browser only (no head office behind the page) — a new entry,
-   * never an edit. It takes no approval: a price that needs a second person is never activated here, because a
-   * name on this screen is not an approval (ADR-0024); it goes to head office through `savePriceWithApproval`.
+   * Turn a proposal into a price in this browser only (no head office behind the page) — a new entry, never an
+   * edit. The SCREEN never passes an approval (ADR-0024): a name on this screen is not one, so a price that needs a
+   * second person goes to head office through `askPriceApproval` / `savePriceWithApproval`, and without head office
+   * it is refused. The optional `approval` is the tested engine's own §28 input — a decided request from head
+   * office's records — kept for the proofs that drive the engine through this session.
    */
-  activatePrice(proposal: PriceProposal): PriceChangeOutcome;
+  activatePrice(proposal: PriceProposal, approval?: DecidedRequest): PriceChangeOutcome;
 
   /** Withdraw a price that should not have gone live. Appends; never deletes. */
   rollBack(entry: PriceEntry): PriceEntry;
@@ -569,9 +572,10 @@ export interface CatalogueSession {
   simulate(input: Parameters<typeof simulatePromotion>[0]): SimulationResult;
 
   /** Launch a promotion LOCALLY — the tested guard. This computes and validates but persists nowhere; the durable
-   *  launch is `launchToCloud` when a box is wired. It takes no approval: a margin-losing offer is refused here and
-   *  goes to head office through `launchWithApproval` (a name on this screen is not an approval — ADR-0024). */
-  launch(simulation: SimulationResult): {
+   *  launch is `launchToCloud` when a box is wired. The SCREEN never passes an approval: a margin-losing offer goes
+   *  to head office through `askLaunchApproval` / `launchWithApproval` (a name on this screen is not an approval —
+   *  ADR-0024). The optional `approval` is the engine's own §28 input, kept for its proofs. */
+  launch(simulation: SimulationResult, approval?: Parameters<typeof approveForLaunch>[1]): {
     readonly ok: true;
     readonly approvedBy: string | null;
   } | {
@@ -637,6 +641,11 @@ export interface CatalogueSession {
   /** Launch a margin-losing offer naming the caller's OWN approved `promotion_launch` request for exactly this
    *  input; otherwise says plainly why not, and sends nothing. */
   launchWithApproval(input: PromotionSimulationInput): Promise<ApprovalUseOutcome>;
+
+  /** An ask's outcome in plain words, in the reader's language (`presentAskOutcome`). */
+  presentAskOutcome(lang: Lang, subject: ApprovalSubject, outcome: ApprovalAskOutcome): StatusPresentation;
+  /** A save's / launch's outcome in plain words, in the reader's language (`presentUseOutcome`). */
+  presentUseOutcome(lang: Lang, subject: ApprovalSubject, outcome: ApprovalUseOutcome, figure?: string): StatusPresentation;
 
   /** The best price a basket would get under the approved rules — the same answer as the lane. */
   quote(lines: readonly BasketLine[], at: string): PromotionResult;
@@ -934,8 +943,11 @@ export function createCatalogueSession(
       );
     },
 
-    // No approval is ever passed: a price that needs a second person is refused here (and goes to head office).
-    activatePrice: (proposal) => activatePriceChange(proposal, { setBy: config.userId }),
+    activatePrice: (proposal, approval) =>
+      activatePriceChange(proposal, {
+        setBy: config.userId,
+        ...(approval === undefined ? {} : { approval }),
+      }),
 
     rollBack: (entry) => rollBackPrice(entry, config.today),
 
@@ -943,10 +955,9 @@ export function createCatalogueSession(
 
     simulate: (input) => simulatePromotion(input),
 
-    launch: (simulation) => {
+    launch: (simulation, approval) => {
       try {
-        // No approval is ever passed: a margin-losing offer is refused here (and goes to head office).
-        const result = approveForLaunch(simulation, undefined, config.userId);
+        const result = approveForLaunch(simulation, approval, config.userId);
         return { ok: true, approvedBy: result.approvedBy ?? null };
       } catch (e) {
         if (e instanceof PromotionApprovalRequiredError) return { ok: false, detail: e.message };
@@ -1053,6 +1064,9 @@ export function createCatalogueSession(
       if (r.launched) return { kind: 'done', verdict: r.verdict, approvedBy: r.approvedBy };
       return useOutcomeOfRefusal(r.code, r.reason);
     },
+
+    presentAskOutcome: (lang, subject, outcome) => presentAskOutcome(lang, subject, outcome),
+    presentUseOutcome: (lang, subject, outcome, figure) => presentUseOutcome(lang, subject, outcome, figure),
 
     // Only ACTIVE promotions, and `bestPrice` checks the window again itself. A draft or stopped
     // offer that quoted here would show a price no lane would ever charge.

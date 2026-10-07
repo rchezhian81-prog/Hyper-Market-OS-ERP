@@ -44,7 +44,7 @@ import {
   type ProposePurchaseOrderPort, type ProposePurchaseOrderOutcome,
 } from './buying-session';
 import {
-  createCatalogueSession,
+  createCatalogueSession, priceChangeRequestBody, promotionLaunchBody,
   type CataloguePorts, type CatalogueSession,
   type PromotionLaunchPort, type PromotionLaunchOutcome,
   type PriceChangeCloudPort, type PriceChangeCloudOutcome,
@@ -321,8 +321,8 @@ export interface CatalogueData {
   readonly today?: string;
   /** Minimum gross margin in basis points. Per-tenant policy (M05-FR-02). */
   readonly marginFloorBps?: number;
-  /** Who may approve a below-floor price or a margin-losing offer. Never the person setting it. */
-  readonly approvers?: readonly string[];
+  // No list of approvers (ADR-0024): a below-floor price or a margin-losing offer is approved by a second person in
+  // their own session on the Approvals page — head office decides who may, so this screen never names anyone.
   /** The tenant's own department hierarchy — what each department requires is theirs to say. */
   readonly categories?: readonly Category[];
   readonly products?: readonly ProductRecord[];
@@ -4519,8 +4519,10 @@ export function bootBuying(data: BuyingData | undefined, proposeOrder?: ProposeP
  *   • no departments and nothing can be **scored at all** — the screen says *not knowable*
  *     rather than 0%, because a zero would send somebody to fix a finished record;
  *   • no costs and no **margin** can be checked, so every price change needs an approver;
- *   • no barcodes and a clash cannot be spotted, so one scan could ring up two products;
- *   • nobody to approve and nothing that needs approval can go through at all.
+ *   • no barcodes and a clash cannot be spotted, so one scan could ring up two products.
+ *
+ * "Who may approve" is no longer a gap here (ADR-0024): head office's approval engine routes a request to whoever
+ * holds the authority, so the screen needs no list of names — and must not have one to offer.
  */
 export const CATALOGUE_GAPS = Object.freeze([
   'what_the_shop_sells',
@@ -4528,7 +4530,6 @@ export const CATALOGUE_GAPS = Object.freeze([
   'what_things_cost',
   'the_prices_already_set',
   'which_barcodes_are_taken',
-  'who_may_approve',
   'where_things_sit_on_the_shelves',
   'which_zones_to_collect_last',
 ] as const);
@@ -4542,9 +4543,6 @@ export function catalogueGaps(data: CatalogueData | undefined): readonly Catalog
   if (data?.costsMinor === undefined) gaps.push('what_things_cost');
   if (data?.priceEntries === undefined) gaps.push('the_prices_already_set');
   if (data?.barcodes === undefined) gaps.push('which_barcodes_are_taken');
-  // An empty list counts, and deliberately: nobody to approve stops exactly the same work as
-  // never having been told who may.
-  if (data?.approvers === undefined || data.approvers.length === 0) gaps.push('who_may_approve');
   if (data?.shelfLocations === undefined) gaps.push('where_things_sit_on_the_shelves');
   // Only worth saying once the shop HAS shelves. Asking a shop with no shelf map which zones it
   // collects last is asking about a walk that does not exist yet.
@@ -4564,33 +4562,37 @@ export function catalogueGaps(data: CatalogueData | undefined): readonly Catalog
 /**
  * The authenticated POST that records a promotion launch at head office (M05-FR-03/04, API-02). One
  * operator-authenticated call under their OWN session (`credentials: 'same-origin'`, never a service token) to
- * `POST /v1/promotions/:id/launch`: the cloud re-simulates the input and re-checks §28 (a margin-losing offer
- * needs a different, authorised approver). A 2xx `launched` is a launch; a 422 is the cloud refusing (surfaced,
- * never a false "launched"); a dropped link is a lost link, not a launch (P-08).
+ * `POST /v1/promotions/:id/launch`: the cloud re-simulates the input and, for a margin-losing offer, checks the
+ * `approvalId` it names — the caller's own request, approved by a different person who may approve prices, for
+ * exactly this input (ADR-0024). No approver's name is ever sent. A 2xx `launched` is a launch; a refusal comes back
+ * in head office's own words with its code (never a false "launched"); a dropped link is a lost link (P-08).
  */
 export function openPromotionLaunchPort(): PromotionLaunchPort {
+  const lostLink: PromotionLaunchOutcome = { launched: false, reason: 'no connection to head office — the offer was not launched', code: 'lost_link' };
   return {
-    post: async ({ input, approval }): Promise<PromotionLaunchOutcome> => {
+    post: async (launch): Promise<PromotionLaunchOutcome> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
-      if (fetchFn === undefined) return { launched: false, reason: 'no connection to head office — the offer was not launched' };
-      const key = globalThis.crypto?.randomUUID?.() ?? `promotion-launch-${input.promotionId}`;
+      if (fetchFn === undefined) return lostLink;
+      const key = globalThis.crypto?.randomUUID?.() ?? `promotion-launch-${launch.input.promotionId}`;
       try {
-        const res = await fetchFn(`/v1/promotions/${encodeURIComponent(input.promotionId)}/launch`, {
+        const res = await fetchFn(`/v1/promotions/${encodeURIComponent(launch.input.promotionId)}/launch`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
           credentials: 'same-origin',
-          // The cloud reads the simulation input from the body and re-runs it; the §28 approver + reason ride
-          // alongside for a margin-losing offer. A name typed in a box is not authority — the cloud verifies it.
-          body: JSON.stringify({ ...input, ...(approval === undefined ? {} : { approvedBy: approval.approvedBy, rationale: approval.rationale }) }),
+          // The simulation input (the cloud re-runs it) and, for a margin-losing offer, the approval it names — built
+          // by the SAME function the approval's details come from, so what was approved is what is sent.
+          body: JSON.stringify(promotionLaunchBody(launch)),
         });
-        const body = (await res.json().catch(() => ({}))) as { launched?: boolean; verdict?: string; approvedBy?: string | null; whatHappened?: string };
-        if (res.status >= 200 && res.status < 300 && body.launched === true) {
-          return { launched: true, verdict: body.verdict ?? 'launched', approvedBy: body.approvedBy ?? null };
+        if (res.status >= 200 && res.status < 300) {
+          const body = (await res.json().catch(() => ({}))) as { launched?: boolean; verdict?: string; approvedBy?: string | null };
+          if (body.launched === true) return { launched: true, verdict: body.verdict ?? 'launched', approvedBy: body.approvedBy ?? null };
+          return { launched: false, reason: 'head office did not launch the offer' };
         }
-        // 422 (needs approval / approver may not approve) or any other non-2xx — the cloud declined; surface why.
-        return { launched: false, reason: body.whatHappened ?? 'head office did not launch the offer' };
+        // 422 (needs approval / the approval does not hold) or any other refusal — head office's own words and code.
+        const refusal = await refusalOf(res);
+        return { launched: false, reason: refusal.whatHappened === '' ? 'head office did not launch the offer' : refusal.whatHappened, code: refusal.code };
       } catch {
-        return { launched: false, reason: 'no connection to head office — the offer was not launched' };
+        return lostLink;
       }
     },
   };
@@ -4599,38 +4601,38 @@ export function openPromotionLaunchPort(): PromotionLaunchPort {
 /**
  * The authenticated POST that records a governed price change at head office (M05-FR-02, API-02). One
  * operator-authenticated call under their OWN session (`credentials: 'same-origin'`, never a service token) to
- * `POST /v1/prices/changes`: the cloud re-runs `checkPrice` over the figures (MRP ceiling, cost, margin floor)
- * and re-checks §28 (a below-cost/below-floor price needs a different, authorised approver). A 2xx carrying a
- * verdict is the recorded change; a 422 is the cloud refusing (surfaced, never a false "saved"); a dropped link
- * is a lost link, not a change (P-08).
+ * `POST /v1/prices/changes`: the cloud re-runs `checkPrice` over the figures (MRP ceiling, cost, margin floor) and,
+ * for a below-cost/below-floor price, checks the `approvalId` it names — the caller's own request, approved by a
+ * different person who holds `price.change.approve`, for exactly these figures (ADR-0024). No approver's name is
+ * ever sent. A 2xx carrying a verdict is the recorded change; a refusal comes back in head office's own words with
+ * its code (never a false "saved"); a dropped link is a lost link, not a change (P-08).
  */
 export function openPriceChangePort(): PriceChangeCloudPort {
+  const lostLink: PriceChangeCloudOutcome = { saved: false, reason: 'no connection to head office — the price was not changed', code: 'lost_link' };
   return {
-    post: async ({ productId, priceMinor, mrpMinor, costMinor, currency, marginFloorBps, approval }): Promise<PriceChangeCloudOutcome> => {
+    post: async ({ approvalId, ...figures }): Promise<PriceChangeCloudOutcome> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
-      if (fetchFn === undefined) return { saved: false, reason: 'no connection to head office — the price was not changed' };
-      const key = globalThis.crypto?.randomUUID?.() ?? `price-change-${productId}-${priceMinor}`;
+      if (fetchFn === undefined) return lostLink;
+      const key = globalThis.crypto?.randomUUID?.() ?? `price-change-${figures.productId}-${figures.priceMinor}`;
       try {
         const res = await fetchFn('/v1/prices/changes', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
           credentials: 'same-origin',
-          // The cloud re-runs the guard over these raw figures; the §28 approver + reason ride alongside for a
-          // below-cost/below-floor price. A name typed in a box is not authority — the cloud verifies it holds
-          // `price.change.approve` and is not the setter.
-          body: JSON.stringify({
-            productId, priceMinor, mrpMinor, costMinor, currency, marginFloorBps,
-            ...(approval === undefined ? {} : { approval: { decidedBy: approval.approvedBy, reason: approval.rationale } }),
-          }),
+          // The raw figures the cloud re-runs the guard over and, when it needs one, the approval it names — built by
+          // the SAME function the approval's details come from, so what was approved is exactly what is sent.
+          body: JSON.stringify(priceChangeRequestBody(figures, approvalId)),
         });
-        const body = (await res.json().catch(() => ({}))) as { verdict?: string; approvedBy?: string | null; whatHappened?: string };
-        if (res.status >= 200 && res.status < 300 && typeof body.verdict === 'string') {
-          return { saved: true, verdict: body.verdict, approvedBy: body.approvedBy ?? null };
+        if (res.status >= 200 && res.status < 300) {
+          const body = (await res.json().catch(() => ({}))) as { verdict?: string; approvedBy?: string | null };
+          if (typeof body.verdict === 'string') return { saved: true, verdict: body.verdict, approvedBy: body.approvedBy ?? null };
+          return { saved: false, reason: 'head office did not change the price' };
         }
-        // 422 (above MRP / below cost / below floor without a valid approver) or any other non-2xx — surface why.
-        return { saved: false, reason: body.whatHappened ?? 'head office did not change the price' };
+        // 422 (above MRP / below cost / below floor without a usable approval) or any other refusal — its own words.
+        const refusal = await refusalOf(res);
+        return { saved: false, reason: refusal.whatHappened === '' ? 'head office did not change the price' : refusal.whatHappened, code: refusal.code };
       } catch {
-        return { saved: false, reason: 'no connection to head office — the price was not changed' };
+        return lostLink;
       }
     },
   };
@@ -4680,7 +4682,19 @@ export function openRecallCloudPort(): RecallCloudPort {
   };
 }
 
-export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort): CataloguePorts {
+/** Head office's approval engine as the catalogue screen uses it: ask (the caller is the maker) and read the inbox. */
+export interface CatalogueApprovalPorts {
+  readonly askApproval: (ask: ApprovalAsk) => Promise<AskResult>;
+  readonly approvalInbox: () => Promise<InboxRead>;
+}
+
+/** The live engine: the same POST and GET the import screen and the Approvals page use. */
+export const CATALOGUE_APPROVALS: CatalogueApprovalPorts = Object.freeze({
+  askApproval: (ask: ApprovalAsk) => postApprovalRequest(ask),
+  approvalInbox: () => fetchApprovalInbox(),
+});
+
+export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort, approvals?: CatalogueApprovalPorts): CataloguePorts {
   const costOf = (productId: string): CostRegister => {
     const minor = data?.costsMinor?.[productId];
     if (minor === undefined) {
@@ -4720,12 +4734,14 @@ export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?:
     ...(outbox === undefined ? {} : { outbox: () => outbox }),
     ...(launchPromotion === undefined ? {} : { launchPromotion: () => launchPromotion }),
     ...(changePrice === undefined ? {} : { changePrice: () => changePrice }),
+    ...(approvals === undefined ? {} : { askApproval: approvals.askApproval, approvalInbox: approvals.approvalInbox }),
   };
 }
 
 /** Build the product-and-pricing session, or `null` when this box was told nothing about it. The outbox, when
- *  given, is the durable queue the Save button commits a publish to. */
-export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort): CatalogueSession | null {
+ *  given, is the durable queue the Save button commits a publish to; `approvals` is head office's maker-checker
+ *  engine — without it nothing that needs a second person can be saved from this screen. */
+export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort, approvals?: CatalogueApprovalPorts): CatalogueSession | null {
   if (data === undefined) return null;
   return createCatalogueSession(
     {
@@ -4738,7 +4754,7 @@ export function bootCatalogue(data: CatalogueData | undefined, outbox?: SyncOutb
       today: data.today ?? '1970-01-01',
       marginFloorBps: data.marginFloorBps ?? 0,
     },
-    cataloguePortsFromData(data, outbox, launchPromotion, changePrice),
+    cataloguePortsFromData(data, outbox, launchPromotion, changePrice, approvals),
   );
 }
 
@@ -4986,8 +5002,9 @@ if (browserWindow !== undefined) {
   const catalogueOutbox = browserWindow.catalogueOutbox ?? openCatalogueOutbox();
   // The product publish rides the offline outbox; the promotion LAUNCH (M05-FR-03/04) and the price CHANGE
   // (M05-FR-02) are online governed actions that POST to head office on an explicit click — the cloud re-runs
-  // the guard (re-simulate / re-check the MRP+cost+floor) and re-checks §28 for itself.
-  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox, openPromotionLaunchPort(), openPriceChangePort());
+  // the guard (re-simulate / re-check the MRP+cost+floor). One that needs a second person is ASKED for on head
+  // office's approval engine and sent naming the approval (ADR-0024) — never a typed approver.
+  const catalogue = bootCatalogue(browserWindow.catalogueData, catalogueOutbox, openPromotionLaunchPort(), openPriceChangePort(), CATALOGUE_APPROVALS);
   if (catalogue !== null) {
     browserWindow.catalogueSession = catalogue;
     browserWindow.catalogueGaps = catalogueGaps(browserWindow.catalogueData);
