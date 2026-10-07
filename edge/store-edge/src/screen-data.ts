@@ -2213,6 +2213,8 @@ export function adminPayload(input: ScreenInput): Record<string, unknown> | null
     dormantAfterDays: policy.dormantAfterDays,
   };
   if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  // Never defaulted: a screen inventing what this person holds would offer decisions head office then refuses.
+  if (policy.permissions !== undefined) payload['permissions'] = policy.permissions;
 
   if (input.pack.accounts.known) payload['accounts'] = input.pack.accounts.value;
   if (input.pack.roles.known) payload['roles'] = input.pack.roles.value;

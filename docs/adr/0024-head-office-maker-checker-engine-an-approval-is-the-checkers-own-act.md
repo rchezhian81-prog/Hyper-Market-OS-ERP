@@ -154,3 +154,21 @@ must approve — then the kind's checker permission or a value-limit rule change
   refused (`approver_is_read_from_the_commit`).
 - **Reconsider-when:** the owner sets a dedicated authority for approving commercial terms. Then only the three kinds'
   checker permission changes.
+
+## Amendment — 2b-vi-c-2, the person asking (7 October 2026)
+
+- **Two new kinds for access** (M02-FR-04: "Store/HR manager (request/confirm), Owner (approve emergency access) …
+  separation between requester and granter"):
+  - `emergency_access` — `POST /v1/access/emergency/:grantId`;
+  - `access_change` — `POST /v1/access/lifecycle/:requestId` (joiner, mover, leaver).
+- **How both work now.** The person asking is the signed-in caller (`identity.role.request` — the store manager or the
+  owner). The approver holds `identity.role.grant` (the owner), approves in their own session, and is never the
+  requester. Both routes now require the approval.
+  - Before, the owner called the route and TYPED who had asked. The route's gate moves from `identity.role.grant` to
+    `identity.role.request`; the authority still comes from the owner's approval.
+  - The access-change rule "the approver cannot hand out what they do not hold" checks the approver from the approval.
+- **The migration control-total signature reads the load operator** from head office's record of the trial loads
+  (each trial load now records who ran it). A typed `loadOperator` is refused. With no trial load on record, nothing is
+  signed.
+- **Recorded, not changed:** the emergency-access cap (`maxMinutes`) is still read from the request. The owner sees it
+  in the approval, and the shop's own emergency-access policy is an open owner input (M02).

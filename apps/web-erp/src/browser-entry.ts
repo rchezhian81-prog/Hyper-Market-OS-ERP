@@ -240,13 +240,17 @@ import {
   type Payslip as PayrollPayslip, type Settlement as PayrollSettlement,
 } from '../../../packages/payroll/src/index';
 import type { LedgerSide, QueuedPosting } from '../../../packages/period-close/src/index';
-import { createAdminSession, type AdminPorts, type AdminSession } from './admin-session';
+import {
+  createAdminSession, SUPPORT_DECIDE_PERMISSION,
+  type AdminPorts, type AdminSession, type SupportAccessPort, type SupportAccessState, type SupportDecision,
+  type SupportDecisionResult, type SupportEndResult, type SupportRead,
+} from './admin-session';
 import { createSetupSession, type SetupSession } from './setup-session';
 import {
   SetupEditController, editorFor, parseDraft, saveResultFromError, type SaveResult,
 } from './setup-editing';
 import type { SetupStatus } from '../../../packages/tenant/src/index';
-import type { Device, SupportSession, VersionPolicy } from '../../../packages/platform-admin/src/index';
+import type { Device, SupportAccessRequest, SupportAction, SupportSession, VersionPolicy } from '../../../packages/platform-admin/src/index';
 import {
   createAiSession, type AiPorts, type AiSession, type PendingProposal,
 } from './ai-session';
@@ -3659,9 +3663,13 @@ export interface AdminData {
   readonly storeId?: string;
   readonly now?: string;
   readonly dormantAfterDays?: number;
+  /** The permission codes this person holds. **Never defaulted**: absent means they may decide nothing here — head
+   *  office re-checks every decision anyway. `platform.support.grant` is the owner's authority over outside access. */
+  readonly permissions?: readonly string[];
   readonly accounts?: readonly UserAccount[];
   readonly roles?: readonly Role[];
   readonly assignments?: readonly RoleAssignment[];
+  /** The support sessions the box last knew — shown only until head office answers with its own list. */
   readonly supportSessions?: readonly SupportSession[];
   readonly devices?: readonly Device[];
   /** **Absent means nothing is being enforced**, which is not a compliant fleet. */
@@ -3672,12 +3680,16 @@ export interface AdminData {
   readonly legalHolds?: readonly LegalHold[];
 }
 
-export function adminPortsFromData(data: AdminData | undefined): AdminPorts {
+export function adminPortsFromData(data: AdminData | undefined, supportAccess?: SupportAccessPort): AdminPorts {
+  const held = new Set(data?.permissions ?? []);
   return {
     accounts: () => data?.accounts ?? [],
     roles: () => data?.roles ?? [],
     assignments: () => data?.assignments ?? [],
     supportSessions: () => data?.supportSessions ?? [],
+    // Default-deny: an absent permission list decides nothing (head office would refuse it anyway).
+    mayDecideSupport: () => held.has(SUPPORT_DECIDE_PERMISSION),
+    ...(supportAccess === undefined ? {} : { supportAccess }),
     devices: () => data?.devices ?? [],
     // NOT defaulted. No policy means nothing is being enforced, and judging a fleet against a
     // minimum nobody set would report it compliant with a rule the shop never made.
@@ -3689,8 +3701,13 @@ export function adminPortsFromData(data: AdminData | undefined): AdminPorts {
   };
 }
 
-/** Build the admin screen, or `null` when the box was told nothing about who administers this shop. */
-export function bootAdmin(data: AdminData | undefined): AdminSession | null {
+/**
+ * Build the admin screen, or `null` when the box was told nothing about who administers this shop.
+ *
+ * `supportAccess` is head office's support-access routes ({@link HEAD_OFFICE_SUPPORT_ACCESS} in the browser). Without
+ * it the screen is not connected to head office: it says so, and decides nothing.
+ */
+export function bootAdmin(data: AdminData | undefined, supportAccess?: SupportAccessPort): AdminSession | null {
   if (data === undefined) return null;
   return createAdminSession(
     {
@@ -3700,9 +3717,135 @@ export function bootAdmin(data: AdminData | undefined): AdminSession | null {
       now: data.now ?? '1970-01-01T00:00:00.000Z',
       dormantAfterDays: data.dormantAfterDays ?? 0,
     },
-    adminPortsFromData(data),
+    adminPortsFromData(data, supportAccess),
   );
 }
+
+// ── Outside access at head office (M33-FR-03 · SEC-11 · §28 · audit PA-03) ─────────────────────────────────────
+//
+// The admin screen's support tab reads and decides on head office's own lifecycle
+// (`services/platform/src/support-access-lifecycle.ts`), in the signed-in person's OWN session (`credentials:
+// 'same-origin'`). The support person files their own request elsewhere; this screen never files one, and never names a
+// decider — head office takes the caller as the person who decided.
+
+const SUPPORT_ACCESS_PATH = '/v1/platform/support-access';
+
+const stringList = (v: unknown): readonly string[] | null =>
+  Array.isArray(v) && v.every((x) => typeof x === 'string') ? v as string[] : null;
+
+/** One support session as head office hands it over, read defensively: a row missing its id, people, window or scopes
+ *  is dropped, never half-shown. Head office's own `active` flag is NOT carried — the screen computes liveness. */
+export function supportSessionOf(raw: unknown): SupportSession | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const scopes = stringList(r['scopes']);
+  if (!nonBlank(r['sessionId']) || !nonBlank(r['requesterId']) || !nonBlank(r['approvedBy']) || !nonBlank(r['startedAt'])
+    || !nonBlank(r['expiresAt']) || scopes === null || scopes.length === 0) return null;
+  const actions: SupportAction[] = (Array.isArray(r['actions']) ? r['actions'] : [])
+    .filter((a): a is Record<string, unknown> => a !== null && typeof a === 'object' && nonBlank((a as Record<string, unknown>)['at']) && nonBlank((a as Record<string, unknown>)['action']))
+    .map((a) => ({ at: a['at'] as string, action: a['action'] as string, ...(nonBlank(a['target']) ? { target: a['target'] } : {}) }));
+  return {
+    sessionId: r['sessionId'], requesterId: r['requesterId'],
+    requesterName: nonBlank(r['requesterName']) ? r['requesterName'] : r['requesterId'],
+    approvedBy: r['approvedBy'], reason: typeof r['reason'] === 'string' ? r['reason'] : '',
+    scopes, tenantId: typeof r['tenantId'] === 'string' ? r['tenantId'] : '',
+    startedAt: r['startedAt'], expiresAt: r['expiresAt'],
+    ...(nonBlank(r['endedAt']) ? { endedAt: r['endedAt'] } : {}),
+    actions,
+  };
+}
+
+/** One waiting request as head office hands it over, read defensively (a row without its id, requester, scopes or a
+ *  whole number of minutes is dropped — it cannot be decided honestly). */
+export function supportRequestOf(raw: unknown): SupportAccessRequest | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const scopes = stringList(r['scopes']);
+  const minutes = r['minutes'];
+  if (!nonBlank(r['requestId']) || !nonBlank(r['requesterId']) || scopes === null || scopes.length === 0
+    || typeof minutes !== 'number' || !Number.isSafeInteger(minutes) || !nonBlank(r['at'])) return null;
+  return {
+    requestId: r['requestId'], requesterId: r['requesterId'],
+    requesterName: nonBlank(r['requesterName']) ? r['requesterName'] : r['requesterId'],
+    reason: typeof r['reason'] === 'string' ? r['reason'] : '',
+    scopes, tenantId: typeof r['tenantId'] === 'string' ? r['tenantId'] : '', minutes, at: r['at'],
+  };
+}
+
+/** Read head office's support-access state (GET — writes nothing). */
+export async function fetchSupportAccess(): Promise<SupportRead> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  try {
+    const res = await fetchFn(`${SUPPORT_ACCESS_PATH}/sessions`, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return { result: 'refused', ...(await refusalOf(res)) };
+    const body = (await res.json()) as { sessions?: unknown; pending?: unknown; asAt?: unknown };
+    if (!nonBlank(body.asAt)) return { result: 'refused', code: 'unreadable_answer', whatHappened: '' };
+    const state: SupportAccessState = {
+      sessions: (Array.isArray(body.sessions) ? body.sessions : []).map(supportSessionOf).filter((x): x is SupportSession => x !== null),
+      pending: (Array.isArray(body.pending) ? body.pending : []).map(supportRequestOf).filter((x): x is SupportAccessRequest => x !== null),
+      asAt: body.asAt,
+    };
+    return { result: 'read', state };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/** The owner's decision (POST …/requests/:requestId/decision) in their OWN session. The body is only the decision and,
+ *  for a shorter approval, the minutes — the decider is the caller, never a name in the body. */
+async function postSupportDecision(input: { readonly requestId: string; readonly decision: SupportDecision; readonly grantedMinutes?: number }): Promise<SupportDecisionResult> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  const key = globalThis.crypto?.randomUUID?.() ?? `support-decision-${input.requestId}-${input.decision}-${Date.now()}`;
+  try {
+    const res = await fetchFn(`${SUPPORT_ACCESS_PATH}/requests/${encodeURIComponent(input.requestId)}/decision`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ decision: input.decision, ...(input.grantedMinutes === undefined ? {} : { grantedMinutes: input.grantedMinutes }) }),
+    });
+    if (res.status >= 200 && res.status < 300) {
+      const body = (await res.json().catch(() => ({}))) as { status?: unknown; session?: unknown };
+      if (body.status === 'rejected') return { result: 'rejected' };
+      const session = supportSessionOf(body.session);
+      if (body.status === 'approved' && session !== null) return { result: 'approved', session };
+      return { result: 'refused', code: 'unreadable_answer', whatHappened: '' };
+    }
+    return { result: 'refused', ...(await refusalOf(res)) };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/** End a live session early (POST …/sessions/:sessionId/end) in the owner's OWN session. */
+async function postSupportEnd(input: { readonly sessionId: string }): Promise<SupportEndResult> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  const key = globalThis.crypto?.randomUUID?.() ?? `support-end-${input.sessionId}-${Date.now()}`;
+  try {
+    const res = await fetchFn(`${SUPPORT_ACCESS_PATH}/sessions/${encodeURIComponent(input.sessionId)}/end`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({}),
+    });
+    if (res.status >= 200 && res.status < 300) {
+      const body = (await res.json().catch(() => ({}))) as { endedAt?: unknown };
+      return nonBlank(body.endedAt) ? { result: 'ended', endedAt: body.endedAt } : { result: 'refused', code: 'unreadable_answer', whatHappened: '' };
+    }
+    return { result: 'refused', ...(await refusalOf(res)) };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/** Head office's support-access routes, as the admin screen uses them in the browser. */
+export const HEAD_OFFICE_SUPPORT_ACCESS: SupportAccessPort = Object.freeze({
+  read: () => fetchSupportAccess(),
+  decide: (input: { readonly requestId: string; readonly decision: SupportDecision; readonly grantedMinutes?: number }) => postSupportDecision(input),
+  end: (input: { readonly sessionId: string }) => postSupportEnd(input),
+});
 
 /** What the box tells the store-setup screen: who is looking, and the setup status the API computed. */
 export interface SetupData {
@@ -5590,7 +5733,10 @@ if (browserWindow !== undefined) {
   browserWindow.payrollSession = bootPayroll(browserWindow.payrollData);
   browserWindow.payrollEssSession = bootPayrollEss(browserWindow.payrollEssData);
   browserWindow.payrollReauth = markPayrollReauthenticated;
-  const admin = bootAdmin(browserWindow.adminData);
+  // Outside access (M33-FR-03 · §28 · audit PA-03): the support tab reads head office's own requests and sessions, and
+  // the owner approves, rejects or ends one in THEIR OWN session — never on a typed name. Without a payload the page
+  // shows its sample, which is not connected to head office and decides nothing.
+  const admin = bootAdmin(browserWindow.adminData, HEAD_OFFICE_SUPPORT_ACCESS);
   if (admin !== null) browserWindow.adminSession = admin;
   const setup = bootSetup(browserWindow.setupData);
   if (setup !== null && browserWindow.setupData !== undefined) {

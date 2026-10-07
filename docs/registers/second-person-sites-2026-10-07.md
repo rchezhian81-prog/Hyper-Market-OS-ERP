@@ -24,7 +24,7 @@ only when its slice merges with a test that proves it.
 - **c** — 2b-vi-c, in three parts:
   - **c-1** the 8 low-severity and record-only names (rows 19–26) — done;
   - **c-2** the typed makers (emergency access, access lifecycle, migration load operator) and the admin support-grant
-    screen;
+    screen — done;
   - **c-3** the store seal on the box-relayed decisions, with the day-reopen and bill-capture screens (row 17b).
 
 ## The 26 sites
@@ -62,9 +62,12 @@ only when its slice merges with a test that proves it.
 
 - **Typed makers** (the requester, not the approver):
   - Fixed in **a**: `bank-details requestedBy`, `import uploadedBy` and the pay-run `actor`.
-  - Open, slice **c-2**:
-    - `requestedBy` on the emergency-access and access-lifecycle requests;
-    - `loadOperator` on a migration load;
+  - Fixed in **c-2**:
+    - `requestedBy` on the emergency-access and access-lifecycle requests — the caller asks (`identity.role.request`)
+      and the owner approves on the engine (kinds `emergency_access`, `access_change`);
+    - `loadOperator` on a migration control-total signature — read from head office's record of who ran each trial
+      load; a typed one is refused (`load_operator_is_read_from_the_record`), and with no trial load on record nothing is
+      signed;
     - `enteredBy` on stock movements — fixed with row 14 in b-3.
 - **Box-relayed decisions with no store seal** (slice **c-3**). Unlike sales, refunds, cash and till closes (ADR-0023),
   these never check a seal:
@@ -87,7 +90,8 @@ only when its slice merges with a test that proves it.
   - service compensation — checked in b-3: the service screen offers no compensation yet (its compensation call is a
     stub that grants nothing), so there is no typed box to remove. When a compensation screen is built it asks on the
     engine;
-  - the admin support grant — slice c-2.
+  - the admin support grant — fixed in c-2: the Admin screen shows head office's waiting support requests and the owner
+    approves or rejects them in their own session; the typed approver box and the local-only grant are gone.
 - **The margin floor is taken from the request** (found in 2b-vi-b-1). `POST /v1/prices/changes`, price-list entries
   and quotations read `marginFloorBps` — and a quotation also its line costs — from the body. So the person setting a
   price also chooses the floor it is checked against. The second person now sees the floor and costs in the approval's
@@ -106,6 +110,15 @@ only when its slice merges with a test that proves it.
 - **The checklist screen's unsigned save** (found in c-1). Ticking items without signing sent an empty signer name,
   which head office could not read (so the save was refused), and a signed checklist re-sent its earlier signer's name.
   Fixed: the screen sends a signature only when this person signs.
+- **The emergency-access time cap is read from the request** (found in c-2). `maxMinutes` comes from the body, so the
+  person asking also sets the ceiling their request is checked against (default 240 minutes when absent). The owner now
+  sees it in the approval's details, but the cap should be the shop's own emergency-access policy — an open owner input
+  in M02 ("the emergency-access approval policy"). Recorded, not changed.
+- **A single owner can no longer grant emergency access or change someone's access alone** (c-2). The person asking
+  (a store or HR manager, `identity.role.request`) and the owner approving must be two people — M02-FR-04's "separation
+  between requester and granter". Before, the owner typed someone else's name as the requester.
+- **The owner who runs a migration trial load cannot sign its stock totals** (c-2). The chartered accountant signs them
+  (as well as the finance and tax totals). Before, the owner typed a different "load operator".
 - **The pay-run route's gate.** It is `payroll.statutory.read` for every step, approve and lock included. Payroll
   approve, lock and bank-file release are under the pilot hold; this is recorded here and **no new permission is
   invented**. The owner sets the payroll approval authority when the hold lifts.
