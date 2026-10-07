@@ -37,9 +37,11 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - **Pay-run steps:** every step's actor is the signed-in person. The pilot seed now drafts its pay run as its
     preparer.
   - **Screens:**
-    - The import screen asks for approval, then loads with the approval.
-    - A new **Approvals** page lets a checker approve or reject with a reason, and shows a maker where their requests
-      stand.
+    - The import screen (*Administration → Import & export*): the typed approver box is gone. The uploader writes why
+      and presses **Ask for approval**, then **Load it**. It loads only with the uploader's own approval of that job and
+      that exact file, and says in plain words why not otherwise.
+    - A new **Approvals** page (*Today → Approvals*), served by the store computer: **Waiting for you** (approve or
+      reject, a reason required, never your own) and **What you asked for** (status in words), in English and Tamil.
 - **Proved:**
   - `tests/unit/approval-requests.test.ts` (15).
   - `tests/integration/maker-checker-is-two-people.test.ts` (13). Through the real API, it shows:
@@ -57,10 +59,14 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
     - one bank change sent three times at once — one lands;
     - one import committed three times at once — one load, never a crash.
   - The import, export, supplier, duplicate-bank, step-up, pay-run and pilot-seed proofs now drive two people.
+  - Screens: unit (Approvals session 23, import session 30) and browser on Chromium (Approvals 4, import 5). The
+    50-page spec audit and the offline-opening proof include the new page.
 - **Found and fixed while proving it:** on real PostgreSQL, two checkers deciding at the same moment were both told
   "approved / rejected" while only one decision was saved. A write that met an existing one counted as a replay. Now
   the decision that stands is read back, and the other checker gets `already_decided`. A use works the same way.
 - **Not yet / honest limits:**
+  - A supplier bank change has no screen (API-only); its approval shows on Approvals.
+  - The manager screen keeps its own "approvals" tab for store-relayed decisions, separate from this page.
   - The other 23 sites (2b-vi-b: 15 money and price; 2b-vi-c: 8 low-severity or record-only, plus seals on the box-relayed
     decisions).
   - Escalation, delegation and value-limit routing (the rest of M02-FR-03).
