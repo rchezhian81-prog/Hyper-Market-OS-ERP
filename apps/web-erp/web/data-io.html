@@ -11,9 +11,12 @@
       lives in the tested session model (apps/web-erp/src/data-io-session.ts), attached as window.dataIoSession
       and built on the shared packages/ui primitives. EXPORT: pick a domain and take it out to an open CSV
       (audited; sensitive columns hidden unless allowed). IMPORT: pick a template, paste the file, CHECK it (a
-      preview — errors by line), then LOAD it — which needs a SEPARATE approver (§28: the uploader may never
-      approve their own). Every write runs ONLY on an explicit click, never on load. The exportable domains and
-      the log are read live (GET /v1/export, /v1/exports); offline the screen shows its sample stand-in.
+      preview — errors by line), name the load, say why and ASK FOR APPROVAL (head office's maker-checker
+      engine, ADR-0024 — the uploader's own request for this exact file). A DIFFERENT person approves it on their
+      Approvals page, in their own session; then LOAD it, which names that approved request — never a typed name.
+      Every write runs ONLY on an explicit click, never on load. The exportable domains, the log and the
+      uploader's own requests are read live (GET /v1/export, /v1/exports, /v1/approvals/requests); offline the
+      screen shows its sample stand-in.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <style>
@@ -31,7 +34,12 @@
       label { display:block; margin:8px 0 4px; font-size:14px; color:var(--muted); }
       select, input, textarea { width:100%; min-height:var(--tap); padding:8px 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
       textarea { min-height:120px; font-family:ui-monospace,Menlo,Consolas,monospace; }
-      .row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+      .row2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
+      .actions { display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; }
+      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
+      li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
+      .chip { display:inline-flex; align-items:center; gap:6px; font-weight:600; font-size:14px; }
+      .chip .icon { font-size:16px; }
       button.act { min-height:var(--tap); padding:0 16px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--info); color:var(--on-info); }
       button.act.primary { background:var(--good); color:var(--on-accent); }
       button.act.small { min-height: var(--tap); font-size:14px; background:var(--info); color:var(--on-info); }
@@ -87,10 +95,16 @@
           <div class="preview" id="preview" hidden></div>
           <div class="row2">
             <div><label for="import-job" id="job-label"></label><input id="import-job" type="text" autocomplete="off" /></div>
-            <div><label for="import-approver" id="approver-label"></label><input id="import-approver" type="text" autocomplete="off" /></div>
+            <div><label for="import-why" id="why-label"></label><input id="import-why" type="text" autocomplete="off" maxlength="300" /></div>
           </div>
-          <button id="commit" class="act primary" type="button"></button>
+          <div class="actions">
+            <button id="ask" class="act small" type="button"></button>
+            <button id="commit" class="act primary" type="button"></button>
+          </div>
+          <p class="result" id="ask-result" hidden role="status" aria-live="polite"><span class="icon" id="ask-result-icon" aria-hidden="true"></span><span id="ask-result-text"></span></p>
           <p class="result" id="commit-result" hidden role="status" aria-live="polite"><span class="icon" id="commit-result-icon" aria-hidden="true"></span><span id="commit-result-text"></span></p>
+          <h3 id="requests-heading" hidden></h3>
+          <ul class="rows" id="my-requests" aria-label="Your requests to load" hidden></ul>
         </div>
       </section>
     </main>

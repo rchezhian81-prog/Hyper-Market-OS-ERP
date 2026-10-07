@@ -77,12 +77,13 @@ describe('every screen the store computer serves has a door, and every door open
   it('an unserved or unbuilt item opens nothing on the box — and the unserved ones are exactly the pages nothing serves yet', () => {
     const notBox = ERP_NAVIGATION.filter((i) => (i.served ?? 'box') !== 'box');
     for (const i of notBox) expect(screenOfPath(i.path), `${i.id} is marked ${i.served} but the box serves it`).toBeNull();
-    // The pages in apps/web-erp/web the box does not serve. Three have an item (marked unserved); the other two —
-    // the owner's company report and the DPO's erasure console — have no item yet (docs/STATUS.md, G5c).
+    // The pages in apps/web-erp/web the box does not serve. Four have an item (marked unserved); the other two —
+    // the owner's company report and the DPO's erasure console — have no item yet (docs/STATUS.md, G5c). Approvals
+    // (ADR-0024) is built and has its item; the store computer does not serve it yet.
     const servedFiles = new Set(BOX_SCREENS.map((s) => APP_SHELL[s].file));
     const unservedPages = readdirSync('apps/web-erp/web').filter((f) => f.endsWith('.html') && !servedFiles.has(f)).sort();
-    expect(unservedPages).toEqual(['company-report.html', 'erasure-console.html', 'payroll-payslip.html', 'payroll.html', 'setup.html']);
-    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['my-payslip', 'payroll', 'store-setup']);
+    expect(unservedPages).toEqual(['approvals.html', 'company-report.html', 'erasure-console.html', 'payroll-payslip.html', 'payroll.html', 'setup.html']);
+    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['approval-requests', 'my-payslip', 'payroll', 'store-setup']);
     // `suppliers` left this list at SP-7d (30 Sep 2026): the Suppliers screen is built and served by the box.
     expect(notBox.filter((i) => i.served === 'unbuilt').map((i) => i.id).sort()).toEqual(['reconciliation', 'settings']);
   });
@@ -107,6 +108,16 @@ describe('every door is gated on a word somebody enforces and somebody holds (P-
     const phantoms = ['admin.settings.manage', 'admin.users.manage', 'approval.decide', 'audit.view', 'cash.view', 'catalogue.view', 'erp.dashboard.view', 'exception.view', 'finance.view', 'grn.view', 'po.view', 'price.view', 'promotion.view', 'reconciliation.view', 'return.view', 'sales.view', 'stock.view'];
     expect(enforced.has('supplier.view')).toBe(true);
     for (const i of boxItems) expect(phantoms, `${i.id} still gates on ${i.requires}`).not.toContain(i.requires);
+  });
+
+  it('Approvals (ADR-0024) is a door for every signed-in person: gated on the word its routes check, which the role catalogue grants', () => {
+    const item = ERP_NAVIGATION.find((i) => i.id === 'approval-requests')!;
+    expect(item).toBeDefined();
+    expect(item.requires).toBe('identity.self.read');
+    expect(enforced.has('identity.self.read')).toBe(true);
+    expect(SCREEN_SOURCE).toContain(`'identity.self.read'`);
+    expect(granted.has('identity.self.read')).toBe(true);
+    expect(item.labelTa).toMatch(TAMIL);
   });
 
   it('tripwire — the route-permission reader finds the words the routes declare', () => {

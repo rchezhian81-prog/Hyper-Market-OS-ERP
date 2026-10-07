@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { askForApproval, approvedRequestId, decide } from '../support/approval-request';
 
 // Bulk data import, end to end (M30-FR-01/03, API-03). A store loads a supplier price file, an opening-stock
 // count, a batch of invoices — hundreds of rows at once. The failure this closes is a half-good file applied
@@ -37,8 +38,27 @@ const invoiceTemplate = {
 
 const validate = (h: ApiHarness, u: string, body: Record<string, unknown>, key = 'v-1') =>
   h.request({ method: 'POST', path: '/v1/import/validate', userId: u, tenantId: A, idempotencyKey: key, body });
-const commit = (h: ApiHarness, u: string, body: Record<string, unknown>, key = 'c-1') =>
+const commitAsSent = (h: ApiHarness, u: string, body: Record<string, unknown>, key = 'c-1') =>
   h.request({ method: 'POST', path: '/v1/import/commit', userId: u, tenantId: A, idempotencyKey: key, body });
+/** The commit as two people make it (ADR-0024): a body naming its checker (`approval.decidedBy`) becomes that checker's
+ *  own approval in the engine — asked by the uploader for THIS job and THIS content (the fingerprint validate returns),
+ *  approved under the checker's sign-in — and the commit names it. Anything the engine would refuse to set up (the
+ *  uploader as their own checker, a person who may not import) is sent as written, so the route's own refusal shows. */
+async function commit(h: ApiHarness, u: string, body: Record<string, unknown>, key = 'c-1') {
+  const checker = (body['approval'] as { decidedBy?: string } | undefined)?.decidedBy;
+  const jobId = body['jobId'];
+  if (typeof checker !== 'string' || typeof jobId !== 'string' || checker === u) return commitAsSent(h, u, body, key);
+  const { approval: _named, ...rest } = body;
+  void _named;
+  try {
+    const v = await validate(h, u, rest, `v-${jobId}-${key}`);
+    const contentFingerprint = (v.body as { contentFingerprint: string }).contentFingerprint;
+    const approvalId = await approvedRequestId(h, A, u, checker, { kind: 'data_import_commit', subjectRef: jobId, details: { jobId, contentFingerprint } });
+    return commitAsSent(h, u, { ...rest, approvalId }, key);
+  } catch {
+    return commitAsSent(h, u, body, key);
+  }
+}
 const listCommits = (h: ApiHarness, u: string) =>
   h.request({ method: 'GET', path: '/v1/import/commits', userId: u, tenantId: A });
 const readCommit = (h: ApiHarness, u: string, jobId: string) =>
@@ -103,10 +123,17 @@ describe('bulk data import: validate, then commit the whole job or nothing under
       jobId: 'imp-self',
       template: productTemplate,
       text: 'sku,name,qty\nA1,Rice,10',
-      approval: { status: 'approved', decidedBy: 'u-mgr' }, // same person who uploaded
+      approval: { status: 'approved', decidedBy: 'u-mgr' }, // same person who uploaded — a NAME, not an approval
     });
     expect(res.status).toBe(422);
-    expect(codeOf(res)).toBe('import_refused_self_approved');
+    expect(codeOf(res)).toBe('approver_named_without_approval');
+    // The uploader cannot approve their own import in the engine either (§28) — though they hold the authority to check others'.
+    const v = await validate(h, 'u-mgr', { template: productTemplate, text: 'sku,name,qty\nA1,Rice,10' }, 'v-self');
+    const asked = await askForApproval(h, A, 'u-mgr', { kind: 'data_import_commit', subjectRef: 'imp-self', details: { jobId: 'imp-self', contentFingerprint: (v.body as { contentFingerprint: string }).contentFingerprint } });
+    expect(asked.status).toBe(201);
+    expect(codeOf(await decide(h, A, 'u-mgr', (asked.body as { requestId: string }).requestId))).toBe('self_approval');
+    // An accountant (read only) may not decide an import at all.
+    expect((await decide(h, A, 'u-book', (asked.body as { requestId: string }).requestId)).status).toBe(403);
     expect((await listCommits(h, 'u-owner')).body).toMatchObject({ total: 0 }); // nothing applied
   });
 
@@ -182,7 +209,7 @@ describe('bulk data import: validate, then commit the whole job or nothing under
     const noApproval = await commit(h, 'u-mgr', {
       jobId: 'imp-x', template: productTemplate, text: 'sku,name,qty\nA1,Rice,10',
     });
-    expect(noApproval.status).toBe(400);
+    expect(noApproval.status).toBe(422);
     expect(codeOf(noApproval)).toBe('no_approval');
   });
 

@@ -213,6 +213,11 @@ import {
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
 } from './data-io-session';
 import {
+  createApprovalsSession,
+  type ApprovalsPorts, type ApprovalsSession, type ApprovalInboxView, type ApprovalRequestView, type ApprovalStatus,
+  type ApprovalAsk, type AskResult, type InboxRead, type DecideResult, type DecisionWord, type Refused,
+} from './approvals-session';
+import {
   createWorkforceInboxSession,
   type WorkforceInboxPorts, type WorkforceInboxSession, type WorkforceWorklistData,
   type WorkforceDismissPort,
@@ -2873,7 +2878,8 @@ async function postExport(domain: string): Promise<ExportResult> {
   } catch { return 'lost_link'; }
 }
 
-/** POST a validate (POST /v1/import/validate) — a preview, writes nothing. Resolves the full template body. */
+/** POST a validate (POST /v1/import/validate) — a preview, writes nothing. Resolves the full template body. The
+ *  route also returns the file's check code (`contentFingerprint`) — what an import's approval is for (ADR-0024). */
 async function postValidate(template: FullImportTemplate | undefined, req: { text: string; declaredTotalMinor?: number }): Promise<ValidateResult> {
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined || template === undefined) return 'refused';
@@ -2887,14 +2893,14 @@ async function postValidate(template: FullImportTemplate | undefined, req: { tex
       }),
     });
     if (res.status >= 400) return 'refused';
-    const body = (await res.json()) as { preview?: {
+    const body = (await res.json()) as { contentFingerprint?: unknown; preview?: {
       totalRows: number; validCount: number; errorRowCount: number;
       errors: readonly { line: number; column: string; message: string }[];
       duplicatesForReview: readonly unknown[]; sumMinor?: number; reconciles?: boolean; commitReady: boolean;
     } };
     const p = body.preview;
     if (p === undefined) return 'refused';
-    const view: ImportPreviewView = {
+    const preview: ImportPreviewView = {
       totalRows: p.totalRows, validCount: p.validCount, errorRowCount: p.errorRowCount,
       errors: p.errors.map((e) => ({ line: e.line, column: e.column, message: e.message })),
       duplicateCount: p.duplicatesForReview.length,
@@ -2902,19 +2908,34 @@ async function postValidate(template: FullImportTemplate | undefined, req: { tex
       ...(p.reconciles !== undefined ? { reconciles: p.reconciles } : {}),
       commitReady: p.commitReady,
     };
-    return view;
+    const fp = body.contentFingerprint;
+    return { preview, contentFingerprint: typeof fp === 'string' && fp.trim() !== '' ? fp : null };
   } catch { return 'lost_link'; }
 }
 
-/** POST a commit (POST /v1/import/commit) under §28 — the approver is a SEPARATE person named on the screen;
- *  the uploader is the caller's own session identity. The server re-validates and enforces §28. */
+/** Read the server's refusal words off a 4xx/5xx (`{ error: { code, whatHappened } }`); an unreadable body is still a
+ *  refusal, with no words of its own. */
+async function refusalOf(res: Response): Promise<{ code: string; whatHappened: string }> {
+  try {
+    const body = (await res.json()) as { error?: { code?: unknown; whatHappened?: unknown } };
+    const code = typeof body.error?.code === 'string' ? body.error.code : `http_${res.status}`;
+    const whatHappened = typeof body.error?.whatHappened === 'string' ? body.error.whatHappened : '';
+    return { code, whatHappened };
+  } catch {
+    return { code: `http_${res.status}`, whatHappened: '' };
+  }
+}
+
+/** POST a commit (POST /v1/import/commit) naming the uploader's own APPROVED request (ADR-0024). The uploader is the
+ *  caller's own session — no name is sent for anyone; the server recomputes the file's check code, checks the approval
+ *  is for exactly this, and spends it once. */
 async function postCommit(
   template: FullImportTemplate | undefined,
-  req: { text: string; jobId: string; approver: string; declaredTotalMinor?: number },
-  uploadedBy: string | undefined,
+  req: { text: string; jobId: string; approvalId: string; declaredTotalMinor?: number },
 ): Promise<CommitResult> {
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
-  if (fetchFn === undefined || template === undefined) return 'refused';
+  if (fetchFn === undefined) return 'lost_link';
+  if (template === undefined) return { code: 'unknown_template', whatHappened: '' };
   const key = globalThis.crypto?.randomUUID?.() ?? `import-${req.jobId}`;
   try {
     const res = await fetchFn('/v1/import/commit', {
@@ -2923,12 +2944,12 @@ async function postCommit(
         jobId: req.jobId,
         template: { id: template.id, domain: template.domain, columns: template.columns, keyColumns: template.keyColumns },
         text: req.text,
-        approval: { decidedBy: req.approver, status: 'approved' },
-        ...(uploadedBy !== undefined ? { uploadedBy } : {}),
+        approvalId: req.approvalId,
         ...(req.declaredTotalMinor !== undefined ? { declaredTotalMinor: req.declaredTotalMinor } : {}),
       }),
     });
-    return res.status >= 200 && res.status < 300 ? 'committed' : 'refused';
+    if (res.status >= 200 && res.status < 300) return 'committed';
+    return await refusalOf(res);
   } catch { return 'lost_link'; }
 }
 
@@ -2945,7 +2966,9 @@ export function dataIoPortsFromData(data: DataIoData | undefined, live?: DataIoL
     mayCommitImport: () => held.has(IMPORT_COMMIT_PERMISSION),
     runExport: (domain) => postExport(domain),
     validate: (req) => postValidate(findTemplate(req.templateId), req),
-    commit: (req) => postCommit(findTemplate(req.templateId), req, data?.userId),
+    commit: (req) => postCommit(findTemplate(req.templateId), req),
+    askApproval: (ask) => postApprovalRequest(ask),
+    approvalInbox: () => fetchApprovalInbox(),
   };
 }
 
@@ -2969,6 +2992,145 @@ export async function fetchDataIoLive(): Promise<DataIoLive | null> {
     const eBody = (await eRes.json()) as { exports?: readonly ExportAuditView[] };
     return { domains: dBody.domains ?? [], exports: eBody.exports ?? [] };
   } catch { return null; }
+}
+
+// ── Approvals — head office's maker-checker engine (ADR-0024 · M02-FR-03 · §28) ───────────────────────────────────
+
+/** What the box tells the Approvals page: who is looking and what they hold. The inbox itself is a LIVE head-office
+ *  read (`GET /v1/approvals/requests`) refreshed by the shell when online; offline the page shows its clearly-marked
+ *  sample stand-in. Every signed-in member of the shop may open it — head office decides what waits for whom. */
+export interface ApprovalsData {
+  readonly userId?: string;
+  readonly permissions?: readonly string[];
+  readonly inbox?: ApprovalInboxView;
+}
+
+/** The word the approvals routes check — every signed-in person holds it; the routes then check each kind's own. */
+const APPROVALS_PERMISSION = 'identity.self.read';
+const APPROVAL_STATUSES: readonly ApprovalStatus[] = ['waiting', 'approved', 'rejected', 'expired', 'used'];
+const EMPTY_APPROVAL_INBOX: ApprovalInboxView = Object.freeze({ waitingForMe: [], mine: [], asAt: null });
+
+const nonBlank = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+
+/** One request row, read defensively: a row missing its id, kind, maker or status is dropped, never half-shown. */
+function approvalRowOf(raw: unknown): ApprovalRequestView | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const status = r['status'];
+  if (!nonBlank(r['requestId']) || !nonBlank(r['kind']) || !nonBlank(r['requestedBy']) || typeof status !== 'string'
+    || !(APPROVAL_STATUSES as readonly string[]).includes(status)) return null;
+  const details = r['details'] !== null && typeof r['details'] === 'object' && !Array.isArray(r['details']) ? r['details'] as Record<string, unknown> : {};
+  const valueMinor = typeof r['valueMinor'] === 'number' && Number.isSafeInteger(r['valueMinor']) ? r['valueMinor'] : null;
+  const text = (k: string): string => (typeof r[k] === 'string' ? r[k] as string : '');
+  return {
+    requestId: r['requestId'], kind: r['kind'], label: text('label'), subjectRef: text('subjectRef'), valueMinor, details,
+    summary: text('summary'), reason: text('reason'), requestedBy: r['requestedBy'], requestedAt: text('requestedAt'),
+    status: status as ApprovalStatus,
+    ...(nonBlank(r['decidedBy']) ? { decidedBy: r['decidedBy'] } : {}),
+    ...(typeof r['decisionReason'] === 'string' ? { decisionReason: r['decisionReason'] } : {}),
+    ...(nonBlank(r['decidedAt']) ? { decidedAt: r['decidedAt'] } : {}),
+    ...(nonBlank(r['expiresAt']) || r['expiresAt'] === null ? { expiresAt: r['expiresAt'] as string | null } : {}),
+    ...(nonBlank(r['usedBy']) ? { usedBy: r['usedBy'] } : {}),
+  };
+}
+
+const approvalRowsOf = (raw: unknown): ApprovalRequestView[] =>
+  (Array.isArray(raw) ? raw : []).map(approvalRowOf).filter((r): r is ApprovalRequestView => r !== null);
+
+/** Read the caller's approvals inbox (a GET — read only): what waits for them, and what they asked for. */
+export async function fetchApprovalInbox(): Promise<InboxRead> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  try {
+    const res = await fetchFn('/v1/approvals/requests', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) {
+      const refused: Refused = { result: 'refused', ...(await refusalOf(res)) };
+      return refused;
+    }
+    const body = (await res.json()) as { waitingForMe?: unknown; mine?: unknown; asAt?: unknown };
+    return {
+      result: 'read',
+      inbox: { waitingForMe: approvalRowsOf(body.waitingForMe), mine: approvalRowsOf(body.mine), asAt: nonBlank(body.asAt) ? body.asAt : null },
+    };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/** Ask for approval (POST /v1/approvals/requests) in the caller's own session — the caller IS the maker; no other
+ *  person is named anywhere in the body. */
+async function postApprovalRequest(ask: ApprovalAsk): Promise<AskResult> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  const key = globalThis.crypto?.randomUUID?.() ?? `approval-ask-${ask.kind}-${ask.subjectRef}-${Date.now()}`;
+  try {
+    const res = await fetchFn('/v1/approvals/requests', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        kind: ask.kind, subjectRef: ask.subjectRef, details: ask.details, valueMinor: ask.valueMinor,
+        summary: ask.summary, reason: ask.reason,
+      }),
+    });
+    if (res.status >= 200 && res.status < 300) {
+      const request = approvalRowOf(await res.json().catch(() => null));
+      if (request !== null) return { result: 'asked', request };
+      return { result: 'refused', code: 'unreadable_answer', whatHappened: '' };
+    }
+    return { result: 'refused', ...(await refusalOf(res)) };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/** Record a checker's decision (POST /v1/approvals/requests/:requestId/decide) in the caller's own session. */
+async function postApprovalDecision(input: { readonly requestId: string; readonly decision: DecisionWord; readonly reason: string }): Promise<DecideResult> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  const key = globalThis.crypto?.randomUUID?.() ?? `approval-decide-${input.requestId}-${input.decision}`;
+  try {
+    const res = await fetchFn(`/v1/approvals/requests/${encodeURIComponent(input.requestId)}/decide`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ decision: input.decision, reason: input.reason }),
+    });
+    if (res.status >= 200 && res.status < 300) {
+      const body = (await res.json().catch(() => ({}))) as { decision?: unknown; decidedBy?: unknown };
+      const decision: DecisionWord = body.decision === 'rejected' ? 'rejected' : body.decision === 'approved' ? 'approved' : input.decision;
+      return { result: 'decided', decision, decidedBy: nonBlank(body.decidedBy) ? body.decidedBy : '' };
+    }
+    return { result: 'refused', ...(await refusalOf(res)) };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+export function approvalsPortsFromData(
+  data: ApprovalsData | undefined,
+  inbox?: ApprovalInboxView,
+  decide: ApprovalsPorts['decide'] = postApprovalDecision,
+): ApprovalsPorts {
+  const held = new Set(data?.permissions ?? []);
+  return {
+    inbox: () => inbox ?? data?.inbox ?? EMPTY_APPROVAL_INBOX,
+    // Default-deny: an absent permission list may do nothing here (the routes would refuse it anyway).
+    mayUse: () => held.has(APPROVALS_PERMISSION),
+    decide,
+  };
+}
+
+/** Build the Approvals page, or `null` when the box carried no payload for it (the shell shows its sample). */
+export function bootApprovals(data: ApprovalsData | undefined, inbox?: ApprovalInboxView): ApprovalsSession | null {
+  if (data === undefined) return null;
+  return createApprovalsSession({ userId: data.userId === undefined ? null : data.userId }, approvalsPortsFromData(data, inbox));
+}
+
+/** The live inbox for the shell's refresh: the inbox, or null offline/refused (the page keeps what it shows). */
+export async function fetchApprovalInboxOrNull(): Promise<ApprovalInboxView | null> {
+  const read = await fetchApprovalInbox();
+  return read.result === 'read' ? read.inbox : null;
 }
 
 // ── Workforce guidance inbox (A10) — the exact mirror of the Operations inbox above ────────────────────────
@@ -3954,6 +4116,13 @@ interface ManagerWindow {
   dataIo?: {
     refresh(): Promise<DataIoLive | null>;
     present(live: DataIoLive): DataIoSession;
+  };
+  approvalsData?: ApprovalsData;
+  approvalsSession?: ApprovalsSession;
+  /** The shell reads the live inbox through this and re-presents it — a GET read; decisions go through the session. */
+  approvals?: {
+    refresh(): Promise<ApprovalInboxView | null>;
+    present(inbox: ApprovalInboxView): ApprovalsSession;
   };
   workforceInboxData?: WorkforceInboxData;
   workforceInboxSession?: WorkforceInboxSession;
@@ -5266,8 +5435,9 @@ if (browserWindow !== undefined) {
   }
   // The data import/export console (M30): boots from the box's policy (who + what they hold + the store's import
   // templates), then the shell refreshes the export catalogue + log with live GETs (read-only). The writes —
-  // run an export (audited), validate a file (a preview), commit an import (§28: a SEPARATE approver, never the
-  // uploader) — run only on an explicit click; the server re-validates and is the single gate.
+  // run an export (audited), check a file (a preview), ask for approval (the uploader's own request, ADR-0024),
+  // load it (naming the APPROVED request a second person gave in their own session — never a typed name) — run only
+  // on an explicit click; the server re-validates and is the single gate.
   const dataIoData = browserWindow.dataIoData;
   const dataIo = bootDataIo(dataIoData, undefined);
   if (dataIo !== null) {
@@ -5277,6 +5447,22 @@ if (browserWindow !== undefined) {
       present: (live) => createDataIoSession(
         { userId: dataIoData?.userId === undefined ? null : dataIoData.userId },
         dataIoPortsFromData(dataIoData, live),
+      ),
+    };
+  }
+  // The Approvals page (ADR-0024 · M02-FR-03 · §28): boots from the box's word on who is looking (and what they
+  // hold), then the shell refreshes the inbox with a live GET (read-only). Offline it shows its sample stand-in and
+  // says so. The one write — a checker's approve/reject WITH A REASON, in their own session — runs only on an explicit
+  // click; head office never offers a person their own request and refuses a self-approval, which the page never fakes.
+  const approvalsData = browserWindow.approvalsData;
+  const approvals = bootApprovals(approvalsData);
+  if (approvals !== null) {
+    browserWindow.approvalsSession = approvals;
+    browserWindow.approvals = {
+      refresh: fetchApprovalInboxOrNull,
+      present: (inbox) => createApprovalsSession(
+        { userId: approvalsData?.userId === undefined ? null : approvalsData.userId },
+        approvalsPortsFromData(approvalsData, inbox),
       ),
     };
   }

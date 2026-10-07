@@ -55,6 +55,7 @@ const SCREENS = [
   { name: 'the floor indents', dir: 'web-erp', view: 'indents.js', page: 'indents.html', bundle: 'web-erp.bundle.js' },
   { name: 'the products nobody can sell', dir: 'web-erp', view: 'unsellable.js', page: 'unsellable.html', bundle: 'web-erp.bundle.js' },
   { name: 'the import/export console', dir: 'web-erp', view: 'data-io.js', page: 'data-io.html', bundle: 'web-erp.bundle.js' },
+  { name: 'the approvals inbox', dir: 'web-erp', view: 'approvals.js', page: 'approvals.html', bundle: 'web-erp.bundle.js' },
   { name: 'the workforce inbox', dir: 'web-erp', view: 'workforce.js', page: 'workforce.html', bundle: 'web-erp.bundle.js' },
   { name: 'the self-service', dir: 'web-erp', view: 'ess.js', page: 'ess.html', bundle: 'web-erp.bundle.js' },
   { name: 'the rostering', dir: 'web-erp', view: 'rostering.js', page: 'rostering.html', bundle: 'web-erp.bundle.js' },

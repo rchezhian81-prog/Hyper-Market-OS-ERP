@@ -21,7 +21,7 @@
 // ordinary. The bank-file route in `payroll.ts` declares the same requirement route-level.
 
 import type { ReauthRequirement, Route } from '../../kernel/src/index';
-import { apiError, notFound, requireStepUp } from '../../kernel/src/index';
+import { apiError, notFound, requireActorIsCaller, requireStepUp } from '../../kernel/src/index';
 import {
   evaluatePayRunTransition,
   type PayRunAggregate, type PayRunEvent, type PayRunAction,
@@ -61,18 +61,23 @@ export function payRunStoreRoutes(deps: PayRunStoreDeps): readonly Route[] {
         }
         const at = typeof b['at'] === 'string' ? (b['at'] as string) : deps.now();
         const reason = typeof b['reason'] === 'string' ? (b['reason'] as string) : undefined;
+        // WHO takes each step is the signed-in caller (ADR-0024 · audit PA-03 · §28): the maker drafts and submits under
+        // their own sign-in, a different person approves under theirs. A body `actor` naming anyone else is refused —
+        // before, both halves were body strings, so one person could submit as one name and approve as another.
+        requireActorIsCaller(ctx, b, 'actor');
+        const actor = ctx.userId;
 
         // draft — create the run. It has no prior state to transition from; refuse a second draft of the same id.
         if (action === 'draft') {
-          if (typeof b['payPeriod'] !== 'string' || typeof b['actor'] !== 'string') {
-            throw apiError(400, { code: 'pay_run_draft_needs_period_actor', whatHappened: 'Drafting a pay run needs payPeriod (e.g. 2026-08) and actor (who prepared it).', wasItSaved: 'not_saved', nextSafeAction: 'Send payPeriod and actor.' });
+          if (typeof b['payPeriod'] !== 'string') {
+            throw apiError(400, { code: 'pay_run_draft_needs_period_actor', whatHappened: 'Drafting a pay run needs payPeriod (e.g. 2026-08); who prepared it is the signed-in person.', wasItSaved: 'not_saved', nextSafeAction: 'Send payPeriod.' });
           }
           const existing = await deps.load(ctx.tenantId, payRunId);
           if (existing !== undefined) {
             return { status: 200, body: { payRunId, alreadyExists: true, current: existing } }; // idempotent — one draft per id
           }
           const drafted: PayRunEvent = {
-            kind: 'drafted', payPeriod: b['payPeriod'], by: b['actor'], at,
+            kind: 'drafted', payPeriod: b['payPeriod'], by: actor, at,
             ...(Number.isInteger(b['netTotalMinor']) ? { netTotalMinor: b['netTotalMinor'] as number } : {}),
             ...(Number.isInteger(b['employeeCount']) ? { employeeCount: b['employeeCount'] as number } : {}),
           };
@@ -82,9 +87,6 @@ export function payRunStoreRoutes(deps: PayRunStoreDeps): readonly Route[] {
         }
 
         // Every other action must be a legal transition from the STORED state.
-        if (typeof b['actor'] !== 'string') {
-          throw apiError(400, { code: 'pay_run_append_needs_actor', whatHappened: 'A pay-run step needs actor (who is taking it) — the approver must differ from the submitter (§28).', wasItSaved: 'not_saved', nextSafeAction: 'Send the actor.' });
-        }
         // A RELEASE step (approve / lock / reverse) needs a fresh, MFA-backed re-authentication from the SIGNED
         // token — refused 403 `reauthentication_required` BEFORE the stored state is read or anything is
         // written. Maker ≠ checker below still applies on top (SEC-03, §28).
@@ -95,13 +97,13 @@ export function payRunStoreRoutes(deps: PayRunStoreDeps): readonly Route[] {
         const decision = evaluatePayRunTransition({
           ...(current !== undefined ? { current } : {}),
           action: action as PayRunAction,
-          actor: b['actor'],
+          actor,
           ...(reason !== undefined ? { reason } : {}),
         });
         if (!decision.allowed) {
           throw apiError(422, { code: `pay_run_${decision.refusal ?? 'refused'}`, whatHappened: decision.reason, wasItSaved: 'not_saved', nextSafeAction: 'Take a step the run’s current state allows (a different person approves; a locked run is corrected by a reversal + a new run).' });
         }
-        const event = eventFor(action as PayRunAction, b['actor'], at, reason);
+        const event = eventFor(action as PayRunAction, actor, at, reason);
         await deps.append(ctx.tenantId, payRunId, event);
         const updated = await deps.load(ctx.tenantId, payRunId);
         return { status: 200, body: { payRunId, decision, current: updated } };

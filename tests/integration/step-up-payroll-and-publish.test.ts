@@ -15,6 +15,7 @@ import { apiHarness, type ApiHarness } from '../support/api-harness';
  */
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaae1';
+const CHECKER = 'u-owner-checker';
 const OWNER = 'u-owner';
 const STORE = 'store-01';
 const AS_OF = '2030-06-01';
@@ -27,8 +28,12 @@ const STALE: Evidence = { authTimeFromNowSeconds: -100_000 };
 
 const errorOf = (res: { body: unknown }) => (res.body as { error?: { code?: string; whatHappened?: string } }).error;
 
-const append = (h: ApiHarness, payRunId: string, body: unknown, key: string, ev: Evidence = {}) =>
-  h.request({ method: 'POST', path: `/v1/hr/payroll/pay-run/${payRunId}/append`, userId: OWNER, tenantId: A, idempotencyKey: key, body, ...ev });
+/** A pay-run step taken by the person signed in (ADR-0024): the maker's steps as OWNER, the checker's as a second owner,
+ *  CHECKER — the body's `actor: 'maker' | 'checker'` here only picks WHICH of the two signs in; it is not sent. */
+const append = (h: ApiHarness, payRunId: string, body: unknown, key: string, ev: Evidence = {}) => {
+  const { actor, ...step } = body as { actor?: string };
+  return h.request({ method: 'POST', path: `/v1/hr/payroll/pay-run/${payRunId}/append`, userId: actor === 'checker' ? CHECKER : OWNER, tenantId: A, idempotencyKey: key, body: step, ...ev });
+};
 const runState = async (h: ApiHarness, payRunId: string) =>
   ((await h.request({ method: 'GET', path: `/v1/hr/payroll/pay-run/${payRunId}`, userId: OWNER, tenantId: A })).body as { state: string }).state;
 
@@ -46,6 +51,7 @@ describe('payroll release steps need a fresh MFA re-auth at the write boundary',
   it('draft and submit are ordinary; APPROVE with a password-only session is refused and NOT appended; a fresh MFA approve lands', async () => {
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
+    await h.provisionOwner(A, CHECKER);
     expect((await append(h, 'pr1', { action: 'draft', actor: 'maker', payPeriod: '2026-08' }, 'a1', PWD_ONLY)).status).toBe(201);
     expect((await append(h, 'pr1', { action: 'submit', actor: 'maker' }, 'a2', PWD_ONLY)).status).toBe(200);
 
@@ -66,6 +72,7 @@ describe('payroll release steps need a fresh MFA re-auth at the write boundary',
   it('LOCK with a stale re-auth is refused; a fresh one locks. REVERSE needs it too; REJECT does not', async () => {
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
+    await h.provisionOwner(A, CHECKER);
     await append(h, 'pr2', { action: 'draft', actor: 'maker', payPeriod: '2026-08' }, 'b1');
     await append(h, 'pr2', { action: 'submit', actor: 'maker' }, 'b2');
     await append(h, 'pr2', { action: 'approve', actor: 'checker' }, 'b3');
@@ -89,6 +96,7 @@ describe('payroll release steps need a fresh MFA re-auth at the write boundary',
   it('the step-up is checked BEFORE maker ≠ checker, and a self-approval is still refused after it passes', async () => {
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
+    await h.provisionOwner(A, CHECKER);
     await append(h, 'pr4', { action: 'draft', actor: 'maker', payPeriod: '2026-08' }, 'd1');
     await append(h, 'pr4', { action: 'submit', actor: 'maker' }, 'd2');
     expect((await append(h, 'pr4', { action: 'approve', actor: 'maker' }, 'd3', PWD_ONLY)).status).toBe(403); // step-up first
@@ -100,6 +108,7 @@ describe('payroll release steps need a fresh MFA re-auth at the write boundary',
   it('the salary BANK FILE needs it on every call (route-level): no evidence → 403; fresh MFA → the file', async () => {
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
+    await h.provisionOwner(A, CHECKER);
     const refused = await bankFile(h, 'f1', NONE);
     expect(refused.status).toBe(403);
     expect(errorOf(refused)?.code).toBe('reauthentication_required');
@@ -112,10 +121,12 @@ describe('payroll release steps need a fresh MFA re-auth at the write boundary',
   it('a DIRECT raw API call with a genuinely signed, non-MFA token cannot bypass the payroll gate', async () => {
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
+    await h.provisionOwner(A, CHECKER);
     await append(h, 'pr5', { action: 'draft', actor: 'maker', payPeriod: '2026-08' }, 'e1');
     await append(h, 'pr5', { action: 'submit', actor: 'maker' }, 'e2');
-    const token = h.idp.issue({ sub: OWNER, tenantId: A, authTimeFromNowSeconds: null, amr: null });
-    const res = await h.raw({ method: 'POST', path: '/v1/hr/payroll/pay-run/pr5/append', token, idempotencyKey: 'e3', body: { action: 'approve', actor: 'checker' } });
+    // The checker's OWN genuinely signed token, but with no MFA behind it.
+    const token = h.idp.issue({ sub: CHECKER, tenantId: A, authTimeFromNowSeconds: null, amr: null });
+    const res = await h.raw({ method: 'POST', path: '/v1/hr/payroll/pay-run/pr5/append', token, idempotencyKey: 'e3', body: { action: 'approve' } });
     expect(res.status).toBe(403);
     expect(errorOf(res)?.code).toBe('reauthentication_required');
     expect(await runState(h, 'pr5')).toBe('submitted');
@@ -142,6 +153,7 @@ describe('a BULK catalogue publish needs a fresh MFA re-auth; the owner draws th
   it('below the default threshold (50) a password-only publish is routine; once the owner sets the threshold to 2, a 2-line re-price is bulk and is refused with nothing published; fresh MFA publishes it; a 1-line change is routine again', async () => {
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
+    await h.provisionOwner(A, CHECKER);
     await h.request({ method: 'POST', path: '/v1/catalogue/tax-classes/25010020/rates/2017-07-01', userId: OWNER, tenantId: A, idempotencyKey: 'k-tax', body: { rateBps: 500 } });
     for (const [id, sku] of [['p-1', 'SKU-1'], ['p-2', 'SKU-2'], ['p-3', 'SKU-3']] as const) {
       expect((await publishProduct(h, id, sku)).status).toBeLessThan(300);
@@ -178,6 +190,7 @@ describe('a BULK catalogue publish needs a fresh MFA re-auth; the owner draws th
   it('a DIRECT raw API call with a valid non-MFA token cannot bypass the bulk gate', async () => {
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
+    await h.provisionOwner(A, CHECKER);
     await h.request({ method: 'POST', path: '/v1/catalogue/tax-classes/25010020/rates/2017-07-01', userId: OWNER, tenantId: A, idempotencyKey: 'k-tax', body: { rateBps: 500 } });
     await publishProduct(h, 'p-1', 'SKU-1');
     await setPrice(h, 'p-1', 'e1', 2_000, '2030-01-01');
@@ -204,6 +217,7 @@ describe('a SENSITIVE catalogue publish — an age-restricted product added or c
   it('ONE age-restricted product (far below the bulk line): password-only is refused with the product named and nothing published; fresh MFA publishes a pack whose product carries { minimumAge }; changing its age is sensitive again; an unrelated re-price is routine', async () => {
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
+    await h.provisionOwner(A, CHECKER);
     await h.request({ method: 'POST', path: '/v1/catalogue/tax-classes/25010020/rates/2017-07-01', userId: OWNER, tenantId: A, idempotencyKey: 'k-tax', body: { rateBps: 500 } });
     await h.request({ method: 'POST', path: '/v1/catalogue/tax-classes/22030000/rates/2017-07-01', userId: OWNER, tenantId: A, idempotencyKey: 'k-tax-beer', body: { rateBps: 1800 } });
 

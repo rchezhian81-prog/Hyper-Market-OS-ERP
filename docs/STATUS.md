@@ -5,6 +5,71 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-vi-a — head office's maker-checker engine; the three severe typed-approver sites (7 October 2026)
+
+- **The finding (audit PA-03, reopened):** the 2b-vi triage read every head-office route that takes a second person from
+  a request body. It found **26** that accept a typed name as that person's act — not the two pricing approvals recorded
+  on 6 October, which understated it. Three are severe:
+  - **a supplier's bank account:** the requester and the approver were both body strings, and the approver's authority
+    was never checked;
+  - **a bulk import:** the checker and the uploader both came from the body;
+  - **a pay-run step:** the maker and the checker were both a body `actor`.
+  All 26, with the slice that fixes each, are in `docs/registers/second-person-sites-2026-10-07.md`.
+- **The decision (ADR-0024, new):** one maker-checker engine at head office (M02-FR-03).
+  - The maker asks, in their own session, for the exact details; the engine fingerprints them.
+  - A different person who holds the authority approves or rejects, with a reason, in their own session.
+  - The action names the approval and uses it once, only if it is exactly what was approved.
+  - The store enforces one decision and one use. The second of two at the same moment is told, never silently dropped.
+- **What changed:**
+  - **The engine** (`services/identity/src/approval-requests.ts`):
+    - `POST /v1/approvals/requests` — ask;
+    - `GET /v1/approvals/requests` — the inbox: *waiting for me* and *what I asked*;
+    - `POST /v1/approvals/requests/:id/decide` — approve or reject with a reason;
+    - `openApproval` / `takeApproval` — what an action's route uses.
+    - Storage (`approvalRequestsAdapter`): one guard per request; the decision and the use are each keyed by the
+      request, and each write carries its own attempt id.
+  - **Supplier bank details:** kind `supplier_bank_change`. The approval binds the supplier and every detail of the
+    change. A typed approver is refused by name, and the requester is the signed-in person.
+  - **Bulk import:** kind `data_import_commit`.
+    - Validate returns the file's content fingerprint, and the approval binds the job and that content. The checker is
+      another person authorised to import; the uploader is the signed-in person.
+    - An import job is recorded once, keyed by the job.
+  - **Pay-run steps:** every step's actor is the signed-in person. The pilot seed now drafts its pay run as its
+    preparer.
+  - **Screens:**
+    - The import screen asks for approval, then loads with the approval.
+    - A new **Approvals** page lets a checker approve or reject with a reason, and shows a maker where their requests
+      stand.
+- **Proved:**
+  - `tests/unit/approval-requests.test.ts` (15).
+  - `tests/integration/maker-checker-is-two-people.test.ts` (13). Through the real API, it shows:
+    - the audit's typed-approver body is refused;
+    - the owner asks and the accountant approves;
+    - self-approval, no authority, waiting and rejected are each refused by name;
+    - another account, supplier, date, maker or tenant is refused;
+    - one approval is one use, and an old approval never moves the money back;
+    - a leaver's approval stops counting;
+    - an import is bound to its file;
+    - the inbox works;
+    - a typed pay-run actor is refused.
+  - Three races on real PostgreSQL, each repeated 15 times locally with no failure:
+    - two checkers at once — one decision stands and the other is told;
+    - one bank change sent three times at once — one lands;
+    - one import committed three times at once — one load, never a crash.
+  - The import, export, supplier, duplicate-bank, step-up, pay-run and pilot-seed proofs now drive two people.
+- **Found and fixed while proving it:** on real PostgreSQL, two checkers deciding at the same moment were both told
+  "approved / rejected" while only one decision was saved. A write that met an existing one counted as a replay. Now
+  the decision that stands is read back, and the other checker gets `already_decided`. A use works the same way.
+- **Not yet / honest limits:**
+  - The other 23 sites (2b-vi-b: 15 money and price; 2b-vi-c: 8 low-severity or record-only, plus seals on the box-relayed
+    decisions).
+  - Escalation, delegation and value-limit routing (the rest of M02-FR-03).
+  - The pay-run route's gate is `payroll.statutory.read` for every step. This is recorded, not changed: payroll is
+    under the pilot hold.
+  - An approval spent by an action that then failed is used up, and the maker asks again (fail-closed).
+  - Staff UAT (SP-10, pending, unasked).
+- **Next:** 2b-vi-b — the 15 money and price approvals onto the engine, each with its screen.
+
 ## Wave 2b-v-d — the store computer seals who it verified; head office checks the seal (7 October 2026)
 
 - **The finding (audit PF-02, CRITICAL), its last part:** the store computer verified the cashier (2b-v-a) and the
@@ -41,8 +106,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   finding, not only the new seal ones) have no back-office screen; refund flags show on "Refund exceptions" and the
   Today page counts the store's own exceptions. Recorded for the OB-15 command-centre work; staff UAT (SP-10, pending,
   unasked).
-- **Next:** 2b-vi — the two pricing approvals at head office (selling below cost, a loss-making promotion) become the
-  approver's own act; then the OB-15 block.
+- **Next:** 2b-vi (done as 2b-vi-a above; the triage found 26 sites, not 2); then the OB-15 block.
 
 ## Wave 2b-v-c — a refund approval at head office is the approver's own act, for one refund, spent once (6 October 2026)
 

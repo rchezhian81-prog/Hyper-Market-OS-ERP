@@ -134,6 +134,19 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
   change (`approval.decidedBy`, `services/pricing/src/index.ts`) and a margin-losing promotion launch (`approvedBy`,
   `services/pricing/src/promotions.ts`) at head office still accept a typed approver's name checked only for authority;
   they get the same approval object (the approver's own act, bound, one use).
+- **PA-03 REOPENED 7 Oct 2026 — the 2b-vi triage.** Reading every head-office route that takes a second person from a
+  body found **26** that accept a typed name as that person's act, not the 2 recorded above. That earlier note
+  understated it. All 26 are listed in `docs/registers/second-person-sites-2026-10-07.md`, with the slice that fixes
+  each. Head office's maker-checker engine (ADR-0024, M02-FR-03) is the one fix. The maker asks for the exact details;
+  a different person with the authority approves or rejects with a reason, in their own session. The action uses the
+  approval once; the store enforces one decision and one use, and the second of two at the same moment is told.
+  - **2b-vi-a — DONE 7 Oct 2026:** the engine, its inbox and its screen, and the three severe sites: supplier bank
+    details, the bulk import commit (bound to the file's content) and pay-run steps (actor = the signed-in person).
+  - **2b-vi-b — next:** the 15 money and price sites, each with its screen.
+  - **2b-vi-c — after:** the 8 low-severity and record-only names, plus the store seal on the remaining box-relayed
+    decisions.
+  - **The pay-run route's gate** is `payroll.statutory.read` even for approve and lock. This is recorded, not changed:
+    payroll is under the pilot hold, and no permission is invented.
 - **PA-01 / EA-03** branch and resource scope derived on the server from the person's grants — **DONE 5 Oct 2026 (#704)**:
   `ctx.scope` from the grants on every request, the kernel's `narrowScope` / `assertBranchInScope`, applied to the
   consolidation, drill-through and roster routes the audit executed (the other fifteen branch-keyed route files
@@ -215,7 +228,7 @@ identity, hardware, hosted recovery evidence. **PA-13** (commercial platform, R8
 | UX-2b the *Today* command centre, rail icons, sign-in frame (OB-15/OB-16/OB-17) | 1⅞ — done 5 Oct 2026 (#700) |
 | UX-3 the sign-in page in the owner's approved design (OB-18) | between 2b-iii-a and 2b-iii-b, at the owner's word — done 5 Oct 2026 (#706) |
 | Wave 2a write guards — PF-01 refunds/gift/points; SF-04 transfers; FUL-02 promises; PA-11 audit chain | 2 — done 5 Oct 2026 (#701, #702) |
-| Wave 2b identity criticals — PA-02 leaver; PA-01/EA-03 scope; PA-03 second person; PF-03 age check; PF-02 till credential | 2 — PA-02 done 5 Oct 2026 (#703); PA-01/EA-03 done 5 Oct 2026 (#704); PA-03 done 5 Oct 2026 (#705 grants/templates/decisions/delegations, #707 facilities); PF-03 done 5 Oct 2026 (#708); PF-02 till half done 6 Oct 2026 (#709); PF-02 manager approval at the till done 6 Oct 2026 (#710); PF-02 head-office desk approval objects done 6 Oct 2026 (2b-v-c); signed store stamps and synced-fact flags done 7 Oct 2026 (2b-v-d) — PF-02 closed; pricing approvers as approval objects (2b-vi, found 6 Oct) next |
+| Wave 2b identity criticals — PA-02 leaver; PA-01/EA-03 scope; PA-03 second person; PF-03 age check; PF-02 till credential | 2 — PA-02 done 5 Oct 2026 (#703); PA-01/EA-03 done 5 Oct 2026 (#704); PA-03 done 5 Oct 2026 (#705 grants/templates/decisions/delegations, #707 facilities); PF-03 done 5 Oct 2026 (#708); PF-02 till half done 6 Oct 2026 (#709); PF-02 manager approval at the till done 6 Oct 2026 (#710); PF-02 head-office desk approval objects done 6 Oct 2026 (2b-v-c); signed store stamps and synced-fact flags done 7 Oct 2026 (2b-v-d) — PF-02 closed; PA-03 reopened 7 Oct 2026 by the 2b-vi triage (26 typed-approver sites, register `second-person-sites-2026-10-07.md`): maker-checker engine + 3 severe sites done 7 Oct 2026 (2b-vi-a, ADR-0024); 15 money/price sites (2b-vi-b) next; 8 low/record-only + relayed-decision seals (2b-vi-c) after |
 | Handheld enrolment on the hosted demo | 1½ (a demo device code for the practice phones) |
 | Quantity scale across pack sections | 4, with DF-3 |
 | SP-10 register | 8 |

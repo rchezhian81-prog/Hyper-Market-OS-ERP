@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 816 | 502 | 502 | 64 | 277 |
+| 13 | 819 | 504 | 504 | 64 | 277 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -35,6 +35,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/access/lifecycle/:requestId` | `identity.role.grant` | core | yes |
 | GET | `/v1/approvals/decisions` | `approvals.delegation.read` | core | — |
 | POST | `/v1/approvals/decisions/:id/synced` | `approvals.decision.sync` | core | yes |
+| GET | `/v1/approvals/requests` | `identity.self.read` | core | — |
+| POST | `/v1/approvals/requests` | `identity.self.read` | core | yes |
+| POST | `/v1/approvals/requests/:requestId/decide` | `identity.self.read` | core | yes |
 | POST | `/v1/identity/grants` | `identity.role.request` | core | yes |
 | POST | `/v1/identity/grants/:grantId/approve` | `identity.role.grant` | core | yes |
 | POST | `/v1/identity/grants/:grantId/reject` | `identity.role.grant` | core | yes |

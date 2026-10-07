@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedRequestId } from '../support/approval-request';
 
 // Duplicate bank-account detection, end to end through the real API (M15-FR-03, API-05). A
 // mandatory fraud control: if two DISTINCT holders (suppliers) share one bank account, that is
@@ -13,18 +14,22 @@ const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 // A bank change that passes M06 verification: called back on a number we already held, approved by
-// a second person. The caller (owner) holds purchase.supplier.bank; requestedBy/approvedBy are the
-// people named on the change, not the caller.
-const setBank = (h: ApiHarness, tenant: string, user: string, supplierId: string, account: string, seq: string) =>
-  h.request({
+// a second person. The caller (owner) holds purchase.supplier.bank and asks; the second person approves in their own session.
+// Who asks is the caller; the second person is a finance user (`u-approver`, an accountant who holds
+// purchase.supplier.approve) approving THIS change in their own session (ADR-0024).
+async function setBank(h: ApiHarness, tenant: string, user: string, supplierId: string, account: string, seq: string) {
+  await h.provisionRole(tenant, 'u-approver', 'accountant');
+  const change = {
+    newAccount: account, requestedVia: 'letter',
+    calledBackOn: '+91-800-1', numberWeAlreadyHeld: '+91-800-1', requestedAt: `2026-08-0${seq}T10:00:00.000Z`,
+  };
+  const approvalId = await approvedRequestId(h, tenant, user, 'u-approver', { kind: 'supplier_bank_change', subjectRef: supplierId, details: { ...change, supplierId } });
+  return h.request({
     method: 'POST', path: `/v1/purchase/suppliers/${supplierId}/bank-details`,
     userId: user, tenantId: tenant, idempotencyKey: `bank-${tenant}-${supplierId}-${seq}`,
-    body: {
-      newAccount: account, requestedVia: 'letter',
-      calledBackOn: '+91-800-1', numberWeAlreadyHeld: '+91-800-1',
-      requestedBy: 'u-buyer', approvedBy: 'u-approver', requestedAt: `2026-08-0${seq}T10:00:00.000Z`,
-    },
+    body: { ...change, approvalId },
   });
+}
 
 interface Flag { accountRef: string; holders: { holderId: string; holderType: string }[] }
 interface DupBody { flags: Flag[]; blocked: string[] }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedRequestId } from '../support/approval-request';
 
 // Domain data export, end to end (M30-FR-02, API-03). Your data is yours: every authorised domain
 // exports to an open CSV + JSON schema, the caller's OWN authority deciding whether it is allowed
@@ -26,16 +27,18 @@ const exportLog = (h: ApiHarness, u: string) =>
   h.request({ method: 'GET', path: '/v1/exports', userId: u, tenantId: A });
 
 // Seed one committed import job, via the real M30 commit route (uploader ≠ approver, §28).
-const seedImportCommit = (h: ApiHarness, u: string, jobId: string, key: string) =>
-  h.request({
-    method: 'POST', path: '/v1/import/commit', userId: u, tenantId: A, idempotencyKey: key,
-    body: {
-      jobId,
-      template: { id: 'product-v1', domain: 'product', columns: [{ name: 'sku', type: 'text', required: true }], keyColumns: ['sku'] },
-      text: 'sku\nA1\nA2',
-      approval: { status: 'approved', decidedBy: 'u-approver' },
-    },
-  });
+// An import committed the way two people commit one (ADR-0024): `u` uploads and asks, the store manager approves under
+// their own sign-in, and the commit names that approval.
+async function seedImportCommit(h: ApiHarness, u: string, jobId: string, key: string) {
+  const file = {
+    template: { id: 'product-v1', domain: 'product', columns: [{ name: 'sku', type: 'text', required: true }], keyColumns: ['sku'] },
+    text: 'sku\nA1\nA2',
+  };
+  const v = await h.request({ method: 'POST', path: '/v1/import/validate', userId: u, tenantId: A, idempotencyKey: `v-${key}`, body: file });
+  const contentFingerprint = (v.body as { contentFingerprint: string }).contentFingerprint;
+  const approvalId = await approvedRequestId(h, A, u, 'u-mgr', { kind: 'data_import_commit', subjectRef: jobId, details: { jobId, contentFingerprint } });
+  return h.request({ method: 'POST', path: '/v1/import/commit', userId: u, tenantId: A, idempotencyKey: key, body: { jobId, ...file, approvalId } });
+}
 
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
