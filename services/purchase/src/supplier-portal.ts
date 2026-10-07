@@ -9,7 +9,7 @@
 // nothing fed on the cloud. The partner's grants come from its stored configuration, never a payload.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, documentsVerifiedByTheCaller } from '../../kernel/src/index';
 import {
   acceptSubmission, checkPartnerCompliance, buildStatement, auditPartnerAction, findProbing, scopeToPartner,
   type PortalGrant, type SubmissionKind, type PartnerDocument, type PartnerDocumentKind, type StatementLine,
@@ -169,15 +169,19 @@ export function supplierPortalRoutes(deps: SupplierPortalDeps): readonly Route[]
           || (b.logins !== undefined && (!Array.isArray(b.logins) || !b.logins.every((u) => isStr(u))))) {
           throw apiError(400, {
             code: 'not_readable_as_a_partner',
-            whatHappened: 'A partner needs a list of valid portal grants, optional compliance documents ({ documentId, kind, reference, validFrom, validUntil, verifiedBy? }), the document kinds it requires, and the user id(s) that are its portal logins.',
+            whatHappened: 'A partner needs a list of valid portal grants, optional compliance documents ({ documentId, kind, reference, validFrom, validUntil, verifiedBy? — yourself, if you verified it }), the document kinds it requires, and the user id(s) that are its portal logins.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send { "grants": [...], "documents": [...], "requiredDocuments": [...], "logins": [...] }. Nothing was configured.',
           });
         }
         const requiredDocuments = (b.requiredDocuments as PartnerDocumentKind[] | undefined) ?? [];
         const logins = (b.logins as string[] | undefined) ?? [];
-        await deps.recordPartner(ctx.tenantId, partnerId, { grants: b.grants as PortalGrant[], documents, requiredDocuments, logins }, deps.now());
-        return { status: 201, body: { partnerId, grants: b.grants, documents: documents.length, requiredDocuments, logins: logins.length } };
+        // A verified document is cover for an ASN or an invoice (M24-FR-03), so who verified it is the person who did,
+        // under their own sign-in (2b-vi-c, PA-03): verified now → the caller; re-sent exactly as stored → kept.
+        const now = deps.now();
+        const verified = documentsVerifiedByTheCaller(ctx, documents, (await deps.partner(ctx.tenantId, partnerId))?.documents ?? [], now);
+        await deps.recordPartner(ctx.tenantId, partnerId, { grants: b.grants as PortalGrant[], documents: verified, requiredDocuments, logins }, now);
+        return { status: 201, body: { partnerId, grants: b.grants, documents: verified.length, requiredDocuments, logins: logins.length } };
       },
     },
     {

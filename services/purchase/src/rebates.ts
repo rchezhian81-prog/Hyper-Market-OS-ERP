@@ -16,6 +16,7 @@
 // M23) is a separate flow — this surface records what is earned and what has been received against it.
 
 import type { Route } from '../../kernel/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   accrueRebate,
@@ -24,6 +25,9 @@ import {
 import { isCurrencyCode, type Money } from '../../../packages/contracts/src/money';
 
 export interface RebateDeps {
+  /** Head office's maker-checker engine (ADR-0024): a scheme's approver gave it in their own session. Optional on a
+   *  bare stub (then a scheme records unapproved); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   /** One scheme by id (latest version), or undefined. */
   readonly scheme: (tenantId: string, schemeId: string) => Promise<RebateScheme | undefined> | RebateScheme | undefined;
   /** Every scheme. */
@@ -53,7 +57,7 @@ export function rebateRoutes(deps: RebateDeps): readonly Route[] {
   return [
     {
       // Record a rebate scheme. Body: { supplierId, basis, rateBp, thresholdMinor?, startsOn, endsOn,
-      // approvedBy? }. Latest per scheme id (a renegotiated scheme is a new version, never an overwrite).
+      // approvalId? }. Latest per scheme id (a renegotiated scheme is a new version, never an overwrite).
       api: 'API-03', method: 'POST', path: '/v1/purchase/rebate-schemes/:schemeId',
       permission: 'purchase.contract.manage', idempotent: true,
       handler: async (ctx) => {
@@ -67,7 +71,7 @@ export function rebateRoutes(deps: RebateDeps): readonly Route[] {
           || !isDate(b['startsOn']) || !isDate(b['endsOn']) || (approvedBy !== undefined && typeof approvedBy !== 'string')) {
           throw apiError(400, {
             code: 'not_readable_as_a_rebate_scheme',
-            whatHappened: `A rebate scheme needs a schemeId in the path and { supplierId, basis (${BASES.join(' | ')}), rateBp (whole, ≥0), thresholdMinor?, startsOn, endsOn (YYYY-MM-DD), approvedBy? } in the body.`,
+            whatHappened: `A rebate scheme needs a schemeId in the path and { supplierId, basis (${BASES.join(' | ')}), rateBp (whole, ≥0), thresholdMinor?, startsOn, endsOn (YYYY-MM-DD), approvalId? } in the body.`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the supplier, the basis and rate, and the term.',
           });
@@ -80,6 +84,13 @@ export function rebateRoutes(deps: RebateDeps): readonly Route[] {
             nextSafeAction: 'Correct the term and record again. Nothing was saved.',
           });
         }
+        // The scheme's approver (ADR-0024 · 2b-vi-c-1 · audit PA-03): an approval someone who may approve suppliers GAVE in
+        // their own session for exactly this scheme (kind `rebate_scheme`). A typed "approved by" is refused by name.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: approvedBy,
+          kind: 'rebate_scheme', subjectRef: schemeId, details: actionDetails(ctx.body, { schemeId }), valueMinor: null,
+          maker: ctx.userId, usedBy: `rebate-scheme:${schemeId}`, now: deps.now(),
+        });
         const scheme: RebateScheme = {
           schemeId,
           supplierId: b['supplierId'] as string,
@@ -88,8 +99,9 @@ export function rebateRoutes(deps: RebateDeps): readonly Route[] {
           ...(isNonNegInt(threshold) ? { thresholdMinor: threshold } : {}),
           startsOn: b['startsOn'] as string,
           endsOn: b['endsOn'] as string,
-          ...(isStr(approvedBy) ? { approvedBy: approvedBy as string } : {}),
+          ...(opened === undefined ? {} : { approvedBy: opened.decision.decidedBy }),
         };
+        await opened?.spend();
         await deps.recordScheme(ctx.tenantId, scheme);
         return { status: 201, body: { scheme } };
       },

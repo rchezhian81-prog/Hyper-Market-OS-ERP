@@ -324,7 +324,7 @@
       "id": "M06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 10,
+        "unit": 11,
         "integration": 12,
         "realDb": 2,
         "browser": 2,
@@ -334,6 +334,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/approval-requests.test.ts",
           "tests/unit/bank-controls.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-buying-boot.test.ts",
@@ -2043,7 +2044,7 @@
       "id": "D02",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 2,
+        "unit": 3,
         "integration": 4,
         "realDb": 0,
         "browser": 0,
@@ -2053,6 +2054,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/approval-requests.test.ts",
           "tests/unit/erp-merchandising-session.test.ts",
           "tests/unit/merchandising-space.test.ts"
         ],

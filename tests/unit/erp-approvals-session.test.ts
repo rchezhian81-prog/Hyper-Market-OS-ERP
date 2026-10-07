@@ -156,6 +156,10 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       service_compensation: { en: 'Give a customer compensation above the desk\'s own limit', ta: 'சேவை மேசையின் சொந்த வரம்புக்கு மேல் வாடிக்கையாளருக்கு இழப்பீடு வழங்குதல்' },
       supplier_invoice_check: { en: 'Check a supplier bill', ta: 'விநியோகஸ்தர் பில்லைச் சரிபார்த்தல்' },
       supplier_payment: { en: 'Pay a supplier', ta: 'விநியோகஸ்தருக்குப் பணம் செலுத்துதல்' },
+      // A supplier's commercial terms (2b-vi-c-1).
+      display_contract: { en: 'Approve a supplier\'s display-space funding', ta: 'விநியோகஸ்தரின் காட்சி இட நிதியை அனுமதித்தல்' },
+      rebate_scheme: { en: 'Approve a supplier rebate scheme', ta: 'விநியோகஸ்தர் தள்ளுபடித் திட்டத்தை அனுமதித்தல்' },
+      purchase_contract: { en: 'Approve a supplier contract', ta: 'விநியோகஸ்தர் ஒப்பந்தத்தை அனுமதித்தல்' },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());
@@ -224,6 +228,28 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
     const ta = labelsOf('ta', { amountMinor: 25000, quantityMinor: 5, refundId: 'rf-1', orderId: 'ord-7', basis: 'goodwill', caseId: 'c', kind: 'k', invoiceId: 'i', supplierId: 's', paymentId: 'p', paidOn: 'd', method: 'm', reference: 'r', movementId: 'mv' });
     expect(ta['amountMinor']).toBe('தொகை: ₹250.00');
     expect(ta['quantityMinor']).toBe('அளவு: 5');
+    for (const [key, line] of Object.entries(ta)) expect(line, `${key} in Tamil`).toMatch(/^[^:]*[஀-௿][^:]*:/);
+  });
+
+  it('a supplier\'s terms read as the shop says them — funding in rupees, the places as a list, the rate as a percent (2b-vi-c-1)', () => {
+    const labelsOf = (lang: 'en' | 'ta', details: Record<string, unknown>) =>
+      Object.fromEntries(presentRequest(lang, row({ details })).details.map((d) => [d.key, `${d.label}: ${d.value}`]));
+    // A display contract: the money the supplier pays, the dates, and the places it buys.
+    expect(labelsOf('en', {
+      storeId: 's1', supplierId: 'sup1', description: 'end-cap by the door', fundingAmount: { minor: 5_000_000, currency: 'INR' },
+      startsOn: '2026-01-01', endsOn: '2026-12-31', locationIds: ['end1', 'end2'], areaId: 'front', contractId: 'DC-1',
+    })).toMatchObject({
+      storeId: 'Store: s1', fundingAmount: 'Funding the supplier pays: ₹50,000.00', startsOn: 'Starts on: 2026-01-01',
+      endsOn: 'Ends on: 2026-12-31', locationIds: 'Display places: end1, end2', areaId: 'Floor area: front', contractId: 'Contract: DC-1',
+    });
+    // A rebate scheme (the rate in basis points reads as a percent; the threshold is money) and a supplier contract.
+    expect(labelsOf('en', { schemeId: 'rb-1', supplierId: 'sup-1', basis: 'purchase_value', rateBp: 300, thresholdMinor: 1_000_000 })).toMatchObject({
+      schemeId: 'Rebate scheme: rb-1', rateBp: 'Rebate rate: 3.00%', thresholdMinor: 'Buying needed before it pays: ₹10,000.00',
+    });
+    expect(labelsOf('en', { contractId: 'c-1', agreedLeadTimeDays: 7 })).toEqual({
+      contractId: 'Contract: c-1', agreedLeadTimeDays: 'Agreed delivery time (days): 7',
+    });
+    const ta = labelsOf('ta', { storeId: 's', fundingAmount: { minor: 100, currency: 'INR' }, startsOn: 'a', endsOn: 'b', locationIds: ['x'], areaId: 'f', contractId: 'c', schemeId: 'r', rateBp: 1, thresholdMinor: 1, agreedLeadTimeDays: 1 });
     for (const [key, line] of Object.entries(ta)) expect(line, `${key} in Tamil`).toMatch(/^[^:]*[஀-௿][^:]*:/);
   });
 

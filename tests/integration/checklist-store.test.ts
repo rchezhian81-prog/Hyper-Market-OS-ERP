@@ -49,7 +49,7 @@ describe('durable checklist-completion store (M25-FR-02 follow-on)', () => {
     const h = await cast();
 
     // Safe not counted (a blocking item) → the shop cannot close, whatever else is done.
-    expect((await putChecklist(h, 'u-mgr', 'CL-1', closing({ safeDone: false, logDone: true, signedBy: 'Meena' }), 'k1')).status).toBe(200);
+    expect((await putChecklist(h, 'u-mgr', 'CL-1', closing({ safeDone: false, logDone: true, signedBy: 'u-mgr' }), 'k1')).status).toBe(200);
     let s = statusBody(await statusOf(h, 'u-mgr', 'CL-1'));
     expect(s.assessment.outcome).toBe('blocked_item');
     expect(s.assessment.complete).toBe(false);
@@ -62,17 +62,17 @@ describe('durable checklist-completion store (M25-FR-02 follow-on)', () => {
     expect(s.assessment.complete).toBe(false);
 
     // Signed with everything done → complete.
-    expect((await putChecklist(h, 'u-mgr', 'CL-1', closing({ safeDone: true, logDone: true, signedBy: 'Meena' }), 'k3')).status).toBe(200);
+    expect((await putChecklist(h, 'u-mgr', 'CL-1', closing({ safeDone: true, logDone: true, signedBy: 'u-mgr' }), 'k3')).status).toBe(200);
     s = statusBody(await statusOf(h, 'u-mgr', 'CL-1'));
     expect(s.assessment.outcome).toBe('complete');
     expect(s.assessment.complete).toBe(true);
-    expect(s.checklist.signedBy).toBe('Meena');
+    expect(s.checklist.signedBy).toBe('u-mgr');
   });
 
   it('a signed checklist with only non-blocking items left is complete and carries them into the handover, and it survives a restart', async () => {
     const h = await cast();
     // Safe counted (blocking done), fridge log NOT filled (non-blocking) → complete but carries the log forward.
-    await putChecklist(h, 'u-mgr', 'CL-2', closing({ safeDone: true, logDone: false, signedBy: 'Ravi' }), 'k1');
+    await putChecklist(h, 'u-mgr', 'CL-2', closing({ safeDone: true, logDone: false, signedBy: 'u-mgr' }), 'k1');
 
     const restarted = apiHarness({ store: h.store });
     const s = statusBody(await statusOf(restarted, 'u-owner', 'CL-2'));
@@ -84,9 +84,9 @@ describe('durable checklist-completion store (M25-FR-02 follow-on)', () => {
 
   it('the list surfaces the blocked count and filters by branch', async () => {
     const h = await cast();
-    await putChecklist(h, 'u-mgr', 'CL-A', closing({ safeDone: false, logDone: true, signedBy: 'Meena', branchId: 'b1' }), 'k1'); // blocked
-    await putChecklist(h, 'u-mgr', 'CL-B', closing({ safeDone: true, logDone: true, signedBy: 'Meena', branchId: 'b1' }), 'k2');  // complete
-    await putChecklist(h, 'u-mgr', 'CL-C', closing({ safeDone: false, logDone: true, signedBy: 'Ravi', branchId: 'b2' }), 'k3');  // blocked, other branch
+    await putChecklist(h, 'u-mgr', 'CL-A', closing({ safeDone: false, logDone: true, signedBy: 'u-mgr', branchId: 'b1' }), 'k1'); // blocked
+    await putChecklist(h, 'u-mgr', 'CL-B', closing({ safeDone: true, logDone: true, signedBy: 'u-mgr', branchId: 'b1' }), 'k2');  // complete
+    await putChecklist(h, 'u-owner', 'CL-C', closing({ safeDone: false, logDone: true, signedBy: 'u-owner', branchId: 'b2' }), 'k3');  // blocked, other branch
 
     const all = listBody(await listChecklists(h, 'u-mgr'));
     expect(all.count).toBe(3);
@@ -98,9 +98,20 @@ describe('durable checklist-completion store (M25-FR-02 follow-on)', () => {
     expect(b1.checklists.every((c) => c.checklistId !== 'CL-C')).toBe(true);
   });
 
+  it('the signature is the signer\'s own act: a checklist signed in someone else\'s name is refused, nothing stored (2b-vi-c-1, PA-03)', async () => {
+    const h = await cast();
+    const typed = await putChecklist(h, 'u-mgr', 'CL-T', closing({ safeDone: true, logDone: true, signedBy: 'u-owner' }), 'k1');
+    expect(typed.status).toBe(400);
+    expect(codeOf(typed)).toBe('actor_is_the_caller');
+    expect((await statusOf(h, 'u-mgr', 'CL-T')).status).toBe(404);
+    // Signing in one's own name is recorded as that person's signature.
+    expect((await putChecklist(h, 'u-mgr', 'CL-T', closing({ safeDone: true, logDone: true, signedBy: 'u-mgr' }), 'k2')).status).toBe(200);
+    expect(statusBody(await statusOf(h, 'u-mgr', 'CL-T')).checklist.signedBy).toBe('u-mgr');
+  });
+
   it('404s for an unknown checklist, gates writes/reads, and refuses a malformed checklist', async () => {
     const h = await cast();
-    await putChecklist(h, 'u-mgr', 'CL-1', closing({ safeDone: true, logDone: true, signedBy: 'Meena' }), 'k1');
+    await putChecklist(h, 'u-mgr', 'CL-1', closing({ safeDone: true, logDone: true, signedBy: 'u-mgr' }), 'k1');
 
     expect((await statusOf(h, 'u-mgr', 'GHOST')).status).toBe(404);
     // A cashier can neither submit a checklist nor read one.

@@ -21,6 +21,7 @@
 // read/review, `merchandising.display.manage` to record a contract.
 
 import type { Route } from '../../kernel/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { apiError } from '../../kernel/src/index';
 import {
   spacePerformance, reviewDisplayContracts,
@@ -48,6 +49,9 @@ const isArea = (v: unknown): v is RawArea =>
   && (v['locationIds'] === undefined || strArray(v['locationIds']) !== undefined);
 
 export interface SpacePerformanceDeps {
+  /** Head office's maker-checker engine (ADR-0024): Finance approved a display contract's funding in their own session.
+   *  Optional on a bare stub (then a contract records unapproved); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   /** Every display contract recorded for the tenant — append-only, folded latest-per-contractId. */
   readonly contracts: (tenantId: string) => Promise<readonly DisplayContract[]> | readonly DisplayContract[];
   readonly recordContract: (tenantId: string, contractId: string, contract: DisplayContract, key: string) => Promise<void> | void;
@@ -119,7 +123,7 @@ export function spacePerformanceRoutes(deps: SpacePerformanceDeps): readonly Rou
     {
       // Record a supplier display contract: the space it buys, the money and the dates. Append-only,
       // latest-per-contractId (a correction supersedes). Body: { storeId, supplierId, description,
-      // fundingAmount, startsOn, endsOn, locationIds[], areaId?, approvedBy? }.
+      // fundingAmount, startsOn, endsOn, locationIds[], areaId?, approvalId? }.
       api: 'API-04', method: 'POST', path: '/v1/merchandising/display-contracts/:contractId',
       permission: 'merchandising.display.manage', idempotent: true,
       handler: async (ctx) => {
@@ -131,18 +135,27 @@ export function spacePerformanceRoutes(deps: SpacePerformanceDeps): readonly Rou
           || (b['areaId'] !== undefined && !isStr(b['areaId'])) || (b['approvedBy'] !== undefined && typeof b['approvedBy'] !== 'string')) {
           throw apiError(400, {
             code: 'not_readable_as_a_display_contract',
-            whatHappened: 'A display contract needs a contractId in the path and { storeId, supplierId, description, fundingAmount (money), startsOn, endsOn (YYYY-MM-DD), locationIds[], areaId?, approvedBy? }.',
+            whatHappened: 'A display contract needs a contractId in the path and { storeId, supplierId, description, fundingAmount (money), startsOn, endsOn (YYYY-MM-DD), locationIds[], areaId?, approvalId? }.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the supplier, the space it buys, the money and the dates.',
           });
         }
+        // Finance approves the funding terms (D02-FR-06 · ADR-0024 · 2b-vi-c-1 · audit PA-03): an approval someone who may
+        // approve suppliers GAVE in their own session for exactly this contract (kind `display_contract`). A typed
+        // "approved by" is refused by name; before, any name cleared the `unapproved` finding.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+          kind: 'display_contract', subjectRef: contractId, details: actionDetails(ctx.body, { contractId }),
+          valueMinor: (b['fundingAmount'] as Money).minor, maker: ctx.userId, usedBy: `display-contract:${contractId}`, now: deps.now(),
+        });
         const contract: DisplayContract = {
           contractId, storeId: b['storeId'] as string, supplierId: b['supplierId'] as string,
           description: b['description'] as string, fundingAmount: b['fundingAmount'] as Money,
           startsOn: b['startsOn'] as string, endsOn: b['endsOn'] as string, locationIds,
           ...(isStr(b['areaId']) ? { areaId: b['areaId'] } : {}),
-          ...(isStr(b['approvedBy']) ? { approvedBy: b['approvedBy'] } : {}),
+          ...(opened === undefined ? {} : { approvedBy: opened.decision.decidedBy }),
         };
+        await opened?.spend();
         await deps.recordContract(ctx.tenantId, contractId, contract, ctx.idempotencyKey ?? contractId);
         return { status: 201, body: { contractId, storeId: contract.storeId, supplierId: contract.supplierId, approved: contract.approvedBy !== undefined } };
       },

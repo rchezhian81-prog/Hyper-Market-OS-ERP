@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sentWithApproval } from '../support/approval-request';
 
 // Space productivity + supplier display-contract governance, end to end (M04-FR-04 · D02-FR-06 · M23, API-04).
 // Two questions a big shop usually answers by feel: is this space earning its keep (margin per square foot,
@@ -18,7 +19,12 @@ const review = (h: ApiHarness, u: string, body: Record<string, unknown>, key = '
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 const contract = (over: Record<string, unknown> = {}) =>
-  ({ storeId: 's1', supplierId: 'sup1', description: 'end-cap by the door', fundingAmount: inr(50000), startsOn: '2026-01-01', endsOn: '2026-12-31', locationIds: ['end1'], approvedBy: 'fin-lead', ...over });
+  ({ storeId: 's1', supplierId: 'sup1', description: 'end-cap by the door', fundingAmount: inr(50000), startsOn: '2026-01-01', endsOn: '2026-12-31', locationIds: ['end1'], ...over });
+/** A display contract as two people make it (ADR-0024 · D02-FR-06 "Finance approves funding terms"): the merchandiser
+ *  records it and asks; `checker` — someone who may approve suppliers (the owner, the accountant) — approves it. */
+const approvedContract = (h: ApiHarness, u: string, checker: string, id: string, body: Record<string, unknown>, key = `dc-${id}`) =>
+  sentWithApproval(h, A, u, checker, { kind: 'display_contract', subjectRef: id, pathIds: { contractId: id }, valueMinor: (body['fundingAmount'] as { minor: number }).minor },
+    body, (b) => recordContract(h, u, id, b, key));
 
 async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
@@ -56,10 +62,10 @@ describe('space productivity + display-contract governance (M04-FR-04)', () => {
 
   it('records display contracts and reviews them — the expired end-cap still on the floor is the finding', async () => {
     const h = await seeded();
-    await recordContract(h, 'u-mgr', 'c-active', contract({ fundingAmount: inr(50000) }));
-    await recordContract(h, 'u-mgr', 'c-expired', contract({ endsOn: '2026-06-30', fundingAmount: inr(10000), locationIds: ['end2'] }));
-    await recordContract(h, 'u-mgr', 'c-unapproved', contract({ approvedBy: undefined, locationIds: ['end3'] }));
-    await recordContract(h, 'u-mgr', 'c-owing', contract({ fundingAmount: inr(20000), locationIds: ['end4'] }));
+    await approvedContract(h, 'u-mgr', 'u-owner', 'c-active', contract({ fundingAmount: inr(50000) }));
+    await approvedContract(h, 'u-mgr', 'u-owner', 'c-expired', contract({ endsOn: '2026-06-30', fundingAmount: inr(10000), locationIds: ['end2'] }));
+    await recordContract(h, 'u-mgr', 'c-unapproved', contract({ locationIds: ['end3'] }));
+    await approvedContract(h, 'u-mgr', 'u-owner', 'c-owing', contract({ fundingAmount: inr(20000), locationIds: ['end4'] }));
 
     const res = await review(h, 'u-mgr', {
       onDate: '2026-08-24', currency: 'INR',
@@ -87,14 +93,29 @@ describe('space productivity + display-contract governance (M04-FR-04)', () => {
     expect(codeOf(await recordContract(h, 'u-mgr', 'c-bad', contract({ fundingAmount: undefined }), 'dc-bad'))).toBe('not_readable_as_a_display_contract');
   });
 
+  it('the funding approver approves in their own session: a typed name, the recorder, or someone who may not approve suppliers is refused (2b-vi-c-1, PA-03)', async () => {
+    const h = await seeded();
+    // THE BYPASS, CLOSED: any typed name ("fin-lead") used to clear the `unapproved` finding.
+    expect(codeOf(await recordContract(h, 'u-mgr', 'c-typed', contract({ approvedBy: 'fin-lead' }), 'dc-typed'))).toBe('approver_named_without_approval');
+    expect(codeOf(await approvedContract(h, 'u-owner', 'u-owner', 'c-self', contract()))).toBe('self_approval');
+    // A store manager handles display space but does not approve a supplier's funding terms.
+    expect((await approvedContract(h, 'u-owner', 'u-mgr', 'c-mgr', contract())).status).toBe(403);
+    const reviewed = (await review(h, 'u-owner', { onDate: '2026-08-24', currency: 'INR' }, 'rev-none')).body as { statuses: unknown[] };
+    expect(reviewed.statuses).toEqual([]); // none of them was recorded
+    // The approval is for exactly this funding: a different amount is a different contract.
+    const ok = await approvedContract(h, 'u-mgr', 'u-owner', 'c-ok', contract());
+    expect(ok.body).toMatchObject({ approved: true });
+  });
+
   it('supersedes a corrected contract and survives a restart', async () => {
     const h = await seeded();
-    await recordContract(h, 'u-mgr', 'c1', contract({ approvedBy: undefined }), 'c1-v1'); // unapproved
+    await recordContract(h, 'u-mgr', 'c1', contract(), 'c1-v1'); // unapproved
     const before = (await review(h, 'u-mgr', { onDate: '2026-08-24', currency: 'INR', received: { c1: inr(50000) } }, 'rev-v1')).body as { statuses: { contractId: string; finding: string }[] };
     expect(before.statuses.find((s) => s.contractId === 'c1')?.finding).toBe('unapproved');
 
-    // A correction adds an approver — a DIFFERENT idempotency key, so it supersedes rather than dedups.
-    await recordContract(h, 'u-mgr', 'c1', contract({ approvedBy: 'fin-lead' }), 'c1-v2');
+    // Finance approves the funding in their own session, and the contract is recorded again with that approval — a
+    // DIFFERENT idempotency key, so it supersedes rather than dedups.
+    expect((await approvedContract(h, 'u-mgr', 'u-owner', 'c1', contract(), 'c1-v2')).status).toBe(201);
     const restarted = apiHarness({ store: h.store });
     const after = (await review(restarted, 'u-owner', { onDate: '2026-08-24', currency: 'INR', received: { c1: inr(50000) } }, 'rev-v2')).body as { statuses: { contractId: string; finding: string }[] };
     expect(after.statuses.find((s) => s.contractId === 'c1')?.finding).toBe('active');

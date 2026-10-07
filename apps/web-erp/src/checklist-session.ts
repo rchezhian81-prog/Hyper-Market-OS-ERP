@@ -56,7 +56,8 @@ export interface SubmitChecklistPort {
     readonly checklistId: string;
     readonly kind: 'opening' | 'closing' | 'handover';
     readonly items: readonly ChecklistItem[];
-    readonly signedBy: string;
+    /** Only when signing, and only the signed-in person: head office refuses a signature in anyone else's name. */
+    readonly signedBy?: string;
     readonly branchId?: string;
     readonly forDate?: string;
   }): Promise<SubmitResult>;
@@ -290,7 +291,10 @@ export function createChecklistSession(config: ChecklistConfig, ports: Checklist
         checklistId,
         kind: stored.kind,
         items,
-        signedBy: sign ? (config.userId as string) : (stored.signedBy ?? ''),
+        // A signature is the signer's own act: sent only when THIS person signs. Ticking more items without signing
+        // sends no signature (before, an unsigned save sent an empty name, which head office could not read, and a
+        // signed checklist re-sent its earlier signer's name as if they had signed again).
+        ...(sign ? { signedBy: config.userId as string } : {}),
         ...(stored.branchId === undefined ? {} : { branchId: stored.branchId }),
         ...(stored.forDate === undefined ? {} : { forDate: stored.forDate }),
       });

@@ -21,6 +21,7 @@
 // the PO + GRN + three-way-match join (unit-reconciled) and per-tenant scorecard weights are follow-ons.
 
 import type { Route } from '../../kernel/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   scoreSupplier, reviewContracts,
@@ -29,6 +30,9 @@ import {
 import { isCurrencyCode, type Money } from '../../../packages/contracts/src/money';
 
 export interface SupplierScorecardDeps {
+  /** Head office's maker-checker engine (ADR-0024): a contract's approver gave it in their own session. Optional on a
+   *  bare stub (then every approval is unknown, and a contract records unapproved); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   /** Every recorded delivery outcome for this supplier (latest per PO). */
   readonly receipts: (tenantId: string, supplierId: string) => Promise<readonly ReceiptFact[]> | readonly ReceiptFact[];
   /** This supplier's contracts (latest per contract id) — to pick the one to score against. */
@@ -113,7 +117,7 @@ export function supplierScorecardRoutes(deps: SupplierScorecardDeps): readonly R
       },
     },
     {
-      // Record a supplier contract. Body: { supplierId, startsOn, endsOn, agreedLeadTimeDays, approvedBy? }.
+      // Record a supplier contract. Body: { supplierId, startsOn, endsOn, agreedLeadTimeDays, approvalId? }.
       // Latest per contract id wins (a renegotiated term is a new version, never an overwrite).
       api: 'API-03', method: 'POST', path: '/v1/purchase/contracts/:contractId',
       permission: 'purchase.contract.manage', idempotent: true,
@@ -126,7 +130,7 @@ export function supplierScorecardRoutes(deps: SupplierScorecardDeps): readonly R
           || !isQty(lead) || (approvedBy !== undefined && typeof approvedBy !== 'string')) {
           throw apiError(400, {
             code: 'not_readable_as_a_contract',
-            whatHappened: 'A supplier contract needs a contractId in the path and { supplierId, startsOn, endsOn (YYYY-MM-DD), agreedLeadTimeDays (whole, ≥0), optional approvedBy } in the body.',
+            whatHappened: 'A supplier contract needs a contractId in the path and { supplierId, startsOn, endsOn (YYYY-MM-DD), agreedLeadTimeDays (whole, ≥0), optional approvalId } in the body.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the supplier, the term dates, and the agreed lead time.',
           });
@@ -139,14 +143,23 @@ export function supplierScorecardRoutes(deps: SupplierScorecardDeps): readonly R
             nextSafeAction: 'Correct the term and record again. Nothing was saved.',
           });
         }
+        // The terms' approver (ADR-0024 · 2b-vi-c-1 · audit PA-03): an approval someone who may approve suppliers GAVE in
+        // their own session for exactly these terms (kind `purchase_contract`). A typed "approved by" is refused by name;
+        // before, any name cleared the contract's `unapproved` alert. No approval: recorded, and the alert stays.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: approvedBy,
+          kind: 'purchase_contract', subjectRef: contractId, details: actionDetails(ctx.body, { contractId }), valueMinor: null,
+          maker: ctx.userId, usedBy: `purchase-contract:${contractId}`, now: deps.now(),
+        });
         const contract: SupplierContract = {
           contractId,
           supplierId: b['supplierId'] as string,
           startsOn: b['startsOn'] as string,
           endsOn: b['endsOn'] as string,
           agreedLeadTimeDays: lead as number,
-          ...(isStr(approvedBy) ? { approvedBy: approvedBy as string } : {}),
+          ...(opened === undefined ? {} : { approvedBy: opened.decision.decidedBy }),
         };
+        await opened?.spend();
         await deps.recordContract(ctx.tenantId, contract, ctx.idempotencyKey ?? contractId);
         return { status: 201, body: { contract } };
       },

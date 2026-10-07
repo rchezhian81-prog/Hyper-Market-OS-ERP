@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sentWithApproval } from '../support/approval-request';
 
 // M06-FR-03 (D03-FR-03 · M23): supplier rebates on the live API — the money the shop has already EARNED
 // and not yet collected. A scheme is recorded; an accrual for a measured period runs the tested
@@ -16,7 +17,7 @@ type Accrual = { accrued: { minor: number }; received: { minor: number }; outsta
 const accrualOf = (res: { body: unknown }): Accrual => (res.body as { accrual: Accrual }).accrual;
 
 const scheme = (over: Record<string, unknown> = {}) =>
-  ({ supplierId: 'sup-1', basis: 'purchase_value', rateBp: 300, thresholdMinor: 1_000_000, startsOn: '2026-01-01', endsOn: '2026-12-31', approvedBy: 'u-owner', ...over });
+  ({ supplierId: 'sup-1', basis: 'purchase_value', rateBp: 300, thresholdMinor: 1_000_000, startsOn: '2026-01-01', endsOn: '2026-12-31', ...over });
 
 const putScheme = (h: ApiHarness, u: string, id: string, b: unknown, key: string) =>
   h.request({ method: 'POST', path: `/v1/purchase/rebate-schemes/${id}`, userId: u, tenantId: A, idempotencyKey: key, body: b });
@@ -88,6 +89,25 @@ describe('supplier rebates (M06-FR-03)', () => {
     expect(codeOf(await putScheme(h, 'u-owner', 'rb-y', scheme({ basis: 'made_up' }), 'k2'))).toBe('not_readable_as_a_rebate_scheme');
     // An accrual against a scheme that was never recorded is a 404.
     expect((await postAccrual(h, 'u-mgr', 'nope', 'a1', { basisAmount: money(2_000_000) }, 'k3')).status).toBe(404);
+  });
+
+  it('a scheme\'s approver approves it in their own session — never a typed name, never the person recording it (2b-vi-c-1, PA-03)', async () => {
+    const h = await cast();
+    const approved = (u: string, checker: string, id: string, b: Record<string, unknown>) =>
+      sentWithApproval(h, A, u, checker, { kind: 'rebate_scheme', subjectRef: id, pathIds: { schemeId: id } }, b, (body) => putScheme(h, u, id, body, `put-${id}`));
+    // A name typed as the approver is refused by name; before, any name was stored as the scheme's approver.
+    expect(codeOf(await putScheme(h, 'u-mgr', 'rb-t', scheme({ approvedBy: 'u-owner' }), 'k-t'))).toBe('approver_named_without_approval');
+    // The store manager records it; the owner (who may approve suppliers) approves it in their own session.
+    const ok = await approved('u-mgr', 'u-owner', 'rb-a', scheme());
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+    expect((ok.body as { scheme: { approvedBy?: string } }).scheme.approvedBy).toBe('u-owner');
+    // The owner cannot approve the owner's own scheme, and the store manager may not approve one at all.
+    expect(codeOf(await approved('u-owner', 'u-owner', 'rb-s', scheme()))).toBe('self_approval');
+    expect((await approved('u-owner', 'u-mgr', 'rb-m', scheme())).status).toBe(403);
+    // Recorded with no approval: stored, and it says so.
+    const plain = await putScheme(h, 'u-mgr', 'rb-p', scheme(), 'k-p');
+    expect(plain.status).toBe(201);
+    expect((plain.body as { scheme: { approvedBy?: string } }).scheme.approvedBy).toBeUndefined();
   });
 
   it('survives a restart: the scheme and its accruals rebuild from the event store', async () => {

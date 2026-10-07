@@ -69,6 +69,23 @@ describe('durable certification store (M25-FR-03 follow-on)', () => {
     expect(notAssigned).toMatchObject({ allowed: false, outcome: 'not_assigned' });
   });
 
+  it('who verified a certificate is the person who did, under their own sign-in — never a typed name, never its holder (2b-vi-c-1, PA-03)', async () => {
+    const h = await cast();
+    // A verifier typed for someone else is refused by name — before, the typed name made the certificate count as cover.
+    const typed = await putCert(h, 'u-mgr', 'C-typed', cert({ verifiedBy: 'u-owner' }), 'k-typed');
+    expect(typed.status).toBe(400);
+    expect(codeOf(typed)).toBe('actor_is_the_caller');
+    // Nobody verifies their own certificate (it is cover for their own gated task).
+    const own = await putCert(h, 'u-mgr', 'C-own', cert({ employeeId: 'u-mgr', verifiedBy: 'u-mgr' }), 'k-own');
+    expect(own.status).toBe(422);
+    expect(codeOf(own)).toBe('self_verification');
+    const stored = (await listCerts(h, 'u-owner')).body as { certifications: { certificationId: string }[] };
+    expect(stored.certifications.map((c) => c.certificationId)).toEqual([]); // neither was saved
+    // The manager verifies an employee's certificate in their own name — recorded as theirs.
+    expect((await putCert(h, 'u-mgr', 'C-ok', cert(), 'k-ok')).status).toBe(200);
+    expect(((await listCerts(h, 'u-owner')).body as { certifications: { verifiedBy?: string }[] }).certifications[0]?.verifiedBy).toBe('u-mgr');
+  });
+
   it('a leaver is blocked outright', async () => {
     const h = await cast();
     await putEmployee(h, 'u-mgr', 'E1', emp({ active: false }), 'k1');

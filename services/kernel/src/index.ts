@@ -12,7 +12,8 @@ export {
 
 export {
   scopeOf, branchInScope, assertBranchInScope, narrowScope, withinScope, outsideBranchScope, scopeNotHeld,
-  actorIsTheCaller, requireActorIsCaller, secondPersonIsASeparateAct,
+  actorIsTheCaller, requireActorIsCaller, secondPersonIsASeparateAct, documentsVerifiedByTheCaller,
+  type VerifiableDocument,
 } from './scope';
 
 export {

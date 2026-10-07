@@ -5,6 +5,60 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-vi-c-1 — the eight minor typed names are the person's own act (7 October 2026)
+
+- **The finding (audit PA-03, register rows 19–26):** eight head-office routes still took a person as a name typed into
+  the request:
+  - a certificate's verifier (it made the certificate count as cover for a gated task);
+  - a checklist's signer;
+  - a supplier document's verifier, and a supplier-portal partner document's verifier (the latter is cover for an ASN or
+    an invoice);
+  - the "approved by" on a display contract, a rebate scheme and a supplier contract (it cleared their `unapproved`
+    findings);
+  - the "approved by" in an import job's history.
+- **What changed:**
+  - **A verifier or signer is the signed-in person.** A name for anyone else is refused by name
+    (`actor_is_the_caller`).
+    - A certificate is never verified by its own holder.
+    - On a supplier or partner record, a document re-sent exactly as stored keeps its verifier and time. A new or
+      changed one must name the caller and takes the server's time.
+  - **A supplier's terms are approved on the engine** (ADR-0024, amended), with three new kinds: `display_contract`,
+    `rebate_scheme` and `purchase_contract`. The approver holds the existing supplier-approval authority
+    (`purchase.supplier.approve` — the accountant and the owner today). Recorded without approval, the terms stay
+    unapproved.
+  - **An import job's history** reads its approver from head office's record of the commit. A typed one is refused.
+  - **Screens:**
+    - The checklist screen now sends a signature only when this person signs. Before, an unsigned save sent an empty
+      name, which head office refused, and a signed checklist re-sent its earlier signer's name.
+    - The Approvals page names the three new kinds and their details in English and Tamil — funding in rupees, the
+      display places as a list, the rebate rate as a percentage.
+- **Proved:**
+  - Unit:
+    - `approval-requests` (22) and `kernel-scope` (7: the document-verifier rule);
+    - Approvals page wording (29);
+    - checklist screen (18).
+  - Integration, through the real API:
+    - certificates (5);
+    - checklists (5);
+    - supplier master (7, including documents);
+    - partner compliance (5);
+    - display contracts (5);
+    - rebate schemes (7);
+    - supplier contracts (8);
+    - import history (5, including a real commit approved by a second person).
+  - Each covers: a typed name for someone else is refused; self-approval and approval without the authority are
+    refused; the honest path records the right person.
+- **Not yet / honest limits:**
+  - Display contracts, rebate schemes and supplier contracts have no screen (API-only).
+  - The box's checklist relay (`checklists/:id/synced`) still takes the signer the box captured. It moves with the other
+    box-relayed decisions in c-3.
+  - Staff UAT (SP-10) is pending.
+- **Owner decision recorded, not asked:** who approves a supplier's terms. The roadmap names "Purchase Approver/Finance"
+  and "Finance approves funding terms", so the existing supplier-approval authority is used. A separate authority would
+  be the owner's to set (ADR-0024 reconsider-when).
+- **Next:** 2b-vi-c-2 — the typed makers (emergency access and access-change requests, the migration load operator)
+  and the admin support-grant screen; then c-3, the store seal on the box-relayed decisions.
+
 ## Wave 2b-vi-b-3 — stock, orders and purchasing approvals are the approver's own act (7 October 2026)
 
 - **The finding (audit PA-03, register rows 13–18):** six places at head office took their second person as a name

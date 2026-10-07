@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedRequestId } from '../support/approval-request';
 
 // Import job history & supplier data-quality scoring, end to end (M30-FR-04, API-03 Purchase). The failure
 // this closes is quiet and expensive: a supplier's file arriving with 12% of rows rejected every week for a
@@ -55,6 +56,27 @@ describe('import quality: which supplier files cost hours a year, and it kept th
     // Event-sourced — the history is identical after a cold restart.
     const restarted = apiHarness({ store: h.store });
     expect(((await history(restarted, 'u-owner')).body as { count: number }).count).toBe(2);
+  });
+
+  it('who approved a load is head office\'s record of the commit, never a typed name (2b-vi-c-1, PA-03, M30-FR-04)', async () => {
+    const h = await cast();
+    // A typed approver is refused — before, the history said "approved by" whatever name was sent.
+    const typed = await job(h, 'u-mgr', 'j-typed', fileOutcome({ approvedBy: 'u-owner' }));
+    expect(typed.status).toBe(422);
+    expect(codeOf(typed)).toBe('approver_is_read_from_the_commit');
+    // A job committed at head office: the manager uploads, the owner approves the exact file in their own session.
+    const template = { id: 'product-v1', domain: 'product', columns: [{ name: 'sku', type: 'text', required: true }], keyColumns: ['sku'] };
+    const text = 'sku\nA1';
+    const v = await h.request({ method: 'POST', path: '/v1/import/validate', userId: 'u-mgr', tenantId: A, idempotencyKey: 'v-jc', body: { template, text } });
+    const contentFingerprint = (v.body as { contentFingerprint: string }).contentFingerprint;
+    const approvalId = await approvedRequestId(h, A, 'u-mgr', 'u-owner', { kind: 'data_import_commit', subjectRef: 'j-committed', details: { jobId: 'j-committed', contentFingerprint } });
+    expect((await h.request({ method: 'POST', path: '/v1/import/commit', userId: 'u-mgr', tenantId: A, idempotencyKey: 'c-jc', body: { jobId: 'j-committed', template, text, approvalId } })).status).toBe(200);
+    // Its history row names the owner — read from the commit — and a job never committed names nobody.
+    expect((await job(h, 'u-mgr', 'j-committed', fileOutcome({ totalRows: 1, validRows: 1 }))).status).toBe(201);
+    expect((await job(h, 'u-mgr', 'j-outside', fileOutcome({ uploadedAt: '2026-08-21T10:00:00Z' }))).status).toBe(201);
+    const rows = (await history(h, 'u-owner')).body as { jobs: { jobId: string; detail: string }[] };
+    expect(rows.jobs.find((j) => j.jobId === 'j-committed')?.detail).toContain('approved by u-owner');
+    expect(rows.jobs.find((j) => j.jobId === 'j-outside')?.detail).not.toContain('approved by');
   });
 
   it('scores a source by its data quality, blames the column not the operator, and shows direction', async () => {

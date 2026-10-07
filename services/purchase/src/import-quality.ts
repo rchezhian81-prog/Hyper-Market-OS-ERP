@@ -53,6 +53,9 @@ export interface ImportQualityDeps {
   readonly jobs: (tenantId: string) => Promise<readonly ImportJobRecord[]> | readonly ImportJobRecord[];
   /** Append one job outcome — append-only, refusals kept alongside successes (hard rule #6). */
   readonly recordImportJob: (tenantId: string, jobId: string, record: ImportJobRecord, key: string) => Promise<void> | void;
+  /** Who approved this job's commit at head office — read from head office's own record of the commit (2b-vi-a: the
+   *  approver's own act on the engine), `undefined` when the job was never committed there. Optional on a bare stub. */
+  readonly committedApprover?: (tenantId: string, jobId: string) => Promise<string | undefined> | string | undefined;
   readonly now: () => string;
 }
 
@@ -74,8 +77,8 @@ export function importQualityRoutes(deps: ImportQualityDeps): readonly Route[] {
     {
       // Record an import job outcome — a supplier/system file that was committed, refused or abandoned.
       // Refusals are recorded too (hard rule #6). Body: { sourceId, templateId, fileName, outcome, totalRows,
-      // validRows, errorRows, duplicatesForReview, errors[], uploadedAt?, approvedBy?, refusalReason?,
-      // sumMinor?, reconciled? }. uploadedBy is the authenticated caller.
+      // validRows, errorRows, duplicatesForReview, errors[], uploadedAt?, refusalReason?, sumMinor?, reconciled? }.
+      // uploadedBy is the authenticated caller; approvedBy is head office's record of who approved the commit.
       api: 'API-03', method: 'POST', path: '/v1/purchase/import-jobs/:jobId',
       permission: 'purchase.import.record', idempotent: true,
       handler: async (ctx) => {
@@ -95,11 +98,22 @@ export function importQualityRoutes(deps: ImportQualityDeps): readonly Route[] {
           || (b['reconciled'] !== undefined && typeof b['reconciled'] !== 'boolean')) {
           throw apiError(400, {
             code: 'not_readable_as_an_import_job',
-            whatHappened: 'An import job needs a jobId in the path and { sourceId, templateId, fileName, outcome (committed/refused/abandoned), totalRows, validRows, errorRows, duplicatesForReview, errors:[{line,column,kind,message}] } — plus optional uploadedAt, approvedBy, refusalReason, sumMinor, reconciled.',
+            whatHappened: 'An import job needs a jobId in the path and { sourceId, templateId, fileName, outcome (committed/refused/abandoned), totalRows, validRows, errorRows, duplicatesForReview, errors:[{line,column,kind,message}] } — plus optional uploadedAt, refusalReason, sumMinor, reconciled.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Record the outcome as reported by the importer, refusals included — a history of only the successes hides a file that fails half the time.',
           });
         }
+        // Who approved the load is head office's own record of the commit (2b-vi-c-1 · audit PA-03 · M30-FR-04) — the
+        // person who approved it in their own session. Before, the history said "approved by" whatever name was typed.
+        if (b['approvedBy'] !== undefined) {
+          throw apiError(422, {
+            code: 'approver_is_read_from_the_commit',
+            whatHappened: 'Who approved an import is taken from head office\'s record of the commit (the approver\'s own act), never from the request.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the job outcome without approvedBy; a committed job shows its approver from the commit. Nothing was recorded.',
+          });
+        }
+        const committedBy = await deps.committedApprover?.(ctx.tenantId, jobId);
         const record: ImportJobRecord = {
           jobId, tenantId: ctx.tenantId, templateId: b['templateId'] as string, sourceId: b['sourceId'] as string,
           fileName: b['fileName'] as string, uploadedBy: ctx.userId,
@@ -107,7 +121,7 @@ export function importQualityRoutes(deps: ImportQualityDeps): readonly Route[] {
           outcome: b['outcome'] as JobOutcome,
           totalRows: b['totalRows'], validRows: b['validRows'], errorRows: b['errorRows'],
           duplicatesForReview: b['duplicatesForReview'], errors: errors as RowError[],
-          ...(isStr(b['approvedBy']) ? { approvedBy: b['approvedBy'] as string } : {}),
+          ...(committedBy === undefined ? {} : { approvedBy: committedBy }),
           ...(isStr(b['refusalReason']) ? { refusalReason: b['refusalReason'] as string } : {}),
           ...(typeof b['sumMinor'] === 'number' ? { sumMinor: b['sumMinor'] } : {}),
           ...(typeof b['reconciled'] === 'boolean' ? { reconciled: b['reconciled'] } : {}),

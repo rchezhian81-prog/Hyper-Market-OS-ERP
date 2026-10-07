@@ -86,6 +86,26 @@ async function seeded(): Promise<ApiHarness> {
 }
 
 describe('the supplier master — one record, one balance, paid safely (SP-7c)', () => {
+
+  it('who verified a supplier document is the person who did, under their own sign-in (2b-vi-c-1, PA-03)', async () => {
+    const h = await seeded();
+    const gst = { documentId: 'd1', kind: 'gst_registration', reference: '33AAAAA0000A1Z5', validFrom: '2026-01-01', validUntil: '2027-12-31' };
+    // A verifier typed for someone else is refused by name; nothing is saved.
+    const typed = await propose(h, 's-v', { name: 'Verified Traders', documents: [{ ...gst, verifiedBy: 'u-acct' }] });
+    expect(typed.status).toBe(400);
+    expect(codeOf(typed)).toBe('actor_is_the_caller');
+    // Verified by the person sending it: recorded as theirs, with the server's clock (a typed time is not evidence).
+    const own = await propose(h, 's-v', { name: 'Verified Traders', documents: [{ ...gst, verifiedBy: 'u-buyer', verifiedAt: '2001-01-01T00:00:00.000Z' }] }, 'u-buyer', 'sup-s-v-own');
+    expect(own.status).toBe(201);
+    const doc = (own.body as { supplier: { documents: { verifiedBy?: string; verifiedAt?: string }[] } }).supplier.documents[0]!;
+    expect(doc.verifiedBy).toBe('u-buyer');
+    expect(doc.verifiedAt).not.toBe('2001-01-01T00:00:00.000Z');
+    // Another person updates the supplier, re-sending the document exactly as verified: the buyer's verification stands.
+    const kept = await propose(h, 's-v', { name: 'Verified Traders Pvt', documents: [{ ...gst, verifiedBy: 'u-buyer' }] }, 'u-checker', 'sup-s-v-kept');
+    expect((kept.body as { supplier: { documents: { verifiedBy?: string; verifiedAt?: string }[] } }).supplier.documents[0]).toMatchObject({ verifiedBy: 'u-buyer', verifiedAt: doc.verifiedAt });
+    // A CHANGED document still carrying the buyer's name is a new claim — refused unless the sender verifies it.
+    expect(codeOf(await propose(h, 's-v', { name: 'Verified Traders Pvt', documents: [{ ...gst, validUntil: '2030-12-31', verifiedBy: 'u-buyer' }] }, 'u-checker', 'sup-s-v-changed'))).toBe('actor_is_the_caller');
+  });
   it('a purchase user PROPOSES a supplier, a DIFFERENT person approves it, a look-alike is said as a possible duplicate, the list says who needs a person and why; nothing for a cashier or another tenant', async () => {
     const h = await seeded();
     // Before any master record the supplier the order names is on the list, said to have none.
