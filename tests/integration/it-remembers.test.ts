@@ -392,7 +392,7 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     };
     expect((await handle(kernel, post('/v1/finance/journals', entry, `k-${RUN}-je1`))).status).toBe(201);
 
-    const close = await handle(kernel, post('/v1/finance/periods/2026-08/close', { signedBy: 'u-manager' }, `k-${RUN}-cl`));
+    const close = await handle(kernel, post('/v1/finance/periods/2026-08/close', {}, `k-${RUN}-cl`));
     expect(close.status).toBe(422);
     // The kernel wraps every refusal as `{ error: { code, whatHappened, wasItSaved, ... } }` —
     // one envelope, so a caller reads a refusal the same way whichever service raised it.

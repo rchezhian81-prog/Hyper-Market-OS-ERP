@@ -25,7 +25,7 @@ import {
   type StatutoryScheduleEntry, type PtSlab,
   type CompensationComponent, type CompensationStructureEntry,
   type TdsScheduleEntry, type TaxRegime,
-  type PayRunEvent, type PayRunAction,
+  type PayRunEvent, type PayRunAction, type PayRunAggregate,
   type BankPaymentLine, type BankPaymentType,
   type PayrollTotals, type CostCentreGross,
   type SettlementScheduleEntry, type SettlementInput,
@@ -35,7 +35,33 @@ import {
 const isInt = (v: unknown): v is number => Number.isInteger(v);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
-export function payrollRoutes(): readonly Route[] {
+/**
+ * What the bank file and the journal need of head office (2b-vi-b-2 · audit PA-03, register row 12): the pay run as
+ * head office RECORDED it — drafted, submitted, approved and locked step by step by signed-in people
+ * (`/v1/hr/payroll/pay-run/:id/append`, actor = the caller). Absent (a bare stub), every run is unknown.
+ */
+export interface PayrollDeps {
+  readonly loadPayRun?: (tenantId: string, payRunId: string) => Promise<PayRunAggregate | undefined> | PayRunAggregate | undefined;
+}
+
+/** Refused: the run's history in the request. Its approver was a string anyone could write; head office reads its own. */
+const eventsInTheRequest = (what: string): Error => apiError(400, {
+  code: 'pay_run_is_read_from_the_record',
+  whatHappened: `The ${what} is built from the pay run head office recorded — who submitted, approved and locked it, each under their own sign-in — never from a history sent in the request (§28, audit PA-03).`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Send the payRunId without events[]. Nothing was built.',
+});
+
+/** The run as recorded, or refused by name. */
+async function recordedRun(deps: PayrollDeps, tenantId: string, payRunId: string, what: string, code: string): Promise<PayRunAggregate> {
+  const run = deps.loadPayRun === undefined ? undefined : await deps.loadPayRun(tenantId, payRunId);
+  if (run === undefined) {
+    throw apiError(422, { code, whatHappened: `Head office has no pay run ${payRunId} — a ${what} needs a locked run.`, wasItSaved: 'not_saved', nextSafeAction: 'Draft, submit, approve and lock the pay run first.' });
+  }
+  return run;
+}
+
+export function payrollRoutes(deps: PayrollDeps = {}): readonly Route[] {
   return [
     {
       // A month's statutory deductions + net pay. Body: { onDate, grossMinor, pfWageMinor,
@@ -175,8 +201,9 @@ export function payrollRoutes(): readonly Route[] {
       },
     },
     {
-      // Build the salary bank-transfer file from a LOCKED pay run. Body: { payRunId, events, lines[],
-      // valueDate?, paymentType? }. The events are folded to confirm the run is locked before the file builds.
+      // Build the salary bank-transfer file from a LOCKED pay run. Body: { payRunId, lines[], valueDate?, paymentType? }.
+      // The run is the one head office RECORDED (2b-vi-b-2): locked, approved by a different signed-in person; and when
+      // the run recorded its net total and headcount, the lines must be exactly that money for exactly those people.
       api: 'API-09', method: 'POST', path: '/v1/hr/payroll/bank-file',
       permission: 'payroll.statutory.read', idempotent: true,
       // Building the salary bank file is the RELEASE moment of payroll (§28, SEC-03): it needs a RECENT,
@@ -186,18 +213,26 @@ export function payrollRoutes(): readonly Route[] {
       reauth: PAYROLL_RELEASE_STEP_UP,
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (typeof b['payRunId'] !== 'string' || !Array.isArray(b['events']) || !Array.isArray(b['lines'])) {
-          throw apiError(400, { code: 'bank_file_needs_run_and_lines', whatHappened: 'The bank file needs payRunId, the pay run’s events[] (to confirm it is locked) and lines[] (per-employee net pay).', wasItSaved: 'not_saved', nextSafeAction: 'Send the pay run history and the net-pay lines (name, account, IFSC, amount).' });
+        if (b['events'] !== undefined) throw eventsInTheRequest('bank file');
+        if (typeof b['payRunId'] !== 'string' || !Array.isArray(b['lines'])) {
+          throw apiError(400, { code: 'bank_file_needs_run_and_lines', whatHappened: 'The bank file needs payRunId and lines[] (per-employee net pay).', wasItSaved: 'not_saved', nextSafeAction: 'Send the pay run id and the net-pay lines (name, account, IFSC, amount).' });
         }
-        const run = foldPayRun(b['payRunId'], b['events'] as PayRunEvent[]);
-        if (run === undefined) {
-          throw apiError(422, { code: 'bank_file_no_run', whatHappened: 'There is no pay run for those events — a bank file needs a locked run.', wasItSaved: 'not_saved', nextSafeAction: 'Draft, submit, approve and lock the pay run first.' });
+        const run = await recordedRun(deps, ctx.tenantId, b['payRunId'], 'bank file', 'bank_file_no_run');
+        const lines = b['lines'] as BankPaymentLine[];
+        const paid = lines.reduce((sum, l) => sum + (Number.isSafeInteger(l?.netPayMinor) ? l.netPayMinor : 0), 0);
+        if ((run.netTotalMinor !== undefined && paid !== run.netTotalMinor) || (run.employeeCount !== undefined && lines.length !== run.employeeCount)) {
+          throw apiError(422, {
+            code: 'bank_file_does_not_match_the_run',
+            whatHappened: `The lines pay ${paid} paise to ${lines.length} people; the approved run ${run.payRunId} is ${run.netTotalMinor ?? '—'} paise to ${run.employeeCount ?? '—'} people. A bank file pays exactly what was approved.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Build the file from the approved run\'s own lines. A different amount is a new run, approved again. Nothing was built.',
+          });
         }
         try {
           const file = buildBankFile({
             payRunState: run.state,
             payPeriod: run.payPeriod,
-            lines: b['lines'] as BankPaymentLine[],
+            lines,
             ...(typeof b['valueDate'] === 'string' ? { valueDate: b['valueDate'] } : {}),
             ...(typeof b['paymentType'] === 'string' ? { paymentType: b['paymentType'] as BankPaymentType } : {}),
           });
@@ -209,18 +244,25 @@ export function payrollRoutes(): readonly Route[] {
       },
     },
     {
-      // Build the balanced double-entry accounting journal from a LOCKED pay run. Body: { payRunId, events,
-      // totals, costCentres? }. The events are folded to confirm the run is locked before the journal builds.
+      // Build the balanced double-entry accounting journal from a LOCKED pay run. Body: { payRunId, totals,
+      // costCentres? }. The run is the one head office RECORDED (2b-vi-b-2); its recorded net total must be the journal's.
       api: 'API-09', method: 'POST', path: '/v1/hr/payroll/journal',
       permission: 'payroll.statutory.read', idempotent: true,
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (typeof b['payRunId'] !== 'string' || !Array.isArray(b['events']) || !isObj(b['totals'])) {
-          throw apiError(400, { code: 'journal_needs_run_and_totals', whatHappened: 'The payroll journal needs payRunId, the pay run’s events[] (to confirm it is locked) and totals (gross, PF/ESI employee+employer, PT, TDS, net).', wasItSaved: 'not_saved', nextSafeAction: 'Send the pay run history and the run’s money totals.' });
+        if (b['events'] !== undefined) throw eventsInTheRequest('payroll journal');
+        if (typeof b['payRunId'] !== 'string' || !isObj(b['totals'])) {
+          throw apiError(400, { code: 'journal_needs_run_and_totals', whatHappened: 'The payroll journal needs payRunId and totals (gross, PF/ESI employee+employer, PT, TDS, net).', wasItSaved: 'not_saved', nextSafeAction: 'Send the pay run id and the run’s money totals.' });
         }
-        const run = foldPayRun(b['payRunId'], b['events'] as PayRunEvent[]);
-        if (run === undefined) {
-          throw apiError(422, { code: 'journal_no_run', whatHappened: 'There is no pay run for those events — a journal needs a locked run.', wasItSaved: 'not_saved', nextSafeAction: 'Draft, submit, approve and lock the pay run first.' });
+        const run = await recordedRun(deps, ctx.tenantId, b['payRunId'], 'journal', 'journal_no_run');
+        const net = (b['totals'] as Record<string, unknown>)['netMinor'];
+        if (run.netTotalMinor !== undefined && net !== run.netTotalMinor) {
+          throw apiError(422, {
+            code: 'journal_does_not_match_the_run',
+            whatHappened: `The totals say net ${String(net)} paise; the approved run ${run.payRunId} is ${run.netTotalMinor} paise. The journal posts exactly what was approved.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the approved run\'s own totals. Nothing was built.',
+          });
         }
         try {
           const journal = buildPayrollJournal({

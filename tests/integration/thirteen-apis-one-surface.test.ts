@@ -63,7 +63,7 @@ const ALL: readonly Route[] = [
   ...fulfilmentRoutes({ appendAttempt: () => {}, attempts: () => [], assigned: () => [], deliveryState: () => [], recordDeliveryTransition: () => {}, now: () => NOW }),
   ...financeRoutes({
     periodStates: () => new Map(), nextOpenPeriod: () => '2026-08', appendJournal: () => {},
-    controlTotals: () => [], postersIn: () => [], markClosed: () => {}, markReopened: () => {}, canSignPeriod: () => false, now: () => NOW,
+    controlTotals: () => [], postersIn: () => [], markClosed: () => {}, markReopened: () => {}, now: () => NOW,
   }),
   ...reportingRoutes({ figures: () => [], now: () => NOW }),
   ...platformRoutes({ probe: () => [], flags: () => ({}), setFlag: () => {}, recordSupportAccess: () => {}, settings: inMemorySettings(), exportTenant: () => emptyExportBundle(), setBranding: () => {}, branding: () => undefined, setEntitlement: () => {}, entitlements: () => [], now: () => NOW }),

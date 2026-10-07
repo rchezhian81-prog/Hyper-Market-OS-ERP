@@ -526,7 +526,9 @@ export const PILOT_TRANSACTIONS: PilotTransactions = {
     {
       contractId: 'conc-demo-1', concessionaireId: 'concnaire-demo-1', name: 'Demo Bakery Counter (demo)',
       branchId: BRANCH_ID, startsOn: '2026-09-01', endsOn: '2027-08-31', basis: 'revenue_share',
-      depositMinor: 5_000_000, revenueShareBps: 1000, approvedBy: 'pilot-owner',
+      // The second person who approves it in their own session (ADR-0024) — another person who manages concessions,
+      // never the seed's actor who records it.
+      depositMinor: 5_000_000, revenueShareBps: 1000, approvedBy: 'pilot-accountant',
     },
   ],
   coupons: [

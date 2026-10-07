@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedBody } from '../support/approval-request';
 
 // Concession, end to end through the real API (M27, API-09). A partner trades a counter inside the
 // store; the money the tills take for their sales was NEVER the store's revenue — it is money held on
@@ -17,7 +18,7 @@ const contract = (over: Record<string, unknown> = {}) => ({
   fixedRentMinor: 500_000, revenueShareBps: 1_500, depositMinor: 1_000_000, ...over,
 });
 
-const setContract = (h: ApiHarness, tenantId: string, userId: string, id: string, body = contract(), key?: string) =>
+const setContract = (h: ApiHarness, tenantId: string, userId: string, id: string, body: Record<string, unknown> = contract(), key?: string) =>
   h.request({ method: 'POST', path: `/v1/concession/contracts/${id}`, userId, tenantId, idempotencyKey: key ?? `cc-${id}`, body });
 
 const sale = (h: ApiHarness, tenantId: string, userId: string, id: string, body: Record<string, unknown>) =>
@@ -118,15 +119,24 @@ const valuation = (h: ApiHarness, tenantId: string, userId: string, body: unknow
 const stockAccess = (h: ApiHarness, tenantId: string, userId: string, body: unknown, key: string) =>
   h.request({ method: 'POST', path: '/v1/concession/stock-access', userId, tenantId, idempotencyKey: key, body });
 
+const codeOfC = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 const tradeable = (over: Record<string, unknown> = {}) =>
-  contract({ approvedBy: 'u-owner', insuranceUntil: '2026-12-31', licenceUntil: '2026-12-31', ...over });
+  contract({ insuranceUntil: '2026-12-31', licenceUntil: '2026-12-31', ...over });
+/** The contract approved the way a person approves it (ADR-0024): another concession manager (the accountant) approves
+ *  exactly these terms in their own session; the owner records it naming that approval. */
+const approvedContract = async (h: ApiHarness, id: string, body: Record<string, unknown> = tradeable()) => {
+  await h.provisionRole(A, 'u-acct', 'accountant');
+  return approvedBody(h, A, 'u-owner', 'u-acct', 'concession_contract', id, body, { contractId: id });
+};
 
 describe('concession ownership + eligibility (M27)', () => {
   it('may-trade blocks a lapsed insurance / unapproved / expired counter, every reason at once', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.enableFeature(A, 'dept.concession'); // this shop runs a concession counter (M36-FR-01)
-    await setContract(h, A, 'u-owner', 'OK', tradeable());
+    // A name typed as approver — before, stored with no check of any kind — is refused by name (audit PA-03).
+    expect(codeOfC(await setContract(h, A, 'u-owner', 'TYPED', tradeable({ approvedBy: 'u-owner' }), 'cc-TYPED'))).toBe('approver_named_without_approval');
+    await setContract(h, A, 'u-owner', 'OK', await approvedContract(h, 'OK'));
     const ok = (await mayTrade(h, A, 'u-owner', 'OK', '2026-06-01')).body as { mayTrade: boolean; blockedBy: string[] };
     expect(ok.mayTrade).toBe(true);
 
@@ -153,8 +163,14 @@ describe('concession ownership + eligibility (M27)', () => {
     expect(p1.outstandingLiabilityMinor).toBe(800_000); // 1,000,000 − 200,000; the unapproved forfeit is ignored
     expect(p1.detail).toContain('nobody');
 
-    // Approve a forfeit → now it reduces the liability.
-    await depositMove(h, A, 'u-owner', 'JEWEL', 'd4', { kind: 'forfeited', amountMinor: 100_000, approvedBy: 'u-owner' });
+    // A typed approver is refused by name; nobody approves their own forfeit; a received deposit takes no approval.
+    expect(codeOfC(await depositMove(h, A, 'u-owner', 'JEWEL', 'd4t', { kind: 'forfeited', amountMinor: 100_000, approvedBy: 'u-acct' }))).toBe('approver_named_without_approval');
+    expect(codeOfC(await depositMove(h, A, 'u-owner', 'JEWEL', 'd5', { kind: 'received', amountMinor: 1, approvalId: 'areq-x' }))).toBe('only_a_forfeit_is_approved');
+    // Approve a forfeit in the second person's own session → now it reduces the liability, recorded with who approved.
+    await h.provisionRole(A, 'u-acct', 'accountant');
+    const forfeit = await approvedBody(h, A, 'u-owner', 'u-acct', 'concession_deposit_forfeit', 'JEWEL/d4', { kind: 'forfeited', amountMinor: 100_000 }, { concessionaireId: 'JEWEL', movementId: 'd4' }, 100_000);
+    expect(codeOfC(await depositMove(h, A, 'u-owner', 'JEWEL', 'd4', { ...forfeit, amountMinor: 900_000 }))).toBe('approval_does_not_match'); // not a bigger forfeit
+    expect((await depositMove(h, A, 'u-owner', 'JEWEL', 'd4', forfeit)).status).toBe(201);
     expect(((await depositPos(h, A, 'u-owner', 'JEWEL')).body as { outstandingLiabilityMinor: number }).outstandingLiabilityMinor).toBe(700_000);
   });
 

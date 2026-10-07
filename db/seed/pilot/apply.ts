@@ -445,19 +445,36 @@ export async function applyPilotTransactions(
     );
   }
 
-  // 4. Concession contracts.
+  // 4. Concession contracts. An approved contract is approved the way a person approves it (ADR-0024): the seed's actor
+  //    asks for approval of exactly these terms, and the named second person decides under their OWN sign-in; the
+  //    contract then names that approval. A name in the body is not an approval and head office refuses it.
   for (const c of data.concessions) {
+    const terms = {
+      concessionaireId: c.concessionaireId, name: c.name, branchId: c.branchId, startsOn: c.startsOn, endsOn: c.endsOn,
+      basis: c.basis, depositMinor: c.depositMinor,
+      ...(c.revenueShareBps === undefined ? {} : { revenueShareBps: c.revenueShareBps }),
+      ...(c.fixedRentMinor === undefined ? {} : { fixedRentMinor: c.fixedRentMinor }),
+    };
+    let approvalId: string | undefined;
+    if (c.approvedBy !== undefined) {
+      const asked = await post(
+        `concession ${c.contractId} — approval asked`, '/v1/approvals/requests',
+        { kind: 'concession_contract', subjectRef: c.contractId, details: { ...terms, contractId: c.contractId }, valueMinor: null, summary: `Approve the concession contract ${c.name}`, reason: 'demo concession counter (synthetic)' },
+        `seed-concession-ask-${c.contractId}-${digestOf(terms)}`,
+      );
+      approvalId = (asked.body as { requestId?: string } | undefined)?.requestId;
+      if (approvalId !== undefined) {
+        await post(
+          `concession ${c.contractId} — approved by ${c.approvedBy}`, `/v1/approvals/requests/${encodeURIComponent(approvalId)}/decide`,
+          { decision: 'approved', reason: 'demo terms checked (synthetic)' }, `seed-concession-decide-${approvalId}`, c.approvedBy,
+        );
+      }
+    }
     await post(
       `concession ${c.contractId}`,
       `/v1/concession/contracts/${encodeURIComponent(c.contractId)}`,
-      {
-        concessionaireId: c.concessionaireId, name: c.name, branchId: c.branchId, startsOn: c.startsOn, endsOn: c.endsOn,
-        basis: c.basis, depositMinor: c.depositMinor,
-        ...(c.revenueShareBps === undefined ? {} : { revenueShareBps: c.revenueShareBps }),
-        ...(c.fixedRentMinor === undefined ? {} : { fixedRentMinor: c.fixedRentMinor }),
-        ...(c.approvedBy === undefined ? {} : { approvedBy: c.approvedBy }),
-      },
-      `seed-concession-${c.contractId}`,
+      { ...terms, ...(approvalId === undefined ? {} : { approvalId }) },
+      `seed-concession-${c.contractId}-${digestOf(terms)}`,
     );
   }
 

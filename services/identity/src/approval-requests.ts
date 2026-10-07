@@ -67,6 +67,28 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'quotation_below_floor', label: 'Quote a customer below the margin floor',
     makerPermission: 'pos.quotation.write', checkerPermission: 'price.change.approve', validForMinutes: 24 * 60,
   },
+  // Finance (2b-vi-b-2 · M23-FR-04 "period close/reopen by Finance with approval"): the person who closes or reopens a
+  // month asks; someone holding the authority to SIGN a period (`finance.period.sign` — the accountant, the CA, the
+  // owner) approves — the signature that certifies the control totals is that person's own act.
+  period_close: {
+    kind: 'period_close', label: 'Close and sign an accounting month',
+    makerPermission: 'finance.period.close', checkerPermission: 'finance.period.sign', validForMinutes: 24 * 60,
+  },
+  period_reopen: {
+    kind: 'period_reopen', label: 'Reopen a signed accounting month',
+    makerPermission: 'finance.period.close', checkerPermission: 'finance.period.sign', validForMinutes: 24 * 60,
+  },
+  // Concessions (M27-FR-01 "contracts approved"; a forfeit takes a deposit off the liability): the checker is ANOTHER
+  // person already authorised to manage concession contracts (owner, accountant) — a dedicated approval authority would
+  // be new role policy, which is the owner's to set.
+  concession_contract: {
+    kind: 'concession_contract', label: 'Approve a concession contract',
+    makerPermission: 'concession.contract.manage', checkerPermission: 'concession.contract.manage', validForMinutes: 24 * 60,
+  },
+  concession_deposit_forfeit: {
+    kind: 'concession_deposit_forfeit', label: 'Forfeit a concessionaire\'s deposit',
+    makerPermission: 'concession.contract.manage', checkerPermission: 'concession.contract.manage', validForMinutes: 24 * 60,
+  },
 });
 
 /** A maker's request, as recorded. */

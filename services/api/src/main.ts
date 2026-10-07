@@ -814,8 +814,8 @@ export function buildSurface(deps: {
     ...financeRoutes(store === undefined ? {
       periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)),
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
-      markClosed: () => {}, markReopened: () => {}, canSignPeriod: () => Promise.resolve(false), now,
-    } : financeAdapter({ store, now })),
+      markClosed: () => {}, markReopened: () => {}, now,
+    } : { ...financeAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     // The day book (M23-FR-01): a trading day's synced sales + returns → balanced journals through the accountant's
     // mapping; unmapped kinds and unsplittable receipts are visible exceptions, never silently unposted (P-08).
     ...dayBookRoutes(store === undefined ? {
@@ -895,7 +895,7 @@ export function buildSurface(deps: {
       contract: empty(undefined), sales: empty([]), recordContract: () => {}, recordSale: () => {},
       depositMovements: empty([]), recordDepositMovement: () => {},
       storeValuation: (_t, branchId) => ({ branchId, ownedValueMinor: 0, ownedLots: 0, excluded: [], excludedValueMinor: 0, detail: 'no store' }), now,
-    } : concessionAdapter({ store, now })),
+    } : { ...concessionAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     // Concession docket tags (M27-FR-03): the till's line-by-line attribution lands here, append-only, and
     // reaches the period charge + settlement through the concession adapter's `sales`.
     ...concessionTagRoutes(store === undefined ? {
@@ -993,7 +993,7 @@ export function buildSurface(deps: {
     ...gstPortalRoutes(),
     // Payroll (priority 16) — statutory-deduction preview (PF/ESI/TN Professional Tax) on effective-dated
     // configurable rate tables; for review, commits nothing. Confidential — owner-gated.
-    ...payrollRoutes(),
+    ...payrollRoutes(store === undefined ? {} : { loadPayRun: payRunAdapter({ store, now }).load }),
     // Workforce (M25-FR-01) — roster-gap detection: the named gaps in a proposed roster (per role per shift,
     // with the hour), plus the unstaffed-critical count. Stateless what-if over the tested engine, commits
     // nothing; the durable roster/attendance store is a later increment. Manager-gated (workforce.roster.read).
