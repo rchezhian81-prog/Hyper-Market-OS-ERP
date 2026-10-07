@@ -13,7 +13,6 @@ function deps(): PlatformDeps {
     probe: () => [],
     flags: () => ({}),
     setFlag: () => {},
-    recordSupportAccess: () => {},
     settings: inMemorySettings(),
     exportTenant: () => emptyExportBundle(),
     setBranding: () => {},

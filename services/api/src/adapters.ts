@@ -8838,17 +8838,6 @@ export function platformAdapter(input: {
       }));
     },
 
-    /** Never deleted (#6). Somebody outside the business read this tenant's data, and that is kept. */
-    recordSupportAccess: async (request, expiresAt) => {
-      await input.store.append(request.tenantId, STREAM.platform, makeEvent({
-        id: `support-${request.requestId}`,
-        type: 'SupportAccessGranted',
-        occurredAt: request.at,
-        idempotencyKey: `support-${request.tenantId}-${request.requestId}`,
-        source: 'api/platform',
-        payload: { ...request, expiresAt },
-      }));
-    },
 
     /**
      * The tenant's whole dataset, certified complete (M36-FR-03). The store read is

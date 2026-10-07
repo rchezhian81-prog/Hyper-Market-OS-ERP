@@ -66,7 +66,7 @@ const ALL: readonly Route[] = [
     controlTotals: () => [], postersIn: () => [], markClosed: () => {}, markReopened: () => {}, now: () => NOW,
   }),
   ...reportingRoutes({ figures: () => [], now: () => NOW }),
-  ...platformRoutes({ probe: () => [], flags: () => ({}), setFlag: () => {}, recordSupportAccess: () => {}, settings: inMemorySettings(), exportTenant: () => emptyExportBundle(), setBranding: () => {}, branding: () => undefined, setEntitlement: () => {}, entitlements: () => [], now: () => NOW }),
+  ...platformRoutes({ probe: () => [], flags: () => ({}), setFlag: () => {}, settings: inMemorySettings(), exportTenant: () => emptyExportBundle(), setBranding: () => {}, branding: () => undefined, setEntitlement: () => {}, entitlements: () => [], now: () => NOW }),
   ...migrationRoutes({
     target: () => ({ targetId: 'tgt-1', tenantId: 't', kind: 'rehearsal', label: 'rehearsal' }), findings: () => [],
     acceptances: () => [], signatures: () => [], recordAcceptance: () => {},

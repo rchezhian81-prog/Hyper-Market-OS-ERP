@@ -170,5 +170,8 @@ must approve — then the kind's checker permission or a value-limit rule change
 - **The migration control-total signature reads the load operator** from head office's record of the trial loads
   (each trial load now records who ran it). A typed `loadOperator` is refused. With no trial load on record, nothing is
   signed.
+- **The one-step support-access grant is retired** (`POST /v1/platform/support-access`, 410 `support_access_moved`). It
+  took both people from the body. Support access is the request-and-decide pair: the support person asks in their own
+  session, and the owner decides on the Admin screen in theirs.
 - **Recorded, not changed:** the emergency-access cap (`maxMinutes`) is still read from the request. The owner sees it
   in the approval, and the shop's own emergency-access policy is an open owner input (M02).

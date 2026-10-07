@@ -103,6 +103,21 @@ describe('support-access lifecycle (M33-FR-03 · SEC-11)', () => {
     expect(codeOf(late)).toBe('support_access_refused');
   });
 
+  it('the old one-step grant, which took both people from the request, is retired and says where support access went (2b-vi-c-2, PA-03)', async () => {
+    const h = apiHarness();
+    await cast(h);
+    const res = await h.request({
+      method: 'POST', path: '/v1/platform/support-access', userId: 'u-owner', tenantId: TENANT, idempotencyKey: 'one-shot',
+      body: {
+        request: { requestId: 'SUP-X', tenantId: TENANT, requesterId: 'u-anyone', requesterName: 'Anyone', reason: 'a typed requester', scopes: ['read:sync_queue'], at: '2026-10-07T10:00:00.000Z', minutes: 30 },
+        approval: { subjectRef: 'SUP-X', status: 'approved', decidedBy: 'u-somebody-else' },
+      },
+    });
+    expect(res.status).toBe(410);
+    expect(codeOf(res)).toBe('support_access_moved');
+    expect(((await sessions(h, 'u-owner')).body as { sessions: unknown[] }).sessions).toEqual([]); // nobody was let in
+  });
+
   it('rejects a request cleanly, and refuses deciding an unknown or already-decided request', async () => {
     const h = apiHarness();
     await cast(h);

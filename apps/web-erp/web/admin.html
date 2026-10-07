@@ -119,6 +119,7 @@
       p.readonly { margin: 0 0 8px; padding: 12px 14px; border-radius: 12px; background: var(--info-surface); color: var(--on-info-surface); border-left: 6px solid var(--info); font-size: 15px; }
       ul.rows { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 10px; }
       li.wait { background: var(--panel); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; border-left: 6px solid var(--warn); min-width: 0; }
+      li.wait .what { display: grid; gap: 2px; }
       li.wait .what small { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
       li.wait .own { color: var(--muted); font-size: 15px; margin: 4px 0 0; }
       li.wait .decide { display: grid; gap: 8px; margin-top: 6px; }
@@ -128,6 +129,8 @@
       button.approve { background: var(--good); color: var(--on-accent); }
       button:disabled { opacity: 0.6; }
       .row .end { padding: 0 18px; flex: none; }
+      /* On a phone the End button goes under the words, full width, so the words keep the row. */
+      @media (max-width: 560px) { .row { flex-wrap: wrap; } .row .end { width: 100%; } }
     </style>
   </head>
   <body>

@@ -1124,7 +1124,7 @@ export function buildSurface(deps: {
       ? { schedule: () => undefined, setSchedule: () => {}, recordSent: () => {}, now }
       : scheduledBriefAdapter({ store, now })),
     ...platformRoutes(store === undefined ? {
-      probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {},
+      probe: probes, flags: empty({}), setFlag: () => {},
       settings, exportTenant: emptyExportBundle,
       setBranding: () => {}, branding: empty(undefined),
       setEntitlement: () => {}, entitlements: empty([]), now,

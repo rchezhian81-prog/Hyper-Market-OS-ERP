@@ -12,7 +12,7 @@ import { storeSealer } from '../support/store-seal';
 import {
   catalogueAdapter, posAdapter, financeAdapter, customerAdapter, ordersAdapter, inventoryAdapter,
   fulfilmentAdapter, purchaseAdapter, identityAdapter, platformAdapter, reportingAdapter,
-  migrationAdapter, aiAdapter, addMonths, STREAM, STREAM_FOR,
+  migrationAdapter, aiAdapter, addMonths, STREAM, STREAM_FOR, supportAccessAdapter,
 } from '../../services/api/src/adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
 import { hmacSigner, publishPack } from '../../services/catalogue/src/index';
@@ -555,19 +555,21 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
     expect(changes).toHaveLength(3);
   });
 
-  it('keeps a support access grant, which is never deleted (#6)', async () => {
-    const adapter = platformAdapter({ store, now: () => NOW, probes: async () => [] });
-    await adapter.recordSupportAccess({
-      requestId: `${RUN}-SUP`, tenantId: TENANT, requesterId: 'e-1', requesterName: 'Engineer',
-      reason: 'investigating a sync backlog reported this morning',
-      // Least privilege, stated. The shape this used to have had no scopes at all.
-      scopes: ['read:sync_queue'], at: NOW, minutes: 60,
-    }, '2026-08-07T13:00:00Z');
+  it('keeps a support access request, which is never deleted (#6)', async () => {
+    // Support access is the two-person lifecycle (2b-vi-c-2): the support person files the request in their own session.
+    const adapter = supportAccessAdapter({ store, now: () => NOW });
+    await adapter.recordEvent(TENANT, {
+      kind: 'requested',
+      request: {
+        requestId: `${RUN}-SUP`, tenantId: TENANT, requesterId: 'e-1', requesterName: 'Engineer',
+        reason: 'investigating a sync backlog reported this morning',
+        // Least privilege, stated. The shape this used to have had no scopes at all.
+        scopes: ['read:sync_queue'], at: NOW, minutes: 60,
+      },
+    }, `${RUN}-sup-req`);
 
-    const kept = (await store.readStream(TENANT, STREAM.platform))
-      .filter((e) => e.event.type === 'SupportAccessGranted');
-    expect(kept).toHaveLength(1);
-    await expect(client.query('DELETE FROM event_ledger WHERE id = $1', [kept[0]!.event.id]))
+    expect((await adapter.records(TENANT)).filter((r) => r.requestId === `${RUN}-SUP`)).toHaveLength(1);
+    await expect(client.query('DELETE FROM event_ledger WHERE id = $1', [`support-${RUN}-SUP-requested-${RUN}-sup-req`]))
       .rejects.toThrow(/append-only/i);
   });
 

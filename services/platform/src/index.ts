@@ -87,10 +87,7 @@ export function assessHealth(probes: readonly DependencyProbe[]): Health {
  * `packages/platform-admin`, and this service maps HTTP to it and nothing else.
  */
 export type { SupportAccessRequest, OwnerApproval, SupportSession } from '../../../packages/platform-admin/src/index';
-import {
-  grantSupportAccess,
-  type SupportAccessRequest, type OwnerApproval, type SupportSession,
-} from '../../../packages/platform-admin/src/index';
+
 import {
   DurableTenantSettings, setupItem, storePolicyFrom,
   InvalidSetupAnswerError, SetupVersionConflictError,
@@ -164,7 +161,6 @@ export interface PlatformDeps {
   readonly probe: () => Promise<readonly DependencyProbe[]> | readonly DependencyProbe[];
   readonly flags: (tenantId: string) => Promise<Readonly<Record<string, boolean>>> | Readonly<Record<string, boolean>>;
   readonly setFlag: (tenantId: string, change: FeatureFlagChange) => Promise<void> | void;
-  readonly recordSupportAccess: (r: SupportAccessRequest, expiresAt: string) => Promise<void> | void;
   /** Durable per-tenant settings backing the self-service store-setup surface (M33-FR-01). */
   readonly settings: DurableTenantSettings;
   /**
@@ -222,26 +218,19 @@ export function platformRoutes(deps: PlatformDeps): readonly Route[] {
       },
     },
     {
+      // RETIRED (2b-vi-c-2 · audit PA-03). This one-shot grant took BOTH people from the body — the requester and the
+      // approving "owner" — and wrote into whichever tenant the body named. Support access is the two-person lifecycle
+      // in support-access-lifecycle.ts: the support person files a request in their own session, and the owner decides
+      // it in theirs (the Admin screen). Kept on the surface so a caller is told where it went, never silently 404'd.
       api: 'API-11', method: 'POST', path: '/v1/platform/support-access',
       permission: 'platform.support.grant', idempotent: true,
-      handler: async (ctx) => {
-        // The ONE implementation. It refuses an empty scope list, a scope support may never
-        // hold, an approval that tries to lengthen the requested window, and a self-approval —
-        // none of which the copy that used to live in this file could even express.
-        const body = ctx.body as { readonly request: SupportAccessRequest; readonly approval?: OwnerApproval };
-        let session: SupportSession;
-        try {
-          session = grantSupportAccess(body.request, body.approval);
-        } catch (e) {
-          throw apiError(422, {
-            code: 'support_access_refused',
-            whatHappened: e instanceof Error ? e.message : 'support access was refused',
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'No access was granted. State the scopes actually needed, give a real reason, and have somebody else approve it for a window inside policy.',
-          });
-        }
-        await deps.recordSupportAccess(body.request, session.expiresAt);
-        return { status: 201, body: session };
+      handler: async () => {
+        throw apiError(410, {
+          code: 'support_access_moved',
+          whatHappened: 'Support access is no longer granted in one step with both people named in the request. The support person asks in their own session, and the owner decides in theirs.',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'File the request at POST /v1/platform/support-access/requests (as the support person), then the owner approves or rejects it at POST /v1/platform/support-access/requests/:requestId/decision. No access was granted.',
+        });
       },
     },
     {

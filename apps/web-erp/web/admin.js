@@ -36,7 +36,7 @@ const WORDS = {
     fleetLead: 'What this shop runs on, and whether each one is allowed to take a sale.',
     recordsLead: 'What the rules say may eventually be deleted, and what a legal hold stops being deleted. Nothing on this screen deletes anything.',
     liveNow: 'IN YOUR DATA NOW', ended: 'finished', minutesLeft: 'minutes left',
-    maySee: 'may see', actions: 'things done', approvedBy: 'approved by',
+    maySee: 'may see', actions: 'things done', approvedByLabel: 'approved by',
     noSupport: 'Nobody outside this business has been let in.',
     noAccounts: 'This screen has not been told about any accounts.',
     nothingFlagged: 'nothing to look at',
@@ -60,7 +60,7 @@ const WORDS = {
     fleetLead: 'இந்தக் கடை எதில் இயங்குகிறது, ஒவ்வொன்றும் விற்பனை செய்ய அனுமதிக்கப்பட்டுள்ளதா.',
     recordsLead: 'விதிகளின்படி எது நீக்கப்படலாம், சட்டப்பூர்வ தடை எதை நீக்கவிடாது. இந்தத் திரை எதையும் நீக்காது.',
     liveNow: 'இப்போது உங்கள் தகவலுக்குள்', ended: 'முடிந்தது', minutesLeft: 'நிமிடங்கள் உள்ளன',
-    maySee: 'பார்க்கலாம்', actions: 'செய்யப்பட்டவை', approvedBy: 'அனுமதித்தவர்',
+    maySee: 'பார்க்கலாம்', actions: 'செய்யப்பட்டவை', approvedByLabel: 'அனுமதித்தவர்',
     noSupport: 'இந்த வணிகத்திற்கு வெளியே உள்ள யாரும் அனுமதிக்கப்படவில்லை.',
     noAccounts: 'எந்தக் கணக்கு பற்றியும் இந்தத் திரைக்குச் சொல்லப்படவில்லை.',
     nothingFlagged: 'பார்க்க எதுவும் இல்லை',
@@ -104,7 +104,7 @@ function sampleSession() {
     access: () => [],
     support: () => [],
     outside: (l) => ({
-      connected: false, source: notConnected(l), mayDecide: false, cannotDecide: null, waiting: [], sessions: [], liveCount: 0,
+      connected: false, source: notConnected(l), mayDecide: false, cannotDecide: null, waitingKnown: false, waiting: [], sessions: [], liveCount: 0,
     }),
     refreshSupport: async () => ({ kind: 'not_connected' }),
     decideSupport: async () => ({ kind: 'not_connected' }),
@@ -243,7 +243,7 @@ function sessionNode(view, mayDecide) {
     : fill(st('ranOutAt'), { at: view.until })}`;
   window_.textContent = `${fill(st('windowWords'), { from: view.from, until: view.until })}${finish}`;
   const detail = document.createElement('small');
-  detail.textContent = `${view.session.reason} · ${t('approvedBy')} ${view.session.approvedBy}`
+  detail.textContent = `${view.session.reason} · ${t('approvedByLabel')} ${view.session.approvedBy}`
     + ` · ${view.actionCount} ${t('actions')}`;
 
   what.append(name, scopes, window_, detail);
@@ -271,10 +271,12 @@ function renderSupport() {
   el('waiting-title').textContent = st('waitingTitle');
   el('waiting-lead').textContent = st('waitingLead');
   const cannot = el('cannot-decide');
-  cannot.hidden = view.cannotDecide === null || view.waiting.length === 0;
+  // Said whenever there is something this person would otherwise act on: a waiting request, or a live session to end.
+  cannot.hidden = view.cannotDecide === null || (view.waiting.length === 0 && view.liveCount === 0);
   cannot.textContent = view.cannotDecide ?? '';
   const nothing = el('nothing-waiting');
-  nothing.hidden = view.waiting.length > 0;
+  // "Nobody is waiting" only when head office SAID so — before it answers, the list is not known, not empty (P-08).
+  nothing.hidden = !view.waitingKnown || view.waiting.length > 0;
   nothing.textContent = st('nothingWaiting');
   // Minutes being typed survive a repaint (a language switch, a re-read) — the figure is the owner's, not the page's.
   const typed = new Map([...document.querySelectorAll('#waiting-list input.minutes')].map((i) => [i.dataset.requestId, i.value]));

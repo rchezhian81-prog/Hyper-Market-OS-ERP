@@ -110,6 +110,11 @@ only when its slice merges with a test that proves it.
 - **The checklist screen's unsigned save** (found in c-1). Ticking items without signing sent an empty signer name,
   which head office could not read (so the save was refused), and a signed checklist re-sent its earlier signer's name.
   Fixed: the screen sends a signature only when this person signs.
+- **A second support-access route took both people from the request** (found in c-2; the triage had listed support
+  access as fine — that check covered the request-and-decide routes, not this one). The older one-step
+  `POST /v1/platform/support-access` took the requester and the approving owner from the body, and wrote into whichever
+  tenant the body named. Nothing read what it wrote. **Retired** in c-2: it now answers 410 `support_access_moved` and
+  points to the request-and-decide routes; the Admin screen uses those.
 - **The emergency-access time cap is read from the request** (found in c-2). `maxMinutes` comes from the body, so the
   person asking also sets the ceiling their request is checked against (default 240 minutes when absent). The owner now
   sees it in the approval's details, but the cap should be the shop's own emergency-access policy — an open owner input
@@ -131,7 +136,8 @@ name only as a label:
 - price-change vendor funding, the B2B credit check and invoice reconcile (stateless);
 - stock counts and warehouse transfers (approver = the caller);
 - customer erasure, product merge, delegation, emergency access and access lifecycle (the decider);
-- support access, purchase orders, supplier approval, GSTR-1 submission, settlement, shift, floor indents,
+- support access through its request-and-decide routes (the older one-step route was not — see the side findings),
+  purchase orders, supplier approval, GSTR-1 submission, settlement, shift, floor indents,
   adjustment requests, goods receipt and risk;
 - data-rights verification (the method of proof, not a person);
 - branch-lifecycle evaluation and partner certification (a ruling, or a label).

@@ -295,6 +295,9 @@ export interface OutsideAccessView {
   readonly mayDecide: boolean;
   /** Why this person cannot decide here, in plain words; null when they can. */
   readonly cannotDecide: string | null;
+  /** Whether head office has ever answered with its waiting list. Until it has, an empty list is NOT "nobody is waiting"
+   *  — it is not known (P-08). */
+  readonly waitingKnown: boolean;
   /** Head office's waiting requests, oldest first. Empty until head office has answered. */
   readonly waiting: readonly WaitingRequestView[];
   /** Live first, then most recent. */
@@ -526,6 +529,7 @@ export function createAdminSession(config: AdminConfig, ports: AdminPorts): Admi
         source: presentSource(lang),
         mayDecide: refusal === null,
         cannotDecide: refusal === null ? null : cannotWords(lang, refusal),
+        waitingKnown: live !== null,
         waiting,
         sessions,
         liveCount: sessions.filter((s) => s.active).length,

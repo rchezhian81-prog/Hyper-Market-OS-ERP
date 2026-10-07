@@ -220,6 +220,7 @@ describe('the waiting list and the sessions are read from head office (M33-FR-03
     expect(view.connected).toBe(true);
     expect(view.source.label).toBe('Asking head office…');
     expect(view.waiting).toEqual([]);
+    expect(view.waitingKnown, 'an unread list is not "nobody is waiting"').toBe(false);
     // Until head office answers, the list the store computer last knew is what shows.
     expect(view.sessions.map((v) => v.session.sessionId)).toEqual(['S-1']);
     expect(view.mayDecide, 'nothing is decided against a list head office has not given').toBe(false);
@@ -235,6 +236,7 @@ describe('the waiting list and the sessions are read from head office (M33-FR-03
     const view = s.outside('en');
     expect(ho.reads).toHaveLength(1);
     expect(view.source).toMatchObject({ tone: 'ok', label: 'From head office, as at 06-08-2026 19:35.' });
+    expect(view.waitingKnown).toBe(true);
     expect(view.mayDecide).toBe(true);
     expect(view.cannotDecide).toBeNull();
     // Oldest first: the one who has waited longest is at the top.
@@ -267,6 +269,7 @@ describe('the waiting list and the sessions are read from head office (M33-FR-03
     // And with no answer ever, it says what the store computer last knew.
     const never = admin({ supportAccess: { ...ho.port, read: async () => ({ result: 'lost_link' as const }) } });
     await never.refreshSupport();
+    expect(never.outside('en').waitingKnown, 'no answer is not an empty list').toBe(false);
     expect(never.outside('en').source.label).toBe('No connection to head office. What is shown is what the store computer last knew — nothing can be decided until head office answers. Press “Check again”.');
   });
 
