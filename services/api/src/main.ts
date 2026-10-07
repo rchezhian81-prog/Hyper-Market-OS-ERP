@@ -473,14 +473,14 @@ export function buildSurface(deps: {
       ? { products: empty([]), priceEntries: empty([]), barcodes: empty([]), taxSchedule: empty([]), now }
       : cataloguePreviewAdapter({ store, now })),
     ...pricingRoutes(store === undefined
-      ? { recordPriceChange: () => {}, canApprove: () => Promise.resolve(false), now }
-      : { ...pricingAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+      ? { recordPriceChange: () => {}, now }
+      : { ...pricingAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) }),
     ...priceListRoutes(store === undefined
-      ? { entries: empty([]), recordEntry: () => {}, canApprove: () => Promise.resolve(false), now }
-      : priceListAdapter({ store, now })),
+      ? { entries: empty([]), recordEntry: () => {}, now }
+      : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     ...promotionRoutes(store === undefined
-      ? { launchedPromotion: empty(undefined), recordLaunch: () => {}, canApprove: () => Promise.resolve(false), now }
-      : promotionAdapter({ store, now })),
+      ? { launchedPromotion: empty(undefined), recordLaunch: () => {}, now }
+      : { ...promotionAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     ...promotionCatalogueRoutes(store === undefined
       ? { promotion: empty(undefined), promotions: empty([]), recordDefined: () => {}, recordStatus: () => {}, now }
       : promotionCatalogueAdapter({ store, now })),
@@ -955,7 +955,7 @@ export function buildSurface(deps: {
     // (idempotent), and a withdrawn/expired quote is kept as a lost-sale signal. Event-sourced, restart-safe.
     ...quotationsRoutes(store === undefined
       ? { quotations: () => [], record: () => {}, now }
-      : quotationsAdapter({ store, now })),
+      : { ...quotationsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     // Restricted-sale gate (B14 / COTPA 2003) — the till's age-18 gate on tobacco and its refusal of a
     // loose single-stick quantity; a decision, not a write, so stateless and offline-safe.
     ...restrictedSalesRoutes(),

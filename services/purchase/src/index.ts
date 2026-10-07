@@ -13,7 +13,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
-import { namedSecondPersonRefusal, openApproval, type ApprovalPort } from '../../identity/src/approval-requests';
+import { namedSecondPersonRefusal, openApproval, type ApprovalPort, NO_APPROVALS } from '../../identity/src/approval-requests';
 import { threeWayMatch, type MatchLine, type MatchResult } from '../../../packages/purchasing/src/three-way-match';
 import {
   matchInvoice, InvalidMatchApprovalError,
@@ -380,8 +380,6 @@ export function invoicedBeforeOn(poId: string, invoice: SupplierInvoiceRecord, a
   return out;
 }
 
-/** No engine wired (a bare stub): every approval is unknown, so nothing is approved by accident. */
-const NO_APPROVALS: ApprovalPort = { approvalState: () => undefined, approvalVersion: () => 0, spendApproval: () => {}, permissionsOfUser: () => undefined };
 
 export interface PurchaseDeps {
   /** The invoice with this id, or undefined — the never-double-count check and the match's source. */

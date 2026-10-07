@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-vi-b-1 — pricing approvals are the approver's own act (7 October 2026)
+
+- **The finding (audit PA-03, register rows 4–7):** four pricing routes took the approver as a name typed into the
+  request:
+  - a price below cost or below the margin floor;
+  - a price-list entry below cost or below the margin floor;
+  - a margin-losing promotion launch;
+  - a quotation below the margin floor — this one checked no authority at all, so any name passed.
+- **What changed:**
+  - All four use head office's approval engine (ADR-0024, amended). There are four new kinds — `price_change`,
+    `price_list_entry`, `promotion_launch` and `quotation_below_floor` — each approved by someone holding
+    `price.change.approve` (the owner), never the setter.
+  - One rule now says what is approved: the action's own body without its control fields, plus its path ids
+    (`actionDetails`). A typed name is refused the same way everywhere (`approvalNamedIn`).
+  - The approval is spent once, after every price rule has passed and before the price is recorded.
+  - The routes' old typed-approver lookups (`canApprove`) are gone.
+  - **Screen:** Products & prices asks for approval and then saves the price or starts the offer with it. The
+    typed-approver dialog is gone.
+- **Proved:**
+  - `tests/unit/approval-requests.test.ts` (18).
+  - The price-change, price-list, promotion, quotation and pilot-safety proofs (35) now drive two people. Each covers:
+    - a typed approver is refused;
+    - self-approval and approval without the authority are refused;
+    - an approval of one price, entry, offer or quote never sets another;
+    - one approval is used once.
+- **Found (recorded, not changed):** the margin floor — and a quotation's line costs — are still read from the
+  request. The approver sees them in the approval, but the floor should be the shop's own policy. This is Wave 4
+  (SF-01), recorded in the register.
+- **Next:** 2b-vi-b-2 — the finance approvals (period close and reopen, concession contract and deposit forfeit, the
+  payroll bank file).
+
 ## Wave 2b-vi-a — head office's maker-checker engine; the three severe typed-approver sites (7 October 2026)
 
 - **The finding (audit PA-03, reopened):** the 2b-vi triage read every head-office route that takes a second person from

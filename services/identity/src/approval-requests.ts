@@ -49,6 +49,24 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'data_import_commit', label: 'Apply a bulk import',
     makerPermission: 'purchase.import.record', checkerPermission: 'purchase.import.record', validForMinutes: 24 * 60,
   },
+  // Pricing (2b-vi-b · M05-FR-02/04 · M12-FR-02): a loss-making price, list entry, promotion or quotation is approved by
+  // someone holding the pricing-approval authority (`price.change.approve`) — "above the setter's authority".
+  price_change: {
+    kind: 'price_change', label: 'Set a price below cost or below the margin floor',
+    makerPermission: 'price.change.propose', checkerPermission: 'price.change.approve', validForMinutes: 24 * 60,
+  },
+  price_list_entry: {
+    kind: 'price_list_entry', label: 'Add a price-list entry below cost or below the margin floor',
+    makerPermission: 'price.change.propose', checkerPermission: 'price.change.approve', validForMinutes: 24 * 60,
+  },
+  promotion_launch: {
+    kind: 'promotion_launch', label: 'Launch a promotion that loses margin',
+    makerPermission: 'promotion.launch', checkerPermission: 'price.change.approve', validForMinutes: 24 * 60,
+  },
+  quotation_below_floor: {
+    kind: 'quotation_below_floor', label: 'Quote a customer below the margin floor',
+    makerPermission: 'pos.quotation.write', checkerPermission: 'price.change.approve', validForMinutes: 24 * 60,
+  },
 });
 
 /** A maker's request, as recorded. */
@@ -306,6 +324,54 @@ export interface ApprovalPort {
   /** Record the one use; resolves `false` when another action's use landed first (even the same action sent twice). */
   readonly spendApproval: (tenantId: string, requestId: string, usedBy: string, expectedVersion: number) => Promise<boolean | void> | boolean | void;
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+}
+
+/** No engine wired (a bare stub): every approval is unknown, so nothing is approved by accident. */
+export const NO_APPROVALS: ApprovalPort = Object.freeze({
+  approvalState: () => undefined, approvalVersion: () => 0, spendApproval: () => {}, permissionsOfUser: () => undefined,
+});
+
+/** Fields that are never part of the action itself: the approval's id, and the typed second-person fields it replaced. */
+const CONTROL_FIELDS: ReadonlySet<string> = new Set(['approvalId', 'approval', 'approvedBy', 'rationale']);
+
+/**
+ * What a maker asks approval FOR: the action's own body without its control fields, plus the route's path ids. The
+ * rule every client follows is the same — ask with exactly the body you will send (and the ids in its address).
+ */
+export function actionDetails(body: unknown, pathIds: Readonly<Record<string, string>> = {}): Record<string, unknown> {
+  const b = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {};
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(b)) if (!CONTROL_FIELDS.has(k)) out[k] = v;
+  return { ...out, ...pathIds };
+}
+
+/**
+ * The common shape of an action that may need a second person: a typed name with no `approvalId` is refused by name;
+ * no approval at all resolves `undefined` (the action's own rules then decide whether it needed one); an `approvalId`
+ * is opened against exactly these details (`openApproval`).
+ */
+export async function approvalNamedIn(port: ApprovalPort | undefined, input: {
+  readonly tenantId: string;
+  readonly approvalId: unknown;
+  /** The legacy typed second-person field and what it carried — refused by name when there is no approval. */
+  readonly typedField: string;
+  readonly typedValue: unknown;
+  readonly kind: string;
+  readonly subjectRef: string;
+  readonly details: unknown;
+  readonly valueMinor: number | null;
+  readonly maker: string;
+  readonly usedBy: string;
+  readonly now: string;
+}): Promise<{ readonly decision: ApprovalDecision; spend(): Promise<void> } | undefined> {
+  if (!isStr(input.approvalId)) {
+    if (isStr(input.typedValue)) throw namedSecondPersonRefusal(input.typedField, input.typedValue);
+    return undefined;
+  }
+  return openApproval(port ?? NO_APPROVALS, {
+    tenantId: input.tenantId, approvalId: input.approvalId.trim(), kind: input.kind, subjectRef: input.subjectRef,
+    details: input.details, valueMinor: input.valueMinor, maker: input.maker, usedBy: input.usedBy, now: input.now,
+  });
 }
 
 /**

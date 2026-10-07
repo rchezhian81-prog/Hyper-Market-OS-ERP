@@ -21,7 +21,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
-import { fingerprintOf, namedSecondPersonRefusal, openApproval, type ApprovalPort } from '../../identity/src/approval-requests';
+import { fingerprintOf, namedSecondPersonRefusal, openApproval, type ApprovalPort, NO_APPROVALS } from '../../identity/src/approval-requests';
 import { validateImport, commitImport, type TemplateSpec, type ValidateInput, type ImportPreview } from '../../../packages/import/src/import-job';
 import { parseDelimited, MalformedFileError, MissingHeaderError } from '../../../packages/import/src/delimited';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
@@ -54,8 +54,6 @@ export interface DataImportDeps {
   readonly approvals?: ApprovalPort;
 }
 
-/** No engine wired (a bare stub): every approval is unknown, so nothing is applied by accident. */
-const NO_APPROVALS: ApprovalPort = { approvalState: () => undefined, approvalVersion: () => 0, spendApproval: () => {}, permissionsOfUser: () => undefined };
 
 /** What an import's approval is for (ADR-0024): the template, every row and the declared total — change any of them
  *  and the approval no longer matches. Returned by validate, asked for by the maker, recomputed at commit. */

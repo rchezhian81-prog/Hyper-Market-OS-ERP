@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  approvalRequestRoutes, takeApproval, fingerprintOf, statusOf, namedSecondPersonRefusal, APPROVAL_KINDS,
+  approvalRequestRoutes, takeApproval, fingerprintOf, statusOf, namedSecondPersonRefusal, APPROVAL_KINDS, actionDetails, approvalNamedIn, NO_APPROVALS,
   type ApprovalDecision, type ApprovalRequest, type ApprovalState,
 } from '../../services/identity/src/approval-requests';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
@@ -180,5 +180,29 @@ describe('an action uses an approval only when it is exactly what was approved (
     expect(e.status).toBe(422);
     expect(e.body.code).toBe('approver_named_without_approval');
     expect(e.body.whatHappened).toContain('u-acct');
+  });
+});
+
+describe('what an action asks approval FOR, and the common typed-name rule (2b-vi-b)', () => {
+  it('the details are the body without its control fields, plus the route\'s path ids', () => {
+    expect(actionDetails({ priceMinor: 6000, approvalId: 'areq-1', approval: { decidedBy: 'x' }, approvedBy: 'x', rationale: 'r' }, { productId: 'P1' }))
+      .toEqual({ priceMinor: 6000, productId: 'P1' });
+    expect(actionDetails(undefined)).toEqual({});
+    expect(actionDetails([1, 2])).toEqual({});
+    // The same body sent with or without an approval fingerprints the same — ask with exactly the body you will send.
+    expect(fingerprintOf(actionDetails({ a: 1, approvalId: 'z' }))).toBe(fingerprintOf(actionDetails({ a: 1 })));
+  });
+  it('a typed name with no approval is refused by name; no approval at all is the action\'s own call', async () => {
+    const base = { tenantId: T, kind: 'price_change', subjectRef: 'P1', details: {}, valueMinor: 1, maker: 'u-mgr', usedBy: 'x', now: NOW };
+    expect((await thrown(() => approvalNamedIn(NO_APPROVALS, { ...base, approvalId: undefined, typedField: 'approval.decidedBy', typedValue: 'u-owner' }))).body.code)
+      .toBe('approver_named_without_approval');
+    expect(await approvalNamedIn(NO_APPROVALS, { ...base, approvalId: '  ', typedField: 'approvedBy', typedValue: undefined })).toBeUndefined();
+    // An approval id with no engine behind it is unknown — never approved by accident.
+    expect((await thrown(() => approvalNamedIn(undefined, { ...base, approvalId: 'areq-1', typedField: 'approvedBy', typedValue: 'u-owner' }))).body.code).toBe('approval_unknown');
+  });
+  it('every pricing kind is approved by the pricing-approval authority', () => {
+    for (const k of ['price_change', 'price_list_entry', 'promotion_launch', 'quotation_below_floor']) {
+      expect(APPROVAL_KINDS[k]!.checkerPermission).toBe('price.change.approve');
+    }
   });
 });

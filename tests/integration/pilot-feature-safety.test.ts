@@ -78,13 +78,25 @@ describe('pilot feature safety — dangerous capabilities are off/gated by defau
 
   it('maker-checker (§28) holds — a price change cannot be self-approved', async () => {
     const h = await freshTenant();
+    // Below cost, so it needs a separate approver (ADR-0024): naming yourself in the body is refused, and asking for
+    // approval then approving it yourself is refused by the engine.
+    const change = { productId: 'safety-prod', priceMinor: 3000, mrpMinor: 6000, costMinor: 5000, currency: 'INR', marginFloorBps: 0 };
     const res = await h.request({
       method: 'POST', path: '/v1/prices/changes', userId: OWNER, tenantId: T, idempotencyKey: 'safety-price-1',
-      // below cost, so it needs a separate approver — supplying the setter as the approver must be refused.
-      body: { productId: 'safety-prod', priceMinor: 3000, mrpMinor: 6000, costMinor: 5000, currency: 'INR', marginFloorBps: 0, approval: { decidedBy: OWNER, reason: 'self' } },
+      body: { ...change, approval: { decidedBy: OWNER, reason: 'self' } },
     });
     expect(res.status).toBe(422);
-    expect(codeOf(res)).toBe('approved_by_the_setter');
+    expect(codeOf(res)).toBe('approver_named_without_approval');
+    const asked = await h.request({
+      method: 'POST', path: '/v1/approvals/requests', userId: OWNER, tenantId: T, idempotencyKey: 'safety-price-ask',
+      body: { kind: 'price_change', subjectRef: 'safety-prod', details: change, valueMinor: 3000, summary: 'below cost', reason: 'self' },
+    });
+    const self = await h.request({
+      method: 'POST', path: `/v1/approvals/requests/${(asked.body as { requestId: string }).requestId}/decide`, userId: OWNER, tenantId: T,
+      idempotencyKey: 'safety-price-self', body: { decision: 'approved', reason: 'self' },
+    });
+    expect(self.status).toBe(422);
+    expect(codeOf(self)).toBe('self_approval');
   });
 
   it('a fresh tenant authorises nothing without a grant (default-deny)', async () => {

@@ -17,7 +17,10 @@ only when its slice merges with a test that proves it.
 **Slices.**
 
 - **a** — 2b-vi-a, *this slice, done*.
-- **b** — 2b-vi-b, money and price approvals, each with its screen.
+- **b** — 2b-vi-b, money and price approvals, each with its screen, in three parts:
+  - **b-1** pricing — done;
+  - **b-2** finance;
+  - **b-3** stock, orders and purchasing.
 - **c** — 2b-vi-c, low-severity and record-only names, plus seals on the box-relayed decisions.
 
 ## The 26 sites
@@ -27,10 +30,10 @@ only when its slice merges with a test that proves it.
 | 1 | `POST /v1/purchase/suppliers/:id/bank-details` | `approvedBy` and `requestedBy` | A, severe | Both people were body strings; the approver's authority was never checked; the account changed | M06-FR-01, SP-7c, §28 | a | **Fixed**: kind `supplier_bank_change`; the maker is the caller |
 | 2 | `POST /v1/import/commit` | `approval.decidedBy` and `uploadedBy` | A, severe | The checker and the uploader both came from the body; no permission check | M30-FR-01/03, §28 | a | **Fixed**: kind `data_import_commit`, bound to the file's content fingerprint; the maker is the caller |
 | 3 | `POST /v1/hr/payroll/pay-run/:id/append` | `actor` | A, severe | The maker and the checker were both body `actor`s; maker ≠ checker compared two strings | §28, SEC-03 | a | **Fixed**: every step's actor is the caller (approve/lock/bank-file release stay on pilot hold) |
-| 4 | `POST /v1/prices/changes` | `approval.decidedBy` | A | Unlocked a below-cost or below-floor price | M05-FR-02, M34-FR-01, §28 | b | Open |
-| 5 | `POST /v1/prices/list/:productId/entries/:entryId` | `approval.decidedBy` | A | Unlocked a below-cost list entry | M05-FR-01/02, §28 | b | Open |
-| 6 | `POST /v1/promotions/:id/launch` | `approvedBy` | A | Launched a promotion that needed approval | M20, M05-FR-04, §28 | b | Open |
-| 7 | `POST /v1/pos/quotations/:id` | `approval.decidedBy` | A (no authority check at all) | Allowed a quote below the margin floor; the floor itself came from the body | M12-FR-02, M05-FR-02, §28 | b | Open |
+| 4 | `POST /v1/prices/changes` | `approval.decidedBy` | A | Unlocked a below-cost or below-floor price | M05-FR-02, M34-FR-01, §28 | b-1 | **Fixed** (b-1): kind `price_change`; the screen asks and saves with the approval |
+| 5 | `POST /v1/prices/list/:productId/entries/:entryId` | `approval.decidedBy` | A | Unlocked a below-cost list entry | M05-FR-01/02, §28 | b-1 | **Fixed** (b-1): kind `price_list_entry` (API-only; no screen) |
+| 6 | `POST /v1/promotions/:id/launch` | `approvedBy` | A | Launched a promotion that needed approval | M20, M05-FR-04, §28 | b-1 | **Fixed** (b-1): kind `promotion_launch`; the screen asks and launches with the approval |
+| 7 | `POST /v1/pos/quotations/:id` | `approval.decidedBy` | A (no authority check at all) | Allowed a quote below the margin floor; the floor itself came from the body | M12-FR-02, M05-FR-02, §28 | b-1 | **Fixed** (b-1): kind `quotation_below_floor`, approver must hold `price.change.approve` (API-only; no screen) |
 | 8 | `POST /v1/finance/periods/:period/reopen` | `approvedBy` | A | Reopened a closed accounting period | M23-FR-04, §28 | b | Open |
 | 9 | `POST /v1/finance/periods/:period/close` | `signedBy` | A | Certified a period close | §28 (M23) | b | Open |
 | 10 | `POST /v1/concession/contracts/:id` | `approvedBy` | A (no check) | Cleared the contract's `not_approved` trading blocker | M27, §28 | b | Open |
@@ -75,6 +78,11 @@ only when its slice merges with a test that proves it.
   - finance close and reopen;
   - service compensation;
   - the admin support grant.
+- **The margin floor is taken from the request** (found in 2b-vi-b-1). `POST /v1/prices/changes`, price-list entries
+  and quotations read `marginFloorBps` — and a quotation also its line costs — from the body. So the person setting a
+  price also chooses the floor it is checked against. The second person now sees the floor and costs in the approval's
+  details, but the floor itself should come from the shop's own margin policy (M05-FR-02). That register does not
+  exist at head office yet; it belongs with the operative price and promotion registers in **Wave 4 (SF-01)**.
 - **The pay-run route's gate.** It is `payroll.statutory.read` for every step, approve and lock included. Payroll
   approve, lock and bank-file release are under the pilot hold; this is recorded here and **no new permission is
   invented**. The owner sets the payroll approval authority when the hold lifts.

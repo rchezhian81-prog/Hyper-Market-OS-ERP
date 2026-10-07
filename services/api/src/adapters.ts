@@ -8409,15 +8409,6 @@ export function pricingAdapter(input: {
   return {
     now: input.now,
 
-    // The approver must genuinely hold price.change.approve — read from the tenant's own grants, the
-    // same authoritative source the kernel authorizes against. A named approver who cannot approve
-    // prices is not an approval (§28).
-    canApprove: async (tenantId, userId) => {
-      const grants = await effectiveGrants(input.store, tenantId);
-      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
-      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('price.change.approve'));
-    },
-
     recordPriceChange: async (tenantId, change: PriceChangeRecord) => {
       await input.store.append(tenantId, STREAM.pricing, makeEvent({
         id: `pricechange-${change.productId}-${change.at}`,
@@ -8440,13 +8431,6 @@ export function priceListAdapter(input: {
   return {
     now: input.now,
 
-    // The §28 approver of a below-cost/floor price-list entry must genuinely hold price.change.approve —
-    // the same authoritative grant source the kernel authorizes against, identical to the governed change.
-    canApprove: async (tenantId, userId) => {
-      const grants = await effectiveGrants(input.store, tenantId);
-      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
-      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('price.change.approve'));
-    },
 
     entries: (tenantId, productId) =>
       allOf<PriceEntry>(input.store, tenantId, forPriceList(productId), 'PriceListEntryPublished'),
@@ -8472,13 +8456,6 @@ export function promotionAdapter(input: {
   return {
     now: input.now,
 
-    // A margin-losing promotion is a below-cost pricing decision, so its §28 approver must genuinely hold
-    // `price.change.approve` — the same authoritative grant source the price change and price list check.
-    canApprove: async (tenantId, userId) => {
-      const grants = await effectiveGrants(input.store, tenantId);
-      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
-      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('price.change.approve'));
-    },
 
     launchedPromotion: async (tenantId, promotionId) => {
       const launched = await allOf<LaunchRecord>(input.store, tenantId, STREAM.promotions, 'PromotionLaunched');
