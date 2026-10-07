@@ -420,25 +420,26 @@ export function createDataIoSession(config: DataIoConfig, ports: DataIoPorts): D
       const mine = requestsFor(inbox.inbox.mine, job);
       if (mine.length === 0) return { kind: 'not_asked' };
 
-      const approved = mine.filter((r) => r.status === 'approved');
-      if (approved.length === 0) {
-        // Nothing usable. A request still waiting is the news; otherwise the newest request says what happened.
-        if (mine.some((r) => r.status === 'waiting')) return { kind: 'waiting' };
-        const latest = mine.slice().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0]!;
-        if (latest.status === 'rejected') return { kind: 'rejected', decidedBy: latest.decidedBy ?? '—', reason: latest.decisionReason ?? '—' };
-        if (latest.status === 'expired') return { kind: 'expired' };
-        return { kind: 'used' };
-      }
-
-      // Re-check the file NOW: the approval is only for the file as it was when asked. A changed file is refused here,
-      // before any commit is sent (the server would refuse it too).
+      // Check the file NOW: an approval is only for the file as it was when asked (its check code). A changed file is
+      // refused here, before any commit is sent (the server would refuse it too).
       const checked = await ports.validate({ templateId, text: text2, ...withTotal(declaredTotalMinor) });
       if (checked === 'lost_link') return { kind: 'lost_link' };
       if (checked === 'refused' || checked.contentFingerprint === null) return { kind: 'refused', whatHappened: '' };
-      const match = approved
-        .filter((r) => r.details['contentFingerprint'] === checked.contentFingerprint && r.details['jobId'] === job)
-        .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0];
-      if (match === undefined) return { kind: 'file_changed' };
+      const newest = (rows: readonly ApprovalRequestView[]): ApprovalRequestView | undefined =>
+        rows.slice().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0];
+      const forThisFile = mine.filter((r) => r.details['contentFingerprint'] === checked.contentFingerprint && r.details['jobId'] === job);
+
+      const match = newest(forThisFile.filter((r) => r.status === 'approved'));
+      if (match === undefined) {
+        // Nothing usable for THIS file. A request for it still waiting is the news; otherwise the newest request for it
+        // says what happened; with none for this file, a rejection still says who and why, and anything else means the
+        // file changed after asking.
+        if (forThisFile.some((r) => r.status === 'waiting')) return { kind: 'waiting' };
+        const latest = newest(forThisFile) ?? newest(mine)!;
+        if (latest.status === 'rejected') return { kind: 'rejected', decidedBy: latest.decidedBy ?? '—', reason: latest.decisionReason ?? '—' };
+        if (forThisFile.length === 0) return { kind: 'file_changed' };
+        return latest.status === 'expired' ? { kind: 'expired' } : { kind: 'used' };
+      }
 
       const r = await ports.commit({ templateId, text: text2, jobId: job, approvalId: match.requestId, ...withTotal(declaredTotalMinor) });
       if (r === 'committed') return { kind: 'committed' };

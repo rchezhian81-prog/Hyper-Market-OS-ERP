@@ -100,7 +100,7 @@ function requestNode(r, waitingForMe) {
   }
 
   if (waitingForMe) {
-    const decide = document.createElement('div'); decide.className = 'decide';
+    const decideBox = document.createElement('div'); decideBox.className = 'decide';
     const inputId = `reason-${r.requestId}`;
     const label = document.createElement('label'); label.htmlFor = inputId; label.textContent = t('reasonLabel');
     const input = document.createElement('input'); input.type = 'text'; input.id = inputId; input.className = 'reason'; input.autocomplete = 'off'; input.maxLength = 300;
@@ -112,8 +112,8 @@ function requestNode(r, waitingForMe) {
     approve.addEventListener('click', () => { void decide(r.requestId, 'approved', input, [approve, reject]); });
     reject.addEventListener('click', () => { void decide(r.requestId, 'rejected', input, [approve, reject]); });
     buttons.append(approve, reject);
-    decide.append(label, input, buttons);
-    li.append(decide);
+    decideBox.append(label, input, buttons);
+    li.append(decideBox);
   }
   return li;
 }

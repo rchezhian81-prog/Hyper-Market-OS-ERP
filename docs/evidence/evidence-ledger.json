@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 918,
+  "testFiles": 922,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -21,7 +21,7 @@
   "totals": {
     "unit": 81,
     "integration": 78,
-    "realDb": 56,
+    "realDb": 57,
     "browser": 44,
     "connected": 2,
     "device": 0,
@@ -95,22 +95,24 @@
       "id": "M02",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 19,
-        "integration": 15,
-        "realDb": 3,
-        "browser": 3,
+        "unit": 21,
+        "integration": 16,
+        "realDb": 4,
+        "browser": 4,
         "connected": 0,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
+          "tests/unit/approval-requests.test.ts",
           "tests/unit/approvals-delegation.test.ts",
           "tests/unit/approvals.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/edge-today-figures.test.ts",
           "tests/unit/effective-grants.test.ts",
           "tests/unit/erp-admin-session.test.ts",
+          "tests/unit/erp-approvals-session.test.ts",
           "tests/unit/erp-manager-session.test.ts",
           "tests/unit/identity-access-binding.test.ts",
           "tests/unit/identity-account.test.ts",
@@ -134,6 +136,7 @@
           "tests/integration/authorization-is-enforced.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/emergency-access.test.ts",
+          "tests/integration/maker-checker-is-two-people.test.ts",
           "tests/integration/manager-decisions-reach-the-cloud-through-the-edge.test.ts",
           "tests/integration/second-person-is-a-separate-act.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
@@ -145,9 +148,11 @@
         "realDb": [
           "tests/integration/access-lifecycle.test.ts",
           "tests/integration/authorization-is-enforced.test.ts",
-          "tests/integration/branch-scope-is-the-servers.test.ts"
+          "tests/integration/branch-scope-is-the-servers.test.ts",
+          "tests/integration/maker-checker-is-two-people.test.ts"
         ],
         "browser": [
+          "tests/e2e/approvals-delivery.e2e.ts",
           "tests/e2e/customer-login.e2e.ts",
           "tests/e2e/manager-decisions-survive-reload.e2e.ts",
           "tests/e2e/the-erp-pages-meet-the-spec.e2e.ts"
@@ -319,8 +324,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 10,
-        "integration": 11,
-        "realDb": 1,
+        "integration": 12,
+        "realDb": 2,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -342,6 +347,7 @@
         "integration": [
           "tests/integration/duplicate-bank.test.ts",
           "tests/integration/goods-receipt-assembled.test.ts",
+          "tests/integration/maker-checker-is-two-people.test.ts",
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-orders.test.ts",
           "tests/integration/purchase-tenant-isolation.test.ts",
@@ -353,6 +359,7 @@
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
         "realDb": [
+          "tests/integration/maker-checker-is-two-people.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
         "browser": [
@@ -1646,8 +1653,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 9,
-        "integration": 4,
-        "realDb": 0,
+        "integration": 5,
+        "realDb": 1,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -1669,9 +1676,12 @@
           "tests/integration/ai-mapping-quality.test.ts",
           "tests/integration/data-export.test.ts",
           "tests/integration/data-import.test.ts",
-          "tests/integration/import-quality.test.ts"
+          "tests/integration/import-quality.test.ts",
+          "tests/integration/maker-checker-is-two-people.test.ts"
         ],
-        "realDb": [],
+        "realDb": [
+          "tests/integration/maker-checker-is-two-people.test.ts"
+        ],
         "browser": [
           "tests/e2e/company-report.e2e.ts",
           "tests/e2e/data-io-delivery.e2e.ts",

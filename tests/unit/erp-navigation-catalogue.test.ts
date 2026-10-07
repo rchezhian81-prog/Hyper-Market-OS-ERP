@@ -77,13 +77,13 @@ describe('every screen the store computer serves has a door, and every door open
   it('an unserved or unbuilt item opens nothing on the box — and the unserved ones are exactly the pages nothing serves yet', () => {
     const notBox = ERP_NAVIGATION.filter((i) => (i.served ?? 'box') !== 'box');
     for (const i of notBox) expect(screenOfPath(i.path), `${i.id} is marked ${i.served} but the box serves it`).toBeNull();
-    // The pages in apps/web-erp/web the box does not serve. Four have an item (marked unserved); the other two —
+    // The pages in apps/web-erp/web the box does not serve. Three have an item (marked unserved); the other two —
     // the owner's company report and the DPO's erasure console — have no item yet (docs/STATUS.md, G5c). Approvals
-    // (ADR-0024) is built and has its item; the store computer does not serve it yet.
+    // (ADR-0024) is served by the box and is NOT on this list.
     const servedFiles = new Set(BOX_SCREENS.map((s) => APP_SHELL[s].file));
     const unservedPages = readdirSync('apps/web-erp/web').filter((f) => f.endsWith('.html') && !servedFiles.has(f)).sort();
-    expect(unservedPages).toEqual(['approvals.html', 'company-report.html', 'erasure-console.html', 'payroll-payslip.html', 'payroll.html', 'setup.html']);
-    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['approval-requests', 'my-payslip', 'payroll', 'store-setup']);
+    expect(unservedPages).toEqual(['company-report.html', 'erasure-console.html', 'payroll-payslip.html', 'payroll.html', 'setup.html']);
+    expect(notBox.filter((i) => i.served === 'unserved').map((i) => i.id).sort()).toEqual(['my-payslip', 'payroll', 'store-setup']);
     // `suppliers` left this list at SP-7d (30 Sep 2026): the Suppliers screen is built and served by the box.
     expect(notBox.filter((i) => i.served === 'unbuilt').map((i) => i.id).sort()).toEqual(['reconciliation', 'settings']);
   });
@@ -114,6 +114,8 @@ describe('every door is gated on a word somebody enforces and somebody holds (P-
     const item = ERP_NAVIGATION.find((i) => i.id === 'approval-requests')!;
     expect(item).toBeDefined();
     expect(item.requires).toBe('identity.self.read');
+    expect(item.served ?? 'box').toBe('box');
+    expect(screenOfPath(item.path)).toBe('approvals');
     expect(enforced.has('identity.self.read')).toBe(true);
     expect(SCREEN_SOURCE).toContain(`'identity.self.read'`);
     expect(granted.has('identity.self.read')).toBe(true);

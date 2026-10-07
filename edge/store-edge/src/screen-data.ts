@@ -57,7 +57,7 @@ import { packFreshness, type SignedPack } from '../../../services/catalogue/src/
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'indents', 'unsellable', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'indents', 'unsellable', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor', 'approvals',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -2330,6 +2330,17 @@ export function migrationPayload(input: ScreenInput): Record<string, unknown> | 
   return payload;
 }
 
+/**
+ * The Approvals page payload (ADR-0024 · M02-FR-03 · §28): only WHO is looking. The inbox — what waits for this person
+ * and what they asked for — is head office's, read live (`GET /v1/approvals/requests`), never a copy on this box; head
+ * office decides what waits for whom by each kind's own permission. The page has no named viewer of its own in the
+ * pack: behind the authenticated relay the person who signed in becomes the viewer (their id, their permissions from
+ * this box's role register); on a box with nobody signed in it says nobody is named and decides nothing.
+ */
+export function approvalsPayload(_input: ScreenInput): Record<string, unknown> | null {
+  return { permissions: [] };
+}
+
 /** The global each screen's bundle reads at boot. One name per screen, and they must not drift. */
 export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   pos: 'posCatalogue',
@@ -2382,6 +2393,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   migration: 'migrationData',
   warehouse: 'warehouseData',
   'warehouse-supervisor': 'warehouseSupervisorData',
+  approvals: 'approvalsData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -2435,6 +2447,7 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   migration: migrationPayload,
   warehouse: warehousePayload,
   'warehouse-supervisor': warehouseSupervisorPayload,
+  approvals: approvalsPayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

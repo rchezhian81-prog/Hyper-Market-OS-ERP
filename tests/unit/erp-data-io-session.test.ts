@@ -212,7 +212,7 @@ describe('asking for approval — the uploader\'s own request, for this job and 
     expect(await session({ askApproval: async () => ({ result: 'lost_link' }) }).askForApproval('en', ASK)).toEqual({ kind: 'lost_link' });
     expect(await session({ validate: async () => 'lost_link' }).askForApproval('en', ASK)).toEqual({ kind: 'lost_link' });
     // A bare stand-in with no engine wired cannot ask — and says so, rather than pretending.
-    const { askApproval: _drop, ...bare } = ports();
+    const bare: DataIoPorts = { ...ports(), askApproval: undefined };
     expect(await createDataIoSession({ userId: 'u-op' }, bare).askForApproval('en', ASK)).toEqual({ kind: 'lost_link' });
   });
 });
@@ -291,6 +291,23 @@ describe('loading — names the uploader\'s own APPROVED request; never a typed 
     expect(commits).toBe(0);
   });
 
+  it('asked again for the changed file → "waiting" (not "file changed"); a rejection of an older file still says who and why', async () => {
+    const NEW = 'd'.repeat(64);
+    const oldApproved = request({ requestId: 'areq-old', status: 'approved', decidedBy: 'u-owner', requestedAt: '2026-10-07T03:00:00.000Z' });
+    const newWaiting = request({ requestId: 'areq-new', details: { jobId: 'JOB-1', contentFingerprint: NEW }, requestedAt: '2026-10-07T05:00:00.000Z' });
+    let commits = 0;
+    const s = session({
+      approvalInbox: async () => inboxOf(oldApproved, newWaiting),
+      validate: async () => ({ preview: PREVIEW, contentFingerprint: NEW }),
+      commit: async () => { commits += 1; return 'committed'; },
+    });
+    expect(await s.commit(LOAD)).toEqual({ kind: 'waiting' });
+    const oldRejected = request({ status: 'rejected', decidedBy: 'u-mgr', decisionReason: 'wrong supplier' });
+    expect(await session({ approvalInbox: async () => inboxOf(oldRejected), validate: async () => ({ preview: PREVIEW, contentFingerprint: NEW }) }).commit(LOAD))
+      .toEqual({ kind: 'rejected', decidedBy: 'u-mgr', reason: 'wrong supplier' });
+    expect(commits).toBe(0);
+  });
+
   it('of two approvals for the job, the one for THIS file is named', async () => {
     const seen: CommitRequest[] = [];
     const old = request({ requestId: 'areq-old', status: 'approved', decidedBy: 'u-owner', details: { jobId: 'JOB-1', contentFingerprint: 'c'.repeat(64) }, requestedAt: '2026-10-07T05:00:00.000Z' });
@@ -316,7 +333,7 @@ describe('loading — names the uploader\'s own APPROVED request; never a typed 
 
   it('no link to head office → no load, said as a lost link (never as "loaded")', async () => {
     expect(await session({ approvalInbox: async () => ({ result: 'lost_link' }) }).commit(LOAD)).toEqual({ kind: 'lost_link' });
-    const { approvalInbox: _drop, ...bare } = ports();
+    const bare: DataIoPorts = { ...ports(), approvalInbox: undefined };
     expect(await createDataIoSession({ userId: 'u-op' }, bare).commit(LOAD)).toEqual({ kind: 'lost_link' });
     expect(await session({ approvalInbox: async () => ({ result: 'refused', code: 'unauthenticated', whatHappened: 'Sign in again.' }) }).commit(LOAD))
       .toEqual({ kind: 'refused', whatHappened: 'Sign in again.' });
