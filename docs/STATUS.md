@@ -5,6 +5,48 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-vi-b-2 — finance approvals are the approver's own act (7 October 2026)
+
+- **The finding (audit PA-03, register rows 8–12):** five finance places took their second person as a typed name or a
+  history in the request:
+  - signing a month close;
+  - approving a month reopen;
+  - approving a concession contract — stored with no check of any kind;
+  - forfeiting a concessionaire's deposit — no check;
+  - the salary bank file and the payroll journal, built from a pay-run history sent in the request, whose "approved by"
+    was a string.
+- **What changed:**
+  - **Month close and reopen** use head office's approval engine (kinds `period_close`, `period_reopen`).
+    - The person who closes or reopens asks. Someone who may sign a period (the accountant, the CA or the owner)
+      approves in their own session, and never their own request.
+    - The signature on a close is that approval. Head office still refuses a signer who posted into the month and
+      re-checks its own control totals at the moment of closing.
+  - **Concession contract and deposit forfeit** use the engine (kinds `concession_contract`,
+    `concession_deposit_forfeit`). Another person who manages concessions approves. Only a forfeit takes an approval.
+  - **Salary bank file and payroll journal** read the pay run head office recorded — submitted, approved and locked
+    step by step by signed-in people. A history in the request is refused by name. The file must pay exactly the run's
+    recorded net total to exactly its recorded headcount.
+  - **Screen:** the Finance screen asks for the signature or approval and then closes or reopens the month at head
+    office. The typed "who is approving" box is gone.
+  - The routes' old signer lookup (`canSignPeriod`) is gone. The practice-data seed now approves its concession
+    contract as two people.
+- **Found and fixed while proving it:** a concession contract's versions shared one record id. Approving a contract
+  recorded unapproved — the normal two-person path now — crashed on PostgreSQL instead of landing as the new version.
+  Each version now has its own id.
+- **Proved:**
+  - `tests/unit/approval-requests.test.ts` (19).
+  - Period close and reopen (7), concession (incl. forfeit), the two concession-tag proofs, payroll bank file (5) and
+    journal (4), step-up, the pilot seeds and the demo UAT, all through the real API. The whole integration suite
+    passes (2,293), and the hosted seed runs twice on a fresh PostgreSQL with nothing changing the second time.
+- **Not yet / honest limits:**
+  - A month-close approval names the month, not the figures. A posting after approval that still agrees is not
+    re-shown to the signer.
+  - Concession contracts and forfeits have no screen (API-only).
+  - Payroll stays on pilot hold.
+  - Staff UAT (SP-10) is pending.
+- **Next:** 2b-vi-b-3 — stock, orders and purchasing (write-off, upward stock adjustment, online-order refunds,
+  service compensation, invoice capture, supplier payments).
+
 ## Wave 2b-vi-b-1 — pricing approvals are the approver's own act (7 October 2026)
 
 - **The finding (audit PA-03, register rows 4–7):** four pricing routes took the approver as a name typed into the
