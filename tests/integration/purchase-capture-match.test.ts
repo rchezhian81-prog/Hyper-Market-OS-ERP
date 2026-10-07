@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sentWithApproval } from '../support/approval-request';
 import { STREAM } from '../../services/api/src/adapters';
 import type { StoredMatch, SupplierInvoiceRecord } from '../../services/purchase/src/index';
 
@@ -31,8 +32,19 @@ const get = (h: ApiHarness, path: string, userId: string, tenantId = A) => h.req
 const line = (productId: string, quantity: number, unitPriceMinor: number) => ({ productId, quantity, unitPriceMinor, lineTotalMinor: quantity * unitPriceMinor });
 /** The paper: 10 × ₹5.00 of p1 and 4 × ₹10.00 of p2 = ₹90.00. */
 const PAPER = { supplierId: 's-1', poId: 'po-1', declaredTotalMinor: 9000, lines: [line('p1', 10, 500), line('p2', 4, 1000)] };
-const capture = (h: ApiHarness, invoiceId: string, body: Record<string, unknown>, userId = 'u-buyer', key = `cap-${invoiceId}`) =>
-  post(h, `/v1/purchase/invoices/${invoiceId}/capture`, userId, body, key);
+/**
+ * The capture as two people make it (ADR-0024): a body naming its checker (`approvedBy`) becomes that checker's own approval
+ * in the engine — asked by the capturer for exactly this bill, decided in the checker's own session — and the capture names
+ * it. When the checker may not approve (themselves, no authority, unknown), the engine's refusal comes back and nothing is
+ * captured. No checker named: captured as sent (flagged `no_approval`).
+ */
+const capture = (h: ApiHarness, invoiceId: string, body: Record<string, unknown>, userId = 'u-buyer', key = `cap-${invoiceId}`) => {
+  const { approvedBy, ...rest } = body;
+  const send = (b: Record<string, unknown>) => post(h, `/v1/purchase/invoices/${invoiceId}/capture`, userId, b, key);
+  if (typeof approvedBy !== 'string') return send(rest);
+  const totalMinor = ((rest['lines'] ?? []) as { lineTotalMinor: number }[]).reduce((t, l) => t + l.lineTotalMinor, 0);
+  return sentWithApproval(h, A, userId, approvedBy, { kind: 'supplier_invoice_check', subjectRef: invoiceId, pathIds: { invoiceId }, valueMinor: totalMinor }, rest, send);
+};
 const match = (h: ApiHarness, invoiceId: string, userId = 'u-checker', body: Record<string, unknown> = {}, key = `mat-${invoiceId}`) =>
   post(h, `/v1/purchase/invoices/${invoiceId}/match`, userId, body, key);
 const relayed = (h: ApiHarness, invoiceId: string, over: Record<string, unknown> = {}, key = `sync-${invoiceId}`) =>
@@ -153,9 +165,15 @@ describe('a supplier invoice is captured as the paper says it and matched agains
     expect(self.status).toBe(422);
     expect(codeOf(self)).toBe('self_approval');
     expect((await get(h, '/v1/purchase/invoices/inv-self', 'u-owner')).status).toBe(404);
-    // An approver head office does not know, or one without the right to check invoices — recorded, flagged.
-    expect(((await capture(h, 'inv-ghost-ok', { ...PAPER, approvedBy: 'u-nobody' })).body as { flags: string[] }).flags).toEqual(['approver_unknown']);
-    expect(((await capture(h, 'inv-cash-ok', { ...PAPER, approvedBy: 'u-cash' })).body as { flags: string[] }).flags).toEqual(['approver_lacks_authority']);
+    // A person head office does not know, or one without the right to check bills, cannot approve one — refused at the
+    // decision, nothing captured (before 2b-vi-b-3 the bill was recorded with their typed name and only flagged).
+    expect((await capture(h, 'inv-ghost', { ...PAPER, approvedBy: 'u-nobody' })).status).toBe(403);
+    expect((await capture(h, 'inv-cash', { ...PAPER, approvedBy: 'u-cash' })).status).toBe(403);
+    // A typed checker is refused by name (audit PA-03).
+    expect(codeOf(await post(h, '/v1/purchase/invoices/inv-typed/capture', 'u-buyer', { ...PAPER, approvedBy: 'u-checker' }, 'cap-typed'))).toBe('approver_named_without_approval');
+    // Captured before anyone checked it: recorded and flagged — the match and the payment still need a second person.
+    expect(((await capture(h, 'inv-ghost-ok', PAPER)).body as { flags: string[] }).flags).toEqual(['no_approval']);
+    expect(((await capture(h, 'inv-cash-ok', PAPER)).body as { flags: string[] }).flags).toEqual(['no_approval']);
     // No order named: received as-is; the match has nothing ordered or received to agree with → blocked.
     const none = (await capture(h, 'inv-noorder', { ...PAPER, poId: null, approvedBy: 'u-checker' })).body as { flags: string[] };
     expect(none.flags).toEqual(['no_purchase_order']);

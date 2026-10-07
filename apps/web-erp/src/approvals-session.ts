@@ -1,8 +1,8 @@
 // The Approvals page — head office's maker-checker inbox (ADR-0024 · audit PA-03 · M02-FR-03 · §28 · P-04 · P-05).
 //
 // Head office's approval engine replaced every box where the person doing the work TYPED the approver's name. Now:
-//   1. the MAKER asks for approval in their own session (`POST /v1/approvals/requests`) — the import, Products & prices
-//      and Finance (month close and reopen) screens do this;
+//   1. the MAKER asks for approval in their own session (`POST /v1/approvals/requests`) — the import, Products & prices,
+//      Finance (month close and reopen) and Record a loss (a material write-off) screens do this;
 //   2. a CHECKER — anyone else who holds that kind's approval permission, never the maker — sees the request here,
 //      under "Waiting for you", and approves or rejects it WITH A WRITTEN REASON, in their own session
 //      (`POST /v1/approvals/requests/:requestId/decide`);
@@ -102,11 +102,18 @@ export type CopyKey =
   | 'kindDataImport' | 'kindSupplierBank'
   | 'kindPriceChange' | 'kindPriceListEntry' | 'kindPromotionLaunch' | 'kindQuotationBelowFloor'
   | 'kindPeriodClose' | 'kindPeriodReopen' | 'kindConcessionContract' | 'kindConcessionDepositForfeit'
+  | 'kindStockWriteOff' | 'kindStockAdjustmentUp' | 'kindOrderRefund' | 'kindServiceCompensation'
+  | 'kindSupplierInvoiceCheck' | 'kindSupplierPayment'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
   | 'detailVendorFundingPerUnit' | 'detailBaselineUnits' | 'detailExpectedUnits'
   | 'detailPeriod' | 'detailReason'
+  | 'detailLocationId' | 'detailQty' | 'detailUom' | 'detailLossType' | 'detailReasonCode' | 'detailValueMinor' | 'detailEvidenceRef'
+  | 'detailWriteOffId'
+  | 'detailAmountMinor' | 'detailRefundId' | 'detailOrderId' | 'detailBasis' | 'detailCaseId' | 'detailKind'
+  | 'detailInvoiceId' | 'detailSupplierId' | 'detailPaymentId' | 'detailPaidOn' | 'detailMethod' | 'detailReference'
+  | 'detailMovementId' | 'detailQuantityMinor'
   | 'statusWaitingForYou' | 'statusWaiting' | 'statusApproved' | 'statusApprovedUntil' | 'statusRejected'
   | 'statusExpired' | 'statusUsed'
   | 'decidedApproved' | 'decidedRejected' | 'decideNeedsReason' | 'decideNobody' | 'decideNotPermitted'
@@ -129,12 +136,21 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindPromotionLaunch: 'Launch a promotion that loses margin', kindQuotationBelowFloor: 'Quote a customer below the margin floor',
     kindPeriodClose: 'Close and sign an accounting month', kindPeriodReopen: 'Reopen a signed accounting month',
     kindConcessionContract: 'Approve a concession contract', kindConcessionDepositForfeit: 'Forfeit a concessionaire\'s deposit',
+    kindStockWriteOff: 'Write off stock (a material loss)', kindStockAdjustmentUp: 'Correct stock upward',
+    kindOrderRefund: 'Refund an online order', kindServiceCompensation: 'Give a customer compensation above the desk\'s own limit',
+    kindSupplierInvoiceCheck: 'Check a supplier bill', kindSupplierPayment: 'Pay a supplier',
     detailJobId: 'Load name', detailContentFingerprint: 'File check code',
     detailProductId: 'Item', detailPriceMinor: 'New price', detailMrpMinor: 'MRP', detailCostMinor: 'What it costs us', detailCurrency: 'Currency',
     detailMarginFloorBps: 'Minimum margin', detailPromotionId: 'Offer', detailDescription: 'Offer description', detailNormalPrice: 'Normal price',
     detailPromoPrice: 'Offer price', detailUnitCost: 'What one unit costs us', detailVendorFundingPerUnit: 'Supplier pays per unit',
     detailBaselineUnits: 'Units we sell now', detailExpectedUnits: 'Units expected with the offer',
     detailPeriod: 'Month', detailReason: 'Why',
+    detailLocationId: 'Where', detailQty: 'Quantity', detailUom: 'Unit', detailLossType: 'Kind of loss', detailReasonCode: 'Reason code',
+    detailValueMinor: 'What it is worth', detailEvidenceRef: 'Evidence', detailWriteOffId: 'Write-off',
+    detailAmountMinor: 'Amount', detailRefundId: 'Refund', detailOrderId: 'Order', detailBasis: 'Reason for the refund',
+    detailCaseId: 'Customer case', detailKind: 'What kind', detailInvoiceId: 'Supplier bill', detailSupplierId: 'Supplier',
+    detailPaymentId: 'Payment', detailPaidOn: 'Paid on', detailMethod: 'How it is paid', detailReference: 'Reference',
+    detailMovementId: 'Stock movement', detailQuantityMinor: 'Quantity',
     statusWaitingForYou: 'Waiting for your decision', statusWaiting: 'Waiting for a second person',
     statusApproved: 'Approved by {who}', statusApprovedUntil: 'Approved by {who} — use it before {until}',
     statusRejected: 'Rejected by {who}: {reason}', statusExpired: 'Expired — it was not used in time. Ask again.',
@@ -168,12 +184,21 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindPromotionLaunch: 'லாபத்தை இழக்கும் சலுகையைத் தொடங்குதல்', kindQuotationBelowFloor: 'குறைந்தபட்ச லாப வரம்புக்குக் கீழே வாடிக்கையாளருக்கு விலை மேற்கோள்',
     kindPeriodClose: 'கணக்கு மாதத்தை மூடி கையெழுத்திடுதல்', kindPeriodReopen: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்',
     kindConcessionContract: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்', kindConcessionDepositForfeit: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்',
+    kindStockWriteOff: 'சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)', kindStockAdjustmentUp: 'சரக்கு எண்ணிக்கையை மேல்நோக்கித் திருத்துதல்',
+    kindOrderRefund: 'ஆன்லைன் ஆர்டருக்குப் பணத்தைத் திருப்பித் தருதல்', kindServiceCompensation: 'சேவை மேசையின் சொந்த வரம்புக்கு மேல் வாடிக்கையாளருக்கு இழப்பீடு வழங்குதல்',
+    kindSupplierInvoiceCheck: 'விநியோகஸ்தர் பில்லைச் சரிபார்த்தல்', kindSupplierPayment: 'விநியோகஸ்தருக்குப் பணம் செலுத்துதல்',
     detailJobId: 'ஏற்றத்தின் பெயர்', detailContentFingerprint: 'கோப்புச் சரிபார்ப்புக் குறியீடு',
     detailProductId: 'பொருள்', detailPriceMinor: 'புதிய விலை', detailMrpMinor: 'அதிகபட்ச சில்லறை விலை (MRP)', detailCostMinor: 'நமக்கு ஆகும் அடக்க விலை', detailCurrency: 'நாணயம்',
     detailMarginFloorBps: 'குறைந்தபட்ச லாப வரம்பு', detailPromotionId: 'சலுகை', detailDescription: 'சலுகை விவரம்', detailNormalPrice: 'வழக்கமான விலை',
     detailPromoPrice: 'சலுகை விலை', detailUnitCost: 'ஒரு அலகுக்கு நமக்கு ஆகும் அடக்கம்', detailVendorFundingPerUnit: 'ஒரு அலகுக்கு விநியோகஸ்தர் தருவது',
     detailBaselineUnits: 'இப்போது விற்கும் அலகுகள்', detailExpectedUnits: 'சலுகையுடன் எதிர்பார்க்கும் அலகுகள்',
     detailPeriod: 'மாதம்', detailReason: 'ஏன்',
+    detailLocationId: 'எங்கே', detailQty: 'எண்ணிக்கை', detailUom: 'அலகு', detailLossType: 'இழப்பின் வகை', detailReasonCode: 'காரணக் குறியீடு',
+    detailValueMinor: 'மதிப்பு', detailEvidenceRef: 'ஆதாரம்', detailWriteOffId: 'இழப்புப் பதிவு',
+    detailAmountMinor: 'தொகை', detailRefundId: 'பணத்திருப்பம்', detailOrderId: 'ஆர்டர்', detailBasis: 'பணத்திருப்பத்தின் காரணம்',
+    detailCaseId: 'வாடிக்கையாளர் புகார்', detailKind: 'வகை', detailInvoiceId: 'விநியோகஸ்தர் பில்', detailSupplierId: 'விநியோகஸ்தர்',
+    detailPaymentId: 'பணம் செலுத்துதல்', detailPaidOn: 'செலுத்திய தேதி', detailMethod: 'செலுத்தும் முறை', detailReference: 'குறிப்பு எண்',
+    detailMovementId: 'சரக்கு நகர்வு', detailQuantityMinor: 'அளவு',
     statusWaitingForYou: 'உங்கள் முடிவுக்காகக் காத்திருக்கிறது', statusWaiting: 'இரண்டாம் நபருக்காகக் காத்திருக்கிறது',
     statusApproved: '{who} அனுமதித்தார்', statusApprovedUntil: '{who} அனுமதித்தார் — {until}-க்குள் பயன்படுத்தவும்',
     statusRejected: '{who} மறுத்தார்: {reason}', statusExpired: 'காலாவதியானது — நேரத்தில் பயன்படுத்தப்படவில்லை. மீண்டும் கேளுங்கள்.',
@@ -210,6 +235,12 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   period_reopen: 'kindPeriodReopen',
   concession_contract: 'kindConcessionContract',
   concession_deposit_forfeit: 'kindConcessionDepositForfeit',
+  stock_write_off: 'kindStockWriteOff',
+  stock_adjustment_up: 'kindStockAdjustmentUp',
+  order_refund: 'kindOrderRefund',
+  service_compensation: 'kindServiceCompensation',
+  supplier_invoice_check: 'kindSupplierInvoiceCheck',
+  supplier_payment: 'kindSupplierPayment',
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
@@ -220,6 +251,11 @@ const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
   normalPrice: 'detailNormalPrice', promoPrice: 'detailPromoPrice', unitCost: 'detailUnitCost',
   vendorFundingPerUnit: 'detailVendorFundingPerUnit', baselineUnits: 'detailBaselineUnits', expectedUnits: 'detailExpectedUnits',
   period: 'detailPeriod', reason: 'detailReason',
+  locationId: 'detailLocationId', qty: 'detailQty', uom: 'detailUom', lossType: 'detailLossType', reasonCode: 'detailReasonCode',
+  valueMinor: 'detailValueMinor', evidenceRef: 'detailEvidenceRef', writeOffId: 'detailWriteOffId',
+  amountMinor: 'detailAmountMinor', refundId: 'detailRefundId', orderId: 'detailOrderId', basis: 'detailBasis', caseId: 'detailCaseId',
+  kind: 'detailKind', invoiceId: 'detailInvoiceId', supplierId: 'detailSupplierId', paymentId: 'detailPaymentId', paidOn: 'detailPaidOn',
+  method: 'detailMethod', reference: 'detailReference', movementId: 'detailMovementId', quantityMinor: 'detailQuantityMinor',
 };
 
 // ── small, deterministic formatters ───────────────────────────────────────────────────────────────────────────
@@ -245,12 +281,15 @@ function spellOut(key: string): string {
 
 const LONG_CODE = /^[0-9a-f]{24,}$/i;
 
+/** A `…Minor` figure is money in paise — except a quantity in its smallest unit (`quantityMinor`), which is a count. */
+const isMoneyKey = (key: string): boolean => /Minor$/.test(key) && !/(?:quantity|qty)Minor$/i.test(key);
+
 /** One detail value as plain words: money in rupees, long check codes shortened, yes/no, anything else as text. */
 function detailValue(t: (k: CopyKey) => string, key: string, value: unknown): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'boolean') return value ? t('yesWord') : t('noWord');
   if (typeof value === 'number') {
-    if (/Minor$/.test(key) && Number.isSafeInteger(value)) return rupees(value);
+    if (isMoneyKey(key) && Number.isSafeInteger(value)) return rupees(value);
     // Basis points as the shop says it: 2000 → "20.00%".
     if (/Bps$/.test(key) && Number.isSafeInteger(value)) return `${(value / 100).toFixed(2)}%`;
     return String(value);

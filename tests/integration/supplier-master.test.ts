@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
-import { approvedRequestId, askForApproval, decide } from '../support/approval-request';
+import { approvedRequestId, askForApproval, decide, sentWithApproval } from '../support/approval-request';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import type { StoredMatch } from '../../services/purchase/src/index';
 import type { SupplierAccountStatement } from '../../services/purchase/src/supplier-account';
@@ -33,7 +33,11 @@ const post = (h: ApiHarness, path: string, userId: string, body: unknown, key: s
 const put = (h: ApiHarness, path: string, userId: string, body: unknown, key: string) => h.request({ method: 'PUT', path, userId, tenantId: A, idempotencyKey: key, body });
 const get = (h: ApiHarness, path: string, userId: string, tenantId = A) => h.request({ method: 'GET', path, userId, tenantId });
 const line = (productId: string, quantity: number, unitPriceMinor: number) => ({ productId, quantity, unitPriceMinor, lineTotalMinor: quantity * unitPriceMinor });
-const PAPER = { supplierId: 's-1', poId: 'po-1', declaredTotalMinor: 9000, lines: [line('p1', 10, 500), line('p2', 4, 1000)], approvedBy: 'u-checker' };
+const PAPER = { supplierId: 's-1', poId: 'po-1', declaredTotalMinor: 9000, lines: [line('p1', 10, 500), line('p2', 4, 1000)] };
+/** The buyer captures the bill; the checker (u-checker) approves it in their own session first (ADR-0024). */
+const capture = (h: ApiHarness, invoiceId: string, key: string) =>
+  sentWithApproval(h, A, 'u-buyer', 'u-checker', { kind: 'supplier_invoice_check', subjectRef: invoiceId, pathIds: { invoiceId }, valueMinor: 9000 }, PAPER,
+    (body) => post(h, `/v1/purchase/invoices/${invoiceId}/capture`, 'u-buyer', body, key));
 const rl = (lineId: string, productId: string, ordered: number, counted: number, unit: number, extra: Record<string, unknown> = {}) =>
   ({ lineId, productId, orderedMinor: ordered, countedMinor: counted, uom: 'ea', unitCost: { minor: unit, currency: 'INR' }, condition: 'good', ...extra });
 const propose = (h: ApiHarness, supplierId: string, body: Record<string, unknown>, userId = 'u-buyer', key = `sup-${supplierId}`) => post(h, `/v1/purchase/suppliers/${supplierId}`, userId, body, key);
@@ -44,8 +48,13 @@ async function bank(h: ApiHarness, supplierId: string, account: string, approved
   const approvalId = await approvedRequestId(h, A, 'u-owner', approvedBy, { kind: 'supplier_bank_change', subjectRef: supplierId, details: { ...change, supplierId } });
   return post(h, `/v1/purchase/suppliers/${supplierId}/bank-details`, 'u-owner', { ...change, approvalId }, key);
 }
-const pay = (h: ApiHarness, supplierId: string, paymentId: string, body: Record<string, unknown>, userId = 'u-acct', key = `pay-${paymentId}`) =>
-  post(h, `/v1/purchase/suppliers/${supplierId}/payments/${paymentId}`, userId, { amountMinor: 1000, paidOn: '2026-10-02', method: 'bank_transfer', reference: 'UTR-1', approvedBy: 'u-owner', ...body }, key);
+/** A payment as two people make it (ADR-0024): the payer asks for exactly this payment and `approver` (the owner unless
+ *  said) approves it in their own session; the payment names that approval. */
+const pay = (h: ApiHarness, supplierId: string, paymentId: string, over: Record<string, unknown>, userId = 'u-acct', key = `pay-${paymentId}`) => {
+  const { approver = 'u-owner', ...body } = { amountMinor: 1000, paidOn: '2026-10-02', method: 'bank_transfer', reference: 'UTR-1', ...over } as Record<string, unknown> & { approver?: string };
+  return sentWithApproval(h, A, userId, approver, { kind: 'supplier_payment', subjectRef: `${supplierId}/${paymentId}`, pathIds: { supplierId, paymentId }, valueMinor: typeof body['amountMinor'] === 'number' ? body['amountMinor'] : null }, body,
+    (b) => post(h, `/v1/purchase/suppliers/${supplierId}/payments/${paymentId}`, userId, b, key));
+};
 const list = async (h: ApiHarness, userId = 'u-buyer', tenantId = A) => {
   const res = await get(h, '/v1/purchase/suppliers', userId, tenantId);
   return { status: res.status, body: res.body as { suppliers: SupplierListRow[]; count: number; needingAttentionCount: number; owedMinor: number } };
@@ -70,7 +79,7 @@ async function seeded(): Promise<ApiHarness> {
   expect((await post(h, '/v1/purchase/orders/po-1', 'u-buyer', { supplierId: 's-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'p2', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-1')).status).toBe(201);
   expect((await post(h, '/v1/purchase/orders/po-1/approval', 'u-owner', { reason: 'fixture' }, 'po-1-approve')).status).toBe(200);
   expect((await post(h, '/v1/inventory/goods-receipt/grn-1', 'u-recv', { warehouseId: 'store-1', receivedOnDate: '2026-09-30', currency: 'INR', poId: 'po-1', lines: [rl('L1', 'p1', 10, 10, 500), rl('L2', 'p2', 2, 2, 1000), rl('L3', 'p2', 2, 2, 1000, { condition: 'damaged' })] }, 'grn-1')).status).toBe(201);
-  expect((await post(h, '/v1/purchase/invoices/inv-1/capture', 'u-buyer', PAPER, 'cap-inv-1')).status).toBe(201);
+  expect((await capture(h, 'inv-1', 'cap-inv-1')).status).toBe(201);
   expect(((await post(h, '/v1/purchase/invoices/inv-1/match', 'u-checker', {}, 'mat-inv-1')).body as StoredMatch).payableMinor).toBe(9000);
   expect((await post(h, '/v1/inventory/goods-receipt/grn-1/lines/L3/disposition', 'u-boss', { disposition: 'return', reason: 'dented' }, 'd-L3')).status).toBe(200);
   return h;
@@ -181,9 +190,12 @@ describe('the supplier master — one record, one balance, paid safely (SP-7c)',
     // The account verified (by someone other than the creator) → a bank transfer may be recorded — but not by the payer approving
     // themselves, not on an approver without the authority, not for more than is owed, and not while the supplier is under a hold.
     expect((await bank(h, 's-1', 'tok-acct-1', 'u-acct', 'bank-1')).status).toBe(200);
-    expect(codeOf(await pay(h, 's-1', 'p-self', { approvedBy: 'u-acct' }))).toBe('self_approval');
-    expect(codeOf(await pay(h, 's-1', 'p-weak', { approvedBy: 'u-checker' }))).toBe('approver_lacks_authority');
-    expect(codeOf(await pay(h, 's-1', 'p-ghost', { approvedBy: 'u-nobody' }))).toBe('approver_lacks_authority');
+    expect(codeOf(await pay(h, 's-1', 'p-self', { approver: 'u-acct' }))).toBe('self_approval');
+    expect((await pay(h, 's-1', 'p-weak', { approver: 'u-checker' })).status).toBe(403); // no supplier-payment authority
+    expect((await pay(h, 's-1', 'p-ghost', { approver: 'u-nobody' })).status).toBe(403);
+    // A typed approver — the audit's case — is refused by name; and no approval at all is refused.
+    expect(codeOf(await post(h, '/v1/purchase/suppliers/s-1/payments/p-typed', 'u-acct', { amountMinor: 1000, paidOn: '2026-10-02', method: 'bank_transfer', reference: 'UTR-1', approvedBy: 'u-owner' }, 'pay-p-typed'))).toBe('approver_named_without_approval');
+    expect(codeOf(await post(h, '/v1/purchase/suppliers/s-1/payments/p-none', 'u-acct', { amountMinor: 1000, paidOn: '2026-10-02', method: 'bank_transfer', reference: 'UTR-1' }, 'pay-p-none'))).toBe('payment_needs_approval');
     expect(codeOf(await pay(h, 's-1', 'p-too-much', { amountMinor: 6001 }))).toBe('payment_exceeds_balance');
     expect((await post(h, '/v1/purchase/suppliers/s-1/block-status', 'u-buyer', { blocked: true, reason: 'quality dispute' }, 'blk-1')).status).toBe(200);
     expect(codeOf(await pay(h, 's-1', 'p-blocked', {}))).toBe('supplier_blocked');
@@ -212,7 +224,7 @@ describe('the supplier master — one record, one balance, paid safely (SP-7c)',
 
   it('a SECOND bill against the same order pays nothing for goods the first already claimed, is withheld in full, and the pair is said to over-claim the order; the first is untouched', async () => {
     const h = await seeded();
-    expect((await post(h, '/v1/purchase/invoices/inv-2/capture', 'u-buyer', PAPER, 'cap-inv-2')).status).toBe(201);
+    expect((await capture(h, 'inv-2', 'cap-inv-2')).status).toBe(201);
     const second = (await post(h, '/v1/purchase/invoices/inv-2/match', 'u-checker', {}, 'mat-inv-2')).body as StoredMatch;
     expect(second).toMatchObject({ blocked: true, payableMinor: 0, invoicedMinor: 9000, withheldMinor: 9000, flags: ['order_over_invoiced'] });
     expect(second.sources.invoicedBefore).toEqual({ p1: 10, p2: 4 });
@@ -251,7 +263,7 @@ describe('the supplier master — one record, one balance, paid safely (SP-7c)',
     expect((await approve(h, 's-1', 'u-acct')).status).toBe(200);
     expect((await pay(h, 's-1', 'p-cash-1', { method: 'cash', reference: 'voucher 3' })).status).toBe(201);
     // A second bill wholly withheld → disputed on the statement, never folded into the balance.
-    expect((await post(h, '/v1/purchase/invoices/inv-2/capture', 'u-buyer', PAPER, 'cap-inv-2')).status).toBe(201);
+    expect((await capture(h, 'inv-2', 'cap-inv-2')).status).toBe(201);
     expect(((await post(h, '/v1/purchase/invoices/inv-2/match', 'u-checker', {}, 'mat-inv-2')).body as StoredMatch).withheldMinor).toBe(9000);
     const mine = await get(h, '/v1/supplier-portal/me/statement', 'u-sup');
     expect(mine.status).toBe(200);

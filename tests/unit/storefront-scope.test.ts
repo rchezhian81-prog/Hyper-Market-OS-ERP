@@ -48,7 +48,7 @@ function stub() {
     recordPayment: (_t, p) => { l.payments.push(p); }, recordPaymentResolution: () => {},
     orderRefunds: () => [], refundOutcomes: () => [], recordRefund: () => {}, recordRefundOutcome: () => {},
     allPayments: () => l.payments, allPaymentResolutions: () => [], allRefunds: () => [], allRefundOutcomes: () => [],
-    refundThreshold: () => 0, holdsPermission: () => false, refundProcessor: testModeRefundProcessor(),
+    refundThreshold: () => 0, refundProcessor: testModeRefundProcessor(),
     placedOrder: (_t, id) => l.placed.find((p) => p.orderId === id),
     ordersForCustomer: (_t, c) => l.placed.filter((p) => p.customerRef === c),
     recordAccessRefusal: (_t, r) => { l.refusals.push(r); },

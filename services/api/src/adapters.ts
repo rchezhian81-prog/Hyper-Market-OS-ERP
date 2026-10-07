@@ -5259,14 +5259,6 @@ export function writeOffAdapter(input: {
         payload: { thresholdMinor },
       }));
     },
-    // Manager/Owner authority to approve a material write-off (M28-FR-01, §28). Today only owner and
-    // store_manager hold inventory.movement.append, so this identifies a Manager/Owner; a named approver
-    // who does not hold it does not count (the same check as the other §28 approvals).
-    canApproveWriteOff: async (tenantId, userId) => {
-      const grants = await effectiveGrants(input.store, tenantId);
-      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
-      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('inventory.movement.append'));
-    },
     // Non-own owners currently holding stock of this product at this location (M27-FR-02), folded from
     // the M08 ledger's `ownership` field. Own stock never blocks a store write-off, so it is skipped;
     // a non-own owner with positive on-hand means the shelf holds somebody else's inventory here.
@@ -7942,12 +7934,6 @@ export function ordersAdapter(input: {
       const all = await allOf<{ thresholdMinor: number }>(input.store, tenantId, streamName(STREAM.returns, 'refund-threshold'), 'RefundThresholdSet');
       const last = all[all.length - 1];
       return last === undefined ? undefined : last.thresholdMinor;
-    },
-    // Whether the named approver genuinely holds the permission — from their grants and the role catalogue, never the body.
-    holdsPermission: async (tenantId, userId, permission) => {
-      const grants = await effectiveGrants(input.store, tenantId);
-      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
-      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes(permission));
     },
     refundProcessor: input.refundProcessor ?? testModeRefundProcessor(),
 

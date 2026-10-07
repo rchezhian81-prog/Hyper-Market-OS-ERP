@@ -21,6 +21,7 @@ import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 
 const LOSS_TYPES: readonly LossType[] = ['wastage', 'damage', 'expiry', 'donation', 'destruction'];
 
@@ -59,9 +60,9 @@ export interface WriteOffDeps {
   readonly writeOffThreshold: (tenantId: string) => Promise<number | undefined> | number | undefined;
   /** Set the tenant's material-loss threshold — append-only config (latest wins), owner-only. */
   readonly recordWriteOffThreshold: (tenantId: string, thresholdMinor: number, key: string) => Promise<void> | void;
-  /** Whether a user holds Manager/Owner authority to approve a material write-off (§28). A named
-   *  approver who does not hold it does not count — the same check as the other §28 approvals. */
-  readonly canApproveWriteOff: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /** Head office's maker-checker engine (ADR-0024): a material loss's approver gave it in their own session, holding
+   *  the stock authority. Optional on a bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   /**
    * The NON-OWN owners (concession / consignment / customer) currently holding stock of this product at
    * this location, folded from the M08 ledger's `ownership` field (M27-FR-02). Empty ⇒ the store owns all
@@ -142,9 +143,16 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
         // The material-loss threshold is the tenant's policy (or the default), NEVER the body — otherwise a
         // caller could claim any loss "immaterial" and skip the evidence and the second signature.
         const thresholdMinor = (await deps.writeOffThreshold(ctx.tenantId)) ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR;
-        const approval: DecidedRequest | undefined = isStr(b['approvedBy'])
-          ? { id: writeOffId, subjectType: 'stock_adjustment', subjectRef: writeOffId, requestedBy: ctx.userId, branchId: ctx.branchId, value: null, status: 'approved', decidedBy: b['approvedBy'] as string, reason: b['reasonCode'] as string, decidedAt: at }
-          : undefined;
+        // The second person (ADR-0024 · §28 · M28-FR-01): an approval ANOTHER person who handles stock GAVE in their own
+        // session for exactly this loss (kind `stock_write_off`) — never the raiser, and they still hold the authority.
+        // A name typed into `approvedBy` is refused by name; before, it was checked only for the role it named.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+          kind: 'stock_write_off', subjectRef: writeOffId, details: actionDetails(ctx.body, { writeOffId }), valueMinor: b['valueMinor'] as number,
+          maker: ctx.userId, usedBy: `write-off:${writeOffId}`, now: at,
+        });
+        const approval: DecidedRequest | undefined = opened === undefined ? undefined
+          : { id: writeOffId, subjectType: 'stock_adjustment', subjectRef: writeOffId, requestedBy: ctx.userId, branchId: ctx.branchId, value: null, status: 'approved', decidedBy: opened.decision.decidedBy, reason: opened.decision.reason, decidedAt: opened.decision.decidedAt };
 
         // The engine runs over an ephemeral ledger + outbox: it validates the reason, the positive quantity,
         // the evidence for a material loss and the separate approver (§28), and produces the compensating
@@ -164,7 +172,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           }, ledger, outbox);
         } catch (e) {
           if (e instanceof ApprovalRequiredError) {
-            throw apiError(422, { code: 'write_off_needs_approval', whatHappened: `${e.message} The person who raised the loss cannot approve it (§28).`, wasItSaved: 'not_saved', nextSafeAction: 'Have a separate person approve the loss with a reason, then re-send. Nothing was recorded.' });
+            throw apiError(422, { code: 'write_off_needs_approval', whatHappened: `${e.message} The person who raised the loss cannot approve it (§28).`, wasItSaved: 'not_saved', nextSafeAction: 'Ask for approval (POST /v1/approvals/requests, kind stock_write_off, with exactly this loss); once another person who handles stock approves it, re-send with the approvalId. Nothing was recorded.' });
           }
           if (e instanceof MissingEvidenceError) {
             throw apiError(422, { code: 'write_off_needs_evidence', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Capture a photo or witness reference for the material loss and re-send. Nothing was recorded.' });
@@ -175,25 +183,15 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           throw e;
         }
 
-        // §28 authority gate: commitWriteOff enforces a SEPARATE approver for a material loss, but the pure
-        // engine cannot see roles — a name typed in the box is not an approval. When approval was required
-        // and an approver was named, that approver must GENUINELY hold Manager/Owner authority, else it does
-        // not count (the same shape as the price-change / promotion / compensation approvals). Nothing recorded.
-        if (result.requiredApproval && isStr(b['approvedBy']) && !(await deps.canApproveWriteOff(ctx.tenantId, b['approvedBy'] as string))) {
-          throw apiError(422, {
-            code: 'approver_may_not_approve',
-            whatHappened: `${b['approvedBy']} does not hold the authority to approve a stock write-off, so their approval of this material loss does not count.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Have a Manager or Owner (a different person than the one raising it) approve the loss with a reason. Nothing was recorded.',
-          });
-        }
+        // Every rule passed: the approval is spent — once — and only then is the loss recorded.
+        await opened?.spend();
 
         const rec: StoredWriteOff = {
           id: writeOffId, productId: b['productId'] as string, locationId: b['locationId'] as string,
           lossType: result.lossType, qtyRemoved: result.qtyRemoved, uom: b['uom'] as string,
           valueMinor: result.value.minor, currency, reasonCode: b['reasonCode'] as string,
           requiredApproval: result.requiredApproval, evidenceRef: result.evidenceRef,
-          raisedBy: ctx.userId, approvedBy: isStr(b['approvedBy']) ? (b['approvedBy'] as string) : null, at,
+          raisedBy: ctx.userId, approvedBy: opened === undefined ? null : opened.decision.decidedBy, at,
         };
         await deps.recordWriteOff(ctx.tenantId, rec);
         // Seal the stock loss — what left, how much, why, its value and (for a material loss) the §28

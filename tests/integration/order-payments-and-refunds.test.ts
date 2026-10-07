@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sentWithApproval } from '../support/approval-request';
 
 /**
  * **The order's payment and its refunds, through the real authenticated API (M18-FR-04 · M20-FR-03 · §28 · §31 · #3).**
@@ -30,8 +31,20 @@ const place = (h: ApiHarness, orderId: string) =>
   post(h, `/v1/orders/${orderId}/promise`, OWNER, `place-${orderId}`, { lines: [{ productId: 'MILK', quantityMinor: 2 }], locationId: LOC });
 const pay = (h: ApiHarness, orderId: string, over: Record<string, unknown> = {}, user = MGR) =>
   post(h, `/v1/orders/${orderId}/payment`, user, `pay-${orderId}-${JSON.stringify(over)}`, { providerRef: 'tok_ok_1', amountMinor: 10_000, result: 'authorised', ...over });
-const refund = (h: ApiHarness, orderId: string, body: Record<string, unknown>, user = MGR, key = `rf-${orderId}-${String(body['refundId'])}`) =>
-  post(h, `/v1/orders/${orderId}/refunds`, user, key, { basis: 'goodwill', reason: 'late delivery', approvedBy: OWNER, ...body });
+/**
+ * A refund as two people make it (ADR-0024): the issuer asks for exactly this refund; the person named as `approvedBy`
+ * (the owner unless said) approves it in their own session; the refund names the approval. When that person may not
+ * approve it (the issuer, a cashier), the engine's refusal comes back and nothing is sent. `approvedBy: undefined` sends
+ * the refund with no approval at all.
+ */
+const refund = (h: ApiHarness, orderId: string, body: Record<string, unknown>, user = MGR, key = `rf-${orderId}-${String(body['refundId'])}`) => {
+  const { approvedBy, ...rest } = { basis: 'goodwill', reason: 'late delivery', approvedBy: OWNER, ...body } as Record<string, unknown>;
+  const send = (b: Record<string, unknown>) => post(h, `/v1/orders/${orderId}/refunds`, user, key, b);
+  if (typeof approvedBy !== 'string') return send(rest);
+  return sentWithApproval(h, T, user, approvedBy, {
+    kind: 'order_refund', subjectRef: `${orderId}/${String(rest['refundId'])}`, pathIds: { orderId }, valueMinor: rest['amountMinor'] as number,
+  }, rest, send);
+};
 
 interface Position { paidMinor: number; refundedMinor: number; pendingMinor: number; refundableMinor: number; refunds: { refundId: string; effectiveState: string }[] }
 interface MoneyRead { payment: { state: string; paidMinor: number }; position: Position }
@@ -101,23 +114,26 @@ describe('refunds against the order\'s own token (M18-FR-04)', () => {
     expect(issued.status, JSON.stringify(issued.body)).toBe(201);
     expect(issued.body).toMatchObject({ refund: { effectiveState: 'issued', providerRefundRef: 'rf-test-rf-4a', approvedBy: OWNER, requestedBy: MGR }, position: { paidMinor: 10_000, refundedMinor: 2_000, refundableMinor: 8_000 } });
     expect((issued.body as { tellTheCustomer: string }).tellTheCustomer).toContain('have refunded');
-    // Idempotent on the refund id even under a NEW idempotency key (a retry from another screen): the record comes back,
-    // nothing is sent again; a different amount under the same refund id is refused.
-    expect((await refund(h, 'o-4', { refundId: 'rf-4a', amountMinor: 2_000, basis: 'substitution', reason: 'cheaper substitute agreed' }, MGR, 'rf-4a-retry')).body).toMatchObject({ alreadyRecorded: true });
-    expect(codeOf(await post(h, `/v1/orders/o-4/refunds`, MGR, 'rf-4a-other', { refundId: 'rf-4a', amountMinor: 999, basis: 'goodwill', reason: 'x', approvedBy: OWNER }))).toBe('refund_id_reused');
+    // Idempotent on the refund id even under a NEW idempotency key (a retry from another screen): the record comes back
+    // before any approval is looked at, nothing is sent again; a different amount under the same refund id is refused.
+    expect((await refund(h, 'o-4', { refundId: 'rf-4a', amountMinor: 2_000, basis: 'substitution', reason: 'cheaper substitute agreed', approvedBy: undefined }, MGR, 'rf-4a-retry')).body).toMatchObject({ alreadyRecorded: true });
+    expect(codeOf(await post(h, `/v1/orders/o-4/refunds`, MGR, 'rf-4a-other', { refundId: 'rf-4a', amountMinor: 999, basis: 'goodwill', reason: 'x' }))).toBe('refund_id_reused');
     const read = (await get(h, '/v1/orders/o-4/refunds')).body as MoneyRead;
     expect(read.position).toMatchObject({ refundedMinor: 2_000, pendingMinor: 0, refundableMinor: 8_000 });
     expect(read.position.refunds.map((r) => [r.refundId, r.effectiveState])).toEqual([['rf-4a', 'issued']]);
     expect(await h.store.readStream(T, 'orders', { type: 'OrderRefundIssued' })).toHaveLength(0); // the order's own stream, not the tenant root
   });
 
-  it('approval per policy (§28): no approver, the requester approving themselves, or a cashier as approver all refuse before any money moves; the amount never exceeds what is refundable', async () => {
+  it('approval per policy (§28): no approval, the requester approving themselves, a cashier approving, or a typed approver all refuse before any money moves; the amount never exceeds what is refundable', async () => {
     const h = await seeded();
     await place(h, 'o-5');
     await pay(h, 'o-5');
     expect(codeOf(await refund(h, 'o-5', { refundId: 'a', amountMinor: 1_000, approvedBy: undefined }))).toBe('given_without_approval');
-    expect(codeOf(await refund(h, 'o-5', { refundId: 'b', amountMinor: 1_000, approvedBy: MGR }))).toBe('approved_by_the_processor');
-    expect(codeOf(await refund(h, 'o-5', { refundId: 'c', amountMinor: 1_000, approvedBy: CASHIER }))).toBe('approver_lacks_authority');
+    // The issuer cannot approve their own refund, and a cashier cannot approve one at all — the engine refuses the decision.
+    expect(codeOf(await refund(h, 'o-5', { refundId: 'b', amountMinor: 1_000, approvedBy: MGR }))).toBe('self_approval');
+    expect((await refund(h, 'o-5', { refundId: 'c', amountMinor: 1_000, approvedBy: CASHIER })).status).toBe(403);
+    // A name typed as the approver is refused by name (audit PA-03) — before, the owner's typed name moved the money.
+    expect(codeOf(await post(h, '/v1/orders/o-5/refunds', MGR, 'rf-typed', { refundId: 'c2', amountMinor: 1_000, basis: 'goodwill', reason: 'x', approvedBy: OWNER }))).toBe('approver_named_without_approval');
     expect(codeOf(await refund(h, 'o-5', { refundId: 'd', amountMinor: 10_001 }))).toBe('exceeds_refundable');
     expect(codeOf(await refund(h, 'o-5', { refundId: 'e', amountMinor: 0 }))).toBe('nothing_to_refund');
     expect((await refund(h, 'o-5', { refundId: 'f', amountMinor: 1_000 }, CASHIER)).status).toBe(403);

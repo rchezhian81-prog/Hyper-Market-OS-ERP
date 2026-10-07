@@ -18,7 +18,8 @@
 //     exception (P-08, hard rule #10).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, requireActorIsCaller } from '../../kernel/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import type { ProductValuation } from '../../../packages/stock/src/valuation';
 import type { AgeingSource } from '../../../packages/stock/src/ageing-source';
 import { stockAgeing, inventoryTurns, gmroi, stockoutImpact, type Ratio, type StockoutInput } from '../../../packages/stock/src/metrics';
@@ -211,6 +212,9 @@ export const negativeStock = (rows: readonly Availability[]): readonly NegativeS
 
 export interface InventoryDeps {
   readonly appendMovement: (tenantId: string, m: Movement) => Promise<void> | void;
+  /** Head office's maker-checker engine (ADR-0024): an upward correction's approver gave it in their own session.
+   *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   /**
    * Has this exact movement already been recorded?
    *
@@ -346,17 +350,39 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
             nextSafeAction: 'Record the loss at POST /v1/inventory/write-off/:writeOffId — it reduces the stock and captures the value, evidence and approver. Nothing was appended here.',
           });
         }
-        const check = checkMovement(m);
+        // An upward correction (`adjusted`) is never relayed by a store computer — it is a person at head office making
+        // stock appear. Both people are real (ADR-0024 · §28 · 2b-vi-b-3): whoever enters it is the signed-in caller, and
+        // the second person is an approval ANOTHER person who handles stock GAVE in their own session for exactly this
+        // correction (kind `stock_adjustment_up`). Before, both were body strings compared with each other.
+        let opened: Awaited<ReturnType<typeof approvalNamedIn>>;
+        let movement: Movement = m;
+        if (m.kind === 'adjusted') {
+          requireActorIsCaller(ctx, m as unknown as Record<string, unknown>, 'enteredBy');
+          const body = m as unknown as Record<string, unknown>;
+          opened = await approvalNamedIn(deps.approvals, {
+            tenantId: ctx.tenantId, approvalId: body['approvalId'], typedField: 'approvedBy', typedValue: body['approvedBy'],
+            kind: 'stock_adjustment_up', subjectRef: m.movementId, details: actionDetails(ctx.body), valueMinor: null,
+            maker: ctx.userId, usedBy: `stock-adjustment:${m.movementId}`, now: deps.now(),
+          });
+          const { approvalId: _a, ...rest } = body;
+          void _a;
+          movement = { ...(rest as unknown as Movement), enteredBy: ctx.userId, ...(opened === undefined ? {} : { approvedBy: opened.decision.decidedBy }) };
+        }
+        const check = checkMovement(movement);
         if (!check.ok) {
           throw apiError(422, {
             code: check.refusedBecause!,
             whatHappened: check.detail,
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Nothing was appended. Add what is missing and send it again — the stock has not moved in the system either way.',
+            nextSafeAction: check.refusedBecause === 'adjustment_not_approved'
+              ? 'Nothing was appended. Ask for approval (POST /v1/approvals/requests, kind stock_adjustment_up, with exactly this movement); once another person who handles stock approves it, send it with the approvalId.'
+              : 'Nothing was appended. Add what is missing and send it again — the stock has not moved in the system either way.',
           });
         }
-        if (!(await deps.isKnown(ctx.tenantId, m.movementId))) {
-          await deps.appendMovement(ctx.tenantId, m);
+        if (!(await deps.isKnown(ctx.tenantId, movement.movementId))) {
+          // Every rule passed: the approval is spent — once — and only then does the stock move.
+          await opened?.spend();
+          await deps.appendMovement(ctx.tenantId, movement);
         }
         return { status: 202, body: { movementId: m.movementId, appended: true } };
       },

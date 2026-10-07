@@ -25,6 +25,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { isPayable, detectDuplicateBankAccounts, holdersBlockedForDuplicate, type BankAccountHolder } from '../../../packages/bank-controls/src/index';
 import type { PartnerDocumentKind } from '../../../packages/supplier-portal/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
@@ -99,6 +100,9 @@ export interface SupplierListRow {
 }
 
 export interface SupplierMasterDeps extends SupplierAccountDeps {
+  /** Head office's maker-checker engine (ADR-0024): a supplier payment's approver gave it in their own session.
+   *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   readonly record: (tenantId: string, supplierId: string) => Promise<SupplierRecord | undefined> | SupplierRecord | undefined;
   readonly records: (tenantId: string) => Promise<readonly SupplierRecord[]> | readonly SupplierRecord[];
   /** Append a version of the record; the latest version applies. */
@@ -322,37 +326,36 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
         const paymentId = (ctx.params['paymentId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (supplierId === '' || paymentId === '' || !isPosInt(b['amountMinor']) || !isDate(b['paidOn'])
-          || !(PAYMENT_METHODS as readonly unknown[]).includes(b['method']) || !isStr(b['reference']) || !isStr(b['approvedBy'])) {
+          || !(PAYMENT_METHODS as readonly unknown[]).includes(b['method']) || !isStr(b['reference'])) {
           throw apiError(400, {
             code: 'not_readable_as_a_supplier_payment',
-            whatHappened: `A supplier payment needs the supplierId and paymentId in the path and { amountMinor (whole, positive), paidOn (YYYY-MM-DD), method (${PAYMENT_METHODS.join(' / ')}), reference, approvedBy }.`,
+            whatHappened: `A supplier payment needs the supplierId and paymentId in the path and { amountMinor (whole, positive), paidOn (YYYY-MM-DD), method (${PAYMENT_METHODS.join(' / ')}), reference, approvalId }.`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the payment as it was made. Nothing was recorded.',
           });
         }
         const t = ctx.tenantId;
         const method = b['method'] as PaymentMethod;
-        const approvedBy = b['approvedBy'].trim();
         const regs = await accountRegisters(deps, t);
         const prior = (regs.payments ?? []).find((p) => p.paymentId === paymentId);
         if (prior !== undefined) return { status: 200, body: { payment: prior, alreadyRecorded: true, owedMinor: foldSupplierAccount({ ...regs, supplierId: prior.supplierId }).totals.owedMinor } };
-        if (approvedBy === ctx.userId) {
+        // The approver (ADR-0024 · §28 · M23-FR-01): an approval ANOTHER person holding `purchase.supplier.pay` GAVE in
+        // their own session for exactly this payment (kind `supplier_payment`) — never the payer. A name typed into
+        // `approvedBy` is refused by name; before, it was checked only for the role it named.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: t, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+          kind: 'supplier_payment', subjectRef: `${supplierId}/${paymentId}`, details: actionDetails(ctx.body, { supplierId, paymentId }),
+          valueMinor: b['amountMinor'], maker: ctx.userId, usedBy: `supplier-payment:${supplierId}/${paymentId}`, now: deps.now(),
+        });
+        if (opened === undefined) {
           throw apiError(422, {
-            code: 'self_approval',
-            whatHappened: `${ctx.userId} is recording this payment and cannot also be the person who approved it (§28 separation of duties).`,
+            code: 'payment_needs_approval',
+            whatHappened: `A payment to ${supplierId} needs a second person's approval — someone else who may pay suppliers (§28).`,
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Name the different person who approved the payment. Nothing was recorded.',
+            nextSafeAction: 'Ask for approval (POST /v1/approvals/requests, kind supplier_payment, with exactly this payment); once it is approved, record it with the approvalId. Nothing was recorded.',
           });
         }
-        const approverPermissions = await deps.permissionsOfUser(t, approvedBy);
-        if (approverPermissions === undefined || !approverPermissions.includes('purchase.supplier.pay')) {
-          throw apiError(422, {
-            code: 'approver_lacks_authority',
-            whatHappened: `${approvedBy} ${approverPermissions === undefined ? 'is not known here' : 'does not hold the authority to approve a supplier payment'}, so their approval does not count.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Have someone who holds purchase.supplier.pay, and who is not the payer, approve it. Nothing was recorded.',
-          });
-        }
+        const approvedBy = opened.decision.decidedBy;
         const [blocked, bank, holders] = await Promise.all([deps.supplierBlocked(t, supplierId), deps.bankState(t, supplierId), deps.bankHolders(t)]);
         if (!isPayable({ blocked })) {
           throw apiError(409, {
@@ -387,6 +390,8 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
             nextSafeAction: 'Pay up to the balance owed, or match the invoice that justifies the rest first. Nothing was recorded.',
           });
         }
+        // Every rule passed: the approval is spent — once — and only then is the payment recorded.
+        await opened.spend();
         const now = deps.now();
         const payment: SupplierPayment = {
           paymentId, supplierId, amountMinor: b['amountMinor'], currency: 'INR', paidOn: b['paidOn'], method, reference: b['reference'].trim(),

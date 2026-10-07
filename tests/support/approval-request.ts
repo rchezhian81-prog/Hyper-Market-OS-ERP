@@ -56,3 +56,22 @@ export async function approvedBody(
   const approvalId = await approvedRequestId(h, tenantId, maker, checker, { kind, subjectRef, details: actionDetails(body, pathIds), valueMinor });
   return { ...body, approvalId };
 }
+
+/**
+ * Do an action as two people (ADR-0024): the maker asks for exactly `body` (plus the route's path ids), `checker`
+ * decides in their own session, and the action is sent naming the approval. When the maker may not even ask, the body
+ * is sent as it is (the route's own refusal shows); when the checker may not approve it (themselves, no authority),
+ * the engine's refusal is returned — the action is never sent.
+ */
+export async function sentWithApproval(
+  h: ApiHarness, tenantId: string, maker: string, checker: string,
+  ask: { kind: string; subjectRef: string; pathIds?: Record<string, string>; valueMinor?: number | null },
+  body: Record<string, unknown>, send: (body: Record<string, unknown>) => Promise<HttpResponse>,
+): Promise<HttpResponse> {
+  const asked = await askForApproval(h, tenantId, maker, { kind: ask.kind, subjectRef: ask.subjectRef, details: actionDetails(body, ask.pathIds ?? {}), valueMinor: ask.valueMinor ?? null });
+  if (asked.status !== 201) return send(body);
+  const requestId = (asked.body as { requestId: string }).requestId;
+  const decided = await decide(h, tenantId, checker, requestId);
+  if (decided.status !== 201) return decided;
+  return send({ ...body, approvalId: requestId });
+}

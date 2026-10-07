@@ -277,9 +277,13 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     //      STORED order and receipts (SP-7a): all twelve came into our custody, so the match owes twelve — and the two returned
     //      tins come off through a debit note (SP-7b), never by editing the invoice.
     const paper = { supplierId: SUPPLIER, poId: PO, declaredTotalMinor: ORDERED * COST, lines: [{ productId: PRODUCT, quantity: ORDERED, unitPriceMinor: COST, lineTotalMinor: ORDERED * COST }] };
-    const captured = await ok(call('POST', '/v1/purchase/invoices/inv-1/capture', BUYER, { ...paper, approvedBy: CHECKER }, 'cap-inv-1'), 201);
+    // The checker approves the bill in their OWN session (ADR-0024) — the capture names that approval, never a typed name.
+    expect(codeOf(await call('POST', '/v1/purchase/invoices/inv-typed/capture', BUYER, { ...paper, approvedBy: CHECKER }, 'cap-inv-typed'))).toBe('approver_named_without_approval');
+    const billAsk = await ok(call('POST', '/v1/approvals/requests', BUYER, { kind: 'supplier_invoice_check', subjectRef: 'inv-1', details: { ...paper, invoiceId: 'inv-1' }, valueMinor: ORDERED * COST, summary: 'Check bill inv-1', reason: 'paper bill in hand' }, 'ask-inv-1'), 201);
+    await ok(call('POST', `/v1/approvals/requests/${String(billAsk['requestId'])}/decide`, CHECKER, { decision: 'approved', reason: 'checked against the paper bill' }, 'decide-inv-1'), 201);
+    const captured = await ok(call('POST', '/v1/purchase/invoices/inv-1/capture', BUYER, { ...paper, approvalId: billAsk['requestId'] }, 'cap-inv-1'), 201);
     expect(captured).toMatchObject({ alreadyCaptured: false, invoice: { invoiceId: 'inv-1', supplierId: SUPPLIER, poId: PO, totalMinor: ORDERED * COST, capturedBy: BUYER, approvedBy: CHECKER } });
-    // The capturer may not name themself as the invoice's approver (§28) — refused at capture, nothing stored.
+    // The capturer may not name themself as the invoice's approver (§28) — a typed name is refused at capture, nothing stored.
     expect((await call('POST', '/v1/purchase/invoices/inv-self/capture', BUYER, { ...paper, approvedBy: BUYER }, 'cap-inv-self')).status).toBeGreaterThanOrEqual(400);
     expect((await call('GET', '/v1/purchase/invoices/inv-self', OWNER)).status).toBe(404);
     const matched = await ok(call('POST', '/v1/purchase/invoices/inv-1/match', CHECKER, {}, 'mat-inv-1'), 200);

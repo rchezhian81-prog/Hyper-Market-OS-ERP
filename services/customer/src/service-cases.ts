@@ -20,6 +20,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import {
   assessFirstResponse, assessSla, grantCompensation, approveDraft, serviceReport,
   DEFAULT_COMPENSATION_POLICY, readCompensationPolicy,
@@ -57,7 +58,6 @@ export interface CompensationRecord {
 const KINDS: readonly CaseKind[] = ['complaint', 'enquiry', 'warranty', 'lost_and_found'];
 const PRIORITIES: readonly CasePriority[] = ['low', 'normal', 'high', 'urgent'];
 const COMPENSATION_KINDS: readonly CompensationKind[] = ['refund', 'goodwill_credit', 'loyalty_points', 'replacement'];
-const APPROVAL_STATUSES = ['approved', 'rejected', 'pending'] as const;
 const DRAFT_DECISIONS: readonly DraftDecision[] = ['approved', 'rejected', 'edited_and_approved'];
 const strArray = (v: unknown): readonly string[] | undefined =>
   Array.isArray(v) && v.every((x) => typeof x === 'string') ? (v as string[]) : undefined;
@@ -70,14 +70,6 @@ const COMPENSATION_REFUSAL: Readonly<Record<Exclude<CompensationOutcome, 'grante
   no_reason: 422, exceeds_policy_cap: 422, needs_approval: 422, self_approved: 422,
 };
 
-function readApproval(v: unknown): CompensationApproval | undefined | 'invalid' {
-  if (v === undefined) return undefined;
-  if (!isObj(v) || !isStr(v['subjectRef']) || !(APPROVAL_STATUSES as readonly string[]).includes(v['status'] as string)
-    || !isStr(v['decidedBy']) || typeof v['reason'] !== 'string') {
-    return 'invalid';
-  }
-  return { subjectRef: v['subjectRef'] as string, status: v['status'] as CompensationApproval['status'], decidedBy: v['decidedBy'] as string, reason: v['reason'] as string };
-}
 
 export interface ServiceCaseDeps {
   readonly serviceCase: (tenantId: string, caseId: string) => Promise<ServiceCase | undefined> | ServiceCase | undefined;
@@ -93,9 +85,12 @@ export interface ServiceCaseDeps {
   readonly compensationPolicy: (tenantId: string) => Promise<CompensationPolicy | undefined> | CompensationPolicy | undefined;
   /** Set the tenant's compensation limits — append-only config (latest wins), owner-only. */
   readonly recordCompensationPolicy: (tenantId: string, policy: CompensationPolicy, key: string) => Promise<void> | void;
-  /** Whether a user holds `service.compensation.approve` — the §28 authority to approve an over-limit
-   *  grant (owner-only by default). A named approver who does not hold it does not count. */
+  /** Whether a user holds `service.compensation.approve` — the CALLER's own authority decides how much they may grant
+   *  alone (owner-only by default). An over-limit grant's second person is an approval (`approvals`), never a name. */
   readonly canApproveCompensation: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /** Head office's maker-checker engine (ADR-0024): an over-limit grant's approver gave it in their own session.
+   *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   /** AI drafts on a case, and the human decisions on them (P-05) — an AI drafts, a NAMED HUMAN approves. */
   readonly drafts: (tenantId: string, caseId: string) => Promise<readonly AiDraft[]> | readonly AiDraft[];
   readonly draft: (tenantId: string, caseId: string, draftId: string) => Promise<AiDraft | undefined> | AiDraft | undefined;
@@ -212,7 +207,7 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
     {
       // Grant compensation on a case — MONEY LEAVING THE BUSINESS, decided by the person the customer is
       // shouting at, which is why the reason and the second signature are not optional (§28). Body:
-      // { kind, amountMinor, reason, approval? }. The AUTHORITY LIMITS are the tenant's policy, sourced
+      // { kind, amountMinor, reason, approvalId? }. The AUTHORITY LIMITS are the tenant's policy, sourced
       // server-side — the caller can no longer declare their own limit — and the caller's own authority is
       // set by their role: someone holding service.compensation.approve (the owner) may grant up to the
       // desk ceiling alone, everyone else up to the agent authority. grantedBy is the authenticated caller.
@@ -222,14 +217,13 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
       handler: async (ctx) => {
         const caseId = ctx.params['caseId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const approval = readApproval(b['approval']);
         if (!COMPENSATION_KINDS.includes(b['kind'] as CompensationKind) || !isInt(b['amountMinor']) || (b['amountMinor'] as number) < 0
-          || typeof b['reason'] !== 'string' || approval === 'invalid') {
+          || typeof b['reason'] !== 'string') {
           throw apiError(400, {
             code: 'not_readable_as_compensation',
-            whatHappened: 'Compensation needs { kind (refund/goodwill_credit/loyalty_points/replacement), amountMinor, reason, approval? }. The authority limits are the tenant\'s policy, not sent by the caller.',
+            whatHappened: 'Compensation needs { kind (refund/goodwill_credit/loyalty_points/replacement), amountMinor, reason, approvalId? }. The authority limits are the tenant\'s policy, not sent by the caller.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send the amount, a real reason, and (for an over-limit grant) an approval by someone who may approve it. The agent is taken from your login.',
+            nextSafeAction: 'Send the amount, a real reason, and (for an over-limit grant) the id of an approval someone who may approve it gave on the Approvals page. The agent is taken from your login.',
           });
         }
         const existing = await deps.serviceCase(ctx.tenantId, caseId);
@@ -242,6 +236,17 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
         const ownAuthorityMinor = callerMayApprove ? policy.deskCeilingMinor : policy.agentAuthorityMinor;
 
         const now = deps.now();
+        // The second person (ADR-0024 · §28 · M21-FR-04): for a grant above the agent's own authority, an approval someone
+        // holding `service.compensation.approve` GAVE in their own session for exactly this grant (kind
+        // `service_compensation`). A typed `approval.decidedBy` is refused by name.
+        const typed = isObj(b['approval']) ? (b['approval'] as Record<string, unknown>)['decidedBy'] : undefined;
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approval.decidedBy', typedValue: typed,
+          kind: 'service_compensation', subjectRef: caseId, details: actionDetails(ctx.body, { caseId }), valueMinor: b['amountMinor'] as number,
+          maker: ctx.userId, usedBy: `compensation:${caseId}/${now}`, now,
+        });
+        const approval: CompensationApproval | undefined = opened === undefined ? undefined
+          : { subjectRef: caseId, status: 'approved', decidedBy: opened.decision.decidedBy, reason: opened.decision.reason };
         const result = grantCompensation({
           serviceCase: existing, kind: b['kind'] as CompensationKind, amountMinor: b['amountMinor'] as number,
           grantedBy: ctx.userId, reason: b['reason'] as string, agentAuthorityMinor: ownAuthorityMinor,
@@ -257,18 +262,8 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
               : 'Correct the amount or the reason and grant again. Nothing was paid.',
           });
         }
-        // §28 authority gate: the engine grants an over-limit amount on a self-checked approval (decidedBy
-        // ≠ grantedBy), but a name in a box is not an approval. When the grant was carried by an approval
-        // (result.approvedBy set), the approver must GENUINELY hold service.compensation.approve, else it
-        // does not count — the same shape as the price-change and promotion approvals. Nothing is recorded.
-        if (result.approvedBy !== undefined && !(await deps.canApproveCompensation(ctx.tenantId, result.approvedBy))) {
-          throw apiError(422, {
-            code: 'approver_may_not_approve',
-            whatHappened: `${result.approvedBy} does not hold the authority to approve compensation, so their approval of this over-limit grant does not count.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Have someone who may approve compensation (the owner) approve it with a reason. Nothing was paid.',
-          });
-        }
+        // Every rule passed: the approval is spent — once — and only then is the grant recorded.
+        await opened?.spend();
         const rec: CompensationRecord = {
           caseId, kind: b['kind'] as CompensationKind, amountMinor: b['amountMinor'] as number,
           grantedBy: ctx.userId, ...(result.approvedBy !== undefined ? { approvedBy: result.approvedBy } : {}),

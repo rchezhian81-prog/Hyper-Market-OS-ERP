@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sentWithApproval } from '../support/approval-request';
 import { STREAM } from '../../services/api/src/adapters';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import type { StoredMatch } from '../../services/purchase/src/index';
@@ -34,7 +35,12 @@ const get = (h: ApiHarness, path: string, userId: string, tenantId = A, query?: 
 const line = (productId: string, quantity: number, unitPriceMinor: number) => ({ productId, quantity, unitPriceMinor, lineTotalMinor: quantity * unitPriceMinor });
 /** The paper: 10 × ₹5.00 of p1 and 4 × ₹10.00 of p2 = ₹90.00, against po-1. */
 const PAPER = { supplierId: 's-1', poId: 'po-1', declaredTotalMinor: 9000, lines: [line('p1', 10, 500), line('p2', 4, 1000)] };
-const capture = (h: ApiHarness, invoiceId: string, body: Record<string, unknown>, key = `cap-${invoiceId}`) => post(h, `/v1/purchase/invoices/${invoiceId}/capture`, 'u-buyer', { approvedBy: 'u-checker', ...body }, key);
+/** The buyer captures the bill; the checker approves exactly it in their own session first (ADR-0024). */
+const capture = (h: ApiHarness, invoiceId: string, body: Record<string, unknown>, key = `cap-${invoiceId}`) =>
+  sentWithApproval(h, A, 'u-buyer', 'u-checker', {
+    kind: 'supplier_invoice_check', subjectRef: invoiceId, pathIds: { invoiceId },
+    valueMinor: ((body['lines'] ?? []) as { lineTotalMinor: number }[]).reduce((t, l) => t + l.lineTotalMinor, 0),
+  }, body, (b) => post(h, `/v1/purchase/invoices/${invoiceId}/capture`, 'u-buyer', b, key));
 const match = (h: ApiHarness, invoiceId: string, key = `mat-${invoiceId}`) => post(h, `/v1/purchase/invoices/${invoiceId}/match`, 'u-checker', {}, key);
 const dispose = (h: ApiHarness, grnId: string, lineId: string, disposition: string, key: string) =>
   post(h, `/v1/inventory/goods-receipt/${grnId}/lines/${lineId}/disposition`, 'u-boss', { disposition, reason: `${disposition} — inspected on the dock` }, key);

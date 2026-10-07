@@ -4,6 +4,7 @@ import {
   type ApprovalDecision, type ApprovalRequest, type ApprovalState,
 } from '../../services/identity/src/approval-requests';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
+import { ROLE_CATALOGUE } from '../../services/api/src/roles';
 
 /**
  * **Head office's maker-checker engine (ADR-0024 · Wave 2b-vi · audit PA-03 · M02-FR-03 · §28).** The maker asks for
@@ -212,5 +213,29 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
     for (const k of ['price_change', 'price_list_entry', 'promotion_launch', 'quotation_below_floor']) {
       expect(APPROVAL_KINDS[k]!.checkerPermission).toBe('price.change.approve');
     }
+  });
+  it('stock, orders and purchasing (2b-vi-b-3): each second person holds the authority the route already named', () => {
+    // A write-off and an upward correction: another person who may post stock movements (Manager/Owner) — as before.
+    for (const k of ['stock_write_off', 'stock_adjustment_up']) {
+      expect(APPROVAL_KINDS[k]).toMatchObject({ makerPermission: 'inventory.movement.append', checkerPermission: 'inventory.movement.append' });
+    }
+    // An online-order refund: issued by one person, approved by a holder of the refund-approval authority (M18-FR-04).
+    expect(APPROVAL_KINDS['order_refund']).toMatchObject({ makerPermission: 'order.refund.issue', checkerPermission: 'order.refund.approve' });
+    // Over-limit service compensation: approved by a holder of the compensation-approval authority (M21-FR-04).
+    expect(APPROVAL_KINDS['service_compensation']).toMatchObject({ makerPermission: 'service.case.manage', checkerPermission: 'service.compensation.approve' });
+    // A supplier bill: captured by the buyer, checked by someone who may match bills (SP-7a); a supplier payment: approved
+    // by another person who may pay suppliers (M23-FR-01).
+    expect(APPROVAL_KINDS['supplier_invoice_check']).toMatchObject({ makerPermission: 'purchase.invoice.capture', checkerPermission: 'purchase.invoice.match' });
+    expect(APPROVAL_KINDS['supplier_payment']).toMatchObject({ makerPermission: 'purchase.supplier.pay', checkerPermission: 'purchase.supplier.pay' });
+  });
+  it('no kind is a dead end: some role may ask for it and some role may approve it — no permission was invented', () => {
+    const held = new Set(ROLE_CATALOGUE.flatMap((r) => r.permissions));
+    for (const spec of Object.values(APPROVAL_KINDS)) {
+      expect(held.has(spec.makerPermission), `${spec.kind} maker ${spec.makerPermission}`).toBe(true);
+      expect(held.has(spec.checkerPermission), `${spec.kind} checker ${spec.checkerPermission}`).toBe(true);
+      expect(spec.label.length).toBeGreaterThan(0);
+      expect(spec.validForMinutes).toBe(24 * 60);
+    }
+    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(16);
   });
 });

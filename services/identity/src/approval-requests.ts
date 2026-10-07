@@ -89,6 +89,34 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'concession_deposit_forfeit', label: 'Forfeit a concessionaire\'s deposit',
     makerPermission: 'concession.contract.manage', checkerPermission: 'concession.contract.manage', validForMinutes: 24 * 60,
   },
+  // Stock, orders and purchasing (2b-vi-b-3). Each checker is the authority the route already named — now verified as an
+  // approval that person GAVE, never a name in the body. A material write-off and an upward stock correction are
+  // checked by ANOTHER person who handles stock (M28-FR-01 "Manager/Owner"; the same authority the write-off already
+  // required), never the one who raised it.
+  stock_write_off: {
+    kind: 'stock_write_off', label: 'Write off stock (a material loss)',
+    makerPermission: 'inventory.movement.append', checkerPermission: 'inventory.movement.append', validForMinutes: 24 * 60,
+  },
+  stock_adjustment_up: {
+    kind: 'stock_adjustment_up', label: 'Correct stock upward',
+    makerPermission: 'inventory.movement.append', checkerPermission: 'inventory.movement.append', validForMinutes: 24 * 60,
+  },
+  order_refund: {
+    kind: 'order_refund', label: 'Refund an online order',
+    makerPermission: 'order.refund.issue', checkerPermission: 'order.refund.approve', validForMinutes: 24 * 60,
+  },
+  service_compensation: {
+    kind: 'service_compensation', label: 'Give a customer compensation above the desk\'s own limit',
+    makerPermission: 'service.case.manage', checkerPermission: 'service.compensation.approve', validForMinutes: 24 * 60,
+  },
+  supplier_invoice_check: {
+    kind: 'supplier_invoice_check', label: 'Check a supplier bill',
+    makerPermission: 'purchase.invoice.capture', checkerPermission: 'purchase.invoice.match', validForMinutes: 24 * 60,
+  },
+  supplier_payment: {
+    kind: 'supplier_payment', label: 'Pay a supplier',
+    makerPermission: 'purchase.supplier.pay', checkerPermission: 'purchase.supplier.pay', validForMinutes: 24 * 60,
+  },
 });
 
 /** A maker's request, as recorded. */

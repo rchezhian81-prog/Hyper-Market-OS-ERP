@@ -110,3 +110,28 @@ must approve — then the kind's checker permission or a value-limit rule change
 - The Finance screen asks for the signature or approval and then closes or reopens at head office. The typed "who is
   approving" box is gone.
 
+
+## Amendment — 2b-vi-b-3, stock, orders and purchasing (7 October 2026)
+
+- **Six new kinds.** Each checker holds the authority the route already named; no permission was invented.
+  - `stock_write_off` — `POST /v1/inventory/write-off/:id` (M28-FR-01, a loss at or above the tenant's material-loss
+    threshold). Approved by another person who may post stock movements (`inventory.movement.append`: the manager or
+    the owner). Evidence is still required.
+  - `stock_adjustment_up` — `POST /v1/inventory/movements` with kind `adjusted` (M08). Approved by the same authority.
+    The person who entered it (`enteredBy`) must be the signed-in caller.
+  - `order_refund` — `POST /v1/orders/:orderId/refunds` (M18-FR-04). Issued by `order.refund.issue`, approved by
+    `order.refund.approve`. The approval is spent before any money moves.
+  - `service_compensation` — `POST /v1/service/cases/:caseId/compensation` (M21-FR-04), for a grant above the agent's
+    own authority. Approved by `service.compensation.approve`. The tenant's limits still come from its policy.
+  - `supplier_invoice_check` — `POST /v1/purchase/invoices/:invoiceId/capture` (SP-7a). The buyer
+    (`purchase.invoice.capture`) asks; someone who may match bills (`purchase.invoice.match`) checks. A bill captured
+    before anyone checked it is still recorded, flagged `no_approval`, because the match and the payment each need
+    their own second person.
+  - `supplier_payment` — `POST /v1/purchase/suppliers/:supplierId/payments/:paymentId` (M23-FR-01). Approved by another
+    person who may pay suppliers (`purchase.supplier.pay`). A payment with no approval is refused
+    (`payment_needs_approval`).
+- **The write-off screen** asks for approval for a material loss, and records it with the approval once another person
+  has approved it. The Approvals page names all six kinds in English and Tamil.
+- **Recorded, not changed:** the buyer's bill capture on the store box (`buying.js`) is relayed to head office through
+  `invoices/:id/synced`. That relay re-verifies both people's grants, but its checker is a name the box took. It moves
+  with the other box-relayed decisions in 2b-vi-c (a store seal on the checker's own act).
