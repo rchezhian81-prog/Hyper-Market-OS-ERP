@@ -105,6 +105,7 @@ export type CopyKey =
   | 'kindStockWriteOff' | 'kindStockAdjustmentUp' | 'kindOrderRefund' | 'kindServiceCompensation'
   | 'kindSupplierInvoiceCheck' | 'kindSupplierPayment'
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindPurchaseContract'
+  | 'kindEmergencyAccess' | 'kindAccessChange'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -117,6 +118,8 @@ export type CopyKey =
   | 'detailMovementId' | 'detailQuantityMinor'
   | 'detailStoreId' | 'detailFundingAmount' | 'detailStartsOn' | 'detailEndsOn' | 'detailLocationIds' | 'detailAreaId'
   | 'detailContractId' | 'detailSchemeId' | 'detailRateBp' | 'detailThresholdMinor' | 'detailAgreedLeadTimeDays'
+  | 'detailUserId' | 'detailRoleId' | 'detailBranchScope' | 'detailMinutes' | 'detailMaxMinutes' | 'detailGrantId'
+  | 'detailEvent' | 'detailGrants' | 'detailOwnedOpenItems' | 'detailRequestId' | 'allBranches'
   | 'statusWaitingForYou' | 'statusWaiting' | 'statusApproved' | 'statusApprovedUntil' | 'statusRejected'
   | 'statusExpired' | 'statusUsed'
   | 'decidedApproved' | 'decidedRejected' | 'decideNeedsReason' | 'decideNobody' | 'decideNotPermitted'
@@ -144,6 +147,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindSupplierInvoiceCheck: 'Check a supplier bill', kindSupplierPayment: 'Pay a supplier',
     kindDisplayContract: 'Approve a supplier\'s display-space funding', kindRebateScheme: 'Approve a supplier rebate scheme',
     kindPurchaseContract: 'Approve a supplier contract',
+    kindEmergencyAccess: 'Give someone emergency access for a short time', kindAccessChange: 'Change a person\'s access (joining, moving or leaving)',
     detailJobId: 'Load name', detailContentFingerprint: 'File check code',
     detailProductId: 'Item', detailPriceMinor: 'New price', detailMrpMinor: 'MRP', detailCostMinor: 'What it costs us', detailCurrency: 'Currency',
     detailMarginFloorBps: 'Minimum margin', detailPromotionId: 'Offer', detailDescription: 'Offer description', detailNormalPrice: 'Normal price',
@@ -159,6 +163,10 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     detailStoreId: 'Store', detailFundingAmount: 'Funding the supplier pays', detailStartsOn: 'Starts on', detailEndsOn: 'Ends on',
     detailLocationIds: 'Display places', detailAreaId: 'Floor area', detailContractId: 'Contract', detailSchemeId: 'Rebate scheme',
     detailRateBp: 'Rebate rate', detailThresholdMinor: 'Buying needed before it pays', detailAgreedLeadTimeDays: 'Agreed delivery time (days)',
+    detailUserId: 'Person', detailRoleId: 'Role', detailBranchScope: 'Branches', detailMinutes: 'For how many minutes',
+    detailMaxMinutes: 'Longest allowed (minutes)', detailGrantId: 'Emergency grant', detailEvent: 'Joining, moving or leaving',
+    detailGrants: 'Access after the change', detailOwnedOpenItems: 'Open work they still own', detailRequestId: 'Access change',
+    allBranches: 'all branches',
     statusWaitingForYou: 'Waiting for your decision', statusWaiting: 'Waiting for a second person',
     statusApproved: 'Approved by {who}', statusApprovedUntil: 'Approved by {who} — use it before {until}',
     statusRejected: 'Rejected by {who}: {reason}', statusExpired: 'Expired — it was not used in time. Ask again.',
@@ -197,6 +205,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindSupplierInvoiceCheck: 'விநியோகஸ்தர் பில்லைச் சரிபார்த்தல்', kindSupplierPayment: 'விநியோகஸ்தருக்குப் பணம் செலுத்துதல்',
     kindDisplayContract: 'விநியோகஸ்தரின் காட்சி இட நிதியை அனுமதித்தல்', kindRebateScheme: 'விநியோகஸ்தர் தள்ளுபடித் திட்டத்தை அனுமதித்தல்',
     kindPurchaseContract: 'விநியோகஸ்தர் ஒப்பந்தத்தை அனுமதித்தல்',
+    kindEmergencyAccess: 'ஒருவருக்குக் குறுகிய நேர அவசர அணுகல் வழங்குதல்', kindAccessChange: 'ஒருவரின் அணுகலை மாற்றுதல் (சேர்தல், இடமாற்றம் அல்லது விலகல்)',
     detailJobId: 'ஏற்றத்தின் பெயர்', detailContentFingerprint: 'கோப்புச் சரிபார்ப்புக் குறியீடு',
     detailProductId: 'பொருள்', detailPriceMinor: 'புதிய விலை', detailMrpMinor: 'அதிகபட்ச சில்லறை விலை (MRP)', detailCostMinor: 'நமக்கு ஆகும் அடக்க விலை', detailCurrency: 'நாணயம்',
     detailMarginFloorBps: 'குறைந்தபட்ச லாப வரம்பு', detailPromotionId: 'சலுகை', detailDescription: 'சலுகை விவரம்', detailNormalPrice: 'வழக்கமான விலை',
@@ -212,6 +221,10 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     detailStoreId: 'கடை', detailFundingAmount: 'விநியோகஸ்தர் செலுத்தும் நிதி', detailStartsOn: 'தொடங்கும் நாள்', detailEndsOn: 'முடியும் நாள்',
     detailLocationIds: 'காட்சி இடங்கள்', detailAreaId: 'தளப் பகுதி', detailContractId: 'ஒப்பந்தம்', detailSchemeId: 'தள்ளுபடித் திட்டம்',
     detailRateBp: 'தள்ளுபடி விகிதம்', detailThresholdMinor: 'பலன் கிடைக்க வாங்க வேண்டிய அளவு', detailAgreedLeadTimeDays: 'ஒப்புக்கொண்ட விநியோக நேரம் (நாட்கள்)',
+    detailUserId: 'நபர்', detailRoleId: 'பொறுப்பு', detailBranchScope: 'கிளைகள்', detailMinutes: 'எத்தனை நிமிடங்களுக்கு',
+    detailMaxMinutes: 'அதிகபட்ச அனுமதி (நிமிடங்கள்)', detailGrantId: 'அவசர அணுகல்', detailEvent: 'சேர்தல், இடமாற்றம் அல்லது விலகல்',
+    detailGrants: 'மாற்றத்திற்குப் பின் அணுகல்', detailOwnedOpenItems: 'அவர் இன்னும் பொறுப்பேற்றுள்ள பணிகள்', detailRequestId: 'அணுகல் மாற்றம்',
+    allBranches: 'அனைத்துக் கிளைகளும்',
     statusWaitingForYou: 'உங்கள் முடிவுக்காகக் காத்திருக்கிறது', statusWaiting: 'இரண்டாம் நபருக்காகக் காத்திருக்கிறது',
     statusApproved: '{who} அனுமதித்தார்', statusApprovedUntil: '{who} அனுமதித்தார் — {until}-க்குள் பயன்படுத்தவும்',
     statusRejected: '{who} மறுத்தார்: {reason}', statusExpired: 'காலாவதியானது — நேரத்தில் பயன்படுத்தப்படவில்லை. மீண்டும் கேளுங்கள்.',
@@ -257,6 +270,8 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   display_contract: 'kindDisplayContract',
   rebate_scheme: 'kindRebateScheme',
   purchase_contract: 'kindPurchaseContract',
+  emergency_access: 'kindEmergencyAccess',
+  access_change: 'kindAccessChange',
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
@@ -275,6 +290,9 @@ const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
   storeId: 'detailStoreId', fundingAmount: 'detailFundingAmount', startsOn: 'detailStartsOn', endsOn: 'detailEndsOn',
   locationIds: 'detailLocationIds', areaId: 'detailAreaId', contractId: 'detailContractId', schemeId: 'detailSchemeId',
   rateBp: 'detailRateBp', thresholdMinor: 'detailThresholdMinor', agreedLeadTimeDays: 'detailAgreedLeadTimeDays',
+  userId: 'detailUserId', roleId: 'detailRoleId', branchScope: 'detailBranchScope', minutes: 'detailMinutes',
+  maxMinutes: 'detailMaxMinutes', grantId: 'detailGrantId', event: 'detailEvent', grants: 'detailGrants',
+  ownedOpenItems: 'detailOwnedOpenItems', requestId: 'detailRequestId',
 };
 
 // ── small, deterministic formatters ───────────────────────────────────────────────────────────────────────────
@@ -313,9 +331,19 @@ function detailValue(t: (k: CopyKey) => string, key: string, value: unknown): st
     if (/Bps?$/.test(key) && Number.isSafeInteger(value)) return `${(value / 100).toFixed(2)}%`;
     return String(value);
   }
+  if (key === 'branchScope' && value === 'all') return t('allBranches');
   if (typeof value === 'string') return LONG_CODE.test(value) ? `${value.slice(0, 12)}…` : value;
   // A list of names (a display contract's places) reads as a list, never as code.
   if (Array.isArray(value) && value.every((v) => typeof v === 'string')) return value.length === 0 ? '—' : value.join(', ');
+  // Access after a change ([{ roleId, branchScope }]) reads as "cashier (b1); store_manager (all branches)".
+  if (Array.isArray(value) && value.every((v) => typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>)['roleId'] === 'string')) {
+    if (value.length === 0) return '—';
+    return value.map((v) => {
+      const g = v as Record<string, unknown>;
+      const scope = g['branchScope'] === 'all' ? t('allBranches') : Array.isArray(g['branchScope']) ? (g['branchScope'] as unknown[]).join(', ') : '';
+      return scope === '' ? String(g['roleId']) : `${String(g['roleId'])} (${scope})`;
+    }).join('; ');
+  }
   // Money as { minor, currency } (an offer's prices) reads as rupees, never as code.
   if (typeof value === 'object' && !Array.isArray(value)) {
     const m = value as Record<string, unknown>;

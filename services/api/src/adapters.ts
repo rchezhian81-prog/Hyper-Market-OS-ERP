@@ -9258,6 +9258,17 @@ export function migrationAdapter(input: {
         idempotencyKey: `finding-${tenantId}-${finding.domain}-${finding.evidenceRef}`, source: 'api/migration', payload: finding,
       }));
     },
+    // MG-05 — who ran each trial load (2b-vi-c-2): one record per trial; the control-total signature reads it.
+    recordTrialLoad: async (tenantId, load) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `trial-load-${load.trialId}`, type: 'MigrationTrialLoadRun', occurredAt: load.at,
+        idempotencyKey: `trial-load-${tenantId}-${load.trialId}`, source: 'api/migration', payload: load,
+      }));
+    },
+    trialLoadOperators: async (tenantId) => {
+      const loads = await allOf<{ readonly operator: string }>(input.store, tenantId, STREAM.migration, 'MigrationTrialLoadRun');
+      return [...new Set(loads.map((l) => l.operator))];
+    },
     recordSignature: async (tenantId, signature) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
         // One signature per person per role per PAGE (the findings digest): signing the same page twice

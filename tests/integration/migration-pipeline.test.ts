@@ -98,15 +98,25 @@ describe('the migration pipeline over the real authenticated surface', () => {
     expect(recon.status).toBe(200);
     expect(bodyOf(recon).qg07Passed).toBe(false); // nothing signed yet
 
-    // Owner may sign the stock total, but NOT the finance one (finance/tax is the CA's).
-    const ownerStock = await post(h, '/v1/migration/control-totals/sign', OWNER, 'sg1', { totals: [stock, finance], totalId: 'CT-stock', loadOperator: 'u-op', statement: 'ok' });
-    expect(ownerStock.status).toBe(200);
-    const afterStock = bodyOf(ownerStock).totals;
+    // Nothing is signed before a trial load is on record — then the owner runs it, and head office keeps who did.
+    expect((await post(h, '/v1/migration/control-totals/sign', CA, 'sg0', { totals: [stock, finance], totalId: 'CT-stock', statement: 'ok' })).status).toBe(422);
+    expect(bodyOf(await post(h, '/v1/migration/trial-loads', OWNER, 'tr-sign', {
+      rowsToLoad: 1000, elapsedMs: 5000, extractVerified: true, blockingExceptionsOpen: 0, targetPreparedEmpty: true,
+    })).ok).toBe(true);
 
-    const ownerFin = await post(h, '/v1/migration/control-totals/sign', OWNER, 'sg2', { totals: afterStock, totalId: 'CT-fin', loadOperator: 'u-op', statement: 'ok' });
-    expect(ownerFin.status).toBe(422); // owner is not a chartered accountant
+    // The owner RAN the load, so the owner signs neither total (§28) — and cannot type someone else as the operator
+    // (2b-vi-c-2, audit PA-03; before, the owner typed "u-op" and signed the stock total).
+    const ownerStock = await post(h, '/v1/migration/control-totals/sign', OWNER, 'sg1', { totals: [stock, finance], totalId: 'CT-stock', statement: 'ok' });
+    expect(ownerStock.status).toBe(422);
+    expect((ownerStock.body as { error: { code: string } }).error.code).toBe('signer_ran_the_load');
+    expect(((await post(h, '/v1/migration/control-totals/sign', OWNER, 'sg1-typed', { totals: [stock, finance], totalId: 'CT-stock', loadOperator: 'u-op', statement: 'ok' })).body as { error: { code: string } }).error.code).toBe('load_operator_is_read_from_the_record');
 
-    const caFin = await post(h, '/v1/migration/control-totals/sign', CA, 'sg3', { totals: afterStock, totalId: 'CT-fin', loadOperator: 'u-op', statement: 'audited' });
+    // The chartered accountant, who did not run it, signs the stock total and the finance total.
+    const caStock = await post(h, '/v1/migration/control-totals/sign', CA, 'sg2', { totals: [stock, finance], totalId: 'CT-stock', statement: 'counted' });
+    expect(caStock.status).toBe(200);
+    const afterStock = bodyOf(caStock).totals;
+
+    const caFin = await post(h, '/v1/migration/control-totals/sign', CA, 'sg3', { totals: afterStock, totalId: 'CT-fin', statement: 'audited' });
     expect(caFin.status).toBe(200);
     const bothSigned = bodyOf(caFin).totals;
 

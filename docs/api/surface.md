@@ -30,9 +30,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/access/delegations/:delegationId/revoke` | `approvals.delegation.grant` | core | yes |
 | POST | `/v1/access/delegations/effective-authority` | `approvals.delegation.read` | core | yes |
 | GET | `/v1/access/emergency` | `identity.role.read` | core | — |
-| POST | `/v1/access/emergency/:grantId` | `identity.role.grant` | core | yes |
+| POST | `/v1/access/emergency/:grantId` | `identity.role.request` | core | yes |
 | POST | `/v1/access/emergency/:grantId/revoke` | `identity.role.grant` | core | yes |
-| POST | `/v1/access/lifecycle/:requestId` | `identity.role.grant` | core | yes |
+| POST | `/v1/access/lifecycle/:requestId` | `identity.role.request` | core | yes |
 | GET | `/v1/approvals/decisions` | `approvals.delegation.read` | core | — |
 | POST | `/v1/approvals/decisions/:id/synced` | `approvals.decision.sync` | core | yes |
 | GET | `/v1/approvals/requests` | `identity.self.read` | core | — |

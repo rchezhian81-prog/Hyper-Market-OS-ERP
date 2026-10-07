@@ -14,12 +14,15 @@
 //
 // The rules are the tested `grantEmergencyAccess` / `revokeEmergencyAccess` / `emergencyAccessReview` in
 // `@sre/identity` (the services-run-on-their-tested-engine guardrail). Grants are recorded append-only,
-// folded latest-per-grantId (a revocation supersedes). Granting/revoking is gated `identity.role.grant`
-// (owner); the review reads `identity.role.read`. The authenticated caller is the APPROVER — they cannot be
-// the person who requested it.
+// folded latest-per-grantId (a revocation supersedes). Since 2b-vi-c-2 (ADR-0024 · audit PA-03) both people are
+// real: the person ASKING is the signed-in caller (`identity.role.request` — a store/HR manager or the owner), and
+// the OWNER's approval is an approval they gave in their own session for exactly this grant (kind
+// `emergency_access`, `identity.role.grant`) — never the requester. Before, the owner called this route and TYPED
+// who had asked. Revoking is gated `identity.role.grant`; the review reads `identity.role.read`.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, requireActorIsCaller } from '../../kernel/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
   grantEmergencyAccess, revokeEmergencyAccess, emergencyAccessReview, EmergencyAccessError,
   type EmergencyGrant, type EmergencyRequest, type EmergencyPolicy, type LifecycleApproval,
@@ -41,6 +44,9 @@ export interface EmergencyAccessDeps {
   /** Every emergency grant recorded — folded latest-per-grantId (a revocation supersedes). */
   readonly grants: (tenantId: string) => Promise<readonly EmergencyGrant[]> | readonly EmergencyGrant[];
   readonly recordGrant: (tenantId: string, grantId: string, grant: EmergencyGrant, key: string) => Promise<void> | void;
+  /** Head office's maker-checker engine (ADR-0024): the owner approved this grant in their own session. Optional on a
+   *  bare stub (then every approval is unknown, and nothing is granted); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   readonly now: () => string;
 }
 
@@ -51,33 +57,51 @@ const digestOf = (g: EmergencyGrant): string =>
 export function emergencyAccessRoutes(deps: EmergencyAccessDeps): readonly Route[] {
   return [
     {
-      // Grant time-bound emergency access. The AUTHENTICATED CALLER is the approver (§28 — they cannot be
-      // the requester). Body: { userId, roleId, branchScope ('all' | [branchId]), reason, minutes,
-      // requestedBy, maxMinutes? }. The expiry is computed at grant time and stored — it never open-ends.
+      // Grant time-bound emergency access. The AUTHENTICATED CALLER is the requester; the owner's approval is named
+      // (`approvalId`) — given in their own session for exactly this grant (§28: never the requester). Body: { userId,
+      // roleId, branchScope ('all' | [branchId]), reason, minutes, maxMinutes?, approvalId }. The expiry is computed
+      // at grant time and stored — it never open-ends.
       api: 'API-01', method: 'POST', path: '/v1/access/emergency/:grantId',
-      permission: 'identity.role.grant', idempotent: true,
+      permission: 'identity.role.request', idempotent: true,
       handler: async (ctx) => {
         const grantId = (ctx.params['grantId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const branchScope = readScope(b['branchScope']);
         if (grantId === '' || !isStr(b['userId']) || !isStr(b['roleId']) || !isStr(b['reason'])
-          || !isStr(b['requestedBy']) || !isPosInt(b['minutes']) || branchScope === undefined
+          || !isPosInt(b['minutes']) || branchScope === undefined
           || (b['maxMinutes'] !== undefined && !isPosInt(b['maxMinutes']))) {
           throw apiError(400, {
             code: 'not_readable_as_an_emergency_request',
-            whatHappened: 'An emergency grant needs a grantId in the path and { userId, roleId, branchScope ("all" or [branchId]), reason, minutes, requestedBy, maxMinutes? }.',
+            whatHappened: 'An emergency grant needs a grantId in the path and { userId, roleId, branchScope ("all" or [branchId]), reason, minutes, maxMinutes?, approvalId }. Who asks is taken from your sign-in.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Say who needs it, what role, in which branches, for how many minutes, why, and who asked — you (the approver) cannot be the requester.',
+            nextSafeAction: 'Say who needs it, what role, in which branches, for how many minutes and why — and ask the owner to approve exactly that.',
+          });
+        }
+        // Who asks is the signed-in caller — a body naming anyone else is refused by name (audit PA-03).
+        requireActorIsCaller(ctx, b, 'requestedBy');
+        const now = deps.now();
+        // The owner's approval, given in their own session for exactly this grant (kind `emergency_access`). A typed
+        // approver is refused by name; no approval at all grants nothing.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+          kind: 'emergency_access', subjectRef: grantId, details: actionDetails(ctx.body, { grantId }), valueMinor: null,
+          maker: ctx.userId, usedBy: `emergency-access:${grantId}`, now,
+        });
+        if (opened === undefined) {
+          throw apiError(422, {
+            code: 'emergency_access_needs_approval',
+            whatHappened: 'Emergency access is granted only with the owner\'s approval, given in their own session for exactly this grant (M02-FR-04, §28).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Ask for approval (POST /v1/approvals/requests, kind emergency_access, with exactly this grant); once the owner approves it, send it again with the approvalId. Nobody\'s access changed.',
           });
         }
         const request: EmergencyRequest = {
-          grantId, userId: b['userId'] as string, requestedBy: b['requestedBy'] as string,
+          grantId, userId: b['userId'] as string, requestedBy: ctx.userId,
           reason: b['reason'] as string, roleId: b['roleId'] as string, branchScope,
-          at: deps.now(), minutes: b['minutes'],
+          at: now, minutes: b['minutes'],
         };
-        // The caller is the approver — they approve in their own name, and the engine refuses a
-        // self-approval (§28), a too-short reason, and anything over the policy cap (SEC-11).
-        const approval: LifecycleApproval = { subjectRef: grantId, status: 'approved', decidedBy: ctx.userId };
+        // The engine still refuses a self-approval (§28), a too-short reason, and anything over the policy cap (SEC-11).
+        const approval: LifecycleApproval = { subjectRef: grantId, status: 'approved', decidedBy: opened.decision.decidedBy };
         const policy: EmergencyPolicy = { maxMinutes: (b['maxMinutes'] as number | undefined) ?? DEFAULT_MAX_MINUTES, requiresApprovalBy: 'owner' };
         let granted: EmergencyGrant;
         try {
@@ -93,8 +117,10 @@ export function emergencyAccessRoutes(deps: EmergencyAccessDeps): readonly Route
           }
           throw e;
         }
+        // Every rule passed: the approval is spent — once — and only then is the access granted.
+        await opened.spend();
         await deps.recordGrant(ctx.tenantId, grantId, granted, digestOf(granted));
-        return { status: 201, body: { grantId, userId: granted.userId, approvedBy: granted.approvedBy, expiresAt: granted.expiresAt } };
+        return { status: 201, body: { grantId, userId: granted.userId, requestedBy: granted.requestedBy, approvedBy: granted.approvedBy, expiresAt: granted.expiresAt } };
       },
     },
     {

@@ -24,7 +24,8 @@
 // The authenticated caller is the APPROVER and can never be the person who requested the change (§28).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, requireActorIsCaller } from '../../kernel/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
   applyLifecycle, SelfServiceAccessError,
   type LifecycleEvent, type AccessGrant, type LifecycleRequest, type LifecycleApproval, type OwnedItem, type LifecycleResult,
@@ -112,6 +113,9 @@ export interface AccessLifecycleDeps {
   };
   /** Seal the access change into the domain audit trail (M34-FR-01), attributed to the approver. */
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** Head office's maker-checker engine (ADR-0024): the approver approved this change in their own session. Optional
+   *  on a bare stub (then every approval is unknown, and nothing changes); the running system provides it. */
+  readonly approvals?: ApprovalPort;
 }
 
 /** The route's answer: the engine's decision plus what was actually done about it. */
@@ -125,12 +129,14 @@ export interface LifecycleOutcome extends LifecycleResult {
 export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route[] {
   return [
     {
-      // Decide AND apply a joiner / mover / leaver. Body: { event, userId, requestedBy, reason, grants? (target,
-      // for joiner/mover), ownedOpenItems? (checked for a leaver) }. The AUTHENTICATED CALLER is the approver
-      // (§28 — never the requester). What the person holds now is read from the ledger — a body that tries to
-      // supply it is refused by name. Returns the decision, what was recorded, and whether sessions were closed.
+      // Apply a joiner / mover / leaver. Body: { event, userId, reason, grants? (target, for joiner/mover),
+      // ownedOpenItems? (checked for a leaver), approvalId }. The AUTHENTICATED CALLER is the requester (M02-FR-04
+      // "Store/HR manager (request/confirm)"); the approver is an approval given in their own session for exactly this
+      // change (kind `access_change`, `identity.role.grant` — never the requester, §28). Before 2b-vi-c-2 the approver
+      // called this route and TYPED who had asked. What the person holds now is read from the ledger — a body that
+      // tries to supply it is refused by name. Returns the decision, what was recorded, and whether sessions were closed.
       api: 'API-01', method: 'POST', path: '/v1/access/lifecycle/:requestId',
-      permission: 'identity.role.grant', idempotent: true,
+      permission: 'identity.role.request', idempotent: true,
       handler: async (ctx) => {
         const requestId = (ctx.params['requestId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
@@ -145,25 +151,43 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
         const grants = readGrants(b['grants']);
         const ownedOpenItems = readOwnedItems(b['ownedOpenItems']);
         if (requestId === '' || !EVENTS.includes(b['event'] as LifecycleEvent) || !isStr(b['userId'])
-          || !isStr(b['requestedBy']) || !isStr(b['reason']) || grants === undefined || ownedOpenItems === undefined) {
+          || !isStr(b['reason']) || grants === undefined || ownedOpenItems === undefined) {
           throw apiError(400, {
             code: 'not_readable_as_a_lifecycle_change',
-            whatHappened: 'A lifecycle change needs a requestId in the path and { event (joiner/mover/leaver), userId, requestedBy, reason, grants? (target for joiner/mover: [{userId,roleId,branchScope}]), ownedOpenItems? }.',
+            whatHappened: 'A lifecycle change needs a requestId in the path and { event (joiner/mover/leaver), userId, reason, grants? (target for joiner/mover: [{userId,roleId,branchScope}]), ownedOpenItems?, approvalId }. Who asks is taken from your sign-in.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'For a joiner or mover say the access they should hold AFTER; for a leaver, list any open items they own so they can be reassigned first.',
           });
         }
         const userId = b['userId'] as string;
-        const requestedBy = b['requestedBy'] as string;
+        // Who asks is the signed-in caller — a body naming anyone else is refused by name (audit PA-03).
+        requireActorIsCaller(ctx, b, 'requestedBy');
+        const requestedBy = ctx.userId;
         const at = deps.now();
+        // The approver's own act: an approval given in their own session for exactly this change. A typed approver is
+        // refused by name; no approval at all changes nobody's access.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+          kind: 'access_change', subjectRef: requestId, details: actionDetails(ctx.body, { requestId }), valueMinor: null,
+          maker: ctx.userId, usedBy: `access-change:${requestId}`, now: at,
+        });
+        if (opened === undefined) {
+          throw apiError(422, {
+            code: 'access_change_needs_approval',
+            whatHappened: 'A joiner, mover or leaver change is applied only with an approval a second person gave in their own session for exactly this change (M02-FR-04, §28).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Ask for approval (POST /v1/approvals/requests, kind access_change, with exactly this change); once the owner approves it, send it again with the approvalId. Nobody\'s access changed.',
+          });
+        }
+        const approvedBy = opened.decision.decidedBy;
         const request: LifecycleRequest = {
           requestId, event: b['event'] as LifecycleEvent, userId, requestedBy, reason: b['reason'] as string, at,
           ...(grants.length > 0 ? { grants } : {}),
         };
         // What the person holds NOW — the ledger's answer, folded grants minus revocations.
         const currentGrants = await deps.currentGrants(ctx.tenantId, userId);
-        // The caller approves in their own name; the engine refuses a self-approval (§28).
-        const approval: LifecycleApproval = { subjectRef: requestId, status: 'approved', decidedBy: ctx.userId };
+        // The engine still refuses a self-approval (§28).
+        const approval: LifecycleApproval = { subjectRef: requestId, status: 'approved', decidedBy: approvedBy };
         let result: LifecycleResult;
         try {
           result = applyLifecycle({ request, currentGrants, approval, ownedOpenItems });
@@ -192,7 +216,7 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
         // otherwise a lifecycle change was the way to create an administrator past every other limit.
         if (added.length > 0) {
           const roles = await deps.roles(ctx.tenantId);
-          const approverPermissions = await deps.permissionsOf(ctx.tenantId, ctx.userId);
+          const approverPermissions = await deps.permissionsOf(ctx.tenantId, approvedBy);
           for (const g of added) {
             const role = roles.find((r) => r.id === g.roleId);
             if (role === undefined) {
@@ -207,7 +231,7 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
             if (beyond.length > 0) {
               throw apiError(422, {
                 code: 'escalates_beyond_the_approver',
-                whatHappened: `${ctx.userId} cannot grant ${beyond.join(', ')} because they do not hold it. Otherwise somebody who may approve access changes can create an administrator, and every other limit on them is decorative.`,
+                whatHappened: `${approvedBy} cannot grant ${beyond.join(', ')} because they do not hold it. Otherwise somebody who may approve access changes can create an administrator, and every other limit on them is decorative.`,
                 wasItSaved: 'not_saved',
                 nextSafeAction: 'Have the change approved by someone who already holds what is being granted. Nobody\'s access changed.',
               });
@@ -225,8 +249,10 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
           });
         }
 
+        // Every rule passed: the approval is spent — once — and only then does anybody's access change.
+        await opened.spend();
         await deps.recordChange(ctx.tenantId, {
-          requestId, event: request.event, userId, requestedBy, approvedBy: ctx.userId, reason: request.reason, added, removed,
+          requestId, event: request.event, userId, requestedBy, approvedBy, reason: request.reason, added, removed,
         });
         if (result.closeSessions) {
           // Every token of the person issued up to THIS moment — the leaver's open laptop, the mover's old scope.
@@ -241,7 +267,7 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
           });
         }
         await deps.recordAudit?.(ctx.tenantId, {
-          actorId: ctx.userId, action: `access.${request.event}`, objectType: 'user', objectId: userId,
+          actorId: approvedBy, action: `access.${request.event}`, objectType: 'user', objectId: userId,
           at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
           before: { grants: currentGrants.map((g) => `${g.roleId}@${g.branchScope === 'all' ? 'all' : g.branchScope.join('+')}`).join(',') },
           after: {

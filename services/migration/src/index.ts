@@ -242,6 +242,14 @@ export interface MigrationDeps {
   readonly recordFinding?: (tenantId: string, finding: RecordedFinding) => Promise<void> | void;
   readonly recordSignature?: (tenantId: string, signature: StoredSignature) => Promise<void> | void;
   /**
+   * MG-05 — who ran each trial load, kept by head office (2b-vi-c-2 · audit PA-03). The control-total signature reads the
+   * load operator from here: the rule "whoever ran the load cannot sign its totals" compared the signer against a name
+   * the signer TYPED, so a signer who had run the load typed someone else. Optional so existing stubs compile; without
+   * the record no total can be signed (there is no load on record to compare the signer against).
+   */
+  readonly recordTrialLoad?: (tenantId: string, load: { readonly trialId: string; readonly operator: string; readonly at: string }) => Promise<void> | void;
+  readonly trialLoadOperators?: (tenantId: string) => Promise<readonly string[]> | readonly string[];
+  /**
    * MG-10 — the parallel run the server KEEPS (B3): the owner's written policy (newest applies), each compared
    * day (latest per business date), each difference (latest state per id), and every performed rollback.
    * Optional so existing stubs compile; a route whose store is absent refuses 503 rather than pretending.
@@ -574,6 +582,8 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
             nextSafeAction: 'Nothing was loaded into the rehearsal. Resolve what is named above and run the trial again.',
           });
         }
+        // Who ran it is kept: the person who signs the loaded totals must not be them (MG-06, §28).
+        await deps.recordTrialLoad?.(ctx.tenantId, { trialId, operator: ctx.userId, at: deps.now() });
         return { status: 200, body: result };
       },
     },
@@ -630,19 +640,38 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         const b = ctx.body;
         const rawTotals = isObj(b) ? b['totals'] : undefined;
         const totalId = isObj(b) ? b['totalId'] : undefined;
-        const loadOperator = isObj(b) ? b['loadOperator'] : undefined;
         const statement = isObj(b) ? b['statement'] : undefined;
         if (!Array.isArray(rawTotals) || !rawTotals.every(isControlTotal)
           || typeof totalId !== 'string' || totalId === ''
-          || typeof loadOperator !== 'string' || loadOperator === ''
           || typeof statement !== 'string' || statement === '') {
           throw apiError(400, {
             code: 'not_readable_as_a_signature',
-            whatHappened: 'This payload could not be read as a control-total signature. It needs the control totals, the totalId to sign, who ran the load (loadOperator), and the signer\'s statement.',
+            whatHappened: 'This payload could not be read as a control-total signature. It needs the control totals, the totalId to sign, and the signer\'s statement.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Nothing was signed. Correct the fields and send them again.',
           });
         }
+        // Who ran the load is head office's record of the trial loads (2b-vi-c-2 · audit PA-03), never a name in the
+        // request — a signer who ran the load could type someone else's name and sign their own work.
+        if (isObj(b) && b['loadOperator'] !== undefined) {
+          throw apiError(422, {
+            code: 'load_operator_is_read_from_the_record',
+            whatHappened: 'Who ran the load is taken from head office\'s record of the trial loads, never from the request.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the signature without loadOperator. Nothing was signed.',
+          });
+        }
+        const operators = deps.trialLoadOperators === undefined ? [] : await deps.trialLoadOperators(ctx.tenantId);
+        if (operators.length === 0) {
+          throw apiError(422, {
+            code: 'no_trial_load_on_record',
+            whatHappened: 'No trial load is on record, so there is nobody to keep from signing their own load\'s totals — and no loaded totals to sign.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Run the trial load through head office (POST /v1/migration/trial-loads) first. Nothing was signed.',
+          });
+        }
+        // Anyone who ran a trial load is the load operator for the rule; the signer is checked against each of them.
+        const loadOperator = operators.includes(ctx.userId) ? ctx.userId : operators[operators.length - 1]!;
         const totals = rawTotals.map((t) => ({ ...t, tenantId: ctx.tenantId }));
         const roles = deps.rolesOf ? await deps.rolesOf(ctx.tenantId, ctx.userId) : [];
         // The role that carries authority for THIS signature: a chartered accountant if the signer

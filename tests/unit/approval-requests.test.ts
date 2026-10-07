@@ -235,6 +235,11 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
       expect(APPROVAL_KINDS[k]).toMatchObject({ makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve' });
     }
   });
+  it('access (2b-vi-c-2): a store or HR manager asks, the owner approves — M02-FR-04 "separation between requester and granter"', () => {
+    for (const k of ['emergency_access', 'access_change']) {
+      expect(APPROVAL_KINDS[k]).toMatchObject({ makerPermission: 'identity.role.request', checkerPermission: 'identity.role.grant' });
+    }
+  });
   it('no kind is a dead end: some role may ask for it and some role may approve it — no permission was invented', () => {
     const held = new Set(ROLE_CATALOGUE.flatMap((r) => r.permissions));
     for (const spec of Object.values(APPROVAL_KINDS)) {
@@ -243,6 +248,6 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
       expect(spec.label.length).toBeGreaterThan(0);
       expect(spec.validForMinutes).toBe(24 * 60);
     }
-    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(19);
+    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(21);
   });
 });
