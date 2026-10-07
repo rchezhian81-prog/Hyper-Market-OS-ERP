@@ -2631,39 +2631,52 @@ describe('admin and security, fed by the box', () => {
     expect(admin.support()[0]?.active, 'an expired grant still read as access').toBe(false);
   });
 
-  it('REFUSES blanket access — the rule the API path could not even state', async () => {
-    const base = await serve(snapshotOf());
-    const admin = bootAdmin((await payloadFromScreen(base, 'admin'))! as never)!;
-    const outcome = admin.grant({
-      request: {
-        requestId: 'R-1', requesterId: 'u-eng', requesterName: 'Engineer',
-        reason: 'investigating the duplicate settlement raised in ticket 4471',
-        scopes: [], tenantId: 'store-1', minutes: 60, at: NOW,
-      },
-      approval: { subjectRef: 'R-1', status: 'approved', decidedBy: 'u-owner' },
-    });
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.detail).toContain('never blanket admin');
+  it('carries what the person holds, so only the owner is offered a decision — and grants nothing itself', async () => {
+    // The local "let somebody in" form is gone (audit PA-03): the box no longer hands the page anything to grant with.
+    // It hands over who is looking and what they hold; the decision itself is head office's, in the owner's session.
+    const base = await serve(snapshotOf({
+      pack: pack({ adminPolicy: known({ dormantAfterDays: 60, userId: 'u-owner', permissions: ['platform.support.read', 'platform.support.grant'] }) }),
+    }));
+    const payload = (await payloadFromScreen(base, 'admin'))!;
+    expect(payload['permissions']).toEqual(['platform.support.read', 'platform.support.grant']);
+    const decided: unknown[] = [];
+    const admin = bootAdmin(payload as never, {
+      read: async () => ({ result: 'read', state: { sessions: [], pending: [{ requestId: 'R-1', requesterId: 'u-eng', requesterName: 'Engineer', reason: 'investigating the duplicate settlement raised in ticket 4471', scopes: ['read:settlements'], tenantId: 'store-1', minutes: 60, at: NOW }], asAt: NOW } }),
+      decide: async (input) => { decided.push(input); return { result: 'rejected' }; },
+      end: async () => ({ result: 'lost_link' }),
+    })!;
+    expect('grant' in admin, 'the screen can still grant access on its own').toBe(false);
+    await admin.refreshSupport();
+    expect(admin.outside('en').mayDecide).toBe(true);
+    expect((await admin.decideSupport('R-1', 'rejected')).kind).toBe('rejected');
+    expect(decided).toEqual([{ requestId: 'R-1', decision: 'rejected' }]);
   });
 
-  it('lets nobody in when the box does not know who is letting them', async () => {
+  it('lets nobody decide when the box does not know who is looking, or what they hold', async () => {
     const base = await serve(snapshotOf({
       pack: pack({ adminPolicy: known({ dormantAfterDays: 60 }) }),
     }));
     const payload = (await payloadFromScreen(base, 'admin'))!;
     expect('userId' in payload, '"userId" must be absent, not invented').toBe(false);
-    const outcome = bootAdmin(payload as never)!.grant({
-      request: {
-        requestId: 'R-1', requesterId: 'u-eng', requesterName: 'Engineer',
-        reason: 'investigating the duplicate settlement raised in ticket 4471',
-        scopes: ['read:settlements'], tenantId: 'store-1', minutes: 60, at: NOW,
-      },
-      approval: { subjectRef: 'R-1', status: 'approved', decidedBy: 'u-owner' },
-    });
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.refusal).toBe('nobody_is_named_at_this_desk');
+    expect('permissions' in payload, '"permissions" must be absent, not invented').toBe(false);
+    let sent = 0;
+    const admin = bootAdmin(payload as never, {
+      read: async () => ({ result: 'read', state: { sessions: [], pending: [], asAt: NOW } }),
+      decide: async () => { sent += 1; return { result: 'rejected' }; },
+      end: async () => { sent += 1; return { result: 'ended', endedAt: NOW }; },
+    })!;
+    await admin.refreshSupport();
+    expect(await admin.decideSupport('R-1', 'approved')).toEqual({ kind: 'nobody_named' });
+    expect(sent).toBe(0);
+    // Named, but holding nothing the box was told of: read-only.
+    const named = bootAdmin({ ...(payload as object), userId: 'u-mgr' } as never, {
+      read: async () => ({ result: 'read', state: { sessions: [], pending: [], asAt: NOW } }),
+      decide: async () => { sent += 1; return { result: 'rejected' }; },
+      end: async () => { sent += 1; return { result: 'ended', endedAt: NOW }; },
+    })!;
+    await named.refreshSupport();
+    expect(await named.decideSupport('R-1', 'approved')).toEqual({ kind: 'not_permitted' });
+    expect(sent).toBe(0);
   });
 
   it('reports a fleet as UNENFORCED when the shop has set no version policy', async () => {

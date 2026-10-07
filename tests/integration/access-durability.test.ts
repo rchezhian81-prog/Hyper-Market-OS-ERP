@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sentWithApproval } from '../support/approval-request';
 
 // M02 access surface — DURABILITY AND ISOLATION AS A WHOLE (M02-FR-02/03/04 · SEC-03 · P-04, API-01).
 //
@@ -81,10 +82,10 @@ describe('M02 access surface rebuilds and keeps enforcing after a restart (durab
       method: 'POST', path: '/v1/access/delegations/d1', userId: 'u-owner-1', tenantId: A, idempotencyKey: 'k-d1',
       body: { fromUserId: 'u-boss', toUserId: 'u-deputy', fromDate: day(0), untilDate: day(10), subjectTypes: ['refund'], reason: 'annual leave', granter: { userId: 'u-boss', branchScope: ['b1'], authorityLimit: { minor: 50000, currency: 'INR' } }, valueCap: { minor: 30000, currency: 'INR' }, branchScope: ['b1'] },
     });
-    await h.request({
-      method: 'POST', path: '/v1/access/emergency/e1', userId: 'u-owner-1', tenantId: A, idempotencyKey: 'k-e1',
-      body: { userId: 'u-support', roleId: 'store_manager', branchScope: 'all', reason: 'diagnose the till freeze on lane 3', minutes: 60, requestedBy: 'u-support' },
-    });
+    // The emergency grant as two people make it (2b-vi-c-2): one owner asks, the other approves in their own session.
+    const emergency = { userId: 'u-support', roleId: 'store_manager', branchScope: 'all', reason: 'diagnose the till freeze on lane 3', minutes: 60 };
+    expect((await sentWithApproval(h, A, 'u-owner-1', 'u-owner-2', { kind: 'emergency_access', subjectRef: 'e1', pathIds: { grantId: 'e1' } }, emergency,
+      (b) => h.request({ method: 'POST', path: '/v1/access/emergency/e1', userId: 'u-owner-1', tenantId: A, idempotencyKey: 'k-e1', body: b }))).status).toBe(201);
 
     // One restart — all three kinds must come back from the same rebuilt store.
     const restarted = apiHarness({ store: h.store });

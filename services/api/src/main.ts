@@ -420,7 +420,7 @@ export function buildSurface(deps: {
       : { ...approvalDecisionAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, applyDecision }),
     ...emergencyAccessRoutes(store === undefined
       ? { grant: empty(undefined), grants: empty([]), recordGrant: () => {}, now }
-      : emergencyAccessAdapter({ store, now })),
+      : { ...emergencyAccessAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     // Joiner/mover/leaver access lifecycle (M02-FR-04 · Wave 2b PA-02) — a durable COMMAND now: it reads what the
     // person holds from the ledger, appends the grants and revocations, and cuts the live session through the same
     // revocation list the authenticator consults, so a leaver's access ends on the next request.
@@ -429,6 +429,7 @@ export function buildSurface(deps: {
       : {
         ...accessLifecycleAdapter({ store, now, roleCatalogue: ROLE_CATALOGUE }),
         recordAudit: auditTrail?.recordAudit,
+        approvals: approvalRequestsAdapter({ store, now }),
         ...(deps.revocations === undefined ? {} : { revocations: deps.revocations }),
       }),
     ...catalogueRoutes({
@@ -1123,7 +1124,7 @@ export function buildSurface(deps: {
       ? { schedule: () => undefined, setSchedule: () => {}, recordSent: () => {}, now }
       : scheduledBriefAdapter({ store, now })),
     ...platformRoutes(store === undefined ? {
-      probe: probes, flags: empty({}), setFlag: () => {}, recordSupportAccess: () => {},
+      probe: probes, flags: empty({}), setFlag: () => {},
       settings, exportTenant: emptyExportBundle,
       setBranding: () => {}, branding: empty(undefined),
       setEntitlement: () => {}, entitlements: empty([]), now,

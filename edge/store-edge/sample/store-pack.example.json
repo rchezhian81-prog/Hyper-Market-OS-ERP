@@ -87,6 +87,10 @@
     "which is not the same as every device being up to date. Leave retentionPolicies",
     "empty and it says NOTHING HAS BEEN DECIDED, which is not the same as nothing being",
     "due for deletion. A legal hold outranks a retention date, and nothing deletes.",
+    "adminPolicy.permissions is what the person on the admin screen holds: only a holder of",
+    "platform.support.grant (the owner) is offered Approve, Reject or End on a support",
+    "request head office holds. The support person files their own request; nobody types",
+    "a requester or an approver on this screen. Leave permissions out and nothing is decided.",
     "killSwitches/agentBudgets/aiUsage/aiPending/aiEvaluations/aiPolicy:",
     "the AI control screen (M32/M36/A01-A10).",
     "THE KILL SWITCH IS THE POINT. Leave killSwitches out and the screen says it has NOT",
@@ -491,7 +495,11 @@
   "legalHolds": [],
   "adminPolicy": {
     "dormantAfterDays": 60,
-    "userId": "REPLACE_WITH_ADMIN_USER_ID"
+    "userId": "REPLACE_WITH_ADMIN_USER_ID",
+    "permissions": [
+      "platform.support.read",
+      "platform.support.grant"
+    ]
   },
   "killSwitches": [],
   "agentBudgets": [

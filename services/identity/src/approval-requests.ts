@@ -133,6 +133,17 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'purchase_contract', label: 'Approve a supplier contract',
     makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,
   },
+  // Access (2b-vi-c-2 · M02-FR-04): "Store/HR manager (request/confirm), Owner (approve emergency access) … separation
+  // between requester and granter (§28)". The person ASKING was a name typed by the approver; now the requester asks in
+  // their own session (`identity.role.request`) and the owner approves in theirs (`identity.role.grant`), never their own.
+  emergency_access: {
+    kind: 'emergency_access', label: 'Give someone emergency access for a short time',
+    makerPermission: 'identity.role.request', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
+  },
+  access_change: {
+    kind: 'access_change', label: 'Change a person\'s access (joining, moving or leaving)',
+    makerPermission: 'identity.role.request', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
+  },
 });
 
 /** A maker's request, as recorded. */

@@ -15,6 +15,11 @@
 
       A grant that has expired is not access, and this screen decides that from the clock
       every time it is read, not from a stored flag somebody has to turn off.
+
+      Outside access is head office's two-step lifecycle (M33-FR-03, audit PA-03): the support
+      person files their own request from their own sign-in; the OWNER approves (for fewer minutes
+      if they wish, never more), rejects, or ends a live session early HERE, in their own session.
+      Nobody types a requester or an approver on this page.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <style>
@@ -99,16 +104,33 @@
       .qty input { width: 90px; text-align: center; }
       .empty { color: var(--muted); padding: 20px 4px; }
 
-      .banner {
-        position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
-        background: var(--danger-surface); color: var(--on-danger); display: grid; gap: 10px;
+      /* Outside access: where the list came from, the answer to the last press, and the waiting requests. */
+      .source-line { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+      .source-line button { padding: 0 18px; }
+      p.source, p.result {
+        margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--panel); font-size: 15px;
+        display: inline-flex; gap: 8px; align-items: center; border-left: 6px solid var(--idle);
       }
-      .banner[hidden] { display: none; }
-      .banner.good { background: var(--good); color: var(--on-accent); }
-      .banner strong { font-size: 20px; }
-      .banner p { margin: 0; font-size: 16px; }
-      .banner button { background: var(--danger-surface); color: var(--on-danger); }
-      .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
+      p.source .icon, p.result .icon { font-size: 18px; }
+      p.source.tone-ok, p.result.tone-ok { border-left-color: var(--ok); }
+      p.source.tone-degraded, p.result.tone-degraded { border-left-color: var(--degraded); }
+      p.source.tone-error, p.result.tone-error { border-left-color: var(--error); }
+      p.result[hidden], p.readonly[hidden], p.empty[hidden], #support-decisions[hidden], .source-line button[hidden] { display: none; }
+      p.readonly { margin: 0 0 8px; padding: 12px 14px; border-radius: 12px; background: var(--info-surface); color: var(--on-info-surface); border-left: 6px solid var(--info); font-size: 15px; }
+      ul.rows { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 10px; }
+      li.wait { background: var(--panel); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; border-left: 6px solid var(--warn); min-width: 0; }
+      li.wait .what { display: grid; gap: 2px; }
+      li.wait .what small { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+      li.wait .own { color: var(--muted); font-size: 15px; margin: 4px 0 0; }
+      li.wait .decide { display: grid; gap: 8px; margin-top: 6px; }
+      li.wait .decide label { margin: 0; }
+      li.wait .buttons { display: flex; gap: 12px; flex-wrap: wrap; }
+      li.wait .buttons button { padding: 0 22px; }
+      button.approve { background: var(--good); color: var(--on-accent); }
+      button:disabled { opacity: 0.6; }
+      .row .end { padding: 0 18px; flex: none; }
+      /* On a phone the End button goes under the words, full width, so the words keep the row. */
+      @media (max-width: 560px) { .row { flex-wrap: wrap; } .row .end { width: 100%; } }
     </style>
   </head>
   <body>
@@ -132,27 +154,26 @@
       <section id="view-support">
         <h2 id="support-title">Outside access</h2>
         <p class="lead" id="support-lead">Anybody outside this business who has been let into your live data. Access is granted for a set time and for named things only — never everything, and never open-ended.</p>
-        <div id="support-list"></div>
 
-        <h3 id="grant-title">Let somebody in</h3>
-        <label for="who-in" id="who-in-label">Who needs access</label>
-        <input id="who-in" type="text" autocomplete="off" />
-        <label for="grant-reason" id="grant-reason-label">What are they looking at, and why</label>
-        <textarea id="grant-reason"></textarea>
-        <label for="scopes" id="scopes-label">Exactly what they may see (one per line)</label>
-        <textarea id="scopes"></textarea>
-        <div class="row2">
-          <div>
-            <label for="minutes" id="minutes-label">For how many minutes</label>
-            <input id="minutes" type="text" inputmode="numeric" value="60" />
-          </div>
-          <div>
-            <label for="approver" id="approver-label">Who approves it (not them)</label>
-            <input id="approver" type="text" autocomplete="off" />
-          </div>
+        <!-- Where the lists came from: head office as at a time, no connection, or not connected at all. -->
+        <div class="source-line">
+          <p class="source" id="support-source" role="status" aria-live="polite"><span class="icon" id="support-source-icon" aria-hidden="true"></span><span id="support-source-text"></span></p>
+          <button id="support-check" type="button" hidden>Check again</button>
         </div>
-        <button id="grant" class="danger wide" type="button">Let them in</button>
-        <p class="lead" id="grant-note">This is somebody outside your business seeing your real data. It ends by itself when the time runs out.</p>
+        <!-- The answer to the last Approve / Reject / End, in plain words. -->
+        <p class="result" id="support-result" hidden role="status" aria-live="polite"><span class="icon" id="support-result-icon" aria-hidden="true"></span><span id="support-result-text"></span></p>
+
+        <div id="support-decisions">
+          <h3 id="waiting-title">Waiting for your decision</h3>
+          <p class="lead" id="waiting-lead"></p>
+          <p class="readonly" id="cannot-decide" hidden></p>
+          <p class="empty" id="nothing-waiting" hidden></p>
+          <ul class="rows" id="waiting-list" aria-labelledby="waiting-title"></ul>
+        </div>
+
+        <h3 id="sessions-title">Who has been let in</h3>
+        <div id="support-list"></div>
+        <p class="lead" id="requests-note"></p>
       </section>
 
       <section id="view-people" hidden>
@@ -174,12 +195,6 @@
         <div id="records-list"></div>
       </section>
     </main>
-
-    <div class="banner" id="banner" hidden role="alert">
-      <strong id="banner-title">—</strong>
-      <p id="banner-text"></p>
-      <button id="banner-ok" type="button">I have read this</button>
-    </div>
 
     <!--SCREEN-DATA-->
     <script type="module" src="./web-erp.bundle.js"></script>

@@ -8838,17 +8838,6 @@ export function platformAdapter(input: {
       }));
     },
 
-    /** Never deleted (#6). Somebody outside the business read this tenant's data, and that is kept. */
-    recordSupportAccess: async (request, expiresAt) => {
-      await input.store.append(request.tenantId, STREAM.platform, makeEvent({
-        id: `support-${request.requestId}`,
-        type: 'SupportAccessGranted',
-        occurredAt: request.at,
-        idempotencyKey: `support-${request.tenantId}-${request.requestId}`,
-        source: 'api/platform',
-        payload: { ...request, expiresAt },
-      }));
-    },
 
     /**
      * The tenant's whole dataset, certified complete (M36-FR-03). The store read is
@@ -9257,6 +9246,17 @@ export function migrationAdapter(input: {
         id: `finding-${finding.domain}-${finding.evidenceRef}`, type: 'MigrationFindingRaised', occurredAt: finding.recordedAt,
         idempotencyKey: `finding-${tenantId}-${finding.domain}-${finding.evidenceRef}`, source: 'api/migration', payload: finding,
       }));
+    },
+    // MG-05 — who ran each trial load (2b-vi-c-2): one record per trial; the control-total signature reads it.
+    recordTrialLoad: async (tenantId, load) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `trial-load-${load.trialId}`, type: 'MigrationTrialLoadRun', occurredAt: load.at,
+        idempotencyKey: `trial-load-${tenantId}-${load.trialId}`, source: 'api/migration', payload: load,
+      }));
+    },
+    trialLoadOperators: async (tenantId) => {
+      const loads = await allOf<{ readonly operator: string }>(input.store, tenantId, STREAM.migration, 'MigrationTrialLoadRun');
+      return [...new Set(loads.map((l) => l.operator))];
     },
     recordSignature: async (tenantId, signature) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({

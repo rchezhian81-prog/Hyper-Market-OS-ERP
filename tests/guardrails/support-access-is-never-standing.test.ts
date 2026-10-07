@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { GRANT_REFUSAL_KINDS } from '../../apps/web-erp/src/admin-session';
+import { SUPPORT_ACCESS_COPY, SUPPORT_COPY_KEYS } from '../../apps/web-erp/src/admin-session';
+import { bilingualGaps } from '../../packages/ui/src/index';
 import { grantSupportAccess, supportSessionActive } from '../../packages/platform-admin/src/index';
 
 /**
@@ -21,15 +22,23 @@ import { grantSupportAccess, supportSessionActive } from '../../packages/platfor
  * test ever asked it. A session was granted with an `expiresAt` in a response body and no code
  * anywhere read it again, which is standing access wearing a time limit's clothes.
  *
- * Four things must stay true:
+ * **And the screen granted access on a typed name** (audit PA-03, register "the admin support grant", slice c-2). The
+ * admin page carried a local form — who needs access, the scopes, the minutes, and "who approves it (not them)" — and
+ * ran the engine in the browser. A name typed into a box is not anybody's approval. The page now reads head office's
+ * own lifecycle and the OWNER decides there, in their own session; the decider is the signed-in person, never a field.
  *
- *   1. **one implementation**, and the service maps HTTP to it and nothing else;
- *   2. **blanket access cannot be granted**, and the screen cannot ask for it;
+ * Five things must stay true:
+ *
+ *   1. **one implementation**, and the service maps HTTP to it and nothing else — the screen grants nothing itself;
+ *   2. **blanket access cannot be granted**, and the screen cannot ask for anything at all;
  *   3. **liveness is computed from the clock**, never stored;
- *   4. absent policy is reported as **unenforced**, never as compliant.
+ *   4. absent policy is reported as **unenforced**, never as compliant;
+ *   5. **no approver box, and no decider sent**: the page has no typed requester, scope list or approver, and neither
+ *      the view nor the browser port puts a `decidedBy` / `approvedBy` in anything it sends.
  */
 
 const SERVICE = readFileSync('services/platform/src/index.ts', 'utf8');
+const LIFECYCLE = readFileSync('services/platform/src/support-access-lifecycle.ts', 'utf8');
 const PACKAGE = readFileSync('packages/platform-admin/src/support-access.ts', 'utf8');
 const MODEL = readFileSync('apps/web-erp/src/admin-session.ts', 'utf8');
 const VIEW = readFileSync('apps/web-erp/web/admin.js', 'utf8');
@@ -80,14 +89,26 @@ describe('support access has exactly one implementation', () => {
 
   it('imports the one implementation, and the request type with it', () => {
     expect(code(SERVICE)).toMatch(/from '\.\.\/\.\.\/\.\.\/packages\/platform-admin\/src\/index'/);
-    expect(code(SERVICE)).toMatch(/grantSupportAccess\(body\.request, body\.approval\)/);
+    // The grant runs in ONE place: the owner's decision on a request the support person filed (2b-vi-c-2).
+    expect(code(LIFECYCLE)).toMatch(/grantSupportAccess\(\{ \.\.\.rec\.request, at \}, approval, deps\.policy\)/);
   });
 
-  it('the screen uses the same one, not a third', () => {
+  it('the old one-step grant — both people taken from the request — is retired, and says where access went (2b-vi-c-2, PA-03)', () => {
+    const oneStep = code(SERVICE).slice(code(SERVICE).indexOf("path: '/v1/platform/support-access',"));
+    const handler = oneStep.slice(0, oneStep.indexOf('\n    },'));
+    expect(handler).toMatch(/code: 'support_access_moved'/);
+    expect(handler, 'the one-step route grants again').not.toMatch(/grantSupportAccess\s*\(/);
+    expect(handler, 'the one-step route reads people from the body again').not.toMatch(/body\.request|body\.approval|decidedBy/);
+  });
+
+  it('the screen grants nothing itself — not a third copy, and not the one copy run in the browser', () => {
+    // It reads liveness from the one package, and a grant happens only at head office, on the owner's decision.
     expect(code(MODEL)).toMatch(/from '\.\.\/\.\.\/\.\.\/packages\/platform-admin\/src\/index'/);
-    expect(code(MODEL)).toMatch(/grantSupportAccess\(input\.request, input\.approval\)/);
-    expect(code(MODEL), 'the screen re-decides the rules itself')
-      .not.toMatch(/minutes > |scopes\.length === 0/);
+    expect(code(MODEL), 'the screen runs the grant engine itself again').not.toMatch(/grantSupportAccess\s*\(/);
+    expect(code(MODEL), 'the screen re-decides the policy rules itself')
+      .not.toMatch(/scopes\.length === 0|maxMinutes|forbiddenScopes/);
+    // The only window rule it applies is the owner's own cut: never LONGER than asked — said before anything is sent.
+    expect(code(MODEL)).toMatch(/if \(minutes > request\.minutes\) return \{ kind: 'longer_than_asked'/);
   });
 });
 
@@ -116,24 +137,101 @@ describe('blanket access cannot be granted, or asked for', () => {
     expect(() => grantSupportAccess(request(), undefined)).toThrow(/has not approved/);
   });
 
-  it('has nowhere on the screen to ask for everything', () => {
-    // The scopes box is not optional decoration: an empty one is refused by the rule.
-    expect(HTML).toMatch(/id="scopes"/);
-    const grant = code(VIEW).slice(code(VIEW).indexOf("el('grant').addEventListener"));
-    expect(grant).toMatch(/\.split\('\\n'\)\.map\(\(s\) => s\.trim\(\)\)\.filter\(\(s\) => s !== ''\)/);
-    expect(grant, 'the screen defaults the scopes to everything').not.toMatch(/scopes: \['\*'\]|scopes: \[\]/);
+  it('has nowhere on the screen to ask for anything — the support person files their own request', () => {
+    // The local form is gone: no requester, no reason, no scope list, no minutes to grant, no "let them in".
+    for (const id of ['who-in', 'grant-reason', 'scopes', 'minutes', 'grant', 'approver']) {
+      expect(HTML, `the page still has #${id}`).not.toMatch(new RegExp(`id="${id}"`));
+    }
+    expect(code(VIEW), 'the view still files or grants access locally').not.toMatch(/session\.grant\(|requesterId:|scopes:\s*\[/);
+    // Nothing on this page files a request: the request route is the support person's own.
+    expect(code(VIEW) + code(ENTRY).slice(code(ENTRY).indexOf('const SUPPORT_ACCESS_PATH'), code(ENTRY).indexOf('export const HEAD_OFFICE_SUPPORT_ACCESS')), 'the page files a support request')
+      .not.toMatch(/support-access\/requests'|support-access\/requests`,|\/support-access\/requests['`]\s*,\s*\{\s*method: 'POST'/);
   });
 
-  it('grants nothing under a name nobody holds', () => {
+  it('decides nothing under a name nobody holds, without the owner’s authority, or without head office', () => {
     expect(code(MODEL)).toMatch(/readonly userId: string \| null/);
-    const grant = code(MODEL).slice(code(MODEL).indexOf('grant: (input)'));
-    expect(grant.indexOf('config.userId === null')).toBeLessThan(grant.indexOf('grantSupportAccess('));
+    const refusal = code(MODEL).slice(code(MODEL).indexOf('const localRefusal = ()'));
+    expect(refusal.indexOf("config.userId === null")).toBeGreaterThan(-1);
+    expect(refusal.indexOf('ports.mayDecideSupport()')).toBeGreaterThan(-1);
+    expect(refusal.indexOf('!connected')).toBeGreaterThan(-1);
+    // Every press checks it BEFORE the port is reached.
+    for (const action of ['decideSupport: async', 'endSupport: async']) {
+      const body = code(MODEL).slice(code(MODEL).indexOf(action));
+      expect(body.indexOf('localRefusal()'), action).toBeGreaterThan(-1);
+      expect(body.indexOf('localRefusal()'), action).toBeLessThan(body.indexOf('await port.'));
+    }
     expect(code(ENTRY)).toMatch(/userId: data\.userId === undefined \? null : data\.userId/);
+    // Default-deny: the owner's authority is read from what the box says this person holds — never defaulted.
+    expect(code(ENTRY)).toMatch(/mayDecideSupport: \(\) => held\.has\(SUPPORT_DECIDE_PERMISSION\)/);
+    expect(code(MODEL)).toMatch(/SUPPORT_DECIDE_PERMISSION = 'platform\.support\.grant'/);
     expect(HTML).toMatch(/id="nobody"/);
   });
 
-  it('has words for every refusal, in both languages', () => {
-    expectWordsFor(GRANT_REFUSAL_KINDS, 'GRANT_REFUSAL_WORDS');
+  it('has words for every refusal and every state, in both languages', () => {
+    const gaps = bilingualGaps(SUPPORT_ACCESS_COPY, SUPPORT_COPY_KEYS);
+    expect(gaps.en).toEqual([]);
+    expect(gaps.ta).toEqual([]);
+    for (const key of SUPPORT_COPY_KEYS) expect(SUPPORT_ACCESS_COPY.ta[key], `"${key}" is not Tamil`).toMatch(/[\u0B80-\u0BFF]/);
+    // Every word the page asks the session for exists in the session's copy, or in the page's own sample words.
+    const asked = [...new Set([...code(VIEW).matchAll(/\bst\('(\w+)'\)/g)].map((m) => m[1]!))];
+    expect(asked.length).toBeGreaterThan(15);
+    const missing = asked.filter((k) => !(k in SUPPORT_ACCESS_COPY.en));
+    expect(missing, `the page asks the session for words it does not have: ${missing.join(', ')}`).toEqual([]);
+  });
+});
+
+// ── 2b. A second person's approval is that person's own act — never a typed name (PA-03) ──
+
+describe('the owner’s decision is their own signed-in act — no approver box, and no decider sent', () => {
+  const PORT = code(ENTRY).slice(code(ENTRY).indexOf('const SUPPORT_ACCESS_PATH'), code(ENTRY).indexOf('export const HEAD_OFFICE_SUPPORT_ACCESS'));
+  expect(PORT.length, 'the browser port was not found').toBeGreaterThan(500);
+
+  it('the page has no approver box, and no words for one', () => {
+    expect(HTML, 'the typed approver box is back').not.toMatch(/id="approver"|approver-label/);
+    expect(code(VIEW), 'the view still reads a typed approver').not.toMatch(/el\('approver'\)|approverLabel/);
+    expect(HTML, 'the page still offers to type who approves').not.toMatch(/Who approves it/);
+  });
+
+  it('the view sends no decidedBy / approvedBy — it opens no socket and names nobody', () => {
+    expect(code(VIEW), 'the view names a decider').not.toMatch(/\b(decidedBy|approvedBy)\s*:/);
+    expect(/\bfetch\s*\(/.test(code(VIEW)), 'the view opens a socket itself').toBe(false);
+    expect(code(VIEW).match(/method:\s*'(POST|PUT|PATCH|DELETE)'/g) ?? []).toEqual([]);
+    // The decision and the end run only from a click, never on load: each session call sits in one function, and that
+    // function is reached only from a button's click handler.
+    const view = code(VIEW);
+    for (const [call, fn] of [['session.decideSupport(', 'async function decideNow('], ['session.endSupport(', 'async function endNow(']] as const) {
+      expect(view.split(call).length - 1, `${call} is called more than once`).toBe(1);
+      const at = view.indexOf(call);
+      expect(view.lastIndexOf('function ', at), `${call} is not inside ${fn}`).toBe(view.indexOf(fn) + 'async '.length);
+      const name = fn.replace('async function ', '').replace('(', '');
+      const defined = view.indexOf(fn) + 'async function '.length;
+      const uses = [...view.matchAll(new RegExp(`\\b${name}\\(`, 'g'))].map((m) => m.index).filter((i) => i !== defined);
+      expect(uses.length, `${name} is never called`).toBeGreaterThan(0);
+      for (const use of uses) {
+        expect(view.slice(view.lastIndexOf('\n', use), use), `${name} is called outside a click handler`).toMatch(/addEventListener\('click'/);
+      }
+    }
+    expect(view).toMatch(/approve\.addEventListener\('click', \(\) => \{ void busy\(\[approve, reject\], \(\) => decideNow\(request\.requestId, 'approved', input\)\); \}\)/);
+    expect(code(VIEW)).toMatch(/reject\.addEventListener\('click', \(\) => \{ void busy\(\[approve, reject\], \(\) => decideNow\(request\.requestId, 'rejected', input\)\); \}\)/);
+  });
+
+  it('the browser port POSTs only { decision, grantedMinutes? } in the caller’s own session — never a decider', () => {
+    expect(PORT).toMatch(/body: JSON\.stringify\(\{ decision: input\.decision, \.\.\.\(input\.grantedMinutes === undefined \? \{\} : \{ grantedMinutes: input\.grantedMinutes \}\) \}\)/);
+    expect(PORT, 'the port puts a decider in a body').not.toMatch(/JSON\.stringify\([^)]*\b(decidedBy|approvedBy|requesterId)\b/);
+    expect(PORT.match(/credentials: 'same-origin'/g)?.length).toBe(3);
+    expect(PORT.match(/'idempotency-key': key/g)?.length).toBe(2);
+  });
+
+  it('the model never puts a decider in what it hands the port', () => {
+    const decide = code(MODEL).slice(code(MODEL).indexOf('decideSupport: async'), code(MODEL).indexOf('endSupport: async'));
+    expect(decide).toMatch(/await port\.decide\(\{ requestId, decision, \.\.\.\(grantedMinutes === undefined \? \{\} : \{ grantedMinutes \}\) \}\)/);
+    expect(decide, 'the model sends a decider').not.toMatch(/decidedBy|approvedBy/);
+  });
+
+  it('tripwire — the detectors fire on the shapes they exist to catch', () => {
+    expect("approval: { decidedBy: el('approver').value }").toMatch(/\b(decidedBy|approvedBy)\s*:/);
+    expect('<input id="approver" type="text" />').toMatch(/id="approver"|approver-label/);
+    expect("body: JSON.stringify({ decision, decidedBy: me })").toMatch(/JSON\.stringify\([^)]*\b(decidedBy|approvedBy|requesterId)\b/);
   });
 });
 
@@ -143,8 +241,14 @@ describe('a grant that has expired is not access', () => {
   it('computes it from the clock every time it is read', () => {
     // A stored flag has to be turned off by something, and that something is exactly what did
     // not exist for as long as this control has been in the codebase.
-    expect(code(MODEL)).toMatch(/supportSessionActive\(session, config\.now\)/);
+    expect(code(MODEL)).toMatch(/supportSessionActive\(session, at\)/);
+    // Head office's list against head office's own clock; the store computer's against the store computer's.
+    expect(code(MODEL)).toMatch(/state\.sessions\.map\(\(s\) => viewOf\(s, state\.asAt\)\)/);
+    expect(code(MODEL)).toMatch(/ports\.supportSessions\(\)\.map\(\(s\) => viewOf\(s, config\.now\)\)/);
     expect(code(MODEL), 'liveness became a stored flag').not.toMatch(/session\.active\b/);
+    // Head office's own `active` is not even carried into the page.
+    const reader = code(ENTRY).slice(code(ENTRY).indexOf('export function supportSessionOf'), code(ENTRY).indexOf('export function supportRequestOf'));
+    expect(reader, 'the browser carries a stored liveness flag').not.toMatch(/active/);
   });
 
   it('proves it: the same session is live before its expiry and not after', () => {
@@ -160,11 +264,18 @@ describe('a grant that has expired is not access', () => {
     expect(code(VIEW)).toMatch(/t\('liveNow'\)/);
   });
 
-  it('shows what a session may touch, and what it did', () => {
-    const render = code(VIEW).slice(code(VIEW).indexOf('function renderSupport'));
+  it('shows what a session may touch, its window, and what it did', () => {
+    const render = code(VIEW).slice(code(VIEW).indexOf('function sessionNode'));
     expect(render).toMatch(/view\.scopes\.join/);
     expect(render).toMatch(/view\.actionCount/);
     expect(render).toMatch(/session\.reason/);
+    expect(render).toMatch(/st\('windowWords'\)/);
+    // And a waiting request shows who, why, what and for how long before anyone decides it.
+    const waiting = code(VIEW).slice(code(VIEW).indexOf('function waitingNode'));
+    expect(waiting).toMatch(/request\.requesterName/);
+    expect(waiting).toMatch(/request\.reason/);
+    expect(waiting).toMatch(/request\.scopes\.join/);
+    expect(waiting).toMatch(/request\.askedMinutes/);
   });
 
   it('keeps every session — somebody outside the business saw live data', () => {
@@ -233,14 +344,38 @@ describe('the admin and security screen', () => {
     expect(readFileSync('apps/web-erp/web/sre-chrome.js', 'utf8')).toMatch(/window\.shellCachedAt/);
   });
 
-  it('never interrupts anybody with a browser dialog', () => {
+  it('never interrupts anybody with a browser dialog — answers go to one live status line', () => {
     expect(code(VIEW)).not.toMatch(/\b(prompt|confirm|alert)\s*\(/);
-    expect(code(VIEW)).toMatch(/function tell\(/);
+    expect(HTML).toMatch(/<p class="result" id="support-result" hidden role="status" aria-live="polite">/);
+    expect(HTML).toMatch(/<p class="source" id="support-source" role="status" aria-live="polite">/);
+    expect(code(VIEW)).toMatch(/paintLine\('support-result', present\(lang\)\)/);
+  });
+
+  it('every input is labelled, every target is 48px with a visible focus, and no row is a primary action', () => {
+    expect(HTML).toMatch(/:root \{ --tap: 48px; \}/);
+    expect(HTML).toMatch(/button \{\s*min-height: var\(--tap\)/);
+    expect(HTML).toMatch(/input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible \{\s*outline: 3px solid var\(--focus\)/);
+    const waiting = code(VIEW).slice(code(VIEW).indexOf('function waitingNode'), code(VIEW).indexOf('function sessionNode'));
+    expect(waiting).toMatch(/label\.htmlFor = inputId/);
+    expect(waiting).toMatch(/input\.id = inputId/);
+    // One primary action at a time: a list of requests is never a list of primary buttons.
+    expect(code(VIEW), 'a row button is marked primary').not.toMatch(/className = '[^']*\bprimary\b/);
   });
 
   it('says every state in words, not by colour alone', () => {
     expectWordsFor(['ok', 'upgrade_available', 'upgrade_required', 'blocked', 'unknown'], 'VERDICT_WORDS');
     expect(code(VIEW)).toMatch(/account\.flags\.join/);
+  });
+
+  it('says plainly when it is not connected to head office, and decides nothing (the sample stand-in)', () => {
+    const sample = code(VIEW).slice(code(VIEW).indexOf('function sampleSession'), code(VIEW).indexOf('const real = window.adminSession'));
+    expect(sample).toMatch(/connected: false/);
+    expect(sample).toMatch(/decideSupport: async \(\) => \(\{ kind: 'not_connected' \}\)/);
+    expect(sample).toMatch(/endSupport: async \(\) => \(\{ kind: 'not_connected' \}\)/);
+    expect(sample).toMatch(/sampleNotConnected/);
+    expect(code(VIEW)).toMatch(/el\('support-decisions'\)\.hidden = !view\.connected/);
+    // And a list head office never gave is not "nobody is waiting" (P-08).
+    expect(code(VIEW)).toMatch(/nothing\.hidden = !view\.waitingKnown \|\| view\.waiting\.length > 0/);
   });
 
   it('is offered in Tamil everywhere it is offered in English', () => {

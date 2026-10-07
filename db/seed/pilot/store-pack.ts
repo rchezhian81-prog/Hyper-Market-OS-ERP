@@ -276,7 +276,7 @@ export function buildDemoStorePack(input: DemoStorePackInput): DemoStorePack {
     expiryPolicy: { nearExpiryDays: input.trading.receiptPolicy.nearExpiryDays, userId: CAST.manager },
     servicePolicy: { returnWindowDays: 7, approvalThresholdMinor: 200_000, noReceiptCapMinor: 50_000, agentAuthorityMinor: 5_000, compensationCapMinor: 50_000, userId: CAST.manager },
     financePolicy: { period: month, tradingDayCutoff: policies.tradingDayCutoff, journalPrefixes: { takings: 'TK', tax: 'TX', refunds: 'RF' }, userId: CAST.accountant },
-    adminPolicy: { dormantAfterDays: 60, userId: CAST.owner },
+    adminPolicy: { dormantAfterDays: 60, ...viewer(CAST.owner) },
     aiPolicy: { staleAfterMinutes: 60, period: month, userId: CAST.owner },
     merchandisingPolicy: { refillAtBp: 2500, countStaleAfterMinutes: 240, refillRole: 'store_manager', ...viewer(CAST.manager) },
     writeOffCapturePolicy: { ...viewer(CAST.manager), materialThresholdMinor: 50_000 },

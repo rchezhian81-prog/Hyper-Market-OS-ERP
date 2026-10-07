@@ -160,6 +160,9 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       display_contract: { en: 'Approve a supplier\'s display-space funding', ta: 'விநியோகஸ்தரின் காட்சி இட நிதியை அனுமதித்தல்' },
       rebate_scheme: { en: 'Approve a supplier rebate scheme', ta: 'விநியோகஸ்தர் தள்ளுபடித் திட்டத்தை அனுமதித்தல்' },
       purchase_contract: { en: 'Approve a supplier contract', ta: 'விநியோகஸ்தர் ஒப்பந்தத்தை அனுமதித்தல்' },
+      // Access (2b-vi-c-2).
+      emergency_access: { en: 'Give someone emergency access for a short time', ta: 'ஒருவருக்குக் குறுகிய நேர அவசர அணுகல் வழங்குதல்' },
+      access_change: { en: 'Change a person\'s access (joining, moving or leaving)', ta: 'ஒருவரின் அணுகலை மாற்றுதல் (சேர்தல், இடமாற்றம் அல்லது விலகல்)' },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());
@@ -250,6 +253,22 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       contractId: 'Contract: c-1', agreedLeadTimeDays: 'Agreed delivery time (days): 7',
     });
     const ta = labelsOf('ta', { storeId: 's', fundingAmount: { minor: 100, currency: 'INR' }, startsOn: 'a', endsOn: 'b', locationIds: ['x'], areaId: 'f', contractId: 'c', schemeId: 'r', rateBp: 1, thresholdMinor: 1, agreedLeadTimeDays: 1 });
+    for (const [key, line] of Object.entries(ta)) expect(line, `${key} in Tamil`).toMatch(/^[^:]*[஀-௿][^:]*:/);
+  });
+
+  it('an access request reads as the shop says it — the person, the role, the branches, the minutes (2b-vi-c-2)', () => {
+    const labelsOf = (lang: 'en' | 'ta', details: Record<string, unknown>) =>
+      Object.fromEntries(presentRequest(lang, row({ details })).details.map((d) => [d.key, `${d.label}: ${d.value}`]));
+    expect(labelsOf('en', { userId: 'u-support', roleId: 'store_manager', branchScope: 'all', reason: 'diagnose the till freeze', minutes: 60, grantId: 'e1' })).toEqual({
+      userId: 'Person: u-support', roleId: 'Role: store_manager', branchScope: 'Branches: all branches', reason: 'Why: diagnose the till freeze',
+      minutes: 'For how many minutes: 60', grantId: 'Emergency grant: e1',
+    });
+    expect(labelsOf('en', { event: 'joiner', userId: 'u-new', grants: [{ userId: 'u-new', roleId: 'cashier', branchScope: ['b1'] }, { userId: 'u-new', roleId: 'store_manager', branchScope: 'all' }], ownedOpenItems: [], requestId: 'j1' })).toMatchObject({
+      event: 'Joining, moving or leaving: joiner', grants: 'Access after the change: cashier (b1); store_manager (all branches)',
+      ownedOpenItems: 'Open work they still own: —', requestId: 'Access change: j1',
+    });
+    const ta = labelsOf('ta', { userId: 'u', roleId: 'r', branchScope: 'all', minutes: 1, maxMinutes: 2, grantId: 'g', event: 'e', grants: [], ownedOpenItems: [], requestId: 'q' });
+    expect(ta['branchScope']).toBe('கிளைகள்: அனைத்துக் கிளைகளும்');
     for (const [key, line] of Object.entries(ta)) expect(line, `${key} in Tamil`).toMatch(/^[^:]*[஀-௿][^:]*:/);
   });
 

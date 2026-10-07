@@ -269,7 +269,7 @@ describe('all three register cleanly on the kernel', () => {
   };
   const platDeps: PlatformDeps = {
     probe: () => [{ name: 'postgres', criticality: 'shop_cannot_trade_without_it', reachable: true }],
-    flags: () => ({}), setFlag: () => {}, recordSupportAccess: () => {},
+    flags: () => ({}), setFlag: () => {},
     settings: inMemorySettings(), exportTenant: () => emptyExportBundle(),
     setBranding: () => {}, branding: () => undefined,
     setEntitlement: () => {}, entitlements: () => [], now: () => NOW,

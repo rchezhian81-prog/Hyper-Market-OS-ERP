@@ -3,6 +3,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
+import { askForApproval, decide } from '../support/approval-request';
+import { actionDetails } from '../../services/identity/src/approval-requests';
 import { LocalIdp } from '../support/local-idp';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
@@ -24,8 +26,31 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const OWNER = 'u-owner';
 const grant = (userId: string, role: string, branch: string[] | 'all' = 'all') => ({ userId, roleId: role, branchScope: branch });
-const lifecycle = (h: ApiHarness, u: string, id: string, body: Record<string, unknown>, key?: string, tenantId = A) =>
+/** The change sent exactly as given, by `u` (the route's own refusals show). */
+const lifecycleAs = (h: ApiHarness, u: string, id: string, body: Record<string, unknown>, key?: string, tenantId = A) =>
   h.request({ method: 'POST', path: `/v1/access/lifecycle/${id}`, userId: u, tenantId, idempotencyKey: key ?? `lc-${id}`, body });
+/** The store manager ASKS for access changes (identity.role.request — M02-FR-04 "Store/HR manager (request/confirm)"). */
+const MAKER = 'u-ref-mgr';
+const sentUnderKey = new Map<string, Record<string, unknown>>();
+/**
+ * A change as two people make it (2b-vi-c-2 · ADR-0024 · audit PA-03): the store manager asks for exactly this change in
+ * their own session; `approver` approves it in theirs; the manager applies it naming the approval. A body that still
+ * names a typed requester has it dropped — who asks is the sign-in. The same key re-sent is the same request (a lost reply).
+ */
+async function lifecycle(h: ApiHarness, approver: string, id: string, body: Record<string, unknown>, key?: string, tenantId = A) {
+  const k = `${tenantId}/${key ?? `lc-${id}`}`;
+  const resent = sentUnderKey.get(k);
+  if (resent !== undefined) return lifecycleAs(h, MAKER, id, resent, key, tenantId);
+  const { requestedBy: _typed, ...rest } = body;
+  void _typed;
+  const asked = await askForApproval(h, tenantId, MAKER, { kind: 'access_change', subjectRef: id, details: actionDetails(rest, { requestId: id }) });
+  if (asked.status !== 201) return lifecycleAs(h, MAKER, id, rest, key, tenantId);
+  const requestId = (asked.body as { requestId: string }).requestId;
+  const decided = await decide(h, tenantId, approver, requestId);
+  if (decided.status !== 201) return decided;
+  sentUnderKey.set(k, { ...rest, approvalId: requestId });
+  return lifecycleAs(h, MAKER, id, { ...rest, approvalId: requestId }, key, tenantId);
+}
 const me = (h: ApiHarness, token: string) => h.raw({ method: 'GET', path: '/v1/identity/me', token });
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 const permissionsOf = (res: { body: unknown }): readonly string[] => (res.body as { permissions: string[] }).permissions;
@@ -143,20 +168,33 @@ describe('a leaver is reassigned first, then their access actually ends', () => 
 describe('what the route refuses', () => {
   it('a body that supplies currentGrants is refused by name — the server reads them', async () => {
     const h = await cast();
-    const r = await lifecycle(h, OWNER, 'x1', { event: 'leaver', userId: 'u-ref-cashier', requestedBy: 'u-hr', reason: 'left', currentGrants: [] });
+    const r = await lifecycleAs(h, MAKER, 'x1', { event: 'leaver', userId: 'u-ref-cashier', reason: 'left', currentGrants: [] });
     expect(r.status).toBe(400);
     expect(codeOf(r)).toBe('current_grants_are_the_servers');
     expect((await h.request({ method: 'GET', path: '/v1/identity/me', userId: 'u-ref-cashier', tenantId: A })).status).toBe(200); // untouched
   });
 
-  it('self-approval (§28), an unknown role, a cashier at the route, and a malformed change', async () => {
+  it('both people are real (2b-vi-c-2, audit PA-03): no approval, a typed approver or requester, self-approval and a manager approving are refused', async () => {
     const h = await cast();
-    expect(codeOf(await lifecycle(h, OWNER, 's1', { event: 'joiner', userId: 'u-x', requestedBy: OWNER, reason: 'x', grants: [grant('u-x', 'cashier')] }))).toBe('self_service_access_refused');
-    expect(codeOf(await lifecycle(h, OWNER, 's2', { event: 'joiner', userId: 'u-x', requestedBy: 'u-hr', reason: 'x', grants: [grant('u-x', 'fresh_counter')] }))).toBe('unknown_role');
+    const JOIN = { event: 'joiner', userId: 'u-x', reason: 'new cashier', grants: [grant('u-x', 'cashier')] };
+    expect(codeOf(await lifecycleAs(h, MAKER, 's0', JOIN))).toBe('access_change_needs_approval');
+    // THE BYPASS, CLOSED: the owner called the route and TYPED who had asked; neither name may be typed now.
+    expect(codeOf(await lifecycleAs(h, MAKER, 's0', { ...JOIN, approvedBy: OWNER }, 'lc-s0-typed'))).toBe('approver_named_without_approval');
+    expect(codeOf(await lifecycleAs(h, OWNER, 's0', { ...JOIN, requestedBy: 'u-hr' }, 'lc-s0-req'))).toBe('actor_is_the_caller');
+    // The owner cannot approve the owner's own request; a store manager cannot approve one at all.
+    const ownAsk = await askForApproval(h, A, OWNER, { kind: 'access_change', subjectRef: 's1', details: actionDetails(JOIN, { requestId: 's1' }) });
+    expect(codeOf(await decide(h, A, OWNER, (ownAsk.body as { requestId: string }).requestId))).toBe('self_approval');
+    expect((await lifecycle(h, MAKER, 's1b', JOIN)).status).toBe(403);
+    expect((await me(h, tokenNow('u-x'))).status).toBe(403); // nobody's access changed
+  });
+
+  it('an unknown role, a cashier at the route, and a malformed change', async () => {
+    const h = await cast();
+    expect(codeOf(await lifecycle(h, OWNER, 's2', { event: 'joiner', userId: 'u-x', reason: 'x', grants: [grant('u-x', 'fresh_counter')] }))).toBe('unknown_role');
     expect((await me(h, tokenNow('u-x'))).status).toBe(403); // the refused joiner holds nothing
-    expect((await lifecycle(h, 'u-ref-cashier', 's3', { event: 'joiner', userId: 'u-x', requestedBy: 'u-hr', reason: 'x', grants: [grant('u-x', 'cashier')] })).status).toBe(403);
-    expect(codeOf(await lifecycle(h, OWNER, 's4', { event: 'promotion', userId: 'u-x', requestedBy: 'u-hr', reason: 'x' }))).toBe('not_readable_as_a_lifecycle_change');
-    expect(codeOf(await lifecycle(h, OWNER, 's5', { event: 'joiner', userId: 'u-x', requestedBy: 'u-hr', reason: 'x', grants: [{ userId: 'u-x', roleId: 'cashier' }] }))).toBe('not_readable_as_a_lifecycle_change');
+    expect((await lifecycleAs(h, 'u-ref-cashier', 's3', { event: 'joiner', userId: 'u-x', reason: 'x', grants: [grant('u-x', 'cashier')] })).status).toBe(403);
+    expect(codeOf(await lifecycleAs(h, MAKER, 's4', { event: 'promotion', userId: 'u-x', reason: 'x' }))).toBe('not_readable_as_a_lifecycle_change');
+    expect(codeOf(await lifecycleAs(h, MAKER, 's5', { event: 'joiner', userId: 'u-x', reason: 'x', grants: [{ userId: 'u-x', roleId: 'cashier' }] }))).toBe('not_readable_as_a_lifecycle_change');
   });
 });
 

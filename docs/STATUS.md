@@ -5,6 +5,65 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-vi-c-2 — the person asking is a real sign-in; outside support access is decided by the owner on screen (7 October 2026)
+
+- **The finding (audit PA-03, register side findings "typed makers" and "the admin support grant"):**
+  - emergency access and joiner/mover/leaver changes: the owner called the route and TYPED who had asked;
+  - a migration control-total signature compared the signer against a "load operator" the signer TYPED;
+  - the Admin screen's "grant outside access" form took a typed "Who approves it (not them)" and decided locally;
+  - found while doing it: an older one-step support-access route took both people from the request and wrote into
+    whichever tenant the request named.
+- **What changed:**
+  - **Emergency access and access changes** use head office's approval engine (ADR-0024, amended). There are two new
+    kinds, `emergency_access` and `access_change`.
+    - The person asking is the signed-in caller (`identity.role.request` — the store manager or the owner).
+    - The owner approves in their own session (`identity.role.grant`), never their own request; then the person who
+      asked carries it out.
+    - "The approver cannot hand out what they do not hold" now checks the approver from the approval.
+  - **Migration:** each trial load records who ran it. The control-total signature reads the load operator from that
+    record; a typed one is refused; with no trial load on record nothing is signed. So the owner who ran the load cannot
+    sign its stock total — the chartered accountant does.
+  - **Admin screen, Outside access:**
+    - it shows head office's waiting support requests and the sessions;
+    - the owner approves (optionally for fewer minutes, never more), rejects, or ends a session early, in their own
+      session;
+    - the typed approver box and the local-only grant form are gone, and filing a request is the support person's own
+      act;
+    - someone without the authority sees the list read-only, with a sentence saying why.
+  - **The old one-step support-access route is retired.** It answers 410 and points to the request-and-decide routes.
+  - The Approvals page names the two access kinds and their details (person, role, branches, minutes, access after the
+    change) in English and Tamil.
+- **Proved:**
+  - Unit:
+    - approval kinds (23);
+    - access-change route (4);
+    - migration signature (6);
+    - Admin screen (50) and its guardrail (33);
+    - Approvals page (30).
+  - Integration, through the real API:
+    - emergency access (5);
+    - access changes (8, including the leaver on real PostgreSQL);
+    - access durability (3);
+    - migration pipeline (5);
+    - support access (7, including the retired route);
+    - screens fed (updated);
+    - "it remembers" (37).
+  - Browser on Chromium: Admin support access (6, against the real request/decision routes).
+- **Not yet / honest limits:**
+  - Emergency access and access changes have no screen (API-only).
+  - The support person has no screen to file a request (API-only).
+  - The emergency-access time cap is still read from the request (recorded; the shop's own emergency policy is an open
+    owner input).
+  - The trial server's store pack must be rebuilt for the owner's permissions to reach the Admin page; until then the
+    page is read-only.
+  - Staff UAT (SP-10) is pending.
+- **Behaviour change the owner should know:**
+  - one person can no longer give emergency access or change someone's access alone — a manager asks, and the owner
+    approves;
+  - the owner who runs a migration trial load does not sign its totals.
+- **Next:** 2b-vi-c-3 — the store computer's seal on the decisions it relays (approval decisions, day reopen, the
+  buyer's bill capture, checklists, migration).
+
 ## Wave 2b-vi-c-1 — the eight minor typed names are the person's own act (7 October 2026)
 
 - **The finding (audit PA-03, register rows 19–26):** eight head-office routes still took a person as a name typed into

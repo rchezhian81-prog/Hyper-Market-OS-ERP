@@ -779,6 +779,9 @@ export interface PackAdminPolicy {
   readonly dormantAfterDays: number;
   /** Who is on the admin screen. Absent means nothing privileged may be done. */
   readonly userId?: string;
+  /** The permission codes this person holds — `platform.support.grant` to decide outside access. **Never defaulted**:
+   *  absent means the screen offers no decision (head office re-checks every one anyway). */
+  readonly permissions?: readonly string[];
 }
 
 /** Who is at the AI control screen, and how long a draft stays fit to accept. All per-tenant. */
