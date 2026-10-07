@@ -37,7 +37,10 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   are the approver's own act, and head office can tell which relayed facts a store computer vouched for.
 - **Not yet / honest limits:** the seal key is shared by every box, like the pack key (a per-box key is the
   reconsider-when); a box not yet updated, and records already queued when this lands, are flagged "not verified" once;
-  staff UAT (SP-10, pending, unasked).
+  **found while writing the owner's checks:** head office's SALE exceptions (`GET /v1/sales/exceptions` — every intake
+  finding, not only the new seal ones) have no back-office screen; refund flags show on "Refund exceptions" and the
+  Today page counts the store's own exceptions. Recorded for the OB-15 command-centre work; staff UAT (SP-10, pending,
+  unasked).
 - **Next:** 2b-vi — the two pricing approvals at head office (selling below cost, a loss-making promotion) become the
   approver's own act; then the OB-15 block.
 
