@@ -58,7 +58,7 @@ const WORDS = {
     alreadyClosed: 'This month is closed.', closedBy: 'closed by', signedBy: 'signed by',
     reopenTitle: 'Reopen this month', reopenReasonLabel: 'Why does it need reopening?',
     reopenLead: 'A signed month reopens only with the approval of someone who may sign a month — the accountant or the CA, never you. Write why and press “Ask for approval”. Once they approve it on their Approvals page, press “Reopen the month” with the same reason.',
-    askReopen: 'Ask for approval', reopenIt: 'Reopen the month', yourRequest: 'Your request:',
+    askReopen: 'Ask for approval', reopenIt: 'Reopen the month', yourRequest: 'Your request',
     signable: 'These figures agree exactly and nothing is outstanding. They can be signed.',
     notSignable: 'These figures do NOT agree, or something is outstanding. Do not sign them.',
     ok: 'OK', read: 'Please read this', done: 'Closed and signed', reopened: 'Reopened', waitingTitle: 'Waiting for approval',
@@ -87,7 +87,7 @@ const WORDS = {
     alreadyClosed: 'இந்த மாதம் மூடப்பட்டுள்ளது.', closedBy: 'மூடியவர்', signedBy: 'கையெழுத்திட்டவர்',
     reopenTitle: 'இந்த மாதத்தை மீண்டும் திற', reopenReasonLabel: 'ஏன் மீண்டும் திறக்க வேண்டும்?',
     reopenLead: 'கையெழுத்திட்ட மாதம், மாதத்திற்குக் கையெழுத்திடக்கூடியவரின் அனுமதியுடன் மட்டுமே மீண்டும் திறக்கும் — கணக்காளர் அல்லது பட்டயக் கணக்காளர் (CA), ஒருபோதும் நீங்கள் அல்ல. ஏன் என்று எழுதி “அனுமதி கேள்” அழுத்தவும். அவர் தனது அனுமதிகள் பக்கத்தில் அனுமதித்ததும், அதே காரணத்துடன் “மாதத்தை மீண்டும் திற” அழுத்தவும்.',
-    askReopen: 'அனுமதி கேள்', reopenIt: 'மாதத்தை மீண்டும் திற', yourRequest: 'உங்கள் கோரிக்கை:',
+    askReopen: 'அனுமதி கேள்', reopenIt: 'மாதத்தை மீண்டும் திற', yourRequest: 'உங்கள் கோரிக்கை',
     signable: 'இந்த எண்கள் சரியாகப் பொருந்துகின்றன, நிலுவை எதுவும் இல்லை. கையெழுத்திடலாம்.',
     notSignable: 'இந்த எண்கள் பொருந்தவில்லை, அல்லது ஏதோ நிலுவையில் உள்ளது. கையெழுத்திட வேண்டாம்.',
     ok: 'சரி', read: 'இதைப் படிக்கவும்', done: 'மூடிக் கையெழுத்திடப்பட்டது', reopened: 'மீண்டும் திறக்கப்பட்டது', waitingTitle: 'அனுமதிக்காகக் காத்திருக்கிறது',
@@ -334,7 +334,7 @@ function paintRequest(id, presented) {
   icon.setAttribute('aria-hidden', 'true');
   icon.textContent = presented.icon;
   const text = document.createElement('span');
-  text.textContent = `${t('yourRequest')} ${presented.label}`;
+  text.textContent = `${t('yourRequest')}: ${presented.label}`;
   chip.append(icon, text);
   line.replaceChildren(chip);
   line.hidden = false;

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { CLOSE_REFUSAL_KINDS, REOPEN_REFUSAL_KINDS } from '../../apps/web-erp/src/finance-session';
+import { FINANCE_MONTH_COPY, MONTH_COPY_KEYS } from '../../apps/web-erp/src/finance-session';
 import { buildControlTotals, closePeriod } from '../../packages/period-close/src/index';
+import { bilingualGaps } from '../../packages/ui/src/index';
 
 /**
  * **The month close, guarded — and the producer that never existed.**
@@ -22,6 +23,10 @@ import { buildControlTotals, closePeriod } from '../../packages/period-close/src
  *   3. **no ledger side means no comparison**, and no comparison is never "everything agrees";
  *   4. **a refused posting blocks the close and is never discarded**, and a closed month is
  *      append-only.
+ *
+ * And one more, since ADR-0024 (audit PA-03): **a month is closed and reopened at head office, by two
+ * people** — the closer asks, someone who may sign a month approves it in their own session, and the
+ * close names that approval. No name typed on this screen is ever taken as a signature or an approval.
  */
 
 const TOTALS = readFileSync('packages/period-close/src/control-totals.ts', 'utf8');
@@ -138,7 +143,9 @@ describe('a month cannot close on nothing at all', () => {
   });
 
   it('refuses BEFORE calling closePeriod, not after', () => {
-    const close = code(MODEL).slice(code(MODEL).indexOf('close: () =>'));
+    const at = code(MODEL).indexOf('const close = (): CloseOutcome =>');
+    expect(at, 'the local check is missing from the model').toBeGreaterThan(-1);
+    const close = code(MODEL).slice(at);
     expect(close.indexOf('built === undefined')).toBeLessThan(close.indexOf('closePeriod('));
   });
 
@@ -188,25 +195,80 @@ describe('what is outstanding blocks the close, and is never discarded', () => {
     expect(close, 'the close returns on the first blocker').not.toMatch(/return \{[^}]*closed: false[^}]*\};\s*\n\s*if \(/);
   });
 
-  it('needs a different person to reopen, and a reason', () => {
-    const reopen = code(MODEL).slice(code(MODEL).indexOf('reopen: (input)'));
-    expect(reopen).toMatch(/input\.approvedBy === config\.userId/);
-    expect(reopen).toMatch(/needs_a_reason/);
-    expect(reopen).toMatch(/§28/);
+  it('closes only with a signature someone else GAVE at head office, for exactly this month', () => {
+    // ADR-0024 · §28: the close names the closer's own APPROVED `period_close` request, found in head office's
+    // inbox for exactly `{ period }` — never a name, never the closer's own say-so.
+    const close = code(MODEL).slice(code(MODEL).indexOf('closeWithApproval: async ()'));
+    expect(close).toMatch(/findOwnApproval\(ports\.approvalInbox, PERIOD_CLOSE_KIND, config\.period, periodCloseDetails\(config\.period\), null\)/);
+    expect(close).toMatch(/ports\.closeAtHeadOffice!\(\{ period: config\.period, approvalId: found\.requestId \}\)/);
+    // This box's own evidence is checked first: a month whose figures cannot be signed is never sent.
+    expect(close.indexOf('beforeClosing()')).toBeLessThan(close.indexOf('findOwnApproval('));
+    expect(code(MODEL).slice(code(MODEL).indexOf('const beforeClosing'))).toMatch(/const local = close\(\);/);
   });
 
-  it('offers reopening on the SCREEN, so the control is not worked around', () => {
+  it('reopens only with a DIFFERENT person\'s own approval, for exactly the written reason', () => {
+    const reopen = code(MODEL).slice(code(MODEL).indexOf('reopenWithApproval: async (reason)'));
+    expect(reopen).toMatch(/findOwnApproval\(ports\.approvalInbox, PERIOD_REOPEN_KIND, config\.period, periodReopenDetails\(why, config\.period\), null\)/);
+    expect(reopen).toMatch(/reason: why, approvalId: found\.requestId/);
+    const before = code(MODEL).slice(code(MODEL).indexOf('const beforeReopening'));
+    expect(before).toMatch(/needs_why/);
+    expect(before).toMatch(/not_closed/);
+  });
+
+  it('takes no typed name as a signature or an approval — anywhere on the screen', () => {
+    // The typed "Who is approving it (not you)" box is gone, and nothing the screen sends names a second person.
+    expect(HTML).not.toMatch(/reopen-approver/);
+    expect(HTML, 'a text box someone could type a name into').not.toMatch(/<input/);
+    expect(code(VIEW)).not.toMatch(/approvedBy|reopen-approver/);
+    expect(code(MODEL)).not.toMatch(/readonly approvedBy: string \}/);
+    // The bodies are built by the same functions the approval's details come from.
+    expect(code(ENTRY)).toMatch(/periodCloseRequestBody\(approvalId\)/);
+    expect(code(ENTRY)).toMatch(/periodReopenRequestBody\(reason, approvalId\)/);
+  });
+
+  it('offers closing and reopening on the SCREEN, so the control is not worked around', () => {
     // A capability the session has and the screen does not is the fault this codebase keeps
-    // finding. It is shown only once the month is actually closed.
+    // finding. Reopening is shown only once the month is actually closed.
+    expect(HTML).toMatch(/id="ask-close"/);
+    expect(HTML).toMatch(/id="close-month"/);
+    expect(HTML).toMatch(/id="ask-reopen"/);
     expect(HTML).toMatch(/id="reopen"/);
-    expect(code(VIEW)).toMatch(/session\.reopen\(/);
+    expect(code(VIEW)).toMatch(/session\.askToClose\(/);
+    expect(code(VIEW)).toMatch(/session\.closeWithApproval\(/);
+    expect(code(VIEW)).toMatch(/session\.askToReopen\(/);
+    expect(code(VIEW)).toMatch(/session\.reopenWithApproval\(/);
     expect(code(VIEW)).toMatch(/el\('reopen-box'\)\.hidden = !session\.period\(\)\.closed/);
+  });
+
+  it('asks, closes and reopens ONLY on a click — never at load — and the view sends no write of its own', () => {
+    const view = code(VIEW);
+    for (const call of ['session.askToClose(', 'session.closeWithApproval(', 'session.askToReopen(', 'session.reopenWithApproval(']) {
+      const at = view.indexOf(call);
+      expect(at, `${call} is missing`).toBeGreaterThan(-1);
+      expect(view.indexOf(call, at + 1), `${call} is called twice`).toBe(-1);
+      const before = view.slice(Math.max(0, at - 260), at);
+      expect(before, `${call} is not inside a click handler`).toMatch(/addEventListener\('click', \(\) => \{\s*void busy\('[a-z-]+', async \(\) => \{/);
+    }
+    expect(view.match(/method:\s*'(POST|PUT|PATCH|DELETE)'/g) ?? []).toEqual([]);
+    expect(view).not.toMatch(/\bfetch\(/);
+  });
+
+  it('wires the browser to head office, and a page that is not wired closes and reopens nothing', () => {
+    expect(code(ENTRY)).toMatch(/bootFinance\(browserWindow\.financeData, FINANCE_HEAD_OFFICE\)/);
+    const model = code(MODEL);
+    const before = model.slice(model.indexOf('const beforeClosing'), model.indexOf('const ask = async'));
+    expect(before.match(/if \(!connected\) return \{ kind: 'not_connected' \};/g) ?? []).toHaveLength(2);
+    // The sample stand-in is connected to nothing and says so.
+    expect(code(VIEW)).toMatch(/closeWithApproval: async \(\) => \(\{ kind: 'not_connected' \}\)/);
+    expect(code(VIEW)).toMatch(/reopenWithApproval: async \(\) => \(\{ kind: 'not_connected' \}\)/);
   });
 
   it('closes and reopens nothing under a name nobody holds', () => {
     expect(code(MODEL)).toMatch(/readonly userId: string \| null/);
-    for (const fn of ['close: () =>', 'reopen: (input)']) {
-      const body = code(MODEL).slice(code(MODEL).indexOf(fn));
+    for (const fn of ['const close = (): CloseOutcome =>', 'const beforeClosing', 'const beforeReopening']) {
+      const at = code(MODEL).indexOf(fn);
+      expect(at, `${fn} is missing`).toBeGreaterThan(-1);
+      const body = code(MODEL).slice(at, at + 400);
       expect(body.indexOf('config.userId === null'), `${fn} does not check who is asking`)
         .toBeGreaterThan(-1);
     }
@@ -239,8 +301,12 @@ describe('the screen somebody puts their name to', () => {
   });
 
   it('has words for every refusal and every blocker, in both languages', () => {
-    expectWordsFor(CLOSE_REFUSAL_KINDS, 'CLOSE_REFUSAL_WORDS');
-    expectWordsFor(REOPEN_REFUSAL_KINDS, 'REOPEN_REFUSAL_WORDS');
+    // Every close / reopen outcome is said by the model's presenters (tested, both languages); the view shows them.
+    expect(bilingualGaps(FINANCE_MONTH_COPY, MONTH_COPY_KEYS)).toEqual({ en: [], ta: [] });
+    expect(code(VIEW)).toMatch(/session\.presentAskOutcome\(lang, 'close', outcome\)/);
+    expect(code(VIEW)).toMatch(/session\.presentUseOutcome\(lang, 'close', outcome\)/);
+    expect(code(VIEW)).toMatch(/session\.presentAskOutcome\(lang, 'reopen', outcome\)/);
+    expect(code(VIEW)).toMatch(/session\.presentUseOutcome\(lang, 'reopen', outcome\)/);
     expectWordsFor(
       ['control_totals_do_not_reconcile', 'dead_lettered_postings', 'unsent_sync_items', 'open_exceptions', 'already_closed'],
       'BLOCKER_WORDS',

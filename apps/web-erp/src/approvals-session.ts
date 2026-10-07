@@ -1,7 +1,8 @@
 // The Approvals page — head office's maker-checker inbox (ADR-0024 · audit PA-03 · M02-FR-03 · §28 · P-04 · P-05).
 //
 // Head office's approval engine replaced every box where the person doing the work TYPED the approver's name. Now:
-//   1. the MAKER asks for approval in their own session (`POST /v1/approvals/requests`) — the import screen does this;
+//   1. the MAKER asks for approval in their own session (`POST /v1/approvals/requests`) — the import, Products & prices
+//      and Finance (month close and reopen) screens do this;
 //   2. a CHECKER — anyone else who holds that kind's approval permission, never the maker — sees the request here,
 //      under "Waiting for you", and approves or rejects it WITH A WRITTEN REASON, in their own session
 //      (`POST /v1/approvals/requests/:requestId/decide`);

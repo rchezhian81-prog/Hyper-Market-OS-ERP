@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createFinanceSession, CLOSE_REFUSAL_KINDS, REOPEN_REFUSAL_KINDS,
+  createFinanceSession, CLOSE_REFUSAL_KINDS,
   type FinanceConfig, type FinancePorts,
 } from '../../apps/web-erp/src/finance-session';
 import { buildControlTotals, postedSide, type QueuedPosting } from '../../packages/period-close/src/index';
@@ -19,6 +19,9 @@ import { buildControlTotals, postedSide, type QueuedPosting } from '../../packag
  *   • a dead-lettered posting blocks the close and is never discarded;
  *   • every blocker is reported at once, not one per attempt;
  *   • a closed month is append-only, and reopening needs somebody else.
+ *
+ * `close()` here is the screen's LOCAL check of the box's figures — it closes nothing. A month is closed and reopened
+ * at head office with a second person's own approval: tests/unit/erp-finance-month-approvals.test.ts.
  */
 
 const NOW = '2026-08-01T10:00:00.000Z';
@@ -160,8 +163,8 @@ describe('the month on the screen', () => {
 
 // ── Closing ─────────────────────────────────────────────────────────────────
 
-describe('a month closes only when it should', () => {
-  it('closes when both sides agree and nothing is outstanding', () => {
+describe('the local check: a month could close only when it should (head office closes it)', () => {
+  it('passes when both sides agree and nothing is outstanding', () => {
     const outcome = finance().close();
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
@@ -262,43 +265,11 @@ describe('the pack somebody puts their name to', () => {
 // ── Reopening ───────────────────────────────────────────────────────────────
 
 describe('a closed month is append-only', () => {
-  const closed = (over: Partial<FinancePorts> = {}) =>
-    finance({ periodState: () => ({ closed: true, closedBy: 'u-other', closedAt: NOW }), ...over });
-
-  it('reopens with a reason and somebody else’s approval', () => {
-    const outcome = closed().reopen({ reason: 'supplier credit note arrived late', approvedBy: 'u-boss' });
-    expect(outcome.ok).toBe(true);
-  });
-
-  it('refuses when the person reopening is the one approving it', () => {
-    const outcome = closed().reopen({ reason: 'late note', approvedBy: 'u-finance' });
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.refusal).toBe('needs_a_different_person');
-    expect(outcome.detail).toContain('§28');
-  });
-
-  it('needs a reason — it is the first thing an auditor asks', () => {
-    const outcome = closed().reopen({ reason: '  ', approvedBy: 'u-boss' });
-    if (outcome.ok) return;
-    expect(outcome.refusal).toBe('needs_a_reason');
-  });
-
-  it('refuses to reopen a month that is not closed', () => {
-    const outcome = finance().reopen({ reason: 'x', approvedBy: 'u-boss' });
-    if (outcome.ok) return;
-    expect(outcome.refusal).toBe('not_closed');
-    expect(REOPEN_REFUSAL_KINDS).toHaveLength(4);
-  });
-
-  it('reopens nothing when the box does not know who is asking', () => {
-    const outcome = closed().reopen({ reason: 'x', approvedBy: 'u-boss' });
-    expect(outcome.ok).toBe(true);
-    const anonymous = finance(
-      { periodState: () => ({ closed: true }) }, { userId: null },
-    ).reopen({ reason: 'x', approvedBy: 'u-boss' });
-    expect(anonymous.ok).toBe(false);
-    if (anonymous.ok) return;
-    expect(anonymous.refusal).toBe('nobody_is_named_at_this_desk');
+  it('has no reopen on a typed approver\'s name — reopening is asked for and approved at head office', () => {
+    // The old `reopen({ reason, approvedBy })` took a name typed into a box as the approval. It is gone; reopening
+    // is `askToReopen` + `reopenWithApproval` (tests/unit/erp-finance-month-approvals.test.ts).
+    const s = finance({ periodState: () => ({ closed: true, closedBy: 'u-other', closedAt: NOW }) });
+    expect('reopen' in s).toBe(false);
+    expect(s.period().closed).toBe(true);
   });
 });

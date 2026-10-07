@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 924,
+  "testFiles": 926,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -22,7 +22,7 @@
     "unit": 81,
     "integration": 78,
     "realDb": 57,
-    "browser": 44,
+    "browser": 45,
     "connected": 2,
     "device": 0,
     "uat": 0
@@ -1314,10 +1314,10 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 19,
+        "unit": 21,
         "integration": 17,
         "realDb": 5,
-        "browser": 3,
+        "browser": 4,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -1327,7 +1327,9 @@
           "tests/unit/api-manifest.test.ts",
           "tests/unit/b2b-collections.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
+          "tests/unit/erp-approvals-session.test.ts",
           "tests/unit/erp-day-book-session.test.ts",
+          "tests/unit/erp-finance-month-approvals.test.ts",
           "tests/unit/erp-finance-session.test.ts",
           "tests/unit/erp-suppliers-session.test.ts",
           "tests/unit/finance-credit-notes.test.ts",
@@ -1372,6 +1374,7 @@
         ],
         "browser": [
           "tests/e2e/day-book-post-delivery.e2e.ts",
+          "tests/e2e/finance-month-close-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
           "tests/e2e/suppliers-delivery.e2e.ts"
         ],
@@ -3502,7 +3505,7 @@
         "unit": 12,
         "integration": 10,
         "realDb": 3,
-        "browser": 0,
+        "browser": 1,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -3539,7 +3542,9 @@
           "tests/integration/the-old-shop-arrives-whole.test.ts",
           "tests/integration/we-get-it-out-ourselves.test.ts"
         ],
-        "browser": [],
+        "browser": [
+          "tests/e2e/finance-month-close-delivery.e2e.ts"
+        ],
         "connected": [],
         "device": [],
         "uat": []

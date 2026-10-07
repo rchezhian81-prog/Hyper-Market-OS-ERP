@@ -36,12 +36,19 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Proved:**
   - `tests/unit/approval-requests.test.ts` (19).
   - Period close and reopen (7), concession (incl. forfeit), the two concession-tag proofs, payroll bank file (5) and
-    journal (4), step-up, the pilot seeds and the demo UAT, all through the real API. The whole integration suite
+    journal (4), step-up, the pilot seeds and the demo UAT, all through the real API.
+  - Finance screen: unit (month approvals 34, plus the finance session and the "a month cannot close on nothing"
+    guardrail) and browser on Chromium (month close and reopen 7, against the real approval and finance routes, with
+    the accountant approving through the real decide route). The whole integration suite
     passes (2,293), and the hosted seed runs twice on a fresh PostgreSQL with nothing changing the second time.
 - **Not yet / honest limits:**
   - A month-close approval names the month, not the figures. A posting after approval that still agrees is not
     re-shown to the signer.
   - Concession contracts and forfeits have no screen (API-only).
+  - After a close or reopen, the Finance page shows head office's answer for that visit. On reload it shows the store
+    computer's last word until that catches up. A second ask is refused in plain words (`already_closed`).
+  - The finance page carries no permission list, so a person without `finance.period.close` is refused by head office
+    in its own words, not hidden on the page.
   - Payroll stays on pilot hold.
   - Staff UAT (SP-10) is pending.
 - **Next:** 2b-vi-b-3 — stock, orders and purchasing (write-off, upward stock adjustment, online-order refunds,

@@ -6,6 +6,7 @@ import {
 } from '../../apps/web-erp/src/approvals-session';
 import { approvalsPortsFromData, bootApprovals } from '../../apps/web-erp/src/browser-entry';
 import { bilingualGaps } from '../../packages/ui/src/index';
+import { APPROVAL_KINDS } from '../../services/identity/src/approval-requests';
 
 // The Approvals page — head office's maker-checker inbox (ADR-0024 · audit PA-03 · M02-FR-03 · §28). A CHECKER sees
 // what other people asked for that they may decide (never their own) and approves or rejects it WITH A WRITTEN REASON
@@ -114,6 +115,52 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
     expect(offerKeys['promoPrice']).toMatchObject({ label: 'Offer price', value: '₹145.00' }); // never {"minor":14500,...}
     expect(offerKeys['unitCost']!.value).toBe('₹150.00');
     for (const k of ['quotation_below_floor', 'price_list_entry']) expect(presentRequest('ta', row({ kind: k })).label).not.toMatch(/[a-z]_[a-z]/);
+  });
+
+  it('a month\'s close or reopen reads as the shop says it — its kind in both languages, the month and why by name', () => {
+    // Finance (2b-vi-b-2 · M23-FR-04): the closer asks; someone who may sign a month approves here.
+    const close = presentRequest('en', row({
+      kind: 'period_close', label: 'Close and sign an accounting month', subjectRef: '2026-09', details: { period: '2026-09' },
+      summary: 'Close and sign September 2026',
+    }));
+    expect(close.label).toBe('Close and sign an accounting month');
+    expect(close.details).toEqual([{ key: 'period', label: 'Month', value: '2026-09' }]);
+    const reopen = presentRequest('ta', row({
+      kind: 'period_reopen', label: 'Reopen a signed accounting month', subjectRef: '2026-09',
+      details: { reason: 'supplier credit note arrived late', period: '2026-09' },
+    }));
+    expect(reopen.label).toBe('கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்');
+    expect(reopen.details).toEqual([
+      { key: 'reason', label: 'ஏன்', value: 'supplier credit note arrived late' },
+      { key: 'period', label: 'மாதம்', value: '2026-09' },
+    ]);
+    expect(presentRequest('en', row({ kind: 'period_reopen', details: { reason: 'x', period: '2026-09' } })).details.map((d) => d.label)).toEqual(['Why', 'Month']);
+  });
+
+  it('every kind the engine knows today is named in English (its own label) and in Tamil — never as code', () => {
+    const named: Record<string, { readonly en: string; readonly ta: string }> = {
+      data_import_commit: { en: APPROVALS_COPY.en.kindDataImport, ta: APPROVALS_COPY.ta.kindDataImport },
+      supplier_bank_change: { en: APPROVALS_COPY.en.kindSupplierBank, ta: APPROVALS_COPY.ta.kindSupplierBank },
+      price_change: { en: APPROVALS_COPY.en.kindPriceChange, ta: APPROVALS_COPY.ta.kindPriceChange },
+      price_list_entry: { en: APPROVALS_COPY.en.kindPriceListEntry, ta: APPROVALS_COPY.ta.kindPriceListEntry },
+      promotion_launch: { en: APPROVALS_COPY.en.kindPromotionLaunch, ta: APPROVALS_COPY.ta.kindPromotionLaunch },
+      quotation_below_floor: { en: APPROVALS_COPY.en.kindQuotationBelowFloor, ta: APPROVALS_COPY.ta.kindQuotationBelowFloor },
+      period_close: { en: 'Close and sign an accounting month', ta: 'கணக்கு மாதத்தை மூடி கையெழுத்திடுதல்' },
+      period_reopen: { en: 'Reopen a signed accounting month', ta: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்' },
+      concession_contract: { en: 'Approve a concession contract', ta: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்' },
+      concession_deposit_forfeit: { en: 'Forfeit a concessionaire\'s deposit', ta: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்' },
+    };
+    for (const [kind, words] of Object.entries(named)) {
+      // The engine's own label is the English the screen shows; the reader's language wins over the server's label.
+      expect(APPROVAL_KINDS[kind]?.label, `${kind} is not a kind the engine knows`).toBe(words.en);
+      const serverLabel = APPROVAL_KINDS[kind]!.label;
+      expect(presentRequest('en', row({ kind, label: serverLabel })).label).toBe(words.en);
+      expect(presentRequest('en', row({ kind, label: '' })).label, `${kind} falls back to code in English`).toBe(words.en);
+      const ta = presentRequest('ta', row({ kind, label: serverLabel })).label;
+      expect(ta).toBe(words.ta);
+      expect(ta, `${kind} in Tamil`).toMatch(/[஀-௿]/);
+      expect(ta).not.toMatch(/[a-z]_[a-z]/);
+    }
   });
 
   it('every waiting row asks for attention with an icon and words — colour is never the only signal', () => {
