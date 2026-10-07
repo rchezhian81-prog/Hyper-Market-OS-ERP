@@ -2337,7 +2337,7 @@ export function migrationPayload(input: ScreenInput): Record<string, unknown> | 
  * pack: behind the authenticated relay the person who signed in becomes the viewer (their id, their permissions from
  * this box's role register); on a box with nobody signed in it says nobody is named and decides nothing.
  */
-export function approvalsPayload(_input: ScreenInput): Record<string, unknown> | null {
+export function approvalsPayload(): Record<string, unknown> | null {
   return { permissions: [] };
 }
 
