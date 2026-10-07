@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 926,
+  "testFiles": 927,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -438,7 +438,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 29,
+        "integration": 30,
         "realDb": 6,
         "browser": 3,
         "connected": 0,
@@ -487,6 +487,7 @@
           "tests/integration/the-till-exchanges.test.ts",
           "tests/integration/the-till-returns-without-a-receipt.test.ts",
           "tests/integration/trusted-approvals.test.ts",
+          "tests/integration/upward-stock-correction.test.ts",
           "tests/integration/warehouse-counts.test.ts",
           "tests/integration/warehouse-durability.test.ts",
           "tests/integration/warehouse-synced-routes.test.ts",

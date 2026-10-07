@@ -358,6 +358,9 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         let movement: Movement = m;
         if (m.kind === 'adjusted') {
           requireActorIsCaller(ctx, m as unknown as Record<string, unknown>, 'enteredBy');
+          // Already on file (a lost reply re-sent under a new key): the same movement, not a second one — and its
+          // approval, already spent on it, is not asked to pay again.
+          if (await deps.isKnown(ctx.tenantId, m.movementId)) return { status: 202, body: { movementId: m.movementId, appended: true } };
           const body = m as unknown as Record<string, unknown>;
           opened = await approvalNamedIn(deps.approvals, {
             tenantId: ctx.tenantId, approvalId: body['approvalId'], typedField: 'approvedBy', typedValue: body['approvedBy'],

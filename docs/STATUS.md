@@ -5,6 +5,75 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-vi-b-3 — stock, orders and purchasing approvals are the approver's own act (7 October 2026)
+
+- **The finding (audit PA-03, register rows 13–18):** six places at head office took their second person as a name
+  typed into the request:
+  - a material stock write-off;
+  - an upward stock correction — both people ("entered by" and "approved by") were strings, and the only rule was that
+    they differed;
+  - an online-order refund;
+  - service-desk compensation above the agent's own limit;
+  - a supplier bill's check (recorded with an unverified checker and only flagged);
+  - a supplier payment.
+- **What changed:**
+  - All six use head office's approval engine (ADR-0024, amended). There are six new kinds, each checked by the
+    authority the route already named — no permission was invented:
+    - `stock_write_off` and `stock_adjustment_up` — another person who may post stock movements (manager or owner);
+    - `order_refund` — `order.refund.approve`; spent before any money moves;
+    - `service_compensation` — `service.compensation.approve`; the limits still come from the tenant's policy;
+    - `supplier_invoice_check` — someone who may match bills; a bill captured before anyone checked it is recorded and
+      flagged `no_approval`, because the match and the payment each still need their own second person;
+    - `supplier_payment` — another person who may pay suppliers; a payment with no approval is refused.
+  - A typed approver is refused by name everywhere (`approver_named_without_approval`). The person entering an upward
+    correction must be the signed-in caller.
+  - The routes' old typed-approver lookups (`canApproveWriteOff`, the orders `holdsPermission`) are gone.
+  - **Screen:** *Record a write-off* (Inventory).
+    - A small loss is recorded as before.
+    - A big loss (at or above the shop's limit) needs a photo or witness and a written reason. The person presses
+      **Ask for approval**; a second person who handles stock approves it on their own Approvals page; then
+      **Record the loss** sends it naming that approval.
+    - Otherwise the page says in plain words why not (not asked, waiting, rejected — by whom and why — expired, used,
+      changed since asking) and records nothing.
+    - A list, *Losses you asked approval for*, lets the person carry an approved loss back into the form after a
+      reload.
+    - The typed approver box is gone.
+  - **The Approvals page** names all six kinds and their details in English and Tamil. A quantity reads as a count,
+    not as rupees.
+- **Found and fixed while proving it:**
+  - On the write-off page two labels showed raw words, and every head-office refusal came out as a plain "refused"
+    (the reply's code was read from the wrong place). Both fixed; a guardrail checks every word the page asks for.
+  - An approved upward correction re-sent under a new key was refused as "approval already used". It is now answered
+    as the same movement, without asking the approval to pay again.
+- **Proved:**
+  - `tests/unit/approval-requests.test.ts` (21: every kind's authority, and no kind is a dead end — some role may ask
+    and some role may approve).
+  - Integration, through the real API:
+    - write-off (9);
+    - upward stock correction (4, new);
+    - order payments and refunds (6), plus the refund route's unit proof (5);
+    - service compensation (6);
+    - supplier bill capture and match (6), supplier account (4), supplier master (incl. payments);
+    - the store-buys-what-it-sells journey (2).
+    Each covers: a typed approver is refused; self-approval and approval without the authority are refused; an approval
+    for one thing never pays for another; one use.
+  - Screens: unit (write-off session 33, Approvals page 28, write-off guardrail 18) and browser on Chromium (write-off
+    8, against the real approval and write-off routes, with the store manager approving through the real decide route;
+    Approvals 4).
+- **Not yet / honest limits:**
+  - Online-order refunds, service compensation, supplier bill checks, supplier payments and upward corrections have no
+    head-office screen that sends an approver — they are API-only for now. The service screen offers no compensation
+    yet.
+  - The buyer's bill capture on the store computer (`buying.js`) still takes the checker's name on the box; head office
+    re-verifies both people's grants on the relay. It moves with the other box-relayed decisions in 2b-vi-c (register
+    row 17b).
+  - The write-off's browser proof and its head-office proof are separate runs, not one connected run on a real
+    database.
+  - Staff UAT (SP-10) is pending.
+- **Next:** 2b-vi-c — the 8 low-severity and record-only typed names, plus the store seal on the remaining box-relayed
+  decisions (approval decisions, day reopen, bill capture, checklists, migration), with the day-reopen and admin
+  support-grant screens.
+
 ## Wave 2b-vi-b-2 — finance approvals are the approver's own act (7 October 2026)
 
 - **The finding (audit PA-03, register rows 8–12):** five finance places took their second person as a typed name or a
