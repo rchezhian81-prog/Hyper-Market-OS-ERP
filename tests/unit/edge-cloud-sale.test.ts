@@ -85,3 +85,13 @@ describe('toCloudSale — the lane record → the cloud contract', () => {
     expect(sale.tenders).toEqual([]);
   });
 });
+
+describe('the store computer\'s seal travels with the sale (ADR-0023 · PF-02)', () => {
+  it('carries the box\'s stamp on the cashier it verified exactly as written, and invents none', () => {
+    const operatorVerified = { userId: 'u-meena', via: 'pin', laneId: 'lane-1', seal: 'a'.repeat(64) };
+    const record = { id: 'S-1', number: 'R-1', cashierId: 'u-meena', total: 100, lines: [], tenders: [] };
+    expect(toCloudSale({ ...record, operatorVerified }, 1).operatorVerified).toEqual(operatorVerified);
+    expect('operatorVerified' in toCloudSale(record, 1)).toBe(false);
+    expect('operatorVerified' in toCloudSale({ ...record, operatorVerified: 'u-meena' }, 1)).toBe(false);
+  });
+});

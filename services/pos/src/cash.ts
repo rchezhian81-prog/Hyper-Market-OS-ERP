@@ -11,6 +11,7 @@ import {
   type CashMovementKind, type StoredCashMovement,
 } from '../../../packages/cash/src/index';
 import { TILL_AUTHORITY } from './sale-intake';
+import { cashierSealFlags, stampIn, type CashierSealFlag } from './store-seal';
 
 export type { StoredCashMovement } from '../../../packages/cash/src/index';
 
@@ -31,6 +32,8 @@ export type TillMovement = StoredCashMovement & {
 
 /** What the cloud found when it re-verified a movement the store box relayed (SP-4c · §28 · hard rule #10). */
 export type CashGovernanceFlag =
+  /** The store computer's seal on who did it is missing, or does not match this movement (ADR-0023 · PF-02). */
+  | CashierSealFlag
   /** The named custodian holds no grant at all — a name head office does not know. */
   | 'custodian_unknown'
   /** The named custodian is known but holds no till authority. */
@@ -67,6 +70,8 @@ export interface CashDeps {
    * Absent → the route raises no person finding (a composition with no grants register).
    */
   readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+  /** The key head office checks the store computer's seal with (ADR-0023) — on a relayed movement. Absent → not checked. */
+  readonly tillSealKey?: Buffer;
 }
 
 /**
@@ -176,6 +181,11 @@ export function cashRoutes(deps: CashDeps): readonly Route[] {
         const flags: string[] = [
           ...await personFindings(deps, ctx.tenantId, custodianId, 'custodian_unknown', 'custodian_lacks_authority'),
           ...(performedBy === custodianId ? [] : await personFindings(deps, ctx.tenantId, performedBy, 'recorder_unknown', 'recorder_lacks_authority')),
+          // Whether the store computer vouches for who did it (ADR-0023 · PF-02): the person it verified at the till.
+          ...cashierSealFlags(deps.tillSealKey, {
+            fact: 'cash_movement', tenantId: ctx.tenantId, recordId: movementId, amountMinor: amountMinor as number, named: performedBy,
+            stamp: stampIn(ctx.body, 'operatorVerified'),
+          }),
         ];
         const request = { movementId, tillId, kind: kind as CashMovementKind, amountMinor: amountMinor as number, custodianId };
         const assessment = assessCashMovement({ priorMovements: prior, request });

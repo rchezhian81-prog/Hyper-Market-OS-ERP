@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
+import { sealedReturn } from '../support/store-seal';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { SyncAgent } from '../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../edge/sync-agent/src/http-transport';
@@ -84,11 +85,15 @@ async function scene() {
   const apiFetch = (async (url: string, init: RequestInit): Promise<Response> => {
     if (!online) throw new Error('ENETUNREACH');
     const hdr = init.headers as Record<string, string>;
+    // This test drives the till ENGINE below the store computer. A current store computer seals who it verified and the
+    // approval it spent at its till gate (ADR-0023); that step is stood in for here, so the cloud sees what it sees from
+    // a real box and the test keeps proving what it is about — the approver's authority, re-verified on sync.
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     const res = await h.raw({
       method: 'POST', path: new URL(url).pathname,
       token: hdr['authorization']?.replace(/^Bearer /, ''),
       idempotencyKey: hdr['idempotency-key'],
-      body: JSON.parse(String(init.body)) as unknown,
+      body: /\/returns(\/no-receipt)?\/synced$/.test(new URL(url).pathname) ? sealedReturn(A, body) : body,
     });
     return new Response(JSON.stringify(res.body), { status: res.status });
   }) as unknown as typeof globalThis.fetch;

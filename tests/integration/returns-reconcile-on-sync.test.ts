@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sealedReturn } from '../support/store-seal';
 
 // Returns reconcile on sync (M13-FR-01 offline-first · §31 · §28, API-05, Slice 1). A receipted return works
 // with the network cable out and RECONCILES ON SYNC. The offline lane commits the refund against its own log
@@ -28,8 +29,9 @@ const synced = (over: Record<string, unknown> = {}) => ({
   returnId: 'RT1', number: 'RT1', processedBy: 'u-lanecashier', reasonCode: 'customer_changed_mind',
   refundMinor: 5000, refundTender: 'cash', lines: [line(1)], processedAt: AT, ...over,
 });
+// Relayed as a current store computer sends it — who processed it and any approval it spent, sealed (ADR-0023).
 const syncRet = (h: ApiHarness, u: string, saleId: string, body: Record<string, unknown>) =>
-  h.request({ method: 'POST', path: `/v1/sales/${saleId}/returns/synced`, userId: u, tenantId: A, idempotencyKey: `sync-${body['returnId']}`, body });
+  h.request({ method: 'POST', path: `/v1/sales/${saleId}/returns/synced`, userId: u, tenantId: A, idempotencyKey: `sync-${body['returnId']}`, body: sealedReturn(A, body) });
 const exceptions = (h: ApiHarness, u: string) =>
   h.request({ method: 'GET', path: '/v1/pos/return-governance-exceptions', userId: u, tenantId: A });
 const returnable = (h: ApiHarness, u: string, saleId: string) =>

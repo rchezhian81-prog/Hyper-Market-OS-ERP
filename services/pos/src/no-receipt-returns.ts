@@ -31,6 +31,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { ReturnRecord, StoreCreditIssue } from './returns';
 import type { SaleStockLocation } from './sale-stock';
 import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse, type RefundApprovalState } from './refund-approvals';
+import { approvalSealFlags, cashierSealFlags, stampIn } from './store-seal';
 
 const DISPOSITIONS: ReadonlySet<string> = new Set(['resell', 'quarantine', 'damaged', 'scrap']);
 /** Cash and store credit settle at the desk; card/UPI is a provider reversal, pending until reconciled (M13-FR-04). */
@@ -62,6 +63,8 @@ export interface NoReceiptReturnsDeps {
   readonly refundApproval?: (tenantId: string, approvalId: string) => Promise<RefundApprovalState | undefined> | RefundApprovalState | undefined;
   /** The version of an approval's own guard — read before the approval is judged, passed back to the append. */
   readonly approvalVersion?: (tenantId: string, approvalId: string) => Promise<number> | number;
+  /** The key head office checks the store computer's seal with (ADR-0023) — on a synced return. Absent → not checked. */
+  readonly tillSealKey?: Buffer;
   /** Every no-receipt return recorded, tenant-wide — the report (M13-FR-01 "no-receipt-return reports", M15). */
   readonly noReceiptReturns: (tenantId: string) => Promise<readonly ReturnRecord[]> | readonly ReturnRecord[];
   /** Seal the refund fact into the domain audit trail (M34-FR-01). Optional; a bare stub may omit it. */
@@ -418,6 +421,15 @@ export function noReceiptReturnRoutes(deps: NoReceiptReturnsDeps): readonly Rout
         const flags: RefundGovernanceFinding[] = [...noReceiptGovernanceFindings({
           refundMinor: s.refundMinor, capMinor, processedBy: s.processedBy,
           ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }), approverHoldsAuthority,
+        }),
+        // Whether the store computer vouches for who gave it and for the manager's approval (ADR-0023 · PF-02).
+        ...cashierSealFlags(deps.tillSealKey, {
+          fact: 'return', tenantId: ctx.tenantId, recordId: s.returnId, amountMinor: s.refundMinor, named: s.processedBy,
+          stamp: stampIn(ctx.body, 'operatorVerified'),
+        }),
+        ...approvalSealFlags(deps.tillSealKey, {
+          tenantId: ctx.tenantId, recordId: s.returnId, amountMinor: s.refundMinor, approvedBy: s.approvedBy,
+          stamp: stampIn(ctx.body, 'approvalVerified'),
         })];
 
         // Store credit taken offline: issued regardless (it happened at the lane), breaches flagged (as `returns.ts`).

@@ -121,7 +121,14 @@ export type RefundGovernanceFinding =
   | 'store_credit_no_customer'    // a store-credit refund arrived with no customer to issue the credit to
   // A controlled no-receipt return (M13-FR-01) taken at the lane above the tenant's no-receipt cap — or with
   // no cap set at all (a lane that took one when the owner had switched the path off). Record-and-flag on sync.
-  | 'no_receipt_over_cap';
+  | 'no_receipt_over_cap'
+  // The store computer's seal on who processed it and on the manager's approval (ADR-0023 · PF-02): missing means head
+  // office cannot confirm the person was at a till or the approval was the manager's own act there; not matching means
+  // the refund was changed after the store sealed it, or the seal came from another record. Record-and-flag on sync.
+  | 'cashier_not_verified_at_store'
+  | 'cashier_seal_does_not_match'
+  | 'approval_not_verified_at_store'
+  | 'approval_seal_does_not_match';
 
 /**
  * The §28 findings on an already-given (synced) refund, in order of precedence. Pure: the caller supplies

@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
+import { apiHarness, TEST_IDP, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
+import { sealedCashMovement, sealedShiftClose } from '../support/store-seal';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge } from '../../edge/store-edge/src/main';
 import { bootPos, laneDurable, laneCashMovement, laneShiftClose, laneTillCash } from '../../apps/pos/src/browser-entry';
@@ -36,10 +37,11 @@ const close = (over: Record<string, unknown> = {}) => ({
   exceptionRaised: false, reasonCode: null, toleranceMinor: 10_000, toleranceKnown: true, currency: 'INR', ...over,
 });
 
+// Relayed as a current store computer sends them — who did it, sealed by the box (ADR-0023).
 const relayMovement = (h: ApiHarness, tenantId: string, userId: string, body: Record<string, unknown>, key = `k-${String(body['movementId'])}`) =>
-  h.request({ method: 'POST', path: `/v1/tills/${String(body['tillId'])}/cash-movements/synced`, userId, tenantId, idempotencyKey: key, body });
+  h.request({ method: 'POST', path: `/v1/tills/${String(body['tillId'])}/cash-movements/synced`, userId, tenantId, idempotencyKey: key, body: sealedCashMovement(tenantId, body) });
 const relayClose = (h: ApiHarness, tenantId: string, userId: string, body: Record<string, unknown>, key = `k-${String(body['shiftId'])}`) =>
-  h.request({ method: 'POST', path: `/v1/shifts/${String(body['shiftId'])}/close/synced`, userId, tenantId, idempotencyKey: key, body });
+  h.request({ method: 'POST', path: `/v1/shifts/${String(body['shiftId'])}/close/synced`, userId, tenantId, idempotencyKey: key, body: sealedShiftClose(tenantId, body) });
 const tillCash = (h: ApiHarness, tenantId: string, tillId = 'lane-1', userId = 'u-owner') =>
   h.request({ method: 'GET', path: `/v1/tills/${tillId}/cash`, userId, tenantId });
 const overShort = (h: ApiHarness, tenantId: string) => h.request({ method: 'GET', path: '/v1/shifts/over-short', userId: 'u-owner', tenantId });
@@ -144,7 +146,9 @@ describe('the cloud records a relayed shift close, re-runs the rule and re-verif
 });
 
 describe('the till\'s cash reaches the cloud through the REAL edge, and is not re-sent on restart (§31 · hard rule #6)', () => {
-  const KEY = ['till', 'cash', 'reaches', 'cloud', 'signing', 'key'].join('-').padEnd(48, '0');
+  // The box and head office share the pack signing key, as a real store and its head office do — so the box's seal on who
+  // it verified checks out at head office (ADR-0023).
+  const KEY = TEST_PACK_KEY;
   let h: ApiHarness;
   let dir: string;
   let online = true;

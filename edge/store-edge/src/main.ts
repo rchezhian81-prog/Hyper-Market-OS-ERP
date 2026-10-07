@@ -76,6 +76,7 @@ import { TillOperators, loadTillCredentials } from './till-operators';
 import { TillApprovals } from './till-approvals';
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
+import { sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
 import { managerPayload, type ScreenInput } from './screen-data';
@@ -1074,6 +1075,8 @@ export async function startEdge(
       ? 'till sign-in: the person the hosted sign-in names (EDGE_LANE_TRUST_FORWARDED_USER) — only right behind the hosted front.'
       : `till sign-in: staff ID and till PIN, checked on this box (${tillOperators.live().length} session(s) still open).`);
   }
+  // The seal key (ADR-0023): derived from the pack signing key under the seal's own label — never written anywhere.
+  const sealKey = tillSealKey(settings['PACK_SIGNING_KEY']!);
   const lane = lanePort === undefined ? null : await startLaneServer({
     node,
     port: Number(lanePort),
@@ -1086,6 +1089,8 @@ export async function startEdge(
         signInVerified: (i) => tillOperators.signInVerified(i),
         check: (token, laneId) => tillOperators.check(token, laneId),
         signOut: (token) => tillOperators.signOut(token),
+        // The box's seal on who it verified (ADR-0023), under its own key and this box's tenant.
+        seal: (subject) => sealTillFact(sealKey, { ...subject, tenantId }),
       },
     }),
     ...(tillApprovals === null ? {} : {

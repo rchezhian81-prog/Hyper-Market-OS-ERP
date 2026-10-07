@@ -29,6 +29,7 @@ import {
 } from '../../../packages/loyalty/src/stored-value';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse, type RefundApprovalState } from './refund-approvals';
+import { approvalSealFlags, cashierSealFlags, stampIn } from './store-seal';
 
 /** A store-credit issuance to persist ATOMICALLY with a return (M13-FR-03) — the fresh instrument (when
  *  one was opened) and the `refund_to_credit` movement, both landing in the return's own append batch so
@@ -124,6 +125,8 @@ export interface ReturnsDeps {
   /** An approval head office gave (ADR-0022) and, once spent, the refund that spent it. Optional on a bare stub (then
    *  every approval is unknown); the running system provides it. */
   readonly refundApproval?: (tenantId: string, approvalId: string) => Promise<RefundApprovalState | undefined> | RefundApprovalState | undefined;
+  /** The key head office checks the store computer's seal with (ADR-0023) — on a synced refund. Absent → not checked. */
+  readonly tillSealKey?: Buffer;
   /** The tenant's refund approval threshold (M13-FR-03) — `undefined` means none set, so the default
    *  (0 — every refund needs a §28 approver) applies. Sourced SERVER-SIDE: the caller cannot declare
    *  their own threshold in the body and call a refund "immaterial". */
@@ -705,7 +708,18 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           priorRefunds: await Promise.resolve(deps.priorRefunds(ctx.tenantId, saleId)),
           thisReturn: { returnId: s.returnId, lines: s.lines, refundMinor: s.refundMinor },
         });
-        const flags = [...governanceFlags, ...crossLaneFlags];
+        // Whether the store computer vouches for who processed it and for the manager's approval (ADR-0023 · PF-02).
+        const sealFlags = [
+          ...cashierSealFlags(deps.tillSealKey, {
+            fact: 'return', tenantId: ctx.tenantId, recordId: s.returnId, amountMinor: s.refundMinor, named: s.processedBy,
+            stamp: stampIn(ctx.body, 'operatorVerified'),
+          }),
+          ...approvalSealFlags(deps.tillSealKey, {
+            tenantId: ctx.tenantId, recordId: s.returnId, amountMinor: s.refundMinor, approvedBy: s.approvedBy,
+            stamp: stampIn(ctx.body, 'approvalVerified'),
+          }),
+        ];
+        const flags = [...governanceFlags, ...crossLaneFlags, ...sealFlags];
 
         // Store credit taken offline (§31): the credit was handed to the customer at the lane, so on sync
         // the cloud ISSUES it — record-and-flag, never a rejection (the money already moved). It is issued

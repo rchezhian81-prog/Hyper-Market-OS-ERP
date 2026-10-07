@@ -7,10 +7,13 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { assessShiftClose, checkDenominationCount, assessOverShortReview, type ShiftCloseInput, type DenominationCount } from '../../../packages/till/src/index';
 import { personFindings } from './cash';
+import { cashierSealFlags, stampIn, type CashierSealFlag } from './store-seal';
 
 /** What the cloud found when it re-verified a close the store box relayed (SP-4c · §28 · hard rule #10). */
 export type ShiftGovernanceFlag =
   | 'cashier_unknown' | 'cashier_lacks_authority'
+  /** The store computer's seal on who closed it is missing, or does not match this close (ADR-0023 · PF-02). */
+  | CashierSealFlag
   /** The relayed expected/variance do not follow from the relayed figures — the box and the cloud disagree; a person looks. */
   | 'figures_inconsistent'
   /** The variance is material and the relayed close carries no reason (the box should have refused it). */
@@ -104,6 +107,8 @@ export interface ShiftDeps {
    * re-verifies the cashier a relayed close names (SP-4c · §28 · hard rule #4). Absent → no person finding.
    */
   readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+  /** The key head office checks the store computer's seal with (ADR-0023) — on a relayed close. Absent → not checked. */
+  readonly tillSealKey?: Buffer;
 }
 
 const NUMS = ['openingFloatMinor', 'cashSalesMinor', 'pickupsMinor', 'cashRefundsMinor', 'countedCashMinor', 'toleranceMinor'] as const;
@@ -243,7 +248,14 @@ export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
         }
         const n = (k: typeof RELAYED_NUMS[number]): number => b[k] as number;
 
-        const flags: string[] = await personFindings(deps, ctx.tenantId, cashierId, 'cashier_unknown', 'cashier_lacks_authority');
+        const flags: string[] = [
+          ...await personFindings(deps, ctx.tenantId, cashierId, 'cashier_unknown', 'cashier_lacks_authority'),
+          // Whether the store computer vouches for who closed it (ADR-0023 · PF-02).
+          ...cashierSealFlags(deps.tillSealKey, {
+            fact: 'shift_close', tenantId: ctx.tenantId, recordId: shiftId, amountMinor: n('countedMinor'), named: cashierId,
+            stamp: stampIn(ctx.body, 'operatorVerified'),
+          }),
+        ];
         // The same rule, re-run over the relayed figures. The box's answer must follow from them; a disagreement is said.
         const recomputed = assessShiftClose({
           openingFloatMinor: n('openingFloatMinor'), cashSalesMinor: n('cashSalesMinor'), pickupsMinor: n('pickupsMinor'), cashRefundsMinor: n('cashRefundsMinor'),

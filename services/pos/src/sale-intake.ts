@@ -85,6 +85,11 @@ export interface IncomingSale {
   readonly packVersion: number;
   readonly lines: readonly IncomingSaleLine[];
   readonly tenders: readonly IncomingTender[];
+  /**
+   * The store computer's sealed stamp on the cashier it verified at the till (ADR-0023): who, how, which till, and the
+   * box's seal over that and this sale. Untrusted as it arrives — head office checks the seal, never takes it on trust.
+   */
+  readonly operatorVerified?: { readonly userId?: unknown; readonly via?: unknown; readonly laneId?: unknown; readonly seal?: unknown };
 }
 
 export type SaleExceptionKind =
@@ -118,6 +123,12 @@ export type SaleExceptionKind =
   | 'cashier_unknown'
   /** The named cashier holds no till authority (`pos.sale.sync`) — they should not have been signed in (F09 · §28). */
   | 'cashier_lacks_authority'
+  /** The sale arrived without the store computer's seal on who rang it (ADR-0023 · PF-02): head office cannot confirm the
+   *  named cashier was signed in at a till — an old store computer, or a record that never passed through a till. */
+  | 'cashier_not_verified_at_store'
+  /** The store computer's seal on who rang it does not match this sale (ADR-0023 · PF-02). **Critical**: the record was
+   *  changed after the store sealed it, or the seal was copied from another sale. */
+  | 'cashier_seal_does_not_match'
   /** The sale names no lane — the till was never told which lane it is (F09). */
   | 'sale_names_no_lane'
   /** The sale carries no trading day — it cannot be placed in a day's books (F09 · M01-FR-02). */
@@ -181,6 +192,12 @@ export interface IntakeContext {
    * the till's word — the same rule every relayed identity follows (§28 · hard rule #4).
    */
   readonly cashierGrants?: readonly string[] | null;
+  /**
+   * What head office made of the store computer's seal on the cashier (ADR-0023): there and matching, missing, or not
+   * matching this sale. Absent when nobody checked (no seal key in this composition, or a sale banked at head office's
+   * own desk) — then no finding is raised.
+   */
+  readonly cashierSeal?: 'verified' | 'missing' | 'does_not_match';
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -238,6 +255,18 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
     add('cashier_lacks_authority', 'material',
       `cashier "${cashierId}" holds no till authority`,
       'This person is not allowed to ring sales. Check who was on the till and why they were signed in.');
+  }
+  // ── Whether the store computer vouches for that cashier (ADR-0023 · PF-02): its seal over who it verified at the ──
+  // ── till and this sale. Missing is material — nobody can say the person was at a till; a seal that does not ──────
+  // ── match is critical — the record was changed after the store sealed it, or the seal belongs to another sale. ──
+  if (cashierId !== '' && ctx.cashierSeal === 'missing') {
+    add('cashier_not_verified_at_store', 'material',
+      `the sale arrived without the store computer's seal on who rang it (named: "${cashierId}")`,
+      'Head office cannot confirm this person was signed in at a till. Check which store computer sent it — an old one needs updating — or whether it was sent from somewhere other than a till.');
+  } else if (cashierId !== '' && ctx.cashierSeal === 'does_not_match') {
+    add('cashier_seal_does_not_match', 'critical',
+      `the store computer's seal on who rang it does not match this sale (named: "${cashierId}")`,
+      'Treat this sale as possibly altered after it was rung. Compare it with the store computer\'s own record and the receipt before anything is paid out or corrected.');
   }
   if (text(sale.laneId) === '') {
     add('sale_names_no_lane', 'material',

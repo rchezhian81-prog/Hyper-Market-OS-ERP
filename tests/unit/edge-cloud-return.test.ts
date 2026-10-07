@@ -102,3 +102,16 @@ describe('toCloudReturn — the lane refund record → the cloud synced-return c
     expect(r.lines).toEqual([]);
   });
 });
+
+describe('the store computer\'s seals travel with the refund (ADR-0023 · PF-02)', () => {
+  it('carries the stamp on who processed it and on the manager\'s approval exactly as written, and invents none', () => {
+    const operatorVerified = { userId: 'u-meena', via: 'pin', laneId: 'lane-1', seal: 'a'.repeat(64) };
+    const approvalVerified = { approvalId: 'apr-1', approvedBy: 'u-mgr', laneId: 'lane-1', seal: 'b'.repeat(64) };
+    const record = { returnId: 'RT-1', originalSaleId: 'S-1', processedBy: 'u-meena', approvedBy: 'u-mgr', refundMinor: 100, refundTender: 'cash', lines: [] };
+    const sealed = toCloudReturn({ ...record, operatorVerified, approvalVerified });
+    expect(sealed.operatorVerified).toEqual(operatorVerified);
+    expect(sealed.approvalVerified).toEqual(approvalVerified);
+    const bare = toCloudReturn(record);
+    expect('operatorVerified' in bare || 'approvalVerified' in bare).toBe(false);
+  });
+});

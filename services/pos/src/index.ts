@@ -6,6 +6,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
+import { checkOperatorStamp } from '../../../packages/identity/src/till-seal';
 import {
   acceptSale, summariseIntake,
   type IncomingSale, type IntakeContext, type IntakeResult, type SaleException,
@@ -42,6 +43,11 @@ export interface PosDeps {
    * Absent → the intake raises no cashier finding (a composition that has no grants register).
    */
   readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
+  /**
+   * The key head office checks the store computer's seal with (ADR-0023), derived from the pack signing key. Absent → no
+   * seal is checked and no seal finding is raised (a composition without the key).
+   */
+  readonly tillSealKey?: Buffer;
 }
 
 /** Enough of a sale to be a sale. Anything beyond this is a finding, never a refusal. */
@@ -79,6 +85,10 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
         const cashierGrants = deps.permissionsOfUser === undefined || cashierId === ''
           ? undefined
           : ((await deps.permissionsOfUser(ctx.tenantId, cashierId)) ?? null);
+        // Whether the store computer vouches for that cashier: its seal over who it verified and this sale (ADR-0023).
+        const cashierSeal = deps.tillSealKey === undefined || cashierId === '' ? undefined : checkOperatorStamp(deps.tillSealKey, {
+          fact: 'sale', tenantId: ctx.tenantId, recordId: sale.saleId, amountMinor: sale.totalMinor, named: cashierId, stamp: sale.operatorVerified,
+        });
         const intake = acceptSale(sale, {
           catalogue: await deps.catalogue(ctx.tenantId),
           currentPackVersion: await deps.currentPackVersion(ctx.tenantId),
@@ -86,6 +96,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           alreadyBanked: await deps.isBanked(ctx.tenantId, sale.saleId),
           now: deps.now(),
           ...(cashierGrants === undefined ? {} : { cashierGrants }),
+          ...(cashierSeal === undefined ? {} : { cashierSeal }),
         } satisfies IntakeContext);
 
         if (!intake.alreadyBanked) {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sealedReturn } from '../support/store-seal';
 
 /**
  * **GAP-REFUND-XLANE-01 — global at-most-once for cross-lane refunds, at the cloud.**
@@ -26,7 +27,8 @@ const line = (qty: number) => ({ productId: 'P1', uom: 'each', quantityMinor: qt
 const syncRet = (h: ApiHarness, id: string, over: Record<string, unknown> = {}) =>
   h.request({
     method: 'POST', path: '/v1/sales/S1/returns/synced', userId: 'u-owner', tenantId: A, idempotencyKey: `sync-${id}`,
-    body: { returnId: id, number: id, processedBy: 'u-lanecashier', approvedBy: 'u-mgr', reasonCode: 'damaged', refundMinor: 5000, refundTender: 'cash', lines: [line(1)], processedAt: AT, ...over },
+    // Relayed as a current store computer sends it — who processed it and the approval it spent, sealed (ADR-0023).
+    body: sealedReturn(A, { returnId: id, number: id, processedBy: 'u-lanecashier', approvedBy: 'u-mgr', reasonCode: 'damaged', refundMinor: 5000, refundTender: 'cash', lines: [line(1)], processedAt: AT, ...over }),
   });
 const exceptions = (h: ApiHarness) => h.request({ method: 'GET', path: '/v1/pos/return-governance-exceptions', userId: 'u-owner', tenantId: A });
 

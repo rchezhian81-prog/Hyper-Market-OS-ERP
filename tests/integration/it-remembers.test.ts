@@ -8,6 +8,7 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest } from '../../services/kernel/src/index';
 import { AccessControl } from '../../packages/rbac/src/rbac';
 import { buildSurface } from '../../services/api/src/main';
+import { storeSealer } from '../support/store-seal';
 import {
   catalogueAdapter, posAdapter, financeAdapter, customerAdapter, ordersAdapter, inventoryAdapter,
   fulfilmentAdapter, purchaseAdapter, identityAdapter, platformAdapter, reportingAdapter,
@@ -168,7 +169,8 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
       { userId: 'u-lanecash', roleId: 'cashier', branchScope: 'all' },
       { grantId: `${RUN}-G0`, userId: 'u-lanecash', roleId: 'cashier', branchScope: 'all', requestedBy: 'u-manager', approvedBy: 'u-owner', requestedAt: NOW },
     );
-    const res = await handle(kernel, post('/v1/sales', sale, `k-${RUN}-1`));
+    // Relayed as a current store computer sends it: the cashier it verified, sealed (ADR-0023).
+    const res = await handle(kernel, post('/v1/sales', storeSealer(KEY).sale(TENANT, sale), `k-${RUN}-1`));
     expect(res.status).toBe(202);
     expect((res.body as { banked: boolean; exceptions: unknown[] }).banked).toBe(true);
     expect((res.body as { exceptions: unknown[] }).exceptions).toEqual([]);
@@ -180,8 +182,10 @@ describe.skipIf(!DATABASE_URL)('the API remembers (real PostgreSQL)', () => {
   it('collapses a RESEND to one sale, the way a till actually behaves', async () => {
     // The till resends what it could not confirm. Three arrivals, one sale — and the collapse
     // happens on the sale's own id, so it holds even if the transport used a different key.
-    await handle(kernel, post('/v1/sales', sale, `k-${RUN}-1`));
-    await handle(kernel, post('/v1/sales', sale, `k-${RUN}-DIFFERENT`));
+    // The SAME sale the till sent above (sealed by its store computer), resent under the same and a new transport key.
+    const sent = storeSealer(KEY).sale(TENANT, sale);
+    await handle(kernel, post('/v1/sales', sent, `k-${RUN}-1`));
+    await handle(kernel, post('/v1/sales', sent, `k-${RUN}-DIFFERENT`));
 
     expect(await posAdapter({ store, now: () => NOW }).isBanked(TENANT, sale.saleId)).toBe(true);
 

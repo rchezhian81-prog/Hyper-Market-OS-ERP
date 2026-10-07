@@ -125,7 +125,12 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
   the refund's own guarded batch (one lands under a race on real PostgreSQL); a leaver's approval no longer counts;
   head-office cash records the signed-in person and puts a till only in a known cashier's name. **Still open in PF-02:**
   the box's stamps signed and carried on synced sales and refunds, and head office flagging a synced fact without them
-  (2b-v-d). **Found during 2b-v-c (same pattern, pricing — PA-03 family), scheduled as 2b-vi:** a below-cost price
+  (2b-v-d). **PF-02, the box's seal at head office — DONE 7 Oct 2026 (2b-v-d, ADR-0023):** the store computer seals who it
+  verified (cashier; manager's approval) over the fact, record, till and amount; the stamps travel on sales, refunds,
+  cash movements and till closes; head office flags — never refuses — a relayed fact with no seal
+  (`cashier_not_verified_at_store`, `approval_not_verified_at_store`) or a seal that does not match
+  (`cashier_seal_does_not_match` critical, `approval_seal_does_not_match`); who recorded a till cash movement is the
+  person signed in. **PF-02 is closed** (staff UAT pending). **Found during 2b-v-c (same pattern, pricing — PA-03 family), scheduled as 2b-vi:** a below-cost price
   change (`approval.decidedBy`, `services/pricing/src/index.ts`) and a margin-losing promotion launch (`approvedBy`,
   `services/pricing/src/promotions.ts`) at head office still accept a typed approver's name checked only for authority;
   they get the same approval object (the approver's own act, bound, one use).
@@ -210,7 +215,7 @@ identity, hardware, hosted recovery evidence. **PA-13** (commercial platform, R8
 | UX-2b the *Today* command centre, rail icons, sign-in frame (OB-15/OB-16/OB-17) | 1⅞ — done 5 Oct 2026 (#700) |
 | UX-3 the sign-in page in the owner's approved design (OB-18) | between 2b-iii-a and 2b-iii-b, at the owner's word — done 5 Oct 2026 (#706) |
 | Wave 2a write guards — PF-01 refunds/gift/points; SF-04 transfers; FUL-02 promises; PA-11 audit chain | 2 — done 5 Oct 2026 (#701, #702) |
-| Wave 2b identity criticals — PA-02 leaver; PA-01/EA-03 scope; PA-03 second person; PF-03 age check; PF-02 till credential | 2 — PA-02 done 5 Oct 2026 (#703); PA-01/EA-03 done 5 Oct 2026 (#704); PA-03 done 5 Oct 2026 (#705 grants/templates/decisions/delegations, #707 facilities); PF-03 done 5 Oct 2026 (#708); PF-02 till half done 6 Oct 2026 (#709); PF-02 manager approval at the till done 6 Oct 2026 (#710); PF-02 head-office desk approval objects done 6 Oct 2026 (2b-v-c); signed store stamps and synced-fact flags (2b-v-d) next; pricing approvers as approval objects (2b-vi, found 6 Oct) after |
+| Wave 2b identity criticals — PA-02 leaver; PA-01/EA-03 scope; PA-03 second person; PF-03 age check; PF-02 till credential | 2 — PA-02 done 5 Oct 2026 (#703); PA-01/EA-03 done 5 Oct 2026 (#704); PA-03 done 5 Oct 2026 (#705 grants/templates/decisions/delegations, #707 facilities); PF-03 done 5 Oct 2026 (#708); PF-02 till half done 6 Oct 2026 (#709); PF-02 manager approval at the till done 6 Oct 2026 (#710); PF-02 head-office desk approval objects done 6 Oct 2026 (2b-v-c); signed store stamps and synced-fact flags done 7 Oct 2026 (2b-v-d) — PF-02 closed; pricing approvers as approval objects (2b-vi, found 6 Oct) next |
 | Handheld enrolment on the hosted demo | 1½ (a demo device code for the practice phones) |
 | Quantity scale across pack sections | 4, with DF-3 |
 | SP-10 register | 8 |

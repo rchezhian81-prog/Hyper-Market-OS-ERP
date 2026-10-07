@@ -28,6 +28,9 @@ type Method = HttpRequest['method'];
 // not secrets — they are the shared test key material the local IdP and the surface agree on.
 const IDP_TEST_SECRET = ['sre', 'local', 'test', 'idp', 'signing', 'key'].join('-').padEnd(40, '0');
 const PACK_KEY = ['sre', 'local', 'test', 'pack', 'signing', 'key'].join('-').padEnd(48, '0');
+/** The pack signing key this harness's surface runs with — a store computer under test that talks to this harness uses
+ *  the same one, as a real store and its head office do (packs verify, and the box's seal checks, ADR-0023). */
+export const TEST_PACK_KEY = PACK_KEY;
 
 /** The shared local IdP for tests — its policy verifies against the harness's authenticator. */
 export const TEST_IDP = new LocalIdp({
