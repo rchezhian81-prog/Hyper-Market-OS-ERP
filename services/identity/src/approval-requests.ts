@@ -117,6 +117,22 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'supplier_payment', label: 'Pay a supplier',
     makerPermission: 'purchase.supplier.pay', checkerPermission: 'purchase.supplier.pay', validForMinutes: 24 * 60,
   },
+  // A supplier's commercial terms (2b-vi-c-1). Each was stored with a typed "approved by" that cleared its review finding.
+  // The approver is the Purchase Approver / Finance authority M06-FR-01 names for approving a supplier
+  // (`purchase.supplier.approve` — the accountant and the owner today). For a display contract this is D02-FR-06's
+  // "Finance approves funding terms". The person who records the terms asks; a different person approves.
+  display_contract: {
+    kind: 'display_contract', label: 'Approve a supplier\'s display-space funding',
+    makerPermission: 'merchandising.display.manage', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,
+  },
+  rebate_scheme: {
+    kind: 'rebate_scheme', label: 'Approve a supplier rebate scheme',
+    makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,
+  },
+  purchase_contract: {
+    kind: 'purchase_contract', label: 'Approve a supplier contract',
+    makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve', validForMinutes: 24 * 60,
+  },
 });
 
 /** A maker's request, as recorded. */

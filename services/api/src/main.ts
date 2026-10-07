@@ -511,12 +511,12 @@ export function buildSurface(deps: {
     ...supplierScorecardRoutes(store === undefined ? {
       receipts: empty([]), contractsFor: empty([]), allContracts: empty([]),
       recordReceipt: () => {}, recordContract: () => {}, now,
-    } : supplierScorecardAdapter({ store, now })),
+    } : { ...supplierScorecardAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     // Supplier rebates + schemes (M06-FR-03 · M23) — the money earned and not yet claimed.
     ...rebateRoutes(store === undefined ? {
       scheme: empty(undefined), schemes: empty([]), accruals: empty([]),
       recordScheme: () => {}, recordAccrual: () => {}, now,
-    } : rebatesAdapter({ store, now })),
+    } : { ...rebatesAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     // Requisition / RFQ / quotation comparison (M06-FR-02) — like-for-like cheapest + fastest.
     ...rfqRoutes(store === undefined ? {
       requisition: empty(undefined), requisitions: empty([]), quotes: empty([]),
@@ -525,7 +525,12 @@ export function buildSurface(deps: {
     // Import job history & supplier data-quality scoring (M30-FR-04) — which supplier files cost hours a year.
     ...importQualityRoutes(store === undefined ? {
       jobs: empty([]), recordImportJob: () => {}, now,
-    } : importQualityAdapter({ store, now })),
+    } : {
+      ...importQualityAdapter({ store, now }),
+      // The approver of a committed job is head office's own record of the commit (2b-vi-c-1).
+      committedApprover: async (tenantId: string, jobId: string) =>
+        (await dataImportAdapter({ store, now }).commits(tenantId)).find((c) => c.jobId === jobId)?.approvedBy,
+    }),
     // Bulk data import (M30-FR-01/03) — validate a delimited file/rows against a template (per-row errors,
     // reconciliation) and commit the whole job or nothing under §28 maker-checker (the uploader may not approve
     // their own). A committed job is a durable, auditable record.
@@ -587,7 +592,7 @@ export function buildSurface(deps: {
     // and the expired-still-occupying / unapproved / funding-not-received exceptions on display deals.
     ...spacePerformanceRoutes(store === undefined
       ? { contracts: empty([]), recordContract: () => {}, now }
-      : spacePerformanceAdapter({ store, now })),
+      : { ...spacePerformanceAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     // Store assortment / range management (M04-FR-01) — list/drop (stock→clearance, never a silent delete)
     // + the integrity check that stops ordering what you do not sell and selling what you do not stock.
     ...assortmentRoutes(store === undefined

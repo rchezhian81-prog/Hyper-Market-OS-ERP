@@ -13,7 +13,7 @@ const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 const doc = (over: Record<string, unknown> = {}) => ({
-  documentId: 'd1', kind: 'gst_registration', reference: 'GSTIN-1', validFrom: '2020-01-01', validUntil: '2035-01-01', verifiedBy: 'u-buyer', ...over,
+  documentId: 'd1', kind: 'gst_registration', reference: 'GSTIN-1', validFrom: '2020-01-01', validUntil: '2035-01-01', verifiedBy: 'u-owner', ...over,
 });
 const config = (h: ApiHarness, tenantId: string, userId: string, partnerId: string, body: Record<string, unknown>, key?: string) =>
   h.request({ method: 'POST', path: `/v1/supplier-portal/partners/${partnerId}`, userId, tenantId, idempotencyKey: key ?? `cfg-${partnerId}`, body });
@@ -68,6 +68,26 @@ describe('supplier-portal compliance is checked at the action, not on a sweep (M
       documents: [doc({ documentId: 'd-gst', kind: 'gst_registration', reference: 'GST-2' })],
     }, 'cfg-SUP2-b');
     expect((await submit(h, A, 'u-owner', 'SUP2', { submissionId: 's-2', kind: 'invoice' }, 'sub-s-2')).status).toBe(201);
+  });
+
+  it('who verified a document is the person who did, under their own sign-in (2b-vi-c-1, PA-03)', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-mgr', 'store_manager'); // also configures partners
+    const base = { grants: ['submit_invoice'], requiredDocuments: ['gst_registration'] };
+    // A verifier typed for someone else is refused by name — before, the typed name made the document count as cover.
+    const typed = await config(h, A, 'u-mgr', 'SUPV', { ...base, documents: [doc({ verifiedBy: 'u-owner' })] }, 'cfg-v-typed');
+    expect(typed.status).toBe(400);
+    expect(codeOf(typed)).toBe('actor_is_the_caller');
+    expect((await compliance(h, A, 'u-owner', 'SUPV')).status).toBe(404); // nothing was configured
+    // The owner verifies it in their own name (the server stamps the time — proved in the kernel's unit test).
+    expect((await config(h, A, 'u-owner', 'SUPV', { ...base, documents: [doc({ verifiedAt: '2001-01-01T00:00:00.000Z' })] }, 'cfg-v-own')).status).toBe(201);
+    // The manager re-sends the configuration with the document exactly as verified — the owner's verification stands.
+    expect((await config(h, A, 'u-mgr', 'SUPV', { ...base, grants: ['submit_invoice', 'submit_asn'], documents: [doc()] }, 'cfg-v-resend')).status).toBe(201);
+    expect((await submit(h, A, 'u-owner', 'SUPV', { submissionId: 's-v1', kind: 'invoice' }, 'sub-v1')).status).toBe(201);
+    // But a CHANGED document under the old verifier's name is a new claim — refused unless the caller verifies it.
+    expect(codeOf(await config(h, A, 'u-mgr', 'SUPV', { ...base, documents: [doc({ validUntil: '2040-01-01' })] }, 'cfg-v-changed'))).toBe('actor_is_the_caller');
+    expect((await config(h, A, 'u-mgr', 'SUPV', { ...base, documents: [doc({ validUntil: '2040-01-01', verifiedBy: 'u-mgr' })] }, 'cfg-v-mgr')).status).toBe(201);
   });
 
   it('accepts an ASN with a valid document and blocks it when a required kind is missing', async () => {

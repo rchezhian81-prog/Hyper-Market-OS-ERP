@@ -88,3 +88,39 @@ export const secondPersonIsASeparateAct = (field: string, route: string): ApiErr
   wasItSaved: 'not_saved',
   nextSafeAction: `Send this without ${field}; then have the second person call ${route}. Nothing was changed.`,
 });
+
+/** A document a person may vouch for: its own id and facts, and who verified it when. */
+export interface VerifiableDocument {
+  readonly documentId: string;
+  readonly kind: string;
+  readonly reference: string;
+  readonly validFrom: string;
+  readonly validUntil: string;
+  readonly verifiedBy?: string;
+  readonly verifiedAt?: string;
+}
+
+/**
+ * The verifier on a document is the person who verified it, under their own sign-in (Wave 2b-vi-c · audit PA-03 ·
+ * M06-FR-01 · M24-FR-03). A record is sent whole, so each document is judged against the stored copy:
+ *   - a document re-sent exactly as stored, with the same verifier, keeps that verifier and its time;
+ *   - any other verified document — new, changed, or verified now — must name the caller, and is stamped with the
+ *     server's clock (a `verifiedAt` in the request is not evidence);
+ *   - a document with no verifier is unverified, whatever time the request sends.
+ * A typed name for anyone else is refused by name (`actor_is_the_caller`); nothing is saved.
+ */
+export function documentsVerifiedByTheCaller<D extends VerifiableDocument>(
+  ctx: Pick<RequestContext, 'userId'>, sent: readonly D[], stored: readonly D[], now: string, field = 'documents[].verifiedBy',
+): readonly D[] {
+  return sent.map((d) => {
+    const { verifiedBy, verifiedAt: _sentAt, ...facts } = d;
+    void _sentAt;
+    if (verifiedBy === undefined) return facts as unknown as D;
+    const before = stored.find((s) => s.documentId === d.documentId);
+    const unchanged = before !== undefined && before.verifiedBy === verifiedBy && before.kind === d.kind
+      && before.reference === d.reference && before.validFrom === d.validFrom && before.validUntil === d.validUntil;
+    if (unchanged) return { ...facts, verifiedBy, ...(before.verifiedAt === undefined ? {} : { verifiedAt: before.verifiedAt }) } as unknown as D;
+    if (verifiedBy !== ctx.userId) throw actorIsTheCaller(field, verifiedBy, ctx.userId);
+    return { ...facts, verifiedBy, verifiedAt: now } as unknown as D;
+  });
+}

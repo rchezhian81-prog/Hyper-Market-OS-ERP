@@ -19,7 +19,7 @@
 // automatically — it records what was verified and reports what today's facts allow (P-05).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, requireActorIsCaller } from '../../kernel/src/index';
 import {
   canPerformTask,
   type Certification, type Employee,
@@ -63,9 +63,20 @@ export function certStoreRoutes(deps: CertStoreDeps): readonly Route[] {
         if (cert === undefined) {
           throw apiError(400, {
             code: 'not_readable_as_a_certification',
-            whatHappened: 'A certificate needs a certificationId in the path and { employeeId, kind, issuedOn, validUntil } in the body (verifiedBy optional — but an unverified certificate does not count as cover).',
+            whatHappened: 'A certificate needs a certificationId in the path and { employeeId, kind, issuedOn, validUntil } in the body (verifiedBy optional — yourself, if you checked it; an unverified certificate does not count as cover).',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send the certificate and who verified it.',
+            nextSafeAction: 'Send the certificate, and name yourself as verifiedBy if you checked it.',
+          });
+        }
+        // Who verified it is the person who did, under their own sign-in (2b-vi-c, audit PA-03): a verified certificate is
+        // cover for a gated task, so a name typed for someone else is refused — and nobody verifies their own.
+        requireActorIsCaller(ctx, (ctx.body ?? {}) as Record<string, unknown>, 'verifiedBy');
+        if (cert.verifiedBy !== undefined && cert.verifiedBy === cert.employeeId) {
+          throw apiError(422, {
+            code: 'self_verification',
+            whatHappened: 'A certificate cannot be verified by the person it belongs to — it is cover for their own gated task (§28).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Have a different manager who saw the certificate record it. Nothing was saved.',
           });
         }
         await deps.putCertification(ctx.tenantId, cert, ctx.idempotencyKey ?? `cert-${certificationId}-${deps.now()}`);

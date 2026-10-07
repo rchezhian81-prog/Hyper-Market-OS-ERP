@@ -24,7 +24,7 @@
 // (`packages/bank-controls`); the account is the SP-7b projection. This file is the persistence + HTTP skin.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, documentsVerifiedByTheCaller } from '../../kernel/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { isPayable, detectDuplicateBankAccounts, holdersBlockedForDuplicate, type BankAccountHolder } from '../../../packages/bank-controls/src/index';
 import type { PartnerDocumentKind } from '../../../packages/supplier-portal/src/index';
@@ -197,20 +197,23 @@ export function supplierMasterRoutes(deps: SupplierMasterDeps): readonly Route[]
           || !(b['paymentTermsDays'] === undefined || b['paymentTermsDays'] === null || isNonNegInt(b['paymentTermsDays'])) || documents === undefined) {
           throw apiError(400, {
             code: 'not_readable_as_a_supplier',
-            whatHappened: 'A supplier needs a supplierId in the path and a name; gstin, phone, email, address, paymentTermsDays (whole days) and documents ({ documentId, kind, reference, validFrom, validUntil, verifiedBy?, verifiedAt? }) are optional.',
+            whatHappened: 'A supplier needs a supplierId in the path and a name; gstin, phone, email, address, paymentTermsDays (whole days) and documents ({ documentId, kind, reference, validFrom, validUntil, verifiedBy? — yourself, if you verified it }) are optional.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send { name, … }. Nothing was saved.',
           });
         }
         const now = deps.now();
         const existing = await deps.record(ctx.tenantId, supplierId);
+        // Who verified each document is the person who did, under their own sign-in (2b-vi-c, PA-03): a document
+        // verified now must name the caller; one re-sent exactly as stored keeps its verifier.
+        const verifiedDocuments = documentsVerifiedByTheCaller(ctx, documents, existing?.documents ?? [], now);
         const others = (await deps.records(ctx.tenantId)).filter((r) => r.supplierId !== supplierId);
         const gstin = isStr(b['gstin']) ? b['gstin'].trim().toUpperCase() : null;
         const record: SupplierRecord = {
           supplierId, name: b['name'].trim(), gstin,
           phone: isStr(b['phone']) ? b['phone'].trim() : null, email: isStr(b['email']) ? b['email'].trim() : null, address: isStr(b['address']) ? b['address'].trim() : null,
           paymentTermsDays: isNonNegInt(b['paymentTermsDays']) ? b['paymentTermsDays'] : null,
-          documents,
+          documents: verifiedDocuments,
           status: existing?.status ?? 'proposed',
           createdBy: existing?.createdBy ?? ctx.userId, createdAt: existing?.createdAt ?? now,
           updatedBy: ctx.userId, updatedAt: now,

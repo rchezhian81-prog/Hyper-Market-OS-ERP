@@ -228,6 +228,13 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
     expect(APPROVAL_KINDS['supplier_invoice_check']).toMatchObject({ makerPermission: 'purchase.invoice.capture', checkerPermission: 'purchase.invoice.match' });
     expect(APPROVAL_KINDS['supplier_payment']).toMatchObject({ makerPermission: 'purchase.supplier.pay', checkerPermission: 'purchase.supplier.pay' });
   });
+  it('a supplier\'s terms (2b-vi-c-1) are approved by the authority that approves suppliers — Purchase Approver / Finance', () => {
+    // M06-FR-01 names "Purchase Approver/Finance" as who approves a supplier; D02-FR-06 "Finance approves funding terms".
+    expect(APPROVAL_KINDS['display_contract']).toMatchObject({ makerPermission: 'merchandising.display.manage', checkerPermission: 'purchase.supplier.approve' });
+    for (const k of ['rebate_scheme', 'purchase_contract']) {
+      expect(APPROVAL_KINDS[k]).toMatchObject({ makerPermission: 'purchase.contract.manage', checkerPermission: 'purchase.supplier.approve' });
+    }
+  });
   it('no kind is a dead end: some role may ask for it and some role may approve it — no permission was invented', () => {
     const held = new Set(ROLE_CATALOGUE.flatMap((r) => r.permissions));
     for (const spec of Object.values(APPROVAL_KINDS)) {
@@ -236,6 +243,6 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
       expect(spec.label.length).toBeGreaterThan(0);
       expect(spec.validForMinutes).toBe(24 * 60);
     }
-    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(16);
+    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(19);
   });
 });

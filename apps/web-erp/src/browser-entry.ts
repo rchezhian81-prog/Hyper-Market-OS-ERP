@@ -1624,13 +1624,13 @@ function openSubmitChecklistPort(): SubmitChecklistPort {
     post: async ({ checklistId, kind, items, signedBy, branchId, forDate }): Promise<ChecklistSubmitResult> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
       if (fetchFn === undefined) return 'lost_link';
-      const key = globalThis.crypto?.randomUUID?.() ?? `checklist-${checklistId}-${signedBy}`;
+      const key = globalThis.crypto?.randomUUID?.() ?? `checklist-${checklistId}-${signedBy ?? 'unsigned'}`;
       try {
         const res = await fetchFn(`/v1/hr/workforce/checklists/${encodeURIComponent(checklistId)}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ kind, items, signedBy, ...(branchId === undefined ? {} : { branchId }), ...(forDate === undefined ? {} : { forDate }) }),
+          body: JSON.stringify({ kind, items, ...(signedBy === undefined ? {} : { signedBy }), ...(branchId === undefined ? {} : { branchId }), ...(forDate === undefined ? {} : { forDate }) }),
         });
         return res.status >= 200 && res.status < 300 ? 'recorded' : 'refused';
       } catch {

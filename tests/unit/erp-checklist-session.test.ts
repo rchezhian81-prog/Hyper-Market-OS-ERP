@@ -139,7 +139,7 @@ describe('signing is a human write, gated and checked before any POST (§28/P-04
   });
 
   it('ticks the given items done and signs in the manager\'s name, then POSTs', async () => {
-    const calls: { checklistId: string; signedBy: string; items: readonly ChecklistItem[] }[] = [];
+    const calls: { checklistId: string; signedBy?: string; items: readonly ChecklistItem[] }[] = [];
     const s = session(filled(), { submitPort: () => ({ post: async (i) => { calls.push(i); return 'recorded'; } }) });
     const out = await s.submit('C-close', ['safe'], true);
     expect(out).toBe('recorded');
@@ -149,6 +149,14 @@ describe('signing is a human write, gated and checked before any POST (§28/P-04
     // The ticked item is now done; the already-done one stays done.
     expect(calls[0]!.items.find((i) => i.itemId === 'safe')!.done).toBe(true);
     expect(calls[0]!.items.find((i) => i.itemId === 'lights')!.done).toBe(true);
+  });
+
+  it('ticking without signing sends no signature — never an empty name, and never an earlier signer\'s name (2b-vi-c-1)', async () => {
+    const calls: { signedBy?: string }[] = [];
+    const s = session(filled(), { submitPort: () => ({ post: async (i) => { calls.push(i); return 'recorded'; } }) });
+    expect(await s.submit('C-close', ['safe'], false)).toBe('recorded');
+    expect(calls).toHaveLength(1);
+    expect('signedBy' in calls[0]!).toBe(false);
   });
 
   it('never un-ticks an item a shift already did (done stays done even if omitted)', async () => {

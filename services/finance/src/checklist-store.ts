@@ -21,7 +21,7 @@
 // items left is complete and carries them, visible, into the next shift (M25-FR-02).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, requireActorIsCaller } from '../../kernel/src/index';
 import { assessChecklist, type ChecklistItem, type ChecklistResult } from '../../../packages/workforce/src/workforce';
 
 const CHECKLIST_KINDS = ['opening', 'closing', 'handover'] as const;
@@ -103,6 +103,8 @@ export function checklistStoreRoutes(deps: ChecklistStoreDeps): readonly Route[]
         const checklistId = (ctx.params['checklistId'] ?? '').trim();
         const checklist = readChecklist(checklistId, (ctx.body ?? {}) as Record<string, unknown>, deps.now());
         if (checklist === undefined) throw apiError(400, NOT_READABLE_CHECKLIST);
+        // The signature is the signer's own act (2b-vi-c, audit PA-03): `signedBy` names the caller or is absent.
+        requireActorIsCaller(ctx, (ctx.body ?? {}) as Record<string, unknown>, 'signedBy');
         await deps.putChecklist(ctx.tenantId, checklist, ctx.idempotencyKey ?? `checklist-${checklistId}-${deps.now()}`);
         return { status: 200, body: { checklist, assessment: assessStored(checklist) } };
       },
