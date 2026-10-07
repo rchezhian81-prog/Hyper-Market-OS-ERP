@@ -5,6 +5,42 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-v-d — the store computer seals who it verified; head office checks the seal (7 October 2026)
+
+- **The finding (audit PF-02, CRITICAL), its last part:** the store computer verified the cashier (2b-v-a) and the
+  manager's approval (2b-v-b) at the till, but its stamps never reached head office. A sale or refund naming any cashier
+  or approving manager, posted by anyone holding the sync permission, looked exactly like a real one. The audit's
+  instruction for facts already committed at the till: flag them, do not refuse them.
+- **The decision (ADR-0023, new):** the box seals what it verified, and head office checks the seal and flags what it
+  cannot confirm.
+- **What changed:**
+  - **The seal** (`packages/identity/src/till-seal.ts`): a signature over the fact (sale, refund, cash movement, till
+    close, manager's approval), the shop, the record, the till, the person, how they signed in and the amount, under a
+    key derived from the pack signing key both sides already hold, under its own label. Change any one of those and the
+    seal no longer matches.
+  - **The store computer** (`lane-server.ts`, `main.ts`, `till-cash.ts`, the sync translators): seals every sale, refund,
+    cash movement and till close at its till gate after verifying the person, and the manager's approval on a refund;
+    the stamps go on the disk record and travel to head office unchanged. Who recorded a cash movement is now the person
+    signed in at the till, never a name in the till's request.
+  - **Head office** (`services/pos/src/store-seal.ts` and the four sync routes): checks every relayed fact. No seal →
+    "not verified at the store" (a material sale exception, or a flag on the refund, cash movement or close); a seal
+    that does not match → "seal does not match" (a **critical** sale exception — the record was changed after the store
+    sealed it, or the seal came from another record). Never a refusal. The refund-exceptions screen names the new flags
+    in English and Tamil.
+- **Proved:** `tests/unit/till-seal.test.ts` (15) and the translator / till-cash unit tests;
+  `tests/integration/the-store-seal-reaches-head-office.test.ts` (5) on a REAL store computer beside the real head office
+  (a float, a sale, a manager-approved refund and the till close arrive sealed and nothing is flagged; a sale that never
+  passed through a till is flagged; a copied or renamed seal is critical; an unsealed or lifted approval is flagged; the
+  cash performer is the signed-in person). The real-box cash proof and the one-lane end-to-end proof now also show head
+  office checking the box's seal. Full suite green locally with the real database.
+- **PF-02 is closed** in software: the cashier and the manager are verified at the till, head office's own desk approvals
+  are the approver's own act, and head office can tell which relayed facts a store computer vouched for.
+- **Not yet / honest limits:** the seal key is shared by every box, like the pack key (a per-box key is the
+  reconsider-when); a box not yet updated, and records already queued when this lands, are flagged "not verified" once;
+  staff UAT (SP-10, pending, unasked).
+- **Next:** 2b-vi — the two pricing approvals at head office (selling below cost, a loss-making promotion) become the
+  approver's own act; then the OB-15 block.
+
 ## Wave 2b-v-c — a refund approval at head office is the approver's own act, for one refund, spent once (6 October 2026)
 
 - **The finding (audit PF-02, CRITICAL), head office's half — the audit's own reproduction:** "Refund body named a

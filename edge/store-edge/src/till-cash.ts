@@ -27,10 +27,17 @@ import { assessCashMovement, type StoredCashMovement } from '../../../packages/c
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { assessShiftClose } from '../../../packages/till/src/assess-shift';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
+import type { OperatorStamp } from '../../../packages/identity/src/till-seal';
 
 const KINDS: readonly CashMovementKind[] = ['float_issue', 'loan', 'pickup', 'safe_drop', 'float_return'];
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 const int = (v: unknown): number | undefined => (typeof v === 'number' && Number.isSafeInteger(v) ? v : undefined);
+/** The box's sealed stamp on who it verified (ADR-0023), read back off the disk exactly as written, or nothing. */
+const stampOf = (v: unknown): OperatorStamp | undefined => {
+  const x = (v !== null && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  const userId = str(x['userId']); const via = str(x['via']); const laneId = str(x['laneId']); const seal = str(x['seal']);
+  return userId === undefined || via === undefined || laneId === undefined || seal === undefined ? undefined : { userId, via, laneId, seal };
+};
 
 /** One movement of cash on this till, as the box recorded it. */
 export interface TillCashMovementRecord {
@@ -50,6 +57,8 @@ export interface TillCashMovementRecord {
   readonly performedBy: string;
   readonly tradingDay: string;
   readonly at: string;
+  /** Who the box verified at the till, sealed (ADR-0023) — absent only where no till register is wired. */
+  readonly operatorVerified?: OperatorStamp;
 }
 
 /** A denomination line of the blind count, as the cloud's shift-close route reads it. */
@@ -83,6 +92,8 @@ export interface TillShiftCloseRecord {
   readonly toleranceKnown: boolean;
   readonly currency: string;
   readonly denominations?: readonly CountedDenomination[];
+  /** Who the box verified at the till, sealed (ADR-0023) — absent only where no till register is wired. */
+  readonly operatorVerified?: OperatorStamp;
 }
 
 export type TillCashRecord = TillCashMovementRecord | TillShiftCloseRecord;
@@ -103,6 +114,7 @@ export function readTillCashRecord(raw: unknown): TillCashRecord | undefined {
     return {
       kind: 'movement', movementId, tillId, laneId, movementKind: movementKind as CashMovementKind, amountMinor, deltaMinor,
       currency: str(r['currency']) ?? 'INR', custodianId, performedBy, tradingDay, at,
+      ...(stampOf(r['operatorVerified']) === undefined ? {} : { operatorVerified: stampOf(r['operatorVerified'])! }),
     };
   }
   if (r['kind'] === 'close') {
@@ -127,6 +139,7 @@ export function readTillCashRecord(raw: unknown): TillCashRecord | undefined {
       toleranceMinor: r['toleranceMinor'] as number, toleranceKnown: r['toleranceKnown'] !== false,
       currency: str(r['currency']) ?? 'INR',
       ...(denominations === undefined ? {} : { denominations }),
+      ...(stampOf(r['operatorVerified']) === undefined ? {} : { operatorVerified: stampOf(r['operatorVerified'])! }),
     };
   }
   return undefined;
@@ -193,6 +206,8 @@ export interface CashMovementRequest {
   readonly at: string;
   readonly custodianId: string;
   readonly performedBy: string;
+  /** Who the box verified at the till, sealed (ADR-0023) — carried onto the record. */
+  readonly operatorVerified?: OperatorStamp;
 }
 
 export type CashMovementDecision =
@@ -227,6 +242,7 @@ export function decideCashMovement(input: {
       kind: 'movement', movementId: request.movementId, tillId: state.tillId, laneId: input.laneId,
       movementKind: request.movementKind, amountMinor: request.amountMinor, deltaMinor: assessment.deltaMinor, currency: 'INR',
       custodianId: request.custodianId, performedBy: request.performedBy, tradingDay: input.tradingDay, at: request.at,
+      ...(request.operatorVerified === undefined ? {} : { operatorVerified: request.operatorVerified }),
     },
     balanceAfterMinor: assessment.balanceAfterMinor,
     custodianAfter: assessment.custodianAfter,
@@ -327,6 +343,8 @@ export interface ShiftCloseRequest {
   readonly countedMinor: number;
   readonly denominations?: readonly CountedDenomination[];
   readonly reasonCode?: string;
+  /** Who the box verified at the till, sealed (ADR-0023) — carried onto the record. */
+  readonly operatorVerified?: OperatorStamp;
 }
 
 export type ShiftCloseDecision =
@@ -379,6 +397,7 @@ export function decideShiftClose(input: {
       expectedMinor: assessment.expectedMinor, varianceMinor: assessment.varianceMinor, exceptionRaised: assessment.exceptionRaised,
       reasonCode: assessment.reasonCode, toleranceMinor, toleranceKnown, currency: 'INR',
       ...(request.denominations === undefined ? {} : { denominations: request.denominations }),
+      ...(request.operatorVerified === undefined ? {} : { operatorVerified: request.operatorVerified }),
     },
   };
 }
@@ -389,6 +408,7 @@ export function toCloudCashMovement(record: TillCashMovementRecord): Record<stri
     movementId: record.movementId, tillId: record.tillId, laneId: record.laneId, kind: record.movementKind,
     amountMinor: record.amountMinor, deltaMinor: record.deltaMinor, currency: record.currency,
     custodianId: record.custodianId, performedBy: record.performedBy, tradingDay: record.tradingDay, at: record.at,
+    ...(record.operatorVerified === undefined ? {} : { operatorVerified: record.operatorVerified }),
   };
 }
 

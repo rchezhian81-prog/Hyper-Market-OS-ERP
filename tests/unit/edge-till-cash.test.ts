@@ -242,3 +242,23 @@ describe('a record becomes the event head office receives — the same event liv
     expect(factory(JSON.stringify({ kind: 'movement', movementId: 'm1' }), 0)).toBeUndefined();
   });
 });
+
+describe('the store computer\'s seal on who did it travels with the till\'s cash (ADR-0023 · PF-02)', () => {
+  const operatorVerified = { userId: 'u-meena', via: 'pin', laneId: 'lane-1', seal: 'c'.repeat(64) };
+  const movement: TillCashMovementRecord = {
+    kind: 'movement', movementId: 'm-seal', tillId: 'lane-1', laneId: 'lane-1', movementKind: 'float_issue', amountMinor: 1000, deltaMinor: 1000,
+    currency: 'INR', custodianId: 'u-meena', performedBy: 'u-meena', tradingDay: '2026-10-06', at: '2026-10-06T09:00:00.000Z', operatorVerified,
+  };
+  it('reads it back off the disk as written, and sends it to head office', () => {
+    const back = readTillCashRecord(JSON.parse(JSON.stringify(movement)));
+    expect(back).toMatchObject({ operatorVerified });
+    expect(toCloudCashMovement(back as TillCashMovementRecord)).toMatchObject({ operatorVerified });
+  });
+  it('a record whose stamp is half there reads back without one — never a repaired stamp', () => {
+    const half = { ...movement, operatorVerified: { userId: 'u-meena', via: 'pin' } };
+    const back = readTillCashRecord(JSON.parse(JSON.stringify(half)));
+    expect(back).toBeDefined();
+    expect('operatorVerified' in (back as object)).toBe(false);
+    expect('operatorVerified' in toCloudCashMovement(back as TillCashMovementRecord)).toBe(false);
+  });
+});

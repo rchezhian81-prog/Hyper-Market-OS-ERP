@@ -63,6 +63,10 @@ export interface CloudReturn {
    *  as the lane wrote it, every amount read defensively; the cloud records it on the return and the day book clears
    *  the `exchange_credit`. Absent on a plain refund. */
   readonly exchange?: CloudExchangeSettlement;
+  /** Who the box verified processed it, sealed (ADR-0023) — carried exactly as written, for head office to check. */
+  readonly operatorVerified?: Readonly<Record<string, unknown>>;
+  /** The manager's approval the box issued and spent, sealed (ADR-0023) — carried exactly as written. */
+  readonly approvalVerified?: Readonly<Record<string, unknown>>;
   readonly lines: readonly CloudReturnLine[];
 }
 
@@ -149,9 +153,14 @@ export function toCloudReturn(record: unknown, storeId?: string): CloudReturn {
     ...(locationId === undefined ? {} : { locationId }),
     // The exchange's settlement, when this return is one (SP-9b-ii) — carried, never invented.
     ...(exchange === undefined ? {} : { exchange }),
+    // The box's sealed stamps (ADR-0023): carried, never invented — absent when the box verified nobody.
+    ...(isObject(r['operatorVerified']) ? { operatorVerified: r['operatorVerified'] as Record<string, unknown> } : {}),
+    ...(isObject(r['approvalVerified']) ? { approvalVerified: r['approvalVerified'] as Record<string, unknown> } : {}),
     lines,
   };
 }
+
+const isObject = (v: unknown): boolean => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /** The return's identity as written to the disk record — `returnId`, tolerating a bare `id`. */
 export function returnIdOf(record: unknown): string | undefined {

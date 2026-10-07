@@ -9,7 +9,7 @@ import { bootPos, laneDurable } from '../../apps/pos/src/browser-entry';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { SyncAgent } from '../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../edge/sync-agent/src/http-transport';
-import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { apiHarness, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
 import { STREAM } from '../../services/api/src/adapters';
 import type { HttpResponse } from '../../services/kernel/src/index';
 
@@ -38,7 +38,9 @@ import type { HttpResponse } from '../../services/kernel/src/index';
  * regression of the spine fails CI, not a nightly.
  */
 
-const KEY = ['core', 'one', 'lane', 'signing', 'key'].join('-').padEnd(48, '0');
+// The box and head office share the pack signing key, as a real store and its head office do — so the box's seal on the
+// cashier it verified checks out at head office (ADR-0023).
+const KEY = TEST_PACK_KEY;
 const TENANT = 't-sre';
 const TILL = 'u-till';
 
@@ -158,17 +160,14 @@ describe('the core, on one lane, end to end', () => {
     // The hard case: the edge restarted and lost its outbox, so it re-queues a sale it already sent.
     // Nothing at the edge can tell. The idempotency key was minted at the lane, so the cloud collapses
     // it to one — the day is not double-counted.
+    // It re-queues exactly what it sent before — the record off its own disk, the box's seal on the cashier included.
+    const sentBefore = (await bankedSales(h)).find((s) => s.saleId === 'S-1');
+    expect(sentBefore).toMatchObject({ saleId: 'S-1', cashierId: 'cashier', operatorVerified: { userId: 'cashier' } });
     const forgetful = new SyncOutbox();
     forgetful.enqueue({
       id: 'edge-sale-S-1', type: 'SaleCommitted', occurredAt: COMMITTED_AT, version: 1,
       idempotencyKey: `edge-${TENANT}-S-1`, source: 'edge/lane',
-      payload: {
-        saleId: 'S-1', receiptNumber: 'R-0001', laneId: 'lane-1', cashierId: 'cashier',
-        tradingDay: TRADING_DAY, committedAt: COMMITTED_AT, totalMinor: TOTAL_MINOR, currency: 'INR',
-        packVersion: 0,
-        lines: [{ productId: 'P1', quantityMinor: 1, uom: 'ea', unitPriceMinor: 64_000, lineTotalMinor: TOTAL_MINOR, taxRateBps: 1800 }],
-        tenders: [{ kind: 'cash', amountMinor: TOTAL_MINOR }],
-      },
+      payload: sentBefore,
     });
     const agent = new SyncAgent(forgetful, httpTransport({
       baseUrl: 'https://cloud.example.test', token: 'edge-token', fetch: cloudFetch(h),

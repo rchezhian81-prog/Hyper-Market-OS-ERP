@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { giveRefundApproval, withApprovals } from '../support/refund-approval';
+import { sealedReturn } from '../support/store-seal';
 
 /**
  * **Controlled no-receipt returns through the real API (M13-FR-01, §28, M15, M08-FR-01) — CH-01 un-parked.**
@@ -39,8 +40,9 @@ const takeNamed = (h: ApiHarness, userId: string, body: Record<string, unknown>,
   h.request({ method: 'POST', path: '/v1/returns/no-receipt', userId, tenantId, idempotencyKey: `nr-${body['returnId']}`, body });
 const take = async (h: ApiHarness, userId: string, body: Record<string, unknown>, tenantId = A) =>
   takeNamed(h, userId, await withApprovals(h, tenantId, userId, null, body, { refundKind: 'no_receipt_return' }), tenantId);
+// Relayed as a current store computer sends it — who gave it and any approval it spent, sealed (ADR-0023).
 const sync = (h: ApiHarness, userId: string, body: Record<string, unknown>) =>
-  h.request({ method: 'POST', path: '/v1/returns/no-receipt/synced', userId, tenantId: A, idempotencyKey: `nrs-${body['returnId']}`, body });
+  h.request({ method: 'POST', path: '/v1/returns/no-receipt/synced', userId, tenantId: A, idempotencyKey: `nrs-${body['returnId']}`, body: sealedReturn(A, body) });
 const report = (h: ApiHarness, userId: string, tenantId = A) =>
   h.request({ method: 'GET', path: '/v1/pos/no-receipt-returns', userId, tenantId });
 const exceptions = (h: ApiHarness, userId: string) =>

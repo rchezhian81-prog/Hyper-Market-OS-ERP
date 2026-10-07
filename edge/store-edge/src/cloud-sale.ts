@@ -81,7 +81,12 @@ export function toCloudSale(record: unknown, packVersion: number, storeId?: stri
     // rather than falling back to the pack's scope or the lane. A record that declares one keeps its own; a box
     // that knows no store stamps nothing, and the cloud's fallback (which says it assumed) stands.
     ...(locationOf(r, storeId) === undefined ? {} : { locationId: locationOf(r, storeId) }),
+    // WHO the box verified rang it, sealed (ADR-0023) — carried exactly as written, for head office to check. Absent on
+    // a record the box did not verify; head office flags that rather than guessing.
+    ...(isObject(r['operatorVerified']) ? { operatorVerified: r['operatorVerified'] as IncomingSale['operatorVerified'] } : {}),
   };
 }
+
+const isObject = (v: unknown): boolean => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 const locationOf = (r: Rec, storeId: string | undefined): string | undefined => str(r['locationId']) ?? str(storeId);

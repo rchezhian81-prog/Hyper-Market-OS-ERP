@@ -54,7 +54,9 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { LaneSyncStatus } from './sync-status';
-import { returnIdOf } from './cloud-return';
+import { returnIdOf, toCloudReturn } from './cloud-return';
+import { toCloudSale } from './cloud-sale';
+import type { OperatorStamp, TillSealSubject } from '../../../packages/identity/src/till-seal';
 import { concessionTagIdOf } from './cloud-concession-tag';
 import type { EdgeNode } from './index';
 import {
@@ -168,6 +170,13 @@ export interface LaneOperatorPort {
   signInVerified(input: { readonly userId: string; readonly laneId: string }): Promise<SignInOutcome>;
   check(token: string | undefined, laneId: string): CheckOutcome;
   signOut(token: string | undefined): Promise<boolean>;
+  /**
+   * Seal what this box verified (ADR-0023): the fact, the record, the till, the person, how, and how much — under the
+   * seal key and this box's tenant, so head office can tell a record that passed through this till from one that did not.
+   * Every store box wires it (`main.ts`); absent only where a test drives this socket alone, and then the stamp travels
+   * unsealed and head office flags it.
+   */
+  seal?(subject: Omit<TillSealSubject, 'tenantId'>): string;
 }
 
 /** What the box does when the manager asks to close the day — the authoritative `EdgeProcess.closeDay`. */
@@ -357,7 +366,7 @@ export function startLaneServer(input: {
    * verified person, to stamp); otherwise the refusal in the cashier's words. With no register wired (a test of this
    * socket alone) there is nothing to check against and the write goes on unstamped.
    */
-  const operatorRefusal = (req: IncomingMessage, named: unknown): { readonly refusedBecause: string; readonly laneMessage: string } | { readonly verified: { readonly userId: string; readonly via: string } } | undefined => {
+  const operatorRefusal = (req: IncomingMessage, named: unknown): { readonly refusedBecause: string; readonly laneMessage: string } | { readonly verified: { readonly userId: string; readonly via: string; readonly laneId: string } } | undefined => {
     const ops = input.operators;
     if (ops === undefined) return undefined;
     // A box that was never told which till it is takes no money at all — the same refusal its cash routes give.
@@ -370,8 +379,22 @@ export function startLaneServer(input: {
         laneMessage: `${check.displayName} is signed in at this till, but this names ${typeof named === 'string' && named.trim() !== '' ? named : 'nobody'}. Nothing was saved — sign in as yourself.`,
       };
     }
-    return { verified: { userId: check.userId, via: check.via } };
+    return { verified: { userId: check.userId, via: check.via, laneId: ops.laneId } };
   };
+
+  /**
+   * The stamp a verified money write carries (ADR-0023): the person, how they signed in, this till — and the box's seal
+   * over that AND the fact, the record and the amount. Never a clock reading, so a re-sent record stamps the same.
+   */
+  const stampOf = (
+    verified: { readonly userId: string; readonly via: string; readonly laneId: string },
+    fact: Exclude<TillSealSubject['fact'], 'approval'>, recordId: string, amountMinor: number,
+  ): Partial<OperatorStamp> & Omit<OperatorStamp, 'seal'> => {
+    const seal = input.operators?.seal;
+    return seal === undefined ? { ...verified } : { ...verified, seal: seal({ fact, recordId, amountMinor, ...verified }) };
+  };
+  const sealedOnly = (stamp: (Partial<OperatorStamp> & Omit<OperatorStamp, 'seal'>) | undefined): { operatorVerified?: OperatorStamp } =>
+    (stamp?.seal === undefined ? {} : { operatorVerified: { ...stamp, seal: stamp.seal } });
 
   /**
    * Read a bounded JSON body, or answer for the caller and resolve `undefined`: 413 when it is too large (the request
@@ -801,8 +824,15 @@ export function startLaneServer(input: {
         // The person who holds the till is the person signed in at it (ADR-0020 §5) — refused before anything is written.
         const who = operatorRefusal(req, custodianId);
         if (who !== undefined && !('verified' in who)) { send(res, 200, { committed: false, ...who }, cors); return; }
+        // Who recorded it is the person signed in at this till — never a name in the body (ADR-0023 · PF-02) — and the
+        // box seals that it verified them.
+        const verifiedStamp = who === undefined ? undefined : stampOf(who.verified, 'cash_movement', movementId, amountMinor);
         try {
-          send(res, 200, await record({ movementId, movementKind: movementKind as CashMovementKind, amountMinor, at, custodianId, performedBy }), cors);
+          send(res, 200, await record({
+            movementId, movementKind: movementKind as CashMovementKind, amountMinor, at, custodianId,
+            performedBy: who === undefined ? performedBy : who.verified.userId,
+            ...sealedOnly(verifiedStamp),
+          }), cors);
         } catch (e) {
           send(res, 200, { committed: false, refusedBecause: 'could_not_write_durably', laneMessage: e instanceof Error ? e.message : String(e) }, cors);
         }
@@ -850,9 +880,11 @@ export function startLaneServer(input: {
         // The person closing is the person signed in at the till (ADR-0020 §5).
         const who = operatorRefusal(req, cashierId);
         if (who !== undefined && !('verified' in who)) { send(res, 200, { closed: false, ...who }, cors); return; }
+        const verifiedStamp = who === undefined ? undefined : stampOf(who.verified, 'shift_close', shiftId, countedMinor);
         try {
           send(res, 200, await close({
             shiftId, closedAt, cashierId, countedMinor,
+            ...sealedOnly(verifiedStamp),
             ...(denominations === undefined ? {} : { denominations }),
             ...(reasonCode === undefined ? {} : { reasonCode }),
           }), cors);
@@ -945,7 +977,17 @@ export function startLaneServer(input: {
           }
           // The stamp is the person and the way they signed in — never a clock reading: a till re-sending the SAME sale after
           // a lost reply must hash the same, or the box would call its own replay a conflict (GAP-SALE-IDEMPOTENCY-01).
-          if (who !== undefined) parsed = { ...(parsed as Record<string, unknown>), operatorVerified: { ...who.verified } };
+          // Sealed over the fact as head office will read it — the same translation the sync agent sends (ADR-0023).
+          if (who !== undefined) {
+            const cloud = isReturn ? toCloudReturn(parsed) : undefined;
+            const sale = isReturn ? undefined : toCloudSale(parsed, 0);
+            parsed = {
+              ...(parsed as Record<string, unknown>),
+              operatorVerified: cloud !== undefined
+                ? stampOf(who.verified, 'return', cloud.returnId, cloud.refundMinor)
+                : stampOf(who.verified, 'sale', sale!.saleId, sale!.totalMinor),
+            };
+          }
           // A refund's manager approval (ADR-0021): needed by the shop's threshold, or named on the record, it must be one
           // THIS box issued for exactly this refund — spent here, once. The box writes the approver it verified.
           if (isReturn && who !== undefined && input.approvals !== undefined && input.operators !== undefined) {
@@ -954,7 +996,19 @@ export function startLaneServer(input: {
               send(res, 200, { committed: false, refusedBecause: approval.refusedBecause, laneMessage: approval.laneMessage }, cors);
               return;
             }
-            if (approval.stamp !== undefined) parsed = { ...(parsed as Record<string, unknown>), approvedBy: approval.stamp.approvedBy, approvalVerified: { ...approval.stamp } };
+            if (approval.stamp !== undefined) {
+              // The approval it issued and spent, sealed to this refund and its amount (ADR-0023).
+              const refund = toCloudReturn(parsed);
+              const laneId = input.operators.laneId;
+              const seal = input.operators.seal?.({
+                fact: 'approval', recordId: refund.returnId, laneId, userId: approval.stamp.approvedBy, via: 'approval',
+                amountMinor: refund.refundMinor, approvalId: approval.stamp.approvalId,
+              });
+              parsed = {
+                ...(parsed as Record<string, unknown>), approvedBy: approval.stamp.approvedBy,
+                approvalVerified: { ...approval.stamp, laneId, ...(seal === undefined ? {} : { seal }) },
+              };
+            }
           }
         }
 

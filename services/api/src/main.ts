@@ -34,6 +34,7 @@ import {
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from './access';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
+import { tillSealKey } from '../../../packages/identity/src/till-seal';
 import { labellingRoutes } from '../../catalogue/src/labelling';
 import { masterDataRoutes } from '../../catalogue/src/master-data';
 import { categoryPolicyRoutes } from '../../catalogue/src/category-policy';
@@ -303,6 +304,8 @@ export function buildSurface(deps: {
   readonly snapshots?: SnapshotStore;
 }): readonly Route[] {
   const signer = hmacSigner(deps.signingKey);
+  // The key the store computer's seal on who it verified is checked with (ADR-0023) — the same derivation the box uses.
+  const sealKey = tillSealKey(deps.signingKey);
   const whHasher = webhookHasher(deps.signingKey);
   const empty = <T>(v: T) => () => v;
   const store = deps.store;
@@ -667,14 +670,14 @@ export function buildSurface(deps: {
       saleHoldingReceipt: empty(undefined), isBanked: empty(false),
       bankSale: () => {}, recordExceptions: () => {}, openExceptions: empty([]), now,
       permissionsOfUser: empty(undefined),
-    } : posAdapter({ store, now })),
+    } : { ...posAdapter({ store, now }), tillSealKey: sealKey }),
     ...returnsRoutes(store === undefined ? {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
       recordReturn: () => {}, refundThreshold: () => undefined, recordRefundThreshold: () => {}, canApproveRefund: () => Promise.resolve(false),
       returnWindow: () => undefined, recordReturnWindow: () => {},
       storeCreditCap: () => undefined, recordStoreCreditCap: () => {},
       flaggedReturns: empty([]), now,
-    } : { ...returnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    } : { ...returnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, tillSealKey: sealKey }),
     // Refund approvals at head office (ADR-0022): the approver gives one in their own session; a refund names it.
     ...refundApprovalRoutes(store === undefined
       ? { recordRefundApproval: () => {}, permissionsOfUser: () => undefined, now }
@@ -684,7 +687,7 @@ export function buildSurface(deps: {
       noReceiptCap: () => undefined, recordNoReceiptCap: () => {}, knownProduct: () => false,
       canApproveRefund: () => Promise.resolve(false), storeCreditCap: () => undefined,
       recordNoReceiptReturn: () => {}, noReceiptReturns: empty([]), now,
-    } : { ...noReceiptReturnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    } : { ...noReceiptReturnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, tillSealKey: sealKey }),
     // Exchanges (M13-FR-03, CH-01 un-parked): a return + a replacement sale settled together, in one atomic batch.
     ...exchangeRoutes(store === undefined ? {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
@@ -695,10 +698,10 @@ export function buildSurface(deps: {
     } : { ...exchangesAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
     ...cashRoutes(store === undefined
       ? { tillMovements: empty([]), recordCashMovement: () => {}, now }
-      : cashAdapter({ store, now })),
+      : { ...cashAdapter({ store, now }), tillSealKey: sealKey }),
     ...shiftRoutes(store === undefined
       ? { closedShift: empty(undefined), recordShiftClose: () => {}, overShortShifts: empty([]), overShortReviews: empty([]), recordOverShortReview: () => {}, now }
-      : shiftAdapter({ store, now })),
+      : { ...shiftAdapter({ store, now }), tillSealKey: sealKey }),
     ...dayCloseRoutes(store === undefined
       ? { dayClose: empty(undefined), recordDayClose: () => {}, dayReopen: empty(undefined), recordDayReopen: () => {}, dayCloses: empty([]), dayReopens: empty([]), canApproveDayReopen: empty(false), now }
       : dayCloseAdapter({ store, now })),
