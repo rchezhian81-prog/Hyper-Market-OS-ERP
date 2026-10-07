@@ -20,6 +20,14 @@
 // There is no "publish anyway", no "override the MRP", and no button that sets a price and approves
 // it in one motion. Nothing here writes before the model has been asked.
 //
+// ── And who approves (ADR-0024 · §28) ───────────────────────────────────────
+//
+// Nobody's name is typed or picked on this screen. A price below cost or below the margin floor, and
+// an offer that loses margin, are ASKED for on head office's approval engine — with a reason the
+// approver reads — and a different person who may approve prices approves or rejects it on their own
+// Approvals page. Only then does "Save it" / "Start this offer" send the change, naming that approval.
+// The words for every outcome come from the tested model, in both languages.
+//
 // No `prompt`, `confirm` or `alert`; the banner does not fade.
 
 const el = (id) => document.getElementById(id);
@@ -60,8 +68,14 @@ const WORDS = {
     priceLead: 'The two limits below are checked before anything is saved. A price over the MRP cannot be saved by anybody.',
     itemCode: 'Item code', mrpPrinted: 'MRP printed on the pack',
     lowestPrice: 'Lowest price that keeps the margin', newPrice: 'New price (in rupees)',
-    startsOn: 'Starts on', checkPrice: 'Check this price', sendForApproval: 'Send for approval and save',
+    startsOn: 'Starts on', checkPrice: 'Check this price',
     saveIt: 'Save this price', priceOk: 'This price is fine', needsApproval: 'Somebody else has to approve this',
+    askForApproval: 'Ask for approval', saveWithApproval: 'Save it',
+    priceApprovalLead: 'This price needs a second person. 1. Write why and press “Ask for approval”. 2. Someone else who may approve prices approves it on their Approvals page. 3. Come back and press “Save it”. Nothing is saved until then.',
+    offerApprovalLead: 'This offer loses margin, so it needs a second person. 1. Write why and press “Ask for approval”. 2. Someone else who may approve prices approves it on their Approvals page. 3. Come back and press “Start this offer”. Nothing starts until then.',
+    whyLabel: 'Why this is needed (the person approving reads it)',
+    whyPlaceholder: 'For example: clearing short-dated stock before it is written off.',
+    waitingTitle: 'Waiting for approval',
     priceRefused: 'This price cannot be saved', historyTitle: 'What this item has been priced at',
     noHistory: 'This item has never had a price set.', wasReplacing: 'Replaces',
     from: 'From', price: 'Price', status: 'State', version: 'Change',
@@ -72,9 +86,7 @@ const WORDS = {
     unitsExpected: 'Units you expect with the offer', workItOut: 'Work out what it costs',
     startOffer: 'Start this offer', offerStarted: 'Offer started',
     extraNeeded: 'Extra units needed just to break even', unreachable: 'no volume makes this pay',
-    ok: 'OK', cancel: 'Cancel', read: 'Please read this', why: 'Why',
-    whoApproves: 'Who approved this?',
-    whoApprovesNote: 'You cannot approve your own change. Somebody else has to look at it.',
+    ok: 'OK', read: 'Please read this',
     needItem: 'Give the item code first.', needPrice: 'Type the new price first.',
     needDate: 'Say what day this price starts.', needOfferFields: 'Fill in every figure first.',
     unknownItem: 'This screen has not been told about that item.',
@@ -82,8 +94,6 @@ const WORDS = {
     published: 'This item is on sale', recallSet: 'Selling stopped', recallLifted: 'Selling allowed again',
     sampleData: 'Sample data — this is not your shop.',
     gapsTitle: 'This screen has not been told everything',
-    noApprovers: 'This screen has not been told who may approve. Nothing needing approval can be saved.',
-    reasonNeeded: 'Write why, in a sentence somebody can read next year.',
   },
   ta: {
     title: 'பொருட்களும் விலைகளும்', items: 'பொருட்கள்', changePrice: 'விலையை மாற்று', offer: 'சலுகை',
@@ -112,8 +122,14 @@ const WORDS = {
     priceLead: 'கீழே உள்ள இரு வரம்புகளும் சேமிக்கும் முன் சரிபார்க்கப்படும். MRP-ஐ விட அதிக விலையை யாராலும் சேமிக்க முடியாது.',
     itemCode: 'பொருள் குறியீடு', mrpPrinted: 'பாக்கெட்டில் அச்சிடப்பட்ட MRP',
     lowestPrice: 'லாபத்தைக் காக்கும் குறைந்தபட்ச விலை', newPrice: 'புதிய விலை (ரூபாயில்)',
-    startsOn: 'தொடங்கும் நாள்', checkPrice: 'இந்த விலையைச் சரிபார்', sendForApproval: 'ஒப்புதலுக்கு அனுப்பி சேமி',
+    startsOn: 'தொடங்கும் நாள்', checkPrice: 'இந்த விலையைச் சரிபார்',
     saveIt: 'இந்த விலையைச் சேமி', priceOk: 'இந்த விலை சரியானது', needsApproval: 'வேறு ஒருவர் இதை ஒப்புதல் அளிக்க வேண்டும்',
+    askForApproval: 'அனுமதி கேள்', saveWithApproval: 'சேமி',
+    priceApprovalLead: 'இந்த விலைக்கு இரண்டாம் நபர் தேவை. 1. ஏன் என்று எழுதி “அனுமதி கேள்” அழுத்தவும். 2. விலைகளை அனுமதிக்கக்கூடிய வேறொருவர் தனது அனுமதிகள் பக்கத்தில் அனுமதிப்பார். 3. பிறகு திரும்பி வந்து “சேமி” அழுத்தவும். அதுவரை எதுவும் சேமிக்கப்படாது.',
+    offerApprovalLead: 'இந்தச் சலுகையால் லாபம் குறைவதால் இரண்டாம் நபர் தேவை. 1. ஏன் என்று எழுதி “அனுமதி கேள்” அழுத்தவும். 2. விலைகளை அனுமதிக்கக்கூடிய வேறொருவர் தனது அனுமதிகள் பக்கத்தில் அனுமதிப்பார். 3. பிறகு திரும்பி வந்து “இந்தச் சலுகையைத் தொடங்கு” அழுத்தவும். அதுவரை எதுவும் தொடங்காது.',
+    whyLabel: 'இது ஏன் தேவை (அனுமதிப்பவர் இதைப் படிப்பார்)',
+    whyPlaceholder: 'உதாரணம்: காலாவதி நெருங்கும் சரக்கை வீணாகும் முன் விற்றுத் தீர்க்க.',
+    waitingTitle: 'அனுமதிக்காகக் காத்திருக்கிறது',
     priceRefused: 'இந்த விலையைச் சேமிக்க முடியாது', historyTitle: 'இந்தப் பொருளுக்கு இருந்த விலைகள்',
     noHistory: 'இந்தப் பொருளுக்கு இதுவரை விலை நிர்ணயிக்கப்படவில்லை.', wasReplacing: 'மாற்றுவது',
     from: 'முதல்', price: 'விலை', status: 'நிலை', version: 'மாற்றம்',
@@ -124,9 +140,7 @@ const WORDS = {
     unitsExpected: 'சலுகையுடன் எதிர்பார்க்கும் அளவு', workItOut: 'என்ன செலவாகும் என்று கணக்கிடு',
     startOffer: 'இந்தச் சலுகையைத் தொடங்கு', offerStarted: 'சலுகை தொடங்கியது',
     extraNeeded: 'நஷ்டமில்லாமல் இருக்க கூடுதலாகத் தேவையான அளவு', unreachable: 'எந்த அளவு விற்றாலும் ஈடுசெய்யாது',
-    ok: 'சரி', cancel: 'ரத்து', read: 'இதைப் படிக்கவும்', why: 'ஏன்',
-    whoApproves: 'இதை யார் ஒப்புதல் அளித்தார்?',
-    whoApprovesNote: 'உங்கள் சொந்த மாற்றத்தை நீங்களே ஒப்புதல் அளிக்க முடியாது. வேறு ஒருவர் பார்க்க வேண்டும்.',
+    ok: 'சரி', read: 'இதைப் படிக்கவும்',
     needItem: 'முதலில் பொருள் குறியீட்டைக் கொடுக்கவும்.', needPrice: 'முதலில் புதிய விலையைத் தட்டச்சு செய்யவும்.',
     needDate: 'இந்த விலை எந்த நாளில் தொடங்கும் என்று சொல்லுங்கள்.', needOfferFields: 'முதலில் எல்லா எண்களையும் நிரப்பவும்.',
     unknownItem: 'அந்தப் பொருளைப் பற்றி இந்தத் திரைக்குத் தெரியவில்லை.',
@@ -134,8 +148,6 @@ const WORDS = {
     published: 'இந்தப் பொருள் விற்பனையில் உள்ளது', recallSet: 'விற்பனை நிறுத்தப்பட்டது', recallLifted: 'விற்பனை மீண்டும் அனுமதிக்கப்பட்டது',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
     gapsTitle: 'இந்தத் திரைக்கு எல்லாத் தகவலும் வரவில்லை',
-    noApprovers: 'யார் ஒப்புதல் அளிக்கலாம் என்று இந்தத் திரைக்குத் தெரியவில்லை. ஒப்புதல் தேவைப்படுவது எதுவும் சேமிக்க முடியாது.',
-    reasonNeeded: 'ஏன் என்பதை ஒரு வாக்கியத்தில் எழுதுங்கள் — அடுத்த ஆண்டு படிக்கக்கூடியதாக.',
   },
 };
 let lang = 'en';
@@ -235,10 +247,6 @@ const GAP_WORDS = {
     en: 'It has not been told which barcodes are already in use, so a clash cannot be spotted before it happens.',
     ta: 'எந்த பார்கோடுகள் ஏற்கனவே பயன்பாட்டில் உள்ளன என்று தெரியவில்லை. எனவே மோதலை முன்கூட்டியே கண்டறிய முடியாது.',
   },
-  who_may_approve: {
-    en: 'It has not been told who may approve, so nothing needing approval can be saved.',
-    ta: 'யார் ஒப்புதல் அளிக்கலாம் என்று தெரியவில்லை. எனவே ஒப்புதல் தேவைப்படுவது எதுவும் சேமிக்க முடியாது.',
-  },
   where_things_sit_on_the_shelves: {
     en: 'It has not been told where things sit on the shelves, so the picker’s list is in whatever order it arrived rather than the order they walk the shop.',
     ta: 'பொருட்கள் அலமாரியில் எங்கே இருக்கின்றன என்று தெரியவில்லை. எனவே பிக்கரின் பட்டியல் அவர் நடக்கும் வரிசையில் இல்லாமல், வந்த வரிசையிலேயே இருக்கும்.',
@@ -292,73 +300,68 @@ function sampleSession() {
     launch: () => ({ ok: false, detail: 'this is sample data' }),
     canLaunchToCloud: false,
     launchToCloud: async () => ({ launched: false, reason: 'this is sample data' }),
+    // A sample view is connected to nothing, so nothing that needs a second person moves — and it says so.
+    canAskForApproval: false,
+    askPriceApproval: async () => ({ kind: 'not_connected' }),
+    savePriceWithApproval: async () => ({ kind: 'not_connected' }),
+    askLaunchApproval: async () => ({ kind: 'not_connected' }),
+    launchWithApproval: async () => ({ kind: 'not_connected' }),
+    presentAskOutcome: (l) => sampleWords(l),
+    presentUseOutcome: (l) => sampleWords(l),
     quote: () => ({ grossTotal: { minor: 0, currency: 'INR' }, discount: { minor: 0, currency: 'INR' }, netTotal: { minor: 0, currency: 'INR' }, applied: [] }),
   };
 }
+
+/** The sample view's one answer to anything that needs a second person: it is connected to nothing. */
+const SAMPLE_NOT_CONNECTED = {
+  en: 'This is sample data and is not connected to head office, so nothing was asked and nothing was saved.',
+  ta: 'இது மாதிரித் தகவல், தலைமை அலுவலகத்துடன் இணைக்கப்படவில்லை; எனவே எதுவும் கேட்கப்படவில்லை, எதுவும் சேமிக்கப்படவில்லை.',
+};
+const sampleWords = (l) => {
+  const label = SAMPLE_NOT_CONNECTED[l] ?? SAMPLE_NOT_CONNECTED.en;
+  return { tone: 'error', icon: '✕', label, announcement: label, needsAttention: true };
+};
 
 const real = window.catalogueSession;
 const session = real ?? sampleSession();
 
 // ── The banner ──────────────────────────────────────────────────────────────
 
+/** The banner: `good` for done, `'pending'` for waiting on a second person, anything else needs reading. */
 function tell(title, message, good = false) {
   el('banner-title').textContent = title;
   el('banner-text').textContent = message;
   el('banner').classList.toggle('good', good === true);
+  el('banner').classList.toggle('pending', good === 'pending');
   el('banner').hidden = false;
   el('banner-ok').textContent = t('ok');
   el('banner-ok').focus();
 }
 el('banner-ok').addEventListener('click', () => { el('banner').hidden = true; });
 
-// ── The panel ───────────────────────────────────────────────────────────────
-
-let sheetResolve = null;
-
 /**
- * Ask who approved something, and optionally why. On screen, never a browser prompt.
- *
- * An empty list is answered before the panel opens: a panel offering no names and only a Cancel
- * button is a dead end that reads as a bug, when what is actually wrong is that nobody has told
- * this screen who may approve.
+ * Say what happened to an ask or a save that needs a second person — in the model's own words (both
+ * languages, tested), with a title that matches: done, waiting, or please read.
  */
-function askApprover(title, note, people, wantReason = false) {
-  if (people.length === 0) {
-    tell(t('read'), t('noApprovers'));
-    return Promise.resolve(null);
+function tellApproval(kind, presented, subject) {
+  if (kind === 'done') {
+    tell(subject === 'price' ? t('priceSaved') : t('offerStarted'), presented.label, true);
+  } else if (kind === 'asked' || kind === 'waiting') {
+    tell(t('waitingTitle'), presented.label, 'pending');
+  } else {
+    tell(t('read'), presented.label);
   }
-  el('sheet-title').textContent = title;
-  el('sheet-note').textContent = note;
-  el('sheet-cancel').textContent = t('cancel');
-  el('sheet-reason-wrap').hidden = !wantReason;
-  el('sheet-reason-label').textContent = t('why');
-  el('sheet-reason').value = '';
-  el('choices').replaceChildren(...people.map((who) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = who;
-    button.addEventListener('click', () => {
-      const reason = el('sheet-reason').value.trim();
-      // A written reason is the only thing that tells a deliberate margin loss from a mistake, a
-      // year later when nobody remembers either.
-      if (wantReason && reason.length < 10) { tell(t('read'), t('reasonNeeded')); return; }
-      closeSheet({ who, reason });
-    });
-    return button;
-  }));
-  el('sheet').hidden = false;
-  return new Promise((resolve) => { sheetResolve = resolve; });
 }
-function closeSheet(answer) {
-  el('sheet').hidden = true;
-  const resolve = sheetResolve;
-  sheetResolve = null;
-  if (resolve) resolve(answer);
-}
-el('sheet-cancel').addEventListener('click', () => { closeSheet(null); });
 
-/** Who may approve. From the box, never invented here. */
-const approvers = () => window.catalogueData?.approvers ?? [];
+/** Run a click's work once: the button is disabled while head office answers, so a double tap asks once. */
+async function busy(id, work) {
+  const button = el(id);
+  if (button.disabled) return;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try { await work(); } finally { button.disabled = false; button.removeAttribute('aria-busy'); }
+}
+
 const me = () => window.catalogueData?.userId ?? 'pricing';
 const today = () => window.catalogueData?.today ?? '';
 
@@ -677,53 +680,89 @@ function renderProposal(proposal, productId) {
 
   // The save button does not exist on the page until the model says the price may be saved.
   el('save-price').hidden = !(proposal.cleanToActivate || proposal.needsApproval);
-  el('save-price').textContent = proposal.needsApproval ? t('sendForApproval') : t('saveIt');
+  el('save-price').textContent = proposal.needsApproval ? t('saveWithApproval') : t('saveIt');
+  // A price that needs a second person shows the ask: a reason the approver reads, and "Ask for approval".
+  el('price-approval').hidden = !proposal.needsApproval;
+  paintPriceApproval();
   renderHistory(productId);
 }
 
-el('save-price').addEventListener('click', async () => {
-  if (lastProposal === null) return;
+/** The price an ask on this page was last made for — so "Save it" becomes the one main action after asking. */
+let priceAskedFor = null;
+const priceKey = (proposal) => `${proposal.draft.productId}|${proposal.draft.price.minor}`;
 
-  // A below-cost / below-floor price needs a §28 approver: a DIFFERENT person who holds the pricing-approval
-  // authority. Asked on screen; the cloud re-checks the authority (a name in a box is not one). The person
-  // setting the price is not in this list, and a name picked here is checked against the setter anyway.
-  let approver;
-  if (lastProposal.needsApproval) {
-    const answer = await askApprover(t('whoApproves'), t('whoApprovesNote'), approvers().filter((a) => a !== me()), true);
-    if (answer === null) return;
-    approver = { approvedBy: answer.who, rationale: answer.reason };
-  }
+/** Which of "Ask for approval" and "Save it" is the main action: asking first, then saving once asked. */
+function paintPriceApproval() {
+  el('price-approval-lead').textContent = t('priceApprovalLead');
+  el('price-why-label').textContent = t('whyLabel');
+  el('price-why').placeholder = t('whyPlaceholder');
+  el('ask-price').textContent = t('askForApproval');
+  const needs = lastProposal !== null && lastProposal.needsApproval;
+  const asked = needs && priceAskedFor === priceKey(lastProposal);
+  el('ask-price').classList.toggle('primary', needs && !asked);
+  el('save-price').classList.toggle('primary', !needs || asked);
+}
 
-  // Wired to head office? Then the change goes THERE (M05-FR-02): the cloud re-runs the guard (MRP ceiling,
-  // cost, margin floor) and re-checks §28, records the append-only change, and it is read back by the lane. The
-  // screen shows what the cloud decided and changes nothing itself.
-  if (session.canChangePriceInCloud) {
-    const outcome = await session.changePriceInCloud({
-      productId: lastProposal.draft.productId,
-      priceMinor: lastProposal.draft.price.minor,
-      ...(approver === undefined ? {} : { approval: approver }),
+// Ask for approval — the price setter's OWN request, in their own session, for exactly this change. Nothing is saved.
+el('ask-price').addEventListener('click', () => {
+  void busy('ask-price', async () => {
+    if (lastProposal === null || !lastProposal.needsApproval) return;
+    const proposal = lastProposal;
+    const outcome = await session.askPriceApproval(lang, {
+      productId: proposal.draft.productId, priceMinor: proposal.draft.price.minor, why: el('price-why').value,
     });
-    if (!outcome.saved) { tell(t('read'), outcome.reason); return; }
-    tell(t('priceSaved'), `${inr(lastProposal.draft.price.minor)} — ${t('priceSavedNote')}`, true);
-    el('save-price').hidden = true;
-    return;
-  }
+    if (outcome.kind === 'asked') { priceAskedFor = priceKey(proposal); el('price-why').value = ''; paintPriceApproval(); }
+    tellApproval(outcome.kind, session.presentAskOutcome(lang, 'price', outcome), 'price');
+  });
+});
 
-  // No head office behind this page: the local activation is honest that it only validates in this browser.
-  const localApproval = approver === undefined ? undefined : {
-    id: `ap-${lastProposal.draft.id}`, subjectType: 'price_change', subjectRef: lastProposal.draft.id,
-    requestedBy: me(), branchId: null, value: null,
-    status: 'approved', decidedBy: approver.approvedBy, reason: approver.rationale,
-    decidedAt: new Date().toISOString(),
-  };
-  const outcome = session.activatePrice(lastProposal, localApproval);
-  if (!outcome.ok) {
-    tell(t('read'), outcome.refusals.map((r) => words(PRICE_REFUSAL_WORDS, r)).join(' '));
-    return;
-  }
-  tell(t('priceSaved'), `${inr(outcome.entry.price.minor)} — ${t('priceSavedNote')}`, true);
-  el('save-price').hidden = true;
-  renderHistory(outcome.entry.productId);
+el('save-price').addEventListener('click', () => {
+  void busy('save-price', async () => {
+    if (lastProposal === null) return;
+    const proposal = lastProposal;
+
+    // A below-cost / below-floor price needs a second person's OWN approval (ADR-0024 · §28): "Save it" finds the
+    // setter's own APPROVED request for exactly these figures and sends the change naming it. Not asked, waiting,
+    // rejected, expired, used or changed — each is said plainly, and nothing is sent. With no head office behind
+    // this page it says so, and nothing is saved: a name on this screen is not an approval.
+    if (proposal.needsApproval) {
+      const outcome = await session.savePriceWithApproval({
+        productId: proposal.draft.productId, priceMinor: proposal.draft.price.minor,
+      });
+      tellApproval(outcome.kind, session.presentUseOutcome(lang, 'price', outcome, inr(proposal.draft.price.minor)), 'price');
+      if (outcome.kind === 'done') {
+        el('save-price').hidden = true;
+        el('price-approval').hidden = true;
+        priceAskedFor = null;
+      }
+      return;
+    }
+
+    // Wired to head office? Then the change goes THERE (M05-FR-02): the cloud re-runs the guard (MRP ceiling,
+    // cost, margin floor), records the append-only change, and it is read back by the lane. The screen shows
+    // what the cloud decided and changes nothing itself.
+    if (session.canChangePriceInCloud) {
+      const outcome = await session.changePriceInCloud({
+        productId: proposal.draft.productId,
+        priceMinor: proposal.draft.price.minor,
+      });
+      if (!outcome.saved) { tell(t('read'), outcome.reason); return; }
+      tell(t('priceSaved'), `${inr(proposal.draft.price.minor)} — ${t('priceSavedNote')}`, true);
+      el('save-price').hidden = true;
+      return;
+    }
+
+    // No head office behind this page: the local activation is honest that it only validates in this browser,
+    // and it is never handed an approval.
+    const outcome = session.activatePrice(proposal);
+    if (!outcome.ok) {
+      tell(t('read'), outcome.refusals.map((r) => words(PRICE_REFUSAL_WORDS, r)).join(' '));
+      return;
+    }
+    tell(t('priceSaved'), `${inr(outcome.entry.price.minor)} — ${t('priceSavedNote')}`, true);
+    el('save-price').hidden = true;
+    renderHistory(outcome.entry.productId);
+  });
 });
 
 function renderHistory(productId) {
@@ -921,38 +960,76 @@ function renderSimulation(simulation) {
   box.append(head, why, breakEven);
   el('launch').hidden = false;
   el('launch').textContent = t('startOffer');
+  // A margin-losing offer shows the ask: a reason the approver reads, and "Ask for approval".
+  el('promo-approval').hidden = !simulation.blocksApproval;
+  paintLaunchApproval();
 }
 
-el('launch').addEventListener('click', async () => {
-  if (lastSimulation === null || lastSimulationInput === null) return;
+/** The offer an ask on this page was last made for — so "Start this offer" becomes the main action after asking. */
+let offerAskedFor = null;
+const offerKey = (input) => JSON.stringify(input);
 
-  // A margin-losing offer needs a §28 approver: a DIFFERENT person who holds the pricing-approval authority.
-  // Asked on screen; the cloud re-checks the authority (a name in a box is not one).
-  let approver;
-  if (lastSimulation.blocksApproval) {
-    const answer = await askApprover(t('whoApproves'), t('whoApprovesNote'), approvers().filter((a) => a !== me()), true);
-    if (answer === null) return;
-    approver = { approvedBy: answer.who, rationale: answer.reason };
-  }
+/** Which of "Ask for approval" and "Start this offer" is the main action: asking first, then starting once asked. */
+function paintLaunchApproval() {
+  el('promo-approval-lead').textContent = t('offerApprovalLead');
+  el('promo-why-label').textContent = t('whyLabel');
+  el('promo-why').placeholder = t('whyPlaceholder');
+  el('ask-launch').textContent = t('askForApproval');
+  const needs = lastSimulation !== null && lastSimulation.blocksApproval;
+  const asked = needs && lastSimulationInput !== null && offerAskedFor === offerKey(lastSimulationInput);
+  el('ask-launch').classList.toggle('primary', needs && !asked);
+  el('launch').classList.toggle('primary', !needs || asked);
+}
 
-  // Wired to head office? Then the launch goes THERE (M05-FR-03/04): the cloud re-simulates the input and
-  // re-checks §28, records the launch, and it is read back by finance/reporting. The screen shows what the
-  // cloud decided and launches nothing itself.
-  if (session.canLaunchToCloud) {
-    const outcome = await session.launchToCloud({ input: lastSimulationInput, ...(approver === undefined ? {} : { approval: approver }) });
-    if (!outcome.launched) { tell(t('read'), outcome.reason); return; }
-    tell(t('offerStarted'), lastSimulationInput.promotionId, true);
+// Ask for approval — the proposer's OWN request, in their own session, for exactly this offer. Nothing starts.
+el('ask-launch').addEventListener('click', () => {
+  void busy('ask-launch', async () => {
+    if (lastSimulation === null || lastSimulationInput === null || !lastSimulation.blocksApproval) return;
+    const input = lastSimulationInput;
+    const outcome = await session.askLaunchApproval(lang, { input, why: el('promo-why').value });
+    if (outcome.kind === 'asked') { offerAskedFor = offerKey(input); el('promo-why').value = ''; paintLaunchApproval(); }
+    tellApproval(outcome.kind, session.presentAskOutcome(lang, 'offer', outcome), 'offer');
+  });
+});
+
+el('launch').addEventListener('click', () => {
+  void busy('launch', async () => {
+    if (lastSimulation === null || lastSimulationInput === null) return;
+    const simulation = lastSimulation;
+    const input = lastSimulationInput;
+
+    // A margin-losing offer needs a second person's OWN approval (ADR-0024 · §28): "Start this offer" finds the
+    // proposer's own APPROVED request for exactly this offer and launches naming it — otherwise it says why not,
+    // and nothing is sent. With no head office behind this page it says so, and nothing starts.
+    if (simulation.blocksApproval) {
+      const outcome = await session.launchWithApproval(input);
+      tellApproval(outcome.kind, session.presentUseOutcome(lang, 'offer', outcome, input.promotionId), 'offer');
+      if (outcome.kind === 'done') {
+        el('launch').hidden = true;
+        el('promo-approval').hidden = true;
+        offerAskedFor = null;
+      }
+      return;
+    }
+
+    // Wired to head office? Then the launch goes THERE (M05-FR-03/04): the cloud re-simulates the input, records
+    // the launch, and it is read back by finance/reporting. The screen shows what the cloud decided and launches
+    // nothing itself.
+    if (session.canLaunchToCloud) {
+      const outcome = await session.launchToCloud({ input });
+      if (!outcome.launched) { tell(t('read'), outcome.reason); return; }
+      tell(t('offerStarted'), input.promotionId, true);
+      el('launch').hidden = true;
+      return;
+    }
+
+    // No head office behind this page: the local launch is honest that it only validates in this browser, and it
+    // is never handed an approval.
+    const outcome = session.launch(simulation);
+    if (!outcome.ok) { tell(t('read'), outcome.detail); return; }
+    tell(t('offerStarted'), simulation.promotionId, true);
     el('launch').hidden = true;
-    return;
-  }
-
-  // No head office behind this page: the local launch is honest that it only validates in this browser.
-  const localApproval = approver === undefined ? undefined
-    : { subjectRef: lastSimulation.promotionId, status: 'approved', decidedBy: approver.approvedBy, rationale: approver.rationale };
-  const outcome = session.launch(lastSimulation, localApproval);
-  if (!outcome.ok) { tell(t('read'), outcome.detail); return; }
-  tell(t('offerStarted'), lastSimulation.promotionId, true);
-  el('launch').hidden = true;
+  });
 });
 
 // ── Language ────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedRequestId, askForApproval, decide } from '../support/approval-request';
 
 // The effective-dated, scoped price list (M05-FR-01, API-02) end to end through the real API. "One price
 // truth" resolved by precedence customer > channel > zone > store; a future price does NOT activate early;
@@ -128,13 +129,21 @@ describe('price list: effective-dated, scoped, one price truth by precedence (M0
     // Above cost but below the 20% margin floor, no approval → refused.
     expect(codeOf(await setBy('e-thin', { ...base, priceMinor: 5_100 }))).toBe('price_below_floor');
 
-    // §28: a self-approval does not count, and an approver who cannot approve prices does not count.
-    expect(codeOf(await setBy('e-self', { ...base, priceMinor: 4_000, approval: { decidedBy: 'u-mgr', reason: 'x' } }))).toBe('approved_by_the_setter');
-    expect(codeOf(await setBy('e-nope', { ...base, priceMinor: 4_000, approval: { decidedBy: 'u-cash', reason: 'x' } }))).toBe('approver_may_not_approve_prices');
+    // §28 (ADR-0024): a typed approver is refused by name; the setter cannot approve their own request, and a person
+    // who cannot approve prices cannot approve it.
+    expect(codeOf(await setBy('e-typed', { ...base, priceMinor: 4_000, approval: { decidedBy: 'u-owner', reason: 'x' } }))).toBe('approver_named_without_approval');
+    const ask = (entryId: string) => ({ kind: 'price_list_entry', subjectRef: `PX/${entryId}`, details: { ...base, priceMinor: 4_000, productId: 'PX', entryId }, valueMinor: 4_000 });
+    const mine = ((await askForApproval(h, A, 'u-mgr', ask('e-self'))).body as { requestId: string }).requestId;
+    expect((await decide(h, A, 'u-mgr', mine)).status).toBe(403);  // the setter may not approve prices at all
+    expect((await decide(h, A, 'u-cash', mine)).status).toBe(403); // nor may a cashier
+    const owners = ((await askForApproval(h, A, 'u-owner', ask('e-own'))).body as { requestId: string }).requestId;
+    expect(codeOf(await decide(h, A, 'u-owner', owners))).toBe('self_approval'); // who may approve, never their own
 
-    // A valid separate approver (the owner holds price.change.approve and is not the setter) lets a genuine
-    // loss leader through — recorded WITH the approver's name.
-    const ok = await setBy('e-ok', { ...base, priceMinor: 4_000, approval: { decidedBy: 'u-owner', reason: 'Diwali loss leader' } });
+    // A valid separate approver (the owner holds price.change.approve and is not the setter) approves a genuine loss
+    // leader in their own session — the entry names that approval and is recorded WITH the approver's name.
+    const approvalId = await approvedRequestId(h, A, 'u-mgr', 'u-owner', ask('e-ok'));
+    expect(codeOf(await setBy('e-other', { ...base, priceMinor: 4_000, approvalId }))).toBe('approval_does_not_match'); // another entry
+    const ok = await setBy('e-ok', { ...base, priceMinor: 4_000, approvalId });
     expect(ok.status).toBe(201);
     expect(ok.body).toMatchObject({ approvedBy: 'u-owner' });
 

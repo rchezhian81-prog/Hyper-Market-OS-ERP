@@ -22,17 +22,20 @@ import {
   issueQuotation, convertQuotation, withdrawQuotation, quotationsNeedingFollowUp,
   type Quotation, type QuotationLine, type QuotationApproval,
 } from '../../../packages/suspended-sales/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
-const APPROVAL_STATUSES = ['approved', 'rejected', 'pending'] as const;
 
 export interface QuotationsDeps {
   /** Every quotation's latest state, folded from the append-only log. */
   readonly quotations: (tenantId: string) => Promise<readonly Quotation[]> | readonly Quotation[];
   /** Append a quotation's new state (issued / converted / withdrawn). Idempotent on quotation + state. */
   readonly record: (tenantId: string, q: Quotation) => Promise<void> | void;
+  /** Head office's maker-checker engine (ADR-0024): a below-floor quote's approver gave it in their own session.
+   *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   readonly now: () => string;
 }
 
@@ -61,13 +64,6 @@ function readLines(v: unknown): readonly QuotationLine[] | undefined {
   return out;
 }
 
-function readApproval(v: unknown): QuotationApproval | undefined {
-  if (!isObj(v) || !isStr(v['subjectRef']) || !(APPROVAL_STATUSES as readonly string[]).includes(v['status'] as string)
-    || !isStr(v['decidedBy']) || !isStr(v['reason'])) {
-    return undefined;
-  }
-  return { subjectRef: v['subjectRef'] as string, status: v['status'] as QuotationApproval['status'], decidedBy: v['decidedBy'] as string, reason: v['reason'] as string };
-}
 
 export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
   const find = async (tenantId: string, quotationId: string): Promise<Quotation | undefined> =>
@@ -90,10 +86,6 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
             nextSafeAction: 'Send the customer, the lines with their promised prices, and the date the price is held until.',
           });
         }
-        const approval = b['approval'] === undefined ? undefined : readApproval(b['approval']);
-        if (b['approval'] !== undefined && approval === undefined) {
-          throw apiError(400, { code: 'approval_not_readable', whatHappened: 'An approval needs { subjectRef, status, decidedBy, reason }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the approval that authorised the below-floor price, or omit it.' });
-        }
         if (b['marginFloorBps'] !== undefined && (!isInt(b['marginFloorBps']) || (b['marginFloorBps'] as number) < 0)) {
           throw apiError(400, { code: 'margin_floor_not_a_number', whatHappened: 'marginFloorBps must be a whole number of basis points when given.', wasItSaved: 'not_saved', nextSafeAction: 'Send the margin floor in basis points, or leave it out.' });
         }
@@ -102,6 +94,17 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
           throw apiError(409, { code: 'quotation_already_exists', whatHappened: `A quotation '${quotationId}' already exists.`, wasItSaved: 'not_saved', nextSafeAction: 'Use a new quotation id, or convert/withdraw the existing one.' });
         }
 
+        // The second person (ADR-0024 · §28 · M05-FR-02): a below-floor quote is approved by someone holding the pricing-
+        // approval authority (`price.change.approve`), in their own session, for exactly this quotation (kind
+        // `quotation_below_floor`). Before, any name passed — no authority was checked at all. A typed one is refused.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approval.decidedBy',
+          typedValue: isObj(b['approval']) ? (b['approval'] as Record<string, unknown>)['decidedBy'] : undefined,
+          kind: 'quotation_below_floor', subjectRef: quotationId, details: actionDetails(ctx.body, { quotationId }), valueMinor: null,
+          maker: ctx.userId, usedBy: `quotation:${quotationId}`, now: deps.now(),
+        });
+        const approval: QuotationApproval | undefined = opened === undefined ? undefined
+          : { subjectRef: quotationId, status: 'approved', decidedBy: opened.decision.decidedBy, reason: opened.decision.reason };
         const issuedAt = isStr(b['issuedAt']) ? (b['issuedAt'] as string) : deps.now();
         const result = issueQuotation({
           quotationId, tenantId: ctx.tenantId, storeId: b['storeId'] as string, customerRef: b['customerRef'] as string,
@@ -110,8 +113,12 @@ export function quotationsRoutes(deps: QuotationsDeps): readonly Route[] {
           ...(approval !== undefined ? { approval } : {}),
         });
         if (!result.issued || result.quotation === undefined) {
-          throw apiError(422, { code: `quotation_${result.outcome}`, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was quoted. Address the reason and issue again.' });
+          throw apiError(422, { code: `quotation_${result.outcome}`, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: result.outcome === 'below_floor_unapproved'
+            ? 'Nothing was quoted. Ask for approval (POST /v1/approvals/requests, kind quotation_below_floor, with exactly this quotation); once someone who may approve prices approves it, send the approvalId.'
+            : 'Nothing was quoted. Address the reason and issue again.' });
         }
+        // Every rule passed: the approval is spent — once — and only then is the quotation recorded.
+        await opened?.spend();
         await deps.record(ctx.tenantId, result.quotation);
         return { status: 201, body: { quotationId, state: 'issued', totalMinor: result.quotation.totalMinor, validUntil: result.quotation.validUntil } };
       },

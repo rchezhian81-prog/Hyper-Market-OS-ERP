@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { askForApproval, decide } from '../support/approval-request';
 
 // Promotion governance, end to end through the real API (M20 / M05-FR-04, §28, API-02). A promotion is
 // a decision to give away margin for volume: this SIMULATES the margin impact before launch, and lets a
-// margin-LOSING offer launch only with a named approver who is not the proposer and a written reason
-// (§28) — a loss-leader is legitimate, but never by accident. Proves the wired `packages/promotions`
+// margin-LOSING offer launch only with an approval a second person — not the proposer, holding the pricing-approval
+// authority — GAVE in their own session with a written reason (§28 · ADR-0024, kind `promotion_launch`); a typed
+// approver is refused. A loss-leader is legitimate, but never by accident. Proves the wired `packages/promotions`
 // governance against the real pipeline and real per-tenant RBAC — another engine nothing fed.
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -29,6 +31,9 @@ const getPromo = (h: ApiHarness, tenantId: string, userId: string, id: string) =
   h.request({ method: 'GET', path: `/v1/promotions/${id}`, userId, tenantId });
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
+/** The proposer asks for approval of exactly this launch; resolves the request id (the checker decides separately). */
+const askToLaunch = async (h: ApiHarness, proposer: string, id: string, body: Record<string, unknown>) =>
+  ((await askForApproval(h, A, proposer, { kind: 'promotion_launch', subjectRef: id, details: { ...body, promotionId: id }, valueMinor: null })).body as { requestId: string }).requestId;
 interface Sim { verdict: string; blocksApproval: boolean }
 interface Launched { launched: boolean; verdict?: string; approvedBy?: string | null }
 
@@ -58,20 +63,28 @@ describe('a promotion is simulated, then gated on its margin (M20 / M05-FR-04, �
     await h.provisionRole(A, 'u-cash', 'cashier'); // holds NO pricing-approval authority
 
     expect(codeOf(await launch(h, A, 'u-owner', 'PL', lossPromo()))).toBe('launch_needs_approval'); // no approval
+    // A name typed in a box is not an approval — refused by name, whoever it names (audit PA-03).
+    expect(codeOf(await launch(h, A, 'u-owner', 'PL', lossPromo({ approvedBy: 'u-mgr', rationale: 'festival loss leader for footfall' }), 'k-typed'))).toBe('approver_named_without_approval');
     // Self-approval is refused — the proposer cannot approve their own margin loss.
-    expect(codeOf(await launch(h, A, 'u-owner', 'PL', lossPromo({ approvedBy: 'u-owner', rationale: 'clearance of short-dated stock' }), 'k-self'))).toBe('launch_needs_approval');
-    // An approver who does NOT hold the pricing-approval authority does not count — a name typed in a box
-    // is not an approval. This is the bypass being closed (a below-cost promotion is a pricing decision).
-    expect(codeOf(await launch(h, A, 'u-owner', 'PL', lossPromo({ approvedBy: 'u-cash', rationale: 'festival loss leader for footfall' }), 'k-noauth'))).toBe('approver_may_not_approve');
-    // A genuinely-authorised approver but no real reason is still refused.
-    expect(codeOf(await launch(h, A, 'u-owner', 'PL', lossPromo({ approvedBy: 'u-mgr', rationale: 'ok' }), 'k-noreason'))).toBe('launch_needs_approval');
+    const own = await askToLaunch(h, 'u-owner', 'PL', lossPromo());
+    expect(codeOf(await decide(h, A, 'u-owner', own, 'approved', 'clearance of short-dated stock'))).toBe('self_approval');
+    // A person who does NOT hold the pricing-approval authority cannot approve it (a below-cost promotion is a
+    // pricing decision).
+    expect((await decide(h, A, 'u-cash', own, 'approved', 'festival loss leader for footfall')).status).toBe(403);
+    // A genuinely-authorised approver but no real reason is still refused at launch — and the approval is not spent.
+    expect((await decide(h, A, 'u-mgr', own, 'approved', 'ok')).status).toBe(201);
+    expect(codeOf(await launch(h, A, 'u-owner', 'PL', { ...lossPromo(), approvalId: own }, 'k-noreason'))).toBe('launch_needs_approval');
+    // An approval of one offer never launches a different one.
+    expect(codeOf(await launch(h, A, 'u-owner', 'PL', { ...lossPromo({ promoPrice: inr(3_000) }), approvalId: own }, 'k-other'))).toBe('approval_does_not_match');
   });
 
   it('launches a margin-losing offer when a genuinely-authorised second person approves with a reason', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-mgr', 'owner'); // genuinely holds price.change.approve
-    const res = await launch(h, A, 'u-owner', 'PL', lossPromo({ approvedBy: 'u-mgr', rationale: 'loss-leader to drive festival footfall' }));
+    const approvalId = await askToLaunch(h, 'u-owner', 'PL', lossPromo());
+    expect((await decide(h, A, 'u-mgr', approvalId, 'approved', 'loss-leader to drive festival footfall')).status).toBe(201);
+    const res = await launch(h, A, 'u-owner', 'PL', { ...lossPromo(), approvalId });
     expect(res.status).toBe(201);
     expect((res.body as Launched).approvedBy).toBe('u-mgr');
   });

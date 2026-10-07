@@ -21,6 +21,7 @@ import { resolvePrice, priceHistory, type PriceEntry, type PriceScope, type Reso
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { checkPrice } from '../../../packages/price-guard/src/price-guard';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 
 const SCOPES: readonly PriceScope[] = ['customer', 'channel', 'zone', 'store'];
 const isScope = (v: unknown): v is PriceScope => typeof v === 'string' && (SCOPES as readonly string[]).includes(v);
@@ -32,7 +33,9 @@ export interface PriceListDeps {
   readonly entries: (tenantId: string, productId: string) => Promise<readonly PriceEntry[]> | readonly PriceEntry[];
   readonly recordEntry: (tenantId: string, productId: string, entry: PriceEntry) => Promise<void> | void;
   /** Whether a user holds `price.change.approve` — the §28 approver of a below-cost/floor price must genuinely hold it. */
-  readonly canApprove: (tenantId: string, userId: string) => Promise<boolean>;
+  /** Head office's maker-checker engine (ADR-0024): a loss-making entry's approver gave it in their own session.
+   *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   readonly now: () => string;
 }
 
@@ -48,7 +51,7 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
       handler: async (ctx) => {
         const productId = ctx.params['productId'] ?? '';
         const entryId = ctx.params['entryId'] ?? '';
-        const b = (ctx.body ?? {}) as { scope?: unknown; scopeRef?: unknown; priceMinor?: unknown; currency?: unknown; mrpMinor?: unknown; costMinor?: unknown; marginFloorBps?: unknown; effectiveFrom?: unknown; effectiveTo?: unknown; approval?: unknown };
+        const b = (ctx.body ?? {}) as { scope?: unknown; scopeRef?: unknown; priceMinor?: unknown; currency?: unknown; mrpMinor?: unknown; costMinor?: unknown; marginFloorBps?: unknown; effectiveFrom?: unknown; effectiveTo?: unknown; approval?: unknown; approvalId?: unknown };
 
         if (!isScope(b.scope) || !isStr(b.scopeRef)
           || !isNonNegInt(b.priceMinor) || !isNonNegInt(b.mrpMinor) || !isNonNegInt(b.costMinor)
@@ -78,23 +81,19 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
           });
         }
 
-        // A supplied §28 approval: the approver may not be the setter, and must genuinely hold the approve
-        // permission — a named approver who cannot approve prices is not an approval.
-        let approval: DecidedRequest | undefined;
-        const appr = b.approval as { decidedBy?: unknown; reason?: unknown } | undefined;
-        if (appr !== undefined && typeof appr.decidedBy === 'string' && appr.decidedBy.trim() !== '') {
-          const approver = appr.decidedBy;
-          if (approver === setBy) {
-            throw apiError(422, { code: 'approved_by_the_setter', whatHappened: `${setBy} cannot approve their own price change (§28).`, wasItSaved: 'not_saved', nextSafeAction: 'Have someone else approve it. Nothing was recorded.' });
-          }
-          if (!(await deps.canApprove(ctx.tenantId, approver))) {
-            throw apiError(422, { code: 'approver_may_not_approve_prices', whatHappened: `${approver} does not hold price.change.approve, so their approval does not count.`, wasItSaved: 'not_saved', nextSafeAction: 'Have someone who may approve prices approve it. Nothing was recorded.' });
-          }
-          approval = Object.freeze({
-            id: entryId, subjectType: 'price', subjectRef: entryId, requestedBy: setBy, branchId: ctx.branchId,
-            value: null, status: 'approved', decidedBy: approver, reason: typeof appr.reason === 'string' ? appr.reason : '', decidedAt: deps.now(),
-          }) as DecidedRequest;
-        }
+        // The second person (ADR-0024 · §28): an approval the approver GAVE in their own session for exactly this entry
+        // (kind `price_list_entry`) — not the setter's own, unused, unexpired, and the approver still holds
+        // `price.change.approve`. A typed `approval.decidedBy` is refused by name.
+        const appr = b.approval as { decidedBy?: unknown } | undefined;
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b.approvalId, typedField: 'approval.decidedBy', typedValue: appr?.decidedBy,
+          kind: 'price_list_entry', subjectRef: `${productId}/${entryId}`, details: actionDetails(ctx.body, { productId, entryId }),
+          valueMinor: priceMinor, maker: setBy, usedBy: `price-list-entry:${productId}/${entryId}`, now: deps.now(),
+        });
+        const approval: DecidedRequest | undefined = opened === undefined ? undefined : Object.freeze({
+          id: entryId, subjectType: 'price', subjectRef: entryId, requestedBy: setBy, branchId: ctx.branchId,
+          value: null, status: 'approved', decidedBy: opened.decision.decidedBy, reason: opened.decision.reason, decidedAt: opened.decision.decidedAt,
+        }) as DecidedRequest;
 
         // The governed gate — the SAME `checkPrice` engine the M05-FR-02 change route uses (pure and
         // deterministic; the identical check runs on the offline edge). Above MRP is refused with no approval
@@ -117,10 +116,12 @@ export function priceListRoutes(deps: PriceListDeps): readonly Route[] {
             wasItSaved: 'not_saved',
             nextSafeAction: check.verdict === 'above_mrp'
               ? 'Set a price at or below the MRP. Nothing was recorded.'
-              : 'Have someone who is not the setter, and who may approve prices, approve it with a reason. Nothing was recorded.',
+              : 'Ask for approval (POST /v1/approvals/requests, kind price_list_entry, with exactly this entry); once someone who may approve prices approves it, send the approvalId. Nothing was recorded.',
           });
         }
 
+        // Every rule passed: the approval is spent — once — and only then is the entry recorded.
+        await opened?.spend();
         // Version is monotonic per (scope, ref) — a later entry supersedes on tie, and a sale can lock it.
         const existing = await deps.entries(ctx.tenantId, productId);
         const version = existing

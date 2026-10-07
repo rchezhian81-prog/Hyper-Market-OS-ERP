@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedRequestId, askForApproval, decide } from '../support/approval-request';
 
 // Quotations, end to end (M12-FR-02 / M22, API-05). A price PROMISED, not a sale: it moves no stock, the
 // quoted price is honoured only inside its validity window (an expired quote is refused, never silently
-// re-priced), a below-floor price needs a separate approver (§28), converting is idempotent (one quote →
+// re-priced), a below-floor price needs an approval a separate person holding the pricing-approval authority gave
+// in their own session (§28 · ADR-0024, kind `quotation_below_floor` — before, any typed name passed), converting is idempotent (one quote →
 // one sale), and a withdrawn/expired quote is KEPT as a lost-sale signal (hard rule #6). Writes gated
 // pos.quotation.write; the list and follow-up read pos.quotation.read.
 
@@ -55,20 +57,29 @@ describe('quotations: a price promised, converted once, held only while valid (M
     expect((await list(h2, 'u-owner', { state: 'converted' })).body).toMatchObject({ count: 1 });
   });
 
-  it('refuses a below-floor price without a separate approver, and a self-approval (§28)', async () => {
+  it('refuses a below-floor price without a separate approver, a typed one, a self-approval or one without the authority (§28)', async () => {
     const h = await cast();
     const belowFloor = { marginFloorBps: 1000, lines: [line({ unitPriceMinor: 10000, unitCostMinor: 9500 })] }; // 5% vs 10% floor
+    const asked = (id: string) => ({ kind: 'quotation_below_floor', subjectRef: id, details: { storeId: 's1', customerRef: 'cust-1', currency: 'INR', validUntil: '2027-12-31', ...belowFloor, quotationId: id }, valueMinor: null });
 
     const unapproved = await issue(h, 'u-mgr', 'q-lo', belowFloor);
     expect(unapproved.status).toBe(422);
     expect(codeOf(unapproved)).toBe('quotation_below_floor_unapproved');
 
-    const selfApproved = await issue(h, 'u-mgr', 'q-self', { ...belowFloor, approval: { subjectRef: 'q-self', status: 'approved', decidedBy: 'u-mgr', reason: 'x' } }, 'i-q-self');
-    expect(selfApproved.status).toBe(422);
-    expect(codeOf(selfApproved)).toBe('quotation_self_approved');
+    // The audit's case: before, any name typed here passed with no authority check at all.
+    const typed = await issue(h, 'u-mgr', 'q-typed', { ...belowFloor, approval: { subjectRef: 'q-typed', status: 'approved', decidedBy: 'u-cash', reason: 'x' } }, 'i-q-typed');
+    expect(codeOf(typed)).toBe('approver_named_without_approval');
 
-    // A different person's approval lets it through.
-    const approved = await issue(h, 'u-mgr', 'q-ok', { ...belowFloor, approval: { subjectRef: 'q-ok', status: 'approved', decidedBy: 'u-owner', reason: 'strategic account' } }, 'i-q-ok');
+    const mgrs = ((await askForApproval(h, A, 'u-mgr', asked('q-self'))).body as { requestId: string }).requestId;
+    expect((await decide(h, A, 'u-mgr', mgrs)).status).toBe(403);  // the store manager holds no pricing-approval authority
+    expect((await decide(h, A, 'u-cash', mgrs)).status).toBe(403); // nor does a cashier
+    const owners = ((await askForApproval(h, A, 'u-owner', asked('q-own'))).body as { requestId: string }).requestId;
+    expect(codeOf(await decide(h, A, 'u-owner', owners))).toBe('self_approval'); // who may approve, never their own
+
+    // The owner (holds price.change.approve) approves in their own session — it lets exactly this quotation through.
+    const approvalId = await approvedRequestId(h, A, 'u-mgr', 'u-owner', asked('q-ok'));
+    expect(codeOf(await issue(h, 'u-mgr', 'q-other', { ...belowFloor, approvalId }, 'i-q-other'))).toBe('approval_does_not_match');
+    const approved = await issue(h, 'u-mgr', 'q-ok', { ...belowFloor, approvalId }, 'i-q-ok');
     expect(approved.status).toBe(201);
   });
 

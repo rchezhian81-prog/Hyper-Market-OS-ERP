@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 922. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 924. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 78 · Real PostgreSQL 57 · Browser (stub cloud) 44 · Browser (connected) 2 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 24 · ENGINE_ONLY 1 · INTEGRATION_TESTED 16 · PARTIALLY_WIRED 52 · WIRED 11.
 - Labels that do NOT hold: none.
@@ -31,7 +31,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M02 | INTEGRATION_TESTED | 21 | 16 | 4 | 4 | · | · | · | ✓ an integration test cites it |
 | M03 | INTEGRATION_TESTED | 16 | 13 | · | 2 | · | · | · | ✓ an integration test cites it |
 | M04 | WIRED | 7 | 7 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| M05 | E2E_VERIFIED | 11 | 11 | 2 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M05 | E2E_VERIFIED | 12 | 11 | 2 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M06 | E2E_VERIFIED | 10 | 12 | 2 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M07 | E2E_VERIFIED | 9 | 17 | 1 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M08 | E2E_VERIFIED | 14 | 29 | 6 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |

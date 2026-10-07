@@ -18,8 +18,12 @@
 // wrongly, at exactly the moment a buyer is relying on it. So an unknown cost is its own refusal
 // and goes to an approver rather than being assumed away.
 //
-// **3. A price set and approved by one person.** §28. The maker cannot approve their own change,
-// and the screen is never handed their name to offer.
+// **3. A price set and approved by one person.** §28 · ADR-0024. A below-cost / below-floor price and a
+// margin-losing offer go through head office's maker-checker engine: the person setting it ASKS
+// (`POST /v1/approvals/requests`) for exactly the change they will send; a DIFFERENT person who may approve
+// prices approves or rejects it on their own Approvals page, in their own session; then the change is sent
+// naming that approval (`approvalId`), and head office uses it once. Nobody's name is typed or picked here —
+// a typed name is not an approval, and head office refuses one by name.
 //
 // ── And the thing it must not let happen quietly ────────────────────────────
 //
@@ -30,6 +34,8 @@
 
 import { money, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
+import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
+import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
 import {
   completeness, detectDuplicateProducts, publishProduct, sellability, validateProduct, worklist,
   BarcodeRegistry, DuplicateBarcodeError, NotPublishableError,
@@ -51,61 +57,302 @@ import {
 } from '../../../packages/promotions/src/index';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { queueProductPublish, type PublishQueueResult, type ProductPublishBarcode } from './catalogue-publish-command';
+import {
+  rupees,
+  type ApprovalAsk, type ApprovalRequestView, type AskResult, type InboxRead,
+} from './approvals-session';
+
+/** The simulation input an offer is worked out (and launched) from. */
+export type PromotionSimulationInput = Parameters<typeof simulatePromotion>[0];
+
+/** The approval kinds this screen asks under (head office's maker-checker engine, ADR-0024). */
+export const PRICE_APPROVAL_KIND = 'price_change';
+export const PROMOTION_APPROVAL_KIND = 'promotion_launch';
 
 /**
  * A promotion launch to record at head office (M05-FR-03/04) — the simulation INPUT (the cloud re-simulates
- * from it, never trusting a client's numbers) plus, for a margin-losing offer, the §28 approver + reason.
+ * from it, never trusting a client's numbers) plus, for a margin-losing offer, the `approvalId` of the caller's
+ * OWN approved `promotion_launch` request for exactly this input (ADR-0024). Never a typed approver.
  */
 export interface PromotionLaunchInput {
-  readonly input: Parameters<typeof simulatePromotion>[0];
-  /** Present only for a margin-losing offer: a DIFFERENT person who holds the pricing-approval authority. */
-  readonly approval?: { readonly approvedBy: string; readonly rationale: string };
+  readonly input: PromotionSimulationInput;
+  /** Present only for a margin-losing offer: the requestId a DIFFERENT person approved in their own session. */
+  readonly approvalId?: string;
 }
 
-/** What head office said when asked to launch — its own verdict, or the reason it did not. */
+/** What head office said when asked to launch — its own verdict, or the reason (and its code) it did not. */
 export type PromotionLaunchOutcome =
   | { readonly launched: true; readonly verdict: string; readonly approvedBy: string | null }
-  | { readonly launched: false; readonly reason: string };
+  | { readonly launched: false; readonly reason: string; readonly code?: string };
 
 /** The authenticated POST that records a launch at head office. Injected, so the model opens no socket itself;
- *  the cloud re-simulates and re-checks §28 (a margin-losing offer needs a different, authorised approver). */
+ *  the cloud re-simulates and checks the approval (a margin-losing offer needs a different person's own approval). */
 export interface PromotionLaunchPort {
   post(input: PromotionLaunchInput): Promise<PromotionLaunchOutcome>;
 }
 
 /**
- * A governed price change to record at head office (M05-FR-02, API-02). What the operator typed — the product
- * and the new price — plus, for a below-cost / below-margin-floor price, the §28 approver + written reason. The
- * MRP ceiling, the landed cost, the currency and the margin floor are assembled by the session from the same
- * authoritative sources the local proposal uses, never typed here; the cloud re-runs `checkPrice` over them.
+ * A governed price change to record at head office (M05-FR-02, API-02): what the operator typed — the product
+ * and the new price. The MRP ceiling, the landed cost, the currency and the margin floor are assembled by the
+ * session from the same authoritative sources the local proposal uses, never typed here; the cloud re-runs
+ * `checkPrice` over them. A price that needs a second person goes through `savePriceWithApproval` instead.
  */
 export interface PriceChangeCloudInput {
   readonly productId: string;
   readonly priceMinor: number;
-  /** Present only for a below-cost / below-floor price: a DIFFERENT person who holds `price.change.approve`. */
-  readonly approval?: { readonly approvedBy: string; readonly rationale: string };
 }
 
-/** What head office said when asked to change a price — its own verdict, or the reason it did not. */
+/** EXACTLY the body `POST /v1/prices/changes` receives (less the `approvalId`) — and therefore exactly what an
+ *  approval for it is FOR. Built in one place (`priceChangeRequestBody`), so the ask and the send never drift. */
+export interface PriceChangeBody {
+  readonly productId: string;
+  readonly priceMinor: number;
+  readonly mrpMinor: number;
+  readonly costMinor: number;
+  readonly currency: string;
+  readonly marginFloorBps: number;
+}
+
+/** What head office said when asked to change a price — its own verdict, or the reason (and its code) it did not. */
 export type PriceChangeCloudOutcome =
   | { readonly saved: true; readonly verdict: string; readonly approvedBy: string | null }
-  | { readonly saved: false; readonly reason: string };
+  | { readonly saved: false; readonly reason: string; readonly code?: string };
 
 /** The authenticated POST that records a governed price change at head office (M05-FR-02, API-02). Injected, so
- *  the model opens no socket itself; the cloud re-runs `checkPrice` (MRP ceiling, cost, margin floor) and
- *  re-checks §28 (a below-cost/below-floor price needs a different, authorised approver). It receives the raw
- *  figures the session assembled — a price above MRP or below cost is the cloud's to refuse, never the screen's
- *  to wave through. */
+ *  the model opens no socket itself; the cloud re-runs `checkPrice` (MRP ceiling, cost, margin floor) and checks
+ *  the approval it names (ADR-0024). It receives the raw figures the session assembled — a price above MRP or
+ *  below cost is the cloud's to refuse, never the screen's to wave through. */
 export interface PriceChangeCloudPort {
-  post(input: {
-    readonly productId: string;
-    readonly priceMinor: number;
-    readonly mrpMinor: number;
-    readonly costMinor: number;
-    readonly currency: string;
-    readonly marginFloorBps: number;
-    readonly approval?: { readonly approvedBy: string; readonly rationale: string };
-  }): Promise<PriceChangeCloudOutcome>;
+  post(input: PriceChangeBody & { readonly approvalId?: string }): Promise<PriceChangeCloudOutcome>;
+}
+
+// ── What an approval is FOR — one rule, the engine's own (ADR-0024) ─────────────────────────────────────────
+//
+// Head office's engine fingerprints what the maker asked for, and the action's route recomputes the fingerprint
+// from the body it receives: "the action's JSON body without approvalId / approval / approvedBy / rationale, plus
+// the route's path ids" (`actionDetails` in services/identity/src/approval-requests.ts). The browser bundle cannot
+// import that file (it is server code), so the same rule is written once here and proved equal to the engine's by
+// tests/unit/erp-catalogue-approvals.test.ts. The body the port SENDS and the details the screen ASKS for come from
+// the same functions below, so they cannot drift apart.
+
+/** Fields that are never part of the action itself (the engine's own list). */
+const CONTROL_FIELDS: ReadonlySet<string> = new Set(['approvalId', 'approval', 'approvedBy', 'rationale']);
+
+function detailsOfBody(body: Readonly<Record<string, unknown>>, pathIds: Readonly<Record<string, string>> = {}): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(body)) if (!CONTROL_FIELDS.has(k)) out[k] = v;
+  return { ...out, ...pathIds };
+}
+
+/** The JSON body of `POST /v1/prices/changes`: the six figures, and the approval it names when it needs one. */
+export function priceChangeRequestBody(body: PriceChangeBody, approvalId?: string): Record<string, unknown> {
+  return {
+    productId: body.productId, priceMinor: body.priceMinor, mrpMinor: body.mrpMinor, costMinor: body.costMinor,
+    currency: body.currency, marginFloorBps: body.marginFloorBps,
+    ...(approvalId === undefined ? {} : { approvalId }),
+  };
+}
+
+/** What a `price_change` approval is for: exactly the body the change will send (the route has no path ids). */
+export function priceChangeDetails(body: PriceChangeBody): Record<string, unknown> {
+  return detailsOfBody(priceChangeRequestBody(body));
+}
+
+/** The JSON body of `POST /v1/promotions/:promotionId/launch`: the simulation input, and the approval it names. */
+export function promotionLaunchBody(launch: PromotionLaunchInput): Record<string, unknown> {
+  return { ...launch.input, ...(launch.approvalId === undefined ? {} : { approvalId: launch.approvalId }) };
+}
+
+/** What a `promotion_launch` approval is for: exactly the launch body, plus the offer's id from the route's path. */
+export function promotionLaunchDetails(input: PromotionSimulationInput): Record<string, unknown> {
+  return detailsOfBody(promotionLaunchBody({ input }), { promotionId: input.promotionId });
+}
+
+/** A stable text for any JSON value (object keys sorted, undefined dropped) — the engine's own canonical form. */
+function canonical(v: unknown): string {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v ?? null);
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  const o = v as Record<string, unknown>;
+  return `{${Object.keys(o).filter((k) => o[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`).join(',')}}`;
+}
+
+/** True when two sets of details are the same action — the same test head office's fingerprint makes. */
+export function sameDetails(a: unknown, b: unknown): boolean {
+  return canonical(a) === canonical(b);
+}
+
+// ── The two-person flow's outcomes, and their words ─────────────────────────────────────────────────────────
+
+/** Which governed action an approval is for: a price change, or an offer's launch. */
+export type ApprovalSubject = 'price' | 'offer';
+
+/** The outcome of pressing "Ask for approval". Nothing is saved by asking. */
+export type ApprovalAskOutcome =
+  | { readonly kind: 'asked'; readonly request: ApprovalRequestView }
+  | { readonly kind: 'needs_why' }
+  | { readonly kind: 'not_connected' }
+  | { readonly kind: 'cannot_check'; readonly missing: 'mrp' | 'cost' }
+  | { readonly kind: 'refused'; readonly code: string; readonly whatHappened: string }
+  | { readonly kind: 'lost_link' };
+
+/** The outcome of pressing "Save it" / "Start this offer" for a change that needs a second person. */
+export type ApprovalUseOutcome =
+  | { readonly kind: 'done'; readonly verdict: string; readonly approvedBy: string | null }
+  | { readonly kind: 'not_connected' }
+  | { readonly kind: 'cannot_check'; readonly missing: 'mrp' | 'cost' }
+  | { readonly kind: 'not_asked' }
+  | { readonly kind: 'waiting' }
+  | { readonly kind: 'rejected'; readonly decidedBy: string | null; readonly reason: string }
+  | { readonly kind: 'expired' }
+  | { readonly kind: 'used' }
+  | { readonly kind: 'changed' }
+  | { readonly kind: 'checker_may_not_approve' }
+  | { readonly kind: 'named_not_approved' }
+  | { readonly kind: 'refused'; readonly code: string; readonly whatHappened: string }
+  | { readonly kind: 'lost_link' };
+
+/** The approval refusals head office's engine can return when an action names an approval (ADR-0024). */
+export const APPROVAL_REFUSAL_CODES = Object.freeze([
+  'approval_unknown', 'approval_does_not_match', 'approval_still_waiting', 'approval_rejected',
+  'approval_expired', 'approval_already_used', 'checker_may_not_approve', 'approver_named_without_approval',
+] as const);
+
+/** The shortest reason a person may write — a sentence the approver (and next year's auditor) can read. */
+export const MIN_REASON_LENGTH = 10;
+
+export type ApprovalCopyKey =
+  | 'notSaved' | 'notStarted'
+  | 'summaryBelowCost' | 'summaryBelowFloor' | 'summaryOffer'
+  | 'askedPrice' | 'askedOffer' | 'needsWhy' | 'notConnectedPrice' | 'notConnectedOffer'
+  | 'noMrp' | 'noCost' | 'askRefused' | 'askRefusedNoWords' | 'askLostLink'
+  | 'savedPrice' | 'startedOffer'
+  | 'notAsked' | 'waiting' | 'rejected' | 'rejectedNoName' | 'expired' | 'used' | 'changed'
+  | 'checkerMayNot' | 'namedNotApproved' | 'refused' | 'refusedNoWords' | 'lostLink';
+
+/** Every word the two-person flow says, in English and Tamil. `{not}` is "Not saved" / "Not started". */
+export const CATALOGUE_APPROVAL_COPY: BilingualCopy<ApprovalCopyKey> = {
+  en: {
+    notSaved: 'Not saved', notStarted: 'Not started',
+    summaryBelowCost: 'Price of {product} to {price} (below cost {cost})',
+    summaryBelowFloor: 'Price of {product} to {price} (below the margin floor; cost {cost})',
+    summaryOffer: 'Launch offer {offer} — loses margin ({promo} instead of {normal}; it costs us {cost})',
+    askedPrice: 'Asked. Waiting for a second person who may approve prices to approve it on the Approvals page. Nothing is saved yet.',
+    askedOffer: 'Asked. Waiting for a second person who may approve prices to approve it on the Approvals page. The offer has not started yet.',
+    needsWhy: 'Write why this is needed, in a sentence — the person approving reads it. Nothing was asked.',
+    notConnectedPrice: 'Not saved — this price needs a second person’s approval at head office, and this screen is not connected to head office. Nothing was saved.',
+    notConnectedOffer: 'Not started — this offer needs a second person’s approval at head office, and this screen is not connected to head office. Nothing was saved.',
+    noMrp: 'Nothing was sent — no MRP is recorded for this item, so the legal ceiling cannot be checked.',
+    noCost: 'Nothing was sent — this screen has not been told what this item cost, so the margin cannot be checked.',
+    askRefused: 'Not asked:', askRefusedNoWords: 'Not asked — head office refused the request.',
+    askLostLink: 'No connection — nothing was asked. Try again.',
+    savedPrice: 'Price saved: {price}. The approval has now been used — another change needs a new approval.',
+    startedOffer: 'Offer started: {offer}. The approval has now been used — another launch needs a new approval.',
+    notAsked: '{not} — nobody has been asked to approve exactly this yet. Write why and press “Ask for approval” first.',
+    waiting: '{not} — still waiting for a second person who may approve prices (not you) to approve it on their Approvals page.',
+    rejected: '{not} — {who} rejected it: “{reason}”. Change what they said and ask again.',
+    rejectedNoName: '{not} — it was rejected: {reason} Change what they said and ask again.',
+    expired: '{not} — the approval ran out of time before it was used. Ask again.',
+    used: '{not} — that approval was already used once. One approval allows one change; ask again.',
+    changed: '{not} — this is not exactly what was approved (a figure changed after you asked). Ask for approval again for exactly this.',
+    checkerMayNot: '{not} — the person who approved it no longer may approve prices, so their approval does not count. Ask again.',
+    namedNotApproved: '{not} — naming a person is not their approval. Ask for approval, and wait for a second person to approve it on their Approvals page.',
+    refused: '{not}: {words}', refusedNoWords: '{not} — head office refused it.',
+    lostLink: '{not} — no connection to head office. Try again.',
+  },
+  ta: {
+    notSaved: 'சேமிக்கப்படவில்லை', notStarted: 'தொடங்கப்படவில்லை',
+    summaryBelowCost: '{product} விலையை {price} ஆக்குதல் (அடக்க விலை {cost}-ஐ விடக் குறைவு)',
+    summaryBelowFloor: '{product} விலையை {price} ஆக்குதல் (குறைந்தபட்ச லாபத்தை விடக் குறைவு; அடக்க விலை {cost})',
+    summaryOffer: '{offer} சலுகையைத் தொடங்குதல் — லாபம் குறையும் ({normal}-க்குப் பதில் {promo}; நமக்கு ஆகும் செலவு {cost})',
+    askedPrice: 'கேட்கப்பட்டது. விலைகளை அனுமதிக்கக்கூடிய இரண்டாம் நபர் அனுமதிகள் பக்கத்தில் அனுமதிக்கக் காத்திருக்கிறது. இன்னும் எதுவும் சேமிக்கப்படவில்லை.',
+    askedOffer: 'கேட்கப்பட்டது. விலைகளை அனுமதிக்கக்கூடிய இரண்டாம் நபர் அனுமதிகள் பக்கத்தில் அனுமதிக்கக் காத்திருக்கிறது. சலுகை இன்னும் தொடங்கவில்லை.',
+    needsWhy: 'இது ஏன் தேவை என்று ஒரு வாக்கியத்தில் எழுதுங்கள் — அனுமதிப்பவர் அதைப் படிப்பார். எதுவும் கேட்கப்படவில்லை.',
+    notConnectedPrice: 'சேமிக்கப்படவில்லை — இந்த விலைக்குத் தலைமை அலுவலகத்தில் இரண்டாம் நபரின் அனுமதி தேவை, இந்தத் திரை தலைமை அலுவலகத்துடன் இணைக்கப்படவில்லை. எதுவும் சேமிக்கப்படவில்லை.',
+    notConnectedOffer: 'தொடங்கப்படவில்லை — இந்தச் சலுகைக்குத் தலைமை அலுவலகத்தில் இரண்டாம் நபரின் அனுமதி தேவை, இந்தத் திரை தலைமை அலுவலகத்துடன் இணைக்கப்படவில்லை. எதுவும் சேமிக்கப்படவில்லை.',
+    noMrp: 'எதுவும் அனுப்பப்படவில்லை — இந்தப் பொருளுக்கு MRP பதிவு செய்யப்படவில்லை, எனவே சட்ட வரம்பைச் சரிபார்க்க முடியாது.',
+    noCost: 'எதுவும் அனுப்பப்படவில்லை — இந்தப் பொருளின் அடக்க விலை இந்தத் திரைக்குத் தெரியவில்லை, எனவே லாபத்தைச் சரிபார்க்க முடியாது.',
+    askRefused: 'கேட்கப்படவில்லை:', askRefusedNoWords: 'கேட்கப்படவில்லை — தலைமை அலுவலகம் கோரிக்கையை ஏற்கவில்லை.',
+    askLostLink: 'இணைப்பு இல்லை — எதுவும் கேட்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
+    savedPrice: 'விலை சேமிக்கப்பட்டது: {price}. அனுமதி இப்போது பயன்படுத்தப்பட்டுவிட்டது — இன்னொரு மாற்றத்திற்குப் புதிய அனுமதி தேவை.',
+    startedOffer: 'சலுகை தொடங்கியது: {offer}. அனுமதி இப்போது பயன்படுத்தப்பட்டுவிட்டது — இன்னொரு தொடக்கத்திற்குப் புதிய அனுமதி தேவை.',
+    notAsked: '{not} — இதற்கே இன்னும் யாரிடமும் அனுமதி கேட்கப்படவில்லை. ஏன் என்று எழுதி, முதலில் “அனுமதி கேள்” அழுத்தவும்.',
+    waiting: '{not} — விலைகளை அனுமதிக்கக்கூடிய இரண்டாம் நபர் (நீங்கள் அல்ல) தனது அனுமதிகள் பக்கத்தில் அனுமதிக்க இன்னும் காத்திருக்கிறது.',
+    rejected: '{not} — {who} மறுத்தார்: “{reason}”. அவர் சொன்னதை மாற்றி மீண்டும் கேளுங்கள்.',
+    rejectedNoName: '{not} — மறுக்கப்பட்டது: {reason} அவர் சொன்னதை மாற்றி மீண்டும் கேளுங்கள்.',
+    expired: '{not} — பயன்படுத்தும் முன்பே அனுமதியின் நேரம் முடிந்துவிட்டது. மீண்டும் கேளுங்கள்.',
+    used: '{not} — அந்த அனுமதி ஏற்கனவே ஒருமுறை பயன்படுத்தப்பட்டது. ஒரு அனுமதி ஒரு மாற்றத்திற்கு மட்டுமே; மீண்டும் கேளுங்கள்.',
+    changed: '{not} — அனுமதிக்கப்பட்டது சரியாக இது அல்ல (நீங்கள் கேட்ட பிறகு ஒரு எண் மாறிவிட்டது). இதற்கே மீண்டும் அனுமதி கேளுங்கள்.',
+    checkerMayNot: '{not} — அனுமதித்தவருக்கு இப்போது விலைகளை அனுமதிக்கும் அதிகாரம் இல்லை, எனவே அவரது அனுமதி செல்லாது. மீண்டும் கேளுங்கள்.',
+    namedNotApproved: '{not} — ஒருவரின் பெயரைக் குறிப்பிடுவது அவரது அனுமதி ஆகாது. அனுமதி கேட்டு, இரண்டாம் நபர் தனது அனுமதிகள் பக்கத்தில் அனுமதிக்கும் வரை காத்திருங்கள்.',
+    refused: '{not}: {words}', refusedNoWords: '{not} — தலைமை அலுவலகம் ஏற்கவில்லை.',
+    lostLink: '{not} — தலைமை அலுவலகத்துடன் இணைப்பு இல்லை. மீண்டும் முயற்சிக்கவும்.',
+  },
+};
+
+export const APPROVAL_COPY_KEYS: readonly ApprovalCopyKey[] = Object.freeze(Object.keys(CATALOGUE_APPROVAL_COPY.en) as ApprovalCopyKey[]);
+
+const fill = (template: string, values: Readonly<Record<string, string>>): string =>
+  template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
+
+/** A refusal from the action's route, in the same plain words the inbox gives (ADR-0024's codes, mapped once). */
+export function useOutcomeOfRefusal(code: string | undefined, whatHappened: string): ApprovalUseOutcome {
+  switch (code) {
+    case 'lost_link': return { kind: 'lost_link' };
+    case 'approval_unknown': return { kind: 'not_asked' };
+    case 'approval_does_not_match': return { kind: 'changed' };
+    case 'approval_still_waiting': return { kind: 'waiting' };
+    case 'approval_rejected': return { kind: 'rejected', decidedBy: null, reason: whatHappened };
+    case 'approval_expired': return { kind: 'expired' };
+    case 'approval_already_used': return { kind: 'used' };
+    case 'checker_may_not_approve': return { kind: 'checker_may_not_approve' };
+    case 'approver_named_without_approval': return { kind: 'named_not_approved' };
+    // Anything else (an above-MRP price, a malformed offer, no permission): head office's own words.
+    default: return { kind: 'refused', code: code ?? 'refused', whatHappened };
+  }
+}
+
+/** Where an ask stands, in words — tone + icon + words, never colour alone. */
+export function presentAskOutcome(lang: Lang, subject: ApprovalSubject, o: ApprovalAskOutcome): StatusPresentation {
+  const t = translator(CATALOGUE_APPROVAL_COPY, lang);
+  const err = (label: string): StatusPresentation => presentStatus({ tone: 'error', icon: '✕', label, needsAttention: true });
+  switch (o.kind) {
+    // Waiting is a pending state — a person has to come back to it — with its own icon and words.
+    case 'asked': return presentScreenState({ state: 'pending', label: `${t(subject === 'price' ? 'askedPrice' : 'askedOffer')} ${o.request.summary}` });
+    case 'needs_why': return err(t('needsWhy'));
+    case 'not_connected': return err(t(subject === 'price' ? 'notConnectedPrice' : 'notConnectedOffer'));
+    case 'cannot_check': return err(t(o.missing === 'mrp' ? 'noMrp' : 'noCost'));
+    case 'refused': return err(o.whatHappened.trim() === '' ? t('askRefusedNoWords') : `${t('askRefused')} ${o.whatHappened.trim()}`);
+    case 'lost_link': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('askLostLink'), needsAttention: true });
+  }
+}
+
+/** Where using an approval stands, in words. `figure` is the price (₹) or the offer's name, for the "done" line. */
+export function presentUseOutcome(lang: Lang, subject: ApprovalSubject, o: ApprovalUseOutcome, figure = ''): StatusPresentation {
+  const t = translator(CATALOGUE_APPROVAL_COPY, lang);
+  const not = t(subject === 'price' ? 'notSaved' : 'notStarted');
+  const say = (key: ApprovalCopyKey, values: Readonly<Record<string, string>> = {}): string => fill(t(key), { not, ...values });
+  const err = (label: string): StatusPresentation => presentStatus({ tone: 'error', icon: '✕', label, needsAttention: true });
+  const warn = (label: string): StatusPresentation => presentStatus({ tone: 'degraded', icon: '⚠', label, needsAttention: true });
+  switch (o.kind) {
+    case 'done':
+      return presentStatus({ tone: 'ok', icon: '✓', needsAttention: false,
+        label: subject === 'price' ? say('savedPrice', { price: figure }) : say('startedOffer', { offer: figure }) });
+    case 'not_connected': return err(t(subject === 'price' ? 'notConnectedPrice' : 'notConnectedOffer'));
+    case 'cannot_check': return err(t(o.missing === 'mrp' ? 'noMrp' : 'noCost'));
+    case 'not_asked': return warn(say('notAsked'));
+    case 'waiting': return presentScreenState({ state: 'pending', label: say('waiting') });
+    case 'rejected':
+      return err(o.decidedBy === null || o.decidedBy.trim() === ''
+        ? say('rejectedNoName', { reason: o.reason.trim() === '' ? '—' : o.reason.trim() })
+        : say('rejected', { who: o.decidedBy, reason: o.reason.trim() === '' ? '—' : o.reason.trim() }));
+    case 'expired': return warn(say('expired'));
+    case 'used': return warn(say('used'));
+    case 'changed': return warn(say('changed'));
+    case 'checker_may_not_approve': return err(say('checkerMayNot'));
+    case 'named_not_approved': return err(say('namedNotApproved'));
+    case 'refused': return err(o.whatHappened.trim() === '' ? say('refusedNoWords') : say('refused', { words: o.whatHappened.trim() }));
+    case 'lost_link': return warn(say('lostLink'));
+  }
 }
 
 /** What this surface can see about the shop, and what it honestly cannot. */
@@ -144,16 +391,21 @@ export interface CataloguePorts {
   /**
    * Records a promotion launch at head office (M05-FR-03/04). Absent for a read-only screen (or a test that
    * never launches): `launchToCloud` then refuses rather than pretending. The cloud is the authority — it
-   * re-simulates and re-checks §28 — so this only carries the ask and reports back what head office decided.
+   * re-simulates and checks the approval — so this only carries the ask and reports back what head office decided.
    */
   launchPromotion?(): PromotionLaunchPort;
   /**
    * Records a governed price change at head office (M05-FR-02). Absent for a read-only screen (or a test that
    * never changes a price): `changePriceInCloud` then refuses rather than pretending. The cloud is the
-   * authority — it re-runs `checkPrice` and re-checks §28 — so this only carries the ask and reports back what
-   * head office decided.
+   * authority — it re-runs `checkPrice` and checks the approval — so this only carries the ask and reports back
+   * what head office decided.
    */
   changePrice?(): PriceChangeCloudPort;
+  /** Ask a second person to approve (POST /v1/approvals/requests) — the caller's own session is the maker. Only from
+   *  an explicit click. Absent when the screen is not connected to head office: then nothing needing approval moves. */
+  askApproval?(ask: ApprovalAsk): Promise<AskResult>;
+  /** The caller's approvals inbox (GET /v1/approvals/requests) — read only. Absent when not connected. */
+  approvalInbox?(): Promise<InboxRead>;
 }
 
 export interface CatalogueConfig {
@@ -301,7 +553,13 @@ export interface CatalogueSession {
     readonly scopeRef?: string;
   }): PriceProposal;
 
-  /** Turn a proposal into a live price — a new entry, never an edit. */
+  /**
+   * Turn a proposal into a price in this browser only (no head office behind the page) — a new entry, never an
+   * edit. The SCREEN never passes an approval (ADR-0024): a name on this screen is not one, so a price that needs a
+   * second person goes to head office through `askPriceApproval` / `savePriceWithApproval`, and without head office
+   * it is refused. The optional `approval` is the tested engine's own §28 input — a decided request from head
+   * office's records — kept for the proofs that drive the engine through this session.
+   */
   activatePrice(proposal: PriceProposal, approval?: DecidedRequest): PriceChangeOutcome;
 
   /** Withdraw a price that should not have gone live. Appends; never deletes. */
@@ -313,8 +571,10 @@ export interface CatalogueSession {
   /** What a promotion would do to margin before anybody launches it (M05-FR-04). */
   simulate(input: Parameters<typeof simulatePromotion>[0]): SimulationResult;
 
-  /** Launch a promotion LOCALLY — the tested guard (a margin-losing one needs a named approver + reason). This
-   *  computes and validates but persists nowhere; the durable launch is `launchToCloud` when a box is wired. */
+  /** Launch a promotion LOCALLY — the tested guard. This computes and validates but persists nowhere; the durable
+   *  launch is `launchToCloud` when a box is wired. The SCREEN never passes an approval: a margin-losing offer goes
+   *  to head office through `askLaunchApproval` / `launchWithApproval` (a name on this screen is not an approval —
+   *  ADR-0024). The optional `approval` is the engine's own §28 input, kept for its proofs. */
   launch(simulation: SimulationResult, approval?: Parameters<typeof approveForLaunch>[1]): {
     readonly ok: true;
     readonly approvedBy: string | null;
@@ -331,9 +591,10 @@ export interface CatalogueSession {
   readonly canLaunchToCloud: boolean;
 
   /**
-   * Launch a promotion at head office (M05-FR-03/04) — the authoritative launch. Sends the simulation INPUT (the
-   * cloud re-simulates, never trusting a client's numbers) plus, for a margin-losing offer, the §28 approver +
-   * reason. Returns what the cloud decided; refuses with a reason rather than pretending when no cloud is wired.
+   * Launch a promotion at head office (M05-FR-03/04) — the authoritative launch of an offer that needs NO second
+   * person. Sends the simulation INPUT (the cloud re-simulates, never trusting a client's numbers). Returns what the
+   * cloud decided; refuses with a reason rather than pretending when no cloud is wired. A margin-losing offer goes
+   * through `askLaunchApproval` then `launchWithApproval`.
    */
   launchToCloud(input: PromotionLaunchInput): Promise<PromotionLaunchOutcome>;
 
@@ -345,14 +606,46 @@ export interface CatalogueSession {
   readonly canChangePriceInCloud: boolean;
 
   /**
-   * Change a price at head office (M05-FR-02) — the authoritative change. The session assembles the MRP in force
-   * today, the landed cost, the currency and the margin floor from the same sources the local proposal uses (so
-   * it refuses cleanly, without a POST, when the cost or MRP is unknown rather than sending a figure that cannot
-   * be checked), and sends them with the new price plus, for a below-cost/below-floor price, the §28 approver +
-   * reason. The cloud re-runs `checkPrice` and re-checks §28; this returns what it decided, and refuses with a
-   * reason rather than pretending when no cloud is wired.
+   * Change a price at head office (M05-FR-02) — the authoritative change of a price that needs NO second person.
+   * The session assembles the MRP in force today, the landed cost, the currency and the margin floor from the same
+   * sources the local proposal uses (so it refuses cleanly, without a POST, when the cost or MRP is unknown rather
+   * than sending a figure that cannot be checked), and sends them with the new price. The cloud re-runs
+   * `checkPrice`; this returns what it decided, and refuses with a reason rather than pretending when no cloud is
+   * wired. A below-cost / below-floor price goes through `askPriceApproval` then `savePriceWithApproval`.
    */
   changePriceInCloud(input: PriceChangeCloudInput): Promise<PriceChangeCloudOutcome>;
+
+  /** True when this screen can ask head office for a second person's approval, read the answer and send the
+   *  change naming it. False means local-only: nothing that needs approval can be saved from here. */
+  readonly canAskForApproval: boolean;
+
+  /**
+   * Ask a second person to approve EXACTLY this price change (ADR-0024 · §28 · M05-FR-02). The caller is the
+   * maker, in their own session; the details are the very body the change will send (`priceChangeDetails`), the
+   * amount is the new price, and the summary is in the reader's language. Refused locally (no POST) when the
+   * screen is not connected, when no reason is written, or when the MRP or the cost is unknown. Saves nothing.
+   */
+  askPriceApproval(lang: Lang, input: PriceChangeCloudInput & { readonly why: string }): Promise<ApprovalAskOutcome>;
+
+  /**
+   * Save a price that needs a second person: finds the caller's OWN `price_change` request for this product whose
+   * details are exactly this change's, and only when it is APPROVED sends the change naming it (`approvalId`). Not
+   * asked, waiting, rejected (by whom, and why), expired, used, or changed since asking — each is said plainly, and
+   * nothing is sent. Head office checks it all again and uses the approval once.
+   */
+  savePriceWithApproval(input: PriceChangeCloudInput): Promise<ApprovalUseOutcome>;
+
+  /** Ask a second person to approve EXACTLY this margin-losing offer (`promotionLaunchDetails`). Saves nothing. */
+  askLaunchApproval(lang: Lang, input: { readonly input: PromotionSimulationInput; readonly why: string }): Promise<ApprovalAskOutcome>;
+
+  /** Launch a margin-losing offer naming the caller's OWN approved `promotion_launch` request for exactly this
+   *  input; otherwise says plainly why not, and sends nothing. */
+  launchWithApproval(input: PromotionSimulationInput): Promise<ApprovalUseOutcome>;
+
+  /** An ask's outcome in plain words, in the reader's language (`presentAskOutcome`). */
+  presentAskOutcome(lang: Lang, subject: ApprovalSubject, outcome: ApprovalAskOutcome): StatusPresentation;
+  /** A save's / launch's outcome in plain words, in the reader's language (`presentUseOutcome`). */
+  presentUseOutcome(lang: Lang, subject: ApprovalSubject, outcome: ApprovalUseOutcome, figure?: string): StatusPresentation;
 
   /** The best price a basket would get under the approved rules — the same answer as the lane. */
   quote(lines: readonly BasketLine[], at: string): PromotionResult;
@@ -373,6 +666,76 @@ export function createCatalogueSession(
       at: `${config.today}T12:00:00.000Z`,
       storeId: config.storeId,
     });
+
+  /** The MRP in force TODAY, from the effective-dated history — not the newest one recorded. A future MRP increase
+   *  must not raise today's ceiling before the pack it is printed on ships. */
+  const mrpToday = (productId: string): Money | undefined =>
+    (ports.products().find((p) => p.productId === productId)?.mrpHistory ?? [])
+      .filter((m) => m.effectiveFrom <= config.today)
+      .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
+      .at(-1)?.value;
+
+  /**
+   * The ONE place the body of a price change is built — for the change sent with no approval, for the change sent
+   * naming one, and for the details an approval is asked for. A price with no ceiling or no known cost cannot be
+   * checked for the law or the margin, so it is refused here, plainly, rather than sent (P-08).
+   */
+  const priceBody = (input: PriceChangeCloudInput):
+    | { readonly ok: true; readonly body: PriceChangeBody }
+    | { readonly ok: false; readonly missing: 'mrp' | 'cost' } => {
+    const mrp = mrpToday(input.productId);
+    if (mrp === undefined) return { ok: false, missing: 'mrp' };
+    const cost = ports.costOf(input.productId);
+    if (!cost.known) return { ok: false, missing: 'cost' };
+    return {
+      ok: true,
+      body: {
+        productId: input.productId, priceMinor: input.priceMinor, mrpMinor: mrp.minor, costMinor: cost.cost.minor,
+        currency: config.currency, marginFloorBps: config.marginFloorBps,
+      },
+    };
+  };
+
+  const connected = (): boolean => ports.askApproval !== undefined && ports.approvalInbox !== undefined;
+
+  /**
+   * The caller's OWN request of this kind, about this subject, for EXACTLY these details — approved, or why not.
+   * The same reading the import screen makes: a request for exactly this still waiting is the news; otherwise the
+   * newest request for exactly this says what happened; with none for exactly this, a rejection still says who and
+   * why, and anything else means the change moved after asking.
+   */
+  const findApproval = async (
+    kind: string, subjectRef: string, details: Readonly<Record<string, unknown>>, valueMinor: number | null,
+  ): Promise<{ readonly requestId: string } | ApprovalUseOutcome> => {
+    const read = ports.approvalInbox;
+    if (read === undefined) return { kind: 'not_connected' };
+    const inbox = await read();
+    if (inbox.result === 'lost_link') return { kind: 'lost_link' };
+    if (inbox.result === 'refused') return { kind: 'refused', code: inbox.code, whatHappened: inbox.whatHappened };
+    const mine = inbox.inbox.mine.filter((r) => r.kind === kind && r.subjectRef === subjectRef);
+    if (mine.length === 0) return { kind: 'not_asked' };
+    const newest = (rows: readonly ApprovalRequestView[]): ApprovalRequestView | undefined =>
+      rows.slice().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0];
+    const exact = mine.filter((r) => r.valueMinor === valueMinor && sameDetails(r.details, details));
+    const approved = newest(exact.filter((r) => r.status === 'approved'));
+    if (approved !== undefined) return { requestId: approved.requestId };
+    if (exact.some((r) => r.status === 'waiting')) return { kind: 'waiting' };
+    const latest = newest(exact) ?? newest(mine)!;
+    if (latest.status === 'rejected') return { kind: 'rejected', decidedBy: latest.decidedBy ?? null, reason: latest.decisionReason ?? '' };
+    if (exact.length === 0) return { kind: 'changed' };
+    return latest.status === 'expired' ? { kind: 'expired' } : { kind: 'used' };
+  };
+
+  const ask = async (request: ApprovalAsk): Promise<ApprovalAskOutcome> => {
+    const port = ports.askApproval;
+    if (port === undefined) return { kind: 'not_connected' };
+    const asked = await port(request);
+    if (asked.result === 'asked') return { kind: 'asked', request: asked.request };
+    if (asked.result === 'lost_link') return { kind: 'lost_link' };
+    return { kind: 'refused', code: asked.code, whatHappened: asked.whatHappened };
+  };
+
+  const hasReason = (why: string): boolean => why.trim().length >= MIN_REASON_LENGTH;
 
   const inspect: CatalogueSession['inspect'] = (product) => {
     let validation: ValidationResult | null;
@@ -612,8 +975,8 @@ export function createCatalogueSession(
       if (port === undefined) {
         return { launched: false, reason: 'this screen is not connected to head office, so it cannot launch the offer' };
       }
-      // The cloud is the authority — it re-simulates the input and re-checks §28. The screen renders whatever
-      // it decides and invents nothing.
+      // The cloud is the authority — it re-simulates the input and checks any approval. The screen renders
+      // whatever it decides and invents nothing.
       return port().post(input);
     },
 
@@ -626,34 +989,84 @@ export function createCatalogueSession(
       if (port === undefined) {
         return { saved: false, reason: 'this screen is not connected to head office, so it cannot change the price' };
       }
-      // The MRP in force TODAY, from the effective-dated history — the same read the local proposal uses, never
-      // the newest recorded (a future MRP increase must not raise today's ceiling before its pack ships).
-      const product = ports.products().find((p) => p.productId === input.productId);
-      const mrp = (product?.mrpHistory ?? [])
-        .filter((m) => m.effectiveFrom <= config.today)
-        .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
-        .at(-1)?.value;
-      // A price with no ceiling and no known cost cannot be checked for the law or the margin. Refuse here,
-      // plainly, rather than POST a figure the cloud would reject with a less legible error (P-08).
-      if (mrp === undefined) {
-        return { saved: false, reason: 'this product has no MRP recorded, so the legal ceiling cannot be checked' };
+      const built = priceBody({ productId: input.productId, priceMinor: input.priceMinor });
+      if (!built.ok) {
+        return built.missing === 'mrp'
+          ? { saved: false, reason: 'this product has no MRP recorded, so the legal ceiling cannot be checked' }
+          : { saved: false, reason: 'this screen has not been told what this product cost, so the margin cannot be checked' };
       }
-      const cost = ports.costOf(input.productId);
-      if (!cost.known) {
-        return { saved: false, reason: 'this screen has not been told what this product cost, so the margin cannot be checked' };
-      }
-      // The cloud is the authority — it re-runs `checkPrice` over these figures and re-checks §28. The screen
-      // sends the raw figures it already trusts for the local proposal and renders whatever the cloud decides.
-      return port().post({
-        productId: input.productId,
-        priceMinor: input.priceMinor,
-        mrpMinor: mrp.minor,
-        costMinor: cost.cost.minor,
-        currency: config.currency,
-        marginFloorBps: config.marginFloorBps,
-        ...(input.approval === undefined ? {} : { approval: input.approval }),
+      // The cloud is the authority — it re-runs `checkPrice` over these figures. The screen sends the raw figures
+      // it already trusts for the local proposal and renders whatever the cloud decides.
+      return port().post(built.body);
+    },
+
+    canAskForApproval: connected() && ports.changePrice !== undefined && ports.launchPromotion !== undefined,
+
+    // The MAKER's step for a price (ADR-0024): ask for exactly the change that will be sent. Nothing is saved.
+    askPriceApproval: async (lang, input) => {
+      if (!connected() || ports.changePrice === undefined) return { kind: 'not_connected' };
+      if (!hasReason(input.why)) return { kind: 'needs_why' };
+      const built = priceBody({ productId: input.productId, priceMinor: input.priceMinor });
+      if (!built.ok) return { kind: 'cannot_check', missing: built.missing };
+      const body = built.body;
+      const t = translator(CATALOGUE_APPROVAL_COPY, lang);
+      const product = ports.products().find((p) => p.productId === body.productId);
+      const summary = fill(t(body.priceMinor < body.costMinor ? 'summaryBelowCost' : 'summaryBelowFloor'), {
+        product: product === undefined || product.name.trim() === '' ? body.productId : product.name,
+        price: rupees(body.priceMinor), cost: rupees(body.costMinor),
+      });
+      return ask({
+        kind: PRICE_APPROVAL_KIND, subjectRef: body.productId,
+        // EXACTLY the body the change will send — the route fingerprints that body and refuses any difference.
+        details: priceChangeDetails(body), valueMinor: body.priceMinor,
+        summary, reason: input.why.trim(),
       });
     },
+
+    // The change, naming the caller's own APPROVED request for exactly these figures. Never a typed approver.
+    savePriceWithApproval: async (input) => {
+      const port = ports.changePrice;
+      if (!connected() || port === undefined) return { kind: 'not_connected' };
+      const built = priceBody({ productId: input.productId, priceMinor: input.priceMinor });
+      if (!built.ok) return { kind: 'cannot_check', missing: built.missing };
+      const body = built.body;
+      const found = await findApproval(PRICE_APPROVAL_KIND, body.productId, priceChangeDetails(body), body.priceMinor);
+      if (!('requestId' in found)) return found;
+      const r = await port().post({ ...body, approvalId: found.requestId });
+      if (r.saved) return { kind: 'done', verdict: r.verdict, approvedBy: r.approvedBy };
+      return useOutcomeOfRefusal(r.code, r.reason);
+    },
+
+    // The MAKER's step for a margin-losing offer: ask for exactly the launch that will be sent. Nothing starts.
+    askLaunchApproval: async (lang, { input, why }) => {
+      if (!connected() || ports.launchPromotion === undefined) return { kind: 'not_connected' };
+      if (!hasReason(why)) return { kind: 'needs_why' };
+      const t = translator(CATALOGUE_APPROVAL_COPY, lang);
+      const summary = fill(t('summaryOffer'), {
+        offer: input.promotionId, promo: rupees(input.promoPrice.minor), normal: rupees(input.normalPrice.minor),
+        cost: rupees(input.unitCost.minor),
+      });
+      return ask({
+        kind: PROMOTION_APPROVAL_KIND, subjectRef: input.promotionId,
+        // EXACTLY the launch body plus the offer's id from the route's path — what the route fingerprints.
+        details: promotionLaunchDetails(input), valueMinor: null,
+        summary, reason: why.trim(),
+      });
+    },
+
+    // The launch, naming the caller's own APPROVED request for exactly this offer. Never a typed approver.
+    launchWithApproval: async (input) => {
+      const port = ports.launchPromotion;
+      if (!connected() || port === undefined) return { kind: 'not_connected' };
+      const found = await findApproval(PROMOTION_APPROVAL_KIND, input.promotionId, promotionLaunchDetails(input), null);
+      if (!('requestId' in found)) return found;
+      const r = await port().post({ input, approvalId: found.requestId });
+      if (r.launched) return { kind: 'done', verdict: r.verdict, approvedBy: r.approvedBy };
+      return useOutcomeOfRefusal(r.code, r.reason);
+    },
+
+    presentAskOutcome: (lang, subject, outcome) => presentAskOutcome(lang, subject, outcome),
+    presentUseOutcome: (lang, subject, outcome, figure) => presentUseOutcome(lang, subject, outcome, figure),
 
     // Only ACTIVE promotions, and `bestPrice` checks the window again itself. A draft or stopped
     // offer that quoted here would show a price no lane would ever charge.

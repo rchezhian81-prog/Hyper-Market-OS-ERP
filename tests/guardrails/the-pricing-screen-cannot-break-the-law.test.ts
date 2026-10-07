@@ -73,8 +73,8 @@ describe('nothing on this surface can authorise a price above MRP', () => {
     }
   });
 
-  it('offers no approver panel for a refusal nothing can approve', () => {
-    // `needsApproval` is what puts a name-picker on the screen. An MRP breach must never set it.
+  it('offers no approval for a refusal nothing can approve', () => {
+    // `needsApproval` is what puts "Ask for approval" on the screen. An MRP breach must never set it.
     const propose = code(CHANGE).slice(code(CHANGE).indexOf('export function proposePriceChange'));
     expect(propose).toMatch(/needsApproval: check\.verdict !== 'above_mrp'/);
   });
@@ -220,24 +220,58 @@ describe('every refusal has words, in both languages', () => {
   });
 });
 
-describe('separation of duties, on the screen and under it', () => {
-  it('never offers the person setting the price as their own approver', () => {
-    expect(code(VIEW)).toMatch(/approvers\(\)\.filter\(\(a\) => a !== me\(\)\)/);
+describe('separation of duties, on the screen and under it (ADR-0024 · §28)', () => {
+  // A name in a box is not an approval. The screen used to let the person setting a loss-making price PICK an
+  // approver's name and send it as the approval; head office now refuses that by name. The second person approves
+  // in their own session on the Approvals page, and the change names the approval it was given.
+
+  it('names nobody: no approver picker, no list of approvers, no typed name built or sent', () => {
+    expect(code(VIEW), 'the view still has an approver picker').not.toMatch(/askApprover|approvers\(\)|catalogueData\?\.approvers/);
+    expect(HTML, 'the page still has the approver panel').not.toMatch(/id="choices"|id="sheet-reason"|id="sheet"/);
+    expect(code(VIEW), 'the view builds a typed second person').not.toMatch(/\b(approvedBy|decidedBy|rationale)\s*:/);
+    const ports = code(ENTRY).slice(code(ENTRY).indexOf('export function openPromotionLaunchPort'), code(ENTRY).indexOf('export function openRecallCloudPort'));
+    expect(ports, 'a port still sends a typed approver').not.toMatch(/approval: \{ decidedBy|approvedBy: approval|rationale: approval/);
+    const data = code(ENTRY).slice(code(ENTRY).indexOf('export interface CatalogueData'));
+    expect(data.slice(0, data.indexOf('\n}')), 'the screen is still handed a list of approvers').not.toMatch(/approvers/);
   });
 
-  it('strips them on the box too, not only on the screen that would offer them', () => {
-    const builder = code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf('export function cataloguePayload'));
-    expect(builder).toMatch(/approvers: policy\.approvers\.filter\(\(who\) => who !== policy\.userId\)/);
+  it('asks head office\'s approval engine instead, and saves only by naming the approval it was given', () => {
+    expect(code(MODEL)).toMatch(/PRICE_APPROVAL_KIND = 'price_change'/);
+    expect(code(MODEL)).toMatch(/PROMOTION_APPROVAL_KIND = 'promotion_launch'/);
+    for (const call of ['askPriceApproval', 'savePriceWithApproval', 'askLaunchApproval', 'launchWithApproval']) {
+      expect(code(VIEW), `the view never calls ${call}`).toMatch(new RegExp(`session\\.${call}\\(`));
+    }
+    expect(code(ENTRY)).toMatch(/body: JSON\.stringify\(priceChangeRequestBody\(figures, approvalId\)\)/);
+    expect(code(ENTRY)).toMatch(/body: JSON\.stringify\(promotionLaunchBody\(launch\)\)/);
   });
 
-  it('and the rule refuses it regardless of what the screen offered', () => {
+  it('asks for exactly what it will send — the details and the body come from the same function', () => {
+    const details = code(MODEL).slice(code(MODEL).indexOf('export function priceChangeDetails'));
+    expect(details.slice(0, 200)).toMatch(/detailsOfBody\(priceChangeRequestBody\(body\)\)/);
+    const launch = code(MODEL).slice(code(MODEL).indexOf('export function promotionLaunchDetails'));
+    expect(launch.slice(0, 200)).toMatch(/detailsOfBody\(promotionLaunchBody\(\{ input \}\), \{ promotionId: input\.promotionId \}\)/);
+    expect(code(MODEL)).toMatch(/details: priceChangeDetails\(body\)/);
+    expect(code(MODEL)).toMatch(/details: promotionLaunchDetails\(input\)/);
+  });
+
+  it('never hands the in-browser activation an approval of its own making', () => {
+    expect(code(VIEW)).toMatch(/session\.activatePrice\(proposal\)/);
+    expect(code(VIEW)).toMatch(/session\.launch\(simulation\)/);
+    expect(code(VIEW), 'the view passes an approval to the local activation').not.toMatch(/session\.activatePrice\([^)]*,/);
+    expect(code(VIEW), 'the view passes an approval to the local launch').not.toMatch(/session\.launch\([^)]*,/);
+  });
+
+  it('and the rule refuses the setter\'s own approval regardless', () => {
     const activate = code(CHANGE).slice(code(CHANGE).indexOf('export function activatePriceChange'));
     expect(activate).toMatch(/approval\.decidedBy === input\.setBy/);
   });
 
   it('makes a margin loss carry a written reason a person can read next year', () => {
-    expect(code(VIEW)).toMatch(/reason\.length < 10/);
-    expect(code(VIEW)).toMatch(/reasonNeeded/);
+    expect(code(MODEL)).toMatch(/MIN_REASON_LENGTH = 10/);
+    expect(code(MODEL)).toMatch(/if \(!hasReason\(input\.why\)\) return \{ kind: 'needs_why' \}/);
+    expect(code(MODEL)).toMatch(/if \(!hasReason\(why\)\) return \{ kind: 'needs_why' \}/);
+    expect(HTML).toContain('id="price-why"');
+    expect(HTML).toContain('id="promo-why"');
   });
 });
 

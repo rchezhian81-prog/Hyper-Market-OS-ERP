@@ -96,6 +96,26 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
     expect(serverWorded.label).toBe('Launch a loss-making promotion');
   });
 
+  it('a pricing request reads as the shop says it — its kind in both languages, money in rupees, the floor as a percent', () => {
+    const price = presentRequest('ta', row({
+      kind: 'price_change', label: 'Set a price below cost or below the margin floor', subjectRef: 'P1', valueMinor: 6000,
+      details: { productId: 'P1', priceMinor: 6000, mrpMinor: 10000, costMinor: 5000, currency: 'INR', marginFloorBps: 2000 },
+    }));
+    expect(price.label).toBe(APPROVALS_COPY.ta.kindPriceChange);
+    const byKey = Object.fromEntries(price.details.map((d) => [d.key, d]));
+    expect(byKey['priceMinor']).toMatchObject({ label: APPROVALS_COPY.ta.detailPriceMinor, value: '₹60.00' });
+    expect(byKey['marginFloorBps']!.value).toBe('20.00%');
+    const offer = presentRequest('en', row({
+      kind: 'promotion_launch', label: '', subjectRef: 'diwali-dal',
+      details: { promotionId: 'diwali-dal', promoPrice: { minor: 14500, currency: 'INR' }, unitCost: { minor: 15000, currency: 'INR' }, baselineUnits: 100 },
+    }));
+    expect(offer.label).toBe('Launch a promotion that loses margin');
+    const offerKeys = Object.fromEntries(offer.details.map((d) => [d.key, d]));
+    expect(offerKeys['promoPrice']).toMatchObject({ label: 'Offer price', value: '₹145.00' }); // never {"minor":14500,...}
+    expect(offerKeys['unitCost']!.value).toBe('₹150.00');
+    for (const k of ['quotation_below_floor', 'price_list_entry']) expect(presentRequest('ta', row({ kind: k })).label).not.toMatch(/[a-z]_[a-z]/);
+  });
+
   it('every waiting row asks for attention with an icon and words — colour is never the only signal', () => {
     for (const r of session().view('en').waiting) {
       expect(r.status.label).toBe('Waiting for your decision');

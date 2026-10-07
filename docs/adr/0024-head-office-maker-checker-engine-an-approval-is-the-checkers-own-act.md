@@ -75,3 +75,21 @@
 
 The owner sets a dedicated "approve imports" authority, or a value limit above which a second approver (or the owner)
 must approve — then the kind's checker permission or a value-limit rule changes; the engine's shape does not.
+
+## Amendment — 2b-vi-b-1, pricing (7 October 2026)
+
+- **One rule for what is approved.** Every action moved onto the engine fingerprints the same thing: its own request
+  body without the control fields (`approvalId`, and the typed `approval` / `approvedBy` / `rationale` it replaced), plus
+  the route's path ids (`actionDetails`). A client asks with exactly the body it will send. Every route refuses a typed
+  name the same way (`approvalNamedIn`).
+- **Four pricing kinds.** Each is approved by the pricing-approval authority (`price.change.approve`, M05-FR-02: "above
+  the setter's authority"):
+  - `price_change` — `POST /v1/prices/changes`;
+  - `price_list_entry` — `POST /v1/prices/list/:productId/entries/:entryId`;
+  - `promotion_launch` — `POST /v1/promotions/:id/launch`;
+  - `quotation_below_floor` — `POST /v1/pos/quotations/:id`. Before this, a below-floor quote passed with any name and
+    no authority check at all.
+- The Products & prices screen asks for approval and then saves or launches with it; the typed-approver dialog is gone.
+- **Recorded, not changed:** the margin floor (and a quotation's line costs) are still read from the request. The
+  approver sees them in the approval's details. The shop's own margin policy is Wave 4 (SF-01) work.
+

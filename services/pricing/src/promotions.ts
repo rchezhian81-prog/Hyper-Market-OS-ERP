@@ -16,6 +16,7 @@ import {
   type EffectivenessInput, type VendorFundingClaim, type AbuseLimit, type AbuseCheckInput,
 } from '../../../packages/promotions/src/simulation';
 import type { Money } from '../../../packages/contracts/src/money';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 
 const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
 
@@ -36,7 +37,9 @@ export interface PromotionDeps {
   readonly recordLaunch: (tenantId: string, record: LaunchRecord) => Promise<void> | void;
   /** Whether a user holds `price.change.approve` — a margin-losing (below-cost) promotion is a pricing
    *  decision, so its §28 approver must genuinely hold the pricing-approval authority, not just be named. */
-  readonly canApprove: (tenantId: string, userId: string) => Promise<boolean>;
+  /** Head office's maker-checker engine (ADR-0024): a margin-losing launch's approver gave it in their own session.
+   *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   readonly now: () => string;
 }
 
@@ -151,8 +154,9 @@ export function promotionRoutes(deps: PromotionDeps): readonly Route[] {
     },
     {
       // Launch the promotion. It launches freely when it improves or only mildly reduces margin;
-      // a margin-LOSING offer (below cost, or worse than doing nothing) launches only with a named
-      // approver who is not the proposer and a written reason (§28). Idempotent per promotion.
+      // a margin-LOSING offer (below cost, or worse than doing nothing) launches only with an approval a
+      // different person GAVE in their own session, with a reason, for exactly this simulation (ADR-0024 · §28;
+      // kind `promotion_launch`). Idempotent per promotion.
       api: 'API-02', method: 'POST', path: '/v1/promotions/:promotionId/launch',
       permission: 'promotion.launch', idempotent: true,
       handler: async (ctx) => {
@@ -162,30 +166,22 @@ export function promotionRoutes(deps: PromotionDeps): readonly Route[] {
           return { status: 200, body: { promotionId, launched: true, verdict: already.verdict, approvedBy: already.approvedBy, alreadyLaunched: true } };
         }
 
-        const b = (ctx.body ?? {}) as { approvedBy?: unknown; rationale?: unknown };
+        const b = (ctx.body ?? {}) as { approvedBy?: unknown; approvalId?: unknown };
         const input = readSimInput(ctx.body, promotionId);
         if (input === undefined) throw badInput();
 
         const simulation: SimulationResult = simulatePromotion(input);
 
-        // A margin-losing offer needs a §28 approver — and a name typed in a box is not one. When the
-        // simulation blocks approval, verify the named approver genuinely holds the pricing-approval
-        // authority (the same `price.change.approve` that governs a below-cost price); the pure engine
-        // cannot see the grants, so this closes the "invent a co-signer" bypass. A self-approval falls
-        // through to `approveForLaunch`, which refuses it (§28).
-        if (simulation.blocksApproval && typeof b.approvedBy === 'string' && b.approvedBy.trim() !== '' && b.approvedBy !== ctx.userId
-          && !(await deps.canApprove(ctx.tenantId, b.approvedBy))) {
-          throw apiError(422, {
-            code: 'approver_may_not_approve',
-            whatHappened: `${b.approvedBy} does not hold price.change.approve, so their approval of a margin-losing promotion does not count.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Have someone who may approve below-cost pricing approve it with a reason. Nothing was launched.',
-          });
-        }
-
-        const approval = typeof b.approvedBy === 'string'
-          ? { subjectRef: promotionId, status: 'approved' as const, decidedBy: b.approvedBy, ...(typeof b.rationale === 'string' ? { rationale: b.rationale } : {}) }
-          : undefined;
+        // The second person (ADR-0024 · §28): an approval the approver GAVE in their own session for exactly this
+        // simulation — not the proposer's own, unused, unexpired, and the approver still holds the pricing-approval
+        // authority (`price.change.approve`, the same that governs a below-cost price). A typed `approvedBy` is refused.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b.approvalId, typedField: 'approvedBy', typedValue: b.approvedBy,
+          kind: 'promotion_launch', subjectRef: promotionId, details: actionDetails(ctx.body, { promotionId }), valueMinor: null,
+          maker: ctx.userId, usedBy: `promotion-launch:${promotionId}`, now: deps.now(),
+        });
+        const approval = opened === undefined ? undefined
+          : { subjectRef: promotionId, status: 'approved' as const, decidedBy: opened.decision.decidedBy, rationale: opened.decision.reason };
 
         let approvedBy: string | null = null;
         try {
@@ -196,11 +192,14 @@ export function promotionRoutes(deps: PromotionDeps): readonly Route[] {
               code: 'launch_needs_approval',
               whatHappened: e.message,
               wasItSaved: 'not_saved',
-              nextSafeAction: 'A margin-losing offer can still launch, but a second person must approve it with a written reason. Nothing was launched.',
+              nextSafeAction: 'A margin-losing offer can still launch: ask for approval (POST /v1/approvals/requests, kind promotion_launch, with exactly this offer); once a second person approves it with a written reason, send the approvalId. Nothing was launched.',
             });
           }
           throw e;
         }
+
+        // Every rule passed: the approval is spent — once — and only then is the launch recorded.
+        await opened?.spend();
 
         const record: LaunchRecord = {
           promotionId, verdict: simulation.verdict, incrementalMarginMinor: simulation.incrementalMargin.minor,

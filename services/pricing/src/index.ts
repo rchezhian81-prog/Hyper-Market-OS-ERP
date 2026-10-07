@@ -6,7 +6,8 @@
 // form: the named approver must actually hold `price.change.approve`, and cannot be the person
 // setting the price. An allowed change is recorded as an append-only event; the pack-publish path
 // (services/catalogue) then re-checks §28 before it reaches the shelf edge, so the control survives
-// every step.
+// every step. Since 2b-vi-b (ADR-0024) the approver is an approval they GAVE in their own session, for exactly
+// this price (kind `price_change`) — a name typed into `approval.decidedBy` is refused by name.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
@@ -14,6 +15,7 @@ import { checkPrice } from '../../../packages/price-guard/src/price-guard';
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 
 export interface PriceChangeRecord {
   readonly id: string;
@@ -30,8 +32,9 @@ export interface PriceChangeRecord {
 export interface PricingDeps {
   /** Persist an allowed price change as an append-only event. */
   readonly recordPriceChange: (tenantId: string, change: PriceChangeRecord) => Promise<void> | void;
-  /** Whether a user holds `price.change.approve` in this tenant — the approver must genuinely hold it. */
-  readonly canApprove: (tenantId: string, userId: string) => Promise<boolean>;
+  /** Head office's maker-checker engine (ADR-0024): a loss-making price's approver gave it in their own session.
+   *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   /**
    * Seal this price change into the tamper-evident domain audit trail (M34-FR-01), attributed to the
    * acting user. Optional — the running system provides it; a bare deps stub may omit it. The actor is
@@ -50,6 +53,7 @@ interface Body {
   readonly costMinor?: number;
   readonly marginFloorBps?: number;
   readonly approval?: { readonly decidedBy?: string; readonly reason?: string };
+  readonly approvalId?: string;
 }
 
 const refuse = (code: string, whatHappened: string): never => {
@@ -77,21 +81,18 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
         const id = `price-${b.productId!}`;
         const setBy = ctx.userId;
 
-        // Build the approval the engine checks. §28 in the engine: an approval only counts if the
-        // approver is not the setter. Here we ALSO require the approver to genuinely hold the
-        // approve permission — a named approver who cannot approve is not an approval.
-        let approval: DecidedRequest | undefined;
-        if (b.approval?.decidedBy !== undefined && b.approval.decidedBy.trim() !== '') {
-          const approver = b.approval.decidedBy;
-          if (approver === setBy) refuse('approved_by_the_setter', `${setBy} cannot approve their own price change (§28).`);
-          if (!(await deps.canApprove(ctx.tenantId, approver))) {
-            refuse('approver_may_not_approve_prices', `${approver} does not hold price.change.approve, so their approval does not count.`);
-          }
-          approval = Object.freeze({
-            id, subjectType: 'price', subjectRef: id, requestedBy: setBy, branchId: ctx.branchId,
-            value: null, status: 'approved', decidedBy: approver, reason: b.approval.reason ?? '', decidedAt: deps.now(),
-          });
-        }
+        // The second person (ADR-0024 · §28): an approval the approver GAVE in their own session for exactly this price —
+        // the engine has already checked it is not the setter's own, was approved with a reason, is unused and unexpired,
+        // and that the approver still holds `price.change.approve`. A typed `approval.decidedBy` is refused by name.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b.approvalId, typedField: 'approval.decidedBy', typedValue: b.approval?.decidedBy,
+          kind: 'price_change', subjectRef: b.productId!, details: actionDetails(ctx.body), valueMinor: b.priceMinor!,
+          maker: setBy, usedBy: `price-change:${b.productId!}`, now: deps.now(),
+        });
+        const approval: DecidedRequest | undefined = opened === undefined ? undefined : Object.freeze({
+          id, subjectType: 'price', subjectRef: id, requestedBy: setBy, branchId: ctx.branchId,
+          value: null, status: 'approved', decidedBy: opened.decision.decidedBy, reason: opened.decision.reason, decidedAt: opened.decision.decidedAt,
+        });
 
         const check = checkPrice({
           id,
@@ -114,10 +115,12 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
             wasItSaved: 'not_saved',
             nextSafeAction: check.verdict === 'above_mrp'
               ? 'Set a price at or below the MRP. Nothing was changed.'
-              : 'Have someone who is not the setter, and who may approve prices, approve it with a reason. Nothing was changed.',
+              : 'Ask for approval (POST /v1/approvals/requests, kind price_change, with exactly this change); once someone who may approve prices approves it, send the approvalId. Nothing was changed.',
           });
         }
 
+        // Every rule passed: the approval is spent — once — and only then is the price recorded.
+        await opened?.spend();
         const record: PriceChangeRecord = {
           id, productId: b.productId!, priceMinor: b.priceMinor!, currency, setBy,
           verdict: check.verdict, approvedBy: approval?.decidedBy ?? null, reason: check.reason, at: deps.now(),
