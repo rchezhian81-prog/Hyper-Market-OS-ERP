@@ -21,7 +21,11 @@ only when its slice merges with a test that proves it.
   - **b-1** pricing — done;
   - **b-2** finance — done;
   - **b-3** stock, orders and purchasing — done.
-- **c** — 2b-vi-c, low-severity and record-only names, plus seals on the box-relayed decisions.
+- **c** — 2b-vi-c, in three parts:
+  - **c-1** the 8 low-severity and record-only names (rows 19–26) — done;
+  - **c-2** the typed makers (emergency access, access lifecycle, migration load operator) and the admin support-grant
+    screen;
+  - **c-3** the store seal on the box-relayed decisions, with the day-reopen and bill-capture screens (row 17b).
 
 ## The 26 sites
 
@@ -45,24 +49,24 @@ only when its slice merges with a test that proves it.
 | 16 | `POST /v1/service/cases/:id/compensation` | `approval.decidedBy` | A | Granted service compensation | M21-FR-04, §28 | b-3 | **Fixed** (b-3): kind `service_compensation`, approver holds `service.compensation.approve` (the service screen grants none yet) |
 | 17 | `POST /v1/purchase/invoices/:id/capture` | `approvedBy` | A (flag only) | The invoice was recorded with an unverified approver | SP-7a, M07-FR-04, §28 | b-3 | **Fixed** (b-3): kind `supplier_invoice_check`, checker holds `purchase.invoice.match`; captured with no approval it is flagged `no_approval` (API-only at head office; the box's capture is row 17b) |
 | 18 | `POST /v1/purchase/suppliers/:id/payments/:paymentId` | `approvedBy` | A | Recorded a supplier payment | M23-FR-01, M06-FR-01, M15-FR-03, §28 | b-3 | **Fixed** (b-3): kind `supplier_payment`, approved by another person who may pay suppliers; no approval → `payment_needs_approval` (API-only; no screen) |
-| 19 | `POST /v1/hr/workforce/certifications/:id` | `verifiedBy` | A-low | Made a certificate count as cover for the task gate | M25-FR-03 | c | Open |
-| 20 | `POST /v1/hr/workforce/checklists/:id` | `signedBy` | A-low | Recorded a sign-off under a typed name | M25-FR-02 | c | Open |
-| 21 | `POST /v1/purchase/suppliers/:id` | `documents[].verifiedBy` | A-low | Stored a typed document verifier on the supplier master | M06-FR-01 | c | Open |
-| 22 | `POST /v1/supplier-portal/partners/:id` | `documents[].verifiedBy` | A-low | Made a compliance document count, which gates ASN and invoice acceptance | M24-FR-02 | c | Open |
-| 23 | `POST /v1/merchandising/display-contracts/:id` | `approvedBy` | A-rec | Cleared the `unapproved` review finding | M04-FR-04, D02-FR-06 | c | Open |
-| 24 | `POST /v1/purchase/rebate-schemes/:id` | `approvedBy` | A-rec | Stored only | M06-FR-03, D03-FR-03 | c | Open |
-| 25 | `POST /v1/purchase/contracts/:id` | `approvedBy` | A-rec | Cleared the `unapproved` contract alert | M06-FR-03, D03-FR-03 | c | Open |
-| 26 | `POST /v1/purchase/import-jobs/:id` | `approvedBy` | A-rec | The job history showed "approved by X" from the body | M30-FR-04 | c | Open |
+| 19 | `POST /v1/hr/workforce/certifications/:id` | `verifiedBy` | A-low | Made a certificate count as cover for the task gate | M25-FR-03 | c-1 | **Fixed** (c-1): the verifier is the caller (`actor_is_the_caller`), never the certificate's own holder (`self_verification`) |
+| 20 | `POST /v1/hr/workforce/checklists/:id` | `signedBy` | A-low | Recorded a sign-off under a typed name | M25-FR-02 | c-1 | **Fixed** (c-1): the signer is the caller; the checklist screen sends a signature only when the person signs |
+| 21 | `POST /v1/purchase/suppliers/:id` | `documents[].verifiedBy` | A-low | Stored a typed document verifier on the supplier master | M06-FR-01 | c-1 | **Fixed** (c-1): a document verified now names the caller and takes the server's time; one re-sent exactly as stored keeps its verifier |
+| 22 | `POST /v1/supplier-portal/partners/:id` | `documents[].verifiedBy` | A-low | Made a compliance document count, which gates ASN and invoice acceptance | M24-FR-02 | c-1 | **Fixed** (c-1): the same rule as row 21 (one shared kernel rule) |
+| 23 | `POST /v1/merchandising/display-contracts/:id` | `approvedBy` | A-rec | Cleared the `unapproved` review finding | M04-FR-04, D02-FR-06 | c-1 | **Fixed** (c-1): kind `display_contract`, approved by `purchase.supplier.approve` ("Finance approves funding terms") (API-only; no screen) |
+| 24 | `POST /v1/purchase/rebate-schemes/:id` | `approvedBy` | A-rec | Stored only | M06-FR-03, D03-FR-03 | c-1 | **Fixed** (c-1): kind `rebate_scheme`, approved by `purchase.supplier.approve` (API-only; no screen) |
+| 25 | `POST /v1/purchase/contracts/:id` | `approvedBy` | A-rec | Cleared the `unapproved` contract alert | M06-FR-03, D03-FR-03 | c-1 | **Fixed** (c-1): kind `purchase_contract`, approved by `purchase.supplier.approve` (API-only; no screen) |
+| 26 | `POST /v1/purchase/import-jobs/:id` | `approvedBy` | A-rec | The job history showed "approved by X" from the body | M30-FR-04 | c-1 | **Fixed** (c-1): the approver is read from head office's record of the commit; a typed one is refused (`approver_is_read_from_the_commit`) |
 
 ## Side findings (recorded; each goes into the slice named)
 
 - **Typed makers** (the requester, not the approver):
   - Fixed in **a**: `bank-details requestedBy`, `import uploadedBy` and the pay-run `actor`.
-  - Open, slice **c**:
+  - Open, slice **c-2**:
     - `requestedBy` on the emergency-access and access-lifecycle requests;
     - `loadOperator` on a migration load;
-    - `enteredBy` on stock movements (also covered by row 14).
-- **Box-relayed decisions with no store seal** (slice **c**). Unlike sales, refunds, cash and till closes (ADR-0023),
+    - `enteredBy` on stock movements — fixed with row 14 in b-3.
+- **Box-relayed decisions with no store seal** (slice **c-3**). Unlike sales, refunds, cash and till closes (ADR-0023),
   these never check a seal:
   - `approvals/decisions/:id/synced` — this one also *applies* a clean decision;
   - `day-close/:id/reopen/synced`;
@@ -71,7 +75,7 @@ only when its slice merges with a test that proves it.
   - the two migration `/synced` routes.
 - **Back-office screens where the second person is a typed name.** In both, the box checks only that it is a
   different name. Each moves with its route:
-  - day reopen (`day-reopen.js`), slice **c**;
+  - day reopen (`day-reopen.js`), slice **c-3**;
   - the buyer's invoice capture (`buying.js`) — **moved to slice c** (found in 2b-vi-b-3, recorded here as row
     17b). The buyer captures the bill on the store box, which may be offline, and the box relays it through
     `invoices/:id/synced`. Head office re-verifies both people's grants on that relay, but the checker is still a name
@@ -83,7 +87,7 @@ only when its slice merges with a test that proves it.
   - service compensation — checked in b-3: the service screen offers no compensation yet (its compensation call is a
     stub that grants nothing), so there is no typed box to remove. When a compensation screen is built it asks on the
     engine;
-  - the admin support grant — slice c.
+  - the admin support grant — slice c-2.
 - **The margin floor is taken from the request** (found in 2b-vi-b-1). `POST /v1/prices/changes`, price-list entries
   and quotations read `marginFloorBps` — and a quotation also its line costs — from the body. So the person setting a
   price also chooses the floor it is checked against. The second person now sees the floor and costs in the approval's
@@ -95,6 +99,13 @@ only when its slice merges with a test that proves it.
 - **A month-close approval names the month, not the figures.** Head office re-checks its own control totals at the
   moment of closing, so a month that stopped agreeing after the approval cannot close. A posting after the approval
   that still agrees is not shown to the signer again. Recorded as the reconsider-when.
+- **Who approves a supplier's terms** (found in c-1). Rows 23–25 had no approval authority of their own. M06-FR-01 names
+  "Purchase Approver/Finance" as who approves a supplier, and D02-FR-06 says "Finance approves funding terms", so all three
+  use the existing supplier-approval permission (`purchase.supplier.approve` — the accountant and the owner today). No
+  permission was invented; a dedicated "approve commercial terms" authority would be the owner's to set.
+- **The checklist screen's unsigned save** (found in c-1). Ticking items without signing sent an empty signer name,
+  which head office could not read (so the save was refused), and a signed checklist re-sent its earlier signer's name.
+  Fixed: the screen sends a signature only when this person signs.
 - **The pay-run route's gate.** It is `payroll.statutory.read` for every step, approve and lock included. Payroll
   approve, lock and bank-file release are under the pilot hold; this is recorded here and **no new permission is
   invented**. The owner sets the payroll approval authority when the hold lifts.

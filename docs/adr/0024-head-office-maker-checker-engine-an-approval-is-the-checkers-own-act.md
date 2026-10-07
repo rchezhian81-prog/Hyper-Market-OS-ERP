@@ -135,3 +135,22 @@ must approve — then the kind's checker permission or a value-limit rule change
 - **Recorded, not changed:** the buyer's bill capture on the store box (`buying.js`) is relayed to head office through
   `invoices/:id/synced`. That relay re-verifies both people's grants, but its checker is a name the box took. It moves
   with the other box-relayed decisions in 2b-vi-c (a store seal on the checker's own act).
+
+## Amendment — 2b-vi-c-1, the low-severity and record-only names (7 October 2026)
+
+- **A verifier or signer is the person signed in.** Where the second person's act is the record itself — verifying a
+  certificate, signing a checklist, verifying a supplier's or a partner's document — the route takes that person from
+  the sign-in. A name for anyone else is refused (`actor_is_the_caller`).
+  - A certificate is never verified by its own holder (`self_verification`).
+  - A supplier or partner record is sent whole, so each document is judged against the stored copy. A document re-sent
+    exactly as stored keeps its verifier and time. A new or changed one must name the caller, and takes the server's
+    clock (`documentsVerifiedByTheCaller`, in the kernel).
+- **Three new kinds for a supplier's terms:** `display_contract`, `rebate_scheme` and `purchase_contract`.
+  - Before, each was stored with a typed "approved by" that cleared its `unapproved` finding.
+  - The approver now holds the existing supplier-approval authority (`purchase.supplier.approve`: M06-FR-01's "Purchase
+    Approver/Finance", and D02-FR-06's "Finance approves funding terms" for display funding).
+  - Terms recorded without an approval stay unapproved, and the finding stays.
+- **An import job's history reads its approver** from head office's record of the commit (2b-vi-a). A typed one is
+  refused (`approver_is_read_from_the_commit`).
+- **Reconsider-when:** the owner sets a dedicated authority for approving commercial terms. Then only the three kinds'
+  checker permission changes.
