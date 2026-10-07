@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { recordedPayRun } from '../support/pay-run';
 
 /**
  * **API-tier step-up for payroll release and bulk product publish (Stage E slice 1 · SEC-03 · §28 · closes the
@@ -38,14 +39,8 @@ const runState = async (h: ApiHarness, payRunId: string) =>
   ((await h.request({ method: 'GET', path: `/v1/hr/payroll/pay-run/${payRunId}`, userId: OWNER, tenantId: A })).body as { state: string }).state;
 
 const LINES = [{ employeeId: 'e1', employeeName: 'Asha R', bankAccountNo: '123456789012', ifsc: 'HDFC0001234', netPayMinor: 1_444_000 }];
-const LOCKED = [
-  { kind: 'drafted', payPeriod: '2026-08', by: 'maker', at: '2026-08-28T10:00:00Z' },
-  { kind: 'submitted', by: 'maker', at: '2026-08-28T10:05:00Z' },
-  { kind: 'approved', by: 'checker', at: '2026-08-28T11:00:00Z' },
-  { kind: 'locked', at: '2026-08-28T11:30:00Z' },
-];
 const bankFile = (h: ApiHarness, key: string, ev: Evidence = {}) =>
-  h.request({ method: 'POST', path: '/v1/hr/payroll/bank-file', userId: OWNER, tenantId: A, idempotencyKey: key, body: { payRunId: 'pr1', events: LOCKED, lines: LINES }, ...ev });
+  h.request({ method: 'POST', path: '/v1/hr/payroll/bank-file', userId: OWNER, tenantId: A, idempotencyKey: key, body: { payRunId: 'pr1', lines: LINES }, ...ev });
 
 describe('payroll release steps need a fresh MFA re-auth at the write boundary', () => {
   it('draft and submit are ordinary; APPROVE with a password-only session is refused and NOT appended; a fresh MFA approve lands', async () => {
@@ -109,6 +104,8 @@ describe('payroll release steps need a fresh MFA re-auth at the write boundary',
     const h = apiHarness();
     await h.seedOwner(A, OWNER);
     await h.provisionOwner(A, CHECKER);
+    // The file reads the run head office RECORDED (2b-vi-b-2): submitted by the owner, approved and locked by the checker.
+    await recordedPayRun(h, A, 'pr1', { maker: OWNER, checker: CHECKER });
     const refused = await bankFile(h, 'f1', NONE);
     expect(refused.status).toBe(403);
     expect(errorOf(refused)?.code).toBe('reauthentication_required');

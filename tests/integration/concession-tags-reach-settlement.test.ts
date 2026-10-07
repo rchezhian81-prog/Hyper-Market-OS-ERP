@@ -3,6 +3,7 @@
 // period charge and the settlement statement without anyone re-keying them.
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedBody } from '../support/approval-request';
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa27';
 const OWNER = 'u-owner'; const MGR = 'u-mgr'; const CASH = 'u-cash'; const ACCT = 'u-acct';
@@ -34,10 +35,17 @@ async function cast(entitled = true): Promise<ApiHarness> {
   if (entitled) await h.enableFeature(A, 'dept.concession');
   return h;
 }
-const contract = (h: ApiHarness, over: Record<string, unknown> = {}, key = 'ct-gold') => post(h, CT, OWNER, key, {
-  concessionaireId: 'cx-gold', name: 'Gold counter', branchId: 'br-1', startsOn: '2026-01-01', endsOn: '2026-12-31',
-  basis: 'revenue_share', revenueShareBps: 1_500, depositMinor: 0, insuranceUntil: '2027-12-31', licenceUntil: '2027-12-31', approvedBy: 'u-owner', ...over,
-});
+// The contract is approved the way a person approves it (ADR-0024): the accountant — another concession manager —
+// approves exactly these terms in their own session, and the owner records it naming that approval.
+const contract = async (h: ApiHarness, over: Record<string, unknown> = {}, key = 'ct-gold') => {
+  const terms = {
+    concessionaireId: 'cx-gold', name: 'Gold counter', branchId: 'br-1', startsOn: '2026-01-01', endsOn: '2026-12-31',
+    basis: 'revenue_share', revenueShareBps: 1_500, depositMinor: 0, insuranceUntil: '2027-12-31', licenceUntil: '2027-12-31', ...over,
+  };
+  // An unreadable contract is refused before any approval is looked at — sent as it is.
+  if (over['commissionOn'] !== undefined && over['commissionOn'] !== 'gross' && over['commissionOn'] !== 'net') return post(h, CT, OWNER, key, terms);
+  return post(h, CT, OWNER, key, await approvedBody(h, A, OWNER, ACCT, 'concession_contract', 'ct-gold', terms, { contractId: 'ct-gold' }));
+};
 
 interface Tag { tagId: string; kind: string; netMinor: number; commissionMinor: number; history: { op: string; byRole: string }[]; settlementStatus: string }
 interface Stream { tags: Tag[]; totals: { tags: number; netMinor: number; commissionMinor: number } }

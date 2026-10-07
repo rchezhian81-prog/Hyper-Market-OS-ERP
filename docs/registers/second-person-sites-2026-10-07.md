@@ -19,7 +19,7 @@ only when its slice merges with a test that proves it.
 - **a** — 2b-vi-a, *this slice, done*.
 - **b** — 2b-vi-b, money and price approvals, each with its screen, in three parts:
   - **b-1** pricing — done;
-  - **b-2** finance;
+  - **b-2** finance — done;
   - **b-3** stock, orders and purchasing.
 - **c** — 2b-vi-c, low-severity and record-only names, plus seals on the box-relayed decisions.
 
@@ -34,11 +34,11 @@ only when its slice merges with a test that proves it.
 | 5 | `POST /v1/prices/list/:productId/entries/:entryId` | `approval.decidedBy` | A | Unlocked a below-cost list entry | M05-FR-01/02, §28 | b-1 | **Fixed** (b-1): kind `price_list_entry` (API-only; no screen) |
 | 6 | `POST /v1/promotions/:id/launch` | `approvedBy` | A | Launched a promotion that needed approval | M20, M05-FR-04, §28 | b-1 | **Fixed** (b-1): kind `promotion_launch`; the screen asks and launches with the approval |
 | 7 | `POST /v1/pos/quotations/:id` | `approval.decidedBy` | A (no authority check at all) | Allowed a quote below the margin floor; the floor itself came from the body | M12-FR-02, M05-FR-02, §28 | b-1 | **Fixed** (b-1): kind `quotation_below_floor`, approver must hold `price.change.approve` (API-only; no screen) |
-| 8 | `POST /v1/finance/periods/:period/reopen` | `approvedBy` | A | Reopened a closed accounting period | M23-FR-04, §28 | b | Open |
-| 9 | `POST /v1/finance/periods/:period/close` | `signedBy` | A | Certified a period close | §28 (M23) | b | Open |
-| 10 | `POST /v1/concession/contracts/:id` | `approvedBy` | A (no check) | Cleared the contract's `not_approved` trading blocker | M27, §28 | b | Open |
-| 11 | `POST /v1/concession/concessionaires/:id/deposit-movements/:movementId` | `approvedBy` | A (no check) | A forfeit took a deposit off the liability | M27, §28 | b | Open |
-| 12 | `POST /v1/hr/payroll/bank-file` (+ `/journal`) | `events[].approved.by` | A | Built the salary bank file from caller-supplied events | §28, SEC-03 | b (pilot hold) | Open; must read the durable pay run |
+| 8 | `POST /v1/finance/periods/:period/reopen` | `approvedBy` | A | Reopened a closed accounting period | M23-FR-04, §28 | b-2 | **Fixed** (b-2): kind `period_reopen`, approver holds `finance.period.sign`; the Finance screen asks and reopens at head office |
+| 9 | `POST /v1/finance/periods/:period/close` | `signedBy` | A | Certified a period close | §28 (M23) | b-2 | **Fixed** (b-2): kind `period_close` — the signature is the signer's own approval; the Finance screen asks and closes at head office |
+| 10 | `POST /v1/concession/contracts/:id` | `approvedBy` | A (no check) | Cleared the contract's `not_approved` trading blocker | M27, §28 | b-2 | **Fixed** (b-2): kind `concession_contract`, approved by another concession manager (API-only; no screen) |
+| 11 | `POST /v1/concession/concessionaires/:id/deposit-movements/:movementId` | `approvedBy` | A (no check) | A forfeit took a deposit off the liability | M27, §28 | b-2 | **Fixed** (b-2): kind `concession_deposit_forfeit`, only a forfeit takes an approval (API-only; no screen) |
+| 12 | `POST /v1/hr/payroll/bank-file` (+ `/journal`) | `events[].approved.by` | A | Built the salary bank file from caller-supplied events | §28, SEC-03 | b-2 | **Fixed** (b-2): both read the pay run head office recorded (approved by a different signed-in person); a history in the request is refused; the lines / net must be the run's recorded net total and headcount |
 | 13 | `POST /v1/inventory/write-off/:id` | `approvedBy` | A | Approved a material stock loss | M28-FR-01, M27-FR-02, §28 | b | Open |
 | 14 | `POST /v1/inventory/movements` (`adjusted`) | `approvedBy` and `enteredBy` | A | An upward adjustment approved by one body string against another | M08, §28, hard rule #2 | b | Open |
 | 15 | `POST /v1/orders/:id/refunds` | `approvedBy` | A | Moved money back to a customer | M18-FR-04, M20-FR-03, §28 | b | Open |
@@ -83,6 +83,12 @@ only when its slice merges with a test that proves it.
   price also chooses the floor it is checked against. The second person now sees the floor and costs in the approval's
   details, but the floor itself should come from the shop's own margin policy (M05-FR-02). That register does not
   exist at head office yet; it belongs with the operative price and promotion registers in **Wave 4 (SF-01)**.
+- **A concession contract's two versions shared one record id** (found in 2b-vi-b-2). Approving a contract that was
+  recorded unapproved — the normal two-person path now — collided with the first version on PostgreSQL (a crash, not
+  a new version). Fixed: each version's id comes from its own key.
+- **A month-close approval names the month, not the figures.** Head office re-checks its own control totals at the
+  moment of closing, so a month that stopped agreeing after the approval cannot close. A posting after the approval
+  that still agrees is not shown to the signer again. Recorded as the reconsider-when.
 - **The pay-run route's gate.** It is `payroll.statutory.read` for every step, approve and lock included. Payroll
   approve, lock and bank-file release are under the pilot hold; this is recorded here and **no new permission is
   invented**. The owner sets the payroll approval authority when the hold lifts.

@@ -3222,14 +3222,18 @@ export function concessionAdapter(input: {
     },
 
     recordContract: async (tenantId, contract) => {
+      // Keyed on the terms — re-sending the same contract collapses, a change of terms is a new fact.
+      // The eligibility terms (insurance/licence/approver) are in the key too, so renewing insurance or
+      // approving the contract is a new version the eligibility gate reads.
+      const key = `concession-contract-${tenantId}-${contract.contractId}-${contract.basis}-${contract.fixedRentMinor ?? 0}-${contract.revenueShareBps ?? 0}-${contract.depositMinor}-${contract.active}-${contract.insuranceUntil ?? 'none'}-${contract.licenceUntil ?? 'none'}-${contract.approvedBy ?? 'unapproved'}`;
       await input.store.append(tenantId, forConcession(contract.contractId), makeEvent({
-        id: `concession-contract-${contract.contractId}-${contract.basis}-${contract.fixedRentMinor ?? 0}-${contract.revenueShareBps ?? 0}`,
+        // Each VERSION has its own id, derived from its key (2b-vi-b-2). Before, the id named only the money terms, so
+        // approving a contract recorded unapproved — the normal two-person path now — collided with the first version's
+        // id on PostgreSQL (a 500) instead of landing as the new version.
+        id: `concession-contract-${contract.contractId}-${createHash('sha256').update(key).digest('hex').slice(0, 16)}`,
         type: 'ConcessionContractSet',
         occurredAt: input.now(),
-        // Keyed on the terms — re-sending the same contract collapses, a change of terms is a new fact.
-        // The eligibility terms (insurance/licence/approver) are in the key too, so renewing insurance or
-        // approving the contract is a new version the eligibility gate reads.
-        idempotencyKey: `concession-contract-${tenantId}-${contract.contractId}-${contract.basis}-${contract.fixedRentMinor ?? 0}-${contract.revenueShareBps ?? 0}-${contract.depositMinor}-${contract.active}-${contract.insuranceUntil ?? 'none'}-${contract.licenceUntil ?? 'none'}-${contract.approvedBy ?? 'unapproved'}`,
+        idempotencyKey: key,
         source: 'api/finance',
         payload: contract,
       }));
@@ -7098,15 +7102,6 @@ export function financeAdapter(input: {
         source: 'api/finance',
         payload: { period, ...reopen, reopenedAt: input.now(), seq },
       }));
-    },
-
-    // The §28 authority to SIGN a month-close or APPROVE a re-open (M23-FR-04) — finance.period.sign, held by
-    // the owner and the accountant (the CA/books person the roadmap has sign the control totals). A named
-    // signer/approver who does not hold it does not count (the same check as the other §28 approvals).
-    canSignPeriod: async (tenantId, userId) => {
-      const grants = await effectiveGrants(input.store, tenantId);
-      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
-      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('finance.period.sign'));
     },
   };
 }

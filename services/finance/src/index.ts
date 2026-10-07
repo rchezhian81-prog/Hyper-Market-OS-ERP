@@ -16,6 +16,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { reopenPeriod, type ReopenApproval } from '../../../packages/period-close/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 
 export interface JournalLine {
   readonly accountCode: string;
@@ -165,9 +166,9 @@ export interface FinanceDeps {
   readonly markClosed: (tenantId: string, period: string, signedBy: string) => Promise<void> | void;
   /** Reopen a closed period as a NEW append-only fact (never an edit) — the period becomes re-closable. */
   readonly markReopened: (tenantId: string, period: string, reopen: { readonly requestedBy: string; readonly approvedBy: string; readonly reason: string }) => Promise<void> | void;
-  /** Whether a user holds `finance.period.sign` — the §28 authority to SIGN a month-close or APPROVE a
-   *  re-open (the owner or the accountant/CA). A named signer/approver who does not hold it does not count. */
-  readonly canSignPeriod: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /** Head office's maker-checker engine (ADR-0024): the signer of a close and the approver of a reopen act in their
+   *  own session, holding `finance.period.sign`. Optional on a bare stub (then every approval is unknown). */
+  readonly approvals?: ApprovalPort;
   readonly now: () => string;
 }
 
@@ -200,7 +201,7 @@ export function financeRoutes(deps: FinanceDeps): readonly Route[] {
       permission: 'finance.period.close', idempotent: true,
       handler: async (ctx) => {
         const period = ctx.params['period'] ?? '';
-        const body = (ctx.body ?? {}) as { signedBy?: string };
+        const body = (ctx.body ?? {}) as { signedBy?: unknown; approvalId?: unknown };
         // A period is not closed twice. If figures changed after signing, it is REOPENED (with a second
         // person's approval), never silently re-closed over the top of the signed set.
         if ((await deps.periodStates(ctx.tenantId)).get(period) === 'closed') {
@@ -211,34 +212,35 @@ export function financeRoutes(deps: FinanceDeps): readonly Route[] {
             nextSafeAction: `To change a signed period, reopen ${period} with a second person's approval, or post a correction to the open period. Nothing was changed.`,
           });
         }
+        // The signature (ADR-0024 · §28 · M23-FR-04): an approval the signer GAVE in their own session for closing THIS
+        // month (kind `period_close`) — not the closer's own, and the signer still holds `finance.period.sign`. A name
+        // typed into `signedBy` is not a signature and is refused by name. The engine below still refuses a signer who
+        // posted into the month, and re-checks head office's own control totals at this moment.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: body.approvalId, typedField: 'signedBy', typedValue: body.signedBy,
+          kind: 'period_close', subjectRef: period, details: actionDetails(ctx.body, { period }), valueMinor: null,
+          maker: ctx.userId, usedBy: `period-close:${period}`, now: deps.now(),
+        });
         const result = closePeriod({
           period,
           checks: await deps.controlTotals(ctx.tenantId, period),
           closedBy: ctx.userId,
           postedBy: await deps.postersIn(ctx.tenantId, period),
-          ...(body.signedBy === undefined ? {} : { signedBy: body.signedBy }),
+          ...(opened === undefined ? {} : { signedBy: opened.decision.decidedBy }),
         });
         if (!result.ok) {
           throw apiError(422, {
             code: result.refusedBecause!,
             whatHappened: result.detail,
             wasItSaved: 'not_saved',
-            nextSafeAction: 'The period is still open and everything in it is unchanged. Settle what is named above, then close it.',
+            nextSafeAction: result.refusedBecause === 'not_signed'
+              ? `The period is still open. Ask for its signature (POST /v1/approvals/requests, kind period_close, details { period: "${period}" }); once someone who may sign a period approves it, close it with the approvalId.`
+              : 'The period is still open and everything in it is unchanged. Settle what is named above, then close it.',
           });
         }
-        // §28 authority gate: the engine has confirmed the signer did not post into the month, but a pure
-        // engine cannot see roles — a name typed in the box is not a signature. The named signer must
-        // GENUINELY hold finance.period.sign (the owner or the accountant/CA), else the certification does
-        // not count (the same shape as the other §28 approvals). Nothing is closed.
-        if (!(await deps.canSignPeriod(ctx.tenantId, body.signedBy!))) {
-          throw apiError(422, {
-            code: 'signer_may_not_certify',
-            whatHappened: `${body.signedBy} does not hold the authority to sign a period close, so their signature on ${period} does not count.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Have someone who may sign a period (the owner or the accountant) certify the control totals. Nothing was closed.',
-          });
-        }
-        await deps.markClosed(ctx.tenantId, period, body.signedBy!);
+        // Every rule passed: the signature is spent — once — and only then is the month closed.
+        await opened!.spend();
+        await deps.markClosed(ctx.tenantId, period, opened!.decision.decidedBy);
         return { status: 200, body: { closed: result.detail } };
       },
     },
@@ -251,17 +253,33 @@ export function financeRoutes(deps: FinanceDeps): readonly Route[] {
       permission: 'finance.period.close', idempotent: true,
       handler: async (ctx) => {
         const period = ctx.params['period'] ?? '';
-        const b = (ctx.body ?? {}) as { approvedBy?: unknown; reason?: unknown };
-        if (typeof b.approvedBy !== 'string' || b.approvedBy.trim() === '' || typeof b.reason !== 'string' || b.reason.trim() === '') {
+        const b = (ctx.body ?? {}) as { approvedBy?: unknown; reason?: unknown; approvalId?: unknown };
+        if (typeof b.reason !== 'string' || b.reason.trim() === '') {
           throw apiError(400, {
-            code: 'reopen_needs_approver_and_reason',
-            whatHappened: 'Reopening a closed period needs { approvedBy } — a different person who approves it (§28) — and a written { reason }.',
+            code: 'reopen_needs_a_reason',
+            whatHappened: 'Reopening a closed period needs a written { reason } — the first thing an auditor asks.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send who approves the reopen and why. Nothing was changed.',
+            nextSafeAction: 'Send why it needs reopening. Nothing was changed.',
+          });
+        }
+        // The approver (ADR-0024 · §28 · M23-FR-04): an approval they GAVE in their own session for reopening THIS month
+        // with THIS reason (kind `period_reopen`) — never the requester's own, and they still hold `finance.period.sign`.
+        // A typed `approvedBy` is refused by name.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b.approvalId, typedField: 'approvedBy', typedValue: b.approvedBy,
+          kind: 'period_reopen', subjectRef: period, details: actionDetails(ctx.body, { period }), valueMinor: null,
+          maker: ctx.userId, usedBy: `period-reopen:${period}`, now: deps.now(),
+        });
+        if (opened === undefined) {
+          throw apiError(422, {
+            code: 'reopen_needs_approval',
+            whatHappened: `Reopening ${period} needs a second person's approval — someone who may sign a period, not you (§28).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: `Ask for approval (POST /v1/approvals/requests, kind period_reopen, details { reason, period: "${period}" }); once it is approved, reopen with the approvalId. Nothing was changed.`,
           });
         }
         const currentState = (await deps.periodStates(ctx.tenantId)).get(period) ?? 'open';
-        const approval: ReopenApproval = { subjectRef: period, status: 'approved', decidedBy: b.approvedBy.trim(), reason: b.reason.trim() };
+        const approval: ReopenApproval = { subjectRef: period, status: 'approved', decidedBy: opened.decision.decidedBy, reason: opened.decision.reason };
         const result = reopenPeriod({ period, requestedBy: ctx.userId, approval, at: deps.now(), currentState });
         if (!result.reopened) {
           // not-closed / self-approval — the engine's reason, verbatim.
@@ -272,18 +290,9 @@ export function financeRoutes(deps: FinanceDeps): readonly Route[] {
             nextSafeAction: 'A signed period reopens only with a DIFFERENT person’s approval and a reason; an already-open period has nothing to reopen. Nothing was changed.',
           });
         }
-        // §28 authority gate: the engine confirmed the approver is not the requester, but a name in the box
-        // is not an approval. The named approver must GENUINELY hold finance.period.sign (the owner or the
-        // accountant/CA), else their approval of the re-open does not count. Nothing is reopened.
-        if (!(await deps.canSignPeriod(ctx.tenantId, approval.decidedBy))) {
-          throw apiError(422, {
-            code: 'approver_may_not_approve',
-            whatHappened: `${approval.decidedBy} does not hold the authority to approve a period re-open, so their approval does not count.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Have someone who may sign a period (the owner or the accountant), and who is not the one re-opening it, approve it with a reason. Nothing was changed.',
-          });
-        }
-        await deps.markReopened(ctx.tenantId, period, { requestedBy: ctx.userId, approvedBy: approval.decidedBy, reason: approval.reason });
+        // Every rule passed: the approval is spent — once — and only then is the month reopened (a NEW append-only fact).
+        await opened.spend();
+        await deps.markReopened(ctx.tenantId, period, { requestedBy: ctx.userId, approvedBy: approval.decidedBy, reason: b.reason.trim() });
         return { status: 200, body: { period, state: result.state, reopenedBy: ctx.userId, approvedBy: approval.decidedBy, detail: result.detail } };
       },
     },

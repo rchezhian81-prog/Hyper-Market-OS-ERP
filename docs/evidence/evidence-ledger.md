@@ -18,8 +18,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 924. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
-- Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 78 · Real PostgreSQL 57 · Browser (stub cloud) 44 · Browser (connected) 2 · Device 0 · Staff UAT 0.
+- Evidence test files scanned: 926. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 78 · Real PostgreSQL 57 · Browser (stub cloud) 45 · Browser (connected) 2 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 24 · ENGINE_ONLY 1 · INTEGRATION_TESTED 16 · PARTIALLY_WIRED 52 · WIRED 11.
 - Labels that do NOT hold: none.
 
@@ -49,7 +49,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M20 | PARTIALLY_WIRED | 18 | 8 | 1 | 3 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M21 | INTEGRATION_TESTED | 4 | 11 | 1 | · | · | · | · | ✓ an integration test cites it |
 | M22 | WIRED | 9 | 8 | 1 | 2 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| M23 | PARTIALLY_WIRED | 19 | 17 | 5 | 3 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| M23 | PARTIALLY_WIRED | 21 | 17 | 5 | 4 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M24 | E2E_VERIFIED | 2 | 7 | 1 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M25 | E2E_VERIFIED | 8 | 17 | 2 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M26 | E2E_VERIFIED | 2 | 7 | 1 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
@@ -113,7 +113,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | QG-04 | INTEGRATION_TESTED | 1 | 1 | 1 | 1 | · | · | · | ✓ an integration test cites it |
 | QG-05 | PARTIALLY_WIRED | 1 | · | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-06 | PARTIALLY_WIRED | 1 | 1 | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| QG-07 | PARTIALLY_WIRED | 12 | 10 | 3 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| QG-07 | PARTIALLY_WIRED | 12 | 10 | 3 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-08 | PARTIALLY_WIRED | 1 | 2 | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-09 | PARTIALLY_WIRED | 1 | · | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-10 | PARTIALLY_WIRED | · | · | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
@@ -155,7 +155,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **M19** — browser: `delivery-route-partial-delivery.e2e.ts`, `driver-handheld-syncs-through-the-box.e2e.ts`, `picker-handheld-syncs-through-the-box.e2e.ts`, `picker-substitution-delivery.e2e.ts`, `substitution-exception-claim-resolve.e2e.ts`
 - **M20** — browser: `customer-login.e2e.ts`, `customer-order-delivery.e2e.ts`, `erasure-console.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`
 - **M22** — browser: `b2b-portal-delivery.e2e.ts`, `customer-login.e2e.ts` · real PostgreSQL: `b2b-reconcile-ar.test.ts`
-- **M23** — browser: `day-book-post-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `suppliers-delivery.e2e.ts` · real PostgreSQL: `b2b-reconcile-ar.test.ts`, `credit-note-reconciliation.test.ts`, `stored-value-liability.test.ts`, `the-store-buys-what-it-sells.test.ts`, `the-till-exchanges.test.ts`
+- **M23** — browser: `day-book-post-delivery.e2e.ts`, `finance-month-close-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `suppliers-delivery.e2e.ts` · real PostgreSQL: `b2b-reconcile-ar.test.ts`, `credit-note-reconciliation.test.ts`, `stored-value-liability.test.ts`, `the-store-buys-what-it-sells.test.ts`, `the-till-exchanges.test.ts`
 - **M24** — browser: `supplier-portal-delivery.e2e.ts` · real PostgreSQL: `beyond-the-till.test.ts`
 - **M25** — browser: `checklist-delivery.e2e.ts`, `rostering-delivery.e2e.ts`, `screens-open-offline.e2e.ts` · real PostgreSQL: `beyond-the-till.test.ts`, `branch-scope-is-the-servers.test.ts`
 - **M26** — browser: `facilities-delivery.e2e.ts` · real PostgreSQL: `beyond-the-till.test.ts`
@@ -177,6 +177,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **WF-10** — browser: `the-served-till-takes-a-sale.e2e.ts`, `the-store-trades-a-day.e2e.ts` · connected: `the-store-trades-a-day.e2e.ts` · real PostgreSQL: `the-shop-reaches-the-cloud.test.ts`, `the-store-trades-a-day.test.ts`
 - **QG-02** — browser: `the-till-and-manager-meet-the-interaction-budget.e2e.ts`
 - **QG-04** — browser: `risk-acceptance-delivery.e2e.ts` · real PostgreSQL: `offline-sync-slice.test.ts`
+- **QG-07** — browser: `finance-month-close-delivery.e2e.ts` · real PostgreSQL: `offline-sync-slice.test.ts`, `the-old-shop-arrives-whole.test.ts`, `we-get-it-out-ourselves.test.ts`
 - **MG-04** — browser: `migration-decision-delivery.e2e.ts` · real PostgreSQL: `the-old-shop-arrives-whole.test.ts`, `schema-migrations.test.ts`
 - **MG-06** — browser: `migration-decision-delivery.e2e.ts` · real PostgreSQL: `the-old-shop-arrives-whole.test.ts`
 - **MG-11** — browser: `migration-decision-delivery.e2e.ts` · real PostgreSQL: `the-old-shop-arrives-whole.test.ts`

@@ -22,6 +22,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import {
   computePeriodCharge, settleConcession, mayConcessionTrade, depositPosition, valueOwnStock, checkStockAccess,
   type ConcessionContract, type ConcessionSale, type ConcessionChargeBasis,
@@ -63,6 +64,9 @@ export interface ConcessionDeps {
    * Folded from the M08 movement ledger's `ownership` field, valuing each owner's pool separately.
    */
   readonly storeValuation: (tenantId: string, branchId: string) => Promise<ValuationResult> | ValuationResult;
+  /** Head office's maker-checker engine (ADR-0024): a contract's approval and a deposit forfeit's are a second person's
+   *  own act. Optional on a bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   readonly now: () => string;
 }
 
@@ -91,6 +95,15 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
             nextSafeAction: 'Send the contract fields and try again. Nothing was set.',
           });
         }
+        // The approval (ADR-0024 · §28 · M27-FR-01 "contracts approved"): one ANOTHER person authorised to manage
+        // concession contracts GAVE in their own session for exactly these terms (kind `concession_contract`). Without it
+        // the contract is recorded unapproved and cannot trade. A typed `approvedBy` — before, stored with no check of
+        // any kind — is refused by name.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+          kind: 'concession_contract', subjectRef: contractId, details: actionDetails(ctx.body, { contractId }), valueMinor: null,
+          maker: ctx.userId, usedBy: `concession-contract:${contractId}`, now: deps.now(),
+        });
         const contract: ConcessionContract = {
           contractId, tenantId: ctx.tenantId, branchId: b['branchId'] as string,
           concessionaireId: b['concessionaireId'] as string, name: b['name'] as string,
@@ -103,11 +116,12 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
           // unapproved contract cannot trade (§28). Previously dropped, so may-trade could never pass.
           ...(isDate(b['insuranceUntil']) ? { insuranceUntil: b['insuranceUntil'] as string } : {}),
           ...(isDate(b['licenceUntil']) ? { licenceUntil: b['licenceUntil'] as string } : {}),
-          ...(isStr(b['approvedBy']) ? { approvedBy: b['approvedBy'] as string } : {}),
+          ...(opened === undefined ? {} : { approvedBy: opened.decision.decidedBy }),
           ...(b['commissionOn'] === 'gross' || b['commissionOn'] === 'net' ? { commissionOn: b['commissionOn'] } : {}),
         };
+        await opened?.spend();
         await deps.recordContract(ctx.tenantId, contract);
-        return { status: 201, body: { contractId, concessionaireId: contract.concessionaireId, basis: contract.basis } };
+        return { status: 201, body: { contractId, concessionaireId: contract.concessionaireId, basis: contract.basis, approvedBy: contract.approvedBy ?? null } };
       },
     },
     {
@@ -203,7 +217,8 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
     },
     {
       // Record a deposit movement — a deposit is the concessionaire's money, a LIABILITY never rent. A
-      // forfeit needs a named approver (the engine keeps an unapproved forfeit as a liability).
+      // forfeit leaves the liability only with a second person's own approval (ADR-0024, kind
+      // `concession_deposit_forfeit`); the engine keeps an unapproved forfeit as a liability.
       api: 'API-09', method: 'POST', path: '/v1/concession/concessionaires/:concessionaireId/deposit-movements/:movementId',
       permission: 'concession.contract.manage', idempotent: true,
       entitlement: 'dept.concession',
@@ -221,11 +236,29 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
             nextSafeAction: 'Send the kind and amount. A forfeit needs a named approver to leave the liability.',
           });
         }
+        // Only a forfeit takes an approval — money received or refunded is the concessionaire's either way.
+        if (b['kind'] !== 'forfeited' && (b['approvalId'] !== undefined || b['approvedBy'] !== undefined)) {
+          throw apiError(400, {
+            code: 'only_a_forfeit_is_approved',
+            whatHappened: `A ${String(b['kind'])} deposit movement takes no approval — only a forfeit leaves the liability on a second person's say-so.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the movement without an approval. Nothing was recorded.',
+          });
+        }
+        // A forfeit's second person (ADR-0024 · §28): an approval they GAVE in their own session for exactly this
+        // forfeit and amount. A typed `approvedBy` — before, taken with no check — is refused by name.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+          kind: 'concession_deposit_forfeit', subjectRef: `${concessionaireId}/${movementId}`,
+          details: actionDetails(ctx.body, { concessionaireId, movementId }), valueMinor: b['amountMinor'] as number,
+          maker: ctx.userId, usedBy: `deposit-forfeit:${concessionaireId}/${movementId}`, now: deps.now(),
+        });
         const movement: DepositMovement = {
           movementId, concessionaireId, kind: b['kind'] as DepositMovement['kind'],
           amountMinor: b['amountMinor'] as number, at: deps.now(),
-          ...(isStr(b['approvedBy']) ? { approvedBy: b['approvedBy'] as string } : {}),
+          ...(opened === undefined ? {} : { approvedBy: opened.decision.decidedBy }),
         };
+        await opened?.spend();
         await deps.recordDepositMovement(ctx.tenantId, movement);
         return { status: 201, body: { movementId, concessionaireId, kind: movement.kind, amountMinor: movement.amountMinor } };
       },

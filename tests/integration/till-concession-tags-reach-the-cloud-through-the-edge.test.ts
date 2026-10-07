@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
+import { approvedBody } from '../support/approval-request';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
@@ -27,7 +28,7 @@ const OWNER = 'u-owner';
 const CONTRACT = {
   branchId: 'br-1', concessionaireId: 'jeweller-1', name: 'Gold counter', startsOn: '2026-01-01', endsOn: '2026-12-31',
   basis: 'revenue_share', revenueShareBps: 1_500, commissionOn: 'gross', depositMinor: 500_000,
-  insuranceUntil: '2027-06-30', licenceUntil: '2027-06-30', approvedBy: OWNER,
+  insuranceUntil: '2027-06-30', licenceUntil: '2027-06-30',
 };
 
 /** A docket line as the till's page hands it to the box's lane socket. */
@@ -51,8 +52,10 @@ describe('till concession tags reach the cloud through the real edge (M27-FR-03,
     h = apiHarness();
     await h.seedOwner(A, OWNER);
     await h.provisionRole(A, 'u-sync', 'cashier'); // the store's sync identity: concession.tag.sync
+    await h.provisionRole(A, 'u-acct', 'accountant'); // approves the contract in their own session (ADR-0024)
     await h.enableFeature(A, 'dept.concession');
-    const defined = await h.request({ method: 'POST', path: '/v1/concession/contracts/ct-gold', userId: OWNER, tenantId: A, idempotencyKey: 'ct-gold', body: CONTRACT });
+    const approved = await approvedBody(h, A, OWNER, 'u-acct', 'concession_contract', 'ct-gold', CONTRACT, { contractId: 'ct-gold' });
+    const defined = await h.request({ method: 'POST', path: '/v1/concession/contracts/ct-gold', userId: OWNER, tenantId: A, idempotencyKey: 'ct-gold', body: approved });
     expect([200, 201]).toContain(defined.status);
 
     globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {

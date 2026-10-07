@@ -200,6 +200,14 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
     // An approval id with no engine behind it is unknown — never approved by accident.
     expect((await thrown(() => approvalNamedIn(undefined, { ...base, approvalId: 'areq-1', typedField: 'approvedBy', typedValue: 'u-owner' }))).body.code).toBe('approval_unknown');
   });
+  it('a month is signed by whoever may sign a period, and a concession by another concession manager (2b-vi-b-2)', () => {
+    for (const k of ['period_close', 'period_reopen']) {
+      expect(APPROVAL_KINDS[k]).toMatchObject({ makerPermission: 'finance.period.close', checkerPermission: 'finance.period.sign' });
+    }
+    for (const k of ['concession_contract', 'concession_deposit_forfeit']) {
+      expect(APPROVAL_KINDS[k]).toMatchObject({ makerPermission: 'concession.contract.manage', checkerPermission: 'concession.contract.manage' });
+    }
+  });
   it('every pricing kind is approved by the pricing-approval authority', () => {
     for (const k of ['price_change', 'price_list_entry', 'promotion_launch', 'quotation_below_floor']) {
       expect(APPROVAL_KINDS[k]!.checkerPermission).toBe('price.change.approve');

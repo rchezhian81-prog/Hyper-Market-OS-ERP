@@ -93,3 +93,20 @@ must approve — then the kind's checker permission or a value-limit rule change
 - **Recorded, not changed:** the margin floor (and a quotation's line costs) are still read from the request. The
   approver sees them in the approval's details. The shop's own margin policy is Wave 4 (SF-01) work.
 
+## Amendment — 2b-vi-b-2, finance (7 October 2026)
+
+- **Four new kinds.**
+  - `period_close` and `period_reopen` (M23-FR-04, "period close/reopen by Finance with approval"): the person who
+    closes or reopens (`finance.period.close`) asks; someone who may sign a period (`finance.period.sign` — the
+    accountant, the CA or the owner) approves. The signature on a close **is** that approval; head office still refuses
+    a signer who posted into the month and re-checks its own control totals at the moment of closing.
+  - `concession_contract` and `concession_deposit_forfeit` (M27-FR-01, "contracts approved"): the checker is another
+    person authorised to manage concession contracts. As with imports, a dedicated approval authority would be new role
+    policy, which is the owner's to set. Only a forfeit takes an approval.
+- **The salary bank file and the payroll journal read the pay run head office recorded.** That run was submitted,
+  approved and locked step by step by signed-in people (2b-vi-a). A history sent in the request — whose approver was a
+  string anyone could write — is refused by name. When the run recorded its net total and headcount, the file and the
+  journal must pay exactly that.
+- The Finance screen asks for the signature or approval and then closes or reopens at head office. The typed "who is
+  approving" box is gone.
+
