@@ -99,7 +99,11 @@ export type CopyKey =
   | 'askedByLabel' | 'whyLabel' | 'whenLabel' | 'amountLabel' | 'detailsLabel' | 'aboutLabel'
   | 'reasonLabel' | 'reasonPlaceholder' | 'approveBtn' | 'rejectBtn'
   | 'kindDataImport' | 'kindSupplierBank'
+  | 'kindPriceChange' | 'kindPriceListEntry' | 'kindPromotionLaunch' | 'kindQuotationBelowFloor'
   | 'detailJobId' | 'detailContentFingerprint'
+  | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
+  | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
+  | 'detailVendorFundingPerUnit' | 'detailBaselineUnits' | 'detailExpectedUnits'
   | 'statusWaitingForYou' | 'statusWaiting' | 'statusApproved' | 'statusApprovedUntil' | 'statusRejected'
   | 'statusExpired' | 'statusUsed'
   | 'decidedApproved' | 'decidedRejected' | 'decideNeedsReason' | 'decideNobody' | 'decideNotPermitted'
@@ -118,7 +122,13 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     reasonLabel: 'Your reason (the person who asked will read it)', reasonPlaceholder: 'For example: checked the prices against the supplier\'s letter.',
     approveBtn: 'Approve', rejectBtn: 'Reject',
     kindDataImport: 'Apply a bulk import', kindSupplierBank: 'Change where a supplier is paid',
+    kindPriceChange: 'Set a price below cost or below the margin floor', kindPriceListEntry: 'Add a price-list entry below cost or below the margin floor',
+    kindPromotionLaunch: 'Launch a promotion that loses margin', kindQuotationBelowFloor: 'Quote a customer below the margin floor',
     detailJobId: 'Load name', detailContentFingerprint: 'File check code',
+    detailProductId: 'Item', detailPriceMinor: 'New price', detailMrpMinor: 'MRP', detailCostMinor: 'What it costs us', detailCurrency: 'Currency',
+    detailMarginFloorBps: 'Minimum margin', detailPromotionId: 'Offer', detailDescription: 'Offer description', detailNormalPrice: 'Normal price',
+    detailPromoPrice: 'Offer price', detailUnitCost: 'What one unit costs us', detailVendorFundingPerUnit: 'Supplier pays per unit',
+    detailBaselineUnits: 'Units we sell now', detailExpectedUnits: 'Units expected with the offer',
     statusWaitingForYou: 'Waiting for your decision', statusWaiting: 'Waiting for a second person',
     statusApproved: 'Approved by {who}', statusApprovedUntil: 'Approved by {who} — use it before {until}',
     statusRejected: 'Rejected by {who}: {reason}', statusExpired: 'Expired — it was not used in time. Ask again.',
@@ -148,7 +158,13 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     reasonLabel: 'உங்கள் காரணம் (கேட்டவர் இதைப் படிப்பார்)', reasonPlaceholder: 'உதாரணம்: விநியோகஸ்தரின் கடிதத்துடன் விலைகளைச் சரிபார்த்தேன்.',
     approveBtn: 'அனுமதி', rejectBtn: 'மறு',
     kindDataImport: 'மொத்த இறக்குமதியைப் பயன்படுத்துதல்', kindSupplierBank: 'விநியோகஸ்தருக்குப் பணம் செல்லும் கணக்கை மாற்றுதல்',
+    kindPriceChange: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலை வைத்தல்', kindPriceListEntry: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலைப்பட்டியல் பதிவு',
+    kindPromotionLaunch: 'லாபத்தை இழக்கும் சலுகையைத் தொடங்குதல்', kindQuotationBelowFloor: 'குறைந்தபட்ச லாப வரம்புக்குக் கீழே வாடிக்கையாளருக்கு விலை மேற்கோள்',
     detailJobId: 'ஏற்றத்தின் பெயர்', detailContentFingerprint: 'கோப்புச் சரிபார்ப்புக் குறியீடு',
+    detailProductId: 'பொருள்', detailPriceMinor: 'புதிய விலை', detailMrpMinor: 'அதிகபட்ச சில்லறை விலை (MRP)', detailCostMinor: 'நமக்கு ஆகும் அடக்க விலை', detailCurrency: 'நாணயம்',
+    detailMarginFloorBps: 'குறைந்தபட்ச லாப வரம்பு', detailPromotionId: 'சலுகை', detailDescription: 'சலுகை விவரம்', detailNormalPrice: 'வழக்கமான விலை',
+    detailPromoPrice: 'சலுகை விலை', detailUnitCost: 'ஒரு அலகுக்கு நமக்கு ஆகும் அடக்கம்', detailVendorFundingPerUnit: 'ஒரு அலகுக்கு விநியோகஸ்தர் தருவது',
+    detailBaselineUnits: 'இப்போது விற்கும் அலகுகள்', detailExpectedUnits: 'சலுகையுடன் எதிர்பார்க்கும் அலகுகள்',
     statusWaitingForYou: 'உங்கள் முடிவுக்காகக் காத்திருக்கிறது', statusWaiting: 'இரண்டாம் நபருக்காகக் காத்திருக்கிறது',
     statusApproved: '{who} அனுமதித்தார்', statusApprovedUntil: '{who} அனுமதித்தார் — {until}-க்குள் பயன்படுத்தவும்',
     statusRejected: '{who} மறுத்தார்: {reason}', statusExpired: 'காலாவதியானது — நேரத்தில் பயன்படுத்தப்படவில்லை. மீண்டும் கேளுங்கள்.',
@@ -177,11 +193,19 @@ export const COPY_KEYS: readonly CopyKey[] = Object.freeze(Object.keys(APPROVALS
 const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   data_import_commit: 'kindDataImport',
   supplier_bank_change: 'kindSupplierBank',
+  price_change: 'kindPriceChange',
+  price_list_entry: 'kindPriceListEntry',
+  promotion_launch: 'kindPromotionLaunch',
+  quotation_below_floor: 'kindQuotationBelowFloor',
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
   jobId: 'detailJobId',
   contentFingerprint: 'detailContentFingerprint',
+  productId: 'detailProductId', priceMinor: 'detailPriceMinor', mrpMinor: 'detailMrpMinor', costMinor: 'detailCostMinor',
+  currency: 'detailCurrency', marginFloorBps: 'detailMarginFloorBps', promotionId: 'detailPromotionId', description: 'detailDescription',
+  normalPrice: 'detailNormalPrice', promoPrice: 'detailPromoPrice', unitCost: 'detailUnitCost',
+  vendorFundingPerUnit: 'detailVendorFundingPerUnit', baselineUnits: 'detailBaselineUnits', expectedUnits: 'detailExpectedUnits',
 };
 
 // ── small, deterministic formatters ───────────────────────────────────────────────────────────────────────────
@@ -211,8 +235,18 @@ const LONG_CODE = /^[0-9a-f]{24,}$/i;
 function detailValue(t: (k: CopyKey) => string, key: string, value: unknown): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'boolean') return value ? t('yesWord') : t('noWord');
-  if (typeof value === 'number') return /Minor$/.test(key) && Number.isSafeInteger(value) ? rupees(value) : String(value);
+  if (typeof value === 'number') {
+    if (/Minor$/.test(key) && Number.isSafeInteger(value)) return rupees(value);
+    // Basis points as the shop says it: 2000 → "20.00%".
+    if (/Bps$/.test(key) && Number.isSafeInteger(value)) return `${(value / 100).toFixed(2)}%`;
+    return String(value);
+  }
   if (typeof value === 'string') return LONG_CODE.test(value) ? `${value.slice(0, 12)}…` : value;
+  // Money as { minor, currency } (an offer's prices) reads as rupees, never as code.
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const m = value as Record<string, unknown>;
+    if (Number.isSafeInteger(m['minor']) && m['currency'] === 'INR' && Object.keys(m).length === 2) return rupees(m['minor'] as number);
+  }
   const text = JSON.stringify(value);
   return text.length > 120 ? `${text.slice(0, 119)}…` : text;
 }
