@@ -80,7 +80,8 @@ import {
 } from './expiry-session';
 import type { Batch } from '../../../packages/fefo/src/index';
 import {
-  createFinanceSession, type FinancePorts, type FinanceSession,
+  createFinanceSession, periodCloseRequestBody, periodReopenRequestBody,
+  type FinancePorts, type FinanceSession, type MonthActionResult,
 } from './finance-session';
 import {
   createGstReconciliationSession, type GstReconciliationPorts, type GstReconciliationSession, type QueueRow as GstQueueRow,
@@ -565,7 +566,14 @@ export interface FinanceData {
   readonly openExceptionCount?: number;
 }
 
-export function financePortsFromData(data: FinanceData | undefined): FinancePorts {
+/** Head office as the finance screen reaches it (ADR-0024 · API-09): the approval engine (ask + inbox) and the month's
+ *  close and reopen routes — every call in the caller's OWN session. Without it the screen closes and reopens nothing. */
+export interface FinanceHeadOfficePorts extends HeadOfficeApprovalPorts {
+  readonly closeAtHeadOffice: NonNullable<FinancePorts['closeAtHeadOffice']>;
+  readonly reopenAtHeadOffice: NonNullable<FinancePorts['reopenAtHeadOffice']>;
+}
+
+export function financePortsFromData(data: FinanceData | undefined, headOffice?: FinanceHeadOfficePorts): FinancePorts {
   return {
     // NOT defaulted to a zeroed ledger. A ledger of noughts would disagree with the accounts by
     // the whole month and read as a reconciliation failure, when the truth is that nobody has
@@ -575,11 +583,19 @@ export function financePortsFromData(data: FinanceData | undefined): FinancePort
     periodState: () => data?.periodState ?? { closed: false },
     unsentSyncCount: () => data?.unsentSyncCount ?? 0,
     openExceptionCount: () => data?.openExceptionCount ?? 0,
+    // Wired to head office only when given: a local-only screen asks nothing and closes nothing (it says so).
+    ...(headOffice === undefined ? {} : {
+      askApproval: headOffice.askApproval,
+      approvalInbox: headOffice.approvalInbox,
+      closeAtHeadOffice: headOffice.closeAtHeadOffice,
+      reopenAtHeadOffice: headOffice.reopenAtHeadOffice,
+    }),
   };
 }
 
-/** Build the finance screen, or `null` when the box was told no chart-of-accounts headings. */
-export function bootFinance(data: FinanceData | undefined): FinanceSession | null {
+/** Build the finance screen, or `null` when the box was told no chart-of-accounts headings. `headOffice` wires the
+ *  month's close and reopen to head office's engine and routes; without it the screen is a local evidence view. */
+export function bootFinance(data: FinanceData | undefined, headOffice?: FinanceHeadOfficePorts): FinanceSession | null {
   if (data === undefined) return null;
   return createFinanceSession(
     {
@@ -591,7 +607,7 @@ export function bootFinance(data: FinanceData | undefined): FinanceSession | nul
       tradingDayCutoff: data.tradingDayCutoff ?? '00:00',
       journalPrefixes: data.journalPrefixes ?? { takings: '', tax: '', refunds: '' },
     },
-    financePortsFromData(data),
+    financePortsFromData(data, headOffice),
   );
 }
 
@@ -3084,6 +3100,55 @@ async function postApprovalRequest(ask: ApprovalAsk): Promise<AskResult> {
   }
 }
 
+/** Head office's approval engine as every screen that asks for an approval uses it: ask (the caller is the maker) and
+ *  read the inbox. Shared by the Products & prices screen and the Finance screen's month close and reopen. */
+export interface HeadOfficeApprovalPorts {
+  readonly askApproval: (ask: ApprovalAsk) => Promise<AskResult>;
+  readonly approvalInbox: () => Promise<InboxRead>;
+}
+
+/** The live engine: the same POST and GET the import screen and the Approvals page use. */
+export const HEAD_OFFICE_APPROVALS: HeadOfficeApprovalPorts = Object.freeze({
+  askApproval: (ask: ApprovalAsk) => postApprovalRequest(ask),
+  approvalInbox: () => fetchApprovalInbox(),
+});
+
+/** POST a month's close or reopen at head office (API-09) in the caller's OWN session, naming their approved request.
+ *  The body is built by the same function the approval's details come from, so what was approved is what is sent. */
+async function postMonthAction(path: string, body: Record<string, unknown>, key: string): Promise<MonthActionResult> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  try {
+    const res = await fetchFn(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+    if (res.status >= 200 && res.status < 300) {
+      const answer = (await res.json().catch(() => ({}))) as { closed?: unknown; detail?: unknown };
+      const detail = typeof answer.closed === 'string' ? answer.closed : typeof answer.detail === 'string' ? answer.detail : '';
+      return { result: 'done', detail };
+    }
+    return { result: 'refused', ...(await refusalOf(res)) };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/** The live head office for the finance screen: the shared approval engine and the month's two routes. */
+export const FINANCE_HEAD_OFFICE: FinanceHeadOfficePorts = Object.freeze({
+  ...HEAD_OFFICE_APPROVALS,
+  closeAtHeadOffice: ({ period, approvalId }: { readonly period: string; readonly approvalId: string }) => postMonthAction(
+    `/v1/finance/periods/${encodeURIComponent(period)}/close`, periodCloseRequestBody(approvalId),
+    globalThis.crypto?.randomUUID?.() ?? `period-close-${period}-${approvalId}`,
+  ),
+  reopenAtHeadOffice: ({ period, reason, approvalId }: { readonly period: string; readonly reason: string; readonly approvalId: string }) => postMonthAction(
+    `/v1/finance/periods/${encodeURIComponent(period)}/reopen`, periodReopenRequestBody(reason, approvalId),
+    globalThis.crypto?.randomUUID?.() ?? `period-reopen-${period}-${approvalId}`,
+  ),
+});
+
 /** Record a checker's decision (POST /v1/approvals/requests/:requestId/decide) in the caller's own session. */
 async function postApprovalDecision(input: { readonly requestId: string; readonly decision: DecisionWord; readonly reason: string }): Promise<DecideResult> {
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
@@ -4683,16 +4748,10 @@ export function openRecallCloudPort(): RecallCloudPort {
 }
 
 /** Head office's approval engine as the catalogue screen uses it: ask (the caller is the maker) and read the inbox. */
-export interface CatalogueApprovalPorts {
-  readonly askApproval: (ask: ApprovalAsk) => Promise<AskResult>;
-  readonly approvalInbox: () => Promise<InboxRead>;
-}
+export type CatalogueApprovalPorts = HeadOfficeApprovalPorts;
 
-/** The live engine: the same POST and GET the import screen and the Approvals page use. */
-export const CATALOGUE_APPROVALS: CatalogueApprovalPorts = Object.freeze({
-  askApproval: (ask: ApprovalAsk) => postApprovalRequest(ask),
-  approvalInbox: () => fetchApprovalInbox(),
-});
+/** The live engine: the same POST and GET the import screen, the Approvals page and the finance screen use. */
+export const CATALOGUE_APPROVALS: CatalogueApprovalPorts = HEAD_OFFICE_APPROVALS;
 
 export function cataloguePortsFromData(data: CatalogueData | undefined, outbox?: SyncOutbox, launchPromotion?: PromotionLaunchPort, changePrice?: PriceChangeCloudPort, approvals?: CatalogueApprovalPorts): CataloguePorts {
   const costOf = (productId: string): CostRegister => {
@@ -5040,7 +5099,9 @@ if (browserWindow !== undefined) {
   if (service !== null) browserWindow.serviceSession = service;
   const expiry = bootExpiry(browserWindow.expiryData);
   if (expiry !== null) browserWindow.expirySession = expiry;
-  const finance = bootFinance(browserWindow.financeData);
+  // The month's close and reopen go to head office (ADR-0024 · M23-FR-04): asked for, approved by someone who may sign
+  // a month on their own Approvals page, and done naming that approval — never on a typed name.
+  const finance = bootFinance(browserWindow.financeData, FINANCE_HEAD_OFFICE);
   if (finance !== null) browserWindow.financeSession = finance;
   // The portal actions this screen commits queue in a DEVICE-backed outbox, so a poll/verify requested while
   // the link is down survives the operator closing and reopening the tab before it syncs (P-01, §31). A device

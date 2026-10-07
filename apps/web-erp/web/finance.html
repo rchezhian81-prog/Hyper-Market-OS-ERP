@@ -16,6 +16,11 @@
 
       Only a posting the accounts ACCEPTED counts as received. The queue sits beside the
       totals, never inside them.
+
+      Closing and reopening a month happen AT HEAD OFFICE, by two people (ADR-0024 / §28):
+      the closer asks for the signature here, someone who may sign a month (the accountant
+      or the CA) approves it on their own Approvals page, and only then is the month closed,
+      naming that approval. No name is ever typed on this page.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <style>
@@ -104,10 +109,20 @@
       }
       .banner[hidden] { display: none; }
       .banner.good { background: var(--good); color: var(--on-accent); }
+      /* Waiting on a second person: not done, not wrong — somebody has to come back to it. */
+      .banner.pending { background: var(--warn-surface); color: var(--on-warn-surface); }
       .banner strong { font-size: 20px; }
       .banner p { margin: 0; font-size: 16px; }
       .banner button { background: var(--danger-surface); color: var(--on-danger); }
       .banner.good button { background: var(--ok-surface); color: var(--on-ok-surface); }
+      .banner.pending button { background: var(--on-warn-surface); color: var(--warn-surface); }
+
+      /* The month's two-person steps: ask, then act. Each button a full-width 48px target. */
+      .month-step { display: grid; gap: 12px; }
+      .month-step[hidden] { display: none; }
+      .month-step button { width: 100%; }
+      .request-status { margin: 0; }
+      .request-status[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -136,17 +151,31 @@
         <h3 id="blockers-title">What is stopping this month closing</h3>
         <div id="blockers"></div>
 
-        <button id="close-month" class="primary wide" type="button">Close the month</button>
-        <p class="lead" id="close-note">Nothing is closed until every figure agrees and nothing is outstanding. A closed month is never edited — a correction is a new entry in the open one.</p>
+        <!-- Closing happens at head office, with the signature of someone who may sign a month (never the closer). -->
+        <div id="close-box" class="month-step">
+          <h3 id="close-title">Close and sign this month</h3>
+          <p class="lead" id="close-lead">Closing a month needs the signature of someone who may sign a month — the accountant or the CA, never you. When the figures agree, press “Ask for the signature”. Once they approve it on their Approvals page, press “Close the month”.</p>
+          <div>
+            <label for="close-why" id="close-why-label">A note for the person signing (optional)</label>
+            <textarea id="close-why" maxlength="300"></textarea>
+          </div>
+          <button id="ask-close" class="primary wide" type="button">Ask for the signature</button>
+          <button id="close-month" class="wide" type="button">Close the month</button>
+          <p class="request-status" id="close-request" hidden role="status"></p>
+          <p class="lead" id="close-note">Nothing is closed until every figure agrees and nothing is outstanding. A closed month is never edited — a correction is a new entry in the open one.</p>
+        </div>
 
         <!-- Shown only once the month is closed. A control with no surface is one somebody works around. -->
-        <div id="reopen-box" hidden>
+        <div id="reopen-box" class="month-step" hidden>
           <h3 id="reopen-title">Reopen this month</h3>
-          <label for="reopen-reason" id="reopen-reason-label">Why does it need reopening?</label>
-          <textarea id="reopen-reason"></textarea>
-          <label for="reopen-approver" id="reopen-approver-label">Who is approving it (not you)</label>
-          <input id="reopen-approver" type="text" autocomplete="off" />
+          <p class="lead" id="reopen-lead">A signed month reopens only with the approval of someone who may sign a month — the accountant or the CA, never you. Write why and press “Ask for approval”. Once they approve it on their Approvals page, press “Reopen the month” with the same reason.</p>
+          <div>
+            <label for="reopen-reason" id="reopen-reason-label">Why does it need reopening?</label>
+            <textarea id="reopen-reason" maxlength="300"></textarea>
+          </div>
+          <button id="ask-reopen" class="primary wide" type="button">Ask for approval</button>
           <button id="reopen" class="danger wide" type="button">Reopen the month</button>
+          <p class="request-status" id="reopen-request" hidden role="status"></p>
         </div>
       </section>
 

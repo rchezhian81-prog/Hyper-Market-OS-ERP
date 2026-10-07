@@ -138,7 +138,9 @@ export interface PriceChangeCloudPort {
 /** Fields that are never part of the action itself (the engine's own list). */
 const CONTROL_FIELDS: ReadonlySet<string> = new Set(['approvalId', 'approval', 'approvedBy', 'rationale']);
 
-function detailsOfBody(body: Readonly<Record<string, unknown>>, pathIds: Readonly<Record<string, string>> = {}): Record<string, unknown> {
+/** What an approval is FOR, by the engine's rule: the action's body without its control fields, plus its path ids.
+ *  Shared by every screen that asks (the Finance screen's month close and reopen use it too). */
+export function detailsOfBody(body: Readonly<Record<string, unknown>>, pathIds: Readonly<Record<string, string>> = {}): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(body)) if (!CONTROL_FIELDS.has(k)) out[k] = v;
   return { ...out, ...pathIds };
@@ -293,6 +295,35 @@ export const APPROVAL_COPY_KEYS: readonly ApprovalCopyKey[] = Object.freeze(Obje
 
 const fill = (template: string, values: Readonly<Record<string, string>>): string =>
   template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
+
+/**
+ * The caller's OWN request of this kind, about this subject, for EXACTLY these details — approved, or why not.
+ * The same reading the import screen makes: a request for exactly this still waiting is the news; otherwise the
+ * newest request for exactly this says what happened; with none for exactly this, a rejection still says who and
+ * why, and anything else means the action moved after asking. Shared by every screen that uses an approval (the
+ * Products & prices screen and the Finance screen's month close and reopen). Reads only.
+ */
+export async function findOwnApproval(
+  read: (() => Promise<InboxRead>) | undefined,
+  kind: string, subjectRef: string, details: Readonly<Record<string, unknown>>, valueMinor: number | null,
+): Promise<{ readonly requestId: string; readonly decidedBy: string | null } | ApprovalUseOutcome> {
+  if (read === undefined) return { kind: 'not_connected' };
+  const inbox = await read();
+  if (inbox.result === 'lost_link') return { kind: 'lost_link' };
+  if (inbox.result === 'refused') return { kind: 'refused', code: inbox.code, whatHappened: inbox.whatHappened };
+  const mine = inbox.inbox.mine.filter((r) => r.kind === kind && r.subjectRef === subjectRef);
+  if (mine.length === 0) return { kind: 'not_asked' };
+  const newest = (rows: readonly ApprovalRequestView[]): ApprovalRequestView | undefined =>
+    rows.slice().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0];
+  const exact = mine.filter((r) => r.valueMinor === valueMinor && sameDetails(r.details, details));
+  const approved = newest(exact.filter((r) => r.status === 'approved'));
+  if (approved !== undefined) return { requestId: approved.requestId, decidedBy: approved.decidedBy ?? null };
+  if (exact.some((r) => r.status === 'waiting')) return { kind: 'waiting' };
+  const latest = newest(exact) ?? newest(mine)!;
+  if (latest.status === 'rejected') return { kind: 'rejected', decidedBy: latest.decidedBy ?? null, reason: latest.decisionReason ?? '' };
+  if (exact.length === 0) return { kind: 'changed' };
+  return latest.status === 'expired' ? { kind: 'expired' } : { kind: 'used' };
+}
 
 /** A refusal from the action's route, in the same plain words the inbox gives (ADR-0024's codes, mapped once). */
 export function useOutcomeOfRefusal(code: string | undefined, whatHappened: string): ApprovalUseOutcome {
@@ -698,33 +729,10 @@ export function createCatalogueSession(
 
   const connected = (): boolean => ports.askApproval !== undefined && ports.approvalInbox !== undefined;
 
-  /**
-   * The caller's OWN request of this kind, about this subject, for EXACTLY these details — approved, or why not.
-   * The same reading the import screen makes: a request for exactly this still waiting is the news; otherwise the
-   * newest request for exactly this says what happened; with none for exactly this, a rejection still says who and
-   * why, and anything else means the change moved after asking.
-   */
-  const findApproval = async (
+  /** The caller's OWN request for exactly these details — approved, or why not (`findOwnApproval`, shared). */
+  const findApproval = (
     kind: string, subjectRef: string, details: Readonly<Record<string, unknown>>, valueMinor: number | null,
-  ): Promise<{ readonly requestId: string } | ApprovalUseOutcome> => {
-    const read = ports.approvalInbox;
-    if (read === undefined) return { kind: 'not_connected' };
-    const inbox = await read();
-    if (inbox.result === 'lost_link') return { kind: 'lost_link' };
-    if (inbox.result === 'refused') return { kind: 'refused', code: inbox.code, whatHappened: inbox.whatHappened };
-    const mine = inbox.inbox.mine.filter((r) => r.kind === kind && r.subjectRef === subjectRef);
-    if (mine.length === 0) return { kind: 'not_asked' };
-    const newest = (rows: readonly ApprovalRequestView[]): ApprovalRequestView | undefined =>
-      rows.slice().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0];
-    const exact = mine.filter((r) => r.valueMinor === valueMinor && sameDetails(r.details, details));
-    const approved = newest(exact.filter((r) => r.status === 'approved'));
-    if (approved !== undefined) return { requestId: approved.requestId };
-    if (exact.some((r) => r.status === 'waiting')) return { kind: 'waiting' };
-    const latest = newest(exact) ?? newest(mine)!;
-    if (latest.status === 'rejected') return { kind: 'rejected', decidedBy: latest.decidedBy ?? null, reason: latest.decisionReason ?? '' };
-    if (exact.length === 0) return { kind: 'changed' };
-    return latest.status === 'expired' ? { kind: 'expired' } : { kind: 'used' };
-  };
+  ): ReturnType<typeof findOwnApproval> => findOwnApproval(ports.approvalInbox, kind, subjectRef, details, valueMinor);
 
   const ask = async (request: ApprovalAsk): Promise<ApprovalAskOutcome> => {
     const port = ports.askApproval;

@@ -100,10 +100,12 @@ export type CopyKey =
   | 'reasonLabel' | 'reasonPlaceholder' | 'approveBtn' | 'rejectBtn'
   | 'kindDataImport' | 'kindSupplierBank'
   | 'kindPriceChange' | 'kindPriceListEntry' | 'kindPromotionLaunch' | 'kindQuotationBelowFloor'
+  | 'kindPeriodClose' | 'kindPeriodReopen' | 'kindConcessionContract' | 'kindConcessionDepositForfeit'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
   | 'detailVendorFundingPerUnit' | 'detailBaselineUnits' | 'detailExpectedUnits'
+  | 'detailPeriod' | 'detailReason'
   | 'statusWaitingForYou' | 'statusWaiting' | 'statusApproved' | 'statusApprovedUntil' | 'statusRejected'
   | 'statusExpired' | 'statusUsed'
   | 'decidedApproved' | 'decidedRejected' | 'decideNeedsReason' | 'decideNobody' | 'decideNotPermitted'
@@ -124,11 +126,14 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindDataImport: 'Apply a bulk import', kindSupplierBank: 'Change where a supplier is paid',
     kindPriceChange: 'Set a price below cost or below the margin floor', kindPriceListEntry: 'Add a price-list entry below cost or below the margin floor',
     kindPromotionLaunch: 'Launch a promotion that loses margin', kindQuotationBelowFloor: 'Quote a customer below the margin floor',
+    kindPeriodClose: 'Close and sign an accounting month', kindPeriodReopen: 'Reopen a signed accounting month',
+    kindConcessionContract: 'Approve a concession contract', kindConcessionDepositForfeit: 'Forfeit a concessionaire\'s deposit',
     detailJobId: 'Load name', detailContentFingerprint: 'File check code',
     detailProductId: 'Item', detailPriceMinor: 'New price', detailMrpMinor: 'MRP', detailCostMinor: 'What it costs us', detailCurrency: 'Currency',
     detailMarginFloorBps: 'Minimum margin', detailPromotionId: 'Offer', detailDescription: 'Offer description', detailNormalPrice: 'Normal price',
     detailPromoPrice: 'Offer price', detailUnitCost: 'What one unit costs us', detailVendorFundingPerUnit: 'Supplier pays per unit',
     detailBaselineUnits: 'Units we sell now', detailExpectedUnits: 'Units expected with the offer',
+    detailPeriod: 'Month', detailReason: 'Why',
     statusWaitingForYou: 'Waiting for your decision', statusWaiting: 'Waiting for a second person',
     statusApproved: 'Approved by {who}', statusApprovedUntil: 'Approved by {who} — use it before {until}',
     statusRejected: 'Rejected by {who}: {reason}', statusExpired: 'Expired — it was not used in time. Ask again.',
@@ -160,11 +165,14 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindDataImport: 'மொத்த இறக்குமதியைப் பயன்படுத்துதல்', kindSupplierBank: 'விநியோகஸ்தருக்குப் பணம் செல்லும் கணக்கை மாற்றுதல்',
     kindPriceChange: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலை வைத்தல்', kindPriceListEntry: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலைப்பட்டியல் பதிவு',
     kindPromotionLaunch: 'லாபத்தை இழக்கும் சலுகையைத் தொடங்குதல்', kindQuotationBelowFloor: 'குறைந்தபட்ச லாப வரம்புக்குக் கீழே வாடிக்கையாளருக்கு விலை மேற்கோள்',
+    kindPeriodClose: 'கணக்கு மாதத்தை மூடி கையெழுத்திடுதல்', kindPeriodReopen: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்',
+    kindConcessionContract: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்', kindConcessionDepositForfeit: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்',
     detailJobId: 'ஏற்றத்தின் பெயர்', detailContentFingerprint: 'கோப்புச் சரிபார்ப்புக் குறியீடு',
     detailProductId: 'பொருள்', detailPriceMinor: 'புதிய விலை', detailMrpMinor: 'அதிகபட்ச சில்லறை விலை (MRP)', detailCostMinor: 'நமக்கு ஆகும் அடக்க விலை', detailCurrency: 'நாணயம்',
     detailMarginFloorBps: 'குறைந்தபட்ச லாப வரம்பு', detailPromotionId: 'சலுகை', detailDescription: 'சலுகை விவரம்', detailNormalPrice: 'வழக்கமான விலை',
     detailPromoPrice: 'சலுகை விலை', detailUnitCost: 'ஒரு அலகுக்கு நமக்கு ஆகும் அடக்கம்', detailVendorFundingPerUnit: 'ஒரு அலகுக்கு விநியோகஸ்தர் தருவது',
     detailBaselineUnits: 'இப்போது விற்கும் அலகுகள்', detailExpectedUnits: 'சலுகையுடன் எதிர்பார்க்கும் அலகுகள்',
+    detailPeriod: 'மாதம்', detailReason: 'ஏன்',
     statusWaitingForYou: 'உங்கள் முடிவுக்காகக் காத்திருக்கிறது', statusWaiting: 'இரண்டாம் நபருக்காகக் காத்திருக்கிறது',
     statusApproved: '{who} அனுமதித்தார்', statusApprovedUntil: '{who} அனுமதித்தார் — {until}-க்குள் பயன்படுத்தவும்',
     statusRejected: '{who} மறுத்தார்: {reason}', statusExpired: 'காலாவதியானது — நேரத்தில் பயன்படுத்தப்படவில்லை. மீண்டும் கேளுங்கள்.',
@@ -197,6 +205,10 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   price_list_entry: 'kindPriceListEntry',
   promotion_launch: 'kindPromotionLaunch',
   quotation_below_floor: 'kindQuotationBelowFloor',
+  period_close: 'kindPeriodClose',
+  period_reopen: 'kindPeriodReopen',
+  concession_contract: 'kindConcessionContract',
+  concession_deposit_forfeit: 'kindConcessionDepositForfeit',
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
@@ -206,6 +218,7 @@ const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {
   currency: 'detailCurrency', marginFloorBps: 'detailMarginFloorBps', promotionId: 'detailPromotionId', description: 'detailDescription',
   normalPrice: 'detailNormalPrice', promoPrice: 'detailPromoPrice', unitCost: 'detailUnitCost',
   vendorFundingPerUnit: 'detailVendorFundingPerUnit', baselineUnits: 'detailBaselineUnits', expectedUnits: 'detailExpectedUnits',
+  period: 'detailPeriod', reason: 'detailReason',
 };
 
 // ── small, deterministic formatters ───────────────────────────────────────────────────────────────────────────
