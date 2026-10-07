@@ -73,7 +73,8 @@ function detailOf(res: SeedResponse): string | undefined {
 interface SeedRunner {
   readonly steps: SeedStep[];
   record(step: SeedStep): void;
-  post(what: string, path: string, body: unknown, idempotencyKey: string): Promise<SeedResponse>;
+  /** POST as the seed's own operator — or, with `as`, as the named person (a step that is that person's own act). */
+  post(what: string, path: string, body: unknown, idempotencyKey: string, as?: string): Promise<SeedResponse>;
 }
 
 /** A short, stable digest of what a step publishes — the part of an idempotency key that changes when the data does. */
@@ -89,8 +90,8 @@ function makeRunner(client: SeedClient, tenantId: string, actor: string, options
       throw new Error(`pilot seed step failed — ${step.what}: ${step.detail ?? `status ${step.status ?? '?'}`}`);
     }
   };
-  const post = async (what: string, path: string, body: unknown, idempotencyKey: string): Promise<SeedResponse> => {
-    const res = await client.request({ method: 'POST', path, userId: actor, tenantId, body, idempotencyKey });
+  const post = async (what: string, path: string, body: unknown, idempotencyKey: string, as?: string): Promise<SeedResponse> => {
+    const res = await client.request({ method: 'POST', path, userId: as ?? actor, tenantId, body, idempotencyKey });
     const detail = detailOf(res);
     // A step under a FIXED key whose dataset text changed after it landed (a receipt's unit word corrected months later,
     // H-14): the kernel refuses the changed request under the old key — rightly, a receipt, an order or a payment is
@@ -484,17 +485,19 @@ export async function applyPilotTransactions(
     );
   }
 
-  // 7. Payroll — a demo-marked DRAFT pay run (no approval; clearly non-real).
+  // 7. Payroll — a demo-marked DRAFT pay run (no approval; clearly non-real). Drafted by the person who prepares it,
+  //    under their OWN sign-in — who takes a pay-run step is the caller, never a name in the body (ADR-0024).
   for (const p of data.payRuns) {
     await post(
       `pay run ${p.payRunId}`,
       `/v1/hr/payroll/pay-run/${encodeURIComponent(p.payRunId)}/append`,
       {
-        action: 'draft', payPeriod: p.payPeriod, actor: p.actor,
+        action: 'draft', payPeriod: p.payPeriod,
         ...(p.netTotalMinor === undefined ? {} : { netTotalMinor: p.netTotalMinor }),
         ...(p.employeeCount === undefined ? {} : { employeeCount: p.employeeCount }),
       },
-      `seed-payrun-${p.payRunId}`,
+      `seed-payrun-as-preparer-${p.payRunId}`,
+      p.actor,
     );
   }
 

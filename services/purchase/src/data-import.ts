@@ -20,7 +20,8 @@
 // no AI commits an import (hard rule #5).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, requireActorIsCaller } from '../../kernel/src/index';
+import { fingerprintOf, namedSecondPersonRefusal, openApproval, type ApprovalPort } from '../../identity/src/approval-requests';
 import { validateImport, commitImport, type TemplateSpec, type ValidateInput, type ImportPreview } from '../../../packages/import/src/import-job';
 import { parseDelimited, MalformedFileError, MissingHeaderError } from '../../../packages/import/src/delimited';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
@@ -48,6 +49,18 @@ export interface DataImportDeps {
   readonly commits: (tenantId: string) => Promise<readonly ImportCommitRecord[]> | readonly ImportCommitRecord[];
   readonly recordCommit: (tenantId: string, record: ImportCommitRecord, key: string) => Promise<void> | void;
   readonly now: () => string;
+  /** Head office's maker-checker engine (ADR-0024): the import's checker approves in their own session. Optional on a
+   *  bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
+}
+
+/** No engine wired (a bare stub): every approval is unknown, so nothing is applied by accident. */
+const NO_APPROVALS: ApprovalPort = { approvalState: () => undefined, approvalVersion: () => 0, spendApproval: () => {}, permissionsOfUser: () => undefined };
+
+/** What an import's approval is for (ADR-0024): the template, every row and the declared total — change any of them
+ *  and the approval no longer matches. Returned by validate, asked for by the maker, recomputed at commit. */
+export function importContentFingerprint(input: ValidateInput): string {
+  return fingerprintOf({ template: input.template, rows: input.rows, declaredTotalMinor: input.declaredTotalMinor ?? null });
 }
 
 /** Read a TemplateSpec off the request. Only the shape the engine needs is checked here. */
@@ -123,7 +136,8 @@ export function dataImportRoutes(deps: DataImportDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const read = readValidateInput(b);
         if ('error' in read) throw read.error;
-        return { status: 200, body: { preview: validateImport(read.input) } };
+        // The content fingerprint is what the maker asks approval FOR (ADR-0024) — the commit recomputes it from the file.
+        return { status: 200, body: { preview: validateImport(read.input), contentFingerprint: importContentFingerprint(read.input) } };
       },
     },
     {
@@ -136,29 +150,28 @@ export function dataImportRoutes(deps: DataImportDeps): readonly Route[] {
           throw apiError(400, { code: 'no_job_id', whatHappened: 'An import commit needs a { jobId } that the approval refers to.', wasItSaved: 'not_saved', nextSafeAction: 'Send the job id.' });
         }
         const jobId = (b['jobId'] as string).trim();
-        if (!isObj(b['approval']) || !isStr((b['approval'] as Record<string, unknown>)['decidedBy']) || !isStr((b['approval'] as Record<string, unknown>)['status'])) {
-          throw apiError(400, { code: 'no_approval', whatHappened: 'An import commit needs an { approval } with { decidedBy, status } — nothing is applied without it (§28).', wasItSaved: 'not_saved', nextSafeAction: 'Have the owner (not the uploader) approve the job, then commit.' });
+        // The uploader (maker) is the signed-in caller — never a body value (ADR-0024 · audit PA-03). The checker is an
+        // approval they gave in their own session, for THIS job and THIS content; a typed checker is refused.
+        requireActorIsCaller(ctx, b, 'uploadedBy');
+        const uploadedBy = ctx.userId;
+        if (!isStr(b['approvalId'])) {
+          const named = isObj(b['approval']) ? (b['approval'] as Record<string, unknown>)['decidedBy'] : undefined;
+          if (isStr(named)) throw namedSecondPersonRefusal('approval.decidedBy', named as string);
+          throw apiError(422, { code: 'no_approval', whatHappened: 'An import changes nothing until a second person approves it (M30-FR-01, §28).', wasItSaved: 'not_saved', nextSafeAction: 'Ask for approval (POST /v1/approvals/requests, kind data_import_commit, with the jobId and the content fingerprint validate returned); once the owner approves, commit with the approvalId.' });
         }
         const read = readValidateInput(b);
         if ('error' in read) throw read.error;
         const preview: ImportPreview = validateImport(read.input);
 
-        const uploadedBy = isStr(b['uploadedBy']) ? (b['uploadedBy'] as string).trim() : ctx.userId;
-        const ab = b['approval'] as Record<string, unknown>;
-        // The approval the checker recorded. The tested engine gates on status / subjectRef / decidedBy; the
-        // rest is carried for a complete, auditable maker-checker fact. subjectRef is fixed to the job id here
-        // so a client cannot point an approval for one job at another.
+        const opened = await openApproval(deps.approvals ?? NO_APPROVALS, {
+          tenantId: ctx.tenantId, approvalId: (b['approvalId'] as string).trim(), kind: 'data_import_commit', subjectRef: jobId,
+          details: { jobId, contentFingerprint: importContentFingerprint(read.input) }, valueMinor: null,
+          maker: uploadedBy, usedBy: `import-${jobId}`, now: deps.now(),
+        });
+        // The engine's own approval record, built from the checker's decision — the tested engine still gates on it.
         const approval: DecidedRequest = {
-          id: isStr(ab['id']) ? (ab['id'] as string) : `imp-approval-${jobId}`,
-          subjectType: 'data_import',
-          subjectRef: jobId,
-          requestedBy: uploadedBy,
-          branchId: null,
-          value: null,
-          status: ab['status'] as DecidedRequest['status'],
-          decidedBy: (ab['decidedBy'] as string).trim(),
-          reason: isStr(ab['reason']) ? (ab['reason'] as string).trim() : 'bulk import approved',
-          decidedAt: isStr(ab['decidedAt']) ? (ab['decidedAt'] as string) : deps.now(),
+          id: (b['approvalId'] as string).trim(), subjectType: 'data_import', subjectRef: jobId, requestedBy: uploadedBy, branchId: null,
+          value: null, status: opened.decision.decision, decidedBy: opened.decision.decidedBy, reason: opened.decision.reason, decidedAt: opened.decision.decidedAt,
         };
 
         // Committing the same job twice is refused — an import job commits once.
@@ -171,6 +184,8 @@ export function dataImportRoutes(deps: DataImportDeps): readonly Route[] {
         if (!result.committed) {
           throw apiError(422, { code: `import_refused_${result.refusal}`, whatHappened: `The import was not committed: ${REFUSAL_MESSAGE[result.refusal ?? ''] ?? result.refusal}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was applied. Address the reason and commit again.' });
         }
+        // Every rule passed: the approval is spent — once — and only then is the import applied.
+        await opened.spend();
 
         const at = deps.now();
         const record: ImportCommitRecord = {
@@ -180,7 +195,9 @@ export function dataImportRoutes(deps: DataImportDeps): readonly Route[] {
           ...(preview.reconciles !== undefined ? { reconciles: preview.reconciles } : {}),
           at, rows: preview.validRows,
         };
-        await deps.recordCommit(ctx.tenantId, record, ctx.idempotencyKey ?? `import-${jobId}-${at}`);
+        // Keyed by the JOB, not the request: an import job commits once, so two commits of one job racing on the same
+        // approval (the same action — the engine lets it retry after a lost write) land ONE record, never a second.
+        await deps.recordCommit(ctx.tenantId, record, `job-${jobId}`);
         return { status: 200, body: { jobId, committed: true, rowsApplied: result.rowsApplied, at } };
       },
     },

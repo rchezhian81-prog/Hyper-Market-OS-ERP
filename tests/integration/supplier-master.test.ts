@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedRequestId, askForApproval, decide } from '../support/approval-request';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import type { StoredMatch } from '../../services/purchase/src/index';
 import type { SupplierAccountStatement } from '../../services/purchase/src/supplier-account';
@@ -37,9 +38,12 @@ const rl = (lineId: string, productId: string, ordered: number, counted: number,
   ({ lineId, productId, orderedMinor: ordered, countedMinor: counted, uom: 'ea', unitCost: { minor: unit, currency: 'INR' }, condition: 'good', ...extra });
 const propose = (h: ApiHarness, supplierId: string, body: Record<string, unknown>, userId = 'u-buyer', key = `sup-${supplierId}`) => post(h, `/v1/purchase/suppliers/${supplierId}`, userId, body, key);
 const approve = (h: ApiHarness, supplierId: string, userId: string, key = `sup-approve-${supplierId}-${userId}`) => post(h, `/v1/purchase/suppliers/${supplierId}/approval`, userId, { reason: 'documents checked' }, key);
-const bank = (h: ApiHarness, supplierId: string, account: string, approvedBy: string, key: string) => post(h, `/v1/purchase/suppliers/${supplierId}/bank-details`, 'u-owner', {
-  newAccount: account, requestedVia: 'letter', calledBackOn: '+91-800-1', numberWeAlreadyHeld: '+91-800-1', requestedBy: 'u-recv', approvedBy, requestedAt: '2026-09-30T08:00:00.000Z',
-}, key);
+// The owner asks for the change; `approvedBy` approves it in their own session (ADR-0024), and the change names that approval.
+async function bank(h: ApiHarness, supplierId: string, account: string, approvedBy: string, key: string) {
+  const change = { newAccount: account, requestedVia: 'letter', calledBackOn: '+91-800-1', numberWeAlreadyHeld: '+91-800-1', requestedAt: '2026-09-30T08:00:00.000Z' };
+  const approvalId = await approvedRequestId(h, A, 'u-owner', approvedBy, { kind: 'supplier_bank_change', subjectRef: supplierId, details: { ...change, supplierId } });
+  return post(h, `/v1/purchase/suppliers/${supplierId}/bank-details`, 'u-owner', { ...change, approvalId }, key);
+}
 const pay = (h: ApiHarness, supplierId: string, paymentId: string, body: Record<string, unknown>, userId = 'u-acct', key = `pay-${paymentId}`) =>
   post(h, `/v1/purchase/suppliers/${supplierId}/payments/${paymentId}`, userId, { amountMinor: 1000, paidOn: '2026-10-02', method: 'bank_transfer', reference: 'UTR-1', approvedBy: 'u-owner', ...body }, key);
 const list = async (h: ApiHarness, userId = 'u-buyer', tenantId = A) => {
@@ -127,13 +131,23 @@ describe('the supplier master — one record, one balance, paid safely (SP-7c)',
     const h = await seeded();
     expect((await propose(h, 's-1', { name: 'Amma Traders' })).status).toBe(201);
     expect((await propose(h, 's-2', { name: 'Beta Foods' })).status).toBe(201);
-    const byCreator = await bank(h, 's-1', 'tok-acct-1', 'u-buyer', 'bank-1');
+    // The store manager who created the supplier cannot approve where its money goes — they hold no bank-approval
+    // authority at all, so the engine refuses them (ADR-0024).
+    const change = { newAccount: 'tok-acct-1', requestedVia: 'letter', calledBackOn: '+91-800-1', numberWeAlreadyHeld: '+91-800-1', requestedAt: '2026-09-30T08:00:00.000Z' };
+    const asked = await askForApproval(h, A, 'u-owner', { kind: 'supplier_bank_change', subjectRef: 's-1', details: { ...change, supplierId: 's-1' } });
+    expect((await decide(h, A, 'u-buyer', (asked.body as { requestId: string }).requestId)).status).toBe(403);
+    // A creator who DOES hold it — a second owner who set the supplier up — is refused at the change itself (M06-FR-01 · §28).
+    await h.provisionOwner(A, 'u-owner-2');
+    expect((await propose(h, 's-3', { name: 'Gamma Oils' }, 'u-owner-2')).status).toBe(201);
+    const byCreator = await bank(h, 's-3', 'tok-acct-3', 'u-owner-2', 'bank-1');
     expect(byCreator.status).toBe(422);
     expect(codeOf(byCreator)).toBe('supplier_creator_cannot_approve_bank');
+    expect((await one(h, 's-3')).body.bank).toBeNull();
     expect((await one(h, 's-1')).body.bank).toBeNull();
     expect((await bank(h, 's-1', 'tok-acct-1', 'u-acct', 'bank-2')).status).toBe(200);
     const s1 = (await one(h, 's-1')).body;
-    expect(s1.bank).toEqual({ accountRef: 'tok-acct-1', requestedBy: 'u-recv', verifiedBy: 'u-acct', changedAt: '2026-09-30T08:00:00.000Z' });
+    // Who asked is the signed-in owner, never a name in the body; who verified is the accountant who approved it.
+    expect(s1.bank).toEqual({ accountRef: 'tok-acct-1', requestedBy: 'u-owner', verifiedBy: 'u-acct', changedAt: '2026-09-30T08:00:00.000Z' });
     expect(s1.attention).toEqual(['awaiting_approval']);
     // The other supplier is pointed at the SAME account — both are flagged (M15-FR-03), on the list and on the record.
     expect((await bank(h, 's-2', 'tok-acct-1', 'u-acct', 'bank-3')).status).toBe(200);

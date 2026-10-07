@@ -12,6 +12,7 @@ prefixes, an owner, a status and a date, so nothing is tracked in someone's head
 | [`changes.md`](./changes.md) | Deliberate scope/plan changes (how OD-02 is honoured) | `CH-` |
 | [`requirements.md`](./requirements.md) | Governance status of requirements (detail in `../requirements/`) | roadmap IDs |
 | [`sp10-staff-uat.md`](./sp10-staff-uat.md) | SP-10: every staff / physical-device practice session, with the software version it ran on; the only thing that can mark SP-10 done | `UAT-S-` |
+| [`second-person-sites-2026-10-07.md`](./second-person-sites-2026-10-07.md) | Audit PA-03: every head-office route that took a typed name as a second person's act (26), the slice that moves each onto the maker-checker engine (ADR-0024), and its state | row # |
 
 > **State.** Built during Setup 4 / Stage 0 from Annexure G and Annexure H. Rows
 > marked _pending roadmap_ are completed from `docs/roadmap/roadmap-v2.0.docx`

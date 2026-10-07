@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Approvals</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Approvals — head office's maker-checker inbox (ADR-0024, audit PA-03, M02-FR-03, §28, P-04, P-05). Every rule
+      lives in the tested session model (apps/web-erp/src/approvals-session.ts), attached as window.approvalsSession
+      and built on the shared packages/ui primitives. WAITING FOR YOU: what other people asked for that this person
+      may decide — never their own — each with the action in plain words, the summary, who asked, why, when, the
+      amount and exactly what will happen; Approve or Reject, each only with a written reason, in this person's own
+      session. WHAT YOU ASKED FOR: this person's own requests and where each stands. Every decision runs ONLY on an
+      explicit click, never on load, and the inbox is then read again. The inbox is read live
+      (GET /v1/approvals/requests); offline the page shows its clearly-marked sample stand-in.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap:48px; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
+      main { flex:1; padding:16px; display:grid; gap:16px; align-content:start; max-width:900px; width:100%; }
+      h2 { margin:0 0 4px; font-size:20px; } p.lead { margin:0 0 4px; color:var(--muted); font-size:15px; }
+      h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+      .summary { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+      .summary .count { font-size:18px; font-weight:700; }
+      ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+      li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); min-width:0; }
+      li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
+      li.row.tone-error { border-left-color:var(--error); } li.row.tone-idle { border-left-color:var(--idle); }
+      .row .head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .row .headline { font-weight:600; } .row .value { font-weight:700; font-variant-numeric:tabular-nums; }
+      .row .summary-line { font-weight:600; overflow-wrap:anywhere; }
+      .status { display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
+      .status .icon { font-size:18px; width:1.4em; text-align:center; }
+      .row .facts { font-size:14px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+      .row .facts span { overflow-wrap:anywhere; }
+      .row .details { margin:0; padding:8px 10px; background:var(--bg); border-radius:10px; font-size:14px; display:grid; gap:2px; }
+      .row .details-label { color:var(--muted); font-weight:600; }
+      .row .details .kv { overflow-wrap:anywhere; }
+      .decide { display:grid; gap:8px; margin-top:4px; }
+      .decide label { font-size:14px; color:var(--muted); }
+      .decide input { width:100%; min-height:var(--tap); padding:8px 12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
+      .decide .buttons { display:flex; gap:12px; flex-wrap:wrap; }
+      button.act { min-height:var(--tap); padding:0 18px; border:0; border-radius:10px; font-size:16px; font-weight:700; background:var(--info); color:var(--on-info); }
+      button.act.approve { background:var(--good); color:var(--on-accent); }
+      button.act:disabled { opacity:.6; }
+      button.act:focus-visible, .decide input:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      p.result { margin:0; padding:12px 14px; border-radius:12px; background:var(--panel); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.result .icon { font-size:18px; }
+      p.result.tone-ok { border-left:6px solid var(--ok); } p.result.tone-degraded { border-left:6px solid var(--degraded); } p.result.tone-error { border-left:6px solid var(--error); }
+      p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <p class="stale" id="stale" hidden></p>
+    <p class="sample" id="sample" hidden></p>
+    <p class="nobody" id="nobody" hidden></p>
+
+    <header>
+      <h1 class="who" id="who">Approvals <small id="whoami"></small></h1>
+      <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+    </header>
+
+    <main>
+      <div>
+        <h2 id="title">Approvals</h2>
+        <p class="lead" id="lead"></p>
+      </div>
+
+      <div class="summary" role="status" aria-live="polite">
+        <span class="count" id="waiting-count"></span>
+      </div>
+
+      <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
+
+      <h3 id="waiting-heading"></h3>
+      <ul class="rows" id="waiting" aria-label="Waiting for you"></ul>
+      <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+
+      <h3 id="mine-heading"></h3>
+      <ul class="rows" id="mine" aria-label="What you asked for"></ul>
+    </main>
+
+    <!--SCREEN-DATA-->
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script src="./approvals.js" type="module"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

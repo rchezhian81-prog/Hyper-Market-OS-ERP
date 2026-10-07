@@ -537,7 +537,7 @@ export const PILOT_TRANSACTIONS: PilotTransactions = {
     { orderId: 'order-demo-1', locationId: WAREHOUSE_ID, lines: [{ productId: 'prod-rice', quantityMinor: 5000 }] },
   ],
   payRuns: [
-    { payRunId: 'payrun-demo-2026-08', payPeriod: '2026-08', actor: 'pilot-accountant', netTotalMinor: 15_000_000, employeeCount: 12 },
+    { payRunId: 'payrun-demo-2026-08', payPeriod: '2026-08', actor: 'pilot-owner', netTotalMinor: 15_000_000, employeeCount: 12 },
   ],
   eInvoices: [
     {

@@ -12,7 +12,8 @@
 // it. Paying the invoice and investigating later is how an overcharge becomes permanent.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, requireActorIsCaller } from '../../kernel/src/index';
+import { namedSecondPersonRefusal, openApproval, type ApprovalPort } from '../../identity/src/approval-requests';
 import { threeWayMatch, type MatchLine, type MatchResult } from '../../../packages/purchasing/src/three-way-match';
 import {
   matchInvoice, InvalidMatchApprovalError,
@@ -379,6 +380,9 @@ export function invoicedBeforeOn(poId: string, invoice: SupplierInvoiceRecord, a
   return out;
 }
 
+/** No engine wired (a bare stub): every approval is unknown, so nothing is approved by accident. */
+const NO_APPROVALS: ApprovalPort = { approvalState: () => undefined, approvalVersion: () => 0, spendApproval: () => {}, permissionsOfUser: () => undefined };
+
 export interface PurchaseDeps {
   /** The invoice with this id, or undefined — the never-double-count check and the match's source. */
   readonly invoice: (tenantId: string, invoiceId: string) => Promise<SupplierInvoiceRecord | undefined> | SupplierInvoiceRecord | undefined;
@@ -397,6 +401,9 @@ export interface PurchaseDeps {
   readonly matchPolicy: (tenantId: string) => Promise<StoredMatchPolicy | undefined> | StoredMatchPolicy | undefined;
   readonly recordMatchPolicy: (tenantId: string, policy: StoredMatchPolicy) => Promise<void> | void;
   readonly applyBankChange: (tenantId: string, r: BankChangeRequest) => Promise<void> | void;
+  /** Head office's maker-checker engine (ADR-0024): the bank change's second person approves in their own session.
+   *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   /** SP-7c (M06-FR-01 · §28): who CREATED the supplier's master record, or undefined — they may never approve its bank details. */
   readonly supplierCreatedBy?: (tenantId: string, supplierId: string) => Promise<string | undefined> | string | undefined;
   /**
@@ -714,14 +721,29 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
       api: 'API-03', method: 'POST', path: '/v1/purchase/suppliers/:supplierId/bank-details',
       permission: 'purchase.supplier.bank', idempotent: true,
       handler: async (ctx) => {
-        const request = { ...(ctx.body as BankChangeRequest), supplierId: ctx.params['supplierId'] ?? '' };
+        // Who asks is the signed-in caller (ADR-0024 · audit PA-03); the second person is an APPROVAL they gave in their
+        // own session — never a name in this body. The details below are what the approval was asked for, exactly.
+        const body = (ctx.body !== null && typeof ctx.body === 'object' ? ctx.body : {}) as Record<string, unknown>;
+        requireActorIsCaller(ctx, body, 'requestedBy');
+        const { approvedBy: named, approvalId, requestedBy: _maker, ...asked } = body;
+        void _maker;
+        const supplierId = ctx.params['supplierId'] ?? '';
+        const details = { ...asked, supplierId };
+        if (typeof approvalId !== 'string' || approvalId.trim() === '') {
+          if (typeof named === 'string' && named.trim() !== '') throw namedSecondPersonRefusal('approvedBy', named);
+        }
+        const opened = typeof approvalId === 'string' && approvalId.trim() !== '' ? await openApproval(deps.approvals ?? NO_APPROVALS, {
+          tenantId: ctx.tenantId, approvalId: approvalId.trim(), kind: 'supplier_bank_change', subjectRef: supplierId, details,
+          valueMinor: null, maker: ctx.userId, usedBy: `bank-change-${supplierId}`, now: deps.now(),
+        }) : undefined;
+        const request = { ...(asked as Partial<BankChangeRequest>), supplierId, requestedBy: ctx.userId, ...(opened === undefined ? {} : { approvedBy: opened.decision.decidedBy }) } as BankChangeRequest;
         const check = verifyBankChange(request);
         if (!check.ok) {
           throw apiError(422, {
             code: check.refusedBecause!,
             whatHappened: check.detail,
             wasItSaved: 'not_saved',
-            nextSafeAction: 'The old account is unchanged and payments will still go there. Ring the supplier on a number you already had, then have a second person approve it.',
+            nextSafeAction: 'The old account is unchanged and payments will still go there. Ring the supplier on a number you already had, then ask for approval (POST /v1/approvals/requests, kind supplier_bank_change) and send the approvalId once a second person has approved it.',
           });
         }
         // SP-7c (M06-FR-01 · §28): the person who CREATED the supplier can never approve its bank details — the two halves
@@ -735,6 +757,8 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
             nextSafeAction: 'Have a different person with the bank-approval authority approve the change. The old account is unchanged.',
           });
         }
+        // Every rule passed: the approval is spent — once — and only then does the account change.
+        await opened?.spend();
         await deps.applyBankChange(ctx.tenantId, request);
         return { status: 200, body: { changed: check.detail } };
       },

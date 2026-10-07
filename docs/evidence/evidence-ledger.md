@@ -18,8 +18,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 918. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
-- Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 78 · Real PostgreSQL 56 · Browser (stub cloud) 44 · Browser (connected) 2 · Device 0 · Staff UAT 0.
+- Evidence test files scanned: 922. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 78 · Real PostgreSQL 57 · Browser (stub cloud) 44 · Browser (connected) 2 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 24 · ENGINE_ONLY 1 · INTEGRATION_TESTED 16 · PARTIALLY_WIRED 52 · WIRED 11.
 - Labels that do NOT hold: none.
 
@@ -28,11 +28,11 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | ID | Label | Unit | Integration (in-process) | Real PostgreSQL | Browser (stub cloud) | Browser (connected) | Device | Staff UAT | Label holds |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | M01 | WIRED | 18 | 11 | 3 | 2 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| M02 | INTEGRATION_TESTED | 19 | 15 | 3 | 3 | · | · | · | ✓ an integration test cites it |
+| M02 | INTEGRATION_TESTED | 21 | 16 | 4 | 4 | · | · | · | ✓ an integration test cites it |
 | M03 | INTEGRATION_TESTED | 16 | 13 | · | 2 | · | · | · | ✓ an integration test cites it |
 | M04 | WIRED | 7 | 7 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M05 | E2E_VERIFIED | 11 | 11 | 2 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M06 | E2E_VERIFIED | 10 | 11 | 1 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M06 | E2E_VERIFIED | 10 | 12 | 2 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M07 | E2E_VERIFIED | 9 | 17 | 1 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M08 | E2E_VERIFIED | 14 | 29 | 6 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M09 | E2E_VERIFIED | 12 | 21 | 3 | 6 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
@@ -56,7 +56,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M27 | WIRED | 6 | 5 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M28 | E2E_VERIFIED | 4 | 7 | 2 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M29 | WIRED | 11 | 7 | 1 | 2 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| M30 | INTEGRATION_TESTED | 9 | 4 | · | 3 | · | · | · | ✓ an integration test cites it |
+| M30 | INTEGRATION_TESTED | 9 | 5 | 1 | 3 | · | · | · | ✓ an integration test cites it |
 | M31 | WIRED | 4 | 6 | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M32 | E2E_VERIFIED | 8 | 9 | 1 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M33 | E2E_VERIFIED | 20 | 18 | 2 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
@@ -137,11 +137,11 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 _The JSON twin (`evidence-ledger.json`) lists every file and session per item. Here, the browser and connected files only — the ones a label rests on._
 
 - **M01** — browser: `company-report.e2e.ts`, `document-template-publish-delivery.e2e.ts` · real PostgreSQL: `branch-scope-is-the-servers.test.ts`, `number-series.test.ts`, `the-store-buys-what-it-sells.test.ts`
-- **M02** — browser: `customer-login.e2e.ts`, `manager-decisions-survive-reload.e2e.ts`, `the-erp-pages-meet-the-spec.e2e.ts` · real PostgreSQL: `access-lifecycle.test.ts`, `authorization-is-enforced.test.ts`, `branch-scope-is-the-servers.test.ts`
+- **M02** — browser: `approvals-delivery.e2e.ts`, `customer-login.e2e.ts`, `manager-decisions-survive-reload.e2e.ts`, `the-erp-pages-meet-the-spec.e2e.ts` · real PostgreSQL: `access-lifecycle.test.ts`, `authorization-is-enforced.test.ts`, `branch-scope-is-the-servers.test.ts`, `maker-checker-is-two-people.test.ts`
 - **M03** — browser: `screens-open-offline.e2e.ts`, `unsellable-screen.e2e.ts`
 - **M04** — browser: `merchandising-count-and-refill.e2e.ts`
 - **M05** — browser: `catalogue-price-change-delivery.e2e.ts`, `catalogue-promotion-launch-delivery.e2e.ts`, `pricing-promotions-menu-links.e2e.ts` · real PostgreSQL: `one-customer.test.ts`, `the-store-trades-a-day.test.ts`
-- **M06** — browser: `buying-po-delivery.e2e.ts`, `suppliers-delivery.e2e.ts` · real PostgreSQL: `the-store-buys-what-it-sells.test.ts`
+- **M06** — browser: `buying-po-delivery.e2e.ts`, `suppliers-delivery.e2e.ts` · real PostgreSQL: `maker-checker-is-two-people.test.ts`, `the-store-buys-what-it-sells.test.ts`
 - **M07** — browser: `goods-receipt-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `warehouse-handheld-delivery.e2e.ts`, `warehouse-handheld-syncs-through-the-box.e2e.ts` · real PostgreSQL: `the-store-buys-what-it-sells.test.ts`
 - **M08** — browser: `indents-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `stock-health-delivery.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`, `floor-indents-handheld-issue.test.ts`, `the-store-buys-what-it-sells.test.ts`, `the-till-exchanges.test.ts`, `the-till-returns-without-a-receipt.test.ts`, `write-guards-on-postgresql.test.ts`
 - **M09** — browser: `indents-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `warehouse-handheld-delivery.e2e.ts`, `warehouse-handheld-issues-to-floor.e2e.ts`, `warehouse-handheld-syncs-through-the-box.e2e.ts`, `warehouse-supervisor-delivery.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`, `floor-indents-handheld-issue.test.ts`, `the-store-buys-what-it-sells.test.ts`
@@ -162,7 +162,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **M27** — browser: `till-concession-tag-through-the-box.e2e.ts`
 - **M28** — browser: `screens-open-offline.e2e.ts`, `write-off-capture-delivery.e2e.ts` · real PostgreSQL: `beyond-the-till.test.ts`, `physical-to-system.test.ts`
 - **M29** — browser: `company-report.e2e.ts`, `the-erp-pages-meet-the-spec.e2e.ts` · real PostgreSQL: `branch-scope-is-the-servers.test.ts`
-- **M30** — browser: `company-report.e2e.ts`, `data-io-delivery.e2e.ts`, `screens-open-offline.e2e.ts`
+- **M30** — browser: `company-report.e2e.ts`, `data-io-delivery.e2e.ts`, `screens-open-offline.e2e.ts` · real PostgreSQL: `maker-checker-is-two-people.test.ts`
 - **M32** — browser: `integration-health-delivery.e2e.ts` · real PostgreSQL: `the-seams-hold.test.ts`
 - **M33** — browser: `fleet-change-delivery.e2e.ts`, `screens-open-offline.e2e.ts` · real PostgreSQL: `two-shops-one-system.test.ts`, `tenants-register.test.ts`
 - **M34** — browser: `risk-acceptance-delivery.e2e.ts`, `screens-open-offline.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`, `physical-to-system.test.ts`

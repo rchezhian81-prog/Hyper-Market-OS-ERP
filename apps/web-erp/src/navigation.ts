@@ -64,6 +64,13 @@ export const NAV_GROUP_LABELS: Readonly<Record<string, { readonly en: string; re
  */
 export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'dashboard', label: 'Today', labelTa: 'இன்று', path: '/manager/', requires: 'till.dayclose.read', group: 'Today' },
+  // Approvals — head office's maker-checker inbox (ADR-0024 · M02-FR-03 · §28): what other people asked for that this
+  // person may decide (never their own), and where their own requests stand. Every signed-in person may open it, so it
+  // is gated on the SAME word its three routes check (`identity.self.read`); head office then decides what waits for
+  // whom by each kind's own permission. Not a revival of the retired `approvals` item (that was a tab of the manager's
+  // screen): this is the page every person's second-person approvals now go through. The store computer serves it at
+  // `/approvals` with only who is looking; the inbox itself is read live from head office.
+  { id: 'approval-requests', label: 'Approvals', labelTa: 'அனுமதிகள்', path: '/approvals', requires: 'identity.self.read', group: 'Today' },
   // Every item below names the permission the SCREEN ITSELF checks (its browser-entry gate) or, for a screen fed
   // only by the store pack, the permission its own cloud read route checks — never a word nobody enforces (Stage G
   // slice 5b reconciled eighteen such words; docs/STATUS.md). Paths are the store computer's routes; `?tab=` opens a

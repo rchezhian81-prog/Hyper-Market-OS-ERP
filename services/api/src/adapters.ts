@@ -19,7 +19,7 @@
 //   • **Streams are per tenant and per domain.** `tenantId` is the argument to every call, not a
 //     column somebody remembers to filter on (OB-01).
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import type { BatchEntry, EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
@@ -62,6 +62,7 @@ import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedR
 import type { ExchangeDeps } from '../../pos/src/exchanges';
 import type { NoReceiptReturnsDeps } from '../../pos/src/no-receipt-returns';
 import type { ApprovalUse, RefundApproval, RefundApprovalDeps, RefundApprovalState } from '../../pos/src/refund-approvals';
+import type { ApprovalDecision, ApprovalRequest, ApprovalRequestDeps, ApprovalState } from '../../identity/src/approval-requests';
 import type { RefusedDecision } from '../../migration/src/decisions';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { ControlTotal, TotalSignature } from '../../../packages/migration/src/reconcile';
@@ -2587,6 +2588,86 @@ export function refundApprovalsAdapter(input: { readonly store: EventStore; read
     },
     refundApproval: (tenantId, approvalId) => readRefundApproval(input.store, tenantId, approvalId),
     approvalVersion: (tenantId, approvalId) => input.store.guardVersion(tenantId, refundApprovalGuardKey(approvalId)),
+  };
+}
+
+// ── Head office's maker-checker engine (ADR-0024 · M02-FR-03 · audit PA-03) ─────────────────────────────────────────
+/** One guard per request: a decision and the one use of an approval both bump it, so two checkers, or two actions, racing
+ *  on one request cannot both land. */
+export const approvalRequestGuardKey = (requestId: string): string => `approval-request:${requestId}`;
+const APPROVAL_REQUESTS = 'approval-requests';
+
+async function readApprovalState(store: EventStore, tenantId: string, requestId: string): Promise<ApprovalState | undefined> {
+  const asked = await store.findByIdempotencyKey(tenantId, `approval-request-${tenantId}-${requestId}`);
+  if (asked === undefined) return undefined;
+  const decided = await store.findByIdempotencyKey(tenantId, `approval-decision-${tenantId}-${requestId}`);
+  const used = await store.findByIdempotencyKey(tenantId, `approval-used-${tenantId}-${requestId}`);
+  const usedBy = (used?.event.payload as { usedBy?: unknown } | undefined)?.usedBy;
+  return {
+    request: asked.event.payload as ApprovalRequest,
+    ...(decided === undefined ? {} : { decision: decided.event.payload as ApprovalDecision }),
+    ...(typeof usedBy === 'string' ? { usedBy } : {}),
+  };
+}
+
+/** The maker-checker engine's store (ADR-0024): requests, decisions and uses — append-only, one guard per request. */
+export function approvalRequestsAdapter(input: { readonly store: EventStore; readonly now: () => string }): ApprovalRequestDeps & {
+  /** Spend an approved request for one action, under the request's guard read before it was judged. Resolves `false`
+   *  when another use landed first; throws `ConcurrencyConflictError` when the guard moved under it. */
+  readonly spendApproval: (tenantId: string, requestId: string, usedBy: string, expectedVersion: number) => Promise<boolean>;
+} {
+  return {
+    now: input.now,
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    recordRequest: async (tenantId, request) => {
+      await input.store.append(tenantId, APPROVAL_REQUESTS, makeEvent({
+        id: `approval-request-${request.requestId}`, type: 'ApprovalRequested', occurredAt: request.requestedAt,
+        idempotencyKey: `approval-request-${tenantId}-${request.requestId}`, source: 'api/approvals', payload: request,
+      }));
+    },
+    recordDecision: async (tenantId, decision, expectedVersion) => {
+      const [result] = await input.store.appendBatch(tenantId, [{
+        stream: APPROVAL_REQUESTS,
+        event: makeEvent({
+          // The KEY names the request, so only one decision can ever land; the id is this attempt's own, so two checkers
+          // at the same moment meet on the key (one lands, the other reads it back) — never a duplicate-id crash.
+          id: `approval-decision-${decision.requestId}-${randomUUID()}`, type: 'ApprovalDecided', occurredAt: decision.decidedAt,
+          idempotencyKey: `approval-decision-${tenantId}-${decision.requestId}`, source: 'api/approvals', payload: decision,
+        }),
+      }], { guard: { key: approvalRequestGuardKey(decision.requestId), expectedVersion } });
+      // The decision that stands — the other checker's, when theirs landed first.
+      return result!.record.event.payload as ApprovalDecision;
+    },
+    approvalState: (tenantId, requestId) => readApprovalState(input.store, tenantId, requestId),
+    approvalVersion: (tenantId, requestId) => input.store.guardVersion(tenantId, approvalRequestGuardKey(requestId)),
+    allRequests: async (tenantId) => {
+      const events = await input.store.readStream(tenantId, APPROVAL_REQUESTS);
+      const byId = new Map<string, { request?: ApprovalRequest; decision?: ApprovalDecision; usedBy?: string }>();
+      for (const e of events) {
+        const p = e.event.payload as { requestId?: string; usedBy?: string };
+        if (typeof p.requestId !== 'string') continue;
+        const cur = byId.get(p.requestId) ?? {};
+        if (e.event.type === 'ApprovalRequested') cur.request = e.event.payload as ApprovalRequest;
+        else if (e.event.type === 'ApprovalDecided') cur.decision ??= e.event.payload as ApprovalDecision;
+        else if (e.event.type === 'ApprovalUsed' && typeof p.usedBy === 'string') cur.usedBy ??= p.usedBy;
+        byId.set(p.requestId, cur);
+      }
+      return [...byId.values()].flatMap((v): ApprovalState[] => (v.request === undefined ? [] : [{
+        request: v.request, ...(v.decision === undefined ? {} : { decision: v.decision }), ...(v.usedBy === undefined ? {} : { usedBy: v.usedBy }),
+      }]));
+    },
+    spendApproval: async (tenantId, requestId, usedBy, expectedVersion) => {
+      // As a decision: the key names the request (one use, ever), the id is this attempt's own. A use that met another
+      // already there did NOT land — even when it is the same action sent twice — so only one of them proceeds.
+      const [result] = await input.store.appendBatch(tenantId, [{
+        stream: APPROVAL_REQUESTS,
+        event: makeEvent({
+          id: `approval-used-${requestId}-${randomUUID()}`, type: 'ApprovalUsed', occurredAt: input.now(),
+          idempotencyKey: `approval-used-${tenantId}-${requestId}`, source: 'api/approvals', payload: { requestId, usedBy },
+        }),
+      }], { guard: { key: approvalRequestGuardKey(requestId), expectedVersion } });
+      return !result!.deduped;
+    },
   };
 }
 
