@@ -14,6 +14,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import {
   looksLikeCardNumber, paymentPosition, refundPosition, planOrderRefund, refundMessage, foldRefunds,
   type OrderPayment, type OrderPaymentResolution, type OrderRefund, type OrderRefundOutcome, type RefundBasis,
@@ -41,7 +42,9 @@ export interface PaymentRefundDeps {
   readonly allRefundOutcomes: (tenantId: string) => Promise<readonly OrderRefundOutcome[]> | readonly OrderRefundOutcome[];
   /** The tenant's refund approval threshold (M13-FR-03 policy, shared) — undefined means the default (every refund). */
   readonly refundThreshold: (tenantId: string) => Promise<number | undefined> | number | undefined;
-  readonly holdsPermission: (tenantId: string, userId: string, permission: string) => Promise<boolean> | boolean;
+  /** Head office's maker-checker engine (ADR-0024): a refund's approver gave it in their own session, holding
+   *  `order.refund.approve`. Optional on a bare stub (then every approval is unknown); the running system provides it. */
+  readonly approvals?: ApprovalPort;
   readonly refundProcessor: RefundProcessor;
 }
 
@@ -147,7 +150,7 @@ export function paymentRefundRoutes(deps: PaymentRefundDeps): readonly Route[] {
       },
     },
     {
-      // Issue a refund against the order's own token (M18-FR-04). Body: { refundId, amountMinor, basis, reason, approvedBy? }.
+      // Issue a refund against the order's own token (M18-FR-04). Body: { refundId, amountMinor, basis, reason, approvalId? }.
       api: 'API-07', method: 'POST', path: '/v1/orders/:orderId/refunds',
       permission: 'order.refund.issue', idempotent: true,
       handler: async (ctx) => {
@@ -158,7 +161,7 @@ export function paymentRefundRoutes(deps: PaymentRefundDeps): readonly Route[] {
           || (b['approvedBy'] !== undefined && !isStr(b['approvedBy']))) {
           throw apiError(400, {
             code: 'not_readable_as_a_refund',
-            whatHappened: 'A refund needs { refundId, amountMinor (paise, whole), basis: cancellation | substitution | short_pick | goodwill, reason, approvedBy? }.',
+            whatHappened: 'A refund needs { refundId, amountMinor (paise, whole), basis: cancellation | substitution | short_pick | goodwill, reason, approvalId? }.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Nothing was sent to the provider and nothing was recorded.',
           });
@@ -180,13 +183,22 @@ export function paymentRefundRoutes(deps: PaymentRefundDeps): readonly Route[] {
         }
         const { payment, refunds } = await position(ctx.tenantId, orderId);
         const substitutions = await deps.orderSubstitutions(ctx.tenantId, orderId);
-        const approvedBy = isStr(b['approvedBy']) ? b['approvedBy'] : undefined;
+        // The second person (ADR-0024 · §28 · M18-FR-04): an approval someone holding `order.refund.approve` GAVE in their
+        // own session for exactly this refund (kind `order_refund`) — never the person issuing it. A name typed into
+        // `approvedBy` is refused by name; before, it was checked only for the role it named, and the money moved.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
+          kind: 'order_refund', subjectRef: `${orderId}/${refundId}`, details: actionDetails(b, { orderId }), valueMinor: amountMinor,
+          maker: ctx.userId, usedBy: `order-refund:${orderId}/${refundId}`, now: deps.now(),
+        });
+        const approvedBy = opened?.decision.decidedBy;
         const plan = planOrderRefund({
           payment, position: refunds, amountMinor, basis: b['basis'] as RefundBasis,
           substitutionRefundDueMinor: substitutions.reduce((t, s) => t + s.refundMinor, 0),
           requestedBy: ctx.userId,
           ...(approvedBy === undefined ? {} : { approvedBy }),
-          approverHoldsAuthority: approvedBy === undefined ? false : await deps.holdsPermission(ctx.tenantId, approvedBy, 'order.refund.approve'),
+          // The engine has already checked the approver holds the authority now (and is not the requester).
+          approverHoldsAuthority: approvedBy !== undefined,
           approvalThresholdMinor: (await deps.refundThreshold(ctx.tenantId)) ?? DEFAULT_REFUND_THRESHOLD_MINOR,
         });
         if (!plan.ok) {
@@ -197,6 +209,8 @@ export function paymentRefundRoutes(deps: PaymentRefundDeps): readonly Route[] {
             nextSafeAction: 'Nothing moved. Correct the request — or, for an approval finding, have a second person with refund-approval authority approve it.',
           });
         }
+        // Every rule passed: the approval is spent — once — BEFORE any money moves.
+        await opened?.spend();
         // The money moves here — against the ORDER's token, once. Whatever the processor says is recorded as it said it.
         const answer = await deps.refundProcessor.refund({ refundId, providerRef: payment.providerRef!, amountMinor, currency: 'INR' });
         const state = answer.result === 'refunded' ? 'issued' : answer.result === 'declined' ? 'refused' : 'pending';

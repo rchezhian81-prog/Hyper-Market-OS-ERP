@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedRequestId, sentWithApproval } from '../support/approval-request';
+import { actionDetails } from '../../services/identity/src/approval-requests';
 
 // Service-desk compensation, end to end (M21-FR-03 · §28, API-06). Money leaving the business, decided by
 // the person the customer is currently shouting at — which is why the reason and the second signature are
 // not optional. Two §28 controls that used to be dodgeable are now real:
 //   1. The authority LIMITS are the tenant's policy, sourced server-side — the caller can no longer send
 //      their own `agentAuthorityMinor` in the body and grant any amount "within their own authority".
-//   2. An over-limit grant needs an approver who GENUINELY holds `service.compensation.approve` (the owner),
-//      not merely a name in the box different from the granter.
+//   2. An over-limit grant needs an approval given IN THEIR OWN SESSION by someone who genuinely holds
+//      `service.compensation.approve` (the owner) — head office's maker-checker engine (ADR-0024). A name typed into
+//      the request is refused by name (audit PA-03); before 2b-vi-b-3 a typed name with the authority was enough.
 // The desk default is ₹500 an agent may grant alone; ₹5,000 is the absolute desk ceiling; the owner may
 // set both. Append-only (a compensation ledger). Gated service.case.manage to grant, service.case.read to read.
 
@@ -18,6 +21,11 @@ const open = (h: ApiHarness, u: string, id: string) =>
   h.request({ method: 'POST', path: `/v1/service/cases/${id}`, userId: u, tenantId: A, idempotencyKey: `open-${id}`, body: CASE });
 const comp = (h: ApiHarness, u: string, id: string, body: Record<string, unknown>, key: string) =>
   h.request({ method: 'POST', path: `/v1/service/cases/${id}/compensation`, userId: u, tenantId: A, idempotencyKey: key, body });
+/** The grant as two people make it: the agent asks for exactly this grant; `checker` approves it in their own session;
+ *  the grant names the approval. When the checker may not approve (the agent, no authority), the engine's refusal returns. */
+const approvedComp = (h: ApiHarness, u: string, checker: string, id: string, body: Record<string, unknown>, key: string) =>
+  sentWithApproval(h, A, u, checker, { kind: 'service_compensation', subjectRef: id, pathIds: { caseId: id }, valueMinor: body['amountMinor'] as number },
+    body, (b) => comp(h, u, id, b, key));
 const comps = (h: ApiHarness, u: string, id: string) =>
   h.request({ method: 'GET', path: `/v1/service/cases/${id}/compensations`, userId: u, tenantId: A });
 const getPolicy = (h: ApiHarness, u: string) =>
@@ -50,23 +58,29 @@ describe('service-desk compensation is a §28 financial control (M21-FR-03)', ()
     expect(list.compensations[0]).toMatchObject({ grantedBy: 'u-mgr' });
   });
 
-  it('above the desk authority, needs an approver who GENUINELY holds the authority — a name is not an approval', async () => {
+  it('above the desk authority, needs an approval GIVEN by someone who holds the authority — a name is not an approval', async () => {
     const h = await cast();
     await open(h, 'u-mgr', 'k1');
+    const OVER = { kind: 'refund', amountMinor: 200_000, reason: 'repeated failures' };
 
     // ₹2,000 — above the ₹500 desk authority, a separate approver is required (§28).
-    expect(codeOf(await comp(h, 'u-mgr', 'k1', { kind: 'refund', amountMinor: 200_000, reason: 'repeated failures' }, 'c-a'))).toBe('needs_approval');
-    // The agent cannot be the approver of their own grant.
-    expect(codeOf(await comp(h, 'u-mgr', 'k1', { kind: 'refund', amountMinor: 200_000, reason: 'repeated failures', approval: { subjectRef: 'k1', status: 'approved', decidedBy: 'u-mgr', reason: 'ok' } }, 'c-b'))).toBe('self_approved');
+    expect(codeOf(await comp(h, 'u-mgr', 'k1', OVER, 'c-a'))).toBe('needs_approval');
+    // Nobody approves their own grant — the engine refuses the decision: the agent (who lacks the authority anyway), and
+    // even the owner, who holds it.
+    expect(codeOf(await approvedComp(h, 'u-mgr', 'u-mgr', 'k1', OVER, 'c-b'))).toBe('not_permitted_for_this_approval');
+    expect(codeOf(await approvedComp(h, 'u-owner', 'u-owner', 'k1', OVER, 'c-b2'))).toBe('self_approval');
     // An approval for a DIFFERENT case does not authorise this one.
-    expect(codeOf(await comp(h, 'u-mgr', 'k1', { kind: 'refund', amountMinor: 200_000, reason: 'repeated failures', approval: { subjectRef: 'other', status: 'approved', decidedBy: 'u-owner', reason: 'ok' } }, 'c-c'))).toBe('needs_approval');
-    // THE BYPASS, CLOSED: an approver who does NOT hold service.compensation.approve does not count — a name
-    // in a box (an unprovisioned 'u-boss', or a store manager who lacks the approve authority) is refused.
-    expect(codeOf(await comp(h, 'u-mgr', 'k1', { kind: 'refund', amountMinor: 200_000, reason: 'repeated failures', approval: { subjectRef: 'k1', status: 'approved', decidedBy: 'u-boss', reason: 'signed off' } }, 'c-noauth'))).toBe('approver_may_not_approve');
-    expect(codeOf(await comp(h, 'u-mgr', 'k1', { kind: 'refund', amountMinor: 200_000, reason: 'repeated failures', approval: { subjectRef: 'k1', status: 'approved', decidedBy: 'u-cash', reason: 'signed off' } }, 'c-noauth2'))).toBe('approver_may_not_approve');
+    const forOther = await approvedRequestId(h, A, 'u-mgr', 'u-owner', { kind: 'service_compensation', subjectRef: 'other', details: actionDetails(OVER, { caseId: 'other' }), valueMinor: 200_000 });
+    expect(codeOf(await comp(h, 'u-mgr', 'k1', { ...OVER, approvalId: forOther }, 'c-c'))).toBe('approval_does_not_match');
+    // Someone who does NOT hold service.compensation.approve cannot approve one (an unprovisioned 'u-boss', a cashier).
+    expect((await approvedComp(h, 'u-mgr', 'u-boss', 'k1', OVER, 'c-noauth')).status).toBe(403);
+    expect((await approvedComp(h, 'u-mgr', 'u-cash', 'k1', OVER, 'c-noauth2')).status).toBe(403);
+    // THE BYPASS, CLOSED (audit PA-03): the owner's name typed into the request is refused by name — before, it granted.
+    expect(codeOf(await comp(h, 'u-mgr', 'k1', { ...OVER, approval: { subjectRef: 'k1', status: 'approved', decidedBy: 'u-owner', reason: 'signed off' } }, 'c-typed'))).toBe('approver_named_without_approval');
+    expect(((await comps(h, 'u-owner', 'k1')).body as { count: number }).count).toBe(0); // nothing was paid
 
-    // A real second signature, from the OWNER (who holds the authority), on this case — granted.
-    const ok = await comp(h, 'u-mgr', 'k1', { kind: 'refund', amountMinor: 200_000, reason: 'repeated failures', approval: { subjectRef: 'k1', status: 'approved', decidedBy: 'u-owner', reason: 'signed off' } }, 'c-ok');
+    // The OWNER approves this grant in their own session — granted, and the approval is used up.
+    const ok = await approvedComp(h, 'u-mgr', 'u-owner', 'k1', OVER, 'c-ok');
     expect(ok.status).toBe(201);
     expect(ok.body).toMatchObject({ granted: true, approvedBy: 'u-owner' });
   });
@@ -77,7 +91,7 @@ describe('service-desk compensation is a §28 financial control (M21-FR-03)', ()
     // No reason — refused even within authority.
     expect(codeOf(await comp(h, 'u-mgr', 'k1', { kind: 'goodwill_credit', amountMinor: 30_000, reason: '   ' }, 'c-nr'))).toBe('no_reason');
     // ₹6,000 — above the ₹5,000 desk ceiling: a management decision, refused even with a valid owner approval.
-    expect(codeOf(await comp(h, 'u-mgr', 'k1', { kind: 'refund', amountMinor: 600_000, reason: 'x', approval: { subjectRef: 'k1', status: 'approved', decidedBy: 'u-owner', reason: 'ok' } }, 'c-cap'))).toBe('exceeds_policy_cap');
+    expect(codeOf(await approvedComp(h, 'u-mgr', 'u-owner', 'k1', { kind: 'refund', amountMinor: 600_000, reason: 'x' }, 'c-cap'))).toBe('exceeds_policy_cap');
   });
 
   it('the owner may grant up to the desk ceiling alone, but never above it', async () => {

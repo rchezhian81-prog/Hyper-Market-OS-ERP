@@ -372,7 +372,14 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
     });
     await step('the supplier invoice is captured and matched by a second person; the debit note; the account owes the net', async () => {
       const paper = { supplierId: SUPPLIER, poId: PO, declaredTotalMinor: ORDERED * COST, lines: [{ productId: PRODUCT, quantity: ORDERED, unitPriceMinor: COST, lineTotalMinor: ORDERED * COST }] };
-      expectStatus(await call('POST', `/v1/purchase/invoices/${run}-inv-1/capture`, cast.buyer, { ...paper, approvedBy: cast.checker }, 'cap-inv-1'), [201], 'invoice capture');
+      // The second person who checked the bill approves it in their OWN session (ADR-0024), for exactly this bill; the
+      // capture names that approval — a name typed into the body is refused.
+      const asked = expectStatus(await call('POST', '/v1/approvals/requests', cast.buyer, {
+        kind: 'supplier_invoice_check', subjectRef: `${run}-inv-1`, details: { ...paper, invoiceId: `${run}-inv-1` }, valueMinor: ORDERED * COST,
+        summary: `Check supplier bill ${run}-inv-1`, reason: 'demo smoke (synthetic)',
+      }, 'ask-inv-1'), [201], 'ask the checker') as { requestId?: string };
+      expectStatus(await call('POST', `/v1/approvals/requests/${asked.requestId ?? ''}/decide`, cast.checker, { decision: 'approved', reason: 'checked against the paper bill' }, 'decide-inv-1'), [201], 'checker approves');
+      expectStatus(await call('POST', `/v1/purchase/invoices/${run}-inv-1/capture`, cast.buyer, { ...paper, approvalId: asked.requestId }, 'cap-inv-1'), [201], 'invoice capture');
       const matched = expectStatus(await call('POST', `/v1/purchase/invoices/${run}-inv-1/match`, cast.checker, {}, 'mat-inv-1'), [200], 'invoice match');
       must(matched['blocked'] === false && matched['payableMinor'] === ORDERED * COST, `match: ${JSON.stringify(matched).slice(0, 200)}`);
       expectStatus(await call('POST', `/v1/purchase/suppliers/${SUPPLIER}/debit-notes/DN-${GRN}-L2/issue`, cast.checker, {}, 'dn-1'), [201], 'debit note');

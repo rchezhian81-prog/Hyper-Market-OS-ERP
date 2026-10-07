@@ -105,8 +105,8 @@ import {
   createWasteReviewSession, type WasteReviewPorts, type WasteReviewSession, type WriteOffRow,
 } from './waste-review-session';
 import {
-  createWriteOffCaptureSession,
-  type WriteOffCapturePorts, type WriteOffCaptureSession, type WriteOffCapturePort, type CaptureResult,
+  createWriteOffCaptureSession, writeOffRequestBody,
+  type WriteOffCapturePorts, type WriteOffCaptureSession, type WriteOffCapturePort, type WriteOffPostResult,
 } from './write-off-capture-session';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import {
@@ -841,26 +841,31 @@ export interface WriteOffCaptureData {
 
 const WRITE_OFF_APPEND_PERMISSION = 'inventory.movement.append';
 /** Off-browser / tests inject their own http; a real port is wired in the boot body. */
-const NOOP_CAPTURE_PORT: WriteOffCapturePort = { post: async () => 'lost_link' };
+const NOOP_CAPTURE_PORT: WriteOffCapturePort = { post: async () => ({ result: 'lost_link' }) };
 
+/** The ports the capture screen runs on. `headOffice` is head office's approval engine (ask + the caller's inbox) —
+ *  without it a big loss is never recorded (ADR-0024: a typed name is not an approval). */
 export function writeOffCapturePortsFromData(
   data: WriteOffCaptureData | undefined,
   capturePort: WriteOffCapturePort = NOOP_CAPTURE_PORT,
+  headOffice?: HeadOfficeApprovalPorts,
 ): WriteOffCapturePorts {
   const held = new Set(data?.permissions ?? []);
   return {
     // Default-deny: an absent permission list can record nothing (the server would refuse it anyway).
     mayCapture: () => held.has(WRITE_OFF_APPEND_PERMISSION),
     capturePort: () => capturePort,
+    ...(headOffice === undefined ? {} : { askApproval: headOffice.askApproval, approvalInbox: headOffice.approvalInbox }),
   };
 }
 
 /** Build the write-off capture screen, or `null` when the box carried no payload for it (shell shows the
  *  sample). The threshold is the injected tenant policy; absent, the engine default is used — the SAME line the
- *  server enforces, never invented here. */
+ *  server enforces, never invented here. `headOffice` wires the approval engine a big loss needs. */
 export function bootWriteOffCapture(
   data: WriteOffCaptureData | undefined,
   capturePort?: WriteOffCapturePort,
+  headOffice?: HeadOfficeApprovalPorts,
 ): WriteOffCaptureSession | null {
   if (data === undefined) return null;
   return createWriteOffCaptureSession(
@@ -868,55 +873,36 @@ export function bootWriteOffCapture(
       userId: data.userId === undefined ? null : data.userId,
       materialThresholdMinor: data.materialThresholdMinor ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR,
     },
-    writeOffCapturePortsFromData(data, capturePort),
+    writeOffCapturePortsFromData(data, capturePort, headOffice),
   );
 }
 
 /** The authenticated POST of a stock write-off — the raiser's OWN session cookie (`credentials: 'same-origin'`),
- *  never a service token. The server records the loss in the caller's own name and enforces the threshold,
- *  evidence and §28 separate-approver rules; the screen never fabricates an approver or an evidence reference.
- *  A network/timeout is a retryable lost link, not a refusal. The writeOffId rides in the URL (idempotency —
- *  a re-send under the same id records once). No AI calls this — a person does (hard rule #5). */
+ *  never a service token. The body is exactly `writeOffRequestBody` — the same function the approval's details come
+ *  from, so what was approved is what is sent — naming the approval (`approvalId`) for a big loss, never an approver.
+ *  The server records the loss in the caller's own name and enforces the limit, the evidence and the approval. A
+ *  network/timeout is a retryable lost link, not a refusal; a refusal carries head office's own code and words. The
+ *  writeOffId rides in the URL and as the idempotency key (a re-send under the same id records once). No AI calls
+ *  this — a person does (hard rule #5). */
 function openWriteOffCapturePort(): WriteOffCapturePort {
   return {
-    post: async (input): Promise<CaptureResult> => {
+    post: async ({ writeOffId, body, approvalId }): Promise<WriteOffPostResult> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
-      if (fetchFn === undefined) return 'lost_link';
-      const { writeOffId, ...body } = input;
+      if (fetchFn === undefined) return { result: 'lost_link' };
       try {
         const res = await fetchFn(`/v1/inventory/write-off/${encodeURIComponent(writeOffId)}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'idempotency-key': writeOffId, accept: 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify(body),
+          body: JSON.stringify(writeOffRequestBody(body, approvalId)),
         });
-        if (res.status === 201) return 'recorded';
-        if (res.status === 409) return 'conflict';
-        if (res.status === 422) {
-          const code = await readErrorCode(res);
-          if (code === 'write_off_needs_evidence') return 'needs_evidence';
-          if (code === 'write_off_needs_approval') return 'needs_approval';
-          if (code === 'approver_may_not_approve') return 'approver_not_authorised';
-          return 'refused';
-        }
-        if (res.status === 400) return 'refused';
-        return 'refused';
+        if (res.status >= 200 && res.status < 300) return { result: 'recorded' };
+        return { result: 'refused', ...(await refusalOf(res)) };
       } catch {
-        return 'lost_link';
+        return { result: 'lost_link' };
       }
     },
   };
-}
-
-/** Read the `code` from a governed-route error body, tolerantly — a body that does not parse maps to a plain
- *  refusal rather than throwing (the screen still shows the operator an honest outcome). */
-async function readErrorCode(res: Response): Promise<string | undefined> {
-  try {
-    const body = (await res.json()) as { code?: string };
-    return body.code;
-  } catch {
-    return undefined;
-  }
 }
 
 /** What the box tells the stock-count review screen — the last-synced reconciled counts plus who is looking. */
@@ -5131,7 +5117,7 @@ if (browserWindow !== undefined) {
   // caller's own name, none of which the screen fabricates. No AI records a loss (hard rule #5).
   const writeOffCaptureData = browserWindow.writeOffCaptureData;
   const writeOffCapturePort = openWriteOffCapturePort();
-  const writeOffCapture = bootWriteOffCapture(writeOffCaptureData, writeOffCapturePort);
+  const writeOffCapture = bootWriteOffCapture(writeOffCaptureData, writeOffCapturePort, HEAD_OFFICE_APPROVALS);
   if (writeOffCapture !== null) {
     browserWindow.writeOffCaptureSession = writeOffCapture;
     browserWindow.writeOffCapture = { capturePort: () => writeOffCapturePort };

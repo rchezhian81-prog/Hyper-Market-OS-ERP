@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 926,
+  "testFiles": 927,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -438,7 +438,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 29,
+        "integration": 30,
         "realDb": 6,
         "browser": 3,
         "connected": 0,
@@ -487,6 +487,7 @@
           "tests/integration/the-till-exchanges.test.ts",
           "tests/integration/the-till-returns-without-a-receipt.test.ts",
           "tests/integration/trusted-approvals.test.ts",
+          "tests/integration/upward-stock-correction.test.ts",
           "tests/integration/warehouse-counts.test.ts",
           "tests/integration/warehouse-durability.test.ts",
           "tests/integration/warehouse-synced-routes.test.ts",
@@ -1057,7 +1058,7 @@
       "id": "M18",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 10,
+        "unit": 11,
         "integration": 9,
         "realDb": 2,
         "browser": 0,
@@ -1067,6 +1068,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/approval-requests.test.ts",
           "tests/unit/fulfilment-serviceability-simulator.test.ts",
           "tests/unit/order-payment-refund-routes.test.ts",
           "tests/unit/order-payment-refunds.test.ts",
@@ -1223,7 +1225,7 @@
       "id": "M21",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 4,
+        "unit": 5,
         "integration": 11,
         "realDb": 1,
         "browser": 0,
@@ -1233,6 +1235,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/approval-requests.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-service-session.test.ts",
           "tests/unit/service-desk-campaigns.test.ts",
@@ -1314,7 +1317,7 @@
       "id": "M23",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 21,
+        "unit": 22,
         "integration": 17,
         "realDb": 5,
         "browser": 4,
@@ -1325,6 +1328,7 @@
       "files": {
         "unit": [
           "tests/unit/api-manifest.test.ts",
+          "tests/unit/approval-requests.test.ts",
           "tests/unit/b2b-collections.test.ts",
           "tests/unit/edge-feeds-the-screens.test.ts",
           "tests/unit/erp-approvals-session.test.ts",
@@ -1564,7 +1568,7 @@
       "id": "M28",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 4,
+        "unit": 5,
         "integration": 7,
         "realDb": 2,
         "browser": 2,
@@ -1574,6 +1578,7 @@
       },
       "files": {
         "unit": [
+          "tests/unit/erp-approvals-session.test.ts",
           "tests/unit/erp-waste-review-session.test.ts",
           "tests/unit/erp-write-off-capture-session.test.ts",
           "tests/unit/waste-sustainability.test.ts",

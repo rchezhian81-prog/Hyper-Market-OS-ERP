@@ -73,7 +73,7 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
     expect(bank.requestedBy).toBe('u-acct');
     expect(bank.when).toBe('07-10-2026 11:30');
     expect(bank.details).toEqual([
-      { key: 'supplierId', label: 'Supplier id', value: 'SUP-7' },
+      { key: 'supplierId', label: 'Supplier', value: 'SUP-7' },
       { key: 'newAccountLast4', label: 'New account last4', value: '4321' },
       { key: 'verifiedByCall', label: 'Verified by call', value: 'yes' },
     ]);
@@ -149,7 +149,16 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       period_reopen: { en: 'Reopen a signed accounting month', ta: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்' },
       concession_contract: { en: 'Approve a concession contract', ta: 'கூட்டாளர் கவுண்டர் ஒப்பந்தத்தை அனுமதித்தல்' },
       concession_deposit_forfeit: { en: 'Forfeit a concessionaire\'s deposit', ta: 'கூட்டாளரின் வைப்புத் தொகையைப் பறிமுதல் செய்தல்' },
+      // Stock, orders and purchasing (2b-vi-b-3).
+      stock_write_off: { en: 'Write off stock (a material loss)', ta: 'சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)' },
+      stock_adjustment_up: { en: 'Correct stock upward', ta: 'சரக்கு எண்ணிக்கையை மேல்நோக்கித் திருத்துதல்' },
+      order_refund: { en: 'Refund an online order', ta: 'ஆன்லைன் ஆர்டருக்குப் பணத்தைத் திருப்பித் தருதல்' },
+      service_compensation: { en: 'Give a customer compensation above the desk\'s own limit', ta: 'சேவை மேசையின் சொந்த வரம்புக்கு மேல் வாடிக்கையாளருக்கு இழப்பீடு வழங்குதல்' },
+      supplier_invoice_check: { en: 'Check a supplier bill', ta: 'விநியோகஸ்தர் பில்லைச் சரிபார்த்தல்' },
+      supplier_payment: { en: 'Pay a supplier', ta: 'விநியோகஸ்தருக்குப் பணம் செலுத்துதல்' },
     };
+    // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
+    expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());
     for (const [kind, words] of Object.entries(named)) {
       // The engine's own label is the English the screen shows; the reader's language wins over the server's label.
       expect(APPROVAL_KINDS[kind]?.label, `${kind} is not a kind the engine knows`).toBe(words.en);
@@ -161,6 +170,61 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       expect(ta, `${kind} in Tamil`).toMatch(/[஀-௿]/);
       expect(ta).not.toMatch(/[a-z]_[a-z]/);
     }
+  });
+
+  it('a material write-off reads as the shop says it — every field of the loss by name, its value in rupees, in both languages', () => {
+    // Stock (2b-vi-b-3 · M28-FR-01): the raiser asks on Record a loss; another person who handles stock approves here.
+    const details = {
+      productId: 'Toor dal 1kg', locationId: 'aisle-3', qty: 12, uom: 'ea', lossType: 'damage', reasonCode: 'damage',
+      valueMinor: 114000, evidenceRef: 'photo-17', writeOffId: 'WO-1',
+    };
+    const en = presentRequest('en', row({
+      kind: 'stock_write_off', label: 'Write off stock (a material loss)', subjectRef: 'WO-1', valueMinor: 114000, details,
+      summary: 'Write off 12 × Toor dal 1kg — damage, ₹1,140.00',
+    }));
+    expect(en.label).toBe('Write off stock (a material loss)');
+    expect(en.amount).toBe('₹1,140.00');
+    expect(en.details).toEqual([
+      { key: 'productId', label: 'Item', value: 'Toor dal 1kg' },
+      { key: 'locationId', label: 'Where', value: 'aisle-3' },
+      { key: 'qty', label: 'Quantity', value: '12' },
+      { key: 'uom', label: 'Unit', value: 'ea' },
+      { key: 'lossType', label: 'Kind of loss', value: 'damage' },
+      { key: 'reasonCode', label: 'Reason code', value: 'damage' },
+      { key: 'valueMinor', label: 'What it is worth', value: '₹1,140.00' },
+      { key: 'evidenceRef', label: 'Evidence', value: 'photo-17' },
+      { key: 'writeOffId', label: 'Write-off', value: 'WO-1' },
+    ]);
+    const ta = presentRequest('ta', row({ kind: 'stock_write_off', label: 'Write off stock (a material loss)', details }));
+    expect(ta.label).toBe('சரக்கை இழப்பாகக் கழித்தல் (பெரிய இழப்பு)');
+    expect(ta.details.map((d) => d.label)).toEqual([
+      'பொருள்', 'எங்கே', 'எண்ணிக்கை', 'அலகு', 'இழப்பின் வகை', 'காரணக் குறியீடு', 'மதிப்பு', 'ஆதாரம்', 'இழப்புப் பதிவு',
+    ]);
+  });
+
+  it('the other stock, order and supplier kinds name their fields — money in rupees, a quantity as a count', () => {
+    const labelsOf = (lang: 'en' | 'ta', details: Record<string, unknown>) =>
+      Object.fromEntries(presentRequest(lang, row({ details })).details.map((d) => [d.key, `${d.label}: ${d.value}`]));
+    // An upward stock correction: `quantityMinor` is a count of stock, never rupees.
+    expect(labelsOf('en', { movementId: 'mv-9', kind: 'adjusted', productId: 'P1', locationId: 'aisle-3', quantityMinor: 5, uom: 'ea', reason: 'found in the back' })).toEqual({
+      movementId: 'Stock movement: mv-9', kind: 'What kind: adjusted', productId: 'Item: P1', locationId: 'Where: aisle-3',
+      quantityMinor: 'Quantity: 5', uom: 'Unit: ea', reason: 'Why: found in the back',
+    });
+    // An online-order refund, a compensation, a supplier bill and a supplier payment.
+    expect(labelsOf('en', { refundId: 'rf-1', orderId: 'ord-7', amountMinor: 25000, basis: 'short_pick' })).toEqual({
+      refundId: 'Refund: rf-1', orderId: 'Order: ord-7', amountMinor: 'Amount: ₹250.00', basis: 'Reason for the refund: short_pick',
+    });
+    expect(labelsOf('en', { caseId: 'case-3', kind: 'goodwill_credit', amountMinor: 50000 })).toEqual({
+      caseId: 'Customer case: case-3', kind: 'What kind: goodwill_credit', amountMinor: 'Amount: ₹500.00',
+    });
+    expect(labelsOf('en', { invoiceId: 'INV-44', supplierId: 'SUP-7', paymentId: 'pay-2', paidOn: '2026-10-07', method: 'neft', reference: 'UTR123' })).toEqual({
+      invoiceId: 'Supplier bill: INV-44', supplierId: 'Supplier: SUP-7', paymentId: 'Payment: pay-2', paidOn: 'Paid on: 2026-10-07',
+      method: 'How it is paid: neft', reference: 'Reference: UTR123',
+    });
+    const ta = labelsOf('ta', { amountMinor: 25000, quantityMinor: 5, refundId: 'rf-1', orderId: 'ord-7', basis: 'goodwill', caseId: 'c', kind: 'k', invoiceId: 'i', supplierId: 's', paymentId: 'p', paidOn: 'd', method: 'm', reference: 'r', movementId: 'mv' });
+    expect(ta['amountMinor']).toBe('தொகை: ₹250.00');
+    expect(ta['quantityMinor']).toBe('அளவு: 5');
+    for (const [key, line] of Object.entries(ta)) expect(line, `${key} in Tamil`).toMatch(/^[^:]*[஀-௿][^:]*:/);
   });
 
   it('every waiting row asks for attention with an icon and words — colour is never the only signal', () => {

@@ -20,7 +20,7 @@ only when its slice merges with a test that proves it.
 - **b** — 2b-vi-b, money and price approvals, each with its screen, in three parts:
   - **b-1** pricing — done;
   - **b-2** finance — done;
-  - **b-3** stock, orders and purchasing.
+  - **b-3** stock, orders and purchasing — done.
 - **c** — 2b-vi-c, low-severity and record-only names, plus seals on the box-relayed decisions.
 
 ## The 26 sites
@@ -39,12 +39,12 @@ only when its slice merges with a test that proves it.
 | 10 | `POST /v1/concession/contracts/:id` | `approvedBy` | A (no check) | Cleared the contract's `not_approved` trading blocker | M27, §28 | b-2 | **Fixed** (b-2): kind `concession_contract`, approved by another concession manager (API-only; no screen) |
 | 11 | `POST /v1/concession/concessionaires/:id/deposit-movements/:movementId` | `approvedBy` | A (no check) | A forfeit took a deposit off the liability | M27, §28 | b-2 | **Fixed** (b-2): kind `concession_deposit_forfeit`, only a forfeit takes an approval (API-only; no screen) |
 | 12 | `POST /v1/hr/payroll/bank-file` (+ `/journal`) | `events[].approved.by` | A | Built the salary bank file from caller-supplied events | §28, SEC-03 | b-2 | **Fixed** (b-2): both read the pay run head office recorded (approved by a different signed-in person); a history in the request is refused; the lines / net must be the run's recorded net total and headcount |
-| 13 | `POST /v1/inventory/write-off/:id` | `approvedBy` | A | Approved a material stock loss | M28-FR-01, M27-FR-02, §28 | b | Open |
-| 14 | `POST /v1/inventory/movements` (`adjusted`) | `approvedBy` and `enteredBy` | A | An upward adjustment approved by one body string against another | M08, §28, hard rule #2 | b | Open |
-| 15 | `POST /v1/orders/:id/refunds` | `approvedBy` | A | Moved money back to a customer | M18-FR-04, M20-FR-03, §28 | b | Open |
-| 16 | `POST /v1/service/cases/:id/compensation` | `approval.decidedBy` | A | Granted service compensation | M21-FR-04, §28 | b | Open |
-| 17 | `POST /v1/purchase/invoices/:id/capture` | `approvedBy` | A (flag only) | The invoice was recorded with an unverified approver | SP-7a, M07-FR-04, §28 | b | Open |
-| 18 | `POST /v1/purchase/suppliers/:id/payments/:paymentId` | `approvedBy` | A | Recorded a supplier payment | M23-FR-01, M06-FR-01, M15-FR-03, §28 | b | Open |
+| 13 | `POST /v1/inventory/write-off/:id` | `approvedBy` | A | Approved a material stock loss | M28-FR-01, M27-FR-02, §28 | b-3 | **Fixed** (b-3): kind `stock_write_off`, approved by another person who may post stock movements; the write-off screen asks and records with the approval |
+| 14 | `POST /v1/inventory/movements` (`adjusted`) | `approvedBy` and `enteredBy` | A | An upward adjustment approved by one body string against another | M08, §28, hard rule #2 | b-3 | **Fixed** (b-3): kind `stock_adjustment_up`; `enteredBy` must be the caller (API-only; no screen sends one) |
+| 15 | `POST /v1/orders/:id/refunds` | `approvedBy` | A | Moved money back to a customer | M18-FR-04, M20-FR-03, §28 | b-3 | **Fixed** (b-3): kind `order_refund`, approver holds `order.refund.approve`; spent before the money moves (API-only; no screen) |
+| 16 | `POST /v1/service/cases/:id/compensation` | `approval.decidedBy` | A | Granted service compensation | M21-FR-04, §28 | b-3 | **Fixed** (b-3): kind `service_compensation`, approver holds `service.compensation.approve` (the service screen grants none yet) |
+| 17 | `POST /v1/purchase/invoices/:id/capture` | `approvedBy` | A (flag only) | The invoice was recorded with an unverified approver | SP-7a, M07-FR-04, §28 | b-3 | **Fixed** (b-3): kind `supplier_invoice_check`, checker holds `purchase.invoice.match`; captured with no approval it is flagged `no_approval` (API-only at head office; the box's capture is row 17b) |
+| 18 | `POST /v1/purchase/suppliers/:id/payments/:paymentId` | `approvedBy` | A | Recorded a supplier payment | M23-FR-01, M06-FR-01, M15-FR-03, §28 | b-3 | **Fixed** (b-3): kind `supplier_payment`, approved by another person who may pay suppliers; no approval → `payment_needs_approval` (API-only; no screen) |
 | 19 | `POST /v1/hr/workforce/certifications/:id` | `verifiedBy` | A-low | Made a certificate count as cover for the task gate | M25-FR-03 | c | Open |
 | 20 | `POST /v1/hr/workforce/checklists/:id` | `signedBy` | A-low | Recorded a sign-off under a typed name | M25-FR-02 | c | Open |
 | 21 | `POST /v1/purchase/suppliers/:id` | `documents[].verifiedBy` | A-low | Stored a typed document verifier on the supplier master | M06-FR-01 | c | Open |
@@ -72,12 +72,18 @@ only when its slice merges with a test that proves it.
 - **Back-office screens where the second person is a typed name.** In both, the box checks only that it is a
   different name. Each moves with its route:
   - day reopen (`day-reopen.js`), slice **c**;
-  - the buyer's invoice capture (`buying.js`), slice **b**.
+  - the buyer's invoice capture (`buying.js`) — **moved to slice c** (found in 2b-vi-b-3, recorded here as row
+    17b). The buyer captures the bill on the store box, which may be offline, and the box relays it through
+    `invoices/:id/synced`. Head office re-verifies both people's grants on that relay, but the checker is still a name
+    the box took. The fix is the same one the other box-relayed decisions need — a store seal on the checker's own
+    act — so it moves with them in slice c instead of getting a one-off answer here.
 - **Screens that collect a typed approver but run only a local engine** (not wired to the API). Each is wired with
   its route in slice **b** or **c**:
-  - finance close and reopen;
-  - service compensation;
-  - the admin support grant.
+  - finance close and reopen — wired in b-2;
+  - service compensation — checked in b-3: the service screen offers no compensation yet (its compensation call is a
+    stub that grants nothing), so there is no typed box to remove. When a compensation screen is built it asks on the
+    engine;
+  - the admin support grant — slice c.
 - **The margin floor is taken from the request** (found in 2b-vi-b-1). `POST /v1/prices/changes`, price-list entries
   and quotations read `marginFloorBps` — and a quotation also its line costs — from the body. So the person setting a
   price also chooses the floor it is checked against. The second person now sees the floor and costs in the approval's

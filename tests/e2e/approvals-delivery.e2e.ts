@@ -203,7 +203,7 @@ describe.skipIf(!HAVE_BROWSER)('a checker approves or rejects what someone else 
       expect(imp).toContain('Waiting for your decision');
       const bank = await textOf(page, '#waiting li[data-request-id="areq-bank"]');
       expect(bank).toContain('₹12,500.00');
-      expect(bank).toContain('Supplier id: SUP-7');
+      expect(bank).toContain('Supplier: SUP-7');
 
       // What I asked for — each status in words, not colour.
       const mine = await textOf(page, '#mine');

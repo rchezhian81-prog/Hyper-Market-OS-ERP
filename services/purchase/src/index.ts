@@ -13,7 +13,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
-import { namedSecondPersonRefusal, openApproval, type ApprovalPort, NO_APPROVALS } from '../../identity/src/approval-requests';
+import { namedSecondPersonRefusal, openApproval, actionDetails, approvalNamedIn, type ApprovalPort, NO_APPROVALS } from '../../identity/src/approval-requests';
 import { threeWayMatch, type MatchLine, type MatchResult } from '../../../packages/purchasing/src/three-way-match';
 import {
   matchInvoice, InvalidMatchApprovalError,
@@ -451,23 +451,26 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         if (totalMinor !== b['declaredTotalMinor']) throw refuseTotal(totalMinor, b['declaredTotalMinor'], false);
         const existing = await deps.invoice(ctx.tenantId, invoiceId);
         if (existing !== undefined) return { status: 200, body: { invoice: existing, alreadyCaptured: true, flags: existing.governanceFlags } };
-        if (isStr(approvedBy) && approvedBy === ctx.userId) {
-          throw apiError(422, {
-            code: 'self_approval',
-            whatHappened: `${ctx.userId} captured this invoice and cannot also be the person who checked it (§28 separation of duties).`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Name the different person who checked it, or leave approvedBy out — the match and the payment need a second person anyway. Nothing was saved.',
-          });
-        }
+        // The second person who checked the bill (ADR-0024 · §28 · 2b-vi-b-3): an approval someone holding
+        // `purchase.invoice.match` GAVE in their own session for exactly this bill (kind `supplier_invoice_check`). A name
+        // typed into `approvedBy` is refused by name — before, an unknown or unauthorised name was only flagged and the
+        // bill recorded with it. With no approval the bill is captured and flagged `no_approval`, as before.
+        const opened = await approvalNamedIn(deps.approvals, {
+          tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: approvedBy,
+          kind: 'supplier_invoice_check', subjectRef: invoiceId, details: actionDetails(ctx.body, { invoiceId }), valueMinor: totalMinor,
+          maker: ctx.userId, usedBy: `invoice-check:${invoiceId}`, now: deps.now(),
+        });
+        const checkedBy = opened?.decision.decidedBy;
         const flags: InvoiceFlag[] = [];
-        if (!isStr(approvedBy)) flags.push('no_approval'); else await verifyApprover(deps, ctx.tenantId, approvedBy, flags);
+        if (checkedBy === undefined) flags.push('no_approval');
         await orderForInvoice(deps, ctx.tenantId, isStr(poId) ? poId : null, b['supplierId'], flags);
         const capturedAt = deps.now();
         const record: SupplierInvoiceRecord = {
           invoiceId, supplierId: b['supplierId'], poId: isStr(poId) ? poId : null, lines: read.lines, declaredTotalMinor: b['declaredTotalMinor'], totalMinor, currency: 'INR',
-          capturedBy: ctx.userId, capturedAt, approvedBy: isStr(approvedBy) ? approvedBy : null, approvedAt: isStr(approvedBy) ? capturedAt : null,
+          capturedBy: ctx.userId, capturedAt, approvedBy: checkedBy ?? null, approvedAt: checkedBy === undefined ? null : opened!.decision.decidedAt,
           source: 'head-office', governanceFlags: flags,
         };
+        await opened?.spend();
         await deps.recordInvoice(ctx.tenantId, record);
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: ctx.userId, action: 'invoice.capture', objectType: 'supplier_invoice', objectId: invoiceId,

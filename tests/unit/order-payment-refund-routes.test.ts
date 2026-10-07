@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { paymentRefundRoutes, type PaymentRefundDeps } from '../../services/orders/src/payments';
 import { testModeRefundProcessor, type OrderPayment, type OrderRefund } from '../../packages/orders/src/payment-refunds';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
+import { actionDetails, fingerprintOf } from '../../services/identity/src/approval-requests';
 
 /**
  * Route-level over a stubbed ledger (M18-FR-04 · M20-FR-03): the shapes each write refuses before anything is
@@ -12,9 +13,13 @@ import type { RequestContext, Route } from '../../services/kernel/src/index';
 
 const NOW = '2026-10-10T10:00:00.000Z';
 const T = 't-sre';
+/** The refund body as it will be sent — carrying a provider token of its own, which the route must ignore — and so what
+ *  the approval below was asked for (the engine's own details rule). */
+const REFUND = { refundId: 'r1', amountMinor: 1_000, basis: 'goodwill', reason: 'late', providerRef: 'tok_attacker' };
+const REFUND_DETAILS = actionDetails(REFUND, { orderId: 'o1' });
 
 function stub() {
-  const l = { payments: [] as OrderPayment[], refunds: [] as OrderRefund[], sentTo: [] as string[] };
+  const l = { payments: [] as OrderPayment[], refunds: [] as OrderRefund[], sentTo: [] as string[], spent: false };
   const deps: PaymentRefundDeps = {
     now: () => NOW,
     orderState: (_t, id) => (id === 'o1' ? { state: 'placed', locationId: 'L1', lines: [] } : undefined),
@@ -29,7 +34,18 @@ function stub() {
     recordRefundOutcome: () => {},
     allPayments: () => l.payments, allPaymentResolutions: () => [], allRefunds: () => l.refunds, allRefundOutcomes: () => [],
     refundThreshold: () => 0,
-    holdsPermission: (_t, u) => u === 'u-owner',
+    // Head office's engine, standing in: request areq-1 was asked by u-mgr for exactly the refund below and approved by
+    // u-owner (who holds order.refund.approve) in their own session (ADR-0024). A typed approver is refused.
+    approvals: {
+      approvalState: (_t, id) => (id !== 'areq-1' ? undefined : {
+        request: { requestId: 'areq-1', kind: 'order_refund', subjectRef: 'o1/r1', valueMinor: 1_000, fingerprint: fingerprintOf(REFUND_DETAILS), details: REFUND_DETAILS, summary: 'r', reason: 'late', requestedBy: 'u-mgr', requestedAt: '2026-10-07T00:00:00.000Z' },
+        decision: { requestId: 'areq-1', decision: 'approved', decidedBy: 'u-owner', reason: 'ok', decidedAt: '2026-10-07T00:00:00.000Z', expiresAt: '2099-01-01T00:00:00.000Z' },
+        ...(l.spent ? { usedBy: 'order-refund:o1/r1' } : {}),
+      }),
+      approvalVersion: () => 0,
+      spendApproval: () => { l.spent = true; },
+      permissionsOfUser: (_t, u) => (u === 'u-owner' ? ['order.refund.approve'] : []),
+    },
     refundProcessor: { refund: async (input) => { l.sentTo.push(input.providerRef); return testModeRefundProcessor().refund(input); } },
   };
   return { l, routes: paymentRefundRoutes(deps) };
@@ -91,12 +107,17 @@ describe('payment and refund routes — refusals before anything is recorded', (
     for (const body of [undefined, { refundId: 'r', amountMinor: 1, basis: 'pity', reason: 'x' }, { refundId: 'r', amountMinor: 1, basis: 'goodwill' }, { refundId: 'r', amountMinor: 1.5, basis: 'goodwill', reason: 'x' }, { refundId: 'r', amountMinor: 1, basis: 'goodwill', reason: 'x', approvedBy: 9 }]) {
       expect((await thrown(() => post.handler(ctx({ body })))).body.code).toBe('not_readable_as_a_refund');
     }
-    const res = await post.handler(ctx({ body: { refundId: 'r1', amountMinor: 1_000, basis: 'goodwill', reason: 'late', approvedBy: 'u-owner', providerRef: 'tok_attacker' } }));
+    // A typed approver is refused by name — naming a person is not their approval (audit PA-03).
+    expect((await thrown(() => post.handler(ctx({ body: { ...REFUND, approvedBy: 'u-owner' } })))).body.code).toBe('approver_named_without_approval');
+    // Anything not exactly what was approved is refused — here, a different refund.
+    expect((await thrown(() => post.handler(ctx({ body: { ...REFUND, refundId: 'r2', approvalId: 'areq-1' } })))).body.code).toBe('approval_does_not_match');
+    const res = await post.handler(ctx({ body: { ...REFUND, approvalId: 'areq-1' } }));
     expect(res.status).toBe(201);
+    expect(s.l.spent).toBe(true);
     expect(s.l.sentTo).toEqual(['tok_order']);
     expect(s.l.refunds).toHaveLength(1);
     // Same id, same amount and basis → the record, not a second send.
-    const same = await post.handler(ctx({ body: { refundId: 'r1', amountMinor: 1_000, basis: 'goodwill', reason: 'late', approvedBy: 'u-owner' } }));
+    const same = await post.handler(ctx({ body: { ...REFUND, approvalId: 'areq-1' } }));
     expect(same.status).toBe(200);
     expect(same.body).toMatchObject({ alreadyRecorded: true });
     expect(s.l.sentTo).toEqual(['tok_order']);

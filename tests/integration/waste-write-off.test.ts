@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sentWithApproval } from '../support/approval-request';
 
 // API-04 M28-FR-01 — the write-off write path, now the SINGLE governed door for a stock loss. A loss
 // (wastage/damage/expiry/donation/destruction) is a reason-coded compensating stock movement that REDUCES
 // on-hand (one truth, P-02), valued for finance, and a MATERIAL loss (value ≥ the tenant threshold) needs
 // captured EVIDENCE and a SEPARATE approver who GENUINELY holds Manager/Owner authority (§28 — the raiser can
-// never approve it, and a name in the box is not an approval). The material-loss threshold is the tenant's
+// never approve it, and a name in the box is not an approval: since 2b-vi-b-3 the approver approves in their OWN
+// session on head office's maker-checker engine, ADR-0024, and a typed name is refused by name). The material-loss threshold is the tenant's
 // policy, sourced server-side — the caller cannot declare their own and call any loss "immaterial". These
 // tests drive the real route + adapter + tested `commitWriteOff` engine over the in-memory harness.
 
@@ -13,6 +15,11 @@ const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 const post = (h: ApiHarness, u: string, id: string, body: unknown, key = id) =>
   h.request({ method: 'POST', path: `/v1/inventory/write-off/${id}`, userId: u, tenantId: A, idempotencyKey: key, body });
+/** A write-off as two people make it: the raiser asks for exactly this loss; `checker` approves it in their own session;
+ *  the write-off names the approval. When the checker may not approve (the raiser, no authority), the engine's refusal returns. */
+const approvedPost = (h: ApiHarness, u: string, checker: string, id: string, body: Record<string, unknown>) =>
+  sentWithApproval(h, A, u, checker, { kind: 'stock_write_off', subjectRef: id, pathIds: { writeOffId: id }, valueMinor: body['valueMinor'] as number },
+    body, (b) => post(h, u, id, b));
 const move = (h: ApiHarness, u: string, m: Record<string, unknown>) =>
   h.request({ method: 'POST', path: '/v1/inventory/movements', userId: u, tenantId: A, idempotencyKey: `mv-${m['movementId']}`, body: m });
 const availability = async (h: ApiHarness, u: string): Promise<{ productId: string; locationId: string; onHandMinor: number }[]> =>
@@ -51,7 +58,7 @@ describe('write-off routes are the single governed door for a stock loss (M28-FR
   it('refuses a MATERIAL loss without captured evidence (M28-FR-01)', async () => {
     const h = await cast();
     // Material: value ≥ the ₹500 threshold, but no evidenceRef (the evidence check precedes the approver).
-    const res = await post(h, 'u-owner', 'wo-2', base({ valueMinor: 500_000, lossType: 'damage', approvedBy: 'u-mgr' }));
+    const res = await approvedPost(h, 'u-owner', 'u-mgr', 'wo-2', base({ valueMinor: 500_000, lossType: 'damage' }));
     expect(res.status).toBe(422);
     expect(codeOf(res)).toBe('write_off_needs_evidence');
   });
@@ -61,29 +68,34 @@ describe('write-off routes are the single governed door for a stock loss (M28-FR
     const noApproval = await post(h, 'u-owner', 'wo-3', base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
     expect(noApproval.status).toBe(422);
     expect(codeOf(noApproval)).toBe('write_off_needs_approval');
-    // Self-approval: the raiser (u-owner) names themselves the approver → refused (§28).
-    const selfApproved = await post(h, 'u-owner', 'wo-4', base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1', approvedBy: 'u-owner' }));
+    // Self-approval: the raiser (u-owner) cannot approve their own loss — the engine refuses the decision (§28).
+    const selfApproved = await approvedPost(h, 'u-owner', 'u-owner', 'wo-4', base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
     expect(selfApproved.status).toBe(422);
-    expect(codeOf(selfApproved)).toBe('write_off_needs_approval');
+    expect(codeOf(selfApproved)).toBe('self_approval');
   });
 
-  it('refuses a MATERIAL loss whose named approver does not hold the authority — a name is not an approval', async () => {
+  it('refuses a MATERIAL loss approved by someone without the authority, or by a typed name — a name is not an approval', async () => {
     const h = await cast();
-    // A cashier (no authority) named as approver on a material loss is refused (the bypass being closed).
-    const byCashier = await post(h, 'u-owner', 'wo-5a', base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1', approvedBy: 'u-cash' }));
-    expect(byCashier.status).toBe(422);
-    expect(codeOf(byCashier)).toBe('approver_may_not_approve');
-    // An unprovisioned name (a name typed in a box) is refused just the same.
-    const byGhost = await post(h, 'u-owner', 'wo-5b', base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1', approvedBy: 'u-nobody' }));
-    expect(byGhost.status).toBe(422);
-    expect(codeOf(byGhost)).toBe('approver_may_not_approve');
+    const LOSS = base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' });
+    // A cashier (no authority) cannot approve a material loss, nor can an unprovisioned person — refused at the decision.
+    expect((await approvedPost(h, 'u-owner', 'u-cash', 'wo-5a', LOSS)).status).toBe(403);
+    expect((await approvedPost(h, 'u-owner', 'u-nobody', 'wo-5b', LOSS)).status).toBe(403);
+    // THE BYPASS, CLOSED (audit PA-03): a manager's name typed into the write-off is refused by name — before, it was
+    // checked only for the role it named, and the stock left the books.
+    const typed = await post(h, 'u-owner', 'wo-5c', { ...LOSS, approvedBy: 'u-mgr' });
+    expect(typed.status).toBe(422);
+    expect(codeOf(typed)).toBe('approver_named_without_approval');
+    expect(((await h.request({ method: 'GET', path: '/v1/inventory/write-offs', userId: 'u-owner', tenantId: A })).body as { count: number }).count).toBe(0);
   });
 
-  it('commits a MATERIAL loss with evidence AND a genuine Manager/Owner approver', async () => {
+  it('commits a MATERIAL loss with evidence AND a genuine Manager/Owner approval, used once', async () => {
     const h = await cast();
-    const res = await post(h, 'u-owner', 'wo-6', base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1', approvedBy: 'u-mgr' }));
+    const res = await approvedPost(h, 'u-owner', 'u-mgr', 'wo-6', base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ requiredApproval: true, evidenceRef: 'photo-1' });
+    // The record names the person who approved it in their own session — the manager, not the raiser.
+    const listed = (await h.request({ method: 'GET', path: '/v1/inventory/write-offs', userId: 'u-owner', tenantId: A })).body as { writeOffs: { approvedBy?: string }[] };
+    expect(listed.writeOffs[0]).toMatchObject({ approvedBy: 'u-mgr' });
   });
 
   it('reduces on-hand — a committed loss removes the stock, not just records it (P-02)', async () => {
