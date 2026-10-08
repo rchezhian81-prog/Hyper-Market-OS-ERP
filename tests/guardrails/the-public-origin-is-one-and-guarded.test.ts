@@ -80,7 +80,7 @@ describe('the Caddyfile routes only what is public', () => {
     expect(targets.length).toBeGreaterThanOrEqual(2);
     expect(new Set(targets)).toEqual(new Set(['web:80'])); // never the API or the edge directly
     expect(on).toMatch(/header !Authorization/); // an explicit token wins; only the cookie-only /v1 call takes the detour
-    expect(on).toMatch(/header_regexp Cookie \(\^\|;\\s\*\)sre_demo_session=/);
+    expect(on).toMatch(/header_regexp Cookie \(\^\|;\\s\*\)\(sre_demo_session\|sre_session\)=/);
     for (const staff of ['/pos', '/owner', '/erp', '/picker', '/delivery', '/warehouse', '/supplier', '/store', '/store-lane', '/login']) {
       expect(on, `${staff} is behind the gate`).toMatch(new RegExp(`@staff path [^\\n]* ${staff.replace('/', '\\/')}(?:/\\*| |$)`));
     }

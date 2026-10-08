@@ -75,10 +75,12 @@
 			header_up X-Forwarded-For {remote_host}
 		}
 	}
+	# A /v1 call carrying the pilot sign-in's cookie, or the product sign-in service's session (OB-15-b): the front turns
+	# either into the call's token there.
 	@apiWithDemoCookie {
 		path /v1/*
 		header !Authorization
-		header_regexp Cookie (^|;\s*)sre_demo_session=
+		header_regexp Cookie (^|;\s*)(sre_demo_session|sre_session)=
 	}
 	handle @apiWithDemoCookie {
 		reverse_proxy web:80 {

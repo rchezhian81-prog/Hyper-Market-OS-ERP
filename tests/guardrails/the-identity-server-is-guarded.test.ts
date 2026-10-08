@@ -109,3 +109,48 @@ describe('the stack', () => {
     expect(jwks).toMatch(/createPublicKey/);
   });
 });
+
+describe('the sign-in page is the product\'s own (OB-15-b · OB-18)', () => {
+  it('the realm uses the owner\'s theme, which the identity server reads read-only; only the trial server shows the practice strip', () => {
+    expect(realm['loginTheme']).toBe('sre');
+    const block = compose.slice(compose.indexOf('\n  idp:'), compose.indexOf('\n  sign-in:'));
+    expect(block).toMatch(/- \.\.\/keycloak\/themes\/sre:\/opt\/keycloak\/themes\/sre:ro/);
+    expect(block).not.toMatch(/PILOT_DEMO_BANNER/);
+    const pilot = readFileSync('infra/compose/docker-compose.pilot.yml', 'utf8');
+    expect(pilot.slice(pilot.indexOf('\n  idp:'))).toMatch(/^\s+idp:\n\s+environment:\n\s+PILOT_DEMO_BANNER: '1'/);
+  });
+});
+
+describe('the front door signed in through the identity server (OB-15-b)', () => {
+  const front = readFileSync('infra/compose/nginx.identity.conf', 'utf8');
+  const pilotCompose = readFileSync('infra/compose/docker-compose.pilot.yml', 'utf8');
+
+  it('asks the product\'s sign-in service — never the pilot sign-in — and keeps no token in a cookie', () => {
+    expect(front).not.toMatch(/demo-login|sre_demo_session|cookie_/);
+    expect(front).toMatch(/set \$sre_gate http:\/\/sign-in:8092\/login\/verify;/);
+    expect(front).toMatch(/set \$sre_gate_sell http:\/\/sign-in:8092\/login\/verify-sell;/);
+    expect(front).toMatch(/set \$sre_sign_in_service http:\/\/sign-in:8092;/);
+  });
+
+  it('a head-office call carries the session\'s current token unless the caller sent its own', () => {
+    const v1 = front.slice(front.indexOf('location /v1/ {'), front.indexOf('}', front.indexOf('location /v1/ {')));
+    expect(v1).toMatch(/auth_request \/_auth\/verify-optional;/);
+    expect(v1).toMatch(/auth_request_set \$sre_session_bearer \$upstream_http_x_sre_bearer;/);
+    expect(v1).toMatch(/proxy_set_header Authorization \$sre_api_authorization;/);
+    expect(front).toMatch(/map \$http_authorization \$sre_api_authorization \{ default \$http_authorization; "" \$sre_session_bearer; \}/);
+  });
+
+  it('the store computer hears WHO from the sign-in\'s answer only — a visitor\'s own header is overwritten', () => {
+    for (const loc of ['location /store/ {', 'location /store-lane/ {']) {
+      const block = front.slice(front.indexOf(loc), front.indexOf('\n  }', front.indexOf(loc)));
+      expect(block).toMatch(/auth_request_set \$sre_user \$upstream_http_x_sre_user;/);
+      expect(block).toMatch(/proxy_set_header X-Sre-User \$sre_user;/);
+    }
+  });
+
+  it('the trial server keeps the pilot front door unless told otherwise, and the proxy forwards either session cookie', () => {
+    expect(pilotCompose).toMatch(/\.\/\$\{SRE_FRONT_CONF:-nginx\.pilot\.conf\}:\/etc\/nginx\/conf\.d\/default\.conf:ro/);
+    expect(caddy).toMatch(/header_regexp Cookie \(\^\|;\\s\*\)\(sre_demo_session\|sre_session\)=/);
+  });
+});
+

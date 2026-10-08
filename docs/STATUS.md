@@ -5,6 +5,43 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-15-b-2 — the trial server's front door can use the product's sign-in, in the owner's look (8 October 2026)
+
+- **The block:** OB-15 ("A 1"; ADR-0019), part 3 of the sign-in.
+- **What changed:**
+  - **A second front-door setup** (`infra/compose/nginx.identity.conf`) asks the product's sign-in service instead of
+    the pilot sign-in. One setting on the trial server chooses it (`SRE_FRONT_CONF`); removing the setting switches
+    back. The default is unchanged.
+  - **Head-office calls from a signed-in screen** carry the person's current sign-in, added by the front door — the
+    browser never holds it.
+  - **Keycloak's sign-in page is now the owner's approved design (OB-18)**, in English and Tamil, including the
+    wrong-password message and the one-time-code setup for privileged people. The practice-data strip shows on the
+    trial server only.
+  - **The administrator's steps** to switch over, and back, are in `docs/runbooks/identity-server.md`.
+- **Proved:**
+  - **End to end on this machine (opt-in, 1 of 1):** the repository's own front-door file in real nginx, the sign-in
+    service, the real head-office service and a real Keycloak 26.0.7 with the new page:
+    - a screen with no sign-in → the sign-in page → back to the screen;
+    - the store computer is told the real person, and a visitor's own claim is overwritten;
+    - head office lets a signed-in screen in, and refuses without a sign-in;
+    - sign-out ends it.
+  - The earlier real-Keycloak suite: 6 of 6 again, through the new page.
+  - **Browser checks of the page on a real Keycloak: 22 of 22.** Wide and phone widths; English and Tamil; wrong password;
+    one-time-code setup; no script error; nothing fetched from outside.
+  - Guardrails: the front door, the theme wiring, and the theme itself (the design's words and styles are generated
+    from the same source as the pilot sign-in, and the build fails if they drift).
+- **Not yet / honest limits:**
+  - **Not switched on anywhere.** The trial server switches when the administrator follows the runbook.
+  - People are still created by hand in Keycloak's console; the Admin screen does it next.
+  - Some of Keycloak's own messages (account locked, expired page, one-time-code setup steps) are still in English on
+    the Tamil page; the Tamil the helper wrote for buttons and labels needs a native reader (OB-17).
+  - The design's help text says "staff ID or work email", but the realm signs in by staff ID only (kept as designed).
+  - The real-Keycloak suites and browser checks run by hand, not in the automatic checks.
+  - Staff UAT (SP-10) is pending.
+- **Behaviour change the owner should know:** none until the administrator switches the trial server over.
+- **Next:** OB-15-c — people created from the product's Admin screen (through Keycloak's admin interface), then a realm
+  per shop and the tenant console.
+
 ## OB-15-b-1 — the product's own sign-in service, proved on a real Keycloak (8 October 2026)
 
 - **The block:** OB-15 ("A 1"; ADR-0019), part 2 of the sign-in.

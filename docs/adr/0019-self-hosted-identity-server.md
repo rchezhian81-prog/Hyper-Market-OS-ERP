@@ -116,6 +116,17 @@
   instance.
 - **The return address is `/login/callback`**, not `/auth/…` — the proxy forwards `/auth/` to the identity server itself.
 
+**Part 3 (OB-15-b-2) — the front door.**
+- `infra/compose/nginx.identity.conf` is the trial front door gated by the sign-in service (`/login/verify`,
+  `/login/verify-sell`). The pilot front door stays the default; `SRE_FRONT_CONF` chooses between them, one setting
+  each way.
+- **Head-office calls carry the session's token.** `/v1/` asks `/login/verify-optional`, which always answers 204 and
+  adds the person and a current token when there is a session. The front door then uses the caller's own
+  `Authorization` header when one is sent, and the session's token otherwise. The browser never holds a token.
+- The public proxy forwards a request carrying either session cookie (`sre_demo_session` or `sre_session`).
+- **The sign-in page is the product's own Keycloak theme** (`infra/keycloak/themes/sre`, the OB-18 design, English
+  and Tamil), selected by the realm's `loginTheme`.
+
 ## Reconsider-when
 
 - A tenant requires its own cloud directory for all staff (then Keycloak brokers it; if brokering proves

@@ -190,6 +190,17 @@ describe('the front door\'s question', () => {
     expect((await go('GET', '/login/verify', id)).status).toBe(401);
   });
 
+  it('for a head-office call it always says "go on": with a session it hands over the token, without one it adds nothing', async () => {
+    const { go, signIn } = rig();
+    const none = await go('GET', '/login/verify-optional');
+    expect(none.status).toBe(204);
+    expect(none.headers['x-sre-bearer']).toBeUndefined();
+    expect(none.headers['x-sre-user']).toBeUndefined();
+    const withSession = await go('GET', '/login/verify-optional', await signIn('u-cash'));
+    expect(withSession.status).toBe(204);
+    expect(withSession.headers['x-sre-bearer']).toMatch(/^Bearer /);
+  });
+
   it('the till\'s door lets in only a person whose grants allow selling', async () => {
     const { go, signIn } = rig();
     expect((await go('GET', '/login/verify-sell', await signIn('u-cash'))).status).toBe(204);

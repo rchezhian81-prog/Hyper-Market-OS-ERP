@@ -12,7 +12,8 @@
 //   3. keeps the sign-in HERE, not in the browser: the browser holds a random session id in an HttpOnly, Secure,
 //      SameSite=Strict cookie, and this service keeps only a hash of it beside the tokens;
 //   4. answers the front door (`/login/verify`, `/login/verify-sell`) with the person (`X-Sre-User`) and a CURRENT access
-//      token (`X-Sre-Bearer`) — renewed with the refresh token before it runs out — or 401;
+//      token (`X-Sre-Bearer`) — renewed with the refresh token before it runs out — or 401; and, for a head-office call,
+//      `/login/verify-optional`: the token when there is a session, nothing when there is not (the API decides);
 //   5. signs out (`POST /login/logout`): the session ends here at once, and the identity server is asked to end its own.
 //
 // It mints nothing and holds no password: every token it holds was signed by the identity server, and it can check one
@@ -227,6 +228,15 @@ export function createSignInHandler(deps: SignInDeps): (req: SignInRequest) => P
       });
       deps.audit({ event: 'signed_in', userId: got.userId });
       return redirect(started.next, cookie(id, SESSION_MAX_SECONDS));
+    }
+
+    // ── The front door's question for a head-office call: "who is this, if anyone?" ─────────────────────────────────
+    // Always "go on" (204): the API decides — a call with no session reaches it with no token and is told 401 there.
+    // With a session, the current token comes back for the front door to put on the call. Never a refusal of its own,
+    // so the API's own answers (and its rate limits) stay the API's.
+    if (req.method === 'GET' && path === '/login/verify-optional') {
+      const here = await current(req);
+      return here === undefined ? plain(204) : plain(204, { 'x-sre-user': here.session.userId, 'x-sre-bearer': `Bearer ${here.session.accessToken}` });
     }
 
     // ── The front door's question, for every screen and every head-office call ───────────────────────────────────────
