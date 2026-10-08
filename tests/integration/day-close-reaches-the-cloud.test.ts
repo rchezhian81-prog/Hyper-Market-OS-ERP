@@ -111,7 +111,7 @@ describe('store day close reaches the cloud and reconciles on sync (M14-FR-04, ย
     expect(body.dayCloses.find((r) => r.dayCloseId === 'dc-1')).toMatchObject({ tradingDay: '2026-08-02', locked: true, reopened: false });
   });
 
-  it('delivers a controlled reopen approved by a genuine authority โ€” recorded, no flags, day unlocked', async () => {
+  it('delivers a controlled reopen approved by a genuine authority โ€” recorded and day unlocked; with no store computer between, said as unverified', async () => {
     const s = await scene();
     expect((await s.drain(s.closeOffline())).acknowledged).toBe(1);
 
@@ -122,7 +122,8 @@ describe('store day close reaches the cloud and reconciles on sync (M14-FR-04, ย
 
     const body = (await list(s.h, 'u-owner')).body as ListBody;
     expect(body.dayCloses.find((r) => r.dayCloseId === 'dc-1')).toMatchObject({ locked: false, reopened: true, reopenedBy: 'u-mgr', approvedBy: 'u-owner' });
-    expect(body.flaggedReopens).toHaveLength(0);
+    // This engine-to-cloud path has no store computer in it, so nobody vouched for the reopener or the approver (2b-vi-c-3).
+    expect(body.flaggedReopens).toContainEqual(expect.objectContaining({ dayCloseId: 'dc-1', governanceFlags: ['decider_not_verified_at_store', 'approver_not_verified_at_store'] }));
   });
 
   it('reconciles a reopen whose approver lacks authority, AND flags it as a visible ยง28 exception', async () => {
@@ -138,7 +139,7 @@ describe('store day close reaches the cloud and reconciles on sync (M14-FR-04, ย
 
     const body = (await list(s.h, 'u-owner')).body as ListBody;
     expect(body.dayCloses.find((r) => r.dayCloseId === 'dc-1')).toMatchObject({ locked: false, reopened: true });
-    expect(body.flaggedReopens).toContainEqual(expect.objectContaining({ dayCloseId: 'dc-1', governanceFlags: ['approver_lacks_authority'] }));
+    expect(body.flaggedReopens).toContainEqual(expect.objectContaining({ dayCloseId: 'dc-1', governanceFlags: ['decider_not_verified_at_store', 'approver_lacks_authority', 'approver_not_verified_at_store'] }));
   });
 
   it('waits out an outage, then reconciles once the line returns (ยง31)', async () => {

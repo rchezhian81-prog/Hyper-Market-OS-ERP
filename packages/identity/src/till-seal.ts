@@ -14,12 +14,13 @@
 // Deterministic (no clock, no randomness): a till re-sending the SAME record after a lost reply produces the same seal,
 // so the box never calls its own replay a conflict. Pure apart from `node:crypto`.
 
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 const LABEL = 'sre-till-seal-v1';
 
-/** What a seal is on: a sale, a refund (any kind), a till cash movement, a till close, or a manager's approval. */
-export type TillSealFact = 'sale' | 'return' | 'cash_movement' | 'shift_close' | 'approval';
+/** What a seal is on: a sale, a refund (any kind), a till cash movement, a till close, a manager's approval, or a decision
+ *  a person made on a back-office screen the box serves (2b-vi-c-3). */
+export type TillSealFact = 'sale' | 'return' | 'cash_movement' | 'shift_close' | 'approval' | 'decision';
 
 /** Everything a seal binds. Change any one of these and the seal no longer matches. */
 export interface TillSealSubject {
@@ -88,7 +89,7 @@ const text = (v: unknown): string | undefined => (typeof v === 'string' && v.tri
  * this fact, this shop, this record and this amount.
  */
 export function checkOperatorStamp(key: Buffer, input: {
-  readonly fact: Exclude<TillSealFact, 'approval'>;
+  readonly fact: Exclude<TillSealFact, 'approval' | 'decision'>;
   readonly tenantId: string;
   readonly recordId: string;
   readonly amountMinor: number;
@@ -123,4 +124,72 @@ export function checkApprovalStamp(key: Buffer, input: {
     fact: 'approval', tenantId: input.tenantId, recordId: input.recordId, laneId, userId: approver, via: 'approval',
     amountMinor: input.amountMinor, approvalId,
   }, s['seal']) ? 'verified' : 'does_not_match';
+}
+
+// ── A DECISION made on a back-office screen the box serves (2b-vi-c-3 · ADR-0023 amended · audit PA-03) ─────────────────
+//
+// An approval decided on the manager's screen, a supplier bill captured on the buyer's, a checklist signed, a migration
+// exception resolved or total signed — each reaches head office through the box's relay, naming the person who decided.
+// The box can vouch for that person only when it KNOWS who is at the screen: a till operator session (their own staff ID
+// and PIN) or, on the hosted copy, the person the front's sign-in verified. Then it seals the decision — which kind, which
+// record, who, how, and a digest of EVERYTHING the decision says — so a decision changed after the box sealed it (another
+// outcome, another reason, another line) no longer matches. Head office checks the seal and flags what it cannot confirm.
+
+/** The field a relayed decision carries the box's stamp in. Never part of what the seal covers. */
+export const DECIDER_STAMP_FIELD = 'deciderVerified';
+
+/** The kinds of decision a box seals. Each kind is its own namespace: a seal for one never fits another. */
+export type DecisionKind = 'approval_decision' | 'supplier_invoice' | 'checklist' | 'migration_exception' | 'migration_total' | 'day_reopen';
+
+/** The box's stamp on the person who made a decision, as it travels on the relayed record. */
+export interface DeciderStamp {
+  readonly userId: string;
+  readonly via: string;
+  readonly laneId: string;
+  readonly seal: string;
+}
+
+/** Canonical JSON (keys sorted at every depth) — both sides digest the same bytes whatever order the keys arrived in. */
+function canonicalJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`;
+  if (v !== null && typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o).filter((k) => o[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(v);
+}
+
+/** What the seal covers of a decision: the whole record as relayed, without the stamp itself. */
+export function decisionDigest(record: unknown): string {
+  const body = record !== null && typeof record === 'object' && !Array.isArray(record) ? { ...(record as Record<string, unknown>) } : {};
+  delete body[DECIDER_STAMP_FIELD];
+  return createHash('sha256').update(canonicalJson(body), 'utf8').digest('hex');
+}
+
+const decisionSubject = (input: { readonly tenantId: string; readonly kind: DecisionKind; readonly recordId: string; readonly record: unknown; readonly laneId: string; readonly userId: string; readonly via: string }): TillSealSubject => ({
+  fact: 'decision', tenantId: input.tenantId, recordId: `${input.kind}:${input.recordId}:${decisionDigest(input.record)}`,
+  laneId: input.laneId, userId: input.userId, via: input.via, amountMinor: 0,
+});
+
+/** The box's stamp on a decision it saw the named person make (the record is sealed WITHOUT the stamp field). */
+export function sealDecision(key: Buffer, input: {
+  readonly tenantId: string; readonly kind: DecisionKind; readonly recordId: string; readonly record: unknown;
+  readonly laneId: string; readonly userId: string; readonly via: string;
+}): DeciderStamp {
+  return { userId: input.userId, via: input.via, laneId: input.laneId, seal: sealTillFact(key, decisionSubject(input)) };
+}
+
+/**
+ * Check the box's stamp on a relayed decision. `named` is who the record says decided; the stamp must name that same
+ * person, and its seal must match this shop, this kind, this record and every word of the decision.
+ */
+export function checkDeciderStamp(key: Buffer, input: {
+  readonly tenantId: string; readonly kind: DecisionKind; readonly recordId: string; readonly named: string; readonly record: unknown;
+}): SealCheck {
+  const body = input.record !== null && typeof input.record === 'object' ? input.record as Record<string, unknown> : {};
+  const s = (body[DECIDER_STAMP_FIELD] !== null && typeof body[DECIDER_STAMP_FIELD] === 'object' ? body[DECIDER_STAMP_FIELD] : {}) as Record<string, unknown>;
+  const userId = text(s['userId']); const via = text(s['via']); const laneId = text(s['laneId']);
+  if (userId === undefined || via === undefined || laneId === undefined || s['seal'] === undefined) return 'missing';
+  if (userId !== input.named.trim()) return 'does_not_match';
+  return tillSealMatches(key, decisionSubject({ ...input, laneId, userId, via }), s['seal']) ? 'verified' : 'does_not_match';
 }

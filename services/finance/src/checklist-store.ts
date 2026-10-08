@@ -23,6 +23,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound, requireActorIsCaller } from '../../kernel/src/index';
 import { assessChecklist, type ChecklistItem, type ChecklistResult } from '../../../packages/workforce/src/workforce';
+import { deciderSealFlags } from '../../pos/src/store-seal';
 
 const CHECKLIST_KINDS = ['opening', 'closing', 'handover'] as const;
 type ChecklistKind = typeof CHECKLIST_KINDS[number];
@@ -37,12 +38,18 @@ export interface StoredChecklist {
   /** The trading day this checklist belongs to (YYYY-MM-DD), for the review list. */
   readonly forDate?: string;
   readonly submittedAt: string;
+  /** What head office could not confirm about a checklist relayed from a store (2b-vi-c-3): the signer the store
+   *  computer did not vouch for. Absent on a checklist submitted at head office (the signer is the caller there). */
+  readonly signatureFlags?: readonly string[];
 }
 
 export interface ChecklistStoreDeps {
   readonly putChecklist: (tenantId: string, checklist: StoredChecklist, key: string) => Promise<void> | void;
   readonly checklists: (tenantId: string) => Promise<readonly StoredChecklist[]> | readonly StoredChecklist[];
   readonly checklist: (tenantId: string, checklistId: string) => Promise<StoredChecklist | undefined> | StoredChecklist | undefined;
+  /** The store computer's seal key (ADR-0023, amended 2b-vi-c-3): a relayed decision's decider is checked against the
+   *  box's seal. Absent on a bare stub — then nothing is checked and nothing is claimed. */
+  readonly tillSealKey?: Buffer;
   readonly now: () => string;
 }
 
@@ -127,8 +134,14 @@ export function checklistStoreRoutes(deps: ChecklistStoreDeps): readonly Route[]
           // A completion that happened offline must not be dropped — keep it in the box's outbox and raise it.
           throw apiError(400, { ...NOT_READABLE_CHECKLIST, nextSafeAction: 'Keep it in the outbox and raise it — a checklist completed at the store must not be dropped.' });
         }
-        await deps.putChecklist(ctx.tenantId, checklist, ctx.idempotencyKey ?? `checklist-synced-${checklistId}-${deps.now()}`);
-        return { status: 200, body: { checklist, assessment: assessStored(checklist), synced: true } };
+        // The shift happened, so the checklist is recorded; but a signer the store computer did not vouch for is SAID on
+        // the record (2b-vi-c-3 · ADR-0023 amended) — before, the name the box captured was simply trusted.
+        const signatureFlags = checklist.signedBy === undefined ? [] : deciderSealFlags(deps.tillSealKey, {
+          tenantId: ctx.tenantId, kind: 'checklist', recordId: checklistId, named: checklist.signedBy, record: ctx.body,
+        });
+        const kept: StoredChecklist = signatureFlags.length === 0 ? checklist : { ...checklist, signatureFlags };
+        await deps.putChecklist(ctx.tenantId, kept, ctx.idempotencyKey ?? `checklist-synced-${checklistId}-${deps.now()}`);
+        return { status: 200, body: { checklist: kept, assessment: assessStored(kept), synced: true, flags: signatureFlags } };
       },
     },
     {

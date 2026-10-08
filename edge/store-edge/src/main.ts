@@ -76,7 +76,8 @@ import { TillOperators, loadTillCredentials } from './till-operators';
 import { TillApprovals } from './till-approvals';
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
-import { sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
+import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
+import { withDeciderSeal } from './decision-seal';
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
 import { managerPayload, type ScreenInput } from './screen-data';
@@ -145,6 +146,8 @@ function dayCloseEventFrom(record: string, index: number): DomainEvent | undefin
         reopenedBy: p['reopenedBy'],
         approvedBy: p['approvedBy'],
         reason: p['reason'],
+        // The box's seal on the reopener, exactly as written (2b-vi-c-3); absent when it verified nobody.
+        ...(p['deciderVerified'] === undefined ? {} : { deciderVerified: p['deciderVerified'] }),
       },
     });
   }
@@ -298,7 +301,7 @@ export interface EdgeProcess {
    * Idempotent per day. Available with or without a cloud — the unlock is local regardless (P-01).
    */
   readonly reopenDay: (
-    req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string },
+    req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string; readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string } },
   ) => Promise<
     | { readonly reopened: true; readonly tradingDay: string }
     | { readonly reopened: false; readonly reason: string }
@@ -736,6 +739,8 @@ export async function startEdge(
    * `accepted`. A write the disk refused is `not_saved` — the device keeps the item; nothing was lost anywhere.
    * The key is reserved before the write so two batches carrying the same key cannot both be accepted.
    */
+  // The seal key (ADR-0023): derived from the pack signing key under the seal's own label — never written anywhere.
+  const sealKey = tillSealKey(settings['PACK_SIGNING_KEY']!);
   const relayDeviceEvents: LaneDeviceRelayHandler = async (batch) => {
     const acks: DeviceAck[] = [];
     for (const raw of batch.items) {
@@ -744,7 +749,10 @@ export async function startEdge(
         acks.push({ key: read.key ?? '', status: 'refused', reason: read.reason });
         continue;
       }
-      const { key, event } = read.item;
+      const { key } = read.item;
+      // A back-office decision is sealed here when the person this box verified is the one it names (2b-vi-c-3);
+      // any stamp the device sent itself is removed — only the box vouches.
+      const event = withDeciderSeal(sealKey, tenantId, read.item.event, batch.verifiedPerson);
       if (!isRelayable(event.type, batch.source)) {
         acks.push({ key, status: 'refused', reason: `${event.type} is not a record this box relays for ${batch.source}` });
         continue;
@@ -1075,8 +1083,6 @@ export async function startEdge(
       ? 'till sign-in: the person the hosted sign-in names (EDGE_LANE_TRUST_FORWARDED_USER) — only right behind the hosted front.'
       : `till sign-in: staff ID and till PIN, checked on this box (${tillOperators.live().length} session(s) still open).`);
   }
-  // The seal key (ADR-0023): derived from the pack signing key under the seal's own label — never written anywhere.
-  const sealKey = tillSealKey(settings['PACK_SIGNING_KEY']!);
   const lane = lanePort === undefined ? null : await startLaneServer({
     node,
     port: Number(lanePort),
@@ -1304,7 +1310,7 @@ export async function startEdge(
   // cloud (record-and-flag, never a rejection — hard rule #10). Idempotent per day: a second reopen of an
   // already-reopened day is a no-op success, never a duplicate compensating event.
   const reopenDay = async (
-    req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string },
+    req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string; readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string } },
   ): Promise<
     | { readonly reopened: true; readonly tradingDay: string }
     | { readonly reopened: false; readonly reason: string }
@@ -1350,9 +1356,15 @@ export async function startEdge(
 
     // Durable-write-then-enqueue, the close's mirror. `dayCloseEventFrom` sees `reopenedBy` and mints
     // `StoreDayReopened` (both on this run and on a restart re-queue), routed to `.../reopen/synced`.
+    // The box seals the reopen for the person it verified when that person is the reopener (2b-vi-c-3): the seal covers
+    // the body head office receives, word for word. Anybody else — or nobody verified — and the reopen goes unsealed.
+    const relayed = { dayCloseId: req.dayCloseId, storeId: tenantId, tradingDay: close.tradingDay, reopenedBy: req.reopenedBy, approvedBy: req.approvedBy, reason: req.reason };
+    const v = req.verifiedPerson;
+    const deciderVerified = v !== undefined && v.userId !== '' && v.userId === req.reopenedBy.trim()
+      ? sealDecision(sealKey, { tenantId, kind: 'day_reopen', recordId: req.dayCloseId, record: relayed, laneId: v.laneId, userId: v.userId, via: v.via })
+      : undefined;
     const record = JSON.stringify({
-      dayCloseId: req.dayCloseId, storeId: tenantId, tradingDay: close.tradingDay,
-      reopenedBy: req.reopenedBy, approvedBy: req.approvedBy, reason: req.reason, reopenedAt: now,
+      ...relayed, reopenedAt: now, ...(deciderVerified === undefined ? {} : { deciderVerified }),
     });
     await dayCloseLog.append(record);
     const event = dayCloseEventFrom(record, 0);

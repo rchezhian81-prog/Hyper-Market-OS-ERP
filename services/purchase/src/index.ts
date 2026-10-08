@@ -12,6 +12,7 @@
 // it. Paying the invoice and investigating later is how an overcharge becomes permanent.
 
 import type { Route } from '../../kernel/src/index';
+import { deciderSealFlags } from '../../pos/src/store-seal';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
 import { namedSecondPersonRefusal, openApproval, actionDetails, approvalNamedIn, type ApprovalPort, NO_APPROVALS } from '../../identity/src/approval-requests';
 import { threeWayMatch, type MatchLine, type MatchResult } from '../../../packages/purchasing/src/three-way-match';
@@ -196,6 +197,9 @@ export interface SupplierInvoiceLine {
 export const INVOICE_FLAGS = Object.freeze([
   'capturer_unknown', 'capturer_lacks_authority', 'approver_unknown', 'approver_lacks_authority', 'self_approved', 'no_approval',
   'no_purchase_order', 'order_unknown', 'order_not_issued', 'supplier_differs_from_order',
+  // 2b-vi-c-3 (ADR-0023 amended): a bill relayed from a store whose capturer the store computer did not vouch for, or
+  // which names a checker the store computer could not verify (a second person's check is their own act at head office).
+  'decider_not_verified_at_store', 'decider_seal_does_not_match', 'approver_not_verified_at_store',
 ] as const);
 export type InvoiceFlag = (typeof INVOICE_FLAGS)[number];
 
@@ -219,6 +223,8 @@ export interface SupplierInvoiceRecord {
   readonly source: string;
   readonly storeId?: string | null;
   readonly governanceFlags: readonly string[];
+  /** A checker the store's screen NAMED but no second person verified (2b-vi-c-3) — kept as evidence, never as an approval. */
+  readonly approvalClaimedBy?: string;
 }
 
 /** A recorded three-way match: the engine's verdict plus what it was computed FROM (never the body). */
@@ -303,13 +309,6 @@ const refuseTotal = (totalMinor: number, declared: number, relayed: boolean) => 
   wasItSaved: 'not_saved',
   nextSafeAction: relayed ? 'Do not discard it at the store. Keep it in the queue and raise it.' : 'Check the lines against the paper and send it again. Nothing was saved.',
 });
-
-/** Who checked the capture — re-verified from THEIR grants, never taken on the sender's word (§28, hard rule #4). */
-async function verifyApprover(deps: Pick<PurchaseDeps, 'permissionsOfUser'>, tenantId: string, approvedBy: string, flags: InvoiceFlag[]): Promise<void> {
-  const permissions = await deps.permissionsOfUser(tenantId, approvedBy);
-  if (permissions === undefined) flags.push('approver_unknown');
-  else if (!permissions.includes('purchase.invoice.match')) flags.push('approver_lacks_authority');
-}
 
 /** The order behind an invoice, from head office's register — never the body; what it could not confirm is SAID. */
 async function orderForInvoice(
@@ -412,6 +411,9 @@ export interface PurchaseDeps {
    * buy. Not-known is returned as not-known, the same way loyalty points are.
    */
   readonly openCommitments: (tenantId: string) => Promise<Commitments | undefined> | Commitments | undefined;
+  /** The store computer's seal key (ADR-0023, amended 2b-vi-c-3): a relayed decision's decider is checked against the
+   *  box's seal. Absent on a bare stub — then nothing is checked and nothing is claimed. */
+  readonly tillSealKey?: Buffer;
   readonly now: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
@@ -515,15 +517,19 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         const capturerPermissions = await deps.permissionsOfUser(ctx.tenantId, b['capturedBy']);
         if (capturerPermissions === undefined) flags.push('capturer_unknown');
         else if (!capturerPermissions.includes('purchase.invoice.capture')) flags.push('capturer_lacks_authority');
-        // The APPROVER — a second person (§28): absent is said, the capturer themselves is said, and their authority checked.
-        if (!isStr(approvedBy)) flags.push('no_approval');
-        else if (approvedBy === b['capturedBy']) flags.push('self_approved');
-        else await verifyApprover(deps, ctx.tenantId, approvedBy, flags);
+        // Did the store computer see the CAPTURER capture this bill, exactly as it arrives? (2b-vi-c-3)
+        flags.push(...deciderSealFlags(deps.tillSealKey, { tenantId: ctx.tenantId, kind: 'supplier_invoice', recordId: invoiceId, named: b['capturedBy'], record: ctx.body }));
+        // The CHECKER — a second person (§28). A name the store's screen typed is not that person's act: no store computer
+        // verified them, so it is kept as a claim and the bill is recorded unchecked (2b-vi-c-3 · audit PA-03, register
+        // row 17b). The check is the checker's own act at head office — the match, under their own sign-in.
+        flags.push('no_approval');
+        if (isStr(approvedBy)) flags.push(approvedBy === b['capturedBy'] ? 'self_approved' : 'approver_not_verified_at_store');
         await orderForInvoice(deps, ctx.tenantId, isStr(poId) ? poId : null, b['supplierId'], flags);
         const record: SupplierInvoiceRecord = {
           invoiceId, supplierId: b['supplierId'], poId: isStr(poId) ? poId : null, lines: read.lines, declaredTotalMinor: b['declaredTotalMinor'], totalMinor, currency: 'INR',
           capturedBy: b['capturedBy'], capturedAt: b['capturedAt'],
-          approvedBy: isStr(approvedBy) ? approvedBy : null, approvedAt: isStr(approvedBy) ? (isIso(b['approvedAt']) ? b['approvedAt'] : b['capturedAt']) : null,
+          approvedBy: null, approvedAt: null,
+          ...(isStr(approvedBy) ? { approvalClaimedBy: approvedBy } : {}),
           relayedBy: ctx.userId, source: isStr(b['source']) ? b['source'] : 'buyer-screen', storeId: isStr(b['storeId']) ? b['storeId'] : null,
           governanceFlags: flags,
         };

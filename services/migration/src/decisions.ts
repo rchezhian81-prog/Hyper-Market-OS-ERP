@@ -38,6 +38,7 @@ import {
   type ControlTotal, type TotalSignature,
 } from '../../../packages/migration/src/reconcile';
 import { assertSafeTarget } from './guards';
+import { deciderSealFlags } from '../../pos/src/store-seal';
 import type { MigrationDeps } from './index';
 
 // ── What gets recorded ─────────────────────────────────────────────────────────────────────────────
@@ -260,6 +261,10 @@ export function decisionRoutes(deps: MigrationDeps): readonly Route[] {
           const r = await refuse(ctx.tenantId, { kind: 'exception_resolution', subjectId: exceptionId, attemptedBy: decidedBy, refusedBecause, detail, relayedBy: ctx.userId });
           return { status: 202, body: { exceptionId, applied: false, refusedBecause, detail, refusedDecisionId: r.decisionId } };
         };
+        // Did the store computer see THIS person make THIS resolution? (2b-vi-c-3 · ADR-0023 amended) — a name the box
+        // could not vouch for is recorded as refused, never applied, and a person looks.
+        const resolverSeal = deciderSealFlags(deps.tillSealKey, { tenantId: ctx.tenantId, kind: 'migration_exception', recordId: exceptionId, named: decidedBy, record: ctx.body });
+        if (resolverSeal.length > 0) return refusedAs(resolverSeal[0]!, `the store computer did not vouch that ${decidedBy} made this decision (${resolverSeal[0]!}), so it does not count until a person looks.`);
         // Authority first: a name at the box is not authority (§28).
         const mayResolve = deps.holdsPermission === undefined ? false : await deps.holdsPermission(ctx.tenantId, decidedBy, 'migration.exception.resolve');
         if (!mayResolve) return refusedAs('decider_lacks_authority', `${decidedBy} does not hold the authority to resolve migration exceptions, so this decision made at the store does not count.`);
@@ -404,6 +409,8 @@ export function decisionRoutes(deps: MigrationDeps): readonly Route[] {
           const r = await refuse(ctx.tenantId, { kind: 'total_signature', subjectId: totalId, attemptedBy: signedBy, refusedBecause, detail, relayedBy: ctx.userId });
           return { status: 202, body: { totalId, applied: false, refusedBecause, detail, refusedDecisionId: r.decisionId } };
         };
+        const signerSeal = deciderSealFlags(deps.tillSealKey, { tenantId: ctx.tenantId, kind: 'migration_total', recordId: totalId, named: signedBy, record: ctx.body });
+        if (signerSeal.length > 0) return refusedAs(signerSeal[0]!, `the store computer did not vouch that ${signedBy} signed this total (${signerSeal[0]!}), so the signature does not count until a person looks.`);
         const maySign = deps.holdsPermission === undefined ? false : await deps.holdsPermission(ctx.tenantId, signedBy, 'migration.controltotal.sign');
         if (!maySign) return refusedAs('signer_lacks_authority', `${signedBy} does not hold the authority to sign a control total, so this signature made at the store does not count.`);
         const all = await totalsNow(ctx.tenantId);

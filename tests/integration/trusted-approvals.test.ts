@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sealedDecision } from '../support/store-seal';
 import { SUBJECT_AUTHORITY } from '../../services/identity/src/approval-decisions';
 
 /**
@@ -29,7 +30,7 @@ const relayDecision = (h: ApiHarness, over: Record<string, unknown>, key: string
     id: 'ap-1', subjectType: 'stock_count', subjectRef: 'c1', requestedBy: 'u-worker', branchId: 'store-1', value: null,
     status: 'approved', decidedBy: 'u-mgr', reason: 'checked the shelf', decidedAt: AT, storeId: 'store-1', source: 'manager-screen', ...over,
   };
-  return h.request({ method: 'POST', path: `/v1/approvals/decisions/${String(body.id)}/synced`, userId: 'u-box', tenantId: A, idempotencyKey: key, body });
+  return h.request({ method: 'POST', path: `/v1/approvals/decisions/${String(body.id)}/synced`, userId: 'u-box', tenantId: A, idempotencyKey: key, body: sealedDecision(A, 'ApprovalDecided', body) });
 };
 const position = async (h: ApiHarness): Promise<Position> =>
   (await h.request({ method: 'GET', path: '/v1/inventory/counts', userId: 'u-owner', tenantId: A, query: { productId: 'P1', locationId: 'S1' } })).body as Position;

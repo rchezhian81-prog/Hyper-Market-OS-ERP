@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sealedDecision } from '../support/store-seal';
 import { sentWithApproval } from '../support/approval-request';
 import { STREAM } from '../../services/api/src/adapters';
 import type { StoredMatch, SupplierInvoiceRecord } from '../../services/purchase/src/index';
@@ -47,10 +48,11 @@ const capture = (h: ApiHarness, invoiceId: string, body: Record<string, unknown>
 };
 const match = (h: ApiHarness, invoiceId: string, userId = 'u-checker', body: Record<string, unknown> = {}, key = `mat-${invoiceId}`) =>
   post(h, `/v1/purchase/invoices/${invoiceId}/match`, userId, body, key);
-const relayed = (h: ApiHarness, invoiceId: string, over: Record<string, unknown> = {}, key = `sync-${invoiceId}`) =>
-  post(h, `/v1/purchase/invoices/${invoiceId}/synced`, 'u-box', {
-    invoiceId, ...PAPER, capturedBy: 'u-buyer', capturedAt: AT, approvedBy: 'u-checker', approvedAt: AT, storeId: 'store-1', source: 'buyer-screen', ...over,
-  }, key);
+/** A bill as a current store computer relays it: the capturer it verified, sealed (`sealed: false` = an unsealed body). */
+const relayed = (h: ApiHarness, invoiceId: string, over: Record<string, unknown> = {}, key = `sync-${invoiceId}`, sealed = true) => {
+  const body = { invoiceId, ...PAPER, capturedBy: 'u-buyer', capturedAt: AT, approvedBy: 'u-checker', approvedAt: AT, storeId: 'store-1', source: 'buyer-screen', ...over };
+  return post(h, `/v1/purchase/invoices/${invoiceId}/synced`, 'u-box', sealed ? sealedDecision(A, 'SupplierInvoiceCaptured', body) : body, key);
+};
 const matchesOnRecord = async (h: ApiHarness, invoiceId: string) =>
   (await h.store.readStream(A, STREAM.purchase, { type: 'InvoiceMatched' })).map((e) => e.event.payload as StoredMatch).filter((m) => m.invoiceId === invoiceId);
 
@@ -198,15 +200,21 @@ describe('a supplier invoice is captured as the paper says it and matched agains
     const h = await seeded();
     const first = await relayed(h, 'inv-r1');
     expect(first.status).toBe(202);
-    expect(first.body).toMatchObject({ alreadyCaptured: false, flags: [], invoice: { invoiceId: 'inv-r1', capturedBy: 'u-buyer', approvedBy: 'u-checker', relayedBy: 'u-box', source: 'buyer-screen', storeId: 'store-1', poId: 'po-1' } });
+    // The checker the store's screen TYPED is kept as a claim, never as an approval (2b-vi-c-3 · register row 17b): no store
+    // computer verified that person, so the bill is recorded unchecked and the check is the checker's own act — the match.
+    expect(first.body).toMatchObject({
+      alreadyCaptured: false, flags: ['no_approval', 'approver_not_verified_at_store'],
+      invoice: { invoiceId: 'inv-r1', capturedBy: 'u-buyer', approvedBy: null, approvalClaimedBy: 'u-checker', relayedBy: 'u-box', source: 'buyer-screen', storeId: 'store-1', poId: 'po-1' },
+    });
     expect((await relayed(h, 'inv-r1', {}, 'sync-inv-r1-again')).body).toMatchObject({ alreadyCaptured: true });
     expect((await match(h, 'inv-r1')).body).toMatchObject({ payableMinor: 7000, sources: { invoice: { capturedBy: 'u-buyer' } } });
-    // A capturer head office does not know; a capturer without the right; the capturer checking their own capture; an unknown checker.
-    expect(((await relayed(h, 'inv-r2', { capturedBy: 'u-ghost', approvedBy: 'u-checker' })).body as { flags: string[] }).flags).toEqual(['capturer_unknown']);
-    expect(((await relayed(h, 'inv-r3', { capturedBy: 'u-cash' })).body as { flags: string[] }).flags).toEqual(['capturer_lacks_authority']);
-    expect(((await relayed(h, 'inv-r4', { approvedBy: 'u-buyer' })).body as { flags: string[] }).flags).toEqual(['self_approved']);
+    // A capturer head office does not know; a capturer without the right; the capturer naming themselves as checker; no checker.
+    expect(((await relayed(h, 'inv-r2', { capturedBy: 'u-ghost', approvedBy: 'u-checker' })).body as { flags: string[] }).flags).toEqual(['capturer_unknown', 'no_approval', 'approver_not_verified_at_store']);
+    expect(((await relayed(h, 'inv-r3', { capturedBy: 'u-cash' })).body as { flags: string[] }).flags).toEqual(['capturer_lacks_authority', 'no_approval', 'approver_not_verified_at_store']);
+    expect(((await relayed(h, 'inv-r4', { approvedBy: 'u-buyer' })).body as { flags: string[] }).flags).toEqual(['no_approval', 'self_approved']);
     expect(((await relayed(h, 'inv-r5', { approvedBy: null })).body as { flags: string[] }).flags).toEqual(['no_approval']);
-    expect(((await relayed(h, 'inv-r6', { approvedBy: 'u-cash' })).body as { flags: string[] }).flags).toEqual(['approver_lacks_authority']);
+    // A bill the store computer did not vouch for — no seal — is said; one changed after the seal no longer matches.
+    expect(((await relayed(h, 'inv-r6', { approvedBy: null }, 'sync-inv-r6', false)).body as { flags: string[] }).flags).toEqual(['decider_not_verified_at_store', 'no_approval']);
     // Malformed or not adding up → refused by name (the box dead-letters it for a person); the path and body must agree.
     expect(codeOf(await relayed(h, 'inv-r7', { declaredTotalMinor: 1 }))).toBe('does_not_add_up_to_the_invoice_total');
     expect(codeOf(await relayed(h, 'inv-r8', { invoiceId: 'inv-other' }))).toBe('not_readable_as_a_relayed_invoice');

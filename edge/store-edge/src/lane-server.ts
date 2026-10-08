@@ -194,7 +194,14 @@ export type LaneDayCloseHandler = (
  */
 export type LaneDeviceRelayHandler = (
   /** `deviceId` is present when the batch came over the authenticated device socket (SP-3a), naming the handheld. */
-  batch: { readonly source: string; readonly items: readonly unknown[]; readonly deviceId?: string },
+  batch: {
+    readonly source: string; readonly items: readonly unknown[]; readonly deviceId?: string;
+    /**
+     * The person this box verified for the request (2b-vi-c-3): the till session sent with it, or on the hosted copy the
+     * person the front's sign-in named. Absent when nobody was verified — the decisions then travel unstamped.
+     */
+    readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+  },
 ) => Promise<RelayReply>;
 
 /** Where the items a device handed over have got to, by key — from the box's own pipeline (SP-2a). */
@@ -202,7 +209,11 @@ export type LaneDeviceStatusHandler = (keys: readonly string[]) => readonly BoxI
 
 /** What the box does when an authority asks to reopen a locked day — the authoritative `EdgeProcess.reopenDay`. */
 export type LaneDayReopenHandler = (
-  req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string },
+  req: {
+    readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string;
+    /** The person this box verified for the request (2b-vi-c-3) — the box seals the reopen when it is the reopener. */
+    readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+  },
 ) => Promise<
   | { readonly reopened: true; readonly tradingDay: string }
   | { readonly reopened: false; readonly reason: string }
@@ -359,6 +370,20 @@ export function startLaneServer(input: {
     const v = req.headers[OPERATOR_HEADER];
     const token = Array.isArray(v) ? v[0] : v;
     return typeof token === 'string' && token !== '' ? token : undefined;
+  };
+
+  /**
+   * Who this box verified for this request, if anybody (2b-vi-c-3): the till session it carries, or — on the hosted copy
+   * only — the person the front's sign-in named in `X-Sre-User`. Never a body value.
+   */
+  const verifiedPersonOf = (req: IncomingMessage): { readonly userId: string; readonly via: string; readonly laneId: string } | undefined => {
+    const ops = input.operators;
+    if (ops === undefined || ops.laneId.trim() === '') return undefined;
+    const check = ops.check(operatorTokenOf(req), ops.laneId);
+    if (check.ok) return { userId: check.userId, via: check.via, laneId: ops.laneId };
+    const forwarded = req.headers['x-sre-user'];
+    const user = ops.trustForwardedUser && typeof forwarded === 'string' ? forwarded.trim() : '';
+    return user === '' ? undefined : { userId: user, via: 'verified_sign_in', laneId: ops.laneId };
   };
 
   /**
@@ -633,7 +658,8 @@ export function startLaneServer(input: {
             return;
           }
           try {
-            send(res, 200, await relay({ source: batch.source, items: batch.items }), cors);
+            const verifiedPerson = verifiedPersonOf(req);
+            send(res, 200, await relay({ source: batch.source, items: batch.items, ...(verifiedPerson === undefined ? {} : { verifiedPerson }) }), cors);
           } catch (e) {
             // The box itself failed mid-batch: no verdict on any item. The device keeps them all (a 5xx is a
             // failed attempt, never a refusal) and tries again.
@@ -758,7 +784,8 @@ export function startLaneServer(input: {
             return;
           }
           try {
-            send(res, 200, await doReopen({ dayCloseId, reopenedBy, reason, approvedBy }), cors);
+            const verifiedPerson = verifiedPersonOf(req);
+            send(res, 200, await doReopen({ dayCloseId, reopenedBy, reason, approvedBy, ...(verifiedPerson === undefined ? {} : { verifiedPerson }) }), cors);
           } catch (e) {
             send(res, 200, { reopened: false, reason: e instanceof Error ? e.message : String(e) }, cors);
           }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sealedDecision } from '../support/store-seal';
 import { SUBJECT_AUTHORITY, DECISION_FLAGS } from '../../services/identity/src/approval-decisions';
 
 /**
@@ -24,10 +25,12 @@ const decision = (over: Record<string, unknown> = {}) => ({
   storeId: 'store-1', source: 'manager-screen', ...over,
 });
 
-const relay = (h: ApiHarness, body: Record<string, unknown>, key: string, opts: { user?: string; tenant?: string; id?: string } = {}) =>
+/** As a current store computer relays it: sealed for the decider it saw signed in (`sealed: false` = an unsealed body). */
+const relay = (h: ApiHarness, body: Record<string, unknown>, key: string, opts: { user?: string; tenant?: string; id?: string; sealed?: boolean } = {}) =>
   h.request({
     method: 'POST', path: `/v1/approvals/decisions/${opts.id ?? String(body['id'])}/synced`,
-    userId: opts.user ?? 'u-box', tenantId: opts.tenant ?? A, idempotencyKey: key, body,
+    userId: opts.user ?? 'u-box', tenantId: opts.tenant ?? A, idempotencyKey: key,
+    body: opts.sealed === false ? body : sealedDecision(opts.tenant ?? A, 'ApprovalDecided', body),
   });
 
 async function seeded(): Promise<ApiHarness> {
@@ -68,12 +71,17 @@ describe('a decision relayed from the store is recorded, with the decider re-ver
     expect(unknown.status).toBe(202);
     expect((unknown.body as { flags: string[] }).flags).toEqual(['decider_unknown']);
 
+    // A decision no store computer vouched for (2b-vi-c-3): recorded and flagged, not applied.
+    const unsealed = await relay(h, decision({ id: 'a6' }), 'k-a6', { sealed: false });
+    expect(unsealed.status).toBe(202);
+    expect((unsealed.body as { flags: string[] }).flags).toEqual(['decider_not_verified_at_store']);
+
     const odd = await relay(h, decision({ id: 'a5', subjectType: 'something_new' }), 'k-a5');
     expect(odd.status).toBe(202);
     expect((odd.body as { flags: string[] }).flags).toEqual(['authority_unverified']);
 
     const flagged = await h.request({ method: 'GET', path: '/v1/approvals/decisions', userId: 'u-owner', tenantId: A, query: { flagged: 'true' } });
-    expect((flagged.body as { decisions: { requestId: string }[] }).decisions.map((d) => d.requestId).sort()).toEqual(['a2', 'a3', 'a4', 'a5']);
+    expect((flagged.body as { decisions: { requestId: string }[] }).decisions.map((d) => d.requestId).sort()).toEqual(['a2', 'a3', 'a4', 'a5', 'a6']);
     for (const f of (flagged.body as { decisions: { flags: string[] }[] }).decisions.flatMap((d) => d.flags)) {
       expect(DECISION_FLAGS).toContain(f);
     }

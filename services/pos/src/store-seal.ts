@@ -13,7 +13,7 @@
 //
 // Absent key (a composition with no pack signing key) → no check, no flag: nobody looked, and nothing is claimed.
 
-import { checkApprovalStamp, checkOperatorStamp, type TillSealFact } from '../../../packages/identity/src/till-seal';
+import { checkApprovalStamp, checkDeciderStamp, checkOperatorStamp, type DecisionKind, type TillSealFact } from '../../../packages/identity/src/till-seal';
 
 /** The flags a person's seal can raise. */
 export type CashierSealFlag = 'cashier_not_verified_at_store' | 'cashier_seal_does_not_match';
@@ -22,7 +22,7 @@ export type ApprovalSealFlag = 'approval_not_verified_at_store' | 'approval_seal
 
 /** The flag for the person a relayed fact names, or none when the store's seal is there and matches. */
 export function cashierSealFlags(key: Buffer | undefined, input: {
-  readonly fact: Exclude<TillSealFact, 'approval'>;
+  readonly fact: Exclude<TillSealFact, 'approval' | 'decision'>;
   readonly tenantId: string;
   readonly recordId: string;
   readonly amountMinor: number;
@@ -51,4 +51,23 @@ export function approvalSealFlags(key: Buffer | undefined, input: {
 /** The stamp a relayed body carries under `field`, untouched (the check reads it defensively). */
 export function stampIn(body: unknown, field: 'operatorVerified' | 'approvalVerified'): unknown {
   return body !== null && typeof body === 'object' ? (body as Record<string, unknown>)[field] : undefined;
+}
+
+/** The flags a back-office decision's seal can raise (2b-vi-c-3). */
+export type DeciderSealFlag = 'decider_not_verified_at_store' | 'decider_seal_does_not_match';
+
+/**
+ * The flag for the person a relayed back-office decision names as its decider — an approval's decider, a bill's capturer,
+ * a checklist's signer, a migration resolver or signer — or none when the box's seal is there and matches every word.
+ */
+export function deciderSealFlags(key: Buffer | undefined, input: {
+  readonly tenantId: string;
+  readonly kind: DecisionKind;
+  readonly recordId: string;
+  readonly named: string;
+  readonly record: unknown;
+}): DeciderSealFlag[] {
+  if (key === undefined || input.named.trim() === '') return [];
+  const check = checkDeciderStamp(key, input);
+  return check === 'verified' ? [] : [check === 'missing' ? 'decider_not_verified_at_store' : 'decider_seal_does_not_match'];
 }
