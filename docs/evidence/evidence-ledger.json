@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 929,
+  "testFiles": 931,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -95,9 +95,9 @@
       "id": "M02",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 21,
-        "integration": 16,
-        "realDb": 4,
+        "unit": 22,
+        "integration": 17,
+        "realDb": 5,
         "browser": 4,
         "connected": 0,
         "device": 0,
@@ -119,6 +119,7 @@
           "tests/unit/identity-lifecycle.test.ts",
           "tests/unit/identity-org-membership.test.ts",
           "tests/unit/identity-otp.test.ts",
+          "tests/unit/identity-server-tokens.test.ts",
           "tests/unit/identity-session-revocation.test.ts",
           "tests/unit/identity-test-idp.test.ts",
           "tests/unit/identity-token.test.ts",
@@ -136,6 +137,7 @@
           "tests/integration/authorization-is-enforced.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/emergency-access.test.ts",
+          "tests/integration/keycloak-real.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts",
           "tests/integration/manager-decisions-reach-the-cloud-through-the-edge.test.ts",
           "tests/integration/second-person-is-a-separate-act.test.ts",
@@ -149,6 +151,7 @@
           "tests/integration/access-lifecycle.test.ts",
           "tests/integration/authorization-is-enforced.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
+          "tests/integration/keycloak-real.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts"
         ],
         "browser": [

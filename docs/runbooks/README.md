@@ -74,3 +74,4 @@ pilot. The master source of truth for the human sign-offs is `../registers/uat-c
   (`pnpm run demo:smoke`), access without secrets, the role-by-role practice script, and how every
   practice session is recorded in `../registers/sp10-staff-uat.md` with its software version. Every
   step is marked EXECUTED or PREPARED.
+- [identity-server.md](identity-server.md) — the self-hosted identity server (Keycloak, ADR-0019): what it holds, turning it on, the admin console over a tunnel only, and the proof against a real Keycloak.

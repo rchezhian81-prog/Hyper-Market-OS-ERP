@@ -5,6 +5,50 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-15-a — the identity server is in the stack, and head office believes its sign-ins (8 October 2026)
+
+- **The block (owner decision OB-15, "A 1"; ADR-0019):** a real sign-in for every screen, through a self-hosted
+  Keycloak, in the owner's look; people created from the product; a realm per shop. Done in parts. This is part 1: the
+  foundation everything else stands on.
+- **What changed:**
+  - **Head office can check a Keycloak sign-in and cannot make one.**
+    - It reads the public keys Keycloak publishes and checks every sign-in against them.
+    - It pins who issued the sign-in and who it was for, and its expiry.
+    - It refuses the known tricks: switching the signing method, a key the server never published, a key carried
+      inside the sign-in, a changed byte, another issuer or audience, an expired or over-long sign-in.
+    - A rotated key is picked up; made-up key ids cannot make it fetch over and over.
+    - The pilot sign-in keeps working beside it until it retires.
+  - **The store's Keycloak settings live in the repository** (`infra/keycloak/realm-sre-store.json`):
+    - sign-in only by the browser flow with PKCE;
+    - passwords at least 12 characters;
+    - five wrong passwords lock the account;
+    - a one-time code for privileged people;
+    - every sign-in names the product's person, the shop, our API and how the person proved it;
+    - the file holds no person and no secret.
+  - **Keycloak is a service in the stack, opt-in.** It starts only when asked; its admin console is refused at the
+    public address.
+- **Proved:**
+  - Unit: the sign-in checks (8).
+  - Guardrails (49 with the existing proxy guardrails): nothing above can be loosened silently, and head office holds
+    no private key.
+  - **Against a real Keycloak 26.0.7 on this machine, with the repository's realm file** (opt-in suite, 5 of 5):
+    - a person signs in the way a browser does;
+    - head office's checker accepts the result and refuses it altered;
+    - the password shortcut is off;
+    - a privileged person is stopped for a second factor;
+    - five wrong passwords lock the account;
+    - **the real head-office service lets the signed-in person in, and refuses no sign-in or an altered one.**
+- **Not yet / honest limits:**
+  - No screen uses Keycloak yet; the trial server still uses the pilot sign-in.
+  - The sign-in page in the owner's look, people created from the Admin screen, a realm per shop, the store computer's
+    screens behind it, and the trial server running it are the next parts.
+  - The automatic checks cannot run the real-Keycloak suite (no Keycloak there); it is run and recorded by hand with each
+    identity change.
+  - Staff UAT (SP-10) is pending.
+- **Behaviour change the owner should know:** none yet. Nothing anyone uses has changed.
+- **Next:** OB-15-b — the screens sign in through Keycloak, with the login page in the owner's approved look (OB-18),
+  on the trial server.
+
 ## Wave 2b-vi-c-4 — the second person proves it is them; nothing waits in a forgotten queue (8 October 2026)
 
 - **The findings (audit PA-03, register row 17b and the side findings left open by c-3):**
