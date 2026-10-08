@@ -5,6 +5,44 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-15-d-3 — the shops and their features, on the server; the wall between shops stays (8 October 2026)
+
+- **The block:** OB-15 ("A 1"; ADR-0019), part 8.
+  - **Found while building:** a web screen across shops would have broken the database's deliberate rule that only a
+    person at the server may look across shops. The build stopped and asked.
+  - **Owner decision OB-21 "A"** (8 Oct 2026): keep the wall; do it on the server. This supersedes the "shops screen"
+    part of OB-20.
+- **What changed:**
+  - `pnpm run shop:list`: every shop — name, sign-in area, address, who created it and when, plan, features on.
+    - The list of shops is the ONE read across shops, under the platform scope a person at the server sets, as the
+      backup does.
+    - Each shop's own details are read in that shop's own scope.
+  - `pnpm run shop:features -- --tenant … --operator … --on … --off …`: changes ONE shop's features.
+    - Checked first; refused by name when wrong (an unknown feature, no such shop, no name, a production box before
+      the real-data GO).
+    - Only what changes is recorded, in that shop's own history, with the person's name — the same record head
+      office's own switch writes. `--dry-run` writes nothing.
+  - A shop's plan is shown but not changed here: a plan is a subscription with a payment mandate, and live payment
+    providers are on hold.
+- **Proved:**
+  - Unit (10): a shop's line (name, area, address, plan, features folded forward; a shop without a name record said
+    so); the feature change (only what changes; each refusal by name; a repeated name reported once).
+  - **On a real PostgreSQL ledger (3)**, running the built commands with two shops made by the new-shop command:
+    - the list shows both, and every shop its header counts;
+    - a change to one shop is read by head office's own entitlement reader as its own, and the other shop is
+      untouched;
+    - a dry run, a bad request and a production box write nothing.
+- **Fixed before merge:** the list was sometimes cut short when the reading side was slow. CI once showed 48 of 230
+  shops. The command stopped before its output had finished writing; it now finishes writing first. Before the fix,
+  three full runs of the database suites failed; after it, three runs passed.
+- **Not yet / honest limits:**
+  - Plan changes wait for live payment providers (pilot hold).
+  - Each shop's address and front door need the domain name (owner item).
+  - Staff UAT (SP-10) is pending.
+- **Behaviour change the owner should know:** none in the store; two new commands for the administrator.
+- **Next:** OB-15 block finished for what can be built now. Next by the plan: Wave 3 — the stock path from delivery to
+  shelf.
+
 ## OB-15-d-2 — one guided command on the server creates a shop (8 October 2026)
 
 - **The block:** OB-15 ("A 1"; ADR-0019), part 7. **Owner decision OB-20 "A"** (8 Oct 2026): a new shop is created on
