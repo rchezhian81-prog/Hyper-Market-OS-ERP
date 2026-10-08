@@ -25,7 +25,7 @@ describe('the realm file', () => {
     });
     expect((client['attributes'] as Record<string, string>)['pkce.code.challenge.method']).toBe('S256');
     // Sign-in returns only to the product's own callback — never a wildcard.
-    expect(client['redirectUris']).toEqual(['${SRE_WEB_ORIGIN}/auth/callback']);
+    expect(client['redirectUris']).toEqual(['${SRE_WEB_ORIGIN}/login/callback']);
   });
 
   it('passwords are long and a run of wrong ones locks the account; tokens are short-lived; https outside the private network', () => {
@@ -74,6 +74,24 @@ describe('the stack', () => {
     expect(block).toMatch(/KC_DB_PASSWORD: \$\{KEYCLOAK_DB_PASSWORD:-\}/);
     expect(block).not.toMatch(/:\?/);
     expect(block).toMatch(/realm-sre-store\.json:ro/);
+  });
+
+  it('the sign-in service is opt-in with it, holds no secret, publishes no port and runs read-only', () => {
+    const block = compose.slice(compose.indexOf('\n  sign-in:'), compose.indexOf('\nvolumes:'));
+    expect(block).toMatch(/profiles: \['identity'\]/);
+    expect(block).not.toMatch(/\n\s+ports:/);
+    expect(block).not.toMatch(/SECRET|PASSWORD|SIGNING_KEY/);
+    expect(block).toMatch(/read_only: true/);
+    expect(block).toMatch(/SIGN_IN_INTERNAL_ISSUER: http:\/\/idp:8080\//);
+  });
+
+  it('the sign-in service believes a sign-in only through head office\'s own checker, keeps the session server-side, and signs nothing', () => {
+    // The code, without its comments (which say, in words, what it does not hold).
+    const src = readFileSync('services/identity/src/sign-in.ts', 'utf8').split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n');
+    expect(src).toMatch(/verifyToken\(body\.access_token, deps\.policy/);
+    expect(src).toMatch(/HttpOnly; Secure; SameSite=Strict/);
+    expect(src).toMatch(/code_challenge_method: 'S256'/);
+    expect(src).not.toMatch(/createPrivateKey|createSign\(|\bsign\(|client_secret|password/);
   });
 
   it('the public proxy refuses the identity server\'s admin console before forwarding anything under /auth/', () => {

@@ -21,8 +21,22 @@ server publishes. This page is for the administrator. Nothing here is done throu
 - Head office (`IDP_OIDC_ISSUER`, `IDP_OIDC_JWKS_URL`) believes the identity server's sign-ins alongside the pilot
   sign-in while that retires.
 
-**Not yet (next parts):** the sign-in page in the owner's look; the screens using it (they still use the pilot sign-in);
-creating people from the product's Admin screen; a realm per shop; the trial server running it.
+**Part 2 (OB-15-b-1, 8 October 2026): the product's sign-in service** (`services/identity/src/sign-in.ts`, compose
+service `sign-in`, opt-in with the identity server). The front door asks it "who is this?" for every screen:
+- it sends the person to the identity server's own page, with PKCE, a one-time state and a nonce;
+- it takes the code back at `/login/callback`;
+- it believes the result only when head office's own checker does;
+- it keeps the session on the server (the browser holds a random id in an HttpOnly, Secure, SameSite=Strict cookie);
+- it answers `/login/verify` with the person (`X-Sre-User`) and a current token (`X-Sre-Bearer`), renewed before it runs
+  out;
+- it ends a session the identity server ended, and lasts a shift at most;
+- it signs out at both ends.
+
+Its program is built on the box with `pnpm run build:sign-in`. **A restart signs everybody out** (sessions are held in
+memory); they sign in again.
+
+**Not yet (next parts):** the front door wired to it on the trial server; the sign-in page in the owner's look; creating
+people from the product's Admin screen; a realm per shop.
 
 ## Turning it on (when the next part asks for it)
 
@@ -62,6 +76,14 @@ automatic checks (they have no Keycloak); it is run, and its result recorded, wi
    - a privileged person is stopped for a second factor;
    - five wrong passwords lock the account;
    - the **real head-office service**, configured with the identity server, lets that person in and refuses no token or an
-     altered one.
+     altered one;
+   - **through the product's own sign-in service:** `/login/` → the identity server's page → `/login/callback`. The front
+     door gets the person and a token head office believes. Sign-out ends the session here and points the browser to the
+     identity server's own sign-out.
 
-**Recorded:** 8 October 2026, Keycloak 26.0.7, all 5 passed.
+**Recorded:** 8 October 2026, Keycloak 26.0.7:
+- 5 of 5 passed (part 1);
+- 6 of 6 passed with the sign-in service (part 2).
+
+The built program was also started against it: it refuses to start without its settings, sends a visitor to the identity
+server's page, and answers `/login/verify` with 401 for no session.

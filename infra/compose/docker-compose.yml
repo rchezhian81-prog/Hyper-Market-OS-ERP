@@ -286,6 +286,38 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # ---------------------------------------------------------------------------
+  # The product's sign-in service (OB-15-b · ADR-0019), beside the identity server and OPT-IN with it
+  # (`--profile identity`). The front door asks it "who is this?" for every screen: it sends a person to the identity
+  # server, takes the one-time code back, keeps the session on the server (the browser holds a random id only), and
+  # answers with the person and a current token. It holds no password and signs nothing. Its program is built on the
+  # box first (`pnpm run build:sign-in` → services/identity/dist/sign-in.mjs). It publishes no port.
+  # ---------------------------------------------------------------------------
+  sign-in:
+    image: node:22-alpine
+    profiles: ['identity']
+    restart: unless-stopped
+    command: ['node', '/app/sign-in.mjs']
+    user: '1000:1000'
+    depends_on:
+      - idp
+    environment:
+      SIGN_IN_ISSUER: ${IDP_OIDC_ISSUER:-}
+      SIGN_IN_INTERNAL_ISSUER: http://idp:8080/auth/realms/sre-store
+      SIGN_IN_ORIGIN: ${SRE_WEB_ORIGIN:-}
+      SIGN_IN_CLIENT_ID: sre-web
+      IDP_AUDIENCE: ${IDP_AUDIENCE:-sre-retail-os-api}
+      API_INTERNAL_URL: http://api:8081
+      PORT: '8092'
+    volumes:
+      - ../../services/identity/dist:/app:ro
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 32
+
 volumes:
   db-data:
   edge-data:
