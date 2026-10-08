@@ -132,18 +132,46 @@ export class TokenRevocationList {
 }
 
 /**
+ * Which of OUR policies a token is checked under (OB-15 · ADR-0019): the one whose algorithm the token's header names.
+ * The header only chooses among policies this service was configured with — each pins its own algorithm, key, issuer and
+ * audience — so a token cannot bring a key, an algorithm or an issuer of its own. None configured for that algorithm →
+ * no policy, and the token is refused.
+ */
+function policyFor(token: string, policies: readonly TokenPolicy[]): TokenPolicy | undefined {
+  if (policies.length === 1) return policies[0];
+  let alg: unknown;
+  try { alg = (JSON.parse(Buffer.from(token.split('.')[0] ?? '', 'base64url').toString('utf8')) as { alg?: unknown }).alg; } catch { return undefined; }
+  return policies.find((p) => (p.algorithm ?? 'HS256') === alg);
+}
+
+/**
  * The kernel's `Authenticator`, revocation-aware: verifies exactly as `tokenAuthenticator` does (signature,
  * then claims, then the lifetime ceiling), then refuses a token the tenant has revoked. Like the plain
  * authenticator it returns a principal or nothing — never a reason — and sends the reason to the operator.
+ *
+ * Several policies may be given (OB-15): the pilot sign-in's shared-secret tokens and the identity server's public-key
+ * tokens, side by side while the pilot sign-in retires. A token naming a key the identity server's set does not hold
+ * asks the keyring for ONE rate-limited refresh (keys rotate) and is checked once more.
  */
 export function revocationAwareAuthenticator(
-  policy: TokenPolicy,
+  policy: TokenPolicy | readonly TokenPolicy[],
   revocations: TokenRevocationList,
   onRefusal?: (reason: TokenRefusal | 'revoked', detail: string) => void,
   now: () => number = () => Date.now(),
 ): (token: string) => Promise<Principal | undefined> {
+  const policies: readonly TokenPolicy[] = Array.isArray(policy) ? policy : [policy as TokenPolicy];
   return async (token) => {
-    const verdict = verifyToken(token, policy, now());
+    const chosen = policyFor(token, policies);
+    if (chosen === undefined) {
+      onRefusal?.('algorithm_not_ours', 'the token is signed in a way no configured identity server signs');
+      return undefined;
+    }
+    let verdict = verifyToken(token, chosen, now());
+    const refreshable = chosen.keyring as { refreshForUnknownKey?: () => Promise<void> } | undefined;
+    if (!verdict.ok && verdict.refusedBecause === 'key_not_ours' && typeof refreshable?.refreshForUnknownKey === 'function') {
+      await refreshable.refreshForUnknownKey();
+      verdict = verifyToken(token, chosen, now());
+    }
     if (!verdict.ok) {
       onRefusal?.(verdict.refusedBecause!, verdict.detail);
       return undefined;

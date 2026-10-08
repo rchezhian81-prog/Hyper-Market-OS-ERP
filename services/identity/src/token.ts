@@ -36,7 +36,7 @@
 //     it must come from the signed payload and nowhere else — never from a header, a query
 //     parameter or a path segment a caller controls.
 
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual, verify as verifySignature, type KeyObject } from 'node:crypto';
 import type { Principal } from '../../kernel/src/index';
 
 /** Why a token was not believed. Never returned to the caller — the reply is always "unauthenticated". */
@@ -45,6 +45,7 @@ export type TokenRefusal =
   | 'header_unreadable'
   | 'payload_unreadable'
   | 'algorithm_not_ours'
+  | 'key_not_ours'
   | 'signature_does_not_verify'
   | 'no_expiry'
   | 'expired'
@@ -66,9 +67,33 @@ export interface TokenVerdict {
   readonly detail: string;
 }
 
+/**
+ * The identity server's PUBLIC signing keys, by key id (OB-15 · ADR-0019): what an RS256 token is checked against.
+ * Filled from the server's published key set (`jwks.ts`); a token's `kid` only picks WHICH of these keys — a key the
+ * token brings with it is never used.
+ */
+export interface PublicKeyring {
+  get(kid: string): KeyObject | undefined;
+}
+
 export interface TokenPolicy {
-  /** The IdP's shared secret. From configuration, never from the token. */
+  /**
+   * How tokens under this policy are signed — OURS, from configuration, never from the token. `HS256` (default): the
+   * shared-secret tokens of the pilot sign-in. `RS256`: the self-hosted identity server's tokens (Keycloak, ADR-0019),
+   * checked against its public keys; this service holds no private key and can sign nothing.
+   */
+  readonly algorithm?: 'HS256' | 'RS256';
+  /** The IdP's shared secret (HS256 only). From configuration, never from the token. */
   readonly secret: string;
+  /** The identity server's public keys (RS256 only). */
+  readonly keyring?: PublicKeyring;
+  /**
+   * Which signed claim names the PRODUCT's person (default `sub`). The identity server's own `sub` is its internal id;
+   * the product's people, grants and approvals are keyed by the product's user id, which the server carries in a claim
+   * set from the person's account when the product provisioned it (`sre_user_id`, ADR-0019 §3). Read only after the
+   * signature verifies, like every other claim.
+   */
+  readonly subjectClaim?: string;
   /** Who must have issued it. */
   readonly issuer: string;
   /** Who it must have been issued *for* — this API, not another service of ours. */
@@ -134,23 +159,39 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
 
   // The algorithm is OURS. The header is checked against it, never consulted for it — which is
   // what makes `alg: none` and the RS256→HS256 confusion attack simply not apply.
-  if (header['alg'] !== 'HS256') {
+  const algorithm = policy.algorithm ?? 'HS256';
+  if (header['alg'] !== algorithm) {
     return {
       ok: false, refusedBecause: 'algorithm_not_ours',
-      detail: `the token asks to be verified with "${String(header['alg'])}" and this service verifies HS256. A token does not get to choose how it is checked`,
+      detail: `the token asks to be verified with "${String(header['alg'])}" and this policy verifies ${algorithm}. A token does not get to choose how it is checked`,
     };
   }
 
-  const expected = createHmac('sha256', policy.secret)
-    .update(`${headerPart}.${payloadPart}`)
-    .digest();
   let given: Buffer;
   try { given = Buffer.from(signaturePart, 'base64url'); } catch {
     return { ok: false, refusedBecause: 'signature_does_not_verify', detail: 'the signature is not readable' };
   }
-  // Length first: `timingSafeEqual` throws on a mismatch rather than returning false.
-  if (given.length !== expected.length || !timingSafeEqual(expected, given)) {
-    return { ok: false, refusedBecause: 'signature_does_not_verify', detail: 'the signature does not verify against the issuer key' };
+  if (algorithm === 'RS256') {
+    // The key id picks one of the identity server's OWN published keys; a token naming a key we were not given is not
+    // ours. A key embedded in the token (`jwk`, `jku`, `x5u`) is never consulted.
+    const kid = header['kid'];
+    const key = typeof kid === 'string' && kid !== '' ? policy.keyring?.get(kid) : undefined;
+    if (key === undefined) {
+      return { ok: false, refusedBecause: 'key_not_ours', detail: 'the token names a signing key the identity server has not published' };
+    }
+    let verified = false;
+    try { verified = verifySignature('RSA-SHA256', Buffer.from(`${headerPart}.${payloadPart}`), key, given); } catch { verified = false; }
+    if (!verified) {
+      return { ok: false, refusedBecause: 'signature_does_not_verify', detail: 'the signature does not verify against the identity server key' };
+    }
+  } else {
+    const expected = createHmac('sha256', policy.secret)
+      .update(`${headerPart}.${payloadPart}`)
+      .digest();
+    // Length first: `timingSafeEqual` throws on a mismatch rather than returning false.
+    if (given.length !== expected.length || !timingSafeEqual(expected, given)) {
+      return { ok: false, refusedBecause: 'signature_does_not_verify', detail: 'the signature does not verify against the issuer key' };
+    }
   }
 
   // ── Only now is the payload worth reading ─────────────────────────────────
@@ -203,7 +244,7 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
     };
   }
 
-  const userId = payload['sub'];
+  const userId = payload[policy.subjectClaim ?? 'sub'];
   if (typeof userId !== 'string' || userId.trim() === '') {
     return { ok: false, refusedBecause: 'no_subject', detail: 'the token names no user' };
   }

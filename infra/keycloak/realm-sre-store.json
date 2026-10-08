@@ -1,0 +1,226 @@
+{
+  "realm": "sre-store",
+  "displayName": "SRE Retail OS",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "loginWithEmailAllowed": false,
+  "duplicateEmailsAllowed": false,
+  "editUsernameAllowed": false,
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "en",
+    "ta"
+  ],
+  "defaultLocale": "en",
+  "passwordPolicy": "length(12) and maxLength(128) and notUsername and notEmail and passwordHistory(5)",
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "maxDeltaTimeSeconds": 43200,
+  "quickLoginCheckMilliSeconds": 1000,
+  "minimumQuickLoginWaitSeconds": 60,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 0,
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "roles": {
+    "realm": [
+      {
+        "name": "sre-privileged",
+        "description": "Owner, administrator, accountant and anyone who approves or reaches the store from outside: a second factor is required at every sign-in (ADR-0019, SEC-03). Granted by the product's provisioning, never by hand."
+      }
+    ]
+  },
+  "browserFlow": "sre browser",
+  "authenticationFlows": [
+    {
+      "alias": "sre browser",
+      "description": "Password, then a one-time code for privileged people (ADR-0019).",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "flowAlias": "sre browser forms",
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "autheticatorFlow": true,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "sre browser forms",
+      "description": "Username and password, then the conditional second factor.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-username-password-form",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false,
+          "authenticatorConfig": "sre amr pwd"
+        },
+        {
+          "flowAlias": "sre privileged second factor",
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "autheticatorFlow": true,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "sre privileged second factor",
+      "description": "A one-time code, required when the person holds sre-privileged.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "conditional-user-role",
+          "authenticatorConfig": "sre privileged",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "autheticatorFlow": false,
+          "userSetupAllowed": true,
+          "authenticatorConfig": "sre amr otp"
+        }
+      ]
+    }
+  ],
+  "authenticatorConfig": [
+    {
+      "alias": "sre privileged",
+      "config": {
+        "condUserRole": "sre-privileged",
+        "negate": "false"
+      }
+    },
+    {
+      "alias": "sre amr pwd",
+      "config": {
+        "default.reference.value": "pwd",
+        "default.reference.maxAge": "36000"
+      }
+    },
+    {
+      "alias": "sre amr otp",
+      "config": {
+        "default.reference.value": "otp",
+        "default.reference.maxAge": "36000"
+      }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "sre-web",
+      "name": "SRE Retail OS",
+      "description": "The product's screens. Public client: authorisation code with PKCE (S256); no password grant, no implicit flow.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "fullScopeAllowed": false,
+      "redirectUris": [
+        "${SRE_WEB_ORIGIN}/auth/callback"
+      ],
+      "webOrigins": [
+        "${SRE_WEB_ORIGIN}"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${SRE_WEB_ORIGIN}/login/"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience: the product API",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "${SRE_API_AUDIENCE:sre-retail-os-api}",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant_id: this realm's shop",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "tenant_id",
+            "claim.value": "${SRE_TENANT_ID}",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "sre_user_id: the product's person",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "sre_user_id",
+            "claim.name": "sre_user_id",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "amr: how the person proved it",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-amr-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\": [{\"name\": \"username\", \"displayName\": \"${username}\", \"validations\": {\"length\": {\"min\": 3, \"max\": 255}, \"username-prohibited-characters\": {}, \"up-username-not-idn-homograph\": {}}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"email\", \"displayName\": \"${email}\", \"validations\": {\"email\": {}, \"length\": {\"max\": 255}}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"firstName\", \"displayName\": \"${firstName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"lastName\", \"displayName\": \"${lastName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"sre_user_id\", \"displayName\": \"Product person id\", \"validations\": {\"length\": {\"min\": 1, \"max\": 128}}, \"permissions\": {\"view\": [\"admin\"], \"edit\": [\"admin\"]}, \"multivalued\": false}], \"groups\": [], \"unmanagedAttributePolicy\": \"ADMIN_VIEW\"}"
+          ]
+        }
+      }
+    ]
+  }
+}

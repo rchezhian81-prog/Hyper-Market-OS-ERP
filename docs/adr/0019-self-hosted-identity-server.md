@@ -72,6 +72,31 @@
   creates its realm.
 - The stack gains a service, a schema and a backup item; the runbooks gain its restore step.
 
+## Implementation notes — part 1 (OB-15-a, 8 October 2026)
+
+- **Head office checks, never signs.** The API believes the identity server's RS256 tokens against the public keys the
+  server publishes (`services/identity/src/jwks.ts`; a rotated key is fetched when a token names it, at most once per
+  30 s), with the issuer, the audience and the lifetime ceiling pinned as before. The header's `alg` only chooses between
+  the policies configured (the pilot sign-in's HS256, the identity server's RS256); a key carried in the token is never
+  used.
+- **The product's person is a claim the product sets.** Keycloak's own `sub` is its internal id. The product's user id
+  travels as `sre_user_id`, a user attribute only an administrator (the product's provisioning) can set.
+- **The realm is code.** `infra/keycloak/realm-sre-store.json` is imported on every start:
+  - the browser flow with PKCE; no password grant;
+  - password policy and lockout;
+  - a one-time code for `sre-privileged`;
+  - the `tenant_id`, `sre_user_id`, audience and `amr` mappers;
+  - a declared user profile.
+
+  A guardrail pins all of this.
+- **Opt-in in the stack** (`--profile identity`) until the screens use it. Its admin console is refused at the public
+  proxy and is reached over an SSH tunnel.
+- **Proved against a real Keycloak 26.0.7** (`tests/integration/keycloak-real.test.ts`, opt-in, recorded in the runbook):
+  - sign-in by code + PKCE;
+  - the real head-office service believing the result;
+  - the second-factor stop;
+  - the lockout.
+
 ## Reconsider-when
 
 - A tenant requires its own cloud directory for all staff (then Keycloak brokers it; if brokering proves
