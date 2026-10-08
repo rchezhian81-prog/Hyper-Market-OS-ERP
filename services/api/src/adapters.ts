@@ -1272,6 +1272,9 @@ function streamName(...parts: readonly string[]): string {
   return parts.join(PART);
 }
 
+/** Where a shop's subscription (plan) is recorded — read by the operator's shop list (OB-15-d-3) as head office writes it. */
+export const PLATFORM_BILLING_STREAM = streamName(STREAM.platform, 'billing');
+
 const forCustomer = (customerId: string): string => streamName(STREAM.consent, customerId);
 // Data-subject requests are TENANT-WIDE (one stream, every request) so the overdue read sees the whole
 // privacy queue in one fold — the queue a regulator asks about first (M20-FR-04 / DPDP).
@@ -9003,7 +9006,7 @@ export function billingAdapter(input: {
 }): BillingDeps {
   const policy: DunningPolicy = input.policy ?? { maxRetries: 3, suspendableGrants: [...OPTIONAL_FEATURES] };
   const noticeHours = input.preDebitNoticeHours ?? 24;
-  const BILLING = streamName(STREAM.platform, 'billing');
+  const BILLING = PLATFORM_BILLING_STREAM;
 
   interface StartedPayload {
     readonly planId: string; readonly rail: BillingRail; readonly mandate: Mandate;

@@ -59,6 +59,8 @@
     "tenant:bootstrap": "node scripts/build-service.mjs tools >/dev/null && node scripts/dist/bootstrap-tenant.js",
     "realm:for-shop": "node scripts/build-service.mjs tools >/dev/null && node scripts/dist/realm-for-shop.js",
     "shop:new": "node scripts/build-service.mjs tools >/dev/null && node scripts/dist/new-shop.js",
+    "shop:list": "node scripts/build-service.mjs tools >/dev/null && node scripts/dist/shops.js list",
+    "shop:features": "node scripts/build-service.mjs tools >/dev/null && node scripts/dist/shops.js features",
     "demo:smoke": "node scripts/build-service.mjs tools >/dev/null && node scripts/dist/demo-smoke.js",
     "verify:audit": "node --experimental-strip-types scripts/verify-audit-chain.mts",
     "test:integration": "vitest run tests/integration",

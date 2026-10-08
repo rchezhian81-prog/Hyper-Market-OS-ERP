@@ -65,7 +65,11 @@ shop's realm file, and the administrator loads it (below). Head office believes 
 
 **Part 7 (OB-15-d-2, owner decision OB-20 "A"): one guided command creates a shop** (`pnpm run shop:new`, below).
 
-**Not yet (next parts):** the shops screen (every shop, its plan and features, for the platform administrator); a sign-in
+**Part 8 (OB-15-d-3, owner decision OB-21 "A"): the shops and their features, on the server.** The wall between shops
+stays: head office's online system never looks across shops. The list of shops and a change of one shop's features are
+two more guided commands (below).
+
+**Not yet (next parts):** a sign-in
 service and front door per shop's address (needs the domain name); giving people sign-ins in a further shop from the
 product (head office's provisioner is the first shop's); resetting a forgotten password from the product.
 
@@ -97,6 +101,19 @@ Head office never holds a key that can create a realm (owner decision OB-19). Th
 
 The proof suite `tests/integration/keycloak-shop-realms.test.ts` loads a shop's file exactly this way and proves each
 shop's person is believed in their own shop only, and that a realm pinned to the wrong shop is refused.
+
+## The shops, and a shop's features (administrator, on the server)
+
+- **Every shop:** `pnpm run shop:list`. It shows each shop's name, sign-in area, address, who created it and when, its
+  plan, and the features it has on. It is the one read across shops, as the backup is.
+- **One shop's features:** `pnpm run shop:features -- --tenant <its id> --operator <your name> --on loyalty,delivery --off b2b`
+  - Add `--dry-run` first to see what it will do.
+  - It records only what changes, in that shop's own history, with your name. The shop's screens read it exactly as
+    if its own administrator had switched it.
+  - It refuses an unknown feature, a shop that is not there, no name, or a production box (until the written GO for
+    real data). Nothing is written when it refuses.
+- **A shop's plan** is shown, not changed here: a plan is a subscription with a payment mandate, and live payment
+  providers are on hold.
 
 ## Connecting head office to the identity server, so people's sign-ins are given from the product
 
