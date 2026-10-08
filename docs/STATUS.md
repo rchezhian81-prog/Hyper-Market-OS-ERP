@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-15-d-2 — one guided command on the server creates a shop (8 October 2026)
+
+- **The block:** OB-15 ("A 1"; ADR-0019), part 7. **Owner decision OB-20 "A"** (8 Oct 2026): a new shop is created on
+  the server with one guided command; no web page or head-office account can create one. A screen listing the shops,
+  with each shop's plan and features, comes next.
+- **What changed:** `pnpm run shop:new -- --name … --owner … --operator … --realm sre-<shop> --origin https://…`
+  - **checks everything first**, using the existing tested rules: never a production box, never the demo shop, a real
+    shop id (or one is made), a named owner and a named operator, known roles, a usable sign-in area name and address.
+    Every problem is said at once, and nothing is written;
+  - then, in order: records the shop with its first owner (and any further first people) in one go; puts the shop's
+    name, sign-in area and address on the platform's record; writes the shop's sign-in area file (OB-19);
+  - **prints the next steps**: load the area, tell head office, give the owner their sign-in in person, the address
+    with the domain name;
+  - `--dry-run` shows it all and writes nothing. A shop that already exists is left untouched. A database that cannot
+    be reached leaves no file behind.
+- **Proved:**
+  - Unit (9): the plan — the owner first, the shop's record, the file for this shop, each refusal by name, every
+    problem at once, the next steps.
+  - **On a real PostgreSQL ledger (3 tests)**, running the built command as the administrator would:
+    - a dry run writes nothing, and a production box is refused;
+    - a real run records the shop, its owner and its name, and writes its file with no secret;
+    - a second run changes nothing; a bad request writes nothing and lists every problem.
+  - Also run by hand on this machine, including a database that was down (nothing written).
+- **Not yet / honest limits:**
+  - **The shops screen** (every shop, its plan and features, for the platform administrator) is next.
+  - Each shop's address and front door need the domain name (owner item, still open).
+  - Staff UAT (SP-10) is pending.
+- **Behaviour change the owner should know:** none until a new shop is created on the server.
+- **Next:** OB-15-d-3 — the shops screen.
+
 ## OB-15-d-1 — each shop its own sign-in area, prepared by head office and loaded by the administrator (8 October 2026)
 
 - **The block:** OB-15 ("A 1"; ADR-0019), part 6. **Owner decision OB-19 "A"** (8 Oct 2026): head office prepares a new

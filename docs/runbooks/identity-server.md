@@ -63,7 +63,9 @@ before anything is sent; somebody without the administrator's authority sees no 
 **Part 6 (OB-15-d-1, owner decision OB-19 "A"): a realm per shop.** Head office never creates a realm; it makes the
 shop's realm file, and the administrator loads it (below). Head office believes each realm only for its own shop.
 
-**Not yet (next parts):** the tenant console (creating the shop in the product and handing over its file); a sign-in
+**Part 7 (OB-15-d-2, owner decision OB-20 "A"): one guided command creates a shop** (`pnpm run shop:new`, below).
+
+**Not yet (next parts):** the shops screen (every shop, its plan and features, for the platform administrator); a sign-in
 service and front door per shop's address (needs the domain name); giving people sign-ins in a further shop from the
 product (head office's provisioner is the first shop's); resetting a forgotten password from the product.
 
@@ -73,10 +75,17 @@ Head office never holds a key that can create a realm (owner decision OB-19). Th
 
 1. **Pin the first shop**, once: in `.env.pilot`, `IDP_OIDC_TENANT_ID=<the first shop's tenant id>`. Release. Head
    office's log says `… — signs for shop <id> only`.
-2. **Make the new shop's file** on the server:
-   `pnpm run realm:for-shop -- --realm sre-<shop> --tenant <the new shop's tenant id> --name "<Shop name>" --origin https://<the shop's address>`
-   It refuses a name, id or address it cannot use, by name, and changes nothing anywhere; the file holds no person and
-   no secret.
+2. **Create the shop**, on the server, with one guided command (owner decision OB-20 "A"):
+   `pnpm run shop:new -- --name "<Shop name>" --owner <its first owner's id> --operator <your name> --realm sre-<shop> --origin https://<the shop's address>`
+   Add `--dry-run` first to see what it will do. It checks everything before writing anything (never a production
+   box, never the demo shop, a named operator, known roles, a usable realm name and address). Then, in order, it:
+   - records the shop with its first owner (`--admin <id>:<role>` adds more);
+   - puts the shop's name on the platform's record;
+   - writes its sign-in area file;
+   - prints the next steps.
+
+   A shop that already exists is left alone. (`pnpm run realm:for-shop` makes the file alone, for a shop that already
+   exists.)
 3. **Load it:** `/auth/admin` → the realm list (top left) → **Create realm** → Browse → choose the file → **Create**.
 4. **Tell head office:** in `.env.pilot`, `IDP_OIDC_SHOP_REALMS=sre-<shop>=<its tenant id>` (comma-separate further
    shops). Release. Head office's log names each realm and the one shop it signs for. A realm named without its shop,
