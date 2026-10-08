@@ -59,7 +59,11 @@ async function detailsOf(store: SqlEventStore, tenantId: string): Promise<ShopEv
     .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
 }
 
-async function main(): Promise<void> {
+/**
+ * Returns the exit code instead of calling process.exit: a long list written to a pipe is still being flushed when the
+ * last line is "written", and process.exit would cut it short — the administrator would see some shops, not all.
+ */
+async function main(): Promise<number> {
   const db = new Pool({ connectionString: databaseUrl, max: 2 });
   const store = new SqlEventStore(pgPoolClient(db));
   try {
@@ -68,7 +72,7 @@ async function main(): Promise<void> {
       const lines = [];
       for (const row of shops) lines.push(shopLine(row, await detailsOf(store, row.tenantId)));
       for (const l of renderShopList(lines)) out(l);
-      process.exit(0);
+      return 0;
     }
 
     const tenantId = str('tenant');
@@ -81,12 +85,12 @@ async function main(): Promise<void> {
     if (!plan.ok) {
       out('NOT CHANGED — nothing was written:');
       for (const p of plan.problems) out(`  • ${p}`);
-      process.exit(1);
+      return 1;
     }
     for (const c of plan.changes) out(`  ${c.enabled ? 'turn ON ' : 'turn OFF'} ${c.feature}`);
     for (const f of plan.unchanged) out(`  already so: ${f}`);
-    if (plan.changes.length === 0) { out('Nothing to change.'); process.exit(0); }
-    if (flags['dry-run'] === true) { out('DRY RUN — nothing was written.'); process.exit(0); }
+    if (plan.changes.length === 0) { out('Nothing to change.'); return 0; }
+    if (flags['dry-run'] === true) { out('DRY RUN — nothing was written.'); return 0; }
     const by = `operator:${str('operator')}`;
     for (const c of plan.changes) {
       const at = new Date().toISOString();
@@ -98,13 +102,14 @@ async function main(): Promise<void> {
     }
     const after = shopLine(row!, await detailsOf(store, tenantId)).featuresOn;
     out(`CHANGED — recorded in shop ${tenantId}'s own history by ${str('operator')}. Features on now: ${after.length === 0 ? 'none' : after.join(', ')}.`);
-    process.exit(0);
+    return 0;
   } catch (e) {
     out(`Could not reach the ledger: ${e instanceof Error ? e.message : String(e)}. Nothing was written.`);
-    process.exit(2);
+    return 2;
   } finally {
     await db.end().catch(() => undefined);
   }
 }
 
-await main();
+// Node exits by itself once the output has drained and the pools are closed.
+process.exitCode = await main();
