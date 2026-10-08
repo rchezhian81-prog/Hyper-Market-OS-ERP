@@ -414,11 +414,13 @@ export function peopleAdapter(input: {
 }
 
 /** A leaver's sign-in, switched off at the identity server and the end recorded on the ledger (OB-15-c). */
-export function signInEnder(input: { readonly directory: IdentityDirectory; readonly people: ReturnType<typeof peopleAdapter> }): {
-  readonly end: (tenantId: string, userId: string, endedBy: string, at: string) => Promise<'ended' | 'none'>;
+export function signInEnder(input: { readonly directory: IdentityDirectory; readonly people: ReturnType<typeof peopleAdapter>; readonly tenantId?: string }): {
+  readonly end: (tenantId: string, userId: string, endedBy: string, at: string) => Promise<'ended' | 'none' | 'not_connected'>;
 } {
   return {
     end: async (tenantId, userId, endedBy, at) => {
+      // The directory provisions into ONE shop's realm (OB-15-d): another shop's leaver is not looked for there.
+      if (input.tenantId !== undefined && input.tenantId !== tenantId) return 'not_connected';
       const outcome = await input.directory.end(userId);
       const known = (await input.people.people(tenantId)).some((p) => p.userId === userId && p.state !== 'ended');
       if (outcome === 'ended' || known) {

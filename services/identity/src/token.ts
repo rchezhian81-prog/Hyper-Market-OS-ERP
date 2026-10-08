@@ -55,6 +55,7 @@ export type TokenRefusal =
   | 'audience_not_ours'
   | 'no_subject'
   | 'no_tenant'
+  | 'tenant_not_this_issuers'
   | 'no_issued_at'
   | 'lifetime_too_long';
 
@@ -97,6 +98,12 @@ export interface TokenPolicy {
   readonly subjectClaim?: string;
   /** Who must have issued it. */
   readonly issuer: string;
+  /**
+   * The ONE shop this issuer signs for (OB-15-d · OB-19 · M36-FR-01). Each shop has its own realm at the identity server;
+   * a sign-in from that realm that names any other shop is refused, whatever it says. Absent: the issuer is not pinned
+   * (one shop, or the pilot sign-in).
+   */
+  readonly tenantId?: string;
   /** Who it must have been issued *for* — this API, not another service of ours. */
   readonly audience: string;
   /**
@@ -254,6 +261,12 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
   const tenantId = payload['tenant_id'];
   if (typeof tenantId !== 'string' || tenantId.trim() === '') {
     return { ok: false, refusedBecause: 'no_tenant', detail: 'the token names no tenant' };
+  }
+  if (policy.tenantId !== undefined && tenantId !== policy.tenantId) {
+    return {
+      ok: false, refusedBecause: 'tenant_not_this_issuers',
+      detail: 'the token names a shop this issuer does not sign for. Each shop is signed in only by its own realm',
+    };
   }
 
   const branch = payload['branch_id'];

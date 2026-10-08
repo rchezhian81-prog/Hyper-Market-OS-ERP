@@ -140,6 +140,7 @@ import { identityRoutes } from '../../identity/src/index';
 import { jwksKeyring } from '../../identity/src/jwks';
 import { directoryLocationOf, keycloakDirectory, type IdentityDirectory } from '../../identity/src/identity-directory';
 import { peopleRoutes } from '../../identity/src/people';
+import { shopRealmsFrom, type ShopRealm } from '../../identity/src/shop-realms';
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../identity/src/revocation';
 import { delegationRoutes } from '../../identity/src/delegation';
 import { approvalDecisionRoutes, type ApprovalDecisionRecord, type AppliedDecision } from '../../identity/src/approval-decisions';
@@ -302,6 +303,8 @@ export function buildSurface(deps: {
   readonly numberSeries?: NumberSeriesStore;
   /** The identity server's directory (OB-15-c): people's sign-ins given and ended from the product. Omitted: not connected. */
   readonly identityDirectory?: IdentityDirectory;
+  /** The one shop whose realm that directory provisions into (OB-15-d). Other shops: not connected. */
+  readonly identityDirectoryTenantId?: string;
   /**
    * Where projection snapshots live (CORE-03). A `SqlSnapshotStore` in production, so bounded reads
    * survive a restart; omitted, adapters fall back to a process-local in-memory cache (still correct,
@@ -437,7 +440,7 @@ export function buildSurface(deps: {
         approvals: approvalRequestsAdapter({ store, now }),
         ...(deps.revocations === undefined ? {} : { revocations: deps.revocations }),
         // A leaver's sign-in at the identity server is switched off before their access change is recorded (OB-15-c).
-        ...(deps.identityDirectory === undefined ? {} : { signIns: signInEnder({ directory: deps.identityDirectory, people: peopleAdapter({ store, now }) }) }),
+        ...(deps.identityDirectory === undefined ? {} : { signIns: signInEnder({ directory: deps.identityDirectory, people: peopleAdapter({ store, now }), ...(deps.identityDirectoryTenantId === undefined ? {} : { tenantId: deps.identityDirectoryTenantId }) }) }),
       }),
     // People's sign-ins (OB-15-c · M02-FR-01): the platform administrator gives a named person — never a shared account,
     // never somebody already holding authority — a sign-in at the identity server; the one-time password is shown once.
@@ -447,6 +450,7 @@ export function buildSurface(deps: {
         ...peopleAdapter({ store, now }),
         recordAudit: auditTrail?.recordAudit,
         ...(deps.identityDirectory === undefined ? {} : { directory: deps.identityDirectory }),
+        ...(deps.identityDirectoryTenantId === undefined ? {} : { directoryTenantId: deps.identityDirectoryTenantId }),
       }),
     ...catalogueRoutes({
       ...(store === undefined ? {
@@ -1350,13 +1354,24 @@ export async function startApi(
   const identityDirectory = provisionerSecret === undefined || directoryAt === undefined ? undefined : keycloakDirectory({
     ...directoryAt, clientId: 'sre-provisioner', clientSecret: provisionerSecret, secondFactorRole: 'sre-privileged', fetch: globalThis.fetch,
   });
-  if (identityDirectory !== undefined) out(`identity server: people's sign-ins are given from the product (realm ${directoryAt!.realm})\n`);
-  const identityServerKeys = oidcJwks === undefined ? undefined : jwksKeyring({
-    url: oidcJwks, fetch: globalThis.fetch, onProblem: (detail) => { err(`identity server: ${detail}\n`); },
-  });
-  if (identityServerKeys !== undefined) {
-    const held = await identityServerKeys.refresh();
-    out(`identity server: ${held} signing key(s) held for ${oidcIssuer}\n`);
+  if (identityDirectory !== undefined) {
+    const pinnedTo = settings['IDP_OIDC_TENANT_ID'];
+    out(`identity server: people's sign-ins are given from the product (realm ${directoryAt!.realm}${pinnedTo === undefined ? '' : `, shop ${pinnedTo} only`})\n`);
+  }
+  // Each shop's realm, pinned to its shop (OB-15-d · OB-19): the first realm from IDP_OIDC_ISSUER / IDP_OIDC_JWKS_URL,
+  // pinned by IDP_OIDC_TENANT_ID; every further shop's realm from IDP_OIDC_SHOP_REALMS. Its keys fetched now.
+  const shopRealms = shopRealmsFrom(settings);
+  if (shopRealms.problems.length > 0) {
+    for (const p of shopRealms.problems) err(`\n${p}\n`);
+    err('\n');
+    return undefined;
+  }
+  const realmPolicies: { readonly realm: ShopRealm; readonly keyring: ReturnType<typeof jwksKeyring> }[] = [];
+  for (const realm of shopRealms.realms) {
+    const keyring = jwksKeyring({ url: realm.jwksUrl, fetch: globalThis.fetch, onProblem: (detail) => { err(`identity server (${realm.realm}): ${detail}\n`); } });
+    const held = await keyring.refresh();
+    out(`identity server: ${held} signing key(s) held for ${realm.issuer}${realm.tenantId === undefined ? '' : ` — signs for shop ${realm.tenantId} only`}\n`);
+    realmPolicies.push({ realm, keyring });
   }
 
   // 2 — Persistence, before the surface, because the surface is built around it.
@@ -1427,6 +1442,7 @@ export async function startApi(
     store,
     revocations,
     ...(identityDirectory === undefined ? {} : { identityDirectory }),
+    ...(settings['IDP_OIDC_TENANT_ID'] === undefined ? {} : { identityDirectoryTenantId: settings['IDP_OIDC_TENANT_ID'] }),
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
     // restart, the same table and rules the in-memory path uses in tests.
     settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))),
@@ -1478,15 +1494,18 @@ export async function startApi(
         },
         // The self-hosted identity server (OB-15 · ADR-0019), when configured: its tokens are checked against its own
         // published public keys, for exactly its issuer and our audience, under the same lifetime ceiling.
-        ...(identityServerKeys === undefined ? [] : [{
+        // Each shop's realm, checked against its own published keys, for exactly its issuer, our audience and — once
+        // pinned — the one shop it signs for (OB-15-d), under the same lifetime ceiling.
+        ...realmPolicies.map(({ realm, keyring }) => ({
           algorithm: 'RS256' as const,
           secret: '',
-          keyring: identityServerKeys,
+          keyring,
           subjectClaim: 'sre_user_id',
-          issuer: settings['IDP_OIDC_ISSUER']!,
+          issuer: realm.issuer,
+          ...(realm.tenantId === undefined ? {} : { tenantId: realm.tenantId }),
           audience: settings['IDP_AUDIENCE']!,
           maxLifetimeSeconds: Number(settings['IDP_MAX_TOKEN_LIFETIME_SECONDS']),
-        }]),
+        })),
       ],
       revocations,
       (reason) => { err(`auth refused: ${reason}\n`); },

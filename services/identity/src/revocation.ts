@@ -141,7 +141,13 @@ function policyFor(token: string, policies: readonly TokenPolicy[]): TokenPolicy
   if (policies.length === 1) return policies[0];
   let alg: unknown;
   try { alg = (JSON.parse(Buffer.from(token.split('.')[0] ?? '', 'base64url').toString('utf8')) as { alg?: unknown }).alg; } catch { return undefined; }
-  return policies.find((p) => (p.algorithm ?? 'HS256') === alg);
+  const byAlgorithm = policies.filter((p) => (p.algorithm ?? 'HS256') === alg);
+  if (byAlgorithm.length <= 1) return byAlgorithm[0];
+  // Several shops' realms sign the same way (OB-15-d): the token's issuer only CHOOSES among ours — the chosen policy
+  // then checks the signature against that realm's own keys, the issuer again, and the shop the realm signs for.
+  let iss: unknown;
+  try { iss = (JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as { iss?: unknown }).iss; } catch { return undefined; }
+  return byAlgorithm.find((p) => p.issuer === iss);
 }
 
 /**

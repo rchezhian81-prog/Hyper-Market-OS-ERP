@@ -169,6 +169,10 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   // nothing here can sign.
   { key: 'IDP_OIDC_ISSUER', optional: true },
   { key: 'IDP_OIDC_JWKS_URL', optional: true },
+  // One realm per shop (OB-15-d · OB-19): the shop the first realm signs for, and every further shop's realm=tenant.
+  // With more than one, every realm is pinned to its own shop (services/identity/src/shop-realms.ts).
+  { key: 'IDP_OIDC_TENANT_ID', optional: true },
+  { key: 'IDP_OIDC_SHOP_REALMS', optional: true },
   // Head office's provisioner at that identity server (OB-15-c): the secret the identity server GENERATED for its
   // `sre-provisioner` client, copied here by the administrator. Optional — absent, people are given sign-ins at the
   // identity server by hand and the product's people route says it is not connected. It may manage users, nothing else.

@@ -97,6 +97,11 @@ export interface PeopleDeps {
   readonly holdsAnyRole: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   /** The identity server's directory. Absent: this deployment signs people in elsewhere, and every issue is refused. */
   readonly directory?: IdentityDirectory;
+  /**
+   * The ONE shop whose realm the directory provisions into (OB-15-d). A request from any other shop is answered as not
+   * connected — never a person made in somebody else's realm. Absent: one shop, not pinned.
+   */
+  readonly directoryTenantId?: string;
   readonly generatePassword?: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
@@ -105,13 +110,15 @@ const notSaved = (status: number, code: string, whatHappened: string, nextSafeAc
   apiError(status, { code, whatHappened, wasItSaved: 'not_saved', nextSafeAction });
 
 export function peopleRoutes(deps: PeopleDeps): readonly Route[] {
+  const directoryFor = (tenantId: string): IdentityDirectory | undefined =>
+    deps.directoryTenantId !== undefined && deps.directoryTenantId !== tenantId ? undefined : deps.directory;
   return [
     {
       api: 'API-01', method: 'GET', path: '/v1/identity/people',
       permission: PERSON_READ_PERMISSION,
       handler: async (ctx) => ({
         status: 200,
-        body: { people: await deps.people(ctx.tenantId), connected: deps.directory !== undefined },
+        body: { people: await deps.people(ctx.tenantId), connected: directoryFor(ctx.tenantId) !== undefined },
       }),
     },
     {
@@ -137,7 +144,8 @@ export function peopleRoutes(deps: PeopleDeps): readonly Route[] {
         if (userId === ctx.userId) {
           throw notSaved(422, 'signing_in_yourself', 'Nobody gives themselves a sign-in.', 'Ask another administrator. Nothing was saved.');
         }
-        if (deps.directory === undefined) {
+        const directory = directoryFor(ctx.tenantId);
+        if (directory === undefined) {
           throw notSaved(503, 'identity_server_not_connected', 'This deployment is not connected to the identity server, so no sign-in can be given from here.', 'The administrator sets the provisioner secret on the server (runbook: identity server). Nothing was saved.');
         }
 
@@ -163,7 +171,7 @@ export function peopleRoutes(deps: PeopleDeps): readonly Route[] {
         const password = (deps.generatePassword ?? oneTimePassword)();
         let outcome;
         try {
-          outcome = await deps.directory.issue({ username, userId, displayName, secondFactor: true, temporaryPassword: password }, resume);
+          outcome = await directory.issue({ username, userId, displayName, secondFactor: true, temporaryPassword: password }, resume);
         } catch (e) {
           if (e instanceof DirectoryUnavailableError) {
             throw apiError(503, {
