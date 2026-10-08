@@ -52,6 +52,45 @@
   person who copies a box's settings could forge a seal, as they could forge a pack. A per-box key (device enrolment)
   would narrow this to one box; that is the reconsider-when below.
 
+## Amendment — 8 October 2026 (Wave 2b-vi-c-3): back-office decisions are sealed too
+
+**Context.** The seal covered the till's money facts. Six other records reach head office through the store computer
+and name a person who decided something: an approval decided on the manager's screen, a supplier bill captured on the
+buyer's screen, a checklist signed, a migration exception resolved, a migration control total signed, and a day
+reopened. Head office checked each person's *authority*, but could not tell whether that person was actually signed in
+when their name was written — anyone holding the sync permission could post a body naming anybody (audit PA-03).
+
+**Decision.**
+
+1. **The box seals a decision only for the person it verified for that request** — the till session the request
+   carries, or, on the hosted copy only, the person the front's sign-in named (`X-Sre-User`, ADR-0020 §6). Never a body
+   value. When that person is the person the decision names, the box adds a `deciderVerified` stamp: the person, how they
+   proved it, the till, and a seal over the kind of decision, the shop, the record's id and **every word of the record**
+   (a SHA-256 of the record in canonical key order, without the stamp). Otherwise the decision travels unstamped. A
+   stamp a device wrote itself is always removed first: only the box vouches (`edge/store-edge/src/decision-seal.ts`).
+2. **Head office checks the stamp** (`deciderSealFlags`, `services/pos/src/store-seal.ts`):
+   - no stamp → `decider_not_verified_at_store`; a stamp that does not match (changed after the seal, another record,
+     another shop, another person, a forgery) → `decider_seal_does_not_match`;
+   - **an approval decision** with either flag is recorded and **not applied** — the subject still waits for a decision
+     the store computer vouched for (an approval moves stock or money);
+   - **a migration decision** with either flag is recorded as **refused**, by name (it decides what the new system
+     starts with);
+   - **a checklist, a supplier bill and a day reopen** are recorded with the flag said on the record — the shift
+     happened, the paper bill exists, the day was unlocked at the store (P-01, hard rule #10).
+3. **A second person typed on a store screen is a claim, not a check.** A supplier bill's checker typed on the buyer's
+   screen is kept as `approvalClaimedBy`; the bill is recorded unchecked (`no_approval`, `approver_not_verified_at_store`)
+   and the check is the checker's own act at head office (the match, under their own sign-in). A day reopen's typed
+   approver is recorded and flagged `approver_not_verified_at_store`.
+
+**Consequences.**
+
+- Every relayed back-office decision now says whether a store computer saw the named person make it, and any change on
+  the way is caught.
+- Until a real store box has a sign-in for its back-office screens (OB-15, the identity server), decisions made there
+  are relayed unsealed and flagged; on the hosted copy they are sealed. That is the honest answer, recorded as a limit.
+- Next slice (2b-vi-c-4): the day-reopen approver gives their own PIN at the box (the ADR-0021 approval, extended to
+  this kind), and the buyer's screen stops asking for a typed checker.
+
 ## Reconsider-when
 
 Each store computer is enrolled with its own key (device identity, ADR-0019's identity server or a per-box certificate):

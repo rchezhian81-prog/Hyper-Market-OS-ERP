@@ -310,13 +310,6 @@ const refuseTotal = (totalMinor: number, declared: number, relayed: boolean) => 
   nextSafeAction: relayed ? 'Do not discard it at the store. Keep it in the queue and raise it.' : 'Check the lines against the paper and send it again. Nothing was saved.',
 });
 
-/** Who checked the capture — re-verified from THEIR grants, never taken on the sender's word (§28, hard rule #4). */
-async function verifyApprover(deps: Pick<PurchaseDeps, 'permissionsOfUser'>, tenantId: string, approvedBy: string, flags: InvoiceFlag[]): Promise<void> {
-  const permissions = await deps.permissionsOfUser(tenantId, approvedBy);
-  if (permissions === undefined) flags.push('approver_unknown');
-  else if (!permissions.includes('purchase.invoice.match')) flags.push('approver_lacks_authority');
-}
-
 /** The order behind an invoice, from head office's register — never the body; what it could not confirm is SAID. */
 async function orderForInvoice(
   deps: Pick<PurchaseDeps, 'purchaseOrder'>, tenantId: string, poId: string | null, supplierId: string, flags: InvoiceFlag[],

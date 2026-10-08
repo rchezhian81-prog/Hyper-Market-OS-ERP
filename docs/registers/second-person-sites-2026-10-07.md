@@ -21,11 +21,14 @@ only when its slice merges with a test that proves it.
   - **b-1** pricing — done;
   - **b-2** finance — done;
   - **b-3** stock, orders and purchasing — done.
-- **c** — 2b-vi-c, in three parts:
+- **c** — 2b-vi-c, in four parts:
   - **c-1** the 8 low-severity and record-only names (rows 19–26) — done;
   - **c-2** the typed makers (emergency access, access lifecycle, migration load operator) and the admin support-grant
     screen — done;
-  - **c-3** the store seal on the box-relayed decisions, with the day-reopen and bill-capture screens (row 17b).
+  - **c-3** the store seal on the box-relayed decisions — done (the day-reopen approver and the bill-capture checker are
+    now said as unverified at head office);
+  - **c-4** the day-reopen approver's own PIN at the store computer, the buyer's screen without a typed checker
+    (row 17b), and the migration screen handing its decisions to the store computer.
 
 ## The 26 sites
 
@@ -76,14 +79,23 @@ only when its slice merges with a test that proves it.
   - `invoices/:id/synced`;
   - `checklists/:id/synced`;
   - the two migration `/synced` routes.
+  - **Fixed in c-3** (ADR-0023 amended): the store computer seals each of these for the person it verified for the
+    request, over every word of the record; head office flags `decider_not_verified_at_store` /
+    `decider_seal_does_not_match`. An approval decision so flagged is not applied; a migration decision is refused by
+    name; a checklist, bill or reopen is recorded with the flag. Limit: a real store box's back-office screens have no
+    sign-in yet (OB-15), so their decisions arrive unsealed and flagged.
 - **Back-office screens where the second person is a typed name.** In both, the box checks only that it is a
   different name. Each moves with its route:
-  - day reopen (`day-reopen.js`), slice **c-3**;
+  - day reopen (`day-reopen.js`) — c-3 seals the reopener and flags the typed approver
+    (`approver_not_verified_at_store`); the approver's own PIN at the store computer is slice **c-4**;
   - the buyer's invoice capture (`buying.js`) — **moved to slice c** (found in 2b-vi-b-3, recorded here as row
     17b). The buyer captures the bill on the store box, which may be offline, and the box relays it through
     `invoices/:id/synced`. Head office re-verifies both people's grants on that relay, but the checker is still a name
     the box took. The fix is the same one the other box-relayed decisions need — a store seal on the checker's own
-    act — so it moves with them in slice c instead of getting a one-off answer here.
+    act — so it moves with them in slice c instead of getting a one-off answer here. **c-3:** head office keeps the typed
+    checker as a claim (`approvalClaimedBy`) and records the bill unchecked (`no_approval`,
+    `approver_not_verified_at_store`); the check is the checker's own act at head office (the match). The screen drops
+    the typed checker in **c-4**.
 - **Screens that collect a typed approver but run only a local engine** (not wired to the API). Each is wired with
   its route in slice **b** or **c**:
   - finance close and reopen — wired in b-2;

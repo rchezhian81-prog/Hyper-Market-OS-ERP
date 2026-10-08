@@ -5,6 +5,64 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-vi-c-3 — the store computer vouches for who made each back-office decision it carries (8 October 2026)
+
+- **The finding (audit PA-03, register side finding "seals on the box-relayed decisions"):** six records reach head
+  office through the store computer and name the person who decided: an approval decided on the manager's screen, a
+  supplier bill captured on the buyer's screen, a checklist signed, a migration exception resolved, a migration total
+  signed, and a day reopened. Head office checked each person's authority, but could not tell whether that person was
+  actually signed in when their name was written.
+- **What changed (ADR-0023, amended):**
+  - **The store computer seals a decision only for the person it verified** for that request (the till session, or on
+    the hosted copy the person the sign-in front names). The seal covers every word of the record. Anyone else, or
+    nobody verified, and the record goes unsealed. A seal a screen wrote itself is removed.
+  - **Head office checks the seal:**
+    - an **approval decision** without a matching seal is recorded and **not applied**; the thing waiting for approval
+      still waits;
+    - a **migration decision** without one is recorded as **refused**, by name;
+    - a **checklist**, a **supplier bill** and a **day reopen** are recorded with the flag on the record (the shift
+      happened, the bill exists, the day was unlocked at the store).
+  - **A second person typed on a store screen is a claim, not a check:**
+    - a bill's checker typed on the buyer's screen is kept as a claim; the bill is recorded unchecked, and the check is
+      the checker's own act at head office (the match, under their own sign-in);
+    - a day reopen's typed approver is recorded and flagged "not verified at the store".
+- **Proved:**
+  - Unit:
+    - the sealing rule for all five relayed decisions: sealed only for the verified person; any change, other shop,
+      other record, other kind or other key fails; a screen-written seal is removed (16);
+    - the store computer's route takes the verified person from the session or the hosted sign-in only, never the
+      body (2 new).
+  - Integration, through the real API:
+    - manager decisions through a real store computer: sealed and clean for the signed-in manager; flagged for nobody
+      or somebody else; a forged seal removed; a changed record caught (10, 3 new);
+    - supplier bills, direct and through a real store computer (updated to the new checker rule; unsealed case added);
+    - migration decisions through the API (sealed, unsealed refused, changed refused) and from the screen through the
+      store computer's own sealing function;
+    - checklists (sealed clean; unsealed and changed flagged);
+    - day reopen through a real store computer (sealed reopener; somebody else verified; survives a restart) and at head
+      office (unsealed and changed said);
+    - approve-then-apply, receipt excess, branch-scoped deciders (sealed as a current store computer sends them).
+- **Not yet / honest limits:**
+  - On a real store box the back-office screens have no sign-in yet (OB-15, the identity server), so decisions made
+    there are relayed unsealed and flagged: approval decisions made there are not applied until then. On the hosted
+    copy they are sealed.
+  - The migration screen's decisions are queued on the screen but not yet handed to the store computer; until they are,
+    only a store computer that seals them can deliver them.
+  - The store computer's own checklist path is not reached by any screen today; head office flags any checklist that
+    arrives unsealed.
+  - The day-reopen approver still types a name (flagged); the buyer's screen still asks for a typed checker (kept as a
+    claim). Both screens move to the person's own act next.
+  - The seal key is the shared pack signing key (ADR-0023 limit, unchanged).
+  - Staff UAT (SP-10) is pending.
+- **Behaviour change the owner should know:**
+  - an approval decided on a store screen counts only when the store computer saw that manager signed in;
+  - a supplier bill's "who checked it" from the store screen is no longer taken as the check — someone checks it at
+    head office;
+  - every day reopen currently shows "approver not verified at the store" until the approver's own PIN arrives (next
+    slice).
+- **Next:** 2b-vi-c-4 — the day-reopen approver gives their own PIN at the store computer; the buyer's screen drops the
+  typed checker; the migration screen hands its decisions to the store computer.
+
 ## Wave 2b-vi-c-2 — the person asking is a real sign-in; outside support access is decided by the owner on screen (7 October 2026)
 
 - **The finding (audit PA-03, register side findings "typed makers" and "the admin support grant"):**
