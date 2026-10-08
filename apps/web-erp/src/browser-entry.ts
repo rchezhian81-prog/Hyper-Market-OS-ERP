@@ -245,6 +245,10 @@ import {
   type AdminPorts, type AdminSession, type SupportAccessPort, type SupportAccessState, type SupportDecision,
   type SupportDecisionResult, type SupportEndResult, type SupportRead,
 } from './admin-session';
+import {
+  createPeopleSession, PERSON_PROVISION_PERMISSION,
+  type IssueResult, type PeoplePort, type PeopleRead, type PeopleSession, type PersonRow,
+} from './people-session';
 import { createSetupSession, type SetupSession } from './setup-session';
 import {
   SetupEditController, editorFor, parseDraft, saveResultFromError, type SaveResult,
@@ -3848,6 +3852,88 @@ export const HEAD_OFFICE_SUPPORT_ACCESS: SupportAccessPort = Object.freeze({
   end: (input: { readonly sessionId: string }) => postSupportEnd(input),
 });
 
+// ── People's sign-ins at head office (OB-15-c-2 · M02-FR-01 · hard rule #4) ──────────────────────────────────────
+//
+// The People part of "Who can get in" asks head office in the administrator's OWN session. The one-time password head
+// office returns is handed to the session model, which keeps it in memory until it is handed over — it is never written
+// to storage, never logged, and never sent anywhere else.
+
+const PEOPLE_PATH = '/v1/identity/people';
+
+/** One person's sign-in as head office lists it, read defensively: a row without its ids, name or state is dropped. */
+export function personRowOf(raw: unknown): PersonRow | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const state = r['state'];
+  if (!nonBlank(r['userId']) || !nonBlank(r['username']) || !nonBlank(r['displayName']) || !nonBlank(r['requestedBy']) || !nonBlank(r['requestedAt'])
+    || (state !== 'requested' && state !== 'issued' && state !== 'ended')) return null;
+  return {
+    userId: r['userId'], signInName: r['username'], displayName: r['displayName'], state,
+    requestedBy: r['requestedBy'], requestedAt: r['requestedAt'],
+    ...(nonBlank(r['issuedAt']) ? { issuedAt: r['issuedAt'] } : {}),
+    ...(nonBlank(r['endedAt']) ? { endedAt: r['endedAt'] } : {}),
+  };
+}
+
+async function fetchPeople(): Promise<PeopleRead> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  try {
+    const res = await fetchFn(PEOPLE_PATH, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return { result: 'refused', ...(await refusalOf(res)) };
+    const body = (await res.json()) as { people?: unknown; connected?: unknown };
+    return {
+      result: 'read',
+      people: (Array.isArray(body.people) ? body.people : []).map(personRowOf).filter((x): x is PersonRow => x !== null),
+      connected: body.connected === true,
+    };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/** Give a person a sign-in (POST) — a fresh request each press; the caller is the administrator who gave it. */
+async function postPerson(input: { readonly signInName: string; readonly displayName: string }): Promise<IssueResult> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  const key = globalThis.crypto?.randomUUID?.() ?? `person-${input.signInName}-${Date.now()}`;
+  try {
+    const res = await fetchFn(PEOPLE_PATH, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ signInName: input.signInName, displayName: input.displayName }),
+    });
+    if (res.status >= 200 && res.status < 300) {
+      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!nonBlank(body['userId']) || !nonBlank(body['signInName']) || !nonBlank(body['displayName'])) {
+        return { result: 'refused', code: 'unreadable_answer', whatHappened: '' };
+      }
+      const password = body['oneTimePassword'];
+      return {
+        result: 'issued', userId: body['userId'], signInName: body['signInName'], displayName: body['displayName'],
+        // A replay carries a "withheld" sentence in its place — that is not a password.
+        ...(typeof password === 'string' && /^[2-9A-HJ-NP-Z]{4}(-[2-9A-HJ-NP-Z]{4}){3}$/.test(password) ? { oneTimePassword: password } : {}),
+      };
+    }
+    return { result: 'refused', ...(await refusalOf(res)) };
+  } catch {
+    return { result: 'lost_link' };
+  }
+}
+
+/** Head office's people routes, as the Admin screen uses them in the browser. */
+export const HEAD_OFFICE_PEOPLE: PeoplePort = Object.freeze({ read: () => fetchPeople(), issue: postPerson });
+
+/** Build the People part of "Who can get in", or `null` when the box told the page nothing about who is looking. */
+export function bootPeople(data: AdminData | undefined, port?: PeoplePort): PeopleSession | null {
+  if (data === undefined) return null;
+  return createPeopleSession(
+    { userId: data.userId === undefined ? null : data.userId, mayProvision: (data.permissions ?? []).includes(PERSON_PROVISION_PERMISSION) },
+    port,
+  );
+}
+
 /** What the box tells the store-setup screen: who is looking, and the setup status the API computed. */
 export interface SetupData {
   readonly userId?: string;
@@ -4379,6 +4465,7 @@ interface ManagerWindow {
   payrollReauth?: () => void;
   adminData?: AdminData;
   adminSession?: AdminSession;
+  peopleSession?: PeopleSession;
   setupData?: SetupData;
   setupSession?: SetupSession;
   setupEditing?: SetupEditingApi;
@@ -5776,6 +5863,8 @@ if (browserWindow !== undefined) {
   // shows its sample, which is not connected to head office and decides nothing.
   const admin = bootAdmin(browserWindow.adminData, HEAD_OFFICE_SUPPORT_ACCESS);
   if (admin !== null) browserWindow.adminSession = admin;
+  const peopleSession = bootPeople(browserWindow.adminData, HEAD_OFFICE_PEOPLE);
+  if (peopleSession !== null) browserWindow.peopleSession = peopleSession;
   const setup = bootSetup(browserWindow.setupData);
   if (setup !== null && browserWindow.setupData !== undefined) {
     browserWindow.setupSession = setup;

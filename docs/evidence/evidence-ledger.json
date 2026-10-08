@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 935,
+  "testFiles": 937,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -98,7 +98,7 @@
         "unit": 24,
         "integration": 18,
         "realDb": 6,
-        "browser": 4,
+        "browser": 5,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -159,6 +159,7 @@
           "tests/integration/maker-checker-is-two-people.test.ts"
         ],
         "browser": [
+          "tests/e2e/admin-people-sign-ins.e2e.ts",
           "tests/e2e/approvals-delivery.e2e.ts",
           "tests/e2e/customer-login.e2e.ts",
           "tests/e2e/manager-decisions-survive-reload.e2e.ts",

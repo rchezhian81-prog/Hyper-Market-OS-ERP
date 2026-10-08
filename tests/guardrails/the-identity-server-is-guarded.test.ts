@@ -165,6 +165,16 @@ describe('people\'s sign-ins from the product (OB-15-c)', () => {
     expect(dir).toMatch(/temporary: true/);
   });
 
+  it('the Admin screen holds the one-time password in memory and on screen only — no storage, console, attribute or address', () => {
+    const page = src('apps/web-erp/web/admin.js');
+    expect(page).not.toMatch(/localStorage|sessionStorage|console\.|indexedDB|history\.(push|replace)State/);
+    expect(page).not.toMatch(/setAttribute\([^)]*oneTimePassword|dataset\.[a-zA-Z]+\s*=\s*[^;]*oneTimePassword/);
+    expect(page).toMatch(/el\('handover-otp'\)\.textContent = /);
+    const model = src('apps/web-erp/src/people-session.ts');
+    expect(model).not.toMatch(/localStorage|sessionStorage|console\.|indexedDB/);
+    expect(model).toMatch(/handedOver: \(\) => \{ pending = null; \}/);
+  });
+
   it('the provisioner secret is a secret setting, optional, from the environment only', () => {
     expect(readFileSync('services/kernel/src/config.ts', 'utf8')).toMatch(/\{ key: 'IDP_PROVISIONER_SECRET', secret: true, optional: true, minLength: 16 \}/);
     const block = compose.slice(compose.indexOf('\n  api:'), compose.indexOf('\n  idp:'));

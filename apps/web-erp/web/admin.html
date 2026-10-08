@@ -131,6 +131,17 @@
       .row .end { padding: 0 18px; flex: none; }
       /* On a phone the End button goes under the words, full width, so the words keep the row. */
       @media (max-width: 560px) { .row { flex-wrap: wrap; } .row .end { width: 100%; } }
+      /* Sign-ins (OB-15-c-2): the form, the one-time password waiting to be handed over, the list. */
+      #signins-form[hidden], #handover[hidden] { display: none; }
+      #signins-form .hint { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+      #signins-form button { margin-top: 14px; padding: 0 22px; }
+      #handover { background: var(--panel); border-radius: 12px; padding: 14px; border-left: 6px solid var(--good); display: grid; gap: 8px; }
+      #handover .otp { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: 28px; font-weight: 700; letter-spacing: 0.08em; overflow-wrap: anywhere; user-select: all; }
+      #handover p { margin: 0; font-size: 15px; }
+      .row.state-requested { border-left: 6px solid var(--degraded); }
+      .row.state-issued { border-left: 6px solid var(--ok); }
+      .row.state-ended { border-left: 6px solid var(--line); }
+      @media (max-width: 560px) { #signins-form .row2 { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
@@ -180,6 +191,38 @@
         <h2 id="people-title">Who can get in</h2>
         <p class="lead" id="people-lead">Every account, and anything about it worth a second look.</p>
         <div id="people-list"></div>
+
+        <!-- Sign-ins at the identity server (OB-15-c-2): one named person each, given by the platform administrator. -->
+        <h3 id="signins-title">Sign-ins</h3>
+        <p class="lead" id="signins-lead"></p>
+        <div class="source-line">
+          <p class="source" id="signins-source" role="status" aria-live="polite"><span class="icon" id="signins-source-icon" aria-hidden="true"></span><span id="signins-source-text"></span></p>
+          <button id="signins-check" type="button">Check again</button>
+        </div>
+        <p class="readonly" id="signins-cannot" hidden></p>
+        <form id="signins-form" hidden novalidate autocomplete="off">
+          <div class="row2">
+            <div>
+              <label for="signin-display" id="signin-display-label">Full name</label>
+              <input id="signin-display" name="displayName" type="text" maxlength="80" autocomplete="off" spellcheck="false" />
+            </div>
+            <div>
+              <label for="signin-name" id="signin-name-label">Sign-in name</label>
+              <input id="signin-name" name="signInName" type="text" maxlength="40" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="signin-name-hint" />
+            </div>
+          </div>
+          <p class="hint" id="signin-name-hint"></p>
+          <button id="signin-issue" class="primary" type="submit">Give a sign-in</button>
+        </form>
+        <p class="result" id="signins-result" hidden role="status" aria-live="polite"><span class="icon" id="signins-result-icon" aria-hidden="true"></span><span id="signins-result-text"></span></p>
+        <!-- The one-time password: in memory and on screen only, until the administrator says it was handed over. -->
+        <div id="handover" hidden role="region" aria-labelledby="handover-label">
+          <p id="handover-label"></p>
+          <p class="otp" id="handover-otp"></p>
+          <p id="handover-words"></p>
+          <button id="handover-done" class="primary" type="button">I have handed it over</button>
+        </div>
+        <div id="signins-list"></div>
       </section>
 
       <section id="view-fleet" hidden>

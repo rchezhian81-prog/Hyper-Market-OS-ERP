@@ -54,8 +54,13 @@ memory); they sign in again.
 - **A leaver's sign-in is switched off** at the identity server, and their sessions there ended, before their access
   change is recorded. If the identity server cannot be reached, nothing changes and the screen says so.
 
-**Not yet (next parts):** the People tab on the Admin screen (part 4 is head office's side); a realm per shop; the
-tenant console.
+**Part 5 (OB-15-c-2): the Sign-ins part of the Admin screen.** Admin → **Who can get in** → **Sign-ins**. The platform
+administrator types the person's full name and their own sign-in name, presses **Give a sign-in**, and gets the
+one-time password on screen, once, to hand over in person. **I have handed it over** takes it off the screen. The list
+shows who has a sign-in, who gave it and when. A shared or job name, and their own name, are refused on the screen
+before anything is sent; somebody without the administrator's authority sees no form, and a sentence why.
+
+**Not yet (next parts):** a realm per shop; the tenant console; resetting a forgotten password from the product.
 
 ## Connecting head office to the identity server, so people's sign-ins are given from the product
 
