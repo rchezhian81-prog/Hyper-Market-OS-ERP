@@ -351,6 +351,98 @@ function renderPeople() {
     })));
 }
 
+// ── Sign-ins (OB-15-c-2) ────────────────────────────────────────────────────
+//
+// Every rule is in the tested model (`apps/web-erp/src/people-session.ts`, attached as `window.peopleSession`). The
+// one-time password lives in that model's memory and in the hand-over panel's text — nowhere else: never in storage, an
+// attribute, the address bar or the console. "I have handed it over" forgets it.
+
+const people = window.peopleSession;
+let lastSignIns = null;
+
+function renderSignIns() {
+  el('signins-title').textContent = people === undefined ? t('people') : people.text(lang, 'title');
+  if (people === undefined) {
+    el('signins-lead').textContent = '';
+    paintLine('signins-source', { tone: 'idle', icon: 'ℹ', label: t('sampleNotConnected'), announcement: t('sampleNotConnected') });
+    el('signins-check').hidden = true;
+    el('signins-form').hidden = true;
+    el('signins-cannot').hidden = true;
+    el('signins-list').replaceChildren();
+    return;
+  }
+  const view = people.view(lang);
+  el('signins-lead').textContent = people.text(lang, 'lead');
+  paintLine('signins-source', view.source);
+  el('signins-check').hidden = !people.connected;
+  el('signins-check').textContent = people.text(lang, 'checkAgainBtn');
+  el('signins-cannot').hidden = view.cannot === null;
+  el('signins-cannot').textContent = view.cannot ?? '';
+  el('signins-form').hidden = !view.mayIssue;
+  el('signin-display-label').textContent = people.text(lang, 'nameLabel');
+  el('signin-name-label').textContent = people.text(lang, 'signInLabel');
+  el('signin-name-hint').textContent = people.text(lang, 'signInHint');
+  el('signin-issue').textContent = people.text(lang, 'issueBtn');
+  el('handover-done').textContent = people.text(lang, 'handedOverBtn');
+  renderHandOver();
+  el('signins-list').replaceChildren(...(view.listKnown && view.rows.length === 0
+    ? [emptyLine(people.text(lang, 'noneYet'))]
+    : view.rows.map((p) => {
+      const row = document.createElement('div');
+      row.className = `row state-${p.tone === 'ok' ? 'issued' : p.tone === 'degraded' ? 'requested' : 'ended'}`;
+      const what = document.createElement('span');
+      what.className = 'what';
+      const name = document.createElement('strong');
+      name.textContent = p.name;
+      const sub = document.createElement('small');
+      // The state in words — never a coloured edge on its own.
+      sub.textContent = `${p.stateWords} · ${p.detail}`;
+      what.append(name, sub);
+      row.append(what);
+      return row;
+    })));
+}
+
+function renderHandOver() {
+  const h = people?.handOver() ?? null;
+  el('handover').hidden = h === null;
+  el('handover-label').textContent = h === null ? '' : people.text(lang, 'passwordLabel');
+  el('handover-otp').textContent = h === null ? '' : h.oneTimePassword;
+  el('handover-words').textContent = h === null ? '' : people.text(lang, 'handOver').replace('{name}', h.displayName);
+}
+
+async function refreshSignIns() {
+  if (people === undefined) return;
+  renderSignIns();
+  await people.refresh();
+  renderSignIns();
+}
+
+el('signins-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (people === undefined) return;
+  const input = { displayName: el('signin-display').value, signInName: el('signin-name').value };
+  void busy([el('signin-issue')], async () => {
+    const outcome = await people.issue(input);
+    lastSignIns = (l) => people.present(l, outcome, input);
+    paintLine('signins-result', lastSignIns(lang));
+    if (outcome.kind === 'issued' || outcome.kind === 'issued_without_password') {
+      el('signin-display').value = '';
+      el('signin-name').value = '';
+    }
+    renderSignIns();
+    if (outcome.kind === 'issued') el('handover-done').focus();
+  });
+});
+
+el('handover-done').addEventListener('click', () => {
+  people?.handedOver();
+  renderHandOver();
+  el('signin-display').focus();
+});
+
+el('signins-check').addEventListener('click', () => { void busy([el('signins-check')], refreshSignIns); });
+
 // ── Tills and devices ───────────────────────────────────────────────────────
 
 function renderFleet() {
@@ -438,6 +530,8 @@ function paintChrome() {
 
   renderSupport();
   renderPeople();
+  renderSignIns();
+  if (lastSignIns !== null) paintLine('signins-result', lastSignIns(lang));
   renderFleet();
   renderRecords();
 }
@@ -457,6 +551,8 @@ paintChrome();
 show('support');
 // Head office's waiting requests and sessions — a GET, read once the page is up. Nothing is written on load.
 void refreshSupport();
+// Who has a sign-in — a GET, read once the page is up. Nothing is written on load.
+void refreshSignIns();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {

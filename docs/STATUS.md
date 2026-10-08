@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-15-c-2 — the Admin screen's Sign-ins: the administrator gives a named person a sign-in (8 October 2026)
+
+- **The block:** OB-15 ("A 1"; ADR-0019), part 5. Admin → **Who can get in** → **Sign-ins**.
+- **What changed:**
+  - **A form** for the person's full name and their own sign-in name, and **Give a sign-in**.
+  - **Refused on the screen before anything is sent**, using the very same rules head office uses: a shared or job name
+    ("cashier2", "Store Manager"), a name it cannot read, the administrator's own.
+  - **The one-time password is shown once**, large, with the hand-over words. It lives only in the screen's memory —
+    never in the browser's storage, an attribute, the address or the console. **I have handed it over** removes it.
+  - **The list** shows who has a sign-in, who gave it and when; head office's refusals are said in plain words, in
+    English and Tamil; a lost connection gives nothing and says to check before trying again.
+  - Somebody without the platform administrator's authority sees no form, and one sentence why.
+- **Proved:**
+  - Unit (15): the screen model — refusals before sending, what is sent, the password held then forgotten, every answer
+    in words (English and Tamil), who may, the defensive reading of head office's rows.
+  - **Browser (real Chromium, 4 of 4)**, against a stub head office running the REAL people route:
+    - "cashier2" and the administrator's own name refused on the page, nothing sent;
+    - one request with only the name and sign-in name; the password shown once and found nowhere else on the page,
+      in storage or the address; gone after "I have handed it over";
+    - head office's refusal in English and Tamil; a lost link;
+    - no form for somebody without the authority;
+    - the accessibility audit (48px targets, contrast, labels) with the password showing, in English and Tamil.
+  - Guardrail: the screen keeps the password in memory and on screen only.
+  - A screenshot of the section was checked by eye.
+- **Not yet / honest limits:**
+  - Nothing on the trial server until the administrator connects head office (runbook); the box must also tell the
+    Admin page that the person holds `platform.person.provision`.
+  - A forgotten password is reset at the identity server. If the reply with the password is lost, the person already
+    has a sign-in and their password is reset there.
+  - Staff UAT (SP-10) is pending.
+- **Behaviour change the owner should know:** the Admin screen's "Who can get in" now has a Sign-ins part. It does
+  nothing until head office is connected to the identity server.
+- **Next:** OB-15-d — a realm per shop and the tenant console (M36-FR-01).
+
 ## OB-15-c-1 — head office gives named people their sign-ins, and ends a leaver's (8 October 2026)
 
 - **The block:** OB-15 ("A 1"; ADR-0019), part 4: creating people from the product (M02-FR-01, M02-FR-04).

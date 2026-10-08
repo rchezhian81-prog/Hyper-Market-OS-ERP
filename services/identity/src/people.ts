@@ -22,6 +22,9 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { DirectoryUnavailableError, type IdentityDirectory } from './identity-directory';
+import { isGenericName, SIGN_IN_NAME, PRODUCT_ID, tidyPersonName, readablePersonName } from '../../../packages/identity/src/sign-in-names';
+
+export { isGenericName };
 
 export const PERSON_PROVISION_PERMISSION = 'platform.person.provision';
 export const PERSON_READ_PERMISSION = 'platform.person.read';
@@ -71,30 +74,6 @@ export function foldPeople(events: readonly PersonSignInEvent[]): readonly Perso
   return [...byId.values()];
 }
 
-// Words that name a job, a place or a shared account — never a person. Checked on the name with any trailing number
-// or separator removed ("till2", "cashier-01", "admin_1").
-const GENERIC = new Set([
-  'admin', 'administrator', 'root', 'system', 'service', 'default', 'superuser', 'sa',
-  'cashier', 'cash', 'counter', 'till', 'pos', 'lane', 'billing', 'bill', 'checkout',
-  'manager', 'supervisor', 'owner', 'operator', 'staff', 'user', 'users', 'employee', 'worker', 'team', 'office',
-  'store', 'shop', 'branch', 'warehouse', 'stock', 'sales', 'accounts', 'account', 'finance', 'hr',
-  'test', 'tester', 'testing', 'demo', 'trial', 'guest', 'temp', 'temporary', 'training', 'trainee',
-  'shared', 'common', 'generic', 'support', 'helpdesk', 'it', 'reception', 'frontdesk', 'security', 'picker', 'driver',
-]);
-
-/** True when a sign-in name (or a person's name) is a job, a place or a shared account rather than a person. */
-export function isGenericName(name: string): boolean {
-  const n = name.trim().toLowerCase();
-  const base = n.replace(/[\s._-]*\d+$/, '').replace(/[\s._-]+$/, '');
-  if (base === '' || GENERIC.has(base)) return true;
-  if (/(^|[\s._-])(shared|common|generic)([\s._-]|$)/.test(n)) return true;
-  // "store manager", "till-3 cashier": every word generic.
-  const words = base.split(/[\s._-]+/).filter((w) => w !== '' && !/^\d+$/.test(w));
-  return words.length > 0 && words.every((w) => GENERIC.has(w));
-}
-
-const SIGN_IN_NAME = /^[a-z0-9][a-z0-9._-]{2,39}$/;
-const PRODUCT_ID = /^[a-z0-9][a-z0-9._-]{2,63}$/;
 // No 0/O, 1/I/L: read aloud and typed from a slip of paper.
 const PASSWORD_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 
@@ -145,11 +124,11 @@ export function peopleRoutes(deps: PeopleDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const username = typeof b['signInName'] === 'string' ? b['signInName'].trim().toLowerCase() : '';
         const userId = typeof b['userId'] === 'string' && b['userId'].trim() !== '' ? b['userId'].trim() : username;
-        const displayName = typeof b['displayName'] === 'string' ? b['displayName'].trim().replace(/\s+/g, ' ') : '';
+        const displayName = typeof b['displayName'] === 'string' ? tidyPersonName(b['displayName']) : '';
         if (b['password'] !== undefined || b['oneTimePassword'] !== undefined) {
           throw notSaved(400, 'password_is_never_sent', 'A password was sent. Head office makes the one-time password itself and shows it once; nobody types one in.', 'Send the person\'s sign-in name and full name only. Nothing was saved.');
         }
-        if (!SIGN_IN_NAME.test(username) || !PRODUCT_ID.test(userId) || displayName.length < 2 || displayName.length > 80 || !/\p{L}/u.test(displayName)) {
+        if (!SIGN_IN_NAME.test(username) || !PRODUCT_ID.test(userId) || !readablePersonName(displayName)) {
           throw notSaved(400, 'not_readable_as_a_person', 'A sign-in needs { signInName (3–40 of a–z, 0–9, . _ -), displayName (the person\'s full name), userId? (the product\'s id for them; the sign-in name when absent) }.', 'Send the person\'s own sign-in name and full name. Nothing was saved.');
         }
         if (isGenericName(username) || isGenericName(userId) || isGenericName(displayName)) {
