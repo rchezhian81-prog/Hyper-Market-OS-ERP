@@ -105,6 +105,8 @@ automatic checks (they have no Keycloak); it is run, and its result recorded, wi
    Then run `start-dev --http-port 8180 --import-realm`.
 2. Run:
    `KEYCLOAK_PROOF_BASE=http://127.0.0.1:8180 KEYCLOAK_PROOF_ADMIN_PASSWORD_FILE=<file> KEYCLOAK_PROOF_TENANT=<tenant> KEYCLOAK_PROOF_DATABASE_URL=<a migrated test database> pnpm exec vitest run tests/integration/keycloak-real.test.ts`
+   Give each suite a **freshly migrated** test database: the person it signs in becomes the shop's first owner only
+   where the shop has none yet (on a reused one, head office answers 403 and the check fails, correctly).
 3. It proves, on the real server:
    - the password grant is off;
    - a person signs in by code + PKCE, and head office's verifier accepts the token and refuses it altered;
@@ -124,6 +126,7 @@ visitor's own `X-Sre-User` is overwritten; a head-office call through the front 
 and refused without it; sign-out ends it.
 
 **Recorded:** 8 October 2026, Keycloak 26.0.7:
+- 1 of 1 passed through the front door (part 3);
 - 5 of 5 passed (part 1);
 - 6 of 6 passed with the sign-in service (part 2).
 
