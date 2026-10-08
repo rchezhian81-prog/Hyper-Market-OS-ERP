@@ -28,10 +28,13 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Unit (10): a shop's line (name, area, address, plan, features folded forward; a shop without a name record said
     so); the feature change (only what changes; each refusal by name; a repeated name reported once).
   - **On a real PostgreSQL ledger (3)**, running the built commands with two shops made by the new-shop command:
-    - the list shows both;
+    - the list shows both, and every shop its header counts;
     - a change to one shop is read by head office's own entitlement reader as its own, and the other shop is
       untouched;
     - a dry run, a bad request and a production box write nothing.
+- **Fixed before merge:** the list was sometimes cut short when the reading side was slow. CI once showed 48 of 230
+  shops. The command stopped before its output had finished writing; it now finishes writing first. Before the fix,
+  three full runs of the database suites failed; after it, three runs passed.
 - **Not yet / honest limits:**
   - Plan changes wait for live payment providers (pilot hold).
   - Each shop's address and front door need the domain name (owner item).
