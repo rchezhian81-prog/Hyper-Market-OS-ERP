@@ -260,22 +260,25 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Its settings are optional IN THIS FILE because Compose reads every service's settings even when this one is not
+    # started; a required marker here would stop the whole stack for shops that do not run it. The identity server
+    # itself refuses to start without its database password, administrator password and addresses (runbook).
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       KC_DB_SCHEMA: keycloak
       KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-sre_keycloak}
-      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD to run the identity server}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-}
       KC_HTTP_ENABLED: 'true'
       KC_HTTP_RELATIVE_PATH: /auth
       KC_PROXY_HEADERS: xforwarded
-      KC_HOSTNAME: ${SRE_IDP_PUBLIC_URL:?set SRE_IDP_PUBLIC_URL (https://<your address>/auth)}
+      KC_HOSTNAME: ${SRE_IDP_PUBLIC_URL:-}
       KC_HEALTH_ENABLED: 'true'
       # The FIRST administrator, used once to set the identity server up and then replaced (runbook). From .env only.
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-kcadmin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD to run the identity server}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-}
       # What the realm file reads: the screens' origin (sign-in returns there), the shop this realm is, our API's name.
-      SRE_WEB_ORIGIN: ${SRE_WEB_ORIGIN:?set SRE_WEB_ORIGIN (https://<your address>)}
+      SRE_WEB_ORIGIN: ${SRE_WEB_ORIGIN:-}
       SRE_TENANT_ID: ${EDGE_TENANT_ID}
       SRE_API_AUDIENCE: ${IDP_AUDIENCE:-sre-retail-os-api}
     volumes:

@@ -68,8 +68,11 @@ describe('the stack', () => {
     expect(block).toMatch(/image: quay\.io\/keycloak\/keycloak:\d+\.\d+\.\d+\n/);
     expect(block).toMatch(/profiles: \['identity'\]/);
     expect(block).not.toMatch(/\n\s+ports:/);
-    expect(block).toMatch(/KC_BOOTSTRAP_ADMIN_PASSWORD: \$\{KEYCLOAK_ADMIN_PASSWORD:\?/);
-    expect(block).toMatch(/KC_DB_PASSWORD: \$\{KEYCLOAK_DB_PASSWORD:\?/);
+    // From the environment only — never a value written here. (Optional markers, not required ones: Compose reads every
+    // service's settings even when this one is off, and a required marker would stop the whole stack.)
+    expect(block).toMatch(/KC_BOOTSTRAP_ADMIN_PASSWORD: \$\{KEYCLOAK_ADMIN_PASSWORD:-\}/);
+    expect(block).toMatch(/KC_DB_PASSWORD: \$\{KEYCLOAK_DB_PASSWORD:-\}/);
+    expect(block).not.toMatch(/:\?/);
     expect(block).toMatch(/realm-sre-store\.json:ro/);
   });
 
