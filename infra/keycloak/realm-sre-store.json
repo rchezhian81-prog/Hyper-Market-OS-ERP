@@ -9,6 +9,7 @@
   "loginWithEmailAllowed": false,
   "duplicateEmailsAllowed": false,
   "editUsernameAllowed": false,
+  "loginTheme": "sre",
   "internationalizationEnabled": true,
   "supportedLocales": [
     "en",

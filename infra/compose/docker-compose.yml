@@ -283,6 +283,8 @@ services:
       SRE_API_AUDIENCE: ${IDP_AUDIENCE:-sre-retail-os-api}
     volumes:
       - ../keycloak/realm-sre-store.json:/opt/keycloak/data/import/realm-sre-store.json:ro
+      # The sign-in page in the owner's look (OB-18), English and Tamil — the realm's loginTheme. Read-only; no script inline.
+      - ../keycloak/themes/sre:/opt/keycloak/themes/sre:ro
     security_opt:
       - no-new-privileges:true
 

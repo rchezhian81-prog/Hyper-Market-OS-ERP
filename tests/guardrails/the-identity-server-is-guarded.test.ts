@@ -110,6 +110,17 @@ describe('the stack', () => {
   });
 });
 
+describe('the sign-in page is the product\'s own (OB-15-b · OB-18)', () => {
+  it('the realm uses the owner\'s theme, which the identity server reads read-only; only the trial server shows the practice strip', () => {
+    expect(realm['loginTheme']).toBe('sre');
+    const block = compose.slice(compose.indexOf('\n  idp:'), compose.indexOf('\n  sign-in:'));
+    expect(block).toMatch(/- \.\.\/keycloak\/themes\/sre:\/opt\/keycloak\/themes\/sre:ro/);
+    expect(block).not.toMatch(/PILOT_DEMO_BANNER/);
+    const pilot = readFileSync('infra/compose/docker-compose.pilot.yml', 'utf8');
+    expect(pilot.slice(pilot.indexOf('\n  idp:'))).toMatch(/^\s+idp:\n\s+environment:\n\s+PILOT_DEMO_BANNER: '1'/);
+  });
+});
+
 describe('the front door signed in through the identity server (OB-15-b)', () => {
   const front = readFileSync('infra/compose/nginx.identity.conf', 'utf8');
   const pilotCompose = readFileSync('infra/compose/docker-compose.pilot.yml', 'utf8');

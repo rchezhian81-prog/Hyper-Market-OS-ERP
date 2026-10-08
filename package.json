@@ -33,6 +33,7 @@
     "demo:store-pack": "node scripts/demo-store-pack.mjs",
     "build:demo-login": "node scripts/build-service.mjs demo-login",
     "build:sign-in": "node scripts/build-service.mjs sign-in",
+    "build:keycloak-theme": "node scripts/build-keycloak-theme.mjs",
     "demo-login:add": "node infra/pilot/demo-login/dist/demo-login.mjs add",
     "check:browser": "node scripts/pilot-browser-check.mjs",
     "drill:offline": "node scripts/pilot-offline-drill.mjs",

@@ -94,6 +94,12 @@ services:
     environment:
       SRE_STAFF_ROUTE: ${SRE_STAFF_ROUTE:-staff-demo-gate}
 
+  # The identity server's sign-in page carries the practice-data strip on the trial server only (the theme reads it
+  # through theme.properties; a store stack, without this overlay, never shows it). Inert unless the identity profile runs.
+  idp:
+    environment:
+      PILOT_DEMO_BANNER: '1'
+
   # DEMO-ONLY sign-in (owner decision 27 Sep 2026, defect H-01) — exists ONLY in this pilot overlay; the base (store)
   # compose file has no such service, so a store stack cannot run it. It refuses to start unless DEMO_LOGIN_ENABLED=1
   # and the tenant is the synthetic demo tenant (PILOT_DEMO_TENANT in db/seed/pilot/dataset.ts — set EDGE_TENANT_ID to
