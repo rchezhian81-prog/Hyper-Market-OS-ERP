@@ -97,6 +97,18 @@ describe('store/day close reconciles on sync — record, lock, and re-verify the
     expect(((await list(h, 'u-owner')).body as ListBody).flaggedReopens).toHaveLength(2);
   });
 
+  it('a reopen whose approver keyed their own PIN at the store computer is clean; a changed approver seal is said (2b-vi-c-4)', async () => {
+    const h = await cast();
+    await syncClose(h, 'u-mgr', 'dc-1', close());
+    await syncClose(h, 'u-mgr', 'dc-2', close({ tradingDay: '2026-08-08' }));
+    const raw = (id: string, body: unknown) =>
+      h.request({ method: 'POST', path: `/v1/pos/day-close/${id}/reopen/synced`, userId: 'u-mgr', tenantId: A, idempotencyKey: `pin-${id}`, body });
+    const both = sealedDayReopen(A, 'dc-1', { reopenedBy: 'u-mgr', approvedBy: 'u-owner', reason: 'late credit note' }, { approverToo: true });
+    expect(((await raw('dc-1', both)).body as ReopenBody).flags).toEqual([]);
+    // The approver's seal copied onto another day's reopen does not fit it — and neither does the reopener's.
+    expect(((await raw('dc-2', { ...both, dayCloseId: 'dc-2' })).body as ReopenBody).flags).toEqual(['decider_seal_does_not_match', 'approver_seal_does_not_match']);
+  });
+
   it('a reopen the store computer did not seal for its reopener, or one changed after the seal, is recorded and said (2b-vi-c-3)', async () => {
     const h = await cast();
     await syncClose(h, 'u-mgr', 'dc-1', close());

@@ -18,7 +18,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
-import { deciderSealFlags } from './store-seal';
+import { approverSealFlags, deciderSealFlags } from './store-seal';
 
 /** A store day close as it is recorded on the cloud — the fact the edge relayed, plus its lock. */
 export interface DayCloseRecord {
@@ -180,9 +180,8 @@ export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
           flags.push('approved_by_the_reopener');
         } else {
           if (!(await deps.canApproveDayReopen(ctx.tenantId, r.approvedBy))) flags.push('approver_lacks_authority');
-          // The approver's name was typed on the reopen screen; no store computer verified that person (their own PIN at
-          // the box is the next slice). Said, so the reopen reads as what it is.
-          flags.push('approver_not_verified_at_store');
+          // Did the store computer verify the APPROVER — their own PIN at the box (2b-vi-c-4) — for exactly this reopen?
+          flags.push(...approverSealFlags(deps.tillSealKey, { tenantId: ctx.tenantId, kind: 'day_reopen_approval', recordId: dayCloseId, named: r.approvedBy, record: ctx.body }));
         }
 
         const record: DayReopenRecord = {

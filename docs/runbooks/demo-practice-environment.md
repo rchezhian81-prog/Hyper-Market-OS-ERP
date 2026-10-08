@@ -374,7 +374,9 @@ Cross-cutting, once per person: the DEMO banner is visible; a refused action say
 - The ERP screens have no interactive staff sign-in on a store PC: the pack names one person per screen (KL-01, OA-4).
   The till authenticates the cashier with a staff ID and till PIN the store PC verifies (ADR-0020, closes
   GAP-POS-LOGIN-01); a manager's approval at the till is the manager's own PIN, checked by the store PC, for that one
-  refund (ADR-0021) — so `pilot-manager` needs a till PIN on the store PC too.
+  refund (ADR-0021) — so `pilot-manager` needs a till PIN on the store PC too. Reopening a closed day takes the
+  approver's own till PIN at the store computer (2b-vi-c-4), so whoever approves reopens (`pilot-owner` or the
+  accountant) needs a till PIN on the box as well; on the internet copy the person reopening needs none.
 - The box signs in to head office as `pilot-cashier` for the demo; a dedicated `store-edge` login is a go-live step (UAT-05).
 - Head office assigns waves and routes to phones since 3 Oct 2026 (HA-1: `POST /v1/fulfilment/waves/:waveId/assignment`, `POST /v1/delivery/routes/:routeId/assignment`; the box pulls the open ones). The pack file's `wave` / `route` sections below are the hand-written override and still work for a first practice session; the screen says which source it is holding. A head-office screen for assigning is not built yet — the two routes are called through the API.
 - No TLS on the shop-network leg to the phones (OA-16: staff-only wifi is the control).

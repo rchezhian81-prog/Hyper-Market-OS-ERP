@@ -23,17 +23,20 @@ export interface TillPerson {
   readonly pin?: boolean;
   /** true = a manager who may also approve refunds at the till (`pos.return.approve`, ADR-0021). */
   readonly manager?: boolean;
+  /** Exactly these permissions in the pack (its own role), instead of the cashier / manager / floor roles. */
+  readonly permissions?: readonly string[];
 }
 
 /** The pack sections that name people and give them till authority (`pos.sale.sync`). */
 export function tillPeoplePack(people: readonly TillPerson[]): { people: unknown[]; roles: unknown[]; roleAssignments: unknown[] } {
-  const roleOf = (p: TillPerson) => (p.manager === true ? 'role-manager' : p.till === false ? 'role-floor' : 'role-cashier');
+  const roleOf = (p: TillPerson) => (p.permissions !== undefined ? `role-of-${p.userId}` : p.manager === true ? 'role-manager' : p.till === false ? 'role-floor' : 'role-cashier');
   return {
     people: people.map((p) => ({ userId: p.userId, displayName: p.displayName ?? p.userId, roleId: roleOf(p) })),
     roles: [
       { id: 'role-cashier', name: 'Cashier', permissions: ['pos.sale.sync', 'pos.return.process'] },
       { id: 'role-manager', name: 'Store manager', permissions: ['pos.sale.sync', 'pos.return.process', 'pos.return.approve'] },
       { id: 'role-floor', name: 'Floor staff', permissions: ['pos.exception.read'] },
+      ...people.filter((p) => p.permissions !== undefined).map((p) => ({ id: `role-of-${p.userId}`, name: `Role of ${p.userId}`, permissions: [...p.permissions!] })),
     ],
     roleAssignments: people.map((p) => ({ userId: p.userId, roleId: roleOf(p), branchScope: 'all' })),
   };

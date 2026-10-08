@@ -396,6 +396,7 @@ el('sign').addEventListener('click', () => {
   }
   tell(t('signed'), outcome.detail, true);
   paintChrome();
+  void syncToBox();
 });
 
 // ── Problems in the old data ────────────────────────────────────────────────
@@ -493,7 +494,26 @@ el('decide').addEventListener('click', () => {
   tell(t('decided'), outcome.detail, true);
   el('decide-reason').value = '';
   paintChrome();
+  void syncToBox();
 });
+
+/**
+ * Hand this screen's decisions to the store computer (2b-vi-c-4). The relay is the composition root's
+ * (`window.migrationRelay`), present only when the box told this screen where its socket is. The store computer seals each
+ * decision for the person it verified and carries it to head office; a box that cannot be reached leaves everything saved
+ * on this device, and it goes on the next try.
+ */
+async function syncToBox() {
+  const relay = window.migrationRelay;
+  if (!relay) return;
+  try {
+    await relay.syncNow();
+  } catch {
+    /* the queue is untouched; it goes on the next try */
+  }
+}
+for (const moment of ['online', 'focus', 'pageshow']) window.addEventListener(moment, () => { void syncToBox(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void syncToBox(); });
 
 // ── Running both ────────────────────────────────────────────────────────────
 

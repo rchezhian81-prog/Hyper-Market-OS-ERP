@@ -28,7 +28,7 @@ only when its slice merges with a test that proves it.
   - **c-3** the store seal on the box-relayed decisions — done (the day-reopen approver and the bill-capture checker are
     now said as unverified at head office);
   - **c-4** the day-reopen approver's own PIN at the store computer, the buyer's screen without a typed checker
-    (row 17b), and the migration screen handing its decisions to the store computer.
+    (row 17b), and the migration screen handing its decisions to the store computer — done.
 
 ## The 26 sites
 
@@ -87,7 +87,8 @@ only when its slice merges with a test that proves it.
 - **Back-office screens where the second person is a typed name.** In both, the box checks only that it is a
   different name. Each moves with its route:
   - day reopen (`day-reopen.js`) — c-3 seals the reopener and flags the typed approver
-    (`approver_not_verified_at_store`); the approver's own PIN at the store computer is slice **c-4**;
+    (`approver_not_verified_at_store`); **c-4:** the approver keys their own till PIN at the store computer, which
+    refuses the reopen without it and seals both people;
   - the buyer's invoice capture (`buying.js`) — **moved to slice c** (found in 2b-vi-b-3, recorded here as row
     17b). The buyer captures the bill on the store box, which may be offline, and the box relays it through
     `invoices/:id/synced`. Head office re-verifies both people's grants on that relay, but the checker is still a name
@@ -95,7 +96,7 @@ only when its slice merges with a test that proves it.
     act — so it moves with them in slice c instead of getting a one-off answer here. **c-3:** head office keeps the typed
     checker as a claim (`approvalClaimedBy`) and records the bill unchecked (`no_approval`,
     `approver_not_verified_at_store`); the check is the checker's own act at head office (the match). The screen drops
-    the typed checker in **c-4**.
+    the typed checker in **c-4** — done: the bill is captured by the buyer alone and carries no checker.
 - **Screens that collect a typed approver but run only a local engine** (not wired to the API). Each is wired with
   its route in slice **b** or **c**:
   - finance close and reopen — wired in b-2;

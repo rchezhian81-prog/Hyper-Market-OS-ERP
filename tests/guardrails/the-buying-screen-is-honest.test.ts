@@ -9,9 +9,9 @@ import { DEVICE_ITEM_STATES } from '../../packages/sync/src/device-relay';
  *
  * Every other screen in this product can be wrong and be corrected. This one pays suppliers. A
  * capture that wrote seventy-seven of eighty lines is an invoice matching no piece of paper
- * anywhere; a capture that wrote all eighty without anybody checking them is the same invoice with
- * nobody's name on it; and a capture of an invoice already captured is a supplier owed the money
- * twice. All three are ordinary-looking code.
+ * anywhere; a capture that carries a typed "checked by" name is a check nobody can trust (the
+ * check is a second person's own act at head office, under their own sign-in); and a capture of an
+ * invoice already captured is a supplier owed the money twice. All three are ordinary-looking code.
  *
  * The decisions guarded here are the ones a later change would remove because they look like
  * friction:
@@ -73,21 +73,34 @@ describe('nothing is written before somebody has seen what is wrong', () => {
     expect(preview, 'the preview button writes').not.toMatch(/captureInvoice|raisePurchaseOrder/);
   });
 
-  it('asks somebody else before it captures, and the model refuses a self-approval anyway', () => {
-    const capture = code(VIEW).slice(code(VIEW).indexOf("el('capture').addEventListener"));
-    const asked = capture.indexOf('askApprover');
-    const wrote = capture.indexOf('captureInvoice');
-    expect(asked, 'nobody is asked before a capture').toBeGreaterThan(-1);
-    expect(wrote, 'nothing is captured').toBeGreaterThan(asked);
-    // Belt and braces: the screen may only offer the list, never be the control.
-    expect(code(MODEL)).toMatch(/approved_by_the_person_who_captured_it/);
+  it('never asks the buyer for a typed checker — the check is a second person\'s own act at head office', () => {
+    // Head office does not trust a name typed on the buyer's screen (it records one only as a claim and
+    // flags the bill unapproved). Asking for it would be a control that controls nothing.
+    const capture = code(VIEW).slice(
+      code(VIEW).indexOf("el('capture').addEventListener"),
+      code(VIEW).indexOf('function renderSavedInvoices'),
+    );
+    expect(capture, 'the capture handler was not found').toMatch(/session\.captureInvoice\(/);
+    expect(capture, 'the capture asks for a typed checker').not.toMatch(/askApprover|approval|decidedBy/);
+    expect(code(VIEW), 'the view still offers a list of checkers').not.toMatch(/askApprover|buyingData\?\.approvers/);
+    // And the queued bill names no checker at all — only the buyer who captured it.
+    expect(code(MODEL)).not.toMatch(/approvedBy|approvedAt/);
+    expect(code(MODEL)).toMatch(/capturedBy: config\.buyerId/);
   });
 
   it('commits atomically, or not at all', () => {
     // Seventy-seven of eighty lines written is an invoice matching no piece of paper anywhere, and
-    // nobody can say which three are missing.
-    expect(code(MODEL)).toMatch(/commitImport\(/);
-    expect(code(MODEL), 'the capture writes line by line').not.toMatch(/for \(const line of .*\) \{[\s\S]{0,80}captured\.push/);
+    // nobody can say which three are missing. The whole previewed line set travels in ONE queued
+    // event, enqueued once — never line by line.
+    const capture = code(MODEL).slice(
+      code(MODEL).indexOf('captureInvoice: (input) =>'),
+      code(MODEL).indexOf('savedInvoices: () =>'),
+    );
+    expect(capture.length, 'the model\'s capture was not found').toBeGreaterThan(200);
+    expect(capture.match(/outbox\.enqueue\(/g) ?? [], 'the capture is not one single write').toHaveLength(1);
+    expect(capture).toMatch(/const captured: readonly InvoiceLine\[\] = Object\.freeze\(\[\.\.\.input\.preview\.lines\]\)/);
+    expect(capture).toMatch(/lines: captured/);
+    expect(capture, 'the capture writes line by line').not.toMatch(/\bfor \(|\.forEach\(|captured\.push/);
   });
 });
 
@@ -152,16 +165,8 @@ describe('what the box did not say is said', () => {
     expect(HTML).toMatch(/id="gaps"/);
   });
 
-  it('counts an empty approver list as a gap, because it stops the same work', () => {
-    // Nobody to approve is indistinguishable in effect from never having been told: either way the
-    // buyer cannot save anything, and a blank panel with only a Cancel button reads as a bug.
-    expect(code(ENTRY)).toMatch(/approvers === undefined \|\| data\.approvers\.length === 0/);
-    expect(code(VIEW)).toMatch(/people\.length === 0/);
-  });
-
-  it('never lets the screen invent who may approve', () => {
-    const list = code(VIEW).slice(code(VIEW).indexOf('const approvers ='));
-    expect(list.slice(0, 120)).toMatch(/window\.buyingData\?\.approvers/);
+  it('no longer needs an approver list — the check is a second person\'s own act at head office (2b-vi-c-4)', () => {
+    expect(code(ENTRY)).not.toMatch(/who_may_approve/);
   });
 });
 

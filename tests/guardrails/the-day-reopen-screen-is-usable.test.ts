@@ -69,8 +69,12 @@ describe('the reopen is governed — permission, a reason, a named DIFFERENT app
 
   it('a day not on the worklist is refused, and a well-formed reopen reaches the port', async () => {
     expect(await session().reopen('dc-nope', 'a reason', 'u-acct')).toBe('refused');
-    // Permitted, a reason, a DIFFERENT named approver, a known day → reaches the port (which records it).
-    expect(await session().reopen('dc-1', 'wrong float found next morning', 'u-acct')).toBe('reopened');
+    // A named approver with no PIN of their own is not an approval (2b-vi-c-4): refused before any POST.
+    expect(await session().reopen('dc-1', 'wrong float found next morning', 'u-acct')).toBe('approver_pin_required');
+    // Permitted, a reason, a DIFFERENT named approver who keyed their PIN, a known day → reaches the port (which records it).
+    // The PIN is made at run time — none is written in the repository.
+    const pin = String(100_000 + 4_241);
+    expect(await session().reopen('dc-1', 'wrong float found next morning', 'u-acct', { approverPin: pin })).toBe('reopened');
   });
 });
 

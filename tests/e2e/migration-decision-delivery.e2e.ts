@@ -76,10 +76,28 @@ const migrationData = (over: { userId?: string; loadOperator?: string; withTotal
 /** A server that serves the migration shell (GET, the operator context injected) and the static files the shell
  *  and its service worker need. No cloud routes: a decision here commits to the device outbox (hard rule #1) and
  *  the sync agent drains it later — the browser proof is that it is committed and queued, not that it is sent. */
-async function startShell(data: Record<string, unknown>): Promise<{ base: string; stop: () => Promise<void> }> {
+async function startShell(
+  data: Record<string, unknown>,
+  box?: { readonly batches: { source: string; items: { key: string; event: { type: string; payload: Record<string, unknown> } }[] }[] },
+): Promise<{ base: string; stop: () => Promise<void> }> {
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
       const [path = '/'] = (req.url ?? '/').split('?');
+      // A stub store computer (2b-vi-c-4): it takes the screen's batch and acknowledges every item.
+      if (box !== undefined && req.method === 'POST' && path === '/lane/outbox') {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const batch = JSON.parse(Buffer.concat(chunks).toString('utf8')) as (typeof box.batches)[number];
+        box.batches.push(batch);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ acks: batch.items.map((i) => ({ key: i.key, status: 'accepted' })) }));
+        return;
+      }
+      if (box !== undefined && req.method === 'GET' && path === '/lane/outbox/status') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ items: [] }));
+        return;
+      }
       const file = path === '/' || path === '/migration' ? 'migration.html' : path.replace(/^\//, '');
       try {
         const buf = await readFile(join(WEB_DIR, file));
@@ -89,7 +107,7 @@ async function startShell(data: Record<string, unknown>): Promise<{ base: string
           : 'application/octet-stream';
         let body = buf.toString('utf8');
         if (file.endsWith('.html')) {
-          const inject = `<script>window.migrationData = ${JSON.stringify(data).replace(/</g, '\\u003c')};</script>`;
+          const inject = `<script>window.migrationData = ${JSON.stringify(data).replace(/</g, '\\u003c')};${box === undefined ? '' : 'window.laneWriteBase = location.origin;'}</script>`;
           body = body.replace('<!--SCREEN-DATA-->', inject);
         }
         res.writeHead(200, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store' });
@@ -122,9 +140,9 @@ describe.skipIf(!HAVE_BROWSER)('the operator settles an exception, end to end in
     await browser?.close();
   });
 
-  /** Open the migration screen and wait for the session to boot. */
-  const openScreen = async (data: Record<string, unknown>) => {
-    const srv = await startShell(data);
+  /** Open the migration screen and wait for the session to boot (`box` = a stub store computer behind the lane socket). */
+  const openScreen = async (data: Record<string, unknown>, box?: Parameters<typeof startShell>[1]) => {
+    const srv = await startShell(data, box);
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(`${srv.base}/`, { waitUntil: 'load' });
@@ -164,6 +182,28 @@ describe.skipIf(!HAVE_BROWSER)('the operator settles an exception, end to end in
       await page.waitForSelector('#unsent:not([hidden])', { timeout: 10_000 });
       expect(await unsentHidden(page)).toBe(false);
       expect(((await page.textContent('#unsent')) ?? '')).toMatch(/1\b/);
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('the decision is handed to the store computer, as the person at the desk, from the device queue (2b-vi-c-4)', async () => {
+    const box = { batches: [] as NonNullable<Parameters<typeof startShell>[1]>['batches'] };
+    const { page, teardown } = await openScreen(migrationData({ userId: 'u-owner' }), box);
+    try {
+      await page.click('#tab-data');
+      await page.selectOption('#decide-id', 'EX-1');
+      await page.selectOption('#decide-action', 'correct');
+      await page.fill('#decide-reason', 'reconciled against the supplier GRN — the -4 was a mis-keyed return');
+      await page.click('#decide');
+      // Before this slice the decision lived in a queue nothing drained; now the store computer receives it.
+      const deadline = Date.now() + 10_000;
+      while (box.batches.length === 0 && Date.now() < deadline) await page.waitForTimeout(100);
+      const items = box.batches.flatMap((b) => b.items.map((i) => ({ source: b.source, type: i.event.type, payload: i.event.payload })));
+      expect(items).toEqual([expect.objectContaining({
+        source: 'manager', type: 'MigrationExceptionResolved',
+        payload: expect.objectContaining({ exceptionId: 'EX-1', decidedBy: 'u-owner', action: 'correct' }),
+      })]);
     } finally {
       await teardown();
     }

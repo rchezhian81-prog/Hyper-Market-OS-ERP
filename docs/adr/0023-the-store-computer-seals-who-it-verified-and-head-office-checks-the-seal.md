@@ -91,6 +91,25 @@ when their name was written — anyone holding the sync permission could post a 
 - Next slice (2b-vi-c-4): the day-reopen approver gives their own PIN at the box (the ADR-0021 approval, extended to
   this kind), and the buyer's screen stops asking for a typed checker.
 
+## Amendment — 8 October 2026 (Wave 2b-vi-c-4): the second person's own PIN; no typed checker
+
+1. **A day reopen is two verified people at the store computer.** The reopener is the person the box verified for the
+   request (the hosted sign-in) or their own staff ID and till PIN, holding `till.dayclose.read`; the approver keys
+   their **own** till PIN, holds `till.dayclose.approve`, and is never the reopener. The box checks both with the same
+   PIN register as the till (same guess limits; PINs are never written) and refuses the reopen otherwise — a typed name
+   is not an approval. It seals both: `deciderVerified` (kind `day_reopen`) and `approverVerified` (kind
+   `day_reopen_approval`), each over every word of the reopen. Head office checks both and flags
+   `approver_not_verified_at_store` / `approver_seal_does_not_match` for the approver.
+2. **The buyer's screen no longer asks who checked a bill.** The bill is captured by the signed-in buyer alone and
+   carries no checker; the check is a second person's own act at head office (the match, under their own sign-in).
+3. **The migration screen hands its decisions to the store computer** on the same device route as the manager's and
+   buyer's screens (`MigrationExceptionResolved`, `MigrationTotalSigned` allow-listed for the ERP surface), where they
+   are sealed for the person the box verified. Before, they sat in a queue nothing drained.
+
+**Consequence:** the owner and the accountant need a till PIN on the store computer to approve a reopen (one command,
+in-store-install Step 2b). Until the back-office screens on a real store box have a sign-in (OB-15), a decision made
+there is still relayed unsealed and flagged; a reopen works there by PINs alone.
+
 ## Reconsider-when
 
 Each store computer is enrolled with its own key (device identity, ADR-0019's identity server or a per-box certificate):

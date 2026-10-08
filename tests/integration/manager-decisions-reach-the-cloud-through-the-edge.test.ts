@@ -341,3 +341,25 @@ describe('the box seals a decision only for the person it verified (2b-vi-c-3 ·
   });
 });
 
+describe('the migration screen\'s decisions ride the same box route, sealed (2b-vi-c-4)', () => {
+  it('an exception resolved on the screen is relayed by a real box, sealed for the signed-in owner, and applied at head office', async () => {
+    const c = await cloud();
+    const EX = { exceptionId: 'EX-1', kind: 'duplicate_product', severity: 'low', confidence: 'probable', legacyIds: ['L-1', 'L-2'], evidence: 'same name and pack' };
+    expect((await c.h.request({ method: 'POST', path: '/v1/migration/exceptions', userId: 'u-mgr', tenantId: A, idempotencyKey: 'x1', body: { exceptions: [EX] } })).status).toBe(201);
+    const edge = await c.start();
+    const e = makeEvent({
+      id: 'MigrationExceptionResolved-EX-1', type: 'MigrationExceptionResolved', occurredAt: AT, idempotencyKey: `${A}:MigrationExceptionResolved:EX-1`,
+      source: 'migration-screen',
+      payload: { tenantId: A, cutoverId: 'cut-1', exceptionId: 'EX-1', action: 'migrate_as_is', decidedBy: 'u-owner', reason: 'both are genuinely sold' },
+    });
+    // The screen's source is the ERP surface ('manager'); a handheld may not send it.
+    expect((await postBatch(edge, [{ key: e.idempotencyKey, event: e }], 'warehouse')).acks[0]?.status).toBe('refused');
+    expect((await postBatch(edge, [{ key: e.idempotencyKey, event: e }], 'manager', 'u-owner')).acks[0]?.status).toBe('accepted');
+    expect((edge.deviceEventsOutbox.pending()[0]?.event.payload as Record<string, unknown>)['deciderVerified']).toMatchObject({ userId: 'u-owner' });
+    const pass = await edge.syncOnce!();
+    expect(pass.dead).toBe(0);
+    const ex = (await c.h.request({ method: 'GET', path: '/v1/migration/exceptions', userId: 'u-owner', tenantId: A })).body as { exceptions: { resolution?: { decidedBy: string } }[] };
+    expect(ex.exceptions[0]?.resolution).toMatchObject({ decidedBy: 'u-owner' });
+  });
+});
+

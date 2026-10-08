@@ -126,21 +126,20 @@ describe('audit observations: disconnected procurement flow', () => {
     expect(preview.readyToApprove).toBe(true);
     const input: Parameters<ReturnType<typeof createBuyingSession>['captureInvoice']>[0] = {
       invoiceId: 'INV-AUDIT', supplierId: 'supplier-audit', poId: 'PO-AUDIT', preview,
-      approval: { id: 'ap-audit', subjectType: 'supplier_invoice', subjectRef: 'INV-AUDIT',
-        requestedBy: 'buyer', branchId: null, value: null, status: 'approved', decidedBy: 'approver',
-        reason: 'checked_with_supplier', decidedAt: '2026-09-30T10:00:00Z' },
     };
     expect(s.captureInvoice(input)).toMatchObject({ ok: true, totalMinor: 1000 });
     // REGRESSION (F02, SP-7a): the invoice is on the durable device queue, so this same session's match finds it — and agrees.
     expect(s.match({ poId: 'PO-AUDIT', invoiceId: 'INV-AUDIT' })).toMatchObject({ blocked: false, payableMinor: 1000, withheldMinor: 0 });
     expect(s.captureInvoice(input)).toMatchObject({ ok: false, refusal: 'already_captured' });
     expect(s.savedInvoices()).toEqual([expect.objectContaining({ invoiceId: 'INV-AUDIT', supplierId: 'supplier-audit', poId: 'PO-AUDIT', lineCount: 1, totalMinor: 1000, state: 'saved_here' })]);
-    // The queued record is the shared contract: the invoice's own lines, both people named, relayable for the ERP surface,
+    // The queued record is the shared contract: the invoice's own lines, the buyer who captured it (no checker — the check
+    // is a second person's own act at head office), relayable for the ERP surface,
     // routed to head office's synced invoice route — nothing about the order or the delivery rides with it (F04).
     const item = outbox.find('invoice:INV-AUDIT')!;
     expect(item.event.type).toBe(SUPPLIER_INVOICE_CAPTURED);
-    expect(item.event.payload).toMatchObject({ invoiceId: 'INV-AUDIT', supplierId: 'supplier-audit', poId: 'PO-AUDIT', declaredTotalMinor: 1000, capturedBy: 'buyer', approvedBy: 'approver', storeId: 'store-1', source: 'buyer-screen', lines: [{ productId: 'p-audit', quantity: 10, unitPriceMinor: 100, lineTotalMinor: 1000 }] });
+    expect(item.event.payload).toMatchObject({ invoiceId: 'INV-AUDIT', supplierId: 'supplier-audit', poId: 'PO-AUDIT', declaredTotalMinor: 1000, capturedBy: 'buyer', storeId: 'store-1', source: 'buyer-screen', lines: [{ productId: 'p-audit', quantity: 10, unitPriceMinor: 100, lineTotalMinor: 1000 }] });
     expect(item.event.payload).not.toHaveProperty('ordered');
+    expect(item.event.payload).not.toHaveProperty('approvedBy');
     expect(isRelayable(SUPPLIER_INVOICE_CAPTURED, 'manager')).toBe(true);
     expect(pathFor(item.event)).toBe('/v1/purchase/invoices/INV-AUDIT/synced');
     // A "reload": a fresh boot over the SAME durable queue still knows the invoice — and still refuses to save it twice.

@@ -13,7 +13,7 @@
 //
 // Absent key (a composition with no pack signing key) → no check, no flag: nobody looked, and nothing is claimed.
 
-import { checkApprovalStamp, checkDeciderStamp, checkOperatorStamp, type DecisionKind, type TillSealFact } from '../../../packages/identity/src/till-seal';
+import { APPROVER_STAMP_FIELD, checkApprovalStamp, checkDeciderStamp, checkOperatorStamp, type DecisionKind, type TillSealFact } from '../../../packages/identity/src/till-seal';
 
 /** The flags a person's seal can raise. */
 export type CashierSealFlag = 'cashier_not_verified_at_store' | 'cashier_seal_does_not_match';
@@ -70,4 +70,20 @@ export function deciderSealFlags(key: Buffer | undefined, input: {
   if (key === undefined || input.named.trim() === '') return [];
   const check = checkDeciderStamp(key, input);
   return check === 'verified' ? [] : [check === 'missing' ? 'decider_not_verified_at_store' : 'decider_seal_does_not_match'];
+}
+
+/**
+ * The flag for the SECOND person of a relayed decision the box verified itself (2b-vi-c-4: a day reopen's approver, who
+ * gives their own PIN at the store computer) — or none when the box's seal on them is there and matches every word.
+ */
+export function approverSealFlags(key: Buffer | undefined, input: {
+  readonly tenantId: string;
+  readonly kind: DecisionKind;
+  readonly recordId: string;
+  readonly named: string;
+  readonly record: unknown;
+}): ('approver_not_verified_at_store' | 'approver_seal_does_not_match')[] {
+  if (key === undefined || input.named.trim() === '') return [];
+  const check = checkDeciderStamp(key, { ...input, field: APPROVER_STAMP_FIELD });
+  return check === 'verified' ? [] : [check === 'missing' ? 'approver_not_verified_at_store' : 'approver_seal_does_not_match'];
 }

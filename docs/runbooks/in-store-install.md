@@ -106,6 +106,11 @@ Nobody can take money at a till until the store computer knows them. Two things 
    will not show it again. Only a fingerprint of it is kept, in `till-credentials.json` beside the sales on disk, and
    that fingerprint is useless on any other computer.
 
+- **Reopening a closed day (2b-vi-c-4):** the person who approves a reopen keys their **own** till PIN on the Reopen a
+  locked day screen, and so does the person reopening (unless they signed in on the internet copy). So the owner and the
+  accountant each need a till PIN on this store computer too — issue them the same way. They do not need till
+  authority to have a PIN for this; the store computer checks that the approver holds `till.dayclose.approve` and the
+  reopener `till.dayclose.read`.
 - **Forgotten PIN:** run the same command again — the new PIN replaces the old one at once.
 - **Someone leaves, or a PIN may be known to someone else:** add `--revoke`. Their next sign-in is refused; a till
   they are still signed in at refuses their next sale as soon as head office removes their role from the pack.

@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiHarness, TEST_IDP, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
+import { prepareTillBox, pinOf, type TillPerson } from '../support/till-operator';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 
@@ -26,8 +27,18 @@ const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const AT = '2026-08-07T10:00:00.000Z';
 // The box and head office hold the same pack signing key, as a real store and its head office do (ADR-0023).
 const KEY = TEST_PACK_KEY;
-/** The person the box verified for the reopen request — the owner, signed in at the till with their PIN. */
-const OWNER_AT_THE_BOX = { userId: 'u-owner', via: 'pin', laneId: 'lane-1' };
+/**
+ * The people the box knows (its pack) and the till PINs issued on it (2b-vi-c-4): the owner may see and approve the locked
+ * days, the accountant may approve, the store manager may only see them, the cashier neither. PINs are made at run time.
+ */
+const PEOPLE: readonly TillPerson[] = [
+  { userId: 'u-owner', permissions: ['till.dayclose.read', 'till.dayclose.approve'] },
+  { userId: 'u-acct', permissions: ['till.dayclose.read', 'till.dayclose.approve'] },
+  { userId: 'u-mgr', permissions: ['till.dayclose.read'] },
+  { userId: 'u-lanecash' },
+];
+/** The owner reopens with their own PIN; the accountant approves with theirs. */
+const PINS = { reopenerPin: pinOf('u-owner'), approverPin: pinOf('u-acct') };
 
 /** A store pack the box loads from disk: a CHECKED (empty) exception register + a 02:00 cut-off. Its
  *  presence is what lets the day close — an absent loss-prevention register is a hard block by design. */
@@ -65,11 +76,10 @@ async function scene(opts: { readonly withPack: boolean }): Promise<{
   await h.provisionRole(A, 'u-mgr', 'store_manager');  // till.dayclose.sync + .read — the sync identity
   const dir = await mkdtemp(join(tmpdir(), 'sre-edge-day-close-'));
   cleanups.push(async () => { await rm(dir, { recursive: true, force: true }); });
-  let packFile: string | undefined;
-  if (opts.withPack) {
-    packFile = join(dir, 'store-pack.json');
-    await writeFile(packFile, PACK_JSON, 'utf8');
-  }
+  // With a pack: the box's people and their PINs, a lane, and its lane socket (where the PIN register lives).
+  const tillEnv = opts.withPack
+    ? { ...(await prepareTillBox({ dir, key: KEY, people: PEOPLE, pack: JSON.parse(PACK_JSON) as Record<string, unknown> })), EDGE_LANE_PORT: '0' }
+    : {};
 
   let online = true;
   globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {
@@ -90,7 +100,7 @@ async function scene(opts: { readonly withPack: boolean }): Promise<{
     CLOUD_API_URL: 'https://cloud.example.test',
     // The store's sync token — a store manager who holds till.dayclose.sync. The cloud authenticates it.
     CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-mgr', tenantId: A }),
-    ...(packFile === undefined ? {} : { EDGE_PACK_FILE: packFile }),
+    ...tillEnv,
   });
 
   return {
@@ -183,35 +193,36 @@ describe('the controlled reopen reaches head office through the real edge (M14-F
     expect((await dayCloses(s.h)).lockedCount).toBe(1);
 
     // Reopen it: the owner reopens, a DIFFERENT authority (the accountant) approved it (§28).
-    const outcome = await edge.reopenDay({ dayCloseId: 'dc-r1', reopenedBy: 'u-owner', reason: 'wrong float found next morning', approvedBy: 'u-acct', verifiedPerson: OWNER_AT_THE_BOX });
+    const outcome = await edge.reopenDay({ dayCloseId: 'dc-r1', reopenedBy: 'u-owner', reason: 'wrong float found next morning', approvedBy: 'u-acct', ...PINS });
     expect(outcome.reopened).toBe(true);
     expect(edge.dayCloseAgent?.health().unsentCount).toBe(1); // the reopen is queued, not yet drained
     await edge.syncOnce!();
     expect(edge.dayCloseAgent?.health().unsentCount).toBe(0);
 
     const body = await dayCloses(s.h);
-    // A reopened day is open again (locked:false) and the approver is recorded. The box vouched for the owner who reopened
-    // it (sealed); the approver's name was typed, and no store computer verified them — said, never hidden (2b-vi-c-3).
+    // A reopened day is open again (locked:false) and the approver is recorded. The box verified BOTH people by their own
+    // PINs and sealed them (2b-vi-c-4), so head office has nothing to say.
     expect(body.lockedCount).toBe(0);
     expect(body.dayCloses[0]).toMatchObject({ dayCloseId: 'dc-r1', locked: false, reopened: true, reopenedBy: 'u-owner', approvedBy: 'u-acct' });
-    expect(body.dayCloses[0]?.governanceFlags).toEqual(['approver_not_verified_at_store']);
+    expect(body.dayCloses[0]?.governanceFlags).toEqual([]);
   });
 
-  it('records-and-FLAGS a reopen whose approver lacks the §28 authority (never rejects — hard rule #10)', async () => {
+  it('REFUSES at the box an approver without the authority in the pack, a missing approver PIN, a wrong PIN, and an unconfirmed reopener (2b-vi-c-4)', async () => {
     const s = await scene({ withPack: true });
     const edge = await s.boot();
     expect((await edge.closeDay({ dayCloseId: 'dc-r2', closedBy: 'u-owner' })).closed).toBe(true);
     await edge.syncOnce!();
-
-    // The named approver (u-mgr, a store_manager) is a DIFFERENT person, so the box's §28 gate passes —
-    // but the store manager does NOT hold till.dayclose.approve. Only the cloud knows that, and it FLAGS it.
-    const outcome = await edge.reopenDay({ dayCloseId: 'dc-r2', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-mgr' });
-    expect(outcome.reopened).toBe(true);
+    const ask = (over: Record<string, unknown>) => edge.reopenDay({ dayCloseId: 'dc-r2', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-acct', ...PINS, ...over });
+    // The store manager may see the locked days but not approve a reopen: the box says so, before anything is written.
+    expect(await ask({ approvedBy: 'u-mgr', approverPin: pinOf('u-mgr') })).toMatchObject({ reopened: false, reason: expect.stringMatching(/approver was not confirmed/) });
+    // A typed approver with no PIN of their own is not an approval.
+    expect(await ask({ approverPin: undefined })).toMatchObject({ reopened: false, reason: expect.stringMatching(/their own till PIN/) });
+    // A wrong PIN for the approver, and a reopener who neither signed in nor gave their PIN.
+    const wrong = pinOf('u-acct') === pinOf('u-lanecash') ? pinOf('u-mgr') : pinOf('u-lanecash');
+    expect(await ask({ approverPin: wrong })).toMatchObject({ reopened: false });
+    expect(await ask({ reopenerPin: undefined })).toMatchObject({ reopened: false, reason: expect.stringMatching(/must confirm it is them/) });
     await edge.syncOnce!();
-
-    const row = (await dayCloses(s.h)).dayCloses.find((r) => r.dayCloseId === 'dc-r2');
-    expect(row).toMatchObject({ reopened: true, locked: false, approvedBy: 'u-mgr' });
-    expect(row?.governanceFlags).toContain('approver_lacks_authority');
+    expect((await dayCloses(s.h)).dayCloses.find((r) => r.dayCloseId === 'dc-r2')?.reopened).toBe(false);
   });
 
   it('REFUSES a self-approved reopen at the box (§28) — nothing reaches the cloud', async () => {
@@ -221,7 +232,7 @@ describe('the controlled reopen reaches head office through the real edge (M14-F
     await edge.syncOnce!();
 
     // The reopener names themselves as the approver — the engine's §28 gate throws, the box refuses.
-    const outcome = await edge.reopenDay({ dayCloseId: 'dc-r3', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-owner' });
+    const outcome = await edge.reopenDay({ dayCloseId: 'dc-r3', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-owner', reopenerPin: pinOf('u-owner'), approverPin: pinOf('u-owner') });
     expect(outcome.reopened).toBe(false);
     if (outcome.reopened) return;
     expect(outcome.reason).toMatch(/different person|approval/i);
@@ -232,17 +243,20 @@ describe('the controlled reopen reaches head office through the real edge (M14-F
     expect(body.dayCloses.find((r) => r.dayCloseId === 'dc-r3')?.reopened).toBe(false);
   });
 
-  it('a reopen asked by somebody other than the person the box verified goes unsealed, and head office says so (2b-vi-c-3)', async () => {
+  it('on the hosted copy the signed-in reopener needs no PIN; the approver still keys theirs; both are sealed (2b-vi-c-4)', async () => {
     const s = await scene({ withPack: true });
     await s.h.provisionRole(A, 'u-acct', 'accountant');
     const edge = await s.boot();
     expect((await edge.closeDay({ dayCloseId: 'dc-r5', closedBy: 'u-owner' })).closed).toBe(true);
     await edge.syncOnce!();
-    const outcome = await edge.reopenDay({ dayCloseId: 'dc-r5', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-acct', verifiedPerson: { ...OWNER_AT_THE_BOX, userId: 'u-cashier' } });
-    expect(outcome.reopened).toBe(true); // the unlock is the store's (P-01); the record says who was not vouched for
+    // The person the box verified for the request is the owner (the hosted sign-in) — but somebody else's session does not count.
+    expect(await edge.reopenDay({ dayCloseId: 'dc-r5', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-acct', approverPin: pinOf('u-acct'), verifiedPerson: { userId: 'u-lanecash', via: 'verified_sign_in', laneId: 'lane-1' } }))
+      .toMatchObject({ reopened: false });
+    const outcome = await edge.reopenDay({ dayCloseId: 'dc-r5', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-acct', approverPin: pinOf('u-acct'), verifiedPerson: { userId: 'u-owner', via: 'verified_sign_in', laneId: 'lane-1' } });
+    expect(outcome.reopened).toBe(true);
     await edge.syncOnce!();
     const row = (await dayCloses(s.h)).dayCloses.find((r) => r.dayCloseId === 'dc-r5');
-    expect(row?.governanceFlags).toEqual(['decider_not_verified_at_store', 'approver_not_verified_at_store']);
+    expect(row?.governanceFlags).toEqual([]);
   });
 
   it('refuses to reopen a day this box never closed', async () => {
@@ -259,7 +273,7 @@ describe('the controlled reopen reaches head office through the real edge (M14-F
     await s.h.provisionRole(A, 'u-acct', 'accountant');
     const edge = await s.boot();
     expect((await edge.closeDay({ dayCloseId: 'dc-r4', closedBy: 'u-owner' })).closed).toBe(true);
-    const reopen = await edge.reopenDay({ dayCloseId: 'dc-r4', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-acct', verifiedPerson: OWNER_AT_THE_BOX });
+    const reopen = await edge.reopenDay({ dayCloseId: 'dc-r4', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-acct', ...PINS });
     expect(reopen.reopened).toBe(true);
     await edge.stop(); // both the close and the reopen are on the disk, undrained
 
@@ -271,7 +285,7 @@ describe('the controlled reopen reaches head office through the real edge (M14-F
     const body = await dayCloses(s.h);
     expect(body.lockedCount).toBe(0);
     expect(body.dayCloses[0]).toMatchObject({ dayCloseId: 'dc-r4', reopened: true, locked: false, approvedBy: 'u-acct' });
-    // The seal on the reopener survived the restart: re-minted from the disk exactly as written.
-    expect(body.dayCloses[0]?.governanceFlags).toEqual(['approver_not_verified_at_store']);
+    // The seals on both people survived the restart: re-minted from the disk exactly as written.
+    expect(body.dayCloses[0]?.governanceFlags).toEqual([]);
   });
 });

@@ -81,7 +81,7 @@ describe('the lines must add up to the total printed on the paper', () => {
     expect(preview.readyToApprove).toBe(false);
 
     const outcome = session().captureInvoice({
-      invoiceId: 'INV-1', supplierId: 's1', preview, approval: approvalBy('u-manager', 'INV-1'),
+      invoiceId: 'INV-1', supplierId: 's1', preview,
     });
     expect(outcome).toMatchObject({ ok: false, refusal: 'does_not_add_up_to_the_invoice_total' });
     if (outcome.ok) return;
@@ -149,7 +149,7 @@ describe('the buyer sees every problem before anything is written', () => {
     const bad = ['productId,quantity,unitPriceMinor,lineTotalMinor', 'p1,1,10000,999'].join('\n');
     const preview = session().previewInvoice({ text: bad, declaredTotalMinor: 999 });
     const outcome = session().captureInvoice({
-      invoiceId: 'INV-2', supplierId: 's1', preview, approval: approvalBy('u-manager', 'INV-2'),
+      invoiceId: 'INV-2', supplierId: 's1', preview,
     });
     expect(outcome).toMatchObject({ ok: false, refusal: 'file_has_problems' });
     if (outcome.ok) return;
@@ -165,12 +165,12 @@ describe('the buyer sees every problem before anything is written', () => {
   });
 });
 
-describe('separation of duties, on the way in (§28)', () => {
+describe('capturing the bill — the buyer captures, head office checks (§28)', () => {
   const cleanPreview = () => session().previewInvoice({ text: CLEAN_FILE, declaredTotalMinor: CLEAN_TOTAL });
 
-  it('captures an approved invoice, all of it', () => {
+  it('captures a reconciling invoice, all of it', () => {
     const outcome = session().captureInvoice({
-      invoiceId: 'INV-3', supplierId: 's1', preview: cleanPreview(), approval: approvalBy('u-manager', 'INV-3'),
+      invoiceId: 'INV-3', supplierId: 's1', preview: cleanPreview(),
     });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
@@ -178,27 +178,27 @@ describe('separation of duties, on the way in (§28)', () => {
     expect(outcome.totalMinor).toBe(CLEAN_TOTAL);
   });
 
-  it('refuses an invoice nobody has approved', () => {
-    const outcome = session().captureInvoice({
-      invoiceId: 'INV-4', supplierId: 's1', preview: cleanPreview(),
-    });
-    expect(outcome).toMatchObject({ ok: false, refusal: 'not_approved' });
+  it('needs no checker: the signed-in buyer captures it, and NO checker name rides with it — the check is a second person\'s own act at head office', () => {
+    // Head office never trusted a name typed on the buyer's screen; the check is the match, under the
+    // checker's own sign-in. So the capture neither asks for one nor carries one.
+    const outbox = new SyncOutbox();
+    const s = session({}, outbox);
+    const outcome = s.captureInvoice({ invoiceId: 'INV-4', supplierId: 's1', preview: cleanPreview() });
+    expect(outcome.ok).toBe(true);
+    const payload = outbox.find('invoice:INV-4')!.event.payload as Record<string, unknown>;
+    expect(payload['capturedBy']).toBe(CONFIG.buyerId);
+    expect(payload).not.toHaveProperty('approvedBy');
+    expect(payload).not.toHaveProperty('approvedAt');
+    expect(payload).not.toHaveProperty('approval');
   });
 
-  it('refuses one the buyer approved themselves', () => {
-    const outcome = session().captureInvoice({
-      invoiceId: 'INV-5', supplierId: 's1', preview: cleanPreview(), approval: approvalBy('u-buyer', 'INV-5'),
-    });
-    expect(outcome).toMatchObject({ ok: false, refusal: 'approved_by_the_person_who_captured_it' });
-    if (outcome.ok) return;
-    expect(outcome.detail).toMatch(/somebody else has to look at it/i);
-  });
-
-  it('refuses an approval that belongs to a different invoice', () => {
-    const outcome = session().captureInvoice({
-      invoiceId: 'INV-6', supplierId: 's1', preview: cleanPreview(), approval: approvalBy('u-manager', 'INV-OTHER'),
-    });
-    expect(outcome).toMatchObject({ ok: false, refusal: 'not_approved' });
+  it('refuses a file with nothing in it, and queues nothing', () => {
+    const outbox = new SyncOutbox();
+    const s = session({}, outbox);
+    const empty = s.previewInvoice({ text: 'productId,quantity,unitPriceMinor,lineTotalMinor', declaredTotalMinor: 0 });
+    expect(s.captureInvoice({ invoiceId: 'INV-5', supplierId: 's1', preview: empty }))
+      .toMatchObject({ ok: false, refusal: 'nothing_to_capture' });
+    expect(outbox.all()).toEqual([]);
   });
 
   it('refuses to capture the same invoice twice', () => {
@@ -206,7 +206,7 @@ describe('separation of duties, on the way in (§28)', () => {
     const already: InvoiceLine[] = [{ productId: 'p1', quantity: 10, unitPriceMinor: 100_00, lineTotalMinor: 100_000 }];
     const s = createBuyingSession(CONFIG, ports({ capturedLines: () => already }), new SyncOutbox());
     const outcome = s.captureInvoice({
-      invoiceId: 'INV-7', supplierId: 's1', preview: cleanPreview(), approval: approvalBy('u-manager', 'INV-7'),
+      invoiceId: 'INV-7', supplierId: 's1', preview: cleanPreview(),
     });
     expect(outcome).toMatchObject({ ok: false, refusal: 'already_captured' });
     if (outcome.ok) return;
@@ -421,10 +421,10 @@ describe('raising a purchase order reaches head office (M06-FR-02 · §28)', () 
 describe('the capture is on the DURABLE device queue before the screen says ok (SP-7a · F02)', () => {
   const cleanPreview = (s: ReturnType<typeof session>) => s.previewInvoice({ text: CLEAN_FILE, declaredTotalMinor: CLEAN_TOTAL });
 
-  it('queues ONE SupplierInvoiceCaptured keyed on the invoice — the invoice\'s own lines, both people, the order it names, no figures about the order or the delivery', () => {
+  it('queues ONE SupplierInvoiceCaptured keyed on the invoice — the invoice\'s own lines, the buyer who captured it and no checker, the order it names, no figures about the order or the delivery', () => {
     const outbox = new SyncOutbox();
     const s = session({}, outbox);
-    const outcome = s.captureInvoice({ invoiceId: 'INV-8', supplierId: 's1', poId: 'PO-9', preview: cleanPreview(s), approval: approvalBy('u-manager', 'INV-8') });
+    const outcome = s.captureInvoice({ invoiceId: 'INV-8', supplierId: 's1', poId: 'PO-9', preview: cleanPreview(s) });
     expect(outcome.ok).toBe(true);
     const item = outbox.find('invoice:INV-8')!;
     expect(item.event.type).toBe(SUPPLIER_INVOICE_CAPTURED);
@@ -432,7 +432,7 @@ describe('the capture is on the DURABLE device queue before the screen says ok (
     expect(item.event.payload).toEqual({
       invoiceId: 'INV-8', supplierId: 's1', poId: 'PO-9',
       lines: [{ productId: 'p1', quantity: 10, unitPriceMinor: 100_00, lineTotalMinor: 100_000 }, { productId: 'p2', quantity: 5, unitPriceMinor: 50_00, lineTotalMinor: 25_000 }],
-      declaredTotalMinor: CLEAN_TOTAL, capturedBy: 'u-buyer', capturedAt: expect.any(String) as string, approvedBy: 'u-manager', approvedAt: AT,
+      declaredTotalMinor: CLEAN_TOTAL, capturedBy: 'u-buyer', capturedAt: expect.any(String) as string,
       storeId: null, source: 'buyer-screen',
     });
     expect(isRelayable(SUPPLIER_INVOICE_CAPTURED, 'manager')).toBe(true);
@@ -444,22 +444,22 @@ describe('the capture is on the DURABLE device queue before the screen says ok (
     const outbox = new SyncOutbox();
     const s = session({ capturedLines: () => [] }, outbox);
     expect(s.match({ poId: 'PO-1', invoiceId: 'INV-9' }).blocked).toBe(true); // not yet captured: NOT checked
-    s.captureInvoice({ invoiceId: 'INV-9', supplierId: 's1', preview: cleanPreview(s), approval: approvalBy('u-manager', 'INV-9') });
+    s.captureInvoice({ invoiceId: 'INV-9', supplierId: 's1', preview: cleanPreview(s) });
     expect(s.match({ poId: 'PO-1', invoiceId: 'INV-9' })).toMatchObject({ blocked: false, payableMinor: CLEAN_TOTAL, withheldMinor: 0 });
-    expect(s.captureInvoice({ invoiceId: 'INV-9', supplierId: 's1', preview: cleanPreview(s), approval: approvalBy('u-manager', 'INV-9') }))
+    expect(s.captureInvoice({ invoiceId: 'INV-9', supplierId: 's1', preview: cleanPreview(s) }))
       .toMatchObject({ ok: false, refusal: 'already_captured' });
     // A reload — a new session over the SAME durable queue — knows it too.
     const reloaded = session({ capturedLines: () => [] }, outbox);
     expect(reloaded.match({ poId: 'PO-1', invoiceId: 'INV-9' })).toMatchObject({ blocked: false, payableMinor: CLEAN_TOTAL });
-    expect(reloaded.captureInvoice({ invoiceId: 'INV-9', supplierId: 's1', preview: cleanPreview(reloaded), approval: approvalBy('u-manager', 'INV-9') }))
+    expect(reloaded.captureInvoice({ invoiceId: 'INV-9', supplierId: 's1', preview: cleanPreview(reloaded) }))
       .toMatchObject({ ok: false, refusal: 'already_captured' });
   });
 
   it('a refused capture queues nothing', () => {
     const outbox = new SyncOutbox();
     const s = session({}, outbox);
-    s.captureInvoice({ invoiceId: 'INV-10', supplierId: 's1', preview: cleanPreview(s) }); // nobody approved
-    s.captureInvoice({ invoiceId: 'INV-11', supplierId: 's1', preview: cleanPreview(s), approval: approvalBy('u-buyer', 'INV-11') }); // self-approved
+    s.captureInvoice({ invoiceId: 'INV-10', supplierId: 's1', preview: s.previewInvoice({ text: CLEAN_FILE, declaredTotalMinor: 1 }) }); // does not add up
+    s.captureInvoice({ invoiceId: 'INV-11', supplierId: 's1', preview: s.previewInvoice({ text: 'productId,quantity,unitPriceMinor,lineTotalMinor\np1,1,10000,999', declaredTotalMinor: 999 }) }); // a bad line
     expect(outbox.all()).toEqual([]);
     expect(s.savedInvoices()).toEqual([]);
   });
@@ -467,8 +467,8 @@ describe('the capture is on the DURABLE device queue before the screen says ok (
   it('lists every saved invoice newest first with the five shared state words — from the queue and the box\'s word, never the screen\'s own say-so', () => {
     const outbox = new SyncOutbox();
     const s = session({}, outbox);
-    s.captureInvoice({ invoiceId: 'INV-12', supplierId: 's1', poId: 'PO-1', preview: cleanPreview(s), approval: approvalBy('u-manager', 'INV-12') });
-    s.captureInvoice({ invoiceId: 'INV-13', supplierId: 's2', preview: cleanPreview(s), approval: approvalBy('u-manager', 'INV-13') });
+    s.captureInvoice({ invoiceId: 'INV-12', supplierId: 's1', poId: 'PO-1', preview: cleanPreview(s) });
+    s.captureInvoice({ invoiceId: 'INV-13', supplierId: 's2', preview: cleanPreview(s) });
     expect(s.savedInvoices().map((w) => [w.invoiceId, w.supplierId, w.poId, w.lineCount, w.totalMinor, w.state])).toEqual([
       ['INV-13', 's2', null, 2, CLEAN_TOTAL, 'saved_here'],
       ['INV-12', 's1', 'PO-1', 2, CLEAN_TOTAL, 'saved_here'],
