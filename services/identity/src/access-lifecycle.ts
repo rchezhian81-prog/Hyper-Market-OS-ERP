@@ -113,6 +113,14 @@ export interface AccessLifecycleDeps {
   };
   /** Seal the access change into the domain audit trail (M34-FR-01), attributed to the approver. */
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /**
+   * The person's sign-in at the identity server (OB-15-c). A leaver's is switched OFF and their open sessions there
+   * ended BEFORE anything is recorded — so they cannot sign in again for a fresh token — and when the identity server
+   * cannot be reached, nothing changes (503). Absent: this deployment signs nobody in through the identity server.
+   */
+  readonly signIns?: {
+    readonly end: (tenantId: string, userId: string, endedBy: string, at: string) => Promise<'ended' | 'none'>;
+  };
   /** Head office's maker-checker engine (ADR-0024): the approver approved this change in their own session. Optional
    *  on a bare stub (then every approval is unknown, and nothing changes); the running system provides it. */
   readonly approvals?: ApprovalPort;
@@ -124,6 +132,8 @@ export interface LifecycleOutcome extends LifecycleResult {
   readonly recorded: boolean;
   /** True when every token of the person issued up to this moment was revoked. */
   readonly sessionsClosed: boolean;
+  /** A leaver's sign-in at the identity server: switched off, none there, or no identity server connected. */
+  readonly signIn?: 'ended' | 'none' | 'not_connected';
 }
 
 export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route[] {
@@ -249,6 +259,25 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
           });
         }
 
+        // A leaver's sign-in is switched off FIRST: a leaver who could still sign in would get a fresh token that no
+        // revocation of the old ones covers. If the identity server cannot be reached, nothing changes.
+        let signIn: LifecycleOutcome['signIn'];
+        if (request.event === 'leaver') {
+          if (deps.signIns === undefined) signIn = 'not_connected';
+          else {
+            try {
+              signIn = await deps.signIns.end(ctx.tenantId, userId, approvedBy, at);
+            } catch (e) {
+              throw apiError(503, {
+                code: 'identity_server_unavailable',
+                whatHappened: `${userId}'s sign-in could not be switched off (${e instanceof Error ? e.message : 'no answer'}), so nothing was changed — a leaver who can still sign in has not left.`,
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'Try again when the identity server answers. Nobody\'s access changed.',
+              });
+            }
+          }
+        }
+
         // Every rule passed: the approval is spent — once — and only then does anybody's access change.
         await opened.spend();
         await deps.recordChange(ctx.tenantId, {
@@ -276,7 +305,7 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
           },
           correlationId: requestId,
         });
-        const outcome: LifecycleOutcome = { ...result, recorded: true, sessionsClosed: result.closeSessions };
+        const outcome: LifecycleOutcome = { ...result, recorded: true, sessionsClosed: result.closeSessions, ...(signIn === undefined ? {} : { signIn }) };
         return { status: 200, body: outcome };
       },
     },

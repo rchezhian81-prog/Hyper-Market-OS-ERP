@@ -135,6 +135,19 @@ const audienceIncludes = (aud: unknown, ours: string): boolean =>
   typeof aud === 'string' ? aud === ours
     : Array.isArray(aud) && aud.some((a) => a === ours);
 
+// RFC 8176 method values. A sign-in that used something the person KNOWS and something they HAVE or ARE is a
+// multiple-factor one ("mfa") — whether or not the identity server wrote that word. The self-hosted identity server
+// records the methods themselves (`pwd`, `otp`), so a password + one-time code reaches the step-up check as
+// `pwd otp mfa` (OB-15-c). One method alone, or two of the same kind, never becomes "mfa".
+const KNOWS = new Set(['pwd', 'pin', 'kba']);
+const HAS_OR_IS = new Set(['otp', 'hwk', 'swk', 'sc', 'sms', 'tel', 'face', 'fpt', 'iris', 'retina', 'vbm', 'pop']);
+
+/** The methods, with `mfa` added when they show a factor the person knows AND one they have or are. */
+export function withMultiFactor(amr: readonly string[]): readonly string[] {
+  if (amr.includes('mfa')) return amr;
+  return amr.some((m) => KNOWS.has(m)) && amr.some((m) => HAS_OR_IS.has(m)) ? [...amr, 'mfa'] : amr;
+}
+
 /**
  * Verify a bearer token and resolve it to a principal.
  *
@@ -266,7 +279,7 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
   const authTime = typeof authTimeClaim === 'number' ? authTimeClaim : undefined;
   const amrClaim = payload['amr'];
   const amr = Array.isArray(amrClaim)
-    ? amrClaim.filter((m): m is string => typeof m === 'string')
+    ? withMultiFactor(amrClaim.filter((m): m is string => typeof m === 'string'))
     : undefined;
 
   const jtiClaim = payload['jti'];

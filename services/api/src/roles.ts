@@ -321,6 +321,10 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'platform.job.read', 'platform.job.manage',
       'platform.service.read', 'platform.service.manage',
       'platform.partner.manage', 'platform.partner.read',
+      // OB-15-c · M02-FR-01: give a NAMED person — never a shared account, never somebody already holding a role — a
+      // sign-in at the identity server, and see who has one. It grants no authority: roles stay the owner's
+      // maker-checker act (`identity.role.grant` is absent here, by design).
+      'platform.person.provision', 'platform.person.read',
     ],
   },
   {

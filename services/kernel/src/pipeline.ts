@@ -458,7 +458,7 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
         // same key is refused — answering it with the stored result would report success for
         // something that never ran.
         if (seen.requestHash !== requestHash) throw idempotencyKeyReused();
-        const replay = sealed(seen.status, seen.body, principal.tenantId, traceId, true);
+        const replay = sealed(seen.status, seen.body, principal.tenantId, traceId, true, route.shownOnce !== undefined);
         await writeAudit(replay.status);
         return finish(replay);
       }
@@ -484,13 +484,13 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       ...(reauth === undefined ? {} : { reauth }),
     });
 
-    const response = sealed(result.status, result.body, principal.tenantId, traceId, false);
+    const response = sealed(result.status, result.body, principal.tenantId, traceId, false, route.shownOnce !== undefined);
 
     // Stored only after the outbound guards passed. Banking a reply that must not be sent would
-    // make every replay return it too.
+    // make every replay return it too. A field shown once is never banked at all (hard rule #4).
     if (write && key !== undefined && response.status < 400) {
       await opts.idempotency.put(principal.tenantId, key, {
-        requestHash, status: result.status, body: result.body,
+        requestHash, status: result.status, body: withheldForReplay(result.body, route.shownOnce),
       });
     }
 
@@ -520,9 +520,20 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
   }
 }
 
+/** The value a replay carries in place of a field that was shown once. */
+export const WITHHELD_ON_REPLAY = 'withheld — it was shown once, to the person who asked';
+
+/** The reply as it may be kept for a replay: every field shown once replaced by {@link WITHHELD_ON_REPLAY}. */
+export function withheldForReplay(body: unknown, shownOnce: readonly string[] | undefined): unknown {
+  if (shownOnce === undefined || body === null || typeof body !== 'object' || Array.isArray(body)) return body;
+  const kept: Record<string, unknown> = { ...(body as Record<string, unknown>) };
+  for (const f of shownOnce) if (f in kept) kept[f] = WITHHELD_ON_REPLAY;
+  return kept;
+}
+
 /** Apply the outbound guards and build the reply. */
 function sealed(
-  status: number, body: unknown, tenantId: string, traceId: string, replayed: boolean,
+  status: number, body: unknown, tenantId: string, traceId: string, replayed: boolean, noStore = false,
 ): HttpResponse {
   const findings = scanOutbound(body, tenantId);
   if (findings.length > 0) {
@@ -542,6 +553,7 @@ function sealed(
       'content-type': 'application/json',
       'x-trace-id': traceId,
       ...(replayed ? { 'idempotent-replay': 'true' } : {}),
+      ...(noStore ? { 'cache-control': 'no-store' } : {}),
     },
   };
 }

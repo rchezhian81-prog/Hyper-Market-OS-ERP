@@ -103,4 +103,42 @@ describe('the lifecycle route at the handler', () => {
     expect(l.changes).toHaveLength(0);
     expect(l.revocations).toHaveLength(0);
   });
+
+  // OB-15-c: a leaver who can still sign in at the identity server gets a fresh token no revocation covers.
+  it('a leaver\'s sign-in at the identity server is switched off BEFORE anything is recorded, and the outcome says so', async () => {
+    const order: string[] = [];
+    const l = lab({
+      held: [{ userId: 'u-leaver', roleId: 'cashier', branchScope: 'all' }],
+      signIns: { end: async (_t, userId, endedBy) => { order.push(`end ${userId} by ${endedBy}`); return 'ended'; } },
+      recordChange: () => { order.push('recorded'); },
+    });
+    const res = await l.call({ event: 'leaver', userId: 'u-leaver', reason: 'left' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ recorded: true, sessionsClosed: true, signIn: 'ended' });
+    expect(order).toEqual(['end u-leaver by u-approver', 'recorded']);
+  });
+
+  it('when the identity server cannot switch a leaver off, NOTHING changes: 503, no grant removed, no session cut, the approval not spent', async () => {
+    const l = lab({
+      held: [{ userId: 'u-leaver', roleId: 'cashier', branchScope: 'all' }],
+      signIns: { end: async () => { throw new Error('identity server: not reachable'); } },
+    });
+    expect(await failure(l.call({ event: 'leaver', userId: 'u-leaver', reason: 'left' })))
+      .toEqual({ status: 503, code: 'identity_server_unavailable' });
+    expect(l.changes).toHaveLength(0);
+    expect(l.revocations).toHaveLength(0);
+    // The same approval still works once the identity server answers.
+    const again = lab({ held: [{ userId: 'u-leaver', roleId: 'cashier', branchScope: 'all' }], signIns: { end: async () => 'none' } });
+    expect((await again.call({ event: 'leaver', userId: 'u-leaver', reason: 'left' })).body).toMatchObject({ recorded: true, signIn: 'none' });
+  });
+
+  it('a mover or joiner never touches the sign-in; a deployment without the identity server says "not connected" for a leaver', async () => {
+    let ended = 0;
+    const l = lab({ held: [{ userId: 'u-m', roleId: 'cashier', branchScope: ['b1'] }], signIns: { end: async () => { ended += 1; return 'ended'; } } });
+    const moved = await l.call({ event: 'mover', userId: 'u-m', reason: 'moved', grants: [{ userId: 'u-m', roleId: 'cashier', branchScope: ['b2'] }] });
+    expect(moved.body).not.toHaveProperty('signIn');
+    expect(ended).toBe(0);
+    const bare = lab({ held: [{ userId: 'u-leaver', roleId: 'cashier', branchScope: 'all' }] });
+    expect((await bare.call({ event: 'leaver', userId: 'u-leaver', reason: 'left' })).body).toMatchObject({ signIn: 'not_connected' });
+  });
 });

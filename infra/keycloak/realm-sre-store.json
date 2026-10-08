@@ -209,6 +209,20 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "sre-provisioner",
+      "name": "Head office's provisioner",
+      "description": "Head office gives named people a sign-in and ends a leaver's (OB-15-c). Manages users only. Its secret is generated here on first start, never written in this file.",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "frontchannelLogout": false,
+      "protocol": "openid-connect"
     }
   ],
   "components": {
@@ -223,5 +237,19 @@
         }
       }
     ]
-  }
+  },
+  "users": [
+    {
+      "username": "service-account-sre-provisioner",
+      "enabled": true,
+      "serviceAccountClientId": "sre-provisioner",
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-users",
+          "query-users"
+        ]
+      }
+    }
+  ]
 }

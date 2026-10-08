@@ -244,6 +244,8 @@ import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashH
 import type { IdentityDeps, GrantRequestRecord, PendingGrantRequest, GrantRejection } from '../../identity/src/index';
 import type { TokenRevocation, TokenRevocationStore } from '../../identity/src/revocation';
 import type { AccessLifecycleDeps, LifecycleChange } from '../../identity/src/access-lifecycle';
+import { foldPeople, type PeopleDeps, type PersonSignInEvent } from '../../identity/src/people';
+import type { IdentityDirectory } from '../../identity/src/identity-directory';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } from '../../platform/src/index';
 import { inMemorySettings } from '../../platform/src/index';
@@ -380,6 +382,51 @@ export async function effectiveGrants(store: EventStore, tenantId: string): Prom
     else live.delete(k);
   }
   return [...live.values()].flat();
+}
+
+const PERSON_SIGN_IN_EVENTS = new Set(['PersonSignInRequested', 'PersonSignInIssued', 'PersonSignInEnded', 'PersonSignInWithdrawn']);
+
+/**
+ * People's sign-ins at the identity server (OB-15-c): the attempt, the outcome and the end, on the identity ledger —
+ * never a password. Whether a person holds a role is read from the same effective grants every reader folds.
+ */
+export function peopleAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Pick<PeopleDeps, 'now' | 'people' | 'recordPerson' | 'holdsAnyRole'> {
+  const read = async (tenantId: string): Promise<PersonSignInEvent[]> =>
+    (await input.store.readStream(tenantId, STREAM.identity))
+      .filter((e) => PERSON_SIGN_IN_EVENTS.has(e.event.type))
+      .map((e) => ({ ...payloadOf<Omit<PersonSignInEvent, 'type'>>(e), type: e.event.type } as PersonSignInEvent));
+  return {
+    now: input.now,
+    people: async (tenantId) => foldPeople(await read(tenantId)),
+    recordPerson: async (tenantId, event) => {
+      const { type, ...payload } = event;
+      const key = `${type}-${event.userId}-${event.at}`;
+      await input.store.append(tenantId, STREAM.identity, makeEvent({
+        id: `person-${key}`, type, occurredAt: event.at,
+        idempotencyKey: `person-${tenantId}-${key}`, source: 'api/identity', payload,
+      }));
+    },
+    holdsAnyRole: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId),
+  };
+}
+
+/** A leaver's sign-in, switched off at the identity server and the end recorded on the ledger (OB-15-c). */
+export function signInEnder(input: { readonly directory: IdentityDirectory; readonly people: ReturnType<typeof peopleAdapter> }): {
+  readonly end: (tenantId: string, userId: string, endedBy: string, at: string) => Promise<'ended' | 'none'>;
+} {
+  return {
+    end: async (tenantId, userId, endedBy, at) => {
+      const outcome = await input.directory.end(userId);
+      const known = (await input.people.people(tenantId)).some((p) => p.userId === userId && p.state !== 'ended');
+      if (outcome === 'ended' || known) {
+        await input.people.recordPerson(tenantId, { type: 'PersonSignInEnded', userId, endedBy, reason: 'leaver', at });
+      }
+      return outcome;
+    },
+  };
 }
 
 /**
