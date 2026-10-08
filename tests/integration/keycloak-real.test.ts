@@ -125,7 +125,7 @@ describe.skipIf(!READY)('a real Keycloak, with the repository realm, signs a per
   it('the password grant is off for the product client: the way in is the browser flow', async () => {
     const res = await fetch(`${ISSUER}/protocol/openid-connect/token`, {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'password', client_id: 'sre-web', username: 'anyone', password: 'anything' }).toString(),
+      body: new URLSearchParams({ grant_type: 'password', client_id: 'sre-web', username: 'anyone', password: randomBytes(12).toString('hex') }).toString(),
     });
     expect([400, 401]).toContain(res.status);
     expect(((await res.json()) as { error?: string }).error).toBe('unauthorized_client');
