@@ -137,6 +137,7 @@ import { connectorDeliveryRoutes } from '../../platform/src/connector-delivery';
 import { secretsRoutes } from '../../platform/src/secrets';
 import { orgStructureRoutes } from '../../platform/src/org-structure';
 import { identityRoutes } from '../../identity/src/index';
+import { jwksKeyring } from '../../identity/src/jwks';
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../identity/src/revocation';
 import { delegationRoutes } from '../../identity/src/delegation';
 import { approvalDecisionRoutes, type ApprovalDecisionRecord, type AppliedDecision } from '../../identity/src/approval-decisions';
@@ -1315,6 +1316,23 @@ export async function startApi(
   }
   const settings = config.value!;
 
+  // The self-hosted identity server's public keys (OB-15 · ADR-0019): both settings or neither — half a configuration is
+  // refused rather than half-believed. Fetched once now; a server not yet up leaves its tokens refused until a key is held
+  // (the keyring refreshes when a token names a key it has not seen, at most every 30 s). Nothing on a sale path asks.
+  const oidcIssuer = settings['IDP_OIDC_ISSUER'];
+  const oidcJwks = settings['IDP_OIDC_JWKS_URL'];
+  if ((oidcIssuer === undefined) !== (oidcJwks === undefined)) {
+    err('\nIDP_OIDC_ISSUER and IDP_OIDC_JWKS_URL go together — set both to sign people in through the identity server, or neither.\n\n');
+    return undefined;
+  }
+  const identityServerKeys = oidcJwks === undefined ? undefined : jwksKeyring({
+    url: oidcJwks, fetch: globalThis.fetch, onProblem: (detail) => { err(`identity server: ${detail}\n`); },
+  });
+  if (identityServerKeys !== undefined) {
+    const held = await identityServerKeys.refresh();
+    out(`identity server: ${held} signing key(s) held for ${oidcIssuer}\n`);
+  }
+
   // 2 — Persistence, before the surface, because the surface is built around it.
   //
   // A connection POOL, not a single client. A single `pg.Client` serialised every query across all
@@ -1424,12 +1442,25 @@ export async function startApi(
     // (`IDP_MAX_TOKEN_LIFETIME_SECONDS`) or the tenant has revoked it — by id, or every token of a user issued
     // before a moment. The revocation list is the one the identity routes write to.
     authenticate: revocationAwareAuthenticator(
-      {
-        secret: settings['IDP_SIGNING_KEY']!,
-        issuer: settings['IDP_ISSUER']!,
-        audience: settings['IDP_AUDIENCE']!,
-        maxLifetimeSeconds: Number(settings['IDP_MAX_TOKEN_LIFETIME_SECONDS']),
-      },
+      [
+        {
+          secret: settings['IDP_SIGNING_KEY']!,
+          issuer: settings['IDP_ISSUER']!,
+          audience: settings['IDP_AUDIENCE']!,
+          maxLifetimeSeconds: Number(settings['IDP_MAX_TOKEN_LIFETIME_SECONDS']),
+        },
+        // The self-hosted identity server (OB-15 · ADR-0019), when configured: its tokens are checked against its own
+        // published public keys, for exactly its issuer and our audience, under the same lifetime ceiling.
+        ...(identityServerKeys === undefined ? [] : [{
+          algorithm: 'RS256' as const,
+          secret: '',
+          keyring: identityServerKeys,
+          subjectClaim: 'sre_user_id',
+          issuer: settings['IDP_OIDC_ISSUER']!,
+          audience: settings['IDP_AUDIENCE']!,
+          maxLifetimeSeconds: Number(settings['IDP_MAX_TOKEN_LIFETIME_SECONDS']),
+        }]),
+      ],
       revocations,
       (reason) => { err(`auth refused: ${reason}\n`); },
     ),

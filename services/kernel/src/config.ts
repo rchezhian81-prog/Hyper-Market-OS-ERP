@@ -163,6 +163,12 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   // enough for the store box's 30-day sync token, and the owner may tighten it (a human sign-in from a real IdP
   // is minutes to hours anyway). Never widened silently: it is a setting, read at boot.
   { key: 'IDP_MAX_TOKEN_LIFETIME_SECONDS', numeric: true, fallback: '2678400' },
+  // The self-hosted identity server (Keycloak, ADR-0019 · OB-15) — optional while the pilot sign-in retires. When both
+  // are set, head office ALSO believes tokens that server signed (RS256), checked against the public keys it publishes
+  // at IDP_OIDC_JWKS_URL, issued by exactly IDP_OIDC_ISSUER (the realm's address), for IDP_AUDIENCE. Public keys only:
+  // nothing here can sign.
+  { key: 'IDP_OIDC_ISSUER', optional: true },
+  { key: 'IDP_OIDC_JWKS_URL', optional: true },
   { key: 'PORT', numeric: true, fallback: '8081' },
   { key: 'NODE_ENV', oneOf: ['development', 'test', 'production'], fallback: 'production' },
   { key: 'MIGRATION_TARGET_KIND', oneOf: ['rehearsal', 'staging', 'local', 'production'], fallback: 'rehearsal' },
