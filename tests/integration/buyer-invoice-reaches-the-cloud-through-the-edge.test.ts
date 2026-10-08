@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
+import { apiHarness, TEST_IDP, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
@@ -30,7 +30,8 @@ import type { StoredMatch, SupplierInvoiceRecord } from '../../services/purchase
  * Synthetic data only; nothing touches production (hard rule #7).
  */
 
-const KEY = ['buyer', 'invoice', 'edge', 'signing', 'key'].join('-').padEnd(48, '0');
+// The box and head office hold the same pack signing key, as a real store and its head office do (ADR-0023).
+const KEY = TEST_PACK_KEY;
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const AT = '2026-09-30T10:00:00.000Z';
 const PACK_JSON = JSON.stringify({ version: 1, policies: { tradingDayCutoff: '02:00', storeId: 'store-1' }, lossPreventionRules: [] });
@@ -52,9 +53,10 @@ const invoiceEvent = (invoiceId: string, over: Record<string, unknown> = {}) => 
   },
 });
 
-const postBatch = async (edge: EdgeProcess, items: unknown[], source = 'manager'): Promise<{ status: number; acks: DeviceAck[] }> => {
+/** `user` is the person the hosted copy's front says is signed in (X-Sre-User) — the box seals the bill they captured. */
+const postBatch = async (edge: EdgeProcess, items: unknown[], source = 'manager', user?: string): Promise<{ status: number; acks: DeviceAck[] }> => {
   const res = await savedFetch(`http://127.0.0.1:${edge.lane!.port}/lane/outbox`, {
-    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:8091' },
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:8091', ...(user === undefined ? {} : { 'x-sre-user': user }) },
     body: JSON.stringify({ source, items }),
   });
   const body = (await res.json()) as { acks: DeviceAck[] };
@@ -118,6 +120,7 @@ async function cloud(): Promise<{ h: ApiHarness; start: () => Promise<EdgeProces
   const start = async (): Promise<EdgeProcess> => {
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_PACK_FILE: packFile,
+      EDGE_LANE_ID: 'lane-1', EDGE_LANE_TRUST_FORWARDED_USER: '1', // the hosted copy: the front's sign-in names the buyer
       CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
@@ -133,7 +136,7 @@ describe('the buyer\'s invoice: device queue → box (durable) → head office (
     const c = await cloud();
     const first = await c.start();
     const e = invoiceEvent('INV-1');
-    const { status, acks } = await postBatch(first, [{ key: e.idempotencyKey, event: e }]);
+    const { status, acks } = await postBatch(first, [{ key: e.idempotencyKey, event: e }], 'manager', 'u-buyer');
     expect(status).toBe(200);
     expect(acks).toEqual([{ key: 'invoice:INV-1', status: 'accepted' }]);
     expect(await recordsOn(first)).toEqual(['invoice:INV-1']);
@@ -144,7 +147,9 @@ describe('the buyer\'s invoice: device queue → box (durable) → head office (
     expect(pass.dead).toBe(0);
     expect((await statusOf(first, ['invoice:INV-1']))[0]?.state).toBe('posted');
     const read = (await invoiceAt(c.h, 'INV-1')).body as { invoice: SupplierInvoiceRecord; match: StoredMatch | null };
-    expect(read.invoice).toMatchObject({ invoiceId: 'INV-1', supplierId: 'sup-1', poId: 'po-1', totalMinor: 50_000, capturedBy: 'u-buyer', approvedBy: 'u-mgr', relayedBy: 'u-box', source: 'buyer-screen', storeId: 'store-1', governanceFlags: [] });
+    expect(read.invoice).toMatchObject({ invoiceId: 'INV-1', supplierId: 'sup-1', poId: 'po-1', totalMinor: 50_000, capturedBy: 'u-buyer', approvedBy: null, approvalClaimedBy: 'u-mgr', relayedBy: 'u-box', source: 'buyer-screen', storeId: 'store-1' });
+    // The box vouched for the buyer it saw capture the bill; the manager the screen typed is a claim, not a check (2b-vi-c-3).
+    expect(read.invoice.governanceFlags).toEqual(['no_approval', 'approver_not_verified_at_store']);
     expect(read.match).toBeNull();
 
     // The match at head office: 10 ordered, 8 received (the GRN folded into the order — SP-6), 10 invoiced → pay 8 × ₹50, hold ₹100.

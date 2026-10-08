@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sealedDecision } from '../support/store-seal';
 
 /**
  * **Every "second person" is a separate authenticated act (Wave 2b-iii · audit PA-03 · M02-FR-02 · M02-FR-03 · M26-FR-03
@@ -120,10 +121,10 @@ describe('a template version is drafted by one signed-in person and approved by 
 // ── a store decision relayed by the box: the decider's BRANCH is checked, not only their role ──────────────────
 describe('a relayed decision by a manager outside the request\'s branch is recorded and flagged, not applied', () => {
   const relay = (h: ApiHarness, requestId: string, decidedBy: string, branchId: string | null) =>
-    h.request({ method: 'POST', path: `/v1/approvals/decisions/${requestId}/synced`, userId: 'u-box', tenantId: A, idempotencyKey: `dec-${requestId}`, body: {
+    h.request({ method: 'POST', path: `/v1/approvals/decisions/${requestId}/synced`, userId: 'u-box', tenantId: A, idempotencyKey: `dec-${requestId}`, body: sealedDecision(A, 'ApprovalDecided', {
       id: requestId, subjectType: 'refund', subjectRef: 'S-1', requestedBy: 'u-cash', branchId, value: { minor: 50_000, currency: 'INR' },
       status: 'approved', decidedBy, reason: 'customer unhappy', decidedAt: '2026-10-05T10:00:00.000Z', source: 'manager-screen', storeId: 'store-1',
-    } });
+    }) });
   type Relayed = { flags: string[]; applied: boolean };
 
   it('a br-1 manager deciding a br-2 refund is flagged decider_outside_branch; the same manager on br-1, or a company-wide owner anywhere, is clean', async () => {

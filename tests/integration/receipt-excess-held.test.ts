@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sealedDecision } from '../support/store-seal';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { SUBJECT_AUTHORITY } from '../../services/identity/src/approval-decisions';
@@ -52,7 +53,7 @@ const relayDecision = (h: ApiHarness, over: Record<string, unknown>, key: string
     id: 'ap-x', subjectType: 'goods_receipt_excess', subjectRef: 'g1', requestedBy: 'u-receiver', branchId: 'store-1', value: null,
     status: 'approved', decidedBy: 'u-boss', reason: 'supplier confirmed the extra is free', decidedAt: AT, storeId: 'store-1', source: 'manager-screen', ...over,
   };
-  return post(h, `/v1/approvals/decisions/${String(body.id)}/synced`, 'u-box', body, key);
+  return post(h, `/v1/approvals/decisions/${String(body.id)}/synced`, 'u-box', sealedDecision(A, 'ApprovalDecided', body), key);
 };
 
 /** The cast, the product master (p1/p3 untracked, p2 batch-tracked) and the tenant's 5% excess tolerance. */

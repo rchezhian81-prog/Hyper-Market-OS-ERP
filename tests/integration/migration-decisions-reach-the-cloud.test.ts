@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
+import { apiHarness, TEST_IDP, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
+import { withDeciderSeal } from '../../edge/store-edge/src/decision-seal';
+import { tillSealKey } from '../../packages/identity/src/till-seal';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { SyncAgent } from '../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../edge/sync-agent/src/http-transport';
@@ -58,7 +60,17 @@ async function scene(screenUser: string) {
     return new Response(JSON.stringify(res.body), { status: res.status });
   }) as unknown as typeof globalThis.fetch;
   const transport = httpTransport({ baseUrl: 'https://cloud.example.test', token, fetch: apiFetch, timeoutMs: 5_000 });
-  return { h, session, outbox, drain: () => new SyncAgent(outbox, transport).drain({ at: AT }) };
+  // The store computer between the screen and head office (2b-vi-c-3): it takes the screen's queue and seals each decision for
+  // the person signed in at the screen — the box's own function, under the key head office runs with.
+  const boxOutbox = new SyncOutbox();
+  const relay = () => {
+    for (const item of outbox.pending()) {
+      if (boxOutbox.find(item.event.idempotencyKey) === undefined) {
+        boxOutbox.enqueue(withDeciderSeal(tillSealKey(TEST_PACK_KEY), T, item.event, { userId: screenUser, via: 'verified_sign_in', laneId: 'lane-1' }));
+      }
+    }
+  };
+  return { h, session, outbox, drain: () => { relay(); return new SyncAgent(boxOutbox, transport).drain({ at: AT }); } };
 }
 
 describe('the migration screen\'s decisions reach the cloud and are applied under the decider (MG-04 / MG-06, §31)', () => {

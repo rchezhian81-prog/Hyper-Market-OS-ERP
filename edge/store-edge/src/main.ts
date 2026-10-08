@@ -77,6 +77,7 @@ import { TillApprovals } from './till-approvals';
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
 import { sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
+import { withDeciderSeal } from './decision-seal';
 import { readSales } from './read-model';
 import { emptyPack, readPack, withMigrationFeed, withPublishedTemplates, withIndentsFeed, withAssignmentsFeed, type StorePack } from './store-pack';
 import { managerPayload, type ScreenInput } from './screen-data';
@@ -736,6 +737,8 @@ export async function startEdge(
    * `accepted`. A write the disk refused is `not_saved` — the device keeps the item; nothing was lost anywhere.
    * The key is reserved before the write so two batches carrying the same key cannot both be accepted.
    */
+  // The seal key (ADR-0023): derived from the pack signing key under the seal's own label — never written anywhere.
+  const sealKey = tillSealKey(settings['PACK_SIGNING_KEY']!);
   const relayDeviceEvents: LaneDeviceRelayHandler = async (batch) => {
     const acks: DeviceAck[] = [];
     for (const raw of batch.items) {
@@ -744,7 +747,10 @@ export async function startEdge(
         acks.push({ key: read.key ?? '', status: 'refused', reason: read.reason });
         continue;
       }
-      const { key, event } = read.item;
+      const { key } = read.item;
+      // A back-office decision is sealed here when the person this box verified is the one it names (2b-vi-c-3);
+      // any stamp the device sent itself is removed — only the box vouches.
+      const event = withDeciderSeal(sealKey, tenantId, read.item.event, batch.verifiedPerson);
       if (!isRelayable(event.type, batch.source)) {
         acks.push({ key, status: 'refused', reason: `${event.type} is not a record this box relays for ${batch.source}` });
         continue;
@@ -1075,8 +1081,6 @@ export async function startEdge(
       ? 'till sign-in: the person the hosted sign-in names (EDGE_LANE_TRUST_FORWARDED_USER) — only right behind the hosted front.'
       : `till sign-in: staff ID and till PIN, checked on this box (${tillOperators.live().length} session(s) still open).`);
   }
-  // The seal key (ADR-0023): derived from the pack signing key under the seal's own label — never written anywhere.
-  const sealKey = tillSealKey(settings['PACK_SIGNING_KEY']!);
   const lane = lanePort === undefined ? null : await startLaneServer({
     node,
     port: Number(lanePort),

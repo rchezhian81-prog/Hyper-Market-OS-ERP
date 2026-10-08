@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
+import { apiHarness, TEST_IDP, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
@@ -33,7 +33,8 @@ import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-re
  * Synthetic data only; nothing touches production (hard rule #7).
  */
 
-const KEY = ['manager', 'decisions', 'edge', 'signing', 'key'].join('-').padEnd(48, '0');
+// The box and head office hold the same pack signing key, as a real store and its head office do (ADR-0023).
+const KEY = TEST_PACK_KEY;
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const AT = '2026-09-30T10:00:00.000Z';
 const PACK_JSON = JSON.stringify({ version: 1, policies: { tradingDayCutoff: '02:00', storeId: 'store-1' }, lossPreventionRules: [] });
@@ -55,9 +56,10 @@ const decisionEvent = (id: string, over: Record<string, unknown> = {}) => makeEv
   },
 });
 
-const postBatch = async (edge: EdgeProcess, items: unknown[], source = 'manager'): Promise<{ status: number; acks: DeviceAck[] }> => {
+/** `user` is the person the hosted copy's front says is signed in (X-Sre-User) — the box seals a decision they made. */
+const postBatch = async (edge: EdgeProcess, items: unknown[], source = 'manager', user?: string): Promise<{ status: number; acks: DeviceAck[] }> => {
   const res = await savedFetch(`http://127.0.0.1:${edge.lane!.port}/lane/outbox`, {
-    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:8091' },
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:8091', ...(user === undefined ? {} : { 'x-sre-user': user }) },
     body: JSON.stringify({ source, items }),
   });
   const body = (await res.json()) as { acks: DeviceAck[] };
@@ -126,6 +128,8 @@ async function cloud(): Promise<{
   const start = async (): Promise<EdgeProcess> => {
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
+      // The hosted copy (ADR-0020 §6): the front's sign-in names the person, and the box seals what they decide.
+      EDGE_LANE_ID: 'lane-1', EDGE_LANE_TRUST_FORWARDED_USER: '1',
       CLOUD_API_URL: 'https://cloud.example.test',
       CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
       EDGE_PACK_FILE: packFile,
@@ -145,7 +149,7 @@ describe('the manager\'s decision: device → box (durable) → head office (onc
     const edge = await c.start();
     const e = decisionEvent('a1');
 
-    const { status, acks } = await postBatch(edge, [{ key: e.idempotencyKey, event: e }]);
+    const { status, acks } = await postBatch(edge, [{ key: e.idempotencyKey, event: e }], 'manager', 'u-mgr');
     expect(status).toBe(200);
     expect(acks).toEqual([{ key: 'approval-decision-a1', status: 'accepted' }]);
     // Durable on the box and queued — the device may now forget its pending state.
@@ -287,3 +291,53 @@ describe('the manager\'s decision: device → box (durable) → head office (onc
     expect((await postBatch(second, [{ key: e.idempotencyKey, event: e }])).acks[0]?.status).toBe('duplicate');
   });
 });
+
+describe('the box seals a decision only for the person it verified (2b-vi-c-3 · ADR-0023 amendment · PA-03)', () => {
+  type Flagged = { requestId: string; decidedBy: string; flags: string[] };
+  const decisionOf = async (h: ApiHarness, id: string): Promise<Flagged | undefined> =>
+    (await registerAt(h)).decisions.find((d) => d.requestId === id);
+
+  it('nobody signed in, or somebody else signed in: relayed unsealed, recorded at head office flagged "not verified at the store"', async () => {
+    const c = await cloud();
+    const edge = await c.start();
+    const nobody = decisionEvent('n1');
+    const other = decisionEvent('n2');
+    expect((await postBatch(edge, [{ key: nobody.idempotencyKey, event: nobody }])).acks[0]?.status).toBe('accepted');
+    expect((await postBatch(edge, [{ key: other.idempotencyKey, event: other }], 'manager', 'u-somebody-else')).acks[0]?.status).toBe('accepted');
+    // What sits on the box's disk carries no stamp: the box vouches for nobody it did not verify.
+    expect(edge.deviceEventsOutbox.pending().map((i) => (i.event.payload as Record<string, unknown>)['deciderVerified'])).toEqual([undefined, undefined]);
+    await edge.syncOnce!();
+    expect((await decisionOf(c.h, 'n1'))?.flags).toContain('decider_not_verified_at_store');
+    expect((await decisionOf(c.h, 'n2'))?.flags).toContain('decider_not_verified_at_store');
+  });
+
+  it('a stamp the device wrote itself is removed by the box; the decision of the signed-in manager is sealed by the box and clean', async () => {
+    const c = await cloud();
+    const edge = await c.start();
+    const forged = decisionEvent('f1', { deciderVerified: { userId: 'u-mgr', via: 'pin', laneId: 'lane-1', seal: 'made-up' } });
+    await postBatch(edge, [{ key: forged.idempotencyKey, event: forged }]);
+    const real = decisionEvent('f2');
+    await postBatch(edge, [{ key: real.idempotencyKey, event: real }], 'manager', 'u-mgr');
+    const stamps = edge.deviceEventsOutbox.pending().map((i) => (i.event.payload as Record<string, unknown>)['deciderVerified']);
+    expect(stamps[0]).toBeUndefined();
+    expect(stamps[1]).toMatchObject({ userId: 'u-mgr', via: 'verified_sign_in', laneId: 'lane-1' });
+    await edge.syncOnce!();
+    expect((await decisionOf(c.h, 'f1'))?.flags).toContain('decider_not_verified_at_store');
+    expect((await decisionOf(c.h, 'f2'))?.flags).toEqual([]);
+  });
+
+  it('a sealed decision changed on the way (the reason rewritten) no longer matches: flagged, and the change is said', async () => {
+    const c = await cloud();
+    const edge = await c.start();
+    const e = decisionEvent('t1');
+    await postBatch(edge, [{ key: e.idempotencyKey, event: e }], 'manager', 'u-mgr');
+    const sealed = edge.deviceEventsOutbox.pending()[0]!.event.payload as Record<string, unknown>;
+    // Posted straight to head office with one word changed after the box sealed it.
+    const res = await c.h.request({
+      method: 'POST', path: '/v1/approvals/decisions/t1/synced', userId: 'u-box', tenantId: A, idempotencyKey: 'tampered-t1',
+      body: { ...sealed, reason: 'rewritten after the seal' },
+    });
+    expect((res.body as { flags: string[] }).flags).toContain('decider_seal_does_not_match');
+  });
+});
+

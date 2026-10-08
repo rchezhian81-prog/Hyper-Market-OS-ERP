@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sealedDecision } from '../support/store-seal';
 
 // M25-FR-02 offline-first (§31/P-01) — the CLOUD half of the offline task/checklist COMPLETION queue (slice 1).
 // When the store box has no internet, a manager still opens and closes the shop; the completion is committed to
@@ -54,6 +55,20 @@ describe('offline checklist/task completion sync routes (M25-FR-02, §31/P-01)',
     expect(body.assessment.outcome).toBe('complete');
     expect(body.assessment.complete).toBe(true);
     expect(body.checklist.signedBy).toBe('Meena');
+  });
+
+  it('a checklist the store computer sealed for its signer is clean; an unsealed or altered one is recorded with the flag said (2b-vi-c-3)', async () => {
+    const h = await cast();
+    const sealed = await syncChecklist(h, 'u-mgr', 'CL-S', sealedDecision(A, 'ChecklistCompleted', closing(), 'CL-S'), 'ks1');
+    expect((sealed.body as { flags: string[] }).flags).toEqual([]);
+    // The shift happened, so the checklist is recorded either way — but a signer nobody vouched for is SAID on the record.
+    const unsealed = await syncChecklist(h, 'u-mgr', 'CL-U', closing(), 'ku1');
+    expect(unsealed.status).toBe(200);
+    expect((unsealed.body as { flags: string[]; checklist: { signatureFlags?: string[] } }).checklist.signatureFlags).toEqual(['decider_not_verified_at_store']);
+    const altered = { ...sealedDecision(A, 'ChecklistCompleted', closing(), 'CL-A'), signedBy: 'Somebody Else' };
+    expect((await syncChecklist(h, 'u-mgr', 'CL-A', altered, 'ka1')).body).toMatchObject({ flags: ['decider_seal_does_not_match'] });
+    const stored = (await checklistStatus(h, 'u-mgr', 'CL-U')).body as { checklist: { signatureFlags?: string[] } };
+    expect(stored.checklist.signatureFlags).toEqual(['decider_not_verified_at_store']);
   });
 
   it('a task completed offline syncs and marks the stored task done', async () => {

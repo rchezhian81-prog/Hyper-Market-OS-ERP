@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { startLaneServer, type LaneServer, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler } from '../../edge/store-edge/src/lane-server';
+import { startLaneServer, type LaneServer, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler, type LaneOperatorPort } from '../../edge/store-edge/src/lane-server';
 import type { EdgeNode } from '../../edge/store-edge/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
 
@@ -124,3 +124,49 @@ describe('the lane socket carries device work to the box (SP-2a)', () => {
     expect(await res.json()).toEqual({ acks: [], reason: 'disk went away' });
   });
 });
+
+describe('the lane socket tells the box who it verified for a batch — never from the body (2b-vi-c-3)', () => {
+  const servers: LaneServer[] = [];
+  afterEach(async () => { for (const s of servers.splice(0)) await s.stop(); });
+  type Seen = Parameters<LaneDeviceRelayHandler>[0];
+  const seen: Seen[] = [];
+  const relay: LaneDeviceRelayHandler = async (batch) => { seen.push(batch); return { acks: [] }; };
+  const operators = (trustForwardedUser: boolean): LaneOperatorPort => ({
+    laneId: 'lane-7', trustForwardedUser,
+    signIn: async () => ({ signedIn: false } as never),
+    signInVerified: async () => ({ signedIn: false } as never),
+    // One live session: the token `t-meena` is Meena, signed in with her PIN at lane-7.
+    check: (token) => token === 't-meena'
+      ? { ok: true, userId: 'u-meena', displayName: 'Meena', via: 'pin', expiresAt: '2026-09-30T20:00:00.000Z' } as never
+      : { ok: false, refusedBecause: 'not_signed_in', laneMessage: 'sign in' } as never,
+    signOut: async () => false,
+  });
+  const start = async (trust: boolean) => {
+    seen.splice(0);
+    const s = await startLaneServer({ node: stubNode(), port: 0, relayDeviceEvents: relay, operators: operators(trust) });
+    servers.push(s);
+    return `http://127.0.0.1:${s.port}`;
+  };
+  const send = (base: string, headers: Record<string, string>) => fetch(`${base}/lane/outbox`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:8080', ...headers },
+    body: JSON.stringify({ source: 'manager', items: [], verifiedPerson: { userId: 'u-owner', via: 'pin', laneId: 'lane-7' } }),
+  });
+
+  it('the till session it carries names the person; a body claiming somebody is ignored', async () => {
+    const base = await start(false);
+    await send(base, { 'x-sre-operator': 't-meena' });
+    expect(seen[0]?.verifiedPerson).toEqual({ userId: 'u-meena', via: 'pin', laneId: 'lane-7' });
+    await send(base, {});
+    expect(seen[1]?.verifiedPerson).toBeUndefined();
+  });
+
+  it('the forwarded sign-in counts only on the hosted copy', async () => {
+    const store = await start(false);
+    await send(store, { 'x-sre-user': 'u-owner' });
+    expect(seen[0]?.verifiedPerson).toBeUndefined();
+    const hosted = await start(true);
+    await send(hosted, { 'x-sre-user': 'u-owner' });
+    expect(seen[0]?.verifiedPerson).toEqual({ userId: 'u-owner', via: 'verified_sign_in', laneId: 'lane-7' });
+  });
+});
+

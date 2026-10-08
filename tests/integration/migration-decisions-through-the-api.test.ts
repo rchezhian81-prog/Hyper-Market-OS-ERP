@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sealedDecision } from '../support/store-seal';
 
 // MG-04 / MG-06 — the migration screen's decisions KEPT on the cloud, through the real authenticated API
 // (Stage C3a): exceptions and control totals are recorded once; a manager resolves at the desk; the owner and
@@ -57,19 +58,27 @@ describe('MG-04 exceptions through the API', () => {
   it('a decision relayed from the store box: applied for a manager, REFUSED-and-recorded for a cashier or a stranger', async () => {
     const h = await seeded();
     await post(h, '/v1/migration/exceptions', MGR, 'x1', { exceptions: EX });
-    const applied = await post(h, '/v1/migration/exceptions/EX-1/resolution/synced', SYNC, 's1', { action: 'migrate_as_is', decidedBy: MGR, reason: 'both are genuinely sold' });
+    const applied = await post(h, '/v1/migration/exceptions/EX-1/resolution/synced', SYNC, 's1', sealedDecision(T, 'MigrationExceptionResolved', { action: 'migrate_as_is', decidedBy: MGR, reason: 'both are genuinely sold' }, 'EX-1'));
     expect(applied.status).toBe(202);
     expect(applied.body).toMatchObject({ applied: true });
-    const refused = await post(h, '/v1/migration/exceptions/EX-2/resolution/synced', SYNC, 's2', { action: 'correct', decidedBy: CASHIER, reason: 'fixed it' });
+    const refused = await post(h, '/v1/migration/exceptions/EX-2/resolution/synced', SYNC, 's2', sealedDecision(T, 'MigrationExceptionResolved', { action: 'correct', decidedBy: CASHIER, reason: 'fixed it' }, 'EX-2'));
     expect(refused.status).toBe(202);
     expect(refused.body).toMatchObject({ applied: false, refusedBecause: 'decider_lacks_authority' });
     const read = (await get(h, '/v1/migration/exceptions')).body as { exceptions: { exceptionId: string; resolution?: unknown }[]; refusedDecisions: { attemptedBy: string; refusedBecause: string }[] };
     expect(read.exceptions.find((e) => e.exceptionId === 'EX-1')?.resolution).toMatchObject({ decidedBy: MGR });
     expect(read.exceptions.find((e) => e.exceptionId === 'EX-2')?.resolution).toBeUndefined();
     expect(read.refusedDecisions).toEqual([expect.objectContaining({ attemptedBy: CASHIER, refusedBecause: 'decider_lacks_authority' })]);
+    // A decision the store computer did not vouch for — no seal — is recorded refused, by name (2b-vi-c-3); one changed after
+    // the seal no longer matches.
+    await post(h, '/v1/migration/exceptions', MGR, 'x2', { exceptions: [{ ...EX[0], exceptionId: 'EX-3' }, { ...EX[0], exceptionId: 'EX-4' }] });
+    expect((await post(h, '/v1/migration/exceptions/EX-3/resolution/synced', SYNC, 's4', { action: 'exclude', decidedBy: MGR, reason: 'obsolete' })).body)
+      .toMatchObject({ applied: false, refusedBecause: 'decider_not_verified_at_store' });
+    const sealed = sealedDecision(T, 'MigrationExceptionResolved', { action: 'exclude', decidedBy: MGR, reason: 'obsolete' }, 'EX-4');
+    expect((await post(h, '/v1/migration/exceptions/EX-4/resolution/synced', SYNC, 's5', { ...sealed, action: 'migrate_as_is' })).body)
+      .toMatchObject({ applied: false, refusedBecause: 'decider_seal_does_not_match' });
     // Only a sync-capable identity may relay; an accountant cannot.
     await h.provisionRole(T, 'u-acct', 'accountant');
-    expect((await post(h, '/v1/migration/exceptions/EX-2/resolution/synced', 'u-acct', 's3', { action: 'correct', decidedBy: MGR, reason: 'r' })).status).toBe(403);
+    expect((await post(h, '/v1/migration/exceptions/EX-2/resolution/synced', 'u-acct', 's3', sealedDecision(T, 'MigrationExceptionResolved', { action: 'correct', decidedBy: MGR, reason: 'r' }, 'EX-2'))).status).toBe(403);
   });
 });
 
@@ -96,10 +105,10 @@ describe('MG-06 control totals through the API', () => {
   it('a signature relayed from the store box: applied for the CA on finance, refused-and-recorded for the loader and for a manager', async () => {
     const h = await seeded();
     await post(h, '/v1/migration/control-totals', MGR, 't1', { totals: TOTALS });
-    const applied = await post(h, '/v1/migration/control-totals/CT-FIN/signature/synced', SYNC, 's1', { signedBy: CA, signerRole: 'owner', statement: 'agrees to the accounts' });
+    const applied = await post(h, '/v1/migration/control-totals/CT-FIN/signature/synced', SYNC, 's1', sealedDecision(T, 'MigrationTotalSigned', { signedBy: CA, signerRole: 'owner', statement: 'agrees to the accounts' }, 'CT-FIN'));
     expect(applied.status).toBe(202);
     expect(applied.body).toMatchObject({ applied: true });
-    expect((await post(h, '/v1/migration/control-totals/CT-STOCK/signature/synced', SYNC, 's2', { signedBy: LOADER, statement: 'I loaded it, it is right' })).body)
+    expect((await post(h, '/v1/migration/control-totals/CT-STOCK/signature/synced', SYNC, 's2', sealedDecision(T, 'MigrationTotalSigned', { signedBy: LOADER, statement: 'I loaded it, it is right' }, 'CT-STOCK'))).body)
       .toMatchObject({ applied: false, refusedBecause: 'signer_lacks_authority' }); // a manager holds no sign permission at all
     const read = (await get(h, '/v1/migration/control-totals')).body as { totals: { totalId: string; signature?: { signedBy: string; signerRole: string } }[]; refusedDecisions: { refusedBecause: string }[] };
     expect(read.totals.find((t) => t.totalId === 'CT-FIN')?.signature).toMatchObject({ signedBy: CA, signerRole: 'chartered_accountant' }); // role from grants, not the body's "owner"
