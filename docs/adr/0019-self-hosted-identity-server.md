@@ -97,6 +97,25 @@
   - the second-factor stop;
   - the lockout.
 
+## Implementation notes — part 2 (OB-15-b-1, 8 October 2026)
+
+- **The product's sign-in service** (`services/identity/src/sign-in.ts`) is the front door's "who is this?". It is an
+  OIDC relying party for the public client:
+  - authorisation code with PKCE (S256), a one-time state (ten minutes) and a nonce checked against the ID token;
+  - the code is exchanged on the private network;
+  - the access token is believed only through `verifyToken` (RS256, the published keys).
+- **Session handling:**
+  - the session is held on the server, keyed by a hash of a random 256-bit id in an HttpOnly, Secure, SameSite=Strict
+    cookie;
+  - the front door gets `X-Sre-User` and `X-Sre-Bearer`, renewed with the refresh token in the token's last minute;
+  - a refusal at renewal ends the session;
+  - a session lasts ten hours at most;
+  - sign-out ends it at once and sends the browser to the identity server's end-session.
+- **What the service holds:** no client secret, no password, no signing key.
+- **Limit:** sessions are in memory — a restart signs people out. A shared store is the reconsider-when for more than one
+  instance.
+- **The return address is `/login/callback`**, not `/auth/…` — the proxy forwards `/auth/` to the identity server itself.
+
 ## Reconsider-when
 
 - A tenant requires its own cloud directory for all staff (then Keycloak brokers it; if brokering proves

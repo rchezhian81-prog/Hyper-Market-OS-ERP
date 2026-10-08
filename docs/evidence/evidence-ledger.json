@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 931,
+  "testFiles": 932,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -95,7 +95,7 @@
       "id": "M02",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 22,
+        "unit": 23,
         "integration": 17,
         "realDb": 5,
         "browser": 4,
@@ -126,6 +126,7 @@
           "tests/unit/owner-session.test.ts",
           "tests/unit/rbac.test.ts",
           "tests/unit/service-store-core.test.ts",
+          "tests/unit/sign-in-service.test.ts",
           "tests/unit/till-operators.test.ts"
         ],
         "integration": [

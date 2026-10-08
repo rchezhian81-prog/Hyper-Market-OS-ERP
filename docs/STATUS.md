@@ -5,6 +5,47 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-15-b-1 — the product's own sign-in service, proved on a real Keycloak (8 October 2026)
+
+- **The block:** OB-15 ("A 1"; ADR-0019), part 2 of the sign-in.
+- **What changed:**
+  - **A small sign-in service** (`services/identity/src/sign-in.ts`) now does the job the pilot sign-in's password file
+    did, but through Keycloak:
+    - it sends the person to Keycloak's own page, with protections against a stolen or replayed reply;
+    - it takes the one-time code back and accepts the sign-in only when head office's own checker does;
+    - it keeps the sign-in on the server — the browser holds only a random number;
+    - for every screen it tells the front door who the person is, with a fresh sign-in, renewed before it runs out;
+    - it signs out at both ends.
+    - A session ends when Keycloak ends it (for example, a disabled person) and lasts a shift at most.
+  - **It is in the stack beside Keycloak, switched off with it.** Its program is built on the box.
+  - The Keycloak return address moved to `/login/callback` (the front door sends `/auth/` to Keycloak itself).
+- **Proved:**
+  - Unit (13): the whole sign-in with a stand-in identity server, and each way it can fail:
+    - a state reused, unknown or too old;
+    - a code from another sign-in;
+    - the identity server refusing;
+    - a forged or unknown cookie;
+    - renewal before expiry;
+    - the identity server ending the session;
+    - the one-shift limit;
+    - the till's permission;
+    - sign-out, and a sign-out from another site;
+    - no redirect off-site;
+    - settings refused.
+  - Guardrails (10).
+  - **Against a real Keycloak 26.0.7 (opt-in, 6 of 6):** a person signed in through this service — Keycloak's own page,
+    back to `/login/callback`, and the front door got the person and a token head office believes. Sign-out ended it.
+  - The built program was started for real: it refuses to start without its settings, and sends a visitor to Keycloak.
+- **Not yet / honest limits:**
+  - The trial server's front door does not use it yet; still to come are the login page in the owner's look and people
+    created from the Admin screen.
+  - A restart of the service signs everyone out (sessions are kept in memory).
+  - The real-Keycloak suite runs by hand, not in the automatic checks.
+  - Staff UAT (SP-10) is pending.
+- **Behaviour change the owner should know:** none yet.
+- **Next:** OB-15-b-2 — the Keycloak sign-in page in the owner's approved look (OB-18), and the trial server's front door
+  using this service (with the administrator's setup steps).
+
 ## OB-15-a — the identity server is in the stack, and head office believes its sign-ins (8 October 2026)
 
 - **The block (owner decision OB-15, "A 1"; ADR-0019):** a real sign-in for every screen, through a self-hosted
