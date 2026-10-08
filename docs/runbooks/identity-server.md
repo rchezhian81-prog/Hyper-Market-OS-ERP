@@ -35,8 +35,43 @@ service `sign-in`, opt-in with the identity server). The front door asks it "who
 Its program is built on the box with `pnpm run build:sign-in`. **A restart signs everybody out** (sessions are held in
 memory); they sign in again.
 
-**Not yet (next parts):** the front door wired to it on the trial server; the sign-in page in the owner's look; creating
-people from the product's Admin screen; a realm per shop.
+**Part 3 (OB-15-b-2): the front door can ask it, and the sign-in page wears the owner's look.**
+- `infra/compose/nginx.identity.conf` is the trial server's front door asking the product's sign-in service instead of
+  the pilot sign-in. One setting chooses it (`SRE_FRONT_CONF`); the same setting switches back.
+- Head-office calls from a signed-in screen carry the session's current token, added by the front door (the browser
+  never holds a token).
+- The identity server's page is the product's own (`infra/keycloak/themes/sre`), in English and Tamil.
+
+**Not yet (next parts):** creating people from the product's Admin screen; a realm per shop; the tenant console.
+
+## Switching the trial server's front door to the identity server (administrator, on the server)
+
+Do this only after "Turning it on" below is done and you have signed in at `/auth/admin` yourself. Nothing here is done
+from a chat or a remote-support tool, and no value below is ever written anywhere but the server's own `.env.pilot`.
+
+1. **Give the owner a person in the identity server.** In the admin console, realm `sre-store` → Users → Add user:
+   - user name: the owner's own (never shared);
+   - after saving: Attributes → `sre_user_id` = the owner's id in the product (on the demo: `pilot-owner`);
+   - Credentials → set a password (temporary: on — they choose their own at first sign-in);
+   - Role mapping → `sre-privileged` (they will be asked to set up an authenticator app at first sign-in).
+   Repeat for each staff member who must sign in, with their own product id. Never give two people one user.
+2. **In `.env.pilot`** add:
+   - `COMPOSE_PROFILES=identity`
+   - `SRE_BUILD_TOOLS="demo-login sign-in"` (the release builds the sign-in program every time)
+   - `SRE_FRONT_CONF=nginx.identity.conf`
+   - `SRE_AUTH_ROUTE=auth-upstream` and `SRE_AUTH_UPSTREAM=idp:8080` (if not already set)
+   - the values listed under "The self-hosted identity server" in `infra/compose/.env.example`, if not already set.
+3. **Release as usual** (`infra/deploy/release.sh`). It builds the sign-in program, starts it and restarts the front.
+4. **Check, from your own phone, in a private window:**
+   - `https://<your address>/store/manager/` → the product's sign-in page (the owner's look, English / தமிழ்);
+   - sign in → the manager screen opens;
+   - Sign out → the sign-in page again; the back button does not reopen the screen.
+   The proof suite below (`identity-front-door.test.ts`) proves the same path on a test machine with every change.
+5. **Switching back** (if anything is wrong): remove `SRE_FRONT_CONF` from `.env.pilot` (the pilot sign-in is the
+   default) and release again, or `docker compose … up -d --force-recreate web`. Nothing is lost: the pilot sign-in
+   was never turned off, and the identity server keeps its people for the next try.
+
+**Note.** A restart of the sign-in service signs everybody out (sessions are held in memory). They sign in again.
 
 ## Turning it on (when the next part asks for it)
 
@@ -80,6 +115,13 @@ automatic checks (they have no Keycloak); it is run, and its result recorded, wi
    - **through the product's own sign-in service:** `/login/` → the identity server's page → `/login/callback`. The front
      door gets the person and a token head office believes. Sign-out ends the session here and points the browser to the
      identity server's own sign-out.
+
+**The front door, end to end** (`tests/integration/identity-front-door.test.ts`, same settings, nginx installed on the
+test machine): runs the repository's own `nginx.identity.conf` (only the private addresses pointed at the test machine,
+listening on 127.0.0.1:8099), the sign-in service, the real head-office service and the real Keycloak. It proves: a screen
+with no session → the sign-in → the identity server's page → back; the store computer hears the signed-in person and a
+visitor's own `X-Sre-User` is overwritten; a head-office call through the front door is let in on the session's token
+and refused without it; sign-out ends it.
 
 **Recorded:** 8 October 2026, Keycloak 26.0.7:
 - 5 of 5 passed (part 1);
