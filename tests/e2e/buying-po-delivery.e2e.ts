@@ -213,11 +213,12 @@ describe.skipIf(!HAVE_BROWSER)('buyer PO-propose delivery, end to end in a real 
   // ── The OTHER buyer write-path on this screen: bulk invoice capture (A-03, §28) ──────────────────
   //
   // The screen's headline is killing the eighty-line retype: paste the supplier's file, type the total off
-  // the paper, and capture it — atomically, only when it reconciles, and only with a SECOND person's
-  // approval. Capture commits to the box's own store (offline-first, P-01), so it makes no network call;
-  // the sync to the cloud is a separate wire. These prove that write-path end to end in a real browser.
+  // the paper, and capture it — atomically, and only when it reconciles. The bill is captured by the signed-in
+  // buyer and carries NO checker: head office does not trust a name typed here, and the check is a second
+  // person's own act at head office (the match, under their own sign-in). Capture commits to the device's own
+  // queue (offline-first, P-01), so it makes no network call; the sync to the cloud is a separate wire.
 
-  /** Open the buying screen on the (default) Supplier-invoice tab with the given buyer + approver list. */
+  /** Open the buying screen on the (default) Supplier-invoice tab with the given buyer context. */
   const openInvoiceTab = async (rec: Recorder) => {
     const srv = await startShellAndCloud(rec);
     const context = await browser.newContext();
@@ -243,46 +244,52 @@ describe.skipIf(!HAVE_BROWSER)('buyer PO-propose delivery, end to end in a real 
     await page.waitForSelector('#capture:not([hidden])', { timeout: 10_000 });
   };
 
-  it('a reconciling invoice captures atomically with a SECOND person’s approval, and makes no network call (A-03, §28, P-01)', async () => {
+  const sheetIsOpen = (page: import('playwright-core').Page) =>
+    page.evaluate(() => {
+      const el = (globalThis as unknown as { document: { getElementById(id: string): { hidden?: boolean } | null } })
+        .document.getElementById('sheet');
+      return el !== null && el.hidden !== true;
+    });
+
+  it('a reconciling invoice captures atomically with no checker asked for, and makes no network call (A-03, §28, P-01)', async () => {
     const rec: Recorder = {
-      buyingData: { buyerId: 'u-buyer', productIds: ['p1', 'p2'], approvers: ['u-manager'] },
+      buyingData: { buyerId: 'u-buyer', productIds: ['p1', 'p2'] },
       orderStatus: 201, orderBody: {}, requests: [],
     };
     const { page, teardown } = await openInvoiceTab(rec);
     try {
       await fillInvoice(page, 'sup-1');
       await page.click('#capture');
-      // The on-screen approver panel opens (never a browser prompt); the only choice is u-manager (§28).
-      await page.waitForSelector('#sheet:not([hidden])', { timeout: 10_000 });
-      await page.click('#choices button');
       await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
 
-      // Captured: the "good" banner, and — offline-first — nothing was POSTed anywhere.
+      // No approver panel ever opened — the capture went straight through.
+      expect(await sheetIsOpen(page)).toBe(false);
+      // Captured: the "good" banner, saying head office does the check — and, offline-first, nothing was POSTed.
       expect(await bannerIsGood(page)).toBe(true);
+      expect((await page.textContent('#banner-text')) ?? '').toMatch(/head office/i);
       expect(rec.requests).toHaveLength(0);
     } finally {
       await teardown();
     }
   });
 
-  it('the buyer cannot approve their own capture: the model refuses even if their name reaches the sheet (§28)', async () => {
+  it('the buyer\'s capture never offers a checker, even when the box sends an approvers list (§28)', async () => {
     const rec: Recorder = {
-      // Defense in depth: the box normally strips the buyer from the approver list; even if it did not,
-      // the model must refuse a self-approval. Offer only the buyer's own name and prove it is refused.
-      buyingData: { buyerId: 'u-buyer', productIds: ['p1', 'p2'], approvers: ['u-buyer'] },
+      // The box still serves an approvers list (other flows read it). The invoice capture must ignore it:
+      // a name picked on the buyer's own screen is not a check head office trusts.
+      buyingData: { buyerId: 'u-buyer', productIds: ['p1', 'p2'], approvers: ['u-manager', 'u-buyer'] },
       orderStatus: 201, orderBody: {}, requests: [],
     };
     const { page, teardown } = await openInvoiceTab(rec);
     try {
       await fillInvoice(page, 'sup-1');
       await page.click('#capture');
-      await page.waitForSelector('#sheet:not([hidden])', { timeout: 10_000 });
-      await page.click('#choices button'); // the only name offered is the buyer's own
       await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
 
-      // Refused as a self-approval — not the "good" banner, and still nothing written.
-      expect(await bannerIsGood(page)).toBe(false);
-      expect((await page.textContent('#banner-text')) ?? '').toMatch(/cannot also approve|cannot approve your own/i);
+      expect(await sheetIsOpen(page)).toBe(false);
+      expect(await page.locator('#choices button').count()).toBe(0);
+      expect(await bannerIsGood(page)).toBe(true);
+      expect(rec.requests).toHaveLength(0);
     } finally {
       await teardown();
     }

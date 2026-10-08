@@ -45,13 +45,20 @@ export type ReopenResult =
   | 'refused_self_approval'
   | 'reason_required'
   | 'approver_required'
+  | 'approver_pin_required'
   | 'refused'
   | 'lost_link';
 
 /** The authenticated POST of a reopen. Injected, so the model never opens a socket itself; the box performs
  *  the reopen (enforcing §28: approver ≠ reopener) and the cloud re-verifies the approver's authority. */
 export interface DayReopenPort {
-  post(input: { readonly dayCloseId: string; readonly reason: string; readonly approvedBy: string }): Promise<ReopenResult>;
+  post(input: {
+    readonly dayCloseId: string; readonly reason: string; readonly approvedBy: string;
+    /** The approver's own till PIN — checked by the store computer, never kept (2b-vi-c-4). */
+    readonly approverPin: string;
+    /** The reopener's own till PIN; absent on the hosted copy, where the sign-in already names them. */
+    readonly reopenerPin?: string;
+  }): Promise<ReopenResult>;
 }
 
 export interface DayReopenPorts {
@@ -77,27 +84,30 @@ export type CopyKey =
   | 'title' | 'lead' | 'langName'
   | 'lockedHeading' | 'lockedCount' | 'allClear'
   | 'dayLabel' | 'closedByLabel' | 'closedAtLabel'
-  | 'reopenHeading' | 'dayField' | 'reasonLabel' | 'reasonPlaceholder' | 'approverLabel' | 'approverPlaceholder' | 'reopenBtn'
-  | 'reopenRecorded' | 'reopenRefused' | 'reopenSelf' | 'reopenReasonRequired' | 'reopenApproverRequired' | 'reopenLostLink'
+  | 'reopenHeading' | 'dayField' | 'reasonLabel' | 'reasonPlaceholder' | 'approverLabel' | 'approverPlaceholder' | 'approverPinLabel' | 'reopenerPinLabel' | 'reopenBtn'
+  | 'reopenRecorded' | 'reopenRefused' | 'reopenSelf' | 'reopenReasonRequired' | 'reopenApproverRequired' | 'reopenApproverPinRequired' | 'reopenLostLink'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted' | 'noReopen'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
 export const DAY_REOPEN_COPY: BilingualCopy<CopyKey> = {
   en: {
     title: 'Reopen a locked day', langName: 'தமிழ்',
-    lead: 'Trading days that were closed and LOCKED — most recent first. Reopen one only to correct an error found afterwards. A reopen is recorded with your reason and must be approved by a DIFFERENT authorised person (separation of duties); it never erases the close — it is a new correcting entry.',
+    lead: 'Trading days that were closed and LOCKED — most recent first. Reopen one only to correct an error found afterwards. A reopen is recorded with your reason and must be approved by a DIFFERENT authorised person, who keys their own till PIN here (separation of duties); it never erases the close — it is a new correcting entry.',
     lockedHeading: 'Locked days', lockedCount: 'locked',
     allClear: 'No locked days to reopen.',
     dayLabel: 'Trading day', closedByLabel: 'Closed by', closedAtLabel: 'Closed at',
     reopenHeading: 'Reopen a day', dayField: 'Which day', reasonLabel: 'Reason (required)',
     reasonPlaceholder: 'Why this locked day must be reopened.',
-    approverLabel: 'Approved by (a different person)', approverPlaceholder: 'The authorised person who approved this reopen.',
+    approverLabel: 'Approver’s staff ID (a different person)', approverPlaceholder: 'The authorised person approving this reopen, here now.',
+    approverPinLabel: 'Approver’s till PIN — they key it themselves',
+    reopenerPinLabel: 'Your till PIN (not needed when you signed in on the internet copy)',
     reopenBtn: 'Reopen the day',
     reopenRecorded: 'The day is reopened.',
     reopenRefused: 'Could not reopen — you may not have permission, or the approver is not authorised. Nothing was changed.',
     reopenSelf: 'You cannot approve your own reopen — a different authorised person must approve it (separation of duties).',
     reopenReasonRequired: 'A reopen needs a reason. Nothing was changed.',
     reopenApproverRequired: 'Name the different person who approved this reopen. Nothing was changed.',
+    reopenApproverPinRequired: 'The person approving must key their own till PIN here. Nothing was changed.',
     reopenLostLink: 'No connection to the store computer — not saved. Try again.',
     scrReady: 'Showing the locked days', scrEmpty: 'No locked days to reopen.',
     stateNotPermitted: 'You do not have permission to see the locked days.',
@@ -113,13 +123,16 @@ export const DAY_REOPEN_COPY: BilingualCopy<CopyKey> = {
     dayLabel: 'வர்த்தக நாள்', closedByLabel: 'மூடியவர்', closedAtLabel: 'மூடிய நேரம்',
     reopenHeading: 'ஒரு நாளை மீண்டும் திற', dayField: 'எந்த நாள்', reasonLabel: 'காரணம் (தேவை)',
     reasonPlaceholder: 'இந்த பூட்டிய நாளை ஏன் மீண்டும் திறக்க வேண்டும்.',
-    approverLabel: 'அங்கீகரித்தவர் (வேறொருவர்)', approverPlaceholder: 'இந்த மீள்திறப்பை அங்கீகரித்த அங்கீகரிக்கப்பட்ட நபர்.',
+    approverLabel: 'அங்கீகரிப்பவரின் பணியாளர் எண் (வேறொருவர்)', approverPlaceholder: 'இப்போது இங்கே இருக்கும், இந்த மீள்திறப்பை அங்கீகரிக்கும் அங்கீகரிக்கப்பட்ட நபர்.',
+    approverPinLabel: 'அங்கீகரிப்பவரின் கடை PIN — அவரே உள்ளிட வேண்டும்',
+    reopenerPinLabel: 'உங்கள் கடை PIN (இணைய நகலில் உள்நுழைந்திருந்தால் தேவையில்லை)',
     reopenBtn: 'நாளை மீண்டும் திற',
     reopenRecorded: 'நாள் மீண்டும் திறக்கப்பட்டது.',
     reopenRefused: 'மீண்டும் திறக்க முடியவில்லை — உங்களுக்கு அனுமதி இல்லாமல் இருக்கலாம், அல்லது அங்கீகரித்தவருக்கு அதிகாரம் இல்லை. எதுவும் மாற்றப்படவில்லை.',
     reopenSelf: 'உங்கள் சொந்த மீள்திறப்பை நீங்களே அங்கீகரிக்க முடியாது — வேறொரு அங்கீகரிக்கப்பட்ட நபர் அங்கீகரிக்க வேண்டும் (பொறுப்புப் பிரிப்பு).',
     reopenReasonRequired: 'மீண்டும் திறக்க ஒரு காரணம் தேவை. எதுவும் மாற்றப்படவில்லை.',
     reopenApproverRequired: 'இந்த மீள்திறப்பை அங்கீகரித்த வேறு நபரைக் குறிப்பிடவும். எதுவும் மாற்றப்படவில்லை.',
+    reopenApproverPinRequired: 'அங்கீகரிப்பவர் தங்கள் சொந்த கடை PIN-ஐ இங்கே உள்ளிட வேண்டும். எதுவும் மாற்றப்படவில்லை.',
     reopenLostLink: 'கடை கணினியுடன் இணைப்பு இல்லை — சேமிக்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
     scrReady: 'பூட்டிய நாட்களைக் காட்டுகிறது', scrEmpty: 'மீண்டும் திறக்க பூட்டிய நாட்கள் இல்லை.',
     stateNotPermitted: 'பூட்டிய நாட்களைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
@@ -158,7 +171,11 @@ export interface DayReopenSession {
    *  render; refuses BEFORE any POST without permission, without a reason, without a named approver, or when
    *  the named approver is the reopener themselves (§28 — the box and cloud enforce it too; the screen never
    *  sends a self-approval). */
-  reopen(dayCloseId: string, reason: string, approverId: string): Promise<ReopenResult>;
+  reopen(
+    dayCloseId: string, reason: string, approverId: string,
+    /** The PINs the two people key on this screen (2b-vi-c-4) — passed to the store computer, never kept. */
+    pins?: { readonly approverPin?: string; readonly reopenerPin?: string },
+  ): Promise<ReopenResult>;
   /** Present a reopen outcome as one glanceable status the shell shows after the action. */
   presentReopenResult(lang: Lang, result: ReopenResult): StatusPresentation;
 }
@@ -213,16 +230,24 @@ export function createDayReopenSession(config: DayReopenConfig, ports: DayReopen
     // Reopen a locked day. Refuse BEFORE any POST — no permission, no reason, no named approver, or the
     // reopener naming THEMSELVES as the approver (§28) is a local refusal, not a round trip. The box still
     // enforces §28 and the cloud re-verifies the approver's authority; the screen never sends a self-approval.
-    reopen: async (dayCloseId, reason, approverId) => {
+    reopen: async (dayCloseId, reason, approverId, pins = {}) => {
       if (!ports.mayReopen()) return 'refused';
       const trimmedReason = reason.trim();
       const trimmedApprover = approverId.trim();
       if (trimmedReason === '') return 'reason_required';
       if (trimmedApprover === '') return 'approver_required';
       if (config.userId !== null && trimmedApprover === config.userId) return 'refused_self_approval'; // §28
+      // The approver's own PIN, keyed by them here (2b-vi-c-4): a name alone is not an approval. The store computer checks
+      // it; this screen only refuses to send nothing.
       const row = ports.worklist().locked.find((r) => r.dayCloseId === dayCloseId);
       if (row === undefined) return 'refused';
-      return ports.reopenPort().post({ dayCloseId, reason: trimmedReason, approvedBy: trimmedApprover });
+      const approverPin = (pins.approverPin ?? '').trim();
+      if (approverPin === '') return 'approver_pin_required';
+      const reopenerPin = (pins.reopenerPin ?? '').trim();
+      return ports.reopenPort().post({
+        dayCloseId, reason: trimmedReason, approvedBy: trimmedApprover, approverPin,
+        ...(reopenerPin === '' ? {} : { reopenerPin }),
+      });
     },
 
     presentReopenResult: (lang, result) => {
@@ -232,6 +257,7 @@ export function createDayReopenSession(config: DayReopenConfig, ports: DayReopen
       const label = result === 'refused_self_approval' ? t('reopenSelf')
         : result === 'reason_required' ? t('reopenReasonRequired')
         : result === 'approver_required' ? t('reopenApproverRequired')
+        : result === 'approver_pin_required' ? t('reopenApproverPinRequired')
         : t('reopenRefused');
       return presentStatus({ tone: 'error', icon: '✕', label, needsAttention: true });
     },

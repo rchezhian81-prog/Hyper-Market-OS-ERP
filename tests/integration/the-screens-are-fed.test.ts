@@ -1016,12 +1016,6 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
   ].join('\n');
   const TOTAL = 90_000;
 
-  const approvalBy = (decidedBy: string, invoiceId: string) => ({
-    id: `ap-${invoiceId}`, subjectType: 'supplier_invoice', subjectRef: invoiceId,
-    requestedBy: 'u-buyer', branchId: null, value: null,
-    status: 'approved' as const, decidedBy, reason: 'checked_with_supplier', decidedAt: NOW,
-  });
-
   it('serves the buyer their OWN page, not the manager’s', async () => {
     // Both screens live in `apps/web-erp/web` and share one bundle. A bare `/buying` that resolved
     // to `index.html` would put a day close in front of somebody who came to capture an invoice.
@@ -1043,7 +1037,7 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     expect(payload['buyerId']).toBe('u-buyer');
   });
 
-  it('captures a whole supplier invoice in one go, once somebody else has checked it', async () => {
+  it('captures a whole supplier invoice in one go, under the buyer’s own name', async () => {
     // Audit finding A-03: eighty lines retyped by hand every week. This is the replacement.
     const base = await serve(snapshotOf());
     const payload = (await payloadFromScreen(base, 'buying'))!;
@@ -1054,7 +1048,7 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     expect(preview.readyToApprove).toBe(true);
 
     const outcome = buying.captureInvoice({
-      invoiceId: 'INV-1', supplierId: 'sup-1', preview, approval: approvalBy('u-manager', 'INV-1'),
+      invoiceId: 'INV-1', supplierId: 'sup-1', preview,
     });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
@@ -1062,16 +1056,12 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     expect(outcome.totalMinor).toBe(TOTAL);
   });
 
-  it('refuses the buyer’s own approval, on the payload the box actually served', async () => {
+  it('needs no checker on the payload the box actually served — the check is a second person’s own act at head office', async () => {
     const base = await serve(snapshotOf());
     const buying = bootBuying((await payloadFromScreen(base, 'buying'))! as never)!;
     const preview = buying.previewInvoice({ text: FILE, declaredTotalMinor: TOTAL });
-    const outcome = buying.captureInvoice({
-      invoiceId: 'INV-2', supplierId: 'sup-1', preview, approval: approvalBy('u-buyer', 'INV-2'),
-    });
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.refusal).toBe('approved_by_the_person_who_captured_it');
+    const outcome = buying.captureInvoice({ invoiceId: 'INV-2', supplierId: 'sup-1', preview });
+    expect(outcome.ok).toBe(true);
   });
 
   it('catches a missing line that every remaining line would pass', async () => {
@@ -1085,7 +1075,7 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     expect(preview.problems).toEqual([]); // every line is individually fine
     expect(preview.readyToApprove).toBe(false);
     const outcome = buying.captureInvoice({
-      invoiceId: 'INV-3', supplierId: 'sup-1', preview, approval: approvalBy('u-manager', 'INV-3'),
+      invoiceId: 'INV-3', supplierId: 'sup-1', preview,
     });
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
@@ -1158,7 +1148,7 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     expect(buyingGaps(payload as never)).toEqual(['what_was_ordered', 'what_arrived']);
   });
 
-  it('reports an unserved approver list as a gap, because it stops the same work', async () => {
+  it('an empty approver list is no longer a gap: the buyer captures alone and the check is at head office (2b-vi-c-4)', async () => {
     const base = await serve(snapshotOf({
       pack: pack({
         buyingPolicy: known({
@@ -1169,7 +1159,7 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     }));
     const payload = (await payloadFromScreen(base, 'buying'))!;
     expect(payload['approvers']).toEqual([]);
-    expect(buyingGaps(payload as never)).toContain('who_may_approve');
+    expect(buyingGaps(payload as never) as readonly string[]).not.toContain('who_may_approve');
   });
 });
 

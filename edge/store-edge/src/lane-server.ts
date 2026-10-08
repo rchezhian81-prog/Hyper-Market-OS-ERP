@@ -213,6 +213,9 @@ export type LaneDayReopenHandler = (
     readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string;
     /** The person this box verified for the request (2b-vi-c-3) — the box seals the reopen when it is the reopener. */
     readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+    /** The reopener's and the approver's own till PINs (2b-vi-c-4), checked by the box and never written anywhere. */
+    readonly reopenerPin?: string;
+    readonly approverPin?: string;
   },
 ) => Promise<
   | { readonly reopened: true; readonly tradingDay: string }
@@ -785,7 +788,16 @@ export function startLaneServer(input: {
           }
           try {
             const verifiedPerson = verifiedPersonOf(req);
-            send(res, 200, await doReopen({ dayCloseId, reopenedBy, reason, approvedBy, ...(verifiedPerson === undefined ? {} : { verifiedPerson }) }), cors);
+            // The two PINs go to the box's PIN register and nowhere else — never logged, never echoed (ADR-0020).
+            const pinOf = (k: string): string | undefined => (typeof b[k] === 'string' && b[k] !== '' ? (b[k] as string) : undefined);
+            const reopenerPin = pinOf('reopenerPin');
+            const approverPin = pinOf('approverPin');
+            send(res, 200, await doReopen({
+              dayCloseId, reopenedBy, reason, approvedBy,
+              ...(verifiedPerson === undefined ? {} : { verifiedPerson }),
+              ...(reopenerPin === undefined ? {} : { reopenerPin }),
+              ...(approverPin === undefined ? {} : { approverPin }),
+            }), cors);
           } catch (e) {
             send(res, 200, { reopened: false, reason: e instanceof Error ? e.message : String(e) }, cors);
           }

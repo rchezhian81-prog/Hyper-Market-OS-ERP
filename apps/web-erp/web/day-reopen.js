@@ -2,7 +2,7 @@
 // (apps/web-erp/src/day-reopen-session.ts), attached as window.dayReopenSession, built on packages/ui. This
 // file only draws what the session hands it: the still-LOCKED days (most recent first, each with who closed it
 // and when), then a "reopen" form (pick a day, a required reason, and a NAMED approver who is a different
-// person). Reopening is a HUMAN decision that runs ONLY on an explicit click, never on load, and it posts to
+// person and keys their own till PIN). Reopening is a HUMAN decision that runs ONLY on an explicit click, never on load, and it posts to
 // the BOX (POST /lane/day-reopen) — the only place that can perform it. The screen refuses a self-approval (§28)
 // before any POST; on success the worklist is re-read (a GET) so the reopened day drops off. No prompt/confirm/alert.
 
@@ -17,7 +17,8 @@ function sampleSession() {
       lockedHeading: 'Locked days', lockedCount: 'locked', allClear: 'No locked days to reopen.',
       dayLabel: 'Trading day', closedByLabel: 'Closed by', closedAtLabel: 'Closed at',
       reopenHeading: 'Reopen a day', dayField: 'Which day', reasonLabel: 'Reason (required)', reasonPlaceholder: 'Why this locked day must be reopened.',
-      approverLabel: 'Approved by (a different person)', approverPlaceholder: 'The authorised person who approved this reopen.', reopenBtn: 'Reopen the day',
+      approverLabel: 'Approver’s staff ID (a different person)', approverPlaceholder: 'The authorised person approving this reopen, here now.', reopenBtn: 'Reopen the day',
+      approverPinLabel: 'Approver’s till PIN — they key it themselves', reopenerPinLabel: 'Your till PIN (not needed when you signed in on the internet copy)',
       reopenRecorded: 'The day is reopened.', reopenRefused: 'Could not reopen — you may not have permission, or the approver is not authorised. Nothing was changed.',
       sampleData: 'Sample data — this is not your shop.', nobodyNamed: '' },
     ta: { title: 'மூடிய நாளை மீண்டும் திற', langName: 'English',
@@ -25,7 +26,8 @@ function sampleSession() {
       lockedHeading: 'பூட்டிய நாட்கள்', lockedCount: 'பூட்டியவை', allClear: 'மீண்டும் திறக்க பூட்டிய நாட்கள் இல்லை.',
       dayLabel: 'வர்த்தக நாள்', closedByLabel: 'மூடியவர்', closedAtLabel: 'மூடிய நேரம்',
       reopenHeading: 'ஒரு நாளை மீண்டும் திற', dayField: 'எந்த நாள்', reasonLabel: 'காரணம் (தேவை)', reasonPlaceholder: 'இந்த பூட்டிய நாளை ஏன் மீண்டும் திறக்க வேண்டும்.',
-      approverLabel: 'அங்கீகரித்தவர் (வேறொருவர்)', approverPlaceholder: 'இந்த மீள்திறப்பை அங்கீகரித்த அங்கீகரிக்கப்பட்ட நபர்.', reopenBtn: 'நாளை மீண்டும் திற',
+      approverLabel: 'அங்கீகரிப்பவரின் பணியாளர் எண் (வேறொருவர்)', approverPlaceholder: 'இப்போது இங்கே இருக்கும், இந்த மீள்திறப்பை அங்கீகரிக்கும் அங்கீகரிக்கப்பட்ட நபர்.', reopenBtn: 'நாளை மீண்டும் திற',
+      approverPinLabel: 'அங்கீகரிப்பவரின் கடை PIN — அவரே உள்ளிட வேண்டும்', reopenerPinLabel: 'உங்கள் கடை PIN (இணைய நகலில் உள்நுழைந்திருந்தால் தேவையில்லை)',
       reopenRecorded: 'நாள் மீண்டும் திறக்கப்பட்டது.', reopenRefused: 'மீண்டும் திறக்க முடியவில்லை — உங்களுக்கு அனுமதி இல்லாமல் இருக்கலாம், அல்லது அங்கீகரித்தவருக்கு அதிகாரம் இல்லை. எதுவும் மாற்றப்படவில்லை.',
       sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.', nobodyNamed: '' },
   };
@@ -104,6 +106,10 @@ function paint() {
     el('reopen-reason').placeholder = t('reasonPlaceholder');
     el('reopen-approver').setAttribute('aria-label', t('approverLabel'));
     el('reopen-approver').placeholder = t('approverPlaceholder');
+    el('reopen-approver-pin-label').textContent = t('approverPinLabel');
+    el('reopen-approver-pin').setAttribute('aria-label', t('approverPinLabel'));
+    el('reopener-pin-label').textContent = t('reopenerPinLabel');
+    el('reopener-pin').setAttribute('aria-label', t('reopenerPinLabel'));
     el('do-reopen').textContent = t('reopenBtn');
     el('reopen-day').replaceChildren(...view.locked.map((r) => {
       const o = document.createElement('option'); o.value = r.dayCloseId; o.textContent = `${r.tradingDay} — ${t('closedByLabel')}: ${r.closedBy}`; return o;
@@ -129,7 +135,11 @@ el('do-reopen').addEventListener('click', () => {
     const dayCloseId = el('reopen-day').value;
     const reason = el('reopen-reason').value;
     const approver = el('reopen-approver').value;
-    const result = await session.reopen(dayCloseId, reason, approver);
+    // The two PINs are read at the click and cleared straight after — whatever the outcome, they never stay on the page.
+    const pins = { approverPin: el('reopen-approver-pin').value, reopenerPin: el('reopener-pin').value };
+    el('reopen-approver-pin').value = '';
+    el('reopener-pin').value = '';
+    const result = await session.reopen(dayCloseId, reason, approver, pins);
     paintResult(session.presentReopenResult(lang, result));
     if (result === 'reopened') { el('reopen-reason').value = ''; el('reopen-approver').value = ''; await refresh(); }
   })();

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
+import { prepareTillBox, pinOf } from '../support/till-operator';
 import { readLog } from '../../edge/store-edge/src/file-log';
 
 /**
@@ -101,11 +102,17 @@ describe.skipIf(!HAVE_BROWSER)('an accountant/owner reopens a locked day, end to
   async function boxWithALockedDay(): Promise<{ edge: EdgeProcess; laneBase: string; dayCloseId: string; tradingDay: string }> {
     const dir = await mkdtemp(join(tmpdir(), 'sre-day-reopen-'));
     dirs.push(dir);
-    const packFile = join(dir, 'store-pack.json');
-    await writeFile(packFile, PACK_JSON, 'utf8');
+    // The box's people and their till PINs (2b-vi-c-4): both the reopener and the approver prove who they are here.
+    const tillEnv = await prepareTillBox({
+      dir, key: KEY, pack: JSON.parse(PACK_JSON) as Record<string, unknown>,
+      people: [
+        { userId: 'u-owner', permissions: ['till.dayclose.read', 'till.dayclose.approve'] },
+        { userId: 'u-accountant', permissions: ['till.dayclose.read', 'till.dayclose.approve'] },
+      ],
+    });
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
-      EDGE_LANE_PORT: '0', EDGE_PACK_FILE: packFile,
+      EDGE_LANE_PORT: '0', ...tillEnv,
     }, () => {}))!;
     stops.push(() => edge.stop());
     const dayCloseId = 'dc-e2e';
@@ -136,6 +143,9 @@ describe.skipIf(!HAVE_BROWSER)('an accountant/owner reopens a locked day, end to
     await page.selectOption('#reopen-day', dayCloseId);
     await page.fill('#reopen-reason', 'wrong float found next morning');
     await page.fill('#reopen-approver', 'u-accountant'); // a DIFFERENT person (§28)
+    // Each keys their OWN till PIN on the screen (2b-vi-c-4) — the box checks both.
+    await page.fill('#reopen-approver-pin', pinOf('u-accountant'));
+    await page.fill('#reopener-pin', pinOf('u-owner'));
     await page.click('#do-reopen');
 
     // The result strip confirms it, and — the proof — the reopen reached the BOX: a durable StoreDayReopened on
@@ -145,7 +155,37 @@ describe.skipIf(!HAVE_BROWSER)('an accountant/owner reopens a locked day, end to
     const records = await readLog(edge.dayCloseLog.path);
     const reopens = records.filter((r) => r.ok === true).map((r) => JSON.parse(r.record) as { dayCloseId?: string; reopenedBy?: string; approvedBy?: string }).filter((p) => typeof p.reopenedBy === 'string');
     expect(reopens).toHaveLength(1);
-    expect(reopens[0]).toMatchObject({ dayCloseId, reopenedBy: 'u-owner', approvedBy: 'u-accountant' });
+    // Both people are sealed by the box as verified by their PINs; neither PIN is anywhere on the record.
+    expect(reopens[0]).toMatchObject({
+      dayCloseId, reopenedBy: 'u-owner', approvedBy: 'u-accountant',
+      deciderVerified: { userId: 'u-owner', via: 'pin' }, approverVerified: { userId: 'u-accountant', via: 'pin' },
+    });
+    const raw = records.filter((r) => r.ok === true).map((r) => r.record).join('\n');
+    expect(raw).not.toContain(pinOf('u-accountant'));
+    expect(raw).not.toContain(pinOf('u-owner'));
+    // The PIN boxes are empty again after the click.
+    expect(await page.inputValue('#reopen-approver-pin')).toBe('');
+  });
+
+  it('a named approver without their PIN is refused on screen; a wrong PIN is refused by the box — nothing written', async () => {
+    const { edge, laneBase, dayCloseId, tradingDay } = await boxWithALockedDay();
+    const lockedDay = { dayCloseId, tradingDay, closedBy: 'manager', closedAt: '2026-09-18T02:05:00.000Z' };
+    const shell = await startShell(person('u-owner', ['till.dayclose.read', 'till.dayclose.approve']), laneBase, lockedDay);
+    stops.push(shell.stop);
+    const page = await openScreen(shell.base);
+    await page.selectOption('#reopen-day', dayCloseId);
+    await page.fill('#reopen-reason', 'recount');
+    await page.fill('#reopen-approver', 'u-accountant');
+    await page.click('#do-reopen'); // no PIN keyed
+    await page.waitForSelector('#result.tone-error:not([hidden])', { timeout: 10_000 });
+    expect((await page.textContent('#result-text')) ?? '').toMatch(/own till PIN/);
+    // A PIN that is not the approver's: the box refuses it.
+    await page.fill('#reopen-approver-pin', pinOf('u-owner'));
+    await page.fill('#reopener-pin', pinOf('u-owner'));
+    await page.click('#do-reopen');
+    await page.waitForSelector('#result.tone-error:not([hidden])', { timeout: 10_000 });
+    const records = await readLog(edge.dayCloseLog.path);
+    expect(records.filter((r) => r.ok === true).map((r) => JSON.parse(r.record) as { reopenedBy?: string }).filter((p) => typeof p.reopenedBy === 'string')).toHaveLength(0);
   });
 
   it('a self-approval is refused CLIENT-SIDE (§28) — nothing is sent and the box is untouched', async () => {

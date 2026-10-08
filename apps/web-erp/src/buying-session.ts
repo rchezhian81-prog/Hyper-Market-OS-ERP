@@ -10,7 +10,16 @@
 //
 // Audit finding A-03 is *line-by-line invoice pain*: somebody types an eighty-line supplier invoice
 // into a computer, by hand, every week. The spec's stated priority is to kill that — upload the
-// file, see what is wrong **before** anything is written, get it approved, commit it in one go.
+// file, see what is wrong **before** anything is written, commit it in one go.
+//
+// ── Who captures it, and who checks it ──────────────────────────────────────
+//
+// The bill is captured by the **signed-in buyer**, and nobody else: it carries no checker. This screen
+// used to ask "Who checked this invoice?" and send a typed second name along with it, and head office
+// rightly stopped trusting that name — a name typed on the buyer's own screen is the buyer's say-so, so
+// the synced invoice route records any such name only as a *claim* and flags the bill unapproved. The
+// check is a **second person's own act at head office**: the match, under their own sign-in (§28). So the
+// screen does not ask for a checker at all, rather than asking for one nobody believes.
 //
 // ── The two controls that make bulk capture safe ────────────────────────────
 //
@@ -22,8 +31,10 @@
 //
 // It is also the reason a *partial* commit would be worse than a refusal: seventy-seven of eighty
 // lines written is an invoice in the system that matches no piece of paper anywhere, and nobody can
-// say which three are missing. `commitImport` is atomic, and this composes it rather than
-// re-implementing it.
+// say which three are missing. So the capture is atomic by construction: every line of the previewed
+// file travels in ONE queued event, written once, or nothing is queued at all. (`commitImport` is not
+// used here: it is the maker-checker import, and this capture carries no checker — the check is the
+// second person's own act at head office.)
 //
 // **2. Each line's own arithmetic is checked.** An invoice prints quantity, unit price and a line
 // total, and a mistyped quantity is invisible in a column of numbers but obvious the moment those
@@ -40,7 +51,7 @@ import { money, type CurrencyCode, type Money } from '../../../packages/contract
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { parseDelimited, MalformedFileError } from '../../../packages/import/src/delimited';
 import {
-  commitImport, validateImport,
+  validateImport,
   type ImportPreview, type RowError, type TemplateSpec,
 } from '../../../packages/import/src/import-job';
 import {
@@ -152,10 +163,11 @@ export interface BuyingConfig {
 }
 
 /**
- * The event a captured supplier invoice travels under (SP-7a · F02): the invoice's OWN lines as the paper says them, who
- * captured it and who checked it — queued on the durable device queue BEFORE the screen says "saved", relayed through
- * the store box to head office's synced invoice route, where both people are re-verified. Nothing about the order or the
- * delivery rides with it: those are head office's own records (F04).
+ * The event a captured supplier invoice travels under (SP-7a · F02): the invoice's OWN lines as the paper says them, and
+ * the signed-in buyer who captured it — queued on the durable device queue BEFORE the screen says "saved", relayed through
+ * the store box to head office's synced invoice route. It carries NO checker: checking the bill is a second person's own
+ * act at head office (the match, under their own sign-in, §28), never a name typed on the buyer's screen. Nothing about
+ * the order or the delivery rides with it: those are head office's own records (F04).
  */
 export const SUPPLIER_INVOICE_CAPTURED = 'SupplierInvoiceCaptured';
 /** The invoice's one identity at every hop (device queue → box → cloud). */
@@ -169,8 +181,6 @@ export interface SupplierInvoiceCapturedPayload {
   readonly declaredTotalMinor: number;
   readonly capturedBy: string;
   readonly capturedAt: string;
-  readonly approvedBy: string;
-  readonly approvedAt: string;
   readonly storeId: string | null;
   readonly source: 'buyer-screen';
 }
@@ -242,8 +252,6 @@ export interface ProposePurchaseOrderPort {
 export type CaptureRefusal =
   | 'file_has_problems'
   | 'does_not_add_up_to_the_invoice_total'
-  | 'not_approved'
-  | 'approved_by_the_person_who_captured_it'
   | 'nothing_to_capture'
   | 'already_captured';
 
@@ -258,8 +266,6 @@ export type CaptureRefusal =
 const REFUSALS: Readonly<Record<CaptureRefusal, CaptureRefusal>> = Object.freeze({
   file_has_problems: 'file_has_problems',
   does_not_add_up_to_the_invoice_total: 'does_not_add_up_to_the_invoice_total',
-  not_approved: 'not_approved',
-  approved_by_the_person_who_captured_it: 'approved_by_the_person_who_captured_it',
   nothing_to_capture: 'nothing_to_capture',
   already_captured: 'already_captured',
 });
@@ -314,9 +320,10 @@ export interface BuyingSession {
   }): CapturePreview;
 
   /**
-   * Commit a previewed, approved invoice — all of it or none of it — onto the DURABLE device queue (SP-7a · F02): the
-   * invoice is on the device before this returns `ok`, the match on this very screen finds it at once, a second capture
-   * of it is refused, and the shared device → box → cloud path carries it to head office.
+   * Commit a previewed invoice — all of it or none of it — onto the DURABLE device queue (SP-7a · F02): the invoice is on
+   * the device before this returns `ok`, the match on this very screen finds it at once, a second capture of it is
+   * refused, and the shared device → box → cloud path carries it to head office. It is captured by the signed-in buyer
+   * and carries NO checker: the check is a second person's own act at head office (the match, under their own sign-in).
    */
   captureInvoice(input: {
     readonly invoiceId: string;
@@ -324,7 +331,6 @@ export interface BuyingSession {
     /** The purchase order the invoice is for, when the buyer knows it — head office matches against ITS copy. */
     readonly poId?: string | null;
     readonly preview: CapturePreview;
-    readonly approval?: DecidedRequest;
   }): CaptureOutcome;
 
   /** Compare the order, the delivery and the invoice (M07-FR-04). */
@@ -480,44 +486,27 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts, ou
         };
       }
 
-      let captured: readonly InvoiceLine[] = [];
-      const result = commitImport(
-        {
-          preview: input.preview.preview,
-          uploadedBy: config.buyerId,
-          jobId: input.invoiceId,
-          ...(input.approval === undefined ? {} : { approval: input.approval }),
-        },
-        // Atomic by construction: `commitImport` calls this once with every valid row, or never.
-        // Seventy-seven of eighty lines written is an invoice matching no piece of paper anywhere,
-        // and nobody can say which three are missing.
-        () => { captured = input.preview.lines; },
-      );
-
-      if (!result.committed) {
-        const refusal: CaptureRefusal = result.refusal === 'self_approved'
-          ? 'approved_by_the_person_who_captured_it'
-          : result.refusal === 'nothing_to_import' ? 'nothing_to_capture' : 'not_approved';
+      if (input.preview.lines.length === 0) {
         return {
           ok: false,
-          refusal,
-          detail: refusal === 'approved_by_the_person_who_captured_it'
-            ? 'the person who captured this invoice cannot also approve it (§28). Somebody else has to look at it.'
-            : refusal === 'nothing_to_capture'
-              ? 'there is nothing in this file to capture.'
-              : 'this invoice has not been approved by anybody yet, so nothing has been written.',
+          refusal: 'nothing_to_capture',
+          detail: 'there is nothing in this file to capture.',
         };
       }
+
+      // Atomic by construction: the whole previewed line set goes into ONE queued event, written once — or, on any
+      // refusal above, nothing is queued at all. Seventy-seven of eighty lines written is an invoice matching no piece
+      // of paper anywhere, and nobody can say which three are missing.
+      const captured: readonly InvoiceLine[] = Object.freeze([...input.preview.lines]);
 
       // QUEUED before it is called saved (F02 — before this, `ok: true` was returned and the invoice existed nowhere). The
       // outbox is the durable device queue `bootBuying` opens; enqueue writes it to the device before returning, and the
       // shared device → box → cloud path carries it from there. The key is the invoice's one identity at every hop.
+      // Captured by the signed-in buyer; NO checker rides with it — the check is a second person's own act at head office.
       const capturedAt = now();
       const payload: SupplierInvoiceCapturedPayload = {
         invoiceId: input.invoiceId, supplierId: input.supplierId, poId: input.poId ?? null, lines: captured,
         declaredTotalMinor: input.preview.declaredTotalMinor, capturedBy: config.buyerId, capturedAt,
-        // `commitImport` accepted the capture, so the approval is present, approved, and not the buyer's own.
-        approvedBy: input.approval?.decidedBy ?? '', approvedAt: input.approval?.decidedAt ?? capturedAt,
         storeId: config.storeId ?? null, source: 'buyer-screen',
       };
       outbox.enqueue(makeEvent({

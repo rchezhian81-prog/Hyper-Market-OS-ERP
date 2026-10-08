@@ -81,6 +81,11 @@ export const RELAYABLE_DEVICE_EVENTS: Readonly<Record<string, { readonly surface
   DeliveryStopUpdated: { surfaces: ['driver'] },
   RouteSettled: { surfaces: ['driver'] },
   DriverCashHandedOver: { surfaces: ['driver'] },
+  // 2b-vi-c-4: the migration screen's DECISIONS (an exception resolved, a control total signed), from the ERP surface the
+  // box serves. The box seals each for the person it verified (ADR-0023 amended); head office refuses an unsealed one by
+  // name and re-checks the decider's authority and the load operator from its own records.
+  MigrationExceptionResolved: { surfaces: ['manager'] },
+  MigrationTotalSigned: { surfaces: ['manager'] },
 });
 
 /**

@@ -2087,16 +2087,17 @@ export function bootDayReopen(
 export function openDayReopenPort(laneWriteBase: string | undefined, reopenedBy: string | null): DayReopenPort {
   if (laneWriteBase === undefined || reopenedBy === null || reopenedBy === '') return NOOP_REOPEN_PORT;
   return {
-    post: async ({ dayCloseId, reason, approvedBy }): Promise<ReopenResult> => {
+    post: async ({ dayCloseId, reason, approvedBy, approverPin, reopenerPin }): Promise<ReopenResult> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
       if (fetchFn === undefined) return 'lost_link';
       try {
         const res = await fetchFn(`${laneWriteBase}/lane/day-reopen`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', accept: 'application/json' },
-          // The reopener is the authenticated user at this screen (bound at boot from `dayReopenData.userId`);
-          // the named approver rides as `approvedBy`, and the box enforces §28 (approver ≠ reopener).
-          body: JSON.stringify({ dayCloseId, reopenedBy, reason, approvedBy }),
+          // The reopener is the authenticated user at this screen (bound at boot from `dayReopenData.userId`); the approver
+          // is named AND proves it with their own till PIN, keyed here (2b-vi-c-4). The box checks both PINs, enforces §28
+          // (approver ≠ reopener) and seals who it verified; the PINs go to the box and nowhere else.
+          body: JSON.stringify({ dayCloseId, reopenedBy, reason, approvedBy, approverPin, ...(reopenerPin === undefined ? {} : { reopenerPin }) }),
         });
         const body = (await res.json().catch(() => ({}))) as { reopened?: boolean };
         if (res.status >= 200 && res.status < 300 && body.reopened === true) return 'reopened';
@@ -4056,6 +4057,42 @@ export function migrationPortsFromData(data: MigrationData | undefined, outbox: 
   };
 }
 
+/** A fault with the migration screen's own device storage, for the page to say (P-08). */
+export let migrationStorageProblem: string | undefined;
+
+/**
+ * Open the migration screen's DURABLE device queue (2b-vi-c-4), keyed per store like the manager's and the buyer's: a
+ * resolution or a signature made here is on the device before the screen says so, survives a reload, and is handed to the
+ * store computer — which seals it for the person it verified and carries it to head office.
+ */
+export function openMigrationOutbox(storeId: string, storage?: DeviceStorage): SyncOutbox {
+  const store = storage ?? (globalThis as { localStorage?: DeviceStorage }).localStorage;
+  const onProblem = (why: string): void => { migrationStorageProblem = why; };
+  return openDeviceOutbox(guardedStore(`sre.migration.outbox.${storeId}`, store, onProblem), onProblem);
+}
+
+/** What the migration screen calls to hand its decisions to the store computer. */
+export interface MigrationRelay {
+  syncNow(): Promise<{ readonly handed: number; readonly refused: number; readonly failed: number; readonly offline: boolean }>;
+}
+
+/**
+ * The migration screen's leg of the shared sync path (2b-vi-c-4): the same cross-port call to the box's lane socket the
+ * manager and buyer screens make, as the same ERP surface. `undefined` when no box is wired: the decisions stay saved on
+ * this device, and nothing pretends to have been sent.
+ */
+export function openMigrationRelay(laneWriteBase: string | undefined, outbox: SyncOutbox): MigrationRelay | undefined {
+  if (laneWriteBase === undefined) return undefined;
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return undefined;
+  return {
+    syncNow: async () => {
+      const result = await drainToBox({ outbox, boxBase: laneWriteBase, source: 'manager', fetch: fetchFn });
+      return { handed: result.handed, refused: result.refused, failed: result.failed, offline: result.offline };
+    },
+  };
+}
+
 /** Build the migration screen, or `null` when the box was told nothing about a cutover. */
 export function bootMigration(data: MigrationData | undefined, outbox: SyncOutbox = new SyncOutbox()): MigrationSession | null {
   if (data === undefined) return null;
@@ -4349,6 +4386,9 @@ interface ManagerWindow {
   aiSession?: AiSession;
   migrationData?: MigrationData;
   migrationSession?: MigrationSession;
+  /** Hands the migration screen's decisions to the store computer (2b-vi-c-4). Absent when no box is wired. */
+  migrationRelay?: MigrationRelay;
+  migrationStorageProblem?: string;
   warehouseSupervisorData?: SupervisorData;
   warehouseSupervisorSession?: WarehouseSupervisorSession;
   /** Where the supervisor's approval decisions queue for sync — the view passes it to `decide`. */
@@ -4562,7 +4602,6 @@ export const BUYING_GAPS = Object.freeze([
   'what_was_ordered',
   'what_arrived',
   'which_invoices_are_already_saved',
-  'who_may_approve',
 ] as const);
 export type BuyingGap = (typeof BUYING_GAPS)[number];
 
@@ -4573,9 +4612,8 @@ export function buyingGaps(data: BuyingData | undefined): readonly BuyingGap[] {
   if (data?.ordered === undefined) gaps.push('what_was_ordered');
   if (data?.received === undefined) gaps.push('what_arrived');
   if (data?.captured === undefined) gaps.push('which_invoices_are_already_saved');
-  // An empty list counts as a gap here, and deliberately: nobody to approve is indistinguishable in
-  // effect from never having been told, because both leave the buyer unable to save anything.
-  if (data?.approvers === undefined || data.approvers.length === 0) gaps.push('who_may_approve');
+  // No approver list any more (2b-vi-c-4): a bill is captured by the signed-in buyer alone, and the check is a second
+  // person's own act at head office, so who may approve is not something this screen needs to be told.
   return gaps;
 }
 
@@ -5745,8 +5783,16 @@ if (browserWindow !== undefined) {
   }
   const ai = bootAi(browserWindow.aiData);
   if (ai !== null) browserWindow.aiSession = ai;
-  const migration = bootMigration(browserWindow.migrationData);
-  if (migration !== null) browserWindow.migrationSession = migration;
+  // The migration screen's DURABLE device queue (2b-vi-c-4): its decisions are handed to the store computer, never left in
+  // the tab — before, they lived in a queue nothing drained.
+  const migrationOutbox = browserWindow.migrationData === undefined ? undefined : openMigrationOutbox(browserWindow.migrationData.storeId ?? 'store-1');
+  const migration = bootMigration(browserWindow.migrationData, migrationOutbox);
+  if (migration !== null && migrationOutbox !== undefined) {
+    browserWindow.migrationSession = migration;
+    const migrationRelay = openMigrationRelay(browserWindow.laneWriteBase, migrationOutbox);
+    if (migrationRelay !== undefined) browserWindow.migrationRelay = migrationRelay;
+    if (migrationStorageProblem !== undefined) browserWindow.migrationStorageProblem = migrationStorageProblem;
+  }
   const warehouseSupervisor = bootWarehouseSupervisor(browserWindow.warehouseSupervisorData);
   if (warehouseSupervisor !== null) {
     browserWindow.warehouseSupervisorSession = warehouseSupervisor;

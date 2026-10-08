@@ -112,6 +112,11 @@ const DEVICE_EVENTS_CURSOR = 'sync-cursor-device-events';
 /** The till-cash pipeline's own cursor file (SP-4c · F10), so the seventh log advances independently too. */
 const TILL_CASH_CURSOR = 'sync-cursor-till-cash';
 
+/** Who may ask to reopen a locked day at the store computer (2b-vi-c-4): anyone who may see the locked days. */
+const REOPEN_AUTHORITY = 'till.dayclose.read';
+/** Who may approve a reopen — the permission head office re-checks on every synced reopen (§28). */
+const APPROVE_REOPEN_AUTHORITY = 'till.dayclose.approve';
+
 /**
  * Mint the cloud event from a day-close log record — used BOTH by the pipeline's restart re-queue and
  * by the run-time enqueue in `closeDay`/`reopenDay`, so both mint the identical event (the cloud routes
@@ -148,6 +153,7 @@ function dayCloseEventFrom(record: string, index: number): DomainEvent | undefin
         reason: p['reason'],
         // The box's seal on the reopener, exactly as written (2b-vi-c-3); absent when it verified nobody.
         ...(p['deciderVerified'] === undefined ? {} : { deciderVerified: p['deciderVerified'] }),
+        ...(p['approverVerified'] === undefined ? {} : { approverVerified: p['approverVerified'] }),
       },
     });
   }
@@ -301,7 +307,7 @@ export interface EdgeProcess {
    * Idempotent per day. Available with or without a cloud — the unlock is local regardless (P-01).
    */
   readonly reopenDay: (
-    req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string; readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string } },
+    req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string; readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string }; readonly reopenerPin?: string; readonly approverPin?: string },
   ) => Promise<
     | { readonly reopened: true; readonly tradingDay: string }
     | { readonly reopened: false; readonly reason: string }
@@ -1310,7 +1316,7 @@ export async function startEdge(
   // cloud (record-and-flag, never a rejection — hard rule #10). Idempotent per day: a second reopen of an
   // already-reopened day is a no-op success, never a duplicate compensating event.
   const reopenDay = async (
-    req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string; readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string } },
+    req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string; readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string }; readonly reopenerPin?: string; readonly approverPin?: string },
   ): Promise<
     | { readonly reopened: true; readonly tradingDay: string }
     | { readonly reopened: false; readonly reason: string }
@@ -1336,6 +1342,36 @@ export async function startEdge(
       return { reopened: true, tradingDay: close.tradingDay };
     }
 
+    // BOTH people are verified by this box (2b-vi-c-4 · §28 · ADR-0023 amended) — never a name typed on a screen.
+    //   • the REOPENER: the person the box verified for the request (the hosted sign-in) or their own staff ID and till PIN,
+    //     holding `till.dayclose.read`;
+    //   • the APPROVER: their own staff ID and till PIN, holding `till.dayclose.approve`, and never the reopener.
+    // Checked by the same PIN register as the till's sign-in and approvals (same guess limits); PINs are never written.
+    if (tillOperators === null) {
+      return { reopened: false, reason: 'this store computer cannot check people here, so it cannot reopen a day — tell the manager' };
+    }
+    const lane = laneIdOfThisBox() ?? '';
+    const vp = req.verifiedPerson;
+    let reopener: { readonly userId: string; readonly via: string } | undefined;
+    if (vp !== undefined && vp.userId !== '' && vp.userId === req.reopenedBy.trim()) {
+      reopener = { userId: vp.userId, via: vp.via };
+    } else if (typeof req.reopenerPin === 'string' && req.reopenerPin !== '') {
+      const who = await tillOperators.verifyPerson({ staffId: req.reopenedBy, pin: req.reopenerPin, laneId: lane, authority: REOPEN_AUTHORITY });
+      if (!who.ok) return { reopened: false, reason: `the person reopening was not confirmed: ${who.laneMessage}` };
+      reopener = { userId: who.userId, via: 'pin' };
+    }
+    if (reopener === undefined) {
+      return { reopened: false, reason: 'the person reopening the day must confirm it is them — their staff ID and till PIN' };
+    }
+    if (req.approvedBy.trim() === reopener.userId) {
+      return { reopened: false, reason: 'a different person must approve the reopen — never the person reopening it' };
+    }
+    if (typeof req.approverPin !== 'string' || req.approverPin === '') {
+      return { reopened: false, reason: 'the person approving must key their own till PIN here — a typed name is not an approval' };
+    }
+    const approver = await tillOperators.verifyPerson({ staffId: req.approvedBy, pin: req.approverPin, laneId: lane, authority: APPROVE_REOPEN_AUTHORITY });
+    if (!approver.ok) return { reopened: false, reason: `the approver was not confirmed: ${approver.laneMessage}` };
+
     const now = new Date().toISOString();
     // Gate-check with the tested engine (a throwaway outbox — the durable write + enqueue below is what
     // survives a restart). It throws unless the reopen carries an approval by a DIFFERENT person (§28).
@@ -1359,13 +1395,9 @@ export async function startEdge(
     // The box seals the reopen for the person it verified when that person is the reopener (2b-vi-c-3): the seal covers
     // the body head office receives, word for word. Anybody else — or nobody verified — and the reopen goes unsealed.
     const relayed = { dayCloseId: req.dayCloseId, storeId: tenantId, tradingDay: close.tradingDay, reopenedBy: req.reopenedBy, approvedBy: req.approvedBy, reason: req.reason };
-    const v = req.verifiedPerson;
-    const deciderVerified = v !== undefined && v.userId !== '' && v.userId === req.reopenedBy.trim()
-      ? sealDecision(sealKey, { tenantId, kind: 'day_reopen', recordId: req.dayCloseId, record: relayed, laneId: v.laneId, userId: v.userId, via: v.via })
-      : undefined;
-    const record = JSON.stringify({
-      ...relayed, reopenedAt: now, ...(deciderVerified === undefined ? {} : { deciderVerified }),
-    });
+    const deciderVerified = sealDecision(sealKey, { tenantId, kind: 'day_reopen', recordId: req.dayCloseId, record: relayed, laneId: lane, userId: reopener.userId, via: reopener.via });
+    const approverVerified = sealDecision(sealKey, { tenantId, kind: 'day_reopen_approval', recordId: req.dayCloseId, record: relayed, laneId: lane, userId: approver.userId, via: 'pin' });
+    const record = JSON.stringify({ ...relayed, reopenedAt: now, deciderVerified, approverVerified });
     await dayCloseLog.append(record);
     const event = dayCloseEventFrom(record, 0);
     if (event !== undefined) dayCloseOutbox.enqueue(event);

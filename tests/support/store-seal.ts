@@ -3,7 +3,7 @@
 // these helpers seal under the same pack signing key head office runs with (the harness's own by default), so head office
 // sees what it sees from a real, current store computer.
 
-import { sealDecision, sealTillFact, tillSealKey, DECIDER_STAMP_FIELD } from '../../packages/identity/src/till-seal';
+import { sealDecision, sealTillFact, tillSealKey, APPROVER_STAMP_FIELD, DECIDER_STAMP_FIELD } from '../../packages/identity/src/till-seal';
 import { SEALED_DECISIONS } from '../../edge/store-edge/src/decision-seal';
 import { TEST_PACK_KEY } from './api-harness';
 
@@ -65,9 +65,17 @@ export function storeSealer(packSigningKey: string, via = 'pin') {
       return { ...record, [DECIDER_STAMP_FIELD]: sealDecision(key, { tenantId, kind: shape.kind, recordId: recordId ?? str(record[shape.id]), record, laneId: LANE, userId, via }) };
     },
     /** A relayed day reopen (2b-vi-c-3): the reopener the box verified, sealed over the body head office reads. */
-    dayReopen(tenantId: string, dayCloseId: string, body: Body): Body {
+    dayReopen(tenantId: string, dayCloseId: string, body: Body, opts: { readonly approverToo?: boolean } = {}): Body {
       const userId = str(body['reopenedBy']);
-      return { ...body, [DECIDER_STAMP_FIELD]: sealDecision(key, { tenantId, kind: 'day_reopen', recordId: dayCloseId, record: body, laneId: LANE, userId, via }) };
+      const approver = str(body['approvedBy']);
+      return {
+        ...body,
+        [DECIDER_STAMP_FIELD]: sealDecision(key, { tenantId, kind: 'day_reopen', recordId: dayCloseId, record: body, laneId: LANE, userId, via }),
+        // The approver's own PIN at the box (2b-vi-c-4), when the test stands in for a current store computer.
+        ...(opts.approverToo === true && approver !== ''
+          ? { [APPROVER_STAMP_FIELD]: sealDecision(key, { tenantId, kind: 'day_reopen_approval', recordId: dayCloseId, record: body, laneId: LANE, userId: approver, via: 'pin' }) }
+          : {}),
+      };
     },
   };
 }

@@ -11,7 +11,7 @@
       rule lives in the tested session model (apps/web-erp/src/day-reopen-session.ts), attached as
       window.dayReopenSession and built on the shared packages/ui primitives. It lists the still-LOCKED days
       (most recent first, each with who closed it and when), then a "reopen" form (pick a day, a required reason,
-      and a NAMED approver who is a different person). A reopen is a HUMAN write that runs ONLY on an explicit
+      and a NAMED approver who is a different person and keys their own till PIN). A reopen is a HUMAN write that runs ONLY on an explicit
       click, never on load, and it posts to the BOX (POST /lane/day-reopen) — the only place that can perform it.
       The screen refuses a self-approval (§28) before any POST; the box enforces it and the cloud re-verifies the
       approver's authority. The locked days are read live (GET /v1/pos/day-close); offline the screen shows its
@@ -85,6 +85,14 @@
         <div>
           <label for="reopen-approver" id="reopen-approver-label"></label>
           <input id="reopen-approver" type="text" autocomplete="off" />
+        </div>
+        <div>
+          <label for="reopen-approver-pin" id="reopen-approver-pin-label"></label>
+          <input id="reopen-approver-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" />
+        </div>
+        <div>
+          <label for="reopener-pin" id="reopener-pin-label"></label>
+          <input id="reopener-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" />
         </div>
         <button id="do-reopen" class="act" type="button"></button>
       </section>

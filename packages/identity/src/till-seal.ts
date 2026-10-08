@@ -137,9 +137,11 @@ export function checkApprovalStamp(key: Buffer, input: {
 
 /** The field a relayed decision carries the box's stamp in. Never part of what the seal covers. */
 export const DECIDER_STAMP_FIELD = 'deciderVerified';
+/** The box's stamp on the SECOND person of a decision it verified itself (2b-vi-c-4: a day reopen's approver, by PIN). */
+export const APPROVER_STAMP_FIELD = 'approverVerified';
 
 /** The kinds of decision a box seals. Each kind is its own namespace: a seal for one never fits another. */
-export type DecisionKind = 'approval_decision' | 'supplier_invoice' | 'checklist' | 'migration_exception' | 'migration_total' | 'day_reopen';
+export type DecisionKind = 'approval_decision' | 'supplier_invoice' | 'checklist' | 'migration_exception' | 'migration_total' | 'day_reopen' | 'day_reopen_approval';
 
 /** The box's stamp on the person who made a decision, as it travels on the relayed record. */
 export interface DeciderStamp {
@@ -163,6 +165,7 @@ function canonicalJson(v: unknown): string {
 export function decisionDigest(record: unknown): string {
   const body = record !== null && typeof record === 'object' && !Array.isArray(record) ? { ...(record as Record<string, unknown>) } : {};
   delete body[DECIDER_STAMP_FIELD];
+  delete body[APPROVER_STAMP_FIELD];
   return createHash('sha256').update(canonicalJson(body), 'utf8').digest('hex');
 }
 
@@ -185,9 +188,12 @@ export function sealDecision(key: Buffer, input: {
  */
 export function checkDeciderStamp(key: Buffer, input: {
   readonly tenantId: string; readonly kind: DecisionKind; readonly recordId: string; readonly named: string; readonly record: unknown;
+  /** Which stamp to read: the decider's (default) or the second person's. */
+  readonly field?: typeof DECIDER_STAMP_FIELD | typeof APPROVER_STAMP_FIELD;
 }): SealCheck {
   const body = input.record !== null && typeof input.record === 'object' ? input.record as Record<string, unknown> : {};
-  const s = (body[DECIDER_STAMP_FIELD] !== null && typeof body[DECIDER_STAMP_FIELD] === 'object' ? body[DECIDER_STAMP_FIELD] : {}) as Record<string, unknown>;
+  const field = input.field ?? DECIDER_STAMP_FIELD;
+  const s = (body[field] !== null && typeof body[field] === 'object' ? body[field] : {}) as Record<string, unknown>;
   const userId = text(s['userId']); const via = text(s['via']); const laneId = text(s['laneId']);
   if (userId === undefined || via === undefined || laneId === undefined || s['seal'] === undefined) return 'missing';
   if (userId !== input.named.trim()) return 'does_not_match';

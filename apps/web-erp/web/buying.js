@@ -19,9 +19,13 @@
 //
 // ── And what it never does ──────────────────────────────────────────────────
 //
-// **It writes nothing until the model says the file is clean and somebody else has approved it.**
-// Not a partial save — seventy-seven of eighty lines written is an invoice matching no piece of
-// paper anywhere. The save button does not exist on the page until the preview says it may.
+// **It writes nothing until the model says the file is clean.** Not a partial save — seventy-seven
+// of eighty lines written is an invoice matching no piece of paper anywhere. The save button does not
+// exist on the page until the preview says it may.
+//
+// It never asks "who checked this invoice?". The bill is captured by the signed-in buyer and carries
+// no checker: head office does not trust a name typed here, and the check is a second person's own act
+// at head office — the match, under their own sign-in.
 //
 // No `prompt`, `confirm` or `alert`; the banner does not fade.
 
@@ -42,7 +46,7 @@ const WORDS = {
     invoiceLead: "Paste the supplier's file, type the total printed on the paper, and see what is wrong before anything is saved.",
     invoiceNumber: 'Invoice number', supplier: 'Supplier',
     printedTotal: 'Total printed on the invoice (in rupees)', theLines: "The supplier's lines",
-    checkThis: 'Check this invoice', sendForApproval: 'Send for approval and save',
+    checkThis: 'Check this invoice', saveInvoice: 'Save this invoice',
     readyToSave: 'This invoice adds up and every line is good',
     notReady: 'This invoice cannot be saved yet',
     fileSays: 'The file adds up to', paperSays: 'The paper says',
@@ -53,9 +57,7 @@ const WORDS = {
     needInvoiceNumber: 'Give the invoice number first.',
     needTotal: 'Type the total printed on the paper invoice first.',
     needFile: 'Paste the supplier\'s lines first.',
-    whoApproves: 'Who checked this invoice?',
-    whoApprovesNote: 'You cannot approve your own capture. Somebody else has to look at it.',
-    saved: 'Invoice saved on this device', savedNote: 'It can be checked against the order now. The store computer will carry it to head office, and the list below says where it has got to.',
+    saved: 'Invoice saved on this device', savedNote: 'It can be checked against the order now. The store computer will carry it to head office, where someone else checks the bill against the order under their own sign-in. The list below says where it has got to.',
     invoicePo: 'Purchase order number (if you have it)',
     savedTitle: 'Invoices saved on this screen', savedLead: 'Each is saved on this device first, then with the store computer, then posted at head office.',
     linesWord: 'lines', noOrderWord: 'no purchase order',
@@ -73,7 +75,6 @@ const WORDS = {
     notConnected: 'This screen has not been given anything by the store box yet.',
     remove: 'Remove', lineTotal: 'Line total', whatIsWrong: 'What is wrong',
     gapsTitle: 'This screen has not been told everything',
-    noApprovers: 'This screen has not been told who may approve. Nothing can be saved until it has.',
   },
   ta: {
     buying: 'கொள்முதல்', supplierInvoice: 'சப்ளையர் இன்வாய்ஸ்', checkAgainst: 'ஆர்டருடன் சரிபார்',
@@ -81,7 +82,7 @@ const WORDS = {
     invoiceLead: 'சப்ளையரின் கோப்பை ஒட்டவும், தாளில் அச்சிடப்பட்ட மொத்தத்தைத் தட்டச்சு செய்யவும். எதுவும் சேமிக்கப்படும் முன் என்ன தவறு என்று பாருங்கள்.',
     invoiceNumber: 'இன்வாய்ஸ் எண்', supplier: 'சப்ளையர்',
     printedTotal: 'இன்வாய்ஸில் அச்சிடப்பட்ட மொத்தம் (ரூபாயில்)', theLines: 'சப்ளையரின் வரிகள்',
-    checkThis: 'இந்த இன்வாய்ஸைச் சரிபார்', sendForApproval: 'ஒப்புதலுக்கு அனுப்பி சேமி',
+    checkThis: 'இந்த இன்வாய்ஸைச் சரிபார்', saveInvoice: 'இந்த இன்வாய்ஸைச் சேமி',
     readyToSave: 'இந்த இன்வாய்ஸ் சரியாகக் கூடுகிறது, எல்லா வரிகளும் நன்றாக உள்ளன',
     notReady: 'இந்த இன்வாய்ஸை இன்னும் சேமிக்க முடியாது',
     fileSays: 'கோப்பின் கூட்டுத்தொகை', paperSays: 'தாளில் உள்ளது',
@@ -92,9 +93,7 @@ const WORDS = {
     needInvoiceNumber: 'முதலில் இன்வாய்ஸ் எண்ணைக் கொடுக்கவும்.',
     needTotal: 'முதலில் தாளில் அச்சிடப்பட்ட மொத்தத்தைத் தட்டச்சு செய்யவும்.',
     needFile: 'முதலில் சப்ளையரின் வரிகளை ஒட்டவும்.',
-    whoApproves: 'இந்த இன்வாய்ஸை யார் சரிபார்த்தார்?',
-    whoApprovesNote: 'உங்கள் சொந்த பதிவை நீங்களே ஒப்புதல் அளிக்க முடியாது. வேறு ஒருவர் பார்க்க வேண்டும்.',
-    saved: 'இன்வாய்ஸ் இந்தக் கருவியில் சேமிக்கப்பட்டது', savedNote: 'இப்போது ஆர்டருடன் சரிபார்க்கலாம். கடை கணினி இதை தலைமை அலுவலகத்திற்கு அனுப்பும்; கீழே உள்ள பட்டியல் எங்கே இருக்கிறது என்று சொல்லும்.',
+    saved: 'இன்வாய்ஸ் இந்தக் கருவியில் சேமிக்கப்பட்டது', savedNote: 'இப்போது ஆர்டருடன் சரிபார்க்கலாம். கடை கணினி இதை தலைமை அலுவலகத்திற்கு அனுப்பும்; அங்கு வேறு ஒருவர் தன் சொந்த உள்நுழைவில் இந்த பில்லை ஆர்டருடன் சரிபார்ப்பார். கீழே உள்ள பட்டியல் எங்கே இருக்கிறது என்று சொல்லும்.',
     invoicePo: 'கொள்முதல் ஆர்டர் எண் (இருந்தால்)',
     savedTitle: 'இந்தத் திரையில் சேமிக்கப்பட்ட இன்வாய்ஸ்கள்', savedLead: 'ஒவ்வொன்றும் முதலில் இந்தக் கருவியில், பின் கடை கணினியிடம், பின் தலைமை அலுவலகத்தில் பதிவாகும்.',
     linesWord: 'வரிகள்', noOrderWord: 'கொள்முதல் ஆர்டர் இல்லை',
@@ -112,7 +111,6 @@ const WORDS = {
     notConnected: 'கடை கணினியிடமிருந்து இந்தத் திரைக்கு இன்னும் எதுவும் வரவில்லை.',
     remove: 'நீக்கு', lineTotal: 'வரி மொத்தம்', whatIsWrong: 'என்ன தவறு',
     gapsTitle: 'இந்தத் திரைக்கு எல்லாத் தகவலும் வரவில்லை',
-    noApprovers: 'யார் ஒப்புதல் அளிக்கலாம் என்று இந்தத் திரைக்குத் தெரியவில்லை. அது வரும் வரை எதுவும் சேமிக்க முடியாது.',
   },
 };
 let lang = 'en';
@@ -122,8 +120,6 @@ const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
 const REFUSAL_WORDS = {
   file_has_problems: { en: 'Some lines need fixing on the paper invoice first. Nothing has been saved.', ta: 'சில வரிகளை முதலில் சரிசெய்ய வேண்டும். எதுவும் சேமிக்கப்படவில்லை.' },
   does_not_add_up_to_the_invoice_total: { en: 'The lines do not add up to the total on the paper. Either a line is wrong or a line is missing.', ta: 'வரிகள் தாளில் உள்ள மொத்தத்துடன் பொருந்தவில்லை. ஒரு வரி தவறு அல்லது ஒரு வரி விடுபட்டுள்ளது.' },
-  not_approved: { en: 'Nobody has approved this invoice yet, so nothing has been saved.', ta: 'இந்த இன்வாய்ஸை இன்னும் யாரும் ஒப்புதல் அளிக்கவில்லை. எதுவும் சேமிக்கப்படவில்லை.' },
-  approved_by_the_person_who_captured_it: { en: 'You cannot approve your own capture. Somebody else has to look at it.', ta: 'உங்கள் சொந்த பதிவை நீங்களே ஒப்புதல் அளிக்க முடியாது. வேறு ஒருவர் பார்க்க வேண்டும்.' },
   nothing_to_capture: { en: 'There is nothing in this file to save.', ta: 'இந்தக் கோப்பில் சேமிக்க எதுவும் இல்லை.' },
   already_captured: { en: 'This invoice has already been saved. Saving it twice would double what this supplier is owed.', ta: 'இந்த இன்வாய்ஸ் ஏற்கனவே சேமிக்கப்பட்டுள்ளது. இரண்டு முறை சேமித்தால் சப்ளையருக்கு இரட்டிப்பாகும்.' },
 };
@@ -167,10 +163,6 @@ const GAP_WORDS = {
     en: 'It has not been told which invoices are already saved, so it cannot warn you about saving one twice.',
     ta: 'எந்த இன்வாய்ஸ்கள் ஏற்கனவே சேமிக்கப்பட்டுள்ளன என்று தெரியவில்லை. இரண்டு முறை சேமிப்பதைப் பற்றி எச்சரிக்க முடியாது.',
   },
-  who_may_approve: {
-    en: 'It has not been told who may approve, so nothing here can be saved.',
-    ta: 'யார் ஒப்புதல் அளிக்கலாம் என்று தெரியவில்லை. எனவே இங்கு எதுவும் சேமிக்க முடியாது.',
-  },
 };
 
 /**
@@ -190,7 +182,7 @@ function sampleSession() {
       problems: [],
       preview: { reconciles: declaredTotalMinor === 100_000 },
     }),
-    captureInvoice: () => ({ ok: false, refusal: 'not_approved', detail: 'this is sample data' }),
+    captureInvoice: () => ({ ok: false, refusal: 'nothing_to_capture', detail: 'this is sample data' }),
     match: () => ({
       lines: [], payableMinor: 0, invoicedMinor: 0, withheldMinor: 0, blocked: true,
       detail: 'sample', ownerAction: 'This is sample data — nothing has been compared.',
@@ -214,50 +206,7 @@ function tell(title, message, good = false) {
 }
 el('banner-ok').addEventListener('click', () => { el('banner').hidden = true; });
 
-// ── The panel ───────────────────────────────────────────────────────────────
-
-let sheetResolve = null;
-
-/**
- * Ask who approved something. On screen, never a browser prompt.
- *
- * An empty list is answered before the panel opens. A panel offering no names and only a Cancel
- * button is a dead end that looks like a bug; the buyer is told the box has not been given the
- * list, which is what is actually wrong and is something somebody can go and fix.
- */
-function askApprover(title, note, people) {
-  if (people.length === 0) {
-    tell(t('read'), t('noApprovers'));
-    return Promise.resolve(null);
-  }
-  el('sheet-title').textContent = title;
-  el('sheet-note').textContent = note;
-  el('sheet-cancel').textContent = t('cancel');
-  el('choices').replaceChildren(...people.map((who) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = who;
-    button.addEventListener('click', () => { closeSheet(who); });
-    return button;
-  }));
-  el('sheet').hidden = false;
-  return new Promise((resolve) => { sheetResolve = resolve; });
-}
-function closeSheet(answer) {
-  el('sheet').hidden = true;
-  const resolve = sheetResolve;
-  sheetResolve = null;
-  if (resolve) resolve(answer);
-}
-el('sheet-cancel').addEventListener('click', () => { closeSheet(null); });
-
-/**
- * Who may check a capture. From the box, never invented here.
- *
- * The box has already removed the buyer from this list (§28), and the model refuses a
- * self-approval regardless — offering a name and then rejecting it would be the worse of the two.
- */
-const approvers = () => window.buyingData?.approvers ?? [];
+// ── What the box did not say ────────────────────────────────────────────────
 
 /** Everything the box did not tell this screen, named on the page rather than left to be guessed. */
 function renderGaps() {
@@ -369,7 +318,7 @@ function renderPreview(preview) {
   el('lines-preview').replaceChildren(linesTable(preview.lines));
   // The save button does not exist on the page until the model says the file may be saved.
   el('capture').hidden = !preview.readyToApprove;
-  el('capture').textContent = t('sendForApproval');
+  el('capture').textContent = t('saveInvoice');
 }
 
 function linesTable(lines) {
@@ -398,28 +347,20 @@ function linesTable(lines) {
   return table;
 }
 
-el('capture').addEventListener('click', async () => {
+el('capture').addEventListener('click', () => {
   const invoiceId = el('invoice-id').value.trim();
   if (invoiceId === '') { tell(t('read'), t('needInvoiceNumber')); return; }
   if (lastPreview === null) return;
 
-  // Separation of duties is asked for on screen, and enforced in the model — the buyer cannot be
-  // in this list, and a name picked here is checked against the capture either way.
-  const who = await askApprover(t('whoApproves'), t('whoApprovesNote'), approvers());
-  if (who === null) return;
-
+  // No "who checked this invoice?" here. The bill is captured by the signed-in buyer and carries no
+  // checker — head office does not trust a name typed on this screen. The check is a second person's
+  // own act at head office: the match, under their own sign-in.
   const poId = el('invoice-po').value.trim();
   const outcome = session.captureInvoice({
     invoiceId,
     supplierId: el('supplier-id').value.trim(),
     poId: poId === '' ? null : poId,
     preview: lastPreview,
-    approval: {
-      id: `ap-${invoiceId}`, subjectType: 'supplier_invoice', subjectRef: invoiceId,
-      requestedBy: window.buyingData?.buyerId ?? 'buyer', branchId: null, value: null,
-      status: 'approved', decidedBy: who, reason: 'checked_with_supplier',
-      decidedAt: new Date().toISOString(),
-    },
   });
 
   if (!outcome.ok) {
@@ -615,7 +556,7 @@ function paintChrome() {
   el('declared-total-label').textContent = t('printedTotal');
   el('file-text-label').textContent = t('theLines');
   el('preview').textContent = t('checkThis');
-  el('capture').textContent = t('sendForApproval');
+  el('capture').textContent = t('saveInvoice');
   el('match-title').textContent = t('checkAgainst');
   el('match-lead').textContent = t('matchLead');
   el('match-po-label').textContent = t('comparePo');

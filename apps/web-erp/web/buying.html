@@ -100,10 +100,7 @@
 
       .empty { color: var(--muted); padding: 20px 4px; }
 
-      /* Panels and the banner — same behaviour as every other screen here. */
-      .sheet h3 { margin: 0; font-size: 19px; }
-      .choices { display: grid; gap: 10px; }
-      .choices button { text-align: left; padding: 0 16px; min-height: var(--tap); }
+      /* The banner — same behaviour as every other screen here. */
 
       .banner {
         position: fixed; inset: 0 0 auto 0; z-index: 30; padding: 18px 16px;
@@ -192,7 +189,7 @@
         <div id="verdict" hidden></div>
         <div class="problems" id="problems"></div>
         <div id="lines-preview"></div>
-        <button id="capture" class="primary wide" type="button" hidden>Send for approval and save</button>
+        <button id="capture" class="primary wide" type="button" hidden>Save this invoice</button>
 
         <!-- SP-7a (F02): every invoice saved on this screen, from the DURABLE device queue, with where each has got to. -->
         <h3 id="saved-title" hidden>Invoices saved on this screen</h3>
@@ -242,16 +239,6 @@
         <button id="raise-po" class="primary wide" type="button">Raise the order</button>
       </section>
     </main>
-
-    <!-- Every question is an on-screen panel, never a browser prompt. -->
-    <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-      <div class="sheet-inner">
-        <h3 id="sheet-title">—</h3>
-        <p class="lead" id="sheet-note"></p>
-        <div class="choices" id="choices"></div>
-        <button id="sheet-cancel" type="button">Cancel</button>
-      </div>
-    </div>
 
     <div class="banner" id="banner" hidden role="alert">
       <strong id="banner-title">—</strong>
