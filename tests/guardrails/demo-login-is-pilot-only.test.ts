@@ -61,7 +61,7 @@ describe('the demo sign-in is pilot-only', () => {
     expect(gate).toContain('reverse_proxy web:80');
     expect(CADDY.replace(gate, '')).not.toContain('web:80');
     expect(gate).toMatch(/@staff path [^\n]*\/login \/login\/\*/);
-    expect(gate).toMatch(/header !Authorization\s*\n\s*header_regexp Cookie \(\^\|;\\s\*\)sre_demo_session=/);
+    expect(gate).toMatch(/header !Authorization\s*\n\s*header_regexp Cookie \(\^\|;\\s\*\)\(sre_demo_session\|sre_session\)=/);
     expect(serviceBlock(BASE, 'proxy')).toContain('SRE_STAFF_ROUTE: ${SRE_STAFF_ROUTE:-staff-not-public}');
     expect(serviceBlock(PILOT, 'proxy')).toContain('SRE_STAFF_ROUTE: ${SRE_STAFF_ROUTE:-staff-demo-gate}');
     // The staff shells themselves are behind the sign-in on the demo front (ADR-0018 §2), not merely their data.

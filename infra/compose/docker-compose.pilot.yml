@@ -79,7 +79,10 @@ services:
     volumes: !override
       - ../../apps/customer-app/web:/usr/share/nginx/html/customer:ro
       - ../../apps/supplier-app/web:/usr/share/nginx/html/supplier:ro
-      - ./nginx.pilot.conf:/etc/nginx/conf.d/default.conf:ro
+      # Which sign-in the front door asks (OB-15-b): the pilot sign-in (default) or, with SRE_FRONT_CONF=nginx.identity.conf
+      # in .env.pilot, the product's sign-in service and the identity server (run with COMPOSE_PROFILES=identity).
+      # Switching back is the same one setting.
+      - ./${SRE_FRONT_CONF:-nginx.pilot.conf}:/etc/nginx/conf.d/default.conf:ro
 
   # The public proxy (base file) with the staff gate ON: the hosted demo is the one place the staff screens are
   # reachable from the internet, and only through the demo sign-in at /login/. A store, or any stack without this
