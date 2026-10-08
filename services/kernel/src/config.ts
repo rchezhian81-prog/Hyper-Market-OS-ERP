@@ -169,6 +169,10 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   // nothing here can sign.
   { key: 'IDP_OIDC_ISSUER', optional: true },
   { key: 'IDP_OIDC_JWKS_URL', optional: true },
+  // Head office's provisioner at that identity server (OB-15-c): the secret the identity server GENERATED for its
+  // `sre-provisioner` client, copied here by the administrator. Optional — absent, people are given sign-ins at the
+  // identity server by hand and the product's people route says it is not connected. It may manage users, nothing else.
+  { key: 'IDP_PROVISIONER_SECRET', secret: true, optional: true, minLength: 16 },
   { key: 'PORT', numeric: true, fallback: '8081' },
   { key: 'NODE_ENV', oneOf: ['development', 'test', 'production'], fallback: 'production' },
   { key: 'MIGRATION_TARGET_KIND', oneOf: ['rehearsal', 'staging', 'local', 'production'], fallback: 'rehearsal' },

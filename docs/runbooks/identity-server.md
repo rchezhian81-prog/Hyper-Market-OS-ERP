@@ -42,7 +42,38 @@ memory); they sign in again.
   never holds a token).
 - The identity server's page is the product's own (`infra/keycloak/themes/sre`), in English and Tamil.
 
-**Not yet (next parts):** creating people from the product's Admin screen; a realm per shop; the tenant console.
+**Part 4 (OB-15-c-1): head office gives named people their sign-ins, and ends a leaver's.**
+- The platform administrator gives a **named** person a sign-in from the product (`POST /v1/identity/people`):
+  - never a shared account — a name like "cashier2", "till-3" or "store" is refused;
+  - never themselves;
+  - never somebody who already holds a role. Their sign-in is made at the identity server, in that person's presence (the
+    step below), because whoever sees a one-time password could otherwise act with that person's authority.
+- Every sign-in made this way asks for a one-time code from the person's phone.
+- The one-time password is shown **once**, to the administrator, to hand over in person. It is not kept in the ledger,
+  the audit, a replay or a log. The person chooses their own password at first sign-in and sets up the phone code.
+- **A leaver's sign-in is switched off** at the identity server, and their sessions there ended, before their access
+  change is recorded. If the identity server cannot be reached, nothing changes and the screen says so.
+
+**Not yet (next parts):** the People tab on the Admin screen (part 4 is head office's side); a realm per shop; the
+tenant console.
+
+## Connecting head office to the identity server, so people's sign-ins are given from the product
+
+1. Sign in at `/auth/admin` (see "Turning it on"). Realm `sre-store` → Clients → `sre-provisioner` → Credentials. Copy
+   the **Client secret**. The identity server generated it; nobody makes it up.
+   - **If `sre-provisioner` is not listed**, your realm was first imported before 8 October 2026; an existing realm is
+     not imported again. Add it once: Realm settings → Action (top right) → Partial import → choose
+     `infra/keycloak/realm-sre-store.json` → tick Clients and Users → "If a resource exists: Skip" → Import. Then
+     copy the secret as above.
+2. In `.env.pilot` on the server: `IDP_PROVISIONER_SECRET=<the secret>`. Release as usual. Head office's log says
+   `identity server: people's sign-ins are given from the product (realm sre-store)`.
+3. **The platform administrator's own sign-in** is made by hand at the identity server, as for the owner (step 1 of
+   the switch-over below), with `sre_user_id` = their id in the product (on the demo: `pilot-platform-admin`) and
+   role `sre-privileged`.
+4. **Their first sign-in sets up the phone code.** The identity server records that first sign-in as "password only",
+   so head office asks them to sign in once more, with the code, before they can give anybody a sign-in.
+5. To change the secret: Credentials → Regenerate, then update `.env.pilot` and release. The old one stops working at
+   once.
 
 ## Switching the trial server's front door to the identity server (administrator, on the server)
 
@@ -125,7 +156,18 @@ with no session → the sign-in → the identity server's page → back; the sto
 visitor's own `X-Sre-User` is overwritten; a head-office call through the front door is let in on the session's token
 and refused without it; sign-out ends it.
 
+**People's sign-ins** (`tests/integration/keycloak-provisioning.test.ts`, same settings, a freshly migrated
+database). It proves on the real server:
+- the provisioner may manage people and nothing else (no client, no secret, no realm change, no administrator role);
+- the platform administrator, signed in with password and phone code, gives a named person a sign-in through the real
+  head-office service: the password is returned once, `no-store`, never in a replay, the ledger, the idempotency store
+  or the audit; a shared name and a role-holder are refused; a sign-in without the code is refused;
+- the person's first sign-in forces their own password and the phone code;
+- ending the sign-in switches it off.
+It takes about a minute: it waits for fresh phone codes, as the server refuses one used twice.
+
 **Recorded:** 8 October 2026, Keycloak 26.0.7:
+- 4 of 4 passed for people's sign-ins (part 4);
 - 1 of 1 passed through the front door (part 3);
 - 5 of 5 passed (part 1);
 - 6 of 6 passed with the sign-in service (part 2).

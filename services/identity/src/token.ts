@@ -38,6 +38,7 @@
 
 import { createHmac, timingSafeEqual, verify as verifySignature, type KeyObject } from 'node:crypto';
 import type { Principal } from '../../kernel/src/index';
+import { withMultiFactor } from './amr';
 
 /** Why a token was not believed. Never returned to the caller — the reply is always "unauthenticated". */
 export type TokenRefusal =
@@ -266,7 +267,7 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
   const authTime = typeof authTimeClaim === 'number' ? authTimeClaim : undefined;
   const amrClaim = payload['amr'];
   const amr = Array.isArray(amrClaim)
-    ? amrClaim.filter((m): m is string => typeof m === 'string')
+    ? withMultiFactor(amrClaim.filter((m): m is string => typeof m === 'string'))
     : undefined;
 
   const jtiClaim = payload['jti'];

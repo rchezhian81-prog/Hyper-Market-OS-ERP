@@ -138,6 +138,8 @@ import { secretsRoutes } from '../../platform/src/secrets';
 import { orgStructureRoutes } from '../../platform/src/org-structure';
 import { identityRoutes } from '../../identity/src/index';
 import { jwksKeyring } from '../../identity/src/jwks';
+import { directoryLocationOf, keycloakDirectory, type IdentityDirectory } from '../../identity/src/identity-directory';
+import { peopleRoutes } from '../../identity/src/people';
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../identity/src/revocation';
 import { delegationRoutes } from '../../identity/src/delegation';
 import { approvalDecisionRoutes, type ApprovalDecisionRecord, type AppliedDecision } from '../../identity/src/approval-decisions';
@@ -223,7 +225,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, dataExportAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
+  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -298,6 +300,8 @@ export function buildSurface(deps: {
   readonly revocations?: TokenRevocationList;
   /** Durable gap-free number series (a SqlNumberSeriesStore-backed store in production). */
   readonly numberSeries?: NumberSeriesStore;
+  /** The identity server's directory (OB-15-c): people's sign-ins given and ended from the product. Omitted: not connected. */
+  readonly identityDirectory?: IdentityDirectory;
   /**
    * Where projection snapshots live (CORE-03). A `SqlSnapshotStore` in production, so bounded reads
    * survive a restart; omitted, adapters fall back to a process-local in-memory cache (still correct,
@@ -432,6 +436,17 @@ export function buildSurface(deps: {
         recordAudit: auditTrail?.recordAudit,
         approvals: approvalRequestsAdapter({ store, now }),
         ...(deps.revocations === undefined ? {} : { revocations: deps.revocations }),
+        // A leaver's sign-in at the identity server is switched off before their access change is recorded (OB-15-c).
+        ...(deps.identityDirectory === undefined ? {} : { signIns: signInEnder({ directory: deps.identityDirectory, people: peopleAdapter({ store, now }) }) }),
+      }),
+    // People's sign-ins (OB-15-c · M02-FR-01): the platform administrator gives a named person — never a shared account,
+    // never somebody already holding authority — a sign-in at the identity server; the one-time password is shown once.
+    ...peopleRoutes(store === undefined
+      ? { now, people: empty([]), recordPerson: () => {}, holdsAnyRole: () => false }
+      : {
+        ...peopleAdapter({ store, now }),
+        recordAudit: auditTrail?.recordAudit,
+        ...(deps.identityDirectory === undefined ? {} : { directory: deps.identityDirectory }),
       }),
     ...catalogueRoutes({
       ...(store === undefined ? {
@@ -1325,6 +1340,17 @@ export async function startApi(
     err('\nIDP_OIDC_ISSUER and IDP_OIDC_JWKS_URL go together — set both to sign people in through the identity server, or neither.\n\n');
     return undefined;
   }
+  // Head office's provisioner at the identity server (OB-15-c): only with the identity server configured.
+  const provisionerSecret = settings['IDP_PROVISIONER_SECRET'];
+  const directoryAt = oidcJwks === undefined ? undefined : directoryLocationOf(oidcJwks);
+  if (provisionerSecret !== undefined && directoryAt === undefined) {
+    err('\nIDP_PROVISIONER_SECRET needs the identity server: set IDP_OIDC_ISSUER and IDP_OIDC_JWKS_URL (…/realms/<realm>/protocol/openid-connect/certs) too.\n\n');
+    return undefined;
+  }
+  const identityDirectory = provisionerSecret === undefined || directoryAt === undefined ? undefined : keycloakDirectory({
+    ...directoryAt, clientId: 'sre-provisioner', clientSecret: provisionerSecret, secondFactorRole: 'sre-privileged', fetch: globalThis.fetch,
+  });
+  if (identityDirectory !== undefined) out(`identity server: people's sign-ins are given from the product (realm ${directoryAt!.realm})\n`);
   const identityServerKeys = oidcJwks === undefined ? undefined : jwksKeyring({
     url: oidcJwks, fetch: globalThis.fetch, onProblem: (detail) => { err(`identity server: ${detail}\n`); },
   });
@@ -1400,6 +1426,7 @@ export async function startApi(
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
     revocations,
+    ...(identityDirectory === undefined ? {} : { identityDirectory }),
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
     // restart, the same table and rules the in-memory path uses in tests.
     settings: new DurableTenantSettings(new SqlConfigVersionStore(pgPoolClient(db))),

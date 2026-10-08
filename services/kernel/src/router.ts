@@ -92,6 +92,12 @@ export interface Route {
    */
   readonly idempotent?: boolean;
   /**
+   * Writes only: top-level reply fields that are SHOWN ONCE — a one-time password handed to the person who issued it.
+   * They are never kept for an idempotent replay (the replay says the value was withheld) and the reply is marked
+   * `cache-control: no-store`, so nothing between the service and the screen keeps it either (hard rule #4).
+   */
+  readonly shownOnce?: readonly string[];
+  /**
    * Sensitive actions (§28, SEC-03): require a RECENT re-authentication — and, where declared, a
    * specific factor such as MFA — enforced at the API boundary (closes GAP-SEC-06). The pipeline
    * checks the SIGNED token's `auth_time`/`amr` against this AFTER permission + entitlement and
@@ -109,6 +115,7 @@ export type RouteRefusal =
   | 'read_declaring_idempotency'
   | 'route_without_permission'
   | 'step_up_window_not_positive'
+  | 'shown_once_on_a_read'
   | 'two_routes_for_one_address';
 
 export interface RegisterResult {
@@ -169,6 +176,12 @@ export class Router {
         detail: `${route.method} ${route.path} changes something and does not declare idempotency. The till resends what it could not confirm, so a write that is not safe to repeat is a sale banked twice (§31.1)`,
       };
     }
+    if (route.shownOnce !== undefined && (!isWrite(route.method) || route.shownOnce.length === 0)) {
+      return {
+        ok: false, refusedBecause: 'shown_once_on_a_read',
+        detail: `${route.method} ${route.path} declares reply fields shown once, but only a write with at least one named field can — a read is answered again every time it is asked`,
+      };
+    }
     if (!isWrite(route.method) && route.idempotent === true) {
       return {
         ok: false, refusedBecause: 'read_declaring_idempotency',
@@ -215,6 +228,7 @@ export class Router {
     return this.routes.map((r) => ({
       api: r.api, method: r.method, path: r.path, permission: r.permission,
       ...(r.idempotent === undefined ? {} : { idempotent: r.idempotent }),
+      ...(r.shownOnce === undefined ? {} : { shownOnce: r.shownOnce }),
       ...(r.reauth === undefined ? {} : { reauth: r.reauth }),
       handler: r.handler,
     }));

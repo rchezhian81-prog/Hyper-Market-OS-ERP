@@ -47,7 +47,7 @@ describe('an identity-server sign-in is checked against its own published public
   it('a genuine sign-in names the PRODUCT person (sre_user_id), the tenant from the signed claims, and how they proved it', () => {
     const v = verifyToken(signed(claims()), policy, NOW);
     expect(v.ok).toBe(true);
-    expect(v.principal).toMatchObject({ tenantId: 'tenant-a', userId: 'u-owner', amr: ['pwd', 'otp'] });
+    expect(v.principal).toMatchObject({ tenantId: 'tenant-a', userId: 'u-owner', amr: ['pwd', 'otp', 'mfa'] }); // password + phone code is two factors (RFC 8176, OB-15-c)
   });
 
   it('refuses the algorithm switched: "none", or HS256 signed with the public key as the secret', () => {

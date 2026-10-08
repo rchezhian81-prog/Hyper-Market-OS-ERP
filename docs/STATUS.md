@@ -5,6 +5,49 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-15-c-1 — head office gives named people their sign-ins, and ends a leaver's (8 October 2026)
+
+- **The block:** OB-15 ("A 1"; ADR-0019), part 4: creating people from the product (M02-FR-01, M02-FR-04).
+- **What changed:**
+  - **The platform administrator gives a named person a sign-in** from the product, at the identity server.
+    - Refused, by name: a shared or job name ("cashier2", "till-3", "store", "Store Manager"); the administrator
+      themselves; anybody who already holds a role. Whoever sees a one-time password must not be able to act with
+      somebody's existing authority, so role-holders get their sign-in at the identity server, in person.
+    - Every sign-in made this way asks for a code from the person's phone.
+    - **The one-time password is shown once** and kept nowhere — not in the records, the audit, a repeated request or
+      a log. The person chooses their own password at first sign-in.
+    - If the reply is lost or the identity server is down, the same request later finishes the job; it never makes
+      a second sign-in or replaces a password somebody already uses.
+  - **A leaver's sign-in is switched off** at the identity server before their access change is recorded. If that
+    server cannot be reached, nothing changes and the screen says so.
+  - **Fixed a gap found on the way:** head office's sensitive actions ask for a recent sign-in with a second factor,
+    and did not recognise the identity server's "password + phone code" as one. They do now (RFC 8176).
+  - Head office is connected to the identity server by one setting (`IDP_PROVISIONER_SECRET`). The identity server
+    makes that secret itself; the administrator copies it across (runbook).
+- **Proved:**
+  - Unit tests: the refusals, the order (recorded before, finished after), lost replies, a name taken at the
+    identity server, "shown once" through the real request pipeline, a weak sign-in refused, and the leaver
+    (switched off first; unreachable → nothing changes, approval unspent).
+  - Guardrails: the provisioner's rights, no secret in the realm file, the 255-character limit the identity server
+    enforces (it refused to start on a longer description during this work), no password in any record or log.
+  - **Against a real Keycloak 26.0.7 (opt-in, 4 of 4):**
+    - the provisioner can manage people and nothing else;
+    - a platform administrator signed in with password and phone code gives a named person a sign-in through the
+      real head-office service; the password is returned once and is in no table;
+    - a sign-in without the code is refused;
+    - the new person must choose their own password and set up the phone code;
+    - ending the sign-in switches it off.
+  - The earlier real-Keycloak suites again: 6 of 6 and 1 of 1.
+- **Not yet / honest limits:**
+  - **No screen yet.** The People tab on the Admin screen is the next part. Until then this is head office's side
+    only.
+  - The very first sign-in, on which the phone code is set up, does not count as two-factor at the identity server,
+    so a person signs in once more before a sensitive action.
+  - Resetting a forgotten password is still done at the identity server.
+  - The real-Keycloak suites run by hand. Staff UAT (SP-10) is pending.
+- **Behaviour change the owner should know:** none until the administrator connects head office (runbook).
+- **Next:** OB-15-c-2 — the People tab on the Admin screen.
+
 ## OB-15-b-2 — the trial server's front door can use the product's sign-in, in the owner's look (8 October 2026)
 
 - **The block:** OB-15 ("A 1"; ADR-0019), part 3 of the sign-in.
