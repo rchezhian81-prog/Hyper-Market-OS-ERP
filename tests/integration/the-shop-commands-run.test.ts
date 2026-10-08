@@ -54,9 +54,10 @@ describe.skipIf(DATABASE_URL === undefined)('the shop list and a shop\'s feature
   it('the list shows each shop with its own name, area and address', async () => {
     const listed = await run('shops.js', ['list', '--env-file', env()]);
     expect(listed.code, listed.out).toBe(0);
-    expect(listed.out).toContain(`SRE Anna Nagar Proof — ${anna}`);
-    expect(listed.out).toContain(`SRE T Nagar Proof — ${tnagar}`);
-    expect(listed.out).toMatch(/sign-in area: sre-anna-proof/);
+    // Other suites register shops in the same database: find OUR two in the list, and print the whole list if not.
+    const blockOf = (id: string): string => listed.out.split('\n\n').find((b) => b.includes(id)) ?? `(shop ${id} not listed)\n${listed.out}`;
+    expect(blockOf(anna), blockOf(anna)).toMatch(new RegExp(`^SRE Anna Nagar Proof — ${anna}\\n  sign-in area: sre-anna-proof · address: https://x\\.example\\.test`));
+    expect(blockOf(tnagar), blockOf(tnagar)).toMatch(new RegExp(`^SRE T Nagar Proof — ${tnagar}\\n  sign-in area: sre-tnagar-proof`));
   });
 
   it('a change to ONE shop is in that shop\'s own history, read by head office as its own; the other shop is untouched', async () => {
