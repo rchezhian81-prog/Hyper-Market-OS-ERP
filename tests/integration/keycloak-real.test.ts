@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { verifyToken } from '../../services/identity/src/token';
 import { jwksKeyring } from '../../services/identity/src/jwks';
+import { createSignInHandler, SESSION_COOKIE } from '../../services/identity/src/sign-in';
 import { startApi } from '../../services/api/src/main';
 import { TEST_IDP } from '../support/api-harness';
 import { ensureAppRole, asRole } from '../support/db-app-role';
@@ -76,7 +77,7 @@ async function signIn(username: string, password: string): Promise<{ token?: str
   const jar = new Jar();
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
-  const redirect = `${ORIGIN}/auth/callback`;
+  const redirect = `${ORIGIN}/login/callback`;
   const authUrl = `${ISSUER}/protocol/openid-connect/auth?${new URLSearchParams({
     client_id: 'sre-web', response_type: 'code', scope: 'openid', redirect_uri: redirect,
     code_challenge: challenge, code_challenge_method: 'S256', state: randomBytes(8).toString('hex'),
@@ -193,5 +194,47 @@ describe.skipIf(!READY)('a real Keycloak, with the repository realm, signs a per
     } finally {
       await api!.stop();
     }
+  });
+
+  it('through the product\'s own sign-in service: /login/ → the identity server\'s page → /login/callback → the front door gets the person', async () => {
+    const userId = `u-front-${run}`;
+    const password = await person(userId);
+    const audit: Record<string, unknown>[] = [];
+    const service = createSignInHandler({
+      settings: { issuer: ISSUER, internalIssuer: ISSUER, clientId: 'sre-web', origin: ORIGIN },
+      policy: policy(), fetch: globalThis.fetch, now: () => Date.now(), audit: (l) => { audit.push(l); },
+    });
+    const call = (method: string, url: string, cookie?: string) =>
+      service({ method, url, headers: cookie === undefined ? {} : { cookie: `${SESSION_COOKIE}=${cookie}`, origin: ORIGIN }, body: '' });
+    // 1 — the service sends the browser to the identity server's own page.
+    const start = await call('GET', '/login/?next=/store/manager/');
+    expect(start.status).toBe(303);
+    const jar = new Jar();
+    const form = await fetch(start.headers['location']!, { redirect: 'manual' });
+    jar.take(form);
+    const action = /<form[^>]*id="kc-form-login"[^>]*action="([^"]+)"/.exec(await form.text())?.[1]?.replace(/&amp;/g, '&');
+    expect(action).toBeDefined();
+    // 2 — the person signs in THERE; the identity server sends the browser back to our callback.
+    const posted = await fetch(action!, {
+      method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: jar.header() },
+      body: new URLSearchParams({ username: userId, password }).toString(),
+    });
+    const back = posted.headers.get('location') ?? '';
+    expect(back.startsWith(`${ORIGIN}/login/callback?`)).toBe(true);
+    // 3 — the service exchanges the code, believes it, and keeps the session; the browser gets a random id only.
+    const landed = await call('GET', back.slice(ORIGIN.length));
+    expect(landed.status).toBe(303);
+    expect(landed.headers['location']).toBe('/store/manager/');
+    const id = /sre_session=([^;]+)/.exec(landed.headers['set-cookie'] ?? '')![1]!;
+    // 4 — the front door's question: the person, and a current token head office believes.
+    const verify = await call('GET', '/login/verify', id);
+    expect(verify.status).toBe(204);
+    expect(verify.headers['x-sre-user']).toBe(userId);
+    expect(verifyToken(verify.headers['x-sre-bearer']!.replace(/^Bearer /, ''), policy(), Date.now()).ok).toBe(true);
+    // 5 — sign out: ended here at once, and the identity server's own sign-out is where the browser goes next.
+    const out = await call('POST', '/login/logout', id);
+    expect(new URL(out.headers['location']!).pathname).toBe(`/realms/${REALM}/protocol/openid-connect/logout`);
+    expect((await call('GET', '/login/verify', id)).status).toBe(401);
+    expect(audit.map((l) => l['event'])).toEqual(['signed_in', 'signed_out']);
   });
 });

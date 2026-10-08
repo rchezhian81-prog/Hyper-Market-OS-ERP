@@ -152,7 +152,7 @@
       "frontchannelLogout": true,
       "fullScopeAllowed": false,
       "redirectUris": [
-        "${SRE_WEB_ORIGIN}/auth/callback"
+        "${SRE_WEB_ORIGIN}/login/callback"
       ],
       "webOrigins": [
         "${SRE_WEB_ORIGIN}"

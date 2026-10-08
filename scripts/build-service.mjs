@@ -17,7 +17,7 @@
 // from `node_modules` at run time rather than inlined. The output is one plain `.js` file with the
 // types stripped and every extension resolved.
 //
-// Usage:  node scripts/build-service.mjs <api|edge|tools>
+// Usage:  node scripts/build-service.mjs <api|edge|demo-login|sign-in|tools>
 // Output: <service>/dist/start.js  (git-ignored — `dist/` is in .gitignore)
 //         `tools` bundles the operator commands (scripts/migration-load.ts, scripts/bootstrap-tenant.ts)
 //         into scripts/dist/ — they import the workspace TypeScript the same way the services do.
@@ -35,6 +35,8 @@ const SERVICES = {
   edge: { entry: 'edge/store-edge/src/start.ts', outfile: 'edge/store-edge/dist/start.js' },
   // DEMO-ONLY sign-in: run only by the pilot compose overlay (see infra/pilot/demo-login/login.ts).
   'demo-login': { entry: 'infra/pilot/demo-login/main.ts', outfile: 'infra/pilot/demo-login/dist/demo-login.mjs' },
+  // The product's sign-in service (OB-15-b · ADR-0019): the front door's "who is this?", answered from the identity server.
+  'sign-in': { entry: 'services/identity/src/sign-in-main.ts', outfile: 'services/identity/dist/sign-in.mjs' },
 };
 
 /** Operator commands a person runs on the box; bundled together, each to its own file. */
