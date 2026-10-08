@@ -52,7 +52,9 @@ describe.skipIf(DATABASE_URL === undefined)('the shop list and a shop\'s feature
   afterAll(async () => { rmSync(dir, { recursive: true, force: true }); await db?.end(); });
 
   it('the list shows each shop with its own name, area and address', async () => {
+    const before = (await db.query('SELECT count(*)::int AS n, bool_or(tenant_id = $1) AS ours FROM tenants', [anna])).rows[0] as { n: number; ours: boolean };
     const listed = await run('shops.js', ['list', '--env-file', env()]);
+    console.log(`DEBUG tenants=${before.n} ours=${before.ours} header=${listed.out.split('\n')[0]} code=${listed.code}`);
     expect(listed.code, listed.out).toBe(0);
     // Other suites register shops in the same database: find OUR two in the list, and print the whole list if not.
     const blockOf = (id: string): string => listed.out.split('\n\n').find((b) => b.includes(id)) ?? `(shop ${id} not listed)\n${listed.out}`;
