@@ -11,7 +11,7 @@ import {
   type PeopleDeps, type PersonSignInEvent,
 } from '../../services/identity/src/people';
 import { DirectoryUnavailableError, directoryLocationOf, type DirectoryPerson, type IdentityDirectory, type IssueOutcome } from '../../services/identity/src/identity-directory';
-import { withMultiFactor } from '../../services/identity/src/token';
+import { withMultiFactor } from '../../services/identity/src/amr';
 import { ROLE_CATALOGUE } from '../../services/api/src/roles';
 
 /**
