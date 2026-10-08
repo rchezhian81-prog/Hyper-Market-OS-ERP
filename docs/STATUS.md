@@ -5,6 +5,55 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 2b-vi-c-4 — the second person proves it is them; nothing waits in a forgotten queue (8 October 2026)
+
+- **The findings (audit PA-03, register row 17b and the side findings left open by c-3):**
+  - a day reopen's approver was a name typed on the screen;
+  - the buyer's screen asked "who checked this bill?" and took any name;
+  - the migration screen's decisions sat in a queue nothing ever sent.
+- **What changed (ADR-0023, amended again):**
+  - **Reopening a closed day takes two people, each proving it at the store computer:**
+    - the person reopening is the signed-in person on the internet copy, or keys their own staff ID and till PIN, and
+      may see the locked days;
+    - the person approving keys their **own** till PIN, must hold the approval permission, and is never the reopener.
+    - The store computer refuses the reopen otherwise. It seals both people; head office checks both seals.
+    - The PIN boxes empty themselves after each try. PINs are never written anywhere.
+  - **The buyer's screen** saves a supplier bill under the buyer's name only — no "who checked it" panel. The check is
+    done at head office by a second person under their own login (the match). The "who may approve" warning is gone.
+  - **The migration screen** keeps its decisions in a durable queue on the device and hands them to the store computer,
+    which seals them for the person it verified and carries them to head office.
+- **Proved:**
+  - Unit / guardrails:
+    - buyer session (34);
+    - buyer screen guardrail (25);
+    - day-reopen screen guardrail (a named approver without a PIN is refused before anything is sent);
+    - page anatomy (one sheet fewer).
+  - Integration, through the real API and a real store computer:
+    - day reopen through the box (8): both PINs sealed and clean; an approver without the authority, a missing PIN, a
+      wrong PIN and an unconfirmed reopener all refused before anything is written; the internet copy's signed-in
+      reopener; restart keeps the seals;
+    - head office: both seals clean, a seal copied onto another day caught;
+    - a migration decision from the screen's queue through a real box, sealed and applied (a handheld may not send it);
+    - screens fed (179) and the procurement audit observations (3).
+  - Browser on Chromium:
+    - day reopen (3): both PINs keyed and the reopen sealed on the box; no PIN refused on screen; a wrong PIN refused
+      by the box;
+    - buyer (5): no checker panel, ever;
+    - migration (9): the decision reaches the store computer.
+- **Not yet / honest limits:**
+  - The owner and the accountant need a till PIN on the store computer to approve a reopen. This is one administrator
+    command (in-store-install Step 2b); on the trial server too.
+  - The back-office screens on a real store box still have no sign-in (OB-15), so other decisions made there arrive
+    unsealed and flagged.
+  - The store computer still serves an approver list to the buyer's screen, which no longer uses it (harmless; it goes
+    with DF-3).
+  - Staff UAT (SP-10) is pending.
+- **Behaviour change the owner should know:**
+  - to reopen a closed day, the approver must be at the store computer and key their own PIN;
+  - the buyer no longer picks who checked a bill — someone checks it at head office.
+- **Next:** the OB-15 block (a real sign-in for the back-office screens via the identity server) — it removes the last
+  "not confirmed by the store computer" flags. Then Wave 3.
+
 ## Wave 2b-vi-c-3 — the store computer vouches for who made each back-office decision it carries (8 October 2026)
 
 - **The finding (audit PA-03, register side finding "seals on the box-relayed decisions"):** six records reach head
