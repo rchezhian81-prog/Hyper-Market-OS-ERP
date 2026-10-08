@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## OB-15-d-1 — each shop its own sign-in area, prepared by head office and loaded by the administrator (8 October 2026)
+
+- **The block:** OB-15 ("A 1"; ADR-0019), part 6. **Owner decision OB-19 "A"** (8 Oct 2026): head office prepares a new
+  shop's sign-in area; the administrator loads it; head office never holds a key that can create one.
+- **What changed:**
+  - **Each shop's sign-in area is locked to that shop.** A sign-in from one shop's area that names another shop is
+    refused, however correctly it is signed. With more than one area, every one must be locked, or head office will not
+    start (it says why).
+  - **A tool makes a new shop's file** (`pnpm run realm:for-shop`): the shop's own area name, its id, its web address
+    and our API's name written in; no person, no secret. It refuses what it cannot use, by name, and changes nothing.
+  - **Head office's people-creating connection stays in its own shop**: another shop's administrator is told "not
+    connected" — no person is ever made in another shop's area; the same for a leaver.
+  - The administrator's steps for a new shop are in the identity server runbook.
+- **Proved:**
+  - Unit (19): the settings rules, the shop lock (a correctly signed sign-in for the wrong shop refused), the choice
+    among several areas, the file (every value written in, no secret, bad input refused), the provisioner's own shop.
+  - **Against a real Keycloak 26.0.7 (opt-in, 3 of 3):** a second shop's file made by the tool and loaded the way the
+    administrator loads it:
+    - it is that shop's — its id, its address, the owner's look, only the provisioner's limited account;
+    - a person in each shop is put in their own shop by the real head office, and nowhere else;
+    - an area locked to the wrong shop is refused outright;
+    - a second shop without the first locked will not start.
+  - The earlier real-Keycloak suites again: 6, 1 and 4, all passing.
+- **Not yet / honest limits:**
+  - **The shop console** (creating the shop in the product, with its plan and features, and handing over its file) is
+    next.
+  - **Each shop's own web address and front door** need the domain name (owner item, still open).
+  - People in a further shop are given sign-ins at its area by hand; the product's Sign-ins screen serves the first
+    shop.
+  - Staff UAT (SP-10) is pending.
+- **Behaviour change the owner should know:** none — nothing changes until a second shop exists.
+- **Next:** OB-15-d-2 — the shop console (M36-FR-01).
+
 ## OB-15-c-2 — the Admin screen's Sign-ins: the administrator gives a named person a sign-in (8 October 2026)
 
 - **The block:** OB-15 ("A 1"; ADR-0019), part 5. Admin → **Who can get in** → **Sign-ins**.

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 937,
+  "testFiles": 939,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1957,9 +1957,9 @@
       "id": "M36",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 11,
-        "integration": 26,
-        "realDb": 3,
+        "unit": 12,
+        "integration": 27,
+        "realDb": 4,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -1977,7 +1977,8 @@
           "tests/unit/platform-plans.test.ts",
           "tests/unit/production.test.ts",
           "tests/unit/receipt-presets.test.ts",
-          "tests/unit/service-kernel-entitlement.test.ts"
+          "tests/unit/service-kernel-entitlement.test.ts",
+          "tests/unit/shop-realms.test.ts"
         ],
         "integration": [
           "tests/integration/api-manifest.test.ts",
@@ -1996,6 +1997,7 @@
           "tests/integration/documents-templates.test.ts",
           "tests/integration/driver-handheld-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/it-remembers.test.ts",
+          "tests/integration/keycloak-shop-realms.test.ts",
           "tests/integration/partner-access-control.test.ts",
           "tests/integration/partner-certification.test.ts",
           "tests/integration/partner-sandbox.test.ts",
@@ -2010,6 +2012,7 @@
         "realDb": [
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/it-remembers.test.ts",
+          "tests/integration/keycloak-shop-realms.test.ts",
           "tests/migration/tenants-register.test.ts"
         ],
         "browser": [],

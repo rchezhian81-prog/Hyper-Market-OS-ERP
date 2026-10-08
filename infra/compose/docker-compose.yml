@@ -112,6 +112,9 @@ services:
       # Both or neither; empty = the pilot sign-in only. Public keys only — the API can check a sign-in, never make one.
       IDP_OIDC_ISSUER: ${IDP_OIDC_ISSUER:-}
       IDP_OIDC_JWKS_URL: ${IDP_OIDC_JWKS_URL:-}
+      # One realm per shop (OB-15-d · OB-19): the shop the first realm signs for, and every further shop's realm=tenant.
+      IDP_OIDC_TENANT_ID: ${IDP_OIDC_TENANT_ID:-}
+      IDP_OIDC_SHOP_REALMS: ${IDP_OIDC_SHOP_REALMS:-}
       # Head office's provisioner at the identity server (OB-15-c): the secret that server generated for sre-provisioner,
       # copied by the administrator. Empty = people's sign-ins are given at the identity server by hand.
       IDP_PROVISIONER_SECRET: ${IDP_PROVISIONER_SECRET:-}

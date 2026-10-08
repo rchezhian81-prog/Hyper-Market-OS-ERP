@@ -60,7 +60,34 @@ one-time password on screen, once, to hand over in person. **I have handed it ov
 shows who has a sign-in, who gave it and when. A shared or job name, and their own name, are refused on the screen
 before anything is sent; somebody without the administrator's authority sees no form, and a sentence why.
 
-**Not yet (next parts):** a realm per shop; the tenant console; resetting a forgotten password from the product.
+**Part 6 (OB-15-d-1, owner decision OB-19 "A"): a realm per shop.** Head office never creates a realm; it makes the
+shop's realm file, and the administrator loads it (below). Head office believes each realm only for its own shop.
+
+**Not yet (next parts):** the tenant console (creating the shop in the product and handing over its file); a sign-in
+service and front door per shop's address (needs the domain name); giving people sign-ins in a further shop from the
+product (head office's provisioner is the first shop's); resetting a forgotten password from the product.
+
+## A new shop: its own realm (administrator, on the server)
+
+Head office never holds a key that can create a realm (owner decision OB-19). The steps:
+
+1. **Pin the first shop**, once: in `.env.pilot`, `IDP_OIDC_TENANT_ID=<the first shop's tenant id>`. Release. Head
+   office's log says `… — signs for shop <id> only`.
+2. **Make the new shop's file** on the server:
+   `pnpm run realm:for-shop -- --realm sre-<shop> --tenant <the new shop's tenant id> --name "<Shop name>" --origin https://<the shop's address>`
+   It refuses a name, id or address it cannot use, by name, and changes nothing anywhere; the file holds no person and
+   no secret.
+3. **Load it:** `/auth/admin` → the realm list (top left) → **Create realm** → Browse → choose the file → **Create**.
+4. **Tell head office:** in `.env.pilot`, `IDP_OIDC_SHOP_REALMS=sre-<shop>=<its tenant id>` (comma-separate further
+   shops). Release. Head office's log names each realm and the one shop it signs for. A realm named without its shop,
+   or a shop given two realms, stops head office starting and says why.
+5. **Its people** are given sign-ins at that realm by hand for now (Users → Add user, as for the owner below, with
+   `sre_user_id`); the product's Sign-ins screen serves the first shop.
+6. **Its address and front door** come with the domain name (still open). Until then it can be tried on a test
+   address only.
+
+The proof suite `tests/integration/keycloak-shop-realms.test.ts` loads a shop's file exactly this way and proves each
+shop's person is believed in their own shop only, and that a realm pinned to the wrong shop is refused.
 
 ## Connecting head office to the identity server, so people's sign-ins are given from the product
 
@@ -172,6 +199,7 @@ database). It proves on the real server:
 It takes about a minute: it waits for fresh phone codes, as the server refuses one used twice.
 
 **Recorded:** 8 October 2026, Keycloak 26.0.7:
+- 3 of 3 passed for a second shop's own realm (part 6);
 - 4 of 4 passed for people's sign-ins (part 4);
 - 1 of 1 passed through the front door (part 3);
 - 5 of 5 passed (part 1);

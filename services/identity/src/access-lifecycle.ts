@@ -119,7 +119,7 @@ export interface AccessLifecycleDeps {
    * cannot be reached, nothing changes (503). Absent: this deployment signs nobody in through the identity server.
    */
   readonly signIns?: {
-    readonly end: (tenantId: string, userId: string, endedBy: string, at: string) => Promise<'ended' | 'none'>;
+    readonly end: (tenantId: string, userId: string, endedBy: string, at: string) => Promise<'ended' | 'none' | 'not_connected'>;
   };
   /** Head office's maker-checker engine (ADR-0024): the approver approved this change in their own session. Optional
    *  on a bare stub (then every approval is unknown, and nothing changes); the running system provides it. */
