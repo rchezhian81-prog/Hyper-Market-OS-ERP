@@ -417,7 +417,7 @@ export function buildSurface(deps: {
     // decided on the screen, re-verifying the decider's own authority and record-and-flagging a breach.
     ...approvalDecisionRoutes(store === undefined
       ? { decision: empty(undefined), decisions: empty([]), recordDecision: () => {}, permissionsOfUser: empty(undefined), now }
-      : { ...approvalDecisionAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, applyDecision }),
+      : { ...approvalDecisionAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, applyDecision, tillSealKey: sealKey }),
     ...emergencyAccessRoutes(store === undefined
       ? { grant: empty(undefined), grants: empty([]), recordGrant: () => {}, now }
       : { ...emergencyAccessAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
@@ -490,7 +490,7 @@ export function buildSurface(deps: {
       invoice: empty(undefined), invoices: empty([]), recordInvoice: () => {}, purchaseOrder: empty(undefined), permissionsOfUser: empty(undefined),
       latestMatch: empty(undefined), recordMatch: () => {}, matchPolicy: empty(undefined), recordMatchPolicy: () => {},
       applyBankChange: () => {}, openCommitments: empty(undefined), now,
-    } : { ...purchaseAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) }),
+    } : { ...purchaseAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), tillSealKey: sealKey }),
     // The supplier ACCOUNT (SP-7b · F04's payable half): a projection over the invoice, match, order and receipt registers.
     ...supplierAccountRoutes(store === undefined ? {
       invoices: empty([]), latestMatches: empty(new Map()), purchaseOrders: empty([]), receipts: empty([]), payments: empty([]), debitNoteIssues: empty([]), now,
@@ -1034,7 +1034,7 @@ export function buildSurface(deps: {
     // what-if): a blocking item outstanding stops the shop, an unsigned one is not a record. Writes manage-gated.
     ...checklistStoreRoutes(store === undefined ? {
       putChecklist: () => {}, checklists: () => [], checklist: () => undefined, now,
-    } : checklistStoreAdapter({ store, now })),
+    } : { ...checklistStoreAdapter({ store, now }), tillSealKey: sealKey }),
     // HR/Workforce DURABLE daily-task routing + escalation store (M25-FR-02) — a task is routed to a role,
     // its completion recorded, and an overdue CRITICAL task escalates (the acceptance "an overdue critical task
     // escalates"). GET …/tasks folds the stored tasks + completions and runs the tested assessDailyTasks (pending
@@ -1233,9 +1233,11 @@ export function buildSurface(deps: {
       extractionOperator: empty(undefined), rolesOf: empty([]),
       exclusions: empty([]), recordExclusion: () => {},
       recordExtractionRun: () => {}, recordFinding: () => {}, recordSignature: () => {}, now,
-    } : migrationAdapter({
-      store, now, targetKind: deps.migrationTargetKind, ownerRoleId: OWNER_ROLE_ID,
-    })),
+    } : {
+      ...migrationAdapter({ store, now, targetKind: deps.migrationTargetKind, ownerRoleId: OWNER_ROLE_ID }),
+      // 2b-vi-c-3: a decision relayed from the store's migration screen is checked against the store computer's seal.
+      tillSealKey: sealKey,
+    }),
     ...aiRoutes(store === undefined ? {
       // Stopped by default, matching the adapter. A kill switch that defaults off is an agent
       // running because nobody has told it not to.

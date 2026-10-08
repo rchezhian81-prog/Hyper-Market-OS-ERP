@@ -39,6 +39,7 @@ import { apiError } from '../../kernel/src/index';
 import type { DecidedRequest, Decision } from '../../../packages/approvals/src/approvals';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { deciderSealFlags } from '../../pos/src/store-seal';
 
 /** The permission a decider must hold to decide each subject type — the §28 authority, looked up from grants. */
 export const SUBJECT_AUTHORITY: Readonly<Record<string, string>> = Object.freeze({
@@ -60,6 +61,8 @@ export const DECISION_FLAGS = Object.freeze([
   'self_approval', 'decider_unknown', 'decider_lacks_authority', 'authority_unverified',
   // Wave 2b · PA-03 / PA-01: the decider holds the authority, but not at the branch the request belongs to.
   'decider_outside_branch',
+  // 2b-vi-c-3 (ADR-0023 amended): the store computer did not vouch for the decider — no seal, or one that does not match.
+  'decider_not_verified_at_store', 'decider_seal_does_not_match',
 ] as const);
 export type DecisionFlag = (typeof DECISION_FLAGS)[number];
 
@@ -105,6 +108,9 @@ export interface ApprovalDecisionDeps {
   readonly branchScopeOfUser?: (tenantId: string, userId: string, permission: string) => Promise<readonly string[] | 'all' | undefined> | readonly string[] | 'all' | undefined;
   /** Seal the decision into the domain audit trail (M34-FR-01). Optional — a bare deps stub may omit it. */
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** The store computer's seal key (ADR-0023, amended 2b-vi-c-3): a relayed decision's decider is checked against the
+   *  box's seal. Absent on a bare stub — then nothing is checked and nothing is claimed. */
+  readonly tillSealKey?: Buffer;
   readonly now: () => string;
 }
 
@@ -186,6 +192,8 @@ export function approvalDecisionRoutes(deps: ApprovalDecisionDeps): readonly Rou
         // finding is a FLAG on the recorded decision, not a rejection: the decision happened at the store.
         const flags: DecisionFlag[] = [];
         if (d.decidedBy === d.requestedBy) flags.push('self_approval');
+        // Did the store computer see THIS person make THIS decision? A decision it did not seal waits for a person.
+        flags.push(...deciderSealFlags(deps.tillSealKey, { tenantId: ctx.tenantId, kind: 'approval_decision', recordId: requestId, named: d.decidedBy, record: ctx.body }));
         const permissions = await deps.permissionsOfUser(ctx.tenantId, d.decidedBy);
         const required = SUBJECT_AUTHORITY[d.subjectType];
         if (permissions === undefined) flags.push('decider_unknown');

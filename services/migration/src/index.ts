@@ -279,6 +279,9 @@ export interface MigrationDeps {
   readonly refusedDecisions?: (tenantId: string) => Promise<readonly RefusedDecision[]> | readonly RefusedDecision[];
   readonly recordRefusedDecision?: (tenantId: string, decision: RefusedDecision) => Promise<void> | void;
   readonly holdsPermission?: (tenantId: string, userId: string, permission: string) => Promise<boolean> | boolean;
+  /** The store computer's seal key (ADR-0023, amended 2b-vi-c-3): a relayed decision's decider is checked against the
+   *  box's seal. Absent on a bare stub — then nothing is checked and nothing is claimed. */
+  readonly tillSealKey?: Buffer;
   readonly now: () => string;
 }
 
