@@ -29,6 +29,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       # The NON-superuser application role db-init creates on first boot (see the volume below).
       APP_DB_USER: ${APP_DB_USER:-sre_app}
+      # The identity server's own login and schema (ADR-0019), created on first boot only when a password is given.
+      KEYCLOAK_DB_USER: ${KEYCLOAK_DB_USER:-sre_keycloak}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-}
       # Deterministic collation, so ordering is identical on every machine.
       LANG: C.UTF-8
     volumes:
@@ -105,6 +108,10 @@ services:
       IDP_SIGNING_KEY: ${IDP_SIGNING_KEY}
       IDP_ISSUER: ${IDP_ISSUER}
       IDP_AUDIENCE: ${IDP_AUDIENCE}
+      # The self-hosted identity server (ADR-0019), when it runs: its realm's address and its published public keys.
+      # Both or neither; empty = the pilot sign-in only. Public keys only — the API can check a sign-in, never make one.
+      IDP_OIDC_ISSUER: ${IDP_OIDC_ISSUER:-}
+      IDP_OIDC_JWKS_URL: ${IDP_OIDC_JWKS_URL:-}
       PORT: '8081'
       NODE_ENV: production
       # Never 'production' unless the migration really is running against live data.
@@ -233,6 +240,46 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
+
+  # ---------------------------------------------------------------------------
+  # The self-hosted identity server (Keycloak, ADR-0019 · OB-15). OPT-IN while the pilot sign-in retires: it runs only
+  # with `--profile identity`, so a stack that has not been given its settings is unchanged. It holds the passwords, the
+  # second factors and the lockouts; the product holds none of them and signs nothing. Reached only through the proxy, at
+  # /auth/ (SRE_AUTH_ROUTE=auth-upstream, SRE_AUTH_UPSTREAM=idp:8080); its admin console is refused at the proxy and is
+  # reached by the administrator over an SSH tunnel to the private network only. Its tables live in their own schema.
+  # The store's realm is imported from the repository on start (infra/keycloak/realm-sre-store.json) — no user and no
+  # secret is in that file; people are created by the product's provisioning.
+  # ---------------------------------------------------------------------------
+  idp:
+    image: quay.io/keycloak/keycloak:26.0.7
+    profiles: ['identity']
+    restart: unless-stopped
+    command: ['start', '--import-realm']
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      KC_DB_SCHEMA: keycloak
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-sre_keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD to run the identity server}
+      KC_HTTP_ENABLED: 'true'
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME: ${SRE_IDP_PUBLIC_URL:?set SRE_IDP_PUBLIC_URL (https://<your address>/auth)}
+      KC_HEALTH_ENABLED: 'true'
+      # The FIRST administrator, used once to set the identity server up and then replaced (runbook). From .env only.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-kcadmin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD to run the identity server}
+      # What the realm file reads: the screens' origin (sign-in returns there), the shop this realm is, our API's name.
+      SRE_WEB_ORIGIN: ${SRE_WEB_ORIGIN:?set SRE_WEB_ORIGIN (https://<your address>)}
+      SRE_TENANT_ID: ${EDGE_TENANT_ID}
+      SRE_API_AUDIENCE: ${IDP_AUDIENCE:-sre-retail-os-api}
+    volumes:
+      - ../keycloak/realm-sre-store.json:/opt/keycloak/data/import/realm-sre-store.json:ro
     security_opt:
       - no-new-privileges:true
 

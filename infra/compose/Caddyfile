@@ -39,6 +39,12 @@
 
 # Customer sign-in is deployed at SRE_AUTH_UPSTREAM (Stage F slice 3): set SRE_AUTH_ROUTE=auth-upstream.
 (auth-upstream) {
+	# The identity server's ADMIN console is never on the public origin (ADR-0019): the administrator reaches it over an
+	# SSH tunnel to the private network. Both the console and its API are refused here, by name.
+	handle /auth/admin* {
+		header Content-Type application/json
+		respond `{"error":{"code":"not_public","whatHappened":"The identity server's administration is not reachable from the internet.","wasItSaved":"not_saved","nextSafeAction":"Administer it from the server itself (runbook: identity server)."}}` 404
+	}
 	handle /auth/* {
 		reverse_proxy {$SRE_AUTH_UPSTREAM} {
 			header_up X-Forwarded-For {remote_host}
