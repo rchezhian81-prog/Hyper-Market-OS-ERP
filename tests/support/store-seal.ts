@@ -64,6 +64,11 @@ export function storeSealer(packSigningKey: string, via = 'pin') {
       const userId = str(record[shape.named]);
       return { ...record, [DECIDER_STAMP_FIELD]: sealDecision(key, { tenantId, kind: shape.kind, recordId: recordId ?? str(record[shape.id]), record, laneId: LANE, userId, via }) };
     },
+    /** A relayed day reopen (2b-vi-c-3): the reopener the box verified, sealed over the body head office reads. */
+    dayReopen(tenantId: string, dayCloseId: string, body: Body): Body {
+      const userId = str(body['reopenedBy']);
+      return { ...body, [DECIDER_STAMP_FIELD]: sealDecision(key, { tenantId, kind: 'day_reopen', recordId: dayCloseId, record: body, laneId: LANE, userId, via }) };
+    },
   };
 }
 
@@ -74,3 +79,4 @@ export const sealedReturn = harness.return;
 export const sealedCashMovement = harness.cashMovement;
 export const sealedShiftClose = harness.shiftClose;
 export const sealedDecision = harness.decision;
+export const sealedDayReopen = harness.dayReopen;

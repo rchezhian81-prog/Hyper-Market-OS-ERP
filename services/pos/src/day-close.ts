@@ -18,6 +18,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import { deciderSealFlags } from './store-seal';
 
 /** A store day close as it is recorded on the cloud — the fact the edge relayed, plus its lock. */
 export interface DayCloseRecord {
@@ -60,6 +61,9 @@ export interface DayCloseDeps {
   readonly dayReopens: (tenantId: string) => Promise<readonly DayReopenRecord[]> | readonly DayReopenRecord[];
   /** Does this user genuinely hold the §28 authority to APPROVE a day-close reopen (till.dayclose.approve)? */
   readonly canApproveDayReopen: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /** The store computer's seal key (ADR-0023, amended 2b-vi-c-3): the reopener is checked against the box's seal.
+   *  Absent on a bare stub — then nothing is checked and nothing is claimed. */
+  readonly tillSealKey?: Buffer;
   readonly now: () => string;
 }
 
@@ -168,12 +172,17 @@ export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
         // breach is a FLAG on the recorded reopen, not a rejection (hard rule #10). Defensive: the
         // edge should have blocked a missing/self approval, but a synced fact is recorded regardless.
         const flags: string[] = [];
+        // Did the store computer see the REOPENER reopen this day, exactly as it arrives? (2b-vi-c-3 · ADR-0023 amended)
+        flags.push(...deciderSealFlags(deps.tillSealKey, { tenantId: ctx.tenantId, kind: 'day_reopen', recordId: dayCloseId, named: r.reopenedBy, record: ctx.body }));
         if (r.approvedBy === undefined) {
           flags.push('given_without_approval');
         } else if (r.approvedBy === r.reopenedBy) {
           flags.push('approved_by_the_reopener');
-        } else if (!(await deps.canApproveDayReopen(ctx.tenantId, r.approvedBy))) {
-          flags.push('approver_lacks_authority');
+        } else {
+          if (!(await deps.canApproveDayReopen(ctx.tenantId, r.approvedBy))) flags.push('approver_lacks_authority');
+          // The approver's name was typed on the reopen screen; no store computer verified that person (their own PIN at
+          // the box is the next slice). Said, so the reopen reads as what it is.
+          flags.push('approver_not_verified_at_store');
         }
 
         const record: DayReopenRecord = {

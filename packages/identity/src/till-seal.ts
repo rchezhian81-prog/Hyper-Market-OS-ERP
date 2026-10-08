@@ -139,7 +139,7 @@ export function checkApprovalStamp(key: Buffer, input: {
 export const DECIDER_STAMP_FIELD = 'deciderVerified';
 
 /** The kinds of decision a box seals. Each kind is its own namespace: a seal for one never fits another. */
-export type DecisionKind = 'approval_decision' | 'supplier_invoice' | 'checklist' | 'migration_exception' | 'migration_total';
+export type DecisionKind = 'approval_decision' | 'supplier_invoice' | 'checklist' | 'migration_exception' | 'migration_total' | 'day_reopen';
 
 /** The box's stamp on the person who made a decision, as it travels on the relayed record. */
 export interface DeciderStamp {

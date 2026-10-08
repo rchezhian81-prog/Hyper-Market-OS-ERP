@@ -718,7 +718,7 @@ export function buildSurface(deps: {
       : { ...shiftAdapter({ store, now }), tillSealKey: sealKey }),
     ...dayCloseRoutes(store === undefined
       ? { dayClose: empty(undefined), recordDayClose: () => {}, dayReopen: empty(undefined), recordDayReopen: () => {}, dayCloses: empty([]), dayReopens: empty([]), canApproveDayReopen: empty(false), now }
-      : dayCloseAdapter({ store, now })),
+      : { ...dayCloseAdapter({ store, now }), tillSealKey: sealKey }),
     ...lpCasesRoutes(store === undefined
       ? { cases: empty([]), case: empty(undefined), recordOpened: () => {}, recordEvidence: () => {}, recordClosed: () => {}, now }
       : lpCasesAdapter({ store, now })),

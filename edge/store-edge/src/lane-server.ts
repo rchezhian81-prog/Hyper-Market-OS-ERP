@@ -209,7 +209,11 @@ export type LaneDeviceStatusHandler = (keys: readonly string[]) => readonly BoxI
 
 /** What the box does when an authority asks to reopen a locked day — the authoritative `EdgeProcess.reopenDay`. */
 export type LaneDayReopenHandler = (
-  req: { readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string },
+  req: {
+    readonly dayCloseId: string; readonly reopenedBy: string; readonly reason: string; readonly approvedBy: string;
+    /** The person this box verified for the request (2b-vi-c-3) — the box seals the reopen when it is the reopener. */
+    readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+  },
 ) => Promise<
   | { readonly reopened: true; readonly tradingDay: string }
   | { readonly reopened: false; readonly reason: string }
@@ -780,7 +784,8 @@ export function startLaneServer(input: {
             return;
           }
           try {
-            send(res, 200, await doReopen({ dayCloseId, reopenedBy, reason, approvedBy }), cors);
+            const verifiedPerson = verifiedPersonOf(req);
+            send(res, 200, await doReopen({ dayCloseId, reopenedBy, reason, approvedBy, ...(verifiedPerson === undefined ? {} : { verifiedPerson }) }), cors);
           } catch (e) {
             send(res, 200, { reopened: false, reason: e instanceof Error ? e.message : String(e) }, cors);
           }

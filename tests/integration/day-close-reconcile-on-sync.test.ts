@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { sealedDayReopen } from '../support/store-seal';
 
 // Store/day close reconcile-on-sync (M14-FR-04 · P-01 offline-first · §28, API-05, Slice 1). A store closes
 // and LOCKS its trading day at the edge (packages/day-close: only once the trading-day cut-off has passed and
@@ -20,7 +21,7 @@ const close = (over: Record<string, unknown> = {}) => ({
 const syncClose = (h: ApiHarness, u: string, dayCloseId: string, body: Record<string, unknown>, key?: string) =>
   h.request({ method: 'POST', path: `/v1/pos/day-close/${dayCloseId}/synced`, userId: u, tenantId: A, idempotencyKey: key ?? `sc-${dayCloseId}`, body });
 const syncReopen = (h: ApiHarness, u: string, dayCloseId: string, body: Record<string, unknown>) =>
-  h.request({ method: 'POST', path: `/v1/pos/day-close/${dayCloseId}/reopen/synced`, userId: u, tenantId: A, idempotencyKey: `sr-${dayCloseId}`, body });
+  h.request({ method: 'POST', path: `/v1/pos/day-close/${dayCloseId}/reopen/synced`, userId: u, tenantId: A, idempotencyKey: `sr-${dayCloseId}`, body: sealedDayReopen(A, dayCloseId, body as Record<string, unknown>) });
 const list = (h: ApiHarness, u: string) =>
   h.request({ method: 'GET', path: '/v1/pos/day-close', userId: u, tenantId: A });
 
@@ -51,20 +52,21 @@ describe('store/day close reconciles on sync — record, lock, and re-verify the
     expect(body.dayCloses.find((r) => r.dayCloseId === 'dc-1')).toMatchObject({ tradingDay: '2026-08-07', locked: true, reopened: false });
   });
 
-  it('reconciles a clean reopen with a genuinely-authorised approver — recorded, no flags, day unlocked', async () => {
+  it('reconciles a reopen with a genuinely-authorised approver — recorded, day unlocked, the typed approver said as unverified', async () => {
     const h = await cast();
     await syncClose(h, 'u-mgr', 'dc-1', close());
 
     // The store manager reopened; the OWNER (a different person, holding till.dayclose.approve) approved it.
     const res = await syncReopen(h, 'u-mgr', 'dc-1', { reopenedBy: 'u-mgr', approvedBy: 'u-owner', reason: 'late supplier credit note' });
     expect(res.status).toBe(202);
-    expect((res.body as ReopenBody).flags).toEqual([]);
+    // The box vouched for the reopener (sealed); the approver's name was typed on the screen and no store computer verified
+    // that person — said, never hidden (2b-vi-c-3). Their own PIN at the box is the next slice.
+    expect((res.body as ReopenBody).flags).toEqual(['approver_not_verified_at_store']);
 
     const body = (await list(h, 'u-owner')).body as ListBody;
     const row = body.dayCloses.find((r) => r.dayCloseId === 'dc-1')!;
     expect(row).toMatchObject({ locked: false, reopened: true, reopenedBy: 'u-mgr', approvedBy: 'u-owner' });
     expect(body.lockedCount).toBe(0);
-    expect(body.flaggedReopens).toHaveLength(0);
   });
 
   it('records-and-flags a reopen whose approver lacks the §28 authority — 202, never rejected', async () => {
@@ -74,10 +76,10 @@ describe('store/day close reconciles on sync — record, lock, and re-verify the
     // The store manager holds sync+read but NOT approve; an unprovisioned name holds nothing either.
     const res = await syncReopen(h, 'u-mgr', 'dc-1', { reopenedBy: 'u-mgr', approvedBy: 'u-nobody', reason: 'audit correction' });
     expect(res.status).toBe(202);
-    expect((res.body as ReopenBody).flags).toEqual(['approver_lacks_authority']);
+    expect((res.body as ReopenBody).flags).toEqual(['approver_lacks_authority', 'approver_not_verified_at_store']);
 
     const body = (await list(h, 'u-owner')).body as ListBody;
-    expect(body.flaggedReopens).toContainEqual(expect.objectContaining({ dayCloseId: 'dc-1', governanceFlags: ['approver_lacks_authority'] }));
+    expect(body.flaggedReopens).toContainEqual(expect.objectContaining({ dayCloseId: 'dc-1', governanceFlags: ['approver_lacks_authority', 'approver_not_verified_at_store'] }));
     // Recorded (it happened): the day is reopened, not still locked.
     expect(body.dayCloses.find((r) => r.dayCloseId === 'dc-1')).toMatchObject({ locked: false, reopened: true });
   });
@@ -93,6 +95,19 @@ describe('store/day close reconciles on sync — record, lock, and re-verify the
     expect((await syncReopen(h, 'u-owner', 'dc-2', { reopenedBy: 'u-owner', approvedBy: 'u-owner', reason: 'self' })).body as ReopenBody).toMatchObject({ flags: ['approved_by_the_reopener'] });
 
     expect(((await list(h, 'u-owner')).body as ListBody).flaggedReopens).toHaveLength(2);
+  });
+
+  it('a reopen the store computer did not seal for its reopener, or one changed after the seal, is recorded and said (2b-vi-c-3)', async () => {
+    const h = await cast();
+    await syncClose(h, 'u-mgr', 'dc-1', close());
+    await syncClose(h, 'u-mgr', 'dc-2', close({ tradingDay: '2026-08-08' }));
+    const raw = (id: string, body: unknown) =>
+      h.request({ method: 'POST', path: `/v1/pos/day-close/${id}/reopen/synced`, userId: 'u-mgr', tenantId: A, idempotencyKey: `raw-${id}`, body });
+    const unsealed = await raw('dc-1', { reopenedBy: 'u-mgr', reason: 'no seal' });
+    expect(unsealed.status).toBe(202);
+    expect((unsealed.body as ReopenBody).flags).toEqual(['decider_not_verified_at_store', 'given_without_approval']);
+    const changed = { ...sealedDayReopen(A, 'dc-2', { reopenedBy: 'u-mgr', reason: 'as sealed' }), reason: 'rewritten after the seal' };
+    expect(((await raw('dc-2', changed)).body as ReopenBody).flags).toEqual(['decider_seal_does_not_match', 'given_without_approval']);
   });
 
   it('is idempotent on the day-close id — a re-synced close records once', async () => {
