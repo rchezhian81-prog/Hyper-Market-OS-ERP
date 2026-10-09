@@ -56,9 +56,9 @@ async function cast(): Promise<ApiHarness> {
       snapshot: {
         tenantId: A, version: 1, builtAt: AT, scope: { tenantId: A, storeId: 'store-1' },
         products: [
-          { productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'each', batchTracked: false },
+          { productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'each', batchTracked: false, handling: 'ambient' },
           { productId: 'p2', sku: 'p2', name: 'Fresh paneer 200g', unitPriceMinor: 9_000, taxBps: 500, status: 'active', uom: 'each', batchTracked: true },
-          { productId: 'p3', sku: 'p3', name: 'Biscuits 100g', unitPriceMinor: 2_000, taxBps: 1800, status: 'active', uom: 'each', batchTracked: false },
+          { productId: 'p3', sku: 'p3', name: 'Biscuits 100g', unitPriceMinor: 2_000, taxBps: 1800, status: 'active', uom: 'each', batchTracked: false, handling: 'ambient' },
         ],
         barcodes: [],
       },
@@ -91,14 +91,15 @@ describe('goods receipt / GRN capture (M07-FR-01/02/03)', () => {
     // With both → received, and nothing was left unverified.
     const ok = await receive(h, 'u-mgr', 'grn-2', body([line({ productId: 'p2', batchId: 'B1', expiry: '2027-01-01' })]), 'k3');
     expect(ok.status).toBe(201);
-    expect(grnOf(ok).governanceFlags).toEqual(['no_purchase_order']); // nothing unverified about the goods; only that no order is behind them (SP-6)
+    // nothing unverified about the batch; no order is behind them (SP-6); and the master names no handling class for paneer (SF-07, said)
+    expect(grnOf(ok).governanceFlags).toEqual(['no_purchase_order', 'handling_unknown']);
   });
 
   it('a product the master does not know is received — goods in the building are never refused for paperwork — and the record SAYS the rule was unverified', async () => {
     const h = await cast();
     const res = await receive(h, 'u-mgr', 'grn-unknown', body([line({ productId: 'p-not-on-master' })]), 'k1');
     expect(res.status).toBe(201);
-    expect(grnOf(res).governanceFlags).toEqual(['no_purchase_order', 'product_rules_unverified']);
+    expect(grnOf(res).governanceFlags).toEqual(['no_purchase_order', 'product_rules_unverified', 'handling_unknown']);
     expect(await onHand(h, 'u-mgr', 'p-not-on-master')).toBe(100);
   });
 

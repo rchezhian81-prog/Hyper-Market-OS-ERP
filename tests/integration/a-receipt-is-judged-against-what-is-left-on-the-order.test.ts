@@ -45,7 +45,7 @@ function lab(h: ApiHarness, t: string) {
       await h.store.append(t, STREAM.catalogue, makeEvent({
         id: `pack-${t}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${t}-v1`, source: 'test/catalogue',
         payload: { snapshot: { tenantId: t, version: 1, builtAt: AT, scope: { tenantId: t, storeId: 'store-1' }, barcodes: [],
-          products: [{ productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'each', batchTracked: false }] } },
+          products: [{ productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'each', batchTracked: false, handling: 'ambient' }] } },
       }));
       expect((await req('POST', '/v1/inventory/receipt-policy', 'u-owner', 'k-policy', POLICY)).status).toBe(201);
       expect((await req('POST', `/v1/purchase/orders/${poId}`, 'u-mgr', `po-${poId}`, { supplierId: 'sup-1', lines: [{ productId: 'p1', orderedQty: ordered, unitCost: cost(5000) }] })).status).toBe(201);

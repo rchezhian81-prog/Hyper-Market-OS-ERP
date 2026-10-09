@@ -66,7 +66,7 @@ async function seeded(): Promise<ApiHarness> {
       snapshot: {
         tenantId: A, version: 1, builtAt: AT, scope: { tenantId: A, storeId: 'store-1' },
         products: [
-          { productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false },
+          { productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false, handling: 'ambient' },
           { productId: 'p2', sku: 'p2', name: 'Fresh paneer 200g', unitPriceMinor: 9_000, taxBps: 500, status: 'active', uom: 'ea', batchTracked: true },
         ],
         barcodes: [],
@@ -162,7 +162,7 @@ describe('a receipt relayed from the store becomes a cloud GRN, with the receive
     // A product not on the published master: received untracked and UNVALUED (said), never refused at the back door.
     const unknownProduct = await relay(h, receipt({ grnId: 'g4', poId: null, lines: [{ productId: 'p-new', quantityMinor: 5, uom: 'ea', batchId: null }] }), 'k-g4');
     expect(unknownProduct.status).toBe(202);
-    expect((unknownProduct.body as GrnBody).flags).toEqual(['no_purchase_order', 'product_rules_unverified', 'cost_unknown', 'default_policy']);
+    expect((unknownProduct.body as GrnBody).flags).toEqual(['no_purchase_order', 'product_rules_unverified', 'handling_unknown', 'cost_unknown', 'default_policy']);
     expect(await onHand(h, 'p-new')).toBe(5);
     const v = (await valuation(h, 'p-new')).find((r) => r.locationId === WH) as { unitCostMinor?: unknown } | undefined;
     expect(v?.unitCostMinor).toBe('not_known'); // not ₹0 — the valuation says it does not know

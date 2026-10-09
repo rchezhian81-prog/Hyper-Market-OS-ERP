@@ -30,7 +30,7 @@ import {
   type CapturedLine, type CapturedReceipt,
 } from '../../../packages/receiving/src/index';
 import {
-  rulesFromMaster, policyInForce, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder, awaitsDecision, linesAwaitingDisposition,
+  rulesFromMaster, sayHandling, policyInForce, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder, awaitsDecision, linesAwaitingDisposition,
   type GrnRecord, type ReceiptFlag, type AssembledFromScans,
 } from './goods-receipt';
 import type { SyncedGoodsReceiptDeps } from './goods-receipt-synced';
@@ -158,7 +158,7 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
 
   const productIds = [...new Set(scans.map((s) => s.productId))];
   const master = await rulesFromMaster(deps, input.tenantId, productIds);
-  if (master.unverified) flags.push('product_rules_unverified');
+  if (master.unverified) flags.push('product_rules_unverified'); sayHandling(flags, master);
   const costByProduct = new Map<string, number>();
   let costUnknown = false;
   for (const productId of productIds) {
@@ -194,6 +194,10 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
     }
   }
   if (disagreements.length > 0) flags.push('scan_posting_disagrees');
+  // Wave 3 · SF-07: a cold-chain line held for its temperature (none recorded, or out of range) whose units the scans had
+  // ALREADY put on-hand — the handheld cannot record a temperature yet, so the hold is said here, never silent (P-08).
+  const coldHeld = new Set(captured.discrepancies.filter((d) => d.kind === 'temperature_not_recorded' || d.kind === 'temperature_breach').map((d) => d.lineId));
+  if (assembled.some((a) => coldHeld.has(a.line.lineId) && a.scannedOnHandMinor > 0)) flags.push('cold_chain_held_but_on_hand');
   const heldMinor = heldFromReceipt(captured);
   if (heldMinor > 0) flags.push('excess_already_on_hand');
 

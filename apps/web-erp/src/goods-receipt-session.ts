@@ -91,7 +91,7 @@ export type CopyKey =
   | 'needsApprovalBadge' | 'noPo'
   | 'receivedByLabel' | 'warehouseLabel' | 'sellableLabel' | 'quarantinedLabel' | 'rejectedLabel'
   | 'discrepancyValueLabel' | 'summaryDeliveries' | 'summaryNeedApproval' | 'unitsWord'
-  | 'dkShort' | 'dkExcess' | 'dkDamaged' | 'dkQcFailed' | 'dkExpired' | 'dkNearExpiry' | 'dkMrpMismatch' | 'dkTemperatureBreach'
+  | 'dkShort' | 'dkExcess' | 'dkDamaged' | 'dkQcFailed' | 'dkExpired' | 'dkNearExpiry' | 'dkMrpMismatch' | 'dkTemperatureBreach' | 'dkTemperatureNotRecorded'
   | 'scrReady' | 'scrEmpty' | 'scrNoReceipts' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
@@ -112,6 +112,7 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     dkDamaged: 'Damaged', dkQcFailed: 'Failed quality check', dkExpired: 'Expired on arrival',
     dkNearExpiry: 'Close to its expiry date', dkMrpMismatch: 'Printed price differs from the master',
     dkTemperatureBreach: 'Cold chain broken (temperature)',
+    dkTemperatureNotRecorded: 'Chilled or frozen — no temperature recorded (held for a check)',
     scrReady: 'Showing your deliveries', scrEmpty: 'This screen has not been given the delivery list yet.',
     scrNoReceipts: 'No deliveries have been recorded yet.',
     stateNotPermitted: 'You do not have permission to see goods receipts.',
@@ -134,6 +135,7 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     dkDamaged: 'சேதமடைந்தது', dkQcFailed: 'தர சோதனையில் தோல்வி', dkExpired: 'வந்தபோதே காலாவதி',
     dkNearExpiry: 'காலாவதி தேதி நெருங்கியது', dkMrpMismatch: 'அச்சிட்ட விலை மாஸ்டரிலிருந்து வேறுபடுகிறது',
     dkTemperatureBreach: 'குளிர்ச்சி சங்கிலி உடைந்தது (வெப்பநிலை)',
+    dkTemperatureNotRecorded: 'குளிர்/உறைந்த பொருள் — வெப்பநிலை பதிவு செய்யப்படவில்லை (சரிபார்ப்புக்கு நிறுத்தப்பட்டது)',
     scrReady: 'உங்கள் டெலிவரிகளைக் காட்டுகிறது', scrEmpty: 'இந்தத் திரைக்கு இன்னும் டெலிவரி பட்டியல் தரப்படவில்லை.',
     scrNoReceipts: 'இன்னும் டெலிவரிகள் எதுவும் பதிவு செய்யப்படவில்லை.',
     stateNotPermitted: 'சரக்கு பெறுதல்களைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
@@ -148,7 +150,7 @@ export const COPY_KEYS: readonly CopyKey[] = Object.freeze(Object.keys(GOODS_REC
 
 const DISCREPANCY_COPY: Readonly<Record<DiscrepancyKind, CopyKey>> = Object.freeze({
   short: 'dkShort', excess: 'dkExcess', damaged: 'dkDamaged', qc_failed: 'dkQcFailed',
-  expired: 'dkExpired', near_expiry: 'dkNearExpiry', mrp_mismatch: 'dkMrpMismatch', temperature_breach: 'dkTemperatureBreach',
+  expired: 'dkExpired', near_expiry: 'dkNearExpiry', mrp_mismatch: 'dkMrpMismatch', temperature_breach: 'dkTemperatureBreach', temperature_not_recorded: 'dkTemperatureNotRecorded',
 });
 
 export interface PresentedDiscrepancy {

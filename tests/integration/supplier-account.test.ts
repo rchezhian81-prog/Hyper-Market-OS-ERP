@@ -199,7 +199,7 @@ describe('the supplier account is read from the registers, never typed (SP-7b ·
     const before = await onHand(h, 'p1');
     const ret = await post(h, '/v1/inventory/goods-receipt/grn-2/excess/returned', 'u-recv', { reason: 'collected by the supplier van' }, 'ret-2');
     expect(ret.status).toBe(200);
-    expect(ret.body).toMatchObject({ grnId: 'grn-2', quantityMinor: 13, valueMinor: 6500, movementIds: [], returnedBy: 'u-recv', alreadyReturned: false, flags: ['nothing_left_on_order', 'ordered_quantity_disagrees', 'product_rules_unverified', 'excess_returned_to_supplier'] });
+    expect(ret.body).toMatchObject({ grnId: 'grn-2', quantityMinor: 13, valueMinor: 6500, movementIds: [], returnedBy: 'u-recv', alreadyReturned: false, flags: ['nothing_left_on_order', 'ordered_quantity_disagrees', 'product_rules_unverified', 'handling_unknown', 'excess_returned_to_supplier'] });
     expect(await onHand(h, 'p1')).toBe(before);
     expect((await post(h, '/v1/inventory/goods-receipt/grn-2/excess/returned', 'u-recv', { reason: 'again' }, 'ret-2b')).body).toMatchObject({ alreadyReturned: true });
     expect((await post(h, '/v1/inventory/goods-receipt/grn-2/excess/returned', 'u-cash', { reason: 'x' }, 'ret-2c')).status).toBe(403);
@@ -207,7 +207,7 @@ describe('the supplier account is read from the registers, never typed (SP-7b ·
     expect(a.pendingSupplierReturns[0]).toMatchObject({ returned: true });
     expect(a.pendingSupplierReturns[0]!.returnedAt).not.toBeNull();
     expect(a.totals.pendingReturns).toBe(0);
-    expect(((await get(h, '/v1/inventory/goods-receipt/grn-2', 'u-owner')).body as { grn: { governanceFlags: string[]; excessReturn: { quantityMinor: number } } }).grn).toMatchObject({ governanceFlags: ['nothing_left_on_order', 'ordered_quantity_disagrees', 'product_rules_unverified', 'excess_returned_to_supplier'], excessReturn: { quantityMinor: 13 } });
+    expect(((await get(h, '/v1/inventory/goods-receipt/grn-2', 'u-owner')).body as { grn: { governanceFlags: string[]; excessReturn: { quantityMinor: number } } }).grn).toMatchObject({ governanceFlags: ['nothing_left_on_order', 'ordered_quantity_disagrees', 'product_rules_unverified', 'handling_unknown', 'excess_returned_to_supplier'], excessReturn: { quantityMinor: 13 } });
   });
 
   it('the accountant posts the account through the mapping: accrual + debit note as balanced journals, the register and the ledger reconcile as two derivations, a re-run posts nothing, an unmapped kind is a named exception until the mapping names it, and a re-match that owes less REVERSES by its own journal', async () => {

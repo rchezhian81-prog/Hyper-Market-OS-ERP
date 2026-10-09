@@ -55,8 +55,8 @@ async function seeded(): Promise<ApiHarness> {
       snapshot: {
         tenantId: A, version: 1, builtAt: AT, scope: { tenantId: A, storeId: 'store-1' },
         products: [
-          { productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false },
-          { productId: 'p3', sku: 'p3', name: 'Biscuits 100g', unitPriceMinor: 2_000, taxBps: 1800, status: 'active', uom: 'ea', batchTracked: false },
+          { productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false, handling: 'ambient' },
+          { productId: 'p3', sku: 'p3', name: 'Biscuits 100g', unitPriceMinor: 2_000, taxBps: 1800, status: 'active', uom: 'ea', batchTracked: false, handling: 'ambient' },
         ],
         barcodes: [],
       },
