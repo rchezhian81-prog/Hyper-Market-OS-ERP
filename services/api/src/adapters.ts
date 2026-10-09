@@ -53,6 +53,7 @@ import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { RecallDeps } from '../../inventory/src/recall';
 import { RecallRegistry, type RecallRecord } from '../../../packages/traceability/src/index';
 import type { QualityHoldDeps } from '../../inventory/src/quality-hold';
+import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
 import type { QualityHold } from '../../../packages/quality/src/index';
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
 import type { SoldLine } from '../../../packages/demand/src/sales-history';
@@ -2147,6 +2148,8 @@ export function cataloguePreviewAdapter(input: {
     taxSchedule: tc.schedule,
     // SF-01: the offers the pack carries to the lanes (assembly keeps only the switched-on, not-yet-ended ones).
     promotions: promotionCatalogueAdapter(input).promotions,
+    // SF-08: recalled and held batches' products go in the pack blocked, so every till refuses them offline.
+    blockedProducts: saleBlocksAdapter(input).blockedProducts,
     now: input.now,
   };
 }
@@ -2520,6 +2523,49 @@ export function qualityHoldAdapter(input: {
         payload: hold,
       }));
     },
+  };
+}
+
+/**
+ * SF-08: head office's list of what must not be sold — every batch under an OPEN recall and every batch on quality
+ * HOLD, each named to its product. A hold names its product; a recall names only its batch, so its product is found on
+ * the stock ledger (every batch head office ever received or moved). A batch it cannot name stays `productId: null` —
+ * shown, never guessed. Folded from the two append-only registers on every read; nothing is stored twice.
+ */
+export function saleBlocksAdapter(input: { readonly store: EventStore; readonly now: () => string }): SaleBlockDeps & {
+  readonly blockedProducts: (tenantId: string) => Promise<ReadonlySet<string>>;
+} {
+  const recalls = recallAdapter(input);
+  const holds = qualityHoldAdapter(input);
+  const inv = inventoryAdapter(input);
+  const blocks = async (tenantId: string): Promise<readonly SaleBlock[]> => {
+    const out: SaleBlock[] = [];
+    for (const h of await holds.holds(tenantId)) {
+      if (h.status === 'released') continue;
+      out.push({ productId: h.productId, batchId: h.batchId, kind: 'quality_hold', since: h.heldAt, reason: h.reason });
+    }
+    const open = (await recalls.records(tenantId)).filter((r) => r.status === 'open');
+    if (open.length > 0) {
+      const productsOf = new Map<string, Set<string>>();
+      for (const b of await inv.batches!(tenantId)) {
+        if (b.batchId === null) continue;
+        const set = productsOf.get(b.batchId) ?? new Set<string>();
+        set.add(b.productId);
+        productsOf.set(b.batchId, set);
+      }
+      for (const r of open) {
+        const products = [...(productsOf.get(r.batchId) ?? [])].sort();
+        // A batch id two products share blocks both — the safe reading of a recall that names only the batch.
+        if (products.length === 0) out.push({ productId: null, batchId: r.batchId, kind: 'recall', since: r.initiatedAt, reason: r.reason });
+        for (const productId of products) out.push({ productId, batchId: r.batchId, kind: 'recall', since: r.initiatedAt, reason: r.reason });
+      }
+    }
+    return out;
+  };
+  return {
+    blocks,
+    blockedProducts: async (tenantId) => blockedProductIds(await blocks(tenantId)),
+    currentPack: (tenantId) => latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished'),
   };
 }
 

@@ -5,6 +5,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 3 · SF-08 — a recalled or held batch is stopped at the till, even with no internet (9 October 2026)
+
+- **The audit's finding (HIGH):** head office kept a list of recalled batches and a list of batches on quality hold, but
+  neither reached the till. The till's "do not sell" block came only from a box someone ticked by hand on the product.
+- **Owner decision OB-25 "C (R3) and 1"** (9 Oct 2026): block the whole product now; blocking only the bad batch is
+  deferred in writing to **release R3**; build head office's block list now, for PA-06 to carry to every store.
+- **What changed:**
+  - **Head office works out what must not be sold:** every batch under an open recall and every batch on quality hold
+    (including the holds a cold-room breach now places, PA-07), each named to its product. A recall names only its batch,
+    so the product is found from the stock records.
+  - **The next published product list for the tills marks those products "do not sell".** The till already refuses such a
+    product by name, with no internet. The product comes back on the next list once every recall on it is closed with
+    evidence and every hold on it is released.
+  - **A new head-office view (`/v1/quality/sale-blocks`)** lists every block and says whether it has reached the tills
+    yet: "not yet on the published list — publish now", "on the list", or "this batch cannot be named to a product".
+- **Proved:**
+  - Connected, through the till's own trust check (5 tests): paneer sells; a recall on one paneer
+    batch is shown as "not yet on the list"; after publishing, the till accepts the signed list and refuses paneer by
+    name with no network, while curd still sells; closing the recall with evidence lets paneer sell on the next list. A
+    quality hold does the same until QC releases it. A product with two recalled batches stays blocked until both close.
+    A recalled batch with no product is said. A cashier cannot read the list.
+  - **Mutation check:** unplugging the block list from the product list fails 3 of 5.
+  - Full `pnpm run check` green, with the real database connected.
+- **Not yet / honest limits:**
+  - **Publishing is still a person's act.** A recall reaches the tills when the list is next published; the view says
+    so. Automatic, priority delivery to every store computer, and each store computer confirming which list it holds,
+    are part of **PA-06** (the other session's next item), which will carry this block list.
+  - **The whole product is blocked**, not just the bad batch, until R3 (owner decision).
+  - Staff UAT (SP-10) pending.
+- **Behaviour change the owner should know:** after a recall or a quality hold, publish the product list; until the
+  recall is closed or the hold released, **every** pack of that product is refused at the till — pull the bad batch off
+  the shelf, then close the recall.
+- **Next:** my half of Wave 3 is complete (SF-02, SF-07, PA-07, SF-08). Waiting for the owner's next instruction.
+
 ## Wave 4 · SF-06-b — head office's own category list, and product files that load real products (9 October 2026)
 
 - **The audit's finding:** a product file said "1 row applied" and the product list held nothing. Separately, every
