@@ -192,7 +192,7 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
   is settled here** (found in DF-2).
 - **SF-06** the import console binds templates to real domain commands with a checker decision.
 - **PF-04** receipt-number cursor durable on the box (**DONE 9 Oct 2026** — the box issues and binds every number; OB-22 answered "A"); **PF-05** a held bill survives a reload (**DONE 9 Oct 2026** — held on the store computer's disk, recalled once); **PF-06** (**code side DONE 9 Oct 2026** — attempt recorded before the machine, no-answer settled only by the provider, one payment one bill; live provider still an external gate) electronic
-  tenders keep provider evidence and recover; **PF-07** void and override evidence is durable and feeds the exception
+  tenders keep provider evidence and recover; **PF-07** (**DONE 9 Oct 2026** for voids — on the box first, relayed, judged on head office's own record; no-sale/override wait for till controls) void and override evidence is durable and feeds the exception
   rules.
 - Owner sees: change a price in the office, publish, and the till on the demo sells at the new price; hold a bill,
   reload, recall it.

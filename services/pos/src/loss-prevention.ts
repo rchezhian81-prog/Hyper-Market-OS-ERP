@@ -221,8 +221,8 @@ export function lpRulesRoutes(deps: LpRulesDeps): readonly Route[] {
       },
     },
     {
-      // Evaluate already-synced activity against the store's rules — detect-only, exceptions link back to
-      // the transactions. A what-if over supplied activity; it computes, it never commits.
+      // PREVIEW: evaluate SUPPLIED activity against the store's rules — detect-only, exceptions link back to the
+      // transactions. A what-if; it computes, it never commits, and it is labelled so (audit PF-07).
       api: 'API-05', method: 'POST', path: '/v1/loss-prevention/evaluate',
       permission: 'lp.case.read', idempotent: true,
       handler: async (ctx) => {
@@ -232,7 +232,144 @@ export function lpRulesRoutes(deps: LpRulesDeps): readonly Route[] {
           refuse('not_readable_as_activity', 'Activity is a list of events, each with a txnId, a kind, a cashierId and an "at" time (valueMinor where the kind has a value).', 400);
         }
         const rules = await deps.rules(ctx.tenantId);
-        return { status: 200, body: { exceptions: evaluateLossPrevention(events as ActivityEvent[], rules), asAt: deps.now() } };
+        // A PREVIEW (audit PF-07): it judges the activity in the request, not the shop's record. The control is
+        // GET /v1/loss-prevention/exceptions, which runs the same rules over the voids and refunds head office holds.
+        return { status: 200, body: { preview: true, note: 'A what-if over the activity you supplied — not the shop\'s record. The shop\'s own exceptions are at GET /v1/loss-prevention/exceptions.', exceptions: evaluateLossPrevention(events as ActivityEvent[], rules), asAt: deps.now() } };
+      },
+    },
+  ];
+}
+
+// ── The till's own record, and the rules run on it (Wave 4 · audit PF-07 · M15-FR-01 · M12-FR-04 · P-03 · P-08) ──────────
+// The audit: a void at the till left no evidence once the basket moved on, and the broad rule evaluation above runs only
+// over activity somebody SUPPLIES — a what-if, not a control. Now every void reaches head office through the store box
+// (`TillActivityRecorded`, durable on the box first, the cashier the box verified), is kept on its own append-only stream,
+// and the store's rules run over the AUTHORITATIVE record — the voids head office holds and the refunds it banked — per
+// day. What breaches a rule is RAISED once (and again only when it grows or escalates), linked to the transactions, and
+// listed for the owner with the case opened from it, if any. The evaluate route above stays, labelled a preview.
+
+/** One till action head office keeps as loss-prevention evidence. */
+export interface TillActivity {
+  readonly activityId: string;
+  readonly kind: 'void';
+  readonly laneId: string;
+  readonly cashierId: string;
+  readonly billRef: string;
+  readonly lineId: string;
+  readonly productId: string;
+  readonly description: string;
+  readonly valueMinor: number;
+  readonly reason: string;
+  readonly at: string;
+  /** How the box verified the cashier (pin / verified sign-in), when it said. */
+  readonly via?: string;
+  readonly relayedBy: string;
+}
+
+/** An exception the rules raised from the shop's own record. */
+export interface RaisedException {
+  readonly exceptionId: string;
+  readonly day: string;
+  readonly cashierId: string;
+  readonly kind: SignalKind;
+  readonly breach: string;
+  readonly observed: number;
+  readonly limit: number;
+  readonly severity: string;
+  readonly linkedTxnIds: readonly string[];
+  readonly raisedAt: string;
+}
+
+export interface LpActivityDeps {
+  readonly activity: (tenantId: string, activityId: string) => Promise<TillActivity | undefined> | TillActivity | undefined;
+  readonly recordActivity: (tenantId: string, a: TillActivity) => Promise<void> | void;
+  /** The voids head office holds for one calendar day (UTC), as rule activity. */
+  readonly voidsOn: (tenantId: string, day: string) => Promise<readonly ActivityEvent[]> | readonly ActivityEvent[];
+  /** The refunds head office banked that day (UTC), as rule activity — processed by whom, for how much. */
+  readonly refundsOn: (tenantId: string, day: string) => Promise<readonly ActivityEvent[]> | readonly ActivityEvent[];
+  readonly rules: (tenantId: string) => Promise<readonly LpRule[]> | readonly LpRule[];
+  readonly raised: (tenantId: string) => Promise<readonly RaisedException[]> | readonly RaisedException[];
+  readonly recordRaised: (tenantId: string, r: RaisedException) => Promise<void> | void;
+  readonly cases: (tenantId: string) => Promise<readonly InvestigationCase[]> | readonly InvestigationCase[];
+  readonly now: () => string;
+}
+
+const isIsoDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const exceptionIdOf = (day: string, e: { cashierId: string; kind: string; breach: string }): string => `lpx-${day}-${e.cashierId}-${e.kind}-${e.breach}`;
+
+/** Run the store's rules over the day's authoritative record. */
+async function exceptionsOn(deps: LpActivityDeps, tenantId: string, day: string) {
+  const activity = [...await deps.voidsOn(tenantId, day), ...await deps.refundsOn(tenantId, day)];
+  return evaluateLossPrevention(activity, await deps.rules(tenantId)).map((x) => ({ ...x, exceptionId: exceptionIdOf(day, x), day }));
+}
+
+export function lpActivityRoutes(deps: LpActivityDeps): readonly Route[] {
+  return [
+    {
+      // A till action RELAYED by the store box (`TillActivityRecorded`): kept, then the day is judged against the rules
+      // and whatever breaches is raised. Idempotent on the activity id. `lp.activity.sync` is the box's hop — it grants
+      // nothing else.
+      api: 'API-05', method: 'POST', path: '/v1/loss-prevention/activity/:activityId/synced',
+      permission: 'lp.activity.sync', idempotent: true,
+      handler: async (ctx) => {
+        const activityId = (ctx.params['activityId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (activityId === '' || b['activityId'] !== activityId || b['kind'] !== 'void' || !isStr(b['laneId']) || !isStr(b['cashierId'])
+          || !isStr(b['billRef']) || !isStr(b['lineId']) || !isStr(b['productId']) || typeof b['description'] !== 'string'
+          || !Number.isSafeInteger(b['valueMinor']) || (b['valueMinor'] as number) < 0 || !isStr(b['reason']) || typeof b['at'] !== 'string' || Number.isNaN(Date.parse(b['at']))) {
+          refuse('not_readable_as_till_activity', 'This could not be read as a till void — it needs the activityId matching the path, the lane, the cashier, the bill, the line, the product, its value, the reason and when.', 400);
+        }
+        const prior = await deps.activity(ctx.tenantId, activityId);
+        if (prior !== undefined) return { status: 200, body: { activityId, recorded: true, alreadyRecorded: true } };
+        const a: TillActivity = {
+          activityId, kind: 'void', laneId: b['laneId'] as string, cashierId: b['cashierId'] as string, billRef: b['billRef'] as string,
+          lineId: b['lineId'] as string, productId: b['productId'] as string, description: b['description'] as string,
+          valueMinor: b['valueMinor'] as number, reason: b['reason'] as string, at: b['at'] as string,
+          ...(isStr(b['via']) ? { via: b['via'] as string } : {}), relayedBy: ctx.userId,
+        };
+        await deps.recordActivity(ctx.tenantId, a);
+
+        // Judge the day on the shop's own record and RAISE what breaches — once, and again only when it grows or escalates.
+        const day = a.at.slice(0, 10);
+        const raisedBefore = new Map((await deps.raised(ctx.tenantId)).map((r) => [r.exceptionId, r] as const));
+        const raisedNow: string[] = [];
+        for (const x of await exceptionsOn(deps, ctx.tenantId, day)) {
+          const before = raisedBefore.get(x.exceptionId);
+          if (before !== undefined && before.observed >= x.observed && before.severity === x.severity) continue;
+          await deps.recordRaised(ctx.tenantId, {
+            exceptionId: x.exceptionId, day, cashierId: x.cashierId, kind: x.kind, breach: x.breach, observed: x.observed,
+            limit: x.limit, severity: x.severity, linkedTxnIds: x.linkedTxnIds, raisedAt: deps.now(),
+          });
+          raisedNow.push(x.exceptionId);
+        }
+        return { status: 201, body: { activityId, recorded: true, raised: raisedNow } };
+      },
+    },
+    {
+      // The till's voids head office holds, for a day — the evidence itself, with who, why and how much.
+      api: 'API-05', method: 'GET', path: '/v1/loss-prevention/activity',
+      permission: 'lp.case.read',
+      handler: async (ctx) => {
+        const day = isIsoDay(ctx.query['day']) ? ctx.query['day'] : deps.now().slice(0, 10);
+        const voids = await deps.voidsOn(ctx.tenantId, day);
+        return { status: 200, body: { day, count: voids.length, voids, asAt: deps.now() } };
+      },
+    },
+    {
+      // The exceptions on the SHOP'S OWN RECORD for a day (voids held + refunds banked, against the current rules) — each
+      // with when it was raised and the case opened from it, if any. This is the control; `evaluate` is the preview.
+      api: 'API-05', method: 'GET', path: '/v1/loss-prevention/exceptions',
+      permission: 'lp.case.read',
+      handler: async (ctx) => {
+        const day = isIsoDay(ctx.query['day']) ? ctx.query['day'] : deps.now().slice(0, 10);
+        const raised = new Map((await deps.raised(ctx.tenantId)).map((r) => [r.exceptionId, r] as const));
+        const cases = await deps.cases(ctx.tenantId);
+        const exceptions = (await exceptionsOn(deps, ctx.tenantId, day)).map((x) => {
+          const r = raised.get(x.exceptionId);
+          const c = cases.find((k) => k.raisedFromRef === x.exceptionId);
+          return { ...x, ...(r === undefined ? {} : { raisedAt: r.raisedAt }), ...(c === undefined ? {} : { caseId: c.caseId, caseState: c.state }) };
+        });
+        return { status: 200, body: { day, count: exceptions.length, exceptions, source: 'the shop\'s own record — voids held and refunds banked', asAt: deps.now() } };
       },
     },
   ];

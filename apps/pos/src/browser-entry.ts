@@ -709,6 +709,8 @@ export function bootPos(config?: {
   heldBillsPort?: HeldBillsPort;
   /** The till's card/UPI attempt calls to its box (audit PF-06). Overridable for tests; production asks this till's own edge. */
   paymentsPort?: PaymentAttemptsPort;
+  /** The till's void-evidence call to its box (audit PF-07). Overridable for tests; production posts to this till's own edge. */
+  tillActivityPost?: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }): PosView & {
   readonly till: ReturnType<typeof createTillSession>;
   /**
@@ -772,6 +774,12 @@ export function bootPos(config?: {
   readonly answerCardPayment: (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer') => Promise<CardAttemptAnswer>;
   /** Settle a payment that got no answer against the PROVIDER's record — never by hand. */
   readonly checkCardPayment: (attemptId: string) => Promise<CardAttemptAnswer>;
+  /**
+   * Void a line WITH evidence (audit PF-07): the line, its value and the reason go to the store computer — stamped with
+   * the cashier it verified, queued for head office's loss-prevention record — and the line is removed only once the
+   * box has it. Refused (the line stays) when the box cannot keep it.
+   */
+  readonly voidAtTill: (lineId: string, reason: string) => Promise<{ readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string }>;
   readonly signOut: () => void;
   /** Who is at the till now, or undefined when nobody is signed in. */
   readonly operator: () => string | undefined;
@@ -1073,6 +1081,36 @@ export function bootPos(config?: {
     session.restoreHeld(bill.lines, Array.isArray(bill.ageAnswers) ? bill.ageAnswers : []);
     return { ...answer(r, true, 'Basket recalled.'), billId, ...(r['repriceRequired'] === true ? { repriceRequired: true } : {}) };
   };
+  // VOIDS AS EVIDENCE (audit PF-07): on the store computer before the line goes.
+  const voidAtTill = async (lineId: string, reason: string): Promise<{ readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string }> => {
+    if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('void a line').laneMessage };
+    const line = view.basket().find((l) => l.lineId === lineId);
+    if (line === undefined) return { ok: false, refusedBecause: 'no_such_line', laneMessage: 'That line is not on the bill.' };
+    if (reason.trim() === '') return { ok: false, refusedBecause: 'reason_required', laneMessage: 'A void needs a reason.' };
+    const body = {
+      activityId: `V-${newRequestKey().slice(3)}`, kind: 'void', billRef: session.billRef(), lineId, productId: line.productId,
+      description: line.description, valueMinor: line.unitPriceMinor * line.qty, reason,
+    };
+    const post = async (): Promise<Record<string, unknown>> => {
+      const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
+      const response = await fetch(`${base}/lane/till-activity`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+      const front = FRONT_REFUSED[response.status];
+      if (front !== undefined) return { recorded: false, ...front };
+      return await response.json() as Record<string, unknown>;
+    };
+    let r: Record<string, unknown>;
+    try { r = await (config?.tillActivityPost ?? post)(body); } catch {
+      try { r = await (config?.tillActivityPost ?? post)(body); } catch {
+        return { ok: false, refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so the void was not recorded. The line stays on the bill.' };
+      }
+    }
+    if (r['recorded'] !== true) {
+      return { ok: false, ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}), laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : 'The void was not recorded. The line stays on the bill.' };
+    }
+    view.voidLine(lineId, reason);
+    return { ok: true, laneMessage: 'Line voided.' };
+  };
+
   // CARD AND UPI (audit PF-06): the attempt is on the store computer before the machine is asked.
   const payments = config?.paymentsPort ?? lanePaymentAttempts(config?.lanePort ?? DEFAULT_LANE_PORT);
   const cardAnswer = (r: Record<string, unknown>): CardAttemptAnswer => {
@@ -1142,7 +1180,7 @@ export function bootPos(config?: {
     tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
   });
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill });
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

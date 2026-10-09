@@ -5,6 +5,45 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 4 · PF-07 — a void at the till is kept as evidence and judged on the shop's own record (9 October 2026)
+
+- **The audit's finding:** a void's reason disappeared once the basket moved on. The loss-prevention rules only ran over
+  activity somebody pasted in — a what-if, not a control.
+- **What changed:**
+  - A void now goes to the store computer **first**: the line, its value, the reason, and the cashier the store computer
+    verified (never a typed name). It is saved on the store computer's disk and queued for head office. The till removes
+    the line only once the store computer has it; if it cannot keep it, the line stays on the bill.
+  - The void reaches head office through the existing sync agent, once, and is kept there on its own permanent record.
+  - When voids arrive, head office runs the store's own rules over the voids it holds **and** the refunds it already
+    banked, per day. Whatever breaches a rule is raised, linked to the transactions, and listed for the owner at
+    `GET /v1/loss-prevention/exceptions`. The list shows when each was raised and the investigation case opened from it,
+    if any.
+  - `GET /v1/loss-prevention/activity` shows the voids themselves, with who, why and how much.
+  - The old "evaluate" route still works but now answers as a **preview**: "not the shop's record".
+  - The store computer's hop uses a new permission, `lp.activity.sync`, that grants nothing else.
+- **Proved:**
+  - Connected (real head office, real store computer, real sync agent, real till session, 5 tests):
+    - three voids with reasons are on the store computer first, stamped with the verified cashier;
+    - they reach head office once;
+    - "more than 2 voids" and "a void over ₹500" are raised for that cashier, linked to the voids;
+    - a case is opened from the raised exception and the list shows it;
+    - a store computer that cannot be reached leaves the line on the bill;
+    - nobody signed in, or no reason, means no void;
+    - a banked refund counts too, and evaluate answers as a preview;
+    - an unreadable relayed void is refused by name, and a person without the hop is refused.
+  - Browser (real Chromium, through the till's Void button): tap the line → Void → "Scanned twice" → OK. The line is
+    voided, and the void with its reason is on the store computer's disk, queued for head office.
+  - On the old code the new tests fail; the browser case shows no void record at all.
+  - Full gate: typecheck, lint and secret scan clean; 10,400 unit/integration tests pass (14 skipped), 259 performance,
+    31 browser.
+- **Not yet / honest limits:**
+  - The till has no "no sale" (open drawer) button yet, so there is nothing to record for it. Price overrides are not
+    part of this slice.
+  - Days are judged by calendar date (UTC), not yet by the shop's trading-day cut-off.
+  - The raised exceptions are listed at head office; they are not yet shown on the manager's home screen.
+  - Staff UAT (SP-10) pending.
+- **Next:** the rest of Wave 4 — SF-06 (import console) and PA-06/DF-3 (head office delivers the store pack).
+
 ## Wave 3 · SF-07 part 2 — the store computer's delivery screen takes the arrival temperature (9 October 2026)
 
 - **The wave:** Wave 3, SF-07 (cold chain at receiving), part 2 of 3, by the owner's decision "3 and A" (9 Oct 2026). Part 1
