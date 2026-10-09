@@ -223,6 +223,8 @@ export class PosSession {
   private operatorId: string | undefined;
   /** Every answer to the age question for THIS basket, in order (PF-03). Cleared with the basket, kept across hold/recall. */
   private readonly ageAnswerLog: AgeAnswer[] = [];
+  /** This basket's own reference (audit PF-06): the bill a card/UPI attempt is recorded against, until the next sale. */
+  private billRefValue: string | undefined;
   /** Evaluation instant for effective-dated promotions, when the caller fixed one (`setNow`); else the lane's clock. */
   private nowRef: string | undefined;
 
@@ -734,8 +736,18 @@ export class PosSession {
     this.state = this.lines.length > 0 ? 'selling' : 'idle';
   }
 
+  /**
+   * This basket's reference (audit PF-06) — the bill a card or UPI attempt is recorded against on the store computer, so
+   * a second attempt for the same basket is seen as the same bill. A new one with every new basket.
+   */
+  billRef(): string {
+    if (this.billRefValue === undefined) this.billRefValue = `B-${this.config.laneId ?? 'lane'}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    return this.billRefValue;
+  }
+
   /** Start a fresh basket on the same lane (after a commit). */
   newSale(): void {
+    this.billRefValue = undefined;
     this.lines.length = 0;
     this.seq = 0;
     // A new basket is a new customer: no age answer carries over (PF-03).

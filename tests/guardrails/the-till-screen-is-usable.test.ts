@@ -275,7 +275,12 @@ describe('the refund screen gives money back, safely', () => {
     // method, a customer for store credit, and a manager when the surface says the balance needs one — never the credit.
     expect(flow).toContain("t('exchangeEven')");
     expect(flow).toContain("t('exchangeCollect')");
-    expect(flow).toContain("t('tapTerminal')");
+    // What the card machine said is asked through the shared card flow, which records the attempt on the store computer
+    // first (audit PF-06) — and that flow asks the machine question.
+    expect(flow).toMatch(/cardAttempt\(kind, quote\.balanceMinor\)/);
+    const card = code(APP).slice(code(APP).indexOf('async function cardAttempt('), code(APP).indexOf('async function takeCardOrUpi('));
+    expect(card).toContain("t('tapTerminal')");
+    expect(card).toMatch(/session\.startCardPayment\(/);
     expect(flow).toContain("t('exchangeRefunds')");
     expect(flow).toMatch(/refundTender === 'store_credit'/);
     expect(flow).toMatch(/if \(quote\.needsApproval\)/);

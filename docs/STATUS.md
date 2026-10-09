@@ -36,6 +36,49 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   goods at the store computer; with a good reading the goods no longer wait for a second manager.
 - **Next:** SF-07 part 3 — the reading on the warehouse handheld.
 
+## Wave 4 · PF-06 — a card or UPI payment is written down before the machine is asked (9 October 2026)
+
+- **The audit's finding:** when the card machine did not answer, the till refused the sale and wrote **nothing**. If
+  the machine had in fact taken the money, the shop had no record it ever asked. The customer was charged for goods they
+  did not get, and the next try could charge them again.
+- **What changed:**
+  - **Before** the cashier asks the machine, the store computer records the payment attempt on its disk: which bill,
+    card or UPI, how much, and who. The attempt's reference is what the machine is given, so the provider's own record
+    can be matched to it later. It is a reference, never a card number; anything that looks like a card number is
+    refused (hard rule #3).
+  - What the machine said is recorded on the attempt: approved, declined, or no answer. The first answer stands.
+  - A **no-answer** is never settled by hand. Only the payment provider's record settles it, through a provider
+    plug-in point; no live provider is connected in this build. Until then it stays on the till's unresolved list.
+  - While a no-answer is unresolved, the till will not ask the machine again for that bill. The screen offers "Check
+    that payment with the provider" instead, because asking again is how a customer pays twice.
+  - If the provider confirms the customer paid, that payment is used for the bill and the machine is not asked again.
+    If its complete record shows no payment, the customer may pay again. If its record is incomplete, the payment stays
+    unknown and is not treated as a decline.
+  - A sale paid by card or UPI must carry a payment this store computer recorded as paid, on this till, for that
+    amount. Each payment pays one bill.
+  - Payments taken twice are listed as money owed back to the customer. Payments made with no sale to show for them are
+    listed too.
+  - The exchange's card top-up uses the same flow.
+- **Proved:**
+  - Integration on a real store computer with a stand-in provider (8): recorded before the machine; approved → sale
+    carries the reference and cannot pay a second bill; a card sale with no recorded payment refused; declined stands;
+    the audit's no-answer case (on the disk, second charge refused, no provider says so, a restart keeps it); provider
+    says paid → used, not charged again; provider's complete record says not paid → may pay again; paid twice → owed
+    back; a card-number-like reference refused.
+  - Browser (real Chromium, through the till's buttons): Card → no answer → on the disk → Card again offers a check, not
+    the machine → an approved payment on a new bill carries its reference.
+  - On the old code the new tests fail; the browser case shows no record at all of the attempt.
+  - Full gate: 10,395 unit and integration, 31 performance and 258 browser tests pass (the store-day browser test run
+    with the database).
+- **Not yet / honest limits:**
+  - No live payment provider is connected (credentials and certification are an external gate). Until one is, a
+    no-answer can only be cleared by the provider check once connected; the screen says to take cash meanwhile.
+  - The unresolved list is on the store computer only. It does not yet travel to head office (Wave 5 day
+    reconciliation).
+  - Refunds to a card are not part of this slice.
+  - Staff UAT (SP-10) pending.
+- **Next:** PF-07 — void evidence is durable and feeds the exception rules.
+
 ## Wave 4 · PF-05 — a held basket survives a reload, and comes back to one till, once (9 October 2026)
 
 - **The owner's decision OB-22:** answered "A" (9 Oct 2026). A till with no published receipt range keeps numbering its

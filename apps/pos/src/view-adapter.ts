@@ -124,6 +124,8 @@ export interface PosView {
     readonly atIsoUtc: string;
     readonly kind: 'card' | 'upi';
     readonly outcome: 'approved' | 'declined' | 'no_answer';
+    /** The store computer's attempt reference the machine was asked under (audit PF-06). */
+    readonly ref?: string;
   }): Promise<string>;
 
   /**
@@ -280,7 +282,7 @@ export function createPosView(
       // `declined` do not, so `commit` refuses and nothing is handed over.
       const status: Tender['status'] = input.outcome === 'approved' ? 'authorized'
         : input.outcome === 'declined' ? 'declined' : 'uncertain';
-      const tenders: Tender[] = [{ kind: input.kind, amount: payable, status }];
+      const tenders: Tender[] = [{ kind: input.kind, amount: payable, status, ...(input.ref === undefined ? {} : { ref: input.ref }) }];
       const sale = await session.commit(input.saleId, input.receiptNumber, input.atIsoUtc, tenders);
       return sale.number;
     },

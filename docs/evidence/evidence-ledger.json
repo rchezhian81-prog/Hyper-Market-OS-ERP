@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 958,
+  "testFiles": 960,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -719,9 +719,9 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 15,
-        "integration": 18,
+        "integration": 19,
         "realDb": 3,
-        "browser": 8,
+        "browser": 9,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -745,6 +745,7 @@
           "tests/unit/till-seal.test.ts"
         ],
         "integration": [
+          "tests/integration/a-card-payment-is-recorded-before-the-machine-is-asked.test.ts",
           "tests/integration/a-held-basket-survives-a-reload.test.ts",
           "tests/integration/a-returned-item-keeps-its-lot.test.ts",
           "tests/integration/an-age-restricted-sale-reaches-head-office-with-its-check.test.ts",
@@ -774,6 +775,7 @@
           "tests/e2e/the-served-till-closes.e2e.ts",
           "tests/e2e/the-served-till-keeps-a-held-basket.e2e.ts",
           "tests/e2e/the-served-till-never-repeats-a-receipt-number.e2e.ts",
+          "tests/e2e/the-served-till-records-a-card-payment-first.e2e.ts",
           "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
           "tests/e2e/the-served-till-takes-a-sale.e2e.ts",
           "tests/e2e/the-store-trades-a-day.e2e.ts",
@@ -2148,7 +2150,7 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 3,
-        "integration": 2,
+        "integration": 3,
         "realDb": 0,
         "browser": 0,
         "connected": 0,
@@ -2162,6 +2164,7 @@
           "tests/unit/self-checkout.test.ts"
         ],
         "integration": [
+          "tests/integration/a-card-payment-is-recorded-before-the-machine-is-asked.test.ts",
           "tests/integration/pending-tender-recovery.test.ts",
           "tests/integration/self-checkout-decisions.test.ts"
         ],

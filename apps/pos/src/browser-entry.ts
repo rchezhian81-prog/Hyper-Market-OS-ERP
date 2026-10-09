@@ -314,6 +314,45 @@ export function laneHeldBills(port: number = DEFAULT_LANE_PORT): HeldBillsPort {
   };
 }
 
+/** The store computer's answer about one card/UPI attempt (audit PF-06). */
+export interface CardAttemptAnswer {
+  readonly ok: boolean;
+  readonly refusedBecause?: string;
+  readonly laneMessage: string;
+  readonly attemptId?: string;
+  /** asked · approved · declined · no_answer · recovered_paid · recovered_not_paid */
+  readonly state?: string;
+  readonly amountMinor?: number;
+}
+/** The card/UPI attempt calls to this till's own store computer. */
+export interface PaymentAttemptsPort {
+  ask(body: Record<string, unknown>): Promise<Record<string, unknown>>;
+  answer(body: Record<string, unknown>): Promise<Record<string, unknown>>;
+  recover(body: Record<string, unknown>): Promise<Record<string, unknown>>;
+}
+const UNREACHABLE_PAYMENT = 'This till cannot reach its store computer, so the payment was not recorded. Do not ask the card machine — take cash or use another lane.';
+
+/** Card/UPI attempts on this till's own store computer (audit PF-06), asked with the cashier's session. */
+export function lanePaymentAttempts(port: number = DEFAULT_LANE_PORT): PaymentAttemptsPort {
+  const post = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
+    const once = async (): Promise<Record<string, unknown>> => {
+      const response = await fetch(`${laneBase(port)}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+      const front = FRONT_REFUSED[response.status];
+      if (front !== undefined) return { ok: false, ...front };
+      return await response.json() as Record<string, unknown>;
+    };
+    // Every call is safe to repeat (the attempt id is its identity), so a reply lost on the way back is asked once more.
+    try { return await once(); } catch {
+      try { return await once(); } catch { return { ok: false, refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_PAYMENT }; }
+    }
+  };
+  return {
+    ask: (body) => post('/lane/payment-attempts', body),
+    answer: (body) => post('/lane/payment-attempts/answer', body),
+    recover: (body) => post('/lane/payment-attempts/recover', body),
+  };
+}
+
 /** A request key for one number: unique to this ask, re-sent unchanged only when the reply was lost. */
 function newRequestKey(): string {
   const bytes = new Uint8Array(12);
@@ -559,7 +598,7 @@ export interface ExchangeDraftInput {
     /** The customer a store-credit balance is issued to (M13-FR-03). */
     readonly customerRef?: string;
     /** How the customer pays the balance, when they owe one. Card/UPI carry what the terminal said (M12-FR-03). */
-    readonly topUp?: { readonly kind: 'cash' | 'card' | 'upi'; readonly outcome?: 'approved' | 'declined' | 'no_answer' };
+    readonly topUp?: { readonly kind: 'cash' | 'card' | 'upi'; readonly outcome?: 'approved' | 'declined' | 'no_answer'; readonly ref?: string };
   };
   readonly approval?: { readonly by: string; readonly reason: string; readonly approvalId?: string };
 }
@@ -668,6 +707,8 @@ export function bootPos(config?: {
   approvalPort?: TillApprovalPort;
   /** The till's held-basket calls to its box (audit PF-05). Overridable for tests; production asks this till's own edge. */
   heldBillsPort?: HeldBillsPort;
+  /** The till's card/UPI attempt calls to its box (audit PF-06). Overridable for tests; production asks this till's own edge. */
+  paymentsPort?: PaymentAttemptsPort;
 }): PosView & {
   readonly till: ReturnType<typeof createTillSession>;
   /**
@@ -720,6 +761,17 @@ export function bootPos(config?: {
   readonly recallAtTill: (billId: string) => Promise<HeldAnswer>;
   /** Give a held basket up, with a reason — kept on the box's record, never deleted. */
   readonly abandonAtTill: (billId: string, reason: string) => Promise<HeldAnswer>;
+  /**
+   * Record a card or UPI payment on the store computer BEFORE the machine is asked (audit PF-06). The answer's
+   * `attemptId` is the reference the machine is given. Refused while this bill has a payment that got no answer
+   * (`unresolved_payment_on_this_bill` — check it with `checkCardPayment`), and when the bill already has a confirmed
+   * payment (`already_paid_on_this_bill` — pay with it, do not ask the machine again).
+   */
+  readonly startCardPayment: (kind: 'card' | 'upi', amountMinor?: number) => Promise<CardAttemptAnswer>;
+  /** What the machine said, recorded on the store computer. On `approved`, pay with `tenderCardOrUpi({ ..., ref: attemptId })`. */
+  readonly answerCardPayment: (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer') => Promise<CardAttemptAnswer>;
+  /** Settle a payment that got no answer against the PROVIDER's record — never by hand. */
+  readonly checkCardPayment: (attemptId: string) => Promise<CardAttemptAnswer>;
   readonly signOut: () => void;
   /** Who is at the till now, or undefined when nobody is signed in. */
   readonly operator: () => string | undefined;
@@ -903,7 +955,7 @@ export function bootPos(config?: {
               // The terminal did not approve: declined is declined, and silence is NOT approval (M12-FR-03) — nothing is recorded.
               return { kind: 'refused', laneMessage: topUp.outcome === 'declined' ? 'The card/UPI payment was declined. Nothing was recorded — the goods stay on the counter.' : 'The terminal has not answered. Do not hand over the goods — nothing was recorded; try again once the machine answers.' };
             }
-            tenders.push({ kind: topUp.kind, amount: money(q.balanceMinor, 'INR'), status: topUp.kind === 'cash' ? 'settled' : 'authorized' });
+            tenders.push({ kind: topUp.kind, amount: money(q.balanceMinor, 'INR'), status: topUp.kind === 'cash' ? 'settled' : 'authorized', ...(topUp.ref === undefined ? {} : { ref: topUp.ref }) });
             topUpTenders = [{ kind: topUp.kind, amountMinor: q.balanceMinor }];
           }
           if (!settle(money(q.replacementTotalMinor, 'INR'), tenders).fullyPaid) {
@@ -1021,6 +1073,30 @@ export function bootPos(config?: {
     session.restoreHeld(bill.lines, Array.isArray(bill.ageAnswers) ? bill.ageAnswers : []);
     return { ...answer(r, true, 'Basket recalled.'), billId, ...(r['repriceRequired'] === true ? { repriceRequired: true } : {}) };
   };
+  // CARD AND UPI (audit PF-06): the attempt is on the store computer before the machine is asked.
+  const payments = config?.paymentsPort ?? lanePaymentAttempts(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const cardAnswer = (r: Record<string, unknown>): CardAttemptAnswer => {
+    const a = (r['attempt'] ?? {}) as { attemptId?: unknown; state?: unknown; amountMinor?: unknown };
+    return {
+      ok: r['ok'] === true,
+      laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : UNREACHABLE_PAYMENT,
+      ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}),
+      ...(typeof a.attemptId === 'string' ? { attemptId: a.attemptId } : {}),
+      ...(typeof a.state === 'string' ? { state: a.state } : {}),
+      ...(typeof a.amountMinor === 'number' ? { amountMinor: a.amountMinor } : {}),
+    };
+  };
+  // The amount is the bill's payable, or — for an exchange's top-up — the difference the customer pays.
+  const startCardPayment = async (kind: 'card' | 'upi', amountOverride?: number): Promise<CardAttemptAnswer> => {
+    if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('take a card payment').laneMessage };
+    const amountMinor = amountOverride ?? session.totals().payable.minor;
+    if (amountMinor <= 0) return { ok: false, refusedBecause: 'nothing_to_pay', laneMessage: 'There is nothing to pay.' };
+    return cardAnswer(await payments.ask({ attemptId: `PAY-${newRequestKey().slice(3)}`, billRef: session.billRef(), kind, amountMinor }));
+  };
+  const answerCardPayment = async (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer'): Promise<CardAttemptAnswer> =>
+    cardAnswer(await payments.answer({ attemptId, outcome }));
+  const checkCardPayment = async (attemptId: string): Promise<CardAttemptAnswer> => cardAnswer(await payments.recover({ attemptId }));
+
   const abandonAtTill = async (billId: string, reason: string): Promise<HeldAnswer> => {
     const r = await held.abandon(billId, reason);
     return answer(r, r['abandoned'] === true, 'The basket was not given up.');
@@ -1066,7 +1142,7 @@ export function bootPos(config?: {
     tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
   });
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill });
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
