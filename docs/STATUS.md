@@ -35,6 +35,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - The older import, export, data-quality and two-person tests now run on the real invoice type (the made-up product
     type they used is now refused, as intended), including the real-PostgreSQL one-load-under-three-commits test.
   - On the old code the new tests fail.
+  - Full gate: typecheck, lint and secret scan clean; 10,413 unit/integration tests pass (14 skipped), 260 performance,
+    31 browser.
 - **Not yet / honest limits:**
   - Product files (SF-06-b) are next; head office first needs its own category list.
   - The undo is a head-office action; the import screen has no Undo button yet.
