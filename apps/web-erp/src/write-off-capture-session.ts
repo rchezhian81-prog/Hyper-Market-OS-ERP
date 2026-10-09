@@ -142,7 +142,26 @@ export interface WriteOffCapturePorts {
   askApproval?(ask: ApprovalAsk): Promise<AskResult>;
   /** The caller's approvals inbox (GET /v1/approvals/requests) — read only. Absent when not connected. */
   approvalInbox?(): Promise<InboxRead>;
+  /** SF-05 — head office's value of a loss (GET /v1/inventory/write-off-value) — read only. Absent when not connected:
+   *  the value is then typed, and head office still values the loss itself when it is sent. */
+  readLossValue?(q: LossToValue): Promise<LossValueRead>;
 }
+
+/** SF-05 — the loss head office is asked to value. */
+export interface LossToValue { readonly productId: string; readonly locationId: string; readonly qty: number }
+
+/** SF-05 — head office's answer: its own value of the loss (and whether that is a big loss), or that it holds no cost. */
+export type LossValueRead =
+  | { readonly result: 'valued'; readonly known: true; readonly unitCostMinor: number; readonly valueMinor: number; readonly material: boolean }
+  | { readonly result: 'valued'; readonly known: false }
+  | Refused | LostLink;
+
+/** SF-05 — what the screen does with head office's value. */
+export type LossValueOutcome =
+  | { readonly kind: 'valued'; readonly qty: number; readonly unitCostMinor: number; readonly valueMinor: number; readonly material: boolean }
+  | { readonly kind: 'cost_unknown' }
+  | { readonly kind: 'incomplete' } | { readonly kind: 'not_connected' } | { readonly kind: 'lost_link' }
+  | { readonly kind: 'refused'; readonly whatHappened: string };
 
 export interface WriteOffCaptureConfig {
   /** Who is at the screen. `null` means the store computer was not told; a loss carries the raiser's name,
@@ -176,6 +195,8 @@ export type WriteOffAskOutcome =
 export const WRITE_OFF_REFUSAL_CODES = Object.freeze([
   'write_off_needs_approval', 'write_off_needs_evidence', 'invalid_write_off', 'stock_not_owned_by_the_store',
   'write_off_already_recorded',
+  // SF-05 — head office values a loss from the stock's own cost: a different figure, or none where it holds no cost.
+  'write_off_value_is_the_stock_cost', 'write_off_cost_unknown',
 ] as const);
 export type WriteOffRefusalCode = (typeof WRITE_OFF_REFUSAL_CODES)[number];
 
@@ -221,7 +242,8 @@ export type CopyKey =
   | 'notPermitted' | 'incomplete' | 'needsEvidence' | 'notConnected'
   | 'notAsked' | 'waiting' | 'rejected' | 'rejectedNoName' | 'expired' | 'used' | 'changed'
   | 'checkerMayNot' | 'namedNotApproved' | 'refused' | 'refusedNoWords' | 'lostLink'
-  | 'hoNeedsApproval' | 'hoNeedsEvidence' | 'hoInvalid' | 'hoNotOwned' | 'hoAlready'
+  | 'hoNeedsApproval' | 'hoNeedsEvidence' | 'hoInvalid' | 'hoNotOwned' | 'hoAlready' | 'hoValueIsStockCost' | 'hoCostUnknown'
+  | 'valueFromStock' | 'valueCostUnknown' | 'valueLostLink' | 'valueRefused'
   | 'yourLossesTitle' | 'yourLossesLead' | 'carryOnBtn' | 'carriedOn' | 'whyWord'
   | 'scrReady' | 'stateNotPermitted' | 'nobodyNamed';
 
@@ -272,6 +294,12 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     hoInvalid: '{not} — head office could not accept this loss as written. Check how many (a whole number above zero) and the kind of loss.',
     hoNotOwned: '{not} — some of this item at that place belongs to someone else (a concession or consignment supplier, or a customer). Store staff cannot write off stock the store does not own; its owner records that loss.',
     hoAlready: 'This loss was already recorded. Nothing was recorded again.',
+    hoValueIsStockCost: '{not} — the value is not head office\'s figure for this stock. Re-enter the product, place and quantity so the screen shows head office\'s value, then record again.',
+    hoCostUnknown: '{not} — head office holds no cost for this stock. Type the value you believe it has — a photo or witness and a second person\'s approval will be needed.',
+    valueFromStock: 'Head office\'s value: {qty} × {unit} = {value}.',
+    valueCostUnknown: 'Head office holds no cost for this stock. Type the value you believe it has — this loss needs a photo or witness and a second person\'s approval, whatever its value.',
+    valueLostLink: 'Head office did not answer, so the value could not be read. Try again in a moment.',
+    valueRefused: 'Head office could not value this loss: {words}',
     yourLossesTitle: 'Losses you asked approval for',
     yourLossesLead: 'Once one is approved, press “Carry on with this loss” to put exactly that loss back in the form, then press “Record the loss”.',
     carryOnBtn: 'Carry on with this loss',
@@ -326,6 +354,12 @@ export const WRITE_OFF_CAPTURE_COPY: BilingualCopy<CopyKey> = {
     hoInvalid: '{not} — எழுதியபடி இந்த இழப்பைத் தலைமை அலுவலகம் ஏற்க முடியவில்லை. எத்தனை (பூஜ்ஜியத்திற்கு மேல் ஒரு முழு எண்) மற்றும் இழப்பின் வகையைச் சரிபார்க்கவும்.',
     hoNotOwned: '{not} — அந்த இடத்தில் உள்ள இந்தப் பொருளில் சில வேறொருவருக்குச் சொந்தமானவை (கூட்டாளர் கவுண்டர், சரக்கு-விற்பனை விநியோகஸ்தர் அல்லது வாடிக்கையாளர்). கடைக்குச் சொந்தமில்லாத சரக்கைக் கடை ஊழியர்கள் இழப்பாகக் கழிக்க முடியாது; அதன் உரிமையாளரே அந்த இழப்பைப் பதிவு செய்வார்.',
     hoAlready: 'இந்த இழப்பு ஏற்கனவே பதிவு செய்யப்பட்டது. மீண்டும் எதுவும் பதிவு செய்யப்படவில்லை.',
+    hoValueIsStockCost: '{not} — இந்த மதிப்பு இந்தச் சரக்குக்கான தலைமை அலுவலகத்தின் தொகை அல்ல. பொருள், இடம், அளவை மீண்டும் உள்ளிட்டு தலைமை அலுவலகத்தின் மதிப்பைக் காட்டச் செய்து மீண்டும் பதிவு செய்யவும்.',
+    hoCostUnknown: '{not} — இந்தச் சரக்குக்குத் தலைமை அலுவலகத்திடம் விலை இல்லை. நீங்கள் கருதும் மதிப்பை உள்ளிடவும் — புகைப்படம் அல்லது சாட்சியும் இரண்டாம் நபரின் அனுமதியும் தேவைப்படும்.',
+    valueFromStock: 'தலைமை அலுவலகத்தின் மதிப்பு: {qty} × {unit} = {value}.',
+    valueCostUnknown: 'இந்தச் சரக்குக்குத் தலைமை அலுவலகத்திடம் விலை இல்லை. நீங்கள் கருதும் மதிப்பை உள்ளிடவும் — மதிப்பு எதுவாக இருந்தாலும் இந்த இழப்புக்குப் புகைப்படம் அல்லது சாட்சியும் இரண்டாம் நபரின் அனுமதியும் தேவை.',
+    valueLostLink: 'தலைமை அலுவலகம் பதிலளிக்கவில்லை, அதனால் மதிப்பைப் படிக்க முடியவில்லை. சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும்.',
+    valueRefused: 'தலைமை அலுவலகம் இந்த இழப்பை மதிப்பிட முடியவில்லை: {words}',
     yourLossesTitle: 'நீங்கள் அனுமதி கேட்ட இழப்புகள்',
     yourLossesLead: 'ஒன்று அனுமதிக்கப்பட்டதும், “இந்த இழப்பைத் தொடரவும்” அழுத்தி அதே இழப்பைப் படிவத்தில் மீண்டும் கொண்டு வந்து, பிறகு “இழப்பைப் பதிவு செய்” அழுத்தவும்.',
     carryOnBtn: 'இந்த இழப்பைத் தொடரவும்',
@@ -351,6 +385,8 @@ const REFUSAL_COPY: Readonly<Record<WriteOffRefusalCode, CopyKey>> = Object.free
   invalid_write_off: 'hoInvalid',
   stock_not_owned_by_the_store: 'hoNotOwned',
   write_off_already_recorded: 'hoAlready',
+  write_off_value_is_the_stock_cost: 'hoValueIsStockCost',
+  write_off_cost_unknown: 'hoCostUnknown',
 });
 
 const fill = (template: string, values: Readonly<Record<string, string>>): string =>
@@ -472,7 +508,12 @@ export interface WriteOffCaptureSession {
   isMaterial(valueMinor: number): boolean;
   /** Whether THIS loss needs a second person's approval: material by the store limit — or head office already said
    *  so for this write-off (its limit is the authority, and may differ from the one this page was told). */
-  needsApproval(loss: { readonly writeOffId: string; readonly valueMinor: number }): boolean;
+  needsApproval(loss: { readonly writeOffId: string; readonly valueMinor: number; readonly productId?: string; readonly locationId?: string; readonly qty?: number }): boolean;
+  /** SF-05 — ask head office what this loss is worth (quantity × its own cost of the stock). Read only. The screen shows the
+   *  figure and sends it; where head office holds no cost the value is typed and the loss always needs a second person. */
+  valueLoss(q: LossToValue): Promise<LossValueOutcome>;
+  /** Head office's value in words — `null` when there is nothing to say yet (an incomplete form, no head office). */
+  presentValue(lang: Lang, outcome: LossValueOutcome): StatusPresentation | null;
   /** True when this screen is wired to head office's approval engine. Without it a big loss is never recorded. */
   readonly connected: boolean;
   /** The raiser asks a second person who handles stock to approve exactly this loss (`stock_write_off`, details
@@ -506,8 +547,17 @@ export function createWriteOffCaptureSession(config: WriteOffCaptureConfig, port
   const connected = ports.askApproval !== undefined && ports.approvalInbox !== undefined;
   /** Write-offs head office called big although this page's limit did not (its limit is the one that counts). */
   const bigAtHeadOffice = new Set<string>();
-  const needsApproval = (loss: { readonly writeOffId: string; readonly valueMinor: number }): boolean =>
-    isMaterial(loss.valueMinor) || bigAtHeadOffice.has(loss.writeOffId.trim());
+  /** SF-05 — losses head office valued as big, and stock it holds no cost for (always big), by product|place[|qty]. */
+  const bigByValue = new Set<string>();
+  const costUnknown = new Set<string>();
+  const placeKey = (productId: string, locationId: string): string => `${productId.trim()}\u001f${locationId.trim()}`;
+  const needsApproval = (loss: { readonly writeOffId: string; readonly valueMinor: number; readonly productId?: string; readonly locationId?: string; readonly qty?: number }): boolean => {
+    if (isMaterial(loss.valueMinor) || bigAtHeadOffice.has(loss.writeOffId.trim())) return true;
+    if (loss.productId === undefined || loss.locationId === undefined) return false;
+    const at = placeKey(loss.productId, loss.locationId);
+    return costUnknown.has(at) || (loss.qty !== undefined && bigByValue.has(`${at}\u001f${loss.qty}`));
+  };
+  const draftNeedsApproval = (d: WriteOffDraft): boolean => needsApproval({ writeOffId: d.writeOffId, valueMinor: d.valueMinor, productId: d.productId, locationId: d.locationId, qty: d.qty });
 
   /** Send the loss (naming an approval when it has one) and read head office's answer. */
   const send = async (writeOffId: string, body: WriteOffBody, approval?: { readonly requestId: string; readonly decidedBy: string | null }): Promise<WriteOffRecordOutcome> => {
@@ -550,7 +600,7 @@ export function createWriteOffCaptureSession(config: WriteOffCaptureConfig, port
     askApproval: async (lang, draft, why) => {
       if (!ports.mayCapture()) return { kind: 'not_permitted' };
       if (!isWellFormed(draft)) return { kind: 'incomplete' };
-      if (!needsApproval(draft)) return { kind: 'not_material' };
+      if (!draftNeedsApproval(draft)) return { kind: 'not_material' };
       const port = ports.askApproval;
       if (!connected || port === undefined) return { kind: 'not_connected' };
       const body = writeOffBodyOf(draft);
@@ -583,7 +633,7 @@ export function createWriteOffCaptureSession(config: WriteOffCaptureConfig, port
       if (!isWellFormed(draft)) return { kind: 'incomplete' };
       const writeOffId = draft.writeOffId.trim();
       const body = writeOffBodyOf(draft);
-      if (!needsApproval(draft)) return send(writeOffId, body);
+      if (!draftNeedsApproval(draft)) return send(writeOffId, body);
       if (!connected) return { kind: 'not_connected' };
       if (body.evidenceRef === undefined) return { kind: 'needs_evidence' };
       const found = await findOwnApproval(ports.approvalInbox, WRITE_OFF_APPROVAL_KIND, writeOffId, writeOffDetails(writeOffId, body), body.valueMinor);
@@ -614,6 +664,30 @@ export function createWriteOffCaptureSession(config: WriteOffCaptureConfig, port
       return { state: 'read', rows };
     },
 
+    valueLoss: async (q) => {
+      if (!isNonEmpty(q.productId) || !isNonEmpty(q.locationId) || !isPosInt(q.qty)) return { kind: 'incomplete' };
+      if (ports.readLossValue === undefined) return { kind: 'not_connected' };
+      const read = await ports.readLossValue({ productId: q.productId.trim(), locationId: q.locationId.trim(), qty: q.qty });
+      if (read.result === 'lost_link') return { kind: 'lost_link' };
+      if (read.result === 'refused') return { kind: 'refused', whatHappened: read.whatHappened };
+      const at = placeKey(q.productId, q.locationId);
+      if (!read.known) { costUnknown.add(at); return { kind: 'cost_unknown' }; }
+      costUnknown.delete(at);
+      if (read.material) bigByValue.add(`${at}\u001f${q.qty}`);
+      return { kind: 'valued', qty: q.qty, unitCostMinor: read.unitCostMinor, valueMinor: read.valueMinor, material: read.material };
+    },
+    presentValue: (lang, o) => {
+      const t = translator(WRITE_OFF_CAPTURE_COPY, lang);
+      switch (o.kind) {
+        case 'valued':
+          return presentStatus({ tone: 'ok', icon: '₹', needsAttention: false,
+            label: fill(t('valueFromStock'), { qty: String(o.qty), unit: formatRupees(o.unitCostMinor), value: formatRupees(o.valueMinor) }) });
+        case 'cost_unknown': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('valueCostUnknown'), needsAttention: true });
+        case 'lost_link': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('valueLostLink'), needsAttention: true });
+        case 'refused': return presentStatus({ tone: 'error', icon: '✕', label: fill(t('valueRefused'), { words: o.whatHappened.trim() }), needsAttention: true });
+        case 'incomplete': case 'not_connected': return null;
+      }
+    },
     presentAskOutcome: (lang, outcome) => presentWriteOffAsk(lang, outcome),
     presentRecordOutcome: (lang, outcome) => presentWriteOffRecord(lang, outcome),
   };

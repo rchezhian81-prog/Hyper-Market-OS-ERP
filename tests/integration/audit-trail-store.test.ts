@@ -205,6 +205,9 @@ describe('the audit trail records a stock loss — a write-off (M34 slice 7, har
   it('seals what left, how much, why and its value, attributed to the raiser; verifies intact', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner'); // holds inventory.movement.append + audit.retention.read
+    // SF-05: the milk being lost, at head office's own cost of ₹50 a unit — what the loss is valued from (6 × ₹50 = ₹300).
+    expect((await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: 'u-owner', tenantId: A, idempotencyKey: 'mv-cost-milk',
+      body: { movementId: 'cost-milk', productId: 'MILK-1', locationId: 'store-1', kind: 'received', quantityMinor: 50, uom: 'ea', occurredAt: '2026-08-01T09:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 5_000 } })).status).toBe(202);
 
     const r = await writeOff(h, 'u-owner', 'WO-1', {
       productId: 'MILK-1', locationId: 'store-1', qty: 6, uom: 'ea', lossType: 'expiry',

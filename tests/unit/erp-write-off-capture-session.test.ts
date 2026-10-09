@@ -367,6 +367,8 @@ describe('head office’s refusals of the record — every one in plain words, E
       invalid_write_off: 'Not recorded — head office could not accept this loss as written. Check how many (a whole number above zero) and the kind of loss.',
       stock_not_owned_by_the_store: 'Not recorded — some of this item at that place belongs to someone else (a concession or consignment supplier, or a customer). Store staff cannot write off stock the store does not own; its owner records that loss.',
       write_off_already_recorded: 'This loss was already recorded. Nothing was recorded again.',
+      write_off_value_is_the_stock_cost: 'Not recorded — the value is not head office\'s figure for this stock. Re-enter the product, place and quantity so the screen shows head office\'s value, then record again.',
+      write_off_cost_unknown: 'Not recorded — head office holds no cost for this stock. Type the value you believe it has — a photo or witness and a second person\'s approval will be needed.',
       approval_unknown: 'Not recorded — nobody has been asked to approve this loss yet. Write why and press “Ask for approval” first.',
       approval_does_not_match: 'Not recorded — this is not exactly the loss that was approved (something changed after you asked). Ask for approval again for exactly this.',
       approval_still_waiting: 'Not recorded — still waiting for a second person who handles stock (not you) to approve it on their Approvals page.',
@@ -491,5 +493,53 @@ describe('the box wiring', () => {
     expect(spec?.label).toBe('Write off stock (a material loss)');
     expect(spec?.makerPermission).toBe('inventory.movement.append');
     expect(spec?.checkerPermission).toBe('inventory.movement.append');
+  });
+});
+
+describe('SF-05 — the screen shows head office\'s value of the loss; nobody types it', () => {
+  const session = (read: (q: { productId: string; locationId: string; qty: number }) => Promise<import('../../apps/web-erp/src/write-off-capture-session').LossValueRead>) => {
+    const asked: { productId: string; locationId: string; qty: number }[] = [];
+    const s = createWriteOffCaptureSession({ userId: 'u-owner', materialThresholdMinor: THRESHOLD }, {
+      mayCapture: () => true, capturePort: () => ({ post: async () => ({ result: 'recorded' }) }),
+      readLossValue: async (q) => { asked.push(q); return read(q); },
+    });
+    return { s, asked };
+  };
+
+  it('head office\'s figure, worded: quantity × its cost = value — and a big one by its word, even under this page\'s line', async () => {
+    const { s, asked } = session(async (q) => ({ result: 'valued', known: true, unitCostMinor: 5_000, valueMinor: q.qty * 5_000, material: q.qty >= 7 }));
+    const o = await s.valueLoss({ productId: ' OIL-5L ', locationId: 'store-1', qty: 6 });
+    expect(asked).toEqual([{ productId: 'OIL-5L', locationId: 'store-1', qty: 6 }]);
+    expect(o).toEqual({ kind: 'valued', qty: 6, unitCostMinor: 5_000, valueMinor: 30_000, material: false });
+    expect(s.presentValue('en', o)!.label).toBe('Head office\'s value: 6 × ₹50.00 = ₹300.00.');
+    expect(s.presentValue('ta', o)!.label).toBe('தலைமை அலுவலகத்தின் மதிப்பு: 6 × ₹50.00 = ₹300.00.');
+    // head office calls 7 big (its limit is the authority) although ₹350 is under this page's ₹500
+    await s.valueLoss({ productId: 'OIL-5L', locationId: 'store-1', qty: 7 });
+    expect(s.needsApproval({ writeOffId: 'w', valueMinor: 35_000, productId: 'OIL-5L', locationId: 'store-1', qty: 7 })).toBe(true);
+    expect(s.needsApproval({ writeOffId: 'w', valueMinor: 30_000, productId: 'OIL-5L', locationId: 'store-1', qty: 6 })).toBe(false);
+  });
+
+  it('no cost held: the loss always needs a photo or witness and a second person, whatever value is typed', async () => {
+    const { s } = session(async () => ({ result: 'valued', known: false }));
+    const o = await s.valueLoss({ productId: 'GIFT-BOX', locationId: 'store-1', qty: 1 });
+    expect(o).toEqual({ kind: 'cost_unknown' });
+    expect(s.presentValue('en', o)).toMatchObject({ tone: 'degraded', needsAttention: true });
+    expect(s.presentValue('en', o)!.label).toMatch(/holds no cost .* second person/);
+    expect(s.needsApproval({ writeOffId: 'w', valueMinor: 100, productId: 'GIFT-BOX', locationId: 'store-1', qty: 1 })).toBe(true);
+    const r = await s.record(draft({ productId: 'GIFT-BOX', locationId: 'store-1', qty: 1, valueMinor: 100 }));
+    expect(r.kind).not.toBe('recorded'); // never sent on the raiser's own
+  });
+
+  it('nothing asked for an incomplete loss; no head office, no figure; a lost link and a refusal are said', async () => {
+    const { s, asked } = session(async () => ({ result: 'lost_link' }));
+    expect(await s.valueLoss({ productId: '', locationId: 'store-1', qty: 1 })).toEqual({ kind: 'incomplete' });
+    expect(await s.valueLoss({ productId: 'P', locationId: 'store-1', qty: 0 })).toEqual({ kind: 'incomplete' });
+    expect(asked).toEqual([]);
+    expect(await s.valueLoss({ productId: 'P', locationId: 'store-1', qty: 1 })).toEqual({ kind: 'lost_link' });
+    const refusing = session(async () => ({ result: 'refused', code: 'forbidden', whatHappened: 'You may not.' })).s;
+    const no = await refusing.valueLoss({ productId: 'P', locationId: 'store-1', qty: 1 });
+    expect(refusing.presentValue('en', no)!.label).toBe('Head office could not value this loss: You may not.');
+    const offline = createWriteOffCaptureSession({ userId: 'u-owner', materialThresholdMinor: THRESHOLD }, { mayCapture: () => true, capturePort: () => ({ post: async () => ({ result: 'recorded' }) }) });
+    expect(await offline.valueLoss({ productId: 'P', locationId: 'store-1', qty: 1 })).toEqual({ kind: 'not_connected' });
   });
 });
