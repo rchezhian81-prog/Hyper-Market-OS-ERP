@@ -99,7 +99,7 @@ export type CopyKey =
   | 'waitingHeading' | 'waitingCount' | 'nothingWaiting' | 'mineHeading' | 'nothingAsked'
   | 'askedByLabel' | 'whyLabel' | 'whenLabel' | 'amountLabel' | 'detailsLabel' | 'aboutLabel'
   | 'reasonLabel' | 'reasonPlaceholder' | 'approveBtn' | 'rejectBtn'
-  | 'kindDataImport' | 'kindSupplierBank'
+  | 'kindDataImport' | 'kindDataImportRollback' | 'kindSupplierBank'
   | 'kindPriceChange' | 'kindPriceListEntry' | 'kindPromotionLaunch' | 'kindQuotationBelowFloor'
   | 'kindPeriodClose' | 'kindPeriodReopen' | 'kindConcessionContract' | 'kindConcessionDepositForfeit'
   | 'kindStockWriteOff' | 'kindStockAdjustmentUp' | 'kindOrderRefund' | 'kindServiceCompensation'
@@ -137,7 +137,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     askedByLabel: 'Asked by', whyLabel: 'Why', whenLabel: 'When', amountLabel: 'Amount', detailsLabel: 'Exactly what will happen', aboutLabel: 'About',
     reasonLabel: 'Your reason (the person who asked will read it)', reasonPlaceholder: 'For example: checked the prices against the supplier\'s letter.',
     approveBtn: 'Approve', rejectBtn: 'Reject',
-    kindDataImport: 'Apply a bulk import', kindSupplierBank: 'Change where a supplier is paid',
+    kindDataImport: 'Apply a bulk import', kindDataImportRollback: 'Undo a bulk import', kindSupplierBank: 'Change where a supplier is paid',
     kindPriceChange: 'Set a price below cost or below the margin floor', kindPriceListEntry: 'Add a price-list entry below cost or below the margin floor',
     kindPromotionLaunch: 'Launch a promotion that loses margin', kindQuotationBelowFloor: 'Quote a customer below the margin floor',
     kindPeriodClose: 'Close and sign an accounting month', kindPeriodReopen: 'Reopen a signed accounting month',
@@ -195,7 +195,7 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     askedByLabel: 'கேட்டவர்', whyLabel: 'ஏன்', whenLabel: 'எப்போது', amountLabel: 'தொகை', detailsLabel: 'சரியாக என்ன நடக்கும்', aboutLabel: 'எதைப் பற்றி',
     reasonLabel: 'உங்கள் காரணம் (கேட்டவர் இதைப் படிப்பார்)', reasonPlaceholder: 'உதாரணம்: விநியோகஸ்தரின் கடிதத்துடன் விலைகளைச் சரிபார்த்தேன்.',
     approveBtn: 'அனுமதி', rejectBtn: 'மறு',
-    kindDataImport: 'மொத்த இறக்குமதியைப் பயன்படுத்துதல்', kindSupplierBank: 'விநியோகஸ்தருக்குப் பணம் செல்லும் கணக்கை மாற்றுதல்',
+    kindDataImport: 'மொத்த இறக்குமதியைப் பயன்படுத்துதல்', kindDataImportRollback: 'மொத்த இறக்குமதியைத் திரும்பப் பெறுதல்', kindSupplierBank: 'விநியோகஸ்தருக்குப் பணம் செல்லும் கணக்கை மாற்றுதல்',
     kindPriceChange: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலை வைத்தல்', kindPriceListEntry: 'அடக்க விலைக்கு அல்லது குறைந்தபட்ச லாப வரம்புக்குக் கீழே விலைப்பட்டியல் பதிவு',
     kindPromotionLaunch: 'லாபத்தை இழக்கும் சலுகையைத் தொடங்குதல்', kindQuotationBelowFloor: 'குறைந்தபட்ச லாப வரம்புக்குக் கீழே வாடிக்கையாளருக்கு விலை மேற்கோள்',
     kindPeriodClose: 'கணக்கு மாதத்தை மூடி கையெழுத்திடுதல்', kindPeriodReopen: 'கையெழுத்திட்ட கணக்கு மாதத்தை மீண்டும் திறத்தல்',
@@ -252,6 +252,7 @@ export const COPY_KEYS: readonly CopyKey[] = Object.freeze(Object.keys(APPROVALS
 /** The kinds this screen can name in both languages; any other kind shows the server's own label. */
 const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   data_import_commit: 'kindDataImport',
+  data_import_rollback: 'kindDataImportRollback',
   supplier_bank_change: 'kindSupplierBank',
   price_change: 'kindPriceChange',
   price_list_entry: 'kindPriceListEntry',

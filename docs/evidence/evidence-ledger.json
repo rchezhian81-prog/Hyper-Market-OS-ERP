@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 962,
+  "testFiles": 964,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -396,7 +396,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 19,
+        "integration": 20,
         "realDb": 2,
         "browser": 4,
         "connected": 0,
@@ -417,6 +417,7 @@
         ],
         "integration": [
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
+          "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
           "tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/goods-receipt-assembled.test.ts",
@@ -1703,7 +1704,7 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 9,
-        "integration": 5,
+        "integration": 6,
         "realDb": 1,
         "browser": 3,
         "connected": 0,
@@ -1724,6 +1725,7 @@
         ],
         "integration": [
           "tests/integration/ai-mapping-quality.test.ts",
+          "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
           "tests/integration/data-export.test.ts",
           "tests/integration/data-import.test.ts",
           "tests/integration/import-quality.test.ts",

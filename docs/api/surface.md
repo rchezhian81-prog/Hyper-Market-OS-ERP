@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 826 | 506 | 506 | 64 | 280 |
+| 13 | 828 | 507 | 507 | 64 | 280 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -124,6 +124,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/import/commit` | `purchase.import.record` | core | yes |
 | GET | `/v1/import/commits` | `purchase.import.read` | core | — |
 | GET | `/v1/import/commits/:jobId` | `purchase.import.read` | core | — |
+| POST | `/v1/import/commits/:jobId/rollback` | `purchase.import.record` | core | yes |
+| GET | `/v1/import/templates` | `purchase.import.read` | core | — |
 | POST | `/v1/import/validate` | `purchase.import.read` | core | yes |
 | GET | `/v1/purchase/commitments` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/contracts/:contractId` | `purchase.contract.manage` | core | yes |

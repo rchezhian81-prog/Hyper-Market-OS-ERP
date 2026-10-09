@@ -5,6 +5,48 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 4 · SF-06-a — an invoice file becomes real supplier invoices, and can be undone (9 October 2026)
+
+- **The audit's finding:** a manager loaded one product row and the import said "committed, 1 row applied" — but the
+  product list held nothing. The import stored a note about the job and changed no real record. The file type, the
+  reference lists and the "already exists" list all came from whoever sent the file.
+- **Owner decision OB-23 "C"** (9 Oct 2026): invoices first, then products.
+- **What changed:**
+  - Head office keeps its own list of file types it can load. Today that is one: **supplier invoices**, one row per
+    invoice line with the invoice's header repeated (the shape billing programs export). Any other type is refused by
+    name, and a request carrying its own "what exists" lists is refused.
+  - Every row is checked against head office's own products, suppliers and invoices: unknown product or supplier,
+    zero quantity, a line that does not multiply, an invoice whose lines do not add up to its total, a header that
+    changes inside one invoice, a bill already loaded, and a missing file total — each shown by line. A file with any
+    problem writes nothing.
+  - The person loading must also be allowed to capture invoices. A second person approves the load (as before); then
+    each invoice is written as a real captured invoice — the same record the capture screen writes, so it goes on to
+    the three-way match and the supplier's account — in **one save** with the job's record.
+  - **Undo:** a second person approves a rollback; the invoices are withdrawn by compensating records (the originals
+    stay as evidence). Refused once any of the invoices has been matched. A withdrawn invoice number is never reused.
+  - The demo store pack now offers the invoice file type on the import screen.
+- **Proof:**
+  - Connected (real API, real permissions, real maker-checker engine; 6 tests): an unsupported type is refused and
+    nothing recorded; an 85-line and a 2-line invoice in one file land as two real invoices in one save and match
+    against the stored order; every rule is a row error and a bad file writes nothing; the same bill is never loaded
+    twice; rollback, its refusal once matched, and the never-reused number; the uploader cannot approve their own undo.
+  - Unit (5 tests): the template's rules by line; an unchecked invoice is flagged; an uploader without invoice
+    authority is refused.
+  - The older import, export, data-quality and two-person tests now run on the real invoice type (the made-up product
+    type they used is now refused, as intended), including the real-PostgreSQL one-load-under-three-commits test.
+  - On the old code the new tests fail.
+  - Full gate: typecheck, lint and secret scan clean; 10,413 unit/integration tests pass (14 skipped), 260 performance,
+    31 browser.
+- **Not yet / honest limits:**
+  - Product files (SF-06-b) are next; head office first needs its own category list.
+  - The undo is a head-office action; the import screen has no Undo button yet.
+  - If the capture screen and a file record the same new invoice number at the very same moment, the first one wins
+    and the job still lists it; a write guard on the invoice number would close this.
+  - The roadmap's acceptance — a real 80+ line supplier invoice, timed against typing it by hand — needs a real
+    invoice and the owner; it is not claimed.
+  - Staff UAT (SP-10) pending.
+- **Next:** SF-06-b (product files), then PA-06/DF-3 (head office delivers the store pack).
+
 ## Wave 3 · SF-07 part 3 — the warehouse handheld takes the arrival temperature; a cold scan without one stays off the shelf (9 October 2026)
 
 - **The wave:** Wave 3, SF-07 (cold chain at receiving), part 3 of 3, by the owner's decision "3 and A" (9 Oct 2026). Parts

@@ -63,7 +63,9 @@ export type RowErrorKind =
   | 'not_an_amount'
   | 'not_allowed_value'
   | 'unknown_reference'
-  | 'duplicate_in_file';
+  | 'duplicate_in_file'
+  /** A rule of the module the import writes to (M30-FR-01 "validation applies the target module's business rules"). */
+  | 'target_rule';
 
 export interface RowError {
   /** 1-based line in the source file — so the user can go and fix it. */

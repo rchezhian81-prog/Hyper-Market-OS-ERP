@@ -49,6 +49,11 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'data_import_commit', label: 'Apply a bulk import',
     makerPermission: 'purchase.import.record', checkerPermission: 'purchase.import.record', validForMinutes: 24 * 60,
   },
+  // SF-06-a (M30-FR-04 "rollback approved"): undoing a committed load is approved by another person who may import.
+  data_import_rollback: {
+    kind: 'data_import_rollback', label: 'Undo a bulk import',
+    makerPermission: 'purchase.import.record', checkerPermission: 'purchase.import.record', validForMinutes: 24 * 60,
+  },
   // Pricing (2b-vi-b · M05-FR-02/04 · M12-FR-02): a loss-making price, list entry, promotion or quotation is approved by
   // someone holding the pricing-approval authority (`price.change.approve`) — "above the setter's authority".
   price_change: {

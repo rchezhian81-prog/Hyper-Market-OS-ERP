@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { approvedRequestId, askForApproval, decide } from '../support/approval-request';
+import { INVOICE_TEMPLATE, invoiceFile, seedImportTargets } from '../support/invoice-import';
 import { approvalRequestsAdapter, STREAM, ROLE_REVOKED } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
@@ -38,16 +39,16 @@ const bankChanges = async (h: ApiHarness, tenantId: string, supplierId: string) 
     .filter((e) => e.event.type === 'SupplierBankChanged' && (e.event.payload as { supplierId: string }).supplierId === supplierId)
     .map((e) => e.event.payload as { newAccount: string; requestedBy: string; approvedBy: string });
 
-const template = {
-  id: 'product-v1', domain: 'product',
-  columns: [{ name: 'sku', type: 'text', required: true }, { name: 'name', type: 'text', required: true }, { name: 'qty', type: 'integer', required: true }],
-  keyColumns: ['sku'],
-};
-const FILE = 'sku,name,qty\nA1,Rice 5kg,10\nA2,Toor Dal,5';
+// The supported invoice template (SF-06-a) over head office's own products and supplier.
+const template = INVOICE_TEMPLATE;
+const fileOf = (prefix: string, qty = 10) => invoiceFile([[`${prefix}-INV-1`, 'P1', qty, 100], [`${prefix}-INV-2`, 'P2', 5, 100]]);
+const FILE = fileOf('MC').text;
+/** The declared total of a file built here — the sum of its line totals. */
+const declaredOf = (text: string): number => text.split('\n').slice(1).reduce((t, r) => t + Number(r.split(',')[7]), 0);
 const contentOf = async (h: ApiHarness, tenantId: string, userId: string, text: string): Promise<string> =>
-  ((await h.request({ method: 'POST', path: '/v1/import/validate', userId, tenantId, idempotencyKey: `v-${text.length}-${userId}`, body: { template, text } })).body as { contentFingerprint: string }).contentFingerprint;
+  ((await h.request({ method: 'POST', path: '/v1/import/validate', userId, tenantId, idempotencyKey: `v-${text.length}-${userId}`, body: { template, text, declaredTotalMinor: declaredOf(text) } })).body as { contentFingerprint: string }).contentFingerprint;
 const commit = (h: ApiHarness, tenantId: string, userId: string, body: Record<string, unknown>, key: string) =>
-  h.request({ method: 'POST', path: '/v1/import/commit', userId, tenantId, idempotencyKey: key, body: { template, text: FILE, ...body } });
+  h.request({ method: 'POST', path: '/v1/import/commit', userId, tenantId, idempotencyKey: key, body: { template, text: FILE, declaredTotalMinor: declaredOf(String(body['text'] ?? FILE)), ...body } });
 const commits = async (h: ApiHarness, tenantId: string) =>
   ((await h.request({ method: 'GET', path: '/v1/import/commits', userId: 'u-owner', tenantId })).body as { jobs: { jobId: string; uploadedBy: string; approvedBy: string }[] }).jobs;
 
@@ -58,6 +59,7 @@ async function cast(h: ApiHarness, tenantId: string): Promise<void> {
   await h.provisionRole(tenantId, 'u-mgr', 'store_manager');  // may import (and so approve another person's import)
   await h.provisionRole(tenantId, 'u-mgr2', 'store_manager');
   await h.provisionRole(tenantId, 'u-cash', 'cashier');       // neither
+  await seedImportTargets(h, tenantId);
 }
 
 describe('a supplier\'s bank account changes only on a second person\'s own approval (audit PA-03 · M06-FR-01)', () => {
@@ -165,7 +167,7 @@ describe('a bulk import loads only on a second person\'s own approval of THIS fi
     await cast(h, A);
     const contentFingerprint = await contentOf(h, A, 'u-mgr', FILE);
     const approvalId = await approvedRequestId(h, A, 'u-mgr', 'u-owner', { kind: 'data_import_commit', subjectRef: 'J1', details: { jobId: 'J1', contentFingerprint } });
-    expect(codeOf(await commit(h, A, 'u-mgr', { jobId: 'J1', approvalId, text: 'sku,name,qty\nA1,Rice 5kg,1000\nA2,Toor Dal,5' }, 'c-1'))).toBe('approval_does_not_match');
+    expect(codeOf(await commit(h, A, 'u-mgr', { jobId: 'J1', approvalId, text: fileOf('MC', 1000).text }, 'c-1'))).toBe('approval_does_not_match');
     expect(codeOf(await commit(h, A, 'u-mgr', { jobId: 'J2', approvalId }, 'c-2'))).toBe('approval_does_not_match');
     expect(codeOf(await commit(h, A, 'u-mgr2', { jobId: 'J1', approvalId }, 'c-3'))).toBe('approval_does_not_match');
     // An uploader cannot approve their own file.
@@ -251,9 +253,10 @@ describe.skipIf(!DATABASE_URL)('two people at the same moment — real PostgreSQ
 
   it('one approved import committed three times at the same moment: one load, the others refused by name, never a crash', async () => {
     const J = `${RUN}-J1`;
-    const contentFingerprint = await contentOf(h, PG_TENANT, 'u-mgr', FILE);
+    const runFile = fileOf(RUN).text; // invoice ids are never reused, and this database outlives one run
+    const contentFingerprint = await contentOf(h, PG_TENANT, 'u-mgr', runFile);
     const approvalId = await approvedRequestId(h, PG_TENANT, 'u-mgr', 'u-mgr2', { kind: 'data_import_commit', subjectRef: J, details: { jobId: J, contentFingerprint } });
-    const results = await Promise.all([1, 2, 3].map((n) => commit(h, PG_TENANT, 'u-mgr', { jobId: J, approvalId }, `${RUN}-c-${n}`)));
+    const results = await Promise.all([1, 2, 3].map((n) => commit(h, PG_TENANT, 'u-mgr', { jobId: J, approvalId, text: runFile }, `${RUN}-c-${n}`)));
     expect(results.filter((r) => r.status === 200)).toHaveLength(1);
     for (const r of results) if (r.status !== 200) expect(['concurrent_change', 'approval_already_used', 'import_already_committed']).toContain(codeOf(r));
     expect((await commits(h, PG_TENANT)).filter((c) => c.jobId === J)).toHaveLength(1);

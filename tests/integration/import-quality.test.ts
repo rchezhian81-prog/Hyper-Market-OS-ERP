@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { INVOICE_TEMPLATE, invoiceFile, seedImportTargets } from '../support/invoice-import';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { approvedRequestId } from '../support/approval-request';
 
@@ -65,12 +66,13 @@ describe('import quality: which supplier files cost hours a year, and it kept th
     expect(typed.status).toBe(422);
     expect(codeOf(typed)).toBe('approver_is_read_from_the_commit');
     // A job committed at head office: the manager uploads, the owner approves the exact file in their own session.
-    const template = { id: 'product-v1', domain: 'product', columns: [{ name: 'sku', type: 'text', required: true }], keyColumns: ['sku'] };
-    const text = 'sku\nA1';
-    const v = await h.request({ method: 'POST', path: '/v1/import/validate', userId: 'u-mgr', tenantId: A, idempotencyKey: 'v-jc', body: { template, text } });
+    await seedImportTargets(h, A);
+    const template = INVOICE_TEMPLATE;
+    const { text, declaredTotalMinor } = invoiceFile([['INV-JC', 'P1', 1, 100]]);
+    const v = await h.request({ method: 'POST', path: '/v1/import/validate', userId: 'u-mgr', tenantId: A, idempotencyKey: 'v-jc', body: { template, text, declaredTotalMinor } });
     const contentFingerprint = (v.body as { contentFingerprint: string }).contentFingerprint;
     const approvalId = await approvedRequestId(h, A, 'u-mgr', 'u-owner', { kind: 'data_import_commit', subjectRef: 'j-committed', details: { jobId: 'j-committed', contentFingerprint } });
-    expect((await h.request({ method: 'POST', path: '/v1/import/commit', userId: 'u-mgr', tenantId: A, idempotencyKey: 'c-jc', body: { jobId: 'j-committed', template, text, approvalId } })).status).toBe(200);
+    expect((await h.request({ method: 'POST', path: '/v1/import/commit', userId: 'u-mgr', tenantId: A, idempotencyKey: 'c-jc', body: { jobId: 'j-committed', template, text, declaredTotalMinor, approvalId } })).status).toBe(200);
     // Its history row names the owner — read from the commit — and a job never committed names nobody.
     expect((await job(h, 'u-mgr', 'j-committed', fileOutcome({ totalRows: 1, validRows: 1 }))).status).toBe(201);
     expect((await job(h, 'u-mgr', 'j-outside', fileOutcome({ uploadedAt: '2026-08-21T10:00:00Z' }))).status).toBe(201);
