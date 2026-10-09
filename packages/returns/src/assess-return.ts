@@ -44,6 +44,8 @@ export interface ReturnRequestLine {
   /** The batch/lot the returned unit belongs to (M13-FR-02) — preserved on the recorded return so a
    *  recall (M10) can follow it back to its lot. Omit (or `null`) when the product carries no batch. */
   readonly batchId?: string | null;
+  /** PF-14 — the batch's use-by/expiry, carried from the original sale line so a returned unit keeps its date. */
+  readonly batchExpiry?: string;
 }
 
 export interface ReturnRequest {
@@ -128,7 +130,11 @@ export type RefundGovernanceFinding =
   | 'cashier_not_verified_at_store'
   | 'cashier_seal_does_not_match'
   | 'approval_not_verified_at_store'
-  | 'approval_seal_does_not_match';
+  | 'approval_seal_does_not_match'
+  // PF-14 — the lot a returned unit belongs to: a batch the bill never sold of that product, or none named where the
+  // bill sold several. Record-and-flag on sync (the money already left the lane); refused at the desk.
+  | 'return_batch_not_on_the_sale'
+  | 'return_batch_not_named';
 
 /**
  * The §28 findings on an already-given (synced) refund, in order of precedence. Pure: the caller supplies

@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 3 · PF-14 — a returned item keeps its batch; what cannot be resold is held, not lost (9 October 2026)
+
+- **The wave:** Wave 3. The rest of the wave is split between two sessions, which another session reported as the owner's
+  choice on 9 Oct 2026: this session SF-05 and PF-14; the other session SF-07/PA-07 and SF-08. SF-05 merged as #733.
+  Its browser test was too quick on `main` and held the release back; fixed by #734.
+- **The audit's finding:** a returned item carried a batch only if the desk typed one, and nobody checked it against
+  the bill. A damaged, quarantined or scrap item left no trace in stock at all.
+- **What changed:**
+  - A return takes each item's batch and use-by date from the original bill:
+    - a batch the bill never sold is refused at the desk; on a refund already given at the till it is recorded and
+      flagged;
+    - where the bill sold the product from several batches, the desk must say which one.
+  - A resold item goes back on the shelf under its batch, so a later recall finds it.
+  - A damaged, quarantined or scrap item is now HELD where it came back, with its batch, condition and the return
+    it came from. It is not sellable, but it is listed ("Returned goods held", `GET /v1/returns/held-stock`) until
+    a person deals with it, and a recall can find it by batch.
+- **Proved:**
+  - Integration (7): the bill's batch carried; a wrong batch refused; two batches on the bill — must name one; a till
+    refund flagged, not refused; damaged/quarantined/scrap held with their lot; held once when synced twice;
+    manager may read the list, cashier may not.
+  - Unit (3): the rule. The new tests fail on the code before the fix; the 8,882 existing tests still pass.
+- **Not yet / honest limits:**
+  - The person's decision on a held item (back to stock, back to the supplier, or written off) as a step that clears
+    it from the list.
+  - Staff UAT (SP-10) pending.
+- **Behaviour change the owner should know:** returning milk from a bill that had two batches now asks which batch
+  is on the pack. Damaged returns now appear on a list instead of disappearing.
+- **Next:** my part of Wave 3 is done (SF-02, SF-03, SF-05, PF-14). SF-07/PA-07 and SF-08 are with the other session.
+
 ## Wave 3 · SF-05 — a loss is worth what the stock cost, never what is typed (9 October 2026)
 
 - **The wave:** Wave 3, third of six fixes. SF-03 merged as #731.
