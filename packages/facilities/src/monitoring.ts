@@ -202,6 +202,82 @@ export function assessEquipment(input: {
   };
 }
 
+/** What an equipment assessment obliges the quality-hold register to do (PA-07). */
+export interface EquipmentHoldDecision {
+  readonly assetId: string;
+  /** null when nothing is to be held. */
+  readonly episodeId: string | null;
+  readonly state: EquipmentState;
+  readonly batches: readonly ExposedBatch[];
+  readonly peakTenthsC: number | null;
+  readonly minutesOutOfRange: number;
+  /** The readings that prove it — the excursion's own readings, or the last reading before the silence. */
+  readonly readingIds: readonly string[];
+  readonly detail: string;
+}
+
+/**
+ * Turn an equipment assessment into the holds it calls for (PA-07, M26-FR-02 "a cold-chain breach
+ * raises a quality hold (M10)"). `assessEquipment` says `holdStock`; this names the EXCURSION that
+ * does so, so the same excursion holds a batch once and a later, separate one holds it again.
+ *
+ * A breach is judged on the CURRENT excursion only — the unbroken run of out-of-range readings that
+ * ends with the latest one. The engine's own total counts every excursion in the room's history,
+ * which is the right number for a report but would re-hold released stock forever after one bad
+ * night. Silence (`no_data` / `stale`) holds exactly as the engine says, keyed on the last reading.
+ */
+export function equipmentHoldDecision(input: {
+  readonly assetId: string;
+  readonly range: EquipmentRange;
+  readonly readings: readonly EquipmentReading[];
+  readonly contents?: readonly ExposedBatch[];
+  readonly asAt: string;
+}): EquipmentHoldDecision {
+  const readings = input.readings
+    .filter((r) => r.assetId === input.assetId)
+    .sort((a, b) => a.at.localeCompare(b.at));
+  const whole = assessEquipment({ ...input, readings });
+  const none = (state: EquipmentState, detail: string): EquipmentHoldDecision => ({
+    assetId: input.assetId, episodeId: null, state, batches: [], peakTenthsC: whole.peakTenthsC,
+    minutesOutOfRange: 0, readingIds: [], detail,
+  });
+
+  if (whole.state === 'no_data' || whole.state === 'stale') {
+    if (!whole.holdStock) return none(whole.state, whole.detail);
+    const last = readings[readings.length - 1];
+    return {
+      assetId: input.assetId,
+      episodeId: `silent:${last?.readingId ?? 'never'}`,
+      state: whole.state,
+      batches: whole.exposedBatches,
+      peakTenthsC: whole.peakTenthsC,
+      minutesOutOfRange: 0,
+      readingIds: last === undefined ? [] : [last.readingId],
+      detail: whole.detail,
+    };
+  }
+
+  const outOfRange = (r: EquipmentReading): boolean =>
+    r.tenthsC < input.range.minTenthsC || r.tenthsC > input.range.maxTenthsC;
+  let start = readings.length;
+  while (start > 0 && outOfRange(readings[start - 1]!)) start -= 1;
+  const run = readings.slice(start);
+  if (run.length === 0) return none(whole.state, whole.detail);
+
+  const current = assessEquipment({ ...input, readings: run });
+  if (current.state !== 'breach' || !current.holdStock) return none(current.state, current.detail);
+  return {
+    assetId: input.assetId,
+    episodeId: `breach:${run[0]!.readingId}`,
+    state: 'breach',
+    batches: current.exposedBatches,
+    peakTenthsC: current.peakTenthsC,
+    minutesOutOfRange: current.minutesOutOfRange,
+    readingIds: run.map((r) => r.readingId),
+    detail: current.detail,
+  };
+}
+
 export type PowerEventKind = 'mains_failed' | 'mains_restored' | 'dg_started' | 'dg_failed_to_start' | 'ups_on_battery' | 'ups_depleted';
 
 export interface PowerEvent {

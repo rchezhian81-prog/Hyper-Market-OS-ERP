@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 964,
+  "testFiles": 965,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -613,7 +613,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 20,
-        "integration": 19,
+        "integration": 20,
         "realDb": 1,
         "browser": 3,
         "connected": 0,
@@ -648,6 +648,7 @@
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/ai-inventory-agent.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
+          "tests/integration/cold-room-breach-holds-stock.test.ts",
           "tests/integration/facilities-monitoring.test.ts",
           "tests/integration/fulfilment-packing.test.ts",
           "tests/integration/goods-receipt-synced-route.test.ts",
@@ -1532,7 +1533,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 2,
-        "integration": 7,
+        "integration": 8,
         "realDb": 1,
         "browser": 1,
         "connected": 0,
@@ -1546,6 +1547,7 @@
         ],
         "integration": [
           "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/cold-room-breach-holds-stock.test.ts",
           "tests/integration/facilities-assets.test.ts",
           "tests/integration/facilities-durability.test.ts",
           "tests/integration/facilities-incidents.test.ts",
