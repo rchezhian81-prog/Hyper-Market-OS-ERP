@@ -229,7 +229,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     expect((await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok)).toHaveLength(4);
   }, 60_000);
 
-  it('the receiving screen takes a probed arrival temperature: a word is refused before any scan, a number rides on the scan to the store computer (Wave 3 · SF-07 part 3)', async () => {
+  it('the receiving screen takes a probed arrival temperature on its own keypad: a malformed reading is refused and nothing is set; a number rides on the scan to the store computer (Wave 3 · SF-07 part 3)', async () => {
     const { edge, base } = await box();
     const page = await openHandheld(base);
     await page.fill('#deviceId', 'hh-01');
@@ -237,18 +237,25 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await page.click('button[type="submit"]');
     await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/warehouse/', undefined, { timeout: 15_000 });
     await ready(page);
-    expect(await page.textContent('#recv-temp-label')).toContain('Arrival temperature');
+    expect(await page.textContent('#recv-temp')).toContain('not taken');
+    const key = (k: string) => page.click(`#temp-keypad button:text-is("${k}")`);
 
-    // A word: refused at once, the scanner is never asked, nothing is queued.
-    await page.fill('#recv-temp', 'cold');
-    await page.click('#receive');
+    // A lone minus is not a temperature: refused on OK, nothing set, nothing queued.
+    await page.click('#recv-temp');
+    await page.waitForSelector('#temp:not([hidden])');
+    await key('−');
+    await page.click('#temp-ok');
     await page.waitForSelector('#banner:not([hidden])');
     expect(await page.textContent('#banner-title')).toBe('The temperature must be a number of degrees');
     await page.click('#banner-ok');
+    expect(await page.textContent('#recv-temp')).toContain('not taken');
     expect(edge.deviceEventsOutbox.all()).toHaveLength(0);
 
-    // A number: the scan carries it to the box's durable log.
-    await page.fill('#recv-temp', '-18');
+    // −18 keyed: the button says so, and the next scan carries it to the box's durable log.
+    await page.click('#recv-temp');
+    await key('1'); await key('8'); await key('−');
+    await page.click('#temp-ok');
+    expect(await page.textContent('#recv-temp')).toContain('-18 °C');
     await page.click('#receive');
     await scan(page, '890RICE');
     await page.waitForSelector('#banner:not([hidden])');
@@ -258,5 +265,10 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { payload: Record<string, unknown> });
     expect(records).toHaveLength(1);
     expect(records[0]?.payload).toMatchObject({ grnId: 'grn-1', productId: 'p-rice', quantityMinor: 1, temperatureC: -18 });
+
+    // "No reading" clears it.
+    await page.click('#recv-temp');
+    await page.click('#temp-none');
+    expect(await page.textContent('#recv-temp')).toContain('not taken');
   }, 60_000);
 });

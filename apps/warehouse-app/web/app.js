@@ -45,9 +45,10 @@ const WORDS = {
     sample: 'Sample assignment — this is not real work.',
     receive: 'Receive a delivery', putAway: 'Put away — scan the bin',
     doneReceiving: 'Delivery complete — send the receipt',
-    tempLabel: 'Arrival temperature, °C (chilled or frozen goods)',
+    tempLabel: 'Arrival temperature (chilled or frozen goods)', tempNotTaken: 'not taken',
+    tempTitle: 'Arrival temperature, °C', tempHint: 'Probe the goods and key the reading, for example 3.5 or -18. It goes with every scan until you change it.', tempNone: 'No reading',
     needTemp: 'The temperature must be a number of degrees',
-    needTempDetail: 'Type the probe reading, for example 3.5 or -18, or leave the box empty for goods that are not chilled or frozen. Nothing was scanned.',
+    needTempDetail: 'Key the probe reading, for example 3.5 or -18, or choose No reading for goods that are not chilled or frozen. Nothing was set.',
     scanBarcode: 'Scan the delivery barcode', scanBin: 'Scan the bin to put it in',
     pointAndPull: 'Point the scanner and pull the trigger.',
     cancel: 'Cancel', ok: 'OK', units: 'units',
@@ -116,9 +117,10 @@ const WORDS = {
     sample: 'மாதிரி வேலை — இது உண்மையான வேலை அல்ல.',
     receive: 'பொருள் வரவு பெறு', putAway: 'அடுக்கு — இடத்தை ஸ்கேன் செய்',
     doneReceiving: 'வரவு முடிந்தது — ரசீதை அனுப்பு',
-    tempLabel: 'வந்தபோது வெப்பநிலை, °C (குளிர்/உறைந்த பொருட்கள்)',
+    tempLabel: 'வந்தபோது வெப்பநிலை (குளிர்/உறைந்த பொருட்கள்)', tempNotTaken: 'எடுக்கப்படவில்லை',
+    tempTitle: 'வந்தபோது வெப்பநிலை, °C', tempHint: 'பொருளை அளந்து அளவை அழுத்தவும், உதாரணமாக 3.5 அல்லது -18. மாற்றும் வரை ஒவ்வொரு ஸ்கேனுடனும் செல்லும்.', tempNone: 'அளவு இல்லை',
     needTemp: 'வெப்பநிலை ஒரு எண்ணாக இருக்க வேண்டும்',
-    needTempDetail: 'அளவைத் தட்டச்சு செய்யவும், உதாரணமாக 3.5 அல்லது -18; குளிர்/உறைந்த பொருள் இல்லையெனில் காலியாக விடவும். எதுவும் ஸ்கேன் செய்யப்படவில்லை.',
+    needTempDetail: 'அளவை அழுத்தவும், உதாரணமாக 3.5 அல்லது -18; குளிர்/உறைந்த பொருள் இல்லையெனில் «அளவு இல்லை» என்பதைத் தேர்வு செய்யவும். எதுவும் அமைக்கப்படவில்லை.',
     scanBarcode: 'வரவின் பார்கோடை ஸ்கேன் செய்யவும்', scanBin: 'வைக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     pointAndPull: 'ஸ்கேனரை நோக்கி டிரிக்கரை அழுத்தவும்.',
     cancel: 'ரத்து', ok: 'சரி', units: 'அலகுகள்',
@@ -222,6 +224,7 @@ const data = window.warehouseData;
 const outbox = window.warehouseOutbox ?? null;
 const grnId = (data && data.grnId) || 'GRN';
 
+let arrivalTempC = null; // Wave 3 · SF-07 part 3: the keyed arrival reading, °C, or null (declared early: the first render reads it)
 let selected = null; // the goods-in item chosen to put away
 let selectedPick = null; // the pick-list line (by id) chosen by a tap; a bin scan from the list needs no tap
 let pickStep = null; // where a pick in progress is: 'bin' | 'item' | 'confirm' | null
@@ -294,6 +297,52 @@ function buildKeypad(hostId, entryId) {
 }
 buildKeypad('qty-keypad', 'qty-entry');
 buildKeypad('adjust-keypad', 'adjust-entry');
+
+// ── The arrival temperature (Wave 3 · SF-07 part 3) ──────────────────────────
+// Keyed, never typed: digits, a minus and a decimal point. The reading rides on every receiving scan until it is changed or
+// cleared ("No reading"); head office holds a chilled or frozen scan without one. A keyed value that is not a plain number
+// (a lone minus, a trailing point) is refused on OK — nothing is set.
+function renderTemp() {
+  el('recv-temp').textContent = `${t('tempLabel')}: ${arrivalTempC === null ? t('tempNotTaken') : `${arrivalTempC} °C`}`;
+}
+el('temp-keypad').replaceChildren(...['1', '2', '3', '4', '5', '6', '7', '8', '9', '−', '0', '.', 'C', '⌫'].map((key) => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = key;
+  button.addEventListener('click', () => {
+    const current = el('temp-entry').textContent === '—' ? '' : el('temp-entry').textContent;
+    const next = key === 'C' ? ''
+      : key === '⌫' ? current.slice(0, -1)
+        : key === '−' ? (current.startsWith('-') ? current.slice(1) : `-${current}`)
+          : key === '.' ? (current.includes('.') ? current : `${current === '' || current === '-' ? `${current}0` : current}.`)
+            : (current + key).slice(0, 6);
+    el('temp-entry').textContent = next === '' ? '—' : next;
+  });
+  return button;
+}));
+el('recv-temp').addEventListener('click', () => {
+  el('temp-title').textContent = t('tempTitle');
+  el('temp-hint').textContent = t('tempHint');
+  el('temp-none').textContent = t('tempNone');
+  el('temp-cancel').textContent = t('cancel');
+  el('temp-ok').textContent = t('ok');
+  el('temp-entry').textContent = arrivalTempC === null ? '—' : String(arrivalTempC);
+  el('temp').hidden = false;
+});
+el('temp-cancel').addEventListener('click', () => { el('temp').hidden = true; });
+el('temp-none').addEventListener('click', () => { arrivalTempC = null; el('temp').hidden = true; renderTemp(); });
+el('temp-ok').addEventListener('click', () => {
+  const text = el('temp-entry').textContent;
+  if (text === '—') { arrivalTempC = null; el('temp').hidden = true; renderTemp(); return; }
+  if (!/^-?\d+(\.\d+)?$/.test(text) || Math.abs(Number(text)) > 60) {
+    el('temp').hidden = true;
+    feltResult({ feedback: 'reject', code: 'needTemp', detail: t('needTempDetail'), sound: 'error', vibrateMs: 300 });
+    return;
+  }
+  arrivalTempC = Number(text);
+  el('temp').hidden = true;
+  renderTemp();
+});
 
 // The blind count's quantity: what the worker SAW. The panel carries no expected figure — the model has none to give.
 let qtyResolve = null;
@@ -392,7 +441,7 @@ function render() {
 
   el('goods-in-heading').textContent = t('goodsIn');
   el('receive').textContent = t('receive');
-  el('recv-temp-label').textContent = t('tempLabel');
+  renderTemp();
   // SP-6b: "Delivery complete" appears once something has been received here for this delivery and not yet sent as one receipt.
   el('done-receiving').textContent = t('doneReceiving');
   el('done-receiving').hidden = !(real !== undefined && typeof real.receivingOpen === 'function' && real.receivingOpen(grnId));
@@ -571,16 +620,11 @@ setInterval(() => { void syncToBox(); }, 10_000);
 el('receive').addEventListener('click', async () => {
   // Wave 3 · SF-07 part 3: the probe reading, when the goods are chilled or frozen — checked BEFORE the scan, so a word never
   // travels. Empty = not taken (head office then holds a cold-chain item for a second person's check).
-  const tempText = el('recv-temp').value.trim().replace(',', '.');
-  if (tempText !== '' && (!/^-?\d+(\.\d+)?$/.test(tempText) || Math.abs(Number(tempText)) > 60)) {
-    feltResult({ feedback: 'reject', code: 'needTemp', detail: t('needTempDetail'), sound: 'error', vibrateMs: 300 });
-    return;
-  }
   const code = await awaitScan(t('scanBarcode'));
   if (code === null || real === undefined) return;
   const out = real.receive({
     commandId: nextId('recv'), grnId, barcode: code, scannedQuantity: 1, source: 'po',
-    ...(tempText === '' ? {} : { temperatureC: Number(tempText) }),
+    ...(arrivalTempC === null ? {} : { temperatureC: arrivalTempC }),
   });
   feltResult(out.signal);
   render();
