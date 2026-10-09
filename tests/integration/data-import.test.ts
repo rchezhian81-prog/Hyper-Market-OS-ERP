@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { askForApproval, approvedRequestId, decide } from '../support/approval-request';
+import { INVOICE_TEMPLATE, invoiceFile, seedImportTargets } from '../support/invoice-import';
 
 // Bulk data import, end to end (M30-FR-01/03, API-03). A store loads a supplier price file, an opening-stock
 // count, a batch of invoices — hundreds of rows at once. The failure this closes is a half-good file applied
@@ -15,26 +16,12 @@ const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 
-// A simple non-financial template: a product master load, keyed by sku.
-const productTemplate = {
-  id: 'product-v1', domain: 'product',
-  columns: [
-    { name: 'sku', type: 'text', required: true },
-    { name: 'name', type: 'text', required: true },
-    { name: 'qty', type: 'integer', required: true },
-  ],
-  keyColumns: ['sku'],
-};
-
-// A financial template: supplier invoices whose amounts must sum to a declared control total.
-const invoiceTemplate = {
-  id: 'invoice-v1', domain: 'supplier_invoice',
-  columns: [
-    { name: 'inv', type: 'text', required: true },
-    { name: 'amount', type: 'money_minor', required: true },
-  ],
-  keyColumns: ['inv'], amountColumn: 'amount',
-};
+// The supported template (SF-06-a): supplier invoices, one row per line — checked against head office's own products and
+// supplier, and an approved load becomes real captured invoices.
+const productTemplate = INVOICE_TEMPLATE;
+const invoiceTemplate = INVOICE_TEMPLATE;
+/** Two clean invoices: 10 × ₹1 of P1, 5 × ₹1 of P2. */
+const CLEAN = invoiceFile([['INV-A1', 'P1', 10, 100], ['INV-A2', 'P2', 5, 100]]);
 
 const validate = (h: ApiHarness, u: string, body: Record<string, unknown>, key = 'v-1') =>
   h.request({ method: 'POST', path: '/v1/import/validate', userId: u, tenantId: A, idempotencyKey: key, body });
@@ -70,6 +57,7 @@ async function cast(): Promise<ApiHarness> {
   await h.provisionRole(A, 'u-mgr', 'store_manager');  // purchase.import.record + read
   await h.provisionRole(A, 'u-book', 'accountant');    // purchase.import.read only
   await h.provisionRole(A, 'u-cash', 'cashier');       // neither
+  await seedImportTargets(h, A);
   return h;
 }
 
@@ -77,11 +65,8 @@ describe('bulk data import: validate, then commit the whole job or nothing under
   it('validates a clean file, commits it with a different-person approval, then lists and reads it (survives a restart)', async () => {
     const h = await cast();
 
-    // VALIDATE — a preview. Two good product rows.
-    const preview = await validate(h, 'u-mgr', {
-      template: productTemplate,
-      text: 'sku,name,qty\nA1,Rice 5kg,10\nA2,Toor Dal,5',
-    });
+    // VALIDATE — a preview. Two good invoice lines.
+    const preview = await validate(h, 'u-mgr', { template: productTemplate, ...CLEAN });
     expect(preview.status).toBe(200);
     expect((preview.body as { preview: { totalRows: number; validCount: number; errorRowCount: number; commitReady: boolean } }).preview)
       .toMatchObject({ totalRows: 2, validCount: 2, errorRowCount: 0, commitReady: true });
@@ -90,7 +75,7 @@ describe('bulk data import: validate, then commit the whole job or nothing under
     const committed = await commit(h, 'u-mgr', {
       jobId: 'imp-001',
       template: productTemplate,
-      text: 'sku,name,qty\nA1,Rice 5kg,10\nA2,Toor Dal,5',
+      ...CLEAN,
       approval: { status: 'approved', decidedBy: 'u-owner', reason: 'checked against the supplier sheet' },
     });
     expect(committed.status).toBe(200);
@@ -106,10 +91,7 @@ describe('bulk data import: validate, then commit the whole job or nothing under
     expect(read.status).toBe(200);
     const job = (read.body as { job: { rows: Record<string, string>[]; approvedBy: string } }).job;
     expect(job.approvedBy).toBe('u-owner');
-    expect(job.rows).toEqual([
-      { sku: 'A1', name: 'Rice 5kg', qty: '10' },
-      { sku: 'A2', name: 'Toor Dal', qty: '5' },
-    ]);
+    expect(job.rows.map((r) => [r['invoiceId'], r['productId'], r['quantity']])).toEqual([['INV-A1', 'P1', '10'], ['INV-A2', 'P2', '5']]);
 
     // Survives a restart — it is a durable, append-only record, not in-memory.
     const h2 = apiHarness({ store: h.store });
@@ -122,13 +104,13 @@ describe('bulk data import: validate, then commit the whole job or nothing under
     const res = await commit(h, 'u-mgr', {
       jobId: 'imp-self',
       template: productTemplate,
-      text: 'sku,name,qty\nA1,Rice,10',
+      ...CLEAN,
       approval: { status: 'approved', decidedBy: 'u-mgr' }, // same person who uploaded — a NAME, not an approval
     });
     expect(res.status).toBe(422);
     expect(codeOf(res)).toBe('approver_named_without_approval');
     // The uploader cannot approve their own import in the engine either (§28) — though they hold the authority to check others'.
-    const v = await validate(h, 'u-mgr', { template: productTemplate, text: 'sku,name,qty\nA1,Rice,10' }, 'v-self');
+    const v = await validate(h, 'u-mgr', { template: productTemplate, ...CLEAN }, 'v-self');
     const asked = await askForApproval(h, A, 'u-mgr', { kind: 'data_import_commit', subjectRef: 'imp-self', details: { jobId: 'imp-self', contentFingerprint: (v.body as { contentFingerprint: string }).contentFingerprint } });
     expect(asked.status).toBe(201);
     expect(codeOf(await decide(h, A, 'u-mgr', (asked.body as { requestId: string }).requestId))).toBe('self_approval');
@@ -139,7 +121,7 @@ describe('bulk data import: validate, then commit the whole job or nothing under
 
   it('refuses a financial import that does not reconcile, and previews the mismatch', async () => {
     const h = await cast();
-    const text = 'inv,amount\nINV-1,1000\nINV-2,2000'; // sums to 3000
+    const { text } = invoiceFile([['INV-1', 'P1', 10, 100], ['INV-2', 'P2', 20, 100]]); // sums to 3000
 
     // Preview shows it does not balance against a wrong declared total.
     const preview = await validate(h, 'u-mgr', { template: invoiceTemplate, text, declaredTotalMinor: 9999 });
@@ -165,14 +147,14 @@ describe('bulk data import: validate, then commit the whole job or nothing under
 
   it('refuses a file with a bad row (nothing is applied)', async () => {
     const h = await cast();
-    const text = 'sku,name,qty\nA1,Rice,ten'; // qty "ten" is not a whole number
+    const { text, declaredTotalMinor } = invoiceFile([['INV-1', 'P1', 'ten', 100]]); // quantity "ten" is not a whole number
 
-    const preview = await validate(h, 'u-mgr', { template: productTemplate, text });
+    const preview = await validate(h, 'u-mgr', { template: productTemplate, text, declaredTotalMinor });
     expect((preview.body as { preview: { errorRowCount: number; commitReady: boolean } }).preview)
       .toMatchObject({ errorRowCount: 1, commitReady: false });
 
     const res = await commit(h, 'u-mgr', {
-      jobId: 'imp-bad', template: productTemplate, text,
+      jobId: 'imp-bad', template: productTemplate, text, declaredTotalMinor,
       approval: { status: 'approved', decidedBy: 'u-owner' },
     });
     expect(res.status).toBe(422);
@@ -183,7 +165,7 @@ describe('bulk data import: validate, then commit the whole job or nothing under
   it('refuses committing the same job id twice, and 404s an unknown job', async () => {
     const h = await cast();
     const body = {
-      jobId: 'imp-dup', template: productTemplate, text: 'sku,name,qty\nA1,Rice,10',
+      jobId: 'imp-dup', template: productTemplate, ...CLEAN,
       approval: { status: 'approved', decidedBy: 'u-owner' },
     };
     expect((await commit(h, 'u-mgr', body, 'c-1')).status).toBe(200);
@@ -200,14 +182,14 @@ describe('bulk data import: validate, then commit the whole job or nothing under
   it('rejects a commit without a job id or without an approval (nothing applied without maker-checker)', async () => {
     const h = await cast();
     const noJob = await commit(h, 'u-mgr', {
-      template: productTemplate, text: 'sku,name,qty\nA1,Rice,10',
+      template: productTemplate, ...CLEAN,
       approval: { status: 'approved', decidedBy: 'u-owner' },
     });
     expect(noJob.status).toBe(400);
     expect(codeOf(noJob)).toBe('no_job_id');
 
     const noApproval = await commit(h, 'u-mgr', {
-      jobId: 'imp-x', template: productTemplate, text: 'sku,name,qty\nA1,Rice,10',
+      jobId: 'imp-x', template: productTemplate, ...CLEAN,
     });
     expect(noApproval.status).toBe(422);
     expect(codeOf(noApproval)).toBe('no_approval');
@@ -217,17 +199,17 @@ describe('bulk data import: validate, then commit the whole job or nothing under
     const h = await cast();
 
     // Accountant (read only) can validate and list…
-    expect((await validate(h, 'u-book', { template: productTemplate, text: 'sku,name,qty\nA1,Rice,10' })).status).toBe(200);
+    expect((await validate(h, 'u-book', { template: productTemplate, ...CLEAN })).status).toBe(200);
     expect((await listCommits(h, 'u-book')).status).toBe(200);
     // …but not commit.
     const denied = await commit(h, 'u-book', {
-      jobId: 'imp-ro', template: productTemplate, text: 'sku,name,qty\nA1,Rice,10',
+      jobId: 'imp-ro', template: productTemplate, ...CLEAN,
       approval: { status: 'approved', decidedBy: 'u-owner' },
     });
     expect(denied.status).toBe(403);
 
     // A user with neither permission is refused everywhere.
-    expect((await validate(h, 'u-cash', { template: productTemplate, text: 'sku,name,qty\nA1,Rice,10' })).status).toBe(403);
+    expect((await validate(h, 'u-cash', { template: productTemplate, ...CLEAN })).status).toBe(403);
     expect((await listCommits(h, 'u-cash')).status).toBe(403);
   });
 });

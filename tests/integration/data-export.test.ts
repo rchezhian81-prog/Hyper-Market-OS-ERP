@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { INVOICE_TEMPLATE, invoiceFile, seedImportTargets } from '../support/invoice-import';
 import { approvedRequestId } from '../support/approval-request';
 
 // Domain data export, end to end (M30-FR-02, API-03). Your data is yours: every authorised domain
@@ -30,10 +31,8 @@ const exportLog = (h: ApiHarness, u: string) =>
 // An import committed the way two people commit one (ADR-0024): `u` uploads and asks, the store manager approves under
 // their own sign-in, and the commit names that approval.
 async function seedImportCommit(h: ApiHarness, u: string, jobId: string, key: string) {
-  const file = {
-    template: { id: 'product-v1', domain: 'product', columns: [{ name: 'sku', type: 'text', required: true }], keyColumns: ['sku'] },
-    text: 'sku\nA1\nA2',
-  };
+  await seedImportTargets(h, A);
+  const file = { template: INVOICE_TEMPLATE, ...invoiceFile([[`${jobId}-INV-1`, 'P1', 1, 100], [`${jobId}-INV-2`, 'P2', 1, 100]]) };
   const v = await h.request({ method: 'POST', path: '/v1/import/validate', userId: u, tenantId: A, idempotencyKey: `v-${key}`, body: file });
   const contentFingerprint = (v.body as { contentFingerprint: string }).contentFingerprint;
   const approvalId = await approvedRequestId(h, A, u, 'u-mgr', { kind: 'data_import_commit', subjectRef: jobId, details: { jobId, contentFingerprint } });

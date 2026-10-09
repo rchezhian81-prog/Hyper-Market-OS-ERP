@@ -128,6 +128,7 @@ const ACTION_FOR: Readonly<Record<RowErrorKind, string>> = {
   not_allowed_value: 'the source is using a code we do not recognise — agree a list with them once',
   unknown_reference: 'the source references something not in our master data — either add it or correct theirs',
   duplicate_in_file: 'the same key appears twice in one file — the source is exporting duplicates',
+  target_rule: 'the rows break a rule of the record they load into (lines that do not multiply or add up, a bill already loaded) — check the source document',
 };
 
 function bandOf(acceptedBps: number): QualityBand {

@@ -310,8 +310,15 @@ const refuseTotal = (totalMinor: number, declared: number, relayed: boolean) => 
   nextSafeAction: relayed ? 'Do not discard it at the store. Keep it in the queue and raise it.' : 'Check the lines against the paper and send it again. Nothing was saved.',
 });
 
+const invoiceIdWithdrawn = (invoiceId: string) => apiError(409, {
+  code: 'invoice_id_withdrawn',
+  whatHappened: `Invoice ${invoiceId} was captured before and then withdrawn (an import was undone). Its record is kept as evidence, so the id is not used again.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Check the paper. If it is the same bill, ask why it was withdrawn; if it is a new bill, it has its own number.',
+});
+
 /** The order behind an invoice, from head office's register — never the body; what it could not confirm is SAID. */
-async function orderForInvoice(
+export async function orderForInvoice(
   deps: Pick<PurchaseDeps, 'purchaseOrder'>, tenantId: string, poId: string | null, supplierId: string, flags: InvoiceFlag[],
 ): Promise<StoredPurchaseOrder | undefined> {
   if (poId === null) { flags.push('no_purchase_order'); return undefined; }
@@ -385,6 +392,8 @@ export interface PurchaseDeps {
   readonly invoice: (tenantId: string, invoiceId: string) => Promise<SupplierInvoiceRecord | undefined> | SupplierInvoiceRecord | undefined;
   /** Every captured invoice — the review surface and, in SP-7b, the supplier's account. */
   readonly invoices: (tenantId: string) => Promise<readonly SupplierInvoiceRecord[]> | readonly SupplierInvoiceRecord[];
+  /** SF-06-a: true when this invoice id was EVER captured, withdrawn ones included — a withdrawn id is never reused. */
+  readonly invoiceIdUsed?: (tenantId: string, invoiceId: string) => Promise<boolean> | boolean;
   /** Record a captured invoice — idempotent on the invoice id, so a retry never doubles what a supplier is owed. */
   readonly recordInvoice: (tenantId: string, record: SupplierInvoiceRecord) => Promise<void> | void;
   /** The purchase order head office holds — what was ordered, at what price, and what was received against it (SP-6). */
@@ -453,6 +462,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         if (totalMinor !== b['declaredTotalMinor']) throw refuseTotal(totalMinor, b['declaredTotalMinor'], false);
         const existing = await deps.invoice(ctx.tenantId, invoiceId);
         if (existing !== undefined) return { status: 200, body: { invoice: existing, alreadyCaptured: true, flags: existing.governanceFlags } };
+        if (await deps.invoiceIdUsed?.(ctx.tenantId, invoiceId)) throw invoiceIdWithdrawn(invoiceId);
         // The second person who checked the bill (ADR-0024 · §28 · 2b-vi-b-3): an approval someone holding
         // `purchase.invoice.match` GAVE in their own session for exactly this bill (kind `supplier_invoice_check`). A name
         // typed into `approvedBy` is refused by name — before, an unknown or unauthorised name was only flagged and the
@@ -512,6 +522,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         if (totalMinor !== b['declaredTotalMinor']) throw refuseTotal(totalMinor, b['declaredTotalMinor'], true);
         const existing = await deps.invoice(ctx.tenantId, invoiceId);
         if (existing !== undefined) return { status: 200, body: { invoice: existing, alreadyCaptured: true, flags: existing.governanceFlags } };
+        if (await deps.invoiceIdUsed?.(ctx.tenantId, invoiceId)) throw invoiceIdWithdrawn(invoiceId);
         const flags: InvoiceFlag[] = [];
         // The CAPTURER — re-verified from their grants, never the relay's word (hard rule #4).
         const capturerPermissions = await deps.permissionsOfUser(ctx.tenantId, b['capturedBy']);

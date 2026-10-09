@@ -187,7 +187,8 @@ import type { RebateDeps } from '../../purchase/src/rebates';
 import type { RfqDeps } from '../../purchase/src/rfq';
 import type { ImportQualityDeps, ImportJobRecord } from '../../purchase/src/import-quality';
 import { assessMappingQuality, type MappingQualityFinding } from '../../../packages/import/src/index';
-import type { DataImportDeps, ImportCommitRecord } from '../../purchase/src/data-import';
+import type { DataImportDeps, ImportCommitRecord, ImportRollbackRecord } from '../../purchase/src/data-import';
+import type { ImportEffect } from '../../purchase/src/import-templates';
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
 import { projectAlerts, type AlertLifecycleDeps, type AlertLifecycleEvent, type LiveAlert } from '../../platform/src/alert-lifecycle';
@@ -6753,20 +6754,70 @@ export function dataImportAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): DataImportDeps {
+  /** One real record an approved load writes (SF-06-a) — the SAME event, stream and key the record's own route uses, so
+   *  everything that reads that register sees it, and a re-sent load collapses onto the first. */
+  const effectEntry = (tenantId: string, e: ImportEffect): BatchEntry => ({
+    stream: SUPPLIER_INVOICES_STREAM,
+    event: makeEvent({
+      id: `invoice-${e.invoice.invoiceId}`, type: 'SupplierInvoiceCaptured', occurredAt: e.invoice.capturedAt,
+      idempotencyKey: `invoice-${tenantId}-${e.invoice.invoiceId}`, source: 'api/purchase/import', payload: e.invoice,
+    }),
+  });
   return {
     now: input.now,
-    commits: async (tenantId) => allOf<ImportCommitRecord>(input.store, tenantId, DATA_IMPORTS_STREAM, 'ImportCommitted'),
-    recordCommit: async (tenantId, record, key) => {
-      await input.store.append(tenantId, DATA_IMPORTS_STREAM, makeEvent({
-        id: `data-import-${record.jobId}`,
-        type: 'ImportCommitted',
-        occurredAt: record.at,
-        idempotencyKey: `data-import-${tenantId}-${key}`,
-        source: 'api/purchase',
-        payload: record,
-      }));
+    commits: async (tenantId) => {
+      const rollbacks = new Map((await allOf<ImportRollbackRecord>(input.store, tenantId, DATA_IMPORTS_STREAM, 'ImportRolledBack')).map((r) => [r.jobId, r] as const));
+      return (await allOf<ImportCommitRecord>(input.store, tenantId, DATA_IMPORTS_STREAM, 'ImportCommitted'))
+        .map((c) => (rollbacks.has(c.jobId) ? { ...c, rolledBack: rollbacks.get(c.jobId)! } : c));
+    },
+    recordCommit: async (tenantId, record, key, effects) => {
+      // ONE atomic save: the job's record and every real record it applies — never one without the other.
+      await input.store.appendBatch(tenantId, [
+        ...effects.map((e) => effectEntry(tenantId, e)),
+        {
+          stream: DATA_IMPORTS_STREAM,
+          event: makeEvent({
+            id: `data-import-${record.jobId}`, type: 'ImportCommitted', occurredAt: record.at,
+            idempotencyKey: `data-import-${tenantId}-${key}`, source: 'api/purchase', payload: record,
+          }),
+        },
+      ]);
+    },
+    recordRollback: async (tenantId, record) => {
+      // Compensating records (append-only, §29.1): each invoice the load captured is WITHDRAWN, never deleted.
+      await input.store.appendBatch(tenantId, [
+        ...record.effects.filter((e) => e.kind === 'supplier_invoice').map((e) => ({
+          stream: SUPPLIER_INVOICES_STREAM,
+          event: makeEvent({
+            id: `invoice-withdrawn-${e.ref}`, type: INVOICE_WITHDRAWN, occurredAt: record.at,
+            idempotencyKey: `invoice-withdrawn-${tenantId}-${e.ref}`, source: 'api/purchase/import',
+            payload: { invoiceId: e.ref, byImportRollback: record.jobId, requestedBy: record.requestedBy, approvedBy: record.approvedBy, reason: record.reason, at: record.at },
+          }),
+        })),
+        {
+          stream: DATA_IMPORTS_STREAM,
+          event: makeEvent({
+            id: `data-import-rollback-${record.jobId}`, type: 'ImportRolledBack', occurredAt: record.at,
+            idempotencyKey: `data-import-rollback-${tenantId}-${record.jobId}`, source: 'api/purchase', payload: record,
+          }),
+        },
+      ]);
     },
   };
+}
+
+/** A supplier invoice taken back out by a compensating record (SF-06-a rollback) — the capture stays as evidence. */
+export const INVOICE_WITHDRAWN = 'SupplierInvoiceWithdrawn';
+
+/** The supplier invoices head office holds now: every capture, less the ones withdrawn. */
+export async function liveSupplierInvoices(store: EventStore, tenantId: string): Promise<readonly SupplierInvoiceRecord[]> {
+  const withdrawn = new Set((await allOf<{ invoiceId: string }>(store, tenantId, SUPPLIER_INVOICES_STREAM, INVOICE_WITHDRAWN)).map((w) => w.invoiceId));
+  return (await allOf<SupplierInvoiceRecord>(store, tenantId, SUPPLIER_INVOICES_STREAM, 'SupplierInvoiceCaptured')).filter((r) => !withdrawn.has(r.invoiceId));
+}
+
+/** True when this invoice id was EVER captured (withdrawn included) — an invoice id is never reused. */
+export async function supplierInvoiceIdUsed(store: EventStore, tenantId: string, invoiceId: string): Promise<boolean> {
+  return (await allOf<SupplierInvoiceRecord>(store, tenantId, SUPPLIER_INVOICES_STREAM, 'SupplierInvoiceCaptured')).some((r) => r.invoiceId === invoiceId);
 }
 
 export function purchaseAdapter(input: {
@@ -6780,9 +6831,9 @@ export function purchaseAdapter(input: {
     // who checked it — keyed on the invoice id, so a retry (a lost reply, a re-sent screen queue) never doubles what a
     // supplier is owed. The match reads it here beside the order register and the receipts folded into the order (SP-6);
     // nothing about the order or the delivery is ever taken from a body again.
-    invoice: async (tenantId, invoiceId) =>
-      (await allOf<SupplierInvoiceRecord>(input.store, tenantId, SUPPLIER_INVOICES_STREAM, 'SupplierInvoiceCaptured')).find((r) => r.invoiceId === invoiceId),
-    invoices: (tenantId) => allOf<SupplierInvoiceRecord>(input.store, tenantId, SUPPLIER_INVOICES_STREAM, 'SupplierInvoiceCaptured'),
+    invoice: async (tenantId, invoiceId) => (await liveSupplierInvoices(input.store, tenantId)).find((r) => r.invoiceId === invoiceId),
+    invoices: (tenantId) => liveSupplierInvoices(input.store, tenantId),
+    invoiceIdUsed: (tenantId, invoiceId) => supplierInvoiceIdUsed(input.store, tenantId, invoiceId),
     recordInvoice: async (tenantId, record) => {
       await input.store.append(tenantId, SUPPLIER_INVOICES_STREAM, makeEvent({
         id: `invoice-${record.invoiceId}`,
@@ -6922,7 +6973,7 @@ export function supplierAccountAdapter(input: {
   const receipts = goodsReceiptAdapter(input).all;
   return {
     now: input.now,
-    invoices: (tenantId) => allOf<SupplierInvoiceRecord>(input.store, tenantId, SUPPLIER_INVOICES_STREAM, 'SupplierInvoiceCaptured'),
+    invoices: (tenantId) => liveSupplierInvoices(input.store, tenantId),
     latestMatches: async (tenantId) => {
       const byInvoice = new Map<string, StoredMatch>();
       for (const m of await allOf<StoredMatch>(input.store, tenantId, STREAM.purchase, 'InvoiceMatched')) byInvoice.set(m.invoiceId, m);
