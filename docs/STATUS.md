@@ -19,6 +19,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Proof:** the connected test now has 10 cases (2 new): the approvals and counts lists (and not another store's); the
   report recorded, the store shown behind a newer catalogue, the setup naming it, another store's computer refused, a bad
   report refused. On the old code the new tests fail.
+- **Full gate:** typecheck, lint and secret scan clean; 10,449 unit/integration tests pass (14 skipped), 261
+  performance, 31 browser.
 - **Not yet / honest limits:**
   - A recall still reaches a store when its computer next asks (every 15 seconds to 5 minutes) — there is no push.
   - The warehouse handheld's practice delivery and bins, and settling the quantity scale across sections, are not built
