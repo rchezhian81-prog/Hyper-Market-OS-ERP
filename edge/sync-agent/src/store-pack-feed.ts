@@ -1,4 +1,4 @@
-// The inbound store-pack pull (Wave 4 · PA-06 = DF-3-a · OB-25 "A" · §31 · P-01 · P-08 · hard rule #4).
+// The inbound store-pack pull (Wave 4 · PA-06 = DF-3-a · OB-26 "A" · §31 · P-01 · P-08 · hard rule #4).
 //
 // The store computer used to read its store pack from a file once, at boot. This is the inbound mirror of the catalogue
 // pull (`pack-source.ts` / `pack-puller.ts`): a `StorePackSource` fetches `GET /v1/store-packs/:storeId` under the box's

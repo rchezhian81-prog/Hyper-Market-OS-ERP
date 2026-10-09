@@ -11,7 +11,7 @@ import { STREAM, ROLE_REVOKED } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 
 /**
- * **PA-06 = DF-3-a — head office builds each store's setup and the store computer takes it, checked (Wave 4 · OB-25 "A" ·
+ * **PA-06 = DF-3-a — head office builds each store's setup and the store computer takes it, checked (Wave 4 · OB-26 "A" ·
  * M01-FR-03 · M02-FR-01/02 · §31 · P-01 · P-02 · P-08).**
  *
  * The audit found it: a store computer read its setup from a FILE someone carried to it, and nothing checked who made it,
@@ -20,7 +20,7 @@ import { makeEvent } from '../../packages/contracts/src/event';
  *     their names, the products it published — signed, numbered, for this store only;
  *   • the store computer takes it only if the signature checks and it is this shop's, this store's and newer; it is
  *     written to disk (the one it replaces kept), it replaces the pack file, and it survives a restart;
- *   • a person granted later reaches the store on the next pull (always current, OB-25 "A"); a person whose grant ends
+ *   • a person granted later reaches the store on the next pull (always current, OB-26 "A"); a person whose grant ends
  *     leaves it; another store's computer cannot read this store's setup; head office unreachable → the store keeps
  *     trading on what it has, and an out-of-date setup is SAID, never thrown away.
  */

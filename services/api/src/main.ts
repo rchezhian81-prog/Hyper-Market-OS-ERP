@@ -719,7 +719,7 @@ export function buildSurface(deps: {
     ...orgStructureRoutes(store === undefined ? {
       nodes: empty([]), registrations: empty([]), recordNode: () => {}, recordRegistration: () => {}, now,
     } : orgStructureAdapter({ store, now })),
-    // Head office builds and delivers each store's setup file (PA-06 = DF-3-a · OB-25 "A"): always current, signed, for
+    // Head office builds and delivers each store's setup file (PA-06 = DF-3-a · OB-26 "A"): always current, signed, for
     // the asking store only; and the store settings it carries are head office's own record.
     ...storePackRoutes(store === undefined ? {
       signer, now, stores: async () => new Map(), branchScopeOf: async () => undefined, buildSections: async () => ({}),

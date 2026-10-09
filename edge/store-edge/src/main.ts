@@ -572,7 +572,7 @@ export async function startEdge(
     say('no store pack is configured, so the screens will be told this box knows nothing yet.');
   }
 
-  // PA-06 = DF-3-a (OB-25 "A"): the store's setup from HEAD OFFICE — signed, for this shop and this store, always current.
+  // PA-06 = DF-3-a (OB-26 "A"): the store's setup from HEAD OFFICE — signed, for this shop and this store, always current.
   // Switched on per box (EDGE_STORE_PACK_SOURCE=head-office + EDGE_STORE_ID). The last setup head office sent is held on
   // disk and checked before it is trusted; once one is held it replaces the pack file entirely (one truth, P-02). Until the
   // first arrives, the pack file (if any) is used — and said.

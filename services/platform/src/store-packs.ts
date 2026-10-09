@@ -1,10 +1,10 @@
-// Head office builds and delivers each store's setup file — the store pack (Wave 4 · PA-06 = DF-3-a · OB-25 "A" ·
+// Head office builds and delivers each store's setup file — the store pack (Wave 4 · PA-06 = DF-3-a · OB-26 "A" ·
 // M01-FR-03 · M02-FR-01/02 · §31 · P-01 · P-02 · P-08 · hard rules #2 #4).
 //
 // Before, a store computer read its store pack from a FILE someone carried to it (the demo builder wrote one); nothing
 // checked who made it, for which shop, or how old it was (audit PA-06). Now:
 //
-//   • **Head office builds it, always current** (owner, 9 Oct 2026, OB-25 "A"): every time a store computer asks, head
+//   • **Head office builds it, always current** (owner, 9 Oct 2026, OB-26 "A"): every time a store computer asks, head
 //     office assembles the pack from its own records — the products it published, the people it granted at this store
 //     and their roles, the store's settings, the approvals waiting, the orders and bills, the loss-prevention rules. No
 //     button to press; each part was already approved where it was made.

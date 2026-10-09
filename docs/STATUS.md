@@ -9,7 +9,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 - **The audit's finding:** a store computer read its setup from a file someone carried to it. Nothing checked who made it,
   for which shop or store, or how old it was.
-- **Owner decision OB-25 "A"** (9 Oct 2026): always current — head office builds the setup from its records whenever the
+- **Owner decision OB-26 "A"** (9 Oct 2026): always current — head office builds the setup from its records whenever the
   store computer asks; no publish button.
 - **What changed (part a of three):**
   - **Head office builds it** from its own records: the store's settings, the people granted at this store with their
@@ -34,6 +34,11 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Part c: the demo store computer still uses its file; it is switched over, and the demo-only builder retired, in part
     c, together with screens bound to the signed-in person (two people on one device).
   - No screen for store settings yet (head office route only).
+  - From the Wave 3 session's SF-08 (handed to PA-06): a catalogue pack carrying a NEW recall/hold block reaching every
+    store computer with priority, and each store computer reporting which pack version it holds — in DF-3-b. (The
+    products section here is built from the signed catalogue pack, so it already carries the blocks head office folds in.)
+  - Numbering: this decision was first written as OB-25; the Wave 3 session recorded a different OB-25 (recalls) the same
+    day, so this one is **OB-26**.
   - Staff UAT (SP-10) pending.
 - **Next:** DF-3-b, the remaining sections.
 

@@ -1,4 +1,4 @@
-// The store pack, assembled from head office's OWN records (Wave 4 · PA-06 = DF-3-a · OB-25 "A").
+// The store pack, assembled from head office's OWN records (Wave 4 · PA-06 = DF-3-a · OB-26 "A").
 //
 // One function per section, each reading the register that already holds the truth — nothing typed twice (P-02), and a
 // section head office has nothing for is LEFT OUT so the store computer says it was not told (store-pack.ts: "a pack that

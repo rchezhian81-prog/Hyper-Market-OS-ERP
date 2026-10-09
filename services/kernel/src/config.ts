@@ -214,7 +214,7 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    */
   { key: 'EDGE_LANE_ID', optional: true },
   /**
-   * PA-06 = DF-3-a (OB-25 "A"): where this box takes its store setup from. `head-office` makes it pull its signed setup from
+   * PA-06 = DF-3-a (OB-26 "A"): where this box takes its store setup from. `head-office` makes it pull its signed setup from
    * head office for EDGE_STORE_ID (the pack file is then only a first-boot fallback); unset keeps the pack file.
    */
   { key: 'EDGE_STORE_PACK_SOURCE', optional: true },
