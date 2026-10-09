@@ -20,7 +20,8 @@
 // Idempotent per grnId: the same receipt again is 200 `alreadyReceived` — a re-sync never double-counts stock (§31.1).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, concurrentChange } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
   captureReceipt, availableFromReceipt, heldFromReceipt, IncompleteCaptureError,
   type CapturedLine, type CapturedReceipt,
@@ -141,7 +142,7 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           unitCost: { minor: costByProduct.get(l.productId) ?? 0, currency: 'INR' },
           // The manager's screen books goods in as delivered; damage and QC are the dock's capture (handheld / SP-6b).
           condition: 'good',
-        })), order.ordered, flags);
+        })), order.ordered, flags, order.originalOrdered);
 
         // The FR-02/03 gate — the SAME tested rule the handheld and the direct route run. A tracked item with no batch
         // cannot be received (you cannot recall what you cannot identify, M10): 422 → the box dead-letters it for a
@@ -173,13 +174,20 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           captured, availableMinor: availableFromReceipt(captured), heldMinor: heldFromReceipt(captured),
           governanceFlags: flags, relayedBy: ctx.userId, source: r.source, storeId: r.storeId,
           poReceipt: poReceipt === undefined ? null : { receiptId: poReceipt.receiptId, receivedByProduct: poReceipt.receivedByProduct },
+          ...(order.position === undefined ? {} : { orderPosition: order.position }),
         };
         // Only the SELLABLE quantity becomes availability; quarantine / rejected / held excess are on the GRN but not on-hand.
         const movements = inboundMovements({
           grnId, locationId: record.warehouseId, lines: captured.lines, quantityOf: (l) => l.sellableMinor,
           occurredAt: r.receivedAt, enteredBy: r.receivedBy, unitCostMinorOf: (l) => costByProduct.get(l.productId),
         });
-        await deps.commit(ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt);
+        try {
+          await deps.commit(ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt);
+        } catch (err) {
+          // Wave 3 · SF-02: another receipt against this order landed first; the store computer sends this one again later.
+          if (err instanceof ConcurrencyConflictError) throw concurrentChange(`purchase order ${r.poId ?? ''}`.trim());
+          throw err;
+        }
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: r.receivedBy, action: 'receipt.record', objectType: 'goods_receipt', objectId: grnId,
           at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },

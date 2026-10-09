@@ -173,7 +173,7 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
   manager's own sign-in; the owner's report cannot be widened to another branch by editing the address.
 
 ### Wave 3 — finish the stock path from delivery to shelf (audit step 3) · size L
-- **SF-02** each receipt judged against the remaining order quantity; **SF-03** transfer availability from one
+- **SF-02** each receipt judged against the remaining order quantity (**DONE 9 Oct 2026** — Wave 3a); **SF-03** transfer availability from one
   batch-, state- and reservation-aware projection; **SF-05** loss value from stored cost, never from the caller;
   **SF-07 / PA-07** receiving takes the cold-chain rule from the product master, requires temperature evidence, and a
   breach creates the quality hold; **SF-08** open recalls and holds reach the executable block set and the offline

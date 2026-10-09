@@ -5,6 +5,47 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 3a — a delivery is checked against what is still owed on the order (SF-02) (9 October 2026)
+
+- **The block:** Wave 3 (the stock path from delivery to shelf, audit step 3), first of six items. The owner said
+  "Start Wave 3" on 9 October 2026; the plan's order is kept (SF-02 first).
+- **The finding (audit SF-02):** an order of 100, a delivery of 60 and then another of 60 — both were accepted, all 120
+  became sellable with nothing held, and the order showed 120 received and −20 still to come. Each delivery was compared
+  with the ORIGINAL order, so repeated part-deliveries could over-deliver with nobody approving the extra.
+- **What changed:**
+  - Head office now compares each delivery with **what is still owed**: ordered − already received − cancelled, never
+    below zero. The original order quantity is kept separately on the delivery record, beside what remained.
+  - Anything above what is still owed is an **over-delivery** and is held back, not sellable, until a second person (never
+    the receiver) approves it — the rule that already existed for a single over-delivery.
+  - **Two deliveries at the same moment** against one order cannot both be judged on the same figure: one is recorded,
+    the other is refused by name ("another change… was recorded a moment ago") with nothing written, and when sent again
+    it is judged on the true figure. A cancellation or a manual posting on the order counts as a change too.
+  - The same rule covers all three ways a delivery reaches head office: the office screen, the store computer, and the
+    warehouse handheld.
+- **Proved:**
+  - New tests (10): 60 then 40 closes the order exactly; 60 then 60 sells 40 and holds 20, the order 100 received and 0
+    open, and only a second person's approval receives the extra 20; a delivery after the rest was cancelled is held
+    whole; a short second delivery is short of what remained (10 of 40, not 70 of 100); the store computer's relayed
+    delivery behaves the same; two deliveries at the same moment — one recorded, one refused, judged correctly when sent
+    again; the remainder rule and the line alignment as pure rules. Plus one unit test: the order's version is read before
+    the order, and an issued order is measured against what remains.
+  - **On a real PostgreSQL database** (2 of the 10): 60 then 60, and two deliveries at once — never 120 received.
+  - **Mutation checks:** putting back the old rule (compare with the original order) fails 6 of the new tests; removing
+    the same-moment protection fails the same-moment test.
+  - One older test (the supplier account) had a second delivery of 13 against an order the first delivery had already
+    filled, and expected 10 of them to sell — the very fault. It now sends an over-delivery of 3, all held; its other
+    figures are unchanged.
+  - Full `pnpm run check` green, with the real database connected (10,315 tests, 31 performance, 252 browser).
+- **Not yet / honest limits:**
+  - The rest of Wave 3: SF-03 (moving stock between stores from the right batch), SF-05 (a write-off's value from the
+    stored cost), SF-07 / PA-07 (cold-chain rule and temperature evidence at receiving; a breach creates the quality hold),
+    SF-08 (a recalled lot blocked at the till even offline), PF-14 (a returned item keeps its lot).
+  - The message on an over-delivery line still says "more than ordered"; it now means "more than still owed".
+- **Behaviour change the owner should know:** a second (or later) delivery against the same order can no longer quietly
+  push more stock onto the shelf than was ordered. Anything extra waits for a manager's approval, as a single
+  over-delivery already did.
+- **Next:** Wave 3b — SF-03, transfer availability from one batch-aware figure.
+
 ## Fix — the sign-in page's browser test no longer fails at random (8 October 2026)
 
 - **The problem:** the browser test of the sign-in page (UX-3 · OB-18) failed about 4 runs in 10 at its "second click
@@ -23,7 +64,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   test fails every time ("the second click sent nothing: expected 2 to be 1") — so it still guards against a double
   sign-in. The full `pnpm run check` passes.
 - **Behaviour change the owner should know:** none. The sign-in page itself is unchanged.
-- **Next:** unchanged — by the plan, Wave 3: the stock path from delivery to shelf.
+- **Next:** unchanged — by the plan, Wave 3: the stock path from delivery to shelf. (Started 9 Oct 2026, Wave 3a above.)
 
 ## OB-15-d-3 — the shops and their features, on the server; the wall between shops stays (8 October 2026)
 

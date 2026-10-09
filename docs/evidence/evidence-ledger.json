@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 943,
+  "testFiles": 944,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -333,8 +333,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 11,
-        "integration": 12,
-        "realDb": 2,
+        "integration": 13,
+        "realDb": 3,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -362,6 +362,7 @@
           "tests/integration/purchase-orders.test.ts",
           "tests/integration/purchase-tenant-isolation.test.ts",
           "tests/integration/rebates.test.ts",
+          "tests/integration/receipts-judged-against-what-remains.test.ts",
           "tests/integration/rfq.test.ts",
           "tests/integration/supplier-master.test.ts",
           "tests/integration/supplier-scorecard.test.ts",
@@ -370,6 +371,7 @@
         ],
         "realDb": [
           "tests/integration/maker-checker-is-two-people.test.ts",
+          "tests/integration/receipts-judged-against-what-remains.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
         "browser": [
@@ -388,8 +390,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 17,
-        "realDb": 1,
+        "integration": 18,
+        "realDb": 2,
         "browser": 4,
         "connected": 0,
         "device": 0,
@@ -418,6 +420,7 @@
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
           "tests/integration/receipt-excess-held.test.ts",
+          "tests/integration/receipts-judged-against-what-remains.test.ts",
           "tests/integration/supplier-account.test.ts",
           "tests/integration/supplier-master.test.ts",
           "tests/integration/supplier-portal.test.ts",
@@ -427,6 +430,7 @@
           "tests/integration/warehouse-synced-routes.test.ts"
         ],
         "realDb": [
+          "tests/integration/receipts-judged-against-what-remains.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
         "browser": [

@@ -178,9 +178,10 @@ describe('the supplier account is read from the registers, never typed (SP-7b ·
 
   it('a REJECTED over-delivery is a supplier return PENDING on the account until it has gone back: recorded once, no stock invented to move (the held units never reached on-hand), refused before a second person rejects it', async () => {
     const h = await seeded();
-    // 13 p1 against an order of 10 on a second delivery, zero tolerance → 10 sellable, 3 HELD; nobody has decided it.
-    expect((await post(h, '/v1/inventory/goods-receipt/grn-2', 'u-recv', receipt([rl('L1', 'p1', 10, 13, 500)]), 'grn-2')).status).toBe(201);
-    expect(await onHand(h, 'p1')).toBe(20); // grn-1's 10 sellable + grn-2's 10 ordered — the 3 held are counted, in the building, and NOT on-hand
+    // 3 more p1 on a second delivery, after grn-1 already received all 10 ordered, zero tolerance → nothing remains on the order,
+    // so all 3 are an over-delivery and HELD (Wave 3 · SF-02: judged against what remains, not the original 10); nobody has decided it.
+    expect((await post(h, '/v1/inventory/goods-receipt/grn-2', 'u-recv', receipt([rl('L1', 'p1', 10, 3, 500)]), 'grn-2')).status).toBe(201);
+    expect(await onHand(h, 'p1')).toBe(10); // grn-1's 10 sellable — the 3 held are counted, in the building, and NOT on-hand
     expect(codeOf(await post(h, '/v1/inventory/goods-receipt/grn-2/excess/returned', 'u-recv', { reason: 'van' }, 'ret-early'))).toBe('excess_not_rejected');
     expect((await account(h)).body.pendingSupplierReturns).toEqual([]);
 

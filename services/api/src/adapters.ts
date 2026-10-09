@@ -172,6 +172,7 @@ import { project, EFFECT_ON_HAND } from '../../inventory/src/index';
 import type { Movement, Availability, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
+import { orderReceiptGuardKey } from '../../inventory/src/goods-receipt';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
 import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch, StoredMatchPolicy } from '../../purchase/src/index';
@@ -5696,14 +5697,17 @@ export function goodsReceiptAdapter(input: {
     now: input.now,
     grn: async (tenantId, grnId) => (await fold(tenantId)).find((g) => g.grnId === grnId),
     all: fold,
-    // SP-6 (F01): the purchase order as head office holds it — status and ordered quantity per product.
+    // SP-6 (F01): the purchase order as head office holds it — status and ordered quantity per product; Wave 3 · SF-02: with
+    // what earlier receipts posted and what was cancelled, so a receipt is judged against what REMAINS.
     purchaseOrder: async (tenantId, poId) => {
       const po = (await foldPurchaseOrders(input.store, tenantId)).get(poId);
       if (po === undefined) return undefined;
       const orderedByProduct: Record<string, number> = {};
       for (const line of po.lines) orderedByProduct[line.productId] = (orderedByProduct[line.productId] ?? 0) + line.orderedQty;
-      return { status: po.status, orderedByProduct };
+      return { status: po.status, orderedByProduct, receivedByProduct: po.receivedByProduct, cancelledByProduct: po.cancelledByProduct };
     },
+    // Wave 3 · SF-02: every posting against one order moves this version, so two receipts judged on one remainder cannot both land.
+    orderVersion: (tenantId, poId) => input.store.guardVersion(tenantId, orderReceiptGuardKey(poId)),
     commit: async (tenantId, record, movements, key, poReceipt) => {
       await input.store.appendBatch(tenantId, [
         {
@@ -5719,7 +5723,7 @@ export function goodsReceiptAdapter(input: {
         },
         ...movements.map((m) => movementEvent(tenantId, m)),
         ...(poReceipt === undefined ? [] : [poReceiptEvent(tenantId, poReceipt)]),
-      ]);
+      ], poReceipt === undefined ? undefined : await orderReceiptGuard(input.store, tenantId, poReceipt.poId, poReceipt.expectedVersion));
     },
     // SP-6 (M07-FR-03): the disposition and the movement an accept releases — one append; one disposition per line.
     commitDisposition: async (tenantId, record, movements, key) => {
@@ -5791,7 +5795,7 @@ export function goodsReceiptAdapter(input: {
         ...movements.map((m) => movementEvent(tenantId, m)),
         // SP-6 (F01): an accepted excess is received against the order too — in the same append.
         ...(poReceipt === undefined ? [] : [poReceiptEvent(tenantId, poReceipt)]),
-      ]);
+      ], poReceipt === undefined ? undefined : await orderReceiptGuard(input.store, tenantId, poReceipt.poId, poReceipt.expectedVersion));
     },
   };
 }
@@ -6124,6 +6128,32 @@ function poTotalMinor(lines: StoredPurchaseOrder['lines']): number {
  * quantity per product. Both `purchaseOrdersAdapter` (reads) and `purchaseAdapter.openCommitments` fold
  * through here, so there is one truth for the open commitment.
  */
+/**
+ * Wave 3 · SF-02 — the write guard on a purchase order's postings. A receipt passes the version it read BEFORE reading what
+ * remained; any other writer (an accepted excess, a cancellation, a manual posting) guards on the version current now, which
+ * still moves it — so a receipt judged on a remainder that has since changed is refused by name, never silently over-posted.
+ */
+async function orderReceiptGuard(store: EventStore, tenantId: string, poId: string, expectedVersion?: number): Promise<{ guard: { key: string; expectedVersion: number } }> {
+  const key = orderReceiptGuardKey(poId);
+  return { guard: { key, expectedVersion: expectedVersion ?? await store.guardVersion(tenantId, key) } };
+}
+
+/**
+ * One purchase-order event appended under the order's receipt guard (Wave 3 · SF-02), only to MOVE it. Its writers (a
+ * cancellation, a manual posting) are not judged against what remains, so a guard that moved between the read and the
+ * write is simply read again — the event is never lost and never doubled (its idempotency key holds).
+ */
+async function appendOneGuarded(store: EventStore, tenantId: string, stream: string, poId: string, event: DomainEvent): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await store.appendBatch(tenantId, [{ stream, event }], await orderReceiptGuard(store, tenantId, poId));
+      return;
+    } catch (err) {
+      if (!(err instanceof ConcurrencyConflictError) || attempt >= 5) throw err;
+    }
+  }
+}
+
 async function foldPurchaseOrders(store: EventStore, tenantId: string): Promise<Map<string, StoredPurchaseOrder>> {
   const events = await store.readStream(tenantId, PURCHASE_ORDERS_STREAM); // all types, oldest first
   const byId = new Map<string, StoredPurchaseOrder>();
@@ -6212,7 +6242,8 @@ export function purchaseOrdersAdapter(input: {
     },
 
     cancel: async (tenantId, poId, cancellationId, cancelledByProduct, reason, by, at) => {
-      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+      // Wave 3 · SF-02: a cancellation changes what remains, so it moves the order's receipt guard like a receipt does.
+      await appendOneGuarded(input.store, tenantId, PURCHASE_ORDERS_STREAM, poId, makeEvent({
         id: `po-${poId}-cancelled-${cancellationId}`,
         type: 'PurchaseOrderCancelled',
         occurredAt: at,
@@ -6224,7 +6255,8 @@ export function purchaseOrdersAdapter(input: {
     },
 
     postReceipt: async (tenantId, poId, receiptId, receivedByProduct, by, at) => {
-      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+      // Wave 3 · SF-02: a manually posted receipt moves the order's receipt guard exactly as a goods receipt's posting does.
+      await appendOneGuarded(input.store, tenantId, PURCHASE_ORDERS_STREAM, poId, makeEvent({
         id: `po-${poId}-received-${receiptId}`,
         type: 'PurchaseOrderReceiptPosted',
         occurredAt: at,

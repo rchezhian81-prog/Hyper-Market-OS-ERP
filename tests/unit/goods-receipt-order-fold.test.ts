@@ -85,7 +85,21 @@ describe('orderForReceipt — only an ISSUED order head office holds is folded i
     const f1: ReceiptFlag[] = []; expect(await orderForReceipt(deps(undefined), 't', null, f1)).toEqual({ poId: null, ordered: undefined, folds: false }); expect(f1).toEqual(['no_purchase_order']);
     const f2: ReceiptFlag[] = []; expect(await orderForReceipt(deps(undefined), 't', 'po-x', f2)).toEqual({ poId: 'po-x', ordered: undefined, folds: false }); expect(f2).toEqual(['order_unknown']);
     const f3: ReceiptFlag[] = []; expect(await orderForReceipt(deps({ status: 'proposed', orderedByProduct: { p1: 5 } }), 't', 'po-d', f3)).toEqual({ poId: 'po-d', ordered: { p1: 5 }, folds: false }); expect(f3).toEqual(['order_not_issued']);
-    const f4: ReceiptFlag[] = []; expect(await orderForReceipt(deps({ status: 'issued', orderedByProduct: { p1: 5 } }), 't', 'po-i', f4)).toEqual({ poId: 'po-i', ordered: { p1: 5 }, folds: true }); expect(f4).toEqual([]);
+    const f4: ReceiptFlag[] = []; expect(await orderForReceipt(deps({ status: 'issued', orderedByProduct: { p1: 5 } }), 't', 'po-i', f4)).toEqual({
+      poId: 'po-i', ordered: { p1: 5 }, folds: true,
+      // Wave 3 · SF-02: the original order kept beside what remains, and where each product stood.
+      originalOrdered: { p1: 5 }, position: { p1: { orderedMinor: 5, alreadyReceivedMinor: 0, cancelledMinor: 0, remainingMinor: 5 } },
+    }); expect(f4).toEqual([]);
+  });
+
+  it('an issued order is measured against what REMAINS — and the guard version is read before the order (Wave 3 · SF-02)', async () => {
+    const calls: string[] = [];
+    const out = await orderForReceipt({
+      orderVersion: () => { calls.push('version'); return 7; },
+      purchaseOrder: () => { calls.push('order'); return { status: 'issued' as const, orderedByProduct: { p1: 100 }, receivedByProduct: { p1: 60 }, cancelledByProduct: { p1: 10 } }; },
+    }, 't', 'po-r', []);
+    expect(calls).toEqual(['version', 'order']);
+    expect(out).toMatchObject({ ordered: { p1: 30 }, originalOrdered: { p1: 100 }, expectedVersion: 7, folds: true });
   });
 });
 
