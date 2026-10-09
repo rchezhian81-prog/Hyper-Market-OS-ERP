@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { aBranch } from '../support/a-branch';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { approvedRequestId, askForApproval, decide } from '../support/approval-request';
 
@@ -32,6 +33,7 @@ async function cast(): Promise<ApiHarness> {
   await h.provisionOwner(A, 'owner-2'); // owner: propose + approve
   await h.provisionRole(A, 'mgr', 'store_manager'); // propose, NOT approve
   await h.provisionRole(A, 'cash', 'cashier'); // neither
+  await aBranch(h, A, 'owner-1'); // SF-01: the store a head-office price applies to
   return h;
 }
 

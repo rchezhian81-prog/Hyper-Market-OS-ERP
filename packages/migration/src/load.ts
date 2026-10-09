@@ -356,7 +356,9 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
     steps.push({
       group: 'price', what: `price ${p.productId}`,
       path: '/v1/prices/changes',
-      body: { productId: p.productId, priceMinor: p.priceMinor, mrpMinor: p.mrpMinor, costMinor: p.costMinor, currency: req.currency, marginFloorBps: p.marginFloorBps },
+      // SF-01: the store whose stock this load opens is the store these prices are for — so a migrated price is the one
+      // that store's tills charge from the next published pack (before, it was recorded and never reached a till).
+      body: { productId: p.productId, priceMinor: p.priceMinor, mrpMinor: p.mrpMinor, costMinor: p.costMinor, currency: req.currency, marginFloorBps: p.marginFloorBps, storeId: req.stockLocationId },
       idempotencyKey: key(`price-${p.productId}`),
     });
   }

@@ -30,8 +30,17 @@ export interface PriceChangeRecord {
 }
 
 export interface PricingDeps {
-  /** Persist an allowed price change as an append-only event. */
-  readonly recordPriceChange: (tenantId: string, change: PriceChangeRecord) => Promise<void> | void;
+  /**
+   * Persist an allowed price change as an append-only event — and (SF-01) make it the OPERATIVE price: a store-scope
+   * price-list entry, effective from today, for each of `storeIds`, in the SAME append. The catalogue pack each store's
+   * lanes sell from resolves its price from that list, so the change reaches the till when the next pack is published.
+   */
+  readonly recordPriceChange: (tenantId: string, change: PriceChangeRecord, storeIds: readonly string[]) => Promise<void> | void;
+  /**
+   * SF-01 — the stores a head-office price change applies to when it names none: every store head office knows (its
+   * branches, and every store a catalogue pack has been published for). Optional on a bare stub (then no store).
+   */
+  readonly storesToPrice?: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   /** Head office's maker-checker engine (ADR-0024): a loss-making price's approver gave it in their own session.
    *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
   readonly approvals?: ApprovalPort;
@@ -54,6 +63,8 @@ interface Body {
   readonly marginFloorBps?: number;
   readonly approval?: { readonly decidedBy?: string; readonly reason?: string };
   readonly approvalId?: string;
+  /** SF-01 — the one store this price is for; absent → every store head office knows. */
+  readonly storeId?: string;
 }
 
 const refuse = (code: string, whatHappened: string): never => {
@@ -125,7 +136,15 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           id, productId: b.productId!, priceMinor: b.priceMinor!, currency, setBy,
           verdict: check.verdict, approvedBy: approval?.decidedBy ?? null, reason: check.reason, at: deps.now(),
         };
-        await deps.recordPriceChange(ctx.tenantId, record);
+        // SF-01: where the price becomes operative — the store named, else every store head office knows. A change that
+        // could reach no till is refused rather than "saved" and never charged (the audit's finding).
+        const storeIds = typeof b.storeId === 'string' && b.storeId.trim() !== ''
+          ? [b.storeId.trim()]
+          : deps.storesToPrice === undefined ? [] : [...new Set(await deps.storesToPrice(ctx.tenantId))].sort();
+        if (deps.storesToPrice !== undefined && storeIds.length === 0) {
+          refuse('no_store_to_price', 'Head office knows no store for this price to apply to — no branch is set up and no catalogue has been published for a store, so no till would ever charge it.');
+        }
+        await deps.recordPriceChange(ctx.tenantId, record, storeIds);
         // Seal the price change into the audit trail — who moved this product's price, to what, and (for a
         // below-cost/below-floor change) who approved it (§28). No card or tender data is anywhere near a
         // price; the figure itself is a public shelf fact, so it is recorded in full.
@@ -140,7 +159,8 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           ...(record.reason ? { reason: record.reason } : {}),
           correlationId: record.id,
         });
-        return { status: 201, body: { productId: record.productId, priceMinor: record.priceMinor, verdict: check.verdict, approvedBy: record.approvedBy } };
+        // `operativeAt` says where the price now applies (from today); the till charges it from the next published pack.
+        return { status: 201, body: { productId: record.productId, priceMinor: record.priceMinor, verdict: check.verdict, approvedBy: record.approvedBy, operativeAt: storeIds, effectiveFrom: record.at.slice(0, 10) } };
       },
     },
   ];

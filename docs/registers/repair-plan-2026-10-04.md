@@ -183,7 +183,7 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
   at the till with the network cut.
 
 ### Wave 4 — connect saved changes to actual trading (audit step 4) · size L
-- **SF-01** the price and promotion screens write the operative registers, and one test follows screen → pack → sale.
+- **SF-01** the price and promotion screens write the operative registers, and one test follows screen → pack → sale (prices half **DONE 9 Oct 2026**; offers half next).
 - **PA-06 = DF-3** head office builds and delivers the store pack to every box: authenticated, tenant- and
   branch-bound sections with signed version and expiry, atomic activation and rollback, freshness and revocation;
   every served screen bound to a person. The demo-only pack builder retires. **The quantity scale across pack sections

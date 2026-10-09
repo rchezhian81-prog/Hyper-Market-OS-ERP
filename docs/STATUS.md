@@ -5,6 +5,35 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 4 · SF-01 (prices) — a price saved on the screen is the price the till charges (9 October 2026)
+
+- **The wave:** Wave 4, "saved changes reach trading", at the owner's word ("Go ahead with Wave 4", 9 Oct 2026). Wave 3's
+  SF-07/PA-07 and SF-08 are still with the other session.
+- **The audit's finding:** a price saved on the catalogue screen was accepted ("saved, ok"), but the price list the
+  till's catalogue is built from never changed, so every till kept charging the old price.
+- **What changed:**
+  - A saved price now also becomes the operative price, from today:
+    - for the store it names;
+    - otherwise for **every store head office knows** (each branch, and each store a catalogue has been published for).
+      This is the plain meaning of a head-office price change; per-store or per-area prices still use the price list.
+  - The till charges it from the next published catalogue for that store.
+  - A change that no till could ever charge (no store set up at all) is refused, not "saved".
+  - The data-migration loader now writes each migrated price for the store it is loading. Before, migrated prices
+    were also recorded and never charged.
+- **Proved:**
+  - Integration (4): the audit's case followed to a published pack and a banked sale; one store only; no store →
+    refused; above MRP still refused.
+  - The new tests fail on the code before the fix. Three older price tests now set up a branch first, and the loader's
+    unit test expects the store.
+  - 8,895 unit and integration tests pass; the price-change browser test passes.
+- **Not yet / honest limits:**
+  - **Offers (SF-01-b, next):** the till loads no offers at all today. A launched offer must switch on the defined offer
+    and travel to the till in the signed catalogue.
+  - Staff UAT (SP-10) pending.
+- **Behaviour change the owner should know:** changing a price in the office and publishing the store's catalogue now
+  changes what the till charges.
+- **Next:** SF-01-b — a launched offer reaches the till.
+
 ## Wave 3 · PF-14 — a returned item keeps its batch; what cannot be resold is held, not lost (9 October 2026)
 
 - **The wave:** Wave 3. The rest of the wave is split between two sessions, which another session reported as the owner's

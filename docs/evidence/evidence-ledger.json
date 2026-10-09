@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 948,
+  "testFiles": 949,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -277,7 +277,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 12,
-        "integration": 11,
+        "integration": 12,
         "realDb": 2,
         "browser": 3,
         "connected": 0,
@@ -300,6 +300,7 @@
           "tests/unit/service-catalogue.test.ts"
         ],
         "integration": [
+          "tests/integration/a-saved-price-is-the-price-the-till-charges.test.ts",
           "tests/integration/catalogue-pack-preview.test.ts",
           "tests/integration/catalogue-pack-publish.test.ts",
           "tests/integration/one-customer.test.ts",

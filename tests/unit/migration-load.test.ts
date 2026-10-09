@@ -131,9 +131,9 @@ describe('planLoad — the ordered steps', () => {
     expect(body.product).toMatchObject({ sku: 'RICE-5KG', taxClass: '1006', lifecycle: 'active', brand: 'SRE' });
     expect(body.product).not.toHaveProperty('productId');
   });
-  it('prices carry the extract\'s cost and floor; the route decides below-cost, never the loader', () => {
+  it('prices carry the extract\'s cost and floor and the loaded store (SF-01); the route decides below-cost, never the loader', () => {
     const price = okPlan().steps.find((s) => s.what === 'price P-SOAP')!;
-    expect(price.body).toEqual({ productId: 'P-SOAP', priceMinor: 2_500, mrpMinor: 2_500, costMinor: 1_800, currency: 'INR', marginFloorBps: 500 });
+    expect(price.body).toEqual({ productId: 'P-SOAP', priceMinor: 2_500, mrpMinor: 2_500, costMinor: 1_800, currency: 'INR', marginFloorBps: 500, storeId: 'STORE-MAIN' });
   });
   it('a migrated supplier has NO portal grants and NO logins — access is configured later by a person', () => {
     const supplier = okPlan().steps.find((s) => s.group === 'supplier')!;

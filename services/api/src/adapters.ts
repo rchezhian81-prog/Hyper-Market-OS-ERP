@@ -22,6 +22,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
+import { money } from '../../../packages/contracts/src/money';
 import type { BatchEntry, EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
@@ -8562,15 +8563,52 @@ export function pricingAdapter(input: {
   return {
     now: input.now,
 
-    recordPriceChange: async (tenantId, change: PriceChangeRecord) => {
-      await input.store.append(tenantId, STREAM.pricing, makeEvent({
-        id: `pricechange-${change.productId}-${change.at}`,
-        type: 'PriceChangeRecorded',
-        occurredAt: change.at,
-        idempotencyKey: `pricechange-${tenantId}-${change.productId}-${change.at}`,
-        source: 'api/pricing',
-        payload: change,
-      }));
+    // SF-01: the change AND its operative store-scope price-list entries, effective from today, in ONE append — the
+    // price the catalogue pack resolves per store is now the one the screen saved (before, only the record was kept and
+    // the list the pack reads never moved). Each entry takes the next version for its (store, product), as the list
+    // route numbers them, so the change supersedes whatever stood before.
+    recordPriceChange: async (tenantId, change: PriceChangeRecord, storeIds) => {
+      const existing = await allOf<PriceEntry>(input.store, tenantId, forPriceList(change.productId), 'PriceListEntryPublished');
+      const effectiveFrom = change.at.slice(0, 10);
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: STREAM.pricing,
+          event: makeEvent({
+            id: `pricechange-${change.productId}-${change.at}`,
+            type: 'PriceChangeRecorded',
+            occurredAt: change.at,
+            idempotencyKey: `pricechange-${tenantId}-${change.productId}-${change.at}`,
+            source: 'api/pricing',
+            payload: { ...change, operativeAt: storeIds },
+          }),
+        },
+        ...storeIds.map((storeId) => {
+          const version = existing.filter((e) => e.scope === 'store' && e.scopeRef === storeId).reduce((max, e) => Math.max(max, e.version), 0) + 1;
+          const entry: PriceEntry = {
+            id: `change-${change.at}-${storeId}`, productId: change.productId, scope: 'store', scopeRef: storeId,
+            price: money(change.priceMinor, change.currency as CurrencyCode), effectiveFrom, effectiveTo: null, status: 'active', version,
+          };
+          return {
+            stream: forPriceList(change.productId),
+            event: makeEvent({
+              id: `price-entry-${change.productId}-${entry.id}`,
+              type: 'PriceListEntryPublished',
+              occurredAt: change.at,
+              idempotencyKey: `price-entry-${tenantId}-${change.productId}-${entry.id}`,
+              source: 'api/pricing',
+              payload: entry,
+            }),
+          };
+        }),
+      ]);
+    },
+
+    // SF-01: the stores a head-office price applies to — every branch head office runs, and every store a catalogue
+    // pack has been published for (a store set up before the org structure is still a store whose lanes sell).
+    storesToPrice: async (tenantId) => {
+      const branches = (await orgStructureAdapter(input).nodes(tenantId)).filter((n) => n.kind === 'branch' && n.status !== 'closed').map((n) => n.nodeId);
+      const packs = (await allOf<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished')).map((p) => p.snapshot.scope?.storeId).filter((x): x is string => typeof x === 'string' && x !== '');
+      return [...new Set([...branches, ...packs])];
     },
   };
 }
