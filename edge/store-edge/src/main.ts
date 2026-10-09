@@ -1411,6 +1411,16 @@ export async function startEdge(
       return { closed: false, reason: 'the day cannot close: this box has no loss-prevention rules, so its exception register was never checked' };
     }
     const unresolvedExceptions = (openExceptions as readonly unknown[]).length;
+    // PF-08: every till whose shift is still open and was opened on or before the day being closed — read from the
+    // box's own till-cash log, never the screen's word. A shift a cashier opened on the NEW day does not hold back
+    // yesterday's close.
+    const cashRecords = await tillCashRecords();
+    const openShifts = [...new Set(cashRecords.map((r) => r.tillId))].sort().flatMap((tillId) => {
+      const state = foldTillCash(cashRecords, tillId);
+      if (state.custodian === null || state.openedAt === null) return [];
+      if (tradingDate(wallClockIn(state.openedAt), rule) > dayToClose) return [];
+      return [{ tillId, custodian: state.custodian, openedAt: state.openedAt }];
+    });
 
     // Gate-check with the tested engine (a throwaway outbox — the durable write + enqueue below is what
     // survives a restart, so we do not use the engine's own enqueue here). A blocker throws; surface it.
@@ -1418,7 +1428,7 @@ export async function startEdge(
       decideDayClose({
         id: req.dayCloseId, storeId: tenantId, tradingDay: dayToClose, closedBy: req.closedBy,
         closedAtLocal: wallClockIn(input.now), closedAt: input.now, tradingDayRule: rule,
-        unresolvedExceptions, unsentSyncItems,
+        unresolvedExceptions, unsentSyncItems, openShifts,
       }, new SyncOutbox());
     } catch (e) {
       return { closed: false, reason: e instanceof Error ? e.message : String(e) };

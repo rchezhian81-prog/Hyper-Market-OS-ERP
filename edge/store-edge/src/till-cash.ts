@@ -26,6 +26,7 @@
 import { assessCashMovement, type StoredCashMovement } from '../../../packages/cash/src/assess-cash';
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { assessShiftClose } from '../../../packages/till/src/assess-shift';
+import { checkDenominationCount } from '../../../packages/till/src/denominations';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { OperatorStamp } from '../../../packages/identity/src/till-seal';
 
@@ -351,7 +352,7 @@ export type ShiftCloseDecision =
   | { readonly ok: true; readonly record: TillShiftCloseRecord }
   | {
     readonly ok: false;
-    readonly refusedBecause: 'no_open_shift' | 'not_the_custodian' | 'count_not_a_whole_amount' | 'material_variance_needs_a_reason';
+    readonly refusedBecause: 'no_open_shift' | 'not_the_custodian' | 'count_not_a_whole_amount' | 'denominations_do_not_add_up' | 'material_variance_needs_a_reason';
     readonly detail: string;
     /** On a material variance the box says how far out the drawer is — the count is already made, so the figure can no longer anchor it. */
     readonly varianceMinor?: number;
@@ -378,6 +379,12 @@ export function decideShiftClose(input: {
   }
   if (!Number.isSafeInteger(request.countedMinor) || request.countedMinor < 0) {
     return { ok: false, refusedBecause: 'count_not_a_whole_amount', detail: 'the counted cash must be a whole amount in paise, zero or more' };
+  }
+  // PF-08: the note-by-note count must be real notes and coins that add up to the total — checked HERE, at the drawer,
+  // now that the box is the only place a shift closes (OB-27 "A": head office records, it never takes typed figures).
+  if (request.denominations !== undefined) {
+    const check = checkDenominationCount({ denominations: request.denominations, countedCashMinor: request.countedMinor });
+    if (!check.ok) return { ok: false, refusedBecause: 'denominations_do_not_add_up', detail: check.detail };
   }
   const toleranceKnown = input.toleranceMinor !== undefined;
   const toleranceMinor = input.toleranceMinor ?? DEFAULT_CASH_TOLERANCE_MINOR;
@@ -453,7 +460,7 @@ export function tillCashEventFactory(tenantId: string): (record: string, index: 
 export type TillCashRefusal =
   | 'no_lane' | 'not_readable' | 'not_a_cash_movement' | 'amount_not_positive' | 'till_already_assigned'
   | 'till_not_held_by_this_custodian' | 'insufficient_till_cash' | 'no_open_shift' | 'not_the_custodian'
-  | 'count_not_a_whole_amount' | 'material_variance_needs_a_reason' | 'could_not_write_durably' | 'no_room_left'
+  | 'count_not_a_whole_amount' | 'denominations_do_not_add_up' | 'material_variance_needs_a_reason' | 'could_not_write_durably' | 'no_room_left'
   | 'no_store_box' | 'lane_unreachable';
 
 export type CashMovementOutcome =
@@ -512,6 +519,7 @@ export const TILL_CASH_WORDS: Readonly<Record<TillCashRefusal, string>> = Object
   no_open_shift: 'No float has been taken on this till, so there is no shift to close. Take the float first.',
   not_the_custodian: 'This till is held by another cashier. Only the cashier who took the float can close it.',
   count_not_a_whole_amount: 'The count must be a whole amount, zero or more.',
+  denominations_do_not_add_up: 'The notes and coins you counted do not add up to the total, or include a note that does not exist. Count the drawer again.',
   material_variance_needs_a_reason: 'The drawer is out by more than the shop allows. Say why before the till can close.',
   could_not_write_durably: 'The store computer could not save this. The cash is NOT recorded — do not move it. Tell the manager.',
   no_room_left: 'The store computer has no room left to record this. The cash is NOT recorded — do not move it. Tell the manager now.',
