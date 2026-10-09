@@ -39,7 +39,7 @@
 import type { CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
 import type { Role } from '../../../packages/rbac/src/rbac';
 import type { PilotFoundation, PilotTradingPartners, PilotTransactions } from './dataset';
-import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, templateView } from '../../../services/purchase/src/import-templates';
+import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, PRODUCT_SPEC, PRODUCT_LABEL, templateView } from '../../../services/purchase/src/import-templates';
 
 export interface DemoStorePackInput {
   /** The signed pack's snapshot, as `GET /v1/catalogue/pack` returns it (`body.snapshot`). */
@@ -281,8 +281,8 @@ export function buildDemoStorePack(input: DemoStorePackInput): DemoStorePack {
     aiPolicy: { staleAfterMinutes: 60, period: month, userId: CAST.owner },
     merchandisingPolicy: { refillAtBp: 2500, countStaleAfterMinutes: 240, refillRole: 'store_manager', ...viewer(CAST.manager) },
     writeOffCapturePolicy: { ...viewer(CAST.manager), materialThresholdMinor: 50_000 },
-    // SF-06-a (OB-23 "C"): the import screen offers what head office supports — supplier invoice files.
-    dataIoPolicy: { ...viewer(CAST.owner), importTemplates: [templateView({ spec: SUPPLIER_INVOICE_SPEC, label: SUPPLIER_INVOICE_LABEL, financial: true })] },
+    // SF-06-a/b (OB-23 "C"): the import screen offers what head office supports — supplier invoice files and new products.
+    dataIoPolicy: { ...viewer(CAST.owner), importTemplates: [templateView({ spec: SUPPLIER_INVOICE_SPEC, label: SUPPLIER_INVOICE_LABEL, financial: true }), templateView({ spec: PRODUCT_SPEC, label: PRODUCT_LABEL, financial: false })] },
     ...screenPolicies,
     checklist,
     lossPreventionRules,

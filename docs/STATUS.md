@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 4 · SF-06-b — head office's own category list, and product files that load real products (9 October 2026)
+
+- **The audit's finding:** a product file said "1 row applied" and the product list held nothing. Separately, every
+  product was judged against whatever categories the sender wrote — "grocery" could be a food category on one publish and
+  not on the next, so the food label rules could be skipped.
+- **Owner decisions:** OB-23 "C" (invoices, then products) and OB-24 "A" (one category list for files and the screen).
+- **What changed:**
+  - **Head office keeps the category list.** The owner adds a category directly; a store manager proposes one and the
+    owner approves it in their own session (roadmap M03-FR-01). A parent must exist, a chain never loops, and a change is
+    a new version.
+  - **Every product publish is judged against that list.** A publish that describes a category differently is refused.
+    A category the list lacks is added only when the owner publishes, and the answer says so.
+  - **Product files load real products.** One row per new product. Each row is judged by the same product checks as the
+    single-product screen, against head office's list (category, allergens, country of origin, net quantity, packer,
+    minimum age, SKU unique, product new). A second person approves; the products land in the product master in one save
+    with the job's record. The import screen offers the product file type in the demo pack.
+  - **Undo:** a second person approves; the products get a new "discontinued" version (the published one stays as
+    evidence). Refused once a product has a barcode or a price.
+- **Proof:**
+  - Connected (real API, real permissions, real maker-checker; 7 tests): who may define; parents, loops and versions; the
+    old hole refused; the audit's case (an approved file puts real products in the master); every rule a row error and a
+    bad file loads nothing; a manager cannot load products; undo, and its refusal once a barcode exists.
+  - Every existing product test still passes on the list (the owner's publishes define what they name).
+  - On the old code the new tests fail.
+  - Full gate: typecheck, lint and secret scan clean; 10,423 unit/integration tests pass (14 skipped), 261 performance,
+    31 browser.
+- **Not yet / honest limits:**
+  - No category screen yet — categories are added through head office's routes and the owner's product publishes.
+  - A file loads NEW products only; changing existing products by file is not built.
+  - The import screen has no Undo button yet (head office action).
+  - Staff UAT (SP-10) pending.
+- **Next:** PA-06/DF-3 — head office builds and delivers the store pack to every store computer (the last Wave 4 item).
+
 ## Wave 3 · PA-07 — a fridge or cold-room breakdown puts the stock inside on hold (9 October 2026)
 
 - **The audit's finding (HIGH):** when a cold room went out of range, the monitoring screen said "hold the stock" — and

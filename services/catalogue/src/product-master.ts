@@ -17,9 +17,10 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import { settlePublishCategories, type CategoryRegisterDeps } from './categories';
 import {
   publishProduct, NotPublishableError, CategoryNotFoundError,
-  type ProductRecord, type Category, type ProductLifecycle, type HandlingClass,
+  type ProductRecord, type ProductLifecycle, type HandlingClass,
 } from '../../../packages/product/src/index';
 
 export interface ProductMasterDeps {
@@ -27,6 +28,8 @@ export interface ProductMasterDeps {
   readonly publish: (tenantId: string, record: ProductRecord, key: string) => Promise<void> | void;
   readonly product: (tenantId: string, productId: string) => Promise<ProductRecord | undefined> | ProductRecord | undefined;
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
+  /** Head office's own category list (SF-06-b · OB-24 "A") — what every product is judged against. */
+  readonly categoryRegister: CategoryRegisterDeps;
 }
 
 const LIFECYCLES: readonly ProductLifecycle[] = ['draft', 'new', 'active', 'clearance', 'discontinued'];
@@ -73,12 +76,12 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
       handler: async (ctx) => {
         const productId = ctx.params['productId'] ?? '';
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (productId.trim() === '' || !isObj(b['product']) || !Array.isArray(b['categories'])) {
+        if (productId.trim() === '' || !isObj(b['product'])) {
           throw apiError(400, {
             code: 'not_readable_as_a_product',
-            whatHappened: 'Publishing a product needs a productId in the path, a product object, and the categories[] to validate it against.',
+            whatHappened: 'Publishing a product needs a productId in the path and a product object.',
             wasItSaved: 'not_saved',
-            nextSafeAction: 'Send { product: {...}, categories: [...] } with the product id in the URL.',
+            nextSafeAction: 'Send { product: {...} } with the product id in the URL (categories[] optional: the categories you expect head office to hold).',
           });
         }
         // A minimum age the till cannot read is not a restriction. Refuse it HERE rather than publish a product that
@@ -95,12 +98,15 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
           });
         }
         const record = readProduct(productId, ctx.tenantId, b['product']);
+        // The categories are head office's OWN list (SF-06-b · OB-24 "A") — never the sender's. An expected category that
+        // differs from the list is refused; a missing one is defined only by someone who may define categories, and said.
+        const { categories, defined } = await settlePublishCategories(deps.categoryRegister, ctx, b['categories']);
         // The per-product compliance gate — the SAME tested rule the screen ran, re-run here because a
         // central boundary trusts no client verdict (ADR-0013 control 9): mandatory fields, category, HSN/tax
         // class, MRP/UOM, and a regulated item's safety content (allergen/country-of-origin/min-age).
         let published: ProductRecord;
         try {
-          published = publishProduct(record, b['categories'] as Category[]); // draft → 'new' on first publish
+          published = publishProduct(record, categories); // draft → 'new' on first publish
         } catch (err) {
           if (err instanceof NotPublishableError) {
             throw apiError(422, {
@@ -138,7 +144,7 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
           });
         }
         await deps.publish(ctx.tenantId, published, ctx.idempotencyKey ?? productId);
-        return { status: 201, body: { product: published } };
+        return { status: 201, body: { product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}) } };
       },
     },
     {

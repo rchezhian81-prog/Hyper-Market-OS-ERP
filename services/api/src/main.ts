@@ -170,7 +170,9 @@ import { rebateRoutes } from '../../purchase/src/rebates';
 import { rfqRoutes } from '../../purchase/src/rfq';
 import { importQualityRoutes } from '../../purchase/src/import-quality';
 import { dataImportRoutes } from '../../purchase/src/data-import';
-import { supplierInvoiceTemplate } from '../../purchase/src/import-templates';
+import { supplierInvoiceTemplate, productTemplate } from '../../purchase/src/import-templates';
+import { engineCategory } from '../../catalogue/src/categories';
+import { categoryRoutes } from '../../catalogue/src/categories';
 import { dataExportRoutes, buildExportDomains } from '../../purchase/src/data-export';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import { financeRoutes } from '../../finance/src/index';
@@ -226,7 +228,7 @@ import { syncedDriverRunRoutes } from '../../fulfilment/src/driver-runs';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, dataExportAdapter, financeAdapter, settlementAdapter,
+  dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productInUse, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter,
 } from './adapters';
@@ -472,8 +474,13 @@ export function buildSurface(deps: {
     ...productDuplicateRoutes(),
     // Product-master authoring (M03-FR-01/03) — compliance-gated publish + read, event-sourced store.
     ...productMasterRoutes(store === undefined
-      ? { publish: () => {}, product: empty(undefined), products: empty([]) }
+      ? { publish: () => {}, product: empty(undefined), products: empty([]), categoryRegister: { categories: empty([]), define: () => {}, permissionsOfUser: empty(undefined), now } }
       : productMasterAdapter({ store, now })),
+    // Head office's own category list (SF-06-b · OB-24 "A" · M03-FR-01): the owner defines; a manager proposes for the
+    // owner's approval. Every product publish is judged against it.
+    ...categoryRoutes(store === undefined
+      ? { categories: empty([]), define: () => {}, permissionsOfUser: empty(undefined), now }
+      : { ...categoryRegisterAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
     // Product merge (M03-FR-04 §28) — reversible, two-person duplicate resolution; propose/decide/reverse.
     ...productMergeRoutes(store === undefined
       ? { recordProposal: () => {}, recordApproved: () => {}, recordRejected: () => {}, recordReversed: () => {}, view: empty(undefined), all: empty([]), now }
@@ -569,6 +576,11 @@ export function buildSurface(deps: {
             purchaseOrder: (t, po) => purchaseAdapter({ store, now }).purchaseOrder(t, po),
             permissionsOfUser: (t, u) => purchaseAdapter({ store, now }).permissionsOfUser(t, u),
             invoiceMatched: async (t, id) => (await purchaseAdapter({ store, now }).latestMatch(t, id)) !== undefined,
+          }), productTemplate({
+            // SF-06-b (OB-24 "A"): new products, judged against head office's own category list.
+            categories: async (t) => (await categoryRegisterAdapter({ store, now }).categories(t)).map(engineCategory),
+            products: async (t) => productMasterAdapter({ store, now }).products(t),
+            productInUse: (t, id) => productInUse(store, t, id),
           })],
         }),
     // Domain data export (M30-FR-02) — your data is yours: every authorised domain exports to an open
@@ -580,7 +592,7 @@ export function buildSurface(deps: {
       ? { domains: [], access: () => new AccessControl([], []), exports: () => [], recordExport: () => {}, now }
       : {
           domains: buildExportDomains({
-            products: (t) => productMasterAdapter({ store, now }).products(t),
+            products: async (t) => productMasterAdapter({ store, now }).products(t),
             importCommits: (t) => dataImportAdapter({ store, now }).commits(t),
           }),
           access: tenantAccessResolver(store, ROLE_CATALOGUE),

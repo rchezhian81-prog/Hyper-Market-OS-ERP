@@ -49,6 +49,11 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'data_import_commit', label: 'Apply a bulk import',
     makerPermission: 'purchase.import.record', checkerPermission: 'purchase.import.record', validForMinutes: 24 * 60,
   },
+  // SF-06-b (M03-FR-01 "Owner/Manager approve new category", OB-24 "A"): a manager proposes a category, the owner approves.
+  category_define: {
+    kind: 'category_define', label: 'Add or change a product category',
+    makerPermission: 'catalogue.category.propose', checkerPermission: 'catalogue.category.approve', validForMinutes: 24 * 60,
+  },
   // SF-06-a (M30-FR-04 "rollback approved"): undoing a committed load is approved by another person who may import.
   data_import_rollback: {
     kind: 'data_import_rollback', label: 'Undo a bulk import',

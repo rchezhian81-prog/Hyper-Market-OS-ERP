@@ -188,6 +188,7 @@ import type { RfqDeps } from '../../purchase/src/rfq';
 import type { ImportQualityDeps, ImportJobRecord } from '../../purchase/src/import-quality';
 import { assessMappingQuality, type MappingQualityFinding } from '../../../packages/import/src/index';
 import type { DataImportDeps, ImportCommitRecord, ImportRollbackRecord } from '../../purchase/src/data-import';
+import type { CategoryRegisterDeps, StoredCategory } from '../../catalogue/src/categories';
 import type { ImportEffect } from '../../purchase/src/import-templates';
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
@@ -1804,6 +1805,46 @@ export function catalogueAdapter(input: {
  * master is the latest event per product id (a change is a new version, never an overwrite — hard rule #2),
  * so a product master survives a restart and reads as what happened.
  */
+/**
+ * Head office's category list (SF-06-b · OB-24 "A" · M03-FR-01): each definition is a `CategoryDefined` version on the
+ * catalogue's categories stream; the list is the latest version per id (a change is a new version — hard rule #2).
+ */
+export const CATEGORIES_STREAM = streamName(STREAM.catalogue, 'categories');
+export function categoryRegisterAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): Omit<CategoryRegisterDeps, 'approvals'> {
+  return {
+    now: input.now,
+    categories: async (tenantId) => {
+      const latest = new Map<string, StoredCategory>();
+      for (const c of await allOf<StoredCategory>(input.store, tenantId, CATEGORIES_STREAM, 'CategoryDefined')) latest.set(c.categoryId, c);
+      return [...latest.values()];
+    },
+    define: async (tenantId, records) => {
+      await input.store.appendBatch(tenantId, records.map((r) => ({
+        stream: CATEGORIES_STREAM,
+        event: makeEvent({
+          id: `category-${r.categoryId}-v${r.version}`, type: 'CategoryDefined', occurredAt: r.definedAt,
+          // One version of one category, once: a re-sent definition collapses onto the first.
+          idempotencyKey: `category-${tenantId}-${r.categoryId}-v${r.version}`, source: 'api/catalogue', payload: r,
+        }),
+      })));
+    },
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+  };
+}
+
+/** The product master's stream (`ProductPublished`, latest per id). */
+export const PRODUCTS_STREAM = streamName(STREAM.catalogue, 'products');
+
+/** Why a product is in use (SF-06-b rollback guard): a barcode assigned to it, or a price set for it — or undefined. */
+export async function productInUse(store: EventStore, tenantId: string, productId: string): Promise<string | undefined> {
+  if ((await allOf<{ productId: string }>(store, tenantId, streamName(STREAM.catalogue, 'barcodes'), 'BarcodeAssigned')).some((b) => b.productId === productId)) return 'has a barcode';
+  if ((await allOf<unknown>(store, tenantId, forPriceList(productId), 'PriceListEntryPublished')).length > 0) return 'has a price';
+  return undefined;
+}
+
 export function productMasterAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -1831,6 +1872,7 @@ export function productMasterAdapter(input: {
         payload: record,
       }));
     },
+    categoryRegister: { ...categoryRegisterAdapter(input), approvals: approvalRequestsAdapter(input) },
     product: async (tenantId, productId) => (await foldLatest(tenantId)).get(productId),
     products: async (tenantId) =>
       [...(await foldLatest(tenantId)).values()].sort((a, b) => (a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0)),
@@ -6789,13 +6831,22 @@ export function dataImportAdapter(input: {
 }): DataImportDeps {
   /** One real record an approved load writes (SF-06-a) — the SAME event, stream and key the record's own route uses, so
    *  everything that reads that register sees it, and a re-sent load collapses onto the first. */
-  const effectEntry = (tenantId: string, e: ImportEffect): BatchEntry => ({
-    stream: SUPPLIER_INVOICES_STREAM,
-    event: makeEvent({
-      id: `invoice-${e.invoice.invoiceId}`, type: 'SupplierInvoiceCaptured', occurredAt: e.invoice.capturedAt,
-      idempotencyKey: `invoice-${tenantId}-${e.invoice.invoiceId}`, source: 'api/purchase/import', payload: e.invoice,
-    }),
-  });
+  const effectEntry = (tenantId: string, e: ImportEffect, jobId: string, at: string): BatchEntry => (e.kind === 'supplier_invoice'
+    ? {
+        stream: SUPPLIER_INVOICES_STREAM,
+        event: makeEvent({
+          id: `invoice-${e.invoice.invoiceId}`, type: 'SupplierInvoiceCaptured', occurredAt: e.invoice.capturedAt,
+          idempotencyKey: `invoice-${tenantId}-${e.invoice.invoiceId}`, source: 'api/purchase/import', payload: e.invoice,
+        }),
+      }
+    : {
+        // A product the load publishes — the product master's own event and stream (SF-06-b).
+        stream: PRODUCTS_STREAM,
+        event: makeEvent({
+          id: `product-${e.product.productId}-import-${jobId}`, type: 'ProductPublished', occurredAt: at,
+          idempotencyKey: `product-${tenantId}-${e.product.productId}-import-${jobId}`, source: 'api/purchase/import', payload: e.product,
+        }),
+      });
   return {
     now: input.now,
     commits: async (tenantId) => {
@@ -6806,7 +6857,7 @@ export function dataImportAdapter(input: {
     recordCommit: async (tenantId, record, key, effects) => {
       // ONE atomic save: the job's record and every real record it applies — never one without the other.
       await input.store.appendBatch(tenantId, [
-        ...effects.map((e) => effectEntry(tenantId, e)),
+        ...effects.map((e) => effectEntry(tenantId, e, record.jobId, record.at)),
         {
           stream: DATA_IMPORTS_STREAM,
           event: makeEvent({
@@ -6817,8 +6868,18 @@ export function dataImportAdapter(input: {
       ]);
     },
     recordRollback: async (tenantId, record) => {
-      // Compensating records (append-only, §29.1): each invoice the load captured is WITHDRAWN, never deleted.
+      // Compensating records (append-only, §29.1): each invoice the load captured is WITHDRAWN, never deleted; each product
+      // it published gets a new DISCONTINUED version (the published one stays as evidence).
+      const products = new Map((await allOf<ProductRecord>(input.store, tenantId, PRODUCTS_STREAM, 'ProductPublished')).map((p) => [p.productId, p] as const));
       await input.store.appendBatch(tenantId, [
+        ...record.effects.filter((e) => e.kind === 'product' && products.has(e.ref)).map((e) => ({
+          stream: PRODUCTS_STREAM,
+          event: makeEvent({
+            id: `product-${e.ref}-rollback-${record.jobId}`, type: 'ProductPublished', occurredAt: record.at,
+            idempotencyKey: `product-${tenantId}-${e.ref}-rollback-${record.jobId}`, source: 'api/purchase/import-rollback',
+            payload: { ...products.get(e.ref)!, lifecycle: 'discontinued' as const },
+          }),
+        })),
         ...record.effects.filter((e) => e.kind === 'supplier_invoice').map((e) => ({
           stream: SUPPLIER_INVOICES_STREAM,
           event: makeEvent({
