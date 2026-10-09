@@ -37,6 +37,8 @@ interface PosWindow {
   readonly posSession?: {
     hasCatalogue(): boolean;
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
+    /** The next receipt number, from the store computer (audit PF-04). */
+    nextReceipt(): Promise<string>;
     signIn(cashierId: string): void;
     operator(): string | undefined;
     newSale(): void;
@@ -87,7 +89,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till takes its float, pickup and blin
     expect(await page.textContent('#total')).toBe('₹480.00');
     return page.evaluate(async ([id, when]) => {
       const w = globalThis as unknown as PosWindow;
-      const r = await w.posSession!.tenderCash(id!, `R-${id}`, when!);
+      const r = await w.posSession!.tenderCash(id!, await w.posSession!.nextReceipt(), when!);
       w.posSession!.newSale();
       return r;
     }, [saleId, at]);
@@ -129,7 +131,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till takes its float, pickup and blin
     expect(records[0]).toMatchObject({ kind: 'movement', movementKind: 'float_issue', amountMinor: 200_000, custodianId: 'u-lanecash', laneId: 'lane-1' });
 
     // A ₹480 cash sale (rung NOW — the shift's window opened with the float a moment ago), then ₹500 to the safe.
-    expect(await ring(page, 'S-1', new Date().toISOString())).toBe('R-S-1');
+    expect(await ring(page, 'S-1', new Date().toISOString())).toBe('R-lane-1-000001'); // the box's number (audit PF-04)
     expect(await moreOffers(page)).toEqual(['Cash to safe', 'Refund', 'Exchange', 'Close till']); // the float is out: no second float offered
     await choose(page, 'Cash to safe');
     await keyAmount(page, '500');

@@ -1,39 +1,41 @@
 import { describe, it, expect } from 'vitest';
-import { bootPos } from '../../apps/pos/src/browser-entry';
+import { bootPos, ReceiptNumberRefusedError, type ReceiptNumberAnswer } from '../../apps/pos/src/browser-entry';
 
-// Offline receipt numbering (M01-FR-02, audit STAB-02 / GAP-SYNC-02). The served till used to mint
-// `R-${Date.now()}`, so two lanes ringing offline could collide on a receipt number — a customer
-// document that must be gap-free and unique. Now each lane draws from a per-lane RESERVED RANGE via
-// the existing `ReservedRangeAllocator`, wired into `bootPos`. This proves the mechanism: distinct
-// ranges never collide, each lane is gap-free within its range, and an exhausted range STOPS the
-// till (throws) rather than reusing a number — the shell then takes no money.
+// Receipt numbering on the till (audit PF-04 · M01-FR-02). The till used to count its own numbers in the browser's memory
+// — a reload started again at 0001, a second tab counted separately, and without a range a timestamp was minted. Now it
+// ASKS its store computer for each number (the box's own register is proved against a real box in
+// tests/integration/receipt-numbers-come-from-the-box.test.ts). Here: the till takes what the box gives, mints nothing
+// itself, and stops when the box gives none.
 
-describe('offline receipt numbering draws from a per-lane reserved range (M01-FR-02, STAB-02)', () => {
-  it('two lanes with distinct ranges never mint the same number, and each is gap-free', () => {
-    const laneA = bootPos({ laneId: 'L1', receipt: { prefix: 'R-L1-', padTo: 4, rangeStart: 1, rangeEnd: 100 } });
-    const laneB = bootPos({ laneId: 'L2', receipt: { prefix: 'R-L2-', padTo: 4, rangeStart: 101, rangeEnd: 200 } });
+const answering = (answers: ReceiptNumberAnswer[]) => {
+  const keys: string[] = [];
+  return { keys, port: async (requestKey: string): Promise<ReceiptNumberAnswer> => { keys.push(requestKey); return answers.shift() ?? { issued: false, refusedBecause: 'receipt_numbers_used_up', laneMessage: 'used up' }; } };
+};
 
-    const a = Array.from({ length: 50 }, () => laneA.nextReceipt());
-    const b = Array.from({ length: 50 }, () => laneB.nextReceipt());
-
-    // Gap-free and correctly formatted within each lane.
-    expect(a.slice(0, 3)).toEqual(['R-L1-0001', 'R-L1-0002', 'R-L1-0003']);
-    expect(b.slice(0, 3)).toEqual(['R-L2-0101', 'R-L2-0102', 'R-L2-0103']);
-    // No collision across the two offline lanes — the whole point of reserved ranges.
-    expect(new Set([...a, ...b]).size).toBe(100);
-  });
-
-  it('stops (throws) when the range is exhausted rather than reusing a number', () => {
-    const lane = bootPos({ receipt: { prefix: 'R-', padTo: 2, rangeStart: 1, rangeEnd: 3 } });
+describe('the till takes its receipt numbers from the store computer (audit PF-04)', () => {
+  it('each number is the box\'s, asked under a fresh request key; what the box said rides along', async () => {
+    const box = answering([
+      { issued: true, receiptNumber: 'R-L1-0001', remaining: 99, runningLow: false, source: 'published' },
+      { issued: true, receiptNumber: 'R-L1-0002', remaining: 3, runningLow: true, source: 'published', laneMessage: 'This till has 3 receipt number(s) left.' },
+    ]);
+    const lane = bootPos({ laneId: 'L1', receiptNumbers: box.port });
+    expect(lane.receiptsRemaining()).toBeUndefined();
+    expect(await lane.nextReceipt()).toBe('R-L1-0001');
+    expect(lane.receiptNotice()).toBeUndefined();
+    expect(await lane.nextReceipt()).toBe('R-L1-0002');
     expect(lane.receiptsRemaining()).toBe(3);
-    expect([lane.nextReceipt(), lane.nextReceipt(), lane.nextReceipt()]).toEqual(['R-01', 'R-02', 'R-03']);
-    expect(lane.receiptsRemaining()).toBe(0);
-    expect(() => lane.nextReceipt()).toThrow(/exhausted/i);
+    expect(lane.receiptNotice()).toMatch(/3 receipt number/);
+    expect(new Set(box.keys).size).toBe(2);
   });
 
-  it('an unprovisioned standalone shell falls back to a timestamp — demo only, not collision-safe', () => {
-    const lane = bootPos({});
-    expect(lane.receiptsRemaining()).toBe(Number.POSITIVE_INFINITY);
-    expect(lane.nextReceipt()).toMatch(/^R-/);
+  it('when the box gives no number the till stops — it never mints one of its own', async () => {
+    const lane = bootPos({ receiptNumbers: answering([]).port });
+    await expect(lane.nextReceipt()).rejects.toBeInstanceOf(ReceiptNumberRefusedError);
+    await expect(lane.nextReceipt()).rejects.toMatchObject({ refusedBecause: 'receipt_numbers_used_up' });
+  });
+
+  it('a till whose store computer cannot be reached gives no number (and invents none)', async () => {
+    const lane = bootPos({ lanePort: 1 });
+    await expect(lane.nextReceipt()).rejects.toMatchObject({ refusedBecause: 'lane_unreachable', laneMessage: expect.stringMatching(/Do not take money/) });
   });
 });

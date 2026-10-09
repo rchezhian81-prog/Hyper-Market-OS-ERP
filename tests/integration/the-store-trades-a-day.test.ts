@@ -170,14 +170,15 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     expect(await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: at(0), movementId: 'cm-float' })).toMatchObject({ committed: true });
     const scanned = till.scanBarcode(BARCODE);
     expect(scanned).toMatchObject({ description: 'Ponni rice 5kg', qty: 1, amountMinor: PRICE, requiresAgeCheck: false });
-    expect(await till.tenderCash('S-1', 'R-S-1', at(5))).toBe('R-S-1');
+    const receipt = await till.nextReceipt(); // the bill's number, from this box (audit PF-04)
+    expect(await till.tenderCash('S-1', receipt, at(5))).toBe(receipt);
     till.newSale();
 
     // Durable on THIS box first (hard rule #1), queued for the cloud; nothing has reached head office yet.
     const onDisk = (await readLog(edge.log.path)).map((r) => JSON.parse((r as { record: string }).record) as Record<string, unknown>);
     expect(onDisk).toHaveLength(1);
     // The customer paid the shelf price — never the price plus GST (F15 fixed): the GST is pulled OUT of the ₹480.
-    expect(onDisk[0]).toMatchObject({ id: 'S-1', number: 'R-S-1', cashierId: CASHIER, laneId: LANE, tradingDay, total: PRICE, netMinor: TAXABLE, taxMinor: GST });
+    expect(onDisk[0]).toMatchObject({ id: 'S-1', number: receipt, cashierId: CASHIER, laneId: LANE, tradingDay, total: PRICE, netMinor: TAXABLE, taxMinor: GST });
     // Queued for head office as the cloud's contract, stamped by the BOX: the pulled pack's version and this shop as the stock location.
     expect(edge.outbox.unsentCount()).toBe(1);
     expect(edge.outbox.pending()[0]!.event.payload).toMatchObject({ saleId: 'S-1', packVersion: 1, locationId: STORE, cashierId: CASHIER, laneId: LANE, tradingDay, totalMinor: PRICE });
@@ -194,12 +195,12 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     expect(valued.totalValueMinor).toBe(9 * COST);
 
     // ── The refund, on the till: the bill looked up on this box, a manager's approval, cash back; synced, the stock returns.
-    const bill = (await till.lookupRefund('R-S-1'))!;
+    const bill = (await till.lookupRefund(receipt))!;
     expect(bill).toMatchObject({ sale: { saleId: 'S-1', totalMinor: PRICE }, maxRefundMinor: PRICE }); // what was paid: the ₹480 shelf price
     // The manager approves with their own till PIN, for this bill and this amount (ADR-0021).
     const approval = await managerApprovesOn(till, MANAGER, { kind: 'refund', billRef: 'S-1', valueMinor: PRICE, reason: 'checked the goods' });
     const refunded = await bill.submit({
-      returnId: 'RT-1', number: 'RT-0001', reasonCode: 'changed_mind',
+      returnId: 'RT-1', number: await till.nextReceipt(), reasonCode: 'changed_mind',
       lines: [{ productId: PRODUCT, uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
       refundMinor: PRICE, refundTender: 'cash', approval,
     });
@@ -262,7 +263,8 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     await signInTill(till, CASHIER);
     till.scanBarcode(BARCODE);
     const when = new Date().toISOString();
-    expect(await till.tenderCash('S-2', 'R-S-2', when)).toBe('R-S-2');
+    const second = await till.nextReceipt();
+    expect(await till.tenderCash('S-2', second, when)).toBe(second);
     // The shell's retry shape: the SAME record posted again to the box's lane socket. One sale on the disk, one in the queue.
     const record = (await readLog(edge.log.path)).map((r) => (r as { record: string }).record)[0]!;
     const again = await (await fetch(`http://127.0.0.1:${edge.lane!.port}/lane/sales`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-sre-operator': till.operatorToken()! }, body: record })).json() as { committed: boolean };
@@ -287,7 +289,8 @@ describeOrSkip('the store trades a day, connected: real API · real PostgreSQL �
     const blind = bootPos({ laneId: LANE, catalogue: served, lanePort: stranger.lane!.port, tradingDayCutoff: '00:00' });
     await signInTill(blind, CASHIER);
     blind.scanBarcode(BARCODE);
-    expect(await blind.tenderCash('S-3', 'R-S-3', new Date().toISOString())).toBe('R-S-3');
+    const third = await blind.nextReceipt();
+    expect(await blind.tenderCash('S-3', third, new Date().toISOString())).toBe(third);
     const refused = await stranger.syncOnce!();
     expect(refused.sent).toBe(0);
     expect(refused.remaining + refused.dead).toBe(1);

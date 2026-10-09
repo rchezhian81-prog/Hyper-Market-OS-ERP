@@ -28,6 +28,7 @@
 // reports a 100% margin, which is a lie that reads as very good news.
 
 /** A section of the pack: what the cloud said, or why this box does not know. */
+import type { PackReceiptSeries } from './receipt-numbers';
 import type { MigrationFeed } from '../../sync-agent/src/migration-feed';
 import type { IndentsFeed } from '../../sync-agent/src/indents-feed';
 import type { AssignmentsFeed } from '../../sync-agent/src/assignments-feed';
@@ -1139,6 +1140,11 @@ export interface StorePack {
   /** Return windows, refund thresholds and compensation limits — all per-tenant. */
   readonly servicePolicy: Register<PackServicePolicy>;
   /**
+   * Each till's reserved receipt-number range, as head office published it (M01-FR-02 · audit PF-04). The box issues a
+   * lane's numbers from its range; a lane with none here draws from the box's own sequence and says so.
+   */
+  readonly receiptSeries: Register<readonly PackReceiptSeries[]>;
+  /**
    * Every batch this box knows of, with its expiry (M10-FR-01).
    *
    * Absent means the shop does not track batches at all, and the screen says exactly that rather
@@ -1384,6 +1390,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     satisfaction: notKnown(why),
     slaPolicy: notKnown(why),
     servicePolicy: notKnown(why),
+    receiptSeries: notKnown(why),
     batches: notKnown(why),
     recalls: notKnown(why),
     expiryPolicy: notKnown(why),
@@ -1522,6 +1529,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     satisfaction: section<readonly unknown[]>('satisfaction'),
     slaPolicy: section<unknown>('slaPolicy'),
     servicePolicy: section<PackServicePolicy>('servicePolicy'),
+    receiptSeries: section<readonly PackReceiptSeries[]>('receiptSeries'),
     batches: section<readonly unknown[]>('batches'),
     recalls: section<readonly unknown[]>('recalls'),
     expiryPolicy: section<PackExpiryPolicy>('expiryPolicy'),

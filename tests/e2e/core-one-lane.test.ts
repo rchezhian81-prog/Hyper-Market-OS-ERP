@@ -87,7 +87,8 @@ describe('the core, on one lane, end to end', () => {
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY,
       EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
       // The cashier is named with till authority and has a till PIN on this box (ADR-0020).
-      ...await prepareTillBox({ dir, key: KEY, people: [{ userId: 'cashier', displayName: 'Cashier' }] }),
+      // And the till's receipt-number range, as head office publishes it (audit PF-04): its first bill is R-0001.
+      ...await prepareTillBox({ dir, key: KEY, people: [{ userId: 'cashier', displayName: 'Cashier' }], pack: { receiptSeries: [{ laneId: 'lane-1', prefix: 'R-', padTo: 4, rangeStart: 1, rangeEnd: 9999 }] } }),
     }, () => {}))!;
     await holdSignedInAt(edge.lane!.port, 'cashier');
 
@@ -101,9 +102,9 @@ describe('the core, on one lane, end to end', () => {
     expect(tz.status).toBe(200);
 
     // Ring one sale on the lane, through the loopback socket to this till's own disk — no cloud call.
-    const view = bootPos({ laneId: 'lane-1', cashierId: 'cashier', tradingDay: TRADING_DAY, durable: laneDurable(edge.lane!.port) });
+    const view = bootPos({ laneId: 'lane-1', cashierId: 'cashier', tradingDay: TRADING_DAY, durable: laneDurable(edge.lane!.port), lanePort: edge.lane!.port });
     view.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
-    const receipt = await view.tenderCash('S-1', 'R-0001', COMMITTED_AT);
+    const receipt = await view.tenderCash('S-1', await view.nextReceipt(), COMMITTED_AT);
     expect(receipt).toBe('R-0001');
   });
 
