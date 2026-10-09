@@ -14,6 +14,7 @@
 import { createHash } from 'node:crypto';
 import type { PilotFoundation, PilotCatalogue, PilotTradingPartners, PilotTransactions } from './dataset';
 import { PILOT_DEMO_BRANCH } from './dataset';
+import { assessShiftClose } from '../../../packages/till/src/assess-shift';
 
 export interface SeedResponse {
   readonly status: number;
@@ -60,7 +61,8 @@ export interface ApplyOptions {
   readonly today?: string;
 }
 
-const OK_STATUS = new Set([200, 201]);
+// 202: a fact recorded that already happened elsewhere (a relayed shift close, PF-08) — landed, like a 201.
+const OK_STATUS = new Set([200, 201, 202]);
 
 function detailOf(res: SeedResponse): string | undefined {
   const body = res.body as { error?: { code?: string; whatHappened?: string } } | undefined;
@@ -416,15 +418,23 @@ export async function applyPilotTransactions(
     );
   }
 
-  // 2. Shift closes — a clean blind count with no variance.
+  // 2. Shift closes — a clean blind count with no variance. A shift closes only at the till, through the store box
+  // (PF-08 · OB-27 "A"), so the seed relays the close exactly as a box would: the box's own figures, decided with the
+  // same rule head office re-runs.
   for (const s of data.shiftCloses) {
+    const decided = assessShiftClose({
+      openingFloatMinor: s.openingFloatMinor, cashSalesMinor: s.cashSalesMinor, pickupsMinor: s.pickupsMinor,
+      cashRefundsMinor: s.cashRefundsMinor, countedCashMinor: s.countedCashMinor, toleranceMinor: s.toleranceMinor,
+    });
     await post(
       `shift close ${s.shiftId}`,
-      `/v1/shifts/${encodeURIComponent(s.shiftId)}/close`,
+      `/v1/shifts/${encodeURIComponent(s.shiftId)}/close/synced`,
       {
-        tillId: s.tillId, cashierId: s.cashierId, tradingDay: s.tradingDay,
+        tillId: s.tillId, laneId: s.tillId, cashierId: s.cashierId, tradingDay: s.tradingDay,
+        openedAt: `${s.tradingDay}T03:30:00.000Z`, closedAt: `${s.tradingDay}T15:30:00.000Z`,
         openingFloatMinor: s.openingFloatMinor, cashSalesMinor: s.cashSalesMinor, pickupsMinor: s.pickupsMinor,
-        cashRefundsMinor: s.cashRefundsMinor, countedCashMinor: s.countedCashMinor, toleranceMinor: s.toleranceMinor,
+        cashRefundsMinor: s.cashRefundsMinor, countedMinor: s.countedCashMinor, toleranceMinor: s.toleranceMinor,
+        expectedMinor: decided.expectedMinor, varianceMinor: decided.varianceMinor, exceptionRaised: decided.exceptionRaised,
       },
       `seed-shift-${s.shiftId}`,
     );
