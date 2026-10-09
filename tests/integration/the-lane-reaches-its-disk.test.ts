@@ -66,11 +66,13 @@ const startLane = async () => {
 describe('a sale rung on the screen reaches this till\'s disk', () => {
   it('commits through the loopback socket, and the sale is on the disk afterwards', async () => {
     const edge = await startLane();
-    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durable: laneDurable(edge.lane!.port) });
+    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durable: laneDurable(edge.lane!.port), lanePort: edge.lane!.port });
 
     view.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
-    const receipt = await view.tenderCash('S-1', 'R-0001', '2026-08-05T10:00:00Z');
-    expect(receipt).toBe('R-0001');
+    // The bill's number comes from this box (audit PF-04).
+    const number = await view.nextReceipt();
+    const receipt = await view.tenderCash('S-1', number, '2026-08-05T10:00:00Z');
+    expect(receipt).toBe(number);
 
     // On the disk, whole, and readable.
     const records = await readLog(edge.log.path);
@@ -80,10 +82,10 @@ describe('a sale rung on the screen reaches this till\'s disk', () => {
 
   it('queues it for the cloud in the same breath', async () => {
     const edge = await startLane();
-    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durable: laneDurable(edge.lane!.port) });
+    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durable: laneDurable(edge.lane!.port), lanePort: edge.lane!.port });
 
     view.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
-    await view.tenderCash('S-1', 'R-0001', '2026-08-05T10:00:00Z');
+    await view.tenderCash('S-1', await view.nextReceipt(), '2026-08-05T10:00:00Z');
 
     // Durable AND queued. One without the other is a sale that either never happened or never
     // arrives — the seam found and fixed earlier today, asserted here from the screen's side.
@@ -103,8 +105,8 @@ describe('a sale rung on the screen reaches this till\'s disk', () => {
 
 describe('a refund taken on the screen reaches this till\'s disk (M13-FR-01)', () => {
   const AT = '2026-08-05T19:00:00Z';
-  const refundInput = () => ({
-    id: 'RT-1', number: 'RT-1', originalSaleId: 'S-1', processedAt: AT, reasonCode: 'damaged',
+  const refundInput = (number = 'RT-1') => ({
+    id: 'RT-1', number, originalSaleId: 'S-1', processedAt: AT, reasonCode: 'damaged',
     lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, originalQtyMinor: 1, disposition: 'resell' as const }],
     refund: money(50_00, 'INR'), refundTender: 'cash' as const,
     maxRefund: money(64_000, 'INR'), approvalThresholdMinor: 100_000,
@@ -112,9 +114,9 @@ describe('a refund taken on the screen reaches this till\'s disk (M13-FR-01)', (
 
   it('commits through the loopback socket to the RETURNS log, and queues it for the cloud', async () => {
     const edge = await startLane();
-    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durableReturn: laneDurableReturn(edge.lane!.port) });
+    const view = bootPos({ laneId: 'lane-1', cashierId: 'u-lanecash', durableReturn: laneDurableReturn(edge.lane!.port), lanePort: edge.lane!.port });
 
-    const committed = await view.till.refund(refundInput());
+    const committed = await view.till.refund(refundInput(await view.nextReceipt()));
     expect(committed.refundStatus).toBe('settled');
 
     // On the edge's OWN returns disk, whole — never the sale log.

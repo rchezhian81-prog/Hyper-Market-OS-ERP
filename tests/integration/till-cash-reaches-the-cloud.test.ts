@@ -196,12 +196,12 @@ describe('the till\'s cash reaches the cloud through the REAL edge, and is not r
     online = false;
     const edge = (await startEdge(env(), () => {}))!;
     const port = edge.lane!.port;
-    const till = bootPos({ laneId: 'lane-1', taxPercent: 0, durable: laneDurable(port), cashMovement: laneCashMovement(port), shiftClose: laneShiftClose(port), tillCash: laneTillCash(port) });
+    const till = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: port, durable: laneDurable(port), cashMovement: laneCashMovement(port), shiftClose: laneShiftClose(port), tillCash: laneTillCash(port) });
     await holdSignedInAt(port, 'u-meena');
     till.signIn('u-meena');
     expect(await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: AT, movementId: 'cm-edge-float' })).toMatchObject({ committed: true });
     till.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 48_000, qty: 1 });
-    await till.tenderCash('S-edge-1', 'R-edge-1', '2026-09-30T10:00:00.000Z');
+    await till.tenderCash('S-edge-1', await till.nextReceipt(), '2026-09-30T10:00:00.000Z');
     expect(await till.till.moveCash({ kind: 'pickup', amountMinor: 200_000, at: '2026-09-30T12:00:00.000Z', movementId: 'cm-edge-pick' })).toMatchObject({ committed: true });
     // Expected 2,000 + 480 − 2,000 = ₹480.
     expect(await till.till.close({ shiftId: 'sh-edge-1', closedAt: '2026-09-30T20:00:00.000Z', countedMinor: 48_000 })).toMatchObject({ closed: true, varianceMinor: 0 });

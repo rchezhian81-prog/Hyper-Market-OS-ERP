@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 952,
+  "testFiles": 955,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -33,10 +33,10 @@
       "id": "M01",
       "label": "WIRED",
       "counts": {
-        "unit": 18,
-        "integration": 11,
+        "unit": 19,
+        "integration": 12,
         "realDb": 3,
-        "browser": 2,
+        "browser": 3,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -56,6 +56,7 @@
           "tests/unit/persistence-config-store.test.ts",
           "tests/unit/pos-receipt-numbering.test.ts",
           "tests/unit/published-templates-pull.test.ts",
+          "tests/unit/receipt-numbers.test.ts",
           "tests/unit/receipt.test.ts",
           "tests/unit/reporting-consolidation.test.ts",
           "tests/unit/reporting-kpis-run-on-the-engine.test.ts",
@@ -68,6 +69,7 @@
           "tests/integration/document-templates.test.ts",
           "tests/integration/number-series.test.ts",
           "tests/integration/org-structure.test.ts",
+          "tests/integration/receipt-numbers-come-from-the-box.test.ts",
           "tests/integration/reporting-consolidation.test.ts",
           "tests/integration/store-pack-policy.test.ts",
           "tests/integration/the-published-receipt-template-reaches-the-till-through-the-edge.test.ts",
@@ -82,7 +84,8 @@
         ],
         "browser": [
           "tests/e2e/company-report.e2e.ts",
-          "tests/e2e/document-template-publish-delivery.e2e.ts"
+          "tests/e2e/document-template-publish-delivery.e2e.ts",
+          "tests/e2e/the-served-till-never-repeats-a-receipt-number.e2e.ts"
         ],
         "connected": [],
         "device": [],
@@ -716,9 +719,9 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 16,
+        "integration": 17,
         "realDb": 3,
-        "browser": 6,
+        "browser": 7,
         "connected": 1,
         "device": 0,
         "uat": 0
@@ -747,6 +750,7 @@
           "tests/integration/pending-tender-recovery.test.ts",
           "tests/integration/product-master.test.ts",
           "tests/integration/quotations.test.ts",
+          "tests/integration/receipt-numbers-come-from-the-box.test.ts",
           "tests/integration/restricted-sales.test.ts",
           "tests/integration/self-checkout-decisions.test.ts",
           "tests/integration/step-up-payroll-and-publish.test.ts",
@@ -766,6 +770,7 @@
         "browser": [
           "tests/e2e/core-one-lane.test.ts",
           "tests/e2e/the-served-till-closes.e2e.ts",
+          "tests/e2e/the-served-till-never-repeats-a-receipt-number.e2e.ts",
           "tests/e2e/the-served-till-takes-a-refund.e2e.ts",
           "tests/e2e/the-served-till-takes-a-sale.e2e.ts",
           "tests/e2e/the-store-trades-a-day.e2e.ts",

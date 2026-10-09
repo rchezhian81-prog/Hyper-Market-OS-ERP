@@ -315,7 +315,8 @@ function demoSession() {
     // No identity without the bundle either — the stand-in says so rather than inventing a lane or a cashier.
     signIn() {}, signOut() {}, operator: () => undefined,
     lane: () => ({ laneId: null, tradingDayCutoff: '00:00', tradingDayAt: (at) => at.slice(0, 10) }),
-    nextReceipt: () => 'R-' + Date.now().toString(36).toUpperCase(),
+    // No store computer, so no receipt numbers: the stand-in refuses to take money rather than mint one (audit PF-04).
+    nextReceipt: () => Promise.reject(Object.assign(new Error('no store computer'), { laneMessage: 'This till has no store computer to number its bills. Do not take money — tell the manager.' })),
     tenderCash: (_id, number) => Promise.resolve(number),
     tenderCardOrUpi: ({ receiptNumber, outcome }) => (outcome === 'approved'
       ? Promise.resolve(receiptNumber)
@@ -785,20 +786,15 @@ el('tender').addEventListener('click', async () => {
   const change = changeFor(Number(received));
   if (change < 0) return; // the panel already said so, in words, as they typed
 
-  // The receipt number is drawn from this lane's gap-free reserved range (M01-FR-02). If the range
-  // is spent the till stops rather than reuse a number — no money is taken, the manager is told.
-  let receiptNumber;
-  try {
-    receiptNumber = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
-  } catch {
-    tell(t('read'), t('receiptsUsedUp'));
-    return;
-  }
+  // The receipt number comes from the store computer, saved on its disk first (audit PF-04 · M01-FR-02). If it cannot
+  // give one — the range is spent, the box cannot save — the till stops: no money is taken, the manager is told.
+  const receiptNumber = await takeReceiptNumber();
+  if (receiptNumber === null) return;
   try {
     // Awaited, and the await is the guarantee: the receipt number does not exist until the sale is
     // on this till's disk (hard rule #1). There is nothing to print with before then.
     const receipt = await session.tenderCash(`S-${receiptNumber}`, receiptNumber, new Date().toISOString());
-    tell(`${t('changeDue')}: ${inr(change)}`, receipt);
+    tell(`${t('changeDue')}: ${inr(change)}`, withReceiptNotice(receipt));
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -808,6 +804,25 @@ el('tender').addEventListener('click', async () => {
     tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
   }
 });
+
+/**
+ * The next receipt number, from the store computer (audit PF-04). `null` when it gave none — the screen has then said
+ * why in the box's own words (range spent, nobody signed in, it could not save or be reached) and no money is taken.
+ */
+async function takeReceiptNumber() {
+  try {
+    return await session.nextReceipt();
+  } catch (e) {
+    tell(t('read'), e && e.refusedBecause === 'receipt_numbers_used_up' ? t('receiptsUsedUp') : (e && e.laneMessage ? e.laneMessage : t('receiptsUsedUp')));
+    return null;
+  }
+}
+
+/** The receipt, with what the box last said about the numbers (running low, or no range set up) when it said anything. */
+function withReceiptNotice(receipt) {
+  const notice = session.receiptNotice ? session.receiptNotice() : undefined;
+  return notice ? `${receipt}\n\n${notice}` : receipt;
+}
 
 /**
  * Card or UPI.
@@ -836,19 +851,14 @@ async function takeCardOrUpi(kind, payable) {
     return;
   }
 
-  let receiptNumber;
-  try {
-    receiptNumber = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
-  } catch {
-    tell(t('read'), t('receiptsUsedUp'));
-    return;
-  }
+  const receiptNumber = await takeReceiptNumber();
+  if (receiptNumber === null) return;
   try {
     const receipt = await session.tenderCardOrUpi({
       saleId: `S-${receiptNumber}`, receiptNumber,
       atIsoUtc: new Date().toISOString(), kind, outcome,
     });
-    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, receipt);
+    tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(receipt));
     session.newSale();
     void refreshBadge();
     selectedLineId = null;
@@ -1075,13 +1085,8 @@ async function startRefund() {
 
   // 6. The refund's own document number, from this lane's gap-free range, and its operation identity
   // (the idempotency key — a retry under the same id can never refund twice, RR-F03).
-  let number;
-  try {
-    number = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
-  } catch {
-    tell(t('read'), t('receiptsUsedUp'));
-    return;
-  }
+  const number = await takeReceiptNumber();
+  if (number === null) return;
   const returnId = `RT-${number}`;
 
   let outcome;
@@ -1209,15 +1214,10 @@ async function startExchange() {
   }
 
   // 6. Two documents from this lane's gap-free range: the return (the credit) and the replacement sale's receipt.
-  let number;
-  let replacementReceipt;
-  try {
-    number = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
-    replacementReceipt = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}X`;
-  } catch {
-    tell(t('read'), t('receiptsUsedUp'));
-    return;
-  }
+  const number = await takeReceiptNumber();
+  if (number === null) return;
+  const replacementReceipt = await takeReceiptNumber();
+  if (replacementReceipt === null) return;
 
   let outcome;
   try {
@@ -1310,13 +1310,8 @@ async function startNoReceiptReturn() {
   if (approval === null) return;
 
   // 6. The document number from this lane's gap-free range, and the operation identity (idempotency key, RR-F03).
-  let number;
-  try {
-    number = session.nextReceipt ? session.nextReceipt() : `R-${Date.now().toString(36).toUpperCase()}`;
-  } catch {
-    tell(t('read'), t('receiptsUsedUp'));
-    return;
-  }
+  const number = await takeReceiptNumber();
+  if (number === null) return;
   const returnId = `RT-${number}`;
 
   let outcome;

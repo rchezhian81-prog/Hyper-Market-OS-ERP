@@ -69,6 +69,7 @@ import type {
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
 import { OPERATOR_HEADER, type CheckOutcome, type SignInOutcome } from './till-operators';
 import type { GrantOutcome, ReturnCheck } from './till-approvals';
+import type { IssueOutcome, ReceiptNumberStatus, UseCheck } from './receipt-numbers';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -151,6 +152,20 @@ const LANE_OPERATOR_SIGN_OUT_ROUTE = '/lane/operator/sign-out';
  * what it is for. The box issues an approval bound to that refund — and spends it when the refund reaches the disk.
  */
 const LANE_APPROVALS_ROUTE = '/lane/approvals';
+
+/**
+ * RECEIPT NUMBERS from this box (audit PF-04 · M01-FR-02): `POST /lane/receipt-numbers` with the till's request key gives
+ * the next number for this lane, saved on this box's disk first; `GET /lane/receipt-numbers` is the lane's account —
+ * issued, used, left, and every number issued that no bill used.
+ */
+const LANE_RECEIPT_NUMBERS_ROUTE = '/lane/receipt-numbers';
+
+/** The receipt-number register this socket asks (`ReceiptNumbers`). */
+export interface LaneReceiptNumberPort {
+  issue(input: { readonly laneId: string; readonly requestKey: unknown; readonly issuedTo: string }): Promise<IssueOutcome>;
+  checkUse(input: { readonly laneId: string; readonly receiptNumber: unknown; readonly recordId: string }): UseCheck;
+  status(laneId: string): ReceiptNumberStatus;
+}
 
 /** The approval register this socket asks (`TillApprovals`). */
 export interface LaneApprovalPort {
@@ -365,6 +380,12 @@ export function startLaneServer(input: {
    * and a refund is refused before the disk unless it needs no approval or carries one this box issued for it.
    */
   readonly approvals?: LaneApprovalPort;
+  /**
+   * The receipt-number register (audit PF-04). Wired beside `operators` on every store box: the till's numbers come from
+   * here, and a sale or refund is refused before the disk unless its number is one this box issued to this lane and no
+   * other record used.
+   */
+  readonly receiptNumbers?: LaneReceiptNumberPort;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -547,6 +568,42 @@ export function startLaneServer(input: {
           send(res, 200, refused(e instanceof Error ? e.message : String(e)), cors);
         }
       })();
+      return;
+    }
+
+    // The next receipt number for this lane (audit PF-04): asked by the person signed in at this till, saved on this box's
+    // disk before it is answered. Re-asked with the same request key (a lost reply), the same number comes back.
+    if (req.method === 'POST' && pathname === LANE_RECEIPT_NUMBERS_ROUTE) {
+      const ops = input.operators;
+      const numbers = input.receiptNumbers;
+      const refused = (refusedBecause: string, laneMessage: string) => ({ issued: false, refusedBecause, laneMessage });
+      if (ops === undefined || numbers === undefined) { send(res, 404, refused('not_served', 'this box does not give receipt numbers'), cors); req.resume(); return; }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) { send(res, authRefusal.status, refused('unauthorized_request', authRefusal.reason), cors); req.resume(); return; }
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, (m: string) => refused('request_not_readable', m));
+        if (body === undefined) return;
+        if (ops.laneId.trim() === '') { send(res, 200, refused('no_lane', 'This store computer has not been told which till it is. No number was given — tell the manager.'), cors); return; }
+        // Only the person signed in at this till may draw this till's numbers.
+        const check = ops.check(operatorTokenOf(req), ops.laneId);
+        if (!check.ok) { send(res, 200, refused(check.refusedBecause, check.laneMessage), cors); return; }
+        const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+        try {
+          send(res, 200, await numbers.issue({ laneId: ops.laneId, requestKey: b['requestKey'], issuedTo: check.userId }), { ...cors, 'cache-control': 'no-store' });
+        } catch (e) {
+          send(res, 200, refused('could_not_write_durably', e instanceof Error ? e.message : String(e)), cors);
+        }
+      })();
+      return;
+    }
+    // The lane's account of its numbers — counts, the range and the unused numbers; refused to a foreign origin.
+    if (req.method === 'GET' && pathname === LANE_RECEIPT_NUMBERS_ROUTE) {
+      if (typeof req.headers.origin === 'string' && req.headers.origin !== '' && !isLoopbackOrigin(req.headers.origin)) {
+        send(res, 403, { error: 'this request did not come from this till' }, cors);
+        return;
+      }
+      if (input.operators === undefined || input.receiptNumbers === undefined) { send(res, 404, { error: 'this box does not give receipt numbers' }, cors); return; }
+      send(res, 200, input.receiptNumbers.status(input.operators.laneId), { ...cors, 'cache-control': 'no-store' });
       return;
     }
 
@@ -939,14 +996,14 @@ export function startLaneServer(input: {
     if (req.method === 'OPTIONS' && (route !== undefined || pathname === LANE_DAY_CLOSE_ROUTE || pathname === LANE_DAY_REOPEN_ROUTE || pathname === LANE_SYNC_STATUS_ROUTE || pathname === LANE_DEVICE_OUTBOX_ROUTE || pathname === LANE_DEVICE_OUTBOX_STATUS_ROUTE
       || pathname === LANE_CASH_MOVEMENTS_ROUTE || pathname === LANE_SHIFT_CLOSE_ROUTE || pathname === LANE_TILL_CASH_ROUTE
       || pathname === LANE_OPERATOR_ROUTE || pathname === LANE_OPERATOR_SIGN_IN_ROUTE || pathname === LANE_OPERATOR_SIGN_OUT_ROUTE
-      || pathname === LANE_APPROVALS_ROUTE)) {
+      || pathname === LANE_APPROVALS_ROUTE || pathname === LANE_RECEIPT_NUMBERS_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`, `POST ${LANE_APPROVALS_ROUTE}`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`, `POST ${LANE_APPROVALS_ROUTE}`, `POST ${LANE_RECEIPT_NUMBERS_ROUTE}`, `GET ${LANE_RECEIPT_NUMBERS_ROUTE}`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }
@@ -1051,6 +1108,18 @@ export function startLaneServer(input: {
           }
         }
 
+        // The bill's number (audit PF-04): one this box issued to this lane, not on another record. A sale carries it as
+        // `receiptNumber` (the till's record calls it `number`), a refund as `number`. Checked before the disk; its use is noted once the record is there.
+        let numberUse: UseCheck | undefined;
+        if (!isTag && input.receiptNumbers !== undefined && input.operators !== undefined) {
+          const r = (parsed ?? {}) as Record<string, unknown>;
+          numberUse = input.receiptNumbers.checkUse({ laneId: input.operators.laneId, receiptNumber: isReturn ? r['number'] : (r['receiptNumber'] ?? r['number']), recordId: id });
+          if (!numberUse.ok) {
+            send(res, 200, { committed: false, refusedBecause: numberUse.refusedBecause, laneMessage: numberUse.laneMessage }, cors);
+            return;
+          }
+        }
+
         try {
           // The whole of this server. `commit`/`commitReturn` writes to the disk, waits for the
           // fsync, and only then queues for the cloud — the order is the rule and it lives in the
@@ -1060,6 +1129,7 @@ export function startLaneServer(input: {
             : isReturn
               ? await input.node.commitReturn(id, JSON.stringify(parsed))
               : await input.node.commit(id, JSON.stringify(parsed));
+          if (outcome.committed && numberUse?.ok === true) await numberUse.record();
           // 200 on a refusal too: the *request* was understood, and the answer is in the body. A
           // 5xx here would make a refused sale look like a broken lane, and the cashier needs to
           // know which it is — one means use another lane, the other means try again.

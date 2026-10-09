@@ -142,10 +142,12 @@ describeOrSkip('the till exchanges goods — credit at the bill\'s own price, th
     await signInTill(till, CASHIER);
 
     // ── 2. Two customers buy a tin of ghee each, by barcode, in cash. Banked at head office.
-    for (const [saleId, receipt] of [['S-1', 'R-0001'], ['S-2', 'R-0002']] as const) {
+    // Every document number comes from this box (audit PF-04).
+    const bills: string[] = [];
+    for (const saleId of ['S-1', 'S-2']) {
       till.scanBarcode(GHEE.barcode);
       expect(till.payableMinor()).toBe(GHEE.price);
-      await till.tenderCash(saleId, receipt, new Date().toISOString());
+      bills.push(await till.tenderCash(saleId, await till.nextReceipt(), new Date().toISOString()));
       till.newSale();
     }
     expect(await edge.syncOnce!()).toMatchObject({ dead: 0, remaining: 0 });
@@ -155,27 +157,29 @@ describeOrSkip('the till exchanges goods — credit at the bill\'s own price, th
 
     // ── 3. Exchange A: the first customer wants the DEARER tin. Rung first, like any sale; the bill found by its receipt.
     till.scanBarcode(PREMIUM.barcode);
-    const billA = (await till.lookupRefund('R-0001'))!;
+    const billA = (await till.lookupRefund(bills[0]!))!;
     const back = [{ productId: GHEE.productId, uom: 'ea', quantityMinor: 1, disposition: 'resell' as const }];
     const quoteA = billA.exchange.quote(back);
     // ₹640 credited at the bill's own price against ₹700 rung → the customer pays ₹60; nothing leaves the shop → no manager.
     expect(quoteA).toMatchObject({ ok: true, returnedValueMinor: GHEE.price, replacementTotalMinor: PREMIUM.price, balance: 'top_up', balanceMinor: 6_000, appliedMinor: GHEE.price, needsApproval: false });
+    const [creditA, replacementA] = [await till.nextReceipt(), await till.nextReceipt()];
     const a = await billA.exchange.complete({
-      exchangeId: 'X-1', number: 'RT-0001', reasonCode: 'wrong_item', returnLines: back,
-      replacementSaleId: 'S-X1', replacementReceipt: 'R-0003', settlement: { topUp: { kind: 'cash' } },
+      exchangeId: 'X-1', number: creditA, reasonCode: 'wrong_item', returnLines: back,
+      replacementSaleId: 'S-X1', replacementReceipt: replacementA, settlement: { topUp: { kind: 'cash' } },
     });
-    expect(a).toMatchObject({ kind: 'done', balance: 'top_up', balanceMinor: 6_000, refundStatus: 'settled', number: 'RT-0001', replacementReceipt: 'R-0003' });
+    expect(a).toMatchObject({ kind: 'done', balance: 'top_up', balanceMinor: 6_000, refundStatus: 'settled', number: creditA, replacementReceipt: replacementA });
     till.newSale();
 
     // ── 4. Exchange B: the second customer wants the CHEAPER tin — the shop owes ₹40. At threshold 0 that needs a manager,
     //      a DIFFERENT person from the cashier (§28). Refused without, refused self-approved; nothing written either time.
     till.scanBarcode(SMALL.barcode);
-    const billB = (await till.lookupRefund('R-0002'))!;
+    const billB = (await till.lookupRefund(bills[1]!))!;
     const quoteB = billB.exchange.quote(back);
     expect(quoteB).toMatchObject({ ok: true, balance: 'refund', balanceMinor: 4_000, appliedMinor: SMALL.price, needsApproval: true });
+    const [creditB, replacementB] = [await till.nextReceipt(), await till.nextReceipt()];
     const drafted = (over: Record<string, unknown> = {}) => ({
-      exchangeId: 'X-2', number: 'RT-0002', reasonCode: 'wrong_item', returnLines: back,
-      replacementSaleId: 'S-X2', replacementReceipt: 'R-0004', settlement: { refundTender: 'cash' as const }, ...over,
+      exchangeId: 'X-2', number: creditB, reasonCode: 'wrong_item', returnLines: back,
+      replacementSaleId: 'S-X2', replacementReceipt: replacementB, settlement: { refundTender: 'cash' as const }, ...over,
     });
     expect((await billB.exchange.complete(drafted())).kind).toBe('approval_required');
     expect((await billB.exchange.complete(drafted({ approval: { by: CASHIER, reason: 'mine' } }))).kind).toBe('approval_required');

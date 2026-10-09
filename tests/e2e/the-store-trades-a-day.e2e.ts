@@ -51,6 +51,8 @@ interface PosWindow {
     hasCatalogue(): boolean;
     operator(): string | undefined;
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
+    /** The next receipt number, from the store computer (audit PF-04). */
+    nextReceipt(): Promise<string>;
     newSale(): void;
     lookupRefund(receipt: string): Promise<RefundLookup | null>;
     approveAtTill(r: { managerId: string; pin: string; kind: 'refund'; billRef: string; valueMinor: number; reason: string }): Promise<{ approved: boolean; approvalId?: string; laneMessage?: string }>;
@@ -176,12 +178,14 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     await page.keyboard.press('Enter');
     await page.waitForSelector('#lines tr');
     expect(await page.textContent('#total')).toBe('₹480.00'); // the shelf price — never the price plus GST (F15 fixed), never above the ₹500 MRP
-    expect(await page.evaluate(async ([when]) => {
+    // The bill's number comes from this box (audit PF-04).
+    const receipt = await page.evaluate(async ([when]) => {
       const w = globalThis as unknown as PosWindow;
-      const r = await w.posSession!.tenderCash('S-1', 'R-S-1', when!);
+      const r = await w.posSession!.tenderCash('S-1', await w.posSession!.nextReceipt(), when!);
       w.posSession!.newSale();
       return r;
-    }, [soldAt])).toBe('R-S-1');
+    }, [soldAt]);
+    expect(receipt).toBe('R-lane-1-000001');
     expect(edge.outbox.unsentCount()).toBe(1);
     expect((await call('GET', '/v1/sales/S-1', OWNER)).status).toBe(404);
 
@@ -193,12 +197,12 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     // The manager approves at the till with their own PIN, for this bill and this amount (ADR-0021).
     const refunded = await page.evaluate(async ([manager, managerPin]) => {
       const w = globalThis as unknown as PosWindow;
-      const bill = await w.posSession!.lookupRefund('R-S-1');
+      const bill = await w.posSession!.lookupRefund('R-lane-1-000001');
       if (bill === null) return { kind: 'not_found' } as RefundOutcome;
       const approved = await w.posSession!.approveAtTill({ managerId: manager!, pin: managerPin!, kind: 'refund', billRef: 'S-1', valueMinor: 48_000, reason: 'checked the goods' });
       if (!approved.approved) return { kind: 'approval_refused', laneMessage: approved.laneMessage } as unknown as RefundOutcome;
       return bill.submit({
-        returnId: 'RT-1', number: 'RT-0001', reasonCode: 'changed_mind',
+        returnId: 'RT-1', number: await w.posSession!.nextReceipt(), reasonCode: 'changed_mind',
         lines: [{ productId: 'p-rice', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
         refundMinor: 48_000, refundTender: 'cash', approval: { by: manager!, reason: 'checked the goods', approvalId: approved.approvalId },
       });

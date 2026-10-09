@@ -267,7 +267,8 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     const soldAt = new Date().toISOString();
     const tradingDay = tradingDateOf(soldAt, makeTradingDayRule('00:00'));
     expect(till.scanBarcode(BARCODE)).toMatchObject({ amountMinor: PRICE });
-    expect(await till.tenderCash('S-1', 'R-S-1', soldAt)).toBe('R-S-1');
+    const receipt = await till.nextReceipt(); // the bill's number, from the box (audit PF-04)
+    expect(await till.tenderCash('S-1', receipt, soldAt)).toBe(receipt);
     expect(await edge.syncOnce!()).toMatchObject({ dead: 0, remaining: 0 });
     expect((await call('GET', '/v1/sales/S-1', OWNER)).body).toMatchObject({ saleId: 'S-1', banked: true });
     expect(await onHandAt(STORE)).toBe(GOOD - 1);
@@ -319,13 +320,15 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
 
   it('two tills sell from the same shelf at once; one loses the line to head office mid-day, keeps trading from the pack it holds, and banks when the line returns — stock falls once per sale, nothing doubles, nothing is lost', async () => {
     const before = await onHandAt(STORE); // what the first case left on the shelf
-    const sold = async (edge: EdgeProcess, laneId: string, saleId: string, receipt: string): Promise<void> => {
+    const sold = async (edge: EdgeProcess, laneId: string, saleId: string): Promise<string> => {
       const served = (await servedTillCatalogue(edge))!;
       expect(served).toMatchObject({ source: 'head_office', version: 1 });
       const till = bootPos({ laneId, catalogue: served, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });
       await signInTill(till, CASHIER);
       till.scanBarcode(BARCODE);
+      const receipt = await till.nextReceipt(); // each box numbers its own lane's bills (audit PF-04)
       expect(await till.tenderCash(saleId, receipt, new Date().toISOString())).toBe(receipt);
+      return receipt;
     };
 
     // Two lanes, two boxes, one shelf — both pull the same pack from head office this morning.
@@ -340,8 +343,8 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     await stopBox(laneB);
     const cutOff = await startBox(cloud.token(BOX), { laneId: 'lane-2', dir: laneBDir, cloudUrl: 'http://127.0.0.1:9' });
     expect(cutOff.node.pack()?.snapshot.version).toBe(1);
-    await sold(laneA, 'lane-1', 'S-A1', 'R-A1');
-    await sold(cutOff, 'lane-2', 'S-B1', 'R-B1');
+    await sold(laneA, 'lane-1', 'S-A1');
+    const receiptB = await sold(cutOff, 'lane-2', 'S-B1');
     expect(cutOff.outbox.pending()[0]!.event.payload).toMatchObject({ saleId: 'S-B1', laneId: 'lane-2', locationId: STORE, totalMinor: PRICE });
     expect(await onHandAt(STORE)).toBe(before); // nothing has reached head office yet
 
@@ -352,7 +355,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     expect(await cutOff.syncOnce!()).toMatchObject({ sent: 0, dead: 0, remaining: 1 });
     expect((await call('GET', '/v1/sales/S-B1', OWNER)).status).toBe(404);
     expect(await onHandAt(STORE)).toBe(before - 1);
-    expect(await cutOff.node.lookupSale('R-B1')).toBeDefined();
+    expect(await cutOff.node.lookupSale(receiptB)).toBeDefined();
 
     // The line returns (the box restarted on the live URL): the queued sale is rebuilt from the disk, banks once, the shelf
     // falls once more, and a second pass sends nothing.

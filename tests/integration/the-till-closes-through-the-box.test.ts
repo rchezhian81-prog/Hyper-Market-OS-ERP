@@ -69,7 +69,8 @@ const cashLog = async (edge: EdgeProcess) => (await readLog(edge.tillCashLog.pat
 /** Ring one item and take exact cash for it — the till's cash tender records the payable, the change is worked out on the screen. */
 const ring = async (view: ReturnType<typeof bootPos>, saleId: string, at: string, priceMinor: number) => {
   view.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: priceMinor, qty: 1 });
-  const receipt = await view.tenderCash(saleId, `R-${saleId}`, at);
+  // The bill's number comes from the box (audit PF-04).
+  const receipt = await view.tenderCash(saleId, await view.nextReceipt(), at);
   view.newSale();
   return receipt;
 };
@@ -135,14 +136,14 @@ describe('a shift on the served till: float → sales → pickup → blind count
     const edge = await startBox({ lane: 'lane-1' });
     const till = await tillOn(edge);
     await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: minutesFromNow(-60) });
-    await ring(till, 'S-1', minutesFromNow(-30), 48_000);
+    const receipt = await ring(till, 'S-1', minutesFromNow(-30), 48_000);
     // A ₹100 cash refund on that bill goes through the box's return route — and out of the drawer.
-    const bill = await till.lookupRefund('R-S-1');
+    const bill = await till.lookupRefund(receipt);
     expect(bill).not.toBeNull();
     // The manager approves with their own PIN, for this bill and this amount (ADR-0021).
     const approval = await managerApprovesOn(till, 'u-manager', { kind: 'refund', billRef: bill!.sale.saleId, valueMinor: 10_000 });
     const refund = await bill!.submit({
-      returnId: 'RET-1', number: 'RET-0001', reasonCode: 'damaged', refundMinor: 10_000, refundTender: 'cash',
+      returnId: 'RET-1', number: await till.nextReceipt(), reasonCode: 'damaged', refundMinor: 10_000, refundTender: 'cash',
       lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'damaged' }], approval,
     });
     expect(refund.kind).toBe('settled');
