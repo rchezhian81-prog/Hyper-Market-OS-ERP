@@ -5,6 +5,7 @@ import {
   DayNotEndedError,
   UnresolvedExceptionsError,
   UnsyncedSalesError,
+  OpenShiftsError,
   ReopenApprovalRequiredError,
 } from '../../packages/day-close/src/index';
 import { makeTradingDayRule } from '../../packages/calendar/src/index';
@@ -86,7 +87,16 @@ describe('closeDay', () => {
   it('blocks close while unsent sales remain (M14-FR-04)', () => {
     const outbox = new SyncOutbox();
     expect(() => closeDay(baseClose({ unsentSyncItems: 5 }), outbox)).toThrow(UnsyncedSalesError);
+  });
+
+  it('PF-08: blocks while a till shift of the day is still open, naming the till and who holds it', () => {
+    const outbox = new SyncOutbox();
+    const open = [{ tillId: 'lane-2', custodian: 'u-meena', openedAt: '2026-08-02T03:30:00Z' }];
+    expect(() => closeDay(baseClose({ openShifts: open }), outbox)).toThrow(OpenShiftsError);
+    expect(() => closeDay(baseClose({ openShifts: open }), outbox)).toThrow(/till lane-2 \(held by u-meena/);
     expect(outbox.unsentCount()).toBe(0);
+    expect(closeDay(baseClose({ openShifts: [] }), outbox).locked).toBe(true);
+    expect(outbox.unsentCount()).toBe(1);
   });
 
   it('is idempotent on the day-close id', () => {
