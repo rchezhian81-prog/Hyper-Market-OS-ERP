@@ -32,10 +32,16 @@ const KEY = ['till', 'cross', 'origin', 'signing', 'key'].join('-').padEnd(48, '
  */
 function pageServer(laneUrl: string, operatorToken: string): Promise<{ origin: string; stop: () => Promise<void> }> {
   const html = `<!doctype html><html><body><pre id="out">…</pre><script>
-    fetch(${JSON.stringify(laneUrl)} + '/lane/sales', {
-      method: 'POST', headers: { 'content-type': 'application/json', 'x-sre-operator': ${JSON.stringify(operatorToken)} },
-      body: JSON.stringify({ id: 'S-BROWSER', number: 'R-BROWSER', total: 100, currency: 'INR', cashierId: 'u-lanecash', lines: [], tenders: [] }),
-    }).then(function (r) { return r.json(); })
+    var headers = { 'content-type': 'application/json', 'x-sre-operator': ${JSON.stringify(operatorToken)} };
+    // The bill's number first, from the box (audit PF-04) — the same cross-origin preflight — then the sale carrying it.
+    fetch(${JSON.stringify(laneUrl)} + '/lane/receipt-numbers', { method: 'POST', headers: headers, body: JSON.stringify({ requestKey: 'rq-browser' }) })
+      .then(function (r) { return r.json(); })
+      .then(function (n) {
+        return fetch(${JSON.stringify(laneUrl)} + '/lane/sales', {
+          method: 'POST', headers: headers,
+          body: JSON.stringify({ id: 'S-BROWSER', number: n.receiptNumber, total: 100, currency: 'INR', cashierId: 'u-lanecash', lines: [], tenders: [] }),
+        });
+      }).then(function (r) { return r.json(); })
       .then(function (b) { document.getElementById('out').textContent = 'OK:' + b.committed; })
       .catch(function (e) { document.getElementById('out').textContent = 'ERR:' + e; });
   </script></body></html>`;

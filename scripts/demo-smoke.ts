@@ -305,6 +305,7 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
     });
     let edge: EdgeProcess | undefined;
     let till: ReturnType<typeof bootPos> | undefined;
+    let saleReceipt = '';
     await step('the store box pulls head office\'s pack and the till is built from it', async () => {
       edge = await startBox();
       const pulled = await edge.refreshPack!();
@@ -324,7 +325,9 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
       must(float.committed === true, 'the float was not committed on the box');
       const scanned = till!.scanBarcode(BARCODE);
       must(scanned !== undefined && (scanned as { amountMinor?: number }).amountMinor === PRICE, `the scan priced ${JSON.stringify(scanned)}`);
-      must((await till!.tenderCash(`${run}-S-1`, `${run}-R-S-1`, at(5))) === `${run}-R-S-1`, 'the cash tender did not complete');
+      // The bill's number comes from the box, saved on its disk first (audit PF-04).
+      saleReceipt = await till!.nextReceipt();
+      must((await till!.tenderCash(`${run}-S-1`, saleReceipt, at(5))) === saleReceipt, 'the cash tender did not complete');
       till!.newSale();
       must(edge!.outbox.unsentCount() >= 1, 'nothing is queued for head office after the sale');
       salePayload = edge!.outbox.pending().find((i) => i.event.type === 'SaleCommitted')?.event.payload as Record<string, unknown> | undefined;
@@ -339,13 +342,13 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
       return `₹${PRICE / 100} banked; floor ${GOOD - 1}; valuation ${(GOOD - 1)} × cost`;
     });
     await step('an eligible RESALE return (manager-approved) refunds the cash and puts the unit back on the shelf', async () => {
-      const bill = await till!.lookupRefund(`${run}-R-S-1`);
+      const bill = await till!.lookupRefund(saleReceipt);
       must(bill !== null && bill.maxRefundMinor === PRICE, 'the bill was not found on the box or allows the wrong refund');
       // The manager approves at the till with their own PIN, for this bill and this amount (ADR-0021).
       const approved = await till!.approveAtTill({ managerId: cast.manager, pin: smokeManagerPin, kind: 'refund', billRef: `${run}-S-1`, valueMinor: PRICE, reason: 'checked the goods' });
       must(approved.approved, `the box did not give the manager's approval: ${approved.approved ? '' : approved.laneMessage}`);
       const refunded = await bill!.submit({
-        returnId: `${run}-RT-1`, number: `${run}-RT-0001`, reasonCode: 'changed_mind',
+        returnId: `${run}-RT-1`, number: await till!.nextReceipt(), reasonCode: 'changed_mind',
         lines: [{ productId: PRODUCT, uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
         refundMinor: PRICE, refundTender: 'cash',
         approval: { by: cast.manager, reason: 'checked the goods', ...(approved.approved ? { approvalId: approved.approvalId } : {}) },

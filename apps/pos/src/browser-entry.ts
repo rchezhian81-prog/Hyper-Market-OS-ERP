@@ -15,7 +15,6 @@ import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import type { SaleLookupResult } from '../../../edge/store-edge/src/receipt-lookup';
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { CatalogueCache, type CatalogueSnapshot } from '../../../packages/catalogue/src/catalogue';
-import { ReservedRangeAllocator } from '../../../packages/numbering/src/numbering';
 import { money } from '../../../packages/contracts/src/money';
 import type { TenderKind } from '../../../packages/contracts/src/enums';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
@@ -56,17 +55,31 @@ if (demoBannerDoc !== undefined && demoBannerDoc !== null) {
 }
 
 /**
- * This lane's reserved receipt-number range (M01-FR-02), provisioned per lane in the signed local
- * config pack. Two offline lanes drawing from DISTINCT ranges can never mint the same receipt
- * number, so the day's numbers stay gap-free and collision-free with no network (audit GAP-SYNC-02).
- * The range is reconciled/refreshed on sync — a follow-on that rides the inbound pack path (SYNC-01).
+ * The store computer's answer to "the next receipt number for this till" (audit PF-04 · M01-FR-02). The box issues it
+ * from the lane's published range (else its own sequence for the lane, and says so) and has it on its disk before it
+ * answers — so a reload, a second tab or a restart of the box never number a bill again from 1.
  */
-export interface PosReceiptSeries {
-  readonly prefix: string;
-  readonly padTo: number;
-  readonly rangeStart: number;
-  readonly rangeEnd: number;
+export interface ReceiptNumberAnswer {
+  readonly issued: boolean;
+  readonly receiptNumber?: string;
+  readonly remaining?: number;
+  readonly runningLow?: boolean;
+  readonly source?: 'published' | 'this_box';
+  readonly refusedBecause?: string;
+  readonly laneMessage?: string;
 }
+/** Ask for the next number under a request key; the same key re-asked gets the same number. */
+export type ReceiptNumberPort = (requestKey: string) => Promise<ReceiptNumberAnswer>;
+
+/** The till could not get a receipt number from its store computer — no money may be taken. */
+export class ReceiptNumberRefusedError extends Error {
+  constructor(readonly refusedBecause: string, readonly laneMessage: string) {
+    super(laneMessage);
+    this.name = 'ReceiptNumberRefusedError';
+  }
+}
+
+const UNREACHABLE_NUMBER = 'This till cannot reach its store computer for a receipt number. Do not take money — tell the manager and use another lane.';
 
 /**
  * The RECEIPT template head office published, as the store box last pulled it (M01-FR-02 · §31). Injected by
@@ -109,7 +122,6 @@ interface PosWindow {
   /** The lane's cached catalogue snapshot, injected by the edge before boot (§31). */
   posCatalogue?: CatalogueSnapshot;
   /** This lane's reserved receipt-number range, injected by the edge before boot (per lane). */
-  posReceiptSeries?: PosReceiptSeries;
   /** The receipt template in force, injected by the edge before boot when this box has pulled one (M01-FR-02). */
   posReceiptTemplate?: PosReceiptTemplate;
   /** The refund policy the box's store pack carries — approval threshold + no-receipt cap — injected by the edge before
@@ -240,6 +252,39 @@ export function laneApprovals(port: number = DEFAULT_LANE_PORT): TillApprovalPor
         return { approved: false, refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_APPROVAL };
       }
     },
+  };
+}
+
+/** A request key for one number: unique to this ask, re-sent unchanged only when the reply was lost. */
+function newRequestKey(): string {
+  const bytes = new Uint8Array(12);
+  globalThis.crypto.getRandomValues(bytes);
+  return `rq-${Date.now().toString(36)}-${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * The next receipt number from this till's own store computer (audit PF-04). Asked with the cashier's session; a reply
+ * lost on the way back is asked again ONCE with the same request key, which the box answers with the same number.
+ */
+export function laneReceiptNumbers(port: number = DEFAULT_LANE_PORT): ReceiptNumberPort {
+  const ask = async (requestKey: string): Promise<ReceiptNumberAnswer> => {
+    const response = await fetch(`${laneBase(port)}/lane/receipt-numbers`, {
+      method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ requestKey }),
+    });
+    const front = FRONT_REFUSED[response.status];
+    if (front !== undefined) return { issued: false, ...front };
+    return await response.json() as ReceiptNumberAnswer;
+  };
+  return async (requestKey) => {
+    try {
+      return await ask(requestKey);
+    } catch {
+      try {
+        return await ask(requestKey);
+      } catch {
+        return { issued: false, refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_NUMBER };
+      }
+    }
   };
 }
 
@@ -545,8 +590,8 @@ export function bootPos(config?: {
   cashMovement?: CashMovementWrite;
   shiftClose?: ShiftCloseWrite;
   tillCash?: TillCashRead;
-  /** This lane's reserved receipt-number range (M01-FR-02), provisioned per lane. */
-  receipt?: PosReceiptSeries;
+  /** The till's receipt-number call to its box (audit PF-04). Overridable for tests; production asks this till's own edge. */
+  receiptNumbers?: ReceiptNumberPort;
   /** The receipt template in force as the box last pulled it (M01-FR-02); absent = print with defaults, stamp no version. */
   receiptTemplate?: PosReceiptTemplate;
   /**
@@ -564,13 +609,16 @@ export function bootPos(config?: {
   approvalPort?: TillApprovalPort;
 }): PosView & {
   readonly till: ReturnType<typeof createTillSession>;
-  /** The next receipt number for this lane — gap-free within its reserved range. Throws when the
-   * range is exhausted (the lane must obtain a fresh range on sync); the caller must then take no
-   * money. Without a provisioned range (a standalone/demo shell) a timestamp is returned, which is
-   * NOT collision-safe across lanes and is only for a single unprovisioned till. */
-  readonly nextReceipt: () => string;
-  /** How many receipt numbers remain in this lane's range, or Infinity when unprovisioned. */
-  readonly receiptsRemaining: () => number;
+  /**
+   * The next receipt number for this lane, from the store computer (audit PF-04): saved on the box before it is given,
+   * so a reload or a second tab never repeats one. Rejects with `ReceiptNumberRefusedError` (the range is spent, nobody
+   * is signed in, the box cannot save or cannot be reached) — the caller must then take no money.
+   */
+  readonly nextReceipt: () => Promise<string>;
+  /** How many numbers the box said are left in this lane's range at the last answer; `undefined` before the first. */
+  readonly receiptsRemaining: () => number | undefined;
+  /** What the box said about the numbers at the last answer (running low, or no range published) — or `undefined`. */
+  readonly receiptNotice: () => string | undefined;
   /** Look up a bill this lane rang, for the refund screen — or `null` if it did not ring it. */
   readonly lookupRefund: (receipt: string) => Promise<RefundLookup | null>;
   /** The return-without-a-receipt surface (SP-9b-i · M13-FR-01) — or `null` when this till may not offer one: no
@@ -655,18 +703,21 @@ export function bootPos(config?: {
     },
   );
 
-  // Receipt numbering (M01-FR-02). A provisioned reserved range gives gap-free, collision-free
-  // numbers across offline lanes; the allocator throws when the range is spent, which the shell
-  // surfaces as a safe-stop (take no money) rather than reusing a number. Absent a provisioned range
-  // this is a standalone/demo shell, so a timestamp stands in — explicitly NOT collision-safe.
-  const receiptAllocator = config?.receipt === undefined ? undefined : new ReservedRangeAllocator(
-    { prefix: config.receipt.prefix, padTo: config.receipt.padTo },
-    { start: config.receipt.rangeStart, end: config.receipt.rangeEnd },
-  );
-  const nextReceipt = (): string => (receiptAllocator === undefined
-    ? `R-${Date.now().toString(36).toUpperCase()}`
-    : receiptAllocator.allocate().formatted);
-  const receiptsRemaining = (): number => receiptAllocator?.remaining() ?? Number.POSITIVE_INFINITY;
+  // Receipt numbering (audit PF-04 · M01-FR-02). The store computer issues each number and has it on its disk before the
+  // till hears it, so a reload, a second tab or a restart continue from where the box is — never from 1, never a
+  // timestamp. A refusal (range spent, nobody signed in, the box cannot save) means no money is taken.
+  const receiptNumbers = config?.receiptNumbers ?? laneReceiptNumbers(config?.lanePort ?? DEFAULT_LANE_PORT);
+  let lastNumberAnswer: ReceiptNumberAnswer | undefined;
+  const nextReceipt = async (): Promise<string> => {
+    const answer = await receiptNumbers(newRequestKey());
+    if (answer.issued !== true || typeof answer.receiptNumber !== 'string' || answer.receiptNumber === '') {
+      throw new ReceiptNumberRefusedError(answer.refusedBecause ?? 'not_issued', answer.laneMessage ?? UNREACHABLE_NUMBER);
+    }
+    lastNumberAnswer = answer;
+    return answer.receiptNumber;
+  };
+  const receiptsRemaining = (): number | undefined => lastNumberAnswer?.remaining;
+  const receiptNotice = (): string | undefined => lastNumberAnswer?.laneMessage;
 
   // The refund screen's surface. Look up a bill this lane rang, then hand the screen a small object
   // that can show what is returnable and complete the refund — the money rules stay in the tested
@@ -906,7 +957,7 @@ export function bootPos(config?: {
     tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
   });
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill });
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
@@ -921,7 +972,6 @@ if (browserWindow !== undefined) {
     catalogue: browserWindow.posCatalogue,
     ...(lane?.laneId === undefined || lane.laneId === null || lane.laneId === '' ? {} : { laneId: lane.laneId }),
     ...(lane === undefined ? {} : { tradingDayCutoff: lane.tradingDayCutoff }),
-    ...(browserWindow.posReceiptSeries === undefined ? {} : { receipt: browserWindow.posReceiptSeries }),
     ...(browserWindow.posReceiptTemplate === undefined ? {} : { receiptTemplate: browserWindow.posReceiptTemplate }),
     // The refund policy the box was given (SP-9b-i): without it the till offers no return without a receipt.
     ...(browserWindow.posRefundPolicy === undefined ? {} : { refundPolicy: browserWindow.posRefundPolicy }),

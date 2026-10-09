@@ -33,6 +33,8 @@ interface PosWindow {
   readonly posSession?: {
     scan(item: { productId: string; description: string; unitPriceMinor: number; qty: number }): void;
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
+    /** The next receipt number, from the store computer (audit PF-04). */
+    nextReceipt(): Promise<string>;
     signInAtTill(input: { staffId?: string; pin?: string }): Promise<{ signedIn: boolean; laneMessage?: string }>;
     operator(): string | undefined;
   };
@@ -83,9 +85,10 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
       const signedIn = await w.posSession!.signInAtTill({ staffId: 'u-lanecash', pin });
       if (!signedIn.signedIn) throw new Error(signedIn.laneMessage);
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
-      return w.posSession!.tenderCash('S-1', 'R-0001', '2026-08-28T10:00:00Z');
+      // The bill's number comes from this box (audit PF-04): no range is published here, so the box's own sequence.
+      return w.posSession!.tenderCash('S-1', await w.posSession!.nextReceipt(), '2026-08-28T10:00:00Z');
     }, pinOf('u-lanecash'));
-    expect(receipt).toBe('R-0001');
+    expect(receipt).toBe('R-lane-1-000001');
 
     // The sale is durably on this box's disk — the commit crossed from the screen's port to the
     // socket's, and the socket accepted it (increment 1) and wrote it before answering.
@@ -197,9 +200,9 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and takes 
     const receipt = await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
-      return w.posSession!.tenderCash('S-H1', 'R-H001', '2026-08-28T11:00:00Z');
+      return w.posSession!.tenderCash('S-H1', await w.posSession!.nextReceipt(), '2026-08-28T11:00:00Z');
     });
-    expect(receipt).toBe('R-H001');
+    expect(receipt).toBe('R-lane-1-000001');
     const records = await readLog(edge.log.path);
     expect(records).toHaveLength(1);
     expect(records[0]?.ok === true && JSON.parse(records[0].record)).toMatchObject({ cashierId: 'u-lanecash', operatorVerified: { userId: 'u-lanecash', via: 'verified_sign_in' } });

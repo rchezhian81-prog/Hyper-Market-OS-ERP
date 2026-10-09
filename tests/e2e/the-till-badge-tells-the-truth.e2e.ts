@@ -35,6 +35,8 @@ interface PosWindow {
   readonly posSession?: {
     scan(item: { productId: string; description: string; unitPriceMinor: number; qty: number }): void;
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
+    /** The next receipt number, from the store computer (audit PF-04). */
+    nextReceipt(): Promise<string>;
     signIn(cashierId: string): void;
     operator(): string | undefined;
   };
@@ -89,7 +91,7 @@ describe.skipIf(!HAVE_BROWSER)('the served till\'s sync badge shows what the box
     await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
       w.posSession!.scan({ productId: 'P1', description: 'Aachi Sambar Powder 200g', unitPriceMinor: 6_500, qty: 1 });
-      await w.posSession!.tenderCash('S-1', 'R-0001', '2026-09-29T10:00:00Z');
+      await w.posSession!.tenderCash('S-1', await w.posSession!.nextReceipt(), '2026-09-29T10:00:00Z');
     });
     expect(edge.outbox.unsentCount()).toBe(1);
     await page.evaluate(() => (globalThis as unknown as PosWindow).posBadge!.refresh());

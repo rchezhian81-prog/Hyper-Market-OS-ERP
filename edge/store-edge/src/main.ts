@@ -74,6 +74,7 @@ import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-serv
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
 import { TillOperators, loadTillCredentials } from './till-operators';
 import { TillApprovals } from './till-approvals';
+import { ReceiptNumbers } from './receipt-numbers';
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
 import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
@@ -1084,6 +1085,23 @@ export async function startEdge(
     operators: tillOperators,
     approvalThresholdMinor: () => (pack.servicePolicy.known ? pack.servicePolicy.value.approvalThresholdMinor : null),
   });
+  // RECEIPT NUMBERS (audit PF-04 · M01-FR-02): issued by this box from the lane's published range (else its own sequence,
+  // said aloud), on its disk before the till hears them, and bound to the record that used them. The numbers already on
+  // the sales and refunds logs count as used, so a crash between a record and its "used" line frees nothing.
+  const receiptNumbers = tillOperators === null ? null : await ReceiptNumbers.open({
+    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    published: () => (pack.receiptSeries.known ? pack.receiptSeries.value : null),
+    committed: [
+      ...(await readLog(log.path)).flatMap((r) => {
+        if (!r.ok) return [];
+        try { const x = JSON.parse(r.record) as { id?: unknown; receiptNumber?: unknown; number?: unknown }; const n = x.receiptNumber ?? x.number; return typeof n === 'string' && typeof x.id === 'string' ? [{ receiptNumber: n, recordId: x.id }] : []; } catch { return []; }
+      }),
+      ...(await readLog(returnsLog.path)).flatMap((r) => {
+        if (!r.ok) return [];
+        try { const x = JSON.parse(r.record) as { returnId?: unknown; id?: unknown; number?: unknown }; const id = typeof x.returnId === 'string' ? x.returnId : x.id; return typeof x.number === 'string' && typeof id === 'string' ? [{ receiptNumber: x.number, recordId: id }] : []; } catch { return []; }
+      }),
+    ],
+  });
   if (tillOperators !== null) {
     say(trustForwardedTillUser
       ? 'till sign-in: the person the hosted sign-in names (EDGE_LANE_TRUST_FORWARDED_USER) — only right behind the hosted front.'
@@ -1103,6 +1121,13 @@ export async function startEdge(
         signOut: (token) => tillOperators.signOut(token),
         // The box's seal on who it verified (ADR-0023), under its own key and this box's tenant.
         seal: (subject) => sealTillFact(sealKey, { ...subject, tenantId }),
+      },
+    }),
+    ...(receiptNumbers === null ? {} : {
+      receiptNumbers: {
+        issue: (i) => receiptNumbers.issue(i),
+        checkUse: (i) => receiptNumbers.checkUse(i),
+        status: (laneId) => receiptNumbers.status(laneId),
       },
     }),
     ...(tillApprovals === null ? {} : {
@@ -1430,6 +1455,7 @@ export async function startEdge(
         if (screens !== null) await screens.stop();
         if (devices !== null) await devices.stop();
         if (enrolments !== null) await enrolments.close();
+        if (receiptNumbers !== null) await receiptNumbers.close();
         await log.close();
         await returnsLog.close();
         await completionsLog.close();
@@ -1901,6 +1927,7 @@ export async function startEdge(
       if (screens !== null) await screens.stop();
       if (devices !== null) await devices.stop();
       if (enrolments !== null) await enrolments.close();
+      if (receiptNumbers !== null) await receiptNumbers.close();
       await log.close();
       await returnsLog.close();
       await completionsLog.close();

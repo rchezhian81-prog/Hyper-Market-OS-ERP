@@ -97,6 +97,19 @@ export async function signInAtLane(port: number, staffId: string, pin: string = 
 export const operatorHeader = (token: string): Record<string, string> => ({ 'x-sre-operator': token });
 
 /**
+ * The next receipt number from a real box's register (audit PF-04), asked with a signed-in session — what the till's own
+ * `nextReceipt` does — for a test that posts records to the lane socket directly. A bill must carry a number the box gave.
+ */
+export async function receiptNumberAt(port: number, token: string, requestKey: string = `rq-test-${Math.random().toString(36).slice(2)}`): Promise<string> {
+  const res = await fetch(`http://127.0.0.1:${port}/lane/receipt-numbers`, {
+    method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeader(token) }, body: JSON.stringify({ requestKey }),
+  });
+  const body = await res.json() as { issued?: boolean; receiptNumber?: string; laneMessage?: string };
+  if (body.issued !== true || typeof body.receiptNumber !== 'string') throw new Error(`no receipt number: ${body.laneMessage ?? res.status}`);
+  return body.receiptNumber;
+}
+
+/**
  * Sign a person in on a real box and hand the session to this page's lane writes — what the till page's own sign-in
  * does (`signInAtTill`), for a test that drives the lane ports directly. Resolves the token.
  */

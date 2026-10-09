@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
-import { prepareTillBox, signInAtLane, operatorHeader, pinOf, testPin } from '../support/till-operator';
+import { prepareTillBox, signInAtLane, operatorHeader, pinOf, testPin, receiptNumberAt } from '../support/till-operator';
 
 /**
  * **The person on a sale is the person the store computer verified — offline (ADR-0020 · Wave 2b · audit PF-02 ·
@@ -46,7 +46,10 @@ const post = async (edge: EdgeProcess, path: string, body: unknown, headers: Rec
   const res = await fetch(`http://127.0.0.1:${edge.lane!.port}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
   return { status: res.status, body: await res.json() as Record<string, unknown> };
 };
-const sale = (id: string, cashierId: string) => ({ id, number: `R-${id}`, total: 48_000, cashierId, lines: [], tenders: [] });
+const sale = (id: string, cashierId: string, number = `R-${id}`) => ({ id, number, total: 48_000, cashierId, lines: [], tenders: [] });
+/** A sale carrying a number this box gave the signed-in person (audit PF-04) — what the till's own sale carries. */
+const numberedSale = async (edge: EdgeProcess, who: Record<string, string>, id: string, cashierId: string) =>
+  sale(id, cashierId, await receiptNumberAt(edge.lane!.port, who['x-sre-operator']!));
 const saleRecords = async (edge: EdgeProcess) => (await readLog(edge.log.path)).flatMap((r) => (r.ok ? [JSON.parse(r.record) as Record<string, unknown>] : []));
 
 describe('a sale names the person the box verified — never a typed name', () => {
@@ -64,7 +67,7 @@ describe('a sale names the person the box verified — never a typed name', () =
     const meena = operatorHeader(await signInAtLane(edge.lane!.port, 'u-meena'));
     const wrong = await post(edge, '/lane/sales', sale('S-ravi', 'u-ravi'), meena);
     expect(wrong.body).toMatchObject({ committed: false, refusedBecause: 'operator_not_the_one_named', laneMessage: expect.stringMatching(/Meena is signed in at this till/) });
-    const right = await post(edge, '/lane/sales', sale('S-meena', 'u-meena'), meena);
+    const right = await post(edge, '/lane/sales', await numberedSale(edge, meena, 'S-meena', 'u-meena'), meena);
     expect(right.body).toMatchObject({ committed: true });
     const records = await saleRecords(edge);
     expect(records).toHaveLength(1);
@@ -74,8 +77,9 @@ describe('a sale names the person the box verified — never a typed name', () =
   it('the same sale re-sent after a lost reply is "already recorded" — the stamp carries no clock, so the replay is not a conflict', async () => {
     const edge = await startBox();
     const meena = operatorHeader(await signInAtLane(edge.lane!.port, 'u-meena'));
-    expect((await post(edge, '/lane/sales', sale('S-twice', 'u-meena'), meena)).body).toMatchObject({ committed: true });
-    const again = await post(edge, '/lane/sales', sale('S-twice', 'u-meena'), meena);
+    const twice = await numberedSale(edge, meena, 'S-twice', 'u-meena');
+    expect((await post(edge, '/lane/sales', twice, meena)).body).toMatchObject({ committed: true });
+    const again = await post(edge, '/lane/sales', twice, meena);
     expect(again.body).toMatchObject({ committed: true, laneMessage: 'This sale was already recorded.' });
     expect(await saleRecords(edge)).toHaveLength(1);
   });
@@ -132,7 +136,7 @@ describe('signing in through the box\'s socket', () => {
     await first.stop();
     stops.splice(0);
     const second = await startBox({ dir });
-    expect((await post(second, '/lane/sales', sale('S-after-restart', 'u-meena'), keep)).body).toMatchObject({ committed: true });
+    expect((await post(second, '/lane/sales', await numberedSale(second, keep, 'S-after-restart', 'u-meena'), keep)).body).toMatchObject({ committed: true });
     const log = await readFile(join(dir, 'till-operators.log'), 'utf8');
     expect(log).not.toContain(pinOf('u-meena'));
     expect(log).not.toContain(keep['x-sre-operator']!);
@@ -155,7 +159,8 @@ describe('the hosted copy\'s verified sign-in — only where its overlay switche
     expect(status['signInBy']).toBe('verified_sign_in');
     const signed = await post(edge, '/lane/operator/sign-in', {}, { 'x-sre-user': 'u-meena' });
     expect(signed.body).toMatchObject({ signedIn: true, userId: 'u-meena', via: 'verified_sign_in' });
-    const sold = await post(edge, '/lane/sales', sale('S-hosted', 'u-meena'), operatorHeader(String(signed.body['token'])));
+    const hosted = operatorHeader(String(signed.body['token']));
+    const sold = await post(edge, '/lane/sales', await numberedSale(edge, hosted, 'S-hosted', 'u-meena'), hosted);
     expect(sold.body).toMatchObject({ committed: true });
     expect((await saleRecords(edge))[0]).toMatchObject({ operatorVerified: { userId: 'u-meena', via: 'verified_sign_in' } });
     expect((await post(edge, '/lane/operator/sign-in', {}, { 'x-sre-user': 'u-floor' })).body).toMatchObject({ signedIn: false, refusedBecause: 'no_till_authority' });

@@ -51,6 +51,8 @@ interface PosWindow {
   readonly posSession?: {
     scan(item: { productId: string; description: string; unitPriceMinor: number; qty: number }): void;
     tenderCash(saleId: string, receiptNumber: string, atIsoUtc: string): Promise<string>;
+    /** The next receipt number, from the store computer (audit PF-04). */
+    nextReceipt(): Promise<string>;
     signIn(cashierId: string): void;
     operator(): string | undefined;
     newSale(): void;
@@ -124,14 +126,16 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
       const w = globalThis as unknown as PosWindow;
       // Ring one item and take cash — a bill to refund against.
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
-      await w.posSession!.tenderCash('S-1', 'R-0001', '2026-08-28T10:00:00Z');
+      // The bill's number comes from this box (audit PF-04).
+      const receipt = await w.posSession!.nextReceipt();
+      await w.posSession!.tenderCash('S-1', receipt, '2026-08-28T10:00:00Z');
 
       // Find the bill by its receipt number — the cross-origin lookup, from the box's own log.
-      const bill = await w.posSession!.lookupRefund('R-0001');
+      const bill = await w.posSession!.lookupRefund(receipt);
       if (bill === null) return { found: false } as const;
 
       const draft = {
-        returnId: 'RT-1', number: 'RT-0001', reasonCode: 'damaged',
+        returnId: 'RT-1', number: await w.posSession!.nextReceipt(), reasonCode: 'damaged',
         lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
         // The whole bill back: the amount actually paid — the ₹640 shelf price, the 18% GST INSIDE it (A9; F15 fixed) —
         // which is what the screen offers as the ceiling.
@@ -201,13 +205,14 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const result = await page.evaluate(async (managerPin) => {
       const w = globalThis as unknown as PosWindow;
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
-      await w.posSession!.tenderCash('S-3', 'R-0003', '2026-08-28T10:10:00Z');
-      const bill = await w.posSession!.lookupRefund('R-0003');
+      const receipt = await w.posSession!.nextReceipt();
+      await w.posSession!.tenderCash('S-3', receipt, '2026-08-28T10:10:00Z');
+      const bill = await w.posSession!.lookupRefund(receipt);
       if (bill === null) return { found: false } as const;
       // Store credit chosen: the draft carries the customer it belongs to (M13-FR-03). Offline, store
       // credit settles at the lane like cash — the credit is issued at the cloud when it reconciles.
       const out = await bill.submit({
-        returnId: 'RT-3', number: 'RT-0003', reasonCode: 'customer_changed_mind',
+        returnId: 'RT-3', number: await w.posSession!.nextReceipt(), reasonCode: 'customer_changed_mind',
         lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
         refundMinor: 64_000, refundTender: 'store_credit',
         approval: await (async () => {
@@ -378,7 +383,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
-      await w.posSession!.tenderCash('S-1', 'R-0001', '2026-08-28T10:00:00Z');
+      await w.posSession!.tenderCash('S-1', await w.posSession!.nextReceipt(), '2026-08-28T10:00:00Z');
       w.posSession!.newSale(); // the shell clears the bill after every sale; done here because the sale was rung from the test
     });
 
@@ -395,7 +400,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
 
     // The bill, by its receipt number (scanned off the customer's slip).
     await sheetTitled(page, 'Scan the receipt, or key the bill number');
-    await page.keyboard.type('R-0001');
+    await page.keyboard.type('R-lane-1-000001'); // the bill's number, as this box gave it (audit PF-04)
     await page.keyboard.press('Enter');
 
     // Which item is coming back (one tin, still returnable), how many, why, in what condition.
@@ -491,11 +496,12 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till serves its own screen and gives 
     const outcome = await page.evaluate(async () => {
       const w = globalThis as unknown as PosWindow;
       w.posSession!.scan({ productId: 'P1', description: 'Amul Ghee Gold 1L', unitPriceMinor: 64_000, qty: 1 });
-      await w.posSession!.tenderCash('S-2', 'R-0002', '2026-08-28T10:05:00Z');
-      const bill = await w.posSession!.lookupRefund('R-0002');
+      const receipt = await w.posSession!.nextReceipt();
+      await w.posSession!.tenderCash('S-2', receipt, '2026-08-28T10:05:00Z');
+      const bill = await w.posSession!.lookupRefund(receipt);
       // No approval supplied — the §28 guard must refuse before any money moves.
       return bill!.submit({
-        returnId: 'RT-2', number: 'RT-0002', reasonCode: 'damaged',
+        returnId: 'RT-2', number: await w.posSession!.nextReceipt(), reasonCode: 'damaged',
         lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
         refundMinor: 64_000, refundTender: 'cash',
       });

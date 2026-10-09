@@ -36,6 +36,51 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   goods at the store computer; with a good reading the goods no longer wait for a second manager.
 - **Next:** SF-07 part 3 — the reading on the warehouse handheld.
 
+## Wave 4 · PF-04 — receipt numbers come from the store computer and are never repeated (9 October 2026)
+
+- **The audit's finding:** the till counted its bill numbers in the browser's memory.
+  - Reloading the till restarted the count, so two bills could carry the same number.
+  - A second tab counted separately.
+  - The served till was never given a range at all, so it made numbers up from the clock (`R-MV0GPRPD`).
+- **What changed:**
+  - The store computer now gives out every bill and refund number, and saves it to its own disk before the till hears
+    it. A reload, a second tab or a restart of the store computer carry on from where it is, never from the start.
+  - A reply lost on the way back is asked again under the same request, and gets the same number, not a second one.
+  - Each till draws from the range head office publishes for it, a new `receiptSeries` section of the store pack.
+  - A range that is used up refuses: the till says "do not take money". One running low says so on the receipt
+    message.
+  - When a bill or refund is saved, its number must be one this store computer gave to this till, and not already on
+    another bill. Otherwise it is refused before anything is saved.
+  - Numbers given out but never used stay listed, with who asked and when: `GET /lane/receipt-numbers` shows issued,
+    used, left and the unused list. A gap is visible, never silent.
+  - The till screen never makes up a number any more.
+- **Proved:**
+  - Integration on a real store computer (10): the audit's reload case; two tabs at once; a restart; a lost reply; nobody
+    signed in; running low then used up; no range published; a made-up number refused; a number reused on another bill
+    refused; the account lists the unused number.
+  - Unit (7): a register that cannot write gives no number; per-lane ranges; numbers already on the sales log count as
+    used after a crash; the till takes only the box's number, invents none, and stops when the box gives none.
+  - Browser (real Chromium): bill, reload, bill, second tab, bill gives R-L1-0001, 0002, 0003, each on the disk once.
+  - On the old code the new tests fail; the browser case shows the till inventing `R-MV0GPRPD`.
+  - Full gate: 10,375 unit and integration, 31 performance and 256 browser tests pass.
+  - About 20 older tests rang sales with made-up numbers. They now ask the store computer, as the real till does. The
+    demo smoke script does the same.
+- **Owner decision needed (OB-22), with my recommendation:** what a till does when head office has not yet published a
+  receipt-number range for it.
+  - **A (recommended, built now):** the store computer numbers that till's bills itself (`R-<till>-000001` upwards),
+    still saved and never repeated. Every answer and the store computer's account say "Head office has not set up a
+    receipt-number range for this till yet". The demo till keeps trading, because its pack has no range today.
+    Consequence: two shops whose tills share a name could produce the same number until head office publishes ranges
+    (DF-3).
+  - **B:** refuse every sale on such a till until a range is published. Consequence: the demo till stops taking sales
+    after this release until the administrator rebuilds the demo store pack with a range.
+- **Not yet / honest limits:**
+  - Head office does not yet publish ranges from a screen. They come from the store pack file until head-office pack
+    delivery (DF-3 / PA-06).
+  - A number given out but never used (the till was closed between asking and saving) is a visible gap, not reused.
+  - Staff UAT (SP-10) pending.
+- **Next:** PF-05 — a held bill survives a reload.
+
 ## Wave 4 · SF-01-b (offers) — a launched offer is the offer the till gives (9 October 2026)
 
 - **The audit's finding, in four breaks:**

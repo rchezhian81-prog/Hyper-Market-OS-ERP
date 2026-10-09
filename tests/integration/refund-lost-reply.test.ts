@@ -10,7 +10,7 @@ import { Ledger, InMemoryLedgerStore } from '../../packages/ledger/src/ledger';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { money } from '../../packages/contracts/src/money';
 import type { CommitOutcome } from '../../edge/store-edge/src/durability';
-import { prepareTillBox, holdSignedInAt } from '../support/till-operator';
+import { prepareTillBox, holdSignedInAt, receiptNumberAt } from '../support/till-operator';
 
 /**
  * **RR-F02 — a lost reply is not a definite failure.**
@@ -47,11 +47,13 @@ const startLane = async () => {
   }, () => {}))!;
   stops.push(() => edge.stop());
   // The person processing the refund is signed in at this till (ADR-0020) — the record names her.
-  await holdSignedInAt(edge.lane!.port, 'u-meena');
+  token = await holdSignedInAt(edge.lane!.port, 'u-meena');
   return edge;
 };
-const refundRecord = (id: string) => JSON.stringify({
-  id, returnId: id, originalSaleId: 'S-1', number: `RET-${id}`, processedBy: 'u-meena',
+let token = '';
+// The refund's document number comes from the box it is saved on (audit PF-04).
+const refundRecord = (id: string, number = `RET-${id}`) => JSON.stringify({
+  id, returnId: id, originalSaleId: 'S-1', number, processedBy: 'u-meena',
   reasonCode: 'damaged', refundMinor: 5_000, currency: 'INR', refundTender: 'cash',
   processedAt: '2026-09-11T10:00:00Z', lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }],
 });
@@ -59,6 +61,7 @@ const refundRecord = (id: string) => JSON.stringify({
 describe('RR-F02 — the refund lane write resolves a lost reply safely', () => {
   it('the edge recorded but the reply was lost: the retry resolves it to committed, once', async () => {
     const edge = await startLane();
+    const number = await receiptNumberAt(edge.lane!.port, token);
     let calls = 0;
     // Drop the FIRST reply AFTER the edge has processed it, so the refund is recorded but the caller
     // never hears; later attempts get through.
@@ -69,7 +72,7 @@ describe('RR-F02 — the refund lane write resolves a lost reply safely', () => 
       return response;
     }) as unknown as typeof globalThis.fetch;
 
-    const outcome = await laneDurableReturn(edge.lane!.port)('RET-1', refundRecord('RET-1'));
+    const outcome = await laneDurableReturn(edge.lane!.port)('RET-1', refundRecord('RET-1', number));
     expect(outcome.committed).toBe(true);            // resolved, not a false failure
     expect(outcome.unconfirmed).toBeUndefined();
     expect(calls).toBeGreaterThanOrEqual(2);         // it retried
@@ -87,9 +90,10 @@ describe('RR-F02 — the refund lane write resolves a lost reply safely', () => 
 
   it('a successful first attempt returns immediately, with no retry', async () => {
     const edge = await startLane();
+    const number = await receiptNumberAt(edge.lane!.port, token);
     let calls = 0;
     globalThis.fetch = (async (url: string, init: RequestInit) => { calls += 1; return realFetch(url, init); }) as unknown as typeof globalThis.fetch;
-    const outcome = await laneDurableReturn(edge.lane!.port)('RET-3', refundRecord('RET-3'));
+    const outcome = await laneDurableReturn(edge.lane!.port)('RET-3', refundRecord('RET-3', number));
     expect(outcome.committed).toBe(true);
     expect(calls).toBe(1);
   });
