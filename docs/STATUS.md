@@ -46,6 +46,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   the manager's review list for a check before they can be sold, until the temperature box arrives.
 - **Next:** SF-07 part 2 — the temperature box on the store computer's delivery screen.
 
+## Wave 3 · SF-05 — a loss is worth what the stock cost, never what is typed (9 October 2026)
+
+- **The wave:** Wave 3, third of six fixes. SF-03 merged as #731.
+- **The audit's finding:** 100 units costing ₹50 each (₹5,000) were written off by a manager as "worth ₹0". It was
+  accepted with no second person and no photo, and the shelf went from 100 to 0.
+- **What changed:**
+  - A loss's value is now worked out by head office: quantity × its own average cost of that stock at that place.
+    - A different figure sent with the loss is refused by name; nothing leaves the shelf.
+    - Leaving the value out is fine — head office fills it in.
+  - The shop-floor "Record a loss" screen asks head office for the value as soon as the item, place and quantity are
+    filled. It shows "Head office's value: 6 × ₹50.00 = ₹300.00" (English and Tamil) and locks the value box.
+  - **A choice I made (please say if you want it different):** where head office holds no cost for the stock, the
+    person types the value, and the loss always needs a photo or witness and a second person's approval, however
+    small. The record says the cost was unknown. The audit said such a loss must stay "held"; this uses the approval
+    step that already exists. The other way would be to record it and list it for review afterwards.
+- **Proved:**
+  - Integration (5): the audit's ₹0 case refused; no value given → ₹5,000, big, recorded with a second person; a small
+    loss at cost; the value read; cost unknown → value required, always big.
+  - The screen model (3 new) and the real browser (9, one new: stock with no cost).
+  - The new integration tests fail on the code before the fix. Four existing fixtures now receive the stock with a cost
+    before writing it off, because a loss of stock with no cost now needs a second person.
+- **Not yet / honest limits:** SF-07/PA-07, SF-08, PF-14. Staff UAT (SP-10) pending.
+- **Behaviour change the owner should know:** staff no longer type what a loss is worth; the screen shows head
+  office's figure. A loss of something with no cost on record always needs the manager or owner to approve it.
+- **Next:** SF-07 / PA-07 — receiving takes the cold-chain rule from the product master; a temperature breach puts the
+  stock on hold.
+
 ## Wave 3 · SF-03 — a transfer sends only what the named batch holds (9 October 2026)
 
 - **The wave:** Wave 3, second of six fixes. SF-02 merged as #730.
@@ -71,7 +98,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Not yet / honest limits:** SF-05, SF-07/PA-07, SF-08, PF-14. Staff UAT (SP-10) pending.
 - **Behaviour change the owner should know:** a transfer of a named batch can now be refused where it used to go
   through — because that batch does not hold enough, is expired, or the stock is promised to customers.
-- **Next:** SF-05 — a write-off's value from the stored cost, never the person's figure.
+- **Next:** SF-05 — a write-off's value from the stored cost, never the person's figure (done — see above).
 
 ## Wave 3 · SF-02 — each delivery is judged against what is left on its order (9 October 2026)
 

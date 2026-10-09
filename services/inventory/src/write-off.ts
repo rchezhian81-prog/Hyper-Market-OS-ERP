@@ -45,6 +45,25 @@ export interface StoredWriteOff {
   readonly raisedBy: string;
   readonly approvedBy: string | null;
   readonly at: string;
+  /**
+   * SF-05 — where the value came from: `stock_cost` (quantity × head office's own average cost of this stock here) or
+   * `cost_unknown` (head office holds no cost — the value is the raiser's statement, and the loss was governed as a big
+   * one: evidence and a second person). Absent on records from before SF-05.
+   */
+  readonly valueSource?: 'stock_cost' | 'cost_unknown';
+  /** SF-05 — the unit cost the value was taken from (paise), when known. */
+  readonly unitCostMinor?: number;
+}
+
+/** SF-05 — what a loss of this stock is worth, from head office's own cost. */
+export type LossValue =
+  | { readonly known: true; readonly unitCostMinor: number; readonly valueMinor: number }
+  | { readonly known: false };
+
+/** SF-05 — the value of `qty` units of a product at a location: quantity × head office's average cost there. */
+export async function lossValueOf(deps: Pick<WriteOffDeps, 'unitCostAt'>, tenantId: string, productId: string, locationId: string, qty: number): Promise<LossValue> {
+  const unitCostMinor = deps.unitCostAt === undefined ? undefined : await deps.unitCostAt(tenantId, locationId, productId);
+  return unitCostMinor === undefined ? { known: false } : { known: true, unitCostMinor, valueMinor: unitCostMinor * qty };
 }
 
 export interface WriteOffDeps {
@@ -77,6 +96,12 @@ export interface WriteOffDeps {
    * books), so it is recorded in full — product, loss type, quantity, value, reason and the §28 approver.
    */
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /**
+   * SF-05 — head office's own average unit cost of this product's stock at this location (paise), or `undefined` when it
+   * holds none. A loss is valued from THIS, never from the caller: before, a manager wrote off 100 units costing ₹50 each
+   * as worth ₹0 and skipped the second person and the evidence.
+   */
+  readonly unitCostAt?: (tenantId: string, locationId: string, productId: string) => Promise<number | undefined> | number | undefined;
   readonly now: () => string;
 }
 
@@ -92,13 +117,13 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['productId']) || !isStr(b['locationId']) || !isPosInt(b['qty']) || !isStr(b['uom'])
           || !LOSS_TYPES.includes(b['lossType'] as LossType) || !isStr(b['reasonCode'])
-          || !isNonNegInt(b['valueMinor'])
+          || (b['valueMinor'] !== undefined && !isNonNegInt(b['valueMinor']))
           || (b['currency'] !== undefined && !isCurrencyCode(b['currency'] as string))
           || (b['evidenceRef'] !== undefined && !isStr(b['evidenceRef']))
           || (b['approvedBy'] !== undefined && !isStr(b['approvedBy']))) {
           throw apiError(400, {
             code: 'not_readable_as_a_write_off',
-            whatHappened: 'A write-off needs a productId, locationId, whole qty > 0, uom, a lossType (wastage/damage/expiry/donation/destruction), a reasonCode and a whole valueMinor. The material-loss threshold is the tenant\'s policy, not sent by the caller.',
+            whatHappened: 'A write-off needs a productId, locationId, whole qty > 0, uom, a lossType (wastage/damage/expiry/donation/destruction) and a reasonCode. Its value is head office\'s (quantity × the stock\'s own cost); a valueMinor, when sent, must be that figure. The material-loss threshold is the tenant\'s policy, not sent by the caller.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the write-off fields. Nothing was recorded.',
           });
@@ -140,15 +165,38 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
 
         const currency = (b['currency'] as CurrencyCode) ?? 'INR';
         const at = deps.now();
+        // SF-05: the loss's VALUE is head office's — quantity × its own average cost of this stock here — never the caller's.
+        // A figure the caller sends must be that figure (a screen showing the wrong value must not be approved on it). With
+        // no cost held, the caller's figure is only a statement: the loss is governed as a big one (threshold 0 → evidence
+        // and a second person), and the record says the cost was unknown.
+        const priced = await lossValueOf(deps, ctx.tenantId, b['productId'] as string, b['locationId'] as string, b['qty'] as number);
+        if (priced.known && b['valueMinor'] !== undefined && b['valueMinor'] !== priced.valueMinor) {
+          throw apiError(422, {
+            code: 'write_off_value_is_the_stock_cost',
+            whatHappened: `This loss is worth ${priced.valueMinor} paise at head office's own cost of this stock (${b['qty'] as number} × ${priced.unitCostMinor}); the request said ${b['valueMinor'] as number}. A loss is valued from the stock's cost, never typed.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the loss without a value, or with head office\'s figure (GET /v1/inventory/write-off-value). Nothing was recorded.',
+          });
+        }
+        if (!priced.known && b['valueMinor'] === undefined) {
+          throw apiError(422, {
+            code: 'write_off_cost_unknown',
+            whatHappened: `Head office holds no cost for ${b['productId'] as string} at ${b['locationId'] as string}, so it cannot value this loss itself.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'State the value you believe it has; the loss will then need a photo or witness and a second person\'s approval. Nothing was recorded.',
+          });
+        }
+        const valueMinor = priced.known ? priced.valueMinor : (b['valueMinor'] as number);
         // The material-loss threshold is the tenant's policy (or the default), NEVER the body — otherwise a
-        // caller could claim any loss "immaterial" and skip the evidence and the second signature.
-        const thresholdMinor = (await deps.writeOffThreshold(ctx.tenantId)) ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR;
+        // caller could claim any loss "immaterial" and skip the evidence and the second signature. SF-05: a loss head office
+        // cannot value is never "immaterial" — it needs the evidence and the second person whatever figure it carries.
+        const thresholdMinor = priced.known ? ((await deps.writeOffThreshold(ctx.tenantId)) ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR) : 0;
         // The second person (ADR-0024 · §28 · M28-FR-01): an approval ANOTHER person who handles stock GAVE in their own
         // session for exactly this loss (kind `stock_write_off`) — never the raiser, and they still hold the authority.
         // A name typed into `approvedBy` is refused by name; before, it was checked only for the role it named.
         const opened = await approvalNamedIn(deps.approvals, {
           tenantId: ctx.tenantId, approvalId: b['approvalId'], typedField: 'approvedBy', typedValue: b['approvedBy'],
-          kind: 'stock_write_off', subjectRef: writeOffId, details: actionDetails(ctx.body, { writeOffId }), valueMinor: b['valueMinor'] as number,
+          kind: 'stock_write_off', subjectRef: writeOffId, details: actionDetails(ctx.body, { writeOffId }), valueMinor,
           maker: ctx.userId, usedBy: `write-off:${writeOffId}`, now: at,
         });
         const approval: DecidedRequest | undefined = opened === undefined ? undefined
@@ -165,7 +213,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           result = commitWriteOff({
             id: writeOffId, productId: b['productId'] as string, locationId: b['locationId'] as string,
             qty: b['qty'] as number, uom: b['uom'] as string, lossType: b['lossType'] as LossType,
-            reasonCode: b['reasonCode'] as string, value: { minor: b['valueMinor'] as number, currency },
+            reasonCode: b['reasonCode'] as string, value: { minor: valueMinor, currency },
             raisedBy: ctx.userId, at, thresholdMinor,
             ...(isStr(b['evidenceRef']) ? { evidenceRef: b['evidenceRef'] as string } : {}),
             ...(approval === undefined ? {} : { approval }),
@@ -192,6 +240,8 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           valueMinor: result.value.minor, currency, reasonCode: b['reasonCode'] as string,
           requiredApproval: result.requiredApproval, evidenceRef: result.evidenceRef,
           raisedBy: ctx.userId, approvedBy: opened === undefined ? null : opened.decision.decidedBy, at,
+          valueSource: priced.known ? 'stock_cost' : 'cost_unknown',
+          ...(priced.known ? { unitCostMinor: priced.unitCostMinor } : {}),
         };
         await deps.recordWriteOff(ctx.tenantId, rec);
         // Seal the stock loss — what left, how much, why, its value and (for a material loss) the §28
@@ -206,7 +256,35 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           },
           correlationId: rec.id,
         });
-        return { status: 201, body: { id: writeOffId, lossType: rec.lossType, qtyRemoved: rec.qtyRemoved, valueMinor: rec.valueMinor, requiredApproval: rec.requiredApproval, evidenceRef: rec.evidenceRef } };
+        return { status: 201, body: { id: writeOffId, lossType: rec.lossType, qtyRemoved: rec.qtyRemoved, valueMinor: rec.valueMinor, valueSource: rec.valueSource, requiredApproval: rec.requiredApproval, evidenceRef: rec.evidenceRef } };
+      },
+    },
+    {
+      // SF-05 — what a loss WOULD be worth, before it is recorded: quantity × head office's own cost of the stock there, and
+      // whether that makes it a big loss (evidence + a second person). The capture screen shows this figure; nobody types
+      // it. Cost unknown → `known: false` and always big. A read only — nothing is recorded.
+      api: 'API-04', method: 'GET', path: '/v1/inventory/write-off-value',
+      permission: 'inventory.movement.append',
+      handler: async (ctx) => {
+        const productId = (ctx.query['productId'] ?? '').trim();
+        const locationId = (ctx.query['locationId'] ?? '').trim();
+        const qty = Number(ctx.query['qty']);
+        if (productId === '' || locationId === '' || !isPosInt(qty)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_loss_to_value',
+            whatHappened: 'Valuing a loss needs ?productId=, ?locationId= and a whole ?qty= above 0.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the product, the place and the quantity. Nothing was changed.',
+          });
+        }
+        const priced = await lossValueOf(deps, ctx.tenantId, productId, locationId, qty);
+        const thresholdMinor = (await deps.writeOffThreshold(ctx.tenantId)) ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR;
+        return {
+          status: 200,
+          body: priced.known
+            ? { productId, locationId, qty, known: true, unitCostMinor: priced.unitCostMinor, valueMinor: priced.valueMinor, material: priced.valueMinor >= thresholdMinor, thresholdMinor }
+            : { productId, locationId, qty, known: false, unitCostMinor: null, valueMinor: null, material: true, thresholdMinor },
+        };
       },
     },
     {

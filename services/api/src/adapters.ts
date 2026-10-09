@@ -5352,6 +5352,11 @@ export function writeOffAdapter(input: {
         payload: rec,
       }));
     },
+    // SF-05: head office's own average unit cost of the stock at the location — the same read a transfer values by.
+    unitCostAt: async (tenantId, locationId, productId) => {
+      const here = (await inv.valuation(tenantId, productId)).find((r) => r.locationId === locationId);
+      return here === undefined || here.unitCostMinor === 'not_known' ? undefined : here.unitCostMinor;
+    },
     writeOffThreshold: async (tenantId) => {
       const all = await allOf<{ thresholdMinor: number }>(input.store, tenantId, thresholdStream, 'WriteOffThresholdSet');
       const last = all[all.length - 1];

@@ -19,7 +19,7 @@ const move = (h: ApiHarness, m: Record<string, unknown>) =>
 
 const writeOff = (h: ApiHarness, id: string, body: Record<string, unknown>) =>
   h.request({ method: 'POST', path: `/v1/inventory/write-off/${id}`, userId: 'u-owner', tenantId: A, idempotencyKey: id,
-    body: { locationId: 'L1', uom: 'ea', lossType: 'damage', reasonCode: 'broken', valueMinor: 30_000, ...body } });
+    body: { locationId: 'L1', uom: 'ea', lossType: 'damage', reasonCode: 'broken', ...body } }); // SF-05: valued by head office from the stock's cost
 
 describe('store staff cannot write off concession stock (M27-FR-02 access half)', () => {
   it('refuses a store write-off against a product that holds concession stock', async () => {

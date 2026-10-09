@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 946,
+  "testFiles": 947,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -452,7 +452,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 31,
+        "integration": 32,
         "realDb": 6,
         "browser": 3,
         "connected": 0,
@@ -477,6 +477,7 @@
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
+          "tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/adjustment-requests.test.ts",
           "tests/integration/bin-counts-synced-route.test.ts",
@@ -1587,7 +1588,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 5,
-        "integration": 7,
+        "integration": 8,
         "realDb": 2,
         "browser": 2,
         "connected": 0,
@@ -1603,6 +1604,7 @@
           "tests/unit/waste.test.ts"
         ],
         "integration": [
+          "tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/packaging.test.ts",
           "tests/integration/physical-to-system.test.ts",

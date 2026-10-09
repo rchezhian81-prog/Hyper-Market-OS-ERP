@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 821 | 505 | 505 | 64 | 279 |
+| 13 | 822 | 505 | 505 | 64 | 279 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -233,6 +233,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/valuation` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/write-off-threshold` | `waste.view` | core | — |
 | POST | `/v1/inventory/write-off-threshold` | `inventory.writeoff.threshold.set` | core | yes |
+| GET | `/v1/inventory/write-off-value` | `inventory.movement.append` | core | — |
 | POST | `/v1/inventory/write-off/:writeOffId` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/write-offs` | `waste.view` | core | — |
 | GET | `/v1/merchandising/assortment/:storeId` | `merchandising.range.read` | core | — |
