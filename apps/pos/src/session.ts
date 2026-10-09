@@ -39,6 +39,11 @@ export interface PosSessionConfig {
   readonly currency: CurrencyCode;
   /** Default tax rate EXTRACTED from the inclusive price when a line doesn't carry its own (per-tenant config). */
   readonly defaultTaxRate: Rate;
+  /**
+   * SF-01 — this lane's wall clock, the instant an offer's window is judged at. Absent (a test, a replay) → the instant
+   * `setNow` gave. Before, nothing ever set it, so every offer on a real till was judged at 1 Jan 1970 and none applied.
+   */
+  readonly clock?: () => string;
 }
 
 export interface ScanInput {
@@ -217,8 +222,8 @@ export class PosSession {
   private operatorId: string | undefined;
   /** Every answer to the age question for THIS basket, in order (PF-03). Cleared with the basket, kept across hold/recall. */
   private readonly ageAnswerLog: AgeAnswer[] = [];
-  /** Evaluation instant for effective-dated promotions; set by the caller (no clock). */
-  private nowRef = '1970-01-01T00:00:00Z';
+  /** Evaluation instant for effective-dated promotions, when the caller fixed one (`setNow`); else the lane's clock. */
+  private nowRef: string | undefined;
 
   constructor(
     private readonly config: PosSessionConfig,
@@ -453,7 +458,8 @@ export class PosSession {
       qty: l.uom === 'ea' ? l.quantityMinor : 1,
       group: l.group,
     }));
-    return bestPrice(basket, this.promotions, { at: this.nowRef, currency: this.config.currency });
+    const at = this.nowRef ?? this.config.clock?.() ?? '1970-01-01T00:00:00Z';
+    return bestPrice(basket, this.promotions, { at, currency: this.config.currency });
   }
 
   /** Deterministic promotion discount for the basket (M05-FR-03), or zero. */

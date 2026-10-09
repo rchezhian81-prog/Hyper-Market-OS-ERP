@@ -16,6 +16,7 @@
 // are per-tenant configuration — never hard-coded.
 
 import { isUom } from '../../contracts/src/quantity';
+import type { Promotion } from '../../promotions/src/promotions';
 
 export type ProductStatus = 'draft' | 'active' | 'discontinued' | 'clearance';
 export type BarcodeKind = 'standard' | 'weight_embedded' | 'price_embedded' | 'alternate';
@@ -119,6 +120,11 @@ export interface CatalogueSnapshot {
   readonly barcodes: readonly CatalogueBarcode[];
   /** Embedded-barcode rules for this tenant (may be empty). */
   readonly embeddedRules?: readonly EmbeddedBarcodeRule[];
+  /**
+   * SF-01 — the offers the lanes apply: every LAUNCHED (active) promotion not yet ended at build time, signed with the
+   * rest of the pack (`canonicalise`). The lane evaluates each against its own clock offline (§31). Absent = none.
+   */
+  readonly promotions?: readonly Promotion[];
 }
 
 export interface ScanResult {

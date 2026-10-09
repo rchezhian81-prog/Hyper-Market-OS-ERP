@@ -2102,6 +2102,8 @@ export function cataloguePreviewAdapter(input: {
     priceEntries: pl.entries,
     barcodes: bc.all,
     taxSchedule: tc.schedule,
+    // SF-01: the offers the pack carries to the lanes (assembly keeps only the switched-on, not-yet-ended ones).
+    promotions: promotionCatalogueAdapter(input).promotions,
     now: input.now,
   };
 }
@@ -8659,17 +8661,32 @@ export function promotionAdapter(input: {
     },
 
     recordLaunch: async (tenantId, record) => {
-      await input.store.append(tenantId, STREAM.promotions, makeEvent({
-        id: `promo-launch-${record.promotionId}`,
-        type: 'PromotionLaunched',
-        occurredAt: record.launchedAt,
-        // The promotion's own id, no timestamp — re-launching the same one collapses rather than
-        // recording a second launch of an offer that is already live.
-        idempotencyKey: `promo-launch-${tenantId}-${record.promotionId}`,
-        source: 'api/pricing',
-        payload: record,
-      }));
+      // SF-01: the launch and the switch-on are ONE append — the rule the lanes read becomes active exactly when the
+      // governed launch lands, never one without the other. The activation carries the same key `/activate` uses, so
+      // either path collapses into one switch-on.
+      await input.store.appendBatch(tenantId, [
+        { stream: STREAM.promotions, event: makeEvent({
+          id: `promo-launch-${record.promotionId}`,
+          type: 'PromotionLaunched',
+          occurredAt: record.launchedAt,
+          // The promotion's own id, no timestamp — re-launching the same one collapses rather than
+          // recording a second launch of an offer that is already live.
+          idempotencyKey: `promo-launch-${tenantId}-${record.promotionId}`,
+          source: 'api/pricing',
+          payload: record,
+        }) },
+        { stream: STREAM.promotions, event: makeEvent({
+          id: `promo-active-${record.promotionId}`,
+          type: 'PromotionActivated',
+          occurredAt: record.launchedAt,
+          idempotencyKey: `promo-active-${tenantId}-${record.promotionId}`,
+          source: 'api/pricing',
+          payload: { promotionId: record.promotionId },
+        }) },
+      ]);
     },
+
+    definedPromotion: (tenantId, promotionId) => promotionCatalogueAdapter(input).promotion(tenantId, promotionId),
   };
 }
 
@@ -8714,6 +8731,9 @@ export function promotionCatalogueAdapter(input: {
         payload: promo,
       }));
     },
+
+    launched: async (tenantId, promotionId) =>
+      (await allOf<LaunchRecord>(input.store, tenantId, STREAM.promotions, 'PromotionLaunched')).some((r) => r.promotionId === promotionId),
 
     recordStatus: async (tenantId, promotionId, status, at) => {
       await input.store.append(tenantId, STREAM.promotions, makeEvent({

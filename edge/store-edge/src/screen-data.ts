@@ -147,6 +147,8 @@ export interface TillCatalogue {
   readonly products: readonly TillProduct[];
   readonly scope?: SignedPack['snapshot']['scope'];
   readonly embeddedRules?: SignedPack['snapshot']['embeddedRules'];
+  /** SF-01: the switched-on offers head office signed into the pack — the till applies them offline, by its own clock. */
+  readonly promotions?: SignedPack['snapshot']['promotions'];
 }
 
 /**
@@ -181,6 +183,7 @@ export function tillCatalogue(pack: StorePack, cataloguePack: SignedPack | undef
       builtAt: snapshot.builtAt,
       ...(snapshot.scope === undefined ? {} : { scope: snapshot.scope }),
       ...(snapshot.embeddedRules === undefined ? {} : { embeddedRules: snapshot.embeddedRules }),
+      ...(snapshot.promotions === undefined ? {} : { promotions: snapshot.promotions }),
       products: snapshot.products.map((p) => ({
         productId: p.productId,
         sku: p.sku,
@@ -359,6 +362,9 @@ export function posPayload(input: ScreenInput): Record<string, unknown> | null {
     source: till.source,
     ...(till.scope === undefined ? {} : { scope: till.scope }),
     ...(till.embeddedRules === undefined ? {} : { embeddedRules: till.embeddedRules }),
+    // SF-01: the offers ride through to the lane as signed — before, the box rebuilt the catalogue field by field and
+    // an offer head office launched never reached a scanner.
+    ...(till.promotions === undefined ? {} : { promotions: till.promotions }),
     products,
     barcodes,
     // Named, never silently dropped: a product missing from the till is a product nobody can sell.
