@@ -75,6 +75,8 @@ const WORDS = {
     hold: 'Hold', recall: 'Recall', held: 'Basket held',
     howPaying: 'How is the customer paying?', cash: 'Cash', card: 'Card', upi: 'UPI',
     onHold: 'A basket is on hold. Tap Recall to bring it back.',
+    noneHeld: 'No basket is on hold for this till.',
+    recallWhich: 'Which held basket?',
     tapTerminal: 'What did the card machine say?',
     approved: 'Approved', declined: 'Declined', noAnswer: 'It has not answered',
     more: 'More', pickup: 'Cash to safe', closeTill: 'Close till', refund: 'Refund',
@@ -182,6 +184,8 @@ const WORDS = {
     hold: 'நிறுத்து', recall: 'திரும்பப் பெறு', held: 'கூடை நிறுத்தப்பட்டது',
     howPaying: 'வாடிக்கையாளர் எவ்வாறு பணம் தருகிறார்?', cash: 'ரொக்கம்', card: 'கார்டு', upi: 'UPI',
     onHold: 'ஒரு கூடை நிறுத்தி வைக்கப்பட்டுள்ளது. திரும்பப் பெற தட்டவும்.',
+    noneHeld: 'இந்த டில்லுக்கு நிறுத்தி வைத்த கூடை எதுவும் இல்லை.',
+    recallWhich: 'எந்த நிறுத்திய கூடை?',
     tapTerminal: 'கார்டு இயந்திரம் என்ன சொன்னது?',
     approved: 'ஏற்கப்பட்டது', declined: 'மறுக்கப்பட்டது', noAnswer: 'பதில் இல்லை',
     more: 'மேலும்', pickup: 'பணத்தை பெட்டகத்திற்கு', closeTill: 'டில்லை மூடு', refund: 'திரும்பப் பணம்',
@@ -394,6 +398,7 @@ async function toggleSignIn() {
   if (!outcome.signedIn) { tell(t('signInRefused'), outcome.laneMessage); paintOperator(); return; }
   rememberOperator(session.operatorToken());
   paintOperator();
+  void refreshHeld();
 }
 
 // ── The banner ──────────────────────────────────────────────────────────────
@@ -629,8 +634,9 @@ function render() {
     return row;
   }));
 
-  const suspended = session.state && session.state() === 'suspended';
-  el('hold').textContent = suspended ? t('recall') : t('hold');
+  // On the box (PF-05): Hold while there are items, Recall when the till is empty. The stand-in keeps its flag.
+  const suspended = session.holdAtTill ? (lines.length === 0 && heldCount > 0) : (session.state && session.state() === 'suspended');
+  el('hold').textContent = (session.holdAtTill ? lines.length === 0 : suspended) ? t('recall') : t('hold');
   el('empty').hidden = lines.length > 0 && !suspended;
   // A held basket must SAY it is held. A screen showing an empty basket when one is parked is how
   // the same customer's items get rung up twice.
@@ -742,11 +748,43 @@ el('void').addEventListener('click', async () => {
   render();
 });
 
-el('hold').addEventListener('click', () => {
-  const suspended = session.state && session.state() === 'suspended';
-  if (suspended) session.recall(); else session.suspend();
-  selectedLineId = null;
+/**
+ * Hold and Recall (audit PF-05). With items on the till, Hold hands the basket to the STORE COMPUTER, which keeps it on
+ * its disk — the till clears only once the box has it, so a reload or a power cut cannot lose a customer's basket. With
+ * the till empty, Recall lists what the box holds for this till and brings one back — once; the box gives a basket to
+ * one till only. The stand-in shell (no bundle) keeps the old in-memory flag.
+ */
+let heldCount = 0;
+async function refreshHeld() {
+  if (!session.heldAtTill) return;
+  try { heldCount = (await session.heldAtTill()).length; } catch { heldCount = 0; }
   render();
+}
+el('hold').addEventListener('click', async () => {
+  if (!session.holdAtTill) {
+    const suspended = session.state && session.state() === 'suspended';
+    if (suspended) session.recall(); else session.suspend();
+    selectedLineId = null;
+    render();
+    return;
+  }
+  if (session.basket().length > 0) {
+    // One tap (pos-cashier.md): on success the screen itself says the basket is on hold; only a refusal interrupts.
+    const r = await session.holdAtTill();
+    if (!r.ok) tell(t('read'), r.laneMessage);
+  } else {
+    const baskets = await session.heldAtTill();
+    if (baskets.length === 0) { tell(t('read'), t('noneHeld')); return; }
+    const pick = baskets.length === 1 ? baskets[0].billId : await choose(t('recallWhich'), baskets.map((b) => ({
+      value: b.billId,
+      label: `${b.firstItem}${b.lineCount > 1 ? ` +${b.lineCount - 1}` : ''} · ${inr(b.valueMinor)} · ${new Date(b.heldAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+    })));
+    if (pick === null || pick === undefined) return;
+    const r = await session.recallAtTill(pick);
+    if (!r.ok || r.repriceRequired) tell(t('read'), r.laneMessage);
+  }
+  selectedLineId = null;
+  await refreshHeld();
 });
 
 /**
@@ -1403,7 +1441,7 @@ el('signin').addEventListener('click', () => { void toggleSignIn(); });
   if (session.tillSignInBy) void session.tillSignInBy().then((mode) => { tillSignInMode = mode; });
   // Ask the store computer whether the session this tab kept is still live; a session it no longer knows signs nobody in.
   if (remembered && session.resumeAtTill && !(session.operator && session.operator())) {
-    void session.resumeAtTill(remembered).then((live) => { if (!live) rememberOperator(null); paintOperator(); render(); });
+    void session.resumeAtTill(remembered).then((live) => { if (!live) rememberOperator(null); paintOperator(); render(); if (live) void refreshHeld(); });
   }
 }
 

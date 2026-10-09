@@ -148,6 +148,8 @@ describe.skipIf(!HAVE_BROWSER)('the spec\'s interaction budget, counted on the s
 
     // Suspend and recall: one tap each, and the screen SAYS the basket is held.
     await taps.tap('#hold');
+    // The basket goes to the store computer's disk first (audit PF-05); the screen then says it is held — still one tap.
+    await page.waitForFunction(() => /held|on hold/i.test((globalThis as unknown as Doc).document.querySelector('#empty')?.textContent ?? ''), undefined, { timeout: 5_000 });
     expect(await page.textContent('#empty')).toMatch(/held|on hold/i);
     expect(taps.reset(), 'suspend').toBeLessThanOrEqual(1);
     await taps.tap('#hold');

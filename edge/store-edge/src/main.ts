@@ -75,6 +75,7 @@ import { DeviceEnrolments, readPackDevices } from './device-enrolments';
 import { TillOperators, loadTillCredentials } from './till-operators';
 import { TillApprovals } from './till-approvals';
 import { ReceiptNumbers } from './receipt-numbers';
+import { HeldBills } from './held-bills';
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
 import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
@@ -1102,6 +1103,13 @@ export async function startEdge(
       }),
     ],
   });
+  // HELD BASKETS (audit PF-05 · M12-FR-02): parked on this box's disk, recalled once, never deleted. The shop's hold
+  // policy is the CURRENT pack's; the store is the pack's own.
+  const heldBills = tillOperators === null ? null : await HeldBills.open({
+    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']), tenantId,
+    policy: () => (pack.suspensionPolicy.known ? pack.suspensionPolicy.value : null),
+    storeId: () => (pack.policies.known ? pack.policies.value.storeId : 'this-store'),
+  });
   if (tillOperators !== null) {
     say(trustForwardedTillUser
       ? 'till sign-in: the person the hosted sign-in names (EDGE_LANE_TRUST_FORWARDED_USER) — only right behind the hosted front.'
@@ -1121,6 +1129,14 @@ export async function startEdge(
         signOut: (token) => tillOperators.signOut(token),
         // The box's seal on who it verified (ADR-0023), under its own key and this box's tenant.
         seal: (subject) => sealTillFact(sealKey, { ...subject, tenantId }),
+      },
+    }),
+    ...(heldBills === null ? {} : {
+      heldBills: {
+        hold: (i) => heldBills.hold(i),
+        list: (laneId) => heldBills.list(laneId),
+        recall: (i) => heldBills.recall(i),
+        abandon: (i) => heldBills.abandon(i),
       },
     }),
     ...(receiptNumbers === null ? {} : {
@@ -1456,6 +1472,7 @@ export async function startEdge(
         if (devices !== null) await devices.stop();
         if (enrolments !== null) await enrolments.close();
         if (receiptNumbers !== null) await receiptNumbers.close();
+        if (heldBills !== null) await heldBills.close();
         await log.close();
         await returnsLog.close();
         await completionsLog.close();
@@ -1928,6 +1945,7 @@ export async function startEdge(
       if (devices !== null) await devices.stop();
       if (enrolments !== null) await enrolments.close();
       if (receiptNumbers !== null) await receiptNumbers.close();
+      if (heldBills !== null) await heldBills.close();
       await log.close();
       await returnsLog.close();
       await completionsLog.close();

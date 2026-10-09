@@ -29,6 +29,7 @@
 
 /** A section of the pack: what the cloud said, or why this box does not know. */
 import type { PackReceiptSeries } from './receipt-numbers';
+import type { SuspensionPolicy } from '../../../packages/suspended-sales/src/suspended-bill';
 import type { MigrationFeed } from '../../sync-agent/src/migration-feed';
 import type { IndentsFeed } from '../../sync-agent/src/indents-feed';
 import type { AssignmentsFeed } from '../../sync-agent/src/assignments-feed';
@@ -1145,6 +1146,12 @@ export interface StorePack {
    */
   readonly receiptSeries: Register<readonly PackReceiptSeries[]>;
   /**
+   * How this shop holds baskets at the till (M12-FR-02 · audit PF-05): whether another till may recall a held basket, the
+   * price window after which a recalled basket must be re-priced, how many a till may hold. Absent → the tested defaults
+   * (only the till that held it; four hours; ten).
+   */
+  readonly suspensionPolicy: Register<SuspensionPolicy>;
+  /**
    * Every batch this box knows of, with its expiry (M10-FR-01).
    *
    * Absent means the shop does not track batches at all, and the screen says exactly that rather
@@ -1391,6 +1398,7 @@ export function emptyPack(why: string = NEVER): StorePack {
     slaPolicy: notKnown(why),
     servicePolicy: notKnown(why),
     receiptSeries: notKnown(why),
+    suspensionPolicy: notKnown(why),
     batches: notKnown(why),
     recalls: notKnown(why),
     expiryPolicy: notKnown(why),
@@ -1530,6 +1538,7 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     slaPolicy: section<unknown>('slaPolicy'),
     servicePolicy: section<PackServicePolicy>('servicePolicy'),
     receiptSeries: section<readonly PackReceiptSeries[]>('receiptSeries'),
+    suspensionPolicy: section<SuspensionPolicy>('suspensionPolicy'),
     batches: section<readonly unknown[]>('batches'),
     recalls: section<readonly unknown[]>('recalls'),
     expiryPolicy: section<PackExpiryPolicy>('expiryPolicy'),

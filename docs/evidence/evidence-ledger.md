@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 955. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 958. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 79 · Real PostgreSQL 57 · Browser (stub cloud) 45 · Browser (connected) 2 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 24 · ENGINE_ONLY 1 · INTEGRATION_TESTED 16 · PARTIALLY_WIRED 52 · WIRED 11.
 - Labels that do NOT hold: none.
@@ -38,7 +38,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M09 | E2E_VERIFIED | 12 | 22 | 3 | 6 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M10 | E2E_VERIFIED | 20 | 19 | 1 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M11 | INTEGRATION_TESTED | 4 | 4 | · | 1 | · | · | · | ✓ an integration test cites it |
-| M12 | E2E_VERIFIED | 14 | 17 | 3 | 7 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M12 | E2E_VERIFIED | 15 | 18 | 3 | 8 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M13 | INTEGRATION_TESTED | 24 | 22 | 5 | 3 | · | · | · | ✓ an integration test cites it |
 | M14 | E2E_VERIFIED | 17 | 14 | 2 | 5 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M15 | E2E_VERIFIED | 14 | 11 | 1 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
@@ -147,7 +147,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **M09** — browser: `indents-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `warehouse-handheld-delivery.e2e.ts`, `warehouse-handheld-issues-to-floor.e2e.ts`, `warehouse-handheld-syncs-through-the-box.e2e.ts`, `warehouse-supervisor-delivery.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`, `floor-indents-handheld-issue.test.ts`, `the-store-buys-what-it-sells.test.ts`
 - **M10** — browser: `expiry-recall-delivery.e2e.ts`, `unsellable-screen.e2e.ts`, `warehouse-handheld-delivery.e2e.ts` · real PostgreSQL: `the-store-buys-what-it-sells.test.ts`
 - **M11** — browser: `production-delivery.e2e.ts`
-- **M12** — browser: `core-one-lane.test.ts`, `the-served-till-closes.e2e.ts`, `the-served-till-never-repeats-a-receipt-number.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts`, `the-served-till-takes-a-sale.e2e.ts`, `the-store-trades-a-day.e2e.ts`, `the-till-asks-the-age-question.e2e.ts` · connected: `the-store-trades-a-day.e2e.ts` · real PostgreSQL: `the-shop-reaches-the-cloud.test.ts`, `the-store-buys-what-it-sells.test.ts`, `the-store-trades-a-day.test.ts`
+- **M12** — browser: `core-one-lane.test.ts`, `the-served-till-closes.e2e.ts`, `the-served-till-keeps-a-held-basket.e2e.ts`, `the-served-till-never-repeats-a-receipt-number.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts`, `the-served-till-takes-a-sale.e2e.ts`, `the-store-trades-a-day.e2e.ts`, `the-till-asks-the-age-question.e2e.ts` · connected: `the-store-trades-a-day.e2e.ts` · real PostgreSQL: `the-shop-reaches-the-cloud.test.ts`, `the-store-buys-what-it-sells.test.ts`, `the-store-trades-a-day.test.ts`
 - **M13** — browser: `return-governance-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts` · real PostgreSQL: `refund-approval-is-the-approvers-own-act.test.ts`, `returns-guard-the-refund.test.ts`, `the-till-exchanges.test.ts`, `the-till-returns-without-a-receipt.test.ts`, `write-guards-on-postgresql.test.ts`
 - **M14** — browser: `cash-office-signoff-delivery.e2e.ts`, `day-reopen-delivery.e2e.ts`, `manager-day-close-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-closes.e2e.ts` · real PostgreSQL: `day-close-honestly.test.ts`, `refund-approval-is-the-approvers-own-act.test.ts`
 - **M15** — browser: `loss-prevention-close-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts` · real PostgreSQL: `day-close-honestly.test.ts`

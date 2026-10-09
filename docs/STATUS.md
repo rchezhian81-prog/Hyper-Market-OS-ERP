@@ -36,6 +36,46 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   goods at the store computer; with a good reading the goods no longer wait for a second manager.
 - **Next:** SF-07 part 3 — the reading on the warehouse handheld.
 
+## Wave 4 · PF-05 — a held basket survives a reload, and comes back to one till, once (9 October 2026)
+
+- **The owner's decision OB-22:** answered "A" (9 Oct 2026). A till with no published receipt range keeps numbering its
+  bills on the store computer and says so. Recorded in the decisions register.
+- **The audit's finding:** "Hold" on the till only flipped a switch in the browser. A reload, a closed tab or a power
+  blink lost the customer's basket, and the cashier had to ring everything again from memory.
+- **What changed:**
+  - Hold now hands the basket to the store computer, which saves it on its own disk before the till clears. If the store
+    computer cannot keep it, nothing is cleared and the screen says the basket is still on the till.
+  - The basket is kept whole: the price each item was rung at, its tax, HSN code, age requirement, and any age answer
+    already given.
+  - With the till empty, the button reads **Recall** and the screen says a basket is on hold, even after a reload. Recall
+    lists what the store computer holds for this till and brings one back.
+  - A recall is a one-time claim. The store computer gives a basket to one till only; a second attempt is refused with
+    "ringing it again would charge the customer twice".
+  - The shop's policy decides whether another till may recall a basket (new store-pack section `suspensionPolicy`;
+    default: only the till that held it). It also sets the price window: a basket held longer comes back with "check
+    each price against the shelf", and the most baskets one till may hold.
+  - A basket can be given up with a reason. It is kept on the record with who and why, never deleted (hard rule #6).
+  - These use the tested suspend rules that already existed in `packages/suspended-sales` and were never connected.
+- **Proved:**
+  - Integration on a real store computer (6): hold → reload → listed → recalled at the held prices → sold; two tills
+    recall at once and only one gets it; a restart keeps the basket; nothing to hold, nobody signed in, or the store
+    computer unreachable are refused and the basket stays on the till; a recall never lands on another customer's
+    items; the shop's limit; a basket given up is kept and cannot be recalled.
+  - Unit (6): the other-till rule both ways; the price window; a store computer that cannot write holds nothing; a
+    repeated hold is one hold; the till hands over and takes back a basket with an age-restricted line, and the same
+    total is then paid.
+  - Browser (real Chromium, through the real screen): Hold → reload → the screen says a basket is on hold → Recall →
+    the same two lines → sold at the held total, on the store computer's disk.
+  - The new tests fail on the code before the fix.
+  - The one-tap rule for Hold and Recall still holds: the screen says "on hold" instead of a pop-up to dismiss.
+  - Full gate: 10,387 unit and integration, 31 performance and 257 browser tests pass.
+- **Not yet / honest limits:**
+  - The till screen has no "give up a held basket" button yet; the store computer and the till model support it.
+  - Held baskets are kept per store computer. A basket held on one store computer is not visible on another.
+  - Staff UAT (SP-10) pending.
+- **Next:** PF-06 (card/UPI payments keep their evidence and recover) and PF-07 (void evidence is durable), code side
+  only.
+
 ## Wave 4 · PF-04 — receipt numbers come from the store computer and are never repeated (9 October 2026)
 
 - **The audit's finding:** the till counted its bill numbers in the browser's memory.
@@ -65,7 +105,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Full gate: 10,375 unit and integration, 31 performance and 256 browser tests pass.
   - About 20 older tests rang sales with made-up numbers. They now ask the store computer, as the real till does. The
     demo smoke script does the same.
-- **Owner decision needed (OB-22), with my recommendation:** what a till does when head office has not yet published a
+- **Owner decision OB-22 — answered "A" (9 Oct 2026):** what a till does when head office has not yet published a
   receipt-number range for it.
   - **A (recommended, built now):** the store computer numbers that till's bills itself (`R-<till>-000001` upwards),
     still saved and never repeated. Every answer and the store computer's account say "Head office has not set up a

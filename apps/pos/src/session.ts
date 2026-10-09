@@ -19,6 +19,7 @@ import type { Ledger } from '../../../packages/ledger/src/ledger';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import { makeTradingDayRule, tradingDateOf } from '../../../packages/calendar/src/index';
+import type { SuspendedLine, SuspendedAgeAnswer } from '../../../packages/suspended-sales/src/suspended-bill';
 
 export interface PosSessionConfig {
   /**
@@ -680,6 +681,49 @@ export class PosSession {
       throw new SessionStateError('suspend', this.state);
     }
     this.state = 'suspended';
+  }
+
+  /**
+   * The basket as it is handed to the store computer to hold (audit PF-05): its live lines, flattened to what a disk can
+   * keep — the price it was rung at, its tax, HSN code and age requirement — and the age answers already given.
+   */
+  basketToHold(): { readonly lines: readonly SuspendedLine[]; readonly ageAnswers: readonly SuspendedAgeAnswer[] } {
+    return {
+      lines: this.activeLines().map((l) => ({
+        lineId: l.lineId, productId: l.productId, description: l.description, unitPriceMinor: l.unitPrice.minor,
+        quantityMinor: l.quantityMinor, uom: l.uom, taxBps: l.taxRate.bps, voided: false,
+        ...(l.group === undefined ? {} : { group: l.group }),
+        ...(l.hsnCode === undefined ? {} : { hsnCode: l.hsnCode }),
+        ...(l.minimumAge === undefined ? {} : { minimumAge: l.minimumAge }),
+      })),
+      ageAnswers: this.ageAnswerLog.map((a) => ({ minimumAge: a.minimumAge, outcome: a.outcome, by: a.by, at: a.at, ...(a.productId === undefined ? {} : { productId: a.productId }) })),
+    };
+  }
+
+  /**
+   * Put a recalled basket back on this till (audit PF-05) — only onto an empty one, so two customers' items never mix.
+   * The lines come back at the prices they were held at; the box says when the shop's price window has passed and they
+   * must be checked. The age answers come back with them; a line still needing one is refused at payment until asked.
+   */
+  restoreHeld(lines: readonly SuspendedLine[], ageAnswers: readonly SuspendedAgeAnswer[] = []): void {
+    if (this.activeLines().length > 0 || this.state === 'committed' || this.state === 'tendering') {
+      throw new SessionStateError('recall a held basket onto', this.state);
+    }
+    this.newSale();
+    for (const l of lines) {
+      if (l.voided) continue;
+      this.seq += 1;
+      this.lines.push(Object.freeze({
+        lineId: `L${this.seq}`, productId: l.productId, description: l.description,
+        unitPrice: money(l.unitPriceMinor, this.config.currency), quantityMinor: l.quantityMinor, uom: l.uom as Uom,
+        taxRate: rate(l.taxBps), voided: false,
+        ...(l.hsnCode === undefined ? {} : { hsnCode: l.hsnCode }),
+        ...(l.group === undefined ? {} : { group: l.group }),
+        ...(l.minimumAge === undefined ? {} : { minimumAge: l.minimumAge }),
+      }));
+    }
+    for (const a of ageAnswers) this.ageAnswerLog.push(Object.freeze({ ...a }));
+    this.state = this.lines.length > 0 ? 'selling' : 'idle';
   }
 
   /** Recall a suspended basket. */
