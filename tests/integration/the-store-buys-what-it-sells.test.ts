@@ -108,7 +108,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
   async function publishCatalogue(): Promise<void> {
     await ok(call('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', OWNER, { rateBps: 500 }, 'tax-1006'), 201);
     await ok(call('POST', `/v1/catalogue/products/${PRODUCT}/publish`, OWNER, {
-      product: { sku: 'RICE-5KG', name: 'Ponni rice 5kg', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'active' },
+      product: { sku: 'RICE-5KG', name: 'Ponni rice 5kg', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'active', handling: 'ambient' },
       categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }],
     }, `publish-${PRODUCT}`), 201);
     await ok(call('POST', `/v1/prices/list/${PRODUCT}/entries/e1`, OWNER, {

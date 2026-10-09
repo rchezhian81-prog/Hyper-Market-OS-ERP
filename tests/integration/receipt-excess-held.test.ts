@@ -70,9 +70,9 @@ async function seeded(): Promise<ApiHarness> {
       snapshot: {
         tenantId: A, version: 1, builtAt: AT, scope: { tenantId: A, storeId: 'store-1' },
         products: [
-          { productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false },
+          { productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false, handling: 'ambient' },
           { productId: 'p2', sku: 'p2', name: 'Fresh paneer 200g', unitPriceMinor: 9_000, taxBps: 500, status: 'active', uom: 'ea', batchTracked: true },
-          { productId: 'p3', sku: 'p3', name: 'Biscuits 100g', unitPriceMinor: 2_000, taxBps: 1800, status: 'active', uom: 'ea', batchTracked: false },
+          { productId: 'p3', sku: 'p3', name: 'Biscuits 100g', unitPriceMinor: 2_000, taxBps: 1800, status: 'active', uom: 'ea', batchTracked: false, handling: 'ambient' },
         ],
         barcodes: [],
       },
@@ -93,7 +93,7 @@ describe('the tenant\'s receiving tolerances are the owner\'s call, read by ever
     // A receipt under the default: 101 against 100 is over a 0-tolerance → held 1, and the record says the default applied.
     const under = await receive(h, 'g-default', receipt('p1', 100, 101), 'g-default', 'u-mgr');
     expect(under.status).toBe(201);
-    expect(grnOf(under)).toMatchObject({ availableMinor: 100, heldMinor: 1, governanceFlags: ['no_purchase_order', 'product_rules_unverified', 'default_policy'] });
+    expect(grnOf(under)).toMatchObject({ availableMinor: 100, heldMinor: 1, governanceFlags: ['no_purchase_order', 'product_rules_unverified', 'handling_unknown', 'default_policy'] });
     // The manager cannot set the tenant's tolerances; the owner can.
     expect((await post(h, '/v1/inventory/receipt-policy', 'u-mgr', { excessToleranceBp: 500, shortageToleranceBp: 200, nearExpiryDays: 7 }, 'p-mgr')).status).toBe(403);
     expect(codeOf(await post(h, '/v1/inventory/receipt-policy', 'u-owner', { excessToleranceBp: -1, shortageToleranceBp: 200, nearExpiryDays: 7 }, 'p-bad'))).toBe('not_readable_as_a_receipt_policy');
@@ -105,7 +105,7 @@ describe('the tenant\'s receiving tolerances are the owner\'s call, read by ever
     expect((await get(h, '/v1/inventory/receipt-policy', 'u-mgr')).status).toBe(403);
     // The same 1% excess is now within tolerance: nothing held, no default flag.
     const within = await receive(h, 'g-within', receipt('p1', 100, 101), 'g-within', 'u-mgr');
-    expect(grnOf(within)).toMatchObject({ availableMinor: 101, heldMinor: 0, governanceFlags: ['no_purchase_order', 'product_rules_unverified'] });
+    expect(grnOf(within)).toMatchObject({ availableMinor: 101, heldMinor: 0, governanceFlags: ['no_purchase_order', 'product_rules_unverified', 'handling_unknown'] });
   });
 
   it('is the tenant\'s own: another tenant\'s policy never applies here', async () => {

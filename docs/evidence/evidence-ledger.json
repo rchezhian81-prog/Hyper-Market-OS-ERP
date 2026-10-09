@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 949,
+  "testFiles": 950,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -20,7 +20,7 @@
   },
   "totals": {
     "unit": 81,
-    "integration": 78,
+    "integration": 79,
     "realDb": 57,
     "browser": 45,
     "connected": 2,
@@ -391,7 +391,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 18,
+        "integration": 19,
         "realDb": 2,
         "browser": 4,
         "connected": 0,
@@ -413,6 +413,7 @@
         "integration": [
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/goods-receipt-assembled.test.ts",
           "tests/integration/goods-receipt-disposition.test.ts",
           "tests/integration/goods-receipt-synced-route.test.ts",
@@ -606,7 +607,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 20,
-        "integration": 18,
+        "integration": 19,
         "realDb": 1,
         "browser": 3,
         "connected": 0,
@@ -640,6 +641,7 @@
           "tests/integration/a-returned-item-keeps-its-lot.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/ai-inventory-agent.test.ts",
+          "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/facilities-monitoring.test.ts",
           "tests/integration/fulfilment-packing.test.ts",
           "tests/integration/goods-receipt-synced-route.test.ts",
@@ -2167,7 +2169,7 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 1,
-        "integration": 0,
+        "integration": 1,
         "realDb": 0,
         "browser": 0,
         "connected": 0,
@@ -2178,7 +2180,9 @@
         "unit": [
           "tests/unit/goods-in.test.ts"
         ],
-        "integration": [],
+        "integration": [
+          "tests/integration/cold-chain-at-receiving.test.ts"
+        ],
         "realDb": [],
         "browser": [],
         "connected": [],

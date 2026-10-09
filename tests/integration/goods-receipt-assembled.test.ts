@@ -67,8 +67,8 @@ async function seeded(): Promise<ApiHarness> {
       snapshot: {
         tenantId: A, version: 1, builtAt: AT, scope: { tenantId: A, storeId: 'store-1' },
         products: [
-          { productId: 'p-rice', sku: 'p-rice', name: 'Rice 5kg', unitPriceMinor: 40_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false },
-          { productId: 'p-dal', sku: 'p-dal', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false },
+          { productId: 'p-rice', sku: 'p-rice', name: 'Rice 5kg', unitPriceMinor: 40_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false, handling: 'ambient' },
+          { productId: 'p-dal', sku: 'p-dal', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false, handling: 'ambient' },
           { productId: 'p-milk', sku: 'p-milk', name: 'Milk 500ml', unitPriceMinor: 3_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: true },
         ],
       },

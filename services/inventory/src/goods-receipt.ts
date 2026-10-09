@@ -65,6 +65,10 @@ export const RECEIPT_FLAGS = Object.freeze([
   'excess_returned_to_supplier',
   // SF-02 — a product on the order had nothing left to receive (fully received or cancelled): all of it is excess.
   'nothing_left_on_order',
+  // Wave 3 · SF-07 — the product master names no handling class for a product on the receipt (owner decision 9 Oct 2026,
+  // "A": received normally, said on the record so someone fills it in); and, on a receipt assembled from the handheld's
+  // scans, a cold-chain line held for its temperature whose units the scans had already put on-hand.
+  'handling_unknown', 'cold_chain_held_but_on_hand',
 ] as const);
 export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
 
@@ -265,7 +269,9 @@ const isMoney = (v: unknown): v is { minor: number; currency: string } => isObj(
 
 const isCapturedLine = (v: unknown): v is CapturedLine =>
   isObj(v) && isStr(v['lineId']) && isStr(v['productId']) && isNum(v['orderedMinor']) && isNum(v['countedMinor'])
-  && isStr(v['uom']) && isMoney(v['unitCost']) && isStr(v['condition']);
+  && isStr(v['uom']) && isMoney(v['unitCost']) && isStr(v['condition'])
+  // Wave 3 · SF-07: a recorded temperature is judged against the product's limits, so only a number can be one.
+  && (v['temperatureC'] === undefined || isNum(v['temperatureC']));
 
 /**
  * The product master's rules for every product on a receipt — head office's, never the body's (F03). A product the
@@ -273,14 +279,73 @@ const isCapturedLine = (v: unknown): v is CapturedLine =>
  */
 export async function rulesFromMaster(
   deps: Pick<GoodsReceiptDeps, 'productRule'>, tenantId: string, productIds: Iterable<string>,
-): Promise<{ readonly rules: readonly ProductReceiptRules[]; readonly unverified: boolean }> {
+): Promise<{ readonly rules: readonly ProductReceiptRules[]; readonly unverified: boolean; readonly handlingUnknown: boolean }> {
   const rules: ProductReceiptRules[] = [];
   let unverified = false;
+  let handlingUnknown = false;
   for (const productId of new Set(productIds)) {
     const rule = await deps.productRule(tenantId, productId);
-    if (rule === undefined) { unverified = true; rules.push({ productId, batchTracked: false }); } else rules.push(rule);
+    if (rule === undefined) { unverified = true; handlingUnknown = true; rules.push({ productId, batchTracked: false }); } else {
+      // Wave 3 · SF-07: a product the master holds but whose handling class nobody has given is SAID, never assumed ambient.
+      if (rule.handling === undefined) handlingUnknown = true;
+      rules.push(rule);
+    }
   }
-  return { rules, unverified };
+  return { rules, unverified, handlingUnknown };
+}
+
+/** The handling facts receiving reads from head office's product master (Wave 3 · SF-07): its class and its own limits. */
+export interface MasterHandling {
+  readonly handling?: string;
+  readonly coldChain?: { readonly minTenthsC?: number; readonly maxTenthsC?: number };
+}
+
+/** An approved class default, in the pack engine's tenths of a degree (`COLD_CHAIN_CLASS_DEFAULTS`). */
+export interface ColdClassDefault {
+  readonly handling: string;
+  readonly minTenthsC?: number;
+  readonly maxTenthsC?: number;
+}
+
+/**
+ * Wave 3 · SF-07 — the receiving rule for ONE product, from head office's own records, never the sender's: batch tracking from
+ * the published catalogue (as before, F03); the handling class and cold-chain limits from the PRODUCT MASTER. A product is a
+ * cold-chain item when its class is a cold class (one with an approved default) or the master gives it limits of its own; its
+ * limits are its own when it has them, else its class's approved default — and the rule says whose. `undefined` when neither
+ * the catalogue nor the master knows the product (the caller says so: `product_rules_unverified`).
+ */
+export function receiptRuleFor(
+  productId: string,
+  published: { readonly batchTracked?: boolean; readonly handling?: string } | undefined,
+  master: MasterHandling | undefined,
+  classDefaults: readonly ColdClassDefault[],
+): ProductReceiptRules | undefined {
+  if (published === undefined && master === undefined) return undefined;
+  const handling = master?.handling ?? published?.handling;
+  const own = master?.coldChain;
+  const hasOwn = own !== undefined && (own.minTenthsC !== undefined || own.maxTenthsC !== undefined);
+  const classDefault = handling === undefined ? undefined : classDefaults.find((d) => d.handling === handling);
+  const limits = hasOwn ? own : classDefault;
+  const coldChain = hasOwn || classDefault !== undefined;
+  const c = (tenths: number | undefined): number | undefined => (tenths === undefined ? undefined : tenths / 10);
+  const maxC = c(limits?.maxTenthsC);
+  const minC = c(limits?.minTenthsC);
+  return {
+    productId,
+    batchTracked: published?.batchTracked ?? false,
+    ...(handling === undefined ? {} : { handling }),
+    ...(coldChain ? {
+      coldChain: true,
+      ...(maxC === undefined ? {} : { coldChainMaxC: maxC }),
+      ...(minC === undefined ? {} : { coldChainMinC: minC }),
+      coldChainSource: hasOwn ? 'product' as const : 'class_default' as const,
+    } : {}),
+  };
+}
+
+/** Wave 3 · SF-07 — the flag for a receipt whose rules carried a product with no handling class (owner decision "A"). */
+export function sayHandling(flags: ReceiptFlag[], master: { readonly handlingUnknown: boolean }): void {
+  if (master.handlingUnknown && !flags.includes('handling_unknown')) flags.push('handling_unknown');
 }
 
 /** The tenant's tolerance policy in force — theirs when set, otherwise the default and `defaulted` so the record says so. */
@@ -706,7 +771,7 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         const aligned = alignToOrder(lines as CapturedLine[], order.ordered, flags);
         // The product master's rules and the tenant's policy — never the body (F03). Unknown is SAID, then the safe fallback.
         const master = await rulesFromMaster(deps, ctx.tenantId, aligned.map((l) => l.productId));
-        if (master.unverified) flags.push('product_rules_unverified');
+        if (master.unverified) flags.push('product_rules_unverified'); sayHandling(flags, master);
         const inForce = await policyInForce(deps, ctx.tenantId);
         if (inForce.defaulted) flags.push('default_policy');
         // The FR-02/03 gate — the SAME tested rule the handheld ran, re-run here (a boundary trusts no client
