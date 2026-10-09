@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 828 | 507 | 507 | 64 | 280 |
+| 13 | 829 | 508 | 508 | 64 | 280 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -708,6 +708,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/facilities/energy/:readingId` | `facilities.asset.manage` | core | yes |
 | GET | `/v1/facilities/equipment/:assetId` | `facilities.asset.read` | core | — |
 | POST | `/v1/facilities/equipment/:assetId/contents` | `facilities.asset.manage` | core | yes |
+| POST | `/v1/facilities/equipment/:assetId/hold-check` | `facilities.reading.record` | core | yes |
 | POST | `/v1/facilities/equipment/:assetId/range` | `facilities.asset.manage` | core | yes |
 | POST | `/v1/facilities/equipment/:assetId/readings/:readingId` | `facilities.reading.record` | core | yes |
 | GET | `/v1/facilities/evidence` | `facilities.overdue.read` | core | — |
