@@ -193,6 +193,7 @@ const pack = (over: Partial<StorePack> = {}): StorePack => ({
   satisfaction: known([]),
   slaPolicy: known({ resolutionMinutes: { high: 240 }, firstResponseMinutes: { high: 60 } }),
   receiptSeries: notKnown('no receipt ranges published'),
+  suspensionPolicy: notKnown('no hold policy'),
   servicePolicy: known({
     returnWindowDays: 30, approvalThresholdMinor: 200_00, noReceiptCapMinor: 100_00,
     agentAuthorityMinor: 50_00, compensationCapMinor: 500_00, userId: 'u-desk',
@@ -850,6 +851,7 @@ describe('a box that has been told nothing tells every screen so', () => {
       satisfaction: notKnown('never'), slaPolicy: notKnown('never'),
       servicePolicy: notKnown('never'),
       receiptSeries: notKnown('never'),
+      suspensionPolicy: notKnown('never'),
       batches: notKnown('never'), recalls: notKnown('never'),
       expiryPolicy: notKnown('never'),
       tallyPostings: notKnown('never'), financeLedger: notKnown('never'),
