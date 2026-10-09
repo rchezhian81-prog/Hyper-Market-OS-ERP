@@ -59,6 +59,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.indent.sync',
       // SP-8c-ii: the box relays the shelf count taken on the merchandising screen; the route re-verifies the COUNTER.
       'shelf.count.sync',
+      // PF-07: the box relays the till's voids to head office's loss-prevention record (held so the box identity's grant can be approved).
+      'lp.activity.sync',
       // SP-7a: the owner holds the box's invoice-sync hop too, so a maker-checker grant of the box identity can be approved.
       'purchase.invoice.sync',
       // SP-7b: the owner sets the three-way-match tolerances every invoice is judged by (never the body, OC-13).
@@ -267,6 +269,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // SP-8c-ii hop: the box relays the shelf count taken on the merchandising screen. The route re-verifies the COUNTER
       // from their grants and judges the shelf against head office's own map — this grants no count of its own.
       'shelf.count.sync',
+      // PF-07 hop: the box relays the till's voids (with the reason and the cashier it verified) to head office's
+      // loss-prevention record, where the store's rules run on them — this grants no case or rule authority of its own.
+      'lp.activity.sync',
       // SP-3b hop: the box relays the handheld's adjustment REQUESTS; the route records them pending — this grants no approval.
       'inventory.adjustment.sync',
       // SP-4c hop: the box relays the till's cash movements and shift closes (F10). The routes re-verify the custodian /

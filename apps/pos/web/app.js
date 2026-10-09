@@ -745,7 +745,13 @@ el('void').addEventListener('click', async () => {
   // A reason is mandatory (M15) and it is chosen, not typed.
   const reason = await ask({ title: t('reasonForVoid'), mode: 'choice' });
   if (!reason) return;
-  session.voidLine(selectedLineId, reason);
+  // The void, its value and the reason go to the store computer first (audit PF-07); the line goes only once it has them.
+  if (session.voidAtTill) {
+    const r = await session.voidAtTill(selectedLineId, reason);
+    if (!r.ok) { tell(t('read'), r.laneMessage); return; }
+  } else {
+    session.voidLine(selectedLineId, reason);
+  }
   selectedLineId = null;
   render();
 });

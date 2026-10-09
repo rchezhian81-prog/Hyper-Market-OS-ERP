@@ -65,7 +65,7 @@ import { ReturnEntitlement, type EntitlementLine } from './entitlement';
 import { buildReceiptLookup } from './receipt-lookup';
 import { returnIdOf } from './cloud-return';
 import { createEdgeNode, type EdgeNode } from './index';
-import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler } from './lane-server';
+import { startLaneServer, LANE_HOST, type LaneServer, type LaneDayCloseHandler, type LaneDayReopenHandler, type LaneDeviceRelayHandler, type LaneDeviceStatusHandler, type LaneTillActivityHandler } from './lane-server';
 import { commitLocally } from './durability';
 import { readRelayItem, isRelayable, type BoxItemStatus, type DeviceAck } from '../../../packages/sync/src/device-relay';
 import { laneSyncStatus, type LaneSyncStatus, type QueueHealth } from './sync-status';
@@ -796,6 +796,39 @@ export async function startEdge(
   };
 
   /**
+   * A TILL ACTION kept as loss-prevention evidence (audit PF-07 · M15-FR-01): a void — the line, its value, the reason —
+   * stamped with the cashier THIS box verified (never a name the till typed), written to the device-events log (fsync'd)
+   * and only then queued for head office as `TillActivityRecorded`, on the same dedupe set, cursor and dead-letter queue
+   * as every relayed record. The till removes the line only once this says `recorded`. A re-sent void is the same one.
+   */
+  const recordTillActivity: LaneTillActivityHandler = async ({ laneId, cashierId, via, body }) => {
+    const str = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+    const value = body['valueMinor'];
+    if (body['kind'] !== 'void' || !str(body['activityId']) || !str(body['billRef']) || !str(body['lineId']) || !str(body['productId'])
+      || typeof body['description'] !== 'string' || typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || !str(body['reason'])) {
+      return { recorded: false, refusedBecause: 'not_readable', laneMessage: 'The till did not say which line, how much and why. Nothing was removed — try again.' };
+    }
+    const key = `till-activity-${tenantId}-${body['activityId']}`;
+    if (deviceEventKeys.has(key)) return { recorded: true, laneMessage: 'Already recorded.' };
+    const at = new Date().toISOString();
+    const event: DomainEvent = makeEvent({
+      id: `till-activity-${body['activityId']}`, type: 'TillActivityRecorded', occurredAt: at, idempotencyKey: key, source: `store-box/${laneId}`,
+      payload: {
+        activityId: body['activityId'], kind: 'void', laneId, cashierId, via, billRef: body['billRef'], lineId: body['lineId'],
+        productId: body['productId'], description: body['description'], valueMinor: value, reason: (body['reason'] as string).trim(), at,
+      },
+    });
+    deviceEventKeys.add(key);
+    const outcome = await commitLocally({ saleId: key, record: JSON.stringify(event), log: deviceEventsLog });
+    if (!outcome.committed) {
+      deviceEventKeys.delete(key);
+      return { recorded: false, refusedBecause: outcome.refusedBecause ?? 'could_not_write_durably', laneMessage: 'The store computer could not record the void, so the line stays on the bill. Tell the manager.' };
+    }
+    deviceEventsOutbox.enqueue(event);
+    return { recorded: true, laneMessage: 'Recorded.' };
+  };
+
+  /**
    * Where the device items this box took have got to (SP-2a): `posted` once head office acknowledged, `refused`
    * with the reason when it is in the visible dead-letter queue, `pending` while still to send, `unknown` for a
    * key this box never took. A key below the cursor and not in the outbox was acknowledged in an earlier run.
@@ -1181,6 +1214,7 @@ export async function startEdge(
     // is told "accepted"; the handhelds join on the same route in SP-3.
     relayDeviceEvents,
     deviceEventStatus,
+    recordTillActivity,
     closeDay: (req) => {
       const fn = dayCloseRelay.current;
       return fn !== undefined ? fn(req) : Promise.resolve({ closed: false as const, reason: 'the box is still starting up — try the day close again in a moment' });
