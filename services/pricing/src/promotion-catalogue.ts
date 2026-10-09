@@ -29,6 +29,12 @@ export interface PromotionCatalogueDeps {
   readonly promotions: (tenantId: string) => Promise<readonly Promotion[]> | readonly Promotion[];
   readonly recordDefined: (tenantId: string, promo: Promotion) => Promise<void> | void;
   readonly recordStatus: (tenantId: string, promotionId: string, status: 'active' | 'stopped', at: string) => Promise<void> | void;
+  /**
+   * SF-01 — whether the offer passed the governed launch (`POST /v1/promotions/:id/launch`: the margin check and, for a
+   * margin-losing offer, a second person's approval). Switching an offer on here without it would skip both, so it is
+   * refused. Optional on a bare stub.
+   */
+  readonly launched?: (tenantId: string, promotionId: string) => Promise<boolean> | boolean;
   readonly now: () => string;
 }
 
@@ -134,6 +140,14 @@ export function promotionCatalogueRoutes(deps: PromotionCatalogueDeps): readonly
             whatHappened: `Promotion ${promotionId} has been stopped and cannot be reactivated — define a new one.`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Define a fresh promotion. Nothing was changed.',
+          });
+        }
+        if (promo.status !== 'active' && deps.launched !== undefined && !(await deps.launched(ctx.tenantId, promotionId))) {
+          throw apiError(422, {
+            code: 'promotion_not_launched',
+            whatHappened: `Offer ${promotionId} has not been through the launch check (its margin and, where it loses margin, a second person's approval), so it cannot be switched on here.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Launch the offer (POST /v1/promotions/:promotionId/launch) — that switches it on. Nothing was changed.',
           });
         }
         if (promo.status !== 'active') await deps.recordStatus(ctx.tenantId, promotionId, 'active', deps.now());

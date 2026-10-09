@@ -20,6 +20,10 @@ const define = (h: ApiHarness, t: string, u: string, id: string, body: Record<st
   h.request({ method: 'POST', path: `/v1/promotions/${id}/definition`, userId: u, tenantId: t, idempotencyKey: key ?? `def-${id}`, body });
 const activate = (h: ApiHarness, t: string, u: string, id: string, key?: string) =>
   h.request({ method: 'POST', path: `/v1/promotions/${id}/activate`, userId: u, tenantId: t, idempotencyKey: key ?? `act-${id}`, body: {} });
+// SF-01: an offer is switched on by its governed LAUNCH (the margin check); a margin-positive one needs no second person.
+const MARGIN_OK = { description: 'offer', normalPrice: { minor: 10_000, currency: 'INR' }, promoPrice: { minor: 9_000, currency: 'INR' }, unitCost: { minor: 5_000, currency: 'INR' }, baselineUnits: 100, expectedUnits: 200 };
+const launch = (h: ApiHarness, t: string, u: string, id: string) =>
+  h.request({ method: 'POST', path: `/v1/promotions/${id}/launch`, userId: u, tenantId: t, idempotencyKey: `launch-${id}`, body: MARGIN_OK });
 const stop = (h: ApiHarness, t: string, u: string, id: string) =>
   h.request({ method: 'POST', path: `/v1/promotions/${id}/stop`, userId: u, tenantId: t, idempotencyKey: `stop-${id}`, body: {} });
 const getDef = (h: ApiHarness, t: string, u: string, id: string) =>
@@ -46,7 +50,12 @@ describe('promotion catalogue: define → activate → stop, and the determinist
     // Draft → no discount.
     expect(((await evaluate(h, A, 'u-owner', basket({ tag: 'draft' }))).body as Result).discount.minor).toBe(0);
 
-    expect((await activate(h, A, 'u-owner', 'p1')).status).toBe(200);
+    // Switching it on directly, without the launch check, is refused — and it still does not apply.
+    expect(codeOf(await activate(h, A, 'u-owner', 'p1'))).toBe('promotion_not_launched');
+    expect(((await evaluate(h, A, 'u-owner', basket({ tag: 'unlaunched' }))).body as Result).discount.minor).toBe(0);
+    expect((await launch(h, A, 'u-owner', 'p1')).status).toBe(201);
+    // Once launched, /activate agrees (already on).
+    expect((await activate(h, A, 'u-owner', 'p1', 'act-p1-after')).status).toBe(200);
     // Active, in window → 10% of 1,00,000 = 10,000.
     const r = (await evaluate(h, A, 'u-owner', basket({ tag: 'active' }))).body as Result;
     expect(r.discount.minor).toBe(10_000);
@@ -57,7 +66,7 @@ describe('promotion catalogue: define → activate → stop, and the determinist
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await define(h, A, 'u-owner', 'p1', { kind: 'percent_off', percentBps: 1000, ...WINDOW });
-    await activate(h, A, 'u-owner', 'p1');
+    await launch(h, A, 'u-owner', 'p1');
     expect(((await evaluate(h, A, 'u-owner', basket({ tag: 'on' }))).body as Result).discount.minor).toBe(10_000);
 
     expect((await stop(h, A, 'u-owner', 'p1')).status).toBe(200);
@@ -65,6 +74,10 @@ describe('promotion catalogue: define → activate → stop, and the determinist
 
     // A stopped promotion is ended, not paused (a fresh transport key so it reaches the handler).
     expect(codeOf(await activate(h, A, 'u-owner', 'p1', 'act-p1-again'))).toBe('promotion_stopped');
+    // …and launching it again does not switch it back on either (a fresh transport key so it reaches the handler).
+    const relaunch = await h.request({ method: 'POST', path: '/v1/promotions/p1/launch', userId: 'u-owner', tenantId: A, idempotencyKey: 'launch-p1-again', body: MARGIN_OK });
+    expect(relaunch.body).toMatchObject({ alreadyLaunched: true });
+    expect(((await evaluate(h, A, 'u-owner', basket({ tag: 'still-off' }))).body as Result).discount.minor).toBe(0);
   });
 
   it('best price is deterministic: within an exclusive group only the best applies, others stack', async () => {
@@ -76,7 +89,7 @@ describe('promotion catalogue: define → activate → stop, and the determinist
     await define(h, A, 'u-owner', 'promo-b', { kind: 'amount_off', amountOffMinor: 5_000, exclusiveGroup: 'g1', ...WINDOW }); // 5,000
     // A non-exclusive offer stacks.
     await define(h, A, 'u-owner', 'promo-c', { kind: 'percent_off', percentBps: 500, ...WINDOW }); // 5,000
-    for (const id of ['promo-a', 'promo-b', 'promo-c']) await activate(h, A, 'u-owner', id);
+    for (const id of ['promo-a', 'promo-b', 'promo-c']) await launch(h, A, 'u-owner', id);
 
     const r = (await evaluate(h, A, 'u-owner', basket({ tag: 'excl' }))).body as Result;
     expect(r.discount.minor).toBe(15_000);              // best-of-g1 (10,000) + stacking c (5,000)
@@ -87,7 +100,7 @@ describe('promotion catalogue: define → activate → stop, and the determinist
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await define(h, A, 'u-owner', 'p1', { kind: 'percent_off', percentBps: 1000, requiresMember: true, ...WINDOW });
-    await activate(h, A, 'u-owner', 'p1');
+    await launch(h, A, 'u-owner', 'p1');
 
     expect(((await evaluate(h, A, 'u-owner', basket({ tag: 'guest' }))).body as Result).discount.minor).toBe(0);
     expect(((await evaluate(h, A, 'u-owner', basket({ tag: 'member', isMember: true }))).body as Result).discount.minor).toBe(10_000);

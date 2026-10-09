@@ -22,11 +22,14 @@ import {
 import type { CatalogueBarcode, ProductStatus } from '../../../packages/catalogue/src/catalogue';
 import { mrpOn, type ProductRecord, type BarcodeAssignment } from '../../../packages/product/src/index';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
+import type { Promotion } from '../../../packages/promotions/src/promotions';
 import { resolveGstRate, InvalidRateSchedule, type GstRatePeriod } from '../../../packages/finance/src/rate';
 
 export interface CataloguePreviewDeps {
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
   readonly priceEntries: (tenantId: string, productId: string) => Promise<readonly PriceEntry[]> | readonly PriceEntry[];
+  /** SF-01 — the tenant's offers as head office holds them; only LAUNCHED (active), not-yet-ended ones go in a pack. */
+  readonly promotions?: (tenantId: string) => Promise<readonly Promotion[]> | readonly Promotion[];
   readonly barcodes: (tenantId: string) => Promise<readonly BarcodeAssignment[]> | readonly BarcodeAssignment[];
   readonly taxSchedule: (tenantId: string, hsnCode: string) => Promise<readonly GstRatePeriod[]> | readonly GstRatePeriod[];
   readonly now: () => string;
@@ -114,7 +117,7 @@ export async function assembleCatalogueSnapshot(
     code: b.code, productId: b.productId, kind: 'standard' as const,
   }));
 
-  return buildCatalogueSnapshot({
+  const built = buildCatalogueSnapshot({
     scope: { tenantId: opts.tenantId, storeId: opts.storeId },
     version: opts.version,
     asOf: opts.asOf,
@@ -123,6 +126,13 @@ export async function assembleCatalogueSnapshot(
     priceEntries,
     taxClasses,
   });
+  // SF-01: the launched offers the lanes apply — active and not yet ended at build time (one starting later rides along:
+  // the lane checks each offer's window against its own clock). A draft or stopped offer never reaches a lane.
+  const at = Date.parse(opts.asOf.length === 10 ? `${opts.asOf}T00:00:00Z` : opts.asOf);
+  const promotions = (deps.promotions === undefined ? [] : await deps.promotions(opts.tenantId))
+    .filter((p) => p.status === 'active' && Date.parse(p.endsAt) >= at)
+    .sort((a, b) => (a.id < b.id ? -1 : 1));
+  return promotions.length === 0 ? built : { ...built, snapshot: { ...built.snapshot, promotions } };
 }
 
 export function cataloguePreviewRoutes(deps: CataloguePreviewDeps): readonly Route[] {

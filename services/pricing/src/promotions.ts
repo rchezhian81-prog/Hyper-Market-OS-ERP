@@ -34,7 +34,17 @@ export interface LaunchRecord {
 
 export interface PromotionDeps {
   readonly launchedPromotion: (tenantId: string, promotionId: string) => Promise<LaunchRecord | undefined> | LaunchRecord | undefined;
+  /**
+   * Record the launch — and (SF-01) switch the offer ON: its defined rule becomes active in the SAME append, so what the
+   * margin check and the second person passed is exactly what the lanes apply. Before, a launch was a record only and
+   * the rule the lanes read never moved.
+   */
   readonly recordLaunch: (tenantId: string, record: LaunchRecord) => Promise<void> | void;
+  /**
+   * SF-01 — the offer's defined rule (`POST /v1/promotions/:id/definition`), or `undefined` when none was defined. A
+   * launch with no rule would be "launched" and apply to nothing, so it is refused. Optional on a bare stub.
+   */
+  readonly definedPromotion?: (tenantId: string, promotionId: string) => Promise<{ readonly status: string } | undefined> | { readonly status: string } | undefined;
   /** Whether a user holds `price.change.approve` — a margin-losing (below-cost) promotion is a pricing
    *  decision, so its §28 approver must genuinely hold the pricing-approval authority, not just be named. */
   /** Head office's maker-checker engine (ADR-0024): a margin-losing launch's approver gave it in their own session.
@@ -169,6 +179,24 @@ export function promotionRoutes(deps: PromotionDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as { approvedBy?: unknown; approvalId?: unknown };
         const input = readSimInput(ctx.body, promotionId);
         if (input === undefined) throw badInput();
+        // SF-01: the rule the lanes will apply must exist first — a launch switches THAT rule on.
+        const defined = deps.definedPromotion === undefined ? { status: 'unchecked' } : await deps.definedPromotion(ctx.tenantId, promotionId);
+        if (defined?.status === 'stopped') {
+          throw apiError(422, {
+            code: 'promotion_stopped',
+            whatHappened: `Offer ${promotionId} has been stopped; launching it again would switch a stopped offer back on.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Define a fresh offer and launch that. Nothing was launched.',
+          });
+        }
+        if (defined === undefined) {
+          throw apiError(422, {
+            code: 'promotion_not_defined',
+            whatHappened: `Offer ${promotionId} has no rule defined yet (what it takes off, on which products, from when to when), so launching it would switch on nothing.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Define the offer first (POST /v1/promotions/:promotionId/definition), then launch it. Nothing was launched.',
+          });
+        }
 
         const simulation: SimulationResult = simulatePromotion(input);
 
