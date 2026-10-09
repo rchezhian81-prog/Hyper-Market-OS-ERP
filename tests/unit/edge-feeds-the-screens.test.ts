@@ -164,6 +164,7 @@ const fullPack = (over: Partial<StorePack> = {}): StorePack => ({
   satisfaction: known([]),
   slaPolicy: known({ resolutionMinutes: { high: 240 }, firstResponseMinutes: { high: 60 } }),
   receiptSeries: notKnown('no receipt ranges published'),
+  suspensionPolicy: notKnown('no hold policy'),
   servicePolicy: known({
     returnWindowDays: 30, approvalThresholdMinor: 200_00, noReceiptCapMinor: 100_00,
     agentAuthorityMinor: 50_00, compensationCapMinor: 500_00, userId: 'u-desk',

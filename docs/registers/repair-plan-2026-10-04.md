@@ -191,7 +191,7 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
   every served screen bound to a person. The demo-only pack builder retires. **The quantity scale across pack sections
   is settled here** (found in DF-2).
 - **SF-06** the import console binds templates to real domain commands with a checker decision.
-- **PF-04** receipt-number cursor durable on the box (**DONE 9 Oct 2026** — the box issues and binds every number; owner decision OB-22 on the no-range fallback); **PF-05** a held bill survives a reload; **PF-06** electronic
+- **PF-04** receipt-number cursor durable on the box (**DONE 9 Oct 2026** — the box issues and binds every number; OB-22 answered "A"); **PF-05** a held bill survives a reload (**DONE 9 Oct 2026** — held on the store computer's disk, recalled once); **PF-06** electronic
   tenders keep provider evidence and recover; **PF-07** void and override evidence is durable and feeds the exception
   rules.
 - Owner sees: change a price in the office, publish, and the till on the demo sells at the new price; hold a bill,

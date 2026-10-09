@@ -44,8 +44,21 @@ export interface SuspendedLine {
   readonly uom: string;
   readonly taxBps: number;
   readonly group?: string;
+  /** The HSN / tax-class code the line was priced under, carried so the recalled line is the line that was parked. */
+  readonly hsnCode?: string;
+  /** The minimum age the line needs (PF-03) — a recalled age-restricted line still needs its question answered. */
+  readonly minimumAge?: number;
   readonly voided: boolean;
   readonly voidReason?: string;
+}
+
+/** An answer to the age question given before the basket was parked (PF-03) — evidence, carried with the basket. */
+export interface SuspendedAgeAnswer {
+  readonly minimumAge: number;
+  readonly outcome: 'confirmed' | 'refused';
+  readonly by: string;
+  readonly at: string;
+  readonly productId?: string;
 }
 
 export type SuspendedState = 'suspended' | 'resumed' | 'abandoned';
@@ -64,6 +77,8 @@ export interface SuspendedBill {
   readonly reason?: string;
   /** Customer reference where one was captured — never a name or a phone number (PRV). */
   readonly customerRef?: string;
+  /** The age answers already given for this basket (PF-03), so a recall does not lose them. */
+  readonly ageAnswers?: readonly SuspendedAgeAnswer[];
   readonly state: SuspendedState;
   readonly resumedAt?: string;
   readonly resumedBy?: string;
@@ -184,6 +199,7 @@ export interface SuspendInput {
   readonly at: string;
   readonly reason?: string;
   readonly customerRef?: string;
+  readonly ageAnswers?: readonly SuspendedAgeAnswer[];
 }
 
 /**
@@ -249,6 +265,7 @@ export function suspendBill(
     suspendedAt: input.at,
     ...(input.reason === undefined ? {} : { reason: input.reason }),
     ...(input.customerRef === undefined ? {} : { customerRef: input.customerRef }),
+    ...(input.ageAnswers === undefined || input.ageAnswers.length === 0 ? {} : { ageAnswers: input.ageAnswers }),
     state: 'suspended',
   };
   store.put(bill);

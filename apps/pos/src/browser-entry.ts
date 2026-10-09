@@ -255,6 +255,65 @@ export function laneApprovals(port: number = DEFAULT_LANE_PORT): TillApprovalPor
   };
 }
 
+/** A basket the store computer is holding for this till (audit PF-05). */
+export interface HeldBasket {
+  readonly billId: string;
+  readonly laneId: string;
+  readonly cashierId: string;
+  readonly heldAt: string;
+  readonly lineCount: number;
+  readonly valueMinor: number;
+  readonly firstItem: string;
+  readonly reason?: string;
+}
+/** What the store computer said to a hold, a recall or a give-up. */
+export interface HeldAnswer {
+  readonly ok: boolean;
+  readonly refusedBecause?: string;
+  readonly laneMessage: string;
+  readonly billId?: string;
+  /** On a recall: the basket was held past the shop's price window — check every price before taking money. */
+  readonly repriceRequired?: boolean;
+}
+/** The held-basket calls to this till's own store computer. */
+export interface HeldBillsPort {
+  hold(body: Record<string, unknown>): Promise<Record<string, unknown>>;
+  list(): Promise<readonly HeldBasket[]>;
+  recall(billId: string): Promise<Record<string, unknown>>;
+  abandon(billId: string, reason: string): Promise<Record<string, unknown>>;
+}
+type SuspendedLineShape = Parameters<PosSession['restoreHeld']>[0][number];
+type SuspendedAgeShape = NonNullable<Parameters<PosSession['restoreHeld']>[1]>[number];
+const UNREACHABLE_HOLD = 'This till cannot reach its store computer, so the basket was not held. It is still on the till — do not clear it.';
+
+/** Held baskets on this till's own store computer (audit PF-05), asked with the cashier's session. */
+export function laneHeldBills(port: number = DEFAULT_LANE_PORT): HeldBillsPort {
+  const post = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
+    try {
+      const response = await fetch(`${laneBase(port)}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+      const front = FRONT_REFUSED[response.status];
+      if (front !== undefined) return { ...front };
+      return await response.json() as Record<string, unknown>;
+    } catch {
+      return { refusedBecause: 'lane_unreachable', laneMessage: UNREACHABLE_HOLD };
+    }
+  };
+  return {
+    hold: (body) => post('/lane/held-bills', body),
+    recall: (billId) => post('/lane/held-bills/recall', { billId }),
+    abandon: (billId, reason) => post('/lane/held-bills/abandon', { billId, reason }),
+    list: async () => {
+      try {
+        const response = await fetch(`${laneBase(port)}/lane/held-bills`, { headers: operatorHeaders() });
+        const body = await response.json() as { held?: HeldBasket[] };
+        return Array.isArray(body.held) ? body.held : [];
+      } catch {
+        return [];
+      }
+    },
+  };
+}
+
 /** A request key for one number: unique to this ask, re-sent unchanged only when the reply was lost. */
 function newRequestKey(): string {
   const bytes = new Uint8Array(12);
@@ -607,6 +666,8 @@ export function bootPos(config?: {
   operatorPort?: TillOperatorPort;
   /** The till's manager-approval call to its box (ADR-0021). Overridable for tests; production asks this till's own edge. */
   approvalPort?: TillApprovalPort;
+  /** The till's held-basket calls to its box (audit PF-05). Overridable for tests; production asks this till's own edge. */
+  heldBillsPort?: HeldBillsPort;
 }): PosView & {
   readonly till: ReturnType<typeof createTillSession>;
   /**
@@ -648,6 +709,17 @@ export function bootPos(config?: {
    * PIN and the manager's authority and issues the approval the refund then carries; refused in the cashier's words.
    */
   readonly approveAtTill: (request: TillApprovalRequest) => Promise<TillApprovalOutcome>;
+  /**
+   * Hold this basket ON THE STORE COMPUTER (audit PF-05): it is on the box's disk before the till clears, so a reload,
+   * a closed tab or a power cut cannot lose it. Refused (nothing cleared) when the box cannot keep it.
+   */
+  readonly holdAtTill: (reason?: string) => Promise<HeldAnswer>;
+  /** The baskets this till may recall, oldest first — what the box holds, not what this tab remembers. */
+  readonly heldAtTill: () => Promise<readonly HeldBasket[]>;
+  /** Recall one held basket onto this (empty) till. A claim: the box gives it to one till, once. */
+  readonly recallAtTill: (billId: string) => Promise<HeldAnswer>;
+  /** Give a held basket up, with a reason — kept on the box's record, never deleted. */
+  readonly abandonAtTill: (billId: string, reason: string) => Promise<HeldAnswer>;
   readonly signOut: () => void;
   /** Who is at the till now, or undefined when nobody is signed in. */
   readonly operator: () => string | undefined;
@@ -917,6 +989,43 @@ export function bootPos(config?: {
   const signOut = (): void => { session.signOut(); till.signOut(); };
   const operator = (): string | undefined => session.operator();
 
+  // HELD BASKETS (audit PF-05): the basket goes to the store computer's disk; the till clears only once the box has it.
+  const held = config?.heldBillsPort ?? laneHeldBills(config?.lanePort ?? DEFAULT_LANE_PORT);
+  const answer = (r: Record<string, unknown>, ok: boolean, fallback: string): HeldAnswer => ({
+    ok,
+    laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : fallback,
+    ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}),
+    ...(typeof r['billId'] === 'string' ? { billId: r['billId'] } : {}),
+  });
+  const holdAtTill = async (reason?: string): Promise<HeldAnswer> => {
+    if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('hold a basket').laneMessage };
+    const basket = session.basketToHold();
+    if (basket.lines.length === 0) return { ok: false, refusedBecause: 'empty_basket', laneMessage: 'There is nothing in the basket to hold.' };
+    // The basket's own id: a re-sent hold after a lost reply is the same hold, never a second copy.
+    const billId = `H-${session.laneId() ?? 'lane'}-${newRequestKey().slice(3)}`;
+    const now = new Date().toISOString();
+    const body = { billId, lines: basket.lines, ageAnswers: basket.ageAnswers, tradingDay: session.tradingDayFor(now), ...(reason === undefined || reason.trim() === '' ? {} : { reason }) };
+    let r = await held.hold(body);
+    if (r['refusedBecause'] === 'lane_unreachable') r = await held.hold(body);
+    if (r['held'] !== true) return answer(r, false, UNREACHABLE_HOLD);
+    session.newSale();
+    return answer(r, true, 'Basket held.');
+  };
+  const heldAtTill = (): Promise<readonly HeldBasket[]> => held.list();
+  const recallAtTill = async (billId: string): Promise<HeldAnswer> => {
+    if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('recall a basket').laneMessage };
+    if (session.basketToHold().lines.length > 0) return { ok: false, refusedBecause: 'basket_not_empty', laneMessage: 'Finish or hold the basket on the till first — a recalled basket never joins another customer\'s.' };
+    const r = await held.recall(billId);
+    const bill = r['bill'] as { lines?: SuspendedLineShape[]; ageAnswers?: SuspendedAgeShape[] } | undefined;
+    if (r['recalled'] !== true || bill === undefined || !Array.isArray(bill.lines)) return answer(r, false, 'The store computer did not give the basket back. It is still held.');
+    session.restoreHeld(bill.lines, Array.isArray(bill.ageAnswers) ? bill.ageAnswers : []);
+    return { ...answer(r, true, 'Basket recalled.'), billId, ...(r['repriceRequired'] === true ? { repriceRequired: true } : {}) };
+  };
+  const abandonAtTill = async (billId: string, reason: string): Promise<HeldAnswer> => {
+    const r = await held.abandon(billId, reason);
+    return answer(r, r['abandoned'] === true, 'The basket was not given up.');
+  };
+
   // WHO IS AT THE TILL, verified by the store computer (ADR-0020). The model is told the person only once the box has
   // said who they are; the box then binds every money write to the session.
   const operators = config?.operatorPort ?? laneOperator(config?.lanePort ?? DEFAULT_LANE_PORT);
@@ -957,7 +1066,7 @@ export function bootPos(config?: {
     tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
   });
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill });
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
