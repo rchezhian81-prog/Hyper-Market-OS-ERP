@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { captureReceipt, type CapturedLine } from '../../packages/receiving/src/index';
 import {
-  alignToOrder, receivedAgainstOrder, poPostingFor, orderForReceipt, awaitsDecision, linesAwaitingDisposition,
+  alignToOrder, receivedAgainstOrder, poPostingFor, orderForReceipt, orderPositions, awaitsDecision, linesAwaitingDisposition,
   type GrnRecord, type ReceiptFlag, type OrderForReceipt,
 } from '../../services/inventory/src/goods-receipt';
 
@@ -85,7 +85,42 @@ describe('orderForReceipt — only an ISSUED order head office holds is folded i
     const f1: ReceiptFlag[] = []; expect(await orderForReceipt(deps(undefined), 't', null, f1)).toEqual({ poId: null, ordered: undefined, folds: false }); expect(f1).toEqual(['no_purchase_order']);
     const f2: ReceiptFlag[] = []; expect(await orderForReceipt(deps(undefined), 't', 'po-x', f2)).toEqual({ poId: 'po-x', ordered: undefined, folds: false }); expect(f2).toEqual(['order_unknown']);
     const f3: ReceiptFlag[] = []; expect(await orderForReceipt(deps({ status: 'proposed', orderedByProduct: { p1: 5 } }), 't', 'po-d', f3)).toEqual({ poId: 'po-d', ordered: { p1: 5 }, folds: false }); expect(f3).toEqual(['order_not_issued']);
-    const f4: ReceiptFlag[] = []; expect(await orderForReceipt(deps({ status: 'issued', orderedByProduct: { p1: 5 } }), 't', 'po-i', f4)).toEqual({ poId: 'po-i', ordered: { p1: 5 }, folds: true }); expect(f4).toEqual([]);
+    const f4: ReceiptFlag[] = []; expect(await orderForReceipt(deps({ status: 'issued', orderedByProduct: { p1: 5 } }), 't', 'po-i', f4)).toEqual({ poId: 'po-i', ordered: { p1: 5 }, folds: true, position: { p1: { ordered: 5, receivedBefore: 0, cancelled: 0, remaining: 5 } } }); expect(f4).toEqual([]);
+  });
+
+  it('SF-02: an issued order is measured by what REMAINS — the original kept beside it; never below zero', async () => {
+    const po = { status: 'issued' as const, orderedByProduct: { p1: 100, p2: 10, p3: 5 }, receivedByProduct: { p1: 60, p2: 12 }, cancelledByProduct: { p1: 10, p3: 5 } };
+    expect(orderPositions(po)).toEqual({
+      p1: { ordered: 100, receivedBefore: 60, cancelled: 10, remaining: 30 },
+      p2: { ordered: 10, receivedBefore: 12, cancelled: 0, remaining: 0 }, // an accepted excess took it past the order
+      p3: { ordered: 5, receivedBefore: 0, cancelled: 5, remaining: 0 },
+    });
+    const flags: ReceiptFlag[] = [];
+    const order = await orderForReceipt({ purchaseOrder: () => po }, 't', 'po-i', flags);
+    expect(order.ordered).toEqual({ p1: 30, p2: 0, p3: 0 });
+    expect(flags).toEqual([]); // nothing said until a delivery actually brings a product with nothing left
+  });
+
+  it('SF-02: the order\'s guard is read BEFORE the order, so anything landing in between is caught at the write', async () => {
+    const reads: string[] = [];
+    const order = await orderForReceipt({
+      orderVersion: () => { reads.push('version'); return 7; },
+      purchaseOrder: () => { reads.push('order'); return { status: 'issued', orderedByProduct: { p1: 1 } }; },
+    }, 't', 'po-i', []);
+    expect(reads).toEqual(['version', 'order']);
+    expect(order.expectedVersion).toBe(7);
+  });
+});
+
+describe('alignToOrder — SF-02: a product with nothing left on the order', () => {
+  it('every unit is excess, held by the receipt rule, and the record says nothing was left', () => {
+    const flags: ReceiptFlag[] = [];
+    const aligned = alignToOrder([line('L1', 'p1', 10, 10)], { p1: 0 }, flags);
+    expect(aligned[0]).toMatchObject({ orderedMinor: 0, countedMinor: 10 });
+    expect(flags).toContain('nothing_left_on_order');
+    const c = capture(aligned);
+    expect(c.lines[0]).toMatchObject({ sellableMinor: 0, heldMinor: 10 });
+    expect(receivedAgainstOrder(c)).toEqual({});
   });
 });
 

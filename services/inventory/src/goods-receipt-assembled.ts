@@ -30,7 +30,7 @@ import {
   type CapturedLine, type CapturedReceipt,
 } from '../../../packages/receiving/src/index';
 import {
-  rulesFromMaster, policyInForce, orderForReceipt, alignToOrder, poPostingFor, awaitsDecision, linesAwaitingDisposition,
+  rulesFromMaster, policyInForce, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder, awaitsDecision, linesAwaitingDisposition,
   type GrnRecord, type ReceiptFlag, type AssembledFromScans,
 } from './goods-receipt';
 import type { SyncedGoodsReceiptDeps } from './goods-receipt-synced';
@@ -208,6 +208,7 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
     governanceFlags: flags, source: input.source, storeId,
     ...(input.relayedBy === undefined ? {} : { relayedBy: input.relayedBy }),
     poReceipt: poReceipt === undefined ? null : { receiptId: poReceipt.receiptId, receivedByProduct: poReceipt.receivedByProduct },
+    ...(order.position === undefined ? {} : { orderPosition: order.position }),
     assembledFrom: {
       scanCount: scans.length, commandIds: scans.map((s) => s.commandId), scannedBy: [...new Set(scans.map((s) => s.receivedBy))],
       completedBy: input.completedBy, completedAt: input.completedAt, onHandByLine,
@@ -215,7 +216,7 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
     },
   };
   // NO movements: the scans posted the stock (hard rule #2). The GRN and its posting against the order are one append.
-  await deps.commit(input.tenantId, record, [], input.idempotencyKey, poReceipt);
+  await commitAgainstOrder(deps, input.tenantId, record, [], input.idempotencyKey, poReceipt, order);
   await deps.recordAudit?.(input.tenantId, {
     actorId: input.completedBy, action: 'receipt.assemble', objectType: 'goods_receipt', objectId: input.grnId,
     at: deps.now(), origin: { tenantId: input.tenantId, branchId: input.branchId },
