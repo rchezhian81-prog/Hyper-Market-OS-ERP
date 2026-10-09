@@ -8,6 +8,7 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { hmacSigner } from '../../services/catalogue/src/index';
 import { signStorePack, verifyStorePack, type StorePackEnvelope } from '../../services/platform/src/store-packs';
 import { STREAM, ROLE_REVOKED } from '../../services/api/src/adapters';
+import { GLOBAL_FOR } from '../../edge/store-edge/src/screen-data';
 import { makeEvent } from '../../packages/contracts/src/event';
 
 /**
@@ -178,5 +179,77 @@ describe('PA-06 — head office delivers each store its setup', () => {
     expect((await call('POST', '/v1/stores/S1/settings', { ...SETTINGS, tradingDayCutoff: '25:00' })).status).toBe(400);
     expect((await call('POST', '/v1/stores/NOPE/settings', SETTINGS)).status).toBe(404);
     expect((await call('GET', '/v1/stores/S1/settings')).body).toMatchObject({ settings: { handoverToleranceMinor: 7_500, version: 2 } });
+  });
+
+  // ── DF-3-b-1: the store's rules and every screen's setup ─────────────────────────────────────────────────────────
+  const RULES = {
+    approvalLimitMinor: 500_000, marginFloorBps: 2_000, nearExpiryDays: 30,
+    reporting: { laggingAfterMinutes: 5, staleAfterMinutes: 60 },
+    service: { returnWindowDays: 7, approvalThresholdMinor: 200_000, noReceiptCapMinor: 50_000, agentAuthorityMinor: 5_000, compensationCapMinor: 50_000 },
+    journalPrefixes: { takings: 'TK', tax: 'TX', refunds: 'RF' }, dormantAfterDays: 60, aiStaleAfterMinutes: 60,
+    merchandising: { refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'store_manager' },
+    writeOffMaterialThresholdMinor: 50_000,
+    checklist: [{ itemId: 'close-1', description: 'Count every till blind', blocking: true }, { itemId: 'close-2', description: 'Walk the chiller', blocking: false }],
+  };
+
+  it('DF-3-b-1: the store\'s rules are head office\'s record — every value set by the owner, refused by name when missing — and the setup carries them', async () => {
+    await call('POST', '/v1/stores/S1/settings', SETTINGS);
+    // Nothing is defaulted: a body missing values is refused, naming each one.
+    const missing = await call('POST', '/v1/stores/S1/rules', { approvalLimitMinor: 500_000 });
+    expect(missing.status).toBe(400);
+    expect(JSON.stringify(missing.body)).toMatch(/marginFloorBps.*checklist/);
+    expect((await call('POST', '/v1/stores/S1/rules', { ...RULES, merchandising: { ...RULES.merchandising, refillRole: 'nobody' } })).status).toBe(400);
+    expect((await call('POST', '/v1/stores/S1/rules', RULES, 'u-mgr')).status).toBe(403);
+    expect((await call('POST', '/v1/stores/S1/rules', RULES)).status).toBe(201);
+    expect(((await call('POST', '/v1/stores/S1/rules', { ...RULES, nearExpiryDays: 21 })).body as { rules: { version: number } }).rules.version).toBe(2);
+
+    const edge = await boot();
+    expect((await edge.refreshStorePack!()).status).toBe('updated');
+    const held = JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope;
+    const sec = held.sections as Record<string, unknown>;
+    expect(sec['checklist']).toEqual([
+      { itemId: 'close-1', description: 'Count every till blind', done: false, blocking: true },
+      { itemId: 'close-2', description: 'Walk the chiller', done: false, blocking: false },
+    ]);
+    expect(sec['expiryPolicy']).toEqual({ nearExpiryDays: 21 });
+    expect(sec['merchandisingPolicy']).toMatchObject({ refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'store_manager' });
+    expect(sec['financePolicy']).toMatchObject({ tradingDayCutoff: '02:00', journalPrefixes: { takings: 'TK' } });
+    // The price approvers are the people whose grants AT THIS STORE carry the authority — read from the grants.
+    expect(sec['pricingPolicy']).toEqual({ approvers: ['u-owner'], marginFloorBps: 2_000 });
+    // Every screen's setup is there, and names NO person: the screen runs as whoever signs in.
+    for (const section of ['countsPolicy', 'cashOfficePolicy', 'dayReopenPolicy', 'goodsReceiptPolicy', 'dataIoPolicy']) {
+      expect(sec[section], section).toMatchObject({ permissions: [] });
+      expect((sec[section] as Record<string, unknown>)['userId'], section).toBeUndefined();
+    }
+    expect((sec['dataIoPolicy'] as unknown as { importTemplates: { id: string }[] }).importTemplates.map((t) => t.id)).toEqual(['supplier-invoice-v1', 'product-v1']);
+  });
+
+  it('DF-3-b-1: a store with no rules yet gets no rules sections — the store says it was not told, never a guessed limit', async () => {
+    await call('POST', '/v1/stores/S1/settings', SETTINGS);
+    const edge = await boot();
+    await edge.refreshStorePack!();
+    const held = JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope;
+    for (const section of ['checklist', 'managerPolicy', 'pricingPolicy', 'servicePolicy', 'merchandisingPolicy', 'writeOffCapturePolicy']) {
+      expect(held.sections[section], section).toBeUndefined();
+    }
+    expect(held.sections['countsPolicy']).toEqual({ permissions: [] });
+  });
+
+  it('DF-3-b-1: behind the signed-in front, a screen fed by head office\'s setup runs as the person who signed in — their id, their permissions from head office\'s grants', async () => {
+    await call('POST', '/v1/stores/S1/settings', SETTINGS);
+    await call('POST', '/v1/stores/S1/rules', RULES);
+    const edge = await boot({ EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_SCREEN_TRUST_FORWARDED_USER: '1' });
+    await edge.refreshStorePack!();
+    const base = `http://127.0.0.1:${edge.screens!.port}`;
+    const payloadOf = async (screen: 'counts', who: string): Promise<Record<string, unknown> | null> => {
+      const html = await (await savedFetch(`${base}/${screen}`, { headers: { 'x-sre-user': who } })).text();
+      const m = new RegExp(`<script>window\\.${GLOBAL_FOR[screen]} = ([\\s\\S]*?);</script>`).exec(html);
+      return m === null ? null : JSON.parse(m[1]!) as Record<string, unknown>;
+    };
+    const asManager = await payloadOf('counts', 'u-mgr');
+    expect(asManager).toMatchObject({ userId: 'u-mgr' });
+    expect(asManager!['permissions']).toEqual(expect.arrayContaining(['count.view']));
+    // Someone head office never granted at this store: their own empty permissions — nothing borrowed from anyone.
+    expect((await payloadOf('counts', 'u-box2'))!['permissions']).toEqual([]);
   });
 });

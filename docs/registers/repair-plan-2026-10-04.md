@@ -186,7 +186,7 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
 
 ### Wave 4 — connect saved changes to actual trading (audit step 4) · size L
 - **SF-01** the price and promotion screens write the operative registers, and one test follows screen → pack → sale (prices half **DONE 9 Oct 2026**; offers half **DONE 9 Oct 2026** — a launch switches the rule on, the signed pack carries it, the till applies it by its own clock).
-- **PA-06 = DF-3** (OB-26 "A" — always current; **part a DONE 9 Oct 2026**: signed per-store setup built from head office's records, store settings at head office, the box pulls, checks, keeps the last good and says when out of date; parts b and c next) head office builds and delivers the store pack to every box: authenticated, tenant- and
+- **PA-06 = DF-3** (OB-26 "A" — always current; **part a DONE 9 Oct 2026**: signed per-store setup built from head office's records, store settings at head office, the box pulls, checks, keeps the last good and says when out of date; **part 2a DONE 9 Oct 2026**: store rules at head office and every screen's setup in the pack, run as the signed-in person; parts 2b and c next) head office builds and delivers the store pack to every box: authenticated, tenant- and
   branch-bound sections with signed version and expiry, atomic activation and rollback, freshness and revocation;
   every served screen bound to a person. The demo-only pack builder retires. **The quantity scale across pack sections
   is settled here** (found in DF-2).

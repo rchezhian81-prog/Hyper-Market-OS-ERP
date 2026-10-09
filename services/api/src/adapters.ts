@@ -190,7 +190,7 @@ import type { ImportQualityDeps, ImportJobRecord } from '../../purchase/src/impo
 import { assessMappingQuality, type MappingQualityFinding } from '../../../packages/import/src/index';
 import type { DataImportDeps, ImportCommitRecord, ImportRollbackRecord } from '../../purchase/src/data-import';
 import type { CategoryRegisterDeps, StoredCategory } from '../../catalogue/src/categories';
-import type { StoreSettings } from '../../platform/src/store-packs';
+import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
 import type { ImportEffect } from '../../purchase/src/import-templates';
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
@@ -10648,4 +10648,25 @@ export async function branchScopeHeldBy(store: EventStore, tenantId: string, use
   const grants = await effectiveGrants(store, tenantId);
   if (!grants.some((g) => g.userId === userId)) return undefined;
   return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, permission);
+}
+
+/** A store's working rules (DF-3-b-1): each change a `StoreRulesSet` version; the latest per store applies. */
+const STORE_RULES_STREAM = streamName(STREAM.org, 'store-rules');
+export function storeRulesAdapter(input: { readonly store: EventStore }): {
+  rules: (tenantId: string, storeId: string) => Promise<StoreRules | undefined>;
+  recordRules: (tenantId: string, r: StoreRules) => Promise<void>;
+} {
+  return {
+    rules: async (tenantId, storeId) => {
+      let latest: StoreRules | undefined;
+      for (const r of await allOf<StoreRules>(input.store, tenantId, STORE_RULES_STREAM, 'StoreRulesSet')) if (r.storeId === storeId) latest = r;
+      return latest;
+    },
+    recordRules: async (tenantId, r) => {
+      await input.store.append(tenantId, STORE_RULES_STREAM, makeEvent({
+        id: `store-rules-${r.storeId}-v${r.version}`, type: 'StoreRulesSet', occurredAt: r.setAt,
+        idempotencyKey: `store-rules-${tenantId}-${r.storeId}-v${r.version}`, source: 'api/platform', payload: r,
+      }));
+    },
+  };
 }
