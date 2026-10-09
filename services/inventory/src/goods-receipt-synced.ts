@@ -54,7 +54,7 @@ interface RelayedReceipt {
   readonly warehouseId: string;
   readonly receivedBy: string;
   readonly receivedAt: string;
-  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string; readonly batchId: string | null }[];
+  readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly uom: string; readonly batchId: string | null; readonly temperatureC?: number }[];
   readonly storeId: string | null;
   readonly source: string;
 }
@@ -71,7 +71,13 @@ function readRelayedReceipt(body: unknown): RelayedReceipt | undefined {
     if (!isObj(l) || !isStr(l['productId']) || !isPosInt(l['quantityMinor']) || !isStr(l['uom'])) return undefined;
     const batchId = l['batchId'];
     if (!(batchId === null || batchId === undefined || isStr(batchId))) return undefined;
-    lines.push({ productId: l['productId'], quantityMinor: l['quantityMinor'], uom: l['uom'], batchId: isStr(batchId) ? batchId : null });
+    // Wave 3 · SF-07 part 2: the manager's probed arrival temperature, °C — a number or absent, never anything else.
+    const temperatureC = l['temperatureC'];
+    if (!(temperatureC === undefined || (typeof temperatureC === 'number' && Number.isFinite(temperatureC)))) return undefined;
+    lines.push({
+      productId: l['productId'], quantityMinor: l['quantityMinor'], uom: l['uom'], batchId: isStr(batchId) ? batchId : null,
+      ...(temperatureC === undefined ? {} : { temperatureC }),
+    });
   }
   return {
     grnId: body['grnId'], number: isStr(body['number']) ? body['number'] : body['grnId'],
@@ -93,7 +99,7 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         if (grnId === '' || r === undefined || r.grnId !== grnId) {
           throw apiError(400, {
             code: 'not_readable_as_a_relayed_receipt',
-            whatHappened: 'This payload could not be read as a delivery booked in at the store — it needs the grnId matching the path, warehouseId, receivedBy, receivedAt and at least one line {productId, quantityMinor, uom, batchId|null}.',
+            whatHappened: 'This payload could not be read as a delivery booked in at the store — it needs the grnId matching the path, warehouseId, receivedBy, receivedAt and at least one line {productId, quantityMinor, uom, batchId|null, temperatureC?}.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — goods that were booked in are in the building.',
           });
@@ -141,6 +147,8 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           unitCost: { minor: costByProduct.get(l.productId) ?? 0, currency: 'INR' },
           // The manager's screen books goods in as delivered; damage and QC are the dock's capture (handheld / SP-6b).
           condition: 'good',
+          // Wave 3 · SF-07 part 2: the reading the manager probed, judged against the product master's limits; absent → held.
+          ...(l.temperatureC === undefined ? {} : { temperatureC: l.temperatureC }),
         })), order.ordered, flags);
 
         // The FR-02/03 gate — the SAME tested rule the handheld and the direct route run. A tracked item with no batch

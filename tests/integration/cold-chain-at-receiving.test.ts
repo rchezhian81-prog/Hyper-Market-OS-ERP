@@ -149,6 +149,25 @@ describe('SF-07 — the cold-chain rule comes from the product master', () => {
     expect(await onHand(h, 'p-icecream')).toBe(0);
   });
 
+  it('the store computer\'s delivery CARRIES the reading the manager probed (SF-07 part 2): −18 °C sells straight away, −10 °C is held, a reading that is not a number makes the delivery unreadable', async () => {
+    const h = await seeded();
+    const relay = (grnId: string, temperatureC: unknown) => req(h, 'POST', `/v1/inventory/goods-receipt/${grnId}/synced`, 'u-box', `relay-${grnId}`, {
+      grnId, number: `DN-${grnId}`, poId: null, lineCount: 1, warehouseId: WH, receivedBy: 'u-recv', receivedAt: AT,
+      lines: [{ productId: 'p-icecream', quantityMinor: 10, uom: 'ea', batchId: null, temperatureC }], storeId: 'store-1', source: 'manager-screen',
+    });
+    const cold = await relay('g-relay-cold', -18);
+    expect(cold.status).toBe(202);
+    expect(grnOf(cold)).toMatchObject({ availableMinor: 10 });
+    expect(grnOf(cold).captured.discrepancies).toEqual([]);
+    const soft = await relay('g-relay-soft', -10);
+    expect(soft.status).toBe(202);
+    expect(grnOf(soft).availableMinor).toBe(0);
+    expect(grnOf(soft).captured.discrepancies).toEqual([expect.objectContaining({ kind: 'temperature_breach', requiresApproval: true })]);
+    const word = await relay('g-relay-word', 'cold');
+    expect(word.status).toBe(400);
+    expect(await onHand(h, 'p-icecream')).toBe(10);
+  });
+
   it('the handheld\'s scans of a frozen product (it records no temperature yet) put the stock on-hand; the assembled receipt holds the line AND says cold_chain_held_but_on_hand — never silent', async () => {
     const h = await seeded();
     const scan = await req(h, 'POST', '/v1/inventory/receiving-scans/c-ice/synced', 'u-box', 'scan-c-ice', {

@@ -242,4 +242,44 @@ describe.skipIf(!HAVE_BROWSER)('the manager\'s decision, delivery and count surv
     expect(await page.evaluate(() => (globalThis as unknown as ManagerWindow).managerSession!.floor().heldHere)).toBe(0);
     expect(edge.deviceEventsOutbox.all()).toHaveLength(2);
   });
+
+  it('the delivery screen takes an arrival temperature for chilled or frozen goods: a number travels with its line, nothing is invented for a line without one, and a word is refused before anything is added (Wave 3 · SF-07 part 2)', async () => {
+    const { edge, base } = await box();
+    const page = await openManager(base);
+    await page.click('#tab-receive');
+    expect(await page.textContent('#grn-temp-label')).toContain('Temperature on arrival');
+    expect(await page.getAttribute('#grn-temp', 'aria-describedby')).toBe('grn-temp-hint');
+    await page.fill('#grn-number', 'DN-ICE-1');
+
+    // A word is not a temperature: refused by name, and the line is NOT added.
+    await page.fill('#grn-product', 'ICE');
+    await page.fill('#grn-qty', '12');
+    await page.fill('#grn-temp', 'cold');
+    await page.click('#add-line');
+    await page.waitForFunction(() => !((globalThis as unknown as ManagerWindow).document.querySelector('#banner') as { hidden: boolean }).hidden);
+    expect(await page.textContent('#banner-text')).toContain('must be a number of degrees');
+    await page.click('#banner-ok');
+    expect(await page.isVisible('#receive-empty')).toBe(true);
+
+    // The frozen line with its probed reading, then a dry line with none.
+    await page.fill('#grn-temp', '-18');
+    await page.click('#add-line');
+    expect(await page.textContent('#receive-lines')).toContain('12 · -18 °C');
+    await page.fill('#grn-product', 'DAL');
+    await page.fill('#grn-qty', '5');
+    await page.click('#add-line');
+    await page.click('#save-receipt');
+    await page.waitForFunction(() => !((globalThis as unknown as ManagerWindow).document.querySelector('#banner') as { hidden: boolean }).hidden);
+    expect(await page.textContent('#banner-title')).toBe('Delivery saved');
+    await page.click('#banner-ok');
+    await page.waitForFunction(() => (globalThis as unknown as ManagerWindow).managerSession!.savedWork().find((w) => w.kind === 'receipt')?.state === 'handed_to_box', undefined, { timeout: 10_000 });
+
+    // The box holds the whole receipt: the reading on the frozen line, and NO temperature key on the dry one.
+    const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { type: string; payload: { lines: Record<string, unknown>[] } });
+    expect(records).toHaveLength(1);
+    expect(records[0]!.payload.lines).toEqual([
+      { productId: 'ICE', quantityMinor: 12, uom: 'ea', batchId: null, temperatureC: -18 },
+      { productId: 'DAL', quantityMinor: 5, uom: 'ea', batchId: null },
+    ]);
+  });
 });
