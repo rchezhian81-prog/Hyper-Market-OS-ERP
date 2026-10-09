@@ -129,6 +129,9 @@ function newHeadOffice(opts: { readonly signedIn?: string; readonly screenData?:
       approvals: port,
       // The concession bay holds a concessionaire's stock: the store's staff may not write it off.
       ownersOfStockAt: (_t, _p, locationId) => (locationId === 'concession-bay' ? [{ ownership: 'concession' as const, ownerId: 'conc-sweets' }] : []),
+      // SF-05: head office's own cost of the stock — what a loss is valued from. Toor dal at ₹95 a sack (12 → ₹1,140); the
+      // sweets at ₹80; anything else (the "Mystery box") has no cost held.
+      unitCostAt: (_t, _l, productId) => ({ 'Toor dal 1kg': 9_500, 'Sweets box': 8_000 } as Record<string, number>)[productId],
       now,
     }),
   ]);
@@ -142,7 +145,7 @@ function newHeadOffice(opts: { readonly signedIn?: string; readonly screenData?:
 }
 
 /** Call a REAL route as a signed-in person: the pipeline's permission check, then the route's own handler. */
-async function call(ho: HeadOffice, userId: string, method: Method, path: string, body: unknown): Promise<{ status: number; body: unknown }> {
+async function call(ho: HeadOffice, userId: string, method: Method, path: string, body: unknown, query: Record<string, string> = {}): Promise<{ status: number; body: unknown }> {
   const matched = ho.router.match(method, path);
   if (matched === undefined) return { status: 404, body: { error: { code: 'not_found', whatHappened: `No route ${method} ${path}.` } } };
   if (!(PERMISSIONS[userId] ?? []).includes(matched.route.permission)) {
@@ -150,7 +153,7 @@ async function call(ho: HeadOffice, userId: string, method: Method, path: string
   }
   try {
     const out = await matched.route.handler({
-      tenantId: TENANT, userId, branchId: null, params: matched.params, query: {}, body, traceId: 'trace-e2e',
+      tenantId: TENANT, userId, branchId: null, params: matched.params, query, body, traceId: 'trace-e2e',
       ...(method === 'GET' ? {} : { idempotencyKey: 'key' }),
     });
     return { status: out.status, body: out.body };
@@ -176,7 +179,7 @@ const posts = (ho: HeadOffice, prefix: string): Recorded[] => ho.requests.filter
 async function startHeadOffice(ho: HeadOffice): Promise<{ base: string; stop: () => Promise<void> }> {
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
-      const [path = '/'] = (req.url ?? '/').split('?');
+      const [path = '/', qs = ''] = (req.url ?? '/').split('?');
       const method = (req.method ?? 'GET') as Method;
       if (path.startsWith('/v1/')) {
         let body: unknown;
@@ -188,7 +191,7 @@ async function startHeadOffice(ho: HeadOffice): Promise<{ base: string; stop: ()
         }
         ho.requests.push({ method, path, body, headers: req.headers });
         // The page is the signed-in person's own session — head office knows them from the sign-in, never from a body.
-        const answer = await call(ho, ho.signedIn, method, path, body);
+        const answer = await call(ho, ho.signedIn, method, path, body, Object.fromEntries(new URLSearchParams(qs)));
         res.writeHead(answer.status, { 'content-type': 'application/json' });
         res.end(JSON.stringify(answer.body));
         return;
@@ -249,12 +252,24 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
     return { page, errors, base: srv.base, teardown: async () => { await context.close(); await srv.stop(); } };
   };
 
-  /** Fill the loss: the item, where, how many, its value (₹), the chosen loss-type chip, and (optionally) the photo. */
-  const fillLoss = async (page: Page, over: { product?: string; location?: string; qty?: string; rupees?: string; loss?: string; evidence?: string } = {}) => {
+  /** SF-05: leave the quantity box (its `change`), so the page asks head office what the loss is worth — and wait until
+   *  head office's figure is in the value box (locked) or head office has said it holds no cost (open). */
+  const settleValue = async (page: Page, qty: string): Promise<void> => {
+    await page.fill('#wo-qty', qty);
+    await page.press('#wo-qty', 'Tab');
+    await page.waitForFunction(() => {
+      const doc = (globalThis as unknown as BrowserGlobals).document;
+      return doc.getElementById('value-hint')?.hidden === false;
+    }, undefined, { timeout: 10_000 });
+  };
+  /** Fill the loss: the item, where, how many, the chosen loss-type chip, and (optionally) the photo. The VALUE is head
+   *  office's (SF-05) — typed only where head office holds no cost, or on the sample page with no head office behind it. */
+  const fillLoss = async (page: Page, over: { product?: string; location?: string; qty?: string; rupees?: string; loss?: string; evidence?: string; sample?: boolean } = {}) => {
     await page.fill('#wo-product', over.product ?? 'Toor dal 1kg');
     await page.fill('#wo-location', over.location ?? 'aisle-3');
-    await page.fill('#wo-qty', over.qty ?? '12');
-    await page.fill('#wo-value', over.rupees ?? '1140');
+    if (over.sample === true) await page.fill('#wo-qty', over.qty ?? '12');
+    else await settleValue(page, over.qty ?? '12');
+    if (over.rupees !== undefined) await page.fill('#wo-value', over.rupees);
     await page.locator('#loss-types button.chip', { hasText: over.loss ?? 'Damage' }).click();
     if (over.evidence !== undefined) await page.fill('#wo-evidence', over.evidence);
   };
@@ -279,7 +294,11 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
     const ho = newHeadOffice();
     const { page, errors, teardown } = await openPage(ho);
     try {
-      await fillLoss(page, { rupees: '100' }); // ₹100 < ₹500 → small
+      await fillLoss(page, { qty: '1' }); // head office's value: 1 × ₹95 = ₹95 < ₹500 → small
+      // SF-05: the value is head office's, shown and locked — nobody types it.
+      expect((await page.textContent('#value-hint-text'))?.trim()).toBe('Head office\'s value: 1 × ₹95.00 = ₹95.00.');
+      expect(await page.inputValue('#wo-value')).toBe('95.00');
+      expect(await page.getAttribute('#wo-value', 'readonly'), 'the value box is locked').not.toBeNull();
       expect(await hidden(page, 'approval-step'), 'a small loss shows no approval step').toBe(true);
       const said = await clickFor(page, '#record', /^Loss recorded/);
       expect(said.text).toBe('Loss recorded. The shelf figure has come down.');
@@ -290,9 +309,9 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
       const urlId = sent[0]!.path.slice(WRITE_OFF.length);
       expect(urlId.length, 'a real operation id was minted').toBeGreaterThan(0);
       expect(sent[0]!.headers['idempotency-key'], 'the idempotency-key header is the URL id').toBe(urlId);
-      expect(sent[0]!.body).toEqual({ productId: 'Toor dal 1kg', locationId: 'aisle-3', qty: 12, uom: 'ea', lossType: 'damage', reasonCode: 'damage', valueMinor: 10_000 });
+      expect(sent[0]!.body).toEqual({ productId: 'Toor dal 1kg', locationId: 'aisle-3', qty: 1, uom: 'ea', lossType: 'damage', reasonCode: 'damage', valueMinor: 9_500 });
       expect(posts(ho, ASK), 'a small loss asks nobody').toHaveLength(0);
-      expect(ho.writeOffs.get(urlId)).toMatchObject({ raisedBy: OWNER, approvedBy: null, requiredApproval: false, valueMinor: 10_000 });
+      expect(ho.writeOffs.get(urlId)).toMatchObject({ raisedBy: OWNER, approvedBy: null, requiredApproval: false, valueMinor: 9_500, valueSource: 'stock_cost' });
       expect(await page.inputValue('#wo-product'), 'the form clears for the next loss').toBe('');
       expect(errors).toEqual([]);
     } finally {
@@ -305,7 +324,7 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
     const { page, errors, teardown } = await openPage(ho);
     try {
       expect(await page.locator('#wo-approver').count(), 'the typed approver box is still on the page').toBe(0);
-      await fillLoss(page, { evidence: 'photo-17' }); // ₹1,140 ≥ ₹500 → big
+      await fillLoss(page, { evidence: 'photo-17' }); // head office's value: 12 × ₹95 = ₹1,140 ≥ ₹500 → big
       expect(await hidden(page, 'approval-step'), 'a big loss shows the approval step').toBe(false);
       // One primary action at a time: asking is the next step, recording is not yet.
       expect(await page.getAttribute('#ask', 'class')).toContain('primary');
@@ -403,8 +422,8 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
       await page.waitForFunction('document.documentElement.lang === "en"');
 
       // Recount: ask again for 10 sacks; approved; then the quantity is changed again before recording.
-      await page.fill('#wo-qty', '10');
-      await page.fill('#wo-value', '950');
+      await settleValue(page, '10');
+      expect(await page.inputValue('#wo-value')).toBe('950.00'); // head office's: 10 × ₹95
       await page.fill('#wo-why', `${WHY}; recounted: 10 sacks`);
       await clickFor(page, '#ask', /^Asked\./);
       await decideAsManager(ho, 'approved', 'agreed, 10');
@@ -412,12 +431,12 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
       expect((await clickFor(page, '#record', /not exactly the loss that was approved/)).text)
         .toBe('Not recorded — this is not exactly the loss that was approved (something changed after you asked). Ask for approval again for exactly this.');
       expect(posts(ho, WRITE_OFF), 'a changed loss must not be sent').toHaveLength(0);
-      await page.fill('#wo-qty', '10');
+      await settleValue(page, '10');
       expect((await clickFor(page, '#record', /^Loss recorded/)).text).toContain('u-manager approved it');
       expect(posts(ho, WRITE_OFF)).toHaveLength(1);
 
       // Head office's own refusal: the concession bay's stock is not the store's to write off.
-      await fillLoss(page, { location: 'concession-bay', rupees: '80', loss: 'Expired', product: 'Sweets box' });
+      await fillLoss(page, { location: 'concession-bay', qty: '1', loss: 'Expired', product: 'Sweets box' }); // ₹80, small
       expect((await clickFor(page, '#record', /belongs to someone else/)).text)
         .toBe('Not recorded — some of this item at that place belongs to someone else (a concession or consignment supplier, or a customer). Store staff cannot write off stock the store does not own; its owner records that loss.');
       expect(posts(ho, WRITE_OFF)).toHaveLength(2);
@@ -486,6 +505,22 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
     }
   });
 
+  it('SF-05 — head office holds no cost for this stock: the value is typed, and even a small one needs a second person', async () => {
+    const ho = newHeadOffice();
+    const { page, errors, teardown } = await openPage(ho);
+    try {
+      await fillLoss(page, { product: 'Mystery box', qty: '1', rupees: '20', evidence: 'photo-9' }); // ₹20 typed — far under the ₹500 line
+      expect((await page.textContent('#value-hint-text'))?.trim()).toMatch(/^Head office holds no cost for this stock\. Type the value/);
+      expect(await page.getAttribute('#wo-value', 'readonly'), 'the value box stays open to type').toBeNull();
+      expect(await hidden(page, 'approval-step'), 'a loss head office cannot value always needs the second person').toBe(false);
+      expect((await clickFor(page, '#record', /nobody has been asked/)).text).toMatch(/^Not recorded — nobody has been asked/);
+      expect(posts(ho, WRITE_OFF), 'never sent on the raiser\'s own').toHaveLength(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await teardown();
+    }
+  });
+
   it('a cashier (no inventory.movement.append) sees no form and sends NOTHING', async () => {
     const ho = newHeadOffice({ signedIn: CASHIER });
     const { page, teardown } = await openPage(ho, false);
@@ -522,7 +557,7 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
     const { page, errors, teardown } = await openPage(ho, false);
     try {
       expect(await hidden(page, 'sample')).toBe(false);
-      await fillLoss(page, { evidence: 'photo-17' });
+      await fillLoss(page, { evidence: 'photo-17', rupees: '1140', sample: true });
       await page.fill('#wo-why', WHY);
       expect((await clickFor(page, '#ask', /not connected/)).text)
         .toBe('This is sample data and is not connected to the store computer or head office — nothing was asked and nothing was recorded.');

@@ -106,7 +106,7 @@ import {
 } from './waste-review-session';
 import {
   createWriteOffCaptureSession, writeOffRequestBody,
-  type WriteOffCapturePorts, type WriteOffCaptureSession, type WriteOffCapturePort, type WriteOffPostResult,
+  type WriteOffCapturePorts, type WriteOffCaptureSession, type WriteOffCapturePort, type WriteOffPostResult, type LossToValue, type LossValueRead,
 } from './write-off-capture-session';
 import { DEFAULT_WRITE_OFF_THRESHOLD_MINOR } from '../../../packages/waste/src/waste';
 import {
@@ -857,6 +857,7 @@ export function writeOffCapturePortsFromData(
   data: WriteOffCaptureData | undefined,
   capturePort: WriteOffCapturePort = NOOP_CAPTURE_PORT,
   headOffice?: HeadOfficeApprovalPorts,
+  readLossValue?: (q: LossToValue) => Promise<LossValueRead>,
 ): WriteOffCapturePorts {
   const held = new Set(data?.permissions ?? []);
   return {
@@ -864,7 +865,28 @@ export function writeOffCapturePortsFromData(
     mayCapture: () => held.has(WRITE_OFF_APPEND_PERMISSION),
     capturePort: () => capturePort,
     ...(headOffice === undefined ? {} : { askApproval: headOffice.askApproval, approvalInbox: headOffice.approvalInbox }),
+    ...(readLossValue === undefined ? {} : { readLossValue }),
   };
+}
+
+/** SF-05 — head office's value of a loss, read with the raiser's OWN session (GET /v1/inventory/write-off-value). A read:
+ *  nothing is recorded. A network/timeout is a lost link; a refusal carries head office's own code and words. */
+async function readLossValueFromHeadOffice(q: LossToValue): Promise<LossValueRead> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  try {
+    const query = new URLSearchParams({ productId: q.productId, locationId: q.locationId, qty: String(q.qty) });
+    const res = await fetchFn(`/v1/inventory/write-off-value?${query.toString()}`, { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status < 200 || res.status >= 300) return { result: 'refused', ...(await refusalOf(res)) };
+    const b = (await res.json()) as { known?: unknown; unitCostMinor?: unknown; valueMinor?: unknown; material?: unknown };
+    if (b.known === true && Number.isInteger(b.unitCostMinor) && Number.isInteger(b.valueMinor)) {
+      return { result: 'valued', known: true, unitCostMinor: b.unitCostMinor as number, valueMinor: b.valueMinor as number, material: b.material === true };
+    }
+    if (b.known === false) return { result: 'valued', known: false };
+    return { result: 'lost_link' };
+  } catch {
+    return { result: 'lost_link' };
+  }
 }
 
 /** Build the write-off capture screen, or `null` when the box carried no payload for it (shell shows the
@@ -874,6 +896,7 @@ export function bootWriteOffCapture(
   data: WriteOffCaptureData | undefined,
   capturePort?: WriteOffCapturePort,
   headOffice?: HeadOfficeApprovalPorts,
+  readLossValue?: (q: LossToValue) => Promise<LossValueRead>,
 ): WriteOffCaptureSession | null {
   if (data === undefined) return null;
   return createWriteOffCaptureSession(
@@ -881,7 +904,7 @@ export function bootWriteOffCapture(
       userId: data.userId === undefined ? null : data.userId,
       materialThresholdMinor: data.materialThresholdMinor ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR,
     },
-    writeOffCapturePortsFromData(data, capturePort, headOffice),
+    writeOffCapturePortsFromData(data, capturePort, headOffice, readLossValue),
   );
 }
 
@@ -5385,7 +5408,7 @@ if (browserWindow !== undefined) {
   // caller's own name, none of which the screen fabricates. No AI records a loss (hard rule #5).
   const writeOffCaptureData = browserWindow.writeOffCaptureData;
   const writeOffCapturePort = openWriteOffCapturePort();
-  const writeOffCapture = bootWriteOffCapture(writeOffCaptureData, writeOffCapturePort, HEAD_OFFICE_APPROVALS);
+  const writeOffCapture = bootWriteOffCapture(writeOffCaptureData, writeOffCapturePort, HEAD_OFFICE_APPROVALS, readLossValueFromHeadOffice);
   if (writeOffCapture !== null) {
     browserWindow.writeOffCaptureSession = writeOffCapture;
     browserWindow.writeOffCapture = { capturePort: () => writeOffCapturePort };

@@ -32,7 +32,9 @@ const setThreshold = (h: ApiHarness, u: string, body: unknown, key: string) =>
 /** The error code lives at body.error.code (the apiError envelope), never body.code. */
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 
-// The default material-loss threshold is ₹500 (50_000 paise). `valueMinor` vs that decides materiality.
+// The default material-loss threshold is ₹500 (50_000 paise). Since SF-05 a loss's value is head office's own — quantity ×
+// the stock's average cost — so the cast receives MILK-1 at ₹50 and BREAD at ₹25 a unit, and every `valueMinor` below is
+// exactly that figure (a different one is refused: tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts).
 const base = (over: Record<string, unknown> = {}) => ({
   productId: 'MILK-1', locationId: 'store-1', qty: 6, uom: 'ea', lossType: 'expiry',
   reasonCode: 'past-use-by', valueMinor: 30_000, ...over,
@@ -44,6 +46,9 @@ async function cast(): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // holds inventory.movement.append (Manager/Owner)
   await h.provisionRole(A, 'u-cash', 'cashier');       // holds neither
+  // SF-05: the stock being lost, with head office's own cost — what a loss is valued from.
+  expect((await move(h, 'u-owner', { movementId: 'cost-milk', productId: 'MILK-1', locationId: 'store-1', kind: 'received', quantityMinor: 1000, uom: 'ea', occurredAt: '2026-08-01T09:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 5_000 })).status).toBe(202);
+  expect((await move(h, 'u-owner', { movementId: 'cost-bread', productId: 'BREAD', locationId: 'store-1', kind: 'received', quantityMinor: 100, uom: 'ea', occurredAt: '2026-08-01T09:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 2_500 })).status).toBe(202);
   return h;
 }
 
@@ -58,25 +63,25 @@ describe('write-off routes are the single governed door for a stock loss (M28-FR
   it('refuses a MATERIAL loss without captured evidence (M28-FR-01)', async () => {
     const h = await cast();
     // Material: value ≥ the ₹500 threshold, but no evidenceRef (the evidence check precedes the approver).
-    const res = await approvedPost(h, 'u-owner', 'u-mgr', 'wo-2', base({ valueMinor: 500_000, lossType: 'damage' }));
+    const res = await approvedPost(h, 'u-owner', 'u-mgr', 'wo-2', base({ qty: 100, valueMinor: 500_000, lossType: 'damage' }));
     expect(res.status).toBe(422);
     expect(codeOf(res)).toBe('write_off_needs_evidence');
   });
 
   it('refuses a MATERIAL loss without a separate approver, and one the raiser approves themselves (§28)', async () => {
     const h = await cast();
-    const noApproval = await post(h, 'u-owner', 'wo-3', base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
+    const noApproval = await post(h, 'u-owner', 'wo-3', base({ qty: 100, valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
     expect(noApproval.status).toBe(422);
     expect(codeOf(noApproval)).toBe('write_off_needs_approval');
     // Self-approval: the raiser (u-owner) cannot approve their own loss — the engine refuses the decision (§28).
-    const selfApproved = await approvedPost(h, 'u-owner', 'u-owner', 'wo-4', base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
+    const selfApproved = await approvedPost(h, 'u-owner', 'u-owner', 'wo-4', base({ qty: 100, valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
     expect(selfApproved.status).toBe(422);
     expect(codeOf(selfApproved)).toBe('self_approval');
   });
 
   it('refuses a MATERIAL loss approved by someone without the authority, or by a typed name — a name is not an approval', async () => {
     const h = await cast();
-    const LOSS = base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' });
+    const LOSS = base({ qty: 100, valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' });
     // A cashier (no authority) cannot approve a material loss, nor can an unprovisioned person — refused at the decision.
     expect((await approvedPost(h, 'u-owner', 'u-cash', 'wo-5a', LOSS)).status).toBe(403);
     expect((await approvedPost(h, 'u-owner', 'u-nobody', 'wo-5b', LOSS)).status).toBe(403);
@@ -90,7 +95,7 @@ describe('write-off routes are the single governed door for a stock loss (M28-FR
 
   it('commits a MATERIAL loss with evidence AND a genuine Manager/Owner approval, used once', async () => {
     const h = await cast();
-    const res = await approvedPost(h, 'u-owner', 'u-mgr', 'wo-6', base({ valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
+    const res = await approvedPost(h, 'u-owner', 'u-mgr', 'wo-6', base({ qty: 100, valueMinor: 500_000, lossType: 'damage', evidenceRef: 'photo-1' }));
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ requiredApproval: true, evidenceRef: 'photo-1' });
     // The record names the person who approved it in their own session — the manager, not the raiser.
@@ -100,11 +105,11 @@ describe('write-off routes are the single governed door for a stock loss (M28-FR
 
   it('reduces on-hand — a committed loss removes the stock, not just records it (P-02)', async () => {
     const h = await cast();
-    // Receive 20 of MILK-1 at store-1, then write off 6 (immaterial). On-hand should fall to 14.
+    // Receive 20 more of MILK-1 at store-1 (1,020), then write off 6 (immaterial). On-hand should fall to 1,014.
     expect((await move(h, 'u-owner', { movementId: 'rcv-1', productId: 'MILK-1', locationId: 'store-1', kind: 'received', quantityMinor: 20, uom: 'ea', occurredAt: '2026-08-07T09:00:00.000Z', enteredBy: 'u-owner' })).status).toBe(202);
     expect((await post(h, 'u-owner', 'wo-onhand', base({ qty: 6 }))).status).toBe(201);
     const milk = (await availability(h, 'u-owner')).find((r) => r.productId === 'MILK-1' && r.locationId === 'store-1');
-    expect(milk).toMatchObject({ onHandMinor: 14 });
+    expect(milk).toMatchObject({ onHandMinor: 1014 });
   });
 
   it('refuses a missing reason and a non-positive quantity, and is idempotent on the id', async () => {
@@ -119,7 +124,7 @@ describe('write-off routes are the single governed door for a stock loss (M28-FR
   it('lists committed write-offs with the day total, survives a restart, and gates read on waste.view', async () => {
     const h = await cast();
     await post(h, 'u-owner', 'wo-10', base({ valueMinor: 30_000 }));
-    await post(h, 'u-owner', 'wo-11', base({ valueMinor: 20_000, productId: 'BREAD', lossType: 'donation' }));
+    await post(h, 'u-owner', 'wo-11', base({ qty: 8, valueMinor: 20_000, productId: 'BREAD', lossType: 'donation' }));
 
     const list = await h.request({ method: 'GET', path: '/v1/inventory/write-offs', userId: 'u-owner', tenantId: A });
     expect(list.status).toBe(200);
@@ -145,7 +150,7 @@ describe('write-off routes are the single governed door for a stock loss (M28-FR
     expect((await getThreshold(h, 'u-mgr')).body).toMatchObject({ thresholdMinor: 200_000, isDefault: false });
     // A ₹1,000 loss was MATERIAL under the ₹500 default (would need evidence + approval); under ₹2,000 it is
     // immaterial and commits with neither — proving the tenant policy, not the body, decides materiality.
-    const res = await post(h, 'u-owner', 'wo-th', base({ valueMinor: 100_000 }));
+    const res = await post(h, 'u-owner', 'wo-th', base({ qty: 20, valueMinor: 100_000 }));
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ requiredApproval: false });
   });

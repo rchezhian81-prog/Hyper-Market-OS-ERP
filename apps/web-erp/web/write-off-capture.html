@@ -107,6 +107,8 @@
         <div>
           <label for="wo-value" id="value-label"></label>
           <input id="wo-value" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" />
+          <!-- SF-05: head office's own value of the loss (quantity × its cost of the stock) — filled in, not typed. -->
+          <p class="material-hint" id="value-hint" hidden role="status" aria-live="polite"><span class="icon" id="value-hint-icon" aria-hidden="true"></span><span id="value-hint-text"></span></p>
           <p class="threshold" id="threshold-hint"></p>
         </div>
         <fieldset>

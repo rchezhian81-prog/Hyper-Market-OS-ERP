@@ -82,6 +82,8 @@ function sampleSession() {
     }),
     askApproval: async () => ({ kind: 'sample' }),
     record: async () => ({ kind: 'sample' }),
+    valueLoss: async () => ({ kind: 'not_connected' }),
+    presentValue: () => null,
     yourLosses: async () => ({ state: 'not_connected', rows: [] }),
     presentAskOutcome: (l) => notConnected(l),
     presentRecordOutcome: (l) => notConnected(l),
@@ -141,6 +143,33 @@ function paintLossTypes(view) {
   }));
 }
 
+/** SF-05 — head office's value of the loss in the form: asked when the product, the place or the quantity changes; the
+ *  value box is filled with head office's figure and locked. Where head office holds no cost, the box stays open for the
+ *  operator's figure and the loss always needs a second person. Without head office (the sample) the box is typed. */
+let valueLookup = 0;
+let lastValue = null;
+async function lookUpValue() {
+  const mine = ++valueLookup;
+  const outcome = await session.valueLoss({ productId: el('wo-product').value, locationId: el('wo-location').value, qty: Math.trunc(Number(el('wo-qty').value)) });
+  if (mine !== valueLookup) return; // a newer question is already on its way
+  lastValue = outcome;
+  const box = el('wo-value');
+  if (outcome.kind === 'valued') box.value = (outcome.valueMinor / 100).toFixed(2);
+  else if (box.readOnly) box.value = ''; // head office's earlier figure no longer belongs to this loss
+  box.readOnly = outcome.kind === 'valued';
+  paintValueHint();
+  paintMaterialHint();
+}
+function paintValueHint() {
+  const hint = el('value-hint');
+  const p = lastValue === null ? null : session.presentValue(lang, lastValue);
+  if (p === null) { hint.hidden = true; return; }
+  hint.hidden = false;
+  hint.className = `material-hint tone-${p.tone}`;
+  el('value-hint-icon').textContent = p.icon;
+  el('value-hint-text').textContent = p.label;
+}
+
 /** The "big loss" hint and the approval step — shown from the value the operator has typed, against the injected
  *  threshold (or head office's word on this loss), so the operator sees WHY a photo and a second person's approval
  *  become required before they try to record. */
@@ -148,7 +177,7 @@ function paintMaterialHint() {
   const hint = el('material-hint');
   const v = valueMinor();
   const typed = Number.isFinite(v) && v > 0;
-  const big = typed && session.needsApproval({ writeOffId, valueMinor: v });
+  const big = typed && session.needsApproval({ writeOffId, valueMinor: v, productId: el('wo-product').value, locationId: el('wo-location').value, qty: Math.trunc(Number(el('wo-qty').value)) });
   el('approval-step').hidden = !big;
   paintNextStep(big);
   if (!typed) { hint.hidden = true; return; }
@@ -251,6 +280,8 @@ function carryOn(draft) {
   selectedLossType = draft.lossType;
   carriedReasonCode = draft.reasonCode === draft.lossType ? undefined : draft.reasonCode;
   paint();
+  // SF-05: head office values it again — the same figure unless the stock's cost has moved since it was asked about.
+  void lookUpValue();
   say(() => ({ tone: 'idle', icon: 'ℹ', label: t('carriedOn'), announcement: t('carriedOn'), needsAttention: false }));
   el('record').focus();
 }
@@ -329,6 +360,9 @@ el('record').addEventListener('click', () => {
       || (result.kind === 'head_office_refused' && result.code === 'write_off_already_recorded');
     if (inTheBooks) {
       for (const id of ['wo-product', 'wo-location', 'wo-qty', 'wo-value', 'wo-evidence', 'wo-why']) el(id).value = '';
+      el('wo-value').readOnly = false;
+      lastValue = null;
+      paintValueHint();
       selectedLossType = null;
       carriedReasonCode = undefined;
       writeOffId = newId();
@@ -342,11 +376,13 @@ el('record').addEventListener('click', () => {
 });
 
 el('wo-value').addEventListener('input', () => paintMaterialHint());
+for (const id of ['wo-product', 'wo-location', 'wo-qty']) el(id).addEventListener('change', () => { void lookUpValue(); });
 
 el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en';
   document.documentElement.lang = lang;
   paint();
+  paintValueHint();
   if (lastSaid !== null) paintResult(lastSaid(lang));
   void refreshLosses();
 });
