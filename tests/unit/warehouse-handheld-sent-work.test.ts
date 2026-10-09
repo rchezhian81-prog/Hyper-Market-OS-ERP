@@ -47,6 +47,14 @@ describe('the handheld\'s events fit the shared route', () => {
     expect(pathFor(item.event)).toBe('/v1/inventory/receiving-scans/recv-1/synced');
   });
 
+  it('a scan carries the arrival temperature the worker probed, and invents none when it was not taken (Wave 3 · SF-07 part 3)', () => {
+    const { s, outbox } = session();
+    s.receive({ commandId: 'recv-t', grnId: 'grn-1', barcode: '890RICE', scannedQuantity: 1, source: 'po', temperatureC: -18 });
+    s.receive({ commandId: 'recv-n', grnId: 'grn-1', barcode: '890RICE', scannedQuantity: 1, source: 'po' });
+    expect(outbox.find('recv:grn-1:recv-t')!.event.payload).toMatchObject({ temperatureC: -18 });
+    expect(Object.keys(outbox.find('recv:grn-1:recv-n')!.event.payload as object)).not.toContain('temperatureC');
+  });
+
   it('"delivery complete" (SP-6b) queues ONE completion behind the scans, keyed on the GRN, naming the order — and nothing when nothing was received', () => {
     const { s, outbox } = session();
     // Nothing received here yet → refused, nothing queued, the button has no reason to show.

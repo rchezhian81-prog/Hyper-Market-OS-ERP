@@ -167,6 +167,20 @@ function valueOf(unitCost: Money, quantityMinor: number): Money {
   return { minor: unitCost.minor * quantityMinor, currency: unitCost.currency };
 }
 
+/**
+ * Wave 3 · SF-07 part 3 — the cold-chain verdict on ONE arrival reading, by the same limits `captureReceipt` judges a line by
+ * (the product's own, else its class's approved default; the tenant's maximum after). Lets a boundary that sees a single scan
+ * (the handheld's) decide whether the goods may go on-hand before the whole receipt exists. `not_cold_chain` for anything else.
+ */
+export type ColdChainVerdict = 'not_cold_chain' | 'ok' | 'not_recorded' | 'too_warm' | 'too_cold';
+export function coldChainVerdict(rule: ProductReceiptRules | undefined, policy: Pick<ReceiptPolicy, 'coldChainMaxC'>, temperatureC: number | undefined): ColdChainVerdict {
+  if (rule === undefined || rule.coldChain !== true) return 'not_cold_chain';
+  if (temperatureC === undefined) return 'not_recorded';
+  if (tooWarm(temperatureC, rule.coldChainMaxC ?? policy.coldChainMaxC)) return 'too_warm';
+  if (rule.coldChainMinC !== undefined && temperatureC < rule.coldChainMinC) return 'too_cold';
+  return 'ok';
+}
+
 /** Wave 3 · SF-07 — the warmest acceptable arrival temperature: the product's (or its class's) limit first, the tenant's policy after. */
 function maxC(rule: ProductReceiptRules, policy: ReceiptPolicy): number | undefined {
   return rule.coldChainMaxC ?? policy.coldChainMaxC;

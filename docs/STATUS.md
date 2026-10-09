@@ -47,6 +47,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Staff UAT (SP-10) pending.
 - **Next:** SF-06-b (product files), then PA-06/DF-3 (head office delivers the store pack).
 
+## Wave 3 · SF-07 part 3 — the warehouse handheld takes the arrival temperature; a cold scan without one stays off the shelf (9 October 2026)
+
+- **The wave:** Wave 3, SF-07 (cold chain at receiving), part 3 of 3, by the owner's decision "3 and A" (9 Oct 2026). Parts
+  1 (#736) and 2 (#739) merged.
+- **What changed:**
+  - The warehouse handheld's receiving screen has a button, **"Arrival temperature (chilled or frozen goods)"**, in English
+    and Tamil. It opens the handheld's own number keypad (digits, minus, decimal point) — no typing box, as the handheld's
+    design rules require for gloved hands. Once set, the reading travels with every scan until it is changed or cleared
+    ("No reading"). A malformed reading (a lone minus) is refused and nothing is set.
+  - **Head office now checks each handheld scan** of a chilled or frozen product with the same limits as the office screen
+    and the store computer. A good reading goes on the shelf at once; **no reading, too warm or too cold is recorded but kept
+    off the shelf**.
+  - When the delivery is completed, those held scans become their own line, held for a second person to release or return.
+    The part 1 gap is closed: the handheld no longer puts unchecked cold stock on the shelf.
+- **Proved:**
+  - Head office: ice cream scanned at −18 °C goes on the shelf; at −10 °C or with no reading it is held; a word is refused;
+    the completed delivery shows 4 sellable and 8 held, with nothing on the shelf disagreeing; dal needs no reading.
+  - Real browser (the handheld, against the real store computer): a lone minus refused, nothing set or queued; −18 keyed on
+    the keypad reaches the store computer's saved log on the scan; "No reading" clears it.
+  - The handheld design audit (56-pixel touch targets, no sideways scrolling, contrast, Tamil) and the handheld guardrail
+    ("no typing box on the handheld") pass with the new button and keypad.
+  - Unit tests for the shared temperature rule and for the scan carrying the reading.
+  - **Mutation checks:** head office ignoring the reading fails the handheld test; the handheld dropping it fails the
+    unit test.
+  - Full `pnpm run check` green, with the real database connected.
+- **Not yet / honest limits:**
+  - **PA-07** — a fridge or cold-room breakdown placing the stock inside on hold — is next; then **SF-08**.
+  - The handheld does not yet know which items are chilled, so the button is shown for every delivery and left at "not
+    taken" for dry goods. One reading covers each scan made while it is set.
+  - The Tamil wording is helper-written and needs native review (Wave 8).
+- **Behaviour change the owner should know:** a warehouse worker now types the probe reading before scanning chilled or
+  frozen goods. Without it, those goods stay off the shelf until a second person checks them.
+- **Next:** PA-07 — a cold-room breach places the stock inside on hold.
+
 ## Wave 4 · PF-07 — a void at the till is kept as evidence and judged on the shop's own record (9 October 2026)
 
 - **The audit's finding:** a void's reason disappeared once the basket moved on. The loss-prevention rules only ran over
