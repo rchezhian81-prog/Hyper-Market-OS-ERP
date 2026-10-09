@@ -12,15 +12,23 @@
 //     supplier's or a billing program's CSV export takes). Each invoice in the file becomes a captured supplier invoice
 //     — the same record the buyer's capture screen writes (SP-7a), so it goes on to the three-way match and the
 //     supplier's account. Undone by withdrawing the invoices, only while none of them has been matched.
+//   • `product-v1` (SF-06-b, OB-24 "A") — one row per NEW product, judged by the same tested product engine the publish
+//     route runs, against head office's OWN category list (a food item needs its allergens and origin, a packed item its
+//     net quantity and packer, an age-restricted item its minimum age). An approved load publishes the products to the
+//     product master. Undone by discontinuing them (a new version — the products stay as evidence), only while none has
+//     a barcode or a price yet.
 //
 // Pure of storage: the registers are ports; the API adapter supplies head office's own folds.
 
 import type { TemplateSpec, RowError } from '../../../packages/import/src/import-job';
 import type { StoredPurchaseOrder } from './purchase-orders';
 import { orderForInvoice, type SupplierInvoiceRecord, type SupplierInvoiceLine, type InvoiceFlag } from './index';
+import { validateProduct, publishProduct, type ProductRecord, type Category, type SafetyContent } from '../../../packages/product/src/index';
 
 /** What an approved load writes — the real records, not a note about them. */
-export type ImportEffect = { readonly kind: 'supplier_invoice'; readonly invoice: SupplierInvoiceRecord };
+export type ImportEffect =
+  | { readonly kind: 'supplier_invoice'; readonly invoice: SupplierInvoiceRecord }
+  | { readonly kind: 'product'; readonly product: ProductRecord };
 
 /** A short, storable account of one effect (kept on the job record — what was written, and how to undo it). */
 export interface ImportEffectRef { readonly kind: ImportEffect['kind']; readonly ref: string; readonly valueMinor?: number }
@@ -52,7 +60,9 @@ export interface RegisteredTemplate {
 }
 
 export function effectRef(e: ImportEffect): ImportEffectRef {
-  return { kind: 'supplier_invoice', ref: e.invoice.invoiceId, valueMinor: e.invoice.totalMinor };
+  return e.kind === 'supplier_invoice'
+    ? { kind: 'supplier_invoice', ref: e.invoice.invoiceId, valueMinor: e.invoice.totalMinor }
+    : { kind: 'product', ref: e.product.productId };
 }
 
 /** What a template looks like to the screen (the store pack ships this; the server ignores anything but the id). */
@@ -186,6 +196,112 @@ export function supplierInvoiceTemplate(deps: SupplierInvoiceImportDeps): Regist
         if (e.kind === 'supplier_invoice' && await deps.invoiceMatched(tenantId, e.ref)) {
           reasons.push(`invoice ${e.ref} has already been matched against its order and delivery`);
         }
+      }
+      return reasons;
+    },
+  };
+}
+
+// ── product-v1 ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+export const PRODUCT_SPEC: TemplateSpec = Object.freeze({
+  id: 'product-v1', domain: 'product',
+  columns: [
+    { name: 'productId', type: 'text', required: true },
+    { name: 'sku', type: 'text', required: true },
+    { name: 'name', type: 'text', required: true },
+    { name: 'baseUom', type: 'text', required: true },
+    { name: 'primaryCategoryId', type: 'text', required: true, referenceSet: 'category' },
+    { name: 'taxClass', type: 'text', required: true },
+    { name: 'brand', type: 'text' },
+    // "none" declares no allergens; several are separated by "|"; blank means nobody has declared anything.
+    { name: 'allergens', type: 'text' },
+    { name: 'countryOfOrigin', type: 'text' },
+    { name: 'netQuantity', type: 'text' },
+    { name: 'packerDetails', type: 'text' },
+    { name: 'minimumAge', type: 'integer' },
+  ],
+  keyColumns: ['productId'],
+}) as TemplateSpec;
+
+export const PRODUCT_LABEL = 'New products (one row per product)';
+
+export interface ProductImportDeps {
+  /** Head office's own category list (engine shape). */
+  readonly categories: (tenantId: string) => Promise<readonly Category[]>;
+  /** Head office's product master. */
+  readonly products: (tenantId: string) => Promise<readonly ProductRecord[]>;
+  /** Why this product is already in use (a barcode, a price), or undefined — then its load may be undone. */
+  readonly productInUse: (tenantId: string, productId: string) => Promise<string | undefined>;
+}
+
+const opt = (v: string | undefined): string | undefined => ((v ?? '').trim() === '' ? undefined : v!.trim());
+
+/** A file row as the product engine reads it — draft, so the engine's own publish moves it on. */
+export function productOfRow(row: Readonly<Record<string, string>>, tenantId: string): ProductRecord {
+  const allergensRaw = opt(row['allergens']);
+  const safety: SafetyContent = {
+    ...(allergensRaw === undefined ? {} : { allergens: allergensRaw.toLowerCase() === 'none' ? [] : allergensRaw.split('|').map((a) => a.trim()).filter((a) => a !== '') }),
+    ...(opt(row['countryOfOrigin']) === undefined ? {} : { countryOfOrigin: opt(row['countryOfOrigin'])! }),
+    ...(opt(row['netQuantity']) === undefined ? {} : { netQuantity: opt(row['netQuantity'])! }),
+    ...(opt(row['packerDetails']) === undefined ? {} : { packerDetails: opt(row['packerDetails'])! }),
+    ...(opt(row['minimumAge']) === undefined ? {} : { minimumAge: Number(row['minimumAge']) }),
+  };
+  return {
+    productId: (row['productId'] ?? '').trim(), tenantId, sku: (row['sku'] ?? '').trim(), name: (row['name'] ?? '').trim(),
+    baseUom: (row['baseUom'] ?? '').trim(), primaryCategoryId: opt(row['primaryCategoryId']) ?? null, taxClass: opt(row['taxClass']) ?? null,
+    lifecycle: 'draft',
+    ...(opt(row['brand']) === undefined ? {} : { brand: opt(row['brand'])! }),
+    ...(Object.keys(safety).length === 0 ? {} : { safety }),
+  };
+}
+
+export function productTemplate(deps: ProductImportDeps): RegisteredTemplate {
+  return {
+    spec: PRODUCT_SPEC, label: PRODUCT_LABEL, financial: false,
+    makerPermission: 'catalogue.pack.publish',
+    references: async (tenantId) => ({ category: (await deps.categories(tenantId)).map((c) => c.categoryId) }),
+    check: async (tenantId, rows, lineNumbers) => {
+      const errors: RowError[] = [];
+      const categories = await deps.categories(tenantId);
+      const known = new Set(categories.map((c) => c.categoryId));
+      const master = await deps.products(tenantId);
+      const ids = new Set(master.map((p) => p.productId));
+      const skuOwner = new Map(master.map((p) => [p.sku.toLowerCase(), p.productId] as const));
+      const skuInFile = new Map<string, number>();
+      rows.forEach((row, i) => {
+        const line = lineNumbers[i] ?? i + 2;
+        const product = productOfRow(row, tenantId);
+        if (ids.has(product.productId)) errors.push(err(line, 'productId', `Product ${product.productId} is already in the product master. A file loads NEW products; change an existing one on its own screen.`));
+        const sku = product.sku.toLowerCase();
+        if (sku !== '') {
+          const owner = skuOwner.get(sku);
+          if (owner !== undefined && owner !== product.productId) errors.push(err(line, 'sku', `SKU ${product.sku} already belongs to product ${owner} — one SKU names one product.`));
+          const first = skuInFile.get(sku);
+          if (first !== undefined) errors.push(err(line, 'sku', `SKU ${product.sku} is also on line ${first} — one SKU names one product.`));
+          else skuInFile.set(sku, line);
+        }
+        const age = opt(row['minimumAge']);
+        if (age !== undefined && !(Number.isInteger(Number(age)) && Number(age) > 0)) errors.push(err(line, 'minimumAge', `The minimum age must be a whole number of years; it is "${age}".`));
+        // The product engine's own rules — only once the category is one head office knows (an unknown one is already said).
+        if (product.primaryCategoryId !== null && known.has(product.primaryCategoryId)) {
+          for (const issue of validateProduct(product, categories).issues) {
+            if (issue.severity === 'blocks_publish') errors.push(err(line, issue.field.replace(/^safety\./, ''), `${issue.message}.`));
+          }
+        }
+      });
+      return errors;
+    },
+    effects: async (tenantId, rows) => {
+      const categories = await deps.categories(tenantId);
+      return rows.map((row) => ({ kind: 'product' as const, product: publishProduct(productOfRow(row, tenantId), categories) }));
+    },
+    blocksRollback: async (tenantId, effects) => {
+      const reasons: string[] = [];
+      for (const e of effects) {
+        if (e.kind !== 'product') continue;
+        const why = await deps.productInUse(tenantId, e.ref);
+        if (why !== undefined) reasons.push(`product ${e.ref} ${why}`);
       }
       return reasons;
     },

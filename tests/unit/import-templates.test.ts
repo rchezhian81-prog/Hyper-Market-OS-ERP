@@ -19,13 +19,13 @@ describe('supplier-invoice-v1 — the invoice register\'s rules, by line', () =>
     const t = supplierInvoiceTemplate(deps());
     expect(await t.check('t', [row({})], [2], 200)).toEqual([]);
     const [e] = await t.effects('t', [row({})], { jobId: 'J', uploadedBy: 'u-a', approvedBy: 'u-b', approvedAt: NOW, at: NOW });
-    expect(e!.invoice).toMatchObject({ invoiceId: 'I-1', capturedBy: 'u-a', approvedBy: 'u-b', source: 'import/J', totalMinor: 200, governanceFlags: ['no_purchase_order'] });
+    expect(e!.kind === 'supplier_invoice' && e!.invoice).toMatchObject({ invoiceId: 'I-1', capturedBy: 'u-a', approvedBy: 'u-b', source: 'import/J', totalMinor: 200, governanceFlags: ['no_purchase_order'] });
   });
 
   it('a checker who may not check invoices leaves the invoice captured and flagged as not yet checked', async () => {
     const t = supplierInvoiceTemplate(deps({ permissionsOfUser: () => ['purchase.import.record'] }));
     const [e] = await t.effects('t', [row({})], { jobId: 'J', uploadedBy: 'u-a', approvedBy: 'u-b', approvedAt: NOW, at: NOW });
-    expect(e!.invoice).toMatchObject({ approvedBy: null, governanceFlags: ['no_approval', 'no_purchase_order'] });
+    expect(e!.kind === 'supplier_invoice' && e!.invoice).toMatchObject({ approvedBy: null, governanceFlags: ['no_approval', 'no_purchase_order'] });
   });
 
   it('zero quantity, a line that does not multiply, a header that changes within an invoice, and an invoice already held', async () => {

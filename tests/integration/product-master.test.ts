@@ -126,10 +126,12 @@ describe('product master authoring (M03-FR-01/03)', () => {
     expect((await publish(h, 'u-mgr', 'p-x', SALT, [GROCERY], 'k-mgr')).status).toBe(403); // cannot author
     expect((await get(h, 'u-mgr', 'p-salt')).status).toBe(200); // can read
     expect((await list(h, 'u-mgr')).status).toBe(200);
-    // Malformed: no product object / no categories[].
-    expect((await publish(h, 'u-owner', 'p-bad', undefined, [GROCERY], 'k-bad1')).status).toBe(400);
-    const bad2 = await publish(h, 'u-owner', 'p-bad', SALT, undefined, 'k-bad2');
-    expect(bad2.status).toBe(400);
-    expect(codeOf(bad2)).toBe('not_readable_as_a_product');
+    // Malformed: no product object. (No categories[] is fine since SF-06-b — head office reads its own list.)
+    const bad1 = await publish(h, 'u-owner', 'p-bad', undefined, [GROCERY], 'k-bad1');
+    expect(bad1.status).toBe(400);
+    expect(codeOf(bad1)).toBe('not_readable_as_a_product');
+    expect((await publish(h, 'u-owner', 'p-salt-2', { ...SALT, sku: 'SKU-SALT-2' }, undefined, 'k-nocat')).status).toBe(201);
+    // A categories[] that is not a list is refused by name.
+    expect(codeOf(await publish(h, 'u-owner', 'p-bad', SALT, 'grocery', 'k-bad2'))).toBe('not_readable_as_a_category');
   });
 });

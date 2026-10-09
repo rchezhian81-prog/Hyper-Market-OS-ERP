@@ -37,6 +37,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'documents.number.allocate',
       'catalogue.pack.read', 'catalogue.pack.publish',
       'catalogue.merge.propose', 'catalogue.merge.approve',
+      // SF-06-b (OB-24 "A"): the owner defines product categories; a manager proposes them for the owner's approval.
+      'catalogue.category.propose', 'catalogue.category.approve',
       'price.change.propose', 'price.change.approve',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.supplier.bank', 'purchase.commitment.read',
@@ -161,6 +163,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'identity.self.read', 'identity.role.request', 'org.branch.read', 'payroll.ess.self',
       'catalogue.pack.read',
       'catalogue.merge.propose',
+      'catalogue.category.propose',
       'ai.proposal.read', 'ai.suggestion.dismiss',
       'price.change.propose',
       'promotion.simulate', 'promotion.launch', 'promotion.read',

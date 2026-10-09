@@ -141,6 +141,7 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
     const named: Record<string, { readonly en: string; readonly ta: string }> = {
       data_import_commit: { en: APPROVALS_COPY.en.kindDataImport, ta: APPROVALS_COPY.ta.kindDataImport },
       data_import_rollback: { en: APPROVALS_COPY.en.kindDataImportRollback, ta: APPROVALS_COPY.ta.kindDataImportRollback },
+      category_define: { en: APPROVALS_COPY.en.kindCategoryDefine, ta: APPROVALS_COPY.ta.kindCategoryDefine },
       supplier_bank_change: { en: APPROVALS_COPY.en.kindSupplierBank, ta: APPROVALS_COPY.ta.kindSupplierBank },
       price_change: { en: APPROVALS_COPY.en.kindPriceChange, ta: APPROVALS_COPY.ta.kindPriceChange },
       price_list_entry: { en: APPROVALS_COPY.en.kindPriceListEntry, ta: APPROVALS_COPY.ta.kindPriceListEntry },
