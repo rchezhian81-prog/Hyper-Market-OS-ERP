@@ -180,6 +180,16 @@ const LANE_PAYMENTS_ROUTE = '/lane/payment-attempts';
 const LANE_PAYMENTS_ANSWER_ROUTE = '/lane/payment-attempts/answer';
 const LANE_PAYMENTS_RECOVER_ROUTE = '/lane/payment-attempts/recover';
 
+/**
+ * A TILL ACTION kept as loss-prevention evidence (audit PF-07 · M15-FR-01): `POST /lane/till-activity` — a void, with the
+ * line, its value and the reason — durable on this box (stamped with the cashier it verified) BEFORE the till acts on it,
+ * then queued for head office, where the store's rules run on it.
+ */
+const LANE_TILL_ACTIVITY_ROUTE = '/lane/till-activity';
+export type LaneTillActivityHandler = (input: {
+  readonly laneId: string; readonly cashierId: string; readonly via: string; readonly body: Record<string, unknown>;
+}) => Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage: string }>;
+
 /** The payment-attempt register this socket asks (`PaymentAttempts`). */
 export interface LanePaymentAttemptsPort {
   ask(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly billRef: unknown; readonly kind: unknown; readonly amountMinor: unknown }): Promise<AttemptAnswer>;
@@ -427,6 +437,8 @@ export function startLaneServer(input: {
   readonly heldBills?: LaneHeldBillsPort;
   /** The card/UPI attempt register (audit PF-06). Wired beside `operators` on every store box. */
   readonly payments?: LanePaymentAttemptsPort;
+  /** Till actions kept as evidence (audit PF-07) — the box's `recordTillActivity`. */
+  readonly recordTillActivity?: LaneTillActivityHandler;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -607,6 +619,30 @@ export function startLaneServer(input: {
           send(res, 200, outcome, { ...cors, 'cache-control': 'no-store' });
         } catch (e) {
           send(res, 200, refused(e instanceof Error ? e.message : String(e)), cors);
+        }
+      })();
+      return;
+    }
+
+    // TILL ACTIONS as evidence (audit PF-07): a void, by the person signed in at this till, on the box's disk before the
+    // till removes the line.
+    if (req.method === 'POST' && pathname === LANE_TILL_ACTIVITY_ROUTE) {
+      const ops = input.operators;
+      const record = input.recordTillActivity;
+      const refused = (refusedBecause: string, laneMessage: string) => ({ recorded: false, refusedBecause, laneMessage });
+      if (ops === undefined || record === undefined) { send(res, 404, refused('not_served', 'this box does not keep till actions'), cors); req.resume(); return; }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) { send(res, authRefusal.status, refused('unauthorized_request', authRefusal.reason), cors); req.resume(); return; }
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, (m: string) => refused('request_not_readable', m));
+        if (body === undefined) return;
+        if (ops.laneId.trim() === '') { send(res, 200, refused('no_lane', 'This store computer has not been told which till it is. Nothing was done — tell the manager.'), cors); return; }
+        const check = ops.check(operatorTokenOf(req), ops.laneId);
+        if (!check.ok) { send(res, 200, refused(check.refusedBecause, check.laneMessage), cors); return; }
+        try {
+          send(res, 200, await record({ laneId: ops.laneId, cashierId: check.userId, via: check.via, body: (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown> }), { ...cors, 'cache-control': 'no-store' });
+        } catch (e) {
+          send(res, 200, refused('could_not_write_durably', e instanceof Error ? e.message : String(e)), cors);
         }
       })();
       return;
@@ -1120,14 +1156,15 @@ export function startLaneServer(input: {
       || pathname === LANE_OPERATOR_ROUTE || pathname === LANE_OPERATOR_SIGN_IN_ROUTE || pathname === LANE_OPERATOR_SIGN_OUT_ROUTE
       || pathname === LANE_APPROVALS_ROUTE || pathname === LANE_RECEIPT_NUMBERS_ROUTE
       || pathname === LANE_HELD_BILLS_ROUTE || pathname === LANE_HELD_BILLS_RECALL_ROUTE || pathname === LANE_HELD_BILLS_ABANDON_ROUTE
-      || pathname === LANE_PAYMENTS_ROUTE || pathname === LANE_PAYMENTS_ANSWER_ROUTE || pathname === LANE_PAYMENTS_RECOVER_ROUTE)) {
+      || pathname === LANE_PAYMENTS_ROUTE || pathname === LANE_PAYMENTS_ANSWER_ROUTE || pathname === LANE_PAYMENTS_RECOVER_ROUTE
+      || pathname === LANE_TILL_ACTIVITY_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`, `POST ${LANE_APPROVALS_ROUTE}`, `POST ${LANE_RECEIPT_NUMBERS_ROUTE}`, `GET ${LANE_RECEIPT_NUMBERS_ROUTE}`, `POST ${LANE_HELD_BILLS_ROUTE}`, `GET ${LANE_HELD_BILLS_ROUTE}`, `POST ${LANE_HELD_BILLS_RECALL_ROUTE}`, `POST ${LANE_HELD_BILLS_ABANDON_ROUTE}`, `POST ${LANE_PAYMENTS_ROUTE}`, `GET ${LANE_PAYMENTS_ROUTE}`, `POST ${LANE_PAYMENTS_ANSWER_ROUTE}`, `POST ${LANE_PAYMENTS_RECOVER_ROUTE}`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`, `POST ${LANE_APPROVALS_ROUTE}`, `POST ${LANE_RECEIPT_NUMBERS_ROUTE}`, `GET ${LANE_RECEIPT_NUMBERS_ROUTE}`, `POST ${LANE_HELD_BILLS_ROUTE}`, `GET ${LANE_HELD_BILLS_ROUTE}`, `POST ${LANE_HELD_BILLS_RECALL_ROUTE}`, `POST ${LANE_HELD_BILLS_ABANDON_ROUTE}`, `POST ${LANE_PAYMENTS_ROUTE}`, `GET ${LANE_PAYMENTS_ROUTE}`, `POST ${LANE_PAYMENTS_ANSWER_ROUTE}`, `POST ${LANE_PAYMENTS_RECOVER_ROUTE}`, `POST ${LANE_TILL_ACTIVITY_ROUTE}`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }

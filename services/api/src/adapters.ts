@@ -75,7 +75,7 @@ import type { B2BCollectionsDeps, Receivable as CollectionsReceivable, RecordedP
 import type { B2BCommissionDeps, CommissionAccrual } from '../../finance/src/b2b-commission';
 import type { B2BDocumentsDeps, StoredB2BDocument } from '../../finance/src/b2b-documents';
 import { checkCredit } from '../../../packages/b2b/src/credit';
-import type { LpCasesDeps, LpRulesDeps } from '../../pos/src/loss-prevention';
+import type { LpCasesDeps, LpRulesDeps, LpActivityDeps, TillActivity, RaisedException } from '../../pos/src/loss-prevention';
 import type { InvestigationCase, EvidenceItem } from '../../../packages/loss-prevention/src/cases';
 import { buildOpenCaseWorklist, type OpenCaseWorklist } from '../../../packages/loss-prevention/src/worklist';
 import { openCase } from '../../../packages/loss-prevention/src/cases';
@@ -4847,6 +4847,58 @@ export function lpRulesAdapter(input: {
         payload: rule,
       }));
     },
+  };
+}
+
+/**
+ * The till's own loss-prevention record (audit PF-07): voids relayed by the store box on their own append-only stream,
+ * refunds read from the banked returns projection, the raised exceptions folded latest per id. Rules and cases reuse the
+ * adapters above, so there is one fold path per register.
+ */
+export function lpActivityAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+}): LpActivityDeps {
+  const activityStream = streamName(STREAM.lossPrevention, 'activity');
+  const raisedStream = streamName(STREAM.lossPrevention, 'raised');
+  const dayRange = (day: string) => ({ from: `${day}T00:00:00.000Z`, to: `${day}T23:59:59.999Z` });
+  const rules = lpRulesAdapter(input);
+  const cases = lpCasesAdapter(input);
+  return {
+    now: input.now,
+    activity: async (tenantId, activityId) => (await allOf<TillActivity>(input.store, tenantId, activityStream, 'TillActivityRecorded')).find((a) => a.activityId === activityId),
+    recordActivity: async (tenantId, a) => {
+      await input.store.append(tenantId, activityStream, makeEvent({
+        id: `till-activity-${a.activityId}`, type: 'TillActivityRecorded', occurredAt: a.at,
+        idempotencyKey: `till-activity-${tenantId}-${a.activityId}`, source: 'api/pos', payload: a,
+      }));
+    },
+    voidsOn: async (tenantId, day) => {
+      const { from, to } = dayRange(day);
+      return (await allOf<TillActivity>(input.store, tenantId, activityStream, 'TillActivityRecorded'))
+        .filter((a) => a.at >= from && a.at <= to)
+        .map((a) => ({ txnId: `${a.billRef}:${a.lineId}`, kind: 'void' as const, cashierId: a.cashierId, at: a.at, valueMinor: a.valueMinor }));
+    },
+    refundsOn: async (tenantId, day) => {
+      const { from, to } = dayRange(day);
+      const returns = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from, to });
+      return returns.map((e) => payloadOf<{ readonly returnId: string; readonly processedBy: string; readonly processedAt: string; readonly refundMinor: number }>(e))
+        .map((r) => ({ txnId: r.returnId, kind: 'refund' as const, cashierId: r.processedBy, at: r.processedAt, valueMinor: r.refundMinor }));
+    },
+    rules: rules.rules,
+    raised: async (tenantId) => {
+      const byId = new Map<string, RaisedException>();
+      for (const r of await allOf<RaisedException>(input.store, tenantId, raisedStream, 'LpExceptionRaised')) byId.set(r.exceptionId, r);
+      return [...byId.values()];
+    },
+    recordRaised: async (tenantId, r) => {
+      await input.store.append(tenantId, raisedStream, makeEvent({
+        id: `lp-raised-${r.exceptionId}-${r.observed}-${r.severity}`, type: 'LpExceptionRaised', occurredAt: r.raisedAt,
+        // A grown or escalated breach is a new fact; the same one again collapses.
+        idempotencyKey: `lp-raised-${tenantId}-${r.exceptionId}-${r.observed}-${r.severity}`, source: 'api/pos', payload: r,
+      }));
+    },
+    cases: cases.cases,
   };
 }
 

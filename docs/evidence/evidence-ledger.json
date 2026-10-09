@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 960,
+  "testFiles": 962,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -719,7 +719,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 15,
-        "integration": 19,
+        "integration": 20,
         "realDb": 3,
         "browser": 9,
         "connected": 1,
@@ -748,6 +748,7 @@
           "tests/integration/a-card-payment-is-recorded-before-the-machine-is-asked.test.ts",
           "tests/integration/a-held-basket-survives-a-reload.test.ts",
           "tests/integration/a-returned-item-keeps-its-lot.test.ts",
+          "tests/integration/a-void-is-kept-and-judged-on-the-shops-record.test.ts",
           "tests/integration/an-age-restricted-sale-reaches-head-office-with-its-check.test.ts",
           "tests/integration/catalogue-pack-preview.test.ts",
           "tests/integration/pending-tender-recovery.test.ts",
@@ -943,9 +944,9 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 11,
+        "integration": 12,
         "realDb": 1,
-        "browser": 3,
+        "browser": 4,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -968,6 +969,7 @@
           "tests/unit/settlement.test.ts"
         ],
         "integration": [
+          "tests/integration/a-void-is-kept-and-judged-on-the-shops-record.test.ts",
           "tests/integration/ai-security-agent.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/duplicate-bank.test.ts",
@@ -986,6 +988,7 @@
         "browser": [
           "tests/e2e/loss-prevention-close-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
+          "tests/e2e/the-served-till-keeps-void-evidence.e2e.ts",
           "tests/e2e/the-served-till-takes-a-refund.e2e.ts"
         ],
         "connected": [],
