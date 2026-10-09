@@ -101,3 +101,38 @@ export async function pullStorePack(input: { readonly source: StorePackSource; r
   await input.receiver.take(fetched.body as StorePackEnvelope, input.now);
   return describe('updated', 'A new store setup from head office is in use.');
 }
+
+/**
+ * DF-3-b-2 (SF-08 hand-over): tell head office which catalogue and which store setup this box trades on, so it can see
+ * which stores have taken a new recall or hold. Sent when what the box holds changes; a failure is retried next pass.
+ */
+export function httpHeldVersionsReporter(options: {
+  readonly baseUrl: string;
+  /** Bearer token for this store. Read from configuration; never logged (hard rule #4). */
+  readonly token: string;
+  readonly storeId: string;
+  readonly timeoutMs?: number;
+  readonly fetch: typeof globalThis.fetch;
+}): (held: { catalogueVersion: number | null; storePackVersion: number | null }) => Promise<boolean> {
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  const base = options.baseUrl.replace(/\/+$/, '');
+  return async (held) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => { controller.abort(); }, timeoutMs);
+    try {
+      const response = await options.fetch(`${base}/v1/store-packs/${encodeURIComponent(options.storeId)}/held`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${options.token}`, 'content-type': 'application/json',
+          'idempotency-key': `held-${options.storeId}-${held.catalogueVersion ?? 'none'}-${held.storePackVersion ?? 'none'}`,
+        },
+        body: JSON.stringify(held), signal: controller.signal,
+      });
+      return response.status >= 200 && response.status < 300;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}

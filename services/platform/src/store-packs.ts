@@ -186,6 +186,17 @@ export function readStoreRules(b: Record<string, unknown>, roleIds: readonly str
   return problems.length > 0 ? { problems } : { rules };
 }
 
+/** What a store computer last said it holds (DF-3-b-2 · SF-08 hand-over). */
+export interface HeldVersionsReport {
+  readonly storeId: string;
+  /** The signed catalogue pack it trades on (null: none yet). */
+  readonly catalogueVersion: number | null;
+  /** The store setup from head office it trades on (null: none yet). */
+  readonly storePackVersion: number | null;
+  readonly reportedBy: string;
+  readonly reportedAt: string;
+}
+
 export interface StorePackDeps {
   readonly signer: PackSigner;
   readonly now: () => string;
@@ -201,6 +212,10 @@ export interface StorePackDeps {
   readonly rules?: (tenantId: string, storeId: string) => Promise<StoreRules | undefined>;
   readonly recordRules?: (tenantId: string, r: StoreRules) => Promise<void>;
   readonly roleIds?: readonly string[];
+  /** DF-3-b-2: what each store computer last said it holds, and head office's current catalogue version. */
+  readonly heldVersions?: (tenantId: string, storeId: string) => Promise<HeldVersionsReport | undefined>;
+  readonly recordHeldVersions?: (tenantId: string, r: HeldVersionsReport) => Promise<void>;
+  readonly currentCatalogueVersion?: (tenantId: string) => Promise<number | null>;
 }
 
 const isNonNegInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
@@ -231,6 +246,44 @@ export function storePackRoutes(deps: StorePackDeps): readonly Route[] {
         }
         const sections = await deps.buildSections(ctx.tenantId, storeId);
         return { status: 200, body: signStorePack(deps.signer, { tenantId: ctx.tenantId, storeId, issuedAt: deps.now(), sections }) };
+      },
+    },
+    {
+      // DF-3-b-2 (SF-08 hand-over): the store computer says which catalogue and which setup it trades on — so head office
+      // sees which stores have (and have not yet) taken a new recall or hold. Its own store only.
+      api: 'API-01', method: 'POST', path: '/v1/store-packs/:storeId/held',
+      permission: 'store.pack.read', idempotent: true,
+      handler: async (ctx) => {
+        const storeId = ctx.params['storeId'] ?? '';
+        await knownStore(ctx.tenantId, storeId);
+        const scope = await deps.branchScopeOf(ctx.tenantId, ctx.userId, 'store.pack.read');
+        if (scope === undefined || (scope !== 'all' && !scope.includes(storeId))) {
+          throw apiError(403, { code: 'not_this_stores_computer', whatHappened: `Only store ${storeId}'s own computer reports what it holds.`, wasItSaved: 'not_saved', nextSafeAction: 'Report for your own store.' });
+        }
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const v = (x: unknown): number | null | undefined => (x === null ? null : typeof x === 'number' && Number.isInteger(x) && x >= 0 ? x : undefined);
+        const catalogueVersion = v(b['catalogueVersion']); const storePackVersion = v(b['storePackVersion']);
+        if (catalogueVersion === undefined || storePackVersion === undefined || deps.recordHeldVersions === undefined) {
+          throw apiError(400, { code: 'not_readable_as_held_versions', whatHappened: 'A report needs { catalogueVersion, storePackVersion } — each a whole number, or null when nothing is held.', wasItSaved: 'not_saved', nextSafeAction: 'Send both.' });
+        }
+        const r: HeldVersionsReport = { storeId, catalogueVersion, storePackVersion, reportedBy: ctx.userId, reportedAt: deps.now() };
+        await deps.recordHeldVersions(ctx.tenantId, r);
+        return { status: 200, body: { held: r } };
+      },
+    },
+    {
+      // What the store computer last said it holds, against head office's current catalogue: behind or current, and since when.
+      api: 'API-01', method: 'GET', path: '/v1/store-packs/:storeId/held',
+      permission: 'org.branch.read',
+      handler: async (ctx) => {
+        const storeId = ctx.params['storeId'] ?? '';
+        await knownStore(ctx.tenantId, storeId);
+        const held = deps.heldVersions === undefined ? undefined : await deps.heldVersions(ctx.tenantId, storeId);
+        const current = deps.currentCatalogueVersion === undefined ? null : await deps.currentCatalogueVersion(ctx.tenantId);
+        const state = held === undefined ? 'never_reported'
+          : current === null ? 'nothing_published'
+          : held.catalogueVersion !== null && held.catalogueVersion >= current ? 'current' : 'behind';
+        return { status: 200, body: { storeId, state, currentCatalogueVersion: current, ...(held === undefined ? {} : { held }) } };
       },
     },
     {

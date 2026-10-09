@@ -190,7 +190,7 @@ import type { ImportQualityDeps, ImportJobRecord } from '../../purchase/src/impo
 import { assessMappingQuality, type MappingQualityFinding } from '../../../packages/import/src/index';
 import type { DataImportDeps, ImportCommitRecord, ImportRollbackRecord } from '../../purchase/src/data-import';
 import type { CategoryRegisterDeps, StoredCategory } from '../../catalogue/src/categories';
-import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
+import type { StoreSettings, StoreRules, HeldVersionsReport } from '../../platform/src/store-packs';
 import type { ImportEffect } from '../../purchase/src/import-templates';
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
@@ -10666,6 +10666,37 @@ export function storeRulesAdapter(input: { readonly store: EventStore }): {
       await input.store.append(tenantId, STORE_RULES_STREAM, makeEvent({
         id: `store-rules-${r.storeId}-v${r.version}`, type: 'StoreRulesSet', occurredAt: r.setAt,
         idempotencyKey: `store-rules-${tenantId}-${r.storeId}-v${r.version}`, source: 'api/platform', payload: r,
+      }));
+    },
+  };
+}
+
+/** Every count reconciliation head office holds, latest state per count (DF-3-b-2) — the same fold `countsAdapter` uses. */
+export async function allCountReconciliations(store: EventStore, tenantId: string): Promise<readonly StoredReconciliation[]> {
+  const countsStream = streamName(STREAM.inventory, 'counts');
+  const byId = new Map<string, StoredReconciliation>();
+  for (const r of await allOf<StoredReconciliation>(store, tenantId, countsStream, 'CountReconciled')) byId.set(r.countId, r);
+  for (const d of await allOf<StoredReconciliation>(store, tenantId, countsStream, 'CountDecided')) byId.set(d.countId, d);
+  return [...byId.values()];
+}
+
+/** What each store computer last said it holds (DF-3-b-2 · SF-08 hand-over): latest report per store. */
+const HELD_VERSIONS_STREAM = streamName(STREAM.org, 'store-held-versions');
+export function heldVersionsAdapter(input: { readonly store: EventStore }): {
+  heldVersions: (tenantId: string, storeId: string) => Promise<HeldVersionsReport | undefined>;
+  recordHeldVersions: (tenantId: string, r: HeldVersionsReport) => Promise<void>;
+} {
+  return {
+    heldVersions: async (tenantId, storeId) => {
+      let latest: HeldVersionsReport | undefined;
+      for (const r of await allOf<HeldVersionsReport>(input.store, tenantId, HELD_VERSIONS_STREAM, 'StoreHeldVersionsReported')) if (r.storeId === storeId) latest = r;
+      return latest;
+    },
+    recordHeldVersions: async (tenantId, r) => {
+      await input.store.append(tenantId, HELD_VERSIONS_STREAM, makeEvent({
+        id: `held-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}`, type: 'StoreHeldVersionsReported', occurredAt: r.reportedAt,
+        // One report per (store, versions): the same versions said again collapse onto the first.
+        idempotencyKey: `held-${tenantId}-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}`, source: 'api/platform', payload: r,
       }));
     },
   };

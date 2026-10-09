@@ -5,6 +5,29 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 4 · PA-06 = DF-3-b-2 — the store's waiting work comes from head office; each store computer says what it holds (9 October 2026)
+
+- **What changed (part 2b):**
+  - **The manager's approvals list** in the store setup is head office's own waiting work at this store and its back
+    store: held stock counts, pending stock corrections and held over-deliveries — the three things head office applies
+    when the manager decides them. Another store's work is not listed. (Before, the demo file took "pending decisions",
+    which were never pending.)
+  - **The counts list** is head office's count register for the store.
+  - **SF-08 hand-over:** the setup names the catalogue head office published; the store computer reports which catalogue
+    and which setup it holds whenever that changes; head office shows each store as current, behind, never reported or
+    nothing published — so a new recall's reach can be seen store by store. Only a store's own computer reports.
+- **Proof:** the connected test now has 10 cases (2 new): the approvals and counts lists (and not another store's); the
+  report recorded, the store shown behind a newer catalogue, the setup naming it, another store's computer refused, a bad
+  report refused. On the old code the new tests fail.
+- **Not yet / honest limits:**
+  - A recall still reaches a store when its computer next asks (every 15 seconds to 5 minutes) — there is no push.
+  - The warehouse handheld's practice delivery and bins, and settling the quantity scale across sections, are not built
+    here (part 3 together with the switch-over).
+  - Part 3: switch the demo store computer, retire the demo-only builder, bind local screens and the buying screen to the
+    signed-in person.
+  - Staff UAT (SP-10) pending.
+- **Next:** part 3 (DF-3-c).
+
 ## Wave 4 · PA-06 = DF-3-b-1 — the store's rules live at head office; every screen's setup comes from it (9 October 2026)
 
 - **The finding:** the store's working rules (approval limit, margin floor, return window, near-expiry days, refill rule,

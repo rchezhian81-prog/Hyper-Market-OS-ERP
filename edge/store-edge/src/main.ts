@@ -37,7 +37,7 @@ import { SyncAgent } from '../../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
 import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
-import { httpStorePackSource, pullStorePack, type StorePackPullOutcome, type StorePackPullStatus } from '../../../edge/sync-agent/src/store-pack-feed';
+import { httpStorePackSource, httpHeldVersionsReporter, pullStorePack, type StorePackPullOutcome, type StorePackPullStatus } from '../../../edge/sync-agent/src/store-pack-feed';
 import { readHeldStorePack, writeHeldStorePack, packPayloadOf } from './store-pack-held';
 import type { StorePackEnvelope } from '../../../services/platform/src/store-packs';
 import type { StoreSetupStatus } from './sync-status';
@@ -351,6 +351,8 @@ export interface EdgeProcess {
   readonly refreshStorePack: (() => Promise<StorePackPullOutcome>) | null;
   /** Where this box's store setup came from, which version, and whether it is out of date (P-08). */
   readonly storeSetup: () => StoreSetupStatus;
+  /** DF-3-b-2: tell head office which catalogue and setup this box holds (when changed). Null unless taking setup from head office. */
+  readonly reportHeldVersions: (() => Promise<boolean>) | null;
   /**
    * Run exactly one drain-and-settle of both queues (sales then refunds), returning what moved.
    * Null when no cloud is configured — there is nothing to drain to. The poll loop calls the same
@@ -1544,7 +1546,7 @@ export async function startEdge(
     syncStatusRelay.current = () => laneSyncStatus({ configured: false, queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
     return {
       log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, tillCashLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox, node, lane, screens, devices, enrolments, syncStatus,
-      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, refreshStorePack: null, storeSetup: storeSetupStatus, syncOnce: null,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, refreshStorePack: null, storeSetup: storeSetupStatus, reportHeldVersions: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -1820,6 +1822,18 @@ export async function startEdge(
     return outcome;
   };
 
+  // DF-3-b-2 (SF-08 hand-over): tell head office which catalogue and which setup this box trades on, whenever that changes.
+  const reportHeld = headOfficeStoreId === undefined ? null : httpHeldVersionsReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: headOfficeStoreId, fetch: globalThis.fetch });
+  let lastReportedHeld: string | undefined;
+  const reportHeldVersions = reportHeld === null ? null : async (): Promise<boolean> => {
+    const held = { catalogueVersion: node.pack()?.snapshot.version ?? null, storePackVersion: heldStorePack?.version ?? null };
+    const key = JSON.stringify(held);
+    if (key === lastReportedHeld) return true;
+    const ok = await reportHeld(held);
+    if (ok) lastReportedHeld = key;
+    return ok;
+  };
+
   let stopping = false;
   let quietPasses = 0;
   let timer: NodeJS.Timeout | undefined;
@@ -1937,6 +1951,9 @@ export async function startEdge(
     } catch (e) {
       say(`catalogue refresh failed: ${e instanceof Error ? e.message : String(e)}. Still on the last pack this box trusted.`);
     }
+    if (reportHeldVersions !== null) {
+      try { await reportHeldVersions(); } catch { /* said nowhere on purpose: retried next pass, and head office shows the store as not reported */ }
+    }
     // The migration register rides the same loop, after the catalogue, for the same reasons (C3b).
     try {
       await refreshMigrationFeed();
@@ -2007,6 +2024,7 @@ export async function startEdge(
     refreshAssignmentsFeed,
     refreshStorePack,
     storeSetup: storeSetupStatus,
+    reportHeldVersions,
     syncOnce: () => drainAndSettle(),
     syncStatus,
     stop: async () => {
