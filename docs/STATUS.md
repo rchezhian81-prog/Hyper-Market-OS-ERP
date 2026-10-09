@@ -24,6 +24,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Proof:** the connected test now has 8 cases (3 new): rules validation and versions; the setup carries every rules
   section and the price approvers; a store with no rules gets none (says not told); a real screen behind the signed-in
   front runs as the signed-in person with their own permissions.
+- **Full gate:** typecheck, lint and secret scan clean; 10,447 unit/integration tests pass (14 skipped), 261
+  performance, 31 browser.
 - **Not yet / honest limits:**
   - Part 2b: the approvals waiting at the store, the counts list, the warehouse delivery and bins, SF-08's priority delivery
     of a new recall and each store computer reporting its version, and settling the quantity scale across sections.
