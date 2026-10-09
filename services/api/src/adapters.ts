@@ -190,6 +190,7 @@ import type { ImportQualityDeps, ImportJobRecord } from '../../purchase/src/impo
 import { assessMappingQuality, type MappingQualityFinding } from '../../../packages/import/src/index';
 import type { DataImportDeps, ImportCommitRecord, ImportRollbackRecord } from '../../purchase/src/data-import';
 import type { CategoryRegisterDeps, StoredCategory } from '../../catalogue/src/categories';
+import type { StoreSettings } from '../../platform/src/store-packs';
 import type { ImportEffect } from '../../purchase/src/import-templates';
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
@@ -6420,7 +6421,7 @@ function poTotalMinor(lines: StoredPurchaseOrder['lines']): number {
  * quantity per product. Both `purchaseOrdersAdapter` (reads) and `purchaseAdapter.openCommitments` fold
  * through here, so there is one truth for the open commitment.
  */
-async function foldPurchaseOrders(store: EventStore, tenantId: string): Promise<Map<string, StoredPurchaseOrder>> {
+export async function foldPurchaseOrders(store: EventStore, tenantId: string): Promise<Map<string, StoredPurchaseOrder>> {
   const events = await store.readStream(tenantId, PURCHASE_ORDERS_STREAM); // all types, oldest first
   const byId = new Map<string, StoredPurchaseOrder>();
   for (const e of events) {
@@ -10616,4 +10617,35 @@ export function documentTemplatesAdapter(input: { readonly store: EventStore; re
       }));
     },
   };
+}
+
+/**
+ * A store's settings as head office holds them (PA-06 = DF-3-a): each change a `StoreSettingsSet` version on the org's
+ * store-settings stream; the settings in force are the latest per store (hard rule #2).
+ */
+const STORE_SETTINGS_STREAM = streamName(STREAM.org, 'store-settings');
+export function storeSettingsAdapter(input: { readonly store: EventStore }): {
+  settings: (tenantId: string, storeId: string) => Promise<StoreSettings | undefined>;
+  recordSettings: (tenantId: string, s: StoreSettings) => Promise<void>;
+} {
+  return {
+    settings: async (tenantId, storeId) => {
+      let latest: StoreSettings | undefined;
+      for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) if (s.storeId === storeId) latest = s;
+      return latest;
+    },
+    recordSettings: async (tenantId, s) => {
+      await input.store.append(tenantId, STORE_SETTINGS_STREAM, makeEvent({
+        id: `store-settings-${s.storeId}-v${s.version}`, type: 'StoreSettingsSet', occurredAt: s.setAt,
+        idempotencyKey: `store-settings-${tenantId}-${s.storeId}-v${s.version}`, source: 'api/platform', payload: s,
+      }));
+    },
+  };
+}
+
+/** Where a person holds a permission — the branches of the grants that carry it (PA-01). */
+export async function branchScopeHeldBy(store: EventStore, tenantId: string, userId: string, permission: string): Promise<readonly string[] | 'all' | undefined> {
+  const grants = await effectiveGrants(store, tenantId);
+  if (!grants.some((g) => g.userId === userId)) return undefined;
+  return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, permission);
 }
