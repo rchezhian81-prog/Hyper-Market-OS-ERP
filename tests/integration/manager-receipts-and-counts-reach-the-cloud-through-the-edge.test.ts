@@ -108,7 +108,7 @@ async function cloud(): Promise<{
     payload: { snapshot: {
       tenantId: A, version: 1, builtAt: AT, scope: { tenantId: A, storeId: 'store-1' },
       products: [
-        { productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false },
+        { productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false, handling: 'ambient' },
         { productId: 'p2', sku: 'p2', name: 'Fresh paneer 200g', unitPriceMinor: 9_000, taxBps: 500, status: 'active', uom: 'ea', batchTracked: true },
       ],
       barcodes: [],

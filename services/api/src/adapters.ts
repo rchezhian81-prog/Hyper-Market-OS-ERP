@@ -172,6 +172,8 @@ import { project, projectBatches, EFFECT_ON_HAND } from '../../inventory/src/ind
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
+import { receiptRuleFor } from '../../inventory/src/goods-receipt';
+import { COLD_CHAIN_CLASS_DEFAULTS } from '../../../packages/fulfilment/src/packing';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
 import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch, StoredMatchPolicy } from '../../purchase/src/index';
@@ -5816,10 +5818,13 @@ export function goodsReceiptAdapter(input: {
       ]);
     },
     // The product master's word on tracking (F03): the published catalogue is the master the whole estate runs on.
+    // Wave 3 · SF-07: batch tracking from the published catalogue (F03, as before); the handling class and cold-chain limits
+    // from head office's PRODUCT MASTER, with the approved class defaults the pack uses — never the sender's word.
     productRule: async (tenantId, productId): Promise<ProductReceiptRules | undefined> => {
       const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
       const product = pack?.snapshot.products.find((p) => p.productId === productId);
-      return product === undefined ? undefined : { productId, batchTracked: product.batchTracked ?? false };
+      const master = await productMasterAdapter(input).product(tenantId, productId);
+      return receiptRuleFor(productId, product, master, COLD_CHAIN_CLASS_DEFAULTS);
     },
     receiptPolicy: (tenantId) => latest<StoredReceiptPolicy>(input.store, tenantId, RECEIPT_POLICY_STREAM, 'ReceiptPolicySet'),
     recordReceiptPolicy: async (tenantId, policy) => {

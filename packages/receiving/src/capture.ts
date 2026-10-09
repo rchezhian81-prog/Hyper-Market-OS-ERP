@@ -42,6 +42,17 @@ export interface ProductReceiptRules {
   readonly mrp?: Money;
   /** Cold-chain items need temperature evidence at receipt (D05-FR-04). */
   readonly coldChain?: boolean;
+  /**
+   * Wave 3 · SF-07 — the product master's handling class (ambient / chilled / frozen / …), as the master says it; absent when
+   * the master names none. The engine does not judge it; the boundary flags an unknown one (`handling_unknown`).
+   */
+  readonly handling?: string;
+  /** Wave 3 · SF-07 — the warmest acceptable arrival temperature, °C: the product's own limit, else its class's approved default. */
+  readonly coldChainMaxC?: number;
+  /** Wave 3 · SF-07 — the coldest acceptable arrival temperature, °C (a chilled item can be ruined by freezing). */
+  readonly coldChainMinC?: number;
+  /** Wave 3 · SF-07 — whose limits these are: the product's own, or the approved class default. */
+  readonly coldChainSource?: 'product' | 'class_default';
 }
 
 /** One line as counted at the dock. */
@@ -86,7 +97,9 @@ export type DiscrepancyKind =
   | 'expired'
   | 'near_expiry'
   | 'mrp_mismatch'
-  | 'temperature_breach';
+  | 'temperature_breach'
+  /** Wave 3 · SF-07 — a cold-chain item arrived with no recorded temperature: received, held, released only by a second person. */
+  | 'temperature_not_recorded';
 
 /** A visible, valued, owned exception — never a silent adjustment (P-03/P-08). */
 export interface ReceiptDiscrepancy {
@@ -154,6 +167,15 @@ function valueOf(unitCost: Money, quantityMinor: number): Money {
   return { minor: unitCost.minor * quantityMinor, currency: unitCost.currency };
 }
 
+/** Wave 3 · SF-07 — the warmest acceptable arrival temperature: the product's (or its class's) limit first, the tenant's policy after. */
+function maxC(rule: ProductReceiptRules, policy: ReceiptPolicy): number | undefined {
+  return rule.coldChainMaxC ?? policy.coldChainMaxC;
+}
+
+function tooWarm(temperatureC: number, limit: number | undefined): boolean {
+  return limit !== undefined && temperatureC > limit;
+}
+
 function daysUntil(date: string, asOfDate: string): number {
   return Math.floor((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${asOfDate}T00:00:00Z`)) / 86_400_000);
 }
@@ -195,9 +217,9 @@ export function captureReceipt(input: {
         throw new IncompleteCaptureError(line.lineId, 'an expiry date (the item is batch-tracked)');
       }
     }
-    if (rule.coldChain === true && line.temperatureC === undefined) {
-      throw new IncompleteCaptureError(line.lineId, 'a recorded temperature (cold-chain item)');
-    }
+    // Wave 3 · SF-07 (owner decision 9 Oct 2026, option 3): a cold-chain line with no recorded temperature is no longer refused
+    // at the dock — the goods are physically in the building and the store must keep trading (P-01). It is RECEIVED but HELD
+    // in quarantine, never sellable, until a second person checks the goods and releases or returns them (below).
 
     const raise = (
       kind: DiscrepancyKind,
@@ -271,12 +293,12 @@ export function captureReceipt(input: {
       sellable = 0;
       held = 0;
       raise('temperature_breach', line.countedMinor, true, 'cold chain broken in transit — quarantined');
-    } else if (
-      rule.coldChain === true &&
-      input.policy.coldChainMaxC !== undefined &&
-      line.temperatureC !== undefined &&
-      line.temperatureC > input.policy.coldChainMaxC
-    ) {
+    } else if (rule.coldChain === true && line.temperatureC === undefined) {
+      quarantined = line.countedMinor;
+      sellable = 0;
+      held = 0;
+      raise('temperature_not_recorded', line.countedMinor, true, 'cold-chain item received with no recorded temperature — held until a second person checks it');
+    } else if (rule.coldChain === true && line.temperatureC !== undefined && tooWarm(line.temperatureC, maxC(rule, input.policy))) {
       quarantined = line.countedMinor;
       sellable = 0;
       held = 0;
@@ -284,7 +306,17 @@ export function captureReceipt(input: {
         'temperature_breach',
         line.countedMinor,
         true,
-        `arrived at ${line.temperatureC}°C, above the ${input.policy.coldChainMaxC}°C limit — quarantined`,
+        `arrived at ${line.temperatureC}°C, above the ${maxC(rule, input.policy)}°C limit — quarantined`,
+      );
+    } else if (rule.coldChain === true && line.temperatureC !== undefined && rule.coldChainMinC !== undefined && line.temperatureC < rule.coldChainMinC) {
+      quarantined = line.countedMinor;
+      sellable = 0;
+      held = 0;
+      raise(
+        'temperature_breach',
+        line.countedMinor,
+        true,
+        `arrived at ${line.temperatureC}°C, below the ${rule.coldChainMinC}°C limit — quarantined`,
       );
     } else if (expiry !== null && daysUntil(expiry, input.receivedOnDate) <= input.policy.nearExpiryDays) {
       // Still sellable, but the buyer must see it now, not when it is dead stock.

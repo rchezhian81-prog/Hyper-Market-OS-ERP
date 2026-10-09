@@ -66,11 +66,16 @@ export interface HandlingRule {
   readonly minTenthsC?: number;
 }
 
-const DEFAULT_RULES: readonly HandlingRule[] = [
+/**
+ * The approved class defaults — one table for the estate: the pack uses them, and receiving (Wave 3 · SF-07) uses the SAME
+ * figures for a product whose master names a cold class but no limits of its own. A class listed here is a cold class.
+ */
+export const COLD_CHAIN_CLASS_DEFAULTS: readonly HandlingRule[] = [
   { handling: 'chilled', minTenthsC: -20, maxTenthsC: 50 },
   { handling: 'frozen', maxTenthsC: -150 },
   { handling: 'raw_meat', minTenthsC: -20, maxTenthsC: 40 },
 ];
+const DEFAULT_RULES: readonly HandlingRule[] = COLD_CHAIN_CLASS_DEFAULTS;
 
 /** Pairs that must never share a crate. Symmetric — order does not matter. */
 const INCOMPATIBLE: readonly (readonly [HandlingClass, HandlingClass])[] = [

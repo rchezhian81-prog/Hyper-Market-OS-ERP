@@ -5,6 +5,47 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 3 · SF-07 part 1 — chilled and frozen deliveries need a temperature; without one they are held (9 October 2026)
+
+- **The wave:** Wave 3. SF-02 (#730) and SF-03 (#731) merged. **Owner decision (9 Oct 2026):** the rest of Wave 3 is split
+  between two Claude sessions — this one takes SF-07/PA-07 and SF-08; the other takes SF-05 (already in progress) and
+  PF-14. **Owner decision "3 and A" (9 Oct 2026):** a chilled/frozen line with no temperature is received but HELD for a
+  second person (now), then the store screen and the handheld get a temperature box (next); a product with no handling
+  class is received normally and marked.
+- **The audit's finding (SF-07):** a chilled, batch-tracked product received with a future expiry and no temperature — all
+  10 went on the shelf. The delivery check never read the product master's handling class or temperature limits.
+- **What changed:**
+  - The delivery check now reads each product's **handling class and its own temperature limits** from the product
+    master. A product without its own limits uses the approved standard for its class — the same table packing uses
+    (chilled −2 °C to 5 °C, frozen −15 °C or colder, raw meat −2 °C to 4 °C).
+  - A chilled or frozen line with **no temperature**, **too warm**, or **too cold** is received but **held** — not
+    sellable — on the review list. A second person (never the receiver) checks it and releases it or returns it.
+  - A product whose master names **no handling class** is received normally; the delivery says "handling not known" so
+    someone fills it in.
+  - A temperature that is not a number is refused, nothing received.
+  - The office screen shows the new reason in English and Tamil.
+- **Proved:**
+  - New tests (9): the audit's case held, nothing sellable; the receiver cannot release it, a second person can (once), or
+    returns it; paneer by its own limits (3 °C sells, 4.5 °C and −5 °C held); ice cream by the frozen standard (−18 °C sells,
+    −10 °C held, none held); dal needs no reading; an unclassified product received and marked; the store computer's
+    delivery held the same way; the handheld's delivery held and marked; a non-number refused; the resolution rule itself.
+  - Unit (2): no temperature → held with a second person needed; the product's own limits beat the shop's policy, and too
+    cold is held.
+  - **Mutation check:** making the delivery check ignore the product master again fails 6 of the 9 new tests.
+  - Older tests: the dry-goods test products (dal, rice, biscuits) were given the class "ambient"; tests using products
+    with no class (paneer, milk, unknown products) now expect the "handling not known" mark. One unit test changed meaning
+    by the owner's decision: a chilled line with no temperature is held, not refused.
+  - Full `pnpm run check` green, with the real database connected.
+- **Not yet / honest limits:**
+  - **The store screen and the handheld cannot record a temperature yet** (parts 2 and 3, next). Until then: chilled
+    deliveries booked at the store computer are always held for a check; on the handheld, the scans have already put the
+    stock on the shelf, so the delivery is held on paper and marked "cold chain not checked" — the manager must act on it.
+  - PA-07 — a cold room or fridge breakdown placing the stock inside on hold — is the next item after parts 2 and 3.
+  - The Tamil wording is helper-written and needs native review (Wave 8).
+- **Behaviour change the owner should know:** chilled and frozen deliveries booked at the store computer will now wait on
+  the manager's review list for a check before they can be sold, until the temperature box arrives.
+- **Next:** SF-07 part 2 — the temperature box on the store computer's delivery screen.
+
 ## Wave 3 · SF-03 — a transfer sends only what the named batch holds (9 October 2026)
 
 - **The wave:** Wave 3, second of six fixes. SF-02 merged as #730.

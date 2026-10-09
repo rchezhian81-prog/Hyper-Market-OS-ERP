@@ -76,10 +76,25 @@ describe('captureReceipt — count, batch, expiry, MRP, condition (M07-FR-02)', 
     expect(ok.lines[0]?.batchId).toBe('B1');
   });
 
-  it('refuses a cold-chain item with no recorded temperature (D05-FR-04)', () => {
-    expect(() => capture([line({ productId: 'milk', batchId: 'B1', expiry: '2026-12-01' })])).toThrow(
-      /recorded temperature/,
-    );
+  it('receives a cold-chain item with no recorded temperature but HOLDS it in quarantine for a second person (D05-FR-04 · Wave 3 SF-07, owner decision 9 Oct 2026)', () => {
+    // Until SF-07 this was refused at the dock; the goods are in the building and the store must keep trading (P-01), so it is
+    // received, never sellable, with an owned discrepancy that needs a second person to release or return it.
+    const r = capture([line({ productId: 'milk', batchId: 'B1', expiry: '2026-12-01' })]);
+    expect(r.lines[0]).toMatchObject({ disposition: 'quarantine', sellableMinor: 0, quarantinedMinor: 100 });
+    expect(r.discrepancies).toEqual([expect.objectContaining({ kind: 'temperature_not_recorded', quantityMinor: 100, requiresApproval: true })]);
+    expect(r.requiresApproval).toBe(true);
+  });
+
+  it('judges a cold-chain item by the PRODUCT\'s own limits before the tenant policy, and quarantines one that arrived too cold (Wave 3 SF-07)', () => {
+    const rules: ProductReceiptRules[] = [{ productId: 'paneer', batchTracked: false, coldChain: true, coldChainMaxC: 4, coldChainMinC: -2, coldChainSource: 'product' }];
+    const at = (temperatureC: number) => captureReceipt({ receiptId: 'g', lines: [line({ productId: 'paneer', temperatureC })], rules, policy: POLICY, receivedOnDate: '2026-07-01', currency: INR });
+    expect(at(3).lines[0]?.disposition).toBe('sellable');      // within the product's 4 °C (the tenant's 5 °C is not the limit)
+    expect(at(4.5).lines[0]?.disposition).toBe('quarantine');  // above the product's 4 °C even though under the tenant's 5 °C
+    expect(at(4.5).discrepancies[0]?.detail).toContain('above the 4°C limit');
+    const frozenSolid = at(-5);
+    expect(frozenSolid.lines[0]?.disposition).toBe('quarantine'); // below the product's −2 °C — a chilled item ruined by freezing
+    expect(frozenSolid.discrepancies[0]).toMatchObject({ kind: 'temperature_breach', requiresApproval: true });
+    expect(frozenSolid.discrepancies[0]?.detail).toContain('below the -2°C limit');
   });
 
   it('never receives already-expired stock as sellable', () => {
