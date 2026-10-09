@@ -77,15 +77,19 @@ export function linesFromScans(input: {
   readonly unitCostMinorOf: (productId: string) => number | undefined;
   readonly flags: ReceiptFlag[];
 }): readonly AssembledLine[] {
-  interface Group { productId: string; batchId: string | null; posture: ScanPosture; uom: string; expiry: string | null; counted: number; onHand: number; commandIds: string[]; onHandMovementIds: string[] }
+  // Wave 3 · SF-07 part 3: a cold-chain scan head office HELD (no reading, or out of range) is its own line, so a good scan of the
+  // same product that went on-hand is never judged by — or blamed for — the held one; each line carries its readings.
+  interface Group { productId: string; batchId: string | null; posture: ScanPosture; coldHeld: boolean; uom: string; expiry: string | null; counted: number; onHand: number; commandIds: string[]; onHandMovementIds: string[]; temps: (number | undefined)[] }
   const groups = new Map<string, Group>();
   const productOrder: string[] = [];
   for (const s of input.scans) {
     const posture = postureOf(s.state);
-    const key = `${s.productId}|${s.batchId ?? ''}|${posture}`;
+    const coldHeld = s.coldChainHeld !== undefined;
+    const key = `${s.productId}|${s.batchId ?? ''}|${posture}|${coldHeld ? 'cold-held' : ''}`;
     if (!productOrder.includes(s.productId)) productOrder.push(s.productId);
-    const g = groups.get(key) ?? { productId: s.productId, batchId: s.batchId, posture, uom: s.uom, expiry: null, counted: 0, onHand: 0, commandIds: [], onHandMovementIds: [] };
+    const g = groups.get(key) ?? { productId: s.productId, batchId: s.batchId, posture, coldHeld, uom: s.uom, expiry: null, counted: 0, onHand: 0, commandIds: [], onHandMovementIds: [], temps: [] };
     g.counted += s.quantityMinor;
+    g.temps.push(s.temperatureC);
     g.commandIds.push(s.commandId);
     if (s.expiry !== null && g.expiry === null) g.expiry = s.expiry;
     if (s.onHandMovementId !== null) { g.onHand += s.quantityMinor; g.onHandMovementIds.push(s.onHandMovementId); }
@@ -95,7 +99,8 @@ export function linesFromScans(input: {
   const out: AssembledLine[] = [];
   let n = 0;
   for (const productId of productOrder) {
-    const mine = [...groups.values()].filter((g) => g.productId === productId).sort((a, b) => POSTURE_ORDER[a.posture] - POSTURE_ORDER[b.posture]);
+    const mine = [...groups.values()].filter((g) => g.productId === productId)
+      .sort((a, b) => POSTURE_ORDER[a.posture] - POSTURE_ORDER[b.posture] || Number(a.coldHeld) - Number(b.coldHeld));
     const onOrder = input.ordered?.[productId];
     let remaining = onOrder;
     mine.forEach((g, i) => {
@@ -115,11 +120,21 @@ export function linesFromScans(input: {
         unitCost: { minor: input.unitCostMinorOf(productId) ?? 0, currency: 'INR' },
         condition: g.posture === 'damaged' ? 'damaged' : 'good',
         ...(g.posture === 'held' ? { qc: 'failed' as const } : {}),
+        // Wave 3 · SF-07 part 3: the line's reading for the capture engine. A held line with ANY scan unread carries none (held:
+        // not recorded); otherwise its first reading — out of range by construction, so the engine holds it for the same reason
+        // head office held the scan. A line that went on-hand carries a reading that passed.
+        ...lineTemperature(g.temps, g.coldHeld),
       };
       out.push({ line, posture: g.posture, scannedOnHandMinor: g.onHand, commandIds: g.commandIds, onHandMovementIds: g.onHandMovementIds });
     });
   }
   return out;
+}
+
+function lineTemperature(temps: readonly (number | undefined)[], coldHeld: boolean): { temperatureC?: number } {
+  if (coldHeld && temps.some((t) => t === undefined)) return {};
+  const first = temps.find((t): t is number => t !== undefined);
+  return first === undefined ? {} : { temperatureC: first };
 }
 
 export type AssembleOutcome =
