@@ -29,6 +29,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
     bad file loads nothing; a manager cannot load products; undo, and its refusal once a barcode exists.
   - Every existing product test still passes on the list (the owner's publishes define what they name).
   - On the old code the new tests fail.
+  - Full gate: typecheck, lint and secret scan clean; 10,423 unit/integration tests pass (14 skipped), 261 performance,
+    31 browser.
 - **Not yet / honest limits:**
   - No category screen yet — categories are added through head office's routes and the owner's product publishes.
   - A file loads NEW products only; changing existing products by file is not built.
