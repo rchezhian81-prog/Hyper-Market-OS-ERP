@@ -76,6 +76,7 @@ import { TillOperators, loadTillCredentials } from './till-operators';
 import { TillApprovals } from './till-approvals';
 import { ReceiptNumbers } from './receipt-numbers';
 import { HeldBills } from './held-bills';
+import { PaymentAttempts, type PaymentProviderPort } from './payment-attempts';
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
 import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
@@ -383,6 +384,11 @@ export interface EdgeProcess {
 export async function startEdge(
   env: Readonly<Record<string, string | undefined>> = process.env,
   say: (line: string) => void = (line) => process.stdout.write(`${line}\n`),
+  /**
+   * Ports with no live counterpart in this build (audit PF-06): the card/UPI payment provider. No provider is connected
+   * in production yet (an external gate — credentials and certification); tests pass a stand-in.
+   */
+  ports: { readonly paymentProvider?: PaymentProviderPort } = {},
 ): Promise<EdgeProcess | undefined> {
   const config = loadConfig(STORE_EDGE_CONFIG, env);
   if (!config.ok) {
@@ -1110,6 +1116,12 @@ export async function startEdge(
     policy: () => (pack.suspensionPolicy.known ? pack.suspensionPolicy.value : null),
     storeId: () => (pack.policies.known ? pack.policies.value.storeId : 'this-store'),
   });
+  // CARD AND UPI ATTEMPTS (audit PF-06): recorded before the machine is asked; a no-answer settles only against the
+  // provider's record — through the provider port, which no live provider fills yet.
+  const payments = tillOperators === null ? null : await PaymentAttempts.open({
+    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+    ...(ports.paymentProvider === undefined ? {} : { provider: ports.paymentProvider }),
+  });
   if (tillOperators !== null) {
     say(trustForwardedTillUser
       ? 'till sign-in: the person the hosted sign-in names (EDGE_LANE_TRUST_FORWARDED_USER) — only right behind the hosted front.'
@@ -1129,6 +1141,15 @@ export async function startEdge(
         signOut: (token) => tillOperators.signOut(token),
         // The box's seal on who it verified (ADR-0023), under its own key and this box's tenant.
         seal: (subject) => sealTillFact(sealKey, { ...subject, tenantId }),
+      },
+    }),
+    ...(payments === null ? {} : {
+      payments: {
+        ask: (i) => payments.ask(i),
+        answer: (i) => payments.answer(i),
+        recover: (i) => payments.recover(i),
+        checkTenders: (i) => payments.checkTenders(i),
+        status: (laneId) => payments.status(laneId),
       },
     }),
     ...(heldBills === null ? {} : {
@@ -1473,6 +1494,7 @@ export async function startEdge(
         if (enrolments !== null) await enrolments.close();
         if (receiptNumbers !== null) await receiptNumbers.close();
         if (heldBills !== null) await heldBills.close();
+        if (payments !== null) await payments.close();
         await log.close();
         await returnsLog.close();
         await completionsLog.close();
@@ -1946,6 +1968,7 @@ export async function startEdge(
       if (enrolments !== null) await enrolments.close();
       if (receiptNumbers !== null) await receiptNumbers.close();
       if (heldBills !== null) await heldBills.close();
+      if (payments !== null) await payments.close();
       await log.close();
       await returnsLog.close();
       await completionsLog.close();

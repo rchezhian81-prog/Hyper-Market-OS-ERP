@@ -12,6 +12,11 @@ export interface Tender {
   readonly kind: TenderKind;
   readonly amount: Money;
   readonly status: TenderStatus;
+  /**
+   * The provider reference a card/UPI tender was paid under — the merchant reference the store computer recorded before
+   * the machine was asked (audit PF-06). Never card data (hard rule #3).
+   */
+  readonly ref?: string;
 }
 
 /** Statuses that count as actually paid. 'pending'/'uncertain'/'declined' do not. */

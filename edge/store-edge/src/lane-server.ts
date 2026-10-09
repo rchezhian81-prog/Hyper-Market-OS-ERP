@@ -71,6 +71,7 @@ import { OPERATOR_HEADER, type CheckOutcome, type SignInOutcome } from './till-o
 import type { GrantOutcome, ReturnCheck } from './till-approvals';
 import type { IssueOutcome, ReceiptNumberStatus, UseCheck } from './receipt-numbers';
 import type { HoldOutcome, RecallOutcome, HeldSummary } from './held-bills';
+import type { AttemptAnswer, TenderCheck, Attempt } from './payment-attempts';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -169,6 +170,24 @@ const LANE_RECEIPT_NUMBERS_ROUTE = '/lane/receipt-numbers';
 const LANE_HELD_BILLS_ROUTE = '/lane/held-bills';
 const LANE_HELD_BILLS_RECALL_ROUTE = '/lane/held-bills/recall';
 const LANE_HELD_BILLS_ABANDON_ROUTE = '/lane/held-bills/abandon';
+
+/**
+ * CARD AND UPI ATTEMPTS on this box (audit PF-06 · M12-FR-03): `POST /lane/payment-attempts` records the attempt BEFORE
+ * the machine is asked; `/answer` records what the machine said; `/recover` settles a no-answer against the provider's
+ * record; `GET` is the till's account (unresolved, paid without a sale, owed back). Only the person signed in here.
+ */
+const LANE_PAYMENTS_ROUTE = '/lane/payment-attempts';
+const LANE_PAYMENTS_ANSWER_ROUTE = '/lane/payment-attempts/answer';
+const LANE_PAYMENTS_RECOVER_ROUTE = '/lane/payment-attempts/recover';
+
+/** The payment-attempt register this socket asks (`PaymentAttempts`). */
+export interface LanePaymentAttemptsPort {
+  ask(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly billRef: unknown; readonly kind: unknown; readonly amountMinor: unknown }): Promise<AttemptAnswer>;
+  answer(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown }): Promise<AttemptAnswer>;
+  recover(input: { readonly laneId: string; readonly attemptId: unknown }): Promise<AttemptAnswer>;
+  checkTenders(input: { readonly laneId: string; readonly saleId: string; readonly tenders: unknown }): TenderCheck;
+  status(laneId: string): { readonly unresolved: readonly Attempt[]; readonly paidWithoutSale: readonly Attempt[]; readonly owedToCustomers: readonly Attempt[] };
+}
 
 /** The held-basket register this socket asks (`HeldBills`). */
 export interface LaneHeldBillsPort {
@@ -406,6 +425,8 @@ export function startLaneServer(input: {
   readonly receiptNumbers?: LaneReceiptNumberPort;
   /** The held-basket register (audit PF-05). Wired beside `operators` on every store box. */
   readonly heldBills?: LaneHeldBillsPort;
+  /** The card/UPI attempt register (audit PF-06). Wired beside `operators` on every store box. */
+  readonly payments?: LanePaymentAttemptsPort;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -586,6 +607,46 @@ export function startLaneServer(input: {
           send(res, 200, outcome, { ...cors, 'cache-control': 'no-store' });
         } catch (e) {
           send(res, 200, refused(e instanceof Error ? e.message : String(e)), cors);
+        }
+      })();
+      return;
+    }
+
+    // CARD AND UPI ATTEMPTS (audit PF-06): recorded before the machine is asked, answered, recovered against the provider.
+    if ((req.method === 'POST' && (pathname === LANE_PAYMENTS_ROUTE || pathname === LANE_PAYMENTS_ANSWER_ROUTE || pathname === LANE_PAYMENTS_RECOVER_ROUTE))
+      || (req.method === 'GET' && pathname === LANE_PAYMENTS_ROUTE)) {
+      const ops = input.operators;
+      const payments = input.payments;
+      const refused = (refusedBecause: string, laneMessage: string) => ({ ok: false, refusedBecause, laneMessage });
+      if (ops === undefined || payments === undefined) { send(res, 404, refused('not_served', 'this box does not record card payments'), cors); req.resume(); return; }
+      if (req.method === 'GET') {
+        if (typeof req.headers.origin === 'string' && req.headers.origin !== '' && !isLoopbackOrigin(req.headers.origin)) {
+          send(res, 403, { error: 'this request did not come from this till' }, cors);
+          return;
+        }
+        const check = ops.check(operatorTokenOf(req), ops.laneId);
+        if (!check.ok) { send(res, 200, { ...refused(check.refusedBecause, check.laneMessage), unresolved: [], paidWithoutSale: [], owedToCustomers: [] }, { ...cors, 'cache-control': 'no-store' }); return; }
+        send(res, 200, payments.status(ops.laneId), { ...cors, 'cache-control': 'no-store' });
+        return;
+      }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) { send(res, authRefusal.status, refused('unauthorized_request', authRefusal.reason), cors); req.resume(); return; }
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, (m: string) => refused('request_not_readable', m));
+        if (body === undefined) return;
+        if (ops.laneId.trim() === '') { send(res, 200, refused('no_lane', 'This store computer has not been told which till it is. Do not take money — tell the manager.'), cors); return; }
+        const check = ops.check(operatorTokenOf(req), ops.laneId);
+        if (!check.ok) { send(res, 200, refused(check.refusedBecause, check.laneMessage), cors); return; }
+        const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+        try {
+          const out = pathname === LANE_PAYMENTS_ROUTE
+            ? await payments.ask({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], billRef: b['billRef'], kind: b['kind'], amountMinor: b['amountMinor'] })
+            : pathname === LANE_PAYMENTS_ANSWER_ROUTE
+              ? await payments.answer({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], outcome: b['outcome'] })
+              : await payments.recover({ laneId: ops.laneId, attemptId: b['attemptId'] });
+          send(res, 200, out, { ...cors, 'cache-control': 'no-store' });
+        } catch (e) {
+          send(res, 200, refused('could_not_write_durably', e instanceof Error ? e.message : String(e)), cors);
         }
       })();
       return;
@@ -1058,14 +1119,15 @@ export function startLaneServer(input: {
       || pathname === LANE_CASH_MOVEMENTS_ROUTE || pathname === LANE_SHIFT_CLOSE_ROUTE || pathname === LANE_TILL_CASH_ROUTE
       || pathname === LANE_OPERATOR_ROUTE || pathname === LANE_OPERATOR_SIGN_IN_ROUTE || pathname === LANE_OPERATOR_SIGN_OUT_ROUTE
       || pathname === LANE_APPROVALS_ROUTE || pathname === LANE_RECEIPT_NUMBERS_ROUTE
-      || pathname === LANE_HELD_BILLS_ROUTE || pathname === LANE_HELD_BILLS_RECALL_ROUTE || pathname === LANE_HELD_BILLS_ABANDON_ROUTE)) {
+      || pathname === LANE_HELD_BILLS_ROUTE || pathname === LANE_HELD_BILLS_RECALL_ROUTE || pathname === LANE_HELD_BILLS_ABANDON_ROUTE
+      || pathname === LANE_PAYMENTS_ROUTE || pathname === LANE_PAYMENTS_ANSWER_ROUTE || pathname === LANE_PAYMENTS_RECOVER_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`, `POST ${LANE_APPROVALS_ROUTE}`, `POST ${LANE_RECEIPT_NUMBERS_ROUTE}`, `GET ${LANE_RECEIPT_NUMBERS_ROUTE}`, `POST ${LANE_HELD_BILLS_ROUTE}`, `GET ${LANE_HELD_BILLS_ROUTE}`, `POST ${LANE_HELD_BILLS_RECALL_ROUTE}`, `POST ${LANE_HELD_BILLS_ABANDON_ROUTE}`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`, `POST ${LANE_APPROVALS_ROUTE}`, `POST ${LANE_RECEIPT_NUMBERS_ROUTE}`, `GET ${LANE_RECEIPT_NUMBERS_ROUTE}`, `POST ${LANE_HELD_BILLS_ROUTE}`, `GET ${LANE_HELD_BILLS_ROUTE}`, `POST ${LANE_HELD_BILLS_RECALL_ROUTE}`, `POST ${LANE_HELD_BILLS_ABANDON_ROUTE}`, `POST ${LANE_PAYMENTS_ROUTE}`, `GET ${LANE_PAYMENTS_ROUTE}`, `POST ${LANE_PAYMENTS_ANSWER_ROUTE}`, `POST ${LANE_PAYMENTS_RECOVER_ROUTE}`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }
@@ -1181,6 +1243,16 @@ export function startLaneServer(input: {
             return;
           }
         }
+        // A sale paid by card or UPI (audit PF-06): each such tender names an attempt this box recorded as paid, for that
+        // amount, on this till, used by no other sale. Checked before the disk; its use is noted once the sale is there.
+        let tenderUse: TenderCheck | undefined;
+        if (!isTag && !isReturn && input.payments !== undefined && input.operators !== undefined) {
+          tenderUse = input.payments.checkTenders({ laneId: input.operators.laneId, saleId: id, tenders: ((parsed ?? {}) as Record<string, unknown>)['tenders'] });
+          if (!tenderUse.ok) {
+            send(res, 200, { committed: false, refusedBecause: tenderUse.refusedBecause, laneMessage: tenderUse.laneMessage }, cors);
+            return;
+          }
+        }
 
         try {
           // The whole of this server. `commit`/`commitReturn` writes to the disk, waits for the
@@ -1192,6 +1264,7 @@ export function startLaneServer(input: {
               ? await input.node.commitReturn(id, JSON.stringify(parsed))
               : await input.node.commit(id, JSON.stringify(parsed));
           if (outcome.committed && numberUse?.ok === true) await numberUse.record();
+          if (outcome.committed && tenderUse?.ok === true) await tenderUse.record();
           // 200 on a refusal too: the *request* was understood, and the answer is in the body. A
           // 5xx here would make a refused sale look like a broken lane, and the cashier needs to
           // know which it is — one means use another lane, the other means try again.

@@ -54,6 +54,7 @@ const WORDS = {
     pinTitle: 'Your till PIN', pinHint: 'Key your six-digit till PIN, then OK. It is never shown. Forgotten it? Ask the manager.',
     signInRefused: 'Not signed in',
     signedInAs: 'Signed in',
+    checkPayment: 'Check that payment with the provider',
     cancel: 'Cancel', ok: 'OK', quantity: 'Quantity', cashReceived: 'Cash received',
     changeDue: 'Change due', online: 'Online', offline: 'Offline', unsent: 'Unsent',
     // The badge's states, from the BOX (design system §1 rule 4): connection · unsent · last contact.
@@ -165,6 +166,7 @@ const WORDS = {
     pinTitle: 'உங்கள் கல்லா PIN', pinHint: 'ஆறு இலக்க கல்லா PIN-ஐ உள்ளிட்டு சரி அழுத்தவும். அது ஒருபோதும் காட்டப்படாது. மறந்துவிட்டீர்களா? மேலாளரிடம் கேளுங்கள்.',
     signInRefused: 'உள்நுழையவில்லை',
     signedInAs: 'உள்நுழைந்தவர்',
+    checkPayment: 'அந்தப் பணத்தை வழங்குநரிடம் சரிபார்',
     tender: 'பணம் பெறு', cancel: 'ரத்து', ok: 'சரி', quantity: 'எண்ணிக்கை',
     cashReceived: 'பெற்ற பணம்', changeDue: 'மீதம் தர வேண்டியது', online: 'இணைப்பில்',
     offline: 'இணைப்பு இல்லை', unsent: 'அனுப்பப்படாதவை', reasonForVoid: 'நீக்கக் காரணம்',
@@ -874,27 +876,56 @@ function withReceiptNotice(receipt) {
  * happened, and the pressure to do it is highest exactly when it is worst — a customer waiting and
  * a queue behind them.
  */
-async function takeCardOrUpi(kind, payable) {
-  const outcome = await choose(`${t('tapTerminal')} — ${inr(payable)}`, [
+/**
+ * One card or UPI payment, through the store computer (audit PF-06): the attempt is recorded BEFORE the machine is asked,
+ * and what the machine said is recorded on it. If this bill has a payment that got no answer, the cashier is offered a
+ * CHECK with the provider instead of the machine — asking again is how a customer pays twice. A payment the provider
+ * already confirmed for this bill is used, not charged again. Resolves to the payment's reference, or `null` (not paid —
+ * the screen has said why). The stand-in shell (no bundle) only asks what the machine said.
+ */
+async function cardAttempt(kind, amountMinor) {
+  const machine = () => choose(`${t('tapTerminal')} — ${inr(amountMinor)}`, [
     { value: 'approved', label: t('approved') },
     { value: 'declined', label: t('declined') },
     { value: 'no_answer', label: t('noAnswer') },
   ]);
-  if (outcome === null) return;
-
-  if (outcome !== 'approved') {
-    // Said before anything is attempted, because there is nothing to attempt: an unpaid sale does
-    // not commit, and the cashier needs the instruction, not the error.
-    tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg'));
-    return;
+  if (!session.startCardPayment) {
+    const outcome = await machine();
+    if (outcome === null) return null;
+    if (outcome !== 'approved') { tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg')); return null; }
+    return '';
   }
+  let started = await session.startCardPayment(kind, amountMinor);
+  if (!started.ok && started.refusedBecause === 'unresolved_payment_on_this_bill' && started.attemptId) {
+    const what = await choose(started.laneMessage, [{ value: 'check', label: t('checkPayment') }, { value: 'cancel', label: t('cancel') }]);
+    if (what !== 'check') return null;
+    const checked = await session.checkCardPayment(started.attemptId);
+    if (!checked.ok) { tell(t('read'), checked.laneMessage); return null; }
+    if (checked.state === 'recovered_paid') return checked.attemptId;
+    started = await session.startCardPayment(kind, amountMinor);
+  }
+  if (!started.ok && started.refusedBecause === 'already_paid_on_this_bill' && started.attemptId) return started.attemptId;
+  if (!started.ok || !started.attemptId) { tell(t('read'), started.laneMessage); return null; }
+  const outcome = await machine();
+  if (outcome === null) return null;
+  const answered = await session.answerCardPayment(started.attemptId, outcome);
+  if (!answered.ok) { tell(t('read'), answered.laneMessage); return null; }
+  // Said in the cashier's words: an unpaid sale does not commit, and the goods stay on the counter.
+  if (outcome !== 'approved') { tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg')); return null; }
+  return started.attemptId;
+}
+
+async function takeCardOrUpi(kind, payable) {
+  const ref = await cardAttempt(kind, payable);
+  if (ref === null) return;
+  const outcome = 'approved';
 
   const receiptNumber = await takeReceiptNumber();
   if (receiptNumber === null) return;
   try {
     const receipt = await session.tenderCardOrUpi({
       saleId: `S-${receiptNumber}`, receiptNumber,
-      atIsoUtc: new Date().toISOString(), kind, outcome,
+      atIsoUtc: new Date().toISOString(), kind, outcome, ...(ref ? { ref } : {}),
     });
     tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(receipt));
     session.newSale();
@@ -1221,15 +1252,11 @@ async function startExchange() {
     if (kind === null) return;
     settlement.topUp = { kind };
     if (kind !== 'cash') {
-      // What the card machine said — three answers, and silence is NOT approval (M12-FR-03).
-      const outcome = await choose(`${t('tapTerminal')} — ${inr(quote.balanceMinor)}`, [
-        { value: 'approved', label: t('approved') },
-        { value: 'declined', label: t('declined') },
-        { value: 'no_answer', label: t('noAnswer') },
-      ]);
-      if (outcome === null) return;
-      if (outcome !== 'approved') { tell(t('read'), outcome === 'declined' ? t('declinedMsg') : t('noAnswerMsg')); return; }
-      settlement.topUp.outcome = outcome;
+      // Through the store computer, recorded before the machine is asked — silence is NOT approval (M12-FR-03 · PF-06).
+      const ref = await cardAttempt(kind, quote.balanceMinor);
+      if (ref === null) return;
+      settlement.topUp.outcome = 'approved';
+      if (ref) settlement.topUp.ref = ref;
     }
   } else {
     const refundTender = await choose(`${credit} — ${t('exchangeRefunds')}: ${inr(quote.balanceMinor)} — ${t('refundHow')}`, [
