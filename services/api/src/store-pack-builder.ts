@@ -19,7 +19,7 @@
 //   checklist and the  ← the store's working rules head office holds (POST /v1/stores/:storeId/rules); every screen's
 //   screen policies       viewer is the person who signed in (no person is named here)
 //
-// Not yet built here (DF-3-b-2/c): the approvals list, the buying screen (its buyer is a named person), the practice warehouse/wave/route, counts.
+// Not yet built here (DF-3-c): the buying screen (its buyer is a named person), the practice warehouse/wave/route, counts.
 
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
@@ -27,7 +27,7 @@ import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, PRODUCT_SPEC, PRODUCT_LA
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter,
-  foldPurchaseOrders, purchaseAdapter, lpRulesAdapter,
+  foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE } from './roles';
 import type { PackSigner } from '../../catalogue/src/pack';
@@ -144,6 +144,26 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     sections['merchandisingPolicy'] = { ...rules.merchandising, permissions: [] };
     sections['writeOffCapturePolicy'] = { permissions: [], materialThresholdMinor: rules.writeOffMaterialThresholdMinor };
   }
+
+  // ── DF-3-b-2: the work waiting for this store's manager, from head office's own registers ──────────────────────
+  // The three subjects head office APPLIES when the store's manager decides them (approve-then-apply, SP-4): a held
+  // blind count, a pending stock correction, and a delivery's held excess — at this store or its back store. Each is
+  // listed under the id the decision comes back with.
+  const here = new Set([storeId, ...(settings?.warehouseId !== undefined && settings.warehouseId !== null ? [settings.warehouseId] : [])]);
+  const counts = (await allCountReconciliations(store, tenantId)).filter((c) => here.has(c.locationId));
+  const heldCounts = counts.filter((c) => c.pendingApproval === true);
+  const pendingCorrections = (await adjustmentRequestAdapter({ store, now }).requests(tenantId))
+    .filter((r) => r.status === 'pending' && (here.has(r.locationId) || (r.storeId !== null && here.has(r.storeId))));
+  const heldExcess = (await goodsReceiptAdapter({ store, now }).all(tenantId))
+    .filter((g) => here.has(g.warehouseId) && g.heldMinor > 0 && g.excessDecision === undefined);
+  sections['approvals'] = [
+    ...heldCounts.map((c) => ({ id: `stock_count:${c.countId}`, subjectType: 'stock_count', subjectRef: c.countId, requestedBy: c.counterId, branchId: storeId, valueMinor: Math.abs(c.valueMinor) })),
+    ...pendingCorrections.map((r) => ({ id: `stock_adjustment:${r.requestId}`, subjectType: 'stock_adjustment', subjectRef: r.requestId, requestedBy: r.requestedBy, branchId: storeId, valueMinor: Math.abs(r.valueMinor) })),
+    ...heldExcess.map((g) => ({ id: `goods_receipt_excess:${g.grnId}`, subjectType: 'goods_receipt_excess', subjectRef: g.grnId, requestedBy: g.receivedBy, branchId: storeId, valueMinor: null })),
+  ];
+  sections['countsQueue'] = counts;
+  // Which catalogue head office has published — the store computer compares it with the one it holds (SF-08 hand-over).
+  if (published !== undefined) sections['catalogueVersion'] = published.snapshot.version;
 
   // ── the store's own exception thresholds ───────────────────────────────────────────────────────────────────────
   sections['lossPreventionRules'] = await lpRulesAdapter({ store, now }).rules(tenantId);

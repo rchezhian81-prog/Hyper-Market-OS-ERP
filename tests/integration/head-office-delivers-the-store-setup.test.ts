@@ -7,7 +7,7 @@ import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { hmacSigner } from '../../services/catalogue/src/index';
 import { signStorePack, verifyStorePack, type StorePackEnvelope } from '../../services/platform/src/store-packs';
-import { STREAM, ROLE_REVOKED } from '../../services/api/src/adapters';
+import { STREAM, ROLE_REVOKED, countsAdapter, adjustmentRequestAdapter, goodsReceiptAdapter } from '../../services/api/src/adapters';
 import { GLOBAL_FOR } from '../../edge/store-edge/src/screen-data';
 import { makeEvent } from '../../packages/contracts/src/event';
 
@@ -251,5 +251,47 @@ describe('PA-06 — head office delivers each store its setup', () => {
     expect(asManager!['permissions']).toEqual(expect.arrayContaining(['count.view']));
     // Someone head office never granted at this store: their own empty permissions — nothing borrowed from anyone.
     expect((await payloadOf('counts', 'u-box2'))!['permissions']).toEqual([]);
+  });
+
+  // ── DF-3-b-2: the work waiting at the store, and what the store computer holds ───────────────────────────────────
+  it('DF-3-b-2: the manager\'s approvals list is head office\'s own waiting work AT THIS STORE — a held count, a pending correction, a held excess — and the counts list', async () => {
+    await call('POST', '/v1/stores/S1/settings', SETTINGS);
+    const now = () => new Date().toISOString();
+    const base = { productId: 'p1', currency: 'INR', at: now() };
+    const counts = countsAdapter({ store: h.store, now });
+    await counts.recordReconciliation(A, { ...base, countId: 'CNT-1', locationId: 'WH', expectedMinor: 10, countedMinor: 4, varianceMinor: -6, valueMinor: -6_000, reasonCode: 'shrink', reconciled: false, adjusted: false, requiredApproval: true, pendingApproval: true, counterId: 'u-counter', approvedBy: null } as never);
+    await counts.recordReconciliation(A, { ...base, countId: 'CNT-OTHER', locationId: 'S2', expectedMinor: 10, countedMinor: 4, varianceMinor: -6, valueMinor: -6_000, reasonCode: 'shrink', reconciled: false, adjusted: false, requiredApproval: true, pendingApproval: true, counterId: 'u-counter', approvedBy: null } as never);
+    await adjustmentRequestAdapter({ store: h.store, now }).recordRequest(A, { ...base, requestId: 'ADJ-1', locationId: 'S1', binId: null, deltaMinor: -2, uom: 'each', reasonCode: 'damaged', note: null, valueMinor: -2_000, requestedBy: 'u-mgr', storeId: 'S1', source: 'test', relayedBy: 'u-box', recordedAt: now(), governanceFlags: [], status: 'pending', decidedBy: null, decidedAt: null } as never);
+    await goodsReceiptAdapter({ store: h.store, now }).commit(A, { grnId: 'GRN-9', number: 'GRN-9', poId: null, warehouseId: 'WH', receivedBy: 'u-mgr', receivedAt: now(), captured: {}, availableMinor: 100, heldMinor: 10 } as never, [], 'grn-9');
+
+    const edge = await boot();
+    await edge.refreshStorePack!();
+    const held = JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope;
+    expect((held.sections['approvals'] as { id: string; subjectType: string; valueMinor: number | null }[]).map((a) => [a.id, a.subjectType, a.valueMinor])).toEqual([
+      ['stock_count:CNT-1', 'stock_count', 6_000],
+      ['stock_adjustment:ADJ-1', 'stock_adjustment', 2_000],
+      ['goods_receipt_excess:GRN-9', 'goods_receipt_excess', null],
+    ]);
+    // Another store's count is not this store's work.
+    expect((held.sections['countsQueue'] as { countId: string }[]).map((c) => c.countId)).toEqual(['CNT-1']);
+  });
+
+  it('DF-3-b-2 (SF-08 hand-over): the store computer reports what it holds; head office shows the store BEHIND a newer catalogue, and only its own computer may report', async () => {
+    await call('POST', '/v1/stores/S1/settings', SETTINGS);
+    expect((await call('GET', '/v1/store-packs/S1/held')).body).toMatchObject({ state: 'never_reported' });
+    const edge = await boot();
+    await edge.refreshStorePack!();
+    expect(await edge.reportHeldVersions!()).toBe(true);
+    const setup = JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope;
+    expect((await call('GET', '/v1/store-packs/S1/held')).body).toMatchObject({ state: 'nothing_published', held: { storePackVersion: setup.version, catalogueVersion: null, reportedBy: 'u-box' } });
+    // Head office publishes a catalogue (a recall would ride on it): this store has not taken it yet → BEHIND.
+    await h.store.append(A, STREAM.catalogue, makeEvent({ id: 'cat-7', type: 'CataloguePublished', occurredAt: new Date().toISOString(), idempotencyKey: `cat-${A}-7`, source: 'test', payload: { snapshot: { tenantId: A, version: 7, products: [], barcodes: [] }, signature: 'x', publishedBy: 'u-owner', publishedAt: new Date().toISOString() } }));
+    expect((await call('GET', '/v1/store-packs/S1/held')).body).toMatchObject({ state: 'behind', currentCatalogueVersion: 7 });
+    // The setup now tells the store computer which catalogue head office published.
+    await edge.refreshStorePack!();
+    expect((JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope).sections['catalogueVersion']).toBe(7);
+    // Only that store's computer reports; a bad body is refused.
+    expect((await h.request({ method: 'POST', path: '/v1/store-packs/S1/held', userId: 'u-box2', tenantId: A, branchId: 'S2', idempotencyKey: 'k-x', body: { catalogueVersion: 7, storePackVersion: 1 } })).status).toBe(403);
+    expect((await h.request({ method: 'POST', path: '/v1/store-packs/S1/held', userId: 'u-box', tenantId: A, branchId: 'S1', idempotencyKey: 'k-y', body: { catalogueVersion: 'seven' } })).status).toBe(400);
   });
 });
