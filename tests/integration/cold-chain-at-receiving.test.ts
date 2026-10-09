@@ -168,22 +168,44 @@ describe('SF-07 — the cold-chain rule comes from the product master', () => {
     expect(await onHand(h, 'p-icecream')).toBe(10);
   });
 
-  it('the handheld\'s scans of a frozen product (it records no temperature yet) put the stock on-hand; the assembled receipt holds the line AND says cold_chain_held_but_on_hand — never silent', async () => {
+  it('the handheld\'s scans carry the probed reading (SF-07 part 3): a good one goes on-hand; none, or out of range, is HELD off the shelf — and the assembled receipt holds exactly that line, with nothing on the shelf to disagree', async () => {
     const h = await seeded();
-    const scan = await req(h, 'POST', '/v1/inventory/receiving-scans/c-ice/synced', 'u-box', 'scan-c-ice', {
-      commandId: 'c-ice', grnId: 'g-hand', productId: 'p-icecream', batchId: null, quantityMinor: 10, uom: 'EA', source: 'po', poId: null,
-      state: 'on_hand', expiry: null, receivedBy: 'u-recv', storeId: 'store-1', at: AT,
+    const scan = (commandId: string, temperatureC: unknown) => req(h, 'POST', `/v1/inventory/receiving-scans/${commandId}/synced`, 'u-box', `scan-${commandId}`, {
+      commandId, grnId: 'g-hand', productId: 'p-icecream', batchId: null, quantityMinor: 4, uom: 'EA', source: 'po', poId: null,
+      state: 'on_hand', expiry: null, receivedBy: 'u-recv', storeId: 'store-1', at: AT, ...(temperatureC === undefined ? {} : { temperatureC }),
     });
-    expect(scan.status).toBe(202);
+    const cold = await scan('c-cold', -18);
+    expect(cold.status).toBe(202);
+    expect(cold.body).toMatchObject({ onHand: true });
+    const none = await scan('c-none', undefined);
+    expect(none.body).toMatchObject({ onHand: false, flags: expect.arrayContaining(['cold_chain_held']) });
+    const soft = await scan('c-soft', -10);
+    expect(soft.body).toMatchObject({ onHand: false, flags: expect.arrayContaining(['cold_chain_held']) });
+    expect((await scan('c-word', 'cold')).status).toBe(400);
+    expect(await onHand(h, 'p-icecream')).toBe(4); // only the scan with a good reading is on the shelf
+
     const done = await req(h, 'POST', '/v1/inventory/goods-receipt/g-hand/assembled', 'u-box', 'done-g-hand', {
-      grnId: 'g-hand', poId: null, completedBy: 'u-recv', storeId: 'store-1', at: AT, scanCount: 1, commandIds: ['c-ice'], source: 'warehouse-handheld',
+      grnId: 'g-hand', poId: null, completedBy: 'u-recv', storeId: 'store-1', at: AT, scanCount: 3, commandIds: ['c-cold', 'c-none', 'c-soft'], source: 'warehouse-handheld',
     });
     expect(done.status).toBe(202);
     const g = grnOf(done);
-    expect(g.captured.discrepancies).toEqual([expect.objectContaining({ kind: 'temperature_not_recorded' })]);
-    expect(g.governanceFlags).toContain('cold_chain_held_but_on_hand');
-    // Honest limit until the handheld records a temperature (Wave 3 SF-07, part 3): the scans had already put the 10 on-hand.
-    expect(await onHand(h, 'p-icecream')).toBe(10);
+    // The good scan's line sells; the held scans' line (one unread) is held for a second person as "not recorded".
+    expect(g.captured.lines.map((l) => [l.disposition, l.sellableMinor, l.quarantinedMinor])).toEqual([['sellable', 4, 0], ['quarantine', 0, 8]]);
+    expect(g.captured.discrepancies).toEqual([expect.objectContaining({ kind: 'temperature_not_recorded', quantityMinor: 8 })]);
+    expect(g.governanceFlags).not.toContain('cold_chain_held_but_on_hand');
+    expect(g.governanceFlags).not.toContain('scan_posting_disagrees');
+    expect(await onHand(h, 'p-icecream')).toBe(4);
+  });
+
+  it('a handheld scan of an AMBIENT product needs no reading and goes on-hand as before', async () => {
+    const h = await seeded();
+    const r = await req(h, 'POST', '/v1/inventory/receiving-scans/c-dal/synced', 'u-box', 'scan-c-dal', {
+      commandId: 'c-dal', grnId: 'g-dal-hand', productId: 'p-dal', batchId: null, quantityMinor: 6, uom: 'EA', source: 'po', poId: null,
+      state: 'on_hand', expiry: null, receivedBy: 'u-recv', storeId: 'store-1', at: AT,
+    });
+    expect(r.body).toMatchObject({ onHand: true });
+    expect((r.body as { flags: string[] }).flags).not.toContain('cold_chain_held');
+    expect(await onHand(h, 'p-dal')).toBe(6);
   });
 
   it('a temperature that is not a number is refused by name — nothing is received', async () => {

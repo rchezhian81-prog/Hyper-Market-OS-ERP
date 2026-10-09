@@ -108,6 +108,10 @@
         background: var(--panel-2); border-radius: 12px; padding: 14px 16px; text-align: center;
         font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums;
       }
+      /* Wave 3 · SF-07 part 3: the arrival-temperature box — a full-width 56 px touch target, the phone's number keyboard. */
+      #recv-temp-field { display: grid; gap: 6px; margin: 0 0 10px; }
+      #recv-temp-field label { font-size: 15px; font-weight: 600; }
+      #recv-temp { min-height: 56px; width: 100%; box-sizing: border-box; font-size: 20px; padding: 0 14px; border-radius: 12px; border: 2px solid var(--line); background: var(--panel-2); color: inherit; }
       .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
       .keypad button, .choices button, .direction button { min-height: 56px; font-size: 19px; }
       .choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
@@ -158,6 +162,11 @@
       <div id="goods-in"></div>
       <p class="empty" id="empty" hidden>—</p>
       <!-- Where each accepted scan has got to (SP-3a · S1), from the durable device queue plus the store computer's word. -->
+      <!-- Wave 3 · SF-07 part 3: the probed arrival temperature for chilled or frozen goods; it rides on every scan while filled in. -->
+      <div class="field" id="recv-temp-field">
+        <label for="recv-temp" id="recv-temp-label">Arrival temperature, °C (chilled or frozen goods)</label>
+        <input id="recv-temp" type="text" inputmode="decimal" autocomplete="off" />
+      </div>
       <h2 class="section" id="sent-heading" hidden>—</h2>
       <div id="sent-work"></div>
     </main>

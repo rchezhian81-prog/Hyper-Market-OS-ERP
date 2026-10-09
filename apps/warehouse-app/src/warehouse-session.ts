@@ -113,6 +113,11 @@ export interface ReceiveInput {
   readonly declaredUnitCostMinor?: number;
   /** The condition the goods arrived in — a damaged carton is received but never put where it sells. */
   readonly stockState?: StockState;
+  /**
+   * Wave 3 · SF-07 part 3 — the arrival temperature the worker probed, °C, for chilled or frozen goods. Absent when not taken:
+   * head office then holds a cold-chain scan off the shelf for a second person's check (owner decision 9 Oct 2026).
+   */
+  readonly temperatureC?: number;
 }
 
 export interface ReceiveActionResult {
@@ -564,6 +569,7 @@ export class WarehouseSession {
         quantityMinor: result.quantityMinor, uom: prior?.uom ?? 'EA', source: input.source,
         poId: input.poId ?? null, state, expiry: input.expiry ?? null, receivedBy: this.assignment.workerId,
         storeId: this.assignment.storeId, at: command.at,
+        ...(input.temperatureC === undefined || !Number.isFinite(input.temperatureC) ? {} : { temperatureC: input.temperatureC }),
       },
     }));
 

@@ -26,12 +26,15 @@ import type { StockState } from '../../../packages/stock/src/position';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { MOVEMENT_KINDS, STOCK_STATES, type WarehouseDeps } from './warehouse';
 import type { Movement } from './index';
+import { coldChainVerdict, type ColdChainVerdict, type ProductReceiptRules, type ReceiptPolicy } from '../../../packages/receiving/src/index';
 
 export const WAREHOUSE_SYNC_FLAGS = Object.freeze([
   'mover_unknown', 'mover_lacks_authority', 'receiver_unknown', 'receiver_lacks_authority', 'held_out_of_stock',
   // SP-6b: a scan that reached head office AFTER the delivery was assembled into its GRN — recorded and posted (the goods
   // are in the building), said so the review screen shows a receipt that no longer matches its scans.
   'after_assembly',
+  // Wave 3 · SF-07 part 3: a cold-chain scan with no reading, or one out of the product's limits — recorded, NOT put on-hand.
+  'cold_chain_held',
 ] as const);
 export type WarehouseSyncFlag = (typeof WAREHOUSE_SYNC_FLAGS)[number];
 
@@ -179,6 +182,13 @@ export interface ReceivingScanRecord {
   /** The `received` movement this scan appended, or null when the stock was held out of the sellable position. */
   readonly onHandMovementId: string | null;
   readonly governanceFlags: readonly string[];
+  /** Wave 3 · SF-07 part 3 — the arrival temperature the worker probed, °C; absent when none was taken. */
+  readonly temperatureC?: number;
+  /**
+   * Wave 3 · SF-07 part 3 — set when the product master names a cold-chain item and the reading was missing or out of range:
+   * the scan was recorded but NOT put on-hand, and the assembled receipt holds that line for a second person. Absent otherwise.
+   */
+  readonly coldChainHeld?: Exclude<ColdChainVerdict, 'ok' | 'not_cold_chain'>;
 }
 
 export interface ReceivingScanDeps {
@@ -191,6 +201,10 @@ export interface ReceivingScanDeps {
   readonly scansOf: (tenantId: string, grnId: string) => Promise<readonly ReceivingScanRecord[]> | readonly ReceivingScanRecord[];
   /** SP-6b: whether the delivery has already been assembled into its GRN — a later scan is flagged `after_assembly`. */
   readonly receiptExists?: (tenantId: string, grnId: string) => Promise<boolean> | boolean;
+  /** Wave 3 · SF-07 part 3 — the product's receiving rule from the product master (the goods receipt's own), for the cold-chain check. */
+  readonly productRule?: (tenantId: string, productId: string) => Promise<ProductReceiptRules | undefined> | ProductReceiptRules | undefined;
+  /** Wave 3 · SF-07 part 3 — the tenant's receipt policy (its cold-chain maximum stands behind a product's own). */
+  readonly receiptPolicy?: (tenantId: string) => Promise<Pick<ReceiptPolicy, 'coldChainMaxC'> | undefined> | Pick<ReceiptPolicy, 'coldChainMaxC'> | undefined;
   readonly now: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
@@ -202,13 +216,18 @@ interface RelayedScan {
   readonly grnId: string; readonly productId: string; readonly batchId: string | null; readonly quantityMinor: number;
   readonly uom: string; readonly source: string; readonly poId: string | null; readonly state: string; readonly expiry: string | null;
   readonly receivedBy: string; readonly storeId: string; readonly at: string;
+  readonly temperatureC?: number;
 }
 
 function readRelayedScan(body: unknown, commandId: string, now: string): RelayedScan | undefined {
   if (!isObj(body)) return undefined;
   if (isStr(body['commandId']) && body['commandId'] !== commandId) return undefined;
   if (!isStr(body['grnId']) || !isStr(body['productId']) || !isPosInt(body['quantityMinor']) || !isStr(body['receivedBy']) || !isStr(body['storeId'])) return undefined;
+  // Wave 3 · SF-07 part 3: the probed arrival temperature, °C — a number or absent, never anything else.
+  const temperatureC = body['temperatureC'];
+  if (!(temperatureC === undefined || temperatureC === null || (typeof temperatureC === 'number' && Number.isFinite(temperatureC)))) return undefined;
   return {
+    ...(typeof temperatureC === 'number' ? { temperatureC } : {}),
     grnId: body['grnId'], productId: body['productId'], batchId: optStr(body['batchId']), quantityMinor: body['quantityMinor'],
     uom: isStr(body['uom']) ? body['uom'] : 'EA', source: isStr(body['source']) ? body['source'] : 'unknown',
     poId: optStr(body['poId']), state: isStr(body['state']) ? body['state'] : 'on_hand', expiry: isIso(body['expiry']) ? body['expiry'] : null,
@@ -242,9 +261,19 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
         // so it is recorded and posted exactly as before, and SAID, so the receipt is reviewed against its late scans.
         if (deps.receiptExists !== undefined && (await deps.receiptExists(ctx.tenantId, s.grnId))) flags.push('after_assembly');
 
+        // Wave 3 · SF-07 part 3: a cold-chain item (the product master's word) with no reading, or one out of its limits, is
+        // recorded but NOT put on-hand — the same limits the receipt is judged by; its assembled line is held for a second person.
+        let coldChainHeld: ReceivingScanRecord['coldChainHeld'];
+        if (ON_HAND_STATES.has(s.state) && deps.productRule !== undefined) {
+          const rule = await deps.productRule(ctx.tenantId, s.productId);
+          const policy = deps.receiptPolicy === undefined ? undefined : await deps.receiptPolicy(ctx.tenantId);
+          const verdict = coldChainVerdict(rule, { ...(policy?.coldChainMaxC === undefined ? {} : { coldChainMaxC: policy.coldChainMaxC }) }, s.temperatureC);
+          if (verdict !== 'ok' && verdict !== 'not_cold_chain') { coldChainHeld = verdict; flags.push('cold_chain_held'); }
+        }
+
         // Good stock rises the store's on-hand position at once (M08-FR-01); anything else is recorded and HELD.
         let onHandMovementId: string | null = null;
-        if (ON_HAND_STATES.has(s.state)) {
+        if (ON_HAND_STATES.has(s.state) && coldChainHeld === undefined) {
           onHandMovementId = `recv:${s.grnId}:${commandId}`;
           if (!(await deps.isKnown(ctx.tenantId, onHandMovementId))) {
             await deps.appendMovement(ctx.tenantId, {
@@ -255,7 +284,7 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
               ...(s.expiry !== null ? { expiry: s.expiry } : {}),
             });
           }
-        } else {
+        } else if (coldChainHeld === undefined) {
           flags.push('held_out_of_stock');
         }
 
@@ -263,6 +292,8 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
           commandId, grnId: s.grnId, productId: s.productId, batchId: s.batchId, quantityMinor: s.quantityMinor, uom: s.uom,
           source: s.source, poId: s.poId, state: s.state, expiry: s.expiry, receivedBy: s.receivedBy, relayedBy: ctx.userId,
           storeId: s.storeId, at: s.at, onHandMovementId, governanceFlags: flags,
+          ...(s.temperatureC === undefined ? {} : { temperatureC: s.temperatureC }),
+          ...(coldChainHeld === undefined ? {} : { coldChainHeld }),
         };
         await deps.recordScan(ctx.tenantId, record);
         await deps.recordAudit?.(ctx.tenantId, {

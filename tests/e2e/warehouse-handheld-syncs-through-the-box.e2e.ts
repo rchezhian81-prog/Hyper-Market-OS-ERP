@@ -228,4 +228,35 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     expect(edge.deviceEventsOutbox.all()).toHaveLength(4);
     expect((await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok)).toHaveLength(4);
   }, 60_000);
+
+  it('the receiving screen takes a probed arrival temperature: a word is refused before any scan, a number rides on the scan to the store computer (Wave 3 · SF-07 part 3)', async () => {
+    const { edge, base } = await box();
+    const page = await openHandheld(base);
+    await page.fill('#deviceId', 'hh-01');
+    await page.fill('#code', CODE);
+    await page.click('button[type="submit"]');
+    await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/warehouse/', undefined, { timeout: 15_000 });
+    await ready(page);
+    expect(await page.textContent('#recv-temp-label')).toContain('Arrival temperature');
+
+    // A word: refused at once, the scanner is never asked, nothing is queued.
+    await page.fill('#recv-temp', 'cold');
+    await page.click('#receive');
+    await page.waitForSelector('#banner:not([hidden])');
+    expect(await page.textContent('#banner-title')).toBe('The temperature must be a number of degrees');
+    await page.click('#banner-ok');
+    expect(edge.deviceEventsOutbox.all()).toHaveLength(0);
+
+    // A number: the scan carries it to the box's durable log.
+    await page.fill('#recv-temp', '-18');
+    await page.click('#receive');
+    await scan(page, '890RICE');
+    await page.waitForSelector('#banner:not([hidden])');
+    expect(await page.textContent('#banner-title')).toBe('Received');
+    await page.click('#banner-ok');
+    await waitHanded(page, 'receipt');
+    const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { payload: Record<string, unknown> });
+    expect(records).toHaveLength(1);
+    expect(records[0]?.payload).toMatchObject({ grnId: 'grn-1', productId: 'p-rice', quantityMinor: 1, temperatureC: -18 });
+  }, 60_000);
 });

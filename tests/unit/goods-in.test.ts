@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   captureReceipt,
+  coldChainVerdict,
   availableFromReceipt,
   heldFromReceipt,
   IncompleteCaptureError,
@@ -361,5 +362,18 @@ describe('matchInvoice — three-way match and landed cost (M07-FR-04)', () => {
       ],
     });
     expect(result.netVariance).toEqual({ minor: 5_000, currency: INR });
+  });
+});
+
+describe('coldChainVerdict — one arrival reading, by the same limits the receipt uses (Wave 3 · SF-07 part 3)', () => {
+  it('not a cold-chain item; ok; not recorded; too warm (own limit, then the policy); too cold', () => {
+    const paneer: ProductReceiptRules = { productId: 'paneer', batchTracked: false, coldChain: true, coldChainMaxC: 4, coldChainMinC: -2 };
+    expect(coldChainVerdict({ productId: 'rice', batchTracked: false }, {}, undefined)).toBe('not_cold_chain');
+    expect(coldChainVerdict(undefined, {}, 30)).toBe('not_cold_chain');
+    expect(coldChainVerdict(paneer, {}, 3)).toBe('ok');
+    expect(coldChainVerdict(paneer, {}, undefined)).toBe('not_recorded');
+    expect(coldChainVerdict(paneer, { coldChainMaxC: 8 }, 5)).toBe('too_warm'); // the product's 4 °C beats the policy's 8 °C
+    expect(coldChainVerdict({ productId: 'x', batchTracked: false, coldChain: true }, { coldChainMaxC: 5 }, 6)).toBe('too_warm'); // policy behind
+    expect(coldChainVerdict(paneer, {}, -5)).toBe('too_cold');
   });
 });

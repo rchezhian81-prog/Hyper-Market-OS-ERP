@@ -4431,6 +4431,9 @@ export function receivingScanAdapter(input: {
     scansOf: async (tenantId, grnId) => (await scans(tenantId)).filter((r) => r.grnId === grnId),
     // SP-6b: a scan after the delivery was assembled is said (`after_assembly`) — the GRN register is the one the assembly wrote.
     receiptExists: async (tenantId, grnId) => (await goodsReceiptAdapter(input).grn(tenantId, grnId)) !== undefined,
+    // Wave 3 · SF-07 part 3: the goods receipt's own rule (product master + class defaults) and policy, for the scan's cold-chain check.
+    productRule: (tenantId, productId) => goodsReceiptAdapter(input).productRule(tenantId, productId),
+    receiptPolicy: (tenantId) => goodsReceiptAdapter(input).receiptPolicy(tenantId),
     recordScan: async (tenantId, scan) => {
       await input.store.append(tenantId, scansStream, makeEvent({
         id: `recv-scan-${scan.commandId}`,

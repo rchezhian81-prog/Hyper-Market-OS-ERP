@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 3 · SF-07 part 3 — the warehouse handheld takes the arrival temperature; a cold scan without one stays off the shelf (9 October 2026)
+
+- **The wave:** Wave 3, SF-07 (cold chain at receiving), part 3 of 3, by the owner's decision "3 and A" (9 Oct 2026). Parts
+  1 (#736) and 2 (#739) merged.
+- **What changed:**
+  - The warehouse handheld's receiving screen has a box, **"Arrival temperature, °C (chilled or frozen goods)"**, in English
+    and Tamil. While it is filled in, the reading travels with every scan. A word is refused before the scanner is asked.
+  - **Head office now checks each handheld scan** of a chilled or frozen product with the same limits as the office screen
+    and the store computer. A good reading goes on the shelf at once; **no reading, too warm or too cold is recorded but kept
+    off the shelf**.
+  - When the delivery is completed, those held scans become their own line, held for a second person to release or return.
+    The part 1 gap is closed: the handheld no longer puts unchecked cold stock on the shelf.
+- **Proved:**
+  - Head office: ice cream scanned at −18 °C goes on the shelf; at −10 °C or with no reading it is held; a word is refused;
+    the completed delivery shows 4 sellable and 8 held, with nothing on the shelf disagreeing; dal needs no reading.
+  - Real browser (the handheld, against the real store computer): "cold" refused and nothing queued; −18 reaches the store
+    computer's saved log on the scan.
+  - The handheld design audit (56-pixel touch targets, no sideways scrolling, contrast, Tamil) passes with the new box.
+  - Unit tests for the shared temperature rule and for the scan carrying the reading.
+  - **Mutation checks:** head office ignoring the reading fails the handheld test; the handheld dropping it fails the
+    unit test.
+  - Full `pnpm run check` green, with the real database connected.
+- **Not yet / honest limits:**
+  - **PA-07** — a fridge or cold-room breakdown placing the stock inside on hold — is next; then **SF-08**.
+  - The handheld does not yet know which items are chilled, so the box is shown for every delivery and left empty for dry
+    goods. One reading covers each scan made while it is filled in.
+  - The Tamil wording is helper-written and needs native review (Wave 8).
+- **Behaviour change the owner should know:** a warehouse worker now types the probe reading before scanning chilled or
+  frozen goods. Without it, those goods stay off the shelf until a second person checks them.
+- **Next:** PA-07 — a cold-room breach places the stock inside on hold.
+
 ## Wave 3 · SF-07 part 2 — the store computer's delivery screen takes the arrival temperature (9 October 2026)
 
 - **The wave:** Wave 3, SF-07 (cold chain at receiving), part 2 of 3, by the owner's decision "3 and A" (9 Oct 2026). Part 1

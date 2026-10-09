@@ -45,6 +45,9 @@ const WORDS = {
     sample: 'Sample assignment — this is not real work.',
     receive: 'Receive a delivery', putAway: 'Put away — scan the bin',
     doneReceiving: 'Delivery complete — send the receipt',
+    tempLabel: 'Arrival temperature, °C (chilled or frozen goods)',
+    needTemp: 'The temperature must be a number of degrees',
+    needTempDetail: 'Type the probe reading, for example 3.5 or -18, or leave the box empty for goods that are not chilled or frozen. Nothing was scanned.',
     scanBarcode: 'Scan the delivery barcode', scanBin: 'Scan the bin to put it in',
     pointAndPull: 'Point the scanner and pull the trigger.',
     cancel: 'Cancel', ok: 'OK', units: 'units',
@@ -113,6 +116,9 @@ const WORDS = {
     sample: 'மாதிரி வேலை — இது உண்மையான வேலை அல்ல.',
     receive: 'பொருள் வரவு பெறு', putAway: 'அடுக்கு — இடத்தை ஸ்கேன் செய்',
     doneReceiving: 'வரவு முடிந்தது — ரசீதை அனுப்பு',
+    tempLabel: 'வந்தபோது வெப்பநிலை, °C (குளிர்/உறைந்த பொருட்கள்)',
+    needTemp: 'வெப்பநிலை ஒரு எண்ணாக இருக்க வேண்டும்',
+    needTempDetail: 'அளவைத் தட்டச்சு செய்யவும், உதாரணமாக 3.5 அல்லது -18; குளிர்/உறைந்த பொருள் இல்லையெனில் காலியாக விடவும். எதுவும் ஸ்கேன் செய்யப்படவில்லை.',
     scanBarcode: 'வரவின் பார்கோடை ஸ்கேன் செய்யவும்', scanBin: 'வைக்கும் இடத்தை ஸ்கேன் செய்யவும்',
     pointAndPull: 'ஸ்கேனரை நோக்கி டிரிக்கரை அழுத்தவும்.',
     cancel: 'ரத்து', ok: 'சரி', units: 'அலகுகள்',
@@ -386,6 +392,7 @@ function render() {
 
   el('goods-in-heading').textContent = t('goodsIn');
   el('receive').textContent = t('receive');
+  el('recv-temp-label').textContent = t('tempLabel');
   // SP-6b: "Delivery complete" appears once something has been received here for this delivery and not yet sent as one receipt.
   el('done-receiving').textContent = t('doneReceiving');
   el('done-receiving').hidden = !(real !== undefined && typeof real.receivingOpen === 'function' && real.receivingOpen(grnId));
@@ -562,9 +569,19 @@ setInterval(() => { void syncToBox(); }, 10_000);
 
 // ── Actions ─────────────────────────────────────────────────────────────────
 el('receive').addEventListener('click', async () => {
+  // Wave 3 · SF-07 part 3: the probe reading, when the goods are chilled or frozen — checked BEFORE the scan, so a word never
+  // travels. Empty = not taken (head office then holds a cold-chain item for a second person's check).
+  const tempText = el('recv-temp').value.trim().replace(',', '.');
+  if (tempText !== '' && (!/^-?\d+(\.\d+)?$/.test(tempText) || Math.abs(Number(tempText)) > 60)) {
+    feltResult({ feedback: 'reject', code: 'needTemp', detail: t('needTempDetail'), sound: 'error', vibrateMs: 300 });
+    return;
+  }
   const code = await awaitScan(t('scanBarcode'));
   if (code === null || real === undefined) return;
-  const out = real.receive({ commandId: nextId('recv'), grnId, barcode: code, scannedQuantity: 1, source: 'po' });
+  const out = real.receive({
+    commandId: nextId('recv'), grnId, barcode: code, scannedQuantity: 1, source: 'po',
+    ...(tempText === '' ? {} : { temperatureC: Number(tempText) }),
+  });
   feltResult(out.signal);
   render();
   if (out.signal.feedback === 'accept') void syncToBox();
