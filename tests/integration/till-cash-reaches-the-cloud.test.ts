@@ -229,4 +229,26 @@ describe('the till\'s cash reaches the cloud through the REAL edge, and is not r
     // Still exactly one float and one pickup on the chain.
     expect((await tillCash(h, A)).body as Cash).toMatchObject({ custodian: 'u-meena', balanceMinor: 0 });
   });
+
+  it('PF-08: the day cannot close while a till shift of that day is still open — the box reads its own cash log', async () => {
+    online = true;
+    const edge = (await startEdge(env(), () => {}))!;
+    const port = edge.lane!.port;
+    const till = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: port, durable: laneDurable(port), cashMovement: laneCashMovement(port), shiftClose: laneShiftClose(port), tillCash: laneTillCash(port) });
+    await holdSignedInAt(port, 'u-meena');
+    till.signIn('u-meena');
+    // A new float on lane-1 — the drawer is open again and nobody has counted it.
+    expect(await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: '2026-10-01T09:00:00.000Z', movementId: 'cm-pf08-float' })).toMatchObject({ committed: true });
+    expect((await edge.syncOnce!()).dead).toBe(0);
+
+    const refused = await edge.closeDay({ dayCloseId: 'dc-pf08', closedBy: 'u-mgr' });
+    expect(refused.closed).toBe(false);
+    expect((refused as { reason: string }).reason).toMatch(/1 till shift\(s\) still open — till lane-1 \(held by u-meena/);
+
+    // The cashier counts and closes the drawer; with nothing unsent, the day closes.
+    expect(await till.till.close({ shiftId: 'sh-pf08', closedAt: '2026-10-01T20:00:00.000Z', countedMinor: 200_000 })).toMatchObject({ closed: true, varianceMinor: 0 });
+    expect((await edge.syncOnce!()).dead).toBe(0);
+    expect(await edge.closeDay({ dayCloseId: 'dc-pf08', closedBy: 'u-mgr' })).toMatchObject({ closed: true, locked: true });
+    await edge.stop();
+  }, 30_000);
 });

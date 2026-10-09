@@ -1,7 +1,7 @@
 // Store / day close and controlled reopen (M14-FR-04) — settle the day and LOCK
 // it, honouring the trading-day cut-off (M01-FR-02). Two hard gates from the
 // roadmap acceptance: "the day cannot close with unresolved exceptions or unsent
-// sales", and a closed day is LOCKED (append-only corrections only) — a reopen
+// sales" — and (PF-08) not while a till shift of the day is still open — and a closed day is LOCKED (append-only corrections only) — a reopen
 // requires approval and is audited. This composes the foundation: the trading-day
 // calendar (a day can only close once its cut-off has passed), the sync outbox
 // (the day close and reopen are queued), and the approval engine (reopen needs a
@@ -28,6 +28,19 @@ export interface CloseDayInput {
   readonly unresolvedExceptions: number;
   /** Locally-committed items not yet synced to cloud — MUST be 0 to close. */
   readonly unsentSyncItems: number;
+  /**
+   * Till shifts of this trading day (or earlier) that are still OPEN — a float taken and no close counted (PF-08,
+   * M14-FR-02/04). MUST be empty to close: a day cannot lock while a drawer's cash is unaccounted for. The store box,
+   * which holds the till-cash log, always supplies it; a screen that only predicts the close may leave it out.
+   */
+  readonly openShifts?: readonly OpenShift[];
+}
+
+/** A till whose shift is still open — who holds it and since when. */
+export interface OpenShift {
+  readonly tillId: string;
+  readonly custodian: string;
+  readonly openedAt: string;
 }
 
 export interface DayCloseResult {
@@ -82,6 +95,14 @@ export class UnsyncedSalesError extends Error {
   }
 }
 
+export class OpenShiftsError extends Error {
+  constructor(id: string, open: readonly OpenShift[]) {
+    const named = open.map((o) => `till ${o.tillId} (held by ${o.custodian} since ${o.openedAt})`).join(', ');
+    super(`Day close "${id}" is blocked: ${open.length} till shift(s) still open — ${named}. Count and close each drawer first (M14-FR-02).`);
+    this.name = 'OpenShiftsError';
+  }
+}
+
 export class ReopenApprovalRequiredError extends Error {
   constructor(id: string) {
     super(`Reopening day close "${id}" needs an approval by a different person (M14-FR-04 / §28).`);
@@ -113,6 +134,9 @@ export function closeDay(input: CloseDayInput, outbox: SyncOutbox): DayCloseResu
   }
   if (input.unsentSyncItems > 0) {
     throw new UnsyncedSalesError(input.id, input.unsentSyncItems);
+  }
+  if (input.openShifts !== undefined && input.openShifts.length > 0) {
+    throw new OpenShiftsError(input.id, input.openShifts);
   }
 
   outbox.enqueue(

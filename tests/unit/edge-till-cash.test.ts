@@ -204,6 +204,19 @@ describe('the close is decided against the blind count with the same rule head o
     expect(close(-1)).toMatchObject({ ok: false, refusedBecause: 'count_not_a_whole_amount' });
   });
 
+  it('PF-08: a note-by-note count that does not add up, or names a note that does not exist, is refused at the drawer', () => {
+    const withNotes = (countedMinor: number, denominations: { denominationMinor: number; count: number }[]) => decideShiftClose({
+      state: held, laneId: LANE, tradingDay: '2026-09-30', figures, toleranceMinor: 10_000,
+      request: { shiftId: 'sh-1', closedAt: at(20), cashierId: 'u-meena', countedMinor, denominations },
+    });
+    // 4 × ₹500 + 6 × ₹10 = ₹2,060 — adds up: closes.
+    expect(withNotes(206_000, [{ denominationMinor: 50_000, count: 4 }, { denominationMinor: 1_000, count: 6 }]).ok).toBe(true);
+    // The notes add to ₹2,000 but ₹2,060 was declared.
+    expect(withNotes(206_000, [{ denominationMinor: 50_000, count: 4 }])).toMatchObject({ ok: false, refusedBecause: 'denominations_do_not_add_up' });
+    // A ₹300 note does not exist.
+    expect(withNotes(30_000, [{ denominationMinor: 30_000, count: 1 }])).toMatchObject({ ok: false, refusedBecause: 'denominations_do_not_add_up' });
+  });
+
   it('a pack that names no cash tolerance makes the box apply its default AND say so', () => {
     const d = close(206_000, { toleranceMinor: undefined });
     expect(d.ok && d.record).toMatchObject({ toleranceMinor: DEFAULT_CASH_TOLERANCE_MINOR, toleranceKnown: false });

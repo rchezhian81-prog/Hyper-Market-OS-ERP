@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 837 | 511 | 511 | 64 | 282 |
+| 13 | 836 | 510 | 510 | 64 | 281 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -362,7 +362,6 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/sales/:saleId/returns` | `pos.return.record` | core | yes |
 | POST | `/v1/sales/:saleId/returns/synced` | `pos.return.sync` | core | yes |
 | GET | `/v1/sales/exceptions` | `pos.exception.read` | core | — |
-| POST | `/v1/shifts/:shiftId/close` | `till.shift.close` | core | yes |
 | POST | `/v1/shifts/:shiftId/close/synced` | `till.shift.sync` | core | yes |
 | POST | `/v1/shifts/:shiftId/over-short/review` | `till.overshort.review` | core | yes |
 | GET | `/v1/shifts/over-short` | `till.shift.read` | core | — |

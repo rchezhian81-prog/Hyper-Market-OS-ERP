@@ -198,7 +198,7 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
   reload, recall it.
 
 ### Wave 5 — reconcile the full core store day (audit step 5) · size L
-- **PF-08** an open shift blocks the day close; nobody can type a zero variance; **PF-09** a sale earns and a return
+- **PF-08** an open shift blocks the day close; nobody can type a zero variance (**DONE 9 Oct 2026** — the box refuses the close while a till of the day is open; head office's direct shift close retired, OB-27 "A"); **PF-09** a sale earns and a return
   reverses loyalty and value durably; **PF-13** a concession decision blocks a counter before money; **PF-12** the
   finance close joins imported independent evidence (code side; connectors stay gates).
 - **EA-01** every owner figure says the last complete source sync, not the read time; **EA-02** split tenders report

@@ -28,7 +28,7 @@ const platformAdmin = ROLE_CATALOGUE.find((r) => r.id === 'platform_admin');
  */
 const BUSINESS_TRANSACTION_PERMISSIONS = [
   'pos.sale.sync', 'pos.return.record',
-  'cash.movement.record', 'till.shift.close',
+  'cash.movement.record', 'till.shift.sync',
   'finance.journal.post', 'finance.period.close', 'finance.creditnote.issue',
   'price.change.propose', 'price.change.approve',
   'purchase.order.approve', 'purchase.invoice.capture', 'purchase.supplier.bank',
