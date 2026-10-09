@@ -206,7 +206,7 @@ describe('PA-06 — head office delivers each store its setup', () => {
     const edge = await boot();
     expect((await edge.refreshStorePack!()).status).toBe('updated');
     const held = JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope;
-    const sec = held.sections as Record<string, Record<string, unknown> & unknown[]>;
+    const sec = held.sections as Record<string, unknown>;
     expect(sec['checklist']).toEqual([
       { itemId: 'close-1', description: 'Count every till blind', done: false, blocking: true },
       { itemId: 'close-2', description: 'Walk the chiller', done: false, blocking: false },
@@ -221,7 +221,7 @@ describe('PA-06 — head office delivers each store its setup', () => {
       expect(sec[section], section).toMatchObject({ permissions: [] });
       expect((sec[section] as Record<string, unknown>)['userId'], section).toBeUndefined();
     }
-    expect((sec['dataIoPolicy'] as { importTemplates: { id: string }[] }).importTemplates.map((t) => t.id)).toEqual(['supplier-invoice-v1', 'product-v1']);
+    expect((sec['dataIoPolicy'] as unknown as { importTemplates: { id: string }[] }).importTemplates.map((t) => t.id)).toEqual(['supplier-invoice-v1', 'product-v1']);
   });
 
   it('DF-3-b-1: a store with no rules yet gets no rules sections — the store says it was not told, never a guessed limit', async () => {
