@@ -6,7 +6,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
-import { assessShiftClose, checkDenominationCount, assessOverShortReview, type ShiftCloseInput, type DenominationCount } from '../../../packages/till/src/index';
+import { assessShiftClose, checkDenominationCount, assessOverShortReview, type DenominationCount } from '../../../packages/till/src/index';
 import { personFindings } from './cash';
 import { cashierSealFlags, stampIn, type CashierSealFlag } from './store-seal';
 
@@ -111,8 +111,6 @@ export interface ShiftDeps {
   /** The key head office checks the store computer's seal with (ADR-0023) — on a relayed close. Absent → not checked. */
   readonly tillSealKey?: Buffer;
 }
-
-const NUMS = ['openingFloatMinor', 'cashSalesMinor', 'pickupsMinor', 'cashRefundsMinor', 'countedCashMinor', 'toleranceMinor'] as const;
 
 export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
   return [
