@@ -14,6 +14,11 @@ export interface ReceiptLineInput {
   readonly quantityMinor: number;
   readonly uom: string;
   readonly batchId?: string | null;
+  /**
+   * Wave 3 · SF-07 part 2 — the arrival temperature the manager probed, °C, for chilled or frozen goods. Absent when not
+   * taken: head office then holds a cold-chain line for a second person's check (owner decision 9 Oct 2026).
+   */
+  readonly temperatureC?: number;
 }
 
 export interface CommitReceiptInput {
@@ -97,7 +102,11 @@ export function commitReceipt(
         warehouseId: input.warehouseId,
         receivedBy: input.receivedBy,
         receivedAt: input.receivedAt,
-        lines: input.lines.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor, uom: l.uom, batchId: l.batchId ?? null })),
+        lines: input.lines.map((l) => ({
+          productId: l.productId, quantityMinor: l.quantityMinor, uom: l.uom, batchId: l.batchId ?? null,
+          // Wave 3 · SF-07 part 2: the reading travels with the line; head office judges it against the product's limits.
+          ...(l.temperatureC === undefined ? {} : { temperatureC: l.temperatureC }),
+        })),
         storeId: input.storeId ?? null,
         source: input.source ?? 'receiving',
       },

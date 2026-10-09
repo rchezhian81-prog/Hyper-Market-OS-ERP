@@ -271,6 +271,11 @@
           <label for="grn-qty" id="grn-qty-label">How many</label>
           <input id="grn-qty" type="number" inputmode="numeric" min="1" step="1" />
         </div>
+        <div class="field">
+          <label for="grn-temp" id="grn-temp-label">Temperature on arrival, °C (chilled or frozen goods)</label>
+          <input id="grn-temp" type="text" inputmode="decimal" autocomplete="off" aria-describedby="grn-temp-hint" />
+          <p class="hint" id="grn-temp-hint">Probe the goods and type the reading, for example 3.5 or -18. Without it, chilled and frozen goods wait for a manager's check before they can be sold.</p>
+        </div>
         <button id="add-line" type="button" class="wide">Add this item</button>
         <div class="lines" id="receive-lines"></div>
         <p class="empty" id="receive-empty">No items added yet.</p>
