@@ -8,14 +8,23 @@
 // hand-written log sheet and a sensor feed are assessed identically with the source recorded; and
 // **power is assessed by what it protects**, with unprotected minutes counted from the mains failure
 // rather than the generator attempt. The rules are the pure `assessEquipment` / `assessPower`.
+//
+// PA-07: the assessment's `holdStock` is no longer only a word in a GET. Recording a reading that puts
+// a room in breach (or a hold check run on a room gone quiet) PLACES the M10 quality hold on every
+// batch the room holds, in the same write as the reading — each hold carrying the room, the excursion
+// and the reading ids as its evidence. Held stock is then refused by everything that reads the
+// quality-hold register (dispatch, transfers) until authorised QC releases it. Idempotent per
+// excursion: the same excursion never holds a batch twice, a later separate one holds it again.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
-  assessEquipment, assessPower,
+  assessEquipment, assessPower, equipmentHoldDecision,
   type EquipmentRange, type EquipmentReading, type ReadingSource, type ExposedBatch,
   type PowerEvent, type PowerEventKind,
 } from '../../../packages/facilities/src/index';
+
+import type { QualityHold } from '../../../packages/quality/src/index';
 
 export type { EquipmentReading, ExposedBatch, PowerEvent } from '../../../packages/facilities/src/index';
 
@@ -61,10 +70,52 @@ export interface FacilitiesMonitoringDeps {
   readonly contents: (tenantId: string) => Promise<readonly EquipmentContents[]> | readonly EquipmentContents[];
   readonly powerEvents: (tenantId: string) => Promise<readonly PowerEvent[]> | readonly PowerEvent[];
   readonly recordRange: (tenantId: string, reg: EquipmentRangeReg) => Promise<void> | void;
-  readonly recordReading: (tenantId: string, reading: EquipmentReading) => Promise<void> | void;
+  /** Record a reading and, in the SAME write, the quality holds it causes (PA-07). */
+  readonly recordReading: (tenantId: string, reading: EquipmentReading, holds?: readonly QualityHold[]) => Promise<void> | void;
+  /** The current M10 quality hold of a batch — absent where no quality-hold register is wired. */
+  readonly qualityHold?: (tenantId: string, batchId: string) => Promise<QualityHold | undefined> | QualityHold | undefined;
+  /** Place quality holds found by a hold check (PA-07). */
+  readonly recordHolds?: (tenantId: string, holds: readonly QualityHold[]) => Promise<void> | void;
   readonly recordContents: (tenantId: string, contents: EquipmentContents) => Promise<void> | void;
   readonly recordPowerEvent: (tenantId: string, event: PowerEvent) => Promise<void> | void;
   readonly now: () => string;
+}
+
+/** The holds a room's current state calls for, skipping a batch already held or already held (and
+ *  released) for this same excursion. `extra` is a reading not yet recorded, judged with the rest. */
+async function holdsCalledFor(
+  deps: FacilitiesMonitoringDeps, tenantId: string, reg: EquipmentRangeReg, heldBy: string, extra?: EquipmentReading,
+): Promise<{ readonly decision: ReturnType<typeof equipmentHoldDecision>; readonly holds: readonly QualityHold[] }> {
+  const byId = new Map<string, EquipmentReading>();
+  for (const r of await deps.readings(tenantId)) byId.set(r.readingId, r);
+  if (extra !== undefined) byId.set(extra.readingId, extra);
+  const contents = (await deps.contents(tenantId)).find((c) => c.assetId === reg.assetId)?.contents ?? [];
+  const at = deps.now();
+  const decision = equipmentHoldDecision({ assetId: reg.assetId, range: reg.range, readings: [...byId.values()], contents, asAt: at });
+  if (decision.episodeId === null || deps.qualityHold === undefined) return { decision, holds: [] };
+  const holds: QualityHold[] = [];
+  for (const b of decision.batches) {
+    const existing = await deps.qualityHold(tenantId, b.batchId);
+    if (existing !== undefined && existing.status !== 'released') continue; // already held — the block is in force
+    if (existing?.equipment?.assetId === reg.assetId && existing.equipment.episodeId === decision.episodeId) continue; // released after THIS excursion
+    holds.push({
+      batchId: b.batchId,
+      productId: b.productId,
+      status: 'held',
+      reason: `${reg.name}: ${decision.detail}`,
+      heldAt: at,
+      heldBy,
+      equipment: {
+        assetId: reg.assetId,
+        episodeId: decision.episodeId,
+        state: decision.state as 'breach' | 'no_data' | 'stale',
+        peakTenthsC: decision.peakTenthsC,
+        minutesOutOfRange: decision.minutesOutOfRange,
+        readingIds: decision.readingIds,
+      },
+    });
+  }
+  return { decision, holds };
 }
 
 export function facilitiesMonitoringRoutes(deps: FacilitiesMonitoringDeps): readonly Route[] {
@@ -107,13 +158,19 @@ export function facilitiesMonitoringRoutes(deps: FacilitiesMonitoringDeps): read
         if (!isInt(b['tenthsC']) || !isDateTime(b['at']) || !SOURCES.includes(b['source'] as ReadingSource) || !isStr(b['recordedBy'])) {
           throw apiError(400, { code: 'not_readable_as_a_reading', whatHappened: 'A reading needs a temperature in tenths of a degree, a timestamp, a source (sensor/manual_probe/log_sheet) and who recorded it.', wasItSaved: 'not_saved', nextSafeAction: 'Send the reading fields. Nothing was recorded.' });
         }
-        if (!(await deps.ranges(ctx.tenantId)).some((r) => r.assetId === assetId)) throw notFound(`facilities equipment ${assetId}`);
+        const reg = (await deps.ranges(ctx.tenantId)).find((r) => r.assetId === assetId);
+        if (reg === undefined) throw notFound(`facilities equipment ${assetId}`);
         const reading: EquipmentReading = {
           readingId, assetId, tenthsC: b['tenthsC'] as number, at: b['at'] as string,
           source: b['source'] as ReadingSource, recordedBy: b['recordedBy'] as string,
         };
-        await deps.recordReading(ctx.tenantId, reading);
-        return { status: 201, body: { readingId, assetId, tenthsC: reading.tenthsC, source: reading.source } };
+        // PA-07: a reading that puts the room in breach holds what is in it — in the same write.
+        const { decision, holds } = await holdsCalledFor(deps, ctx.tenantId, reg, ctx.userId, reading);
+        await deps.recordReading(ctx.tenantId, reading, holds);
+        return {
+          status: 201,
+          body: { readingId, assetId, tenthsC: reading.tenthsC, source: reading.source, state: decision.state, heldBatches: holds.map((h) => h.batchId) },
+        };
       },
     },
     {
@@ -144,6 +201,21 @@ export function facilitiesMonitoringRoutes(deps: FacilitiesMonitoringDeps): read
         const contents = (await deps.contents(ctx.tenantId)).find((c) => c.assetId === assetId)?.contents ?? [];
         const assessment = assessEquipment({ assetId, range: reg.range, readings: await deps.readings(ctx.tenantId), contents, asAt });
         return { status: 200, body: assessment };
+      },
+    },
+    {
+      // PA-07: apply the room's current verdict now — a breach no new reading has arrived to show yet, or
+      // a probe gone quiet, holds what is in it exactly as a breaching reading would. Run by a person on
+      // the facilities round or by a schedule; idempotent per excursion.
+      api: 'API-11', method: 'POST', path: '/v1/facilities/equipment/:assetId/hold-check',
+      permission: 'facilities.reading.record', idempotent: true,
+      handler: async (ctx) => {
+        const assetId = ctx.params['assetId'] ?? '';
+        const reg = (await deps.ranges(ctx.tenantId)).find((r) => r.assetId === assetId);
+        if (reg === undefined) throw notFound(`facilities equipment ${assetId}`);
+        const { decision, holds } = await holdsCalledFor(deps, ctx.tenantId, reg, ctx.userId);
+        if (holds.length > 0 && deps.recordHolds !== undefined) await deps.recordHolds(ctx.tenantId, holds);
+        return { status: 200, body: { assetId, state: decision.state, detail: decision.detail, heldBatches: holds.map((h) => h.batchId) } };
       },
     },
     {

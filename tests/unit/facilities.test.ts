@@ -10,6 +10,7 @@ import {
 import {
   assessEquipment,
   assessPower,
+  equipmentHoldDecision,
   type EquipmentReading,
   type EquipmentRange,
   type PowerEvent,
@@ -261,6 +262,41 @@ describe('an equipment breach NAMES the stock it exposes (M26-FR-02)', () => {
       assetId: 'a-cold', range: RANGE, readings: [], contents: [], asAt: '2026-08-04T10:00:00Z',
     });
     expect(result.holdStock).toBe(false);
+  });
+});
+
+describe('PA-07: a breach is turned into holds for ONE excursion at a time', () => {
+  it('judges the current excursion, not the room\'s whole history', () => {
+    // A bad night last week (06:00-09:00) then back in range: the engine's total still says breach,
+    // but nothing is out of range NOW, so nothing is held again.
+    const readings = [reading('2026-08-04T06:00:00Z', 95), reading('2026-08-04T09:00:00Z', 40), reading('2026-08-04T10:00:00Z', 40)];
+    expect(assessEquipment({ assetId: 'a-cold', range: RANGE, readings, contents: CONTENTS, asAt: '2026-08-04T10:30:00Z' }).state).toBe('breach');
+    const d = equipmentHoldDecision({ assetId: 'a-cold', range: RANGE, readings, contents: CONTENTS, asAt: '2026-08-04T10:30:00Z' });
+    expect(d.episodeId).toBeNull();
+    expect(d.batches).toEqual([]);
+  });
+
+  it('names the excursion by its first reading and carries its readings as evidence', () => {
+    const readings = [reading('2026-08-04T08:00:00Z', 40), reading('2026-08-04T09:00:00Z', 95), reading('2026-08-04T09:40:00Z', 110)];
+    const d = equipmentHoldDecision({ assetId: 'a-cold', range: RANGE, readings, contents: CONTENTS, asAt: '2026-08-04T10:00:00Z' });
+    expect(d).toMatchObject({ state: 'breach', episodeId: 'breach:r-2026-08-04T09:00:00Z', peakTenthsC: 110, minutesOutOfRange: 60 });
+    expect(d.readingIds).toEqual(['r-2026-08-04T09:00:00Z', 'r-2026-08-04T09:40:00Z']);
+    expect(d.batches.map((b) => b.batchId)).toEqual(['b-1', 'b-2']);
+  });
+
+  it('inside the grace, or with nothing in the room, holds nothing', () => {
+    const drifting = equipmentHoldDecision({ assetId: 'a-cold', range: RANGE, readings: [reading('2026-08-04T09:50:00Z', 95)], contents: CONTENTS, asAt: '2026-08-04T10:00:00Z' });
+    expect(drifting).toMatchObject({ state: 'drifting', episodeId: null, batches: [] });
+    const empty = equipmentHoldDecision({ assetId: 'a-cold', range: RANGE, readings: [reading('2026-08-04T06:00:00Z', 95)], contents: [], asAt: '2026-08-04T10:00:00Z' });
+    expect(empty.episodeId).toBeNull();
+  });
+
+  it('a silence holds, keyed on the last reading before it', () => {
+    const stale = equipmentHoldDecision({ assetId: 'a-cold', range: RANGE, readings: [reading('2026-08-04T06:00:00Z', 40)], contents: CONTENTS, asAt: '2026-08-04T10:00:00Z' });
+    expect(stale).toMatchObject({ state: 'stale', episodeId: 'silent:r-2026-08-04T06:00:00Z', readingIds: ['r-2026-08-04T06:00:00Z'] });
+    const never = equipmentHoldDecision({ assetId: 'a-cold', range: RANGE, readings: [], contents: CONTENTS, asAt: '2026-08-04T10:00:00Z' });
+    expect(never).toMatchObject({ state: 'no_data', episodeId: 'silent:never', readingIds: [] });
+    expect(never.batches).toHaveLength(2);
   });
 });
 

@@ -2426,11 +2426,31 @@ export function recallAdapter(input: {
  * rule #2/#6). The current state per batch is the latest event's record; the write surface runs the
  * tested `releaseFromQualityHold` engine over that current hold.
  */
+const QUALITY_HOLD_STREAM = streamName(STREAM.inventory, 'quality-holds');
+
+/** One `QualityHeld` fact — the same event whether a person placed the hold or a room's breach did (PA-07). */
+function qualityHeldEntry(tenantId: string, hold: QualityHold, key: string, now: string): { stream: string; event: DomainEvent } {
+  return {
+    stream: QUALITY_HOLD_STREAM,
+    event: makeEvent({
+      id: `qhold-${hold.batchId}-held-${key}`,
+      type: 'QualityHeld',
+      occurredAt: now,
+      idempotencyKey: `qhold-${tenantId}-${hold.batchId}-held-${key}`,
+      source: 'api/inventory',
+      payload: hold,
+    }),
+  };
+}
+
+/** The idempotency key of a hold an equipment excursion placed — one per batch per excursion. */
+const equipmentHoldKey = (hold: QualityHold): string => `equip-${hold.equipment?.assetId ?? ''}-${hold.equipment?.episodeId ?? ''}`;
+
 export function qualityHoldAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): QualityHoldDeps {
-  const stream = streamName(STREAM.inventory, 'quality-holds');
+  const stream = QUALITY_HOLD_STREAM;
   const events = (tenantId: string) => input.store.readStream(tenantId, stream); // both types, oldest first
   const latestByBatch = async (tenantId: string): Promise<Map<string, QualityHold>> => {
     const byBatch = new Map<string, QualityHold>();
@@ -2445,14 +2465,8 @@ export function qualityHoldAdapter(input: {
     hold: async (tenantId, batchId) => (await latestByBatch(tenantId)).get(batchId),
     holds: async (tenantId) => [...(await latestByBatch(tenantId)).values()],
     recordHeld: async (tenantId, hold, key) => {
-      await input.store.append(tenantId, stream, makeEvent({
-        id: `qhold-${hold.batchId}-held-${key}`,
-        type: 'QualityHeld',
-        occurredAt: input.now(),
-        idempotencyKey: `qhold-${tenantId}-${hold.batchId}-held-${key}`,
-        source: 'api/inventory',
-        payload: hold,
-      }));
+      const entry = qualityHeldEntry(tenantId, hold, key, input.now());
+      await input.store.append(tenantId, entry.stream, entry.event);
     },
     recordReleased: async (tenantId, hold, key) => {
       await input.store.append(tenantId, stream, makeEvent({
@@ -3669,6 +3683,7 @@ export function facilitiesMonitoringAdapter(input: {
   // Equipment monitoring folds the one facilities stream by event type: a range and an equipment's
   // contents fold latest-wins by assetId, readings and power events dedupe on their own id via the
   // append idempotency key. Append-only — a new contents set is a new fact, never an overwrite.
+  const qualityHolds = qualityHoldAdapter({ store: input.store, now: input.now });
   return {
     now: input.now,
 
@@ -3712,15 +3727,30 @@ export function facilitiesMonitoringAdapter(input: {
       }));
     },
 
-    recordReading: async (tenantId, reading) => {
-      await input.store.append(tenantId, STREAM.facilities, makeEvent({
-        id: `fac-eqreading-${reading.readingId}`,
-        type: 'FacilitiesEquipmentReading',
-        occurredAt: input.now(),
-        idempotencyKey: `fac-eqreading-${tenantId}-${reading.readingId}`,
-        source: 'api/platform',
-        payload: reading,
-      }));
+    // PA-07: the reading and the quality holds its breach causes are ONE atomic write.
+    recordReading: async (tenantId, reading, holds = []) => {
+      const now = input.now();
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: STREAM.facilities,
+          event: makeEvent({
+            id: `fac-eqreading-${reading.readingId}`,
+            type: 'FacilitiesEquipmentReading',
+            occurredAt: now,
+            idempotencyKey: `fac-eqreading-${tenantId}-${reading.readingId}`,
+            source: 'api/platform',
+            payload: reading,
+          }),
+        },
+        ...holds.map((h) => qualityHeldEntry(tenantId, h, equipmentHoldKey(h), now)),
+      ]);
+    },
+
+    qualityHold: async (tenantId, batchId) => qualityHolds.hold(tenantId, batchId),
+
+    recordHolds: async (tenantId, holds) => {
+      const now = input.now();
+      await input.store.appendBatch(tenantId, holds.map((h) => qualityHeldEntry(tenantId, h, equipmentHoldKey(h), now)));
     },
 
     recordContents: async (tenantId, contents) => {
