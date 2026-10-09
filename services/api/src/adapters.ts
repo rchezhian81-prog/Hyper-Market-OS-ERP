@@ -2586,6 +2586,27 @@ export function salesHistoryAdapter(input: { readonly store: EventStore; readonl
 export const refundGuardKey = (saleId: string): string => `refund:${saleId}`;
 /** The write-guard key for everything that leaves one location's stock by transfer (Wave 2a · SF-04). */
 export const stockGuardKey = (locationId: string): string => `stock:${locationId}`;
+/** SF-02 — a purchase order's write guard: every receipt, cancellation, amendment and posting against it moves it. */
+export const purchaseOrderGuardKey = (poId: string): string => `purchase-order:${poId}`;
+
+/**
+ * SF-02 — append a change to a purchase order (a cancellation, an amendment, a hand-posted receipt, an accepted excess)
+ * MOVING the order's guard, so a goods receipt judged on the order as it stood before this change is refused rather than
+ * doubled. The change itself depends on no figure read here, so a lost race is simply tried again (with a short jitter).
+ */
+async function appendMovingOrder(store: EventStore, tenantId: string, poId: string, entries: readonly BatchEntry[]): Promise<void> {
+  const key = purchaseOrderGuardKey(poId);
+  for (let attempt = 0; ; attempt++) {
+    const expectedVersion = await store.guardVersion(tenantId, key);
+    try {
+      await store.appendBatch(tenantId, entries, { guard: { key, expectedVersion } });
+      return;
+    } catch (err) {
+      if (!(err instanceof ConcurrencyConflictError) || attempt >= 8) throw err;
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.floor(Math.random() * 8 * (attempt + 1))));
+    }
+  }
+}
 /** The write-guard key for every promise held at one location (Wave 2a · FUL-02). */
 export const reservationGuardKey = (locationId: string): string => `reservation:${locationId}`;
 
@@ -5697,14 +5718,17 @@ export function goodsReceiptAdapter(input: {
     grn: async (tenantId, grnId) => (await fold(tenantId)).find((g) => g.grnId === grnId),
     all: fold,
     // SP-6 (F01): the purchase order as head office holds it — status and ordered quantity per product.
+    // SF-02: with what earlier receipts received and cancellations took off — a receipt is judged against what REMAINS.
     purchaseOrder: async (tenantId, poId) => {
       const po = (await foldPurchaseOrders(input.store, tenantId)).get(poId);
       if (po === undefined) return undefined;
       const orderedByProduct: Record<string, number> = {};
       for (const line of po.lines) orderedByProduct[line.productId] = (orderedByProduct[line.productId] ?? 0) + line.orderedQty;
-      return { status: po.status, orderedByProduct };
+      return { status: po.status, orderedByProduct, receivedByProduct: po.receivedByProduct, cancelledByProduct: po.cancelledByProduct };
     },
-    commit: async (tenantId, record, movements, key, poReceipt) => {
+    orderVersion: (tenantId, poId) => input.store.guardVersion(tenantId, purchaseOrderGuardKey(poId)),
+    // SF-02: under the order's guard when the receipt posts against it — two receipts never spend the same remainder.
+    commit: async (tenantId, record, movements, key, poReceipt, orderGuard) => {
       await input.store.appendBatch(tenantId, [
         {
           stream: grnStream,
@@ -5719,7 +5743,7 @@ export function goodsReceiptAdapter(input: {
         },
         ...movements.map((m) => movementEvent(tenantId, m)),
         ...(poReceipt === undefined ? [] : [poReceiptEvent(tenantId, poReceipt)]),
-      ]);
+      ], orderGuard === undefined ? undefined : { guard: { key: purchaseOrderGuardKey(orderGuard.poId), expectedVersion: orderGuard.expectedVersion } });
     },
     // SP-6 (M07-FR-03): the disposition and the movement an accept releases — one append; one disposition per line.
     commitDisposition: async (tenantId, record, movements, key) => {
@@ -5775,7 +5799,7 @@ export function goodsReceiptAdapter(input: {
     // The decision and the movements it releases are ONE append (FND-01): the excess never reaches stock twice, and never
     // reaches it without the decision that allowed it.
     commitExcessDecision: async (tenantId, record, movements, key, poReceipt) => {
-      await input.store.appendBatch(tenantId, [
+      const entries: BatchEntry[] = [
         {
           stream: grnStream,
           event: makeEvent({
@@ -5791,7 +5815,10 @@ export function goodsReceiptAdapter(input: {
         ...movements.map((m) => movementEvent(tenantId, m)),
         // SP-6 (F01): an accepted excess is received against the order too — in the same append.
         ...(poReceipt === undefined ? [] : [poReceiptEvent(tenantId, poReceipt)]),
-      ]);
+      ];
+      // SF-02: an accepted excess moves the order, so a receipt judged before it is refused rather than doubled.
+      if (poReceipt === undefined) await input.store.appendBatch(tenantId, entries);
+      else await appendMovingOrder(input.store, tenantId, poReceipt.poId, entries);
     },
   };
 }
@@ -6200,7 +6227,7 @@ export function purchaseOrdersAdapter(input: {
     },
 
     amend: async (tenantId, poId, amendmentId, lines, reason, by, at) => {
-      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+      await appendMovingOrder(input.store, tenantId, poId, [{ stream: PURCHASE_ORDERS_STREAM, event: makeEvent({
         id: `po-${poId}-amended-${amendmentId}`,
         type: 'PurchaseOrderAmended',
         occurredAt: at,
@@ -6208,11 +6235,11 @@ export function purchaseOrdersAdapter(input: {
         idempotencyKey: `po-${tenantId}-${poId}-amended-${amendmentId}`,
         source: 'api/purchase',
         payload: { poId, amendmentId, lines, reason, by, at },
-      }));
+      }) }]);
     },
 
     cancel: async (tenantId, poId, cancellationId, cancelledByProduct, reason, by, at) => {
-      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+      await appendMovingOrder(input.store, tenantId, poId, [{ stream: PURCHASE_ORDERS_STREAM, event: makeEvent({
         id: `po-${poId}-cancelled-${cancellationId}`,
         type: 'PurchaseOrderCancelled',
         occurredAt: at,
@@ -6220,11 +6247,11 @@ export function purchaseOrdersAdapter(input: {
         idempotencyKey: `po-${tenantId}-${poId}-cancelled-${cancellationId}`,
         source: 'api/purchase',
         payload: { poId, cancellationId, cancelledByProduct, reason, by, at },
-      }));
+      }) }]);
     },
 
     postReceipt: async (tenantId, poId, receiptId, receivedByProduct, by, at) => {
-      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+      await appendMovingOrder(input.store, tenantId, poId, [{ stream: PURCHASE_ORDERS_STREAM, event: makeEvent({
         id: `po-${poId}-received-${receiptId}`,
         type: 'PurchaseOrderReceiptPosted',
         occurredAt: at,
@@ -6232,7 +6259,7 @@ export function purchaseOrdersAdapter(input: {
         idempotencyKey: `po-${tenantId}-${poId}-received-${receiptId}`,
         source: 'api/purchase',
         payload: { poId, receiptId, receivedByProduct, by, at },
-      }));
+      }) }]);
     },
 
     setSupplierBlocked: async (tenantId, supplierId, blocked, reason, by, at) => {

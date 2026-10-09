@@ -41,7 +41,8 @@
 // match (FR-04) reads these GRNs.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, concurrentChange, notFound } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
   captureReceipt, availableFromReceipt, heldFromReceipt, IncompleteCaptureError,
   type CapturedLine, type CheckedLine, type ProductReceiptRules, type ReceiptPolicy, type CapturedReceipt,
@@ -62,6 +63,8 @@ export const RECEIPT_FLAGS = Object.freeze([
   'excess_already_on_hand', 'excess_on_hand_pending_return', 'scan_posting_disagrees', 'expiry_date_assumed',
   // SP-7b — a rejected excess has physically gone back to the supplier (`…/excess/returned`).
   'excess_returned_to_supplier',
+  // SF-02 — a product on the order had nothing left to receive (fully received or cancelled): all of it is excess.
+  'nothing_left_on_order',
 ] as const);
 export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
 
@@ -125,6 +128,12 @@ export interface GrnRecord {
    * yet issued — the flags say which). Absent on records from before SP-6.
    */
   readonly poReceipt?: { readonly receiptId: string; readonly receivedByProduct: Readonly<Record<string, number>> } | null;
+  /**
+   * SF-02 — where the order stood for each of its products when this receipt was judged: the ORIGINAL ordered quantity,
+   * what earlier receipts had already received, what was cancelled, and what remained — the figure this receipt was
+   * measured against. Absent when there was no issued order (and on records from before SF-02).
+   */
+  readonly orderPosition?: Readonly<Record<string, OrderPosition>>;
   /** SP-6 (M07-FR-03) — the disposition a second person gave each quarantined / refused line; absent while none has one. */
   readonly dispositions?: readonly LineDisposition[];
   /**
@@ -192,6 +201,25 @@ export interface PoReceiptPosting {
 export interface PurchaseOrderForReceipt {
   readonly status: 'proposed' | 'issued';
   readonly orderedByProduct: Readonly<Record<string, number>>;
+  /** SF-02 — what earlier receipts already received against it, per product (absent = nothing yet). */
+  readonly receivedByProduct?: Readonly<Record<string, number>>;
+  /** SF-02 — what approved cancellations took off it, per product (absent = nothing). */
+  readonly cancelledByProduct?: Readonly<Record<string, number>>;
+}
+
+/** SF-02 — one product's position on its order when a receipt was judged. */
+export interface OrderPosition {
+  readonly ordered: number;
+  readonly receivedBefore: number;
+  readonly cancelled: number;
+  /** ordered − received − cancelled, never below zero: what this receipt may still bring in as ordered. */
+  readonly remaining: number;
+}
+
+/** SF-02 — the receipt's write is conditional on its order not having moved since it was read. */
+export interface OrderGuard {
+  readonly poId: string;
+  readonly expectedVersion: number;
 }
 
 export interface GoodsReceiptDeps {
@@ -203,7 +231,12 @@ export interface GoodsReceiptDeps {
    * Record the GRN and its inbound movements as ONE atomic append (FND-01) — and, when `poReceipt` is given (SP-6 · F01),
    * the receipt's posting against the purchase order in the SAME append, idempotent on the receipt id.
    */
-  readonly commit: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string, poReceipt?: PoReceiptPosting) => Promise<void> | void;
+  readonly commit: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string, poReceipt?: PoReceiptPosting, orderGuard?: OrderGuard) => Promise<void> | void;
+  /**
+   * SF-02 — the order's write-guard version, read BEFORE the order itself. Every receipt, cancellation and posting against
+   * the order moves it, so a receipt decided on a remaining quantity that has since changed is refused, never doubled.
+   */
+  readonly orderVersion?: (tenantId: string, poId: string) => Promise<number> | number;
   /** SP-6 (F01): the purchase order head office holds — its status and ordered quantity per product — or `undefined`. */
   readonly purchaseOrder: (tenantId: string, poId: string) => Promise<PurchaseOrderForReceipt | undefined> | PurchaseOrderForReceipt | undefined;
   /** SP-6 (M07-FR-03): record a line disposition and, for an accept, the released movement as ONE atomic append. */
@@ -265,6 +298,21 @@ export interface OrderForReceipt {
   readonly ordered: Readonly<Record<string, number>> | undefined;
   /** True only for an ISSUED order head office holds: the one kind of order a receipt folds into. */
   readonly folds: boolean;
+  /** SF-02 — per product on an issued order: original, already received, cancelled, remaining. */
+  readonly position?: Readonly<Record<string, OrderPosition>>;
+  /** SF-02 — the order's guard version read before the order (when the store keeps one). */
+  readonly expectedVersion?: number;
+}
+
+/** SF-02 — each product's position on an order: the remaining quantity is what a receipt is judged against. */
+export function orderPositions(po: PurchaseOrderForReceipt): Readonly<Record<string, OrderPosition>> {
+  const out: Record<string, OrderPosition> = {};
+  for (const [productId, ordered] of Object.entries(po.orderedByProduct)) {
+    const receivedBefore = po.receivedByProduct?.[productId] ?? 0;
+    const cancelled = po.cancelledByProduct?.[productId] ?? 0;
+    out[productId] = { ordered, receivedBefore, cancelled, remaining: Math.max(0, ordered - receivedBefore - cancelled) };
+  }
+  return out;
 }
 
 /**
@@ -272,13 +320,39 @@ export interface OrderForReceipt {
  * order and an order not yet issued are each SAID as a flag and fold into nothing; the delivery is still received.
  */
 export async function orderForReceipt(
-  deps: Pick<GoodsReceiptDeps, 'purchaseOrder'>, tenantId: string, poId: string | null, flags: ReceiptFlag[],
+  deps: Pick<GoodsReceiptDeps, 'purchaseOrder' | 'orderVersion'>, tenantId: string, poId: string | null, flags: ReceiptFlag[],
 ): Promise<OrderForReceipt> {
   if (poId === null) { flags.push('no_purchase_order'); return { poId, ordered: undefined, folds: false }; }
+  // SF-02: the guard first, then the order it protects — so anything that lands on the order in between is caught.
+  const expectedVersion = deps.orderVersion === undefined ? undefined : await deps.orderVersion(tenantId, poId);
   const po = await deps.purchaseOrder(tenantId, poId);
   if (po === undefined) { flags.push('order_unknown'); return { poId, ordered: undefined, folds: false }; }
   if (po.status !== 'issued') { flags.push('order_not_issued'); return { poId, ordered: po.orderedByProduct, folds: false }; }
-  return { poId, ordered: po.orderedByProduct, folds: true };
+  // SF-02: an issued order is measured by what REMAINS on it — never the original figure again. A second delivery of 60
+  // against an order of 100 that already received 60 is judged against 40: 40 as ordered, 20 excess, held for a person.
+  const position = orderPositions(po);
+  const remaining: Record<string, number> = {};
+  for (const [productId, p] of Object.entries(position)) remaining[productId] = p.remaining;
+  return { poId, ordered: remaining, folds: true, position, ...(expectedVersion === undefined ? {} : { expectedVersion }) };
+}
+
+/**
+ * SF-02 — record a receipt under its order's guard: the GRN, its stock and its posting against the order land only while
+ * the order is as it was read. Another receipt or a cancellation that landed first refuses this one by name (409) —
+ * nothing is saved and the receiver books it again against what is left now.
+ */
+export async function commitAgainstOrder(
+  deps: Pick<GoodsReceiptDeps, 'commit'>, tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string,
+  poReceipt: PoReceiptPosting | undefined, order: OrderForReceipt,
+): Promise<void> {
+  const guard = poReceipt !== undefined && order.poId !== null && order.expectedVersion !== undefined
+    ? { poId: order.poId, expectedVersion: order.expectedVersion } : undefined;
+  try {
+    await deps.commit(tenantId, record, movements, key, poReceipt, guard);
+  } catch (e) {
+    if (e instanceof ConcurrencyConflictError) throw concurrentChange(`purchase order ${order.poId ?? ''}`);
+    throw e;
+  }
 }
 
 /**
@@ -300,6 +374,8 @@ export function alignToOrder(lines: readonly CapturedLine[], ordered: Readonly<R
       for (const l of group) aligned.set(l, { ...l, orderedMinor: l.countedMinor });
       continue;
     }
+    // SF-02: nothing left on the order for this product (fully received or cancelled) — everything that came is excess.
+    if (onOrder === 0) say('nothing_left_on_order');
     const claimed = group.reduce((n, l) => n + l.orderedMinor, 0);
     if (group.length === 1) {
       if (claimed !== onOrder) say('ordered_quantity_disagrees');
@@ -672,13 +748,14 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
           heldMinor: heldFromReceipt(captured),
           governanceFlags: flags,
           poReceipt: poReceipt === undefined ? null : { receiptId: poReceipt.receiptId, receivedByProduct: poReceipt.receivedByProduct },
+          ...(order.position === undefined ? {} : { orderPosition: order.position }),
         };
         // Only the SELLABLE quantity becomes availability; quarantine / rejected / held are on the GRN but not on-hand.
         const movements = inboundMovements({
           grnId, locationId: record.warehouseId, lines: captured.lines, quantityOf: (l) => l.sellableMinor,
           occurredAt: receivedAt, enteredBy: ctx.userId, unitCostMinorOf: (l) => l.unitCost.minor,
         });
-        await deps.commit(ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt);
+        await commitAgainstOrder(deps, ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt, order);
         return { status: 201, body: { grn: record, flags, poReceipt: record.poReceipt } };
       },
     },

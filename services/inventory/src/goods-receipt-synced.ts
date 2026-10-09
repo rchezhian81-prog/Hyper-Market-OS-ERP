@@ -26,7 +26,7 @@ import {
   type CapturedLine, type CapturedReceipt,
 } from '../../../packages/receiving/src/index';
 import {
-  DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, rulesFromMaster, policyInForce, inboundMovements, orderForReceipt, alignToOrder, poPostingFor,
+  DEFAULT_RECEIPT_POLICY, RECEIPT_FLAGS, rulesFromMaster, policyInForce, inboundMovements, orderForReceipt, alignToOrder, poPostingFor, commitAgainstOrder,
   type GoodsReceiptDeps, type GrnRecord, type ReceiptFlag,
 } from './goods-receipt';
 
@@ -173,13 +173,14 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
           captured, availableMinor: availableFromReceipt(captured), heldMinor: heldFromReceipt(captured),
           governanceFlags: flags, relayedBy: ctx.userId, source: r.source, storeId: r.storeId,
           poReceipt: poReceipt === undefined ? null : { receiptId: poReceipt.receiptId, receivedByProduct: poReceipt.receivedByProduct },
+          ...(order.position === undefined ? {} : { orderPosition: order.position }),
         };
         // Only the SELLABLE quantity becomes availability; quarantine / rejected / held excess are on the GRN but not on-hand.
         const movements = inboundMovements({
           grnId, locationId: record.warehouseId, lines: captured.lines, quantityOf: (l) => l.sellableMinor,
           occurredAt: r.receivedAt, enteredBy: r.receivedBy, unitCostMinorOf: (l) => costByProduct.get(l.productId),
         });
-        await deps.commit(ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt);
+        await commitAgainstOrder(deps, ctx.tenantId, record, movements, ctx.idempotencyKey ?? grnId, poReceipt, order);
         await deps.recordAudit?.(ctx.tenantId, {
           actorId: r.receivedBy, action: 'receipt.record', objectType: 'goods_receipt', objectId: grnId,
           at: deps.now(), origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },

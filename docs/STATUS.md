@@ -5,6 +5,36 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 3 · SF-02 — each delivery is judged against what is left on its order (9 October 2026)
+
+- **The wave:** Wave 3 of the repair plan, "the stock path from delivery to shelf". SF-02 is the first of its six fixes.
+- **The audit's finding:** an order of 100, a delivery of 60, then another 60. Both were accepted, the second 60 went
+  straight onto the shelf as sellable, and the order showed 120 received and −20 open.
+- **What changed:**
+  - A delivery is now measured against what is still open on the order: ordered − already received − cancelled.
+    The original ordered quantity is kept on the receipt beside what remained.
+  - In the audit's case the second delivery is 40 as ordered and 20 over. The 20 is HELD for a second person (the
+    existing excess approval); the order shows 100 received, 0 open.
+  - A delivery for a product with nothing left on the order (fully received, or the rest cancelled) is all held, and the
+    receipt says `nothing_left_on_order`.
+  - Two deliveries recorded at the same moment cannot both use the same remainder: the receipt's save is guarded on the
+    order. The second is refused by name ("another change was recorded a moment ago") and nothing is saved; booked again,
+    it is judged against what is left. A cancellation, an amendment, a hand-posted receipt and an accepted excess also
+    move the guard.
+  - The same rule runs on all three ways a delivery is booked: the direct receipt, the store computer's receipt, and
+    the receipt built from the handheld's scans.
+- **Proved:**
+  - Integration (4, in memory): 60 + 40; 60 + 60; a cancelled remainder; two deliveries at once.
+  - **On real PostgreSQL (2):** 60 + 60; two deliveries at once — the order never receives more than 100.
+  - Unit (3 new): the remaining quantity per product; the guard read before the order; nothing left → all held.
+  - The new tests fail on the code before the fix; the 87 existing receipt and order tests still pass.
+  - One existing test had the over-receipt built into it (the supplier-account fixture received 13 more against an
+    order already received in full, and expected 10 of them on the shelf). It now expects all 13 held, as the rule says.
+- **Not yet / honest limits:** the rest of Wave 3 (SF-03, SF-05, SF-07/PA-07, SF-08, PF-14). Staff UAT (SP-10) pending.
+- **Behaviour change the owner should know:** a delivery bigger than what is left on the order now waits for a second
+  person for the extra, even when the earlier deliveries were short.
+- **Next:** SF-03 — a transfer's availability from the one batch-aware stock figure.
+
 ## Fix — the sign-in page's browser test no longer fails at random (8 October 2026)
 
 - **The problem:** the browser test of the sign-in page (UX-3 · OB-18) failed about 4 runs in 10 at its "second click

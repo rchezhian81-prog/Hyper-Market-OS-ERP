@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 943,
+  "testFiles": 944,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -333,8 +333,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 11,
-        "integration": 12,
-        "realDb": 2,
+        "integration": 13,
+        "realDb": 3,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -355,6 +355,7 @@
           "tests/unit/supplier-performance.test.ts"
         ],
         "integration": [
+          "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/duplicate-bank.test.ts",
           "tests/integration/goods-receipt-assembled.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts",
@@ -369,6 +370,7 @@
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
@@ -388,8 +390,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 17,
-        "realDb": 1,
+        "integration": 18,
+        "realDb": 2,
         "browser": 4,
         "connected": 0,
         "device": 0,
@@ -408,6 +410,7 @@
           "tests/unit/supplier-account-fold.test.ts"
         ],
         "integration": [
+          "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/goods-receipt-assembled.test.ts",
           "tests/integration/goods-receipt-disposition.test.ts",
@@ -427,6 +430,7 @@
           "tests/integration/warehouse-synced-routes.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
         "browser": [

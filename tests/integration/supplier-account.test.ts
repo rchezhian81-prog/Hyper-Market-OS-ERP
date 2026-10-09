@@ -178,16 +178,19 @@ describe('the supplier account is read from the registers, never typed (SP-7b ·
 
   it('a REJECTED over-delivery is a supplier return PENDING on the account until it has gone back: recorded once, no stock invented to move (the held units never reached on-hand), refused before a second person rejects it', async () => {
     const h = await seeded();
-    // 13 p1 against an order of 10 on a second delivery, zero tolerance → 10 sellable, 3 HELD; nobody has decided it.
+    // 13 p1 on a second delivery against an order of 10 that grn-1 already received in full. Since SF-02 (Wave 3) a receipt
+    // is judged against what is LEFT on the order — nothing — so all 13 are HELD (before SF-02 this fixture put 10 more on
+    // the shelf against the same 10 ordered: the audit's over-receipt). The line's "10 ordered" is the sender's old figure,
+    // so the record also says the ordered quantity disagrees. Nobody has decided it yet.
     expect((await post(h, '/v1/inventory/goods-receipt/grn-2', 'u-recv', receipt([rl('L1', 'p1', 10, 13, 500)]), 'grn-2')).status).toBe(201);
-    expect(await onHand(h, 'p1')).toBe(20); // grn-1's 10 sellable + grn-2's 10 ordered — the 3 held are counted, in the building, and NOT on-hand
+    expect(await onHand(h, 'p1')).toBe(10); // grn-1's 10 only — the 13 held are counted, in the building, and NOT on-hand
     expect(codeOf(await post(h, '/v1/inventory/goods-receipt/grn-2/excess/returned', 'u-recv', { reason: 'van' }, 'ret-early'))).toBe('excess_not_rejected');
     expect((await account(h)).body.pendingSupplierReturns).toEqual([]);
 
-    // The second person REJECTS it → the account shows a pending return of 3 at ₹5.00 and needs attention.
+    // The second person REJECTS it → the account shows a pending return of 13 at ₹5.00 and needs attention.
     expect((await post(h, '/v1/inventory/goods-receipt/grn-2/excess/decide', 'u-boss', { decision: 'rejected', reason: 'not ordered' }, 'ex-2')).status).toBe(200);
     let a = (await account(h)).body;
-    expect(a.pendingSupplierReturns).toEqual([expect.objectContaining({ grnId: 'grn-2', poId: 'po-1', heldMinor: 3, valueMinor: 1500, decidedBy: 'u-boss', returned: false, returnedAt: null })]);
+    expect(a.pendingSupplierReturns).toEqual([expect.objectContaining({ grnId: 'grn-2', poId: 'po-1', heldMinor: 13, valueMinor: 6500, decidedBy: 'u-boss', returned: false, returnedAt: null })]);
     expect(a.totals.pendingReturns).toBe(1);
     expect(((await get(h, '/v1/purchase/suppliers/accounts', 'u-owner')).body as { accounts: { needsAttention: boolean }[] }).accounts[0]!.needsAttention).toBe(true);
 
@@ -196,7 +199,7 @@ describe('the supplier account is read from the registers, never typed (SP-7b ·
     const before = await onHand(h, 'p1');
     const ret = await post(h, '/v1/inventory/goods-receipt/grn-2/excess/returned', 'u-recv', { reason: 'collected by the supplier van' }, 'ret-2');
     expect(ret.status).toBe(200);
-    expect(ret.body).toMatchObject({ grnId: 'grn-2', quantityMinor: 3, valueMinor: 1500, movementIds: [], returnedBy: 'u-recv', alreadyReturned: false, flags: ['product_rules_unverified', 'excess_returned_to_supplier'] });
+    expect(ret.body).toMatchObject({ grnId: 'grn-2', quantityMinor: 13, valueMinor: 6500, movementIds: [], returnedBy: 'u-recv', alreadyReturned: false, flags: ['nothing_left_on_order', 'ordered_quantity_disagrees', 'product_rules_unverified', 'excess_returned_to_supplier'] });
     expect(await onHand(h, 'p1')).toBe(before);
     expect((await post(h, '/v1/inventory/goods-receipt/grn-2/excess/returned', 'u-recv', { reason: 'again' }, 'ret-2b')).body).toMatchObject({ alreadyReturned: true });
     expect((await post(h, '/v1/inventory/goods-receipt/grn-2/excess/returned', 'u-cash', { reason: 'x' }, 'ret-2c')).status).toBe(403);
@@ -204,7 +207,7 @@ describe('the supplier account is read from the registers, never typed (SP-7b ·
     expect(a.pendingSupplierReturns[0]).toMatchObject({ returned: true });
     expect(a.pendingSupplierReturns[0]!.returnedAt).not.toBeNull();
     expect(a.totals.pendingReturns).toBe(0);
-    expect(((await get(h, '/v1/inventory/goods-receipt/grn-2', 'u-owner')).body as { grn: { governanceFlags: string[]; excessReturn: { quantityMinor: number } } }).grn).toMatchObject({ governanceFlags: ['product_rules_unverified', 'excess_returned_to_supplier'], excessReturn: { quantityMinor: 3 } });
+    expect(((await get(h, '/v1/inventory/goods-receipt/grn-2', 'u-owner')).body as { grn: { governanceFlags: string[]; excessReturn: { quantityMinor: number } } }).grn).toMatchObject({ governanceFlags: ['nothing_left_on_order', 'ordered_quantity_disagrees', 'product_rules_unverified', 'excess_returned_to_supplier'], excessReturn: { quantityMinor: 13 } });
   });
 
   it('the accountant posts the account through the mapping: accrual + debit note as balanced journals, the register and the ledger reconcile as two derivations, a re-run posts nothing, an unmapped kind is a named exception until the mapping names it, and a re-match that owes less REVERSES by its own journal', async () => {
