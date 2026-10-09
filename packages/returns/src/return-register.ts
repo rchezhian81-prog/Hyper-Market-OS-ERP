@@ -52,6 +52,10 @@ export interface SoldLine {
    *  exchange credits returned goods at THIS price, never today's (M13-FR-03). Absent on a record that
    *  never carried money per line (the value then pro-rates the bill total by quantity). */
   readonly lineTotalMinor?: number;
+  /** PF-14 — the batch/lot this line was sold from, as the lane captured it (absent for an untracked product). */
+  readonly batchId?: string;
+  /** PF-14 — that batch's use-by/expiry date (YYYY-MM-DD), where captured. */
+  readonly batchExpiry?: string;
 }
 
 /** An original bill, as this box recorded it. */

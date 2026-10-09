@@ -74,6 +74,7 @@ export type CopyKey =
   | 'flagOverReturnedGoods' | 'flagRefundExceedsPaid' | 'flagStoreCreditOverCap' | 'flagStoreCreditNoCustomer'
   | 'flagNoReceiptOverCap'
   | 'flagCashierNotVerifiedAtStore' | 'flagCashierSealDoesNotMatch' | 'flagApprovalNotVerifiedAtStore' | 'flagApprovalSealDoesNotMatch'
+  | 'flagReturnBatchNotOnTheSale' | 'flagReturnBatchNotNamed'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
@@ -101,6 +102,8 @@ export const RETURN_GOVERNANCE_COPY: BilingualCopy<CopyKey> = {
     flagCashierSealDoesNotMatch: 'Who gave it does not match the store computer\'s seal — possibly altered',
     flagApprovalNotVerifiedAtStore: 'The store computer did not vouch for the manager\'s approval',
     flagApprovalSealDoesNotMatch: 'The approval does not match the store computer\'s seal — possibly altered',
+    flagReturnBatchNotOnTheSale: 'A returned item was named with a batch this bill never sold',
+    flagReturnBatchNotNamed: 'A returned item could be from more than one batch on the bill, and none was named',
     scrReady: 'Showing the refund exceptions', scrEmpty: 'No refund exceptions — every refund followed the rules.',
     stateNotPermitted: 'You do not have permission to see the refund exceptions.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
@@ -129,6 +132,8 @@ export const RETURN_GOVERNANCE_COPY: BilingualCopy<CopyKey> = {
     flagCashierSealDoesNotMatch: 'வழங்கியவர் கடைக் கணினியின் முத்திரையுடன் பொருந்தவில்லை — மாற்றப்பட்டிருக்கலாம்',
     flagApprovalNotVerifiedAtStore: 'மேலாளரின் அனுமதியைக் கடைக் கணினி உறுதிப்படுத்தவில்லை',
     flagApprovalSealDoesNotMatch: 'அனுமதி கடைக் கணினியின் முத்திரையுடன் பொருந்தவில்லை — மாற்றப்பட்டிருக்கலாம்',
+    flagReturnBatchNotOnTheSale: 'திருப்பிய பொருளுக்கு இந்தப் பில்லில் விற்கப்படாத தொகுதி குறிப்பிடப்பட்டது',
+    flagReturnBatchNotNamed: 'திருப்பிய பொருள் பில்லில் உள்ள ஒன்றுக்கு மேற்பட்ட தொகுதிகளில் ஏதேனும் ஒன்றிலிருந்து இருக்கலாம்; எதுவும் குறிப்பிடப்படவில்லை',
     scrReady: 'திருப்பிப்பண விதிமீறல்களைக் காட்டுகிறது', scrEmpty: 'திருப்பிப்பண விதிமீறல்கள் இல்லை — ஒவ்வொரு திருப்பிப்பணமும் விதிகளைப் பின்பற்றியது.',
     stateNotPermitted: 'திருப்பிப்பண விதிமீறல்களைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
@@ -153,6 +158,8 @@ const FLAG_COPY: Readonly<Record<RefundGovernanceFinding, CopyKey>> = {
   cashier_seal_does_not_match: 'flagCashierSealDoesNotMatch',
   approval_not_verified_at_store: 'flagApprovalNotVerifiedAtStore',
   approval_seal_does_not_match: 'flagApprovalSealDoesNotMatch',
+  return_batch_not_on_the_sale: 'flagReturnBatchNotOnTheSale',
+  return_batch_not_named: 'flagReturnBatchNotNamed',
 };
 
 // ── the presented shapes the view renders ────────────────────────────────────────────────────────────────

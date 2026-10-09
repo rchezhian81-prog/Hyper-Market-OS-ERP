@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 822 | 505 | 505 | 64 | 279 |
+| 13 | 823 | 505 | 505 | 64 | 279 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -338,6 +338,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/pos/suspended-bills/:billId/abandon` | `pos.suspend.write` | core | yes |
 | POST | `/v1/pos/suspended-bills/:billId/resume` | `pos.suspend.write` | core | yes |
 | GET | `/v1/pos/suspended-bills/stale` | `pos.suspend.read` | core | — |
+| GET | `/v1/returns/held-stock` | `inventory.availability.read` | core | — |
 | POST | `/v1/returns/no-receipt` | `pos.return.record` | core | yes |
 | POST | `/v1/returns/no-receipt/synced` | `pos.return.sync` | core | yes |
 | POST | `/v1/sales` | `pos.sale.sync` | core | yes |

@@ -75,7 +75,50 @@ export interface ReturnForStock {
     readonly quantityMinor: number;
     readonly disposition: string;
     readonly batchId?: string | null;
+    readonly batchExpiry?: string;
+    readonly condition?: string;
   }[];
+}
+
+/**
+ * PF-14 — returned goods that do NOT go back on the shelf, held where they came back: one record per quarantined,
+ * damaged or scrap line, linked to its return and keeping its lot. Not on-hand (they cannot be sold), but never
+ * invisible either: until a person disposes of them they are listed (P-08). Scrap is held too — destroyed goods still
+ * have to be written off by somebody.
+ */
+export interface HeldReturnedStock {
+  readonly heldId: string;
+  readonly returnId: string;
+  readonly lineIndex: number;
+  readonly productId: string;
+  readonly uom: string;
+  readonly quantityMinor: number;
+  readonly disposition: 'quarantine' | 'damaged' | 'scrap';
+  readonly batchId: string | null;
+  readonly batchExpiry: string | null;
+  readonly condition: string | null;
+  /** Where the goods came back — the shelf the original sale drew from; `null` when the return named no place. */
+  readonly locationId: string | null;
+  readonly heldAt: string;
+  readonly heldBy: string;
+}
+
+export function heldReturnedStock(ret: ReturnForStock, location: SaleStockLocation | undefined): readonly HeldReturnedStock[] {
+  const out: HeldReturnedStock[] = [];
+  ret.lines.forEach((line, i) => {
+    if (line.disposition !== 'quarantine' && line.disposition !== 'damaged' && line.disposition !== 'scrap') return;
+    if (!Number.isInteger(line.quantityMinor) || line.quantityMinor <= 0) return;
+    out.push({
+      heldId: `held-${ret.returnId}-${i}`, returnId: ret.returnId, lineIndex: i,
+      productId: line.productId, uom: line.uom, quantityMinor: line.quantityMinor, disposition: line.disposition,
+      batchId: typeof line.batchId === 'string' && line.batchId !== '' ? line.batchId : null,
+      batchExpiry: line.batchExpiry ?? null,
+      condition: typeof line.condition === 'string' && line.condition !== '' ? line.condition : null,
+      locationId: location?.locationId ?? null,
+      heldAt: ret.processedAt, heldBy: ret.processedBy,
+    });
+  });
+  return out;
 }
 
 /**
