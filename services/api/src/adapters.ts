@@ -47,7 +47,7 @@ import type { GstRatePeriod } from '../../../packages/finance/src/rate';
 import type { ProductRecord, BarcodeAssignment, MergeRequest, MergeLink, PackHierarchy, DataQualityFinding, SuggestionDisposition } from '../../../packages/product/src/index';
 import { BarcodeRegistry, assessProductDataQuality, buildDataQualityWorklist } from '../../../packages/product/src/index';
 import type { IncomingSale, IncomingTender, SaleException, PosDeps } from '../../pos/src/index';
-import { resolveSaleStockLocation, returnStockMovements, saleStockMovements } from '../../pos/src/sale-stock';
+import { heldReturnedStock, resolveSaleStockLocation, returnStockMovements, saleStockMovements, type HeldReturnedStock, type SaleStockLocation } from '../../pos/src/sale-stock';
 import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { RecallDeps } from '../../inventory/src/recall';
 import { RecallRegistry, type RecallRecord } from '../../../packages/traceability/src/index';
@@ -2175,10 +2175,27 @@ function saleBatchEvents(tenantId: string, sale: IncomingSale, movements: readon
 /** The batch a recorded RETURN appends (M13, FND-01): the bill's register entry, the tenant-wide reporting
  *  projection, any store credit (instrument + movement) and one `returned` movement per resold line — shared by
  *  `returnsAdapter.recordReturn` and the exchange's atomic commit. */
+/** PF-14 — returned goods held off the shelf, one register for the tenant (`GET /v1/returns/held-stock`). */
+const HELD_RETURNED_STOCK = streamName(STREAM.returns, 'held-stock');
+
+/** PF-14 — one `ReturnedStockHeld` per non-resell line of a return, in the return's own batch (they land together). */
+function heldStockEvents(tenantId: string, held: readonly HeldReturnedStock[]): Parameters<EventStore['appendBatch']>[1] {
+  return held.map((h) => ({
+    stream: HELD_RETURNED_STOCK,
+    event: makeEvent({
+      id: h.heldId, type: 'ReturnedStockHeld', occurredAt: h.heldAt,
+      idempotencyKey: `${tenantId}-${h.heldId}`, source: 'api/pos', payload: h,
+    }),
+  }));
+}
+
 function returnBatchEvents(
   tenantId: string, saleId: string, record: ReturnRecord, storeCredit: StoreCreditIssue | undefined, stockMovements: readonly Movement[],
+  location?: SaleStockLocation,
 ): Parameters<EventStore['appendBatch']>[1] {
   return [
+    // PF-14: what came back but cannot be sold — held where it came back, with its lot, linked to this return.
+    ...heldStockEvents(tenantId, heldReturnedStock(record, location)),
     {
       stream: forSaleReturns(saleId),
       event: makeEvent({
@@ -2770,7 +2787,12 @@ export function returnsAdapter(input: {
         tradingDay: s.tradingDay,
         committedAt: s.committedAt,
         totalMinor: s.totalMinor,
-        lines: s.lines.map((l) => ({ productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor, lineTotalMinor: l.lineTotalMinor })),
+        // PF-14: each line's batch and use-by date as the lane sold it — a return takes its lot from here.
+        lines: s.lines.map((l) => ({
+          productId: l.productId, uom: l.uom, quantityMinor: l.quantityMinor, lineTotalMinor: l.lineTotalMinor,
+          ...(typeof l.batchId === 'string' && l.batchId !== '' ? { batchId: l.batchId } : {}),
+          ...(typeof l.batchExpiry === 'string' && l.batchExpiry !== '' ? { batchExpiry: l.batchExpiry } : {}),
+        })),
         tenders: s.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amountMinor })),
       } satisfies OriginalSale;
     },
@@ -2814,13 +2836,12 @@ export function returnsAdapter(input: {
       // return still records, and the desk's own finding says the sale was never seen.
       const original = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
       const originalSale = original === undefined ? undefined : (original.event.payload as IncomingSale);
-      const stockMovements = originalSale === undefined
-        ? []
-        : returnStockMovements(record, resolveSaleStockLocation(originalSale, await storeOfPack(input.store, tenantId, originalSale.packVersion)));
+      const location = originalSale === undefined ? undefined : resolveSaleStockLocation(originalSale, await storeOfPack(input.store, tenantId, originalSale.packVersion));
+      const stockMovements = location === undefined ? [] : returnStockMovements(record, location);
       // A desk refund's approval (ADR-0022) is spent in this SAME batch, under the sale's guard: one approval, one refund.
       await input.store.appendBatch(
         tenantId,
-        [...returnBatchEvents(tenantId, saleId, record, storeCredit, stockMovements), ...approvalUseEntries(tenantId, approvalUses, record.processedAt)],
+        [...returnBatchEvents(tenantId, saleId, record, storeCredit, stockMovements, location), ...approvalUseEntries(tenantId, approvalUses, record.processedAt)],
         expectedVersion === undefined ? undefined : { guard: { key: refundGuardKey(saleId), expectedVersion } },
       );
     },
@@ -2891,6 +2912,9 @@ export function returnsAdapter(input: {
     // Synced refunds that reconciled with a §28 breach (M13-FR-01), folded from the tenant-wide returns
     // projection — flagged records only, one per return id (latest wins on a re-sync). The visible loss
     // surface a person works (hard rule #10).
+    // PF-14: every returned unit held off the shelf, in the order it came back.
+    heldReturnedStock: (tenantId) => allOf<HeldReturnedStock>(input.store, tenantId, HELD_RETURNED_STOCK, 'ReturnedStockHeld'),
+
     flaggedReturns: async (tenantId) => {
       const all = await allOf<ReturnRecord>(input.store, tenantId, STREAM.returns, 'ReturnRecorded');
       const byId = new Map<string, ReturnRecord>();
@@ -2951,6 +2975,8 @@ export function noReceiptReturnsAdapter(input: {
     recordNoReceiptReturn: async (tenantId, record, storeCredit, location, approvalUse) => {
       const stockMovements = location === undefined ? [] : returnStockMovements(record, location);
       await input.store.appendBatch(tenantId, [
+        // PF-14: what came back but cannot be sold — held, linked to this return (where it came back, when stated).
+        ...heldStockEvents(tenantId, heldReturnedStock(record, location)),
         // The approval it spends (ADR-0022), in this same batch, under that approval's own guard.
         ...approvalUseEntries(tenantId, approvalUse === undefined ? undefined : [approvalUse.use], record.processedAt),
         {
@@ -3056,13 +3082,12 @@ export function exchangesAdapter(input: {
       // Returned units go back to the location the ORIGINAL sale drew from (the same rule as a plain return);
       // the replacement leaves from the location it declares (the route defaults it to the original's).
       const original = await bankedSale(tenantId, originalSaleId);
-      const returnedMovements = original === undefined
-        ? []
-        : returnStockMovements(record, resolveSaleStockLocation(original, await storeOfPack(input.store, tenantId, original.packVersion)));
+      const returnedAt = original === undefined ? undefined : resolveSaleStockLocation(original, await storeOfPack(input.store, tenantId, original.packVersion));
+      const returnedMovements = returnedAt === undefined ? [] : returnStockMovements(record, returnedAt);
       const soldMovements = saleStockMovements(replacement, resolveSaleStockLocation(replacement, await storeOfPack(input.store, tenantId, replacement.packVersion)));
       // Under the bill's refund guard (Wave 2a), with the approval it spends (ADR-0022), in ONE batch.
       await input.store.appendBatch(tenantId, [
-        ...returnBatchEvents(tenantId, originalSaleId, record, storeCredit, returnedMovements),
+        ...returnBatchEvents(tenantId, originalSaleId, record, storeCredit, returnedMovements, returnedAt),
         ...saleBatchEvents(tenantId, replacement, soldMovements),
         ...approvalUseEntries(tenantId, approvalUses, record.processedAt),
       ], expectedVersion === undefined ? undefined : { guard: { key: refundGuardKey(originalSaleId), expectedVersion } });

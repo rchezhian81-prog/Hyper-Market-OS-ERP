@@ -29,6 +29,8 @@ import {
 } from '../../../packages/loyalty/src/stored-value';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse, type RefundApprovalState } from './refund-approvals';
+import { lotsOfReturn, lotProblemWords } from '../../../packages/returns/src/return-lots';
+import type { HeldReturnedStock } from './sale-stock';
 import { approvalSealFlags, cashierSealFlags, stampIn } from './store-seal';
 
 /** A store-credit issuance to persist ATOMICALLY with a return (M13-FR-03) — the fresh instrument (when
@@ -162,6 +164,8 @@ export interface ReturnsDeps {
    * identity already on the return record), marked captured-offline so it is never read as a live session.
    */
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** PF-14 — returned goods held off the shelf (quarantined, damaged, scrap), linked to their return and lot. */
+  readonly heldReturnedStock?: (tenantId: string) => Promise<readonly HeldReturnedStock[]> | readonly HeldReturnedStock[];
   readonly now: () => string;
 }
 
@@ -353,7 +357,20 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
         const approvedBy = approvalId === undefined ? undefined : (await take(approvalId, 'refund')).approvedBy;
         const { approvedBy: _named, ...unnamed } = parsed;
         void _named;
-        const request: ReturnRequest = { ...unnamed, processedBy: ctx.userId, approvalThresholdMinor: thresholdMinor, processedAt, ...(approvedBy === undefined ? {} : { approvedBy }) };
+        // PF-14: each returned unit keeps the lot the bill SOLD it from — a batch the bill never sold of that product, or
+        // none named where it sold several, is refused here (no money has moved); otherwise the bill's batch and use-by
+        // date ride on the return, so a recall can follow the unit back.
+        const lots = lotsOfReturn(sale, parsed.lines);
+        if (lots.problems.length > 0) {
+          const first = lots.problems[0]!;
+          throw apiError(422, {
+            code: first.kind === 'batch_not_on_the_sale' ? 'return_batch_not_on_the_sale' : 'return_batch_not_named',
+            whatHappened: lots.problems.map(lotProblemWords).join(' '),
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Name the batch printed on the returned item (one this bill sold). No money has moved and no stock has changed.',
+          });
+        }
+        const request: ReturnRequest = { ...unnamed, lines: lots.lines, processedBy: ctx.userId, approvalThresholdMinor: thresholdMinor, processedAt, ...(approvedBy === undefined ? {} : { approvedBy }) };
 
         // Return eligibility (M13-FR-02): the shop takes goods back only within its return window. The
         // window is the OWNER's policy (AVR-07) — enforced only once it is set; until then a return is not
@@ -719,7 +736,11 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
             stamp: stampIn(ctx.body, 'approvalVerified'),
           }),
         ];
-        const flags = [...governanceFlags, ...crossLaneFlags, ...sealFlags];
+        // PF-14: the lot each returned unit was sold from — taken from the bill where it is unambiguous; a batch the bill
+        // never sold, or none named where it sold several, is recorded and flagged (the money already left the lane).
+        const lots = sale === undefined ? { lines: s.lines, problems: [] } : lotsOfReturn(sale, s.lines);
+        const lotFlags = [...new Set(lots.problems.map((p) => (p.kind === 'batch_not_on_the_sale' ? 'return_batch_not_on_the_sale' as const : 'return_batch_not_named' as const)))];
+        const flags = [...governanceFlags, ...crossLaneFlags, ...sealFlags, ...lotFlags];
 
         // Store credit taken offline (§31): the credit was handed to the customer at the lane, so on sync
         // the cloud ISSUES it — record-and-flag, never a rejection (the money already moved). It is issued
@@ -756,7 +777,7 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           returnId: s.returnId, number: s.number, originalSaleId: saleId,
           processedBy: s.processedBy, processedAt,
           reasonCode: s.reasonCode, refundMinor: s.refundMinor, refundTender: s.refundTender,
-          refundStatus: s.refundStatus, lines: s.lines,
+          refundStatus: s.refundStatus, lines: lots.lines,
           ...(flags.length > 0 ? { governanceFlags: flags } : {}),
           ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }),
           ...(s.customerRef === undefined ? {} : { customerRef: s.customerRef }),
@@ -802,6 +823,20 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
       handler: async (ctx) => {
         const flagged = await deps.flaggedReturns(ctx.tenantId);
         return { status: 200, body: { count: flagged.length, exceptions: flagged, asAt: deps.now() } };
+      },
+    },
+    {
+      // PF-14 · M13-FR-02 — returned goods held OFF the shelf: every quarantined, damaged or scrap line of every return,
+      // where it came back, with its lot and the return it came from. Not on-hand (it cannot be sold) and never invisible
+      // (P-08): this is the list a person works through. A read — nothing moves. ?productId= / ?batchId= narrow it.
+      api: 'API-05', method: 'GET', path: '/v1/returns/held-stock',
+      permission: 'inventory.availability.read',
+      handler: async (ctx) => {
+        const all = deps.heldReturnedStock === undefined ? [] : await deps.heldReturnedStock(ctx.tenantId);
+        const productId = ctx.query['productId'];
+        const batchId = ctx.query['batchId'];
+        const held = all.filter((h) => (productId === undefined || h.productId === productId) && (batchId === undefined || h.batchId === batchId));
+        return { status: 200, body: { count: held.length, held, asAt: deps.now() } };
       },
     },
   ];

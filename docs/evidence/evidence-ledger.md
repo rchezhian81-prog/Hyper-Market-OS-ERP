@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 947. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 949. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 79 · Real PostgreSQL 57 · Browser (stub cloud) 45 · Browser (connected) 2 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 24 · ENGINE_ONLY 1 · INTEGRATION_TESTED 16 · PARTIALLY_WIRED 52 · WIRED 11.
 - Labels that do NOT hold: none.
@@ -36,10 +36,10 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M07 | E2E_VERIFIED | 9 | 19 | 2 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M08 | E2E_VERIFIED | 14 | 32 | 6 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M09 | E2E_VERIFIED | 12 | 22 | 3 | 6 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M10 | E2E_VERIFIED | 19 | 18 | 1 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M10 | E2E_VERIFIED | 20 | 19 | 1 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M11 | INTEGRATION_TESTED | 4 | 4 | · | 1 | · | · | · | ✓ an integration test cites it |
-| M12 | E2E_VERIFIED | 14 | 15 | 3 | 6 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| M13 | INTEGRATION_TESTED | 23 | 21 | 5 | 3 | · | · | · | ✓ an integration test cites it |
+| M12 | E2E_VERIFIED | 14 | 16 | 3 | 6 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| M13 | INTEGRATION_TESTED | 24 | 22 | 5 | 3 | · | · | · | ✓ an integration test cites it |
 | M14 | E2E_VERIFIED | 17 | 14 | 2 | 5 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M15 | E2E_VERIFIED | 14 | 11 | 1 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M16 | WIRED | 8 | 9 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |

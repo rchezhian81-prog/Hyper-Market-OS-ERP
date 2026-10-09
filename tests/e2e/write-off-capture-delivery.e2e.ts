@@ -257,10 +257,14 @@ describe.skipIf(!HAVE_BROWSER)('a stock loss is recorded at head office — a bi
   const settleValue = async (page: Page, qty: string): Promise<void> => {
     await page.fill('#wo-qty', qty);
     await page.press('#wo-qty', 'Tab');
-    await page.waitForFunction(() => {
+    // Wait for head office's answer for THIS quantity — the line from an earlier quantity may still be showing while the
+    // new question is on its way (found on CI: 12 → 10 read the old ₹1,140 before the ₹950 arrived).
+    await page.waitForFunction((n) => {
       const doc = (globalThis as unknown as BrowserGlobals).document;
-      return doc.getElementById('value-hint')?.hidden === false;
-    }, undefined, { timeout: 10_000 });
+      const hint = doc.getElementById('value-hint');
+      const text = doc.getElementById('value-hint-text')?.textContent ?? '';
+      return hint?.hidden === false && (text.includes(`: ${n} × `) || text.includes('holds no cost'));
+    }, qty, { timeout: 10_000 });
   };
   /** Fill the loss: the item, where, how many, the chosen loss-type chip, and (optionally) the photo. The VALUE is head
    *  office's (SF-05) — typed only where head office holds no cost, or on the sample page with no head office behind it. */

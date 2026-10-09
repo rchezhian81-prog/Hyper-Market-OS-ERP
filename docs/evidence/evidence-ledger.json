@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 947,
+  "testFiles": 949,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -605,8 +605,8 @@
       "id": "M10",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 19,
-        "integration": 18,
+        "unit": 20,
+        "integration": 19,
         "realDb": 1,
         "browser": 3,
         "connected": 0,
@@ -630,12 +630,14 @@
           "tests/unit/quality-cold-chain.test.ts",
           "tests/unit/quality-hold.test.ts",
           "tests/unit/quality-lot-trace.test.ts",
+          "tests/unit/return-lots.test.ts",
           "tests/unit/returns.test.ts",
           "tests/unit/service-catalogue.test.ts",
           "tests/unit/service-pos.test.ts",
           "tests/unit/traceability.test.ts"
         ],
         "integration": [
+          "tests/integration/a-returned-item-keeps-its-lot.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/ai-inventory-agent.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
@@ -711,7 +713,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 15,
+        "integration": 16,
         "realDb": 3,
         "browser": 6,
         "connected": 1,
@@ -736,6 +738,7 @@
           "tests/unit/till-seal.test.ts"
         ],
         "integration": [
+          "tests/integration/a-returned-item-keeps-its-lot.test.ts",
           "tests/integration/an-age-restricted-sale-reaches-head-office-with-its-check.test.ts",
           "tests/integration/catalogue-pack-preview.test.ts",
           "tests/integration/pending-tender-recovery.test.ts",
@@ -778,8 +781,8 @@
       "id": "M13",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 23,
-        "integration": 21,
+        "unit": 24,
+        "integration": 22,
         "realDb": 5,
         "browser": 3,
         "connected": 0,
@@ -806,6 +809,7 @@
           "tests/unit/pos-till-session.test.ts",
           "tests/unit/refund-approvals.test.ts",
           "tests/unit/return-eligibility.test.ts",
+          "tests/unit/return-lots.test.ts",
           "tests/unit/returns-register.test.ts",
           "tests/unit/returns.test.ts",
           "tests/unit/reversal.test.ts",
@@ -813,6 +817,7 @@
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
+          "tests/integration/a-returned-item-keeps-its-lot.test.ts",
           "tests/integration/concurrent-refunds-cannot-double-spend.test.ts",
           "tests/integration/exchanges.test.ts",
           "tests/integration/lane-receipt-lookup.test.ts",
