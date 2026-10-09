@@ -28,6 +28,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - **On real PostgreSQL (2):** 60 + 60; two deliveries at once — the order never receives more than 100.
   - Unit (3 new): the remaining quantity per product; the guard read before the order; nothing left → all held.
   - The new tests fail on the code before the fix; the 87 existing receipt and order tests still pass.
+  - One existing test had the over-receipt built into it (the supplier-account fixture received 13 more against an
+    order already received in full, and expected 10 of them on the shelf). It now expects all 13 held, as the rule says.
 - **Not yet / honest limits:** the rest of Wave 3 (SF-03, SF-05, SF-07/PA-07, SF-08, PF-14). Staff UAT (SP-10) pending.
 - **Behaviour change the owner should know:** a delivery bigger than what is left on the order now waits for a second
   person for the extra, even when the earlier deliveries were short.
