@@ -97,8 +97,23 @@ export function canonicalise(snapshot: CatalogueSnapshot): string {
   const barcodes = [...snapshot.barcodes]
     .sort((a, b) => (a.code < b.code ? -1 : 1))
     .map((b) => [b.code, b.productId, b.kind].join(FIELD));
-  return [snapshot.tenantId, snapshot.version, snapshot.builtAt, ...products, '--', ...barcodes]
+  // SF-01: the offers ride under the same signature — an offer added to a pack after signing breaks it. Only when the
+  // pack carries any, so a pack without offers signs to exactly the bytes it always did.
+  const promotions = [...(snapshot.promotions ?? [])]
+    .sort((a, b) => (a.id < b.id ? -1 : 1))
+    .map((p) => stableJson(p));
+  return [snapshot.tenantId, snapshot.version, snapshot.builtAt, ...products, '--', ...barcodes,
+    ...(promotions.length === 0 ? [] : ['--promotions', ...promotions])]
     .join(RECORD);
+}
+
+/** JSON with keys in sorted order at every depth — the same object signs to the same text whatever built it. */
+function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`;
+  if (v !== null && typeof v === 'object') {
+    return `{${Object.keys(v as Record<string, unknown>).sort().map((k) => `${JSON.stringify(k)}:${stableJson((v as Record<string, unknown>)[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(v);
 }
 
 /**

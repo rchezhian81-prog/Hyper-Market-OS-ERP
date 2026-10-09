@@ -361,6 +361,17 @@ describe('the pack-age badge is on every screen (SYNC-01, P-08)', () => {
   });
 });
 
+describe('SF-01 — the offers head office signed into the pack reach the till through the box', () => {
+  it('passes the pack\'s switched-on offers to the lane as signed; a pack with none sends none', () => {
+    const offer = { id: 'ghee-10', kind: 'percent_off' as const, percentBps: 1000, productIds: ['P1'], startsAt: '2026-08-01T00:00:00.000Z', endsAt: '2026-08-31T00:00:00.000Z', status: 'active' as const };
+    const plain = signedCatalogue(7, '2026-08-05T09:00:00.000Z');
+    const withOffer = publishPack({ snapshot: { ...plain.snapshot, version: 8, promotions: [offer] }, approvals: [], signer: hmacSigner(FRESH_KEY), publishedBy: 'u-manager', publishedAt: '2026-08-05T09:00:00.000Z' });
+    if (!withOffer.ok || withOffer.pack === undefined) throw new Error(withOffer.detail);
+    expect(posPayload(input({ cataloguePack: withOffer.pack }))).toMatchObject({ version: 8, promotions: [offer] });
+    expect(posPayload(input({ cataloguePack: plain }))).not.toHaveProperty('promotions');
+  });
+});
+
 describe('a pack that never arrived is not an empty pack', () => {
   it('starts every section as NOT KNOWN, with the reason', () => {
     const pack = emptyPack();

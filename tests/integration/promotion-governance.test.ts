@@ -24,8 +24,12 @@ const lossPromo = (over: Record<string, unknown> = {}) => goodPromo({ promoPrice
 const simulate = (h: ApiHarness, tenantId: string, userId: string, id: string, body: Record<string, unknown>) =>
   h.request({ method: 'POST', path: `/v1/promotions/${id}/simulate`, userId, tenantId, idempotencyKey: `sim-${id}`, body });
 
-const launch = (h: ApiHarness, tenantId: string, userId: string, id: string, body: Record<string, unknown>, key?: string) =>
-  h.request({ method: 'POST', path: `/v1/promotions/${id}/launch`, userId, tenantId, idempotencyKey: key ?? `launch-${id}`, body });
+// SF-01: a launch switches ON the offer's defined rule, so the rule is defined first (create-once, so a repeat collapses).
+const launch = async (h: ApiHarness, tenantId: string, userId: string, id: string, body: Record<string, unknown>, key?: string) => {
+  await h.request({ method: 'POST', path: `/v1/promotions/${id}/definition`, userId: 'u-owner', tenantId, idempotencyKey: `def-${id}`,
+    body: { kind: 'percent_off', percentBps: 1000, startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 864e5 * 30).toISOString() } });
+  return h.request({ method: 'POST', path: `/v1/promotions/${id}/launch`, userId, tenantId, idempotencyKey: key ?? `launch-${id}`, body });
+};
 
 const getPromo = (h: ApiHarness, tenantId: string, userId: string, id: string) =>
   h.request({ method: 'GET', path: `/v1/promotions/${id}`, userId, tenantId });

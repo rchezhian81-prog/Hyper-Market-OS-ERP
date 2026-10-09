@@ -36,6 +36,41 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   goods at the store computer; with a good reading the goods no longer wait for a second manager.
 - **Next:** SF-07 part 3 — the reading on the warehouse handheld.
 
+## Wave 4 · SF-01-b (offers) — a launched offer is the offer the till gives (9 October 2026)
+
+- **The audit's finding, in four breaks:**
+  - launching an offer only RECORDED the launch; the offer rule stayed a draft;
+  - "switch on" (`/activate`) turned an offer on with no margin check and no second person;
+  - the store catalogue the tills download never carried offers;
+  - the till never loaded offers and judged every offer as if the date were 1 January 1970, so none ever applied.
+- **What changed:**
+  - Launching an offer now switches its defined rule on in the same step. Offers still have to pass the margin check,
+    and a margin-losing offer still needs a second person's approval.
+  - An offer with no rule defined cannot be launched (`promotion_not_defined`). A stopped offer cannot be launched back
+    on (`promotion_stopped`).
+  - "Switch on" without a launch is refused (`promotion_not_launched`).
+  - The store catalogue now carries the switched-on offers that have not ended, inside its signature. A catalogue whose
+    offers were altered after signing no longer matches.
+  - The store box passes the offers to the till as signed. Before, it rebuilt the catalogue field by field and would
+    have dropped them.
+  - The till loads the offers at start-up and judges each offer's dates by its own clock, with no network.
+- **Proved:**
+  - Integration (6): define → launch → next pack → a real till session takes 10% off 3 × ₹20 = ₹54; the signature
+    covers the offers; switching on without launch refused; launch with no rule refused; a stopped offer leaves the pack;
+    an ended offer is not carried and a future one is carried but not given early.
+  - Unit: the box passes the offers to the till; a pack with none sends none.
+  - Browser (real Chromium): the box restores a signed catalogue with a 10% offer from its own disk, serves the real till
+    screen, and 2 × ₹640 asks ₹1,152; the same catalogue without the offer asks ₹1,280.
+  - Full gate: 10,361 unit and integration, 31 performance and 255 browser tests pass.
+  - The new tests fail on the code before the fix (6 of 6). Two older offer test files now launch instead of switching
+    on directly.
+- **Not yet / honest limits:**
+  - Staff UAT (SP-10) pending.
+- **Behaviour change the owner should know:** an offer reaches the tills only after it is defined, launched (margin
+  check, second person if it loses margin) and the store catalogue is published. "Switch on" alone no longer works.
+- **Next:** the rest of Wave 4 (till durability PF-04…PF-07, the import console SF-06, head-office pack delivery
+  PA-06/DF-3).
+
 ## Wave 4 · SF-01 (prices) — a price saved on the screen is the price the till charges (9 October 2026)
 
 - **The wave:** Wave 4, "saved changes reach trading", at the owner's word ("Go ahead with Wave 4", 9 Oct 2026). Wave 3's
@@ -58,8 +93,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
     unit test expects the store.
   - 8,895 unit and integration tests pass; the price-change browser test passes.
 - **Not yet / honest limits:**
-  - **Offers (SF-01-b, next):** the till loads no offers at all today. A launched offer must switch on the defined offer
-    and travel to the till in the signed catalogue.
+  - **Offers (SF-01-b):** done — see the entry above.
   - Staff UAT (SP-10) pending.
 - **Behaviour change the owner should know:** changing a price in the office and publishing the store's catalogue now
   changes what the till charges.

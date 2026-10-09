@@ -619,6 +619,8 @@ export function bootPos(config?: {
       ...identity,
       currency: 'INR',
       defaultTaxRate: taxRateFromPercent(config?.taxPercent ?? 18),
+      // SF-01: offers are judged against this lane's own clock — no network, no fixed date.
+      clock: () => new Date().toISOString(),
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
@@ -626,6 +628,8 @@ export function bootPos(config?: {
   );
   // Indexing happens once at boot, so every subsequent scan is O(1) (§32).
   const catalogue = config?.catalogue ? new CatalogueCache(config.catalogue) : undefined;
+  // SF-01: the switched-on offers the signed pack carried — applied at checkout from the lane's own copy (P-01).
+  session.loadPromotions(config?.catalogue?.promotions ?? []);
   const view = createPosView(session, 'INR', catalogue);
 
   // The till itself — money in and out of the drawer, refunds, closing the shift. A separate
