@@ -66,6 +66,9 @@ const WORDS = {
     read: 'Please read this', done: 'Done',
     deliveryNote: 'Delivery note number', poNumber: 'Purchase order number (leave empty if there is none)',
     itemCode: 'Item code', howMany: 'How many', addItem: 'Add this item', noItemsYet: 'No items added yet.',
+    tempLabel: 'Temperature on arrival, °C (chilled or frozen goods)',
+    tempHint: 'Probe the goods and type the reading, for example 3.5 or -18. Without it, chilled and frozen goods wait for a manager\'s check before they can be sold.',
+    needTemp: 'The temperature must be a number of degrees, for example 3.5 or -18. Leave it empty for goods that are not chilled or frozen.',
     saveDelivery: 'Save the delivery', remove: 'Remove',
     needNumber: 'Give the delivery note a number first.', needLines: 'Add at least one item first.',
     needItem: 'Type an item code and how many.',
@@ -110,6 +113,9 @@ const WORDS = {
     read: 'இதைப் படிக்கவும்', done: 'முடிந்தது',
     deliveryNote: 'டெலிவரி நோட்டு எண்', poNumber: 'கொள்முதல் ஆர்டர் எண் (இல்லையென்றால் காலியாக விடவும்)',
     itemCode: 'பொருள் குறியீடு', howMany: 'எத்தனை', addItem: 'இந்தப் பொருளைச் சேர்',
+    tempLabel: 'வந்தபோது வெப்பநிலை, °C (குளிர்/உறைந்த பொருட்கள்)',
+    tempHint: 'பொருளை அளந்து அளவைத் தட்டச்சு செய்யவும், உதாரணமாக 3.5 அல்லது -18. இல்லையெனில் குளிர்/உறைந்த பொருட்கள் மேலாளர் சரிபார்க்கும் வரை விற்பனைக்கு வராது.',
+    needTemp: 'வெப்பநிலை ஒரு எண்ணாக இருக்க வேண்டும், உதாரணமாக 3.5 அல்லது -18. குளிர்/உறைந்த பொருள் இல்லையெனில் காலியாக விடவும்.',
     noItemsYet: 'இன்னும் எந்தப் பொருளும் சேர்க்கப்படவில்லை.', saveDelivery: 'டெலிவரியைச் சேமி',
     remove: 'நீக்கு', needNumber: 'முதலில் டெலிவரி நோட்டு எண்ணைக் கொடுக்கவும்.',
     needLines: 'குறைந்தது ஒரு பொருளையாவது சேர்க்கவும்.', needItem: 'பொருள் குறியீடும் எண்ணிக்கையும் தேவை.',
@@ -807,7 +813,7 @@ function renderLines() {
     name.textContent = line.productId;
     const qty = document.createElement('span');
     qty.className = 'q';
-    qty.textContent = String(line.quantityMinor);
+    qty.textContent = line.temperatureC === undefined ? String(line.quantityMinor) : `${line.quantityMinor} · ${line.temperatureC} °C`;
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = '×';
@@ -825,9 +831,18 @@ el('add-line').addEventListener('click', () => {
     tell(t('read'), t('needItem'));
     return;
   }
-  receiptLines.push({ productId, quantityMinor: quantity, uom: 'ea' });
+  // Wave 3 · SF-07 part 2: the arrival temperature, when the goods are chilled or frozen. Empty = not taken (head office then
+  // holds a cold-chain line for a manager's check); anything else must be a plain number of degrees — never guessed.
+  const tempText = el('grn-temp').value.trim().replace(',', '.');
+  const temperatureC = tempText === '' ? undefined : Number(tempText);
+  if (temperatureC !== undefined && (!/^-?\d+(\.\d+)?$/.test(tempText) || temperatureC < -60 || temperatureC > 60)) {
+    tell(t('read'), t('needTemp'));
+    return;
+  }
+  receiptLines.push({ productId, quantityMinor: quantity, uom: 'ea', ...(temperatureC === undefined ? {} : { temperatureC }) });
   el('grn-product').value = '';
   el('grn-qty').value = '';
+  el('grn-temp').value = '';
   el('grn-product').focus();
   renderLines();
 });
@@ -1052,6 +1067,8 @@ function paintChrome() {
   el('grn-po-label').textContent = t('poNumber');
   el('grn-product-label').textContent = t('itemCode');
   el('grn-qty-label').textContent = t('howMany');
+  el('grn-temp-label').textContent = t('tempLabel');
+  el('grn-temp-hint').textContent = t('tempHint');
   el('add-line').textContent = t('addItem');
   el('receive-empty').textContent = t('noItemsYet');
   el('save-receipt').textContent = t('saveDelivery');

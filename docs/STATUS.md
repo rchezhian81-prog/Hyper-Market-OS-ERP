@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 3 · SF-07 part 2 — the store computer's delivery screen takes the arrival temperature (9 October 2026)
+
+- **The wave:** Wave 3, SF-07 (cold chain at receiving), part 2 of 3, by the owner's decision "3 and A" (9 Oct 2026). Part 1
+  (#736) holds a chilled or frozen line that arrives without a reading.
+- **What changed:**
+  - The manager's delivery screen on the store computer has a new box, **"Temperature on arrival, °C (chilled or frozen
+    goods)"**, with a one-line hint, in English and Tamil.
+  - The reading travels with its line: screen → the store computer (saved to disk first, as every delivery) → head office,
+    which judges it against the product master's limits. A good reading means the goods go on the shelf without waiting.
+  - A line without a reading is held for a manager's check, as in part 1. A word typed instead of a number is refused on the
+    screen and the line is not added; a non-number arriving at head office makes the delivery unreadable (refused by name).
+- **Proved:**
+  - Real browser (Chromium) against the real store computer: "cold" refused with the reason, nothing added; "-18" shown on
+    the line; the store computer's saved record carries −18 °C on the frozen line and no temperature on the dry one.
+  - Head office: a store-computer delivery of ice cream at −18 °C sells straight away; at −10 °C it is held for a second
+    person; a reading that is not a number is refused.
+  - The delivery record carries the reading and invents none (unit).
+  - **Mutation checks:** head office ignoring the reading fails the new head-office test; the record dropping it fails the
+    record test.
+  - Full `pnpm run check` green, with the real database connected.
+- **Not yet / honest limits:**
+  - **Part 3** — the same reading on the warehouse handheld (its scans still put a cold item on the shelf before head office
+    judges it; the receipt says so).
+  - The store computer's own stock count shows a delivered line straight away, as before; head office's figure is the one
+    that holds a cold line back. The till does not refuse a sale on the store computer's count.
+  - The screen does not yet know which items are chilled, so the box is offered on every line and left empty for dry goods.
+  - The Tamil wording is helper-written and needs native review (Wave 8).
+- **Behaviour change the owner should know:** managers can now type the probe reading when booking in chilled or frozen
+  goods at the store computer; with a good reading the goods no longer wait for a second manager.
+- **Next:** SF-07 part 3 — the reading on the warehouse handheld.
+
 ## Wave 4 · PF-06 — a card or UPI payment is written down before the machine is asked (9 October 2026)
 
 - **The audit's finding:** when the card machine did not answer, the till refused the sale and wrote **nothing**. If

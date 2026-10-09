@@ -49,6 +49,16 @@ describe('commitReceipt', () => {
     expect(outbox.unsentCount()).toBe(1);
   });
 
+  it('carries the arrival temperature a manager probed on its line, and invents none for a line without one (Wave 3 · SF-07 part 2)', () => {
+    const outbox = new SyncOutbox();
+    commitReceipt({ ...baseInput(), lines: [{ productId: 'ice', quantityMinor: 12, uom: 'ea', temperatureC: -18 }, { productId: 'dal', quantityMinor: 5, uom: 'ea' }] }, new Ledger(new InMemoryLedgerStore()), outbox);
+    const payload = outbox.pending()[0]!.event.payload as { lines: Record<string, unknown>[] };
+    expect(payload.lines).toEqual([
+      { productId: 'ice', quantityMinor: 12, uom: 'ea', batchId: null, temperatureC: -18 },
+      { productId: 'dal', quantityMinor: 5, uom: 'ea', batchId: null },
+    ]);
+  });
+
   it('rejects an empty receipt', () => {
     const ledger = new Ledger(new InMemoryLedgerStore());
     const outbox = new SyncOutbox();
