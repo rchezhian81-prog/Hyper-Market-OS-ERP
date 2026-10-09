@@ -28,6 +28,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   arrives and a leaver leaves on the next pull; another store's computer is refused; forged, wrong-store, wrong-shop,
   older and wrong-key setups refused; a tampered file not trusted at restart; offline and out-of-date behaviour; settings
   rules. On the old code the new tests fail.
+- **Full gate:** typecheck, lint and secret scan clean; 10,439 unit/integration tests pass (14 skipped), 261
+  performance, 31 browser.
 - **Not yet / honest limits:**
   - Part b: the approvals list, the per-screen settings, the day-close checklist, warehouse/wave/route and counts are not in
     head office's setup yet (the store says it was not told).
