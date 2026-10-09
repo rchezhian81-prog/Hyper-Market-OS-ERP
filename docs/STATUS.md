@@ -5,6 +5,39 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 5 · PF-08 — the day cannot close with a drawer still open, and nobody can type a balanced drawer (9 October 2026)
+
+- **The audit's finding (HIGH):** the store computer would close and lock the day while a cashier's drawer was still
+  open and uncounted. And head office had a "close a shift" route that took every figure from whoever called it — the
+  float, the sales, the count, even the allowed difference — so a drawer could be made to look balanced.
+- **Owner decision OB-27 "A"** (9 Oct 2026): retire that route; a shift closes only at the till, through the store computer.
+- **What changed:**
+  - **The store computer refuses to close the day** while any till from that day (or before) still has its float out and
+    no count. The message names the till and who holds it. A till opened the next morning does not hold back yesterday.
+  - **Head office's direct shift close is gone** (and its permission). The store computer already works out every figure
+    except the count from its own records; head office records the close it relays, checks the sums again, and flags
+    any disagreement — the head-office figure is the one kept.
+  - **The note-by-note count** (how many ₹500, ₹100 … notes) used to be checked only on the retired route. The store
+    computer now refuses a count whose notes do not add up to the total, or that names a note that does not exist,
+    with a message to the cashier in English and Tamil.
+- **Proved:**
+  - Through the real store computer: a float taken and not counted blocks the day close ("till lane-1, held by Meena");
+    once the drawer is counted, the day closes and locks.
+  - Unit tests: the day-close rule refuses with an open shift; the store computer refuses a breakdown that does not add
+    up, or a ₹300 note.
+  - Head office: the old route answers "not found"; a relayed "zero difference" over a ₹150-short drawer is flagged and
+    head office records −₹150; a missing reason and a breakdown that does not add up are flags.
+  - **Mutation checks:** removing the open-shift block fails the store-computer test; removing the breakdown check fails
+    the unit test.
+  - Full `pnpm run check` green, with the real database connected.
+- **Not yet / honest limits:**
+  - "Complete settlement" beyond open drawers and unsent records — for example a card payment still waiting for the bank's
+    answer holding back the day close — is not added here.
+  - Staff UAT (SP-10) pending.
+- **Behaviour change the owner should know:** the manager cannot close the day until every cashier from that day has
+  counted and closed their drawer. Head office can no longer close a shift on its own.
+- **Next:** PF-09 — a sale earns loyalty and a return takes it back, durably.
+
 ## Wave 4 · PA-06 = DF-3-a — head office sends each store computer its own setup, checked (9 October 2026)
 
 - **The audit's finding:** a store computer read its setup from a file someone carried to it. Nothing checked who made it,

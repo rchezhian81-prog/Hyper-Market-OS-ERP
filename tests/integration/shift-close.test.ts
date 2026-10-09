@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { assessShiftClose } from '../../packages/till/src/index';
 
 // Shift close, end to end through the real API (M14-FR-02, API-05). The cashier counts the drawer
-// WITHOUT seeing the expected figure (a blind count protects integrity); the cloud computes expected
-// = float + cash sales − pickups − cash refunds, the variance against the count, and requires a reason
-// for a MATERIAL over/short — raising a reconciliation exception the cash office can see. Proves the
-// wired shift-close surface against the real pipeline and real per-tenant RBAC.
+// WITHOUT seeing the expected figure (a blind count protects integrity). Since PF-08 (owner decision OB-27 "A",
+// 9 Oct 2026) a shift closes ONLY at the till, through the store box, which works out expected = float + cash
+// sales − pickups − cash refunds from its own logs and refuses a material over/short with no reason (proved in
+// `tests/unit/edge-till-cash.test.ts`). Head office RECORDS the close the box relays, re-runs the same rule over
+// it — a disagreement or a missing reason is a visible flag, never a silent correction — and raises the
+// reconciliation exception the cash office works. The retired direct route, which took every figure from the
+// caller, is gone. Proves the recording surface against the real pipeline and real per-tenant RBAC.
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -17,8 +21,22 @@ const base = (over: Record<string, unknown> = {}) => ({
   countedCashMinor: 115_000, toleranceMinor: 500, ...over,
 });
 
+/** The close as the store box relays it: the box's own figures, decided with the same rule (so they follow). */
+const relayed = (b: Record<string, unknown>): Record<string, unknown> => {
+  const n = (k: string): number => b[k] as number;
+  const decided = assessShiftClose({
+    openingFloatMinor: n('openingFloatMinor'), cashSalesMinor: n('cashSalesMinor'), pickupsMinor: n('pickupsMinor'), cashRefundsMinor: n('cashRefundsMinor'),
+    countedCashMinor: n('countedCashMinor'), toleranceMinor: n('toleranceMinor'), ...(typeof b['reasonCode'] === 'string' ? { reasonCode: b['reasonCode'] } : {}),
+  });
+  const { countedCashMinor, ...rest } = b;
+  return {
+    ...rest, laneId: b['tillId'], openedAt: '2026-08-07T03:00:00Z', closedAt: '2026-08-07T20:00:00Z',
+    countedMinor: countedCashMinor, expectedMinor: decided.expectedMinor, varianceMinor: decided.varianceMinor, exceptionRaised: decided.exceptionRaised,
+  };
+};
+
 const close = (h: ApiHarness, tenantId: string, userId: string, shiftId: string, body: Record<string, unknown>, key?: string) =>
-  h.request({ method: 'POST', path: `/v1/shifts/${shiftId}/close`, userId, tenantId, idempotencyKey: key ?? `sc-${shiftId}`, body });
+  h.request({ method: 'POST', path: `/v1/shifts/${shiftId}/close/synced`, userId, tenantId, idempotencyKey: key ?? `sc-${shiftId}`, body: Number.isInteger(body['countedCashMinor']) ? relayed(body) : body });
 
 const overShort = (h: ApiHarness, tenantId: string, userId: string) =>
   h.request({ method: 'GET', path: '/v1/shifts/over-short', userId, tenantId });
@@ -27,7 +45,7 @@ const review = (h: ApiHarness, tenantId: string, userId: string, shiftId: string
   h.request({ method: 'POST', path: `/v1/shifts/${shiftId}/over-short/review`, userId, tenantId, idempotencyKey: key ?? `rv-${shiftId}`, body });
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
-interface Closed { varianceMinor: number; exceptionRaised: boolean; expectedMinor: number }
+interface Closed { varianceMinor: number; exceptionRaised: boolean; expectedMinor: number; flags: string[] }
 interface OverShort { overShort: { shiftId: string; varianceMinor: number }[]; totalVarianceMinor: number }
 
 describe('a shift closes on a blind count, over/short valued and explained (M14-FR-02, API-05)', () => {
@@ -35,7 +53,7 @@ describe('a shift closes on a blind count, over/short valued and explained (M14-
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     const res = await close(h, A, 'u-owner', 'S1', base());
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(202);
     expect(res.body as Closed).toMatchObject({ expectedMinor: 115_000, varianceMinor: 0, exceptionRaised: false });
   });
 
@@ -44,26 +62,40 @@ describe('a shift closes on a blind count, over/short valued and explained (M14-
     await h.seedOwner(A, 'u-owner');
     // +300 over, tolerance 500 → within tolerance, no reason needed, no exception.
     const res = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 115_300 }));
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(202);
     expect(res.body as Closed).toMatchObject({ varianceMinor: 300, exceptionRaised: false });
   });
 
-  it('refuses a material over/short with no reason, and records it once a reason is given', async () => {
+  it('a material over/short arriving with no reason is recorded and FLAGGED (the box should have refused it); with a reason it is clean', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     // −1000 short, tolerance 500 → material.
-    const noReason = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000 }));
-    expect(noReason.status).toBe(422);
-    expect(codeOf(noReason)).toBe('material_variance_needs_a_reason');
+    const noReason = await close(h, A, 'u-owner', 'S0', base({ countedCashMinor: 114_000 }));
+    expect(noReason.status).toBe(202);
+    expect((noReason.body as Closed).flags).toContain('material_variance_without_reason');
 
-    const withReason = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'gave_wrong_change_on_a_note' }), 'sc-S1-b');
-    expect(withReason.status).toBe(201);
+    const withReason = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'gave_wrong_change_on_a_note' }));
+    expect(withReason.status).toBe(202);
     expect((withReason.body as Closed).exceptionRaised).toBe(true);
+    expect((withReason.body as Closed).flags).not.toContain('material_variance_without_reason');
 
     // The cash office sees the over/short on its reconciliation list.
     const list = (await overShort(h, A, 'u-owner')).body as OverShort;
     expect(list.overShort.map((r) => r.shiftId)).toContain('S1');
-    expect(list.totalVarianceMinor).toBe(-1_000);
+    expect(list.totalVarianceMinor).toBe(-2_000);
+  });
+
+  it('PF-08: head office has no direct close — a caller cannot type in a balanced drawer', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    const direct = await h.request({ method: 'POST', path: '/v1/shifts/S1/close', userId: 'u-owner', tenantId: A, idempotencyKey: 'direct', body: base() });
+    expect(direct.status).toBe(404);
+    // And a relayed close whose figures do not follow (a "zero variance" typed over a short drawer) is flagged, and the
+    // cloud's own arithmetic stands on the record.
+    const invented = await close(h, A, 'u-owner', 'S2', { ...relayed(base({ countedCashMinor: 100_000, reasonCode: 'x' })), expectedMinor: 100_000, varianceMinor: 0, exceptionRaised: false });
+    expect(invented.status).toBe(202);
+    expect(invented.body as Closed).toMatchObject({ varianceMinor: -15_000, exceptionRaised: true });
+    expect((invented.body as Closed).flags).toContain('figures_inconsistent');
   });
 
   it('captures the blind count BY DENOMINATION when the breakdown sums to the count, and surfaces it to the cash office', async () => {
@@ -77,8 +109,7 @@ describe('a shift closes on a blind count, over/short valued and explained (M14-
       { denominationMinor: 1_000, count: 4 },
     ];
     const res = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'two_500_notes_missing', denominations }));
-    expect(res.status).toBe(201);
-    expect((res.body as { denominationsRecorded?: boolean }).denominationsRecorded).toBe(true);
+    expect(res.status).toBe(202);
 
     // The cash office's reconciliation list carries the breakdown, so it sees WHAT was short.
     const list = (await overShort(h, A, 'u-owner')).body as { overShort: { shiftId: string; denominations: unknown }[] };
@@ -86,45 +117,32 @@ describe('a shift closes on a blind count, over/short valued and explained (M14-
     expect(row?.denominations).toEqual(denominations);
   });
 
-  it('refuses a breakdown that does not sum to the counted total (entry error caught at the drawer)', async () => {
+  it('a breakdown that does not sum, or names a note that does not exist, is flagged (the box refuses it at the drawer)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    // Notes add to 110000 but the cashier declared 115000 counted.
+    // Notes add to 110000 but the box relayed 115000 counted.
     const res = await close(h, A, 'u-owner', 'S1', base({
       denominations: [{ denominationMinor: 50_000, count: 2 }, { denominationMinor: 10_000, count: 1 }],
     }));
-    expect(res.status).toBe(422);
-    expect(codeOf(res)).toBe('does_not_sum_to_the_count');
-    // Nothing was recorded — the drawer is not on the over/short list.
-    expect(((await overShort(h, A, 'u-owner')).body as OverShort).overShort).toEqual([]);
-  });
-
-  it('refuses an unknown denomination and a malformed breakdown', async () => {
-    const h = apiHarness();
-    await h.seedOwner(A, 'u-owner');
+    expect(res.status).toBe(202);
+    expect((res.body as Closed).flags).toContain('denominations_do_not_sum');
     // ₹300 note does not exist.
-    const unknown = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 30_000, denominations: [{ denominationMinor: 30_000, count: 1 }] }));
-    expect(unknown.status).toBe(422);
-    expect(codeOf(unknown)).toBe('unknown_denomination');
-
-    // Not a list of {denominationMinor, count} pairs.
-    const malformed = await close(h, A, 'u-owner', 'S2', base({ denominations: [{ denominationMinor: 50_000 }] }));
-    expect(malformed.status).toBe(400);
-    expect(codeOf(malformed)).toBe('denominations_not_readable');
+    const unknown = await close(h, A, 'u-owner', 'S2', base({ countedCashMinor: 30_000, reasonCode: 'x', denominations: [{ denominationMinor: 30_000, count: 1 }] }));
+    expect((unknown.body as Closed).flags).toContain('denominations_do_not_sum');
   });
 
   it('still closes on the total alone when no breakdown is sent (offline lane compatibility)', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     const res = await close(h, A, 'u-owner', 'S1', base());
-    expect(res.status).toBe(201);
-    expect((res.body as { denominationsRecorded?: boolean }).denominationsRecorded).toBe(false);
+    expect(res.status).toBe(202);
+    expect((res.body as Closed).flags).not.toContain('denominations_do_not_sum');
   });
 
   it('is idempotent per shift — a re-sent close does not record it twice on a different figure', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    expect((await close(h, A, 'u-owner', 'S1', base(), 'k1')).status).toBe(201);
+    expect((await close(h, A, 'u-owner', 'S1', base(), 'k1')).status).toBe(202);
     const again = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 999 }), 'k2');
     expect(again.status).toBe(200);
     expect((again.body as { alreadyClosed?: boolean }).alreadyClosed).toBe(true);
@@ -139,7 +157,9 @@ describe('a shift closes on a blind count, over/short valued and explained (M14-
 
     expect((await close(h, A, 'u-acct', 'S2', base())).status).toBe(403);
     expect((await overShort(h, A, 'u-acct')).status).toBe(403);
-    expect((await close(h, A, 'u-owner', 'S3', { tillId: 'T1', cashierId: 'c1', tradingDay: '2026-08-07' })).status).toBe(400); // no figures
+    const malformed = await close(h, A, 'u-owner', 'S3', { tillId: 'T1', cashierId: 'c1', tradingDay: '2026-08-07' }); // no figures
+    expect(malformed.status).toBe(400);
+    expect(codeOf(malformed)).toBe('not_readable_as_a_synced_shift_close');
 
     // Tenant B has no over/short of its own.
     await h.seedOwner(B, 'u-owner-b');
@@ -234,7 +254,7 @@ describe('a material short auto-opens an investigation, assigned to the store ma
     await h.provisionRole(A, 'u-sm', 'store_manager');
     // cashier-1 counted the drawer; ₹1,000 short (material).
     const res = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'short' }));
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(202);
     const inv = (res.body as CloseWithInvestigation).investigation!;
     expect(inv.opened).toBe(true);
     expect(inv.assignedTo).toBe('u-sm');
@@ -264,7 +284,7 @@ describe('a material short auto-opens an investigation, assigned to the store ma
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner'); // no store manager granted
     const res = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'short' }));
-    expect(res.status).toBe(201); // the close succeeds regardless
+    expect(res.status).toBe(202); // the close succeeds regardless
     const inv = (res.body as CloseWithInvestigation).investigation!;
     expect(inv.opened).toBe(false);
     expect(inv.blockedReason).toBe('no_eligible_investigator');
@@ -276,7 +296,7 @@ describe('a material short auto-opens an investigation, assigned to the store ma
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-sm', 'store_manager');
-    expect((await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'short' }), 'k1')).status).toBe(201);
+    expect((await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'short' }), 'k1')).status).toBe(202);
     // Re-sent close is a no-op (alreadyClosed) and does not re-run the auto-open.
     const again = await close(h, A, 'u-owner', 'S1', base({ countedCashMinor: 114_000, reasonCode: 'short' }), 'k2');
     expect((again.body as { alreadyClosed?: boolean }).alreadyClosed).toBe(true);

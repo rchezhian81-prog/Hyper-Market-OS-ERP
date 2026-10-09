@@ -1,7 +1,8 @@
 // API-05 Shift close — the cashier's blind cash count and over/short (M14-FR-02). The cashier counts
-// the drawer WITHOUT seeing the expected figure; this computes the expected cash and the variance,
-// requires a reason for a MATERIAL over/short, and records the close — raising a reconciliation
-// exception the cash office can see. The rule is the pure `assessShiftClose` in `packages/till`.
+// the drawer WITHOUT seeing the expected figure; the store box computes the expected cash and the variance,
+// requires a reason for a MATERIAL over/short, and records the close. Head office records the close the box
+// relays, re-runs the same pure `assessShiftClose` over it, and raises the reconciliation exception the cash
+// office sees. Since PF-08 (OB-27 "A") head office has no direct close of its own.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
@@ -115,108 +116,10 @@ const NUMS = ['openingFloatMinor', 'cashSalesMinor', 'pickupsMinor', 'cashRefund
 
 export function shiftRoutes(deps: ShiftDeps): readonly Route[] {
   return [
-    {
-      // Close a shift against the blind count. A material variance needs a reason; on success the
-      // close is recorded and, if material, flagged for reconciliation. Idempotent per shift.
-      api: 'API-05', method: 'POST', path: '/v1/shifts/:shiftId/close',
-      permission: 'till.shift.close', idempotent: true,
-      handler: async (ctx) => {
-        const shiftId = ctx.params['shiftId'] ?? '';
-        const already = await deps.closedShift(ctx.tenantId, shiftId);
-        if (already !== undefined) {
-          return { status: 200, body: { shiftId, closed: true, varianceMinor: already.varianceMinor, exceptionRaised: already.exceptionRaised, alreadyClosed: true } };
-        }
-
-        const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (typeof b['tillId'] !== 'string' || (b['tillId'] as string).trim() === ''
-          || typeof b['cashierId'] !== 'string' || (b['cashierId'] as string).trim() === ''
-          || typeof b['tradingDay'] !== 'string' || (b['tradingDay'] as string).trim() === ''
-          || !NUMS.every((k) => Number.isInteger(b[k]))) {
-          throw apiError(400, {
-            code: 'not_readable_as_a_shift_close',
-            whatHappened: 'Closing a shift needs a till, a cashier, a trading day, and whole opening float, cash sales, pickups, cash refunds, counted cash and a tolerance.',
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Nothing was closed. Send the till, cashier, day and the cash figures.',
-          });
-        }
-
-        // Optional denomination breakdown of the blind count. When present, every entry must read as a
-        // {denominationMinor, count} pair and the whole breakdown must SUM to the counted total — a
-        // breakdown that does not sum is an entry error caught here at the drawer, never a variance the
-        // cash office chases at audit.
-        let denominations: readonly DenominationCount[] | undefined;
-        if (b['denominations'] !== undefined) {
-          if (!Array.isArray(b['denominations'])
-            || !b['denominations'].every((d) => d !== null && typeof d === 'object'
-              && Number.isInteger((d as Record<string, unknown>)['denominationMinor'])
-              && Number.isInteger((d as Record<string, unknown>)['count']))) {
-            throw apiError(400, {
-              code: 'denominations_not_readable',
-              whatHappened: 'The denomination breakdown must be a list of notes/coins, each with a whole face value in paise and a whole count.',
-              wasItSaved: 'not_saved',
-              nextSafeAction: 'Nothing was closed. Send the breakdown as a list of {denominationMinor, count}, or leave it out to close on the total alone.',
-            });
-          }
-          const parsed = (b['denominations'] as readonly Record<string, unknown>[]).map((d) => ({
-            denominationMinor: d['denominationMinor'] as number, count: d['count'] as number,
-          }));
-          const check = checkDenominationCount({ denominations: parsed, countedCashMinor: b['countedCashMinor'] as number });
-          if (!check.ok) {
-            throw apiError(422, {
-              code: check.refusedBecause!,
-              whatHappened: check.detail,
-              wasItSaved: 'not_saved',
-              nextSafeAction: 'The drawer was NOT closed. Recount the notes and coins so the breakdown matches the counted total, then close again.',
-            });
-          }
-          denominations = parsed;
-        }
-
-        const input: ShiftCloseInput = {
-          openingFloatMinor: b['openingFloatMinor'] as number, cashSalesMinor: b['cashSalesMinor'] as number,
-          pickupsMinor: b['pickupsMinor'] as number, cashRefundsMinor: b['cashRefundsMinor'] as number,
-          countedCashMinor: b['countedCashMinor'] as number, toleranceMinor: b['toleranceMinor'] as number,
-          ...(typeof b['reasonCode'] === 'string' ? { reasonCode: b['reasonCode'] } : {}),
-        };
-        const result = assessShiftClose(input);
-        if (!result.ok) {
-          throw apiError(422, {
-            code: result.refusedBecause!,
-            whatHappened: result.detail,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'The drawer is not balanced within tolerance. Enter the reason for the over/short and close it again.',
-          });
-        }
-
-        const record: ClosedShiftRecord = {
-          shiftId, tillId: b['tillId'] as string, cashierId: b['cashierId'] as string, tradingDay: b['tradingDay'] as string,
-          expectedMinor: result.expectedMinor, countedMinor: result.countedMinor, varianceMinor: result.varianceMinor,
-          currency: typeof b['currency'] === 'string' ? b['currency'] as string : 'INR',
-          exceptionRaised: result.exceptionRaised, reasonCode: result.reasonCode,
-          ...(denominations !== undefined ? { denominations } : {}),
-          closedAt: deps.now(),
-        };
-        await deps.recordShiftClose(ctx.tenantId, record);
-
-        // A material SHORT auto-opens a loss-prevention investigation, assigned to the store manager
-        // (M15-FR-04). It never blocks the close — the shop keeps trading (P-01) — and its outcome
-        // (opened, or why not) is reported alongside so a gap is visible, not silent (P-08).
-        let investigation: ShortageInvestigationOutcome | undefined;
-        if (result.exceptionRaised && result.isShort && deps.openInvestigationOnShortage !== undefined) {
-          investigation = await deps.openInvestigationOnShortage(ctx.tenantId, record);
-        }
-
-        return {
-          status: 201,
-          body: {
-            shiftId, closed: true, expectedMinor: result.expectedMinor, countedMinor: result.countedMinor,
-            varianceMinor: result.varianceMinor, isOver: result.isOver, isShort: result.isShort,
-            exceptionRaised: result.exceptionRaised, denominationsRecorded: denominations !== undefined,
-            ...(investigation !== undefined ? { investigation } : {}),
-          },
-        };
-      },
-    },
+    // PF-08 · OB-27 "A" (9 Oct 2026): there is NO direct close here. A shift closes at the till, through the store box,
+    // which works out every figure but the count from its own logs and judges it; head office only RECORDS the close the
+    // box relays (below) and re-runs the rule over it. The retired direct route took every figure — float, sales, count,
+    // even the tolerance — from the caller, so a caller could invent a balanced drawer.
     {
       // A shift close that ALREADY HAPPENED at the till, relayed by the store box under the store's sync identity
       // (SP-4c · F10 · M14-FR-02 · §31 · §28). The box worked the figures out from its own logs and decided the close
