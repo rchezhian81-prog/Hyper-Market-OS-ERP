@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 944,
+  "testFiles": 945,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -451,7 +451,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 30,
+        "integration": 31,
         "realDb": 6,
         "browser": 3,
         "connected": 0,
@@ -476,6 +476,7 @@
           "tests/unit/write-guards.test.ts"
         ],
         "integration": [
+          "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/adjustment-requests.test.ts",
           "tests/integration/bin-counts-synced-route.test.ts",
           "tests/integration/concession-store-valuation.test.ts",
@@ -532,7 +533,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 12,
-        "integration": 21,
+        "integration": 22,
         "realDb": 3,
         "browser": 6,
         "connected": 0,
@@ -555,6 +556,7 @@
           "tests/unit/warehouse-transfers.test.ts"
         ],
         "integration": [
+          "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/bin-counts-synced-route.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/counts-synced-route.test.ts",
@@ -602,7 +604,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 19,
-        "integration": 16,
+        "integration": 17,
         "realDb": 1,
         "browser": 3,
         "connected": 0,
@@ -632,6 +634,7 @@
           "tests/unit/traceability.test.ts"
         ],
         "integration": [
+          "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/ai-inventory-agent.test.ts",
           "tests/integration/facilities-monitoring.test.ts",
           "tests/integration/fulfilment-packing.test.ts",

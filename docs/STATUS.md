@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 3 · SF-03 — a transfer sends only what the named batch holds (9 October 2026)
+
+- **The wave:** Wave 3, second of six fixes. SF-02 merged as #730.
+- **The audit's finding:** batch A held 10 and batch B 90 of one product at the warehouse. A transfer of 50 of batch A
+  was dispatched: the check used the product's total (100), not the batch's own 10.
+- **What changed:**
+  - The stock a transfer may take is now ONE figure from the stock ledger, per product, place AND batch:
+    - the named batch's own quantity at the source; a batch the source never held has none;
+    - an expired batch is refused (as a held or recalled batch already was);
+    - stock already promised to customer orders at the source is not free to send;
+    - two lines on the same batch are added together (60 + 60 against 100 is 120 asked).
+  - A transfer line in a different unit than the product master's (a "CASE" of what is counted in "EA") is refused by
+    name, at proposal and again at dispatch; nothing is recorded.
+  - The stock ledger's saved summaries (snapshots) now keep the per-batch figures too. An older snapshot without them is
+    not trusted for batches; the ledger is read from the start until the next snapshot is taken.
+- **Proved:**
+  - Integration (6, the real API in memory): the audit's case; an unknown batch; an expired batch; two lines on one
+    batch; 70 promised out of 100; the wrong unit.
+  - The per-batch figure (3): the projection; the same figure before and after a snapshot; an old snapshot not trusted.
+  - The new tests fail on the code before the fix (9 of 9). The 173 existing warehouse, transfer, indent and stock
+    tests pass, including the real-PostgreSQL transfer race. One unit test's expected wording changed: a refusal now
+    names the batch ("only 10 of p-rice batch B1").
+- **Not yet / honest limits:** SF-05, SF-07/PA-07, SF-08, PF-14. Staff UAT (SP-10) pending.
+- **Behaviour change the owner should know:** a transfer of a named batch can now be refused where it used to go
+  through — because that batch does not hold enough, is expired, or the stock is promised to customers.
+- **Next:** SF-05 — a write-off's value from the stored cost, never the person's figure.
+
 ## Wave 3 · SF-02 — each delivery is judged against what is left on its order (9 October 2026)
 
 - **The wave:** Wave 3 of the repair plan, "the stock path from delivery to shelf". SF-02 is the first of its six fixes.
@@ -33,7 +60,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 - **Not yet / honest limits:** the rest of Wave 3 (SF-03, SF-05, SF-07/PA-07, SF-08, PF-14). Staff UAT (SP-10) pending.
 - **Behaviour change the owner should know:** a delivery bigger than what is left on the order now waits for a second
   person for the extra, even when the earlier deliveries were short.
-- **Next:** SF-03 — a transfer's availability from the one batch-aware stock figure.
+- **Next:** SF-03 — a transfer's availability from the one batch-aware stock figure (done — see the SF-03 entry above).
 
 ## Fix — the sign-in page's browser test no longer fails at random (8 October 2026)
 

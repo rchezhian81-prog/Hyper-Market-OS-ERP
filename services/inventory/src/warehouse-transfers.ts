@@ -76,7 +76,28 @@ export interface TransfersDeps {
    * belongs to, or a location that has ever held stock? A transfer to a place nobody reads strands the stock (P-08).
    */
   readonly knownLocation: (tenantId: string, locationId: string) => Promise<boolean> | boolean;
+  /**
+   * SF-03 — the unit the PRODUCT MASTER counts this product in, or `undefined` when the master does not know the product.
+   * A line in another unit (a "case" of what is stocked in "each") would move the wrong quantity, so it is refused.
+   */
+  readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
   readonly now: () => string;
+}
+
+/** SF-03 — each line's unit against the product master's; the first that disagrees is refused by name (422). */
+async function assertUnitsAreTheProducts(deps: TransfersDeps, tenantId: string, lines: readonly TransferLine[]): Promise<void> {
+  if (deps.productUom === undefined) return;
+  for (const line of lines) {
+    const uom = await deps.productUom(tenantId, line.productId);
+    if (uom !== undefined && uom !== line.uom) {
+      throw apiError(422, {
+        code: 'unit_not_the_products',
+        whatHappened: `${line.productId} is counted in "${uom}" on the product master, but this transfer line says "${line.uom}" — the quantity would mean something different at each end.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: `Send the line in "${uom}". Nothing was recorded or moved.`,
+      });
+    }
+  }
 }
 
 /**
@@ -159,6 +180,7 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
             });
           }
         }
+        await assertUnitsAreTheProducts(deps, ctx.tenantId, lines);
         const transfer: Transfer = { transferId, fromLocationId: b.fromLocationId, toLocationId: b.toLocationId, lines, state: 'proposed', requestedBy: ctx.userId };
         await deps.recordProposed(ctx.tenantId, transfer);
         return { status: 201, body: { transferId, state: 'proposed', fromLocationId: transfer.fromLocationId, toLocationId: transfer.toLocationId, lines: lines.length } };
@@ -183,6 +205,8 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         }
         const transfer = await deps.transfer(ctx.tenantId, transferId);
         if (transfer === undefined) throw notFound(`transfer ${transferId}`);
+        // SF-03: a transfer proposed before the unit check is checked again before anything moves.
+        await assertUnitsAreTheProducts(deps, ctx.tenantId, transfer.lines);
         const approval: TransferApproval = { subjectRef: transferId, status: 'approved', decidedBy: ctx.userId };
         // The guard version first, then the stock it protects (Wave 2a · SF-04).
         const expectedVersion = deps.stockVersion === undefined ? undefined : await Promise.resolve(deps.stockVersion(ctx.tenantId, transfer.fromLocationId));
