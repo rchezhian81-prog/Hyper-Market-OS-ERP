@@ -173,6 +173,19 @@ export interface QualityHold {
   readonly heldBy: string;
   readonly releasedAt?: string;
   readonly releasedBy?: string;
+  /** Set when the hold was placed by an equipment assessment (PA-07) rather than by a person: which
+   *  room or fridge, which excursion, and the readings that prove it — kept with the hold for audit. */
+  readonly equipment?: EquipmentHoldEvidence;
+}
+
+export interface EquipmentHoldEvidence {
+  readonly assetId: string;
+  /** One excursion of one piece of equipment — the same excursion never holds a batch twice. */
+  readonly episodeId: string;
+  readonly state: 'breach' | 'no_data' | 'stale';
+  readonly peakTenthsC: number | null;
+  readonly minutesOutOfRange: number;
+  readonly readingIds: readonly string[];
 }
 
 export type ReleaseRefusal =

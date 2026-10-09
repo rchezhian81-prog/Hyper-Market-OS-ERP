@@ -38,6 +38,40 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - Staff UAT (SP-10) pending.
 - **Next:** PA-06/DF-3 — head office builds and delivers the store pack to every store computer (the last Wave 4 item).
 
+## Wave 3 · PA-07 — a fridge or cold-room breakdown puts the stock inside on hold (9 October 2026)
+
+- **The audit's finding (HIGH):** when a cold room went out of range, the monitoring screen said "hold the stock" — and
+  nothing held it. The batches inside stayed sellable and could be sent to a store.
+- **What changed:**
+  - **Recording a temperature reading that shows a breach** (out of range for longer than the room's allowed grace, e.g.
+    30 minutes) now **puts every batch recorded as being in that room on quality hold** — in the same save as the reading.
+  - Each hold says which room, the peak temperature, how long, and **which readings prove it** — kept for an inspector.
+  - A new **"hold check"** for a room does the same when no new reading has arrived: a breach still running, or a probe that
+    has **gone quiet** (no reading for longer than expected) or **never reported**. Silence is treated as a fault, as the
+    monitoring rules already said.
+  - **Once per breach:** a later reading of the same breach adds nothing; if QC releases a batch, the same breach does not
+    put it back on hold; a **new** breach after the room recovered holds it again.
+  - Held stock is refused by dispatch and transfers until **authorised QC** (a second person, permission
+    "quality release") releases it — the existing quality-hold register.
+- **Proved:**
+  - Connected (real API, real permissions; 7 tests): a breaching reading holds both batches with the evidence; a held batch
+    cannot be dispatched until QC releases it; one breach holds once, a release stands, a new breach holds again; inside the
+    grace nothing is held; a quiet probe and a never-reported room are held; a room in range holds nothing; a cashier cannot
+    run the check; an unknown room is a 404.
+  - Unit (4 tests): the rule judges the current breach, not the room's whole history; evidence and naming; grace; silence.
+  - **Mutation checks:** saving the reading without its holds fails 4 of 7; judging the whole history fails 2 unit tests.
+  - Full `pnpm run check` green, with the real database connected.
+- **Not yet / honest limits:**
+  - **What is "in the room"** is the list a person records for that room; stock is not yet tracked to a room by the
+    warehouse bins.
+  - **Nothing runs the hold check on a timer yet** — a person on the facilities round (or a later schedule) runs it.
+  - **The till:** a held batch being refused at the till, offline, is **SF-08** (next) — the same work as recalls.
+  - M10 also says a breach "raises an incident"; the hold carries the evidence, but no separate incident record is opened.
+  - Staff UAT (SP-10) pending.
+- **Behaviour change the owner should know:** a breach now holds stock automatically. Releasing it needs the QC
+  permission; the person releasing should check the stock first.
+- **Next:** SF-08 — recalled and held batches blocked at the till, even with no internet.
+
 ## Wave 4 · SF-06-a — an invoice file becomes real supplier invoices, and can be undone (9 October 2026)
 
 - **The audit's finding:** a manager loaded one product row and the import said "committed, 1 row applied" — but the
