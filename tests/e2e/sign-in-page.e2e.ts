@@ -47,6 +47,8 @@ interface Stand {
   readonly advance: (ms: number) => void;
   /** Hold every sign-in POST until the returned release is called — the "slow server", without racing a clock. */
   readonly holdPosts: () => () => void;
+  /** How many sign-in POSTs have arrived and are being held right now. */
+  readonly heldCount: () => number;
   readonly stop: () => Promise<void>;
 }
 
@@ -91,6 +93,7 @@ function stand(): Promise<Stand> {
           held = [];
           return () => { const waiting = held ?? []; held = null; for (const go of waiting) go(); };
         },
+        heldCount: () => held?.length ?? 0,
         stop: () => new Promise((done) => { server.close(() => { done(); }); server.closeAllConnections(); }),
       });
     });
@@ -270,12 +273,29 @@ describe.skipIf(!HAVE_BROWSER)('the sign-in page, in a real browser (UX-3 · OB-
       const release = s.holdPosts();
       await page.fill('#login', 'ravi.cashier');
       await page.fill('#password', PASSWORD);
-      const landed = page.waitForNavigation({ waitUntil: 'load' });
-      await page.click('#sl-submit', { noWaitAfter: true });
-      expect(await page.getAttribute('#sl-submit', 'aria-busy')).toBe('true');
-      expect(await page.textContent('#sl-submit-text')).toBe(LOGIN_COPY.en.signingIn);
-      // The second click is dispatched inside the page: a tester's finger does not wait for the navigation the way the automation's click would.
-      await page.evaluate('document.getElementById("sl-submit").click()');
+      // Once Chromium has the sign-in POST in flight it stops answering any DevTools call into the old page (even a bare
+      // evaluate) until the answer comes — so a test that clicks and THEN reads the page races the browser, and hangs when
+      // the POST wins with its answer held. Hence: the first click and the read of the busy button happen in ONE script
+      // (nothing is sent until it ends); everything after it is watched at the server or done with real input.
+      const box = await page.locator('#sl-submit').boundingBox();
+      expect(box).not.toBeNull();
+      const [busy, label] = await page.evaluate(`(() => {
+        document.getElementById('sl-submit').click();
+        return [document.getElementById('sl-submit').getAttribute('aria-busy'), document.getElementById('sl-submit-text').textContent];
+      })()`) as [string | null, string | null];
+      expect(busy).toBe('true');
+      expect(label).toBe(LOGIN_COPY.en.signingIn);
+      // The first submit is now provably pending: its POST has reached the server and is held there.
+      await expect.poll(() => s.heldCount(), { timeout: 10_000 }).toBe(1);
+      // The second click is a real one — a finger on the busy button (the input path still works while the POST is held).
+      // Without the page's pending guard it sends a second POST within milliseconds; with it, nothing arrives.
+      await page.mouse.click((box?.x ?? 0) + (box?.width ?? 0) / 2, (box?.y ?? 0) + (box?.height ?? 0) / 2);
+      for (const until = Date.now() + 500; Date.now() < until;) {
+        expect(s.heldCount(), 'the second click sent nothing').toBe(1);
+        await new Promise((r) => { setTimeout(r, 10); });
+      }
+      expect(s.posts()).toBe(1); // answered so far: only the wrong password
+      const landed = page.waitForURL(`${s.base}/store/manager/`, { waitUntil: 'load' });
       release();
       await landed;
       expect(s.posts()).toBe(2); // the wrong one and the right one — the second click sent nothing

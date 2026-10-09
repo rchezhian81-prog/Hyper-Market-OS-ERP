@@ -35,6 +35,26 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   person for the extra, even when the earlier deliveries were short.
 - **Next:** SF-03 — a transfer's availability from the one batch-aware stock figure.
 
+## Fix — the sign-in page's browser test no longer fails at random (8 October 2026)
+
+- **The problem:** the browser test of the sign-in page (UX-3 · OB-18) failed about 4 runs in 10 at its "second click
+  while the first sign-in is still waiting" step: `Test timed out in 30000ms` plus `page.waitForNavigation:
+  net::ERR_ABORTED`. It predates the current work (nothing there had changed since #710).
+- **The cause — the test, not the page:** traced on this machine, every failing run sent **exactly one** sign-in to the
+  server; the page's "already signing in" guard worked every time. The hang was the test's own: once the browser has
+  sent the sign-in, Chromium stops answering the test's questions to the old page (even a bare DevTools evaluate) until
+  the answer arrives — and the test was holding that answer until after its question. The `ERR_ABORTED` was only the
+  browser being shut at the time limit.
+- **What changed (test only; the page is unchanged):** the first click and the reading of the busy button happen in one
+  step inside the page; the test then waits at the server until the one sign-in is held; the second click is a real
+  mouse click on the busy button; for half a second nothing more may arrive; then the answer is released and the test
+  waits for the workspace address.
+- **Proved:** 20 runs in a row, all passing (before: 4 of 10 failed). With the page's guard deliberately removed, the
+  test fails every time ("the second click sent nothing: expected 2 to be 1") — so it still guards against a double
+  sign-in. The full `pnpm run check` passes.
+- **Behaviour change the owner should know:** none. The sign-in page itself is unchanged.
+- **Next:** unchanged — by the plan, Wave 3: the stock path from delivery to shelf.
+
 ## OB-15-d-3 — the shops and their features, on the server; the wall between shops stays (8 October 2026)
 
 - **The block:** OB-15 ("A 1"; ADR-0019), part 8.
