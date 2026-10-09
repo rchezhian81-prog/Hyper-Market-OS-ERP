@@ -139,10 +139,16 @@ export function dispatchTransfer(input: {
     const sellable = lots
       .filter((l) => l.state === 'on_hand')
       .reduce((sum, l) => sum + l.quantityMinor, 0);
-    if (sellable < line.quantityMinor) {
+    // SF-03: every line drawing on the SAME product and batch draws on the same stock — two lines of 60 against 100 are
+    // 120 asked, never two separate 60s that each fit.
+    const asked = transfer.lines
+      .filter((l) => l.productId === line.productId && l.batchId === line.batchId)
+      .reduce((sum, l) => sum + l.quantityMinor, 0);
+    if (sellable < asked) {
+      const what = line.batchId === null ? line.productId : `${line.productId} batch ${line.batchId}`;
       throw new TransferRefusedError(
         transfer.transferId,
-        `only ${sellable} of ${line.productId} available to send, not ${line.quantityMinor}`,
+        `only ${sellable} of ${what} available to send, not ${asked}`,
       );
     }
   }

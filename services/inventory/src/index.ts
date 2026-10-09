@@ -151,6 +151,37 @@ export function project(
     }));
 }
 
+/**
+ * SF-03 — on-hand per product, location AND batch, from the same movement ledger as `project` (one truth, finer grain).
+ * `batchId` is null for stock moved without a batch. The batch's expiry is the one its receipt captured. A transfer of a
+ * named batch is measured against THAT batch here — never the product's total across every batch.
+ */
+export interface BatchBalance {
+  readonly productId: string;
+  readonly locationId: string;
+  readonly batchId: string | null;
+  readonly onHandMinor: number;
+  /** YYYY-MM-DD, from the batch's receipt; absent when none was captured. */
+  readonly expiry?: string;
+}
+
+export function projectBatches(movements: readonly Movement[], opening: readonly BatchBalance[] = []): readonly BatchBalance[] {
+  const keyOf = (productId: string, locationId: string, batchId: string | null): string => `${productId}\u001f${locationId}\u001f${batchId ?? ''}`;
+  const byKey = new Map<string, { productId: string; locationId: string; batchId: string | null; qty: number; expiry?: string }>();
+  for (const b of opening) byKey.set(keyOf(b.productId, b.locationId, b.batchId), { productId: b.productId, locationId: b.locationId, batchId: b.batchId, qty: b.onHandMinor, ...(b.expiry === undefined ? {} : { expiry: b.expiry }) });
+  for (const m of movements) {
+    const batchId = m.batchId ?? null;
+    const key = keyOf(m.productId, m.locationId, batchId);
+    const acc = byKey.get(key) ?? { productId: m.productId, locationId: m.locationId, batchId, qty: 0 };
+    acc.qty += m.quantityMinor * EFFECT_ON_HAND[m.kind];
+    if (m.expiry !== undefined && acc.expiry === undefined) acc.expiry = m.expiry;
+    byKey.set(key, acc);
+  }
+  return [...byKey.values()]
+    .sort((a, b) => (a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : a.locationId < b.locationId ? -1 : a.locationId > b.locationId ? 1 : (a.batchId ?? '') < (b.batchId ?? '') ? -1 : 1))
+    .map((a) => ({ productId: a.productId, locationId: a.locationId, batchId: a.batchId, onHandMinor: a.qty, ...(a.expiry === undefined ? {} : { expiry: a.expiry }) }));
+}
+
 export type MovementRefusal = 'adjustment_without_a_reason' | 'adjustment_not_approved' | 'quantity_not_positive' | 'ownership_without_an_owner';
 
 export interface MovementCheck {
@@ -232,6 +263,8 @@ export interface InventoryDeps {
    * still owns *how* to project (`project` above); the adapter owns *from where*.
    */
   readonly availability: (tenantId: string, productId?: string) => Promise<readonly Availability[]> | readonly Availability[];
+  /** SF-03 — on-hand per batch, from the same ledger (optional: a deployment without it reads no batch figure). */
+  readonly batches?: (tenantId: string, productId?: string) => Promise<readonly BatchBalance[]> | readonly BatchBalance[];
   /**
    * Stock valued at weighted-average cost (M08-FR-04) — projected from the same movement ledger as
    * on-hand, never a stored figure. Returns per product/location the value, the average unit cost,

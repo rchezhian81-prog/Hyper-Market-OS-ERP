@@ -87,7 +87,7 @@ import type { Bin, BinContents } from '../../../packages/warehouse/src/movements
 import { binKey } from '../../../packages/warehouse/src/movements';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
-import type { Transfer, TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import type { AvailableLot, Transfer, TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
 import type { ProductionDeps, StoredRun, StoredRelease } from '../../inventory/src/production';
@@ -168,8 +168,8 @@ import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } from '../../../packages/audit/src/index';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
-import { project, EFFECT_ON_HAND } from '../../inventory/src/index';
-import type { Movement, Availability, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
+import { project, projectBatches, EFFECT_ON_HAND } from '../../inventory/src/index';
+import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
@@ -5003,18 +5003,52 @@ export function transfersAdapter(input: {
     // SP-4 (F07): what head office itself holds at the source for each line — the M08 on-hand for the product there,
     // the line's batch marked recalled from the recall register or quarantined from the quality-hold register. The
     // engine then refuses an over-draw and never sends a problem to another branch. Never the body's word.
+    //
+    // SF-03: ONE batch-, state- and reservation-aware figure. A named batch is measured against THAT batch's on-hand at the
+    // source (never the product's total across every batch — the audit sent 50 of batch A when A held 10); a batch the
+    // source never held is 0; an expired batch, a batch on quality hold and a recalled batch are refused by state; and
+    // what the source has promised to customers is not free to send — the product's free stock (on-hand less the holds
+    // that still stand) is shared out across the transfer's lines in order, so two batches cannot both spend it.
     availableAt: async (tenantId, fromLocationId, lines) => {
       const registry = await recalls.registry(tenantId);
-      const lots = [];
+      const today = input.now().slice(0, 10);
+      const batches = (await inv.batches!(tenantId)).filter((b) => b.locationId === fromLocationId);
+      const reserved = new Map<string, number>();
+      for (const r of await outstandingReservationsAt(input.store, tenantId, fromLocationId, input.now())) {
+        reserved.set(r.productId, (reserved.get(r.productId) ?? 0) + r.quantityMinor);
+      }
+      const freeOf = new Map<string, number>();
+      for (const b of batches) freeOf.set(b.productId, (freeOf.get(b.productId) ?? 0) + b.onHandMinor);
+      for (const [productId, n] of reserved) freeOf.set(productId, (freeOf.get(productId) ?? 0) - n);
+      const lots: AvailableLot[] = [];
+      const seen = new Set<string>();
       for (const line of lines) {
-        const rows = await inv.availability(tenantId, line.productId);
-        const onHand = rows.filter((r) => r.locationId === fromLocationId).reduce((s, r) => s + r.onHandMinor, 0);
+        const key = `${line.productId}\u001f${line.batchId ?? ''}`;
+        if (seen.has(key)) continue; // one lot per product and batch; the engine adds up every line that draws on it
+        seen.add(key);
+        const batch = batches.find((b) => b.productId === line.productId && b.batchId === line.batchId);
+        const onHand = Math.max(0, batch?.onHandMinor ?? 0);
+        const free = Math.max(0, freeOf.get(line.productId) ?? 0);
+        const quantityMinor = Math.min(onHand, free);
+        const asked = lines.filter((l) => l.productId === line.productId && l.batchId === line.batchId).reduce((n, l) => n + l.quantityMinor, 0);
+        freeOf.set(line.productId, free - Math.min(quantityMinor, asked));
         const hold = line.batchId === null ? undefined : await holds.hold(tenantId, line.batchId);
         const quarantined = hold !== undefined && hold.status !== 'passed' && hold.status !== 'released';
+        const isExpired = batch?.expiry !== undefined && batch.expiry < today;
         const recalled = line.batchId !== null && registry.isRecalled(line.batchId);
-        lots.push({ productId: line.productId, batchId: line.batchId, quantityMinor: Math.max(0, onHand), state: quarantined ? 'quarantine' as const : 'on_hand' as const, ...(recalled ? { recalled: true } : {}) });
+        lots.push({
+          productId: line.productId, batchId: line.batchId, quantityMinor,
+          state: quarantined ? 'quarantine' : isExpired ? 'expired' : 'on_hand',
+          ...(recalled ? { recalled: true } : {}),
+        });
       }
       return lots;
+    },
+
+    // SF-03: the unit the published product master counts the product in.
+    productUom: async (tenantId, productId) => {
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      return pack?.snapshot.products.find((p) => p.productId === productId)?.baseUom;
     },
 
     recordProposed: async (tenantId, transfer) => {
@@ -5651,6 +5685,8 @@ export const SNAPSHOT_EVERY = 2_000;
 interface StockSnapshot {
   readonly asOfSeq: number;
   readonly balances: readonly Availability[];
+  /** SF-03 — the same balances per batch. Absent on snapshots taken before SF-03: the batch read then folds from the start. */
+  readonly batchBalances?: readonly BatchBalance[];
 }
 
 const RECEIPT_POLICY_STREAM = streamName(STREAM.inventory, 'receipt-policy');
@@ -5843,6 +5879,7 @@ export function inventoryAdapter(input: {
     readonly opening: readonly Availability[];
     readonly tail: readonly Movement[];
     readonly tailSeq: number;
+    readonly taken: StockSnapshot | undefined;
   }> => {
     const snapshot = await input.store.latestOfType(tenantId, STREAM.inventory, 'InventorySnapshotTaken');
     const taken = snapshot === undefined ? undefined : payloadOf<StockSnapshot>(snapshot);
@@ -5856,7 +5893,20 @@ export function inventoryAdapter(input: {
       opening: taken?.balances ?? [],
       tail: tail.map((e) => payloadOf<Movement>(e)),
       tailSeq: tail.length === 0 ? (taken?.asOfSeq ?? 0) : tail[tail.length - 1]!.seq,
+      taken,
     };
+  };
+
+  /**
+   * SF-03 — per-batch on-hand, from the SAME snapshot and tail as the product figure. A snapshot taken before SF-03 has no
+   * batch balances: then (and only then) the batch read folds the ledger from the start — correct, slower, and gone once
+   * the next snapshot is taken (it carries them).
+   */
+  const batchesFrom = async (tenantId: string, b: Awaited<ReturnType<typeof basis>>): Promise<readonly BatchBalance[]> => {
+    if (b.taken === undefined || b.taken.batchBalances !== undefined) return projectBatches(b.tail, b.taken?.batchBalances ?? []);
+    // Folded only up to the same sequence the tail ends at, so a snapshot built from it covers exactly what it says.
+    const all = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
+    return projectBatches(all.filter((e) => e.seq <= b.tailSeq).map((e) => payloadOf<Movement>(e)));
   };
 
   return {
@@ -5871,6 +5921,11 @@ export function inventoryAdapter(input: {
     availability: async (tenantId, productId) => {
       const { opening, tail } = await basis(tenantId);
       const rows = project(tail, input.now(), opening);
+      return productId === undefined ? rows : rows.filter((r) => r.productId === productId);
+    },
+
+    batches: async (tenantId, productId) => {
+      const rows = await batchesFrom(tenantId, await basis(tenantId));
       return productId === undefined ? rows : rows.filter((r) => r.productId === productId);
     },
 
@@ -6089,7 +6144,8 @@ export function inventoryAdapter(input: {
       // Snapshot when the tail gets long. Deliberately on the WRITE path: a movement arriving from
       // a handheld can afford an occasional extra fold, whereas an availability lookup is somebody
       // standing in an aisle or a customer watching a page. The cost lands where there is slack.
-      const { opening, tail, tailSeq } = await basis(tenantId);
+      const b = await basis(tenantId);
+      const { opening, tail, tailSeq } = b;
       if (tail.length >= every) {
         await input.store.append(tenantId, STREAM.inventory, makeEvent({
           id: `stock-snap-${tenantId}-${tailSeq}`,
@@ -6102,6 +6158,7 @@ export function inventoryAdapter(input: {
           payload: {
             asOfSeq: tailSeq,
             balances: project(tail, input.now(), opening),
+            batchBalances: await batchesFrom(tenantId, b),
           } satisfies StockSnapshot,
         }));
       }
@@ -7787,12 +7844,7 @@ export function ordersAdapter(input: {
      * (a cancelled order, M18-FR-04) is stock back on the shelf too — a cancel that forgot to
      * subtract here is the commonest phantom out-of-stock, so the release ledger is folded in.
      */
-    outstanding: async (tenantId, locationId) => {
-      const held = await allOf<Reservation>(input.store, tenantId, forLocation(locationId), 'ReservationHeld');
-      const released = await releasedIds(input.store, tenantId, locationId);
-      const lapsed = new Set(expired(held, input.now()).map((r) => r.reservationId));
-      return held.filter((r) => !released.has(r.reservationId) && !lapsed.has(r.reservationId));
-    },
+    outstanding: (tenantId, locationId) => outstandingReservationsAt(input.store, tenantId, locationId, input.now()),
 
     // The location's promise guard (Wave 2a · FUL-02): one version per location, read before the stock and the holds.
     reservationVersion: (tenantId, locationId) => input.store.guardVersion(tenantId, reservationGuardKey(locationId)),
@@ -8034,6 +8086,17 @@ export function ordersAdapter(input: {
 }
 
 /** The set of reservation ids released (cancelled) at a location — folded from the release ledger. */
+/**
+ * The holds at a location that still stand — held, not lapsed and not released (M18-FR-04). ONE reading for the order
+ * promise and for a transfer out of the same stock (SF-03): stock promised to a customer is not stock to send away.
+ */
+async function outstandingReservationsAt(store: EventStore, tenantId: string, locationId: string, now: string): Promise<readonly Reservation[]> {
+  const held = await allOf<Reservation>(store, tenantId, forLocation(locationId), 'ReservationHeld');
+  const released = await releasedIds(store, tenantId, locationId);
+  const lapsed = new Set(expired(held, now).map((r) => r.reservationId));
+  return held.filter((r) => !released.has(r.reservationId) && !lapsed.has(r.reservationId));
+}
+
 async function releasedIds(
   store: EventStore, tenantId: string, locationId: string,
 ): Promise<ReadonlySet<string>> {

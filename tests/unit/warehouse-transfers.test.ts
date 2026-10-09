@@ -93,7 +93,7 @@ describe('dispatch — in transit is visible and deliberately not sellable', () 
         available: [{ ...AVAILABLE[0]!, quantityMinor: 10 }],
         at: '2026-08-06T08:00:00Z',
       }),
-    ).toThrow(/only 10 of p-rice available/);
+    ).toThrow(/only 10 of p-rice batch B1 available/);
     expect(() =>
       dispatchTransfer({
         transfer: { ...TRANSFER, toLocationId: 'warehouse' },
