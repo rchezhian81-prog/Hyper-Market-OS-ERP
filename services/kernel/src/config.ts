@@ -214,6 +214,13 @@ export const STORE_EDGE_CONFIG: readonly Spec[] = [
    */
   { key: 'EDGE_LANE_ID', optional: true },
   /**
+   * PA-06 = DF-3-a (OB-25 "A"): where this box takes its store setup from. `head-office` makes it pull its signed setup from
+   * head office for EDGE_STORE_ID (the pack file is then only a first-boot fallback); unset keeps the pack file.
+   */
+  { key: 'EDGE_STORE_PACK_SOURCE', optional: true },
+  /** PA-06 = DF-3-a: which store this box IS, when it takes its setup from head office. */
+  { key: 'EDGE_STORE_ID', optional: true },
+  /**
    * The loopback port the six screens are served from. Optional for the same reason the lane port
    * is: a till does not need to serve the owner's brief, and not opening a socket beats opening
    * one nobody uses.

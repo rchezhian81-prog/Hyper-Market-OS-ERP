@@ -37,6 +37,10 @@ import { SyncAgent } from '../../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
 import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
+import { httpStorePackSource, pullStorePack, type StorePackPullOutcome, type StorePackPullStatus } from '../../../edge/sync-agent/src/store-pack-feed';
+import { readHeldStorePack, writeHeldStorePack, packPayloadOf } from './store-pack-held';
+import type { StorePackEnvelope } from '../../../services/platform/src/store-packs';
+import type { StoreSetupStatus } from './sync-status';
 import {
   httpMigrationFeedSource, pullMigrationFeed,
   type MigrationFeedPullOutcome, type MigrationFeedPullStatus, type MigrationFeedReceiver,
@@ -343,6 +347,10 @@ export interface EdgeProcess {
   readonly refreshIndentsFeed: (() => Promise<IndentsFeedPullOutcome>) | null;
   /** HA-1: pull head office's open wave / route assignments for this store now. Null without a cloud or a store id. */
   readonly refreshAssignmentsFeed: (() => Promise<AssignmentsFeedPullOutcome>) | null;
+  /** PA-06 = DF-3-a: pull this store's setup from head office now. Null unless the box is set to take it from head office. */
+  readonly refreshStorePack: (() => Promise<StorePackPullOutcome>) | null;
+  /** Where this box's store setup came from, which version, and whether it is out of date (P-08). */
+  readonly storeSetup: () => StoreSetupStatus;
   /**
    * Run exactly one drain-and-settle of both queues (sales then refunds), returning what moved.
    * Null when no cloud is configured — there is nothing to drain to. The poll loop calls the same
@@ -563,6 +571,30 @@ export async function startEdge(
   } else {
     say('no store pack is configured, so the screens will be told this box knows nothing yet.');
   }
+
+  // PA-06 = DF-3-a (OB-25 "A"): the store's setup from HEAD OFFICE — signed, for this shop and this store, always current.
+  // Switched on per box (EDGE_STORE_PACK_SOURCE=head-office + EDGE_STORE_ID). The last setup head office sent is held on
+  // disk and checked before it is trusted; once one is held it replaces the pack file entirely (one truth, P-02). Until the
+  // first arrives, the pack file (if any) is used — and said.
+  const storePackSourceSetting = (settings['EDGE_STORE_PACK_SOURCE'] ?? '').trim();
+  const headOfficeStoreId = storePackSourceSetting === 'head-office' ? ((settings['EDGE_STORE_ID'] ?? '').trim() || undefined) : undefined;
+  if (storePackSourceSetting === 'head-office' && headOfficeStoreId === undefined) {
+    say('EDGE_STORE_PACK_SOURCE is head-office but no EDGE_STORE_ID is set — this box cannot ask head office for its setup, so it uses the pack file.');
+  }
+  let heldStorePack: StorePackEnvelope | undefined;
+  if (headOfficeStoreId !== undefined) {
+    heldStorePack = await readHeldStorePack(settings['EDGE_DATA_DIR']!, signer, tenantId, headOfficeStoreId);
+    if (heldStorePack !== undefined) {
+      pack = readPack(packPayloadOf(heldStorePack), heldStorePack.issuedAt);
+      say(`store setup ${heldStorePack.version} from head office (issued ${heldStorePack.issuedAt}) restored from disk${Date.parse(heldStorePack.expiresAt) <= Date.now() ? ' — it is OUT OF DATE: the till keeps trading on it until head office is reached' : ''}.`);
+    } else {
+      say(`no store setup from head office is held yet for store ${headOfficeStoreId} — ${packPath !== undefined ? 'the pack file is used until the first one arrives' : 'the screens are told this box knows nothing yet'}.`);
+    }
+  }
+  /** What the screens and the badge say about where this box's setup came from (P-08). */
+  const storeSetupStatus = (): StoreSetupStatus => (heldStorePack !== undefined
+    ? { source: 'head-office', version: heldStorePack.version, issuedAt: heldStorePack.issuedAt, expiresAt: heldStorePack.expiresAt, expired: Date.parse(heldStorePack.expiresAt) <= Date.now() }
+    : { source: packPath !== undefined ? 'file' : 'none', version: pack.version, issuedAt: null, expiresAt: null, expired: false });
 
   // Which store this box IS, as its store pack names it — stamped on every sale that leaves here as the stock
   // location (M08-FR-01, Stage D slice 2), for a sale rung live and for one re-queued below on restart. Read live:
@@ -1512,7 +1544,7 @@ export async function startEdge(
     syncStatusRelay.current = () => laneSyncStatus({ configured: false, queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
     return {
       log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, tillCashLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox, node, lane, screens, devices, enrolments, syncStatus,
-      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, syncOnce: null,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, refreshStorePack: null, storeSetup: storeSetupStatus, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -1753,6 +1785,41 @@ export async function startEdge(
     return outcome;
   };
 
+  // PA-06 = DF-3-a: this store's setup from head office rides the same loop, FIRST — the other feeds are laid over it. A
+  // verified, newer setup is written to disk atomically (the one it replaces kept as the previous copy) and then becomes the
+  // pack, with every held feed laid back over it. Anything else keeps the setup this box has (P-01) and is said once.
+  const withHeldFeeds = (base: StorePack): StorePack => {
+    let p = base;
+    if (heldFeed !== undefined) p = withMigrationFeed(p, heldFeed.feed, heldFeed.receivedAt);
+    if (heldIndents !== undefined) p = withIndentsFeed(p, heldIndents.feed, heldIndents.receivedAt);
+    if (heldAssignments !== undefined) p = withAssignmentsFeed(p, heldAssignments.feed, heldAssignments.receivedAt);
+    if (heldTemplates !== undefined) p = withPublishedTemplates(p, heldTemplates.feed, heldTemplates.receivedAt);
+    return p;
+  };
+  const storePackSource = headOfficeStoreId === undefined ? null : httpStorePackSource({ baseUrl: cloudUrl, token: cloudToken, storeId: headOfficeStoreId, fetch: globalThis.fetch });
+  let lastStorePackStatus: StorePackPullStatus | undefined;
+  const refreshStorePack = storePackSource === null || headOfficeStoreId === undefined ? null : async (): Promise<StorePackPullOutcome> => {
+    const outcome = await pullStorePack({
+      source: storePackSource, signer, now: new Date().toISOString(),
+      receiver: {
+        tenantId, storeId: headOfficeStoreId,
+        held: () => heldStorePack,
+        take: async (env, receivedAt) => {
+          try {
+            await writeHeldStorePack(settings['EDGE_DATA_DIR']!, env);
+          } catch (e) {
+            say(`the new store setup could not be saved to disk (${e instanceof Error ? e.message : String(e)}). It is in use now and will be pulled again next time.`);
+          }
+          heldStorePack = env;
+          pack = withHeldFeeds(readPack(packPayloadOf(env), receivedAt));
+        },
+      },
+    });
+    if (outcome.status === 'updated' || (outcome.status !== 'unchanged' && outcome.status !== lastStorePackStatus)) say(outcome.staffMessage);
+    lastStorePackStatus = outcome.status;
+    return outcome;
+  };
+
   let stopping = false;
   let quietPasses = 0;
   let timer: NodeJS.Timeout | undefined;
@@ -1858,6 +1925,13 @@ export async function startEdge(
     // (hard rule #1). It never throws — an unreachable cloud is a normal answer that keeps the last
     // pack — but a disk error persisting a new pack is caught inside `refreshPack`, so this cannot
     // stop the loop either.
+    if (refreshStorePack !== null) {
+      try {
+        await refreshStorePack();
+      } catch (e) {
+        say(`store setup refresh failed: ${e instanceof Error ? e.message : String(e)}. This box keeps the setup it has.`);
+      }
+    }
     try {
       await refreshPack();
     } catch (e) {
@@ -1931,6 +2005,8 @@ export async function startEdge(
     refreshPublishedTemplates,
     refreshIndentsFeed,
     refreshAssignmentsFeed,
+    refreshStorePack,
+    storeSetup: storeSetupStatus,
     syncOnce: () => drainAndSettle(),
     syncStatus,
     stop: async () => {

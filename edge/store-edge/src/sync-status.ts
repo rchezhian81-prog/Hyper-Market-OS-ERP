@@ -30,6 +30,16 @@ export interface QueueHealth {
   readonly lastSuccessAt: string | null;
 }
 
+/** Where the box's store setup came from (PA-06 = DF-3-a · P-08): head office (signed, versioned), a file, or nothing. */
+export interface StoreSetupStatus {
+  readonly source: 'head-office' | 'file' | 'none';
+  readonly version: number;
+  readonly issuedAt: string | null;
+  readonly expiresAt: string | null;
+  /** Past its expiry: the till keeps trading on it (P-01) and the badge says so. */
+  readonly expired: boolean;
+}
+
 export interface LaneSyncStatus {
   readonly cloud: CloudLink;
   /** Everything on this box waiting to go: sales, refunds, completions, day closes, partner-counter lines. */

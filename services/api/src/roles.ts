@@ -39,6 +39,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'catalogue.merge.propose', 'catalogue.merge.approve',
       // SF-06-b (OB-24 "A"): the owner defines product categories; a manager proposes them for the owner's approval.
       'catalogue.category.propose', 'catalogue.category.approve',
+      // PA-06 = DF-3-a: read a store's setup file (the store computer's own identity holds it at its store).
+      'store.pack.read',
       'price.change.propose', 'price.change.approve',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.supplier.bank', 'purchase.commitment.read',
@@ -164,6 +166,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'catalogue.pack.read',
       'catalogue.merge.propose',
       'catalogue.category.propose',
+      'store.pack.read',
       'ai.proposal.read', 'ai.suggestion.dismiss',
       'price.change.propose',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
@@ -239,6 +242,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       // M27-FR-03 / Item 3: record a concession docket line at the till; corrections are the engine's SoD call.
       'concession.tag.record',
+      // PA-06 = DF-3-a: the store computer's own identity (a cashier grant at its store) reads that store's setup file.
+      'store.pack.read',
       'identity.self.read', 'payroll.ess.self', 'catalogue.pack.read',
       // The store box's sync identity holds this role. It pulls the catalogue pack under `catalogue.pack.read`
       // and, since Stage C3b, the migration screen's feed under `migration.screen.read` — a READ of the

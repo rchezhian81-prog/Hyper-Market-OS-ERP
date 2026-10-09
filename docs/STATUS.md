@@ -5,6 +5,38 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 4 · PA-06 = DF-3-a — head office sends each store computer its own setup, checked (9 October 2026)
+
+- **The audit's finding:** a store computer read its setup from a file someone carried to it. Nothing checked who made it,
+  for which shop or store, or how old it was.
+- **Owner decision OB-25 "A"** (9 Oct 2026): always current — head office builds the setup from its records whenever the
+  store computer asks; no publish button.
+- **What changed (part a of three):**
+  - **Head office builds it** from its own records: the store's settings, the people granted at this store with their
+    roles and names, the products it published (with category and stock at this store), purchase orders, receipts,
+    supplier invoices and loss-prevention rules. A person granted at another store never appears.
+  - **Signed and bound:** shop, store, a number that only goes up, issued time, and an expiry (7 days). Only the
+    store's own computer may read it. A store with no settings gets "not set up yet" rather than a guess.
+  - **Store settings are head office's record** (cut-off, tolerances, back store …): the owner sets them; each change is
+    a new version.
+  - **The store computer** (switched on per computer: `EDGE_STORE_PACK_SOURCE=head-office`, `EDGE_STORE_ID`) fetches it
+    every sync pass, checks it (signature, shop, store, newer, not expired), saves it in one step keeping the previous
+    copy, and uses it in place of the setup file — with its live feeds (floor requests, assignments, templates,
+    migration) laid back on top. It is restored and re-checked after a restart. If head office can't be reached, the
+    store keeps trading on what it has; a setup past its expiry is still used and is clearly marked out of date.
+- **Proof:** connected test with real head office and a real store computer (5 tests): the audit's case; a new person
+  arrives and a leaver leaves on the next pull; another store's computer is refused; forged, wrong-store, wrong-shop,
+  older and wrong-key setups refused; a tampered file not trusted at restart; offline and out-of-date behaviour; settings
+  rules. On the old code the new tests fail.
+- **Not yet / honest limits:**
+  - Part b: the approvals list, the per-screen settings, the day-close checklist, warehouse/wave/route and counts are not in
+    head office's setup yet (the store says it was not told).
+  - Part c: the demo store computer still uses its file; it is switched over, and the demo-only builder retired, in part
+    c, together with screens bound to the signed-in person (two people on one device).
+  - No screen for store settings yet (head office route only).
+  - Staff UAT (SP-10) pending.
+- **Next:** DF-3-b, the remaining sections.
+
 ## Wave 4 · SF-06-b — head office's own category list, and product files that load real products (9 October 2026)
 
 - **The audit's finding:** a product file said "1 row applied" and the product list held nothing. Separately, every
