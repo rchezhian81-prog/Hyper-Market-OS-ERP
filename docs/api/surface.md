@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 831 | 509 | 509 | 64 | 281 |
+| 13 | 832 | 509 | 509 | 64 | 281 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -283,6 +283,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/quality/recalls/:batchId` | `quality.recall.read` | core | — |
 | POST | `/v1/quality/recalls/:batchId` | `quality.recall.initiate` | core | yes |
 | POST | `/v1/quality/recalls/:batchId/closure` | `quality.recall.initiate` | core | yes |
+| GET | `/v1/quality/sale-blocks` | `quality.recall.read` | core | — |
 | POST | `/v1/replenishment/order-proposal` | `inventory.availability.read` | core | yes |
 | POST | `/v1/replenishment/propose` | `inventory.availability.read` | core | yes |
 | POST | `/v1/warehouse/allocation/propose` | `inventory.availability.read` | core | yes |

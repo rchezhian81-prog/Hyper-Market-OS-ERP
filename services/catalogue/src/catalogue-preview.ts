@@ -32,6 +32,9 @@ export interface CataloguePreviewDeps {
   readonly promotions?: (tenantId: string) => Promise<readonly Promotion[]> | readonly Promotion[];
   readonly barcodes: (tenantId: string) => Promise<readonly BarcodeAssignment[]> | readonly BarcodeAssignment[];
   readonly taxSchedule: (tenantId: string, hsnCode: string) => Promise<readonly GstRatePeriod[]> | readonly GstRatePeriod[];
+  /** SF-08 — the products with a batch under open recall or on quality hold; each goes in the pack `recallBlock`, so
+   *  every till refuses it, offline (owner decision "C": the whole product until the batch block lands in R3). */
+  readonly blockedProducts?: (tenantId: string) => Promise<ReadonlySet<string>> | ReadonlySet<string>;
   readonly now: () => string;
 }
 
@@ -117,11 +120,17 @@ export async function assembleCatalogueSnapshot(
     code: b.code, productId: b.productId, kind: 'standard' as const,
   }));
 
+  // SF-08: what head office's recall and quality-hold registers say must not be sold.
+  const blocked = deps.blockedProducts === undefined ? new Set<string>() : await deps.blockedProducts(opts.tenantId);
+
   const built = buildCatalogueSnapshot({
     scope: { tenantId: opts.tenantId, storeId: opts.storeId },
     version: opts.version,
     asOf: opts.asOf,
-    products: records.map((r) => toMaster(r, opts.asOf)),
+    products: records.map((r) => {
+      const master = toMaster(r, opts.asOf);
+      return blocked.has(r.productId) ? { ...master, recallBlock: true } : master;
+    }),
     barcodes,
     priceEntries,
     taxClasses,
