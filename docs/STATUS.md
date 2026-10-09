@@ -5,6 +5,33 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 4 · PA-06 = DF-3-b-1 — the store's rules live at head office; every screen's setup comes from it (9 October 2026)
+
+- **The finding:** the store's working rules (approval limit, margin floor, return window, near-expiry days, refill rule,
+  day-close checklist …) were constants typed into the demo setup file — some even differ from what the owner confirmed
+  (OB-08: a shelf count is stale after 120 minutes and a refill starts at half empty; the demo file says 240 and a
+  quarter). And every screen's section named a person the file picked.
+- **What changed (part 2a):**
+  - **Head office holds each store's rules** (`/v1/stores/:storeId/rules`): every value must be set (nothing defaulted —
+    `docs/registers/owner-configuration.md` lists the documented starting values), only the owner sets them, each change
+    is a new version, an unknown refill role is refused.
+  - **The setup carries them**: the day-close checklist and the manager, pricing, reporting, expiry, service, finance,
+    admin, AI, merchandising and write-off sections. Who may approve a price below the floor is read from the grants at
+    this store — not typed into a file.
+  - **Every screen's section names no person**: behind the signed-in front each screen runs as the person who signed
+    in, with that person's permissions from head office's grants. A person not granted at the store gets none.
+  - The import screen's section carries the file types head office supports.
+- **Proof:** the connected test now has 8 cases (3 new): rules validation and versions; the setup carries every rules
+  section and the price approvers; a store with no rules gets none (says not told); a real screen behind the signed-in
+  front runs as the signed-in person with their own permissions.
+- **Not yet / honest limits:**
+  - Part 2b: the approvals waiting at the store, the counts list, the warehouse delivery and bins, SF-08's priority delivery
+    of a new recall and each store computer reporting its version, and settling the quantity scale across sections.
+  - The buying screen still names its buyer as a person; it moves to the signed-in person in part 3.
+  - No screen for setting the rules yet (head office route only).
+  - Staff UAT (SP-10) pending.
+- **Next:** DF-3-b-2.
+
 ## Wave 4 · PA-06 = DF-3-a — head office sends each store computer its own setup, checked (9 October 2026)
 
 - **The audit's finding:** a store computer read its setup from a file someone carried to it. Nothing checked who made it,
