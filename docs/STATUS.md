@@ -7,8 +7,8 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ## Wave 3 · SF-07 part 1 — chilled and frozen deliveries need a temperature; without one they are held (9 October 2026)
 
-- **The wave:** Wave 3. SF-02 (#730) and SF-03 (#731) merged. **Owner decision (9 Oct 2026):** the rest of Wave 3 is split
-  between two Claude sessions — this one takes SF-07/PA-07 and SF-08; the other takes SF-05 (already in progress) and
+- **The wave:** Wave 3. SF-02 (#730), SF-03 (#731) and SF-05 (#733) merged. **Owner decision (9 Oct 2026):** the rest of
+  Wave 3 is split between two Claude sessions — this one takes SF-07/PA-07 and SF-08; the other took SF-05 and takes
   PF-14. **Owner decision "3 and A" (9 Oct 2026):** a chilled/frozen line with no temperature is received but HELD for a
   second person (now), then the store screen and the handheld get a temperature box (next); a product with no handling
   class is received normally and marked.
