@@ -48,7 +48,7 @@ async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-worker', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'cashier');
+  await h.provisionRole(A, 'u-box', 'store_computer');
   const seed = await h.request({
     method: 'POST', path: '/v1/inventory/goods-receipt/grn-seed', userId: 'u-worker', tenantId: A, idempotencyKey: 'k-seed',
     body: {

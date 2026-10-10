@@ -46,6 +46,9 @@ export interface B2BCollectionsDeps {
   readonly outstandingMinor: (tenantId: string, customerId: string) => Promise<number> | number;
   readonly recordInvoice: (tenantId: string, customerId: string, invoice: Receivable) => Promise<void> | void;
   readonly recordPayment: (tenantId: string, customerId: string, payment: RecordedPayment) => Promise<void> | void;
+  /** FUL-09: the money received moves the customer's AR ledger and reaches the books — in ONE write with the allocation.
+   *  When present it records the payment itself (instead of `recordPayment`). */
+  readonly recordPaymentWithMoney?: (tenantId: string, customerId: string, payment: RecordedPayment, receivedOn: string) => Promise<void>;
   readonly now: () => string;
 }
 
@@ -98,7 +101,9 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
           receiptId, customerId, receivedMinor: b['receivedMinor'] as number,
           invoices: await deps.invoices(ctx.tenantId, customerId), against,
         });
-        await deps.recordPayment(ctx.tenantId, customerId, { receiptId, receivedMinor: result.receivedMinor, allocations: result.allocations });
+        const payment: RecordedPayment = { receiptId, receivedMinor: result.receivedMinor, allocations: result.allocations };
+        if (deps.recordPaymentWithMoney !== undefined) await deps.recordPaymentWithMoney(ctx.tenantId, customerId, payment, deps.now().slice(0, 10));
+        else await deps.recordPayment(ctx.tenantId, customerId, payment);
         return { status: 201, body: { receiptId, allocatedMinor: result.allocatedMinor, unappliedMinor: result.unappliedMinor, allocations: result.allocations } };
       },
     },

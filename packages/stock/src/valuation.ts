@@ -49,16 +49,15 @@ export interface ValuationMovement {
   /** Unit cost for a cost-carrying entry, in minor units. Absent ⇒ the entry's quantity is unvalued. */
   readonly unitCostMinor?: number;
   /**
-   * OB-31 "A": how many quantity minor units `unitCostMinor` is quoted for — 1000 for a kilo item counted in grams (cost per
-   * kg) or a litre item counted in millilitres; 1 (the default) for a counted item. The receipt's value is then
-   * `qty × cost ÷ scale`, rounded once on the receipt — never per gram.
-   */
-  readonly costScale?: number;
-  /**
    * True for a transfer OUT to another of the shop's own locations (SP-5, F05): the issue leaves at the average like
    * any other, but its value is booked as `transferredOut`, not as cost of goods sold — nothing was sold.
    */
   readonly isTransferOut?: boolean;
+  /**
+   * OB-31 "A": how many `quantityMinor` steps make one whole costed unit — 1000 for a kg product (counted in grams, costed
+   * per kg), 1 for an item. A receipt's value is `quantityMinor × unitCostMinor ÷ minorPerUnit`, rounded once. Absent ⇒ 1.
+   */
+  readonly minorPerUnit?: number;
 }
 
 export interface ProductValuation {
@@ -68,7 +67,7 @@ export interface ProductValuation {
   readonly onHandMinor: number;
   /** Value of the on-hand stock at weighted-average cost. */
   readonly value: Money;
-  /** Weighted-average cost per unit, or `not_known` when nothing valued is on hand. */
+  /** Weighted-average cost per WHOLE unit (per item, per kg — OB-31), or `not_known` when nothing valued is on hand. */
   readonly unitCostMinor: number | 'not_known';
   /** Cumulative cost of goods issued (sold / wasted / written off) at the average — feeds margin. NOT transfers. */
   readonly cogs: Money;
@@ -87,6 +86,8 @@ interface Acc {
   cogsMinor: number;
   transferredOutMinor: number;
   unvaluedMinor: number;
+  /** OB-31: quantity steps per whole costed unit for this product (1 for items, 1000 for kg). */
+  scale: number;
 }
 
 /** value × qty ÷ divisor, rounded half-up on the last minor unit — integer, so nothing drifts. */
@@ -117,12 +118,12 @@ export function weightedAverageValuation(
   for (const m of movements) {
     const key = keyOf(m);
     const acc = byKey.get(key)
-      ?? { productId: m.productId, locationId: m.locationId, qty: 0, valuedQty: 0, valueMinor: 0, cogsMinor: 0, transferredOutMinor: 0, unvaluedMinor: 0 };
+      ?? { productId: m.productId, locationId: m.locationId, qty: 0, valuedQty: 0, valueMinor: 0, cogsMinor: 0, transferredOutMinor: 0, unvaluedMinor: 0, scale: m.minorPerUnit ?? 1 };
 
     if (m.effect === 1) {
       if (m.isPurchaseReceipt && m.unitCostMinor !== undefined) {
-        const scale = m.costScale ?? 1;
-        acc.valueMinor += scale === 1 ? m.unitCostMinor * m.quantityMinor : share(m.unitCostMinor, m.quantityMinor, scale);
+        // OB-31: per-whole-unit cost over smallest-step quantity, rounded once (exact for items).
+        acc.valueMinor += share(m.unitCostMinor, m.quantityMinor, m.minorPerUnit ?? 1);
         acc.valuedQty += m.quantityMinor;
       } else if (m.isPurchaseReceipt) {
         // A receipt with no cost: units enter, value does not. Reported as unvalued, not folded at 0.
@@ -162,7 +163,7 @@ export function weightedAverageValuation(
       locationId: a.locationId,
       onHandMinor: a.qty,
       value: { minor: a.valueMinor, currency },
-      unitCostMinor: a.valuedQty > 0 ? share(a.valueMinor, 1, a.valuedQty) : 'not_known',
+      unitCostMinor: a.valuedQty > 0 ? share(a.valueMinor, a.scale, a.valuedQty) : 'not_known',
       cogs: { minor: a.cogsMinor, currency },
       transferredOut: { minor: a.transferredOutMinor, currency },
       unvaluedMinor: a.unvaluedMinor,

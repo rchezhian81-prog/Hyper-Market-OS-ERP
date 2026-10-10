@@ -57,7 +57,8 @@ export type TokenRefusal =
   | 'no_tenant'
   | 'tenant_not_this_issuers'
   | 'no_issued_at'
-  | 'lifetime_too_long';
+  | 'lifetime_too_long'
+  | 'channel_ambiguous';
 
 export interface TokenVerdict {
   readonly ok: boolean;
@@ -286,6 +287,18 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
   const jtiClaim = payload['jti'];
   const jti = typeof jtiClaim === 'string' && jtiClaim.trim() !== '' ? jtiClaim : undefined;
 
+  // The session this token was issued FOR (PA-10 · M33-FR-02/03), read only now the signature is verified. A token
+  // naming BOTH a support and a remote session is ambiguous about which grant governs it, so it is refused.
+  const supportClaim = payload['support_session_id'];
+  const remoteClaim = payload['remote_session_id'];
+  const supportSession = typeof supportClaim === 'string' && supportClaim.trim() !== '' ? supportClaim.trim() : undefined;
+  const remoteSession = typeof remoteClaim === 'string' && remoteClaim.trim() !== '' ? remoteClaim.trim() : undefined;
+  if (supportSession !== undefined && remoteSession !== undefined) {
+    return { ok: false, refusedBecause: 'channel_ambiguous', detail: 'the token names both a support session and a remote session; one sign-in is bound to one session' };
+  }
+  const channel = supportSession !== undefined ? { kind: 'support' as const, sessionId: supportSession }
+    : remoteSession !== undefined ? { kind: 'remote' as const, sessionId: remoteSession } : undefined;
+
   return {
     ok: true,
     claims: { ...(jti === undefined ? {} : { jti }), ...(iat === undefined ? {} : { iat }) },
@@ -296,6 +309,8 @@ export function verifyToken(token: string, policy: TokenPolicy, nowMs: number): 
       branchId: typeof branch === 'string' && branch !== '' ? branch : null,
       ...(authTime === undefined ? {} : { authTime }),
       ...(amr === undefined || amr.length === 0 ? {} : { amr }),
+      ...(jti === undefined ? {} : { tokenId: jti }),
+      ...(channel === undefined ? {} : { channel }),
     },
     detail: `${userId} of ${tenantId}`,
   };

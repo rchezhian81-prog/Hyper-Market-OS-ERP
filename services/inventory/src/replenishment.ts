@@ -21,7 +21,8 @@ import {
   proposeReplenishmentBatch, InvalidReplenishmentParameterError, type ReplenishmentInput,
 } from '../../../packages/replenishment/src/replenishment';
 import { salesHistory, type SoldLine } from '../../../packages/demand/src/sales-history';
-import { Assortment, type AssortmentEntry } from '../../../packages/merchandising/src/index';
+import type { AssortmentEntry } from '../../../packages/merchandising/src/index';
+import { rangeStatusOf } from './assortment';
 
 export interface ReplenishmentRoutesDeps {
   readonly now: () => string;
@@ -134,11 +135,14 @@ export function replenishmentRoutes(deps: ReplenishmentRoutesDeps): readonly Rou
         const storeId = ctx.query['storeId'];
         const outOfRange: { productId: string; status: string }[] = [];
         if (isStr(storeId)) {
-          const range = new Assortment(storeId, deps.rangeOf === undefined ? [] : await deps.rangeOf(ctx.tenantId, storeId));
+          const entries = deps.rangeOf === undefined ? [] : await deps.rangeOf(ctx.tenantId, storeId);
           const today = deps.now().slice(0, 10);
+          // The one range rule (`rangeStatusOf`, as the purchase order asks it): only a listed item is reordered; a store with
+          // no range recorded yet is not judged (as at the order).
           priced = priced.filter((it) => {
-            if (range.mayReorder(it.productId, today)) return true;
-            outOfRange.push({ productId: it.productId, status: range.statusOn(it.productId, today) ?? 'never_listed' });
+            const status = rangeStatusOf(entries, storeId, it.productId, today);
+            if (status === 'listed' || status === 'no_range') return true;
+            outOfRange.push({ productId: it.productId, status });
             return false;
           });
         }

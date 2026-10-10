@@ -39,6 +39,10 @@ export interface IdpClaims {
    * sign-in). Pass `['pwd']` to mint a single-factor sign-in, or `null` to omit the claim.
    */
   readonly amr?: readonly string[] | null;
+  /** Bind the token to a support-access session (`support_session_id`, PA-10). */
+  readonly supportSessionId?: string;
+  /** Bind the token to a remote session (`remote_session_id`, PA-10). */
+  readonly remoteSessionId?: string;
 }
 
 export interface LocalIdpConfig {
@@ -76,6 +80,8 @@ export class LocalIdp {
       ...(claims.notBeforeSeconds === undefined ? {} : { nbf: nowSec + claims.notBeforeSeconds }),
       ...(authTime === undefined ? {} : { auth_time: authTime }),
       ...(amr === undefined ? {} : { amr: [...amr] }),
+      ...(claims.supportSessionId === undefined ? {} : { support_session_id: claims.supportSessionId }),
+      ...(claims.remoteSessionId === undefined ? {} : { remote_session_id: claims.remoteSessionId }),
       iss: this.config.issuer,
       aud: this.config.audience,
       // As a real IdP does: WHEN it was issued and an id for it, so the API can bound a token's lifetime and

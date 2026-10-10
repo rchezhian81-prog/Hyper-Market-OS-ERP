@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createIndentsSession, INDENTS_COPY, COPY_KEYS, FLOOR_INDENT_REQUESTED, FLOOR_INDENT_RECEIVED, indentKeyFor, receiptKeyFor,
   type IndentsData, type IndentsPorts, type IndentsConfig, type IndentRowView, type IndentLineView, type IndentApprovePort, type ApprovePostResult,
+  type IndentResolvePort, type ResolvePostResult, type ResolveOutcome,
 } from '../../apps/web-erp/src/indents-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
 import { openDeviceOutbox, guardedStore } from '../../packages/sync/src/device-outbox';
@@ -287,5 +288,68 @@ describe('where each saved piece of work has got to: the five shared states, "po
     expect(live.savedWork()[0]).toMatchObject({ id: 'ind-w', state: 'posted' });
     // …and a session with its OWN store knows only what the queue says: with the store computer, not yet posted.
     expect(createIndentsSession(config(), ports().ports, outbox).savedWork()[0]).toMatchObject({ id: 'ind-w', state: 'handed_to_box' });
+  });
+});
+
+describe('Batch 2 · RESOLVE a shortfall: an online write by someone who neither issued nor counted it (§28 · M09-FR-03)', () => {
+  const SHORT: IndentsData = {
+    asAt: AT,
+    indents: [row({ indentId: 'ind-5', state: 'received', approvedBy: 'u-mgr', attention: ['arrived_short'],
+      lines: [line({ allocatedMinor: 20, issuedMinor: 20, receivedMinor: 17, shortfallMinor: 3 })],
+      issues: [{ issueId: 'is-1', issuedBy: 'u-back', issuedAt: AT, state: 'received', receivedBy: 'u-floor2', lines: [{ productId: 'RICE', batchId: null, quantityMinor: 20 }],
+        shortfall: [{ productId: 'RICE', batchId: null, quantityMinor: 3, valueMinor: 135_000 }] }] })],
+  };
+  const withResolve = (answer: ResolvePostResult = { result: 'resolved' }, over: Partial<IndentsPorts> = {}) => {
+    const sent: unknown[] = [];
+    const resolvePort: IndentResolvePort = { post: async (i) => { sent.push(i); return answer; } };
+    return { sent, ports: ports({ data: SHORT, mayResolve: () => true, resolvePort: () => resolvePort, ...over }).ports };
+  };
+  const input = { indentId: 'ind-5', issueId: 'is-1', reasonCode: 'miscount', note: 'searched the back store', found: [{ productId: 'RICE', batchId: null, foundMinor: '1' }] };
+
+  it('offers the open shortfall to a third person, with the adjustment reasons in words; sends only what turned up, no resolver', async () => {
+    const { sent, ports: p } = withResolve();
+    const s = createIndentsSession(config(), p, outboxOn());
+    const v = s.view('en');
+    expect(v.canResolve).toBe(true);
+    expect(v.resolvable.map((r) => `${r.indentId}|${r.issue.issueId}`)).toEqual(['ind-5|is-1']);
+    expect(v.resolveReasons.map((r) => r.code)).toEqual(['damaged', 'expired', 'miscount', 'found', 'theft_suspected', 'other']);
+    expect(s.view('ta').resolveReasons[0]!.label).toBe('சேதமடைந்தது');
+    expect(await s.resolve(input)).toEqual({ outcome: 'resolved' });
+    expect(sent).toEqual([{ indentId: 'ind-5', issueId: 'is-1', reasonCode: 'miscount', note: 'searched the back store', lines: [{ productId: 'RICE', batchId: null, foundMinor: 1 }] }]);
+    expect(s.presentResolveOutcome('en', { outcome: 'resolved' })).toMatchObject({ tone: 'ok' });
+  });
+
+  it('refuses — with nothing sent — the issuer, the counter, a bad reason, a short note, too much found, a resolved or unknown issue, no right, no link', async () => {
+    const resolvedAlready: IndentsData = { indents: [{ ...SHORT.indents![0]!, issues: [{ ...SHORT.indents![0]!.issues[0]!, resolvedBy: 'u-other' }] }] };
+    const cases: [IndentsConfig, Partial<IndentsPorts>, typeof input, string][] = [
+      [config({ userId: 'u-back' }), {}, input, 'issuer_cannot_resolve'],
+      [config({ userId: 'u-floor2' }), {}, input, 'counter_cannot_resolve'],
+      [config(), {}, { ...input, reasonCode: 'lost_somewhere' }, 'bad_reason'],
+      [config(), {}, { ...input, note: 'no' }, 'note_too_short'],
+      [config(), {}, { ...input, found: [{ productId: 'RICE', batchId: null, foundMinor: '4' }] }, 'bad_found'],
+      [config(), {}, { ...input, found: [{ productId: 'OIL', batchId: null, foundMinor: '1' }] }, 'bad_found'],
+      [config(), {}, { ...input, issueId: 'is-9' }, 'issue_unknown'],
+      [config(), { snapshot: () => resolvedAlready }, input, 'not_open'],
+      [config(), { mayResolve: () => false }, input, 'not_permitted'],
+      [config(), { resolvePort: () => null }, input, 'no_link'],
+    ];
+    for (const [cfg, over, inp, outcome] of cases) {
+      const { sent, ports: p } = withResolve({ result: 'resolved' }, over);
+      const s = createIndentsSession(cfg, p, outboxOn());
+      expect(await s.resolve(inp), outcome).toEqual({ outcome });
+      expect(sent, outcome).toEqual([]);
+      expect(s.presentResolveOutcome('ta', { outcome } as ResolveOutcome).label.length, outcome).toBeGreaterThan(0);
+    }
+    // The issuer and the counter are not even offered it.
+    expect(createIndentsSession(config({ userId: 'u-floor2' }), withResolve().ports, outboxOn()).view('en').resolvable).toEqual([]);
+    expect(createIndentsSession(config({ userId: 'u-back' }), withResolve().ports, outboxOn()).view('en').resolvable).toEqual([]);
+  });
+
+  it('passes the cloud\'s refusal on verbatim and never claims it resolved', async () => {
+    const { ports: p } = withResolve({ result: 'refused', reason: 'u-other resolved this shortfall first' });
+    const s = createIndentsSession(config(), p, outboxOn());
+    const o = await s.resolve(input);
+    expect(o).toEqual({ outcome: 'refused', reason: 'u-other resolved this shortfall first' });
+    expect(s.presentResolveOutcome('en', o).label).toContain('u-other resolved this shortfall first');
   });
 });

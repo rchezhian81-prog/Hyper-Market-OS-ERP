@@ -48,6 +48,15 @@
       p.result[hidden] { display:none; }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      section.form { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
+      section.form h3 { margin:0; }
+      section.form label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+      section.form input, section.form select { width:100%; box-sizing:border-box; min-height:var(--tap); padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); font:inherit; }
+      section.form .grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); }
+      section.form button.act { background:var(--accent, var(--line)); color:var(--ink); }
+      input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      p.note { margin:0; color:var(--muted); font-size:14px; }
+      pre.label { margin:0; padding:12px; background:var(--bg); border:1px dashed var(--line); border-radius:10px; font-size:14px; white-space:pre-wrap; }
       [hidden] { display:none !important; }
     </style>
   </head>
@@ -73,6 +82,38 @@
 
       <h3 id="list-heading" hidden></h3>
       <ul class="rows" id="rows" aria-label="Finished batches to release"></ul>
+
+      <section class="form" id="runner" hidden aria-label="Record a run">
+        <h3 id="run-heading"></h3>
+        <p class="note" id="run-hint"></p>
+        <div class="grid">
+          <div><label for="run-recipe" id="run-recipe-label"></label><input id="run-recipe" type="text" autocomplete="off" /></div>
+          <div><label for="run-batches" id="run-batches-label"></label><input id="run-batches" type="text" inputmode="numeric" autocomplete="off" /></div>
+          <div><label for="run-output" id="run-output-label"></label><input id="run-output" type="text" inputmode="numeric" autocomplete="off" /></div>
+          <div><label for="run-batch" id="run-batch-label"></label><input id="run-batch" type="text" autocomplete="off" /></div>
+          <div><label for="run-location" id="run-location-label"></label><input id="run-location" type="text" autocomplete="off" /></div>
+        </div>
+        <button id="run" class="act" type="button"></button>
+      </section>
+      <p class="note" id="no-run" hidden></p>
+
+      <section class="form" id="labeller" hidden aria-label="Print the label">
+        <h3 id="label-heading"></h3>
+        <p class="note" id="label-none" hidden></p>
+        <div id="label-fields">
+          <div class="grid">
+            <div><label for="label-run" id="label-run-label"></label><select id="label-run"></select></div>
+            <div><label for="label-name" id="label-name-label"></label><input id="label-name" type="text" autocomplete="off" /></div>
+            <div><label for="label-net" id="label-net-label"></label><input id="label-net" type="text" autocomplete="off" /></div>
+            <div><label for="label-packer" id="label-packer-label"></label><input id="label-packer" type="text" autocomplete="off" /></div>
+            <div><label for="label-price" id="label-price-label"></label><input id="label-price" type="text" inputmode="decimal" autocomplete="off" /></div>
+            <div><label for="label-allergens" id="label-allergens-label"></label><input id="label-allergens" type="text" autocomplete="off" /></div>
+          </div>
+          <button id="label" class="act" type="button"></button>
+        </div>
+        <pre class="label" id="label-out" hidden aria-label="The label"></pre>
+      </section>
+      <p class="note" id="no-label" hidden></p>
 
       <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>

@@ -12,7 +12,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound, concurrentChange } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { dispatchTransfer, receiveTransfer, TransferRefusedError, type Transfer, type TransferLine, type AvailableLot, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import { dispatchTransfer, receiveTransfer, TransferRefusedError, costedResolution, type Transfer, type TransferLine, type AvailableLot, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { applyMovement, type Bin, type BinContents, type MovementCommand } from '../../../packages/warehouse/src/movements';
 import {
   requestIndent, approveIndent, rejectIndent, planIssue, applyIssue, planReceipt, applyReceipt, cancelIndent,
@@ -27,10 +27,12 @@ import { dispatchPostings, receivePostings, readFound, sameResolution, foundPost
 
 export { readFound, foundPostings };
 import { checkMovement, type Movement } from './index';
+import { valueAtUnitCost, normaliseUom } from '../../../packages/contracts/src/quantity';
 import { locationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import { outsideBranchScope, type RequestContext } from '../../kernel/src/index';
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
-import { Assortment, type AssortmentEntry } from '../../../packages/merchandising/src/index';
+import type { AssortmentEntry } from '../../../packages/merchandising/src/index';
+import { rangeStatusOf } from './assortment';
 
 /**
  * PA-01-r1: an indent is the business of the branch its back store and floor sit in. Acting on, or reading, an indent
@@ -173,7 +175,7 @@ export function readIndentLines(v: unknown): IndentLine[] | undefined {
   const out: IndentLine[] = [];
   for (const raw of v) {
     if (!isObj(raw) || !isStr(raw['productId']) || !isPosInt(raw['quantityMinor']) || !isStr(raw['uom'])) return undefined;
-    out.push({ productId: raw['productId'], requestedMinor: raw['quantityMinor'], uom: raw['uom'] });
+    out.push({ productId: raw['productId'], requestedMinor: raw['quantityMinor'], uom: normaliseUom(raw['uom']) ?? raw['uom'] }); // OB-31: one spelling
   }
   return out;
 }
@@ -222,7 +224,7 @@ export const damagedOf = (counted: readonly ReceivedLine[], transfer: Transfer):
   counted.filter((c) => (c.damagedMinor ?? 0) > 0).map((c) => {
     const i = transfer.lines.findIndex((l) => l.productId === c.productId && l.batchId === c.batchId);
     const unitCost = i >= 0 ? transfer.lineCostsMinor?.[i] ?? transfer.lines[i]!.unitCost.minor : 0;
-    return { productId: c.productId, batchId: c.batchId, quantityMinor: c.damagedMinor!, valueMinor: unitCost * c.damagedMinor! };
+    return { productId: c.productId, batchId: c.batchId, quantityMinor: c.damagedMinor!, valueMinor: valueAtUnitCost(c.damagedMinor!, i >= 0 ? transfer.lines[i]!.uom : 'ea', unitCost) }; // OB-31
   });
 
 /** The GOOD units received: what arrived (capped at what was sent, as the engine counts it) less what arrived damaged. */
@@ -293,18 +295,18 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         if (deps.rangeOf !== undefined) {
           const storeId = (await (deps.locationBranches ?? ((): ((l: string) => string) => (l) => l))(ctx.tenantId))(b['toLocationId']);
           const entries = await deps.rangeOf(ctx.tenantId, storeId);
-          if (entries.length > 0) {
-            const range = new Assortment(storeId, entries);
-            const today = now.slice(0, 10);
-            const outside = lines.filter((l) => !range.maySell(l.productId, today));
-            if (outside.length > 0) {
-              throw apiError(422, {
-                code: 'not_in_store_range',
-                whatHappened: `Store ${storeId} does not range ${outside.map((l) => `${l.productId} (${range.statusOn(l.productId, today) ?? 'never listed'})`).join(', ')} on ${today}, so it is not brought to the floor (M04-FR-01).`,
-                wasItSaved: 'not_saved',
-                nextSafeAction: 'Ask merchandising to list the item for this store first, or leave it off the indent. Nothing was recorded.',
-              });
-            }
+          const today = now.slice(0, 10);
+          // The one range rule (`rangeStatusOf`, as the purchase order asks it); clearance stock may still come out to sell down.
+          const outside = lines
+            .map((l) => ({ productId: l.productId, status: rangeStatusOf(entries, storeId, l.productId, today) }))
+            .filter((x) => x.status === 'not_ranged' || x.status === 'delisted');
+          if (outside.length > 0) {
+            throw apiError(422, {
+              code: 'not_in_range',
+              whatHappened: `Store ${storeId} does not range ${outside.map((x) => `${x.productId} (${x.status})`).join(', ')} on ${today}, so it is not brought to the floor (M04-FR-01).`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Ask merchandising to list the item for this store first, or leave it off the indent. Nothing was recorded.',
+            });
           }
         }
         let indent: FloorIndent;
@@ -516,7 +518,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
             const check = checkMovement(m);
             if (!check.ok) throw apiError(422, { code: check.refusedBecause ?? 'movement_refused', whatHappened: check.detail, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
           }
-          const resolution: ShortfallResolution = { ...planned, movementIds: posted.map((m) => m.movementId) };
+          const resolution: ShortfallResolution = { ...costedResolution(planned, transfer), movementIds: posted.map((m) => m.movementId) };
           const next = applyShortfallResolution(indent, issueId, resolution);
           await deps.recordShortfallResolved(ctx.tenantId, next, issueId, posted, indentVersion);
           await audit(ctx.tenantId, {
@@ -652,11 +654,13 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1: only the caller's branches' indents
         const all = (await deps.indents(ctx.tenantId)).filter((i) => scope.covers(i.toLocationId) || scope.covers(i.fromLocationId));
         const CLOSED: readonly string[] = ['received', 'rejected', 'cancelled'];
+        const needing = (i: FloorIndent): boolean => indentAttention(i).length > 0;
+        // Batch 2 (P-03 · P-08): "open" keeps an indent that is closed in STATE but still needs a person — a received indent
+        // whose shortfall nobody has resolved is not done; hiding it would hide a valued loss from the floor screen.
         const kept = all
           .filter((i) => (isStr(q['toLocationId']) ? i.toLocationId === q['toLocationId'] : true))
           .filter((i) => (isStr(q['state']) ? i.state === q['state'] : true))
-          .filter((i) => (q['open'] === 'true' ? !CLOSED.includes(i.state) : true));
-        const needing = (i: FloorIndent): boolean => indentAttention(i).length > 0;
+          .filter((i) => (q['open'] === 'true' ? !CLOSED.includes(i.state) || needing(i) : true));
         // Awaiting approval FIRST (a decision nobody has made outranks a trolley in progress, P-03), then oldest first.
         const rank = (i: FloorIndent): number => (i.state === 'requested' ? 0 : 1);
         const first = kept.filter(needing).sort((a, b) => rank(a) - rank(b) || a.requestedAt.localeCompare(b.requestedAt) || a.indentId.localeCompare(b.indentId));

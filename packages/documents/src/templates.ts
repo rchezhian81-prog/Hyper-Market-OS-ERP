@@ -55,6 +55,44 @@ export interface TemplateVersion {
   readonly changeNote: string;
 }
 
+/**
+ * The business record a document was issued FROM, resolved on the server at issue (PA-09 · M31-FR-02): which record,
+ * which state of it (`version` — a fingerprint of exactly what was read), and the number it is known by — its own
+ * (a PO number, a GRN number, a receipt number) or, for a record that has none (a statement), one allocated from the
+ * shop's gap-free series at issue (`numberAllocated`).
+ */
+export interface FrozenSource {
+  readonly type: string;
+  readonly id: string;
+  readonly version: string;
+  readonly number: string;
+  readonly numberAllocated: boolean;
+  /** The branch the record belongs to; absent for a shop-wide record (a statement). A reprint is scoped by it. */
+  readonly branchId?: string;
+}
+
+/** One line's money, frozen at issue. Quantities in smallest steps; prices per whole unit; amounts in minor units. */
+export interface FrozenLine {
+  readonly productId: string;
+  readonly quantityMinor: number;
+  readonly uom: string;
+  readonly unitPriceMinor: number;
+  readonly lineTotalMinor: number;
+  readonly taxRateBps?: number;
+  readonly taxMinor?: number;
+}
+
+/** The document's money, read from the source record and frozen at issue — never a figure the caller sent. */
+export interface FrozenFigures {
+  readonly currency: string;
+  readonly totalMinor: number;
+  /** Tax inside the total; null where the document carries none (a purchase order at cost, a statement). */
+  readonly taxMinor: number | null;
+  readonly lines: readonly FrozenLine[];
+  /** Further named amounts the document shows (a statement's invoiced, paid, owed…). */
+  readonly amounts?: Readonly<Record<string, number>>;
+}
+
 export interface IssuedDocument {
   readonly documentId: string;
   readonly tenantId: string;
@@ -72,6 +110,10 @@ export interface IssuedDocument {
   readonly retainUntil?: string;
   /** True when a legal hold or statutory basis blocks disposal regardless of date. */
   readonly legalHold?: boolean;
+  /** PA-09: the record it was issued from, as read at issue. Absent on a document issued before PA-09 and on a notification. */
+  readonly source?: FrozenSource;
+  /** PA-09: the money it shows, as read from the source at issue. */
+  readonly figures?: FrozenFigures;
 }
 
 export type PublishRefusal =
@@ -309,6 +351,8 @@ export function issueDocument(input: {
   readonly retainUntil?: string;
   readonly legalHold?: boolean;
   readonly alreadyIssued?: readonly IssuedDocument[];
+  /** PA-09: what the server resolved the document FROM, frozen onto it with the content. */
+  readonly frozen?: { readonly source: FrozenSource; readonly figures: FrozenFigures };
 }): IssueResult {
   const base = { documentId: input.documentId };
 
@@ -360,6 +404,7 @@ export function issueDocument(input: {
       issuedBy: input.issuedBy,
       ...(input.retainUntil === undefined ? {} : { retainUntil: input.retainUntil }),
       ...(input.legalHold === undefined ? {} : { legalHold: input.legalHold }),
+      ...(input.frozen === undefined ? {} : { source: input.frozen.source, figures: input.frozen.figures }),
     },
   };
 }

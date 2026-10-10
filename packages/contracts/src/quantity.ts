@@ -3,8 +3,24 @@
 // Requirement: `db/data-dictionary/*` — "quantities carry a UOM; weight precision
 // is UOM-aware". Like Money, a Quantity is an integer count of the UOM's smallest
 // unit (e.g. grams for kg) plus the UOM code, so weighed goods stay exact — no
-// float ever enters. Unit conversion and pack-breaking (kg↔g, case↔each) belong
-// to the product/pack model (M03) and are deliberately not offered here.
+// float ever enters. Pack-breaking (case → inner → base) belongs to the product/pack
+// model (M03, `packages/product/src/pack.ts`) and is not offered here.
+//
+// ── THE QUANTITY SCALE — owner decision OB-31 "A" (10 Oct 2026), one rule for every section ──────────────────────
+//
+//   1. Every stored or sent quantity (`quantityMinor`, `countedMinor`, `orderedQty`, a bin's contents, an indent line, a
+//      count, a write-off, a pack section) is an INTEGER COUNT OF THE PRODUCT'S UNIT'S SMALLEST STEP:
+//        ea → one item · kg → one GRAM · L → one MILLILITRE · g → one gram · ml → one millilitre.
+//      So 2.5 kg of loose rice is 2500, never 2.5 and never 3. Weighed goods are counted in grams EVERYWHERE.
+//   2. A unit COST or PRICE is per WHOLE unit: per item, per KG, per LITRE (per gram / per ml only for a product whose
+//      unit is g / ml). Never per gram for a kg product — ₹45/kg is 4500 paise, which per gram is not a whole paisa.
+//   3. VALUE = quantityMinor × unit cost ÷ 10^precision, ROUNDED ONCE (half up, on the last paisa) — `valueAtUnitCost`.
+//      2500 g of rice at ₹45.00/kg = 2500 × 4500 ÷ 1000 = 11250 paise = ₹112.50. For `ea` the divisor is 1 (no rounding).
+//   4. Unit SPELLING is normalised at every boundary (a body, a file, a relayed device event) with `normaliseUom`:
+//      ea/each/EA/pcs/nos → ea, KG/kgs → kg, l/ltr/litre → L, gm/gms → g, ML → ml. A unit that is not one of these, and is
+//      not a pack level the product master defines (case, inner …, converted to base units by `packages/product/src/
+//      pack.ts`), is refused by name — never guessed.
+//   5. A pack level counts in the product's base UNITS (a 25 kg bag of a kg product contains 25 kg = 25000 g).
 
 /** Supported units of measure and their fixed precision (decimal places). */
 export const UOM_PRECISION = Object.freeze({
@@ -156,24 +172,43 @@ export function toDecimalString(a: Quantity): string {
   return `${sign}${whole}.${frac}`;
 }
 
-// ── OB-31 "A" (owner, 10 Oct 2026): weighed and measured goods are COUNTED in their smallest unit and COSTED per whole unit ──
-//
-// A kilo item is counted in grams and a litre item in millilitres everywhere (the quantity's minor units above), but its cost
-// is quoted per KILO / per LITRE — never per gram, where a ₹62/kg price (6.2 paise a gram) cannot be a whole number of paise.
-// So the value of a quantity is `minor units × cost per whole unit ÷ 10^precision`, rounded half-up ONCE on the total — never
-// per gram. A countable item (each) has precision 0: its cost is per item and the value is a plain product. These two are
-// the ONE place that rule lives; receiving, valuation, the purchase order and the supplier account all call them.
+// ── OB-31: the boundary rules ───────────────────────────────────────────────────────────────────────────────────────
 
-/** How many minor units the cost of `uom` is quoted for: 1000 for kg (per kilo) and L (per litre); 1 for anything counted. */
-export function costScaleOf(uom: string): number {
-  return isUom(uom) ? 10 ** precisionOf(uom) : 1;
+/** Spellings people and older screens use for each unit, mapped to the one code the system stores (OB-31 rule 4). */
+const UOM_ALIASES: Readonly<Record<string, Uom>> = Object.freeze({
+  ea: 'ea', each: 'ea', pc: 'ea', pcs: 'ea', piece: 'ea', pieces: 'ea', nos: 'ea', no: 'ea', unit: 'ea', units: 'ea',
+  kg: 'kg', kgs: 'kg', kilo: 'kg', kilos: 'kg', kilogram: 'kg', kilograms: 'kg',
+  g: 'g', gm: 'g', gms: 'g', gram: 'g', grams: 'g',
+  l: 'L', ltr: 'L', ltrs: 'L', litre: 'L', litres: 'L', liter: 'L', liters: 'L',
+  ml: 'ml', mls: 'ml', millilitre: 'ml', millilitres: 'ml',
+});
+
+/** The stored code for a unit spelling, or `undefined` when it is not a unit this system knows (OB-31 rule 4). */
+export function normaliseUom(code: string): Uom | undefined {
+  const key = code.trim().toLowerCase();
+  if (key === '') return undefined;
+  return UOM_ALIASES[key];
 }
 
-/** The value of `quantityMinor` minor units at `unitCostMinor` per whole unit of `uom` — exact, rounded half-up once. */
-export function costOfQuantity(unitCostMinor: number, quantityMinor: number, uom: string): number {
-  const scale = costScaleOf(uom);
-  if (scale === 1) return unitCostMinor * quantityMinor;
-  const n = BigInt(unitCostMinor) * BigInt(quantityMinor);
+/** How many smallest steps make one whole unit: 1 for ea/g/ml, 1000 for kg (grams) and L (millilitres). */
+export function minorPerUnit(uom: Uom): number {
+  return 10 ** precisionOf(uom);
+}
+
+/** The same, from any spelling; an unknown spelling counts as a whole unit (1) — callers refuse unknown units first. */
+export function minorPerUnitOf(code: string): number {
+  const uom = normaliseUom(code);
+  return uom === undefined ? 1 : minorPerUnit(uom);
+}
+
+/**
+ * OB-31 rule 3 — the value of `quantityMinor` smallest steps at `unitCostMinor` per whole unit, rounded ONCE, half up on
+ * the last minor unit. Integer arithmetic throughout (BigInt), so nothing drifts and nothing overflows.
+ */
+export function valueAtUnitCost(quantityMinor: number, uomCode: string, unitCostMinor: number): number {
+  const scale = minorPerUnitOf(uomCode);
+  if (scale === 1) return quantityMinor * unitCostMinor;
+  const n = BigInt(quantityMinor) * BigInt(unitCostMinor);
   const d = BigInt(scale);
   const neg = n < 0n;
   const abs = neg ? -n : n;

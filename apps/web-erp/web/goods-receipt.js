@@ -2,9 +2,10 @@
 // session model (apps/web-erp/src/goods-receipt-session.ts), attached as window.goodsReceiptSession, built on
 // packages/ui. This file only draws what the session hands it: deliveries needing a second person first (§28),
 // then the ones with a valued difference from the order (worst money first), then the clean ones — each with its
-// discrepancies named and valued. It is READ-ONLY — it changes nothing (receiving is captured on the handheld).
-// Refresh re-reads the list live (a GET); offline the screen keeps its view and the stale strip says so. No
-// prompt/confirm/alert.
+// discrepancies named and valued. It captures and approves nothing (receiving is captured on the handheld). Its ONE
+// write (Batch 2), on an explicit click, goes through the session's online port: a held line a second person disposed
+// of as a RETURN has physically gone back to the supplier. Refresh re-reads the list live (a GET); offline the screen
+// keeps its view and the stale strip says so. No prompt/confirm/alert.
 
 const el = (id) => document.getElementById(id);
 let lang = 'en';
@@ -52,10 +53,12 @@ function sampleSession() {
         status: { tone: 'ok', icon: '✓', label: l === 'ta' ? 'ஆர்டர் செய்தபடி பெறப்பட்டது' : 'Received as ordered', announcement: 'received clean', needsAttention: false },
         grnId: 'sample', number: 'GRN-SAMPLE', poId: 'PO-1', warehouseId: 'W1', receivedBy: '—', receivedAt: '',
         needsApproval: false, discrepancyValueMinor: 0, currency: 'INR',
-        sellableMinor: 100_00, quarantinedMinor: 0, rejectedMinor: 0, discrepancies: [],
+        sellableMinor: 100_00, quarantinedMinor: 0, rejectedMinor: 0, discrepancies: [], returnLines: [],
       }],
-      count: 1, needingApprovalCount: 0, nobodyNamed: false,
+      count: 1, needingApprovalCount: 0, nobodyNamed: false, canRecordReturn: false, awaitingReturn: [],
     }),
+    recordReturn: async () => ({ outcome: 'no_link' }),
+    presentReturnOutcome: () => ({ tone: 'degraded', icon: '⚠', label: '', announcement: '', needsAttention: true }),
   };
 }
 
@@ -111,7 +114,65 @@ function receiptNode(r) {
     }
     li.append(diffs);
   }
+  // Batch 2: the held lines disposed of as a return — waiting to go back, or gone — in words, never only a colour.
+  if ((r.returnLines ?? []).length > 0) {
+    const returns = document.createElement('ul');
+    returns.className = 'returns';
+    for (const l of r.returnLines) {
+      const item = document.createElement('li');
+      item.dataset.lineId = l.lineId;
+      item.dataset.state = l.state;
+      const word = document.createElement('span'); word.className = 'r-word'; word.textContent = l.stateLabel;
+      const what = document.createElement('span'); what.textContent = `${l.productId} × ${l.quantityLabel} · ${money(l.valueMinor, l.currency)}`;
+      const who = document.createElement('span'); who.className = 'd-detail';
+      who.textContent = `${t('decidedByLabel')} ${l.decidedBy}` + (l.returnedBy ? ` · ${t('returnedByLabel')} ${l.returnedBy}` : '');
+      item.append(word, what, who);
+      returns.append(item);
+    }
+    li.append(returns);
+  }
   return li;
+}
+
+// ── going back to the supplier (Batch 2) ────────────────────────────────────
+
+function paintReturner(view) {
+  const returner = el('returner');
+  el('no-return').hidden = true;
+  const anyWaiting = view.receipts.some((r) => (r.returnLines ?? []).some((l) => l.state === 'awaiting_return'));
+  if (!view.canRecordReturn) {
+    returner.hidden = true;
+    if (anyWaiting && !view.nobodyNamed && window.goodsReceiptSession !== undefined) { el('no-return').hidden = false; el('no-return').textContent = t('noReturn'); }
+    return;
+  }
+  returner.hidden = false;
+  el('return-heading').textContent = t('returnsHeading');
+  el('return-line-label').textContent = t('returnChoiceLabel');
+  el('return-reason-label').textContent = t('returnReasonLabel');
+  el('return-reason').placeholder = t('returnReasonPlaceholder');
+  el('return').textContent = t('returnBtn');
+  const select = el('return-line');
+  const chosen = select.value;
+  select.replaceChildren(...view.awaitingReturn.map((a) => {
+    const opt = document.createElement('option'); opt.value = `${a.grnId}|${a.line.lineId}`;
+    opt.textContent = `${a.number} · ${a.line.productId} × ${a.line.quantityLabel} · ${money(a.line.valueMinor, a.line.currency)}`;
+    return opt;
+  }));
+  if (chosen && view.awaitingReturn.some((a) => `${a.grnId}|${a.line.lineId}` === chosen)) select.value = chosen;
+  const none = view.awaitingReturn.length === 0;
+  el('return-none').hidden = !none;
+  el('return-none').textContent = none ? t('returnNoneWaiting') : '';
+  el('return-fields').hidden = none;
+  el('return').hidden = none;
+}
+
+function paintResult(presentation) {
+  const result = el('result');
+  result.hidden = false;
+  result.className = `result tone-${presentation.tone}`;
+  el('result-icon').textContent = presentation.icon;
+  el('result-text').textContent = presentation.label;
+  result.setAttribute('aria-label', presentation.announcement || presentation.label);
 }
 
 function paint() {
@@ -123,6 +184,7 @@ function paint() {
   el('lang').textContent = t('langName');
   el('refresh').textContent = t('refresh');
   el('asof').textContent = view.asOf ? `${t('asOfLabel')}: ${new Date(view.asOf).toLocaleString()}` : '';
+  paintReturner(view);
 
   // A not-permitted / nothing-yet state has no rows: show the state line rather than an empty list.
   const state = el('state');
@@ -146,6 +208,17 @@ function paint() {
   el('rows').replaceChildren(...view.receipts.map((r) => receiptNode(r)));
 }
 
+// GONE BACK TO THE SUPPLIER — an online write under the reader's session, on this click only; the session checks the line
+// is waiting (and not one needing a count first) before anything is sent; head office decides.
+el('return').addEventListener('click', () => {
+  void (async () => {
+    const [grnId, lineId] = el('return-line').value.split('|');
+    const outcome = await session.recordReturn({ grnId: grnId ?? '', lineId: lineId ?? '', reason: el('return-reason').value });
+    paintResult(session.presentReturnOutcome(lang, outcome));
+    if (outcome.outcome === 'returned' || outcome.outcome === 'already_returned') { el('return-reason').value = ''; await refresh(); }
+  })();
+});
+
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });
 
 el('sample').hidden = window.goodsReceiptSession !== undefined;
@@ -158,7 +231,7 @@ async function refresh() {
   const api = window.goodsReceipt;
   if (!api || typeof api.refresh !== 'function') return;
   const data = await api.refresh();
-  if (data) { session = api.present(data); paint(); }
+  if (data) { session = api.present(data); window.goodsReceiptSession = session; paint(); }
 }
 el('refresh').addEventListener('click', () => { void refresh(); });
 refresh();

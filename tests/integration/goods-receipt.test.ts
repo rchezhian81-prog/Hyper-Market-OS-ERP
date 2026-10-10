@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 
@@ -48,6 +49,8 @@ const body = (lines: unknown[]) => ({ warehouseId: 'wh1', receivedOnDate: '2026-
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
+  await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
+  await deliveryPlaces(h, A, 'wh1'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // has inventory.movement.append
   await h.provisionRole(A, 'u-cash', 'cashier');       // does not
   await h.store.append(A, STREAM.catalogue, makeEvent({
@@ -175,7 +178,7 @@ describe('goods receipt / GRN capture (M07-FR-01/02/03)', () => {
   /** An ISSUED order: the manager proposes, the owner (a second person) approves. */
   const issuedOrder = async (h: ApiHarness, poId: string, lines: { productId: string; orderedQty: number; unitCostMinor: number }[]): Promise<void> => {
     expect((await h.request({ method: 'POST', path: `/v1/purchase/orders/${poId}`, userId: 'u-mgr', tenantId: A, idempotencyKey: `po-${poId}`,
-      body: { supplierId: 'sup-1', lines: lines.map((l) => ({ productId: l.productId, orderedQty: l.orderedQty, unitCost: cost(l.unitCostMinor) })) } })).status).toBe(201);
+      body: { supplierId: 'sup-1', deliverToLocationId: 'wh1', lines: lines.map((l) => ({ productId: l.productId, orderedQty: l.orderedQty, unitCost: cost(l.unitCostMinor) })) } })).status).toBe(201);
     expect((await h.request({ method: 'POST', path: `/v1/purchase/orders/${poId}/approval`, userId: 'u-owner', tenantId: A, idempotencyKey: `po-${poId}-ok`, body: { reason: 'within budget' } })).status).toBe(200);
   };
   const orderOf = async (h: ApiHarness, poId: string) =>
@@ -255,7 +258,7 @@ describe('goods receipt / GRN capture (M07-FR-01/02/03)', () => {
   it('a receipt against a PROPOSED order, an UNKNOWN order, or no order at all is received and SAID — and folds into nothing', async () => {
     const h = await cast();
     expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-draft', userId: 'u-mgr', tenantId: A, idempotencyKey: 'po-draft',
-      body: { supplierId: 'sup-1', lines: [{ productId: 'p1', orderedQty: 100, unitCost: cost(5000) }] } })).status).toBe(201);
+      body: { supplierId: 'sup-1', deliverToLocationId: 'wh1', lines: [{ productId: 'p1', orderedQty: 100, unitCost: cost(5000) }] } })).status).toBe(201);
     const draft = await receive(h, 'u-mgr', 'grn-d', { ...body([line()]), poId: 'po-draft' }, 'k1');
     expect(draft.status).toBe(201);
     expect(grnOf(draft).governanceFlags).toEqual(['order_not_issued']);

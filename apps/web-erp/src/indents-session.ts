@@ -10,6 +10,10 @@
 //     back-store stock; the requester is refused on this screen before anything is sent, and again by the cloud.
 //   • **RECEIVE an issue independently** (`inventory.movement.append`): a person OTHER than the issuer counts in what the
 //     back store sent — queued durably like the ask; head office puts what arrived on the shelf and values a shortfall.
+//   • **RESOLVE a shortfall** (`inventory.adjustment.approve`, Batch 2): a person who neither issued nor counted an issue
+//     that arrived short says what turned up and why the rest is gone — an online write under their session; head office
+//     books the found units back and confirms the rest LOST at the cost it left with. Refused here for the issuer and the
+//     counter before anything is sent, and again by the cloud (§28).
 //   • **The register** (`inventory.indent.read`): every open indent, needing a person first — awaiting approval, owed by
 //     the back store, on the trolley, arrived short — with requested / issued / received / in transit / outstanding per
 //     line, read live from head office. The figures are head office's; nothing is recomputed here (P-02).
@@ -22,6 +26,7 @@ import { presentStatus, type StatusPresentation } from '../../../packages/a11y/s
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { deviceItemState, deviceItemReason, type BoxItemStatus, type DeviceItemState } from '../../../packages/sync/src/device-relay';
+import { ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
 
 // ── what the screen was last told (the register, one snapshot) ───────────────────────────────────────────────
 
@@ -43,6 +48,13 @@ export interface IndentIssueView {
   readonly issuedAt: string;
   readonly state: 'in_transit' | 'received';
   readonly lines: readonly { readonly productId: string; readonly batchId: string | null; readonly quantityMinor: number }[];
+  /** Who counted it in at the floor (absent / null while it is on the trolley). */
+  readonly receivedBy?: string | null;
+  /** What was dispatched and did not arrive — head office's valued shortfall (absent / empty when it arrived in full). */
+  readonly shortfall?: readonly { readonly productId: string; readonly batchId: string | null; readonly quantityMinor: number; readonly valueMinor: number }[];
+  /** Batch 2: who resolved that shortfall, and the value confirmed lost (absent / null while it is open). */
+  readonly resolvedBy?: string | null;
+  readonly lostValueMinor?: number | null;
 }
 
 /** One indent as head office lists it — its state, who asked and approved, the figures per line, the issues, the reasons. */
@@ -86,6 +98,22 @@ export interface IndentApprovePort {
   post(input: { readonly indentId: string; readonly reason: string }): Promise<ApprovePostResult>;
 }
 
+export type ResolvePostResult =
+  | { readonly result: 'resolved' | 'already_resolved' | 'lost_link' }
+  | { readonly result: 'refused'; readonly reason: string };
+
+/** Batch 2 — the authenticated POST of a shortfall resolution
+ *  (`POST /v1/floor/indents/:id/issues/:issueId/shortfall/resolution`, body `{ reasonCode, note, lines }`). */
+export interface IndentResolvePort {
+  post(input: {
+    readonly indentId: string; readonly issueId: string; readonly reasonCode: string; readonly note: string;
+    readonly lines: readonly { readonly productId: string; readonly batchId: string | null; readonly foundMinor: number }[];
+  }): Promise<ResolvePostResult>;
+}
+
+/** The reason codes a shortfall is resolved under — the stock adjustment's own list (M08-FR-03), never a new one. */
+export const SHORTFALL_REASON_CODES: readonly string[] = ADJUSTMENT_REASON_CODES;
+
 export interface IndentsPorts {
   snapshot(): IndentsData;
   /** `inventory.indent.read` */
@@ -98,6 +126,10 @@ export interface IndentsPorts {
   mayReceive(): boolean;
   /** The approval write, or `null` when this page has no way to reach head office. */
   approvePort(): IndentApprovePort | null;
+  /** Batch 2 · `inventory.adjustment.approve` — resolving a shortfall confirms a loss. Absent ⇒ not held. */
+  mayResolve?(): boolean;
+  /** Batch 2 · the resolution write, or `null` / absent when this page has no way to reach head office. */
+  resolvePort?(): IndentResolvePort | null;
 }
 
 export interface IndentsConfig {
@@ -159,6 +191,11 @@ export type CopyKey =
   | 'approveRecorded' | 'approveAlready' | 'approveRefused' | 'approveLostLink' | 'approveSelf' | 'approveNotPermitted' | 'approveNotRequested' | 'approveNoLink'
   | 'receiveHeading' | 'receiveChoiceLabel' | 'receiveCountedLabel' | 'receiveBtn' | 'receiveNoneOnTrolley' | 'receiveOwnIssue'
   | 'receiveSaved' | 'receiveNotPermitted' | 'receiveNobodyNamed' | 'receiveIssueUnknown' | 'receiveNotInTransit' | 'receiveIssuerCannot' | 'receiveBadCount' | 'receiveAlreadySaved'
+  | 'resolveHeading' | 'resolveChoiceLabel' | 'resolveFoundLabel' | 'resolveReasonLabel' | 'resolveNoteLabel' | 'resolveNotePlaceholder' | 'resolveBtn' | 'resolveNoneOpen'
+  | 'resolveRecorded' | 'resolveAlready' | 'resolveRefused' | 'resolveLostLink' | 'resolveNotPermitted' | 'resolveNoLink' | 'resolveIssueUnknown' | 'resolveNotOpen'
+  | 'resolveIssuerCannot' | 'resolveCounterCannot' | 'resolveBadReason' | 'resolveNoteTooShort' | 'resolveBadFound' | 'noResolve'
+  | 'issueShortWord' | 'issueResolvedBy' | 'issueLostWord' | 'resolveMissingWord'
+  | 'reason_damaged' | 'reason_expired' | 'reason_miscount' | 'reason_found' | 'reason_theft_suspected' | 'reason_other'
   | 'savedHeading' | 'savedLead' | 'savedKindRequest' | 'savedKindReceipt' | 'linesWord'
   | 'noRequest' | 'noApprove' | 'noReceive'
   | 'scrReady' | 'scrEmpty' | 'scrNoIndents' | 'stateNotPermitted'
@@ -197,6 +234,20 @@ export const INDENTS_COPY: BilingualCopy<CopyKey> = {
     receiveIssueUnknown: 'That issue is not on the register.', receiveNotInTransit: 'That issue has already been counted in.',
     receiveIssuerCannot: 'You issued this stock, so you cannot count it in on the floor — a different person must (nothing was saved).',
     receiveBadCount: 'Each line needs a whole number of units, zero or more.', receiveAlreadySaved: 'This count is already saved on this device.',
+    resolveHeading: 'Resolve a shortfall', resolveChoiceLabel: 'Which issue arrived short', resolveFoundLabel: 'Found again', resolveReasonLabel: 'Why the rest is gone',
+    resolveNoteLabel: 'What was done to look for it', resolveNotePlaceholder: 'e.g. searched the back store and the trolley bay',
+    resolveBtn: 'Record the resolution', resolveNoneOpen: 'No shortfall is waiting for you to resolve.',
+    resolveRecorded: 'Shortfall resolved — what turned up is back on the books; the rest is confirmed lost at the cost it left with.',
+    resolveAlready: 'This shortfall was already resolved the same way.', resolveRefused: 'Head office refused the resolution:', resolveLostLink: 'No connection — nothing was resolved. Try again.',
+    resolveNotPermitted: 'You do not have permission to resolve a shortfall (it confirms a stock loss).', resolveNoLink: 'This page cannot reach head office, so nothing can be resolved from it.',
+    resolveIssueUnknown: 'That issue is not on the register.', resolveNotOpen: 'That issue has no open shortfall — it arrived in full or was already resolved.',
+    resolveIssuerCannot: 'You issued this stock, so you cannot resolve its shortfall — a different person must (nothing was sent).',
+    resolveCounterCannot: 'You counted this stock in, so you cannot resolve its shortfall — a different person must (nothing was sent).',
+    resolveBadReason: 'Choose why the rest is gone.', resolveNoteTooShort: 'Say what was done to look for the stock (a few words at least).',
+    resolveBadFound: 'Found again is a whole number, zero or more, and never more than went missing.',
+    noResolve: 'You can see the indents, but resolving a shortfall needs the stock-adjustment approval permission.',
+    issueShortWord: 'short', issueResolvedBy: 'shortfall resolved by', issueLostWord: 'lost', resolveMissingWord: 'missing',
+    reason_damaged: 'Damaged', reason_expired: 'Expired', reason_miscount: 'Miscounted', reason_found: 'Found', reason_theft_suspected: 'Theft suspected', reason_other: 'Other',
     savedHeading: 'Saved on this screen', savedLead: 'Each ask and each count you saved here, and where it has got to. The list is the same after a reload.',
     savedKindRequest: 'Indent', savedKindReceipt: 'Count-in', linesWord: 'lines',
     noRequest: 'You can see the indents, but raising one needs the indent permission.', noApprove: 'You can see the indents, but approving one needs the approval permission.',
@@ -238,6 +289,20 @@ export const INDENTS_COPY: BilingualCopy<CopyKey> = {
     receiveIssueUnknown: 'அந்த வழங்கல் பதிவேட்டில் இல்லை.', receiveNotInTransit: 'அந்த வழங்கல் ஏற்கனவே எண்ணி வாங்கப்பட்டது.',
     receiveIssuerCannot: 'இந்தச் சரக்கை நீங்கள் வழங்கினீர்கள், அதனால் தளத்தில் எண்ணி வாங்க முடியாது — வேறு ஒருவர் வாங்க வேண்டும் (எதுவும் சேமிக்கப்படவில்லை).',
     receiveBadCount: 'ஒவ்வொரு வரிக்கும் பூஜ்ஜியம் அல்லது அதற்கு மேல் முழு எண் அலகுகள் தேவை.', receiveAlreadySaved: 'இந்த எண்ணிக்கை ஏற்கனவே இந்தக் கருவியில் சேமிக்கப்பட்டது.',
+    resolveHeading: 'குறைவைத் தீர்', resolveChoiceLabel: 'எந்த வழங்கல் குறைவாக வந்தது', resolveFoundLabel: 'மீண்டும் கிடைத்தது', resolveReasonLabel: 'மீதி ஏன் இல்லை',
+    resolveNoteLabel: 'தேட என்ன செய்யப்பட்டது', resolveNotePlaceholder: 'எ.கா. பின் கடையிலும் தள்ளுவண்டி இடத்திலும் தேடினோம்',
+    resolveBtn: 'தீர்வைப் பதிவு செய்', resolveNoneOpen: 'நீங்கள் தீர்க்க எந்தக் குறைவும் காத்திருக்கவில்லை.',
+    resolveRecorded: 'குறைவு தீர்க்கப்பட்டது — கிடைத்தது மீண்டும் கணக்கில் உள்ளது; மீதி அது புறப்பட்ட விலையில் இழப்பாக உறுதி செய்யப்பட்டது.',
+    resolveAlready: 'இந்தக் குறைவு ஏற்கனவே இதே போல் தீர்க்கப்பட்டது.', resolveRefused: 'தலைமை அலுவலகம் தீர்வை மறுத்தது:', resolveLostLink: 'இணைப்பு இல்லை — எதுவும் தீர்க்கப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
+    resolveNotPermitted: 'குறைவைத் தீர்க்க உங்களுக்கு அனுமதி இல்லை (அது சரக்கு இழப்பை உறுதி செய்கிறது).', resolveNoLink: 'இந்தப் பக்கம் தலைமை அலுவலகத்தை அடைய முடியாது, அதனால் இங்கிருந்து தீர்க்க முடியாது.',
+    resolveIssueUnknown: 'அந்த வழங்கல் பதிவேட்டில் இல்லை.', resolveNotOpen: 'அந்த வழங்கலுக்குத் திறந்த குறைவு இல்லை — முழுமையாக வந்தது அல்லது ஏற்கனவே தீர்க்கப்பட்டது.',
+    resolveIssuerCannot: 'இந்தச் சரக்கை நீங்கள் வழங்கினீர்கள், அதனால் அதன் குறைவைத் தீர்க்க முடியாது — வேறு ஒருவர் தீர்க்க வேண்டும் (எதுவும் அனுப்பப்படவில்லை).',
+    resolveCounterCannot: 'இந்தச் சரக்கை நீங்கள் எண்ணி வாங்கினீர்கள், அதனால் அதன் குறைவைத் தீர்க்க முடியாது — வேறு ஒருவர் தீர்க்க வேண்டும் (எதுவும் அனுப்பப்படவில்லை).',
+    resolveBadReason: 'மீதி ஏன் இல்லை என்பதைத் தேர்ந்தெடுக்கவும்.', resolveNoteTooShort: 'சரக்கைத் தேட என்ன செய்யப்பட்டது என்று சொல்லுங்கள் (குறைந்தது சில சொற்கள்).',
+    resolveBadFound: 'மீண்டும் கிடைத்தது பூஜ்ஜியம் அல்லது அதற்கு மேல் முழு எண்; காணாமல் போனதை விட அதிகமாக இருக்கக் கூடாது.',
+    noResolve: 'கோரிக்கைகளைப் பார்க்கலாம், ஆனால் குறைவைத் தீர்க்க சரக்குச் சரிசெய்தல் ஒப்புதல் அனுமதி தேவை.',
+    issueShortWord: 'குறைவு', issueResolvedBy: 'குறைவைத் தீர்த்தவர்', issueLostWord: 'இழப்பு', resolveMissingWord: 'காணவில்லை',
+    reason_damaged: 'சேதமடைந்தது', reason_expired: 'காலாவதியானது', reason_miscount: 'தவறாக எண்ணப்பட்டது', reason_found: 'கிடைத்தது', reason_theft_suspected: 'திருட்டு சந்தேகம்', reason_other: 'மற்றவை',
     savedHeading: 'இந்தத் திரையில் சேமிக்கப்பட்டவை', savedLead: 'நீங்கள் இங்கே சேமித்த ஒவ்வொரு கோரிக்கையும் எண்ணிக்கையும், அது எங்கே சென்றது என்பதும். மீண்டும் ஏற்றிய பின்னும் பட்டியல் அதேதான்.',
     savedKindRequest: 'கோரிக்கை', savedKindReceipt: 'எண்ணி வாங்கல்', linesWord: 'வரிகள்',
     noRequest: 'கோரிக்கைகளைப் பார்க்கலாம், ஆனால் எழுப்ப கோரிக்கை அனுமதி தேவை.', noApprove: 'கோரிக்கைகளைப் பார்க்கலாம், ஆனால் ஒப்புதல் அளிக்க ஒப்புதல் அனுமதி தேவை.',
@@ -278,6 +343,8 @@ export interface PresentedIndent {
   readonly ownAsk: boolean;
   /** The issues THIS reader may count in: on the trolley, and not issued by them (§28). */
   readonly receivableIssues: readonly IndentIssueView[];
+  /** Batch 2: the issues THIS reader may resolve the shortfall of: counted in short, still open, neither issued nor counted by them (§28). */
+  readonly resolvableIssues: readonly IndentIssueView[];
 }
 
 export interface IndentsView {
@@ -293,6 +360,10 @@ export interface IndentsView {
   readonly canReceive: boolean;
   readonly approvable: readonly PresentedIndent[];
   readonly receivable: readonly { readonly indentId: string; readonly issue: IndentIssueView }[];
+  readonly canResolve: boolean;
+  readonly resolvable: readonly { readonly indentId: string; readonly issue: IndentIssueView }[];
+  /** The reason codes a resolution may name, in the reader's language. */
+  readonly resolveReasons: readonly { readonly code: string; readonly label: string }[];
   readonly products: readonly IndentProductOption[];
   readonly nobodyNamed: boolean;
 }
@@ -305,6 +376,18 @@ export type RaiseOutcome = { readonly ok: true; readonly indentId: string } | { 
 export interface ReceiveInput { readonly indentId: string; readonly issueId: string; readonly counted: readonly { readonly productId: string; readonly batchId: string | null; readonly quantityMinor: string }[] }
 export type ReceiveRefusal = 'not_permitted' | 'nobody_named' | 'issue_unknown' | 'not_in_transit' | 'issuer_cannot_receive' | 'bad_count' | 'already_saved';
 export type ReceiveOutcome = { readonly ok: true; readonly indentId: string; readonly issueId: string } | { readonly ok: false; readonly refusal: ReceiveRefusal };
+
+export interface ResolveInput {
+  readonly indentId: string;
+  readonly issueId: string;
+  readonly reasonCode: string;
+  readonly note: string;
+  /** What turned up per shortfall line, as typed; a line not named was not found. */
+  readonly found: readonly { readonly productId: string; readonly batchId: string | null; readonly foundMinor: string }[];
+}
+export type ResolveOutcome =
+  | { readonly outcome: 'resolved' | 'already_resolved' | 'lost_link' | 'not_permitted' | 'no_link' | 'issue_unknown' | 'not_open' | 'issuer_cannot_resolve' | 'counter_cannot_resolve' | 'bad_reason' | 'note_too_short' | 'bad_found' }
+  | { readonly outcome: 'refused'; readonly reason: string };
 
 export type ApproveOutcome =
   | { readonly outcome: 'approved' | 'already_approved' | 'lost_link' | 'self_approval' | 'not_permitted' | 'not_requested' | 'no_link' }
@@ -332,6 +415,9 @@ export interface IndentsSession {
   /** Approve — an online write under the reader's session; refused here for the requester (§28). */
   approve(indentId: string, reason: string): Promise<ApproveOutcome>;
   presentApproveOutcome(lang: Lang, outcome: ApproveOutcome): StatusPresentation;
+  /** Batch 2 — resolve a shortfall: an online write under the reader's session; refused here for the issuer and the counter (§28). */
+  resolve(input: ResolveInput): Promise<ResolveOutcome>;
+  presentResolveOutcome(lang: Lang, outcome: ResolveOutcome): StatusPresentation;
   raiseRefusalWords(lang: Lang, refusal: RaiseRefusal): string;
   receiveRefusalWords(lang: Lang, refusal: ReceiveRefusal): string;
   /** Everything this screen saved, newest first, from the durable queue — the same after a reload. */
@@ -366,6 +452,9 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
   const canRequest = (): boolean => !nobodyNamed && ports.mayRequest() && config.storeId !== null && config.backStoreId !== null;
   const canApprove = (): boolean => !nobodyNamed && ports.mayApprove() && ports.approvePort() !== null;
   const canReceive = (): boolean => !nobodyNamed && ports.mayReceive();
+  const canResolve = (): boolean => !nobodyNamed && (ports.mayResolve?.() ?? false) && (ports.resolvePort?.() ?? null) !== null;
+  /** An issue whose shortfall is open: counted in, something missing, nobody has resolved it yet. */
+  const shortfallOpen = (i: IndentIssueView): boolean => i.state === 'received' && (i.shortfall ?? []).some((s) => s.quantityMinor > 0) && (i.resolvedBy ?? null) === null;
   /** Receipts already saved on this device for an issue — offered no second time. */
   const receiptSavedHere = (indentId: string, issueId: string): boolean => outbox.find(receiptKeyFor(indentId, issueId)) !== undefined;
 
@@ -389,6 +478,10 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
     const receivableIssues = canReceive()
       ? row.issues.filter((i) => i.state === 'in_transit' && i.issuedBy !== config.userId && !receiptSavedHere(row.indentId, i.issueId))
       : [];
+    // §28 on the screen: neither the issuer nor the counter resolves the shortfall of what they sent / counted.
+    const resolvableIssues = canResolve()
+      ? row.issues.filter((i) => shortfallOpen(i) && i.issuedBy !== config.userId && (i.receivedBy ?? null) !== config.userId)
+      : [];
     return {
       status, indentId: row.indentId, state: row.state, stateLabel: t(STATE_COPY[row.state] ?? 'stRequested'),
       requestedBy: row.requestedBy, requestedAt: row.requestedAt, approvedBy: row.approvedBy, reason: row.reason,
@@ -398,13 +491,15 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
       canApproveHere: canApprove() && row.state === 'requested' && !ownAsk,
       ownAsk: row.state === 'requested' && ownAsk,
       receivableIssues,
+      resolvableIssues,
     };
   };
+  const reasonsIn = (lang: Lang): { code: string; label: string }[] => SHORTFALL_REASON_CODES.map((code) => ({ code, label: text(lang, `reason_${code}` as CopyKey) }));
 
   const empty = (screenState: StatusPresentation, asOf: string | null, writes: boolean): IndentsView => ({
     screenState, asOf, indents: [], count: 0, needingAttentionCount: 0, inTransitMinor: 0, outstandingMinor: 0,
     canRequest: writes && canRequest(), canApprove: writes && canApprove(), canReceive: writes && canReceive(),
-    approvable: [], receivable: [], products: config.products, nobodyNamed,
+    approvable: [], receivable: [], canResolve: writes && canResolve(), resolvable: [], resolveReasons: [], products: config.products, nobodyNamed,
   });
 
   return {
@@ -433,6 +528,9 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
         canRequest: canRequest(), canApprove: canApprove(), canReceive: canReceive(),
         approvable: indents.filter((i) => i.canApproveHere),
         receivable: indents.flatMap((i) => i.receivableIssues.map((issue) => ({ indentId: i.indentId, issue }))),
+        canResolve: canResolve(),
+        resolvable: indents.flatMap((i) => i.resolvableIssues.map((issue) => ({ indentId: i.indentId, issue }))),
+        resolveReasons: reasonsIn(lang),
         products: config.products, nobodyNamed,
       };
     },
@@ -496,6 +594,53 @@ export function createIndentsSession(config: IndentsConfig, ports: IndentsPorts,
       const posted = await port.post({ indentId: indentId.trim(), reason: reason.trim() });
       if (posted.result === 'refused') return { outcome: 'refused', reason: posted.reason };
       return { outcome: posted.result };
+    },
+
+    resolve: async (input) => {
+      if (!ports.mayRead() || !(ports.mayResolve?.() ?? false) || nobodyNamed) return { outcome: 'not_permitted' };
+      const port = ports.resolvePort?.() ?? null;
+      if (port === null) return { outcome: 'no_link' };
+      const row = (ports.snapshot().indents ?? []).find((r) => r.indentId === input.indentId.trim());
+      const issue = row?.issues.find((i) => i.issueId === input.issueId.trim());
+      if (row === undefined || issue === undefined) return { outcome: 'issue_unknown' };
+      if (!shortfallOpen(issue)) return { outcome: 'not_open' };
+      // §28 on the screen — refused before anything is sent; the cloud refuses again.
+      if (issue.issuedBy === config.userId) return { outcome: 'issuer_cannot_resolve' };
+      if ((issue.receivedBy ?? null) === config.userId) return { outcome: 'counter_cannot_resolve' };
+      if (!SHORTFALL_REASON_CODES.includes(input.reasonCode)) return { outcome: 'bad_reason' };
+      const note = input.note.trim();
+      if (note.length < 4) return { outcome: 'note_too_short' };
+      const lines: { productId: string; batchId: string | null; foundMinor: number }[] = [];
+      for (const f of input.found) {
+        const raw = f.foundMinor.trim() === '' ? '0' : f.foundMinor;
+        const qty = wholeNumber(raw);
+        const missing = (issue.shortfall ?? []).find((s) => s.productId === f.productId && s.batchId === f.batchId);
+        if (qty === undefined || !isNonNegInt(qty) || missing === undefined || qty > missing.quantityMinor) return { outcome: 'bad_found' };
+        if (qty > 0) lines.push({ productId: f.productId, batchId: f.batchId, foundMinor: qty });
+      }
+      const posted = await port.post({ indentId: row.indentId, issueId: issue.issueId, reasonCode: input.reasonCode, note, lines });
+      if (posted.result === 'refused') return { outcome: 'refused', reason: posted.reason };
+      return { outcome: posted.result };
+    },
+
+    presentResolveOutcome: (lang, o) => {
+      const t = translator(INDENTS_COPY, lang);
+      const err = (key: CopyKey) => presentStatus({ tone: 'error', icon: '✕', label: t(key), needsAttention: true });
+      switch (o.outcome) {
+        case 'resolved': return presentStatus({ tone: 'ok', icon: '✓', label: t('resolveRecorded'), needsAttention: false });
+        case 'already_resolved': return presentStatus({ tone: 'ok', icon: '✓', label: t('resolveAlready'), needsAttention: false });
+        case 'lost_link': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('resolveLostLink'), needsAttention: true });
+        case 'no_link': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('resolveNoLink'), needsAttention: true });
+        case 'refused': return presentStatus({ tone: 'error', icon: '✕', label: `${t('resolveRefused')} ${o.reason}`, needsAttention: true });
+        case 'not_permitted': return err('resolveNotPermitted');
+        case 'issue_unknown': return err('resolveIssueUnknown');
+        case 'not_open': return err('resolveNotOpen');
+        case 'issuer_cannot_resolve': return err('resolveIssuerCannot');
+        case 'counter_cannot_resolve': return err('resolveCounterCannot');
+        case 'bad_reason': return err('resolveBadReason');
+        case 'note_too_short': return err('resolveNoteTooShort');
+        case 'bad_found': return err('resolveBadFound');
+      }
     },
 
     presentApproveOutcome: (lang, o) => {

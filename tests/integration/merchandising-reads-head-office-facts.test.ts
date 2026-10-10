@@ -87,10 +87,12 @@ describe.each(backings)('FUL-11 merchandising reads head office\'s own facts —
     expect((await receive(BACK, 'p-tea', 100)).status).toBe(202);
     expect((await receive(BACK, 'p-new', 30)).status).toBe(202);
 
-    // 1. "None on hand", says the request — the ledger says 40 are in the store: clearance, never a silent delete.
-    const drop = await call('POST', `/v1/merchandising/assortment/${STORE}/p-old/drop`, MGR, { onHandMinor: 0, reason: 'poor_sales', effectiveFrom: today });
+    // 1. A request may not say what is on the shelf at all; the ledger says 40 are in the store: clearance, never a delete.
+    const typed = await call('POST', `/v1/merchandising/assortment/${STORE}/p-old/drop`, MGR, { onHandMinor: 0, reason: 'poor_sales', effectiveFrom: today });
+    expect(codeOf(typed)).toBe('drop_carries_caller_stock');
+    const drop = await call('POST', `/v1/merchandising/assortment/${STORE}/p-old/drop`, MGR, { reason: 'poor_sales', effectiveFrom: today });
     expect(drop.status).toBe(201);
-    expect(drop.body).toMatchObject({ outcome: 'routed_to_clearance', status: 'clearance', onHandMinor: 40, onHandFrom: 'head_office_stock_ledger', typedFigureIgnored: 0 });
+    expect(drop.body).toMatchObject({ outcome: 'routed_to_clearance', status: 'clearance', onHandMinor: 40 });
     const gone = await call('POST', `/v1/merchandising/assortment/${STORE}/p-gone/drop`, MGR, { reason: 'supplier_discontinued', effectiveFrom: today });
     expect(gone.body).toMatchObject({ outcome: 'delisted', onHandMinor: 0 });
 
@@ -99,9 +101,9 @@ describe.each(backings)('FUL-11 merchandising reads head office\'s own facts —
     expect(ok.status).toBe(201);
     const notRanged = await call('POST', '/v1/floor/indents/ind-2', MGR, { fromLocationId: BACK, toLocationId: STORE, lines: [{ productId: 'p-new', quantityMinor: 5, uom: 'each' }] });
     expect(notRanged.status).toBe(422);
-    expect(codeOf(notRanged)).toBe('not_in_store_range');
+    expect(codeOf(notRanged)).toBe('not_in_range');
     const delisted = await call('POST', '/v1/floor/indents/ind-3', MGR, { fromLocationId: BACK, toLocationId: STORE, lines: [{ productId: 'p-gone', quantityMinor: 1, uom: 'each' }] });
-    expect(codeOf(delisted)).toBe('not_in_store_range');
+    expect(codeOf(delisted)).toBe('not_in_range');
     expect((await call('GET', '/v1/floor/indents/ind-2', OWNER)).status).toBe(404); // nothing recorded
     // Clearance stock may still come out to sell down.
     expect((await call('POST', '/v1/floor/indents/ind-4', MGR, { fromLocationId: BACK, toLocationId: STORE, lines: [{ productId: 'p-old', quantityMinor: 1, uom: 'each' }] })).status).toBe(201);
@@ -112,7 +114,7 @@ describe.each(backings)('FUL-11 merchandising reads head office\'s own facts —
     expect(proposal.status).toBe(200);
     const pb = proposal.body as { proposals: { productId: string }[]; outOfRange: { productId: string; status: string }[] };
     expect(pb.proposals.map((p) => p.productId)).toEqual(['p-tea']);
-    expect(pb.outOfRange).toEqual([{ productId: 'p-old', status: 'clearance' }, { productId: 'p-gone', status: 'delisted' }, { productId: 'p-new', status: 'never_listed' }]);
+    expect(pb.outOfRange).toEqual([{ productId: 'p-old', status: 'clearance' }, { productId: 'p-gone', status: 'delisted' }, { productId: 'p-new', status: 'not_ranged' }]);
 
     // The integrity check runs on the ledger too: p-old's clearance stock is what the ledger holds, not a typed figure.
     const integrity = await call('POST', `/v1/merchandising/assortment/${STORE}/integrity`, MGR, { onDate: today, soldProductIds: [], onHand: { 'p-old': 0 } });

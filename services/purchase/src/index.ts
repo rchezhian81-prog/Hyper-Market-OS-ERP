@@ -11,6 +11,7 @@
 // is paid, and where they do not, what is paid is the *lowest* of the three until a person settles
 // it. Paying the invoice and investigating later is how an overcharge becomes permanent.
 
+import { minorPerUnitOf, normaliseUom, valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import type { Route } from '../../kernel/src/index';
 import { deciderSealFlags } from '../../pos/src/store-seal';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
@@ -191,6 +192,8 @@ export interface SupplierInvoiceLine {
   readonly quantity: number;
   readonly unitPriceMinor: number;
   readonly lineTotalMinor: number;
+  /** OB-31: the line's unit when the paper names one (kg ⇒ quantity in grams, price per kg); absent ⇒ whole items. */
+  readonly uom?: string;
 }
 
 /** What head office could not verify about a captured invoice — said on the record, never silent (P-08). */
@@ -272,7 +275,7 @@ type LinesRead =
   | { readonly ok: false; readonly code: 'not_readable' | 'line_does_not_multiply' | 'carries_caller_claims'; readonly detail: string };
 
 /** The invoice's own lines off the wire — and a refusal, by name, of a body that carries the F04 shape (ordered / received figures). */
-export function readInvoiceLines(v: unknown): LinesRead {
+export function readInvoiceLines(v: unknown, unitOf?: Readonly<Record<string, string | undefined>>): LinesRead {
   if (!Array.isArray(v) || v.length === 0) return { ok: false, code: 'not_readable', detail: 'at least one invoice line is needed' };
   const lines: SupplierInvoiceLine[] = [];
   for (const [i, raw] of (v as unknown[]).entries()) {
@@ -283,11 +286,25 @@ export function readInvoiceLines(v: unknown): LinesRead {
     if (!isStr(raw['productId']) || !isPosInt(raw['quantity']) || !isNonNegInt(raw['unitPriceMinor']) || !isNonNegInt(raw['lineTotalMinor'])) {
       return { ok: false, code: 'not_readable', detail: `line ${i + 1} needs a productId, a whole positive quantity, and whole non-negative unitPriceMinor and lineTotalMinor` };
     }
-    const product = raw['quantity'] * raw['unitPriceMinor'];
+    // OB-31: a line may say its unit (kg ⇒ quantity in grams, price per kg); without one it counts whole items.
+    if (raw['uom'] !== undefined && (!isStr(raw['uom']) || normaliseUom(raw['uom']) === undefined)) {
+      return { ok: false, code: 'not_readable', detail: `line ${i + 1}: "${String(raw['uom'])}" is not a unit this system knows` };
+    }
+    const said = isStr(raw['uom']) ? normaliseUom(raw['uom'])! : undefined;
+    // OB-31 (Batch 1 finding): head office's product master says what a line is counted in — a line that names no unit is
+    // in the PRODUCT's unit (a weighed product's quantity is grams, its price per kg), never silently "items"; a line that
+    // names a different unit from the master's is refused by name (the quantity would mean something else).
+    const master = unitOf?.[raw['productId']];
+    const masterCode = master === undefined ? undefined : normaliseUom(master) ?? master;
+    if (said !== undefined && masterCode !== undefined && normaliseUom(masterCode) !== undefined && said !== masterCode) {
+      return { ok: false, code: 'not_readable', detail: `line ${i + 1}: ${raw['productId']} is counted in "${masterCode}" on the product master, but the line says "${said}"` };
+    }
+    const uom = said ?? (masterCode !== undefined && normaliseUom(masterCode) !== undefined ? masterCode : undefined);
+    const product = valueAtUnitCost(raw['quantity'], uom ?? 'ea', raw['unitPriceMinor']);
     if (product !== raw['lineTotalMinor']) {
       return { ok: false, code: 'line_does_not_multiply', detail: `line ${i + 1}: ${raw['quantity']} × ${raw['unitPriceMinor']} is ${product}, but the line says ${raw['lineTotalMinor']}` };
     }
-    lines.push({ productId: raw['productId'], quantity: raw['quantity'], unitPriceMinor: raw['unitPriceMinor'], lineTotalMinor: raw['lineTotalMinor'] });
+    lines.push({ productId: raw['productId'], quantity: raw['quantity'], unitPriceMinor: raw['unitPriceMinor'], lineTotalMinor: raw['lineTotalMinor'], ...(uom === undefined ? {} : { uom }) });
   }
   return { ok: true, lines };
 }
@@ -344,9 +361,11 @@ export function matchLinesFrom(
 ): MatchLine[] {
   const usable = order !== undefined && order.status === 'issued' ? order : undefined;
   const ordered = new Map<string, { qty: number; unitMinor: number }>();
+  const scaleOf = new Map<string, number>(); // OB-31: steps per whole unit, from the order's own line unit
   for (const l of usable?.lines ?? []) {
     const cur = ordered.get(l.productId);
     ordered.set(l.productId, { qty: (cur?.qty ?? 0) + l.orderedQty, unitMinor: cur?.unitMinor ?? l.unitCost.minor });
+    if (l.uom !== undefined) scaleOf.set(l.productId, minorPerUnitOf(l.uom));
   }
   for (const [productId, prior] of Object.entries(invoicedBefore)) {
     const cur = ordered.get(productId);
@@ -367,6 +386,7 @@ export function matchLinesFrom(
     invoicedQty: invoiced.get(productId)?.qty ?? 0,
     orderedUnitMinor: ordered.get(productId)?.unitMinor ?? 0,
     invoicedUnitMinor: invoiced.get(productId)?.unitMinor ?? 0,
+    ...(scaleOf.get(productId) === undefined || scaleOf.get(productId) === 1 ? {} : { minorPerUnit: scaleOf.get(productId)! }),
   }));
 }
 
@@ -387,7 +407,20 @@ export function invoicedBeforeOn(poId: string, invoice: SupplierInvoiceRecord, a
 }
 
 
+/** OB-31: the product master's unit for each product named on raw invoice lines (absent ⇒ not known here). */
+export async function unitsOfLines(deps: Pick<PurchaseDeps, 'productUom'>, tenantId: string, v: unknown): Promise<Record<string, string | undefined>> {
+  const out: Record<string, string | undefined> = {};
+  if (deps.productUom === undefined || !Array.isArray(v)) return out;
+  for (const raw of v as unknown[]) {
+    const id = isObj(raw) && isStr(raw['productId']) ? raw['productId'] : undefined;
+    if (id !== undefined && !(id in out)) out[id] = await deps.productUom(tenantId, id);
+  }
+  return out;
+}
+
 export interface PurchaseDeps {
+  /** OB-31: the unit the product master counts a product in — an invoice line naming none is in this unit. Absent ⇒ items. */
+  readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
   /** The invoice with this id, or undefined — the never-double-count check and the match's source. */
   readonly invoice: (tenantId: string, invoiceId: string) => Promise<SupplierInvoiceRecord | undefined> | SupplierInvoiceRecord | undefined;
   /** Every captured invoice — the review surface and, in SP-7b, the supplier's account. */
@@ -432,6 +465,41 @@ export interface Commitments {
   readonly valueMinor: number;
 }
 
+/**
+ * SF-09 (Batch 2) — an invoice a SUPPLIER submitted through the portal, accepted by a BUYER on review, becomes a supplier
+ * invoice on the SAME register the screen and the API capture into: its own lines as the supplier sent them, re-read and
+ * re-checked here (OB-31 units, every line multiplies, the lines add up), the supplier login as the capturer, the buyer
+ * as the reviewer — and NO checker: checking the bill is the three-way match, a second person's own act. An id already
+ * on the register is refused by name; nothing is written twice. Returns the record, or the refusal in words.
+ */
+export async function capturePortalInvoice(deps: PurchaseDeps, tenantId: string, input: {
+  readonly invoiceId: string; readonly supplierId: string; readonly poId: string | null; readonly declaredTotalMinor: number;
+  readonly lines: unknown; readonly submittedBy: string; readonly reviewedBy: string; readonly submissionId: string; readonly branchId: string | null;
+}): Promise<{ readonly ok: true; readonly record: SupplierInvoiceRecord } | { readonly ok: false; readonly code: string; readonly detail: string }> {
+  const read = readInvoiceLines(input.lines, await unitsOfLines(deps, tenantId, input.lines));
+  if (!read.ok) return { ok: false, code: read.code === 'line_does_not_multiply' ? 'invoice_line_does_not_multiply' : 'not_readable_as_a_supplier_invoice', detail: read.detail };
+  const totalMinor = sumOf(read.lines);
+  if (totalMinor !== input.declaredTotalMinor) return { ok: false, code: 'does_not_add_up_to_the_invoice_total', detail: `the lines add up to ${totalMinor} and the invoice says ${input.declaredTotalMinor}` };
+  if ((await deps.invoice(tenantId, input.invoiceId)) !== undefined || (await deps.invoiceIdUsed?.(tenantId, input.invoiceId)) === true) {
+    return { ok: false, code: 'invoice_id_already_used', detail: `invoice ${input.invoiceId} is already on head office's register — one bill is one record` };
+  }
+  const flags: InvoiceFlag[] = ['no_approval'];
+  await orderForInvoice(deps, tenantId, input.poId, input.supplierId, flags);
+  const at = deps.now();
+  const record: SupplierInvoiceRecord = {
+    invoiceId: input.invoiceId, supplierId: input.supplierId, poId: input.poId, lines: read.lines, declaredTotalMinor: input.declaredTotalMinor, totalMinor, currency: 'INR',
+    capturedBy: input.submittedBy, capturedAt: at, approvedBy: null, approvedAt: null, source: `supplier-portal/${input.submissionId}`, governanceFlags: flags,
+  };
+  await deps.recordInvoice(tenantId, record);
+  await deps.recordAudit?.(tenantId, {
+    actorId: input.reviewedBy, action: 'invoice.capture.portal', objectType: 'supplier_invoice', objectId: input.invoiceId,
+    at, origin: { tenantId, branchId: input.branchId }, before: null,
+    after: { supplierId: input.supplierId, poId: input.poId ?? '', lines: String(read.lines.length), totalMinor: String(totalMinor), submittedBy: input.submittedBy, submissionId: input.submissionId, flags: flags.join(',') },
+    correlationId: input.invoiceId,
+  });
+  return { ok: true, record };
+}
+
 export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
   return [
     {
@@ -445,7 +513,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         const invoiceId = (ctx.params['invoiceId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (b['ordered'] !== undefined || b['received'] !== undefined) throw refuseLines({ ok: false, code: 'carries_caller_claims', detail: 'the body names what was ordered or received' }, false);
-        const read = readInvoiceLines(b['lines']);
+        const read = readInvoiceLines(b['lines'], await unitsOfLines(deps, ctx.tenantId, b['lines']));
         if (!read.ok) throw refuseLines(read, false);
         const poId = b['poId'];
         const approvedBy = b['approvedBy'];
@@ -505,7 +573,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
       handler: async (ctx) => {
         const invoiceId = (ctx.params['invoiceId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const read = readInvoiceLines(b['lines']);
+        const read = readInvoiceLines(b['lines'], await unitsOfLines(deps, ctx.tenantId, b['lines']));
         if (!read.ok) throw refuseLines(read, true);
         const poId = b['poId'];
         const approvedBy = b['approvedBy'];

@@ -49,7 +49,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-worker', 'store_manager'); // counts and raises; holds approve too — but never on their own
   await h.provisionRole(A, 'u-mgr', 'store_manager');    // the supervisor who decides
-  await h.provisionRole(A, 'u-box', 'cashier');          // the store box: relays decisions, counts, requests
+  await h.provisionRole(A, 'u-box', 'store_computer');          // the store box: relays decisions, counts, requests
   await h.provisionRole(A, 'u-cashier', 'cashier');      // holds no approval authority
   expect((await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: 'u-owner', tenantId: A, idempotencyKey: 'seed', body: { movementId: 'seed', productId: 'P1', locationId: 'S1', kind: 'received', quantityMinor: 100, uom: 'EA', occurredAt: AT, enteredBy: 'u-owner', unitCostMinor: 100 } })).status).toBe(202);
   expect((await h.request({ method: 'POST', path: '/v1/inventory/count-policy', userId: 'u-owner', tenantId: A, idempotencyKey: 'pol', body: { approvalThresholdMinor: 1_000 } })).status).toBe(201);

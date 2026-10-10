@@ -114,6 +114,15 @@ describe('PF-09 step 3: points and store credit spent at the till are spent once
     expect(JSON.stringify(ex)).toMatch(/S-B/);
   });
 
+  it('OB-33 "A": with no limit set the feed carries the owner\'s ₹500 default; setting 0 switches till spending off', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    expect((await feed(h)).rule.tillSpendCapPaise).toBe(50_000);
+    expect((await h.request({ method: 'PUT', path: '/v1/platform/setup/loyalty.till_spend_cap_paise', userId: 'u-owner', tenantId: A, idempotencyKey: 'off', body: { value: 0 } })).status).toBeLessThan(300);
+    expect((await feed(h)).rule.tillSpendCapPaise).toBe(0);
+  });
+
   it('a spend on a sale that names no member takes nothing and is raised', async () => {
     const h = await shop();
     const body = { ...sale('S-X', 500, [{ kind: 'store_credit', amountMinor: 500 }]) } as Record<string, unknown>;

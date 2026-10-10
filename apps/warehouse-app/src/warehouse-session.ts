@@ -349,6 +349,8 @@ export interface WarehouseAssignment {
   /** The GRN context: what is on order, so an over-delivery or an off-order item is caught (§28). */
   readonly grnId?: string;
   readonly ordered?: readonly OrderedProduct[];
+  /** OB-37: every delivery this store is waiting for (the phone's chooser); the chosen one fills grnId/poId/ordered. */
+  readonly openDeliveries?: readonly { readonly poId: string; readonly number: string; readonly supplierId: string; readonly grnId: string; readonly ordered: readonly OrderedProduct[] }[];
   /** SP-6b: the purchase order the delivery is against, named on "delivery complete" so head office folds the GRN into it. */
   readonly poId?: string;
   /** Goods already received and awaiting put-away when the assignment was served. */

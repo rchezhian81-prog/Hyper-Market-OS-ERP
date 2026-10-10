@@ -4,7 +4,8 @@
 // figures per line), the raise form, the approve control, the count-in control and the "Saved on this screen" list. RAISE
 // and COUNT IN are written to the durable device queue by the session before it returns ok — this file never fetches;
 // the relay (window.indentsRelay) hands the queue to the store computer after every save and when the page regains the
-// network or the reader's attention. APPROVE goes through the session's online port. No prompt/confirm/alert; no timer.
+// network or the reader's attention. APPROVE and RESOLVE A SHORTFALL go through the session's online ports. No
+// prompt/confirm/alert; no timer.
 
 const el = (id) => document.getElementById(id);
 let lang = 'en';
@@ -51,14 +52,16 @@ function sampleSession() {
       indents: [{
         status: { tone: 'ok', icon: '✓', label: l === 'ta' ? 'அடுக்கில் உள்ளது' : 'On the shelf', announcement: 'on the shelf', needsAttention: false },
         indentId: 'IND-SAMPLE', state: 'received', stateLabel: l === 'ta' ? 'பெறப்பட்டது' : 'Received', requestedBy: '—', requestedAt: '', approvedBy: '—', reason: null,
-        needsAttention: false, flags: [], issues: [], canApproveHere: false, ownAsk: false, receivableIssues: [],
+        needsAttention: false, flags: [], issues: [], canApproveHere: false, ownAsk: false, receivableIssues: [], resolvableIssues: [],
         lines: [{ productId: 'RICE-5', uom: 'EA', requestedMinor: 10, allocatedMinor: 10, issuedMinor: 10, receivedMinor: 10, inTransitMinor: 0, shortfallMinor: 0, outstandingMinor: 0 }],
       }],
-      count: 1, needingAttentionCount: 0, inTransitMinor: 0, outstandingMinor: 0, canRequest: false, canApprove: false, canReceive: false, approvable: [], receivable: [], products: [], nobodyNamed: false,
+      count: 1, needingAttentionCount: 0, inTransitMinor: 0, outstandingMinor: 0, canRequest: false, canApprove: false, canReceive: false, approvable: [], receivable: [], canResolve: false, resolvable: [], resolveReasons: [], products: [], nobodyNamed: false,
     }),
     raise: () => ({ ok: false, refusal: 'not_permitted' }),
     receive: () => ({ ok: false, refusal: 'not_permitted' }),
     approve: async () => ({ outcome: 'no_link' }),
+    resolve: async () => ({ outcome: 'no_link' }),
+    presentResolveOutcome: () => ({ tone: 'degraded', icon: '⚠', label: '', announcement: '', needsAttention: true }),
     presentApproveOutcome: () => ({ tone: 'degraded', icon: '⚠', label: '', announcement: '', needsAttention: true }),
     raiseRefusalWords: () => '', receiveRefusalWords: () => '',
     savedWork: () => [], handedKeys: () => [], noteBoxStatus: () => {},
@@ -132,7 +135,12 @@ function indentNode(r) {
       const item = document.createElement('li');
       item.dataset.issueId = i.issueId;
       item.dataset.state = i.state;
-      item.textContent = `${t('issueLabel')} ${i.issueId} · ${i.lines.map((l) => `${l.productId} × ${l.quantityMinor}`).join(', ')} · ${t('issuedByLabel')} ${i.issuedBy} · ${i.state === 'in_transit' ? t('issueInTransit') : t('issueReceived')}`;
+      const short = (i.shortfall ?? []).filter((s) => s.quantityMinor > 0);
+      item.dataset.short = short.length > 0 ? (i.resolvedBy ? 'resolved' : 'open') : 'none';
+      // Batch 2: what did not arrive, and who resolved it — in words beside the issue, never only a colour.
+      const shortText = short.length === 0 ? '' : ` · ${t('issueShortWord')}: ${short.map((s) => `${s.productId} × ${s.quantityMinor}`).join(', ')}`
+        + (i.resolvedBy ? ` · ${t('issueResolvedBy')} ${i.resolvedBy}${typeof i.lostValueMinor === 'number' ? ` · ${t('issueLostWord')} ₹${(i.lostValueMinor / 100).toFixed(2)}` : ''}` : '');
+      item.textContent = `${t('issueLabel')} ${i.issueId} · ${i.lines.map((l) => `${l.productId} × ${l.quantityMinor}`).join(', ')} · ${t('issuedByLabel')} ${i.issuedBy} · ${i.state === 'in_transit' ? t('issueInTransit') : t('issueReceived')}${shortText}`;
       issues.append(item);
     }
     li.append(issues);
@@ -266,6 +274,65 @@ function paintReceiver(view) {
   renderReceiveLines();
 }
 
+// ── resolve a shortfall (Batch 2) ───────────────────────────────────────────
+
+let resolvable = [];
+
+function renderResolveLines() {
+  const choice = resolvable.find((r) => `${r.indentId}|${r.issue.issueId}` === el('resolve-issue').value);
+  el('resolve-found-heading').textContent = t('resolveFoundLabel');
+  el('resolve-lines').replaceChildren(...(choice === undefined ? [] : (choice.issue.shortfall ?? []).filter((s) => s.quantityMinor > 0).map((s) => {
+    const li = document.createElement('li');
+    li.dataset.productId = s.productId;
+    li.dataset.batchId = s.batchId ?? '';
+    const label = document.createElement('label');
+    const inputId = `found-${s.productId}-${s.batchId ?? 'none'}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+    label.htmlFor = inputId;
+    label.textContent = `${s.productId}${s.batchId ? ` · ${s.batchId}` : ''} (${t('resolveMissingWord')} ${s.quantityMinor})`;
+    const input = document.createElement('input'); input.id = inputId; input.type = 'text'; input.inputMode = 'numeric'; input.value = '0'; input.className = 'found';
+    li.append(label, input);
+    return li;
+  })));
+}
+
+function paintResolver(view) {
+  const resolver = el('resolver');
+  el('no-resolve').hidden = true;
+  if (!view.canResolve) {
+    resolver.hidden = true;
+    // Only worth a word when something on the register is actually short and waiting.
+    const anyOpen = view.indents.some((r) => r.issues.some((i) => (i.shortfall ?? []).some((s) => s.quantityMinor > 0) && !i.resolvedBy));
+    if (anyOpen && !view.nobodyNamed && window.indentsSession !== undefined) { el('no-resolve').hidden = false; el('no-resolve').textContent = t('noResolve'); }
+    return;
+  }
+  resolver.hidden = false;
+  resolvable = view.resolvable;
+  el('resolve-heading').textContent = t('resolveHeading');
+  el('resolve-issue-label').textContent = t('resolveChoiceLabel');
+  el('resolve-reason-label').textContent = t('resolveReasonLabel');
+  el('resolve-note-label').textContent = t('resolveNoteLabel');
+  el('resolve-note').placeholder = t('resolveNotePlaceholder');
+  el('resolve').textContent = t('resolveBtn');
+  const reason = el('resolve-reason');
+  const chosenReason = reason.value;
+  reason.replaceChildren(...view.resolveReasons.map((r) => { const o = document.createElement('option'); o.value = r.code; o.textContent = r.label; return o; }));
+  if (chosenReason && view.resolveReasons.some((r) => r.code === chosenReason)) reason.value = chosenReason;
+  const select = el('resolve-issue');
+  const chosen = select.value;
+  select.replaceChildren(...resolvable.map((r) => {
+    const opt = document.createElement('option'); opt.value = `${r.indentId}|${r.issue.issueId}`;
+    opt.textContent = `${r.indentId} · ${t('issueLabel')} ${r.issue.issueId} · ${t('issueShortWord')}: ${(r.issue.shortfall ?? []).map((s) => `${s.productId} × ${s.quantityMinor}`).join(', ')} · ${t('issuedByLabel')} ${r.issue.issuedBy}`;
+    return opt;
+  }));
+  if (chosen && resolvable.some((r) => `${r.indentId}|${r.issue.issueId}` === chosen)) select.value = chosen;
+  const none = resolvable.length === 0;
+  el('resolve-none').hidden = !none;
+  el('resolve-none').textContent = none ? t('resolveNoneOpen') : '';
+  el('resolve-fields').hidden = none;
+  el('resolve').hidden = none;
+  renderResolveLines();
+}
+
 // ── saved on this screen ────────────────────────────────────────────────────
 
 function renderSaved() {
@@ -329,6 +396,7 @@ function paint() {
   paintRaiser(view);
   paintApprover(view);
   paintReceiver(view);
+  paintResolver(view);
   renderSaved();
 }
 
@@ -380,6 +448,22 @@ el('receive').addEventListener('click', () => {
   tell('ok', t('receiveSaved'));
   paint();
   void syncToBox();
+});
+
+el('resolve-issue').addEventListener('change', renderResolveLines);
+
+// RESOLVE A SHORTFALL — an online write under the reader's session; the session refuses the issuer and the counter before
+// anything is sent (§28). Only what turned up is named; the rest is confirmed lost by head office at the cost it left with.
+el('resolve').addEventListener('click', () => {
+  void (async () => {
+    const [indentId, issueId] = el('resolve-issue').value.split('|');
+    const found = [...el('resolve-lines').querySelectorAll('li')].map((li) => ({
+      productId: li.dataset.productId, batchId: li.dataset.batchId === '' ? null : li.dataset.batchId, foundMinor: li.querySelector('input.found').value,
+    }));
+    const outcome = await session.resolve({ indentId: indentId ?? '', issueId: issueId ?? '', reasonCode: el('resolve-reason').value, note: el('resolve-note').value, found });
+    paintResult(session.presentResolveOutcome(lang, outcome));
+    if (outcome.outcome === 'resolved' || outcome.outcome === 'already_resolved') { el('resolve-note').value = ''; await refresh(); }
+  })();
 });
 
 el('lang').addEventListener('click', () => { lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang; paint(); });

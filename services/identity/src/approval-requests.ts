@@ -115,6 +115,12 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'order_refund', label: 'Refund an online order',
     makerPermission: 'order.refund.issue', checkerPermission: 'order.refund.approve', validForMinutes: 24 * 60,
   },
+  // FUL-14 (M19-FR-01 · M18-FR-04): charging a dearer substitute ABOVE the original line price needs the customer's own
+  // yes AND a second person with authority over online-order money — the same authority that approves an order refund.
+  substitution_above_cap: {
+    kind: 'substitution_above_cap', label: 'Charge a dearer substitute above the original price',
+    makerPermission: 'order.lifecycle.manage', checkerPermission: 'order.refund.approve', validForMinutes: 24 * 60,
+  },
   service_compensation: {
     kind: 'service_compensation', label: 'Give a customer compensation above the desk\'s own limit',
     makerPermission: 'service.case.manage', checkerPermission: 'service.compensation.approve', validForMinutes: 24 * 60,
@@ -153,6 +159,13 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
   access_change: {
     kind: 'access_change', label: 'Change a person\'s access (joining, moving or leaving)',
     makerPermission: 'identity.role.request', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
+  },
+  // Branches (PA-04 · M01-FR-04 "every transition except reopening needs the owner's approval; the person executing is
+  // never the person approving"): the manager or owner who carries out the opening/closing asks; the OWNER approves
+  // (`branch.transition.approve` — the owner's alone, like every other domain's approve authority).
+  branch_transition: {
+    kind: 'branch_transition', label: 'Open, close for now, or close a branch for good',
+    makerPermission: 'branch.transition.execute', checkerPermission: 'branch.transition.approve', validForMinutes: 24 * 60,
   },
 });
 

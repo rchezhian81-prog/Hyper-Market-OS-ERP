@@ -143,8 +143,8 @@ describe('a product with a unit the till does not know is refused at the scan, b
       () => Promise.resolve({ committed: true as const, durable: true as const, detail: 'test double', laneMessage: 'Sale complete.' }),
     );
     session.setNow(AT);
-    const view = createPosView(session, 'INR', new CatalogueCache(snapshotWith('each')));
-    expect(() => view.scanBarcode('8901234500099')).toThrow('Cannot sell Odd Item: its unit "each" is not one this till knows.');
+    const view = createPosView(session, 'INR', new CatalogueCache(snapshotWith('bundle')));
+    expect(() => view.scanBarcode('8901234500099')).toThrow('Cannot sell Odd Item: its unit "bundle" is not one this till knows.');
     expect(view.basket()).toEqual([]);
     expect(view.payableMinor()).toBe(0);
     expect(Number.isFinite(view.payableMinor())).toBe(true);

@@ -235,13 +235,13 @@ describe('CatalogueCache', () => {
 });
 
 describe('a unit of measure the till does not know is refused at the scan, by name (Stage G slice 5c)', () => {
-  it('refuses "each" — the engine knows `ea` — instead of pricing the line as ₹NaN', () => {
+  it('refuses "bundle" — a unit no spelling rule knows (OB-31 reads "each" as `ea`) — instead of pricing the line as ₹NaN', () => {
     const cache = new CatalogueCache(snapshot({
-      products: [product({ productId: 'p9', sku: 'ODD', name: 'Odd Item', baseUom: 'each' })],
+      products: [product({ productId: 'p9', sku: 'ODD', name: 'Odd Item', baseUom: 'bundle' })],
       barcodes: [{ code: '8901234500009', productId: 'p9', kind: 'standard' }],
     }));
     expect(() => cache.scan('8901234500009')).toThrow(UnknownUnitError);
-    expect(() => cache.scan('8901234500009')).toThrow('Cannot sell Odd Item: its unit "each" is not one this till knows.');
+    expect(() => cache.scan('8901234500009')).toThrow('Cannot sell Odd Item: its unit "bundle" is not one this till knows.');
   });
 
   it('every unit the system knows still scans', () => {

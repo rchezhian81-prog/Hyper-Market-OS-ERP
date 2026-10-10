@@ -39,7 +39,7 @@ beforeAll(async () => {
   await h.provisionRole(A, 'u-meena', 'cashier');        // rings sales, holds the till
   await h.provisionRole(A, 'u-ravi', 'cashier');
   await h.provisionRole(A, 'u-mgr', 'store_manager');    // approves refunds
-  await h.provisionRole(A, 'u-box', 'cashier');          // the store computer's sync identity
+  await h.provisionRole(A, 'u-box', 'store_computer');          // the store computer's sync identity
   globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {
     if (String(url).startsWith('http://127.0.0.1:')) return savedFetch(url, init); // the till's own loopback calls
     const hdr = (init.headers ?? {}) as Record<string, string>;

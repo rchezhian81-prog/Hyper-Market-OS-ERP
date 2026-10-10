@@ -160,6 +160,10 @@ import {
   type ReleasePort, type ReleaseResult,
 } from './production-session';
 import {
+  createProductionTasksSession,
+  type ProductionTasksSession, type RunCommitPort, type LabelPort, type TaskPostResult,
+} from './production-tasks-session';
+import {
   createFacilitiesSession,
   type FacilitiesPorts, type FacilitiesSession, type FacilitiesData, type OverdueTask,
   type CompletePort, type CompleteResult,
@@ -195,7 +199,7 @@ import {
   type AdapterHealthView, type AdapterHealthState,
 } from './integration-health-session';
 import {
-  createGoodsReceiptSession,
+  createGoodsReceiptSession, type GrnReturnLineView, type GrnLineReturnPort, type LineReturnPostResult,
   type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView,
 } from './goods-receipt-session';
 import {
@@ -207,6 +211,7 @@ import {
   createIndentsSession,
   type IndentsPorts, type IndentsSession, type IndentsData, type IndentRowView, type IndentLineView, type IndentIssueView, type IndentProductOption,
   type IndentApprovePort, type ApprovePostResult as IndentApprovePostResult, type IndentBoxWords,
+  type IndentResolvePort, type ResolvePostResult as IndentResolvePostResult,
 } from './indents-session';
 import {
   createDataIoSession,
@@ -311,6 +316,8 @@ export interface BuyingData {
   /** Who may check this buyer's work. The box has already removed the buyer from it (§28). */
   readonly approvers?: readonly string[];
   readonly productIds?: readonly string[];
+  /** OB-31: each product's unit as the store's catalogue names it (kg ⇒ invoice and order quantities are grams). */
+  readonly productUoms?: Readonly<Record<string, string>>;
   /** Per-tenant tolerances for the three-way match. */
   readonly quantityToleranceBps?: number;
   readonly priceToleranceBps?: number;
@@ -1699,6 +1706,80 @@ export interface ProductionScreenData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
   readonly worklist?: ProductionData;
+  /** FUL-13: where this store's production is made (the kitchen location), when the store computer knows it. */
+  readonly productionLocationId?: string;
+}
+
+/** FUL-13 — the production staff's task paths (record a run, print a label) over the existing APIs, each under the
+ *  person's own session; the server re-checks every rule. */
+const PRODUCTION_COMMIT_PERMISSION = 'production.plan.commit';
+const PRODUCTION_LABEL_PERMISSION = 'production.recipe.manage';
+
+/** The kernel's refusal words (under `error`), or a top-level one, or a plain fallback. */
+const refusalWords = async (res: Response, fallback: string): Promise<string> => {
+  const body = (await res.json().catch(() => ({}))) as { whatHappened?: string; error?: { whatHappened?: string } };
+  return body.error?.whatHappened ?? body.whatHappened ?? fallback;
+};
+
+export function openRunCommitPort(): RunCommitPort {
+  return {
+    post: async ({ runId, ...body }): Promise<TaskPostResult<{ runId: string }>> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      try {
+        // Keyed on the run id: the same run sent twice is one run (the server refuses a different one under that id).
+        const res = await fetchFn(`/v1/production/runs/${encodeURIComponent(runId)}`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'content-type': 'application/json', 'idempotency-key': `run-${runId}`, accept: 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.status >= 200 && res.status < 300) return { result: 'done', value: { runId } };
+        return { result: 'refused', reason: await refusalWords(res, 'head office did not record the run') };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
+  };
+}
+
+export function openLabelPort(): LabelPort {
+  return {
+    post: async ({ runId, ...body }): Promise<TaskPostResult<{ lines: readonly string[] }>> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      try {
+        const res = await fetchFn(`/v1/production/runs/${encodeURIComponent(runId)}/label`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'content-type': 'application/json', 'idempotency-key': globalThis.crypto?.randomUUID?.() ?? `label-${runId}-${body.priceMinor}`, accept: 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.status >= 200 && res.status < 300) {
+          const ok = (await res.json().catch(() => ({}))) as { lines?: unknown };
+          return { result: 'done', value: { lines: Array.isArray(ok.lines) ? ok.lines.filter((l): l is string => typeof l === 'string') : [] } };
+        }
+        return { result: 'refused', reason: await refusalWords(res, 'head office did not make the label') };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
+  };
+}
+
+/** Build the production staff's task paths over a board (the runs a label may be printed for). */
+export function bootProductionTasks(data: ProductionScreenData | undefined, worklist?: ProductionData, ports?: { commit?: RunCommitPort; label?: LabelPort }): ProductionTasksSession | null {
+  if (data === undefined) return null;
+  const held = new Set(data.permissions ?? []);
+  const board = (): ProductionData => worklist ?? data.worklist ?? EMPTY_PRODUCTION;
+  return createProductionTasksSession(
+    { userId: data.userId === undefined ? null : data.userId, defaultLocationId: data.productionLocationId ?? null },
+    {
+      mayCommit: () => held.has(PRODUCTION_COMMIT_PERMISSION),
+      mayLabel: () => held.has(PRODUCTION_LABEL_PERMISSION),
+      commitPort: () => ports?.commit ?? null,
+      labelPort: () => ports?.label ?? null,
+      runs: () => board().runs,
+    },
+  );
 }
 
 const PRODUCTION_READ_PERMISSION = 'production.read';
@@ -2597,7 +2678,10 @@ export function openIndentsOutbox(storeId: string, storage?: DeviceStorage): Syn
   return openDeviceOutbox(guardedStore(`sre.indents.outbox.${storeId}`, store, onProblem), onProblem);
 }
 
-export function indentsPortsFromData(data: IndentsScreenData | undefined, snapshot?: IndentsData, approvePort?: IndentApprovePort): IndentsPorts {
+/** Batch 2: resolving a shortfall confirms a stock loss — the stock adjustment's approval right (M08-FR-03). */
+const INDENT_RESOLVE_PERMISSION = 'inventory.adjustment.approve';
+
+export function indentsPortsFromData(data: IndentsScreenData | undefined, snapshot?: IndentsData, approvePort?: IndentApprovePort, resolvePort?: IndentResolvePort): IndentsPorts {
   const held = new Set(data?.permissions ?? []);
   return {
     snapshot: () => snapshot ?? data?.snapshot ?? EMPTY_INDENTS,
@@ -2607,6 +2691,8 @@ export function indentsPortsFromData(data: IndentsScreenData | undefined, snapsh
     mayApprove: () => held.has(INDENT_APPROVE_PERMISSION),
     mayReceive: () => held.has(WRITE_OFF_APPEND_PERMISSION),
     approvePort: () => approvePort ?? null,
+    mayResolve: () => held.has(INDENT_RESOLVE_PERMISSION),
+    resolvePort: () => resolvePort ?? null,
   };
 }
 
@@ -2619,9 +2705,9 @@ const indentsConfigFrom = (data: IndentsScreenData | undefined) => ({
 });
 
 /** Build the Floor indents session, or `null` when the box carried no payload (shell shows the sample). */
-export function bootIndents(data: IndentsScreenData | undefined, outbox: SyncOutbox, snapshot?: IndentsData, approvePort?: IndentApprovePort, boxWords?: IndentBoxWords): IndentsSession | null {
+export function bootIndents(data: IndentsScreenData | undefined, outbox: SyncOutbox, snapshot?: IndentsData, approvePort?: IndentApprovePort, boxWords?: IndentBoxWords, resolvePort?: IndentResolvePort): IndentsSession | null {
   if (data === undefined) return null;
-  return createIndentsSession(indentsConfigFrom(data), indentsPortsFromData(data, snapshot, approvePort), outbox, boxWords);
+  return createIndentsSession(indentsConfigFrom(data), indentsPortsFromData(data, snapshot, approvePort, resolvePort), outbox, boxWords);
 }
 
 /** What the shell calls to move this screen's saved asks and counts along and learn where each has got to. */
@@ -2662,6 +2748,11 @@ export async function fetchIndents(): Promise<IndentsData | null> {
       issueId: String(i['issueId'] ?? ''), issuedBy: String(i['issuedBy'] ?? ''), issuedAt: String(i['issuedAt'] ?? ''),
       state: i['state'] === 'received' ? 'received' : 'in_transit',
       lines: (Array.isArray(i['lines']) ? i['lines'] as Record<string, unknown>[] : []).map((l) => ({ productId: String(l['productId'] ?? ''), batchId: str(l['batchId']), quantityMinor: num(l['quantityMinor']) })),
+      // Batch 2: who counted it in, what did not arrive, and whether that shortfall is resolved — head office's words.
+      receivedBy: str(i['receivedBy']),
+      shortfall: (Array.isArray(i['shortfall']) ? i['shortfall'] as Record<string, unknown>[] : []).map((s) => ({ productId: String(s['productId'] ?? ''), batchId: str(s['batchId']), quantityMinor: num(s['quantityMinor']), valueMinor: num(s['valueMinor']) })),
+      resolvedBy: str((i['shortfallResolution'] as Record<string, unknown> | undefined)?.['resolvedBy']),
+      lostValueMinor: i['shortfallResolution'] === undefined ? null : ((i['shortfallResolution'] as Record<string, unknown>)['lines'] as Record<string, unknown>[] | undefined ?? []).reduce((s, l) => s + num(l['lostValueMinor']), 0),
     }));
     return {
       indentId: String(r['indentId'] ?? ''), state: String(r['state'] ?? 'requested'), requestedBy: String(r['requestedBy'] ?? ''), requestedAt: String(r['requestedAt'] ?? ''),
@@ -2680,6 +2771,32 @@ export async function fetchIndents(): Promise<IndentsData | null> {
 /** The authenticated POST of an indent APPROVAL — the approver's OWN session, never a service token; the server attributes
  *  the approval to the caller and refuses the requester (§28). A fresh key per attempt: approval is idempotent by STATE on
  *  the server, and one person's refusal must never replay onto another person's click. */
+/** Batch 2 — the authenticated POST of a shortfall RESOLUTION under the resolver's own session: `{ reasonCode, note, lines }`
+ *  where lines name only what turned up. The resolver is the caller, never a body field; head office refuses the issuer and
+ *  the counter (§28). A fresh key per attempt: the server is idempotent by state (the same resolution again is 200). */
+export function openIndentResolvePort(): IndentResolvePort {
+  return {
+    post: async ({ indentId, issueId, reasonCode, note, lines }): Promise<IndentResolvePostResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `indent-resolution-${indentId}-${issueId}-${note.length}`;
+      try {
+        const res = await fetchFn(`/v1/floor/indents/${encodeURIComponent(indentId)}/issues/${encodeURIComponent(issueId)}/shortfall/resolution`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ reasonCode, note, lines: lines.map((l) => ({ productId: l.productId, ...(l.batchId === null ? {} : { batchId: l.batchId }), foundMinor: l.foundMinor })) }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { alreadyResolved?: boolean; whatHappened?: string; error?: { whatHappened?: string } };
+        if (res.status >= 200 && res.status < 300) return { result: body.alreadyResolved === true ? 'already_resolved' : 'resolved' };
+        return { result: 'refused', reason: body.error?.whatHappened ?? body.whatHappened ?? 'head office did not record the resolution' };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
+  };
+}
+
 export function openIndentApprovePort(): IndentApprovePort {
   return {
     post: async ({ indentId, reason }): Promise<IndentApprovePostResult> => {
@@ -2694,9 +2811,10 @@ export function openIndentApprovePort(): IndentApprovePort {
           // Only the note rides along: the approver is the authenticated caller, never a body field; the allocation is head office's.
           body: JSON.stringify(reason === '' ? {} : { reason }),
         });
-        const body = (await res.json().catch(() => ({}))) as { alreadyApproved?: boolean; whatHappened?: string };
+        const body = (await res.json().catch(() => ({}))) as { alreadyApproved?: boolean; whatHappened?: string; error?: { whatHappened?: string } };
         if (res.status >= 200 && res.status < 300) return { result: body.alreadyApproved === true ? 'already_approved' : 'approved' };
-        return { result: 'refused', reason: body.whatHappened ?? 'head office did not approve the indent' };
+        // The kernel's refusal carries its words under `error` (a top-level `whatHappened` is read too, for older replies).
+        return { result: 'refused', reason: body.error?.whatHappened ?? body.whatHappened ?? 'head office did not approve the indent' };
       } catch {
         return { result: 'lost_link' };
       }
@@ -2721,12 +2839,42 @@ const EMPTY_GOODS_RECEIPT: GoodsReceiptData = Object.freeze({});
 export function goodsReceiptPortsFromData(
   data: GoodsReceiptScreenData | undefined,
   snapshot?: GoodsReceiptData,
+  returnPort?: GrnLineReturnPort,
 ): GoodsReceiptPorts {
   const held = new Set(data?.permissions ?? []);
   return {
     snapshot: () => snapshot ?? data?.snapshot ?? EMPTY_GOODS_RECEIPT,
     // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
     mayRead: () => held.has(INVENTORY_READ_PERMISSION),
+    // Batch 2: recording a supplier return is the route's own right (`inventory.movement.append`).
+    mayRecordReturn: () => held.has(WRITE_OFF_APPEND_PERMISSION),
+    returnPort: () => returnPort ?? null,
+  };
+}
+
+/** Batch 2 — the authenticated POST that a disposed line has physically gone back to the supplier, under the reader's own
+ *  session: exactly `{ reason }`; who recorded it is the caller, never a body field. A fresh key per attempt (the server is
+ *  idempotent per line by state: the same line again is 200 "already returned"). */
+export function openGrnLineReturnPort(): GrnLineReturnPort {
+  return {
+    post: async ({ grnId, lineId, reason }): Promise<LineReturnPostResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `grn-line-return-${grnId}-${lineId}-${reason.length}`;
+      try {
+        const res = await fetchFn(`/v1/inventory/goods-receipt/${encodeURIComponent(grnId)}/lines/${encodeURIComponent(lineId)}/returned`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ reason }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { alreadyReturned?: boolean; whatHappened?: string; error?: { whatHappened?: string } };
+        if (res.status >= 200 && res.status < 300) return { result: body.alreadyReturned === true ? 'already_returned' : 'returned' };
+        return { result: 'refused', reason: body.error?.whatHappened ?? body.whatHappened ?? 'head office did not record the return' };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
   };
 }
 
@@ -2734,17 +2882,41 @@ export function goodsReceiptPortsFromData(
 export function bootGoodsReceipt(
   data: GoodsReceiptScreenData | undefined,
   snapshot?: GoodsReceiptData,
+  returnPort?: GrnLineReturnPort,
 ): GoodsReceiptSession | null {
   if (data === undefined) return null;
   return createGoodsReceiptSession(
     { userId: data.userId === undefined ? null : data.userId },
-    goodsReceiptPortsFromData(data, snapshot),
+    goodsReceiptPortsFromData(data, snapshot, returnPort),
   );
 }
 
 /** Read the live GRN list — one GET, read-only — and fold it into the review snapshot. Returns null when nothing
  *  could be read, so the shell keeps whatever it was showing. Each delivery's checked outcome (its valued
  *  discrepancies and whether it needs a second person) is carried through as-is; nothing is recomputed here. */
+/** Batch 2: the held lines a second person disposed of as a RETURN, and whether each has gone back — head office's record
+ *  (`dispositions`, `lineReturns`, `governanceFlags`), never recomputed: a line is "waiting" until head office lists its return. */
+function returnLinesOf(g: Record<string, unknown>, lines: readonly Record<string, unknown>[]): GrnReturnLineView[] {
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const dispositions = Array.isArray(g['dispositions']) ? g['dispositions'] as Record<string, unknown>[] : [];
+  const returns = Array.isArray(g['lineReturns']) ? g['lineReturns'] as Record<string, unknown>[] : [];
+  const flags = Array.isArray(g['governanceFlags']) ? (g['governanceFlags'] as unknown[]).filter((f): f is string => typeof f === 'string') : [];
+  const needsCount = g['assembledFrom'] !== undefined && g['assembledFrom'] !== null && (flags.includes('cold_chain_held_but_on_hand') || flags.includes('scan_posting_disagrees'));
+  const money = (v: unknown) => (typeof v === 'object' && v !== null ? v as { minor?: number; currency?: string } : {});
+  return dispositions.filter((d) => d['disposition'] === 'return').flatMap((d): GrnReturnLineView[] => {
+    const lineId = String(d['lineId'] ?? '');
+    const line = lines.find((l) => l['lineId'] === lineId);
+    if (line === undefined || num(line['quarantinedMinor']) <= 0) return [];
+    const gone = returns.find((r) => r['lineId'] === lineId);
+    return [{
+      lineId, productId: String(d['productId'] ?? line['productId'] ?? ''), quantityMinor: num(line['quarantinedMinor']), uom: String(line['uom'] ?? 'ea'),
+      valueMinor: num(gone?.['valueMinor'] ?? d['valueMinor']), currency: String(gone?.['currency'] ?? money(line['unitCost']).currency ?? 'INR'),
+      decidedBy: String(d['decidedBy'] ?? ''), state: gone === undefined ? 'awaiting_return' : 'returned',
+      returnedBy: gone === undefined ? null : String(gone['returnedBy'] ?? ''), needsCount: gone === undefined && needsCount,
+    }];
+  });
+}
+
 export async function fetchGoodsReceipt(): Promise<GoodsReceiptData | null> {
   const body = await getInventory('/v1/inventory/goods-receipt');
   if (body === null || !Array.isArray(body['receipts'])) return null;
@@ -2777,6 +2949,7 @@ export async function fetchGoodsReceipt(): Promise<GoodsReceiptData | null> {
       quarantinedMinor: lines.reduce((s, l) => s + num(l['quarantinedMinor']), 0),
       rejectedMinor: lines.reduce((s, l) => s + num(l['rejectedMinor']), 0),
       discrepancies,
+      returnLines: returnLinesOf(g, lines),
     };
   });
 
@@ -4367,6 +4540,9 @@ interface ManagerWindow {
   };
   productionData?: ProductionScreenData;
   productionSession?: ProductionSession;
+  /** FUL-13: the production staff's task paths (record a run, print a label). */
+  productionTasks?: ProductionTasksSession;
+  productionTasksFor?: (worklist: ProductionData) => ProductionTasksSession | null;
   /** The shell reads the live production board through this and re-presents it — a GET read, never a write. */
   production?: {
     refresh(): Promise<ProductionData | null>;
@@ -4757,7 +4933,7 @@ export function buyingGaps(data: BuyingData | undefined): readonly BuyingGap[] {
  */
 export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
   return {
-    post: async ({ poId, supplierId, lines }): Promise<ProposePurchaseOrderOutcome> => {
+    post: async ({ poId, supplierId, deliverToLocationId, lines }): Promise<ProposePurchaseOrderOutcome> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
       if (fetchFn === undefined) return { proposed: false, reason: 'no connection to head office — the order was not raised' };
       try {
@@ -4767,11 +4943,12 @@ export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
           credentials: 'same-origin',
           // The Money-shaped lines are exactly what the route reads ({ productId, orderedQty, unitCost: { minor, currency } });
           // the requisitioner is the authenticated caller, so no buyer name is sent, and no approver rides along.
-          body: JSON.stringify({ supplierId, lines }),
+          body: JSON.stringify({ supplierId, deliverToLocationId, lines }),
         });
         const body = (await res.json().catch(() => ({}))) as {
           order?: { requisitionedBy?: string; totalMinor?: number };
           whatHappened?: string;
+          error?: { whatHappened?: string };
         };
         if (
           res.status >= 200 && res.status < 300 &&
@@ -4781,7 +4958,8 @@ export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
         ) {
           return { proposed: true, requisitionedBy: body.order.requisitionedBy, totalMinor: body.order.totalMinor };
         }
-        return { proposed: false, reason: body.whatHappened ?? 'head office did not raise the order' };
+        // The kernel's refusal carries its words under `error` (e.g. OB-32's "supplier … is still waiting for finance").
+        return { proposed: false, reason: body.error?.whatHappened ?? body.whatHappened ?? 'head office did not raise the order' };
       } catch {
         return { proposed: false, reason: 'no connection to head office — the order was not raised' };
       }
@@ -4795,6 +4973,7 @@ export function buyingPortsFromData(data: BuyingData | undefined, proposeOrder?:
     orderedLines: (poId) => data?.ordered?.[poId] ?? [],
     receivedLines: (poId) => data?.received?.[poId] ?? [],
     capturedLines: (invoiceId) => data?.captured?.[invoiceId] ?? [],
+    productUom: (productId) => data?.productUoms?.[productId],
     // Only when a real cloud port was passed at mount: an offline box (or a test with none) keeps its
     // local compute and `canProposeToCloud` reads false, so the screen never offers to raise an order
     // it cannot actually send (P-01/P-08).
@@ -5574,6 +5753,13 @@ if (browserWindow !== undefined) {
   const productionData = browserWindow.productionData;
   const releasePort = openReleasePort();
   const production = bootProduction(productionData, undefined, releasePort);
+  // FUL-13: the staff's task paths ride the same page, over the same board, under the person's own session.
+  const productionTaskPorts = { commit: openRunCommitPort(), label: openLabelPort() };
+  const productionTasks = bootProductionTasks(productionData, undefined, productionTaskPorts);
+  if (productionTasks !== null) {
+    browserWindow.productionTasks = productionTasks;
+    browserWindow.productionTasksFor = (worklist) => bootProductionTasks(productionData, worklist, productionTaskPorts);
+  }
   if (production !== null) {
     browserWindow.productionSession = production;
     browserWindow.production = {
@@ -5770,16 +5956,17 @@ if (browserWindow !== undefined) {
   if (indentsData !== undefined) {
     const indentsOutbox = openIndentsOutbox(indentsData.storeId ?? 'store-1');
     const indentApprovePort = openIndentApprovePort();
+    const indentResolvePort = openIndentResolvePort();
     // ONE box-word store for every session over this queue: the relay notes "posted" / "refused" once, and the live
     // session the view builds after each register read shows the same word (P-08 — never lost in a re-read).
     const indentBoxWords: IndentBoxWords = new Map();
-    const indentsScreen = bootIndents(indentsData, indentsOutbox, undefined, indentApprovePort, indentBoxWords);
+    const indentsScreen = bootIndents(indentsData, indentsOutbox, undefined, indentApprovePort, indentBoxWords, indentResolvePort);
     if (indentsScreen !== null) {
       browserWindow.indentsSession = indentsScreen;
       browserWindow.indentsOutbox = indentsOutbox;
       browserWindow.indents = {
         refresh: fetchIndents,
-        present: (snapshot) => createIndentsSession(indentsConfigFrom(indentsData), indentsPortsFromData(indentsData, snapshot, indentApprovePort), indentsOutbox, indentBoxWords),
+        present: (snapshot) => createIndentsSession(indentsConfigFrom(indentsData), indentsPortsFromData(indentsData, snapshot, indentApprovePort, indentResolvePort), indentsOutbox, indentBoxWords),
       };
       const indentsRelay = openIndentsRelay(browserWindow.laneWriteBase, indentsScreen, indentsOutbox);
       if (indentsRelay !== undefined) browserWindow.indentsRelay = indentsRelay;
@@ -5790,14 +5977,15 @@ if (browserWindow !== undefined) {
   // inventory.availability.read), then the shell refreshes the GRN list with a live GET. It changes nothing —
   // receiving is captured on the handheld, on the offline dock (§31); this only reviews the outcome.
   const goodsReceiptData = browserWindow.goodsReceiptData;
-  const goodsReceipt = bootGoodsReceipt(goodsReceiptData, undefined);
+  const grnLineReturnPort = openGrnLineReturnPort();
+  const goodsReceipt = bootGoodsReceipt(goodsReceiptData, undefined, grnLineReturnPort);
   if (goodsReceipt !== null) {
     browserWindow.goodsReceiptSession = goodsReceipt;
     browserWindow.goodsReceipt = {
       refresh: fetchGoodsReceipt,
       present: (snapshot) => createGoodsReceiptSession(
         { userId: goodsReceiptData?.userId === undefined ? null : goodsReceiptData.userId },
-        goodsReceiptPortsFromData(goodsReceiptData, snapshot),
+        goodsReceiptPortsFromData(goodsReceiptData, snapshot, grnLineReturnPort),
       ),
     };
   }

@@ -17,8 +17,9 @@
 // services-run-on-their-tested-engine guardrail). Drill and compare are pure computes over the supplied
 // source transactions; the drill records an append-only audit. Gated `owner.kpi.read`.
 
-import type { Route, RequestContext } from '../../kernel/src/index';
+import type { Route, RequestContext, BranchScope } from '../../kernel/src/index';
 import { apiError, narrowScope } from '../../kernel/src/index';
+import type { ProducedReportView } from './index';
 import {
   drillThrough, compareBy, auditDrill,
   type SourceTransaction, type Dimension, type DataScope, type DrillAudit,
@@ -58,6 +59,11 @@ const scopeFor = (ctx: RequestContext, raw: unknown): DataScope | undefined => {
 };
 
 export interface DrillThroughDeps {
+  /**
+   * The governed report producers (audit EA-05): the drill loads the headline AND the source records from the same
+   * producer that made the report, server-side — never from the caller. Absent, the governed drill refuses.
+   */
+  readonly produce?: (tenantId: string, reportId: string, options: { readonly tradingDay?: string; readonly scope: BranchScope }) => Promise<ProducedReportView>;
   readonly audits: (tenantId: string) => Promise<readonly DrillAudit[]> | readonly DrillAudit[];
   readonly recordAudit: (tenantId: string, audit: DrillAudit, key: string) => Promise<void> | void;
   readonly now: () => string;
@@ -66,7 +72,54 @@ export interface DrillThroughDeps {
 export function drillThroughRoutes(deps: DrillThroughDeps): readonly Route[] {
   return [
     {
-      // Show the transactions behind a headline figure, within the viewer's scope, and reconcile them to it.
+      // THE GOVERNED DRILL (audit EA-05 · M29-FR-02 · NFR-15): name a report and one of its figures; head office loads
+      // the headline and the source records it was summed from — the same producer that made the report — in the
+      // reader's server-derived scope, and reconciles them. Nothing about the figure or its rows comes from the caller.
+      // Body: { reportId, figure, day? (YYYY-MM-DD), branchScope? }. Every drill is logged (§28).
+      api: 'API-10', method: 'POST', path: '/v1/reporting/drill/governed',
+      permission: 'owner.kpi.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const scope = scopeFor(ctx, b['branchScope']);
+        const day = b['day'];
+        if (!isStr(b['reportId']) || !isStr(b['figure']) || scope === undefined
+          || (day !== undefined && (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)))) {
+          throw apiError(400, { code: 'not_readable_as_a_governed_drill', whatHappened: 'A drill needs { reportId, figure } and may name { day: YYYY-MM-DD, branchScope }. The figure and its rows are head office\'s, never sent.', wasItSaved: 'not_saved', nextSafeAction: 'Name the report and the figure to open.' });
+        }
+        if (deps.produce === undefined) {
+          throw apiError(409, { code: 'this_version_cannot_produce_it', whatHappened: 'Head office has no report producers wired, so there is nothing governed to drill into.', wasItSaved: 'not_saved', nextSafeAction: 'Open the report from the catalogue first.' });
+        }
+        const reportId = b['reportId'] as string;
+        const figureName = b['figure'] as string;
+        let produced: ProducedReportView;
+        try {
+          produced = await deps.produce(ctx.tenantId, reportId, { ...(typeof day === 'string' ? { tradingDay: day } : {}), scope: scope.branchScope });
+        } catch (e) {
+          // Only "no such producer" is the caller's mistake; any other failure is head office's and is not dressed up.
+          if (!(e instanceof Error) || !e.message.startsWith('no head-office producer')) throw e;
+          throw apiError(404, { code: 'no_such_report', whatHappened: `Head office does not produce a report called "${reportId}".`, wasItSaved: 'not_saved', nextSafeAction: 'Pick a report the catalogue says can be run.' });
+        }
+        const headline = produced.figures.find((f) => f.name === figureName);
+        const transactions = produced.drill[figureName];
+        if (headline === undefined || transactions === undefined) {
+          throw apiError(404, { code: 'figure_not_drillable', whatHappened: `"${figureName}" is not a figure of ${reportId} with records behind it.`, wasItSaved: 'not_saved', nextSafeAction: `Pick one of: ${Object.keys(produced.drill).join(', ') || 'none'}.` });
+        }
+        if (headline.valueMinor === undefined) {
+          throw apiError(409, { code: 'figure_not_available', whatHappened: `${figureName} is not available: ${headline.notAvailableBecause ?? 'no source data'}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing to drill into until the source data arrives.' });
+        }
+        const now = deps.now();
+        const result = drillThrough({ metric: `${reportId}:${figureName}`, kpiValueMinor: headline.valueMinor, transactions, scope });
+        await deps.recordAudit(ctx.tenantId, auditDrill(result, scope, now), `${ctx.userId}-${result.metric}-${now}`);
+        return {
+          status: 200,
+          body: { ...result, provenance: 'governed', reportId, figure: figureName, asAt: headline.asAt, staleness: headline.staleness, ...(produced.tradingDay === undefined ? {} : { tradingDay: produced.tradingDay }) },
+        };
+      },
+    },
+    {
+      // A PREVIEW over rows the CALLER supplies — kept as the pure calculator (EA-05 retains it, labelled): it proves
+      // nothing about head office's records and says so on every answer (`provenance: supplied_by_caller`). The
+      // governed drill above is the one that reaches the immutable source.
       // Body: { metric, kpiValueMinor, transactions[], branchScope? }. Records who drilled what (§28).
       api: 'API-10', method: 'POST', path: '/v1/reporting/drill',
       permission: 'owner.kpi.read', idempotent: true,
@@ -82,7 +135,7 @@ export function drillThroughRoutes(deps: DrillThroughDeps): readonly Route[] {
         // Every drill is logged — who reached which transactions, and whether they added up.
         const audit = auditDrill(result, scope, now);
         await deps.recordAudit(ctx.tenantId, audit, `${ctx.userId}-${result.metric}-${now}`);
-        return { status: 200, body: result };
+        return { status: 200, body: { ...result, provenance: 'supplied_by_caller' } };
       },
     },
     {

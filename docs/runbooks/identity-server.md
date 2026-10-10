@@ -191,6 +191,29 @@ Two different statements, and only the first one is true by default:
 A green identity check means the first row. Until an administrator has done the second row on a server, that server still
 uses the pilot sign-in, and every status report must say so.
 
+## Support and remote sessions bind the sign-in (PA-10 · M33-FR-02/03)
+
+A sign-in can be issued FOR one support-access session or one remote session, by a signed claim in the token:
+`support_session_id` (the owner-approved support request's id) or `remote_session_id` (the remote-session register's id).
+Head office checks that session on **every** request, not once at sign-in:
+
+| The session is… | What happens to the sign-in |
+|---|---|
+| live, this person's, and (support) the request is inside the scopes the owner granted | allowed — the person's own role still applies on top, so a grant can narrow, never widen |
+| ended early by the owner, or a remote session terminated by an administrator | refused (`session_channel_not_active`), and the token is revoked in the identity ledger, so it is dead everywhere |
+| past its time box (support) | refused; the register records the session as ended **at its expiry moment**; the token is revoked |
+| someone else's, unknown, or a permission outside the grant | refused (`session_channel_not_yours`, `unknown_session_channel`, `outside_session_grant`) |
+
+A token naming both a support and a remote session is not believed at all. A service that cannot check sessions refuses any
+token that names one (fail-closed). While a session is live, the engineer can always record what they did on it
+(`/v1/platform/support-access/sessions/:id/actions`).
+
+The identity server does not add these claims by itself: the support sign-in client needs a mapper that writes the
+approved session id into the token. Until that is configured on a server, support engineers there sign in with their
+ordinary role, and the session register is a record, not a fence. Proved by
+`tests/integration/support-and-remote-sessions-bind-the-sign-in.test.ts` (in memory and on real PostgreSQL) and
+`tests/unit/a-session-bound-token-is-checked-every-request.test.ts`.
+
 ## The proof against a real Keycloak (automatic since 10 October 2026; can still be run by hand)
 
 `tests/integration/keycloak-real.test.ts` runs against a real Keycloak with this realm imported. It skips itself when no

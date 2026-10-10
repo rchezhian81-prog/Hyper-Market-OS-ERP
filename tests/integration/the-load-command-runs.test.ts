@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync } from 'no
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { aStoreWithRules } from '../support/store-rules';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import { sealExtract, simpleHasher } from '../../packages/migration/src/index';
 
@@ -80,6 +81,7 @@ beforeAll(async () => {
   writeEnv('rehearsal');
   h = apiHarness();
   await h.seedOwner(REAL, OPERATOR);
+  await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the owner sets the store's margin floor before prices load
   // The wire: a real HTTP server in front of the in-process API, so the bundle's fetch, headers and
   // token travel exactly as they will to the box's API.
   server = createServer((req, res) => {

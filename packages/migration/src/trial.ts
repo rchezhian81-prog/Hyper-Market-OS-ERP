@@ -157,6 +157,10 @@ export interface DeltaChange {
   /** Quantity or money moved, so a mis-applied delta is visible as a number, not a row count. */
   readonly deltaMinor?: number;
   readonly deltaQty?: number;
+  /** For a `stock` change (GT-04): the location the stock moved at, its unit, and — for stock IN — its unit cost. */
+  readonly locationId?: string;
+  readonly uom?: string;
+  readonly unitCostMinor?: number;
 }
 
 export type DeltaOutcome = 'applied' | 'already_applied' | 'refused_before_cutoff' | 'refused_production';

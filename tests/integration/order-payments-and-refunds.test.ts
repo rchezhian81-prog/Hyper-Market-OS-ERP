@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { sentWithApproval } from '../support/approval-request';
+import { seedSubstitutionTruth, recordOrderRules, SWAP_PRODUCTS } from '../support/substitution-truth';
 
 /**
  * **The order's payment and its refunds, through the real authenticated API (M18-FR-04 · M20-FR-03 · §28 · §31 · #3).**
@@ -106,6 +107,9 @@ describe('refunds against the order\'s own token (M18-FR-04)', () => {
     const h = await seeded();
     await place(h, 'o-4');
     await pay(h, 'o-4');
+    // FUL-14: the swap is decided from the published prices and the customer's rules on the order, not the offer's figures.
+    await seedSubstitutionTruth(h, T, SWAP_PRODUCTS);
+    await recordOrderRules(h, T, OWNER, 'o-4', { preference: 'best_match' });
     const offer = { lineId: 'l1', orderedProductId: 'MILK', orderedName: 'Milk 1L', orderedUnitPriceMinor: 5_000, orderedQuantityMinor: 2, substituteProductId: 'MILK-ALT', substituteName: 'Milk 1L alt', substituteUnitPriceMinor: 4_000, substituteQuantityMinor: 2, offeredAt: '2026-10-10T10:00:00.000Z' };
     const sub = await post(h, '/v1/orders/o-4/substitute', OWNER, 'sub-4', { offer, decision: 'confirmed' });
     expect(sub.body).toMatchObject({ refundMinor: 2_000, refundDue: true });

@@ -228,14 +228,14 @@ substitution from stored truth; **FUL-01 / FUL-08 / FUL-13** production moves or
 staff pages exist; **FUL-06 / FUL-12 / FUL-10** privacy and customer records durable; **FUL-09** one B2B vertical
 slice; **PF-10 / PF-11 / PA-08** campaigns, compensation and notifications become durable, consent-checked work;
 **PA-04 / PA-05 / PA-09 / SF-09 / SF-10 / SF-11 / EA-07 / EA-08 / EA-09 / EA-10** as listed in the audit, each closed
-by its own connected proof. Owner sees: an online order from the customer app to the doorstep on the demo, with the
+by its own connected proof. (**Round 3, 10 Oct 2026 — verified complete:** FUL-04, FUL-05, FUL-07, FUL-13, FUL-14, PA-04, PA-09, SF-09; **partial, still pending:** FUL-03, FUL-09, FUL-11, SF-11, PA-08, PF-10, EA-07, EA-08 — residuals in the assignment matrix.) Owner sees: an online order from the customer app to the doorstep on the demo, with the
 stock and the money moving once.
 
 ### Wave 7 — close migration and recovery before any cutover (audit step 7) · size L
 **GT-02** a rollback is performed and persisted before it says so; **GT-03** no caller boolean overrides server
 evidence; **GT-04 / GT-05 / GT-06** delta, opening and supplier loads produce real domain effects with read-back;
 **GT-07** backup dump and manifest from one snapshot; **PA-10** support sessions control real access; **PA-12**
-off-site immutable recovery rehearsed on a spare machine. Owner provides: the off-site destination and custodians,
+off-site immutable recovery rehearsed on a spare machine. (**Round 3, 10 Oct 2026 — verified complete:** GT-03, GT-07, PA-10; **partial:** GT-02, GT-04, PA-12.) Owner provides: the off-site destination and custodians,
 lawful access to legacy data, migration witnesses.
 
 ### Wave 8 — staff and device acceptance, then live-provider checks (audit step 8) · SP-10, SF-12

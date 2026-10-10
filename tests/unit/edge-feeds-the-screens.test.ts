@@ -522,6 +522,14 @@ describe('margin is only served where it can genuinely be worked out', () => {
     expect(day.billCount).toBe(2);
   });
 
+  it('carries every payment on a split bill by kind and amount, and reports it that way (audit EA-02)', () => {
+    const split = sale({ total: 300_00, tenders: [{ kind: 'card', amount: { minor: 250_00 } }, { kind: 'cash', amount: { minor: 50_00 } }] });
+    const day = costTheDay([split], PRODUCTS);
+    expect(day.facts[0]?.tenders).toEqual([{ kind: 'card', amountMinor: 250_00 }, { kind: 'cash', amountMinor: 50_00 }]);
+    const served = (reportingPayload(input({ sales: [split] }))!['sales'] as Record<string, unknown>[])[0]!;
+    expect(served['tenders']).toEqual([{ kind: 'card', amountMinor: 250_00 }, { kind: 'cash', amountMinor: 50_00 }]);
+  });
+
   it('treats a product present in the pack but with no cost price as uncostable', () => {
     const noCost: PackProduct[] = [{ ...PRODUCTS[0]!, unitCostMinor: undefined }];
     const day = costTheDay([sale()], noCost);
@@ -931,15 +939,15 @@ describe('the manager\'s payload carries who runs the screen, where and which da
 
 describe('a product with a unit of measure the till cannot price is kept OFF the lane, and named (Stage G slice 5c)', () => {
   it('excludes it with the reason, like a missing tax rate — no more ₹NaN on a line', () => {
-    const payload = posPayload(input({ pack: fullPack({ products: known([{ ...PRODUCTS[0]!, uom: 'each' }]) }) }))!;
+    const payload = posPayload(input({ pack: fullPack({ products: known([{ ...PRODUCTS[0]!, uom: 'bundle' }]) }) }))!;
     expect(payload['products']).toEqual([]);
     expect(payload['excludedProducts']).toEqual([
-      { productId: 'p1', name: 'Toor dal 1kg', why: 'unknown unit of measure "each" on the catalogue' },
+      { productId: 'p1', name: 'Toor dal 1kg', why: 'unknown unit of measure "bundle" on the catalogue' },
     ]);
   });
 
   it('still ships a RECALLED product with a bad unit, WITH its block, so the lane refuses it by name', () => {
-    const payload = posPayload(input({ pack: fullPack({ products: known([{ ...PRODUCTS[0]!, uom: 'each', recallBlock: true }]) }) }))!;
+    const payload = posPayload(input({ pack: fullPack({ products: known([{ ...PRODUCTS[0]!, uom: 'bundle', recallBlock: true }]) }) }))!;
     const products = payload['products'] as { productId: string; recallBlock?: boolean }[];
     expect(products.map((p) => [p.productId, p.recallBlock])).toEqual([['p1', true]]);
   });
@@ -955,7 +963,7 @@ describe('the till is built from the pulled head-office pack once the box holds 
         { productId: 'P1', sku: 'GHEE-1L', name: 'Ghee 1L', baseUom: 'ea', unitPriceMinor: 64_000, taxBps: 500, hsnCode: '0405', mrpMinor: 70_000, status: 'active' },
         { productId: 'P2', sku: 'BEER-650', name: 'Lager 650ml', baseUom: 'ea', unitPriceMinor: 18_000, taxBps: 2800, status: 'active', regulatedFlags: { minimumAge: 21 } },
         { productId: 'P3', sku: 'TIN-400', name: 'Recalled tin', baseUom: 'ea', unitPriceMinor: 9_000, taxBps: 500, status: 'clearance', recallBlock: true, batchTracked: true },
-        { productId: 'P4', sku: 'ODD', name: 'Odd unit', baseUom: 'each', unitPriceMinor: 1_000, taxBps: 500, status: 'active' },
+        { productId: 'P4', sku: 'ODD', name: 'Odd unit', baseUom: 'bundle', unitPriceMinor: 1_000, taxBps: 500, status: 'active' },
         { productId: 'P5', sku: 'OLD', name: 'Discontinued', baseUom: 'ea', unitPriceMinor: 1_000, taxBps: 500, status: 'discontinued' },
       ],
       barcodes: [{ code: '8901234567890', productId: 'P1', kind: 'standard' }, { code: '8901234567891', productId: 'P1', kind: 'alternate' }, { code: '2000001000005', productId: 'P2', kind: 'price_embedded' }],
@@ -978,7 +986,7 @@ describe('the till is built from the pulled head-office pack once the box holds 
     expect(payload['barcodes']).toEqual([
       { code: '8901234567890', productId: 'P1', kind: 'standard' }, { code: '8901234567891', productId: 'P1', kind: 'alternate' }, { code: '2000001000005', productId: 'P2', kind: 'price_embedded' },
     ]);
-    expect(payload['excludedProducts']).toEqual([{ productId: 'P4', name: 'Odd unit', why: 'unknown unit of measure "each" on the catalogue' }]);
+    expect(payload['excludedProducts']).toEqual([{ productId: 'P4', name: 'Odd unit', why: 'unknown unit of measure "bundle" on the catalogue' }]);
     // The file's products (seven of them, v7) are NOT what the lane sells from any more.
     expect(products.some((p) => p['productId'] === 'p1')).toBe(false);
     // …and it builds a real lane catalogue.
@@ -1017,7 +1025,7 @@ describe('the products nobody can sell: one judgement for the till and for the p
     { productId: 'ok', name: 'Sells', categoryId: 'c', unitPriceMinor: 100, uom: 'ea', barcodes: ['1'], availableMinor: 5, taxBps: 500, status: 'active' },
     { productId: 'notax', name: 'No tax', categoryId: 'c', unitPriceMinor: 100, uom: 'ea', barcodes: [], availableMinor: 5, status: 'active' },
     { productId: 'nostatus', name: 'No status', categoryId: 'c', unitPriceMinor: 100, uom: 'ea', barcodes: [], availableMinor: 5, taxBps: 500 },
-    { productId: 'unit', name: 'Odd unit', nameTa: 'வித்தியாச அலகு', categoryId: 'c', unitPriceMinor: 100, uom: 'each', barcodes: [], availableMinor: 5, taxBps: 500, status: 'active' },
+    { productId: 'unit', name: 'Odd unit', nameTa: 'வித்தியாச அலகு', categoryId: 'c', unitPriceMinor: 100, uom: 'bundle', barcodes: [], availableMinor: 5, taxBps: 500, status: 'active' },
     { productId: 'recalled', name: 'Recalled tin', categoryId: 'c', unitPriceMinor: 100, uom: 'ea', barcodes: ['2'], availableMinor: 5, taxBps: 500, status: 'clearance', recallBlock: true },
     { productId: 'draft', name: 'Not yet', categoryId: 'c', unitPriceMinor: 100, uom: 'ea', barcodes: [], availableMinor: 0, taxBps: 500, status: 'draft' },
     // Recalled only on the MASTER, with a gap the till would otherwise drop it for: recall wins, and it is shipped with its block.
@@ -1031,7 +1039,7 @@ describe('the products nobody can sell: one judgement for the till and for the p
     expect(rows.map((r) => [r.productId, r.why])).toEqual([
       ['notax', 'no_tax_rate'], ['nostatus', 'no_status'], ['unit', 'unknown_uom'], ['recalled', 'recall_block'], ['draft', 'not_on_sale'], ['master-recall', 'recall_block'],
     ]);
-    expect(rows.find((r) => r.productId === 'unit')).toMatchObject({ nameTa: 'வித்தியாச அலகு', detail: 'unknown unit of measure "each" on the catalogue' });
+    expect(rows.find((r) => r.productId === 'unit')).toMatchObject({ nameTa: 'வித்தியாச அலகு', detail: 'unknown unit of measure "bundle" on the catalogue' });
     expect(rows.find((r) => r.productId === 'draft')?.detail).toBe('status "draft" on the catalogue — refused at the till');
   });
 

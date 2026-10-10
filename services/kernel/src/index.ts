@@ -11,7 +11,7 @@ export {
 } from './errors';
 
 export {
-  scopeOf, branchInScope, assertBranchInScope, narrowScope, withinScope, outsideBranchScope, scopeNotHeld,
+  scopeOf, branchInScope, assertBranchInScope, narrowScope, withinScope, outsideBranchScope, scopeNotHeld, assertRecordBranchInScope, recordsInScope, shopWideRecord,
   actorIsTheCaller, requireActorIsCaller, secondPersonIsASeparateAct, documentsVerifiedByTheCaller,
   type VerifiableDocument,
 } from './scope';
@@ -34,6 +34,7 @@ export {
   type StoredResult, type IdempotencyStore, type AuditSink, type KernelOptions,
   type OutboundFinding, type RequestObservation,
   type AccessResolver, type EntitlementResolver,
+  type SessionChannel, type ChannelVerdict, type ChannelGuard,
 } from './pipeline';
 
 export {

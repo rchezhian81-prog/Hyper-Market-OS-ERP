@@ -15,12 +15,16 @@
 //
 // Like every ERP screen the rules live here in a tested, DOM-free session model on the shared packages/ui
 // primitives (colour is never the only signal — an icon and a word ride with every tone); the shell renders only
-// what this hands over. It is READ-ONLY: no capture, no approval, no write path (capture is the handheld's, and
-// the §28 approval is a downstream action) — hard rule #5 does not arise, nothing here commits anything.
+// what this hands over. It captures nothing and approves nothing (capture is the handheld's, and the §28 approval is a
+// downstream action). Its ONE write (Batch 2) records that a quarantined line a second person already disposed of as a
+// RETURN has physically gone back to the supplier — an online write under the reader's own session
+// (`POST /v1/inventory/goods-receipt/:grnId/lines/:lineId/returned`, `inventory.movement.append`); it moves no stock (the
+// held units were never on hand) and head office refuses a line not disposed of as a return. Hard rule #5 does not arise.
 
 import { translator, presentScreenState, type BilingualCopy, type Lang } from '../../../packages/ui/src/index';
 import { presentStatus, type StatusPresentation } from '../../../packages/a11y/src/signals';
 import type { DiscrepancyKind } from '../../../packages/receiving/src/index';
+import { minorPerUnitOf, normaliseUom } from '../../../packages/contracts/src/quantity';
 
 // ── what the screen was last told (the GRN list, one snapshot) ──────────────────────────────────────────────
 
@@ -57,6 +61,33 @@ export interface GrnRecordView {
   readonly quarantinedMinor: number;
   readonly rejectedMinor: number;
   readonly discrepancies: readonly GrnDiscrepancyView[];
+  /** Batch 2: the held lines a second person disposed of as a RETURN to the supplier, and whether each has gone back. */
+  readonly returnLines?: readonly GrnReturnLineView[];
+}
+
+/** Batch 2 — one quarantined line disposed of as a return: waiting to go back to the supplier, or gone. */
+export interface GrnReturnLineView {
+  readonly lineId: string;
+  readonly productId: string;
+  /** In the line's smallest steps (OB-31: grams for kg). */
+  readonly quantityMinor: number;
+  readonly uom: string;
+  readonly valueMinor: number;
+  readonly currency: string;
+  readonly decidedBy: string;
+  readonly state: 'awaiting_return' | 'returned';
+  readonly returnedBy: string | null;
+  /** The receipt was assembled from handheld scans that may have put the held units on the shelf — count first (head office refuses). */
+  readonly needsCount: boolean;
+}
+
+export type LineReturnPostResult =
+  | { readonly result: 'returned' | 'already_returned' | 'lost_link' }
+  | { readonly result: 'refused'; readonly reason: string };
+
+/** Batch 2 — the authenticated POST that a disposed line has physically gone back to the supplier (body `{ reason }`). */
+export interface GrnLineReturnPort {
+  post(input: { readonly grnId: string; readonly lineId: string; readonly reason: string }): Promise<LineReturnPostResult>;
 }
 
 /**
@@ -75,6 +106,10 @@ export interface GoodsReceiptPorts {
   snapshot(): GoodsReceiptData;
   /** Whether this user may read receiving (`inventory.availability.read`). */
   mayRead(): boolean;
+  /** Batch 2 · `inventory.movement.append` — recording a supplier return. Absent ⇒ not held. */
+  mayRecordReturn?(): boolean;
+  /** Batch 2 · the return write, or `null` / absent when this page cannot reach head office. */
+  returnPort?(): GrnLineReturnPort | null;
 }
 
 export interface GoodsReceiptConfig {
@@ -92,6 +127,9 @@ export type CopyKey =
   | 'receivedByLabel' | 'warehouseLabel' | 'sellableLabel' | 'quarantinedLabel' | 'rejectedLabel'
   | 'discrepancyValueLabel' | 'summaryDeliveries' | 'summaryNeedApproval' | 'unitsWord'
   | 'dkShort' | 'dkExcess' | 'dkDamaged' | 'dkQcFailed' | 'dkExpired' | 'dkNearExpiry' | 'dkMrpMismatch' | 'dkTemperatureBreach' | 'dkTemperatureNotRecorded'
+  | 'returnsHeading' | 'returnAwaiting' | 'returnGone' | 'returnNeedsCount' | 'returnChoiceLabel' | 'returnReasonLabel' | 'returnReasonPlaceholder' | 'returnBtn'
+  | 'returnNoneWaiting' | 'returnRecorded' | 'returnAlready' | 'returnRefused' | 'returnLostLink' | 'returnNotPermitted' | 'returnNoLink' | 'returnLineUnknown'
+  | 'returnNotAwaiting' | 'returnNeedsCountRefusal' | 'returnReasonMissing' | 'noReturn' | 'decidedByLabel' | 'returnedByLabel'
   | 'scrReady' | 'scrEmpty' | 'scrNoReceipts' | 'stateNotPermitted'
   | 'nobodyNamed' | 'staleShell' | 'sampleData';
 
@@ -113,6 +151,18 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     dkNearExpiry: 'Close to its expiry date', dkMrpMismatch: 'Printed price differs from the master',
     dkTemperatureBreach: 'Cold chain broken (temperature)',
     dkTemperatureNotRecorded: 'Chilled or frozen — no temperature recorded (held for a check)',
+    returnsHeading: 'Going back to the supplier', returnAwaiting: 'Waiting to go back to the supplier', returnGone: 'Gone back to the supplier',
+    returnNeedsCount: 'Count it first — handheld scans may have put it on the shelf', returnChoiceLabel: 'Which held line went back',
+    returnReasonLabel: 'How it went back', returnReasonPlaceholder: 'e.g. the supplier’s driver collected it, van KA-01', returnBtn: 'Record it as gone back',
+    returnNoneWaiting: 'No held line is waiting to go back to a supplier.',
+    returnRecorded: 'Recorded — the line has gone back to the supplier; its value is on the supplier’s debit note.', returnAlready: 'This line was already recorded as gone back.',
+    returnRefused: 'Head office refused it:', returnLostLink: 'No connection — nothing was recorded. Try again.',
+    returnNotPermitted: 'You do not have permission to record stock going back to a supplier.', returnNoLink: 'This page cannot reach head office, so nothing can be recorded from it.',
+    returnLineUnknown: 'That line is not on the list.', returnNotAwaiting: 'That line is not waiting to go back (it was not disposed of as a return, or it already went).',
+    returnNeedsCountRefusal: 'That receipt came from handheld scans that may have put the held stock on the shelf — count the line first (nothing was sent).',
+    returnReasonMissing: 'Say how it went back (who collected it, or which van).',
+    noReturn: 'You can see the deliveries, but recording a return to the supplier needs the stock-movement permission.',
+    decidedByLabel: 'decided by', returnedByLabel: 'sent back by',
     scrReady: 'Showing your deliveries', scrEmpty: 'This screen has not been given the delivery list yet.',
     scrNoReceipts: 'No deliveries have been recorded yet.',
     stateNotPermitted: 'You do not have permission to see goods receipts.',
@@ -136,6 +186,18 @@ export const GOODS_RECEIPT_COPY: BilingualCopy<CopyKey> = {
     dkNearExpiry: 'காலாவதி தேதி நெருங்கியது', dkMrpMismatch: 'அச்சிட்ட விலை மாஸ்டரிலிருந்து வேறுபடுகிறது',
     dkTemperatureBreach: 'குளிர்ச்சி சங்கிலி உடைந்தது (வெப்பநிலை)',
     dkTemperatureNotRecorded: 'குளிர்/உறைந்த பொருள் — வெப்பநிலை பதிவு செய்யப்படவில்லை (சரிபார்ப்புக்கு நிறுத்தப்பட்டது)',
+    returnsHeading: 'சப்ளையருக்குத் திரும்புபவை', returnAwaiting: 'சப்ளையருக்குத் திரும்பக் காத்திருக்கிறது', returnGone: 'சப்ளையருக்குத் திரும்பியது',
+    returnNeedsCount: 'முதலில் எண்ணுங்கள் — கைக்கருவி ஸ்கேன்கள் அதை அடுக்கில் வைத்திருக்கலாம்', returnChoiceLabel: 'எந்தத் தடுத்த வரி திரும்பியது',
+    returnReasonLabel: 'எப்படித் திரும்பியது', returnReasonPlaceholder: 'எ.கா. சப்ளையரின் ஓட்டுநர் எடுத்துச் சென்றார், வண்டி KA-01', returnBtn: 'திரும்பியதாகப் பதிவு செய்',
+    returnNoneWaiting: 'சப்ளையருக்குத் திரும்ப எந்தத் தடுத்த வரியும் காத்திருக்கவில்லை.',
+    returnRecorded: 'பதிவாகியது — வரி சப்ளையருக்குத் திரும்பியது; அதன் மதிப்பு சப்ளையரின் டெபிட் நோட்டில் உள்ளது.', returnAlready: 'இந்த வரி ஏற்கனவே திரும்பியதாகப் பதிவாகியுள்ளது.',
+    returnRefused: 'தலைமை அலுவலகம் மறுத்தது:', returnLostLink: 'இணைப்பு இல்லை — எதுவும் பதிவாகவில்லை. மீண்டும் முயற்சிக்கவும்.',
+    returnNotPermitted: 'சப்ளையருக்குச் சரக்கு திரும்புவதைப் பதிவு செய்ய உங்களுக்கு அனுமதி இல்லை.', returnNoLink: 'இந்தப் பக்கம் தலைமை அலுவலகத்தை அடைய முடியாது, அதனால் இங்கிருந்து பதிவு செய்ய முடியாது.',
+    returnLineUnknown: 'அந்த வரி பட்டியலில் இல்லை.', returnNotAwaiting: 'அந்த வரி திரும்பக் காத்திருக்கவில்லை (திருப்பி அனுப்ப முடிவு செய்யப்படவில்லை, அல்லது ஏற்கனவே சென்றது).',
+    returnNeedsCountRefusal: 'அந்தப் பெறுதல் கைக்கருவி ஸ்கேன்களிலிருந்து வந்தது; தடுத்த சரக்கு அடுக்கில் இருக்கலாம் — முதலில் வரியை எண்ணுங்கள் (எதுவும் அனுப்பப்படவில்லை).',
+    returnReasonMissing: 'எப்படித் திரும்பியது என்று சொல்லுங்கள் (யார் எடுத்துச் சென்றார், அல்லது எந்த வண்டி).',
+    noReturn: 'டெலிவரிகளைப் பார்க்கலாம், ஆனால் சப்ளையருக்குத் திரும்புவதைப் பதிவு செய்ய சரக்கு நகர்வு அனுமதி தேவை.',
+    decidedByLabel: 'முடிவு செய்தவர்', returnedByLabel: 'திருப்பி அனுப்பியவர்',
     scrReady: 'உங்கள் டெலிவரிகளைக் காட்டுகிறது', scrEmpty: 'இந்தத் திரைக்கு இன்னும் டெலிவரி பட்டியல் தரப்படவில்லை.',
     scrNoReceipts: 'இன்னும் டெலிவரிகள் எதுவும் பதிவு செய்யப்படவில்லை.',
     stateNotPermitted: 'சரக்கு பெறுதல்களைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
@@ -179,6 +241,14 @@ export interface PresentedReceipt {
   readonly quarantinedMinor: number;
   readonly rejectedMinor: number;
   readonly discrepancies: readonly PresentedDiscrepancy[];
+  /** Batch 2: the disposed-for-return lines, each with its state in words and its quantity in the line's unit. */
+  readonly returnLines: readonly PresentedReturnLine[];
+}
+
+export interface PresentedReturnLine extends GrnReturnLineView {
+  readonly stateLabel: string;
+  /** The quantity for a person: whole items, or kg / litres with their decimals (OB-31). */
+  readonly quantityLabel: string;
 }
 
 export interface GoodsReceiptView {
@@ -189,18 +259,75 @@ export interface GoodsReceiptView {
   readonly count: number;
   readonly needingApprovalCount: number;
   readonly nobodyNamed: boolean;
+  /** Batch 2: this reader may record a line as gone back to the supplier from here. */
+  readonly canRecordReturn: boolean;
+  /** Batch 2: the lines waiting to go back that this reader may record (not those needing a count first). */
+  readonly awaitingReturn: readonly { readonly grnId: string; readonly number: string; readonly line: PresentedReturnLine }[];
 }
+
+export type LineReturnOutcome =
+  | { readonly outcome: 'returned' | 'already_returned' | 'lost_link' | 'not_permitted' | 'no_link' | 'line_unknown' | 'not_awaiting' | 'needs_count' | 'reason_missing' }
+  | { readonly outcome: 'refused'; readonly reason: string };
 
 export interface GoodsReceiptSession {
   text(lang: Lang, key: CopyKey): string;
   view(lang: Lang): GoodsReceiptView;
+  /** Batch 2 — record that a disposed line has gone back to the supplier: an online write under the reader's session. */
+  recordReturn(input: { readonly grnId: string; readonly lineId: string; readonly reason: string }): Promise<LineReturnOutcome>;
+  presentReturnOutcome(lang: Lang, outcome: LineReturnOutcome): StatusPresentation;
+}
+
+/** OB-31: a quantity in its smallest steps → what a person reads (12 items; 2.5 kg). */
+export function quantityForPerson(quantityMinor: number, uom: string): string {
+  const code = normaliseUom(uom) ?? uom;
+  const per = minorPerUnitOf(code);
+  if (per === 1) return `${quantityMinor} ${code}`;
+  return `${(quantityMinor / per).toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${code}`;
 }
 
 export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: GoodsReceiptPorts): GoodsReceiptSession {
   const text = (lang: Lang, key: CopyKey): string => translator(GOODS_RECEIPT_COPY, lang)(key);
+  const canRecordReturn = (): boolean => config.userId !== null && ports.mayRead() && (ports.mayRecordReturn?.() ?? false) && (ports.returnPort?.() ?? null) !== null;
+  const presentReturnLine = (lang: Lang, l: GrnReturnLineView): PresentedReturnLine => {
+    const t = translator(GOODS_RECEIPT_COPY, lang);
+    return { ...l, stateLabel: t(l.state === 'returned' ? 'returnGone' : l.needsCount ? 'returnNeedsCount' : 'returnAwaiting'), quantityLabel: quantityForPerson(l.quantityMinor, l.uom) };
+  };
+  const noWrites = { canRecordReturn: false, awaitingReturn: [] } as const;
 
   return {
     text,
+
+    recordReturn: async (input) => {
+      if (!canRecordReturn()) return { outcome: (ports.returnPort?.() ?? null) === null && (ports.mayRecordReturn?.() ?? false) && config.userId !== null ? 'no_link' : 'not_permitted' };
+      const grn = (ports.snapshot().receipts ?? []).find((g) => g.grnId === input.grnId.trim());
+      const line = grn?.returnLines?.find((l) => l.lineId === input.lineId.trim());
+      if (grn === undefined || line === undefined) return { outcome: 'line_unknown' };
+      if (line.state !== 'awaiting_return') return { outcome: 'not_awaiting' };
+      if (line.needsCount) return { outcome: 'needs_count' };
+      const reason = input.reason.trim();
+      if (reason.length < 3) return { outcome: 'reason_missing' };
+      const posted = await ports.returnPort!()!.post({ grnId: grn.grnId, lineId: line.lineId, reason });
+      if (posted.result === 'refused') return { outcome: 'refused', reason: posted.reason };
+      return { outcome: posted.result };
+    },
+
+    presentReturnOutcome: (lang, o) => {
+      const t = translator(GOODS_RECEIPT_COPY, lang);
+      const err = (key: CopyKey) => presentStatus({ tone: 'error', icon: '✕', label: t(key), needsAttention: true });
+      switch (o.outcome) {
+        case 'returned': return presentStatus({ tone: 'ok', icon: '✓', label: t('returnRecorded'), needsAttention: false });
+        case 'already_returned': return presentStatus({ tone: 'ok', icon: '✓', label: t('returnAlready'), needsAttention: false });
+        case 'lost_link': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('returnLostLink'), needsAttention: true });
+        case 'no_link': return presentStatus({ tone: 'degraded', icon: '⚠', label: t('returnNoLink'), needsAttention: true });
+        case 'refused': return presentStatus({ tone: 'error', icon: '✕', label: `${t('returnRefused')} ${o.reason}`, needsAttention: true });
+        case 'not_permitted': return err('returnNotPermitted');
+        case 'line_unknown': return err('returnLineUnknown');
+        case 'not_awaiting': return err('returnNotAwaiting');
+        case 'needs_count': return err('returnNeedsCountRefusal');
+        case 'reason_missing': return err('returnReasonMissing');
+      }
+    },
+
     view: (lang) => {
       const t = translator(GOODS_RECEIPT_COPY, lang);
       const nobodyNamed = config.userId === null;
@@ -208,7 +335,7 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
       if (!ports.mayRead()) {
         return {
           screenState: presentScreenState({ state: 'error', label: t('stateNotPermitted') }),
-          asOf: null, receipts: [], count: 0, needingApprovalCount: 0, nobodyNamed,
+          asOf: null, receipts: [], count: 0, needingApprovalCount: 0, nobodyNamed, ...noWrites,
         };
       }
 
@@ -216,13 +343,13 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
       if (data.receipts === undefined) {
         return {
           screenState: presentScreenState({ state: 'empty', label: t('scrEmpty') }),
-          asOf: null, receipts: [], count: 0, needingApprovalCount: 0, nobodyNamed,
+          asOf: null, receipts: [], count: 0, needingApprovalCount: 0, nobodyNamed, canRecordReturn: canRecordReturn(), awaitingReturn: [],
         };
       }
       if (data.receipts.length === 0) {
         return {
           screenState: presentScreenState({ state: 'empty', label: t('scrNoReceipts') }),
-          asOf: data.asAt ?? null, receipts: [], count: 0, needingApprovalCount: 0, nobodyNamed,
+          asOf: data.asAt ?? null, receipts: [], count: 0, needingApprovalCount: 0, nobodyNamed, canRecordReturn: canRecordReturn(), awaitingReturn: [],
         };
       }
 
@@ -253,6 +380,7 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
           discrepancyValueMinor: g.discrepancyValueMinor, currency: g.currency,
           sellableMinor: g.sellableMinor, quarantinedMinor: g.quarantinedMinor, rejectedMinor: g.rejectedMinor,
           discrepancies,
+          returnLines: (g.returnLines ?? []).map((l) => presentReturnLine(lang, l)),
         };
       });
 
@@ -263,6 +391,10 @@ export function createGoodsReceiptSession(config: GoodsReceiptConfig, ports: Goo
         count: receipts.length,
         needingApprovalCount: receipts.filter((r) => r.needsApproval).length,
         nobodyNamed,
+        canRecordReturn: canRecordReturn(),
+        awaitingReturn: canRecordReturn()
+          ? receipts.flatMap((r) => r.returnLines.filter((l) => l.state === 'awaiting_return' && !l.needsCount).map((line) => ({ grnId: r.grnId, number: r.number, line })))
+          : [],
       };
     },
   };

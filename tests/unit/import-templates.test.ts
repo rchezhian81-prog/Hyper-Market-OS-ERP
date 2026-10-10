@@ -42,6 +42,18 @@ describe('supplier-invoice-v1 — the invoice register\'s rules, by line', () =>
     expect(errors.every((e) => e.kind === 'target_rule')).toBe(true);
   });
 
+  it('OB-31: a weighed product\'s line is grams at the per-kg price — 2500 g at 4500 is 11250, not 11250000; recorded with its unit', async () => {
+    const t = supplierInvoiceTemplate(deps({ productUom: (_, p) => (p === 'P2' ? 'KG' : 'ea') }));
+    const kgRow = (o: Record<string, string>) => row({ productId: 'P2', quantity: '2500', unitPriceMinor: '4500', ...o });
+    expect(await t.check('t', [kgRow({ lineTotalMinor: '11250', invoiceTotalMinor: '11250' })], [2], 11_250)).toEqual([]);
+    const wrong = await t.check('t', [kgRow({ lineTotalMinor: '11250000', invoiceTotalMinor: '11250000' })], [2], 11_250_000);
+    expect(wrong).toEqual([expect.objectContaining({ line: 2, column: 'lineTotalMinor', message: '2500 g at 4500 a kg is 11250, but the line says 11250000.' })]);
+    // An item is unchanged.
+    expect(await t.check('t', [row({})], [2], 200)).toEqual([]);
+    const [e] = await t.effects('t', [kgRow({ lineTotalMinor: '11250', invoiceTotalMinor: '11250' })], { jobId: 'J', uploadedBy: 'u-a', approvedBy: 'u-b', approvedAt: NOW, at: NOW });
+    expect(e!.kind === 'supplier_invoice' && e!.invoice.lines).toEqual([expect.objectContaining({ productId: 'P2', quantity: 2_500, lineTotalMinor: 11_250, uom: 'kg' })]);
+  });
+
   it('a matched invoice blocks the rollback of its load, by name', async () => {
     const t = supplierInvoiceTemplate(deps({ invoiceMatched: async (_, id) => id === 'I-1' }));
     expect(await t.blocksRollback('t', [{ kind: 'supplier_invoice', ref: 'I-1' }, { kind: 'supplier_invoice', ref: 'I-2' }])).toEqual(['invoice I-1 has already been matched against its order and delivery']);

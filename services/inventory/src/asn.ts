@@ -74,7 +74,12 @@ function readDockSlot(v: unknown): DockSlot | undefined {
   };
 }
 
-export function asnRoutes(): readonly Route[] {
+/** SF-09: the ASN register — the advance notes a buyer accepted from the supplier portal, by id. */
+export interface AsnRoutesDeps {
+  readonly asn?: (tenantId: string, asnId: string) => Promise<Asn | undefined> | Asn | undefined;
+}
+
+export function asnRoutes(deps: AsnRoutesDeps = {}): readonly Route[] {
   return [
     {
       // The advice note vs what actually turned up (M07-FR-01/03). Only the DIFFERENCES are returned — a
@@ -83,6 +88,20 @@ export function asnRoutes(): readonly Route[] {
       permission: 'inventory.availability.read', idempotent: true,
       handler: async (ctx) => {
         const b = ctx.body;
+        // SF-09: `{ asnId }` names an ASN on head office's register (accepted from the supplier portal) — the supplier's
+        // own document, never re-typed; an id the register does not hold is refused by name.
+        if (isObj(b) && isStr(b['asnId']) && b['asn'] === undefined) {
+          const held = await deps.asn?.(ctx.tenantId, (b['asnId'] as string).trim());
+          if (held === undefined) {
+            throw apiError(404, { code: 'asn_unknown', whatHappened: `There is no accepted ASN ${String(b['asnId'])} on head office's register.`, wasItSaved: 'not_saved', nextSafeAction: 'A buyer accepts the supplier\'s ASN on the portal first, or send the ASN itself.' });
+          }
+          const tally = readReceived(b['received']);
+          if (tally === undefined) {
+            throw apiError(400, { code: 'not_readable_as_an_asn_comparison', whatHappened: 'An ASN comparison needs { received { productId: wholeUnits } }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the tally of what actually arrived.' });
+          }
+          const diffs = compareAgainstAsn(held, tally);
+          return { status: 200, body: { asnId: held.asnId, supplierId: held.supplierId, differences: diffs, count: diffs.length, matched: diffs.length === 0 } };
+        }
         const asn = isObj(b) ? readAsn(b['asn']) : undefined;
         const received = isObj(b) ? readReceived(b['received']) : undefined;
         if (asn === undefined || received === undefined) {

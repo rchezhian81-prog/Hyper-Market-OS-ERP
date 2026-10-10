@@ -20,11 +20,11 @@
 // reconciles the two — the register and the ledger — as two figures reached two different ways (QG-07).
 
 import type { Route } from '../../kernel/src/index';
+import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import { notFound } from '../../kernel/src/index';
 import type { PayablesAccount } from '../../../packages/finance/src/payables';
 import type { SupplierInvoiceRecord, StoredMatch } from './index';
 import type { AccountOpening } from './supplier-openings';
-import { costOfQuantity } from '../../../packages/contracts/src/quantity';
 
 /** One line of a goods receipt as the account reads it — a structural subset of the inventory service's `CheckedLine`. */
 export interface ReceiptLineForAccount {
@@ -34,7 +34,7 @@ export interface ReceiptLineForAccount {
   readonly rejectedMinor: number;
   readonly heldMinor: number;
   readonly unitCost: { readonly minor: number; readonly currency: string };
-  /** OB-31: the line's unit — a kilo / litre line's cost is per kilo / litre while its quantity is in grams / millilitres. */
+  /** OB-31: the line's unit — quantities are smallest steps (grams for kg), the cost is per whole unit. */
   readonly uom?: string;
 }
 
@@ -242,7 +242,7 @@ export interface SupplierAccountInput {
   readonly asAt: string;
 }
 
-const heldValue = (r: ReceiptForAccount): number => r.captured.lines.reduce((s, l) => s + costOfQuantity(l.unitCost.minor, l.heldMinor, l.uom ?? ''), 0);
+const heldValue = (r: ReceiptForAccount): number => r.captured.lines.reduce((s, l) => s + valueAtUnitCost(l.heldMinor, l.uom ?? 'ea', l.unitCost.minor), 0); // OB-31
 
 /** ONE supplier's account, folded from the registers. Pure. */
 export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccountStatement {
@@ -277,7 +277,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
         const issued = (input.debitNoteIssues ?? []).find((i) => i.debitNoteRef === debitNoteRef && i.supplierId === input.supplierId);
         debitNotes.push({
           debitNoteRef, grnId: r.grnId, lineId: d.lineId, productId: d.productId, poId, disposition: d.disposition,
-          quantityMinor: line.quarantinedMinor, valueMinor: costOfQuantity(line.unitCost.minor, line.quarantinedMinor, line.uom ?? ''), currency: d.currency,
+          quantityMinor: line.quarantinedMinor, valueMinor: valueAtUnitCost(line.quarantinedMinor, line.uom ?? 'ea', line.unitCost.minor), currency: d.currency,
           decidedBy: d.decidedBy, decidedAt: d.decidedAt, reason: d.reason,
           number: issued?.number ?? null, issuedBy: issued?.issuedBy ?? null, issuedAt: issued?.issuedAt ?? null,
         });
@@ -285,7 +285,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
           const back = (r.lineReturns ?? []).find((x) => x.lineId === d.lineId);
           pendingLineReturns.push({
             grnId: r.grnId, lineId: d.lineId, productId: d.productId, poId, quantityMinor: line.quarantinedMinor,
-            valueMinor: costOfQuantity(line.unitCost.minor, line.quarantinedMinor, line.uom ?? ''), currency: d.currency, debitNoteRef,
+            valueMinor: valueAtUnitCost(line.quarantinedMinor, line.uom ?? 'ea', line.unitCost.minor), currency: d.currency, debitNoteRef,
             decidedBy: d.decidedBy, decidedAt: d.decidedAt, returned: back !== undefined, returnedBy: back?.returnedBy ?? null, returnedAt: back?.returnedAt ?? null,
           });
         }
@@ -293,7 +293,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
       if (line.rejectedMinor > 0) {
         refusedNotOwed.push({
           grnId: r.grnId, lineId: d.lineId, productId: d.productId, poId, disposition: d.disposition,
-          quantityMinor: line.rejectedMinor, valueMinor: costOfQuantity(line.unitCost.minor, line.rejectedMinor, line.uom ?? ''), currency: d.currency,
+          quantityMinor: line.rejectedMinor, valueMinor: valueAtUnitCost(line.rejectedMinor, line.uom ?? 'ea', line.unitCost.minor), currency: d.currency,
         });
       }
     }

@@ -136,7 +136,7 @@ async function cloud(): Promise<Cloud> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-picker', 'store_manager');
   await h.provisionRole(A, 'u-driver', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'cashier');
+  await h.provisionRole(A, 'u-box', 'store_computer');
   await h.enableFeature(A, 'delivery'); // this shop's plan includes home delivery (M36-FR-01) — a route can be assigned (HA-1)
   // The product master (M19-FR-02 fold): rice travels ambient, milk chilled — and ghee has NO handling class, deliberately.
   const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
@@ -339,6 +339,11 @@ describe('the picker handheld: enrol → device socket → box (durable) → hea
     expect(c.posts()).toBe(3);
     expect(await packRecords('ORD-1')).toBe(1);
 
+    // FUL-04: only an order head office holds is dispatched — the customer's order is on the order register (placed online).
+    const place = async (orderId: string, lines: { productId: string; quantityMinor: number }[]) =>
+      expect((await c.h.request({ method: 'POST', path: `/v1/orders/${orderId}/promise`, userId: 'u-owner', tenantId: A, idempotencyKey: `promise-${orderId}`, body: { lines, locationId: 'store-1' } })).status).toBe(200);
+    await place('ORD-1', [{ productId: 'p-rice', quantityMinor: 2 }, { productId: 'p-milk', quantityMinor: 1 }]);
+    await place('ORD-9', [{ productId: 'p-ghee', quantityMinor: 1 }]);
     // Dispatch builds the manifest FROM that pack — the order picked on the handheld leaves on a sealed, listed load.
     const dispatched = await c.h.request({ method: 'POST', path: '/v1/fulfilment/orders/ORD-1/dispatch', userId: 'u-picker', tenantId: A, idempotencyKey: 'disp-ORD-1', body: { manifestId: 'MAN-1', locationId: 'store-1', seals: { 'crate-1': 'SEAL-7' } } });
     expect(dispatched.status).toBe(200);

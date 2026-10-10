@@ -213,13 +213,12 @@ screen is served to a device that has not enrolled.
    this box at http://<address>:8092/`. Leave `EDGE_DEVICE_HOST` out and the door opens on the computer itself only
    (nothing on the network can reach it) — useful for a rehearsal, useless for a phone.
 2. **Register the device at head office** (the fleet register, `POST /v1/platform/devices/<deviceId>/register`,
-   kind `handheld` or `mobile`) — the same step every till goes through. The store pack the box pulls carries the
-   fleet's `devices` list; until the pack section feed is built (SP-9) the operator copies that list into the
-   pack file (`store-pack.json` → `devices`) — never a code, only what head office returns.
+   kind `handheld` or `mobile`) — the same step every till goes through. The store setup the box pulls from head office carries
+   the store's phones (`devices`) from the fleet register — with a code's fingerprint and expiry only, never the code —
+   so nothing is copied by hand (PA-06 3b, 10 Oct 2026).
 3. **Issue the code** — `POST /v1/platform/devices/<deviceId>/enrolment` by a person holding
    `platform.device.manage`. The answer holds the code ONCE (twenty letters and digits in four groups); head office
-   keeps only its fingerprint and the expiry (a day by default). Put the returned `enrolment` block on the device's
-   pack entry and let the box pull the pack (or restart it against the file).
+   keeps only its fingerprint and the expiry (a day by default). The box has it after its next pull of the store setup.
 4. **On the handheld**, open `http://<address>:8092/` in the browser. It shows **Enrol this handheld**: type the
    device id and the code, press Enrol. A wrong code says so and counts (five wrong per device per fifteen minutes,
    then a wait); an expired code says so — issue a new one; a code already used says so — it never works twice.

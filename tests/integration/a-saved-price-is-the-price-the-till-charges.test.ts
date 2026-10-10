@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { aBranch } from '../support/a-branch';
+import { storeRules } from '../support/store-rules';
 
 /**
  * **SF-01 (prices) — a price saved on the screen is the price the till charges (Wave 4 · M05-FR-01 · M05-FR-02 ·
@@ -22,6 +23,7 @@ async function shop(): Promise<{ h: ApiHarness; req: (method: 'POST' | 'GET', pa
   const req = (method: 'POST' | 'GET', path: string, body?: unknown, key = `k-${Math.random()}`) =>
     h.request({ method, path, userId: 'u-owner', tenantId: A, ...(method === 'POST' ? { idempotencyKey: key } : {}), ...(body === undefined ? {} : { body }) });
   await aBranch(h, A, 'u-owner', 'store-1');
+  await storeRules(h, A, 'u-owner', 'store-1', 0); // M05: the owner set no margin floor for this store (0 = none)
   expect((await req('POST', '/v1/catalogue/products/p-salt/publish', { product: { sku: 'SKU-SALT', name: 'Tata Salt 1kg', baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '25010020', lifecycle: 'draft' }, categories: [GROCERY] })).status).toBeLessThan(300);
   expect((await req('POST', '/v1/catalogue/tax-classes/25010020/rates/2017-07-01', { rateBps: 500 })).status).toBeLessThan(300);
   // the price that stands before the change: ₹20 at store-1, from today
@@ -67,6 +69,7 @@ describe('SF-01 — a price saved on the screen reaches the till', () => {
     const { h, req } = await shop();
     // a second store with its own price
     expect((await h.request({ method: 'POST', path: '/v1/org/nodes/store-2', userId: 'u-owner', tenantId: A, idempotencyKey: 'org-store-2', body: { kind: 'branch', name: 'Store 2', parentId: 'C1', companyId: 'C1' } })).status).toBeLessThan(300);
+    await storeRules(h, A, 'u-owner', 'store-2', 0);
     expect((await req('POST', '/v1/prices/list/p-salt/entries/e2', { scope: 'store', scopeRef: 'store-2', priceMinor: 2_100, mrpMinor: 2_500, costMinor: 1_000, marginFloorBps: 0, currency: 'INR', effectiveFrom: TODAY })).status).toBe(201);
     const saved = await req('POST', '/v1/prices/changes', change(1_900, { storeId: 'store-2' }));
     expect(saved.body).toMatchObject({ operativeAt: ['store-2'] });

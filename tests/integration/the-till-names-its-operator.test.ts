@@ -42,7 +42,7 @@ async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-meena', 'cashier');   // rings sales — holds pos.sale.sync
-  await h.provisionRole(A, 'u-box', 'cashier');     // the store box's sync identity
+  await h.provisionRole(A, 'u-box', 'store_computer');     // the store box's sync identity
   await h.provisionRole(A, 'u-visitor', 'customer'); // a known person with NO till authority
   await h.store.append(A, STREAM.catalogue, makeEvent({
     id: `pack-${A}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${A}-v1`, source: 'test/catalogue',

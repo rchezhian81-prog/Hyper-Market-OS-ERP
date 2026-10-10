@@ -12,9 +12,11 @@ export type OrderState =
   | 'dispatched'
   | 'delivered'
   | 'collected'
+  /** FUL-05: the goods went out and came back undelivered (returned to origin) — the order ends here. */
+  | 'returned'
   | 'cancelled';
 
-export type OrderEvent = 'confirm' | 'pick' | 'pack' | 'dispatch' | 'deliver' | 'collect' | 'cancel';
+export type OrderEvent = 'confirm' | 'pick' | 'pack' | 'dispatch' | 'deliver' | 'collect' | 'return' | 'cancel';
 
 /** Allowed transitions. A cancel is possible up to (and including) 'packed'. */
 const TRANSITIONS: Readonly<Record<OrderState, Partial<Record<OrderEvent, OrderState>>>> =
@@ -23,13 +25,14 @@ const TRANSITIONS: Readonly<Record<OrderState, Partial<Record<OrderEvent, OrderS
     confirmed: { pick: 'picking', cancel: 'cancelled' },
     picking: { pack: 'packed', cancel: 'cancelled' },
     packed: { dispatch: 'dispatched', collect: 'collected', cancel: 'cancelled' },
-    dispatched: { deliver: 'delivered' },
+    dispatched: { deliver: 'delivered', return: 'returned' },
     delivered: {},
     collected: {},
+    returned: {},
     cancelled: {},
   });
 
-const TERMINAL: ReadonlySet<OrderState> = new Set<OrderState>(['delivered', 'collected', 'cancelled']);
+const TERMINAL: ReadonlySet<OrderState> = new Set<OrderState>(['delivered', 'collected', 'returned', 'cancelled']);
 
 export class InvalidOrderTransitionError extends Error {
   constructor(from: OrderState, event: OrderEvent) {
@@ -52,7 +55,7 @@ export function canTransition(from: OrderState, event: OrderEvent): boolean {
   return TRANSITIONS[from][event] !== undefined;
 }
 
-/** True once the order can no longer transition (delivered/collected/cancelled). */
+/** True once the order can no longer transition (delivered/collected/returned/cancelled). */
 export function isTerminal(state: OrderState): boolean {
   return TERMINAL.has(state);
 }

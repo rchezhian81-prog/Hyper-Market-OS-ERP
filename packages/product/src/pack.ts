@@ -106,41 +106,16 @@ export function fromBaseUnits(
   return { packs, remainderBaseUnits: baseUnits - packs * factor };
 }
 
-/** One counted quantity at one pack level — "3 cases", "2 inners", "5 each". */
-export interface PackCount {
-  readonly level: string;
-  readonly quantity: number;
-}
-
 /**
- * SF-11 (M03-FR-02 "a case scanned at receiving converts to the correct unit count"): a mixed count — 4 cases, 3 inners
- * and 2 singles — in base units, exactly. Each quantity must be a whole number ≥ 0; an unknown level throws
- * `UnknownPackLevelError` (never a guess). The base units are the stock's own minor units: items for a counted product,
- * grams for a kilo product, millilitres for a litre product (OB-31).
- */
-export function countInBaseUnits(pack: PackHierarchy, counts: readonly PackCount[]): number {
-  const valid = validatePack(pack);
-  let total = 0;
-  for (const c of counts) {
-    if (!Number.isSafeInteger(c.quantity) || c.quantity < 0) {
-      throw new InvalidPackError(pack.productId, `a count of ${String(c.quantity)} ${c.level} is not a whole number of packs`);
-    }
-    total += c.quantity * unitsPerLevel(valid, c.level);
-  }
-  return total;
-}
-
-/**
- * SF-11 + OB-31: the cost of ONE whole base unit (an item; a kilo for a gram-counted product, a litre for a millilitre-
- * counted one — `costScale` units) from the cost of one pack at `level`. `exact` is false when that is not a whole number
+ * SF-11 (M03-FR-02 · OB-31 rule 5): the cost of ONE whole base unit (an item; a kilo for a kilo product) from the cost of one
+ * pack at `level` — a pack counts in whole base units (a 25 kg sack holds 25). `exact` is false when that is not a whole number
  * of paise — the caller refuses rather than rounding a price nobody agreed.
  */
 export function unitCostFromPackCost(
-  pack: PackHierarchy, level: string, packCostMinor: number, costScale: number,
+  pack: PackHierarchy, level: string, packCostMinor: number,
 ): { readonly unitCostMinor: number; readonly exact: boolean; readonly unitsPerPack: number } {
   const unitsPerPack = unitsPerLevel(validatePack(pack), level);
-  const scaled = packCostMinor * costScale;
-  return { unitCostMinor: Math.floor(scaled / unitsPerPack), exact: scaled % unitsPerPack === 0, unitsPerPack };
+  return { unitCostMinor: Math.floor(packCostMinor / unitsPerPack), exact: packCostMinor % unitsPerPack === 0, unitsPerPack };
 }
 
 /** True when converting up and back down returns exactly what went in. */

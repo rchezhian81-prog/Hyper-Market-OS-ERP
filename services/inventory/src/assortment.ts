@@ -14,6 +14,11 @@
 // its reason and who made it, because "why did we stop carrying this?" is asked six months later by someone
 // who was not in the meeting.
 //
+// FUL-11 (Batch 2): the stock a DROP is judged on is HEAD OFFICE'S — the on-hand at the store and every place under it,
+// read from the ordinary stock position — never a figure in the body (a caller saying "0 on hand" would delete a range
+// line with stock on the shelf, the exact invisibility this route exists to prevent). A body that carries `onHandMinor` is
+// refused by name. And the range is ENFORCED at ordering: `rangeStatusOf` is what the purchase-order route asks.
+//
 // The rules are the tested `dropFromRange` / `checkAssortmentIntegrity` / `Assortment` in `@sre/merchandising`
 // (the `services-run-on-their-tested-engine` guardrail). Range entries are recorded append-only, per store;
 // the reads fold them into an `Assortment` resolved as-at a date. Gated `merchandising.range.manage` to
@@ -36,15 +41,20 @@ const strArray = (v: unknown): readonly string[] | undefined =>
 const onHandMap = (v: unknown): Readonly<Record<string, number>> | undefined =>
   v === undefined ? {} : (isObj(v) && Object.values(v).every((n) => isInt(n) && (n as number) >= 0) ? (v as Record<string, number>) : undefined);
 
+/**
+ * FUL-11 — a product's range status at a store on a date, for the ordering boundary: `no_range` when the store has no
+ * range recorded at all (nothing to enforce yet — said by the caller), else the in-force status (or `not_ranged`).
+ */
+export function rangeStatusOf(entries: readonly AssortmentEntry[], storeId: string, productId: string, onDate: string): 'no_range' | 'not_ranged' | 'listed' | 'clearance' | 'delisted' {
+  if (!entries.some((e) => e.storeId === storeId)) return 'no_range';
+  return new Assortment(storeId, entries).statusOn(productId, onDate) ?? 'not_ranged';
+}
+
 export interface AssortmentDeps {
-  /**
-   * FUL-11 (M04-FR-01): what the store HOLDS, per product, from head office's own stock ledger — every location the org
-   * hierarchy puts under the store. When wired, a drop and an integrity check use THIS figure, never a number typed into
-   * the request (a drop told "no stock" would delete stock that is on the shelf). Optional on a bare stub.
-   */
-  readonly storeStock?: (tenantId: string, storeId: string) => Promise<ReadonlyMap<string, number>> | ReadonlyMap<string, number>;
   /** FUL-11: every product the stock ledger has ever recorded SELLING at the store's locations. Optional on a bare stub. */
   readonly soldAtStore?: (tenantId: string, storeId: string) => Promise<readonly string[]> | readonly string[];
+  /** FUL-11: head office's on-hand for a product at a store (the store and every place under it), from the stock position. */
+  readonly storeOnHand?: (tenantId: string, storeId: string, productId: string) => Promise<number> | number;
   /** Every range entry recorded for a store — append-only, effective-dated; the reads fold them. */
   readonly entries: (tenantId: string, storeId: string) => Promise<readonly AssortmentEntry[]> | readonly AssortmentEntry[];
   readonly recordEntry: (tenantId: string, storeId: string, entry: AssortmentEntry, key: string) => Promise<void> | void;
@@ -79,21 +89,27 @@ export function assortmentRoutes(deps: AssortmentDeps): readonly Route[] {
         const storeId = (ctx.params['storeId'] ?? '').trim();
         const productId = (ctx.params['productId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        // FUL-11: with head office's stock ledger wired, the stock on hand is ITS figure — a body figure is optional and,
-        // when it disagrees, said and ignored. Without the ledger (a bare stub) the body must carry it, as before.
-        const ledger = deps.storeStock === undefined ? undefined : await deps.storeStock(ctx.tenantId, storeId);
-        const typed = b['onHandMinor'];
-        if (storeId === '' || productId === '' || (ledger === undefined && (!isInt(typed) || typed < 0))
-          || (typed !== undefined && (!isInt(typed) || typed < 0))
+        if (b['onHandMinor'] !== undefined) {
+          throw apiError(400, {
+            code: 'drop_carries_caller_stock',
+            whatHappened: `The drop of ${productId} at ${storeId} says how much is on hand. That is head office's to say, from the stock position — a figure in the request could delete a range line with stock still on the shelf.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { reason, effectiveFrom, reasonNote?, replacedByProductId? } — the stock is read here. Nothing was changed.',
+          });
+        }
+        if (deps.storeOnHand === undefined) {
+          throw apiError(503, { code: 'stock_position_unavailable', whatHappened: 'The stock position is not wired here, so a drop cannot be judged on what is on the shelf.', wasItSaved: 'not_saved', nextSafeAction: 'Try again later. Nothing was changed.' });
+        }
+        if (storeId === '' || productId === ''
           || !DROP_REASONS.includes(b['reason'] as DropReason) || !isDate(b['effectiveFrom'])
           || (b['reasonNote'] !== undefined && typeof b['reasonNote'] !== 'string')
           || (b['replacedByProductId'] !== undefined && !isStr(b['replacedByProductId']))) {
-          throw apiError(400, { code: 'not_readable_as_a_drop', whatHappened: 'A drop needs storeId + productId in the path and { onHandMinor (whole ≥ 0), reason (poor_sales/poor_margin/supplier_discontinued/quality_issue/range_rationalisation/seasonal_end/replaced_by_alternative), effectiveFrom, reasonNote?, replacedByProductId? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send why it is being dropped and how much is still on hand. Who decided it is taken from your login.' });
+          throw apiError(400, { code: 'not_readable_as_a_drop', whatHappened: 'A drop needs storeId + productId in the path and { reason (poor_sales/poor_margin/supplier_discontinued/quality_issue/range_rationalisation/seasonal_end/replaced_by_alternative), effectiveFrom, reasonNote?, replacedByProductId? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send why it is being dropped and how much is still on hand. Who decided it is taken from your login.' });
         }
         let decision;
         try {
           decision = dropFromRange({
-            storeId, productId, onHandMinor: ledger === undefined ? typed as number : (ledger.get(productId) ?? 0), reason: b['reason'] as DropReason,
+            storeId, productId, onHandMinor: await deps.storeOnHand(ctx.tenantId, storeId, productId), reason: b['reason'] as DropReason,
             decidedBy: ctx.userId, effectiveFrom: b['effectiveFrom'] as string,
             ...(isStr(b['reasonNote']) ? { reasonNote: b['reasonNote'] } : {}),
             ...(isStr(b['replacedByProductId']) ? { replacedByProductId: b['replacedByProductId'] } : {}),
@@ -105,15 +121,7 @@ export function assortmentRoutes(deps: AssortmentDeps): readonly Route[] {
           throw e;
         }
         await deps.recordEntry(ctx.tenantId, storeId, decision.entry, ctx.idempotencyKey ?? `drop-${storeId}-${productId}-${decision.entry.effectiveFrom}`);
-        const onHandMinor = ledger === undefined ? typed as number : (ledger.get(productId) ?? 0);
-        return {
-          status: 201,
-          body: {
-            storeId, productId, outcome: decision.outcome, status: decision.entry.status, effectiveFrom: decision.entry.effectiveFrom, detail: decision.detail,
-            onHandMinor, onHandFrom: ledger === undefined ? 'the_request' : 'head_office_stock_ledger',
-            ...(ledger !== undefined && typed !== undefined && typed !== onHandMinor ? { typedFigureIgnored: typed } : {}),
-          },
-        };
+        return { status: 201, body: { storeId, productId, outcome: decision.outcome, status: decision.entry.status, effectiveFrom: decision.entry.effectiveFrom, detail: decision.detail, onHandMinor: await deps.storeOnHand(ctx.tenantId, storeId, productId) } };
       },
     },
     {
@@ -134,12 +142,13 @@ export function assortmentRoutes(deps: AssortmentDeps): readonly Route[] {
         const assortment = new Assortment(storeId, await deps.entries(ctx.tenantId, storeId));
         // FUL-11: the facts are head office's where it holds them — what the store's locations hold (the ledger's figure
         // replaces any typed one) and what they have ever sold (added to any the caller reports from the till).
-        const ledger = deps.storeStock === undefined ? undefined : await deps.storeStock(ctx.tenantId, storeId);
         const soldHere = deps.soldAtStore === undefined ? [] : await deps.soldAtStore(ctx.tenantId, storeId);
         const soldAll = [...new Set([...sold, ...soldHere])];
-        const onHandAll: Record<string, number> = ledger === undefined ? { ...onHand } : Object.fromEntries(
-          [...new Set([...ledger.keys(), ...assortment.listedOn(b['onDate'] as string), ...Object.keys(onHand)])].map((p) => [p, ledger.get(p) ?? 0]),
-        );
+        const ranged = (await deps.entries(ctx.tenantId, storeId)).map((e) => e.productId);
+        const onHandAll: Record<string, number> = deps.storeOnHand === undefined ? { ...onHand } : Object.fromEntries(await Promise.all(
+          [...new Set([...ranged, ...Object.keys(onHand)])].map(async (p) => [p, await deps.storeOnHand!(ctx.tenantId, storeId, p)] as const),
+        ));
+        const ledger = deps.storeOnHand;
         const issues = checkAssortmentIntegrity({
           assortment, onDate: b['onDate'] as string, soldProductIds: soldAll,
           ...(reordered.length > 0 ? { reorderedProductIds: reordered } : {}),

@@ -40,14 +40,14 @@
 //                      backwards trace both work with the cable out
 
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
-import { isUom } from '../../../packages/contracts/src/quantity';
+import { isUom, normaliseUom } from '../../../packages/contracts/src/quantity';
 import { assessChecklist } from '../../../packages/workforce/src/index';
 import type { LpRule } from '../../../packages/loss-prevention/src/index';
 import { planDispatch, type DispatchPlan } from '../../../packages/fulfilment/src/routing';
 import { generateDeliverySlots } from '../../../packages/storefront/src/checkout';
 import { ShelfMap, type ShelfLocation } from '../../../packages/merchandising/src/index';
 import {
-  basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
+  basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tenderPartsOf, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
 import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
@@ -244,7 +244,7 @@ export function unsellableProducts(pack: StorePack, cataloguePack?: SignedPack):
     if (p.recallBlock === true || m?.recallBlocked === true) named('recall_block', 'recall block set on the catalogue — refused at the till by name');
     else if (p.taxBps === undefined) named('no_tax_rate', 'no tax rate on the catalogue');
     else if (status === undefined) named('no_status', 'no status on the catalogue');
-    else if (!isUom(p.uom)) named('unknown_uom', `unknown unit of measure "${p.uom}" on the catalogue`);
+    else if (!isUom(normaliseUom(p.uom) ?? p.uom)) named('unknown_uom', `unknown unit of measure "${p.uom}" on the catalogue`);
     else if (!LANE_SELLS.has(status)) named('not_on_sale', `status "${status}" on the catalogue — refused at the till`);
   }
   return rows;
@@ -792,6 +792,11 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     ...(w.grnId === undefined ? {} : { grnId: w.grnId }),
     ...(w.poId === undefined ? {} : { poId: w.poId }),
     ...(w.ordered === undefined ? {} : { ordered: w.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })) }),
+    // OB-37: the store's open deliveries, each with what is still to arrive — the phone lets the receiver choose one.
+    ...(w.openDeliveries === undefined ? {} : { openDeliveries: w.openDeliveries.map((d) => ({
+      poId: d.poId, number: d.number, supplierId: d.supplierId, grnId: d.grnId,
+      ordered: d.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })),
+    })) }),
     ...(w.recalledProductIds === undefined ? {} : { recalledProductIds: w.recalledProductIds }),
     ...(w.recalledBatchIds === undefined ? {} : { recalledBatchIds: w.recalledBatchIds }),
     // The pick list, line by line, each naming its bin. Passed through as sent — absent stays absent, so a
@@ -1111,6 +1116,8 @@ export function buyingPayload(input: ScreenInput): Record<string, unknown> | nul
 
   if (input.pack.products.known) {
     payload['productIds'] = input.pack.products.value.map((p) => p.productId);
+    // OB-31: each product's unit, so the buyer's screen checks a weighed line as grams × price per kg.
+    payload['productUoms'] = Object.fromEntries(input.pack.products.value.map((p) => [p.productId, p.uom]));
   }
   if (input.pack.purchaseOrders.known) {
     payload['ordered'] = foldByReference(
@@ -1366,6 +1373,8 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
       ...(costable ? { cogsMinor: cogs } : {}),
       ...(lines === undefined ? {} : { units: basketUnits(lines) }),
       tender: sale.tenders?.[0]?.kind ?? 'unknown',
+      // Every payment by its own kind and amount (audit EA-02): the tender report splits a bill across what paid it.
+      tenders: tenderPartsOf(sale),
     };
   });
 

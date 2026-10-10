@@ -352,7 +352,13 @@
   final price is captured at pack** in exact integer minor units from the packed grams (never a guess at the
   doorstep); a chilled/frozen/raw-meat line with **no temperature, or one out of range, does not go on the
   van**; a crate that mixes incompatible handling is **refused, not warned**, while the rest of the order
-  still packs; and the pack is **recorded** (`OrderPacked`) so it cannot be re-supplied later.
+  still packs; and the pack is **recorded** (`OrderPacked`) so it cannot be re-supplied later. **FUL-04:** the
+  desk sends only what it observed — `{ lines: [{ productId, pickedMinor, packedGrams?, packTenthsC? }],
+  crateAssignment? }`; the order and its quantities come from the order register (an unknown order is `404
+  order_unknown`, an unconfirmed one `409 order_not_packable`), handling and cold-chain limits from the product
+  master through the same resolver as the wave path (`masterPacking`), name and price from the published
+  catalogue. A body carrying `rules`, a handling class, an ordered quantity, a price or limits is `400
+  pack_carries_caller_rules`; dispatch of an order the register does not hold is `404 order_unknown`.
   `POST …/:id/dispatch` runs `dispatchOrder` over the **recorded** pack — the manifest is **derived from what
   was packed, never from what was ordered** — refusing `409` an unsealed crate (`unsealed_crate`), a short or
   refused line the customer has not been told about (`unresolved_lines`), or an unpacked order

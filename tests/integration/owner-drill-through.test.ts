@@ -34,7 +34,7 @@ describe('owner drill-through — "show me", and it had better add up (M29-FR-02
       transactions: [txn({ transactionId: 't1', amountMinor: 40000 }), txn({ transactionId: 't2', amountMinor: 30000 }), txn({ transactionId: 't3', amountMinor: 30000 })],
     });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ reconciles: true, shownTotalMinor: 100000, withheldCount: 0 });
+    expect(res.body).toMatchObject({ reconciles: true, shownTotalMinor: 100000, withheldCount: 0, provenance: 'supplied_by_caller' });
     expect((res.body as { transactions: unknown[] }).transactions).toHaveLength(3);
 
     // The drill is logged (§28) — and survives a restart.

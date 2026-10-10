@@ -62,6 +62,7 @@ import {
 // cannot contain `node:http`. Same rule, one implementation — see `three-way-match.ts`.
 import { threeWayMatch, type MatchLine, type MatchResult } from '../../../packages/purchasing/src/three-way-match';
 import { makeEvent } from '../../../packages/contracts/src/event';
+import { normaliseUom, valueAtUnitCost, minorPerUnitOf } from '../../../packages/contracts/src/quantity';
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import { deviceItemReason, deviceItemState, type BoxItemStatus, type DeviceItemState } from '../../../packages/sync/src/device-relay';
 
@@ -89,9 +90,13 @@ export const SUPPLIER_INVOICE_TEMPLATE = Object.freeze({
 /** One line of a captured supplier invoice. */
 export interface InvoiceLine {
   readonly productId: string;
+  /** In the product's smallest steps (OB-31: grams for a kg product; items otherwise). */
   readonly quantity: number;
+  /** Per WHOLE unit (per kg, per item). */
   readonly unitPriceMinor: number;
   readonly lineTotalMinor: number;
+  /** OB-31: the product's unit as the store's catalogue names it, when known — head office re-checks it against the master. */
+  readonly uom?: string;
 }
 
 export interface CapturePreview {
@@ -118,7 +123,8 @@ export class UnreadableInvoiceFileError extends Error {
 /**
  * Check each line's own arithmetic.
  *
- * `quantity × unitPriceMinor` must equal `lineTotalMinor`. The generic import engine validates
+ * `quantity × unitPriceMinor` must equal `lineTotalMinor` — in the product's own unit (OB-31): a weighed product's
+ * quantity is grams and its price is per kg, so the line is grams × price ÷ 1000, rounded once. The generic import engine validates
  * types and references; it has no idea what these three columns mean to each other. A mistyped
  * quantity is invisible in a column of numbers and obvious the moment they are multiplied — and it
  * is the single most common transcription error there is.
@@ -126,6 +132,7 @@ export class UnreadableInvoiceFileError extends Error {
 export function lineArithmeticErrors(
   rows: readonly Readonly<Record<string, string>>[],
   lineNumbers: readonly number[],
+  unitOf: (productId: string) => string | undefined = () => undefined,
 ): RowError[] {
   const errors: RowError[] = [];
   rows.forEach((row, index) => {
@@ -133,18 +140,27 @@ export function lineArithmeticErrors(
     const unit = Number(row['unitPriceMinor']);
     const total = Number(row['lineTotalMinor']);
     if (!Number.isFinite(quantity) || !Number.isFinite(unit) || !Number.isFinite(total)) return;
-    if (quantity * unit === total) return;
+    if (!Number.isInteger(quantity) || !Number.isInteger(unit)) return; // the engine already names a non-whole figure
+    const code = unitCodeOf(unitOf((row['productId'] ?? '').trim()));
+    const worth = valueAtUnitCost(quantity, code, unit);
+    if (worth === total) return;
+    const said = minorPerUnitOf(code) === 1
+      ? `${quantity} × ${unit} is ${worth}`
+      : `${quantity} ${code === 'kg' ? 'g' : 'ml'} at ${unit} a ${code} is ${worth}`;
     errors.push({
       line: lineNumbers[index] ?? index + 2,
       column: 'lineTotalMinor',
       kind: 'not_an_amount',
       message:
-        `${quantity} × ${unit} is ${quantity * unit}, but the line says ${total}. ` +
+        `${said}, but the line says ${total}. ` +
         'One of the three is mistyped — check this line against the paper invoice.',
     });
   });
   return errors;
 }
+
+/** OB-31: the code a product's unit normalises to; an unknown or absent unit counts whole items. */
+const unitCodeOf = (uom: string | undefined): string => (uom === undefined ? 'ea' : normaliseUom(uom) ?? 'ea');
 
 export interface BuyingConfig {
   readonly tenantId: string;
@@ -208,6 +224,8 @@ export interface BuyingPorts {
   receivedLines(poId: string): readonly { readonly productId: string; readonly qty: number }[];
   /** Invoice lines already captured, so a second capture of one invoice is visible. */
   capturedLines(invoiceId: string): readonly InvoiceLine[];
+  /** OB-31: the unit the store's catalogue counts a product in (kg ⇒ quantities are grams), or undefined when not known. */
+  productUom?(productId: string): string | undefined;
   /**
    * PROPOSE a purchase order at head office (M06-FR-02, API-03). Absent when this box cannot reach the
    * cloud — then `canProposeToCloud` is false and the screen keeps its local-only compute rather than
@@ -227,6 +245,8 @@ export interface BuyingPorts {
 export interface ProposePurchaseOrderInput {
   readonly poId: string;
   readonly supplierId: string;
+  /** OB-37: the store the order is delivered to — a place in head office's organisation. */
+  readonly deliverToLocationId: string;
   readonly lines: readonly { readonly productId: string; readonly orderedQty: number; readonly unitCostMinor: number }[];
 }
 
@@ -245,6 +265,7 @@ export interface ProposePurchaseOrderPort {
   post(input: {
     readonly poId: string;
     readonly supplierId: string;
+    readonly deliverToLocationId: string;
     readonly lines: readonly { readonly productId: string; readonly orderedQty: number; readonly unitCost: Money }[];
   }): Promise<ProposePurchaseOrderOutcome>;
 }
@@ -392,14 +413,21 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts, ou
     });
 
     // The engine's problems, plus the one only this layer understands.
-    const problems = [...preview.errors, ...lineArithmeticErrors(parsed.rows, parsed.lineNumbers)];
+    const unitOf = (productId: string): string | undefined => ports.productUom?.(productId);
+    const problems = [...preview.errors, ...lineArithmeticErrors(parsed.rows, parsed.lineNumbers, unitOf)];
 
-    const lines: InvoiceLine[] = preview.validRows.map((row) => ({
-      productId: row['productId'] ?? '',
-      quantity: Number(row['quantity']),
-      unitPriceMinor: Number(row['unitPriceMinor']),
-      lineTotalMinor: Number(row['lineTotalMinor']),
-    }));
+    const lines: InvoiceLine[] = preview.validRows.map((row) => {
+      const productId = row['productId'] ?? '';
+      const known = unitOf(productId);
+      const uom = known === undefined ? undefined : normaliseUom(known);
+      return {
+        productId,
+        quantity: Number(row['quantity']),
+        unitPriceMinor: Number(row['unitPriceMinor']),
+        lineTotalMinor: Number(row['lineTotalMinor']),
+        ...(uom === undefined ? {} : { uom }),
+      };
+    });
 
     return {
       preview,
@@ -420,11 +448,11 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts, ou
       supplierId: input.supplierId,
       requisitionedBy: config.buyerId,
       at: input.at,
-      lines: input.lines.map((l): PurchaseOrderLineInput => ({
-        productId: l.productId,
-        orderedQty: l.orderedQty,
-        unitCost: inr(l.unitCostMinor),
-      })),
+      lines: input.lines.map((l): PurchaseOrderLineInput => {
+        const uom = ports.productUom?.(l.productId);
+        const code = uom === undefined ? undefined : normaliseUom(uom);
+        return { productId: l.productId, orderedQty: l.orderedQty, unitCost: inr(l.unitCostMinor), ...(code === undefined ? {} : { uom: code }) };
+      }),
       ...(input.supplierBlocked === undefined ? {} : { supplierBlocked: input.supplierBlocked }),
       ...(input.approval === undefined ? {} : { approval: input.approval }),
     }),
@@ -447,12 +475,17 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts, ou
       if (input.supplierId.trim() === '') {
         return { proposed: false, reason: 'no supplier is chosen for this order' };
       }
+      // OB-37: every order names the store it is delivered to — the receiving staff there expect it.
+      if (input.deliverToLocationId.trim() === '') {
+        return { proposed: false, reason: 'no store is chosen for this order to be delivered to' };
+      }
       // The cloud is the authority — it attributes the requisitioner to the authenticated buyer and refuses a
       // blocked supplier. The proposal carries NO approver: issuing is a separate §28 act the buyer may not do,
       // and a dropped link or a refusal comes back as `proposed: false`, never a false "raised".
       return port().post({
         poId: input.poId,
         supplierId: input.supplierId,
+        deliverToLocationId: input.deliverToLocationId.trim(),
         lines: input.lines.map((l) => ({ productId: l.productId, orderedQty: l.orderedQty, unitCost: inr(l.unitCostMinor) })),
       });
     },
@@ -587,6 +620,8 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts, ou
         const o = ordered.find((l) => l.productId === productId);
         const r = received.find((l) => l.productId === productId);
         const i = invoiced.find((l) => l.productId === productId);
+        // OB-31: grams are paid at the per-kg price — the match values each side in the product's own unit.
+        const scale = minorPerUnitOf(unitCodeOf(i?.uom ?? ports.productUom?.(productId)));
         return {
           productId,
           orderedQty: o?.qty ?? 0,
@@ -594,6 +629,7 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts, ou
           invoicedQty: i?.quantity ?? 0,
           orderedUnitMinor: o?.unitMinor ?? 0,
           invoicedUnitMinor: i?.unitPriceMinor ?? 0,
+          ...(scale === 1 ? {} : { minorPerUnit: scale }),
         };
       });
 

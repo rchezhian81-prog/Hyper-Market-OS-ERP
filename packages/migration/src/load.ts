@@ -19,8 +19,8 @@
 // loads). The demo tenant is refused by id (G4: demo data cannot mix with real data).
 
 import { assertNonProduction, type LoadTarget } from './trial';
-import { validateProduct, CategoryNotFoundError, type Category, type ProductRecord, type RegulatedKind } from '../../product/src/product';
 import { validateGstin, InvalidGstinError } from '../../org/src/hierarchy';
+import { validateProduct, CategoryNotFoundError, type Category, type ProductRecord, type RegulatedKind } from '../../product/src/product';
 
 const REGULATED: readonly RegulatedKind[] = ['food', 'packed', 'weighed', 'age_restricted', 'drug', 'hazardous'];
 

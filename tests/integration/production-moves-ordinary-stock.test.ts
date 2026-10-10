@@ -118,6 +118,41 @@ describe.each(backings)('FUL-01 — production moves ordinary stock — on $name
     expect(await k.onHand('CAKE')).toBe(1);
   }, 60_000);
 
+  it('FUL-13: production → label → a TILL SALE of that batch — the run, its release, the label (batch, use-by, price) and the sale on /v1/sales agree; the cake leaves the shelf at its own cost', async () => {
+    const h = harness();
+    const t = randomUUID();
+    const k = await kitchen(h, t);
+    expect((await k.run('run-L', 2)).status).toBe(201);
+    // Before release a label prints but the batch is not sellable (quarantine) — the label never makes stock.
+    const label = await k.call('POST', '/v1/production/runs/run-L/label', 'u-owner', { productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE Hyper Market, TN', priceMinor: 12_000, allergens: ['wheat', 'milk'] }, 'lbl-L');
+    expect(label.status, JSON.stringify(label.body)).toBe(200);
+    const lines = (label.body as { batchId: string; lines: string[] }).lines.join('\n');
+    expect(label.body).toMatchObject({ runId: 'run-L', batchId: 'CAKE-run-L' });
+    expect(lines).toContain('Coffee cake');
+    expect(lines).toContain('CAKE-run-L');
+    expect(await k.onHand('CAKE')).toBe(0);
+    expect((await k.call('POST', '/v1/production/runs/run-L/release', 'u-qc', { qcPassed: true }, 'rel-L')).status).toBe(200);
+    expect(await k.onHand('CAKE')).toBe(2);
+    const runs = (await k.call('GET', '/v1/production/runs', 'u-owner')).body as { runs: { runId: string; outputBatchId: string; expiresAt: string }[] };
+    const made = runs.runs.find((r) => r.runId === 'run-L')!;
+    expect(lines).toContain(made.expiresAt.slice(0, 10)); // the use-by the label carries is the run's own
+
+    // The till sells one labelled cake: the sale names the label's batch and price; the box sends it to head office.
+    const committedAt = new Date(Date.now() + 1_000).toISOString();
+    const sale = await k.call('POST', '/v1/sales', 'u-owner', {
+      saleId: 'S-cake', receiptNumber: 'R-cake', laneId: 'lane-1', cashierId: 'u-owner', locationId: KITCHEN, tradingDay: committedAt.slice(0, 10), committedAt,
+      totalMinor: 12_000, currency: 'INR', packVersion: 1,
+      lines: [{ productId: 'CAKE', quantityMinor: 1, uom: 'ea', unitPriceMinor: 12_000, lineTotalMinor: 12_000, batchId: made.outputBatchId, batchExpiry: made.expiresAt.slice(0, 10) }],
+      tenders: [{ kind: 'cash', amountMinor: 12_000 }],
+    }, 'sale-cake');
+    expect(sale.status, JSON.stringify(sale.body)).toBe(202);
+    expect(await k.onHand('CAKE')).toBe(1);
+    // Its cost of goods is the cake's (₹9.00 from the run), not the flour's; the rest stays valued at the run's cost.
+    expect((await k.valuation()).byProduct['CAKE']).toBe(900);
+    const batches = (await k.call('GET', '/v1/inventory/batches', 'u-owner', undefined, undefined, { locationId: KITCHEN, productId: 'CAKE' })).body as { batches: { batchId: string; onHandMinor: number }[] };
+    expect(batches.batches).toEqual([expect.objectContaining({ batchId: 'CAKE-run-L', onHandMinor: 1 })]);
+  }, 60_000);
+
   it('FUL-08: a recipe edit that keeps the same number of ingredients is a NEW version (100 g → 150 g flour); the same recipe again is no new version; going back is a version too; each run names the version it used', async () => {
     const h = harness();
     const t = randomUUID();

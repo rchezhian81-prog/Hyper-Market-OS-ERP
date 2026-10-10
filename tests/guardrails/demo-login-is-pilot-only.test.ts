@@ -140,10 +140,14 @@ describe('the DEMO store box relay (ADR-0016) is pilot-only and gated', () => {
 describe('the DEMO store box pack + day-close redirect (ADR-0016)', () => {
   const RELAY = readFileSync('infra/compose/nginx.edge-relay.conf', 'utf8');
 
-  it('the store pack is read-only in the edge and only in the pilot overlay', () => {
+  it('the demo store computer takes its setup from head office (PA-06 3b) — no box-built pack file, in either file', () => {
     const edge = serviceBlock(PILOT, 'edge');
-    expect(edge).toMatch(/EDGE_PACK_FILE: \/etc\/store-pack\/store-pack\.json/);
-    expect(edge).toMatch(/\$\{DEMO_STORE_PACK_DIR:-\/etc\/sre-pilot\/store-pack\}:\/etc\/store-pack:ro/);
+    expect(edge).toMatch(/EDGE_STORE_PACK_SOURCE: head-office/);
+    expect(edge).toMatch(/EDGE_STORE_ID: \$\{EDGE_STORE_ID:-pilot-demo-branch\}/);
+    // OB-38 "A": the file already on the server stays mounted read-only as the fallback until head office's setup arrives
+    // (the box replaces it entirely then); nothing in the repository builds it, and the base file never names one.
+    expect(edge).toMatch(/OB-38/);
+    expect(edge).toMatch(/:\/etc\/store-pack:ro/);
     expect(BASE).not.toMatch(/EDGE_PACK_FILE/);
   });
 

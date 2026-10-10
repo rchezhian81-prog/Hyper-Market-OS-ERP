@@ -23,7 +23,7 @@
 // Pure and deterministic: no clock, no I/O. Money is exact minor units (§29.1).
 
 import type { Money } from '../../contracts/src/money';
-import { costOfQuantity } from '../../contracts/src/quantity';
+import { valueAtUnitCost } from '../../contracts/src/quantity';
 
 /** Where received stock lands. Quarantine is deliberately NOT sellable. */
 export type ReceiptDisposition = 'sellable' | 'quarantine' | 'rejected';
@@ -164,9 +164,9 @@ export interface CapturedReceipt {
 
 const BP = 10_000;
 
-/** OB-31: a kilo / litre line is counted in grams / millilitres and costed per kilo / litre — valued once, never per gram. */
+/** OB-31: a line's quantity (smallest steps — grams for kg) at its per-whole-unit cost, rounded once. */
 function valueOf(unitCost: Money, quantityMinor: number, uom: string): Money {
-  return { minor: costOfQuantity(unitCost.minor, quantityMinor, uom), currency: unitCost.currency };
+  return { minor: valueAtUnitCost(quantityMinor, uom, unitCost.minor), currency: unitCost.currency };
 }
 
 /**

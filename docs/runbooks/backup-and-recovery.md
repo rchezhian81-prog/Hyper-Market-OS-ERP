@@ -54,6 +54,18 @@ node scripts/backup.mjs --out /path/to/backups
 It prints the file, the manifest, the checksum and the row counts. Keep the `.dump` and
 the `.manifest.json` **together** — one is useless without the other.
 
+**The dump and the manifest are one moment (audit GT-07, 10 Oct 2026).** The backup opens a
+read-only snapshot of the database, counts the rows and adds up the money *inside that
+snapshot*, and dumps *that same snapshot* (`pg_dump --snapshot`). Sales that are rung while the
+backup runs are in **neither** the file nor the manifest — the next backup takes them. The
+manifest's `consistency` block says exactly where the line was drawn:
+
+- `snapshotId` and `takenAt` — the moment the backup is of;
+- `latestEventSeq` / `latestEventAt` — the newest record inside it (the "latest durable
+  boundary": everything up to that record is in the backup, nothing after it).
+
+You can take a backup while the shop is trading. You do not need to stop the tills.
+
 The connection details come from the environment, never typed on the command line, so a
 password can never end up in shell history.
 
@@ -72,6 +84,11 @@ node scripts/restore.mjs \
   --manifest /path/to/backups/bk-XXXX.manifest.json \
   --target   "postgres://USER@HOST:PORT/sre_restore"
 ```
+
+The second line it prints names the snapshot and the newest record in the backup. If instead
+it prints `WARNING: this backup predates one-snapshot backups`, the file was taken by the old
+tool, whose counts could be from a slightly different moment — a small mismatch on such a file
+may be that, not lost data. Take a fresh backup with the current tool.
 
 **3. Read the last line.** Only this is a success:
 
@@ -105,6 +122,40 @@ Once a month, on a quiet morning, do exactly Part 4 into a scratch database and 
 
 If the test fails, that is not an emergency — it is the system working. It found the problem
 on a Tuesday morning instead of on the evening it mattered.
+
+### Part 6a — The off-site recovery rehearsal (audit PA-12, 10 Oct 2026)
+
+This is the monthly test done the way the bad day happens: the restore comes **from the off-site
+copy**, onto a **spare machine's empty database**, not from the backup sitting next to the live
+one. One command does all of it and writes down what happened:
+
+```bash
+export DATABASE_URL="postgres://USER@HOST:PORT/DATABASE"            # the live database
+export RESTORE_TARGET_URL="postgres://USER@SPARE:PORT/sre_rehearsal" # an EMPTY database on the spare machine
+node scripts/recovery-rehearsal.mjs --work /path/to/backups --offsite /mnt/offsite/sre
+```
+
+It takes a backup (one snapshot — Part 3), copies the file and its manifest to the off-site
+folder, makes the copies **read-only**, re-reads the copy and checks it against the checksum,
+restores **from the copy** into the spare database, and reconciles rows and money exactly. It
+then writes `rehearsal-<backupId>.json` beside the backup with:
+
+- `outcome` — `restored_and_reconciled` is the only good word; anything else means do not rely
+  on that backup;
+- `boundary` — the newest record the restored database holds (everything after it is what a
+  real recovery would have lost — compare it with the recovery-point target in Part 2);
+- `timingsMs` — how long the backup, the off-site copy and the restore took (compare `total`
+  with the recovery-time target in Part 2).
+
+If the off-site copy does not match what was taken, it says `refused_offsite_copy_damaged` and
+restores nothing. Treat that as a finding about the off-site store.
+
+**What is still yours to decide (owner / external):** where the off-site store is, who holds
+its keys (the custodians), and that it is immutable at the storage end (object lock / WORM). The
+script makes the local copies read-only; true immutability is a property of the store you
+choose. Until that is decided, `--offsite` can be any separate disk, and the rehearsal still
+proves the restore works from a copy. Record each rehearsal in the compliance register with
+the date, your name and the `outcome` line.
 
 ---
 

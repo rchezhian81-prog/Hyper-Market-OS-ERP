@@ -153,6 +153,31 @@
       </section>
       <p class="note" id="no-receive" hidden></p>
 
+      <section class="form" id="resolver" hidden aria-label="Resolve a shortfall">
+        <h3 id="resolve-heading"></h3>
+        <p class="note" id="resolve-none" hidden></p>
+        <div id="resolve-fields">
+          <div>
+            <label for="resolve-issue" id="resolve-issue-label"></label>
+            <select id="resolve-issue"></select>
+          </div>
+          <h3 id="resolve-found-heading"></h3>
+          <ul class="pending" id="resolve-lines" aria-label="Found again"></ul>
+          <div class="grid">
+            <div>
+              <label for="resolve-reason" id="resolve-reason-label"></label>
+              <select id="resolve-reason"></select>
+            </div>
+            <div>
+              <label for="resolve-note" id="resolve-note-label"></label>
+              <input id="resolve-note" type="text" autocomplete="off" />
+            </div>
+          </div>
+        </div>
+        <button id="resolve" class="act" type="button"></button>
+      </section>
+      <p class="note" id="no-resolve" hidden></p>
+
       <h3 id="saved-heading" hidden></h3>
       <p class="note" id="saved-lead" hidden></p>
       <ul class="saved" id="saved" aria-label="Saved on this screen"></ul>

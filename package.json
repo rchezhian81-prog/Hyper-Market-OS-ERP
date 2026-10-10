@@ -30,7 +30,6 @@
     "token:store": "node scripts/issue-store-token.mjs",
     "seed:pilot": "node scripts/seed-pilot-hosted.mjs",
     "demo:publish-pack": "node scripts/demo-publish-pack.mjs",
-    "demo:store-pack": "node scripts/demo-store-pack.mjs",
     "build:demo-login": "node scripts/build-service.mjs demo-login",
     "build:sign-in": "node scripts/build-service.mjs sign-in",
     "build:keycloak-theme": "node scripts/build-keycloak-theme.mjs",

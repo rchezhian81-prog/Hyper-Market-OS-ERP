@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { aStoreWithRules } from '../support/store-rules';
 import { MemoryIdempotencyStore, SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { InMemoryEventStore, SqlEventStore, type EventStore } from '../../packages/persistence/src/event-store';
@@ -110,6 +111,7 @@ const sum = (xs: readonly number[]): number => xs.reduce((s, x) => s + x, 0);
 
 async function cast(h: ApiHarness, t: string): Promise<void> {
   await h.seedOwner(t, OPERATOR);
+  await aStoreWithRules(h, t, OPERATOR, STORE, 0); // M05: the owner sets the store's margin floor before prices load
   await h.provisionRole(t, ACCOUNTANT, 'accountant');
   await h.enableFeature(t, 'b2b'); // credit customers' receivables live behind the B2B feature
 }

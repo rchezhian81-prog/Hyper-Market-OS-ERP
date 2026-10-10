@@ -85,11 +85,11 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
   });
 
-  async function box(): Promise<{ edge: EdgeProcess; base: string }> {
+  async function box(packJson = PACK_JSON): Promise<{ edge: EdgeProcess; base: string }> {
     const dir = await mkdtemp(join(tmpdir(), 'sre-wh-handheld-e2e-'));
     dirs.push(dir);
     const packFile = join(dir, 'store-pack.json');
-    await writeFile(packFile, PACK_JSON, 'utf8');
+    await writeFile(packFile, packJson, 'utf8');
     await issueTillPins(dir, KEY, [PHONE_PERSON]);
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
@@ -150,6 +150,48 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await page.click('[data-phone-holder] button[type="submit"]');
     await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/device/sign-in', undefined, { timeout: 15_000 });
     expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).warehouseSession)).toBeUndefined();
+  });
+
+  it('OB-37: with two deliveries waiting the phone asks which one is at the door, and receives against the one chosen', async () => {
+    const pack = JSON.parse(PACK_JSON) as { warehouse: Record<string, unknown> };
+    const { grnId: _g, poId: _p, ordered: _o, ...rest } = pack.warehouse;
+    void _g; void _p; void _o;
+    pack.warehouse = { ...rest, openDeliveries: [
+      { poId: 'po-1', number: 'PO-0001', supplierId: 'sup-rice', deliverToLocationId: 'wh-1', grnId: 'grn-po-1-1', ordered: [{ productId: 'p-rice', quantityMinor: 25_000, unitCostMinor: 4000, currency: 'INR' }] },
+      { poId: 'po-2', number: 'PO-0002', supplierId: 'sup-oil', deliverToLocationId: 'wh-1', grnId: 'grn-po-2-1', ordered: [{ productId: 'p-rice', quantityMinor: 5_000, unitCostMinor: 4000, currency: 'INR' }] },
+    ] };
+    const { edge, base } = await box(JSON.stringify(pack));
+    const page = await openHandheld(base);
+    await page.fill('#deviceId', 'hh-01');
+    await page.fill('#code', CODE);
+    await page.click('button[type="submit"]');
+    await signInOnPhonePage(page, 'warehouse', PHONE_PERSON);
+    await ready(page);
+    // both deliveries are listed; nothing can be received until one is chosen
+    await page.waitForSelector('#deliveries-heading:not([hidden])');
+    expect(await page.locator('#deliveries a').count()).toBe(2);
+    expect(await page.isDisabled('#receive')).toBe(true);
+    // choose the second: the phone reloads on it and receives against its order
+    await page.click('#deliveries a[href="?delivery=po-2"]');
+    await page.waitForFunction(() => new URLSearchParams((globalThis as unknown as { location: { search: string } }).location.search).get('delivery') === 'po-2', undefined, { timeout: 10_000 });
+    await ready(page);
+    expect(await page.getAttribute('#deliveries a[href="?delivery=po-2"]', 'aria-current')).toBe('true');
+    expect(await page.isDisabled('#receive')).toBe(false);
+    await page.click('#receive');
+    await scan(page, '890RICE');
+    await page.waitForSelector('#banner:not([hidden])');
+    expect(await page.textContent('#banner-title')).toBe('Received');
+    await page.click('#banner-ok');
+    await waitHanded(page, 'receipt');
+    // "delivery complete" names the chosen order, so head office folds the receipt into PO-0002
+    await page.waitForSelector('#done-receiving:not([hidden])');
+    await page.click('#done-receiving');
+    await page.waitForSelector('#banner:not([hidden])');
+    await page.click('#banner-ok');
+    await waitHanded(page, 'receipt_done');
+    const records = (await readLog(edge.deviceEventsLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.ok ? r.record : '{}') as { type: string; payload: Record<string, unknown> });
+    expect(records[0]?.payload).toMatchObject({ grnId: 'grn-po-2-1', productId: 'p-rice' });
+    expect(records[1]?.payload).toMatchObject({ grnId: 'grn-po-2-1', poId: 'po-2' });
   });
 
   it('receive + delivery complete + put away + a blind count → saved here → with the store computer (durable on the box); reload → all still listed, nothing re-sent', async () => {

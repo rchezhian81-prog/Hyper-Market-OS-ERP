@@ -105,7 +105,7 @@ export type CopyKey =
   | 'kindStockWriteOff' | 'kindStockAdjustmentUp' | 'kindOrderRefund' | 'kindServiceCompensation'
   | 'kindSupplierInvoiceCheck' | 'kindSupplierPayment'
   | 'kindDisplayContract' | 'kindRebateScheme' | 'kindPurchaseContract'
-  | 'kindEmergencyAccess' | 'kindAccessChange'
+  | 'kindEmergencyAccess' | 'kindAccessChange' | 'kindSubstitutionAboveCap' | 'kindBranchTransition'
   | 'detailJobId' | 'detailContentFingerprint'
   | 'detailProductId' | 'detailPriceMinor' | 'detailMrpMinor' | 'detailCostMinor' | 'detailCurrency' | 'detailMarginFloorBps'
   | 'detailPromotionId' | 'detailDescription' | 'detailNormalPrice' | 'detailPromoPrice' | 'detailUnitCost'
@@ -148,6 +148,8 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindDisplayContract: 'Approve a supplier\'s display-space funding', kindRebateScheme: 'Approve a supplier rebate scheme',
     kindPurchaseContract: 'Approve a supplier contract',
     kindEmergencyAccess: 'Give someone emergency access for a short time', kindAccessChange: 'Change a person\'s access (joining, moving or leaving)',
+    kindSubstitutionAboveCap: 'Charge a dearer substitute above the original price',
+    kindBranchTransition: 'Open, close for now, or close a branch for good',
     detailJobId: 'Load name', detailContentFingerprint: 'File check code',
     detailProductId: 'Item', detailPriceMinor: 'New price', detailMrpMinor: 'MRP', detailCostMinor: 'What it costs us', detailCurrency: 'Currency',
     detailMarginFloorBps: 'Minimum margin', detailPromotionId: 'Offer', detailDescription: 'Offer description', detailNormalPrice: 'Normal price',
@@ -206,6 +208,8 @@ export const APPROVALS_COPY: BilingualCopy<CopyKey> = {
     kindDisplayContract: 'விநியோகஸ்தரின் காட்சி இட நிதியை அனுமதித்தல்', kindRebateScheme: 'விநியோகஸ்தர் தள்ளுபடித் திட்டத்தை அனுமதித்தல்',
     kindPurchaseContract: 'விநியோகஸ்தர் ஒப்பந்தத்தை அனுமதித்தல்',
     kindEmergencyAccess: 'ஒருவருக்குக் குறுகிய நேர அவசர அணுகல் வழங்குதல்', kindAccessChange: 'ஒருவரின் அணுகலை மாற்றுதல் (சேர்தல், இடமாற்றம் அல்லது விலகல்)',
+    kindSubstitutionAboveCap: 'விலை கூடிய மாற்றுப் பொருளுக்கு அசல் விலைக்கு மேல் கட்டணம் வசூலித்தல்',
+    kindBranchTransition: 'கிளையைத் திறத்தல், தற்காலிகமாக மூடுதல் அல்லது நிரந்தரமாக மூடுதல்',
     detailJobId: 'ஏற்றத்தின் பெயர்', detailContentFingerprint: 'கோப்புச் சரிபார்ப்புக் குறியீடு',
     detailProductId: 'பொருள்', detailPriceMinor: 'புதிய விலை', detailMrpMinor: 'அதிகபட்ச சில்லறை விலை (MRP)', detailCostMinor: 'நமக்கு ஆகும் அடக்க விலை', detailCurrency: 'நாணயம்',
     detailMarginFloorBps: 'குறைந்தபட்ச லாப வரம்பு', detailPromotionId: 'சலுகை', detailDescription: 'சலுகை விவரம்', detailNormalPrice: 'வழக்கமான விலை',
@@ -274,6 +278,8 @@ const KIND_COPY: Readonly<Record<string, CopyKey>> = {
   purchase_contract: 'kindPurchaseContract',
   emergency_access: 'kindEmergencyAccess',
   access_change: 'kindAccessChange',
+  substitution_above_cap: 'kindSubstitutionAboveCap',
+  branch_transition: 'kindBranchTransition',
 };
 /** Detail keys this screen can name in both languages; any other key is spelt out from its own name. */
 const DETAIL_COPY: Readonly<Record<string, CopyKey>> = {

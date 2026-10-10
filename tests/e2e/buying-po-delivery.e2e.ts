@@ -128,6 +128,7 @@ describe.skipIf(!HAVE_BROWSER)('buyer PO-propose delivery, end to end in a real 
   /** Add one order line: supplier, item, quantity and agreed unit price (in rupees). */
   const addLine = async (page: import('playwright-core').Page, supplier: string, item: string, qty: string, rupees: string) => {
     await page.fill('#po-supplier', supplier);
+    await page.fill('#po-store', 'store-1'); // OB-37: the store the order is delivered to
     await page.fill('#po-product', item);
     await page.fill('#po-qty', qty);
     await page.fill('#po-cost', rupees);
@@ -160,6 +161,7 @@ describe.skipIf(!HAVE_BROWSER)('buyer PO-propose delivery, end to end in a real 
       expect(orderReq!.idempotencyKey).toBe(poId);
       const body = orderReq!.body as { supplierId?: string; lines?: { productId?: string; orderedQty?: number; unitCost?: { minor?: number; currency?: string } }[] };
       expect(body.supplierId).toBe('sup-1');
+      expect((body as { deliverToLocationId?: string }).deliverToLocationId).toBe('store-1'); // OB-37
       expect(body.lines).toEqual([{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5000, currency: 'INR' } }]);
       // No approver rides with a proposal — issuing is a separate second person's act (§28).
       expect(JSON.stringify(body)).not.toContain('approv');
@@ -267,6 +269,44 @@ describe.skipIf(!HAVE_BROWSER)('buyer PO-propose delivery, end to end in a real 
       // Captured: the "good" banner, saying head office does the check — and, offline-first, nothing was POSTed.
       expect(await bannerIsGood(page)).toBe(true);
       expect((await page.textContent('#banner-text')) ?? '').toMatch(/head office/i);
+      expect(rec.requests).toHaveLength(0);
+    } finally {
+      await teardown();
+    }
+  });
+
+  it('OB-31: a weighed invoice line is grams at the per-kg price — 2500 g at ₹45.00 is ₹112.50 and captures with its unit; the old qty × price total is refused on the screen', async () => {
+    const rec: Recorder = {
+      buyingData: { buyerId: 'u-buyer', productIds: ['p-rice'], productUoms: { 'p-rice': 'kg' } },
+      orderStatus: 201, orderBody: {}, requests: [],
+    };
+    const { page, teardown } = await openInvoiceTab(rec);
+    try {
+      await page.fill('#invoice-id', 'INV-KG');
+      await page.fill('#supplier-id', 'sup-1');
+      // The old multiplication: 2500 × 4500 = 1,12,50,000 paise. Refused, by line, with the per-kg arithmetic in words.
+      await page.fill('#declared-total', '112500');
+      await page.fill('#file-text', ['productId,quantity,unitPriceMinor,lineTotalMinor', 'p-rice,2500,4500,11250000'].join('\n'));
+      await page.click('#preview');
+      await page.waitForFunction(() => ((globalThis as unknown as { document: { getElementById(id: string): { textContent: string | null } | null } }).document.getElementById('problems')?.textContent ?? '').includes('a kg is 11250'), undefined, { timeout: 10_000 });
+      expect(await page.isHidden('#capture')).toBe(true);
+
+      // The right figure: 2500 g × ₹45.00 a kg ÷ 1000 = ₹112.50 — reconciles and captures, the unit riding with the line.
+      await page.fill('#declared-total', '112.50');
+      await page.fill('#file-text', ['productId,quantity,unitPriceMinor,lineTotalMinor', 'p-rice,2500,4500,11250'].join('\n'));
+      await page.click('#preview');
+      await page.waitForSelector('#capture:not([hidden])', { timeout: 10_000 });
+      await page.click('#capture');
+      await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
+      expect(await bannerIsGood(page)).toBe(true);
+      const queued = await page.evaluate(() => {
+        const ls = (globalThis as unknown as { localStorage: { length: number; key(i: number): string | null; getItem(k: string): string | null } }).localStorage;
+        const out: string[] = [];
+        for (let i = 0; i < ls.length; i += 1) { const k = ls.key(i); if (k !== null && k.startsWith('sre.buying.outbox')) out.push(ls.getItem(k) ?? ''); }
+        return out.join('');
+      });
+      expect(queued).toContain('"lineTotalMinor":11250');
+      expect(queued).toContain('"uom":"kg"');
       expect(rec.requests).toHaveLength(0);
     } finally {
       await teardown();

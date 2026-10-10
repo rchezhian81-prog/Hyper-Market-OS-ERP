@@ -13,11 +13,14 @@ import { makeEvent } from '../../packages/contracts/src/event';
 import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest, type HttpResponse, type RequestObservation } from '../../services/kernel/src/index';
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../services/identity/src/revocation';
 import { tokenRevocationAdapter } from '../../services/api/src/adapters';
+import { sessionChannelsOf } from '../../services/api/src/session-channels';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from '../../services/api/src/access';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
 import { STREAM } from '../../services/api/src/adapters';
 import { LocalIdp } from './local-idp';
+import type { PaymentVerifier } from '../../packages/orders/src/payment-verification';
+import type { NotificationTransport } from '../../packages/notifications/src/index';
 
 type Kernel = Parameters<typeof handle>[0];
 type IdempotencyStore = Kernel['idempotency'];
@@ -100,19 +103,31 @@ export function apiHarness(opts: {
   /** The migration target kind the surface runs against — defaults to the safe 'rehearsal'. Pass
    *  'production' to assert the never-touch-production guard (`assertSafeTarget` → 403). */
   migrationTargetKind?: 'rehearsal' | 'staging' | 'local' | 'production';
+  /** FUL-03: the payment provider the surface asks (the test-mode one in tests). Omitted → online payments stay pending. */
+  paymentVerifier?: PaymentVerifier;
+  /** The clock the session-channel guard reads (PA-10) — injected to drive a support session past its time box. */
+  now?: () => string;
+  /** A notification transport for the send path (PA-08) — the recording test adapter; production has none. */
+  notificationTransport?: NotificationTransport;
 } = {}): ApiHarness {
   const store = opts.store ?? new InMemoryEventStore();
   const idempotency = opts.idempotency ?? new MemoryIdempotencyStore();
   // Token revocations (GAP-SEC-05): ONE list, backed by the same store as everything else, shared by the identity
   // routes (which record) and the authenticator (which refuses) — exactly as `main.ts` composes it.
   const revocations = new TokenRevocationList(tokenRevocationAdapter({ store }));
-  const built = buildRouter(buildSurface({ signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations }));
+  const built = buildRouter(buildSurface({
+    signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations,
+    ...(opts.paymentVerifier === undefined ? {} : { paymentVerifier: opts.paymentVerifier }),
+    ...(opts.notificationTransport === undefined ? {} : { notificationTransport: opts.notificationTransport }),
+  }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 
   const kernel: Kernel = {
     router: built.router!,
     authenticate: revocationAwareAuthenticator(TEST_IDP.policy(), revocations),
     access: tenantAccessResolver(store, ROLE_CATALOGUE),
+    // Support/remote session binding (PA-10), composed exactly as main.ts does it.
+    channels: sessionChannelsOf({ store, revocations, now: opts.now ?? (() => new Date().toISOString()) }),
     entitlements: tenantEntitlementResolver(store),
     idempotency,
     ...(opts.observe === undefined ? {} : { observe: opts.observe }),

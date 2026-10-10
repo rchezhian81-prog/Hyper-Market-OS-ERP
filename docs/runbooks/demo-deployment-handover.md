@@ -290,7 +290,15 @@ Open `$H/customer/` in a browser: the **DEMO / PILOT — NOT PRODUCTION** banner
 
 After the DF-1 release (3 Oct 2026, OB-12): sign in at `$H/login/` and you land on the **demo home**, which lists the pages that work on
 this demo and names the store-computer-fed shells as such. Do not judge the demo by `/erp/` — the Store manager shell shows
-"Not known" until a store computer (or, on the demo, the DF-2 pack) feeds it.
+"Not known" until a store computer feeds it. Since PA-06 3b (10 Oct 2026) the demo store computer takes its setup from
+head office (`EDGE_STORE_PACK_SOURCE=head-office`, `EDGE_STORE_ID=pilot-demo-branch` in the pilot compose file); nothing
+in the repository builds a pack file any more. **OB-38 (owner, 10 Oct 2026) — the switch-over, one administrator step:**
+the deploy alone changes nothing visible — until head office has the demo store set up, the box keeps trading on the setup
+file already on the server (mounted read-only as a fallback) and its log says so. To switch: (1) re-run the demo seed
+(it sets the store's settings, rules, match policy, loss limits and the box's `store_computer` grant at head office);
+(2) mint the box's `CLOUD_API_TOKEN` for `pilot-store-edge` (the store computer role, OB-36) and restart the edge service;
+(3) within one sync pass the box log says `A new store setup from head office is in use` and the status badge shows the
+head-office version. Return that log line as evidence. Afterwards the fallback mount can be removed in a later release.
 
 **Known after the sign-in-gate release (H-14, `docs/STATUS.md` 3 Oct 2026):** the demo till at `$H/store/pos/` will list the five
 seeded products under "Products nobody can sell" with `unknown unit of measure "each"` / `"litre"` until a person corrects their units

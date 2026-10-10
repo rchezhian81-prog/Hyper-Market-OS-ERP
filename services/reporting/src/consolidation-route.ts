@@ -15,9 +15,12 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, assertBranchInScope, narrowScope } from '../../kernel/src/index';
+import { exportDomain, type ExportSpec, type ExportAudit } from '../../../packages/export/src/export';
+import { AccessDeniedError, type AccessControl } from '../../../packages/rbac/src/rbac';
 import {
   ingestContribution,
   consolidate,
+  consolidationExportRows,
   type BranchContribution,
   type BranchMembership,
   type MetricFamily,
@@ -37,7 +40,29 @@ export interface ConsolidationDeps {
   readonly recordMembership: (tenantId: string, membership: BranchMembership, key: string) => Promise<void> | void;
   readonly memberships: (tenantId: string) => Promise<readonly BranchMembership[]> | readonly BranchMembership[];
   readonly now: () => string;
+  /**
+   * The export leg (audit EA-04 · M30-FR-02): the caller's authority for this tenant — the SAME per-tenant resolver the
+   * kernel uses — and the append-only export audit ledger. Absent, the export route refuses rather than writing a file
+   * nobody is recorded as having taken.
+   */
+  readonly access?: (tenantId: string) => Promise<AccessControl> | AccessControl;
+  readonly recordExport?: (tenantId: string, record: ExportAudit, key: string) => Promise<void> | void;
 }
+
+/** The roll-up's open CSV (M30-FR-02): one row per contributing branch, branch-scoped, permission-checked, logged. */
+export const CONSOLIDATION_EXPORT_SPEC: ExportSpec = {
+  domain: 'reporting.consolidation',
+  requires: 'reporting.report.read',
+  branchColumn: 'branch_id',
+  columns: [
+    { name: 'branch_id', type: 'text' },
+    { name: 'family', type: 'enum' },
+    { name: 'period', type: 'text' },
+    { name: 'gross_minor', type: 'money_minor' },
+    { name: 'net_minor', type: 'money_minor' },
+    { name: 'commission_minor', type: 'money_minor' },
+  ],
+};
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isDate = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00.000Z`));
@@ -152,6 +177,62 @@ export function consolidationRoutes(deps: ConsolidationDeps): readonly Route[] {
           staleAfterSeconds: Number.isInteger(staleQ) && staleQ > 0 ? staleQ : DEFAULT_STALE_SECONDS,
         });
         return { status: 200, body: report };
+      },
+    },
+    {
+      // EXPORT the roll-up the reader is looking at (audit EA-04 · M30-FR-02): the same server-scoped `consolidate`, out
+      // through the one authorised export engine — permission, branch scope and redaction decided against the caller's
+      // real authority — and LOGGED (the audit record is the only evidence afterwards of who took the data). A branch
+      // view exports only its branch. Body: { node, family, period, scope? (one branch, or absent for what they hold) }.
+      api: 'API-10', method: 'POST', path: '/v1/consolidation/export',
+      permission: 'reporting.report.read', idempotent: true,
+      handler: async (ctx) => {
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const node = b['node']; const family = b['family']; const period = b['period']; const scopeB = b['scope'];
+        if (!isStr(node) || !isStr(family) || !FAMILIES.includes(family as MetricFamily) || !isStr(period) || (scopeB !== undefined && !isStr(scopeB))) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_consolidation_export',
+            whatHappened: `An export needs { node, family (one of ${FAMILIES.join('/')}), period } and may name one branch as { scope }.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send the node, family and period of the view being exported.',
+          });
+        }
+        if (deps.access === undefined || deps.recordExport === undefined) {
+          throw apiError(503, {
+            code: 'export_not_wired',
+            whatHappened: 'Head office cannot record who takes an export here, so nothing was written out.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Try again on the full head-office service.',
+          });
+        }
+        const branchScope = narrowScope(ctx, isStr(scopeB) ? [scopeB] : undefined);
+        const report = consolidate({
+          nodeId: node, family: family as MetricFamily, period,
+          contributions: await deps.contributions(ctx.tenantId),
+          memberships: await deps.memberships(ctx.tenantId),
+          scope: { userId: ctx.userId, branchScope },
+          asOf: deps.now(), staleAfterSeconds: DEFAULT_STALE_SECONDS,
+        });
+        const at = deps.now();
+        // One branch → the export is that branch's (the engine filters by it); otherwise a company-wide export, which
+        // the engine allows only to someone whose grant is company-wide for this permission.
+        const branchId = branchScope !== 'all' && branchScope.length === 1 ? branchScope[0]! : null;
+        let result: ReturnType<typeof exportDomain>;
+        try {
+          result = exportDomain(CONSOLIDATION_EXPORT_SPEC, consolidationExportRows(report), await deps.access(ctx.tenantId), { userId: ctx.userId, branchId, at });
+        } catch (e) {
+          if (e instanceof AccessDeniedError) {
+            throw apiError(403, {
+              code: 'export_not_permitted',
+              whatHappened: 'You may not export this view of the company report.',
+              wasItSaved: 'not_saved',
+              nextSafeAction: `This export needs '${CONSOLIDATION_EXPORT_SPEC.requires}' over ${branchId === null ? 'the whole company' : `branch ${branchId}`}.`,
+            });
+          }
+          throw e;
+        }
+        await deps.recordExport(ctx.tenantId, result.audit, ctx.idempotencyKey ?? `consolidation-${node}-${family}-${period}-${at}`);
+        return { status: 200, body: { csv: result.csv, rows: result.audit.rowCount, audit: result.audit } };
       },
     },
   ];
