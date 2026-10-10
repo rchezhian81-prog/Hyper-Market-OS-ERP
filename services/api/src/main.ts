@@ -548,7 +548,11 @@ export function buildSurface(deps: {
       : cataloguePreviewAdapter({ store, now })),
     ...pricingRoutes(store === undefined
       ? { recordPriceChange: () => {}, now }
-      : { ...pricingAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) }),
+      : {
+        ...pricingAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }),
+        // M05: the floor a head-office price is judged by is the one the owner set in the store's rules.
+        marginFloorFor: async (t: string, storeId: string) => (await storeRulesAdapter({ store }).rules(t, storeId))?.marginFloorBps,
+      }),
     ...priceListRoutes(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
       : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
