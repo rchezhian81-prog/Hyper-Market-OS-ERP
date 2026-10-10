@@ -423,6 +423,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       'identity.self.read',
       'supplier.portal.self',
+      // SF-09 (Batch 2): the supplier SUBMITS its own documents (an invoice, an ASN) — scoped to its login's partner binding,
+      // kept for a buyer's review, never taking effect on its own. Not a business transaction: a buyer decides.
+      'supplier.portal.self.submit',
     ],
   },
   {
