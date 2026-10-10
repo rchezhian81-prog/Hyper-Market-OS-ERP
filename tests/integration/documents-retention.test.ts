@@ -37,6 +37,13 @@ async function cast(): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');                // document.template.manage/.read + document.issue
   await h.provisionRole(A, 'u-designer', 'store_manager'); // the author drafts under their own sign-in (Wave 2b · PA-03)
   await h.provisionRole(A, 'u-cash', 'cashier');  // none
+  // PA-09: a document is OF a record head office holds — the sales these receipts and invoices are about are banked first.
+  for (const [i, saleId] of ['sale-1', 's1', 's2', 's3', 's4', 's5'].entries()) {
+    await h.request({ method: 'POST', path: '/v1/sales', userId: 'u-cash', tenantId: A, idempotencyKey: `bank-${saleId}`, body: {
+      saleId, receiptNumber: `R-${saleId}`, laneId: 'lane-1', cashierId: 'u-cash', tradingDay: '2026-07-01', committedAt: '2026-07-01T10:00:00.000Z',
+      totalMinor: (i + 1) * 100, currency: 'INR', packVersion: 1, lines: [], tenders: [{ kind: 'cash', amountMinor: (i + 1) * 100 }],
+    } });
+  }
   return h;
 }
 
@@ -45,7 +52,7 @@ describe('document retention & archival (M31): assess versions, propose document
     const h = await cast();
     await publish(h, 'u-owner', 'inv', INV_V1, 'p-v1');
     await publish(h, 'u-owner', 'inv', INV_V2, 'p-v2'); // a change is a NEW version; v2 is current now
-    await issue(h, 'u-owner', 'inv', { documentId: 'd1', kind: 'tax_invoice', subjectRef: 'sale-1', data: { total: '100' } }, 'i-d1');
+    await issue(h, 'u-owner', 'inv', { documentId: 'd1', kind: 'tax_invoice', subjectRef: 'sale-1' }, 'i-d1');
 
     const body = (await retTemplates(h, 'u-owner')).body as {
       count: number; disposableCount: number;
@@ -65,11 +72,11 @@ describe('document retention & archival (M31): assess versions, propose document
     await publish(h, 'u-owner', 'rcpt', RCPT_V1, 'p-rcpt');
     await publish(h, 'u-owner', 'inv', INV_V1, 'p-inv');
 
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-hold', kind: 'receipt', subjectRef: 's1', data: { total: '1' }, retainUntil: '2020-01-01', legalHold: true }, 'i-hold');
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-none', kind: 'receipt', subjectRef: 's2', data: { total: '2' } }, 'i-none');
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-future', kind: 'receipt', subjectRef: 's3', data: { total: '3' }, retainUntil: '2099-01-01' }, 'i-future');
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-expired', kind: 'receipt', subjectRef: 's4', data: { total: '4' }, retainUntil: '2020-01-01' }, 'i-expired');
-    await issue(h, 'u-owner', 'inv', { documentId: 'd-tax', kind: 'tax_invoice', subjectRef: 's5', data: { total: '5' }, retainUntil: '2020-01-01' }, 'i-tax');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-hold', kind: 'receipt', subjectRef: 's1', retainUntil: '2020-01-01', legalHold: true }, 'i-hold');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-none', kind: 'receipt', subjectRef: 's2' }, 'i-none');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-future', kind: 'receipt', subjectRef: 's3', retainUntil: '2099-01-01' }, 'i-future');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-expired', kind: 'receipt', subjectRef: 's4', retainUntil: '2020-01-01' }, 'i-expired');
+    await issue(h, 'u-owner', 'inv', { documentId: 'd-tax', kind: 'tax_invoice', subjectRef: 's5', retainUntil: '2020-01-01' }, 'i-tax');
 
     const body = (await retDocuments(h, 'u-owner', '2026-09-04')).body as {
       today: string; proposedForDisposalCount: number;
@@ -98,11 +105,11 @@ describe('document DISPOSAL execution (M31): an authorised human disposes only w
     await publish(h, 'u-owner', 'rcpt', RCPT_V1, 'p-rcpt');
     await publish(h, 'u-owner', 'inv', INV_V1, 'p-inv');
     // past retention, ordinary kind → the one thing that MAY be disposed
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-expired', kind: 'receipt', subjectRef: 's4', data: { total: '4' }, retainUntil: '2020-01-01' }, 'i-expired');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-expired', kind: 'receipt', subjectRef: 's4', retainUntil: '2020-01-01' }, 'i-expired');
     // never-disposable cases
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-hold', kind: 'receipt', subjectRef: 's1', data: { total: '1' }, retainUntil: '2020-01-01', legalHold: true }, 'i-hold');
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-future', kind: 'receipt', subjectRef: 's3', data: { total: '3' }, retainUntil: '2099-01-01' }, 'i-future');
-    await issue(h, 'u-owner', 'inv', { documentId: 'd-tax', kind: 'tax_invoice', subjectRef: 's5', data: { total: '5' }, retainUntil: '2020-01-01' }, 'i-tax');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-hold', kind: 'receipt', subjectRef: 's1', retainUntil: '2020-01-01', legalHold: true }, 'i-hold');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-future', kind: 'receipt', subjectRef: 's3', retainUntil: '2099-01-01' }, 'i-future');
+    await issue(h, 'u-owner', 'inv', { documentId: 'd-tax', kind: 'tax_invoice', subjectRef: 's5', retainUntil: '2020-01-01' }, 'i-tax');
     return h;
   }
 

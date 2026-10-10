@@ -20,7 +20,8 @@ import type { SourceTransaction } from '../../../packages/owner-control/src/inde
 import type { BranchScope } from '../../kernel/src/index';
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import { figure, sourceFreshness, type Figure, type SourceFreshness } from '../../reporting/src/index';
-import { STREAM, streamName, inventoryAdapter, productMasterAdapter, foldPurchaseOrders } from './adapters';
+import { STREAM, streamName, inventoryAdapter, productMasterAdapter, foldPurchaseOrders, goodsReceiptAdapter } from './adapters';
+import type { SourceResolution } from '../../platform/src/documents';
 
 /** The report ids head office can work out from its own records — each a `case` in `produce` below. */
 export const PRODUCED_AT_HEAD_OFFICE: readonly string[] = Object.freeze([
@@ -318,4 +319,54 @@ export function reportProducers(input: {
   };
 
   return { produced: PRODUCED_AT_HEAD_OFFICE, produce };
+}
+
+const rupeesText = (minor: number): string => `Rs ${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * Resolve the governed source of a document (audit PA-09) — read-only, from head office's own registers: a receipt or a
+ * tax invoice is OF a banked sale; a purchase order of an ISSUED order (a proposed one is a draft and is refused); a
+ * goods receipt of a recorded GRN. Every figure on the document comes from here. A kind this version cannot resolve is
+ * refused by name rather than issued about nothing.
+ */
+export function documentSourceResolver(store: EventStore, now: () => string) {
+  const grns = goodsReceiptAdapter({ store, now });
+  return async (tenantId: string, kind: string, subjectRef: string): Promise<SourceResolution> => {
+    if (kind === 'receipt' || kind === 'tax_invoice') {
+      const held = await store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${subjectRef}`);
+      if (held === undefined) return { found: false, refusal: 'source_not_found', why: `head office holds no sale ${subjectRef}` };
+      const s = held.event.payload as IncomingSale;
+      return {
+        found: true, sourceType: 'sale', sourceId: s.saleId, sourceVersion: `pack-${s.packVersion}`, number: s.receiptNumber,
+        data: {
+          number: s.receiptNumber, saleId: s.saleId, tradingDay: s.tradingDay, committedAt: s.committedAt,
+          totalMinor: String(s.totalMinor), total: rupeesText(s.totalMinor), lineCount: String(s.lines.length), cashier: s.cashierId,
+        },
+      };
+    }
+    if (kind === 'purchase_order') {
+      const po = (await foldPurchaseOrders(store, tenantId)).get(subjectRef);
+      if (po === undefined) return { found: false, refusal: 'source_not_found', why: `head office holds no purchase order ${subjectRef}` };
+      if (po.status !== 'issued') return { found: false, refusal: 'source_is_a_draft', why: `purchase order ${subjectRef} is ${po.status}, not issued — a draft order is not sent to a supplier` };
+      return {
+        found: true, sourceType: 'purchase_order', sourceId: po.poId, sourceVersion: `amendment-${po.amendmentCount}`, number: po.number,
+        data: {
+          number: po.number, supplierId: po.supplierId, totalMinor: String(po.totalMinor), total: rupeesText(po.totalMinor),
+          lineCount: String(po.lines.length), approvedBy: po.approvedBy ?? '', issuedAt: po.issuedAt ?? '',
+        },
+      };
+    }
+    if (kind === 'goods_receipt') {
+      const grn = await grns.grn(tenantId, subjectRef);
+      if (grn === undefined) return { found: false, refusal: 'source_not_found', why: `head office holds no goods receipt ${subjectRef}` };
+      return {
+        found: true, sourceType: 'goods_receipt', sourceId: grn.grnId, sourceVersion: grn.excessDecision === undefined ? 'as-received' : 'excess-decided', number: grn.number,
+        data: {
+          number: grn.number, poId: grn.poId ?? '', warehouseId: grn.warehouseId, receivedBy: grn.receivedBy, receivedAt: grn.receivedAt,
+          availableUnits: String(grn.availableMinor), heldUnits: String(grn.heldMinor),
+        },
+      };
+    }
+    return { found: false, refusal: 'source_not_resolvable', why: `this version cannot yet resolve the record a ${kind} is of, so it is not issued about nothing` };
+  };
 }

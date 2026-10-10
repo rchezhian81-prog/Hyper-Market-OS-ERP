@@ -32,7 +32,7 @@ import {
   type Route,
 } from '../../kernel/src/index';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from './access';
-import { reportProducers, PRODUCED_AT_HEAD_OFFICE } from './report-producers';
+import { reportProducers, PRODUCED_AT_HEAD_OFFICE, documentSourceResolver } from './report-producers';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { tillSealKey } from '../../../packages/identity/src/till-seal';
@@ -1062,7 +1062,7 @@ export function buildSurface(deps: {
     ...documentsRoutes(store === undefined ? {
       versions: empty([]), recordPublish: () => {}, drafts: empty([]), recordDraft: () => {}, issued: empty(undefined), recordIssued: () => {},
       allVersions: empty([]), allIssued: empty([]), disposals: empty([]), recordDisposal: () => {}, now,
-    } : documentsAdapter({ store, now })),
+    } : { ...documentsAdapter({ store, now }), source: documentSourceResolver(store, now) }),
     // Suspended (parked) bills (M15-FR-01/M12-FR-02) — park/resume/abandon; a recall is a claim, once.
     ...suspendedBillsRoutes(store === undefined ? {
       bills: empty([]), record: () => {}, now,

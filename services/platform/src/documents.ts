@@ -45,7 +45,34 @@ export function renderTemplate(template: TemplateVersion, data: Readonly<Record<
     Object.prototype.hasOwnProperty.call(data, key) ? String((data as Record<string, unknown>)[key]) : whole);
 }
 
+/**
+ * What a document is OF (audit PA-09): the governed source record head office resolved itself — its type, id, version
+ * and number — and the figures it supplies to the render. A document is never issued about a record that does not
+ * exist, or about a draft, and its money comes from the record, never from the request.
+ */
+export type SourceResolution =
+  | {
+    readonly found: true;
+    readonly sourceType: 'sale' | 'purchase_order' | 'goods_receipt';
+    readonly sourceId: string;
+    /** The record's version / state the document froze (e.g. a PO's amendment count). */
+    readonly sourceVersion: string;
+    /** The source's own number (receipt, PO, GRN number) — referenced, never re-allocated. */
+    readonly number: string;
+    /** What the source supplies to the render — every money figure on the document comes from here. */
+    readonly data: Readonly<Record<string, string>>;
+  }
+  | { readonly found: false; readonly refusal: 'source_not_found' | 'source_is_a_draft' | 'source_not_resolvable'; readonly why: string };
+
+/** Keys a caller may never supply: money and tax on a document come from its source record (PA-09). */
+const MONEY_KEY = /(minor|amount|total|tax|gst|price|value|paise|rupee|cost|discount|balance)/i;
+
 export interface DocumentsDeps {
+  /**
+   * Resolve the governed source of a document (PA-09) from head office's own records. Absent (a bare wiring), issuing
+   * is refused — a document about a record nobody checked is the audit's finding.
+   */
+  readonly source?: (tenantId: string, kind: DocumentKind, subjectRef: string) => Promise<SourceResolution> | SourceResolution;
   /** Every published version of one template — the publish folds over these to pick the next number. */
   readonly versions: (tenantId: string, templateId: string) => Promise<readonly TemplateVersion[]> | readonly TemplateVersion[];
   /** Append a newly published version. Idempotent on templateId+version. */
@@ -166,9 +193,35 @@ export function documentsRoutes(deps: DocumentsDeps): readonly Route[] {
         }
         const documentId = b['documentId'] as string;
         const existing = await deps.issued(ctx.tenantId, documentId);
+        if (existing !== undefined) {
+          // Idempotent: the SAME frozen document, whatever the second request carries.
+          return { status: 200, body: { ...existing, reissued: false, detail: 'already issued — the frozen document is returned, never a second copy' } };
+        }
+        // PA-09: the document is OF a governed record head office resolves itself — refused when it does not exist or is
+        // a draft — and its money comes from that record. A caller may add descriptive words, never a figure.
+        if (deps.source === undefined) {
+          throw apiError(503, { code: 'document_sources_not_wired', whatHappened: 'Head office cannot check what this document is about here, so nothing was issued.', wasItSaved: 'not_saved', nextSafeAction: 'Issue documents on the full head-office service.' });
+        }
+        const overridden = Object.keys(data).filter((k) => MONEY_KEY.test(k));
+        if (overridden.length > 0) {
+          throw apiError(422, {
+            code: 'client_financial_override',
+            whatHappened: `A document's money comes from its source record, never the request — ${overridden.join(', ')} cannot be sent.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Remove the money fields; head office fills them from the record the document is about.',
+          });
+        }
+        const resolved = await deps.source(ctx.tenantId, b['kind'] as DocumentKind, (b['subjectRef'] as string).trim());
+        if (!resolved.found) {
+          throw apiError(422, { code: resolved.refusal, whatHappened: resolved.why, wasItSaved: 'not_saved', nextSafeAction: 'Issue the document about a record head office holds, once it is final. Nothing was recorded.' });
+        }
+        const clashes = Object.keys(data).filter((k) => k in resolved.data);
+        if (clashes.length > 0) {
+          throw apiError(422, { code: 'client_override', whatHappened: `${clashes.join(', ')} come from the ${resolved.sourceType} ${resolved.sourceId} and cannot be sent.`, wasItSaved: 'not_saved', nextSafeAction: 'Leave those out; head office fills them from the record.' });
+        }
         const result = issueDocument({
-          documentId, tenantId: ctx.tenantId, kind: b['kind'] as DocumentKind, subjectRef: b['subjectRef'] as string,
-          templateId, versions: await deps.versions(ctx.tenantId, templateId), data,
+          documentId, tenantId: ctx.tenantId, kind: b['kind'] as DocumentKind, subjectRef: `${resolved.sourceType}:${resolved.sourceId}`,
+          templateId, versions: await deps.versions(ctx.tenantId, templateId), data: { ...data, ...resolved.data },
           render: renderTemplate, issuedBy: ctx.userId, at: deps.now(),
           ...(isStr(b['retainUntil']) ? { retainUntil: b['retainUntil'] as string } : {}),
           ...(typeof b['legalHold'] === 'boolean' ? { legalHold: b['legalHold'] } : {}),
@@ -185,9 +238,11 @@ export function documentsRoutes(deps: DocumentsDeps): readonly Route[] {
         if (result.outcome === 'render_failed') {
           throw apiError(422, { code: 'render_failed', whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'Check the template body and the data — the rendered document was empty or the renderer failed. Nothing was recorded.' });
         }
-        // Issued: freeze it on its own append-only record.
-        await deps.recordIssued(ctx.tenantId, result.document as IssuedDocument);
-        return { status: 201, body: { ...(result.document as IssuedDocument), reissued: false, detail: result.detail } };
+        // Issued: freeze it — content, template version AND the source it is of (type, id, version, number) — on its own
+        // append-only record.
+        const frozen = { ...(result.document as IssuedDocument), source: { type: resolved.sourceType, id: resolved.sourceId, version: resolved.sourceVersion, number: resolved.number } };
+        await deps.recordIssued(ctx.tenantId, frozen);
+        return { status: 201, body: { ...frozen, reissued: false, detail: result.detail } };
       },
     },
     {
