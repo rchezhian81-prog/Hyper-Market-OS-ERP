@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { aBranch } from '../support/a-branch';
+import { storeRules } from '../support/store-rules';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { withApprovals } from '../support/refund-approval';
@@ -286,6 +287,7 @@ describe('the audit trail records a money action — a price change (M34 slice 4
     const h = apiHarness();
     await h.provisionOwner(A, 'u-pricer'); // holds price.change.propose + audit.retention.read
     await aBranch(h, A, 'u-pricer'); // SF-01: the store the price applies to
+    await storeRules(h, A, 'u-pricer', 'store-1', 2_000); // M05: the store's own margin floor
 
     const r = await proposePrice(h, 'u-pricer', 8_000, 'kp1'); // within MRP, above the cost floor → allowed
     expect(r.status).toBe(201);

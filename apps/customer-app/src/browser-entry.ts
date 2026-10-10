@@ -104,6 +104,13 @@ export type PlaceOutcome =
     readonly shopHasIt: boolean;
     readonly orderId: string;
     readonly detail: string;
+    /** FUL-07: the shop could not promise everything; nothing is charged until the customer decides. */
+    readonly needsDecision?: boolean;
+    readonly shortages?: readonly { readonly productId: string; readonly requestedMinor: number; readonly promisedMinor: number }[];
+    /** The shop's own price for what it promised (FUL-03). */
+    readonly quoteMinor?: number;
+    /** The payment as the SHOP holds it: authorised only when the provider said so. */
+    readonly paymentState?: string;
   }
   | {
     readonly ok: false;
@@ -227,6 +234,13 @@ export interface Shop {
   place(input: { readonly providerRef: string; readonly result: ShopPaymentResult }): Promise<PlaceOutcome>;
   /** Re-send a prepared basket. `null` when nothing is waiting to go. */
   retry(): Promise<PlaceOutcome | null>;
+  /**
+   * FUL-07: after a shortage, pay for what the shop promised — the shop's quote, never the app's sum — or cancel. And ask
+   * the shop to check a pending payment with the provider. Each answer is the shop's; the screen shows it as it came.
+   */
+  payForWhatTheShopHas(input: { readonly providerRef: string; readonly result: ShopPaymentResult }): Promise<PlaceOutcome>;
+  cancelOrder(): Promise<PlaceOutcome>;
+  checkPayment(): Promise<PlaceOutcome>;
   /** Hold the customer's session token, in memory only. */
   signedIn(token: string): void;
   signOut(): void;
@@ -263,6 +277,9 @@ export function bootShop(
   // A basket the shop has not yet acknowledged: the order id and payment answer it must go out
   // with again, so a retry is the SAME order and can never become two.
   let prepared: { readonly orderId: string; readonly providerRef: string; readonly result: ShopPaymentResult; readonly review: SessionState['review'] } | undefined;
+  // The order the shop holds and what it last said about it (FUL-07) — the screen shows this, never the app's own guess.
+  let held: { readonly orderId: string; readonly quoteMinor?: number } | undefined;
+  let awaitingDecision = false;
   const purposes = data?.consentPurposes ?? [];
   let consent: ConsentState = data?.consent ?? { grants: [] };
   // The customer's OWN delivery location. Undefined until captured from the device — never guessed,
@@ -346,11 +363,16 @@ export function bootShop(
       ? Promise.resolve(null)
       : placeThroughTheShop(prepared.providerRef, prepared.result)),
 
+    payForWhatTheShopHas: (input) => followUp('payment', { providerRef: input.providerRef, amountMinor: held?.quoteMinor ?? 0, result: input.result }),
+    cancelOrder: () => followUp('cancel', {}),
+    checkPayment: () => followUp('payment/check', {}),
+
     signedIn: (t) => { token = t; },
     signOut: () => { token = undefined; },
     isSignedIn: () => token !== undefined,
 
-    statusLine: () => (state.order === undefined ? null : orderStatusLine(state.order)),
+    // FUL-07: while the shop waits for the customer's decision on a shortage, its own sentence is the status.
+    statusLine: () => (state.order === undefined ? null : awaitingDecision ? `Order ${state.order.orderId}: ${state.tellTheCustomer}` : orderStatusLine(state.order)),
 
     consent: () => consentControls(consent, purposes),
 
@@ -398,6 +420,23 @@ export function bootShop(
     };
   }
 
+  async function followUp(action: 'payment' | 'payment/check' | 'cancel', body: unknown): Promise<PlaceOutcome> {
+    const refuse = (refusedBecause: PlaceRefusal, tellTheCustomer: string, detail: string): PlaceOutcome => ({ ok: false, state, refusedBecause, tellTheCustomer, detail });
+    if (held === undefined) return refuse('order_refused', 'There is no order with the shop to do this for.', 'no order is held');
+    if (token === undefined) return refuse('not_signed_in', 'Please sign in first. Nothing has been charged.', 'no session token');
+    if (transport?.followUp === undefined) return refuse('no_road_to_the_shop', 'This app has no connection to the shop set up. Nothing has been charged.', 'no follow-up transport');
+    const answer = await transport.followUp({ orderId: held.orderId, token, action, body });
+    if (!answer.reached) return refuse('the_shop_could_not_answer', 'This did not reach the shop. Nothing has changed — please try again.', answer.detail);
+    const verdict = readShopAnswer(answer);
+    if (verdict.kind !== 'placed') {
+      return refuse(verdict.kind === 'refused' ? 'the_shop_refused' : verdict.kind === 'signed_out' ? 'signed_out' : 'the_shop_could_not_answer',
+        verdict.kind === 'refused' ? verdict.whatHappened : 'The shop could not answer just now. Nothing has changed.', verdict.kind);
+    }
+    keep(fromTheShop(state, verdict));
+    awaitingDecision = verdict.paymentState === 'none' && verdict.orderState === 'placed';
+    return { ok: true, state, shopHasIt: true, orderId: held.orderId, detail: `the shop answered the ${action}`, paymentState: verdict.paymentState, ...(verdict.quoteMinor === undefined ? {} : { quoteMinor: verdict.quoteMinor }) };
+  }
+
   async function placeThroughTheShop(providerRef: string, result: ShopPaymentResult): Promise<PlaceOutcome> {
     // An order the shop already has is not sent again by tapping Pay twice: the customer changes the
     // basket (which starts a new review) to order again. The idempotent retry path is `retry()`.
@@ -432,10 +471,13 @@ export function bootShop(
     // 2. The real thing. The amount is the session's own payable (items + fee) — the shop records
     //    it as the checkout's answer and invents nothing.
     const payable = dry.state.order?.payableMinor ?? 0;
+    const slotKind = (data?.slots ?? []).find((sl) => sl.slotId === state.slotId)?.kind;
     const answer = await transport.placeOrder({
       orderId, token, locationId,
       lines: state.lines.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor })),
       payment: { providerRef, amountMinor: payable, result },
+      // The shop quotes its own delivery fee for a delivery (FUL-03).
+      ...(slotKind === undefined ? {} : { fulfilment: slotKind }),
     });
 
     if (!answer.reached) {
@@ -449,9 +491,18 @@ export function bootShop(
     const verdict = readShopAnswer(answer);
     switch (verdict.kind) {
       case 'placed':
-        keep(dry.state);
+        // FUL-07: the order as the SHOP holds it — its payment state and its sentence — not the app's dry run.
+        keep(fromTheShop(dry.state, verdict));
         prepared = undefined;
-        return { ok: true, state, shopHasIt: true, orderId, detail: verdict.alreadyPlaced ? 'the shop already held this order — nothing was placed twice' : 'the shop has the order' };
+        held = { orderId, ...(verdict.quoteMinor === undefined ? {} : { quoteMinor: verdict.quoteMinor }) };
+        awaitingDecision = verdict.needsCustomerDecision;
+        return {
+          ok: true, state, shopHasIt: true, orderId,
+          detail: verdict.alreadyPlaced ? 'the shop already held this order — nothing was placed twice' : 'the shop has the order',
+          paymentState: verdict.paymentState,
+          ...(verdict.quoteMinor === undefined ? {} : { quoteMinor: verdict.quoteMinor }),
+          ...(verdict.needsCustomerDecision ? { needsDecision: true, shortages: verdict.shortages } : {}),
+        };
       case 'signed_out':
         token = undefined;
         prepared = { orderId, providerRef, result, review: state.review };
@@ -464,6 +515,21 @@ export function bootShop(
         return refuse('the_shop_refused', verdict.whatHappened, `the shop refused: ${verdict.code}`);
     }
   }
+}
+
+/**
+ * The session state, reconciled with what the shop said (FUL-07): an order is "confirmed" on this screen only when the
+ * SHOP holds its payment as authorised; otherwise it is waiting, in the shop's own words.
+ */
+function fromTheShop(dry: SessionState, verdict: { readonly paymentState: string; readonly tellTheCustomer: string; readonly orderState?: string }): SessionState {
+  if (dry.order === undefined) return dry;
+  const confirmed = verdict.paymentState === 'authorised' && verdict.orderState !== 'cancelled';
+  const tell = verdict.tellTheCustomer !== '' ? verdict.tellTheCustomer : dry.order.tellTheCustomer;
+  return {
+    ...dry,
+    order: { ...dry.order, state: confirmed ? 'confirmed' : verdict.paymentState === 'declined' || verdict.orderState === 'cancelled' ? 'refused' : 'payment_pending', releaseForPicking: confirmed, tellTheCustomer: tell },
+    tellTheCustomer: tell,
+  };
 }
 
 /** The browser global this bundle attaches to (typed without needing the DOM lib). */

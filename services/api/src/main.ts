@@ -38,9 +38,11 @@ import { tillSealKey } from '../../../packages/identity/src/till-seal';
 import { loyaltyMemberKey } from '../../../packages/loyalty/src/earn-rule';
 import { loyaltyMemberRoutes } from '../../customer/src/loyalty-members';
 import { loyaltyWalletRoutes, spendOnSale } from '../../customer/src/loyalty-wallets';
+import type { PaymentVerifier } from '../../../packages/orders/src/payment-verification';
+import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/index';
 import { loyaltyLiabilityRoutes } from '../../finance/src/loyalty-liability';
 import { independentEvidenceRoutes } from '../../finance/src/independent-evidence';
-import { earnOnSale, takeBackOnReturn } from '../../customer/src/loyalty-effects';
+import { earnOnSale, takeBackOnReturn, giveBackOnReturn } from '../../customer/src/loyalty-effects';
 import { labellingRoutes } from '../../catalogue/src/labelling';
 import { masterDataRoutes } from '../../catalogue/src/master-data';
 import { categoryPolicyRoutes } from '../../catalogue/src/category-policy';
@@ -232,6 +234,9 @@ import { serviceabilityRoutes } from '../../orders/src/serviceability';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { dispatchRoutes } from '../../fulfilment/src/dispatch';
 import { fulfilmentPackingRoutes } from '../../fulfilment/src/packing';
+import { applyOrderFulfilment, orderFulfilmentRoutes } from '../../fulfilment/src/order-fulfilment';
+import { stockLossRoutes } from '../../finance/src/stock-losses';
+import { b2bPostingRoutes } from '../../finance/src/b2b-postings';
 import { syncedWaveRoutes } from '../../fulfilment/src/waves';
 import { assignmentRoutes } from '../../fulfilment/src/assignments';
 import { syncedDriverRunRoutes } from '../../fulfilment/src/driver-runs';
@@ -239,7 +244,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
+  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -323,6 +328,11 @@ export function buildSurface(deps: {
   /** The one shop whose realm that directory provisions into (OB-15-d). Other shops: not connected. */
   readonly identityDirectoryTenantId?: string;
   /**
+   * FUL-03: the payment provider that may say an online payment is paid. No live provider is connected (EX-03); tests and
+   * a demo pass the TEST-MODE provider. Omitted → every online payment stays pending until the bank's answer is recorded.
+   */
+  readonly paymentVerifier?: PaymentVerifier;
+  /**
    * Where projection snapshots live (CORE-03). A `SqlSnapshotStore` in production, so bounded reads
    * survive a restart; omitted, adapters fall back to a process-local in-memory cache (still correct,
    * just rebuilt on a cold start, because a snapshot is disposable).
@@ -354,8 +364,18 @@ export function buildSurface(deps: {
     refundThreshold: empty(undefined), refundProcessor: testModeRefundProcessor(),
     placedOrder: empty(undefined), ordersForCustomer: empty([]), recordAccessRefusal: () => {}, accessRefusals: empty([]),
     ownedExceptions: empty([]), recordOwnedException: () => {}, rolesOf: empty([]),
-  } : { ...ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() }), approvals: approvalRequestsAdapter({ store, now }) };
+  } : (() => {
+    const orders = ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() });
+    const approvals = approvalRequestsAdapter({ store, now });
+    // FUL-14: a substitution is decided from stored truth (prices, attributes, rules, tender, consent, approval).
+    return { ...orders, approvals, substitutionTruth: substitutionTruthAdapter({ store, now, orders, approvals }) };
+  })();
 
+  // FUL-05: the one fulfilment command — run after every pack, dispatch, door outcome and counter hand-over, and on demand.
+  const orderFulfilment = store === undefined ? undefined
+    : orderFulfilmentAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() });
+  const afterOrderFact = orderFulfilment === undefined ? undefined
+    : (t: string, orderId: string, by: string) => applyOrderFulfilment(orderFulfilment, t, orderId, by);
   const probes = deps.probes ?? (async () => []);
   // One durable settings instance, shared so the config-history / rollback routes operate on the SAME
   // versioned store the setup answers write to (a setting change and its rollback share one history).
@@ -529,7 +549,11 @@ export function buildSurface(deps: {
       : cataloguePreviewAdapter({ store, now })),
     ...pricingRoutes(store === undefined
       ? { recordPriceChange: () => {}, now }
-      : { ...pricingAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) }),
+      : {
+        ...pricingAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }),
+        // M05: the floor a head-office price is judged by is the one the owner set in the store's rules.
+        marginFloorFor: async (t: string, storeId: string) => (await storeRulesAdapter({ store }).rules(t, storeId))?.marginFloorBps,
+      }),
     ...priceListRoutes(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
       : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
@@ -780,7 +804,17 @@ export function buildSurface(deps: {
       storeCreditCap: () => undefined, recordStoreCreditCap: () => {},
       flaggedReturns: empty([]), now,
     } : { ...returnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, tillSealKey: sealKey,
-      loyaltyOnReturn: (t, saleId, returnId, refundMinor) => takeBackOnReturn(loyaltyEffects!, t, saleId, returnId, refundMinor) }),
+      // OB-34 "A": a return gives back the points the member PAID WITH, in proportion to the goods coming back; and on such
+      // a bill the earn is taken back against those goods too (its refund is only the money share). An exchange gives
+      // nothing back (its goods are credited in full) and takes back against its credit, as before.
+      loyaltyOnReturn: async (t, saleId, returnId, refundMinor, returned) => {
+        const giveBack = returned === undefined || returned.exchange
+          ? undefined
+          : await giveBackOnReturn(loyaltyEffects!, t, saleId, returnId, returned.valueMinor);
+        const paidWithPoints = giveBack !== undefined && giveBack.outcome !== 'no_points_spent';
+        const takeBack = await takeBackOnReturn(loyaltyEffects!, t, saleId, returnId, paidWithPoints ? returned!.valueMinor : refundMinor);
+        return paidWithPoints ? { ...takeBack, givenBack: giveBack } : takeBack;
+      } }),
     // Head office's maker-checker engine (ADR-0024 · M02-FR-03): the maker asks, a different person with the authority
     // approves or rejects in their own session, and the action then uses that approval once.
     // The adapter is stateless over the store, so the routes and every action that uses an approval read the same truth.
@@ -892,13 +926,26 @@ export function buildSurface(deps: {
     // M19-FR-01 / Item 2 — the substitution exception worklist WITH ownership. Registered BEFORE the orders
     // routes so its literal `/v1/orders/substitution-exceptions…` paths are never captured as an order id.
     ...exceptionOwnershipRoutes(ordersDeps),
-    ...ordersRoutes(ordersDeps),
+    ...ordersRoutes(afterOrderFact === undefined ? ordersDeps : { ...ordersDeps, afterOrderFact }),
+    ...(orderFulfilment === undefined ? [] : orderFulfilmentRoutes(orderFulfilment)),
     // The order's payment and refunds (M18-FR-04 / M20-FR-03): the checkout's answer recorded once, refunds against
     // the order's own token, pending when the bank has not said, on a worklist until it does.
     ...paymentRefundRoutes(ordersDeps),
     // The storefront's own surface (M20): a signed-in customer places and pays for an order that reserves stock in the
     // same breath, and reads back its own orders only — gated by the customer_app entitlement.
-    ...storefrontRoutes(ordersDeps),
+    ...storefrontRoutes({
+      ...ordersDeps,
+      // FUL-03: the shop's own quote — the store price head office last published — and the provider's word on payment.
+      ...(store === undefined ? {} : {
+        unitPriceOf: async (t: string, productId: string) => (await catalogueAdapter({ store, signer, now }).currentPack(t))?.snapshot.products.find((p) => p.productId === productId)?.unitPriceMinor,
+        deliveryFeeFor: async (t: string, goodsMinor: number) => {
+          const { policy } = resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter({ store, now }).schedule(t), on: now().slice(0, 10) });
+          const fee = policy.deliveryFeeMinor ?? 0;
+          return policy.freeDeliveryAboveMinor !== undefined && goodsMinor >= policy.freeDeliveryAboveMinor ? 0 : fee;
+        },
+      }),
+      ...(deps.paymentVerifier === undefined ? {} : { paymentVerifier: deps.paymentVerifier }),
+    }),
     // Serviceability configuration (M18-FR-01 / D08) — the per-tenant, effective-dated delivery radius/fee/
     // threshold/minimum. Resolve NEVER 404s: the D08 default (10 km) applies until the owner sets real radii.
     ...serviceabilityRoutes(store === undefined
@@ -906,7 +953,7 @@ export function buildSurface(deps: {
       : serviceabilityAdapter({ store, now })),
     ...fulfilmentRoutes(store === undefined
       ? { appendAttempt: () => {}, attempts: empty([]), assigned: empty([]), deliveryState: empty([]), recordDeliveryTransition: () => {}, now }
-      : fulfilmentAdapter({ store, now })),
+      : { ...fulfilmentAdapter({ store, now }), ...(afterOrderFact === undefined ? {} : { afterOrderFact }) }),
     // Dispatch planning & run assignment (M19-FR-03/04) — draft today's routes (every order routed or
     // unplanned-with-a-reason, straight-line distances labelled as such), full re-plan when a driver drops
     // out, and the stored plan that finally feeds reconcileRun the order ids each run is answerable for.
@@ -917,7 +964,7 @@ export function buildSurface(deps: {
     // manifest derived from what was packed.
     ...fulfilmentPackingRoutes(store === undefined
       ? { order: empty(undefined), productPacking: empty(undefined), productFacts: empty(undefined), pack: empty(undefined), recordPack: () => {}, manifest: empty(undefined), recordDispatch: () => {}, now }
-      : fulfilmentPackingAdapter({ store, now })),
+      : { ...fulfilmentPackingAdapter({ store, now }), ...(afterOrderFact === undefined ? {} : { afterOrderFact }) }),
     // SP-3c-i (F11's picker half): the PICKER handheld's line outcomes and wave packs, RELAYED by the box from its device
     // socket. The routes re-verify the picker / packer from their grants, compare the pack with the line register and
     // record-and-flag; nothing here moves stock.
@@ -938,7 +985,7 @@ export function buildSurface(deps: {
         permissionsOfUser: empty(undefined), stopUpdates: empty([]), recordStopUpdate: () => {}, settlement: empty(undefined), recordSettlement: () => {},
         handover: empty(undefined), recordHandover: () => {}, deliveryState: empty([]), recordDeliveryTransition: () => {}, recordAttempt: () => {}, now,
       }
-      : { ...driverRunAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+      : { ...driverRunAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, ...(afterOrderFact === undefined ? {} : { afterOrderFact }) }),
     ...financeRoutes(store === undefined ? {
       periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)),
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),
@@ -954,6 +1001,11 @@ export function buildSurface(deps: {
     } : dayBookAdapter({ store, now })),
     // Payables (SP-7b · M23-FR-01): the supplier accounts → balanced journals through the accountant's mapping; the
     // purchase register and the finance ledger reconciled as two figures reached two different ways (QG-07).
+    // The inventory-loss journal: every confirmed-lost floor-indent / transfer shortfall, posted once through the mapping.
+    ...stockLossRoutes(store === undefined ? {
+      periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)), appendJournal: () => {}, now,
+      postingMap: empty(undefined), losses: empty([]), stockLossJournals: empty([]),
+    } : stockLossAdapter({ store, now })),
     ...payablesRoutes(store === undefined ? {
       periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)), appendJournal: () => {}, now,
       postingMap: empty(undefined), supplierAccounts: empty([]), payablesJournals: empty([]), recordException: () => {}, exceptions: empty([]),
@@ -997,14 +1049,19 @@ export function buildSurface(deps: {
     } : b2bCreditAdapter({ store, now })),
     ...b2bCollectionsRoutes(store === undefined ? {
       invoices: empty([]), outstandingMinor: empty(0), recordInvoice: () => {}, recordPayment: () => {}, now,
-    } : b2bCollectionsAdapter({ store, now })),
+    } : { ...b2bCollectionsAdapter({ store, now }), recordPaymentWithMoney: b2bMoneyEffectsAdapter({ store, now }).recordPaymentWithMoney }),
+    // FUL-09: B2B invoices and collections reach the books, once, through the accountant's mapping.
+    ...b2bPostingRoutes(store === undefined ? {
+      periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)), appendJournal: () => {}, now,
+      postingMap: empty(undefined), postables: empty([]), b2bJournals: empty([]),
+    } : b2bPostingAdapter({ store, now })),
     ...b2bCommissionRoutes(store === undefined ? {
       accruals: empty([]), recordAccrual: () => {}, now,
     } : b2bCommissionAdapter({ store, now })),
     ...b2bDocumentsRoutes(store === undefined ? {
       document: empty(undefined), documents: empty([]), convertedQuotationIds: empty([]), recordDocument: () => {},
       allocateNumber: () => Promise.resolve(1), creditAllowed: empty(false), now,
-    } : b2bDocumentsAdapter({ store, now, numberSeries: deps.numberSeries })),
+    } : { ...b2bDocumentsAdapter({ store, now, numberSeries: deps.numberSeries }), afterTaxInvoice: b2bMoneyEffectsAdapter({ store, now }).afterTaxInvoice }),
     // M22-FR-04 — the B2B customer portal: a business customer reads ITS OWN account, invoices, statement and
     // documents, projected from the very adapters the staff surfaces use; who the login is comes from a stored
     // binding, never the request; a cross-customer ask is refused AND recorded.

@@ -41,7 +41,7 @@ describe('the till spends points and store credit, decided on the box, applied o
       expect((await h.request({ method: 'PUT', path: `/v1/platform/setup/${key}`, userId: 'u-owner', tenantId: A, idempotencyKey: `set-${key}`, body: { value } })).status).toBeLessThan(300);
     await set('loyalty.points_per_100_inr', 1);
     await set('loyalty.point_value_paise', 100);       // one point = ₹1
-    await set('loyalty.till_spend_cap_paise', 50_000); // ₹500 a day at the till
+    // The till spend limit is NOT set here: the owner's default (OB-33 "A") is ₹500 a member a day at a store computer.
     expect((await h.request({ method: 'POST', path: '/v1/loyalty/members', userId: 'u-mgr', tenantId: A, idempotencyKey: 'join', body: { mobile: MOBILE, consent: true, verifiedHow: 'seen_on_phone' } })).status).toBe(201);
     // The member already holds 50 points (an earlier ₹5,000 bill) and ₹300 of store credit.
     expect((await h.request({ method: 'POST', path: '/v1/sales', userId: 'u-box', tenantId: A, idempotencyKey: 'earlier', body: {
@@ -182,6 +182,17 @@ describe('the till spends points and store credit, decided on the box, applied o
     const approval = await managerApprovesOn(till, 'u-mgr', { kind: 'refund', billRef: 'S-1', valueMinor: 100_000, reason: 'damaged' });
     const tooMuch = await bill.submit({ returnId: 'RT-1', number: await till.nextReceipt(), reasonCode: 'damaged', lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }], refundMinor: 100_000, refundTender: 'card', approval });
     expect(JSON.stringify(tooMuch)).toMatch(/paid with loyalty points/);
+    // OB-34 "A": the whole bill comes back. The money side is its money share (₹1,000 less the ₹20 paid with points); the
+    // 20 points the member paid with come back to them as points at head office, and the 9 the bill earned are taken back.
+    const approval2 = await managerApprovesOn(till, 'u-mgr', { kind: 'refund', billRef: 'S-1', valueMinor: 98_000, reason: 'damaged' });
+    const whole = await bill.submit({ returnId: 'RT-2', number: await till.nextReceipt(), reasonCode: 'damaged', lines: [{ productId: 'P1', uom: 'ea', quantityMinor: 1, disposition: 'resell' }], refundMinor: 98_000, refundTender: 'cash', approval: approval2 });
+    expect(JSON.stringify(whole)).not.toMatch(/paid with loyalty points/);
+    expect(await edge.syncOnce!()).toMatchObject({ dead: 0, remaining: 0 });
+    // 33 + 20 given back − 9 taken back = 44 points.
+    expect(await headOffice()).toEqual({ points: 44, credit: 25_000 });
+    // The same return relayed again gives nothing twice.
+    expect(await edge.syncOnce!()).toMatchObject({ dead: 0 });
+    expect(await headOffice()).toEqual({ points: 44, credit: 25_000 });
     await edge.stop();
   }, 60_000);
 });

@@ -20,6 +20,8 @@ const asCurrency = (v: unknown): CurrencyCode => (typeof v === 'string' && (CURR
 export interface B2BAccount {
   readonly creditLimitMinor: number;
   readonly currency: CurrencyCode;
+  /** M22-FR-01 "payment terms": days from a tax invoice to when it is due. Absent → due on the day it is issued. */
+  readonly paymentTermsDays?: number;
 }
 
 /** An AR movement — an invoice adds to what is owed, a payment or credit note reduces it. */
@@ -35,7 +37,7 @@ export interface RecordedReceivable {
 export interface B2BCreditDeps {
   readonly account: (tenantId: string, customerId: string) => Promise<B2BAccount | undefined> | B2BAccount | undefined;
   readonly outstandingMinor: (tenantId: string, customerId: string) => Promise<number> | number;
-  readonly recordAccount: (tenantId: string, customerId: string, creditLimitMinor: number, currency: CurrencyCode, at: string) => Promise<void> | void;
+  readonly recordAccount: (tenantId: string, customerId: string, creditLimitMinor: number, currency: CurrencyCode, at: string, paymentTermsDays?: number) => Promise<void> | void;
   readonly recordReceivable: (tenantId: string, customerId: string, m: RecordedReceivable) => Promise<void> | void;
   readonly now: () => string;
 }
@@ -52,18 +54,20 @@ export function b2bCreditRoutes(deps: B2BCreditDeps): readonly Route[] {
       entitlement: 'b2b',
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
-        const b = (ctx.body ?? {}) as { creditLimitMinor?: unknown; currency?: unknown };
-        if (!Number.isInteger(b.creditLimitMinor) || (b.creditLimitMinor as number) < 0) {
+        const b = (ctx.body ?? {}) as { creditLimitMinor?: unknown; currency?: unknown; paymentTermsDays?: unknown };
+        if (!Number.isInteger(b.creditLimitMinor) || (b.creditLimitMinor as number) < 0
+          || (b.paymentTermsDays !== undefined && (!Number.isInteger(b.paymentTermsDays) || (b.paymentTermsDays as number) < 0 || (b.paymentTermsDays as number) > 365))) {
           throw apiError(400, {
             code: 'not_readable_as_an_account',
-            whatHappened: 'A B2B account needs a whole, non-negative credit limit in minor units.',
+            whatHappened: 'A B2B account needs a whole, non-negative credit limit in minor units, and payment terms (when given) in whole days from 0 to 365.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send { "creditLimitMinor": … }. Nothing was set.',
           });
         }
         const currency = asCurrency(b.currency);
-        await deps.recordAccount(ctx.tenantId, customerId, b.creditLimitMinor as number, currency, deps.now());
-        return { status: 201, body: { customerId, creditLimitMinor: b.creditLimitMinor, currency } };
+        const terms = b.paymentTermsDays as number | undefined;
+        await deps.recordAccount(ctx.tenantId, customerId, b.creditLimitMinor as number, currency, deps.now(), terms);
+        return { status: 201, body: { customerId, creditLimitMinor: b.creditLimitMinor, currency, ...(terms === undefined ? {} : { paymentTermsDays: terms }) } };
       },
     },
     {

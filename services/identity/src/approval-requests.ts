@@ -115,6 +115,12 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'order_refund', label: 'Refund an online order',
     makerPermission: 'order.refund.issue', checkerPermission: 'order.refund.approve', validForMinutes: 24 * 60,
   },
+  // FUL-14 (M19-FR-01 · M18-FR-04): charging a dearer substitute ABOVE the original line price needs the customer's own
+  // yes AND a second person with authority over online-order money — the same authority that approves an order refund.
+  substitution_above_cap: {
+    kind: 'substitution_above_cap', label: 'Charge a dearer substitute above the original price',
+    makerPermission: 'order.lifecycle.manage', checkerPermission: 'order.refund.approve', validForMinutes: 24 * 60,
+  },
   service_compensation: {
     kind: 'service_compensation', label: 'Give a customer compensation above the desk\'s own limit',
     makerPermission: 'service.case.manage', checkerPermission: 'service.compensation.approve', validForMinutes: 24 * 60,

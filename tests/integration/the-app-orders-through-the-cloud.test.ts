@@ -3,6 +3,7 @@ import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import { bootShop, forgetfulBasket, type ShopData } from '../../apps/customer-app/src/browser-entry';
 import { httpShopTransport } from '../../apps/customer-app/src/shop-transport';
 import type { StorefrontProduct } from '../../packages/storefront/src/browse';
+import { testModePaymentProvider, type TestModePaymentProvider } from '../../packages/orders/src/payment-verification';
 
 /**
  * M20-FR-03 / §31 (Stage C, M20 slice 2) — the customer app's REAL transport against the REAL API.
@@ -32,13 +33,24 @@ const data = (over: Partial<ShopData> = {}): ShopData => ({
   ...over,
 });
 
+// FUL-03: the test-mode payment provider — captures are registered here, standing in for the bank, never by the app.
+let provider: TestModePaymentProvider;
 async function seeded(entitled = true): Promise<ApiHarness> {
-  const h = apiHarness();
+  provider = testModePaymentProvider();
+  const h = apiHarness({ paymentVerifier: provider });
   await h.seedOwner(T, OWNER);
   await h.provisionRole(T, C1, 'customer');
   await h.provisionRole(T, C2, 'customer');
   if (entitled) await h.enableFeature(T, 'customer_app');
   await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: OWNER, tenantId: T, idempotencyKey: 'mv-1', body: { movementId: 'mv-1', productId: 'MILK', locationId: 'L1', kind: 'received', quantityMinor: 5, uom: 'each', occurredAt: AT, enteredBy: OWNER } });
+  // The shop's own figures the quote is made from (FUL-03): milk published at ₹60 for L1, and a ₹40 delivery fee.
+  const today = new Date().toISOString().slice(0, 10);
+  const ok = async (path: string, body: unknown, key: string) => expect((await h.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: key, body })).status, path).toBeLessThan(300);
+  await ok('/v1/catalogue/tax-classes/0401/rates/2017-07-01', { rateBps: 0 }, 'tax');
+  await ok('/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active' }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }, 'pub');
+  await ok('/v1/prices/list/MILK/entries/e1', { scope: 'store', scopeRef: 'L1', priceMinor: 60_00, mrpMinor: 70_00, costMinor: 40_00, marginFloorBps: 0, currency: 'INR', effectiveFrom: today }, 'price');
+  await ok('/v1/catalogue/pack', { storeId: 'L1', asOf: today }, 'pack');
+  await ok('/v1/serviceability/periods/2026-01-01', { radiusMetres: 10_000, deliveryFeeMinor: 40_00 }, 'svc');
   return h;
 }
 
@@ -79,8 +91,10 @@ describe('the customer app places its order through the real API (M20-FR-03, sli
     const h = await seeded();
     const log: { method: string; path: string; auth: boolean; key?: string }[] = [];
     const shop = appReady(fetchInto(h, log), customerToken(C1));
+    // The provider captured exactly the shop's quote: 2 × ₹60 + ₹40 delivery.
+    provider.capture(PAY.providerRef, 2 * 60_00 + 40_00);
     const out = await shop.place(PAY);
-    expect(out).toMatchObject({ ok: true, shopHasIt: true });
+    expect(out).toMatchObject({ ok: true, shopHasIt: true, paymentState: 'authorised', quoteMinor: 2 * 60_00 + 40_00 });
     const orderId = out.ok ? out.orderId : '';
     expect(shop.statusLine()).toMatch(/confirmed and will be picked/);
 
@@ -102,6 +116,37 @@ describe('the customer app places its order through the real API (M20-FR-03, sli
     expect(second.status).toBe(201);
     const promise = (second.body as { promise: { lines: { productId: string; promisedMinor: number }[] } }).promise;
     expect(promise.lines[0]).toMatchObject({ productId: 'MILK', promisedMinor: 3 });
+  });
+
+  it('FUL-03/FUL-07: the app\'s "authorised" alone is not paid — the screen shows the SHOP\'s answer (waiting), and turns confirmed only when the provider has captured it', async () => {
+    const h = await seeded();
+    const shop = appReady(fetchInto(h, []), customerToken(C1));
+    const out = await shop.place(PAY); // the provider has not captured anything
+    expect(out).toMatchObject({ ok: true, shopHasIt: true, paymentState: 'pending' });
+    expect(shop.statusLine()).toMatch(/waiting on your bank/);
+    expect(shop.statusLine()).not.toMatch(/confirmed and will be picked/);
+    provider.capture(PAY.providerRef, 2 * 60_00 + 40_00);
+    expect(await shop.checkPayment()).toMatchObject({ ok: true, paymentState: 'authorised' });
+    expect(shop.statusLine()).toMatch(/confirmed and will be picked/);
+  });
+
+  it('FUL-07: when the shop cannot promise everything, nothing is charged — the app shows the shortage and the customer pays the shop\'s price for what it has, or cancels', async () => {
+    const h = await seeded();
+    // Another customer takes 4 of the 5 first.
+    expect((await h.request({ method: 'POST', path: '/v1/storefront/orders/so-first', userId: C2, tenantId: T, idempotencyKey: 'so-first', body: { lines: [{ productId: 'MILK', quantityMinor: 4 }], locationId: 'L1' } })).status).toBe(201);
+    const shop = appReady(fetchInto(h, []), customerToken(C1)); // asks for 2
+    const out = await shop.place(PAY);
+    expect(out).toMatchObject({ ok: true, shopHasIt: true, needsDecision: true, shortages: [{ productId: 'MILK', requestedMinor: 2, promisedMinor: 1 }], quoteMinor: 60_00 + 40_00, paymentState: 'none' });
+    expect(shop.statusLine()).toMatch(/not in stock/);
+    provider.capture('tok_short', 60_00 + 40_00);
+    expect(await shop.payForWhatTheShopHas({ providerRef: 'tok_short', result: 'authorised' })).toMatchObject({ ok: true, paymentState: 'authorised' });
+    expect(shop.statusLine()).toMatch(/confirmed and will be picked/);
+
+    const other = appReady(fetchInto(h, []), customerToken(C2)); // nothing left: 5 − 4 − 1
+    const short = await other.place({ providerRef: 'tok_none', result: 'authorised' });
+    expect(short).toMatchObject({ needsDecision: true });
+    expect(await other.cancelOrder()).toMatchObject({ ok: true });
+    expect(other.statusLine()).toMatch(/cancelled/);
   });
 
   it('a request lost on the way is prepared, not sent — and when it gets through it is the SAME order, held once', async () => {

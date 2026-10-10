@@ -73,6 +73,7 @@ import type { IssueOutcome, ReceiptNumberStatus, UseCheck } from './receipt-numb
 import type { HoldOutcome, RecallOutcome, HeldSummary } from './held-bills';
 import type { AttemptAnswer, TenderCheck, Attempt } from './payment-attempts';
 import { refundRoomOutsidePoints } from '../../../packages/loyalty/src/wallet';
+import { returnedValueAtOriginalPrices } from '../../../packages/returns/src/exchange';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -1307,8 +1308,9 @@ export function startLaneServer(input: {
           parsed = { ...rest, ...(memberRef === undefined ? {} : { customerRef: memberRef }) };
           if (keyed !== undefined && memberRef === undefined) delete (parsed as Record<string, unknown>)['customerRef'];
         }
-        // A bill partly paid with POINTS (PF-09 step 3): its refund in money or credit is capped at the part not paid with
-        // points — refunding the rest would turn points into rupees. Checked before the disk, in the cashier's words.
+        // A bill partly paid with POINTS (PF-09 step 3 · OB-34 "A"): its refund in money or credit is capped at the MONEY
+        // SHARE of the goods coming back — the points share goes back to the member as points, at head office. Refunding
+        // more would turn points into rupees. Checked before the disk, in the cashier's words.
         if (isReturn && parsed !== null && typeof parsed === 'object') {
           const r = parsed as Record<string, unknown>;
           const originalId = typeof r['originalSaleId'] === 'string' ? r['originalSaleId'] : undefined;
@@ -1316,11 +1318,19 @@ export function startLaneServer(input: {
           const bill = originalId === undefined ? undefined : await input.node.lookupSale(originalId).catch(() => undefined);
           if (bill !== undefined) {
             const prior = bill.refunds.filter((x) => x.returnId !== id).reduce((n, x) => n + x.refundMinor, 0);
-            const room = refundRoomOutsidePoints({ totalMinor: bill.sale.totalMinor, tenders: bill.sale.tenders, priorRefundsMinor: prior });
+            const lines = Array.isArray(r['lines']) ? (r['lines'] as unknown[]).flatMap((l) => {
+              const o = l as { productId?: unknown; quantityMinor?: unknown } | null;
+              return o !== null && typeof o === 'object' && typeof o.productId === 'string' && typeof o.quantityMinor === 'number' ? [{ productId: o.productId, quantityMinor: o.quantityMinor }] : [];
+            }) : [];
+            const returnedValueMinor = returnedValueAtOriginalPrices(bill.sale, [...bill.returns.filter((x) => x.returnId !== id).flatMap((x) => x.lines), ...lines]);
+            // An EXCHANGE credits the returned goods in full against the replacement (no points come back on it), so it keeps
+            // the coarse cap: the whole part not paid with points.
+            const isExchange = r['exchange'] !== undefined && r['exchange'] !== null;
+            const room = refundRoomOutsidePoints({ totalMinor: bill.sale.totalMinor, tenders: bill.sale.tenders, priorRefundsMinor: prior, ...(isExchange ? {} : { returnedValueMinor }) });
             if (room !== undefined && refundMinor > room) {
               send(res, 200, {
                 committed: false, refusedBecause: 'refund_includes_points',
-                laneMessage: `Part of this bill was paid with loyalty points, which cannot be given back as money. At most ₹${(room / 100).toFixed(2)} can be refunded here. Nothing was saved.`,
+                laneMessage: `Part of this bill was paid with loyalty points, which cannot be given back as money — the member gets those points back instead. At most ₹${(room / 100).toFixed(2)} can be refunded here for these goods. Nothing was saved.`,
               }, cors);
               return;
             }

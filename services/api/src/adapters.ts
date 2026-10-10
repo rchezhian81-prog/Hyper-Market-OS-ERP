@@ -58,7 +58,7 @@ import type { LoyaltyWalletDeps, SpendApplied } from '../../customer/src/loyalty
 import type { LoyaltyLiabilityDeps } from '../../finance/src/loyalty-liability';
 import { fulfilCompensation, type FulfilmentPorts, type CompensationFulfilment } from '../../customer/src/compensation-fulfilment';
 import { monthEvidence, type IndependentEvidenceDeps, type ImportedStatement } from '../../finance/src/independent-evidence';
-import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack } from '../../customer/src/loyalty-effects';
+import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack, ReturnGiveBack } from '../../customer/src/loyalty-effects';
 import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
 import type { QualityHold } from '../../../packages/quality/src/index';
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
@@ -70,7 +70,7 @@ import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedR
 import type { ExchangeDeps } from '../../pos/src/exchanges';
 import type { NoReceiptReturnsDeps } from '../../pos/src/no-receipt-returns';
 import type { ApprovalUse, RefundApproval, RefundApprovalDeps, RefundApprovalState } from '../../pos/src/refund-approvals';
-import type { ApprovalDecision, ApprovalRequest, ApprovalRequestDeps, ApprovalState } from '../../identity/src/approval-requests';
+import type { ApprovalDecision, ApprovalRequest, ApprovalRequestDeps, ApprovalState, ApprovalPort } from '../../identity/src/approval-requests';
 import type { RefusedDecision } from '../../migration/src/decisions';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { ControlTotal, TotalSignature } from '../../../packages/migration/src/reconcile';
@@ -95,7 +95,7 @@ import type { Bin, BinContents } from '../../../packages/warehouse/src/movements
 import { binKey } from '../../../packages/warehouse/src/movements';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
-import { shortfallLinesOf, shortfallLossOf, type AvailableLot, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import { shortfallLinesOf, shortfallLossOf, type AvailableLot, type ShortfallLoss, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
 import { recipeDigest, type ProductionDeps, type StoredRun, type StoredRelease } from '../../inventory/src/production';
@@ -178,8 +178,8 @@ import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } from '../../../packages/audit/src/index';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
-import { project, projectBatches, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
-import { minorPerUnitOf } from '../../../packages/contracts/src/quantity';
+import { project, projectBatches, fefoBatchesAt, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
+import { minorPerUnitOf, normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
@@ -235,6 +235,7 @@ import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/
 import type { CouponDeps } from '../../customer/src/coupons';
 import type { Coupon, Redemption } from '../../../packages/loyalty/src/coupons';
 import { balanceOf } from '../../../packages/loyalty/src/stored-value';
+import { spendRefFor } from '../../../packages/loyalty/src/wallet';
 import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
 import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalogue';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
@@ -246,9 +247,10 @@ import type { OwnedException } from '../../../packages/orders/src/substitution-e
 import type { PaymentRefundDeps } from '../../orders/src/payments';
 import type { StorefrontDeps } from '../../orders/src/storefront';
 import type { StorefrontAccessRefusal } from '../../../packages/orders/src/storefront-scope';
-import { testModeRefundProcessor, type OrderPayment, type OrderPaymentResolution, type OrderRefund, type OrderRefundOutcome, type RefundProcessor } from '../../../packages/orders/src/payment-refunds';
+import { testModeRefundProcessor, paymentPosition, type OrderPayment, type OrderPaymentResolution, type OrderRefund, type OrderRefundOutcome, type RefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import type {
   Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView, StoredSubstitution, StoredBackorder,
+  SubstitutionTruthDeps, StoredSubstitutionRules, SubstitutionConsent,
 } from '../../orders/src/index';
 import type { ServiceabilityConfigDeps } from '../../orders/src/serviceability';
 import type { ServiceabilityPeriod } from '../../../packages/storefront/src/index';
@@ -258,6 +260,9 @@ import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
 import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
+import type { StockLossDeps, StockLossJournal } from '../../finance/src/stock-losses';
+import type { B2BPostingDeps, B2BPostable, B2BJournal } from '../../finance/src/b2b-postings';
+import type { OrderFulfilmentDeps, OrderHandback, FulfilmentSettlement } from '../../fulfilment/src/order-fulfilment';
 import type { WaveSyncDeps, WaveLineOutcome, WavePackRecord } from '../../fulfilment/src/waves';
 import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord } from '../../fulfilment/src/driver-runs';
 import type { IdentityDeps, GrantRequestRecord, PendingGrantRequest, GrantRejection } from '../../identity/src/index';
@@ -2349,6 +2354,14 @@ export function posAdapter(input: {
     currentPackVersion: async (tenantId) =>
       (await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished'))?.snapshot.version ?? 0,
 
+    // OB-35 "A": the batches on hand where this sale's stock leaves from (the same location `bankSale` resolves), earliest
+    // expiry first — Batch 2's FEFO read over the one batch projection, called once per sale.
+    lotsOnHand: async (tenantId, sale) => {
+      const { locationId } = resolveSaleStockLocation(sale, await storeOfPack(input.store, tenantId, sale.packVersion));
+      const batches = await inventoryAdapter({ store: input.store, now: input.now }).batches!(tenantId);
+      return (productId) => fefoBatchesAt(batches, locationId, productId);
+    },
+
     /**
      * Two indexed lookups, not two folds.
      *
@@ -3410,15 +3423,16 @@ export function b2bCreditAdapter(input: {
       (await allOf<RecordedReceivable>(input.store, tenantId, forB2BCustomer(customerId), 'B2BReceivableMovement'))
         .reduce((b, m) => b + m.deltaMinor, 0),
 
-    recordAccount: async (tenantId, customerId, creditLimitMinor, currency) => {
+    recordAccount: async (tenantId, customerId, creditLimitMinor, currency, _at, paymentTermsDays) => {
+      const terms = paymentTermsDays === undefined ? '' : `-t${paymentTermsDays}`;
       await input.store.append(tenantId, forB2BCustomer(customerId), makeEvent({
-        id: `b2b-limit-${customerId}-${creditLimitMinor}`,
+        id: `b2b-limit-${customerId}-${creditLimitMinor}${terms}`,
         type: 'B2BCreditLimitSet',
         occurredAt: input.now(),
-        // Keyed on the value — setting the same limit twice collapses, a different limit is a new fact.
-        idempotencyKey: `b2b-limit-${tenantId}-${customerId}-${creditLimitMinor}`,
+        // Keyed on the values — setting the same limit (and terms) twice collapses, a different one is a new fact.
+        idempotencyKey: `b2b-limit-${tenantId}-${customerId}-${creditLimitMinor}${terms}`,
         source: 'api/finance',
-        payload: { creditLimitMinor, currency } satisfies B2BAccount,
+        payload: { creditLimitMinor, currency, ...(paymentTermsDays === undefined ? {} : { paymentTermsDays }) } satisfies B2BAccount,
       }));
     },
 
@@ -4830,6 +4844,56 @@ export function b2bCollectionsAdapter(input: {
         payload: payment,
       }));
     },
+  };
+}
+
+/**
+ * FUL-09: a B2B tax invoice's and a collection's money effects, each in ONE atomic write — the receivable collections ages
+ * (due on the customer's terms) or the allocation, the AR-ledger movement the credit check reads, and the postable fact the
+ * books read (`b2bPostingAdapter`). Keys are the existing ones per record, so a re-issued / re-sent fact collapses.
+ */
+const B2B_POSTABLES = streamName(STREAM.finance, 'b2b-postables');
+export function b2bMoneyEffectsAdapter(input: { readonly store: EventStore; readonly now: () => string }): {
+  afterTaxInvoice: (tenantId: string, customerId: string, doc: StoredB2BDocument) => Promise<{ readonly dueOn: string }>;
+  recordPaymentWithMoney: (tenantId: string, customerId: string, payment: RecordedPayment, receivedOn: string) => Promise<void>;
+} {
+  const credit = b2bCreditAdapter(input);
+  return {
+    afterTaxInvoice: async (tenantId, customerId, doc) => {
+      const issuedOn = doc.issuedAt.slice(0, 10);
+      const terms = (await credit.account(tenantId, customerId))?.paymentTermsDays ?? 0;
+      const dueOn = new Date(Date.parse(`${issuedOn}T00:00:00.000Z`) + terms * 86_400_000).toISOString().slice(0, 10);
+      const invoice: CollectionsReceivable = { invoiceId: doc.documentId, number: doc.number, customerId, tenantId, issuedOn, dueOn, grossMinor: doc.grossMinor, settledMinor: 0 };
+      const ar: RecordedReceivable = { movementId: `inv-${doc.documentId}`, customerId, kind: 'invoice', deltaMinor: doc.grossMinor, at: doc.issuedAt, ref: doc.number };
+      const postable: B2BPostable = { sourceId: `invoice:${customerId}:${doc.documentId}`, kind: 'invoice', customerId, documentDate: issuedOn, components: { total: doc.grossMinor, net: doc.netMinor, tax: doc.taxMinor }, ref: doc.number };
+      await input.store.appendBatch(tenantId, [
+        { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-inv-${customerId}-${invoice.invoiceId}`, type: 'B2BInvoiceRecorded', occurredAt: doc.issuedAt, idempotencyKey: `b2b-inv-${tenantId}-${customerId}-${invoice.invoiceId}-${invoice.grossMinor}-${invoice.dueOn}-false`, source: 'api/finance', payload: invoice }) },
+        { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: ar.at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
+        { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: doc.issuedAt, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+      ]);
+      return { dueOn };
+    },
+    recordPaymentWithMoney: async (tenantId, customerId, payment, receivedOn) => {
+      const at = input.now();
+      const ar: RecordedReceivable = { movementId: `rcpt-${payment.receiptId}`, customerId, kind: 'payment', deltaMinor: -payment.receivedMinor, at, ref: payment.receiptId };
+      const postable: B2BPostable = { sourceId: `receipt:${customerId}:${payment.receiptId}`, kind: 'receipt', customerId, documentDate: receivedOn, components: { amount: payment.receivedMinor }, ref: payment.receiptId };
+      await input.store.appendBatch(tenantId, [
+        { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-pay-${customerId}-${payment.receiptId}`, type: 'B2BPaymentAllocated', occurredAt: at, idempotencyKey: `b2b-pay-${tenantId}-${customerId}-${payment.receiptId}`, source: 'api/finance', payload: payment }) },
+        { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
+        { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+      ]);
+    },
+  };
+}
+
+export function b2bPostingAdapter(input: { readonly store: EventStore; readonly now: () => string }): B2BPostingDeps {
+  const fin = financeAdapter(input);
+  return {
+    periodStates: fin.periodStates, nextOpenPeriod: fin.nextOpenPeriod, appendJournal: fin.appendJournal, now: input.now,
+    postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    postables: (tenantId) => allOf<B2BPostable>(input.store, tenantId, B2B_POSTABLES, 'B2BPostable'),
+    b2bJournals: async (tenantId) =>
+      (await allOf<JournalEntry | B2BJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted')).filter((j): j is B2BJournal => 'b2b' in j),
   };
 }
 
@@ -6507,8 +6571,10 @@ export function inventoryAdapter(input: {
           }
           if (l.disposition === 'resell') {
             const c = closing.get(l.productId);
-            const wacUnit = c !== undefined && c.onHand > 0 ? Math.round(c.value / c.onHand) : 0;
-            returnedCogsByProduct.set(l.productId, (returnedCogsByProduct.get(l.productId) ?? 0) + l.quantityMinor * wacUnit);
+            // OB-31: the closing value per smallest step (a gram of a kg product), taken in proportion and rounded once —
+            // never a per-gram cost rounded to a whole paisa first.
+            const back = c !== undefined && c.onHand > 0 ? Math.round((c.value * l.quantityMinor) / c.onHand) : 0;
+            returnedCogsByProduct.set(l.productId, (returnedCogsByProduct.get(l.productId) ?? 0) + back);
           }
         });
       }
@@ -7437,6 +7503,31 @@ export function supplierMasterAdapter(input: {
  * accountant's mapping via the same `appendJournal` every other voucher uses, so the period fold, the posters list and
  * the close gate see them as journals like any other. Exceptions are append-only finance-stream facts (hard rule #6).
  */
+/**
+ * The inventory-loss journal's reads (Batch 3 · Batch 2's `ShortfallLoss`): every resolved floor-indent and transfer
+ * shortfall's valued loss from the warehouse streams, and the stock-loss vouchers already posted.
+ */
+export function stockLossAdapter(input: { readonly store: EventStore; readonly now: () => string }): StockLossDeps {
+  const fin = financeAdapter(input);
+  return {
+    periodStates: fin.periodStates, nextOpenPeriod: fin.nextOpenPeriod, appendJournal: fin.appendJournal, now: input.now,
+    postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    losses: async (tenantId) => {
+      const out: ShortfallLoss[] = [];
+      for (const [stream, type] of [[streamName(STREAM.warehouse, 'indents'), 'FloorIndentShortfallResolved'], [streamName(STREAM.warehouse, 'transfers'), 'TransferShortfallResolved']] as const) {
+        for (const e of await input.store.readStream(tenantId, stream, { type })) {
+          const loss = (e.event.payload as { loss?: ShortfallLoss }).loss;
+          if (loss !== undefined) out.push(loss);
+        }
+      }
+      return out;
+    },
+    stockLossJournals: async (tenantId) =>
+      (await allOf<JournalEntry | StockLossJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
+        .filter((j): j is StockLossJournal => 'stockLoss' in j),
+  };
+}
+
 export function payablesAdapter(input: { readonly store: EventStore; readonly now: () => string }): PayablesDeps {
   const fin = financeAdapter(input);
   const registers = supplierAccountAdapter(input);
@@ -8022,6 +8113,7 @@ export function loyaltyEffectsAdapter(input: {
       return {
         ...(earn === undefined ? {} : { earn: payloadOf<SaleEarn>(earn) }),
         takeBacks: events.filter((e) => e.event.type === 'LoyaltyReturnTakenBack').map((e) => payloadOf<ReturnTakeBack>(e)),
+        giveBacks: events.filter((e) => e.event.type === 'LoyaltyReturnGaveBack').map((e) => payloadOf<ReturnGiveBack>(e)),
       };
     },
     pointsBalance: customers.pointsBalance,
@@ -8043,6 +8135,27 @@ export function loyaltyEffectsAdapter(input: {
           idempotencyKey: `loyalty-takeback-${tenantId}-${saleId}-${t.returnId}`, source: 'api/customer', payload: t,
         }) },
       ], { guard: { key: `points:${t.memberRef}`, expectedVersion } });
+    },
+    // OB-34 "A": the points a bill was paid with — read from the member's own applied-spend fact for that bill.
+    pointsSpentOnSale: async (tenantId, saleId) => {
+      const held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
+      if (held === undefined) return undefined;
+      const sale = held.event.payload as { readonly customerRef?: unknown; readonly totalMinor?: unknown };
+      if (typeof sale.customerRef !== 'string' || typeof sale.totalMinor !== 'number') return undefined;
+      const ref = spendRefFor(saleId, 'loyalty_points');
+      const fact = (await allOf<SpendApplied>(input.store, tenantId, streamName(STREAM.loyalty, 'spends', sale.customerRef), 'LoyaltySpendApplied')).find((f) => f.ref === ref);
+      if (fact === undefined || (fact.pointsApplied ?? 0) <= 0) return undefined;
+      return { memberRef: fact.memberRef, saleTotalMinor: sale.totalMinor, pointsApplied: fact.pointsApplied ?? 0, appliedMinor: fact.appliedMinor };
+    },
+    // The give-back and its points movement are ONE write under the member's points guard, like a take-back.
+    recordGiveBack: async (tenantId, saleId, g, at, expectedVersion) => {
+      await input.store.appendBatch(tenantId, [
+        ...(g.points > 0 ? [pointsEntry(tenantId, { movementId: `giveback-${g.returnId}`, customerId: g.memberRef, delta: g.points, reason: 'burn_reversal', sourceRef: `return:${g.returnId}`, at })] : []),
+        { stream: forSaleLoyalty(saleId), event: makeEvent({
+          id: `loyalty-giveback-${g.returnId}`, type: 'LoyaltyReturnGaveBack', occurredAt: at,
+          idempotencyKey: `loyalty-giveback-${tenantId}-${saleId}-${g.returnId}`, source: 'api/customer', payload: g,
+        }) },
+      ], { guard: { key: `points:${g.memberRef}`, expectedVersion } });
     },
     now: input.now,
   };
@@ -8879,6 +8992,11 @@ async function releasedIds(
   return new Set(released.map((r) => r.reservationId));
 }
 
+/** FUL-05: every door attempt on one order, indexed beside the driver's run. */
+const forOrderAttempts = (orderId: string): string => streamName(STREAM.delivery, 'order-attempts', orderId);
+export const orderAttemptsOf = (store: EventStore, tenantId: string, orderId: string): Promise<readonly DeliveryAttempt[]> =>
+  allOf<DeliveryAttempt>(store, tenantId, forOrderAttempts(orderId), 'DeliveryAttemptIndexed');
+
 export function fulfilmentAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -8886,15 +9004,27 @@ export function fulfilmentAdapter(input: {
   return {
     now: input.now,
 
+    // The run IS the stream; and (FUL-05) the same attempt is indexed on the ORDER in the same atomic batch, so the order's
+    // fulfilment reads the cash its door took without scanning every driver's every day.
     appendAttempt: async (tenantId, a) => {
-      await input.store.append(tenantId, forDriverRun(a.driverId, a.attemptedAt.slice(0, 10)), makeEvent({
-        id: `att-${a.attemptId}`,
-        type: 'DeliveryAttempted',
-        occurredAt: a.attemptedAt,
-        idempotencyKey: `att-${tenantId}-${a.attemptId}`,
-        source: 'api/fulfilment',
-        payload: a,
-      }));
+      await input.store.appendBatch(tenantId, [
+        { stream: forDriverRun(a.driverId, a.attemptedAt.slice(0, 10)), event: makeEvent({
+          id: `att-${a.attemptId}`,
+          type: 'DeliveryAttempted',
+          occurredAt: a.attemptedAt,
+          idempotencyKey: `att-${tenantId}-${a.attemptId}`,
+          source: 'api/fulfilment',
+          payload: a,
+        }) },
+        { stream: forOrderAttempts(a.orderId), event: makeEvent({
+          id: `att-order-${a.attemptId}`,
+          type: 'DeliveryAttemptIndexed',
+          occurredAt: a.attemptedAt,
+          idempotencyKey: `att-order-${tenantId}-${a.attemptId}`,
+          source: 'api/fulfilment',
+          payload: a,
+        }) },
+      ]);
     },
 
     // The run IS the stream. Settling one driver's Tuesday no longer reads every delivery the
@@ -9142,6 +9272,119 @@ export function assignmentsAdapter(input: {
     },
     wavePacked: async (tenantId, waveId) => (await waves.pack(tenantId, waveId)) !== undefined,
     routeSettled: async (tenantId, routeId) => (await runs.settlement(tenantId, routeId)) !== undefined,
+  };
+}
+
+/**
+ * FUL-14: the stored truth a substitution is decided from — the catalogue's price, the product master's attributes, the
+ * order's payment, the customer's rules (on the order, else standing) and the consents recorded per order.
+ */
+export function substitutionTruthAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly orders: Pick<OrdersDeps, 'orderPayment' | 'paymentResolution'> & { readonly placedOrder: (tenantId: string, orderId: string) => Promise<PlacedOrder | undefined> | PlacedOrder | undefined };
+  readonly approvals?: ApprovalPort;
+}): SubstitutionTruthDeps {
+  const forOrderSubs = (orderId: string): string => streamName(STREAM.orders, 'substitution-truth', orderId);
+  const forCustomerRules = (customerRef: string): string => streamName(STREAM.orders, 'substitution-rules', customerRef);
+  const pos = posAdapter(input);
+  const master = productMasterAdapter(input);
+  return {
+    ...(input.approvals === undefined ? {} : { approvals: input.approvals }),
+    product: async (tenantId, productId) => {
+      const [published, record] = await Promise.all([pos.catalogue(tenantId), master.product(tenantId, productId)]);
+      const p = published.get(productId);
+      if (p === undefined && record === undefined) return undefined;
+      return {
+        name: record?.name ?? p?.name,
+        ...(p === undefined ? {} : { unitPriceMinor: p.unitPriceMinor }),
+        ...(record === undefined ? {} : { attrs: {
+          productId, name: record.name,
+          ...(record.brand === undefined ? {} : { brand: record.brand }),
+          ...(record.primaryCategoryId === null ? {} : { categoryId: record.primaryCategoryId }),
+          // An allergen declaration only when one was made: `undefined` is "nobody has said", never "none".
+          ...(record.safety?.allergens === undefined ? {} : { allergens: record.safety.allergens.map((a) => a.trim().toLowerCase()) }),
+          ageRestricted: record.safety?.minimumAge !== undefined,
+        } }),
+      };
+    },
+    rulesFor: async (tenantId, orderId) => {
+      const own = await latest<StoredSubstitutionRules>(input.store, tenantId, forOrderSubs(orderId), 'OrderSubstitutionRulesRecorded');
+      if (own !== undefined) return own;
+      const placed = await input.orders.placedOrder(tenantId, orderId);
+      return placed?.customerRef === undefined ? undefined
+        : latest<StoredSubstitutionRules>(input.store, tenantId, forCustomerRules(placed.customerRef), 'CustomerSubstitutionRulesRecorded');
+    },
+    tenderOf: async (tenantId, orderId) => {
+      const pay = paymentPosition(await input.orders.orderPayment?.(tenantId, orderId), await input.orders.paymentResolution?.(tenantId, orderId));
+      if (pay.state === 'authorised') return 'prepaid';
+      return (await input.orders.placedOrder(tenantId, orderId))?.fulfilment === 'pickup' ? 'pay_at_store' : 'cod';
+    },
+    consents: (tenantId, orderId) => allOf<SubstitutionConsent>(input.store, tenantId, forOrderSubs(orderId), 'SubstitutionConsentRecorded'),
+    recordConsent: async (tenantId, c) => {
+      await input.store.append(tenantId, forOrderSubs(c.orderId), makeEvent({
+        id: `sub-consent-${c.orderId}-${c.lineId}-${c.substituteProductId}-${c.at}`, type: 'SubstitutionConsentRecorded', occurredAt: c.at,
+        idempotencyKey: `sub-consent-${tenantId}-${c.orderId}-${c.lineId}-${c.substituteProductId}-${c.given}-${c.at}`, source: 'api/orders', payload: c,
+      }));
+    },
+    recordOrderRules: async (tenantId, orderId, r) => {
+      await input.store.append(tenantId, forOrderSubs(orderId), makeEvent({
+        id: `sub-rules-${orderId}-${r.at}`, type: 'OrderSubstitutionRulesRecorded', occurredAt: r.at,
+        idempotencyKey: `sub-rules-${tenantId}-${orderId}-${r.at}`, source: 'api/orders', payload: r,
+      }));
+    },
+    recordCustomerRules: async (tenantId, customerRef, r) => {
+      await input.store.append(tenantId, forCustomerRules(customerRef), makeEvent({
+        id: `cust-sub-rules-${customerRef}-${r.at}`, type: 'CustomerSubstitutionRulesRecorded', occurredAt: r.at,
+        idempotencyKey: `cust-sub-rules-${tenantId}-${customerRef}-${r.at}`, source: 'api/orders', payload: r,
+      }));
+    },
+  };
+}
+
+/**
+ * FUL-05: the one fulfilment command's own records — the counted hand-back and the settlement, one stream per order — and its
+ * reads of the pack, the manifest, the door, the order and its money, the sale pipeline it banks through and the product unit.
+ */
+export function orderFulfilmentAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly holdMinutes: number;
+  readonly refundProcessor: Parameters<typeof ordersAdapter>[0]['refundProcessor'];
+}): OrderFulfilmentDeps {
+  const forOrder = (orderId: string): string => streamName(STREAM.delivery, 'fulfilment', orderId);
+  const orders = ordersAdapter({ store: input.store, now: input.now, holdMinutes: input.holdMinutes, refundProcessor: input.refundProcessor });
+  const packing = fulfilmentPackingAdapter(input);
+  const delivery = fulfilmentAdapter(input);
+  const pos = posAdapter(input);
+  return {
+    now: input.now,
+    orderState: orders.orderState, recordTransition: orders.recordTransition,
+    orderReservations: orders.orderReservations, releaseReservations: orders.releaseReservations,
+    orderPayment: orders.orderPayment, paymentResolution: orders.paymentResolution, orderRefunds: orders.orderRefunds,
+    pack: packing.pack, manifest: packing.manifest, deliveryState: delivery.deliveryState,
+    doorAttempts: (tenantId, orderId) => orderAttemptsOf(input.store, tenantId, orderId),
+    isBanked: pos.isBanked, bankSale: pos.bankSale,
+    // OB-31: the product's unit in its one spelling ('each' → 'ea', 'KG' → 'kg').
+    uomOf: async (tenantId, productId) => {
+      const unit = (await pos.catalogue(tenantId)).get(productId)?.baseUom;
+      return unit === undefined ? undefined : normaliseUom(unit) ?? unit;
+    },
+    handback: async (tenantId, orderId) => (await allOf<OrderHandback>(input.store, tenantId, forOrder(orderId), 'OrderHandbackCounted'))[0],
+    recordHandback: async (tenantId, h) => {
+      await input.store.append(tenantId, forOrder(h.orderId), makeEvent({
+        id: `order-handback-${h.orderId}`, type: 'OrderHandbackCounted', occurredAt: h.at,
+        idempotencyKey: `order-handback-${tenantId}-${h.orderId}`, source: 'api/fulfilment', payload: h,
+      }));
+    },
+    settlement: async (tenantId, orderId) => (await allOf<FulfilmentSettlement>(input.store, tenantId, forOrder(orderId), 'OrderFulfilmentSettled'))[0],
+    recordSettlement: async (tenantId, st) => {
+      await input.store.append(tenantId, forOrder(st.orderId), makeEvent({
+        id: `order-settled-${st.orderId}`, type: 'OrderFulfilmentSettled', occurredAt: st.at,
+        // One settlement per order: a second run collapses on this key (hard rule #2).
+        idempotencyKey: `order-settled-${tenantId}-${st.orderId}`, source: 'api/fulfilment', payload: st,
+      }));
+    },
   };
 }
 
@@ -10968,7 +11211,16 @@ export function dayBookAdapter(input: { readonly store: EventStore; readonly now
     returnsOn: async (tenantId, day) => {
       const { from, to } = window(day);
       const events = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from, to });
-      return events.map((e) => payloadOf<ReturnRecord>(e)).filter((r) => r.processedAt.slice(0, 10) === day);
+      const returns = events.map((e) => payloadOf<ReturnRecord>(e)).filter((r) => r.processedAt.slice(0, 10) === day);
+      // OB-34 "A": the value of the points each return gave back to the member (head office's give-back fact, on the
+      // sale's loyalty stream) rides on the return, so the day book reverses the whole returned value.
+      return Promise.all(returns.map(async (r) => {
+        if (r.originalSaleId === null) return r;
+        const given = (await input.store.readStream(tenantId, streamName(STREAM.loyalty, 'sale', r.originalSaleId)))
+          .filter((e) => e.event.type === 'LoyaltyReturnGaveBack').map((e) => payloadOf<ReturnGiveBack>(e))
+          .find((g) => g.returnId === r.returnId);
+        return given === undefined || given.valueMinor <= 0 ? r : { ...r, pointsGivenBackMinor: given.valueMinor };
+      }));
     },
     originalSales: async (tenantId, saleIds) => {
       const out = new Map<string, DayBookSale>();

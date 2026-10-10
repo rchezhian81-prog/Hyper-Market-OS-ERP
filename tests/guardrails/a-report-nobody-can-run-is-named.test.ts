@@ -227,10 +227,11 @@ describe('a figure that cannot be worked out says so where the number would be',
     expect(builder).toMatch(/cogs \+= lineCostMinor\(unit, line\)/);
     expect(builder, 'the payload works the cost out for itself again').not.toMatch(/quantityMinor\) \/ 1000/);
 
-    // And the one implementation branches on the UOM, which is the thing the copy dropped.
+    // And the one implementation goes by the UOM, which is the thing the copy dropped — since OB-31 "A" through the one
+    // quantity rule (grams of a kg product ÷ 1000, a gram product ÷ 1, an item × 1).
     const read = readFileSync('edge/store-edge/src/read-model.ts', 'utf8');
     const helper = code(read).slice(code(read).indexOf('export function lineCostMinor'));
-    expect(helper.slice(0, 300)).toMatch(/uom === 'kg' \|\| line\.uom === 'g'/);
+    expect(helper.slice(0, 400)).toMatch(/valueAtUnitCost\(line\.quantityMinor, line\.uom/);
   });
 
   it('tripwire — the detector fires on the shape it exists to catch', () => {

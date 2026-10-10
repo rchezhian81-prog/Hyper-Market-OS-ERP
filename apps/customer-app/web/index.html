@@ -212,6 +212,11 @@
         <p class="say" id="order-say">—</p>
         <!-- Shown only while a basket is prepared and NOT sent: one tap re-sends the SAME order. -->
         <button id="send-now" class="primary wide" type="button" hidden>Send my order now</button>
+        <!-- FUL-07: the shop could not promise everything — the customer decides before anything is charged. -->
+        <button id="pay-available" class="primary wide" type="button" hidden>Pay for what the shop has</button>
+        <button id="cancel-order" class="wide" type="button" hidden>Cancel the order</button>
+        <!-- FUL-03: a payment the bank has not confirmed yet — ask the shop to check with the provider again. -->
+        <button id="check-payment" class="wide" type="button" hidden>Check my payment</button>
       </section>
 
       <!--

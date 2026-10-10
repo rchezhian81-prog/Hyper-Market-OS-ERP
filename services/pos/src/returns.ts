@@ -30,6 +30,8 @@ import {
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { approvalIdIn, namedApproverRefusal, takeRefundApproval, type ApprovalUse, type RefundApprovalState } from './refund-approvals';
 import { lotsOfReturn, lotProblemWords } from '../../../packages/returns/src/return-lots';
+import { returnedValueAtOriginalPrices } from '../../../packages/returns/src/exchange';
+import { refundRoomOutsidePoints } from '../../../packages/loyalty/src/wallet';
 import type { HeldReturnedStock } from './sale-stock';
 import { approvalSealFlags, cashierSealFlags, stampIn } from './store-seal';
 
@@ -129,8 +131,10 @@ export interface ReturnsDeps {
   readonly refundApproval?: (tenantId: string, approvalId: string) => Promise<RefundApprovalState | undefined> | RefundApprovalState | undefined;
   /** The key head office checks the store computer's seal with (ADR-0023) — on a synced refund. Absent → not checked. */
   readonly tillSealKey?: Buffer;
-  /** What a recorded return does to the sale's loyalty points (PF-09-a): takes back in proportion, idempotent per return. */
-  readonly loyaltyOnReturn?: (tenantId: string, saleId: string, returnId: string, refundMinor: number) => Promise<unknown>;
+  /** What a recorded return does to the sale's loyalty points (PF-09-a): takes back in proportion, idempotent per return.
+   *  `returned` (OB-34 "A") is the goods coming back at the bill's own prices, and whether it is an exchange — the points
+   *  the member paid with come back in proportion to those goods (an exchange credits them in full instead). */
+  readonly loyaltyOnReturn?: (tenantId: string, saleId: string, returnId: string, refundMinor: number, returned?: { readonly valueMinor: number; readonly exchange: boolean }) => Promise<unknown>;
   /** The tenant's refund approval threshold (M13-FR-03) — `undefined` means none set, so the default
    *  (0 — every refund needs a §28 approver) applies. Sourced SERVER-SIDE: the caller cannot declare
    *  their own threshold in the body and call a refund "immaterial". */
@@ -305,10 +309,13 @@ const moneyOutOf = (s: SyncedReturn): number =>
   s.exchange === undefined ? s.refundMinor : (s.exchange.balance === 'refund' ? s.exchange.balanceMinor : 0);
 
 /** Loyalty after a recorded return (PF-09-a): never fails the refund — a fault is said on the reply (P-08). */
-async function loyaltyAfterReturn(deps: ReturnsDeps, tenantId: string, saleId: string, returnId: string, refundMinor: number): Promise<unknown> {
+async function loyaltyAfterReturn(
+  deps: ReturnsDeps, tenantId: string, saleId: string, returnId: string, refundMinor: number,
+  returned?: { readonly valueMinor: number; readonly exchange: boolean },
+): Promise<unknown> {
   if (deps.loyaltyOnReturn === undefined) return undefined;
   try {
-    return await deps.loyaltyOnReturn(tenantId, saleId, returnId, refundMinor);
+    return await deps.loyaltyOnReturn(tenantId, saleId, returnId, refundMinor, returned);
   } catch (err) {
     return { outcome: 'not_recorded', detail: `The refund is recorded, but its loyalty points were not taken back: ${err instanceof Error ? err.message : String(err)}.` };
   }
@@ -383,6 +390,22 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           });
         }
         const request: ReturnRequest = { ...unnamed, lines: lots.lines, processedBy: ctx.userId, approvalThresholdMinor: thresholdMinor, processedAt, ...(approvedBy === undefined ? {} : { approvedBy }) };
+        // A bill partly paid with POINTS (PF-09 step 3 · OB-34 "A"): the money side of a refund is the MONEY SHARE of the
+        // goods coming back — the points share goes back to the member as points. The same cap the store computer applies
+        // before its disk; here no money has moved, so more is refused, in words.
+        const returnedValueMinor = returnedValueAtOriginalPrices(sale, request.lines);
+        const pointsRoom = refundRoomOutsidePoints({
+          totalMinor: sale.totalMinor, tenders: sale.tenders, priorRefundsMinor: alreadyRefundedMinor(saleId, priorRefunds),
+          returnedValueMinor: returnedValueAtOriginalPrices(sale, [...priorReturns.flatMap((r) => r.lines), ...request.lines]),
+        });
+        if (pointsRoom !== undefined && request.refundMinor > pointsRoom) {
+          throw apiError(422, {
+            code: 'refund_includes_points',
+            whatHappened: `Part of this bill was paid with loyalty points, which cannot be given back as money — the member gets those points back instead. At most ₹${(pointsRoom / 100).toFixed(2)} can be refunded for these goods.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: `Refund at most ₹${(pointsRoom / 100).toFixed(2)}. No money has moved.`,
+          });
+        }
 
         // Return eligibility (M13-FR-02): the shop takes goods back only within its return window. The
         // window is the OWNER's policy (AVR-07) — enforced only once it is set; until then a return is not
@@ -519,7 +542,7 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           correlationId: request.returnId,
         });
 
-        const loyalty = await loyaltyAfterReturn(deps, ctx.tenantId, saleId, request.returnId, request.refundMinor);
+        const loyalty = await loyaltyAfterReturn(deps, ctx.tenantId, saleId, request.returnId, request.refundMinor, { valueMinor: returnedValueMinor, exchange: false });
         return {
           status: 201,
           body: {
@@ -824,7 +847,9 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           },
           correlationId: record.returnId,
         });
-        const loyalty = await loyaltyAfterReturn(deps, ctx.tenantId, saleId, s.returnId, s.refundMinor);
+        // OB-34: the goods coming back, at the bill's own prices — what the points the member paid with come back against.
+        const returned = sale === undefined ? undefined : { valueMinor: returnedValueAtOriginalPrices(sale, s.lines), exchange: s.exchange !== undefined };
+        const loyalty = await loyaltyAfterReturn(deps, ctx.tenantId, saleId, s.returnId, s.refundMinor, returned);
         // 202: the refund happened and is now reconciled; a §28 breach is surfaced as an exception, not a refusal.
         return { status: 202, body: { returnId: s.returnId, reconciled: true, flags, ...(loyalty === undefined ? {} : { loyalty }) } };
       },

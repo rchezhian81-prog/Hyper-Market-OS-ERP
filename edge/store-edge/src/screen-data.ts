@@ -40,7 +40,7 @@
 //                      backwards trace both work with the cable out
 
 import type { SyncOutbox } from '../../../packages/sync/src/outbox';
-import { isUom } from '../../../packages/contracts/src/quantity';
+import { isUom, normaliseUom } from '../../../packages/contracts/src/quantity';
 import { assessChecklist } from '../../../packages/workforce/src/index';
 import type { LpRule } from '../../../packages/loss-prevention/src/index';
 import { planDispatch, type DispatchPlan } from '../../../packages/fulfilment/src/routing';
@@ -244,7 +244,7 @@ export function unsellableProducts(pack: StorePack, cataloguePack?: SignedPack):
     if (p.recallBlock === true || m?.recallBlocked === true) named('recall_block', 'recall block set on the catalogue — refused at the till by name');
     else if (p.taxBps === undefined) named('no_tax_rate', 'no tax rate on the catalogue');
     else if (status === undefined) named('no_status', 'no status on the catalogue');
-    else if (!isUom(p.uom)) named('unknown_uom', `unknown unit of measure "${p.uom}" on the catalogue`);
+    else if (!isUom(normaliseUom(p.uom) ?? p.uom)) named('unknown_uom', `unknown unit of measure "${p.uom}" on the catalogue`);
     else if (!LANE_SELLS.has(status)) named('not_on_sale', `status "${status}" on the catalogue — refused at the till`);
   }
   return rows;

@@ -56,7 +56,8 @@ describe('the B2B customer portal (M22-FR-04, §35)', () => {
     const h = await cast();
     const account = await get(h, '/v1/b2b-portal/me/account', CAT);
     expect(account.status).toBe(200);
-    expect(account.body).toMatchObject({ customerId: 'CATERER', hasCreditAccount: true, creditLimitMinor: 500_000, outstandingMinor: 100_000, availableCreditMinor: 400_000 });
+    // FUL-09: the 30,000 received moved the AR balance too (100,000 − 30,000) — a collection is money off what is owed.
+    expect(account.body).toMatchObject({ customerId: 'CATERER', hasCreditAccount: true, creditLimitMinor: 500_000, outstandingMinor: 70_000, availableCreditMinor: 430_000 });
 
     const invoices = (await get(h, '/v1/b2b-portal/me/invoices', CAT)).body as { customerId: string; invoices: { number: string; settledMinor: number; outstandingMinor: number }[]; outstandingMinor: number };
     expect(invoices.customerId).toBe('CATERER');

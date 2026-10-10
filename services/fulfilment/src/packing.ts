@@ -24,6 +24,7 @@
 // Recording gated `fulfilment.pack.record`; the reads `fulfilment.pack.read`. Append-only.
 
 import type { Route } from '../../kernel/src/index';
+import { fulfilmentAfter } from './index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   packOrder, dispatchOrder,
@@ -125,6 +126,8 @@ export interface FulfilmentPackingDeps {
   readonly recordPack: (tenantId: string, orderId: string, result: PackResult, key: string) => Promise<void> | void;
   readonly manifest: (tenantId: string, orderId: string) => Promise<Manifest | undefined> | Manifest | undefined;
   readonly recordDispatch: (tenantId: string, orderId: string, manifest: Manifest, key: string) => Promise<void> | void;
+  /** FUL-05: run the one fulfilment command for the order once this fact is recorded. Never fails the fact: a fault is said. */
+  readonly afterOrderFact?: (tenantId: string, orderId: string, by: string) => Promise<unknown>;
   readonly now: () => string;
 }
 
@@ -239,7 +242,8 @@ export function fulfilmentPackingRoutes(deps: FulfilmentPackingDeps): readonly R
         };
         // Recorded even when some lines are refused — the pack is the honest record of what can be sent.
         await deps.recordPack(ctx.tenantId, orderId, result, packDigest(result));
-        return { status: 200, body: result };
+        const fulfilment = await fulfilmentAfter(deps.afterOrderFact, ctx.tenantId, orderId, ctx.userId);
+        return { status: 200, body: fulfilment === undefined ? result : { ...result, fulfilment } };
       },
     },
     {
@@ -298,7 +302,8 @@ export function fulfilmentPackingRoutes(deps: FulfilmentPackingDeps): readonly R
           });
         }
         await deps.recordDispatch(ctx.tenantId, orderId, result.manifest!, result.manifest!.manifestId);
-        return { status: 200, body: result };
+        const fulfilment = await fulfilmentAfter(deps.afterOrderFact, ctx.tenantId, orderId, ctx.userId);
+        return { status: 200, body: fulfilment === undefined ? result : { ...result, fulfilment } };
       },
     },
     {

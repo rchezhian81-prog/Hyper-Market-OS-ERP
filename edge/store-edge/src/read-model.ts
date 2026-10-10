@@ -24,6 +24,7 @@
 import { evaluateLossPrevention, type ActivityEvent, type LpException, type LpRule } from '../../../packages/loss-prevention/src/index';
 import type { SaleFact } from '../../../packages/reporting/src/index';
 import type { PackProduct } from './store-pack';
+import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 
 /** One sale as it was written to this box's disk by a lane (see `apps/pos/src/session.ts`). */
 export interface LoggedSale {
@@ -147,9 +148,9 @@ export type SoldLine = { readonly productId: string; readonly quantityMinor: num
  * Integer arithmetic throughout — never a float (§29.1).
  */
 export function lineCostMinor(unitCostMinor: number, line: SoldLine): number {
-  return line.uom === 'kg' || line.uom === 'g'
-    ? Math.round((unitCostMinor * line.quantityMinor) / 1000)
-    : unitCostMinor * line.quantityMinor;
+  // OB-31 "A": grams of a kg product at a cost per kg (÷ 1000), millilitres at a cost per litre, a gram product at its cost
+  // per gram (÷ 1) — one rule, rounded once, half up (`valueAtUnitCost`).
+  return valueAtUnitCost(line.quantityMinor, line.uom ?? 'ea', unitCostMinor);
 }
 
 /**

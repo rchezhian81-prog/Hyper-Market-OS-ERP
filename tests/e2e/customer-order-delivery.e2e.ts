@@ -8,6 +8,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 import { beginOtpChallenge, verifyOtp, type OtpChallenge } from '../../packages/identity/src/index';
 import { createOtpSimulator } from '../support/otp-simulator';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
+import { testModePaymentProvider, type TestModePaymentProvider } from '../../packages/orders/src/payment-verification';
 
 /**
  * **A real customer, in a real browser, places a real order that the cloud then holds** (M20-FR-03,
@@ -147,11 +148,24 @@ async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string;
   });
 }
 
+// FUL-03: the test-mode payment provider. The provider's sheet in the browser hands the app a token (`shopPaymentRef`);
+// the test, standing in for the bank, registers the capture — the app's own "authorised" never makes it paid.
+let provider: TestModePaymentProvider;
+const PAY_REF = 'tok_e2e_1';
 async function seededApi(): Promise<ApiHarness> {
-  const h = apiHarness();
+  provider = testModePaymentProvider();
+  const h = apiHarness({ paymentVerifier: provider });
   await h.seedOwner(T, OWNER);
   await h.enableFeature(T, 'customer_app');
   await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: OWNER, tenantId: T, idempotencyKey: 'mv-1', body: { movementId: 'mv-1', productId: 'MILK', locationId: 'L1', kind: 'received', quantityMinor: 5, uom: 'each', occurredAt: AT, enteredBy: OWNER } });
+  // The shop's own figures its quote is made from (FUL-03): milk at ₹60 for L1, and a ₹40 delivery fee.
+  const today = new Date().toISOString().slice(0, 10);
+  const ok = async (path: string, body: unknown, key: string) => expect((await h.request({ method: 'POST', path, userId: OWNER, tenantId: T, idempotencyKey: key, body })).status, path).toBeLessThan(300);
+  await ok('/v1/catalogue/tax-classes/0401/rates/2017-07-01', { rateBps: 0 }, 'tax');
+  await ok('/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Aavin Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active' }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }, 'pub');
+  await ok('/v1/prices/list/MILK/entries/e1', { scope: 'store', scopeRef: 'L1', priceMinor: 60_00, mrpMinor: 70_00, costMinor: 40_00, marginFloorBps: 0, currency: 'INR', effectiveFrom: today }, 'price');
+  await ok('/v1/catalogue/pack', { storeId: 'L1', asOf: today }, 'pack');
+  await ok('/v1/serviceability/periods/2026-01-01', { radiusMetres: 10_000, deliveryFeeMinor: 40_00 }, 'svc');
   return h;
 }
 
@@ -160,6 +174,8 @@ const ordersOf = async (h: ApiHarness) =>
 
 /** Drive the customer up to the moment of paying: one milk in the basket, checked, slot chosen, located, signed in. */
 async function readyToPay(page: Page, base: string, sms: ReturnType<typeof createOtpSimulator>): Promise<void> {
+  // The provider's own payment sheet gives the app its token (no card data ever touches the app — hard rule #3).
+  await page.addInitScript((ref) => { (globalThis as unknown as { shopPaymentRef?: string }).shopPaymentRef = ref; }, PAY_REF);
   await page.goto(`${base}/`, { waitUntil: 'load' });
   // The real shop (not the sample) — the bundle read `window.shopData` and attached `window.shop`.
   await page.waitForFunction(() => (globalThis as unknown as { document: { getElementById(id: string): { hidden: boolean } | null } }).document.getElementById('sample')?.hidden === true, undefined, { timeout: 10_000 });
@@ -204,6 +220,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       expect(rec.grantedCustomerRole).toBe(1);
       expect(rec.apiCalls).toHaveLength(0); // nothing has gone to the shop before Pay
 
+      provider.capture(PAY_REF, 60_00 + 40_00); // the bank captured exactly the shop's quote
       await page.click('#pay');
       await page.waitForSelector('#view-order:not([hidden])', { timeout: 15_000 });
       const said = await page.locator('#order-say').textContent();
@@ -236,6 +253,30 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
     }
   }, 60_000);
 
+  it('FUL-03/FUL-07: the app\'s own "paid" is not enough — the screen says WAITING until the provider confirms, and "Check my payment" shows the shop\'s answer', async () => {
+    const h = await seededApi();
+    const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
+    const store = await startStore(h, rec);
+    const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
+    const page = await context.newPage();
+    try {
+      await readyToPay(page, store.base, store.sms);
+      await page.click('#pay'); // the provider has captured nothing
+      await page.waitForSelector('#view-order:not([hidden])', { timeout: 15_000 });
+      expect(await page.locator('#order-say').textContent()).toMatch(/waiting on your bank/);
+      expect(await page.locator('#order-say').textContent()).not.toMatch(/confirmed and will be picked/);
+      expect((await ordersOf(h))[0]).toMatchObject({ payment: { state: 'pending', paidMinor: 0 } });
+      await page.click('#banner-ok');
+      provider.capture(PAY_REF, 60_00 + 40_00);
+      await page.click('#check-payment');
+      await page.locator('#order-say', { hasText: 'confirmed and will be picked' }).waitFor({ timeout: 15_000 });
+      expect((await ordersOf(h))[0]).toMatchObject({ payment: { state: 'authorised', paidMinor: 60_00 + 40_00 } });
+    } finally {
+      await context.close();
+      await store.stop();
+    }
+  }, 60_000);
+
   it('with the connection cut at the moment of paying: NOT SENT, nothing charged — and the same order goes once, by itself, when the connection returns', async () => {
     const h = await seededApi();
     const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
@@ -254,6 +295,7 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       expect(await page.locator('#send-now').getAttribute('hidden')).toBeNull(); // one tap would re-send
       expect(rec.apiCalls).toHaveLength(0); // nothing reached the shop
       expect(await ordersOf(h)).toHaveLength(0);
+      provider.capture(PAY_REF, 60_00 + 40_00);
 
       // The connection returns: the prepared basket goes by itself — once.
       await context.setOffline(false);
