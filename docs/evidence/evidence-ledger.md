@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 1022. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 1024. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 80 · Real PostgreSQL 65 · Browser (stub cloud) 45 · Browser (connected) 6 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 24 · ENGINE_ONLY 1 · INTEGRATION_TESTED 16 · PARTIALLY_WIRED 52 · WIRED 11.
 - Labels that do NOT hold: none.
@@ -33,9 +33,9 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M04 | WIRED | 7 | 7 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M05 | E2E_VERIFIED | 13 | 17 | 3 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M06 | E2E_VERIFIED | 11 | 15 | 5 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M07 | E2E_VERIFIED | 9 | 22 | 4 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M07 | E2E_VERIFIED | 9 | 24 | 5 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M08 | E2E_VERIFIED | 14 | 35 | 9 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M09 | E2E_VERIFIED | 12 | 23 | 4 | 6 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M09 | E2E_VERIFIED | 12 | 24 | 4 | 6 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M10 | E2E_VERIFIED | 20 | 21 | 3 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M11 | INTEGRATION_TESTED | 4 | 5 | 1 | 1 | · | · | · | ✓ an integration test cites it |
 | M12 | E2E_VERIFIED | 15 | 22 | 4 | 10 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
@@ -142,7 +142,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **M04** — browser: `merchandising-count-and-refill.e2e.ts`
 - **M05** — browser: `catalogue-price-change-delivery.e2e.ts`, `catalogue-promotion-launch-delivery.e2e.ts`, `pricing-promotions-menu-links.e2e.ts`, `the-served-till-gives-the-launched-offer.e2e.ts` · real PostgreSQL: `one-customer.test.ts`, `the-load-command-runs.test.ts`, `the-store-trades-a-day.test.ts`
 - **M06** — browser: `buying-po-delivery.e2e.ts`, `suppliers-delivery.e2e.ts` · real PostgreSQL: `a-receipt-is-judged-against-what-is-left-on-the-order.test.ts`, `an-order-names-its-store.test.ts`, `maker-checker-is-two-people.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-store-buys-what-it-sells.test.ts`
-- **M07** — browser: `goods-receipt-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `warehouse-handheld-delivery.e2e.ts`, `warehouse-handheld-syncs-through-the-box.e2e.ts` · real PostgreSQL: `a-receipt-is-judged-against-what-is-left-on-the-order.test.ts`, `an-order-names-its-store.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-store-buys-what-it-sells.test.ts`
+- **M07** — browser: `goods-receipt-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `warehouse-handheld-delivery.e2e.ts`, `warehouse-handheld-syncs-through-the-box.e2e.ts` · real PostgreSQL: `a-receipt-is-judged-against-what-is-left-on-the-order.test.ts`, `an-order-names-its-store.test.ts`, `store-acceptance-journey.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-store-buys-what-it-sells.test.ts`
 - **M08** — browser: `indents-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `stock-health-delivery.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`, `floor-indents-handheld-issue.test.ts`, `inventory-branch-scope.test.ts`, `production-moves-ordinary-stock.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-store-buys-what-it-sells.test.ts`, `the-till-exchanges.test.ts`, `the-till-returns-without-a-receipt.test.ts`, `write-guards-on-postgresql.test.ts`
 - **M09** — browser: `indents-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `warehouse-handheld-delivery.e2e.ts`, `warehouse-handheld-issues-to-floor.e2e.ts`, `warehouse-handheld-syncs-through-the-box.e2e.ts`, `warehouse-supervisor-delivery.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`, `floor-indents-handheld-issue.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-store-buys-what-it-sells.test.ts`
 - **M10** — browser: `expiry-recall-delivery.e2e.ts`, `unsellable-screen.e2e.ts`, `warehouse-handheld-delivery.e2e.ts` · real PostgreSQL: `fulfilment-packing.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-store-buys-what-it-sells.test.ts`

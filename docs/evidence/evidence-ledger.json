@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1022,
+  "testFiles": 1024,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -426,8 +426,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 22,
-        "realDb": 4,
+        "integration": 24,
+        "realDb": 5,
         "browser": 4,
         "connected": 0,
         "device": 0,
@@ -446,6 +446,7 @@
           "tests/unit/supplier-account-fold.test.ts"
         ],
         "integration": [
+          "tests/integration/a-phone-receipt-is-counted-costed-and-put-away.test.ts",
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
@@ -460,6 +461,7 @@
           "tests/integration/purchase-capture-match.test.ts",
           "tests/integration/purchase-invoice-reconcile.test.ts",
           "tests/integration/receipt-excess-held.test.ts",
+          "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-account.test.ts",
           "tests/integration/supplier-master.test.ts",
           "tests/integration/supplier-portal.test.ts",
@@ -472,6 +474,7 @@
         "realDb": [
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/an-order-names-its-store.test.ts",
+          "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
@@ -582,7 +585,7 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 12,
-        "integration": 23,
+        "integration": 24,
         "realDb": 4,
         "browser": 6,
         "connected": 0,
@@ -605,6 +608,7 @@
           "tests/unit/warehouse-transfers.test.ts"
         ],
         "integration": [
+          "tests/integration/a-phone-receipt-is-counted-costed-and-put-away.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/bin-counts-synced-route.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
