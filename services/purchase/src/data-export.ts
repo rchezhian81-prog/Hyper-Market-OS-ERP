@@ -60,11 +60,121 @@ export interface DataExportDeps extends DataExportAuditDeps {
  *     whom), gated `purchase.import.read`.
  * Every value is emitted as text for an open CSV; a missing optional is blank, never invented.
  */
+/** A sale as the export reads it — the sales ledger's own record (SF-10). */
+export interface ExportSale {
+  readonly saleId: string; readonly receiptNumber: string; readonly tradingDay: string; readonly committedAt: string;
+  readonly locationId?: string; readonly laneId: string; readonly cashierId: string; readonly totalMinor: number;
+  readonly tenders: readonly { readonly kind: string; readonly amountMinor: number }[]; readonly customerRef?: string;
+}
+/** A stock position as the export reads it — the stock ledger's availability fold. */
+export interface ExportStockRow { readonly productId: string; readonly locationId: string; readonly onHandMinor: number }
+/** A supplier as the export reads it — the supplier master. */
+export interface ExportSupplier {
+  readonly supplierId: string; readonly name: string; readonly gstin: string | null; readonly phone: string | null; readonly email: string | null;
+  readonly address: string | null; readonly paymentTermsDays: number | null; readonly status: string; readonly approvedBy: string | null;
+}
+/** One journal line as the export reads it — the finance ledger. */
+export interface ExportJournal {
+  readonly entryId: string; readonly period: string; readonly documentDate: string; readonly narrative: string; readonly postedBy: string;
+  readonly lines: readonly { readonly accountCode: string; readonly debitMinor: number; readonly creditMinor: number }[];
+}
+
+/**
+ * The EXPORT COVERAGE REGISTER (audit SF-10 · M30-FR-02 · P-06): every business-data domain, and whether the shop can
+ * take it out through the governed export (`exported`) or not yet (`not_yet`, with why and where it is planned). A
+ * guardrail checks that every `exported` entry is a registered domain, so the register cannot claim coverage the
+ * engine does not give.
+ */
+export const EXPORT_COVERAGE: readonly { readonly domain: string; readonly module: string; readonly status: 'exported' | 'not_yet'; readonly exportDomain?: string; readonly why?: string }[] = [
+  { domain: 'Product master', module: 'M03', status: 'exported', exportDomain: 'products' },
+  { domain: 'Import loads (what was loaded, by whom)', module: 'M30', status: 'exported', exportDomain: 'import-commits' },
+  { domain: 'Sales (bills and how they were paid)', module: 'M12/M13', status: 'exported', exportDomain: 'sales' },
+  { domain: 'Stock on hand by store', module: 'M08', status: 'exported', exportDomain: 'stock-on-hand' },
+  { domain: 'Supplier master', module: 'M06/M24', status: 'exported', exportDomain: 'suppliers' },
+  { domain: 'Ledger journals', module: 'M23', status: 'exported', exportDomain: 'ledger-journals' },
+  { domain: 'Purchase orders', module: 'M06', status: 'not_yet', why: 'needs the purchase-order read model on the export engine — the next adapter' },
+  { domain: 'Customers and consent', module: 'M16', status: 'not_yet', why: 'personal data: a customer\'s own copy is the access/export request (FUL-06); a bulk export needs the owner\'s decision on who may take it' },
+  { domain: 'Loyalty points and store credit', module: 'M17', status: 'not_yet', why: 'member codes are pseudonymous; the export shape is with the loyalty liability work' },
+  { domain: 'Online orders', module: 'M18', status: 'not_yet', why: 'needs a tenant-wide order index on the export engine' },
+  { domain: 'Payroll and attendance', module: 'M26', status: 'not_yet', why: 'sensitive personal data — needs a per-column classification agreed with the owner before any export' },
+];
+
 export function buildExportDomains(sources: {
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
   readonly importCommits: (tenantId: string) => Promise<readonly ImportCommitRecord[]> | readonly ImportCommitRecord[];
+  /** SF-10: the further governed domains. Each optional — absent, the domain is not offered (never an empty file). */
+  readonly sales?: (tenantId: string) => Promise<readonly ExportSale[]>;
+  readonly stock?: (tenantId: string) => Promise<readonly ExportStockRow[]>;
+  readonly suppliers?: (tenantId: string) => Promise<readonly ExportSupplier[]>;
+  readonly journals?: (tenantId: string) => Promise<readonly ExportJournal[]>;
 }): readonly ExportDomainSource[] {
+  const more: ExportDomainSource[] = [];
+  if (sources.sales !== undefined) {
+    const sales = sources.sales;
+    more.push({
+      spec: {
+        domain: 'sales', requires: 'reporting.report.read', branchColumn: 'store',
+        columns: [
+          { name: 'saleId', type: 'text' }, { name: 'receiptNumber', type: 'text' }, { name: 'tradingDay', type: 'date' },
+          { name: 'committedAt', type: 'date' }, { name: 'store', type: 'text', description: 'The store (location) the bill was rung at.' },
+          { name: 'lane', type: 'text' }, { name: 'cashier', type: 'text' }, { name: 'totalMinor', type: 'integer', description: 'Bill total in paise, GST included.' },
+          { name: 'tenders', type: 'text', description: 'kind:amount pairs, e.g. cash:5000;card:50000.' },
+          { name: 'memberRef', type: 'text', sensitive: true, description: 'The loyalty member code (pseudonymous) — redacted without export.sensitive.' },
+        ],
+      },
+      rows: async (t) => (await sales(t)).map((x) => ({
+        saleId: x.saleId, receiptNumber: x.receiptNumber, tradingDay: x.tradingDay, committedAt: x.committedAt, store: x.locationId ?? '',
+        lane: x.laneId, cashier: x.cashierId, totalMinor: String(x.totalMinor), tenders: x.tenders.map((d) => `${d.kind}:${d.amountMinor}`).join(';'),
+        memberRef: x.customerRef ?? '',
+      })),
+    });
+  }
+  if (sources.stock !== undefined) {
+    const stock = sources.stock;
+    more.push({
+      spec: {
+        domain: 'stock-on-hand', requires: 'inventory.availability.read', branchColumn: 'store',
+        columns: [{ name: 'productId', type: 'text' }, { name: 'store', type: 'text' }, { name: 'onHandMinor', type: 'integer', description: 'In the product\'s base unit (grams for weighed goods, OB-31).' }],
+      },
+      rows: async (t) => (await stock(t)).map((r) => ({ productId: r.productId, store: r.locationId, onHandMinor: String(r.onHandMinor) })),
+    });
+  }
+  if (sources.suppliers !== undefined) {
+    const suppliers = sources.suppliers;
+    more.push({
+      spec: {
+        domain: 'suppliers', requires: 'supplier.view',
+        columns: [
+          { name: 'supplierId', type: 'text' }, { name: 'name', type: 'text' }, { name: 'gstin', type: 'text' },
+          { name: 'phone', type: 'text', sensitive: true }, { name: 'email', type: 'text', sensitive: true }, { name: 'address', type: 'text', sensitive: true },
+          { name: 'paymentTermsDays', type: 'integer' }, { name: 'status', type: 'enum', description: 'proposed | active.' }, { name: 'approvedBy', type: 'text' },
+        ],
+      },
+      rows: async (t) => (await suppliers(t)).map((x) => ({
+        supplierId: x.supplierId, name: x.name, gstin: x.gstin ?? '', phone: x.phone ?? '', email: x.email ?? '', address: x.address ?? '',
+        paymentTermsDays: x.paymentTermsDays === null ? '' : String(x.paymentTermsDays), status: x.status, approvedBy: x.approvedBy ?? '',
+      })),
+    });
+  }
+  if (sources.journals !== undefined) {
+    const journals = sources.journals;
+    more.push({
+      spec: {
+        domain: 'ledger-journals', requires: 'finance.period.read',
+        columns: [
+          { name: 'entryId', type: 'text' }, { name: 'period', type: 'text' }, { name: 'documentDate', type: 'date' }, { name: 'account', type: 'text' },
+          { name: 'debitMinor', type: 'integer' }, { name: 'creditMinor', type: 'integer' }, { name: 'narrative', type: 'text' }, { name: 'postedBy', type: 'text' },
+        ],
+      },
+      // One row per journal LINE — the shape any accounting package imports.
+      rows: async (t) => (await journals(t)).flatMap((j) => j.lines.map((l) => ({
+        entryId: j.entryId, period: j.period, documentDate: j.documentDate, account: l.accountCode,
+        debitMinor: String(l.debitMinor), creditMinor: String(l.creditMinor), narrative: j.narrative, postedBy: j.postedBy,
+      }))),
+    });
+  }
   return [
+    ...more,
     {
       spec: {
         domain: 'products',
@@ -193,6 +303,16 @@ export function dataExportRoutes(deps: DataExportDeps): readonly Route[] {
           status: 200,
           body: { domain: source.spec.domain, csv: result.csv, schema: result.schema, audit: result.audit },
         };
+      },
+    },
+    {
+      // COVERAGE (SF-10) — every business-data domain and whether it can be taken out here yet, with why not. No data.
+      api: 'API-03', method: 'GET', path: '/v1/export/coverage',
+      permission: 'export.read',
+      handler: () => {
+        const offered = new Set(deps.domains.map((d) => d.spec.domain));
+        const register = EXPORT_COVERAGE.map((c) => ({ ...c, offeredHere: c.exportDomain !== undefined && offered.has(c.exportDomain) }));
+        return { status: 200, body: { coverage: register, exported: register.filter((c) => c.offeredHere).length, notYet: register.filter((c) => c.status === 'not_yet').length, asAt: deps.now() } };
       },
     },
     {
