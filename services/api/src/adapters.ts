@@ -8024,13 +8024,14 @@ export function customerAdapter(input: {
 
     appendConsent: async (tenantId, r) => {
       await input.store.append(tenantId, forCustomer(r.customerId), makeEvent({
-        id: `consent-${r.customerId}-${r.recordedAt}`,
+        id: `consent-${r.customerId}-${r.purpose}-${r.channel}-${r.given ? 'given' : 'withdrawn'}-${r.recordedAt}`,
         type: 'ConsentRecorded',
         occurredAt: r.recordedAt,
         // Time is part of the key: consent given, withdrawn and given again is three facts about
         // the same customer, purpose and channel, and the middle one is the one a regulator asks
-        // about. A key without the timestamp would keep only the first and call the rest replays.
-        idempotencyKey: `consent-${tenantId}-${r.customerId}-${r.purpose}-${r.channel}-${r.recordedAt}`,
+        // about. A key without the timestamp would keep only the first and call the rest replays. The direction
+        // is in the key too: a withdrawal in the same millisecond as the grant is a second fact, not a replay.
+        idempotencyKey: `consent-${tenantId}-${r.customerId}-${r.purpose}-${r.channel}-${r.given ? 'given' : 'withdrawn'}-${r.recordedAt}`,
         source: 'api/customer',
         payload: r,
       }));
