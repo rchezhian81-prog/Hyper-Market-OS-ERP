@@ -176,13 +176,8 @@ export {
   type TenantBootstrapPlanOk, type TenantBootstrapRefused,
 } from './tenant-bootstrap';
 
-// GT-05 (MG-07): history and attachments — kept under their legacy ids, read-only, reconciled per kind, hash-checked.
-export {
-  planHistoryLoad, executeHistoryLoad, readBackHistory, historyDocumentProblems, attachmentProblems, sha256Hex,
-  HISTORY_KINDS, ATTACHMENT_CONTENT_TYPES, MAX_ATTACHMENT_BYTES,
-  type HistoryKind, type ExtractHistory, type ExtractHistoryDocument, type ExtractAttachment, type HistoryControlTotal,
-  type HistoryPlan, type HistoryRequest, type HistoryLoadReport, type HistoryReadBack, type HistoryCheckLine,
-} from './history-load';
+// GT-05 (MG-07): history and attachments live in './history-load' — imported from there directly, not re-exported here,
+// because they hash file bytes with node:crypto and this barrel is bundled into the browser apps.
 
 // GT-05 (MG-08 "open orders"): purchase orders open on the old system at cutover — issued, with what already came carried.
 export {

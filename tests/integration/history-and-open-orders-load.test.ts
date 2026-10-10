@@ -12,11 +12,13 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 import { legacyHistoryRoutes } from '../../services/migration/src/legacy-history';
 import {
   planLoad, executeLoad, readBackOpening,
-  planHistoryLoad, executeHistoryLoad, readBackHistory,
   planOpenOrders, executeOpenOrders, readBackOpenOrders,
-  type ExtractBundle, type LoadRequest, type LoadPlanOk, type LoadClient,
-  type ExtractHistory, type ExtractHistoryDocument, type ExtractAttachment, type ExtractOpenOrder, type HistoryRequest, type OpenOrderRequest,
+  type ExtractBundle, type LoadRequest, type LoadPlanOk, type LoadClient, type ExtractOpenOrder, type OpenOrderRequest,
 } from '../../packages/migration/src/index';
+import {
+  planHistoryLoad, executeHistoryLoad, readBackHistory,
+  type ExtractHistory, type ExtractHistoryDocument, type ExtractAttachment, type HistoryRequest,
+} from '../../packages/migration/src/history-load';
 
 /**
  * **GT-05 — history keeps its identity and never trades again; open orders arrive issued with what already came carried

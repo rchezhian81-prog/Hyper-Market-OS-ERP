@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 924 | 562 | 562 | 84 | 292 |
+| 13 | 930 | 564 | 564 | 84 | 294 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -963,6 +963,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/migration/extraction-runs/:runId` | `migration.extraction.record` | core | yes |
 | POST | `/v1/migration/extracts/:extractId/seal` | `migration.preservation.seal` | core | yes |
 | POST | `/v1/migration/extracts/verify` | `migration.preservation.verify` | core | yes |
+| GET | `/v1/migration/history/attachments` | `migration.history.read` | core | — |
+| GET | `/v1/migration/history/attachments/:legacyId` | `migration.history.read` | core | — |
+| POST | `/v1/migration/history/attachments/:legacyId` | `migration.history.load` | core | yes |
+| GET | `/v1/migration/history/documents` | `migration.history.read` | core | — |
+| GET | `/v1/migration/history/documents/:kind/:legacyId` | `migration.history.read` | core | — |
+| POST | `/v1/migration/history/documents/:kind/:legacyId` | `migration.history.load` | core | yes |
 | GET | `/v1/migration/history/exclusions` | `migration.reconciliation.read` | core | — |
 | POST | `/v1/migration/history/exclusions` | `migration.exclusion.propose` | core | yes |
 | POST | `/v1/migration/history/exclusions/:exclusionId/decision` | `migration.exclusion.approve` | core | yes |
