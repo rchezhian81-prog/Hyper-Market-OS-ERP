@@ -95,7 +95,7 @@ import type { Bin, BinContents } from '../../../packages/warehouse/src/movements
 import { binKey } from '../../../packages/warehouse/src/movements';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
-import { shortfallLinesOf, shortfallLossOf, type AvailableLot, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import { shortfallLinesOf, shortfallLossOf, type AvailableLot, type ShortfallLoss, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
 import { recipeDigest, type ProductionDeps, type StoredRun, type StoredRelease } from '../../inventory/src/production';
@@ -255,6 +255,7 @@ import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
 import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
+import type { StockLossDeps, StockLossJournal } from '../../finance/src/stock-losses';
 import type { OrderFulfilmentDeps, OrderHandback, FulfilmentSettlement } from '../../fulfilment/src/order-fulfilment';
 import type { WaveSyncDeps, WaveLineOutcome, WavePackRecord } from '../../fulfilment/src/waves';
 import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord } from '../../fulfilment/src/driver-runs';
@@ -7419,6 +7420,31 @@ export function supplierMasterAdapter(input: {
  * accountant's mapping via the same `appendJournal` every other voucher uses, so the period fold, the posters list and
  * the close gate see them as journals like any other. Exceptions are append-only finance-stream facts (hard rule #6).
  */
+/**
+ * The inventory-loss journal's reads (Batch 3 · Batch 2's `ShortfallLoss`): every resolved floor-indent and transfer
+ * shortfall's valued loss from the warehouse streams, and the stock-loss vouchers already posted.
+ */
+export function stockLossAdapter(input: { readonly store: EventStore; readonly now: () => string }): StockLossDeps {
+  const fin = financeAdapter(input);
+  return {
+    periodStates: fin.periodStates, nextOpenPeriod: fin.nextOpenPeriod, appendJournal: fin.appendJournal, now: input.now,
+    postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    losses: async (tenantId) => {
+      const out: ShortfallLoss[] = [];
+      for (const [stream, type] of [[streamName(STREAM.warehouse, 'indents'), 'FloorIndentShortfallResolved'], [streamName(STREAM.warehouse, 'transfers'), 'TransferShortfallResolved']] as const) {
+        for (const e of await input.store.readStream(tenantId, stream, { type })) {
+          const loss = (e.event.payload as { loss?: ShortfallLoss }).loss;
+          if (loss !== undefined) out.push(loss);
+        }
+      }
+      return out;
+    },
+    stockLossJournals: async (tenantId) =>
+      (await allOf<JournalEntry | StockLossJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
+        .filter((j): j is StockLossJournal => 'stockLoss' in j),
+  };
+}
+
 export function payablesAdapter(input: { readonly store: EventStore; readonly now: () => string }): PayablesDeps {
   const fin = financeAdapter(input);
   const registers = supplierAccountAdapter(input);

@@ -479,6 +479,15 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
         { account: 'loyalty_expense', side: 'credit', component: 'amount' },
       ],
     },
+    // Stock confirmed lost when a floor indent's or a transfer's shortfall is resolved (Batch 2's valued loss): suggested as
+    // the loss expense against inventory. Whether the CA splits transit loss from shrinkage is the CA's mapping.
+    ...(['floor_indent', 'transfer'] as const).map((source) => ({
+      kind: `stock_loss:${source}`,
+      legs: [
+        { account: 'inventory_loss', side: 'debit' as const, component: 'amount' },
+        { account: 'inventory', side: 'credit' as const, component: 'amount' },
+      ],
+    })),
     // SP-7b (M23-FR-01): the supplier account — a matched invoice's payable, its reversal, a debit note — through a
     // goods-received-not-invoiced clearing (`payables.ts`). Suggested like the rest; the accountant commits it.
     ...PAYABLES_POSTING_RULES,
