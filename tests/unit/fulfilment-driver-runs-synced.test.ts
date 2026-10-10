@@ -272,8 +272,8 @@ describe('OB-09 — the stop joins the driver\'s run register (owner, 2 Oct 2026
     const n = await post(w, STOP, { routeId: 'R-1', stopId: 's3' }, stop({ stopId: 's3', orderRef: 'ORD-3', state: 'failed', codExpectedMinor: 450_00, failureReason: 'customer_had_no_cash' }));
     expect(n.body).toMatchObject({ flags: [], orderStep: { event: 'fail', to: 'failed' }, runAttempt: { attemptId: 'R-1/s3/failed', outcome: 'customer_had_no_cash' } });
     expect(w.attempts).toEqual([
-      { attemptId: 'R-1/s1/delivered', orderId: 'ORD-1', driverId: 'u-driver', attemptedAt: NOW, outcome: 'delivered', proofRef: 'otp@handheld:R-1/s1', cashCollectedMinor: 250_00, codExpectedMinor: 250_00 },
-      { attemptId: 'R-1/s2/partially_delivered', orderId: 'ORD-2', driverId: 'u-driver', attemptedAt: NOW, outcome: 'partially_delivered', proofRef: 'photo@handheld:R-1/s2', cashCollectedMinor: 120_00, codExpectedMinor: 300_00 },
+      { attemptId: 'R-1/s1/delivered', orderId: 'ORD-1', driverId: 'u-driver', attemptedAt: NOW, outcome: 'delivered', proofRef: 'otp@handheld:R-1/s1', cashCollectedMinor: 250_00, codMethod: 'cash', codExpectedMinor: 250_00 },
+      { attemptId: 'R-1/s2/partially_delivered', orderId: 'ORD-2', driverId: 'u-driver', attemptedAt: NOW, outcome: 'partially_delivered', proofRef: 'photo@handheld:R-1/s2', cashCollectedMinor: 120_00, codMethod: 'cash', codExpectedMinor: 300_00 },
       { attemptId: 'R-1/s3/failed', orderId: 'ORD-3', driverId: 'u-driver', attemptedAt: NOW, outcome: 'customer_had_no_cash', notes: 'customer_had_no_cash', codExpectedMinor: 450_00 },
     ]);
     // The SAME `reconcileRun` the direct route and the dispatcher read: counted apart, the money held by name.

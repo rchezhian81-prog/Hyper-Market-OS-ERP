@@ -234,6 +234,7 @@ import { serviceabilityRoutes } from '../../orders/src/serviceability';
 import { fulfilmentRoutes } from '../../fulfilment/src/index';
 import { dispatchRoutes } from '../../fulfilment/src/dispatch';
 import { fulfilmentPackingRoutes } from '../../fulfilment/src/packing';
+import { applyOrderFulfilment, orderFulfilmentRoutes } from '../../fulfilment/src/order-fulfilment';
 import { syncedWaveRoutes } from '../../fulfilment/src/waves';
 import { assignmentRoutes } from '../../fulfilment/src/assignments';
 import { syncedDriverRunRoutes } from '../../fulfilment/src/driver-runs';
@@ -241,7 +242,7 @@ import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
   dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter,
-  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
+  customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
@@ -363,6 +364,11 @@ export function buildSurface(deps: {
     ownedExceptions: empty([]), recordOwnedException: () => {}, rolesOf: empty([]),
   } : { ...ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() }), approvals: approvalRequestsAdapter({ store, now }) };
 
+  // FUL-05: the one fulfilment command — run after every pack, dispatch, door outcome and counter hand-over, and on demand.
+  const orderFulfilment = store === undefined ? undefined
+    : orderFulfilmentAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() });
+  const afterOrderFact = orderFulfilment === undefined ? undefined
+    : (t: string, orderId: string, by: string) => applyOrderFulfilment(orderFulfilment, t, orderId, by);
   const probes = deps.probes ?? (async () => []);
   // One durable settings instance, shared so the config-history / rollback routes operate on the SAME
   // versioned store the setup answers write to (a setting change and its rollback share one history).
@@ -908,7 +914,8 @@ export function buildSurface(deps: {
     // M19-FR-01 / Item 2 — the substitution exception worklist WITH ownership. Registered BEFORE the orders
     // routes so its literal `/v1/orders/substitution-exceptions…` paths are never captured as an order id.
     ...exceptionOwnershipRoutes(ordersDeps),
-    ...ordersRoutes(ordersDeps),
+    ...ordersRoutes(afterOrderFact === undefined ? ordersDeps : { ...ordersDeps, afterOrderFact }),
+    ...(orderFulfilment === undefined ? [] : orderFulfilmentRoutes(orderFulfilment)),
     // The order's payment and refunds (M18-FR-04 / M20-FR-03): the checkout's answer recorded once, refunds against
     // the order's own token, pending when the bank has not said, on a worklist until it does.
     ...paymentRefundRoutes(ordersDeps),
@@ -934,7 +941,7 @@ export function buildSurface(deps: {
       : serviceabilityAdapter({ store, now })),
     ...fulfilmentRoutes(store === undefined
       ? { appendAttempt: () => {}, attempts: empty([]), assigned: empty([]), deliveryState: empty([]), recordDeliveryTransition: () => {}, now }
-      : fulfilmentAdapter({ store, now })),
+      : { ...fulfilmentAdapter({ store, now }), ...(afterOrderFact === undefined ? {} : { afterOrderFact }) }),
     // Dispatch planning & run assignment (M19-FR-03/04) — draft today's routes (every order routed or
     // unplanned-with-a-reason, straight-line distances labelled as such), full re-plan when a driver drops
     // out, and the stored plan that finally feeds reconcileRun the order ids each run is answerable for.
@@ -945,7 +952,7 @@ export function buildSurface(deps: {
     // manifest derived from what was packed.
     ...fulfilmentPackingRoutes(store === undefined
       ? { pack: empty(undefined), recordPack: () => {}, manifest: empty(undefined), recordDispatch: () => {}, now }
-      : fulfilmentPackingAdapter({ store, now })),
+      : { ...fulfilmentPackingAdapter({ store, now }), ...(afterOrderFact === undefined ? {} : { afterOrderFact }) }),
     // SP-3c-i (F11's picker half): the PICKER handheld's line outcomes and wave packs, RELAYED by the box from its device
     // socket. The routes re-verify the picker / packer from their grants, compare the pack with the line register and
     // record-and-flag; nothing here moves stock.
@@ -966,7 +973,7 @@ export function buildSurface(deps: {
         permissionsOfUser: empty(undefined), stopUpdates: empty([]), recordStopUpdate: () => {}, settlement: empty(undefined), recordSettlement: () => {},
         handover: empty(undefined), recordHandover: () => {}, deliveryState: empty([]), recordDeliveryTransition: () => {}, recordAttempt: () => {}, now,
       }
-      : { ...driverRunAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+      : { ...driverRunAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, ...(afterOrderFact === undefined ? {} : { afterOrderFact }) }),
     ...financeRoutes(store === undefined ? {
       periodStates: empty(new Map()), nextOpenPeriod: empty(now().slice(0, 7)),
       appendJournal: () => {}, controlTotals: empty([]), postersIn: empty([]),

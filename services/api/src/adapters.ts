@@ -254,6 +254,7 @@ import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
 import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
+import type { OrderFulfilmentDeps, OrderHandback, FulfilmentSettlement } from '../../fulfilment/src/order-fulfilment';
 import type { WaveSyncDeps, WaveLineOutcome, WavePackRecord } from '../../fulfilment/src/waves';
 import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord } from '../../fulfilment/src/driver-runs';
 import type { IdentityDeps, GrantRequestRecord, PendingGrantRequest, GrantRejection } from '../../identity/src/index';
@@ -8831,6 +8832,11 @@ async function releasedIds(
   return new Set(released.map((r) => r.reservationId));
 }
 
+/** FUL-05: every door attempt on one order, indexed beside the driver's run. */
+const forOrderAttempts = (orderId: string): string => streamName(STREAM.delivery, 'order-attempts', orderId);
+export const orderAttemptsOf = (store: EventStore, tenantId: string, orderId: string): Promise<readonly DeliveryAttempt[]> =>
+  allOf<DeliveryAttempt>(store, tenantId, forOrderAttempts(orderId), 'DeliveryAttemptIndexed');
+
 export function fulfilmentAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -8838,15 +8844,27 @@ export function fulfilmentAdapter(input: {
   return {
     now: input.now,
 
+    // The run IS the stream; and (FUL-05) the same attempt is indexed on the ORDER in the same atomic batch, so the order's
+    // fulfilment reads the cash its door took without scanning every driver's every day.
     appendAttempt: async (tenantId, a) => {
-      await input.store.append(tenantId, forDriverRun(a.driverId, a.attemptedAt.slice(0, 10)), makeEvent({
-        id: `att-${a.attemptId}`,
-        type: 'DeliveryAttempted',
-        occurredAt: a.attemptedAt,
-        idempotencyKey: `att-${tenantId}-${a.attemptId}`,
-        source: 'api/fulfilment',
-        payload: a,
-      }));
+      await input.store.appendBatch(tenantId, [
+        { stream: forDriverRun(a.driverId, a.attemptedAt.slice(0, 10)), event: makeEvent({
+          id: `att-${a.attemptId}`,
+          type: 'DeliveryAttempted',
+          occurredAt: a.attemptedAt,
+          idempotencyKey: `att-${tenantId}-${a.attemptId}`,
+          source: 'api/fulfilment',
+          payload: a,
+        }) },
+        { stream: forOrderAttempts(a.orderId), event: makeEvent({
+          id: `att-order-${a.attemptId}`,
+          type: 'DeliveryAttemptIndexed',
+          occurredAt: a.attemptedAt,
+          idempotencyKey: `att-order-${tenantId}-${a.attemptId}`,
+          source: 'api/fulfilment',
+          payload: a,
+        }) },
+      ]);
     },
 
     // The run IS the stream. Settling one driver's Tuesday no longer reads every delivery the
@@ -9094,6 +9112,48 @@ export function assignmentsAdapter(input: {
     },
     wavePacked: async (tenantId, waveId) => (await waves.pack(tenantId, waveId)) !== undefined,
     routeSettled: async (tenantId, routeId) => (await runs.settlement(tenantId, routeId)) !== undefined,
+  };
+}
+
+/**
+ * FUL-05: the one fulfilment command's own records — the counted hand-back and the settlement, one stream per order — and its
+ * reads of the pack, the manifest, the door, the order and its money, the sale pipeline it banks through and the product unit.
+ */
+export function orderFulfilmentAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly holdMinutes: number;
+  readonly refundProcessor: Parameters<typeof ordersAdapter>[0]['refundProcessor'];
+}): OrderFulfilmentDeps {
+  const forOrder = (orderId: string): string => streamName(STREAM.delivery, 'fulfilment', orderId);
+  const orders = ordersAdapter({ store: input.store, now: input.now, holdMinutes: input.holdMinutes, refundProcessor: input.refundProcessor });
+  const packing = fulfilmentPackingAdapter(input);
+  const delivery = fulfilmentAdapter(input);
+  const pos = posAdapter(input);
+  return {
+    now: input.now,
+    orderState: orders.orderState, recordTransition: orders.recordTransition,
+    orderReservations: orders.orderReservations, releaseReservations: orders.releaseReservations,
+    orderPayment: orders.orderPayment, paymentResolution: orders.paymentResolution, orderRefunds: orders.orderRefunds,
+    pack: packing.pack, manifest: packing.manifest, deliveryState: delivery.deliveryState,
+    doorAttempts: (tenantId, orderId) => orderAttemptsOf(input.store, tenantId, orderId),
+    isBanked: pos.isBanked, bankSale: pos.bankSale,
+    uomOf: async (tenantId, productId) => (await pos.catalogue(tenantId)).get(productId)?.baseUom,
+    handback: async (tenantId, orderId) => (await allOf<OrderHandback>(input.store, tenantId, forOrder(orderId), 'OrderHandbackCounted'))[0],
+    recordHandback: async (tenantId, h) => {
+      await input.store.append(tenantId, forOrder(h.orderId), makeEvent({
+        id: `order-handback-${h.orderId}`, type: 'OrderHandbackCounted', occurredAt: h.at,
+        idempotencyKey: `order-handback-${tenantId}-${h.orderId}`, source: 'api/fulfilment', payload: h,
+      }));
+    },
+    settlement: async (tenantId, orderId) => (await allOf<FulfilmentSettlement>(input.store, tenantId, forOrder(orderId), 'OrderFulfilmentSettled'))[0],
+    recordSettlement: async (tenantId, st) => {
+      await input.store.append(tenantId, forOrder(st.orderId), makeEvent({
+        id: `order-settled-${st.orderId}`, type: 'OrderFulfilmentSettled', occurredAt: st.at,
+        // One settlement per order: a second run collapses on this key (hard rule #2).
+        idempotencyKey: `order-settled-${tenantId}-${st.orderId}`, source: 'api/fulfilment', payload: st,
+      }));
+    },
   };
 }
 

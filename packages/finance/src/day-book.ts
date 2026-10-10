@@ -434,14 +434,18 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
         { account: 'sales_clearing', side: 'credit', component: 'total' },
       ],
     },
-    ...(['cash', 'card', 'upi', 'store_credit', 'exchange_credit', 'loyalty_points'] as const).flatMap((tender) => {
+    // FUL-05: an online order's sale is paid by its prepayment (`online_prepaid`, held by the payment provider until it
+    // settles) or by the door's cash / UPI, and a cash-on-delivery remainder the customer still owes is `cod_due`.
+    ...(['cash', 'card', 'upi', 'store_credit', 'exchange_credit', 'loyalty_points', 'online_prepaid', 'cod_due'] as const).flatMap((tender) => {
       const account = tender === 'cash' ? 'cash_in_hand'
         : tender === 'card' ? 'card_receivable'
           : tender === 'upi' ? 'upi_receivable'
             : tender === 'store_credit' ? 'store_credit_liability'
               // PF-09 step 3: points spent at the till reduce what the shop owes its members.
               : tender === 'loyalty_points' ? 'loyalty_points_liability'
-                : 'exchange_credit_clearing';
+                : tender === 'online_prepaid' ? 'online_payment_clearing'
+                  : tender === 'cod_due' ? 'cod_receivable'
+                    : 'exchange_credit_clearing';
       return [
         {
           kind: `tender:${tender}`,

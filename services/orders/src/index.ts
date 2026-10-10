@@ -332,6 +332,8 @@ export interface OrdersDeps {
   // without the payment surface keeps the lifecycle it had.
   readonly orderPayment?: (tenantId: string, orderId: string) => Promise<OrderPayment | undefined> | OrderPayment | undefined;
   readonly paymentResolution?: (tenantId: string, orderId: string) => Promise<OrderPaymentResolution | undefined> | OrderPaymentResolution | undefined;
+  /** FUL-05: the one fulfilment command, run when the store hands a packed order over at the counter (`collect`). */
+  readonly afterOrderFact?: (tenantId: string, orderId: string, by: string) => Promise<unknown>;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -528,9 +530,16 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
           if (released.length > 0) await deps.releaseReservations(ctx.tenantId, released);
         }
         await deps.recordTransition(ctx.tenantId, { orderId, event: body.event, from: current.state, to, at });
+        // FUL-05: a collected order's goods and money are posted once by the fulfilment command — said, never thrown.
+        let fulfilment: unknown;
+        if (body.event === 'collect' && deps.afterOrderFact !== undefined) {
+          try { fulfilment = await deps.afterOrderFact(ctx.tenantId, orderId, ctx.userId); } catch (err) {
+            fulfilment = { outcome: 'not_applied', detail: `Collected, but the order's fulfilment was not posted: ${err instanceof Error ? err.message : String(err)}. Run POST /v1/fulfilment/orders/${orderId}/apply.` };
+          }
+        }
         return {
           status: 200,
-          body: { orderId, event: body.event, from: current.state, state: to, released },
+          body: { orderId, event: body.event, from: current.state, state: to, released, ...(fulfilment === undefined ? {} : { fulfilment }) },
         };
       },
     },
