@@ -101,6 +101,7 @@ import {
   type TillCashRecord, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus, type TillCashRefusal,
 } from './till-cash';
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
+import { loyaltyMemberKey, memberRefFor } from '../../../packages/loyalty/src/earn-rule';
 import { makeTradingDayRule, tradingDate, wallClockIn, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -790,6 +791,8 @@ export async function startEdge(
    */
   // The seal key (ADR-0023): derived from the pack signing key under the seal's own label — never written anywhere.
   const sealKey = tillSealKey(settings['PACK_SIGNING_KEY']!);
+  // The loyalty member-code key head office uses too — both from the pack signing key (PF-09).
+  const loyaltyKey = loyaltyMemberKey(settings['PACK_SIGNING_KEY']!);
   const relayDeviceEvents: LaneDeviceRelayHandler = async (batch) => {
     const acks: DeviceAck[] = [];
     for (const raw of batch.items) {
@@ -1253,6 +1256,8 @@ export async function startEdge(
     relayDeviceEvents,
     deviceEventStatus,
     recordTillActivity,
+    // PF-09 step 2: the cashier's keyed mobile number becomes the loyalty member code HERE, before the disk (P-04).
+    memberCode: (mobile: string) => memberRefFor(loyaltyKey, mobile),
     closeDay: (req) => {
       const fn = dayCloseRelay.current;
       return fn !== undefined ? fn(req) : Promise.resolve({ closed: false as const, reason: 'the box is still starting up — try the day close again in a moment' });

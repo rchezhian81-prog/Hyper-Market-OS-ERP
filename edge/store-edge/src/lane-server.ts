@@ -391,6 +391,12 @@ export function startLaneServer(input: {
    */
   readonly closeDay?: LaneDayCloseHandler;
   /**
+   * Turn the mobile number a cashier keyed for a loyalty member into the member code (PF-09 step 2 · OB-28 "1" · P-04),
+   * or undefined when it is not a mobile number. The number itself is NEVER written: the box swaps it for the code
+   * before the sale reaches the disk. Absent → this box does no loyalty, and a keyed number is dropped (said).
+   */
+  readonly memberCode?: (mobile: string) => string | undefined;
+  /**
    * Reopen a locked trading day (M14-FR-04 / §28). Absent on a box that does not reopen days, in which
    * case POST /lane/day-reopen answers 404. The accountant/owner's screen posts
    * `{ dayCloseId, reopenedBy, reason, approvedBy }`; the box makes the authoritative decision.
@@ -1222,6 +1228,25 @@ export function startLaneServer(input: {
           return;
         }
 
+        // LOYALTY (PF-09 step 2 · P-04): a sale may carry the mobile number the cashier keyed. It is swapped HERE for the
+        // member code, before the seal and before the disk, so the number is never written anywhere; a code the till sent
+        // itself is dropped — only this box makes one. A number that is not one, or a box with no loyalty, keeps no
+        // member and the sale goes ahead (hard rule #1); the answer says which.
+        let loyaltyNote: 'member_named' | 'number_not_valid' | 'loyalty_not_on_this_box' | undefined;
+        if (!isTag && !isReturn && parsed !== null && typeof parsed === 'object') {
+          const { customerMobile, customerRef: _tillSent, ...rest } = parsed as Record<string, unknown>;
+          void _tillSent;
+          let memberRef: string | undefined;
+          if (typeof customerMobile === 'string' && customerMobile.trim() !== '') {
+            if (input.memberCode === undefined) loyaltyNote = 'loyalty_not_on_this_box';
+            else {
+              memberRef = input.memberCode(customerMobile);
+              loyaltyNote = memberRef === undefined ? 'number_not_valid' : 'member_named';
+            }
+          }
+          parsed = { ...rest, ...(memberRef === undefined ? {} : { customerRef: memberRef }) };
+        }
+
         // WHO rang it (ADR-0020 §5): a sale names its cashier, a refund the person processing it — and that person must be
         // the one signed in at this till. Refused BEFORE the disk; on success the box stamps who it verified and how.
         // (A partner-counter line is not money and is recorded by its own page; it is not gated here yet.)
@@ -1305,7 +1330,7 @@ export function startLaneServer(input: {
           // 200 on a refusal too: the *request* was understood, and the answer is in the body. A
           // 5xx here would make a refused sale look like a broken lane, and the cashier needs to
           // know which it is — one means use another lane, the other means try again.
-          send(res, 200, outcome, cors);
+          send(res, 200, loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cors);
         } catch (e) {
           send(res, 200, refusal(noun, e instanceof Error ? e.message : String(e)), cors);
         }
