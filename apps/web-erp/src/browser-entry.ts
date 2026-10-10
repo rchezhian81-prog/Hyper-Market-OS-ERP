@@ -207,6 +207,7 @@ import {
   createIndentsSession,
   type IndentsPorts, type IndentsSession, type IndentsData, type IndentRowView, type IndentLineView, type IndentIssueView, type IndentProductOption,
   type IndentApprovePort, type ApprovePostResult as IndentApprovePostResult, type IndentBoxWords,
+  type IndentResolvePort, type ResolvePostResult as IndentResolvePostResult,
 } from './indents-session';
 import {
   createDataIoSession,
@@ -2597,7 +2598,10 @@ export function openIndentsOutbox(storeId: string, storage?: DeviceStorage): Syn
   return openDeviceOutbox(guardedStore(`sre.indents.outbox.${storeId}`, store, onProblem), onProblem);
 }
 
-export function indentsPortsFromData(data: IndentsScreenData | undefined, snapshot?: IndentsData, approvePort?: IndentApprovePort): IndentsPorts {
+/** Batch 2: resolving a shortfall confirms a stock loss — the stock adjustment's approval right (M08-FR-03). */
+const INDENT_RESOLVE_PERMISSION = 'inventory.adjustment.approve';
+
+export function indentsPortsFromData(data: IndentsScreenData | undefined, snapshot?: IndentsData, approvePort?: IndentApprovePort, resolvePort?: IndentResolvePort): IndentsPorts {
   const held = new Set(data?.permissions ?? []);
   return {
     snapshot: () => snapshot ?? data?.snapshot ?? EMPTY_INDENTS,
@@ -2607,6 +2611,8 @@ export function indentsPortsFromData(data: IndentsScreenData | undefined, snapsh
     mayApprove: () => held.has(INDENT_APPROVE_PERMISSION),
     mayReceive: () => held.has(WRITE_OFF_APPEND_PERMISSION),
     approvePort: () => approvePort ?? null,
+    mayResolve: () => held.has(INDENT_RESOLVE_PERMISSION),
+    resolvePort: () => resolvePort ?? null,
   };
 }
 
@@ -2619,9 +2625,9 @@ const indentsConfigFrom = (data: IndentsScreenData | undefined) => ({
 });
 
 /** Build the Floor indents session, or `null` when the box carried no payload (shell shows the sample). */
-export function bootIndents(data: IndentsScreenData | undefined, outbox: SyncOutbox, snapshot?: IndentsData, approvePort?: IndentApprovePort, boxWords?: IndentBoxWords): IndentsSession | null {
+export function bootIndents(data: IndentsScreenData | undefined, outbox: SyncOutbox, snapshot?: IndentsData, approvePort?: IndentApprovePort, boxWords?: IndentBoxWords, resolvePort?: IndentResolvePort): IndentsSession | null {
   if (data === undefined) return null;
-  return createIndentsSession(indentsConfigFrom(data), indentsPortsFromData(data, snapshot, approvePort), outbox, boxWords);
+  return createIndentsSession(indentsConfigFrom(data), indentsPortsFromData(data, snapshot, approvePort, resolvePort), outbox, boxWords);
 }
 
 /** What the shell calls to move this screen's saved asks and counts along and learn where each has got to. */
@@ -2662,6 +2668,11 @@ export async function fetchIndents(): Promise<IndentsData | null> {
       issueId: String(i['issueId'] ?? ''), issuedBy: String(i['issuedBy'] ?? ''), issuedAt: String(i['issuedAt'] ?? ''),
       state: i['state'] === 'received' ? 'received' : 'in_transit',
       lines: (Array.isArray(i['lines']) ? i['lines'] as Record<string, unknown>[] : []).map((l) => ({ productId: String(l['productId'] ?? ''), batchId: str(l['batchId']), quantityMinor: num(l['quantityMinor']) })),
+      // Batch 2: who counted it in, what did not arrive, and whether that shortfall is resolved — head office's words.
+      receivedBy: str(i['receivedBy']),
+      shortfall: (Array.isArray(i['shortfall']) ? i['shortfall'] as Record<string, unknown>[] : []).map((s) => ({ productId: String(s['productId'] ?? ''), batchId: str(s['batchId']), quantityMinor: num(s['quantityMinor']), valueMinor: num(s['valueMinor']) })),
+      resolvedBy: str((i['shortfallResolution'] as Record<string, unknown> | undefined)?.['resolvedBy']),
+      lostValueMinor: i['shortfallResolution'] === undefined ? null : ((i['shortfallResolution'] as Record<string, unknown>)['lines'] as Record<string, unknown>[] | undefined ?? []).reduce((s, l) => s + num(l['lostValueMinor']), 0),
     }));
     return {
       indentId: String(r['indentId'] ?? ''), state: String(r['state'] ?? 'requested'), requestedBy: String(r['requestedBy'] ?? ''), requestedAt: String(r['requestedAt'] ?? ''),
@@ -2680,6 +2691,32 @@ export async function fetchIndents(): Promise<IndentsData | null> {
 /** The authenticated POST of an indent APPROVAL — the approver's OWN session, never a service token; the server attributes
  *  the approval to the caller and refuses the requester (§28). A fresh key per attempt: approval is idempotent by STATE on
  *  the server, and one person's refusal must never replay onto another person's click. */
+/** Batch 2 — the authenticated POST of a shortfall RESOLUTION under the resolver's own session: `{ reasonCode, note, lines }`
+ *  where lines name only what turned up. The resolver is the caller, never a body field; head office refuses the issuer and
+ *  the counter (§28). A fresh key per attempt: the server is idempotent by state (the same resolution again is 200). */
+export function openIndentResolvePort(): IndentResolvePort {
+  return {
+    post: async ({ indentId, issueId, reasonCode, note, lines }): Promise<IndentResolvePostResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `indent-resolution-${indentId}-${issueId}-${note.length}`;
+      try {
+        const res = await fetchFn(`/v1/floor/indents/${encodeURIComponent(indentId)}/issues/${encodeURIComponent(issueId)}/shortfall/resolution`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ reasonCode, note, lines: lines.map((l) => ({ productId: l.productId, ...(l.batchId === null ? {} : { batchId: l.batchId }), foundMinor: l.foundMinor })) }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { alreadyResolved?: boolean; whatHappened?: string; error?: { whatHappened?: string } };
+        if (res.status >= 200 && res.status < 300) return { result: body.alreadyResolved === true ? 'already_resolved' : 'resolved' };
+        return { result: 'refused', reason: body.error?.whatHappened ?? body.whatHappened ?? 'head office did not record the resolution' };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
+  };
+}
+
 export function openIndentApprovePort(): IndentApprovePort {
   return {
     post: async ({ indentId, reason }): Promise<IndentApprovePostResult> => {
@@ -2694,9 +2731,10 @@ export function openIndentApprovePort(): IndentApprovePort {
           // Only the note rides along: the approver is the authenticated caller, never a body field; the allocation is head office's.
           body: JSON.stringify(reason === '' ? {} : { reason }),
         });
-        const body = (await res.json().catch(() => ({}))) as { alreadyApproved?: boolean; whatHappened?: string };
+        const body = (await res.json().catch(() => ({}))) as { alreadyApproved?: boolean; whatHappened?: string; error?: { whatHappened?: string } };
         if (res.status >= 200 && res.status < 300) return { result: body.alreadyApproved === true ? 'already_approved' : 'approved' };
-        return { result: 'refused', reason: body.whatHappened ?? 'head office did not approve the indent' };
+        // The kernel's refusal carries its words under `error` (a top-level `whatHappened` is read too, for older replies).
+        return { result: 'refused', reason: body.error?.whatHappened ?? body.whatHappened ?? 'head office did not approve the indent' };
       } catch {
         return { result: 'lost_link' };
       }
@@ -5772,16 +5810,17 @@ if (browserWindow !== undefined) {
   if (indentsData !== undefined) {
     const indentsOutbox = openIndentsOutbox(indentsData.storeId ?? 'store-1');
     const indentApprovePort = openIndentApprovePort();
+    const indentResolvePort = openIndentResolvePort();
     // ONE box-word store for every session over this queue: the relay notes "posted" / "refused" once, and the live
     // session the view builds after each register read shows the same word (P-08 — never lost in a re-read).
     const indentBoxWords: IndentBoxWords = new Map();
-    const indentsScreen = bootIndents(indentsData, indentsOutbox, undefined, indentApprovePort, indentBoxWords);
+    const indentsScreen = bootIndents(indentsData, indentsOutbox, undefined, indentApprovePort, indentBoxWords, indentResolvePort);
     if (indentsScreen !== null) {
       browserWindow.indentsSession = indentsScreen;
       browserWindow.indentsOutbox = indentsOutbox;
       browserWindow.indents = {
         refresh: fetchIndents,
-        present: (snapshot) => createIndentsSession(indentsConfigFrom(indentsData), indentsPortsFromData(indentsData, snapshot, indentApprovePort), indentsOutbox, indentBoxWords),
+        present: (snapshot) => createIndentsSession(indentsConfigFrom(indentsData), indentsPortsFromData(indentsData, snapshot, indentApprovePort, indentResolvePort), indentsOutbox, indentBoxWords),
       };
       const indentsRelay = openIndentsRelay(browserWindow.laneWriteBase, indentsScreen, indentsOutbox);
       if (indentsRelay !== undefined) browserWindow.indentsRelay = indentsRelay;
