@@ -10,7 +10,7 @@ import { tokenAuthenticator } from '../../services/identity/src/index';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver } from '../../services/api/src/access';
 import { ROLE_CATALOGUE } from '../../services/api/src/roles';
-import { STREAM } from '../../services/api/src/adapters';
+import { STREAM, effectiveGrants } from '../../services/api/src/adapters';
 import { hostedSeedClient, hostedSeedRefusals, publishPilotPack } from '../../db/seed/pilot/hosted';
 import { buildDemoStorePack } from '../../db/seed/pilot/store-pack';
 import { readPack } from '../../edge/store-edge/src/store-pack';
@@ -282,8 +282,11 @@ describe.skipIf(!REAL_DATABASE_URL)('hosted pilot seed — REAL PostgreSQL ledge
           await applyPilotTransactions(client, PILOT_TRANSACTIONS, OWNER),
         ]) expect(failed(report), JSON.stringify(failed(report))).toEqual([]);
       }
-      const grants = await store.readStream(PILOT_DEMO_TENANT, STREAM.identity, { type: 'RoleGranted' });
-      expect(grants.filter((g) => g.event.source === 'pilot/seed')).toHaveLength(PILOT_FOUNDATION.users.length + 1);
+      // Every seeded person holds exactly their dataset role (+ the genesis owner) — counted on the EFFECTIVE grants
+      // (grants minus revocations), so a ledger seeded before OB-36 (box once a cashier) agrees too.
+      const effective = (await effectiveGrants(store, PILOT_DEMO_TENANT)).filter((g) => [PILOT_FOUNDATION.genesisOwner, ...PILOT_FOUNDATION.users].some((u) => u.userId === g.userId));
+      const expectedRoles = [PILOT_FOUNDATION.genesisOwner, ...PILOT_FOUNDATION.users].map((u) => `${u.userId}:${u.role}`).sort();
+      expect([...new Set(effective.map((g) => `${g.userId}:${g.roleId}`))].sort()).toEqual(expectedRoles);
     } finally {
       await pool.end();
     }

@@ -35,7 +35,7 @@ describe('the till spends points and store credit, decided on the box, applied o
     h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-meena', 'cashier');
-    await h.provisionRole(A, 'u-box', 'cashier');
+    await h.provisionRole(A, 'u-box', 'store_computer');
     await h.provisionRole(A, 'u-mgr', 'store_manager');
     const set = async (key: string, value: number) =>
       expect((await h.request({ method: 'PUT', path: `/v1/platform/setup/${key}`, userId: 'u-owner', tenantId: A, idempotencyKey: `set-${key}`, body: { value } })).status).toBeLessThan(300);
@@ -49,7 +49,7 @@ describe('the till spends points and store credit, decided on the box, applied o
       totalMinor: 500_000, currency: 'INR', packVersion: 1, customerRef: MEMBER,
       lines: [{ productId: 'P1', quantityMinor: 1, uom: 'ea', unitPriceMinor: 500_000, lineTotalMinor: 500_000 }], tenders: [{ kind: 'cash', amountMinor: 500_000 }],
     } })).status).toBe(202);
-    expect((await h.request({ method: 'POST', path: '/v1/stored-value/instruments', userId: 'u-box', tenantId: A, idempotencyKey: 'sc', body: { instrumentId: 'sc-1', kind: 'store_credit', ownerRef: MEMBER, faceValueMinor: 30_000 } })).status).toBe(201);
+    expect((await h.request({ method: 'POST', path: '/v1/stored-value/instruments', userId: 'u-owner', tenantId: A, idempotencyKey: 'sc', body: { instrumentId: 'sc-1', kind: 'store_credit', ownerRef: MEMBER, faceValueMinor: 30_000 } })).status).toBe(201);
 
     globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {
       if (String(url).startsWith('http://127.0.0.1:')) return savedFetch(url, init);

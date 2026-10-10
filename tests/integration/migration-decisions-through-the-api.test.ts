@@ -16,7 +16,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.provisionRole(T, MGR, 'store_manager');
   await h.provisionRole(T, CA, 'chartered_accountant');
   await h.provisionRole(T, CASHIER, 'cashier');
-  await h.provisionRole(T, SYNC, 'cashier');          // the store box's sync identity
+  await h.provisionRole(T, SYNC, 'store_computer');          // the store box's sync identity
   await h.provisionRole(T, LOADER, 'store_manager');  // ran the extraction/load
   // Who ran the extraction — the ledger fact the signature rule reads (never the body).
   expect((await post(h, '/v1/migration/extraction-runs/run-1', OWNER, 'er1', { operatorId: LOADER })).status).toBe(201);

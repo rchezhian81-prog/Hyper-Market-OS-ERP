@@ -52,6 +52,20 @@ describe('store/day close reconciles on sync — record, lock, and re-verify the
     expect(body.dayCloses.find((r) => r.dayCloseId === 'dc-1')).toMatchObject({ tradingDay: '2026-08-07', locked: true, reopened: false });
   });
 
+  it('OB-36 "A": the store computer relays the close under its OWN role, and the person it names is re-checked — flagged, never refused', async () => {
+    const h = await cast();
+    await h.provisionRole(A, 'u-box', 'store_computer');
+    // a manager who handles locked days: clean
+    const ok = await syncClose(h, 'u-box', 'dc-1', close(), 'k1');
+    expect(ok.status).toBe(202);
+    expect((ok.body as { flags: string[] }).flags).toEqual([]);
+    // a cashier named as the closer holds no day-close authority; a name nobody granted is unknown — both recorded, both said
+    expect(((await syncClose(h, 'u-box', 'dc-2', close({ tradingDay: '2026-08-08', closedBy: 'u-cash' }), 'k2')).body as { flags: string[] }).flags).toEqual(['closer_lacks_authority']);
+    expect(((await syncClose(h, 'u-box', 'dc-3', close({ tradingDay: '2026-08-09', closedBy: 'u-ghost' }), 'k3')).body as { flags: string[] }).flags).toEqual(['closer_unknown']);
+    const rows = ((await list(h, 'u-owner')).body as ListBody).dayCloses;
+    expect(rows.filter((r) => r.locked).map((r) => r.dayCloseId).sort()).toEqual(['dc-1', 'dc-2', 'dc-3']);
+  });
+
   it('reconciles a reopen with a genuinely-authorised approver — recorded, day unlocked, the typed approver said as unverified', async () => {
     const h = await cast();
     await syncClose(h, 'u-mgr', 'dc-1', close());

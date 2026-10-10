@@ -49,7 +49,9 @@ export type SeedRoleId =
   | 'cashier'
   | 'accountant'
   | 'chartered_accountant'
-  | 'platform_admin';
+  | 'platform_admin'
+  // OB-36 "A": the store computer's own role (a machine, never a person's login).
+  | 'store_computer';
 
 export interface SeedUser {
   /** Stable, obviously-demo user id (the pilot uses the local/test IdP; no real identity). */
@@ -134,7 +136,7 @@ export const PILOT_FOUNDATION: PilotFoundation = {
     // hosted offline/reconnect drill (runbook §9.4; owner decision 28 Sep 2026, option A). `cashier` is the
     // smallest existing role that carries the sync permission; a sync-only role does not exist yet. Never a
     // person's login: the demo sign-in refuses it (PILOT_MACHINE_USERS), so no human shares its identity.
-    { userId: 'pilot-store-edge', displayName: 'Pilot Store Edge — machine (demo)', role: 'cashier' },
+    { userId: 'pilot-store-edge', displayName: 'Pilot Store Edge — machine (demo)', role: 'store_computer' },
   ],
   entitlements: ['loyalty', 'delivery', 'dept.concession'],
   gstRegistrations: [

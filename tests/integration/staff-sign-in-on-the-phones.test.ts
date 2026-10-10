@@ -81,7 +81,7 @@ async function shop(): Promise<{ h: ApiHarness; dir: string; start: (people?: re
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-kavya', 'store_manager');
   await h.provisionRole(A, 'u-ravi', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'cashier');
+  await h.provisionRole(A, 'u-box', 'store_computer');
   const dir = await mkdtemp(join(tmpdir(), 'sre-phone-sign-in-'));
   cleanups.push(async () => { await rm(dir, { recursive: true, force: true }); });
   await issueTillPins(dir, KEY, ['u-kavya', 'u-ravi']);

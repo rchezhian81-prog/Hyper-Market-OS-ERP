@@ -93,7 +93,7 @@ async function cloud(): Promise<{ h: ApiHarness; start: () => Promise<EdgeProces
   await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-buyer', 'store_manager');
   await h.provisionRole(A, 'u-mgr', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'cashier');
+  await h.provisionRole(A, 'u-box', 'store_computer');
   expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-buyer', tenantId: A, idempotencyKey: 'k-po-1', body: { supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5000, currency: 'INR' } }] } })).status).toBe(201);
   expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-1/approval', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-po-1-ok', body: { reason: 'within budget' } })).status).toBe(200);
   expect((await h.request({

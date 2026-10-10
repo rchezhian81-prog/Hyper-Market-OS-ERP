@@ -136,7 +136,7 @@ async function cloud(): Promise<Cloud> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-picker', 'store_manager');
   await h.provisionRole(A, 'u-driver', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'cashier');
+  await h.provisionRole(A, 'u-box', 'store_computer');
   await h.enableFeature(A, 'delivery'); // this shop's plan includes home delivery (M36-FR-01) — a route can be assigned (HA-1)
   // The product master (M19-FR-02 fold): rice travels ambient, milk chilled — and ghee has NO handling class, deliberately.
   const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };

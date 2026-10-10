@@ -55,7 +55,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');
   await h.seedOwner(B, 'u-owner-b');
   for (const u of ['u-floor', 'u-mgr', 'u-back', 'u-floor2']) await h.provisionRole(A, u, 'store_manager');
-  await h.provisionRole(A, 'u-box', 'cashier');
+  await h.provisionRole(A, 'u-box', 'store_computer');
   await h.provisionRole(A, 'u-acct', 'accountant');
   const node = (id: string, body: Body) => post(h, 'u-owner', `/v1/org/nodes/${id}`, body, `org-${id}`);
   expect((await node('C1', { kind: 'company', name: 'SRE Retail' })).status).toBe(201);

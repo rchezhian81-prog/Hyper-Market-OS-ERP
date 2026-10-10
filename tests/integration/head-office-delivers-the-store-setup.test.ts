@@ -51,8 +51,8 @@ describe('PA-06 — head office delivers each store its setup', () => {
   beforeEach(async () => {
     h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    await h.provisionRole(A, 'u-box', 'cashier', ['S1']);   // this store computer's own identity, at S1 only
-    await h.provisionRole(A, 'u-box2', 'cashier', ['S2']);  // another store's computer
+    await h.provisionRole(A, 'u-box', 'store_computer', ['S1']);   // this store computer's own identity, at S1 only
+    await h.provisionRole(A, 'u-box2', 'store_computer', ['S2']);  // another store's computer
     await h.provisionRole(A, 'u-mgr', 'store_manager', ['S1']);
     cut = false;
     globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {
