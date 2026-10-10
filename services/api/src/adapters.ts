@@ -56,6 +56,7 @@ import type { QualityHoldDeps } from '../../inventory/src/quality-hold';
 import type { LoyaltyMemberDeps, LoyaltyRule, MemberRecord } from '../../customer/src/loyalty-members';
 import type { LoyaltyWalletDeps, SpendApplied } from '../../customer/src/loyalty-wallets';
 import type { LoyaltyLiabilityDeps } from '../../finance/src/loyalty-liability';
+import { fulfilCompensation, type FulfilmentPorts, type CompensationFulfilment } from '../../customer/src/compensation-fulfilment';
 import { monthEvidence, type IndependentEvidenceDeps, type ImportedStatement } from '../../finance/src/independent-evidence';
 import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack } from '../../customer/src/loyalty-effects';
 import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
@@ -7927,6 +7928,53 @@ export function independentEvidenceAdapter(input: { readonly store: EventStore; 
       const batches = await allOf<SettlementBatch>(input.store, tenantId, STREAM.settlement, 'SettlementBatchImported');
       return monthEvidence({ period, tenders, batches, statements: await statements(tenantId) });
     },
+  };
+}
+
+/**
+ * PF-11: carrying a granted compensation out — store credit through the stored-value records (keyed on the
+ * compensation, so a retry issues nothing twice), points through the customer's points under their write guard — and
+ * every attempt's status on the compensation stream (append-only; the latest per compensation is its state).
+ */
+const SERVICE_FULFILMENT_STREAM = streamName(STREAM.service, 'compensation-fulfilment');
+
+export function compensationFulfilmentAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly pointValuePaise: (tenantId: string) => Promise<number>;
+}): Pick<ServiceCaseDeps, 'fulfilCompensation' | 'recordFulfilment' | 'fulfilments'> {
+  const value = storedValueAdapter({ store: input.store, now: input.now });
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const ports: FulfilmentPorts = {
+    now: input.now,
+    pointValuePaise: input.pointValuePaise,
+    issueStoreCredit: async (tenantId, instrument, opening) => {
+      if (await value.instrument(tenantId, instrument.instrumentId) !== undefined) return; // issued already — once
+      await value.recordIssue(tenantId, instrument, opening);
+    },
+    addPoints: async (tenantId, customerRef, m) => {
+      for (let attempt = 0; ; attempt += 1) {
+        const version = await input.store.guardVersion(tenantId, `points:${customerRef}`);
+        try {
+          await customers.recordPointsMovement(tenantId, customerRef, { movementId: m.movementId, customerId: customerRef, delta: m.points, reason: 'earn', sourceRef: m.sourceRef, at: m.at }, version);
+          return;
+        } catch (err) {
+          if (err instanceof ConcurrencyConflictError && attempt < 4) continue;
+          throw err;
+        }
+      }
+    },
+  };
+  return {
+    fulfilCompensation: (tenantId, i) => fulfilCompensation(ports, tenantId, i),
+    recordFulfilment: async (tenantId, f) => {
+      await input.store.append(tenantId, SERVICE_FULFILMENT_STREAM, makeEvent({
+        id: `comp-fulfil-${f.compensationId}-${f.at}`, type: 'CompensationFulfilment', occurredAt: f.at,
+        idempotencyKey: `comp-fulfil-${tenantId}-${f.compensationId}-${f.status}-${f.at}`, source: 'api/customer', payload: f,
+      }));
+    },
+    fulfilments: async (tenantId, caseId) =>
+      (await allOf<CompensationFulfilment>(input.store, tenantId, SERVICE_FULFILMENT_STREAM, 'CompensationFulfilment')).filter((f) => f.caseId === caseId),
   };
 }
 
