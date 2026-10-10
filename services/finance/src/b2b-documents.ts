@@ -55,6 +55,8 @@ export interface B2BDocumentsDeps {
   readonly allocateNumber: (tenantId: string, docType: string) => Promise<number> | number;
   /** Does credit control clear an order of this value for this customer? (M22-FR-01). */
   readonly creditAllowed: (tenantId: string, customerId: string, orderValueMinor: number) => Promise<boolean> | boolean;
+  /** FUL-09: a tax invoice's money effects — the receivable collections ages, the AR movement, the postable for the books. */
+  readonly afterTaxInvoice?: (tenantId: string, customerId: string, doc: StoredB2BDocument) => Promise<{ readonly dueOn: string }>;
   readonly now: () => string;
 }
 
@@ -276,7 +278,9 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
         const doc = result.document;
         if (doc === undefined) throw notFound(`invoice ${documentId}`); // unreachable — the probe issued
         await deps.recordDocument(ctx.tenantId, customerId, { ...doc, orderId: order.documentId });
-        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, taxClaimable: doc.taxClaimable, grossMinor: doc.grossMinor, detail: doc.detail } };
+        // FUL-09: the invoice is now money owed — a receivable on the customer's terms, on the AR ledger, and for the books.
+        const owed = await deps.afterTaxInvoice?.(ctx.tenantId, customerId, { ...doc, orderId: order.documentId });
+        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, taxClaimable: doc.taxClaimable, grossMinor: doc.grossMinor, detail: doc.detail, ...(owed === undefined ? {} : { dueOn: owed.dueOn }) } };
       },
     },
     {

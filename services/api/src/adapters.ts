@@ -257,6 +257,7 @@ import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilmen
 import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { StockLossDeps, StockLossJournal } from '../../finance/src/stock-losses';
+import type { B2BPostingDeps, B2BPostable, B2BJournal } from '../../finance/src/b2b-postings';
 import type { OrderFulfilmentDeps, OrderHandback, FulfilmentSettlement } from '../../fulfilment/src/order-fulfilment';
 import type { WaveSyncDeps, WaveLineOutcome, WavePackRecord } from '../../fulfilment/src/waves';
 import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord } from '../../fulfilment/src/driver-runs';
@@ -3411,15 +3412,16 @@ export function b2bCreditAdapter(input: {
       (await allOf<RecordedReceivable>(input.store, tenantId, forB2BCustomer(customerId), 'B2BReceivableMovement'))
         .reduce((b, m) => b + m.deltaMinor, 0),
 
-    recordAccount: async (tenantId, customerId, creditLimitMinor, currency) => {
+    recordAccount: async (tenantId, customerId, creditLimitMinor, currency, _at, paymentTermsDays) => {
+      const terms = paymentTermsDays === undefined ? '' : `-t${paymentTermsDays}`;
       await input.store.append(tenantId, forB2BCustomer(customerId), makeEvent({
-        id: `b2b-limit-${customerId}-${creditLimitMinor}`,
+        id: `b2b-limit-${customerId}-${creditLimitMinor}${terms}`,
         type: 'B2BCreditLimitSet',
         occurredAt: input.now(),
-        // Keyed on the value — setting the same limit twice collapses, a different limit is a new fact.
-        idempotencyKey: `b2b-limit-${tenantId}-${customerId}-${creditLimitMinor}`,
+        // Keyed on the values — setting the same limit (and terms) twice collapses, a different one is a new fact.
+        idempotencyKey: `b2b-limit-${tenantId}-${customerId}-${creditLimitMinor}${terms}`,
         source: 'api/finance',
-        payload: { creditLimitMinor, currency } satisfies B2BAccount,
+        payload: { creditLimitMinor, currency, ...(paymentTermsDays === undefined ? {} : { paymentTermsDays }) } satisfies B2BAccount,
       }));
     },
 
@@ -4825,6 +4827,56 @@ export function b2bCollectionsAdapter(input: {
         payload: payment,
       }));
     },
+  };
+}
+
+/**
+ * FUL-09: a B2B tax invoice's and a collection's money effects, each in ONE atomic write — the receivable collections ages
+ * (due on the customer's terms) or the allocation, the AR-ledger movement the credit check reads, and the postable fact the
+ * books read (`b2bPostingAdapter`). Keys are the existing ones per record, so a re-issued / re-sent fact collapses.
+ */
+const B2B_POSTABLES = streamName(STREAM.finance, 'b2b-postables');
+export function b2bMoneyEffectsAdapter(input: { readonly store: EventStore; readonly now: () => string }): {
+  afterTaxInvoice: (tenantId: string, customerId: string, doc: StoredB2BDocument) => Promise<{ readonly dueOn: string }>;
+  recordPaymentWithMoney: (tenantId: string, customerId: string, payment: RecordedPayment, receivedOn: string) => Promise<void>;
+} {
+  const credit = b2bCreditAdapter(input);
+  return {
+    afterTaxInvoice: async (tenantId, customerId, doc) => {
+      const issuedOn = doc.issuedAt.slice(0, 10);
+      const terms = (await credit.account(tenantId, customerId))?.paymentTermsDays ?? 0;
+      const dueOn = new Date(Date.parse(`${issuedOn}T00:00:00.000Z`) + terms * 86_400_000).toISOString().slice(0, 10);
+      const invoice: CollectionsReceivable = { invoiceId: doc.documentId, number: doc.number, customerId, tenantId, issuedOn, dueOn, grossMinor: doc.grossMinor, settledMinor: 0 };
+      const ar: RecordedReceivable = { movementId: `inv-${doc.documentId}`, customerId, kind: 'invoice', deltaMinor: doc.grossMinor, at: doc.issuedAt, ref: doc.number };
+      const postable: B2BPostable = { sourceId: `invoice:${customerId}:${doc.documentId}`, kind: 'invoice', customerId, documentDate: issuedOn, components: { total: doc.grossMinor, net: doc.netMinor, tax: doc.taxMinor }, ref: doc.number };
+      await input.store.appendBatch(tenantId, [
+        { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-inv-${customerId}-${invoice.invoiceId}`, type: 'B2BInvoiceRecorded', occurredAt: doc.issuedAt, idempotencyKey: `b2b-inv-${tenantId}-${customerId}-${invoice.invoiceId}-${invoice.grossMinor}-${invoice.dueOn}-false`, source: 'api/finance', payload: invoice }) },
+        { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: ar.at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
+        { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: doc.issuedAt, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+      ]);
+      return { dueOn };
+    },
+    recordPaymentWithMoney: async (tenantId, customerId, payment, receivedOn) => {
+      const at = input.now();
+      const ar: RecordedReceivable = { movementId: `rcpt-${payment.receiptId}`, customerId, kind: 'payment', deltaMinor: -payment.receivedMinor, at, ref: payment.receiptId };
+      const postable: B2BPostable = { sourceId: `receipt:${customerId}:${payment.receiptId}`, kind: 'receipt', customerId, documentDate: receivedOn, components: { amount: payment.receivedMinor }, ref: payment.receiptId };
+      await input.store.appendBatch(tenantId, [
+        { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-pay-${customerId}-${payment.receiptId}`, type: 'B2BPaymentAllocated', occurredAt: at, idempotencyKey: `b2b-pay-${tenantId}-${customerId}-${payment.receiptId}`, source: 'api/finance', payload: payment }) },
+        { stream: forB2BCustomer(customerId), event: makeEvent({ id: `b2b-ar-${ar.movementId}`, type: 'B2BReceivableMovement', occurredAt: at, idempotencyKey: `b2b-ar-${tenantId}-${ar.movementId}`, source: 'api/finance', payload: ar }) },
+        { stream: B2B_POSTABLES, event: makeEvent({ id: `b2b-postable-${postable.sourceId}`, type: 'B2BPostable', occurredAt: at, idempotencyKey: `b2b-postable-${tenantId}-${postable.sourceId}`, source: 'api/finance', payload: postable }) },
+      ]);
+    },
+  };
+}
+
+export function b2bPostingAdapter(input: { readonly store: EventStore; readonly now: () => string }): B2BPostingDeps {
+  const fin = financeAdapter(input);
+  return {
+    periodStates: fin.periodStates, nextOpenPeriod: fin.nextOpenPeriod, appendJournal: fin.appendJournal, now: input.now,
+    postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    postables: (tenantId) => allOf<B2BPostable>(input.store, tenantId, B2B_POSTABLES, 'B2BPostable'),
+    b2bJournals: async (tenantId) =>
+      (await allOf<JournalEntry | B2BJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted')).filter((j): j is B2BJournal => 'b2b' in j),
   };
 }
 

@@ -479,6 +479,24 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
         { account: 'loyalty_expense', side: 'credit', component: 'amount' },
       ],
     },
+    // FUL-09 (M22 → M23): a B2B tax invoice is owed by the customer (receivables) against revenue and the output tax on it;
+    // a collection is money received against those receivables. Suggested; which tax account (CGST+SGST or IGST by place of
+    // supply) is the CA's mapping.
+    {
+      kind: 'b2b:invoice',
+      legs: [
+        { account: 'trade_receivables', side: 'debit', component: 'total' },
+        { account: 'sales_revenue', side: 'credit', component: 'net' },
+        { account: 'gst_output', side: 'credit', component: 'tax' },
+      ],
+    },
+    {
+      kind: 'b2b:receipt',
+      legs: [
+        { account: 'bank_receipts_clearing', side: 'debit', component: 'amount' },
+        { account: 'trade_receivables', side: 'credit', component: 'amount' },
+      ],
+    },
     // Stock confirmed lost when a floor indent's or a transfer's shortfall is resolved (Batch 2's valued loss): suggested as
     // the loss expense against inventory. Whether the CA splits transit loss from shrinkage is the CA's mapping.
     ...(['floor_indent', 'transfer'] as const).map((source) => ({
