@@ -189,6 +189,7 @@ import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatc
 import { foldAllSupplierAccounts, foldSupplierAccount, type SupplierAccountDeps, type SupplierPayment, type DebitNoteIssue } from '../../purchase/src/supplier-account';
 import type { SupplierMasterDeps, SupplierRecord, SupplierBankState } from '../../purchase/src/supplier-master';
 import { openingsWithSignOff, type SupplierOpeningDeps, type SupplierOpeningBalance, type SupplierOpeningSignOff } from '../../purchase/src/supplier-openings';
+import type { DisplayFundingDeps, DisplayFundingJournal } from '../../finance/src/display-funding';
 import type { PayablesDeps, PayablesJournal, PayablesExceptionRecord } from '../../finance/src/payables';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
 import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
@@ -11181,6 +11182,73 @@ export function heldVersionsAdapter(input: { readonly store: EventStore }): {
         // One report per (store, versions): the same versions said again collapse onto the first.
         idempotencyKey: `held-${tenantId}-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}`, source: 'api/platform', payload: r,
       }));
+    },
+  };
+}
+
+/**
+ * FUL-11 (M04-FR-01/03 · P-02): what a STORE holds and has sold, from head office's own stock ledger — every location the org
+ * hierarchy places under that store (the store's own id, its back store, its departments). Merchandising reads these instead
+ * of figures typed into a request: a range drop told "no stock" would delete stock that is on the shelf.
+ */
+export function storeStockFactsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  /** Which branch a location belongs to (the org hierarchy); absent → a location is its own store. */
+  readonly branchOf?: (tenantId: string) => Promise<(locationId: string) => string> | ((locationId: string) => string);
+}): {
+  readonly storeStock: (tenantId: string, storeId: string) => Promise<ReadonlyMap<string, number>>;
+  readonly soldAtStore: (tenantId: string, storeId: string) => Promise<readonly string[]>;
+} {
+  const ownerOf = async (tenantId: string): Promise<(locationId: string) => string> =>
+    input.branchOf === undefined ? (l: string) => l : await input.branchOf(tenantId);
+  return {
+    storeStock: async (tenantId, storeId) => {
+      const of = await ownerOf(tenantId);
+      const out = new Map<string, number>();
+      for (const r of await inventoryAdapter({ store: input.store, now: input.now }).availability(tenantId)) {
+        if (r.locationId === storeId || of(r.locationId) === storeId) out.set(r.productId, (out.get(r.productId) ?? 0) + r.onHandMinor);
+      }
+      return out;
+    },
+    soldAtStore: async (tenantId, storeId) => {
+      const of = await ownerOf(tenantId);
+      const sold = new Set<string>();
+      for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
+        const m = payloadOf<Movement>(e);
+        if (m.kind === 'sold' && (m.locationId === storeId || of(m.locationId) === storeId)) sold.add(m.productId);
+      }
+      return [...sold].sort();
+    },
+  };
+}
+
+/**
+ * FUL-11 (M04-FR-04 · D02-FR-06 · M23): supplier display funding — the contracts merchandising recorded, and the receipts finance
+ * posted as journals through the accountant's mapping (a receipt IS its journal, on the one finance stream).
+ */
+export function displayFundingAdapter(input: { readonly store: EventStore; readonly now: () => string }): DisplayFundingDeps & {
+  readonly fundingReceived: (tenantId: string) => Promise<Readonly<Record<string, Money>>>;
+} {
+  const fin = financeAdapter(input);
+  const fundingJournals = async (tenantId: string): Promise<readonly DisplayFundingJournal[]> =>
+    (await allOf<JournalEntry | DisplayFundingJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
+      .filter((j): j is DisplayFundingJournal => 'displayFunding' in j);
+  return {
+    periodStates: fin.periodStates,
+    nextOpenPeriod: fin.nextOpenPeriod,
+    appendJournal: fin.appendJournal,
+    now: input.now,
+    postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    contracts: (tenantId) => spacePerformanceAdapter(input).contracts(tenantId),
+    fundingJournals,
+    fundingReceived: async (tenantId) => {
+      const out: Record<string, Money> = {};
+      for (const j of await fundingJournals(tenantId)) {
+        const id = j.displayFunding.contractId;
+        out[id] = { minor: (out[id]?.minor ?? 0) + j.displayFunding.amountMinor, currency: 'INR' };
+      }
+      return out;
     },
   };
 }

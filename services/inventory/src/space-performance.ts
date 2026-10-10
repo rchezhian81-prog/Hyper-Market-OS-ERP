@@ -55,6 +55,12 @@ export interface SpacePerformanceDeps {
   /** Every display contract recorded for the tenant — append-only, folded latest-per-contractId. */
   readonly contracts: (tenantId: string) => Promise<readonly DisplayContract[]> | readonly DisplayContract[];
   readonly recordContract: (tenantId: string, contractId: string, contract: DisplayContract, key: string) => Promise<void> | void;
+  /**
+   * FUL-11 (M04-FR-04 → M23): what FINANCE has received per contract, from the display-funding journals it posted
+   * (services/finance/src/display-funding.ts). When wired, the review reads this — a "received" figure in the request is
+   * ignored and said so — because the money in is the one fact the review exists to check. Optional on a bare stub.
+   */
+  readonly fundingReceived?: (tenantId: string) => Promise<Readonly<Record<string, Money>>> | Readonly<Record<string, Money>>;
   readonly now: () => string;
 }
 
@@ -111,13 +117,21 @@ export function spacePerformanceRoutes(deps: SpacePerformanceDeps): readonly Rou
         }
         const all = await deps.contracts(ctx.tenantId);
         const contracts = isStr(b['storeId']) ? all.filter((c) => c.storeId === b['storeId']) : all;
+        const fromFinance = deps.fundingReceived === undefined ? undefined : await deps.fundingReceived(ctx.tenantId);
         const statuses = reviewDisplayContracts({
-          contracts, onDate: b['onDate'] as string, received, stillOccupying, currency: b['currency'] as CurrencyCode,
+          contracts, onDate: b['onDate'] as string, received: fromFinance ?? received, stillOccupying, currency: b['currency'] as CurrencyCode,
           ...(isInt(b['warnDays']) ? { warnDays: b['warnDays'] as number } : {}),
         });
         // The commercially actionable findings — free space and money not in — surfaced by exception (P-03).
         const flagged = statuses.filter((s) => s.finding !== 'active').length;
-        return { status: 200, body: { statuses, count: statuses.length, flagged } };
+        return {
+          status: 200,
+          body: {
+            statuses, count: statuses.length, flagged,
+            receivedFrom: fromFinance === undefined ? 'the_request' : 'finance_display_funding_journals',
+            ...(fromFinance !== undefined && b['received'] !== undefined ? { typedReceivedIgnored: true } : {}),
+          },
+        };
       },
     },
     {

@@ -37,6 +37,14 @@ const onHandMap = (v: unknown): Readonly<Record<string, number>> | undefined =>
   v === undefined ? {} : (isObj(v) && Object.values(v).every((n) => isInt(n) && (n as number) >= 0) ? (v as Record<string, number>) : undefined);
 
 export interface AssortmentDeps {
+  /**
+   * FUL-11 (M04-FR-01): what the store HOLDS, per product, from head office's own stock ledger — every location the org
+   * hierarchy puts under the store. When wired, a drop and an integrity check use THIS figure, never a number typed into
+   * the request (a drop told "no stock" would delete stock that is on the shelf). Optional on a bare stub.
+   */
+  readonly storeStock?: (tenantId: string, storeId: string) => Promise<ReadonlyMap<string, number>> | ReadonlyMap<string, number>;
+  /** FUL-11: every product the stock ledger has ever recorded SELLING at the store's locations. Optional on a bare stub. */
+  readonly soldAtStore?: (tenantId: string, storeId: string) => Promise<readonly string[]> | readonly string[];
   /** Every range entry recorded for a store — append-only, effective-dated; the reads fold them. */
   readonly entries: (tenantId: string, storeId: string) => Promise<readonly AssortmentEntry[]> | readonly AssortmentEntry[];
   readonly recordEntry: (tenantId: string, storeId: string, entry: AssortmentEntry, key: string) => Promise<void> | void;
@@ -71,7 +79,12 @@ export function assortmentRoutes(deps: AssortmentDeps): readonly Route[] {
         const storeId = (ctx.params['storeId'] ?? '').trim();
         const productId = (ctx.params['productId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (storeId === '' || productId === '' || !isInt(b['onHandMinor']) || (b['onHandMinor'] as number) < 0
+        // FUL-11: with head office's stock ledger wired, the stock on hand is ITS figure — a body figure is optional and,
+        // when it disagrees, said and ignored. Without the ledger (a bare stub) the body must carry it, as before.
+        const ledger = deps.storeStock === undefined ? undefined : await deps.storeStock(ctx.tenantId, storeId);
+        const typed = b['onHandMinor'];
+        if (storeId === '' || productId === '' || (ledger === undefined && (!isInt(typed) || typed < 0))
+          || (typed !== undefined && (!isInt(typed) || typed < 0))
           || !DROP_REASONS.includes(b['reason'] as DropReason) || !isDate(b['effectiveFrom'])
           || (b['reasonNote'] !== undefined && typeof b['reasonNote'] !== 'string')
           || (b['replacedByProductId'] !== undefined && !isStr(b['replacedByProductId']))) {
@@ -80,7 +93,7 @@ export function assortmentRoutes(deps: AssortmentDeps): readonly Route[] {
         let decision;
         try {
           decision = dropFromRange({
-            storeId, productId, onHandMinor: b['onHandMinor'] as number, reason: b['reason'] as DropReason,
+            storeId, productId, onHandMinor: ledger === undefined ? typed as number : (ledger.get(productId) ?? 0), reason: b['reason'] as DropReason,
             decidedBy: ctx.userId, effectiveFrom: b['effectiveFrom'] as string,
             ...(isStr(b['reasonNote']) ? { reasonNote: b['reasonNote'] } : {}),
             ...(isStr(b['replacedByProductId']) ? { replacedByProductId: b['replacedByProductId'] } : {}),
@@ -92,7 +105,15 @@ export function assortmentRoutes(deps: AssortmentDeps): readonly Route[] {
           throw e;
         }
         await deps.recordEntry(ctx.tenantId, storeId, decision.entry, ctx.idempotencyKey ?? `drop-${storeId}-${productId}-${decision.entry.effectiveFrom}`);
-        return { status: 201, body: { storeId, productId, outcome: decision.outcome, status: decision.entry.status, effectiveFrom: decision.entry.effectiveFrom, detail: decision.detail } };
+        const onHandMinor = ledger === undefined ? typed as number : (ledger.get(productId) ?? 0);
+        return {
+          status: 201,
+          body: {
+            storeId, productId, outcome: decision.outcome, status: decision.entry.status, effectiveFrom: decision.entry.effectiveFrom, detail: decision.detail,
+            onHandMinor, onHandFrom: ledger === undefined ? 'the_request' : 'head_office_stock_ledger',
+            ...(ledger !== undefined && typed !== undefined && typed !== onHandMinor ? { typedFigureIgnored: typed } : {}),
+          },
+        };
       },
     },
     {
@@ -111,12 +132,23 @@ export function assortmentRoutes(deps: AssortmentDeps): readonly Route[] {
           throw apiError(400, { code: 'not_readable_as_an_integrity_check', whatHappened: 'An integrity check needs storeId in the path and { onDate (YYYY-MM-DD), soldProductIds[], reorderedProductIds?, onHand?{ productId: whole ≥ 0 } }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the date and what was sold, reordered and on hand.' });
         }
         const assortment = new Assortment(storeId, await deps.entries(ctx.tenantId, storeId));
+        // FUL-11: the facts are head office's where it holds them — what the store's locations hold (the ledger's figure
+        // replaces any typed one) and what they have ever sold (added to any the caller reports from the till).
+        const ledger = deps.storeStock === undefined ? undefined : await deps.storeStock(ctx.tenantId, storeId);
+        const soldHere = deps.soldAtStore === undefined ? [] : await deps.soldAtStore(ctx.tenantId, storeId);
+        const soldAll = [...new Set([...sold, ...soldHere])];
+        const onHandAll: Record<string, number> = ledger === undefined ? { ...onHand } : Object.fromEntries(
+          [...new Set([...ledger.keys(), ...assortment.listedOn(b['onDate'] as string), ...Object.keys(onHand)])].map((p) => [p, ledger.get(p) ?? 0]),
+        );
         const issues = checkAssortmentIntegrity({
-          assortment, onDate: b['onDate'] as string, soldProductIds: sold,
+          assortment, onDate: b['onDate'] as string, soldProductIds: soldAll,
           ...(reordered.length > 0 ? { reorderedProductIds: reordered } : {}),
-          ...(Object.keys(onHand).length > 0 ? { onHand } : {}),
+          ...(Object.keys(onHandAll).length > 0 ? { onHand: onHandAll } : {}),
         });
-        return { status: 200, body: { storeId, onDate: b['onDate'], issues, count: issues.length } };
+        return {
+          status: 200,
+          body: { storeId, onDate: b['onDate'], issues, count: issues.length, factsFrom: ledger === undefined ? 'the_request' : 'head_office_stock_ledger' },
+        };
       },
     },
     {

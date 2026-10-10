@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 856 | 521 | 521 | 66 | 282 |
+| 13 | 858 | 522 | 522 | 66 | 282 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -580,6 +580,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/credit-notes/reconciliation` | `finance.creditnote.issue` | core | — |
 | GET | `/v1/finance/day-book/:tradingDay` | `finance.period.read` | core | — |
 | POST | `/v1/finance/day-book/:tradingDay/post` | `finance.journal.post` | core | yes |
+| GET | `/v1/finance/display-funding` | `finance.period.read` | core | — |
+| POST | `/v1/finance/display-funding/:contractId/receipts/:receiptId` | `finance.journal.post` | core | yes |
 | POST | `/v1/finance/e-invoice/apply-irp-result` | `finance.einvoice.generate` | core | yes |
 | POST | `/v1/finance/e-invoice/build` | `finance.einvoice.generate` | core | yes |
 | POST | `/v1/finance/e-invoice/eligibility` | `finance.einvoice.generate` | core | yes |

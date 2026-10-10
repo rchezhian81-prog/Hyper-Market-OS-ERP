@@ -21,6 +21,7 @@ import {
   proposeReplenishmentBatch, InvalidReplenishmentParameterError, type ReplenishmentInput,
 } from '../../../packages/replenishment/src/replenishment';
 import { salesHistory, type SoldLine } from '../../../packages/demand/src/sales-history';
+import { Assortment, type AssortmentEntry } from '../../../packages/merchandising/src/index';
 
 export interface ReplenishmentRoutesDeps {
   readonly now: () => string;
@@ -31,6 +32,11 @@ export interface ReplenishmentRoutesDeps {
    * exactly as given, so a pure what-if and every existing caller are unchanged.
    */
   readonly soldLines?: (tenantId: string, fromIso: string, toIso: string) => Promise<readonly SoldLine[]> | readonly SoldLine[];
+  /**
+   * FUL-11 (M04-FR-01): a store's recorded range. With `?storeId=`, an item the store may not REORDER on today's date (never
+   * listed, delisted, or on clearance) is taken out of the proposal and listed under `outOfRange` — visible, never silent.
+   */
+  readonly rangeOf?: (tenantId: string, storeId: string) => Promise<readonly AssortmentEntry[]> | readonly AssortmentEntry[];
 }
 
 /** A whole-day shift on a YYYY-MM-DD date. */
@@ -124,9 +130,27 @@ export function replenishmentRoutes(deps: ReplenishmentRoutesDeps): readonly Rou
           demandWindow = { from, to, days: windowDays };
         }
 
+        // FUL-11: the store's effective range decides what may be proposed for it at all.
+        const storeId = ctx.query['storeId'];
+        const outOfRange: { productId: string; status: string }[] = [];
+        if (isStr(storeId)) {
+          const range = new Assortment(storeId, deps.rangeOf === undefined ? [] : await deps.rangeOf(ctx.tenantId, storeId));
+          const today = deps.now().slice(0, 10);
+          priced = priced.filter((it) => {
+            if (range.mayReorder(it.productId, today)) return true;
+            outOfRange.push({ productId: it.productId, status: range.statusOn(it.productId, today) ?? 'never_listed' });
+            return false;
+          });
+        }
         try {
           const proposals = proposeReplenishmentBatch(priced);
-          return { status: 200, body: { proposals, count: proposals.length, asAt: deps.now(), ...(demandWindow === undefined ? {} : { demandWindow }) } };
+          return {
+            status: 200,
+            body: {
+              proposals, count: proposals.length, asAt: deps.now(), ...(demandWindow === undefined ? {} : { demandWindow }),
+              ...(isStr(storeId) ? { storeId, outOfRange } : {}),
+            },
+          };
         } catch (e) {
           if (e instanceof InvalidReplenishmentParameterError) {
             throw apiError(400, { code: 'invalid_replenishment_parameter', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the parameter and re-send. Nothing was changed.' });

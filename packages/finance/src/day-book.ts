@@ -470,5 +470,14 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
     // SP-7b (M23-FR-01): the supplier account — a matched invoice's payable, its reversal, a debit note — through a
     // goods-received-not-invoiced clearing (`payables.ts`). Suggested like the rest; the accountant commits it.
     ...PAYABLES_POSTING_RULES,
+    // FUL-11 (M04-FR-04 · D02-FR-06): supplier display funding received — the money in, against display income. Suggested
+    // like the rest; whether the CA nets it against cost of goods instead is the CA's mapping.
+    {
+      kind: 'display_funding',
+      legs: [
+        { account: 'bank_clearing', side: 'debit', component: 'amount' },
+        { account: 'display_funding_income', side: 'credit', component: 'amount' },
+      ],
+    },
   ],
 };

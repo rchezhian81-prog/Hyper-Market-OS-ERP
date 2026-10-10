@@ -189,6 +189,7 @@ import { AccessControl } from '../../../packages/rbac/src/rbac';
 import { financeRoutes } from '../../finance/src/index';
 import { dayBookRoutes } from '../../finance/src/day-book';
 import { payablesRoutes } from '../../finance/src/payables';
+import { displayFundingRoutes } from '../../finance/src/display-funding';
 import { concessionTagRoutes, concessionTradingRoutes } from '../../finance/src/concession-tags';
 import { observedHealthRoutes } from '../../platform/src/observed-health';
 import { apiManifestRoutes } from '../../platform/src/api-manifest';
@@ -239,7 +240,7 @@ import { syncedDriverRunRoutes } from '../../fulfilment/src/driver-runs';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
 import {
-  dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter,
+  dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, storeStockFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
   reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter,
 } from './adapters';
@@ -380,7 +381,7 @@ export function buildSurface(deps: {
   const floorIndentDeps = store === undefined ? {
     indent: empty(undefined), indents: empty([]), transferOf: empty(undefined), knownLocation: empty(true), onHandAt: empty([]), availableAt: empty([]), unitCostAt: empty(undefined),
     recordIndent: () => {}, recordIssued: () => {}, recordReceipt: () => {}, recordReturnAccepted: () => {}, recordShortfallResolved: () => {}, permissionsOfUser: empty(undefined), now,
-  } : { ...floorIndentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
+  } : { ...floorIndentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), rangeOf: assortmentAdapter({ store, now }).entries };
   // SP-4: one deps object per count / adjustment surface, so the direct routes, the relayed routes and the manager's
   // relayed APPROVAL DECISION all act on the same records through the same decide steps.
   const countsDeps = store === undefined ? {
@@ -670,12 +671,20 @@ export function buildSurface(deps: {
     // and the expired-still-occupying / unapproved / funding-not-received exceptions on display deals.
     ...spacePerformanceRoutes(store === undefined
       ? { contracts: empty([]), recordContract: () => {}, now }
-      : { ...spacePerformanceAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+      // FUL-11: the review's "received" is finance's own display-funding journals, never a typed figure.
+      : { ...spacePerformanceAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), fundingReceived: displayFundingAdapter({ store, now }).fundingReceived }),
+    // FUL-11 (M04-FR-04 · D02-FR-06 → M23): finance records the supplier's display funding as journals and reconciles each
+    // contract — agreed, received, outstanding, and what the ledger holds.
+    ...displayFundingRoutes(store === undefined ? {
+      periodStates: empty(new Map()), nextOpenPeriod: () => now().slice(0, 7), appendJournal: () => {}, now,
+      postingMap: empty(undefined), contracts: empty([]), fundingJournals: empty([]),
+    } : displayFundingAdapter({ store, now })),
     // Store assortment / range management (M04-FR-01) — list/drop (stock→clearance, never a silent delete)
     // + the integrity check that stops ordering what you do not sell and selling what you do not stock.
     ...assortmentRoutes(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
-      : assortmentAdapter({ store, now })),
+      // FUL-11: the drop and the integrity check read head office's stock ledger at the store's locations, never a typed figure.
+      : { ...assortmentAdapter({ store, now }), ...storeStockFactsAdapter({ store, now, branchOf: locationBranchesOf(store, now) }) }),
     ...warehouseRoutes(store === undefined ? {
       bins: empty([]), contents: empty({}), appliedCommandIds: empty([]), recordBin: () => {}, recordMovement: () => {}, now,
     } : { ...warehouseAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) }),
@@ -698,7 +707,7 @@ export function buildSurface(deps: {
     ...floorIndentRoutes(floorIndentDeps),
     // SP-8b: the floor's indent and its independent receipt RELAYED from the served Indents screen through the box.
     ...syncedFloorIndentRoutes(floorIndentDeps),
-    ...replenishmentRoutes(store === undefined ? { now } : { now, soldLines: salesHistoryAdapter({ store, now }).soldLines }),
+    ...replenishmentRoutes(store === undefined ? { now } : { now, soldLines: salesHistoryAdapter({ store, now }).soldLines, rangeOf: assortmentAdapter({ store, now }).entries }),
     ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : salesHistoryAdapter({ store, now })),
     // Blind counts (M09-FR-04): the direct route and the RELAYED route (SP-2b · F11) share one reconcile — expected, value
     // and threshold are head office's on both (SP-4 · F07); a held variance is decided by a separate person.

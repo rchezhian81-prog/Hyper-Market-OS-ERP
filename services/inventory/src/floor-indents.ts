@@ -30,6 +30,7 @@ import { checkMovement, type Movement } from './index';
 import { locationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import { outsideBranchScope, type RequestContext } from '../../kernel/src/index';
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
+import { Assortment, type AssortmentEntry } from '../../../packages/merchandising/src/index';
 
 /**
  * PA-01-r1: an indent is the business of the branch its back store and floor sit in. Acting on, or reading, an indent
@@ -92,6 +93,12 @@ export async function binPicksFor(
 export interface FloorIndentsDeps {
   /** PA-01-r1: which branch a location belongs to (the org hierarchy); absent → a location is its own branch key. */
   readonly locationBranches?: LocationBranches;
+  /**
+   * FUL-11 (M04-FR-01 "an item not in a store's assortment does not appear in that store's ordering/replenishment"): the
+   * store's recorded range. When the floor's store has a range, an indent for an item it does not range (never listed, or
+   * delisted) is refused by name; clearance stock may still be brought out to sell down. Optional on a bare stub.
+   */
+  readonly rangeOf?: (tenantId: string, storeId: string) => Promise<readonly AssortmentEntry[]> | readonly AssortmentEntry[];
   readonly indent: (tenantId: string, indentId: string) => Promise<FloorIndent | undefined> | FloorIndent | undefined;
   readonly indents: (tenantId: string) => Promise<readonly FloorIndent[]> | readonly FloorIndent[];
   /** The transfer an issue travels on — the same aggregate the transfer routes read (one truth, SP-5). */
@@ -282,6 +289,24 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           }
         }
         const now = deps.now();
+        // FUL-11: the floor's STORE decides what may be brought to it — its effective range on today's date.
+        if (deps.rangeOf !== undefined) {
+          const storeId = (await (deps.locationBranches ?? ((): ((l: string) => string) => (l) => l))(ctx.tenantId))(b['toLocationId']);
+          const entries = await deps.rangeOf(ctx.tenantId, storeId);
+          if (entries.length > 0) {
+            const range = new Assortment(storeId, entries);
+            const today = now.slice(0, 10);
+            const outside = lines.filter((l) => !range.maySell(l.productId, today));
+            if (outside.length > 0) {
+              throw apiError(422, {
+                code: 'not_in_store_range',
+                whatHappened: `Store ${storeId} does not range ${outside.map((l) => `${l.productId} (${range.statusOn(l.productId, today) ?? 'never listed'})`).join(', ')} on ${today}, so it is not brought to the floor (M04-FR-01).`,
+                wasItSaved: 'not_saved',
+                nextSafeAction: 'Ask merchandising to list the item for this store first, or leave it off the indent. Nothing was recorded.',
+              });
+            }
+          }
+        }
         let indent: FloorIndent;
         try {
           indent = requestIndent({ indentId, fromLocationId: b['fromLocationId'], toLocationId: b['toLocationId'], lines, requestedBy: ctx.userId, at: now, reason: isStr(b['reason']) ? b['reason'].trim() : null });
