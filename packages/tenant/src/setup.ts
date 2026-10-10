@@ -69,6 +69,10 @@ const validateBool: SetupValidator = (v) =>
   typeof v === 'boolean' ? null : 'Choose on or off.';
 const validateProductCount: SetupValidator = (v) =>
   isIntIn(v, 1, 1_000_000) ? null : 'Give a whole number of products (at least 1).';
+const validateLoyaltyRate: SetupValidator = (v) =>
+  isIntIn(v, 0, 100) ? null : 'Give a whole number of points per ₹100, from 0 (loyalty off) to 100.';
+const validatePointValue: SetupValidator = (v) =>
+  isIntIn(v, 0, 10_000) ? null : 'Give the value of one point in paise, from 0 to 10000 (₹100).';
 const validateStringList: SetupValidator = (v) =>
   isStringArray(v) ? null : 'Give a list of names (an empty list means none).';
 const validatePaperFormat: SetupValidator = (v) =>
@@ -178,6 +182,20 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     required: false,
     question: 'How many products may one catalogue publish add, change or remove before it counts as a bulk publish and asks the publisher to sign in again with a second factor?',
     validate: validateProductCount,
+  },
+  {
+    setting: SETTINGS.LOYALTY_POINTS_PER_100_INR,
+    group: 'check_default',
+    required: false,
+    question: 'How many loyalty points does a member earn for every ₹100 spent? (0 keeps loyalty off.)',
+    validate: validateLoyaltyRate,
+  },
+  {
+    setting: SETTINGS.LOYALTY_POINT_VALUE_PAISE,
+    group: 'check_default',
+    required: false,
+    question: 'What is one loyalty point worth when a customer spends it, in paise?',
+    validate: validatePointValue,
   },
 ];
 

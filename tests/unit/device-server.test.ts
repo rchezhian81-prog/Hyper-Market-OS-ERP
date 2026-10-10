@@ -44,7 +44,7 @@ const BASE_PACK = {
     { deviceId: 'till-1', kind: 'pos_lane', status: 'registered', label: 'Lane 1' },
   ],
 };
-// DF-3-c (OB-28 "A"): the people who may hold a phone — the warehouse worker, with the job's permission head office re-checks.
+// DF-3-c (OB-30 "A"): the people who may hold a phone — the warehouse worker, with the job's permission head office re-checks.
 const PACK = withTillPeople(BASE_PACK, [
   { userId: 'u-worker', displayName: 'Worker One', permissions: ['inventory.movement.append'] },
 ]) as typeof BASE_PACK;
@@ -277,7 +277,7 @@ describe('the device socket', () => {
     }
   });
 
-  it('DF-3-c (OB-28 "A"): a person signs in on the phone with the till PIN; a wrong PIN, a person without the job and a missing session are refused; a record naming someone else is refused by name', async () => {
+  it('DF-3-c (OB-30 "A"): a person signs in on the phone with the till PIN; a wrong PIN, a person without the job and a missing session are refused; a record naming someone else is refused by name', async () => {
     const { base, relayed } = await start();
     const deviceCookie = cookieHeader((await enrol(base, 'hh-01', CODE)).cookie!);
     // The sign-in page itself: staff ID and PIN, a plain form for the job asked.

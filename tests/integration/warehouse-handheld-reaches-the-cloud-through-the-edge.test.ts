@@ -39,7 +39,7 @@ const KEY = ['warehouse', 'handheld', 'edge', 'signing', 'key'].join('-').padEnd
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const AT = '2026-09-30T10:00:00.000Z';
 const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
-/** DF-3-c (OB-28 "A"): the people who may hold the phone, with the job's permission head office re-checks. */
+/** DF-3-c (OB-30 "A"): the people who may hold the phone, with the job's permission head office re-checks. */
 const PHONE_PEOPLE: readonly TillPerson[] = [{ userId: 'u-worker', displayName: 'Worker One', permissions: ['inventory.movement.append'] }];
 const packJson = (deviceStatus = 'registered'): string => JSON.stringify(withTillPeople({
   version: 1,
@@ -85,7 +85,7 @@ const enrol = async (edge: EdgeProcess, code = CODE, deviceId = 'hh-01'): Promis
   const res = await savedFetch(`${deviceBase(edge)}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId, code }) });
   const device = res.headers.get('set-cookie')?.split(';')[0];
   const body = (await res.json()) as Record<string, unknown>;
-  // DF-3-c (OB-28 "A"): an enrolled phone is then signed in by the person holding it, with the till PIN.
+  // DF-3-c (OB-30 "A"): an enrolled phone is then signed in by the person holding it, with the till PIN.
   const cookie = res.status === 200 && device !== undefined ? await signInOnPhone(deviceBase(edge), device, 'u-worker', 'warehouse') : device;
   return { status: res.status, cookie, body };
 };

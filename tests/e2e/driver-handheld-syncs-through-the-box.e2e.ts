@@ -38,7 +38,7 @@ const TENANT = 't-sre';
 const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
 const PHONE = { viewport: { width: 360, height: 640 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 
-// DF-3-c (OB-28 "A"): the person who signs in on the phone, with the job's permission head office re-checks.
+// DF-3-c (OB-30 "A"): the person who signs in on the phone, with the job's permission head office re-checks.
 const PHONE_PERSON = 'u-driver';
 const PACK_JSON = JSON.stringify(withTillPeople({
   version: 1,

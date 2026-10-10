@@ -1,4 +1,4 @@
-// Browser test support for the phones' sign-in (Wave 4 · PA-06 = DF-3-c · OB-28 "A").
+// Browser test support for the phones' sign-in (Wave 4 · PA-06 = DF-3-c · OB-30 "A").
 //
 // After an enrolled phone opens a job's screen the box sends it to the sign-in page; the person keys their staff ID and the
 // same PIN as the till, and the box sends the phone on to the job's screen as them. The PIN is made at run time from a seed

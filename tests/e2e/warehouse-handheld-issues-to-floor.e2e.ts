@@ -45,7 +45,7 @@ const AS_AT = '2026-10-01T09:00:00.000Z';
 
 const line = (productId: string, outstandingMinor: number) => ({ productId, uom: 'EA', requestedMinor: outstandingMinor, allocatedMinor: outstandingMinor, issuedMinor: 0, receivedMinor: 0, inTransitMinor: 0, shortfallMinor: 0, damagedMinor: 0, returnedMinor: 0, outstandingMinor });
 /** The box's pack: the back store's bins and what they hold, the worker, and — as `pullIndentsFeed` would lay it in — head office's open indents. */
-// DF-3-c (OB-28 "A"): the person who signs in on the phone, with the job's permission head office re-checks.
+// DF-3-c (OB-30 "A"): the person who signs in on the phone, with the job's permission head office re-checks.
 const PHONE_PERSON = 'u-back';
 const PACK_JSON = JSON.stringify(withTillPeople({
   version: 1,

@@ -43,7 +43,7 @@ const TENANT = 't-sre';
 const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
 const HANDHELD = { viewport: { width: 360, height: 640 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 
-// DF-3-c (OB-28 "A"): the person who signs in on the phone, with the job's permission head office re-checks.
+// DF-3-c (OB-30 "A"): the person who signs in on the phone, with the job's permission head office re-checks.
 const PHONE_PERSON = 'u-worker';
 const PACK_JSON = JSON.stringify(withTillPeople({
   version: 1,
@@ -145,7 +145,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     expect(await page.textContent('#who')).toContain('u-worker');
     expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).deviceId)).toBe('hh-01');
     expect(await page.textContent('#queue-text')).toContain('nothing sent yet');
-    // DF-3-c (OB-28 "A"): the phone says who is holding it, with the one button that hands it over.
+    // DF-3-c (OB-30 "A"): the phone says who is holding it, with the one button that hands it over.
     expect(await page.textContent('[data-phone-holder]')).toContain('Signed in: u-worker');
     await page.click('[data-phone-holder] button[type="submit"]');
     await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/device/sign-in', undefined, { timeout: 15_000 });

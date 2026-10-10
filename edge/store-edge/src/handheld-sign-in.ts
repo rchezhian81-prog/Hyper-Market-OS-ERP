@@ -1,9 +1,9 @@
-// WHO IS HOLDING THE PHONE — verified by this store computer, offline (Wave 4 · PA-06 = DF-3-c · OB-28 "A" · ADR-0019 ·
+// WHO IS HOLDING THE PHONE — verified by this store computer, offline (Wave 4 · PA-06 = DF-3-c · OB-30 "A" · ADR-0019 ·
 // ADR-0020 · §28 · hard rules #1, #4, #10).
 //
 // The warehouse, picker and driver phones used to record every scan, pick and stop under the ONE person the store setup
 // named for the job (`workerId`, the wave's `pickerId`, the route's `driverId`). Two people sharing a phone were recorded
-// as one, and a phone left on a shelf worked for whoever picked it up. The owner's decision (OB-28 "A"): each person signs
+// as one, and a phone left on a shelf worked for whoever picked it up. The owner's decision (OB-30 "A"): each person signs
 // in on the phone with the SAME personal PIN as the till, and their work is recorded as theirs.
 //
 //   • The PIN is checked HERE, on the box, by the till's own register (`TillOperators.signInOnDevice`) — same verifiers,

@@ -203,7 +203,7 @@ export async function approvalFromLane(
 }
 
 /**
- * DF-3-c (OB-28 "A"): sign a person in on an ENROLLED phone with the same PIN as the till — what the phone's sign-in page
+ * DF-3-c (OB-30 "A"): sign a person in on an ENROLLED phone with the same PIN as the till — what the phone's sign-in page
  * posts. Resolves the cookie header the phone then carries: its device credential and the person's session together.
  */
 export async function signInOnPhone(base: string, deviceCookie: string, staffId: string, screen: 'warehouse' | 'picker' | 'driver' = 'warehouse'): Promise<string> {

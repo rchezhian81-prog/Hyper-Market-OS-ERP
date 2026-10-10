@@ -40,7 +40,7 @@ const KEY = ['driver', 'handheld', 'edge', 'signing', 'key'].join('-').padEnd(48
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac';
 const AT = '2026-10-01T10:00:00.000Z';
 const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
-/** DF-3-c (OB-28 "A"): the people who may hold the phone, with the job's permission head office re-checks. */
+/** DF-3-c (OB-30 "A"): the people who may hold the phone, with the job's permission head office re-checks. */
 const PHONE_PEOPLE: readonly TillPerson[] = [{ userId: 'u-driver', displayName: 'Driver One', permissions: ['delivery.attempt.record'] }];
 const packJson = (deviceStatus = 'registered'): string => JSON.stringify(withTillPeople({
   version: 1,
@@ -87,7 +87,7 @@ const enrol = async (edge: EdgeProcess, code = CODE, deviceId = 'hh-03', next?: 
   const res = await savedFetch(`${deviceBase(edge)}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId, code, ...(next === undefined ? {} : { next }) }) });
   const device = res.headers.get('set-cookie')?.split(';')[0];
   const body = (await res.json()) as Record<string, unknown>;
-  // DF-3-c (OB-28 "A"): an enrolled phone is then signed in by the person holding it, with the till PIN.
+  // DF-3-c (OB-30 "A"): an enrolled phone is then signed in by the person holding it, with the till PIN.
   const cookie = res.status === 200 && device !== undefined ? await signInOnPhone(deviceBase(edge), device, 'u-driver', 'driver') : device;
   return { status: res.status, cookie, body };
 };
@@ -339,7 +339,7 @@ describe('the driver\'s phone: enrol → device socket → box (durable) → hea
     const card = stopAt('s2', 'delivered', { codCollectedMinor: 0, codMethod: 'card', proofKind: 'otp' });
     const acks = (await postBatch(first, cookie, [skipped, stranger, card].map(item))).acks;
     expect(acks.map((a) => a.status)).toEqual(['accepted', 'refused', 'accepted']);
-    // DF-3-c (OB-28 "A"): the phone is signed in as u-driver; a stop naming anybody else never leaves the box.
+    // DF-3-c (OB-30 "A"): the phone is signed in as u-driver; a stop naming anybody else never leaves the box.
     expect(acks[1]?.reason).toBe('the record names u-stranger, who has not been signed in on this phone this shift');
     const pass = await first.syncOnce!();
     expect(pass.sent).toBe(1);

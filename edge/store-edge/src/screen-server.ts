@@ -363,7 +363,7 @@ export function startScreenServer(input: {
       // OB-16: behind the authenticated relay the ERP screens run as the person who SIGNED IN — their id, their
       // permissions from this box's role register — never as whoever the pack named for the screen. The till is
       // untouched: the person signs in at the till itself.
-      // DF-3-c (OB-28 "A"): so do the phone screens served here (the hosted copy) — the job is done as the person the
+      // DF-3-c (OB-30 "A"): so do the phone screens served here (the hosted copy) — the job is done as the person the
       // front signed in, exactly as a phone on the shop wifi does it as the person who signed in on it with their PIN.
       const handheld = isHandheldSource(route.screen) ? route.screen : null;
       const signedIn = input.trustForwardedUser === true && (APP_SHELL[route.screen].dir === 'web-erp' || handheld !== null) ? forwardedUser(req.headers['x-sre-user']) : null;

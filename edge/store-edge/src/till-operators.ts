@@ -40,7 +40,7 @@ export type SignInVia = 'pin' | 'verified_sign_in';
 export type SignInRefusal = 'wrong_staff_id_or_pin' | 'locked' | 'no_till_authority' | 'no_approval_authority' | 'no_handheld_authority' | 'no_people_register' | 'lane_locked' | 'not_readable' | 'no_lane';
 
 /**
- * The phones (DF-3-c · OB-28 "A"): a person signs in on the warehouse, picker or driver phone with the SAME personal PIN as
+ * The phones (DF-3-c · OB-30 "A"): a person signs in on the warehouse, picker or driver phone with the SAME personal PIN as
  * the till. Such a session belongs to the phone, not to a till: its "lane" is the device, under this prefix, so a phone's
  * session can never take money at a till and a till's session can never post a phone's work.
  */
@@ -276,7 +276,7 @@ export class TillOperators {
   }
 
   /**
-   * Sign a person in on a PHONE (DF-3-c · OB-28 "A") with their staff ID and the same PIN as the till, for the phone's job
+   * Sign a person in on a PHONE (DF-3-c · OB-30 "A") with their staff ID and the same PIN as the till, for the phone's job
    * (`authority`: the permission head office re-checks on that job's records). The same guess limits and log as the till;
    * twenty refusals on one phone lock that phone's sign-in. ONE person per phone at a time: whoever was signed in on it is
    * signed out — said in the log — so the next person's work can never be recorded as theirs.

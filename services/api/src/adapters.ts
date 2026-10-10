@@ -53,6 +53,8 @@ import type { LotTraceDeps } from '../../inventory/src/lot-trace';
 import type { RecallDeps } from '../../inventory/src/recall';
 import { RecallRegistry, type RecallRecord } from '../../../packages/traceability/src/index';
 import type { QualityHoldDeps } from '../../inventory/src/quality-hold';
+import type { LoyaltyMemberDeps, LoyaltyRule, MemberRecord } from '../../customer/src/loyalty-members';
+import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack } from '../../customer/src/loyalty-effects';
 import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
 import type { QualityHold } from '../../../packages/quality/src/index';
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
@@ -7719,6 +7721,94 @@ export function customerAdapter(input: {
         payload: m,
       }) }], expectedVersion === undefined ? undefined : { guard: { key: `points:${customerId}`, expectedVersion } });
     },
+  };
+}
+
+const LOYALTY_MEMBERS = streamName(STREAM.loyalty, 'members');
+const forSaleLoyalty = (saleId: string): string => streamName(STREAM.loyalty, 'sale', saleId);
+
+/**
+ * Loyalty members (PF-09-a · OB-28/OB-29): each enrolment and each leaving is a `LoyaltyMember` fact on one stream — the
+ * member code and the last four digits, never the phone number (P-04). Append-only; the current state is the latest fact.
+ */
+export function loyaltyMembersAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly memberKey?: Buffer;
+  readonly rule: (tenantId: string) => Promise<LoyaltyRule> | LoyaltyRule;
+}): LoyaltyMemberDeps {
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  return {
+    ...(input.memberKey === undefined ? {} : { memberKey: input.memberKey }),
+    memberHistory: async (tenantId, memberRef) =>
+      (await allOf<MemberRecord>(input.store, tenantId, LOYALTY_MEMBERS, 'LoyaltyMember')).filter((m) => m.memberRef === memberRef),
+    recordMember: async (tenantId, record, key) => {
+      await input.store.append(tenantId, LOYALTY_MEMBERS, makeEvent({
+        id: `loyalty-member-${key}`,
+        type: 'LoyaltyMember',
+        occurredAt: input.now(),
+        idempotencyKey: `loyalty-member-${tenantId}-${key}`,
+        source: 'api/customer',
+        payload: record,
+      }));
+    },
+    pointsBalance: customers.pointsBalance,
+    rule: input.rule,
+    now: input.now,
+  };
+}
+
+/**
+ * What a sale and a return do to a member's points (PF-09-a): each sale's loyalty facts fold their own small stream, so a
+ * return reads only its sale's history. The earn and its points movement are ONE write; a take-back and its movement are
+ * ONE write under the member's points guard (Wave 2a), so it can never race a burn into a negative balance.
+ */
+export function loyaltyEffectsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly rule: (tenantId: string) => Promise<LoyaltyRule> | LoyaltyRule;
+}): LoyaltyEffectsDeps {
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const members = loyaltyMembersAdapter(input);
+  const pointsEntry = (tenantId: string, m: RecordedPointsMovement) => ({
+    stream: streamName(STREAM.loyalty, m.customerId),
+    event: makeEvent({
+      id: `points-${m.movementId}`, type: 'PointsMovement', occurredAt: m.at,
+      idempotencyKey: `points-${tenantId}-${m.movementId}`, source: 'api/customer', payload: m,
+    }),
+  });
+  return {
+    rule: input.rule,
+    memberHistory: members.memberHistory,
+    saleLoyalty: async (tenantId, saleId) => {
+      const events = await input.store.readStream(tenantId, forSaleLoyalty(saleId));
+      const earn = events.find((e) => e.event.type === 'LoyaltySaleEarned');
+      return {
+        ...(earn === undefined ? {} : { earn: payloadOf<SaleEarn>(earn) }),
+        takeBacks: events.filter((e) => e.event.type === 'LoyaltyReturnTakenBack').map((e) => payloadOf<ReturnTakeBack>(e)),
+      };
+    },
+    pointsBalance: customers.pointsBalance,
+    pointsVersion: (tenantId, memberRef) => input.store.guardVersion(tenantId, `points:${memberRef}`),
+    recordEarn: async (tenantId, saleId, earn, at) => {
+      await input.store.appendBatch(tenantId, [
+        pointsEntry(tenantId, { movementId: `earn-${saleId}`, customerId: earn.memberRef, delta: earn.points, reason: 'earn', sourceRef: `sale:${saleId}`, at }),
+        { stream: forSaleLoyalty(saleId), event: makeEvent({
+          id: `loyalty-sale-earn-${saleId}`, type: 'LoyaltySaleEarned', occurredAt: at,
+          idempotencyKey: `loyalty-sale-earn-${tenantId}-${saleId}`, source: 'api/customer', payload: earn,
+        }) },
+      ]);
+    },
+    recordTakeBack: async (tenantId, saleId, t, at, expectedVersion) => {
+      await input.store.appendBatch(tenantId, [
+        ...(t.taken > 0 ? [pointsEntry(tenantId, { movementId: `takeback-${t.returnId}`, customerId: t.memberRef, delta: -t.taken, reason: 'earn_reversal', sourceRef: `return:${t.returnId}`, at })] : []),
+        { stream: forSaleLoyalty(saleId), event: makeEvent({
+          id: `loyalty-takeback-${t.returnId}`, type: 'LoyaltyReturnTakenBack', occurredAt: at,
+          idempotencyKey: `loyalty-takeback-${tenantId}-${saleId}-${t.returnId}`, source: 'api/customer', payload: t,
+        }) },
+      ], { guard: { key: `points:${t.memberRef}`, expectedVersion } });
+    },
+    now: input.now,
   };
 }
 

@@ -49,7 +49,7 @@ export const HANDHELD_SCREENS: readonly ScreenName[] = ['warehouse', 'picker', '
 export const DEVICE_COOKIE = 'sre_device';
 export const DEVICE_ENROL_ROUTE = '/device/enrol';
 export const DEVICE_SYNC_STATUS_ROUTE = '/lane/sync-status';
-/** DF-3-c (OB-28 "A"): the person holding the phone signs in here with their staff ID and the till PIN, and out again. */
+/** DF-3-c (OB-30 "A"): the person holding the phone signs in here with their staff ID and the till PIN, and out again. */
 export const PHONE_SIGN_IN_ROUTE = '/device/sign-in';
 export const PHONE_SIGN_OUT_ROUTE = '/device/sign-out';
 /** The phone holder's session: HttpOnly, SameSite=Strict, the box keeps only its hash. Twelve hours, like a till shift. */
@@ -57,7 +57,7 @@ export const OPERATOR_COOKIE = 'sre_operator';
 const OPERATOR_COOKIE_SECONDS = 12 * 3600;
 
 /**
- * Who is holding the phone (DF-3-c · OB-28 "A"): the box's till register, addressed by the DEVICE. Absent → nobody can
+ * Who is holding the phone (DF-3-c · OB-30 "A"): the box's till register, addressed by the DEVICE. Absent → nobody can
  * sign in on a phone, so no phone screen is served and no phone record is taken (fail closed).
  */
 export interface PhoneOperators {
@@ -309,7 +309,7 @@ export function startDeviceServer(input: {
         return;
       }
 
-      // ── Who is holding the phone (DF-3-c · OB-28 "A") ──
+      // ── Who is holding the phone (DF-3-c · OB-30 "A") ──
       const operatorToken = cookieValue(req.headers.cookie, OPERATOR_COOKIE);
       const holder = input.operators === null ? null : input.operators.check(operatorToken, auth.deviceId);
       if (pathname === PHONE_SIGN_IN_ROUTE) {

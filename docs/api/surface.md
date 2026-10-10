@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 838 | 511 | 511 | 64 | 281 |
+| 13 | 842 | 514 | 514 | 64 | 282 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -393,8 +393,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/loyalty/coupons/:code` | `loyalty.coupon.read` | `loyalty` | — |
 | POST | `/v1/loyalty/coupons/:code` | `loyalty.coupon.issue` | `loyalty` | yes |
 | POST | `/v1/loyalty/coupons/:code/redemptions/:redemptionId` | `loyalty.coupon.redeem` | `loyalty` | yes |
+| POST | `/v1/loyalty/members` | `loyalty.member.enrol` | core | yes |
+| POST | `/v1/loyalty/members/:memberRef/leave` | `loyalty.member.enrol` | core | yes |
+| POST | `/v1/loyalty/members/lookup` | `loyalty.points.read` | core | yes |
 | POST | `/v1/loyalty/offers` | `loyalty.coupon.issue` | `loyalty` | yes |
 | POST | `/v1/loyalty/referrals/:referralId` | `loyalty.coupon.issue` | `loyalty` | yes |
+| GET | `/v1/loyalty/rule` | `loyalty.points.read` | core | — |
 | POST | `/v1/notifications/can-send` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id/delivered` | `notification.send.check` | core | yes |

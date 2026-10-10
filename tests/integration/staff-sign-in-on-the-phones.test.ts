@@ -12,7 +12,7 @@ import { withTillPeople, issueTillPins, signInOnPhone, pinOf, type TillPerson } 
 
 /**
  * **Each person signs in on the warehouse, picker or driver phone with the SAME personal PIN as the till, and the work they
- * do on it is recorded as theirs (Wave 4 · PA-06 = DF-3-c · OB-28 "A" · ADR-0019 · ADR-0020 · §28 · hard rules #1/#4/#10).**
+ * do on it is recorded as theirs (Wave 4 · PA-06 = DF-3-c · OB-30 "A" · ADR-0019 · ADR-0020 · §28 · hard rules #1/#4/#10).**
  *
  * The REAL box (`startEdge` with its device socket, its till-PIN register and fsync'd sign-in log, its device-events log and
  * sync agent) against the REAL cloud (the API harness behind a `fetch` the test can cut):
@@ -115,7 +115,7 @@ const scansAt = async (h: ApiHarness): Promise<{ commandId: string; receivedBy: 
   ((await h.request({ method: 'GET', path: '/v1/inventory/receiving-scans', userId: 'u-owner', tenantId: A, query: { grnId: 'grn-1' } })).body as { scans: { commandId: string; receivedBy: string }[] })
     .scans.map((s) => ({ commandId: s.commandId, receivedBy: s.receivedBy })).sort((x, y) => x.commandId.localeCompare(y.commandId));
 
-describe('staff sign in on the phones with their till PIN; the work is recorded as theirs (DF-3-c · OB-28 "A")', () => {
+describe('staff sign in on the phones with their till PIN; the work is recorded as theirs (DF-3-c · OB-30 "A")', () => {
   it('two people, one phone: the second sign-in ends the first; each scan reaches head office as the person who did it — including the first person\'s scan still queued on the phone', async () => {
     const s = await shop();
     const edge = await s.start();

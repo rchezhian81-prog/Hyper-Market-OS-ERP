@@ -224,7 +224,7 @@ screen is served to a device that has not enrolled.
    device id and the code, press Enrol. A wrong code says so and counts (five wrong per device per fifteen minutes,
    then a wait); an expired code says so — issue a new one; a code already used says so — it never works twice.
    On success the phone asks **who is holding it** (next step).
-4a. **The person signs in on the phone (OB-28 "A", DF-3-c).** Each person keys their **staff ID** and the **same six-digit
+4a. **The person signs in on the phone (OB-30 "A", DF-3-c).** Each person keys their **staff ID** and the **same six-digit
    PIN as the till** — so everyone who uses a phone needs a till PIN issued on the store computer first
    (`till/start-till.sh till-pin --user <their id> --by <administrator>`, shown once, kept nowhere), and a role in the
    store setup that gives them the job: warehouse `inventory.movement.append`, picking `fulfilment.pack.record`, delivery

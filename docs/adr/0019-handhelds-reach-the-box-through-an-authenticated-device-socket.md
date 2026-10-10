@@ -65,7 +65,7 @@
 - **The picker handheld** rides the socket end to end since SP-3c-i (1 Oct 2026): `PickLineResolved` / `WavePacked` → the cloud wave register (`services/fulfilment/src/waves.ts`), and enrolment lands a device on the handheld screen it asked for (`?next=/picker/`). **The driver handheld** rides it end to end since SP-3c-ii (1 Oct 2026): `DeliveryStopUpdated` / `RouteSettled` / `DriverCashHandedOver` → the cloud route register (`services/fulfilment/src/driver-runs.ts`), each stop stepping the order's own lifecycle;
   W2 (blind count) and W3 (adjustment request) on the warehouse handheld are SP-3b.
 
-## Amendment — the person holding the phone (Wave 4 · PA-06 = DF-3-c-3a · OB-28 "A", 10 Oct 2026)
+## Amendment — the person holding the phone (Wave 4 · PA-06 = DF-3-c-3a · OB-30 "A", 10 Oct 2026)
 
 The device credential says WHICH phone; it never said WHO holds it — every record named the one person the store setup
 gave the job. Now each person signs in on the enrolled phone with their staff ID and the same PIN as the till
