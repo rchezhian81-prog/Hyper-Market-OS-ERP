@@ -121,4 +121,26 @@ describe.each(backings)('OB-37 — an order names the store it is delivered to �
     expect(got.status).toBe(201);
     expect((got.body as { grn: { governanceFlags: string[] } }).grn.governanceFlags).toContain('order_store_not_named');
   }, 60_000);
+  it('FUL-11 — the store\'s range is enforced at ordering: a delisted, clearance or never-ranged product is refused by name for a store that has a range; the clearance drop was judged on head office\'s own stock; a store with no range is not judged', async () => {
+    const h = harness();
+    const t = randomUUID();
+    const s = await shop(h, t);
+    const list = (store: string, product: string) => s.call('POST', `/v1/merchandising/assortment/${store}/${product}/list`, 'u-buyer', { effectiveFrom: '2026-01-01' }, `l-${store}-${product}`);
+    for (const p of ['p1', 'p-clr', 'p-gone']) expect((await list('S-A', p)).status).toBe(201);
+    // 3 of p-clr are in the BACK STORE under S-A: head office's position says so, so the drop routes to clearance.
+    expect((await s.call('POST', '/v1/inventory/movements', 'u-owner', { movementId: 'stk-clr', productId: 'p-clr', locationId: 'S-A-BACK', kind: 'received', quantityMinor: 3, uom: 'ea', occurredAt: '2026-01-02T00:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 100 }, 'stk-clr')).status).toBeLessThan(300);
+    expect((await s.call('POST', '/v1/merchandising/assortment/S-A/p-clr/drop', 'u-buyer', { reason: 'poor_sales', effectiveFrom: '2026-02-01' }, 'd-clr')).body).toMatchObject({ status: 'clearance', onHandMinor: 3 });
+    expect((await s.call('POST', '/v1/merchandising/assortment/S-A/p-gone/drop', 'u-buyer', { reason: 'supplier_discontinued', effectiveFrom: '2026-02-01' }, 'd-gone')).body).toMatchObject({ status: 'delisted', onHandMinor: 0 });
+    const line = (productId: string) => ({ lines: [{ productId, orderedQty: 5, unitCost: cost }] });
+    expect((await s.order('po-ok', { deliverToLocationId: 'S-A', ...line('p1') })).status).toBe(201);
+    for (const [po, product] of [['po-clr', 'p-clr'], ['po-gone', 'p-gone'], ['po-never', 'p-never']] as const) {
+      const refused = await s.order(po, { deliverToLocationId: 'S-A', ...line(product) });
+      expect(refused.status, product).toBe(422);
+      expect(codeOf(refused), product).toBe('not_in_range');
+    }
+    // Delivered to the back store, it is S-A's range that decides (the org hierarchy says whose back store it is).
+    expect(codeOf(await s.order('po-back', { deliverToLocationId: 'S-A-BACK', ...line('p-gone') }))).toBe('not_in_range');
+    // Store B has no range recorded yet: nothing to enforce.
+    expect((await s.order('po-b', { deliverToLocationId: 'S-B', ...line('p-never') })).status).toBe(201);
+  }, 60_000);
 });

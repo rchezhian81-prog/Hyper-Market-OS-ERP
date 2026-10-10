@@ -20,6 +20,11 @@ const rangeGet = (h: ApiHarness, u: string, store: string, onDate?: string) =>
   h.request({ method: 'GET', path: `/v1/merchandising/assortment/${store}`, userId: u, tenantId: A, query: onDate ? { onDate } : {} });
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
+/** FUL-11: the stock a drop is judged on is head office's own — put it on the ordinary position first. */
+const stockAt = (h: ApiHarness, store: string, product: string, qty: number) =>
+  h.request({ method: 'POST', path: '/v1/inventory/movements', userId: 'u-owner', tenantId: A, idempotencyKey: `stock-${store}-${product}`, body: {
+    movementId: `stock-${store}-${product}`, productId: product, locationId: store, kind: 'received', quantityMinor: qty, uom: 'ea', occurredAt: '2026-01-01T00:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 100,
+  } });
 
 async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
@@ -36,10 +41,11 @@ describe('assortment / range management (M04-FR-01)', () => {
     await list(h, 'u-mgr', 's1', 'p2', '2026-01-01');
     expect(((await rangeGet(h, 'u-owner', 's1', '2026-08-24')).body as { listed: string[] }).listed).toEqual(['p1', 'p2']);
 
-    const clr = await drop(h, 'u-mgr', 's1', 'p1', { onHandMinor: 500, reason: 'poor_sales', effectiveFrom: '2026-08-01' });
+    await stockAt(h, 's1', 'p1', 500); // p2 has none on the shelf
+    const clr = await drop(h, 'u-mgr', 's1', 'p1', { reason: 'poor_sales', effectiveFrom: '2026-08-01' });
     expect(clr.status).toBe(201);
-    expect(clr.body).toMatchObject({ outcome: 'routed_to_clearance', status: 'clearance' });
-    const del = await drop(h, 'u-mgr', 's1', 'p2', { onHandMinor: 0, reason: 'supplier_discontinued', effectiveFrom: '2026-08-01' });
+    expect(clr.body).toMatchObject({ outcome: 'routed_to_clearance', status: 'clearance', onHandMinor: 500 });
+    const del = await drop(h, 'u-mgr', 's1', 'p2', { reason: 'supplier_discontinued', effectiveFrom: '2026-08-01' });
     expect(del.body).toMatchObject({ outcome: 'delisted', status: 'delisted' });
 
     // Neither is "carried" any more — clearance sells down, it is not part of the live range.
@@ -51,7 +57,8 @@ describe('assortment / range management (M04-FR-01)', () => {
     await list(h, 'u-mgr', 's2', 'p-listed', '2026-01-01');
     await list(h, 'u-mgr', 's2', 'p-neversold', '2026-01-01');
     await list(h, 'u-mgr', 's2', 'p-clr', '2026-01-01');
-    await drop(h, 'u-mgr', 's2', 'p-clr', { onHandMinor: 100, reason: 'poor_sales', effectiveFrom: '2026-02-01' }); // → clearance
+    await stockAt(h, 's2', 'p-clr', 100);
+    await drop(h, 'u-mgr', 's2', 'p-clr', { reason: 'poor_sales', effectiveFrom: '2026-02-01' }); // → clearance
 
     const res = await integrity(h, 'u-mgr', 's2', {
       onDate: '2026-08-24',
@@ -72,13 +79,18 @@ describe('assortment / range management (M04-FR-01)', () => {
   it('refuses a nonsense drop and is gated to range staff', async () => {
     const h = await seeded();
     // "replaced" must say what replaced it, or the customer is simply told no.
-    expect(codeOf(await drop(h, 'u-mgr', 's3', 'p1', { onHandMinor: 10, reason: 'replaced_by_alternative', effectiveFrom: '2026-08-01' }, 'd-repl'))).toBe('range_decision_refused');
+    await stockAt(h, 's3', 'p1', 10);
+    expect(codeOf(await drop(h, 'u-mgr', 's3', 'p1', { reason: 'replaced_by_alternative', effectiveFrom: '2026-08-01' }, 'd-repl'))).toBe('range_decision_refused');
     expect((await list(h, 'u-cash', 's3', 'p1', '2026-01-01', 'l-cash')).status).toBe(403);
-    expect((await drop(h, 'u-cash', 's3', 'p1', { onHandMinor: 0, reason: 'poor_sales', effectiveFrom: '2026-08-01' }, 'd-cash')).status).toBe(403);
+    expect((await drop(h, 'u-cash', 's3', 'p1', { reason: 'poor_sales', effectiveFrom: '2026-08-01' }, 'd-cash')).status).toBe(403);
     expect((await integrity(h, 'u-cash', 's3', { onDate: '2026-08-24', soldProductIds: [] }, 'i-cash')).status).toBe(403);
     expect((await rangeGet(h, 'u-cash', 's3')).status).toBe(403);
     expect(codeOf(await list(h, 'u-mgr', 's3', 'p1', 'not-a-date', 'l-bad'))).toBe('not_readable_as_a_listing');
-    expect(codeOf(await drop(h, 'u-mgr', 's3', 'p2', { onHandMinor: -1, reason: 'poor_sales', effectiveFrom: '2026-08-01' }, 'd-bad'))).toBe('not_readable_as_a_drop');
+    expect(codeOf(await drop(h, 'u-mgr', 's3', 'p2', { reason: 'not-a-reason', effectiveFrom: '2026-08-01' }, 'd-bad'))).toBe('not_readable_as_a_drop');
+    // FUL-11: the request does not say what is on the shelf — head office does. "0 on hand" with 10 on the shelf would
+    // have deleted the line and made the stock invisible; it is refused by name.
+    expect(codeOf(await drop(h, 'u-mgr', 's3', 'p1', { onHandMinor: 0, reason: 'poor_sales', effectiveFrom: '2026-08-01' }, 'd-claim'))).toBe('drop_carries_caller_stock');
+    expect(codeOf(await drop(h, 'u-mgr', 's3', 'p1', { onHandMinor: -1, reason: 'poor_sales', effectiveFrom: '2026-08-01' }, 'd-claim2'))).toBe('drop_carries_caller_stock');
   });
 
   it('resolves the range as-at a date and survives a restart', async () => {

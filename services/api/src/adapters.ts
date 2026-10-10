@@ -157,6 +157,8 @@ import { projectRemoteSessions, type RemoteSessionsDeps, type RemoteSessionEvent
 import { fleetSummary } from '../../../packages/platform-admin/src/devices';
 import type { SpacePerformanceDeps } from '../../inventory/src/space-performance';
 import type { AssortmentDeps } from '../../inventory/src/assortment';
+import { rangeStatusOf } from '../../inventory/src/assortment';
+import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import type { DisplayContract, AssortmentEntry } from '../../../packages/merchandising/src/index';
 import type { DelegationDeps } from '../../identity/src/delegation';
 import type { ApprovalDecisionDeps, ApprovalDecisionRecord } from '../../identity/src/approval-decisions';
@@ -4757,6 +4759,12 @@ export function assortmentAdapter(input: {
     now: input.now,
     // Every range entry for the store — append-only; the Assortment resolves the in-force status per date.
     entries: (tenantId, storeId) => allOf<AssortmentEntry>(input.store, tenantId, forAssortment(storeId), 'AssortmentEntryRecorded'),
+    // FUL-11: head office's on-hand at the store and every place under it (the org hierarchy says which), from the stock position.
+    storeOnHand: async (tenantId, storeId, productId) => {
+      const branchOf = branchOfLocationIn(await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId));
+      const rows = await inventoryAdapter(input).availability(tenantId, productId);
+      return rows.filter((r) => r.locationId === storeId || branchOf(r.locationId) === storeId).reduce((s, r) => s + r.onHandMinor, 0);
+    },
     recordEntry: async (tenantId, storeId, entry, key) => {
       const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
       await input.store.append(tenantId, forAssortment(storeId), makeEvent({
@@ -6669,6 +6677,9 @@ export function purchaseOrdersAdapter(input: {
       const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
       return pack?.snapshot.products.find((p) => p.productId === productId)?.baseUom;
     },
+    // FUL-11: the store's range, enforced at ordering.
+    rangeStatus: async (tenantId, storeId, productId, onDate) =>
+      rangeStatusOf(await allOf<AssortmentEntry>(input.store, tenantId, forAssortment(storeId), 'AssortmentEntryRecorded'), storeId, productId, onDate),
     // OB-37: the org node an order's "deliver to" names — the hierarchy's word, never the body's.
     orgLocation: async (tenantId, locationId) => {
       const node = (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).find((n) => n.nodeId === locationId);

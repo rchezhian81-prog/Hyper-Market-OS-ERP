@@ -78,6 +78,8 @@ export interface PurchaseOrderDeps {
   readonly locationBranches?: LocationBranches;
   /** OB-31: the unit the product master counts a product in (orderedQty is in its smallest steps), or undefined. */
   readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
+  /** FUL-11: a product's range status at a store on a date (`rangeStatusOf`) — the order refuses what the store does not range. */
+  readonly rangeStatus?: (tenantId: string, storeId: string, productId: string, onDate: string) => Promise<'no_range' | 'not_ranged' | 'listed' | 'clearance' | 'delisted'>;
   readonly supplierStatus?: (tenantId: string, supplierId: string) => Promise<'active' | 'proposed' | undefined> | 'active' | 'proposed' | undefined;
   /** Record a proposed PO. Idempotent on the PO id. */
   readonly propose: (tenantId: string, po: StoredPurchaseOrder, key: string) => Promise<void> | void;
@@ -260,6 +262,24 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         }
         await requireApprovedSupplier(deps, ctx.tenantId, b['supplierId']);
         const deliverToLocationId = await requireDeliverTo(deps, ctx, b['deliverToLocationId']);
+        // FUL-11 (M04-FR-01): the effective range is enforced at ordering — a store that has a range does not order what
+        // it does not carry (delisted), what it is selling down (clearance) or what it never ranged. A store with no range
+        // recorded yet is not judged (there is nothing to enforce) — the range screen is where that starts.
+        if (deps.rangeStatus !== undefined) {
+          const branches = deps.locationBranches === undefined ? undefined : await deps.locationBranches(ctx.tenantId);
+          const storeId = branches?.(deliverToLocationId) ?? deliverToLocationId;
+          const today = deps.now().slice(0, 10);
+          for (const l of lines as RawLine[]) {
+            const status = await deps.rangeStatus(ctx.tenantId, storeId, l.productId, today);
+            if (status === 'no_range' || status === 'listed') continue;
+            throw apiError(422, {
+              code: 'not_in_range',
+              whatHappened: `${l.productId} is ${status === 'not_ranged' ? 'not in' : `${status} in`} ${storeId}'s range today — an order for it would put on the shelf what the store has decided not to carry${status === 'clearance' ? ' (it is being sold down, never reordered)' : ''}.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Take the line off the order, or list the product in the store\'s range first. Nothing was ordered.',
+            });
+          }
+        }
         // OB-31: each line in the product's own unit (orderedQty in its smallest steps — grams for kg), priced per whole unit.
         const poLines: PurchaseOrderLineInput[] = [];
         for (const l of lines as RawLine[]) {
