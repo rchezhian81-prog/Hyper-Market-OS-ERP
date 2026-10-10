@@ -56,6 +56,7 @@ import type { QualityHoldDeps } from '../../inventory/src/quality-hold';
 import type { LoyaltyMemberDeps, LoyaltyRule, MemberRecord } from '../../customer/src/loyalty-members';
 import type { LoyaltyWalletDeps, SpendApplied } from '../../customer/src/loyalty-wallets';
 import type { LoyaltyLiabilityDeps } from '../../finance/src/loyalty-liability';
+import { monthEvidence, type IndependentEvidenceDeps, type ImportedStatement } from '../../finance/src/independent-evidence';
 import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack } from '../../customer/src/loyalty-effects';
 import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
 import type { QualityHold } from '../../../packages/quality/src/index';
@@ -5850,7 +5851,7 @@ export function settlementAdapter(input: {
 
     importedBatchIds: async (tenantId) => (await batches(tenantId)).map((b) => b.batchId),
 
-    recordBatch: async (tenantId, batch) => {
+    recordBatch: async (tenantId, batch, provenance) => {
       await input.store.append(tenantId, STREAM.settlement, makeEvent({
         id: `settle-batch-${batch.batchId}`,
         type: 'SettlementBatchImported',
@@ -5860,7 +5861,8 @@ export function settlementAdapter(input: {
         // backstop at the ledger, where the guarantee actually has to hold.)
         idempotencyKey: `settle-batch-${tenantId}-${batch.batchId}`,
         source: 'api/finance',
-        payload: batch,
+        // Who brought the file in, and when (PF-12): independent evidence keeps its provenance.
+        payload: provenance === undefined ? batch : { ...batch, provenance },
       }));
     },
 
@@ -7477,19 +7479,13 @@ export function financeAdapter(input: {
     },
 
     /**
-     * No control total can be built from this system alone, and saying so is the honest answer.
-     *
-     * A control total needs two figures reached two different ways — that is the whole point, and
-     * `closePeriod` refuses a pair that shares a derivation by name. Everything this API holds for
-     * a period comes down the same path: the till banks a sale, the sale becomes a journal. Adding
-     * those two up and comparing them is one figure written twice.
-     *
-     * The genuine second sources are outside: the bank statement, the filed return, the counted
-     * shelf. Until one of those is fed in, this returns nothing, the period does not close, and
-     * the refusal says why. A month that closes because nobody checked it is the outcome worth
-     * refusing — `packages/migration/src/banking-verification.ts` is the same control at migration.
+     * No control total can be built from this system ALONE, and it does not try: every check pairs a figure from the books
+     * with the same figure from OUTSIDE — the provider's settlement files and the bank's statements, imported with their
+     * provenance (Wave 5 · PF-12, `services/finance/src/independent-evidence.ts`). A month with nothing imported to compare
+     * still has no check, does not close, and the refusal says why. `closePeriod` still refuses a pair that shares a
+     * derivation by name.
      */
-    controlTotals: () => [],
+    controlTotals: async (tenantId, period) => (await independentEvidenceAdapter(input).evidenceFor(tenantId, period)).checks,
 
     /** Who posted into the month — the separation-of-duties check reads this, so it must be real. */
     postersIn: async (tenantId, period) => [...new Set(
@@ -7896,6 +7892,40 @@ export function loyaltyLiabilityAdapter(input: {
       let balance = 0;
       for (const j of journals) for (const l of j.lines) if (l.accountCode === accountCode) balance += l.creditMinor - l.debitMinor;
       return balance;
+    },
+  };
+}
+
+/**
+ * Independent evidence for the close (PF-12): bank statements on their own stream with their provenance, and the month's
+ * comparison built from the sales ledger's card/UPI tenders, every imported provider settlement file and every statement.
+ */
+const BANK_STATEMENTS = streamName(STREAM.settlement, 'bank-statements');
+
+export function independentEvidenceAdapter(input: { readonly store: EventStore; readonly now: () => string }): IndependentEvidenceDeps {
+  const statements = (tenantId: string) => allOf<ImportedStatement>(input.store, tenantId, BANK_STATEMENTS, 'BankStatementImported');
+  return {
+    now: input.now,
+    statements,
+    recordStatement: async (tenantId, statement) => {
+      await input.store.append(tenantId, BANK_STATEMENTS, makeEvent({
+        id: `bank-statement-${statement.statementId}`, type: 'BankStatementImported', occurredAt: statement.provenance.importedAt,
+        // The statement's own id — importing the same statement twice collapses (the route also refuses it by name).
+        idempotencyKey: `bank-statement-${tenantId}-${statement.statementId}`, source: 'api/finance', payload: statement,
+      }));
+    },
+    evidenceFor: async (tenantId, period) => {
+      const start = Date.parse(`${period}-01T00:00:00.000Z`);
+      const from = new Date(start - 2 * 86_400_000).toISOString();
+      const to = new Date(start + 33 * 86_400_000).toISOString();
+      const sales = (await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to }))
+        .map((e) => e.event.payload as IncomingSale)
+        .filter((sale) => (sale.tradingDay !== '' ? sale.tradingDay : sale.committedAt).slice(0, 7) === period);
+      const tenders = sales.flatMap((sale) => sale.tenders
+        .filter((t) => typeof t.ref === 'string' && t.ref.trim() !== '')
+        .map((t) => ({ ref: t.ref as string, kind: t.kind, amountMinor: t.amountMinor, saleId: sale.saleId })));
+      const batches = await allOf<SettlementBatch>(input.store, tenantId, STREAM.settlement, 'SettlementBatchImported');
+      return monthEvidence({ period, tenders, batches, statements: await statements(tenantId) });
     },
   };
 }
