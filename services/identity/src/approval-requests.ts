@@ -160,6 +160,13 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
     kind: 'access_change', label: 'Change a person\'s access (joining, moving or leaving)',
     makerPermission: 'identity.role.request', checkerPermission: 'identity.role.grant', validForMinutes: 24 * 60,
   },
+  // Branches (PA-04 · M01-FR-04 "every transition except reopening needs the owner's approval; the person executing is
+  // never the person approving"): the manager or owner who carries out the opening/closing asks; the OWNER approves
+  // (`branch.transition.approve` — the owner's alone, like every other domain's approve authority).
+  branch_transition: {
+    kind: 'branch_transition', label: 'Open, close for now, or close a branch for good',
+    makerPermission: 'branch.transition.execute', checkerPermission: 'branch.transition.approve', validForMinutes: 24 * 60,
+  },
 });
 
 /** A maker's request, as recorded. */

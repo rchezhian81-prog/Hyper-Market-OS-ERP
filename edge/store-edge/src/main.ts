@@ -780,6 +780,10 @@ export async function startEdge(
   const concessionTagsOutbox = concessionTagsPipeline.outbox;
   const deviceEventsOutbox = deviceEventsPipeline.outbox;
   const tillCashOutbox = tillCashPipeline.outbox;
+  // LIVE unsent across ALL pipelines — the day close's gate, and (PA-04) what this box tells head office it still holds.
+  const unsentAcrossAllQueues = (): number => outbox.pending().length + returnsOutbox.pending().length
+    + completionsOutbox.pending().length + dayCloseOutbox.pending().length + concessionTagsOutbox.pending().length
+    + deviceEventsOutbox.pending().length + tillCashOutbox.pending().length;
 
   // Every device-event key this box has EVER taken, rebuilt from the whole durable log — not from the outbox,
   // which after a restart holds only the unfinished tail. A device that lost the box's reply and retries a key
@@ -1448,9 +1452,7 @@ export async function startEdge(
     })();
     // LIVE unsent across ALL pipelines — not the manager screen's `unsentItems`, which counts only the
     // sales outbox. A day must not lock while any refund or completion is still unsent (hard rule #10).
-    const unsentSyncItems = outbox.pending().length + returnsOutbox.pending().length
-      + completionsOutbox.pending().length + dayCloseOutbox.pending().length + concessionTagsOutbox.pending().length
-      + deviceEventsOutbox.pending().length + tillCashOutbox.pending().length;
+    const unsentSyncItems = unsentAcrossAllQueues();
     // The exception register EXACTLY as the manager screen computes it (so the box and the screen agree).
     // ABSENT (no loss-prevention rules → nobody is watching) is a hard block, never treated as zero.
     const openExceptions = managerPayload(input)['openExceptions'];
@@ -1912,13 +1914,19 @@ export async function startEdge(
 
   // DF-3-b-2 (SF-08 hand-over): tell head office which catalogue and which setup this box trades on, whenever that changes.
   const reportHeld = headOfficeStoreId === undefined ? null : httpHeldVersionsReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: headOfficeStoreId, fetch: globalThis.fetch });
+  // PA-04: with how many records it still holds unsent — head office will not let the branch close permanently over them,
+  // and will not take an OLD count as current: it is re-said, unchanged, at least every half of the store's own
+  // staleness limit (the setting head office judges it by), so a box that is online never reads as stale.
   let lastReportedHeld: string | undefined;
+  let lastReportedAtMs = 0;
   const reportHeldVersions = reportHeld === null ? null : async (): Promise<boolean> => {
-    const held = { catalogueVersion: node.pack()?.snapshot.version ?? null, storePackVersion: heldStorePack?.version ?? null };
+    const held = { catalogueVersion: node.pack()?.snapshot.version ?? null, storePackVersion: heldStorePack?.version ?? null, unsentItems: unsentAcrossAllQueues() };
     const key = JSON.stringify(held);
-    if (key === lastReportedHeld) return true;
+    const staleAfterSeconds = pack.policies.known ? pack.policies.value.staleAfterSeconds : undefined;
+    const due = staleAfterSeconds !== undefined && Date.now() - lastReportedAtMs >= (staleAfterSeconds * 1000) / 2;
+    if (key === lastReportedHeld && !due) return true;
     const ok = await reportHeld(held);
-    if (ok) lastReportedHeld = key;
+    if (ok) { lastReportedHeld = key; lastReportedAtMs = Date.now(); }
     return ok;
   };
 

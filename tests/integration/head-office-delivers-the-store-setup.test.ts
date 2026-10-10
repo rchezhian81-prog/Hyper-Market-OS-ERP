@@ -116,6 +116,16 @@ describe('PA-06 — head office delivers each store its setup', () => {
     expect(again.storeSetup()).toMatchObject({ source: 'head-office', version: renewed.version });
   });
 
+  it('PA-04: the store computer tells head office how many records it still holds unsent, with the setup it trades on', async () => {
+    expect((await call('POST', '/v1/stores/S1/settings', SETTINGS)).status).toBe(201);
+    const edge = await boot();
+    await edge.refreshStorePack!();
+    expect(await edge.reportHeldVersions!()).toBe(true);
+    const held = (await call('GET', '/v1/store-packs/S1/held')).body as { held?: { unsentItems?: number; reportedBy: string } };
+    // Nothing waiting on this fresh box: a counted zero, said by the box itself — a branch close can rely on it.
+    expect(held.held).toMatchObject({ unsentItems: 0, reportedBy: 'u-box' });
+  });
+
   it('always current: a person granted later reaches the store on the next pull; a person whose grant ends leaves it', async () => {
     await call('POST', '/v1/stores/S1/settings', SETTINGS);
     const edge = await boot();
