@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1050,
+  "testFiles": 1051,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1810,7 +1810,7 @@
       "id": "M29",
       "label": "WIRED",
       "counts": {
-        "unit": 12,
+        "unit": 13,
         "integration": 12,
         "realDb": 5,
         "browser": 2,
@@ -1831,7 +1831,8 @@
           "tests/unit/reporting-consolidation.test.ts",
           "tests/unit/reporting-freshness-is-the-sources.test.ts",
           "tests/unit/reporting-kpis-run-on-the-engine.test.ts",
-          "tests/unit/reporting.test.ts"
+          "tests/unit/reporting.test.ts",
+          "tests/unit/the-owner-sees-takings-and-truthful-freshness.test.ts"
         ],
         "integration": [
           "tests/integration/a-drill-reaches-its-day-and-only-the-readers-branches.test.ts",
