@@ -32,7 +32,8 @@ const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !==
 export interface OrgStructureDeps {
   readonly nodes: (tenantId: string) => Promise<readonly OrgNode[]> | readonly OrgNode[];
   readonly registrations: (tenantId: string) => Promise<readonly GstRegistration[]> | readonly GstRegistration[];
-  readonly recordNode: (tenantId: string, node: OrgNode) => Promise<void> | void;
+  /** Append a node's state. `requestKey` (the request's idempotency key) makes each asked-for edit its own fact (PA-05). */
+  readonly recordNode: (tenantId: string, node: OrgNode, requestKey?: string) => Promise<void> | void;
   readonly recordRegistration: (tenantId: string, registration: GstRegistration) => Promise<void> | void;
   readonly now: () => string;
 }
@@ -141,8 +142,19 @@ export function orgStructureRoutes(deps: OrgStructureDeps): readonly Route[] {
             nextSafeAction: 'Record it as a draft, complete the missing details, then activate it.',
           });
         }
-        await deps.recordNode(ctx.tenantId, node);
-        return { status: 201, body: nodeView(node, [...context, node], register) };
+        await deps.recordNode(ctx.tenantId, node, ctx.idempotencyKey);
+        // PA-05: answer with what was PERSISTED, read back — never with what was asked for. A save that did not take
+        // cannot say it did.
+        const persisted = (await deps.nodes(ctx.tenantId)).find((n) => n.nodeId === nodeId);
+        if (persisted === undefined || persisted.name !== node.name || persisted.status !== node.status || persisted.parentId !== node.parentId) {
+          throw apiError(500, {
+            code: 'org_node_not_persisted',
+            whatHappened: `${nodeId} was sent to be saved, but reading it back does not show the change.`,
+            wasItSaved: 'unknown',
+            nextSafeAction: 'Read the node again before changing anything else; send the change again if it is not there.',
+          });
+        }
+        return { status: 201, body: nodeView(persisted, [...context, persisted], register) };
       },
     },
     {
@@ -173,7 +185,7 @@ export function orgStructureRoutes(deps: OrgStructureDeps): readonly Route[] {
           });
         }
         const activated: OrgNode = { ...node, status: 'active' };
-        await deps.recordNode(ctx.tenantId, activated);
+        await deps.recordNode(ctx.tenantId, activated, ctx.idempotencyKey);
         return { status: 200, body: nodeView(activated, [...context, activated], register) };
       },
     },

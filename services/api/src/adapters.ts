@@ -4268,14 +4268,18 @@ export function orgStructureAdapter(input: {
       }
       return [...byGstin.values()];
     },
-    recordNode: async (tenantId, node) => {
+    recordNode: async (tenantId, node, requestKey) => {
+      // Audit PA-05: the key used to omit the NAME, so a rename was a "re-send of the same state" and collapsed onto
+      // the old one — the route said 201 and the old name stayed. An edit asked for by a request is keyed on that
+      // request (one request, one fact; its retry collapses; a rename and its revert are two facts). With no request
+      // key the WHOLE canonical node — name included — is the key, so only an identical state collapses.
+      const canonical = JSON.stringify([node.nodeId, node.kind, node.name, node.parentId, node.companyId ?? null, node.gstin ?? null, node.status]);
+      const key = createHash('sha256').update(requestKey === undefined ? `state:${canonical}` : `request:${requestKey}`).digest('hex').slice(0, 24);
       await input.store.append(tenantId, ORG_NODES_STREAM, makeEvent({
-        id: `org-node-${node.nodeId}-${node.status}`,
+        id: `org-node-${node.nodeId}-${key}`,
         type: 'OrgNodeSet',
         occurredAt: input.now(),
-        // Keyed on the node + its shape + status: re-sending the same state collapses, an edit or an
-        // activation is a new fact the latest-wins fold takes.
-        idempotencyKey: `org-node-${tenantId}-${node.nodeId}-${node.kind}-${node.parentId ?? 'root'}-${node.companyId ?? 'none'}-${node.gstin ?? 'none'}-${node.status}`,
+        idempotencyKey: `org-node-${tenantId}-${node.nodeId}-${key}`,
         source: 'api/platform',
         payload: node,
       }));
