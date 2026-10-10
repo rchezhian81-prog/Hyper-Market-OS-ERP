@@ -177,7 +177,7 @@ import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } fro
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project, projectBatches, fefoBatchesAt, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
-import { minorPerUnitOf } from '../../../packages/contracts/src/quantity';
+import { minorPerUnitOf, normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
@@ -6500,8 +6500,10 @@ export function inventoryAdapter(input: {
           }
           if (l.disposition === 'resell') {
             const c = closing.get(l.productId);
-            const wacUnit = c !== undefined && c.onHand > 0 ? Math.round(c.value / c.onHand) : 0;
-            returnedCogsByProduct.set(l.productId, (returnedCogsByProduct.get(l.productId) ?? 0) + l.quantityMinor * wacUnit);
+            // OB-31: the closing value per smallest step (a gram of a kg product), taken in proportion and rounded once —
+            // never a per-gram cost rounded to a whole paisa first.
+            const back = c !== undefined && c.onHand > 0 ? Math.round((c.value * l.quantityMinor) / c.onHand) : 0;
+            returnedCogsByProduct.set(l.productId, (returnedCogsByProduct.get(l.productId) ?? 0) + back);
           }
         });
       }
@@ -9169,7 +9171,11 @@ export function orderFulfilmentAdapter(input: {
     pack: packing.pack, manifest: packing.manifest, deliveryState: delivery.deliveryState,
     doorAttempts: (tenantId, orderId) => orderAttemptsOf(input.store, tenantId, orderId),
     isBanked: pos.isBanked, bankSale: pos.bankSale,
-    uomOf: async (tenantId, productId) => (await pos.catalogue(tenantId)).get(productId)?.baseUom,
+    // OB-31: the product's unit in its one spelling ('each' → 'ea', 'KG' → 'kg').
+    uomOf: async (tenantId, productId) => {
+      const unit = (await pos.catalogue(tenantId)).get(productId)?.baseUom;
+      return unit === undefined ? undefined : normaliseUom(unit) ?? unit;
+    },
     handback: async (tenantId, orderId) => (await allOf<OrderHandback>(input.store, tenantId, forOrder(orderId), 'OrderHandbackCounted'))[0],
     recordHandback: async (tenantId, h) => {
       await input.store.append(tenantId, forOrder(h.orderId), makeEvent({

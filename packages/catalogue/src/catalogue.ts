@@ -15,7 +15,7 @@
 // barcode carries the item code and the weight/price in its digits, per rules that
 // are per-tenant configuration — never hard-coded.
 
-import { isUom } from '../../contracts/src/quantity';
+import { isUom, normaliseUom } from '../../contracts/src/quantity';
 import type { Promotion } from '../../promotions/src/promotions';
 
 export type ProductStatus = 'draft' | 'active' | 'discontinued' | 'clearance';
@@ -217,7 +217,11 @@ export class CatalogueCache {
   private readonly rules: readonly EmbeddedBarcodeRule[];
 
   constructor(private readonly snapshot: CatalogueSnapshot) {
-    for (const product of snapshot.products) {
+    for (const raw of snapshot.products) {
+      // OB-31 "A": the product's unit is normalised on the way in ('each'/'EA' → 'ea', 'KG' → 'kg'), so a Quantity can
+      // always be made from it; a spelling no rule knows is kept as it came and refused by name at the scan.
+      const unit = normaliseUom(raw.baseUom);
+      const product = unit === undefined || unit === raw.baseUom ? raw : { ...raw, baseUom: unit };
       this.byProductId.set(product.productId, product);
       this.bySku.set(product.sku, product);
     }
