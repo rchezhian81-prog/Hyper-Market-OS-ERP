@@ -14,6 +14,17 @@ roadmap IDs and the audit's finding IDs.
 | Today's merged work | #689 OB-13 records · #690 UX-1a the back-office look · #691 DF-2 the full demo pack · #692 RL-1 a release reaches the browser · RL-2 (this plan's PR) the demo front's lane path, status read and menu prefix · GT-10 the two timezone-dependent till tests. |
 | Standing orders | OB-12 (DF-1 → DF-2 → DF-3), OB-13 ("A 1": light look everywhere; back office, then DF-2, then the till and handhelds), CLAUDE.md hard rules, synthetic data only, a named person runs every load, SP-10 UAT stays PENDING until performed. |
 
+## The coordinated assignment matrix (10 Oct 2026)
+
+This plan stays the **one canonical backlog**. [`assignment-matrix-2026-10-10.md`](./assignment-matrix-2026-10-10.md) is
+its per-item assignment table: each of the 74 audit findings and each of the 104 controlling items has one row, one
+primary batch (B1 foundation and hybrid operation · B2 purchase, receiving and inventory · B3 sales, returns and
+financial closure · B4 reporting, supporting workflows and readiness), one state and a testable acceptance line. It
+also names who owns each shared contract. Two residual defects found on 10 Oct 2026 are added there as sub-items
+under their parents: **PA-01-r1** (branch scope on inventory read and movement routes) and **PA-06-r1** (a newer
+signed store setup with unchanged contents was kept as "unchanged"). When a wave item here moves, the matrix row
+moves with it.
+
 ## Rules the whole plan keeps (from the audit and CLAUDE.md, in one place)
 
 1. A repair is closed only by **proving its business effect** — a connected test on real PostgreSQL, a browser test
