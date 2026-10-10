@@ -6207,11 +6207,13 @@ export function inventoryAdapter(input: {
      * reconciles to the valuation's stock value. Filtered by product BEFORE folding, so a single
      * product's ageing (and its unvalued quantity) is exactly its own.
      */
-    ageing: async (tenantId, productId) => {
+    ageing: async (tenantId, productId, covers) => {
       const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
       const movements = events
         .map((e) => payloadOf<Movement>(e))
-        .filter((m) => productId === undefined || m.productId === productId);
+        .filter((m) => productId === undefined || m.productId === productId)
+        // PA-01-r1: only the caller's locations — lots are pooled per location, so this is exactly their stock.
+        .filter((m) => covers === undefined || covers(m.locationId));
       return agedStockLots(
         movements.map((m): DatedMovement => ({
           productId: m.productId, locationId: m.locationId,
@@ -6232,10 +6234,14 @@ export function inventoryAdapter(input: {
      * two-point (opening+closing)/2. If ANY sold product has no known tax rate, net sales and gross
      * margin are left ABSENT so the route reports GMROI as not meaningful rather than guessing (P-08).
      */
-    performance: async (tenantId, { from, to }) => {
+    performance: async (tenantId, { from, to, covers }) => {
+      // PA-01-r1: a branch-limited read folds only its own locations' movements, sales and returns. A sale or return that
+      // names no location cannot be placed in a branch, so it is in no branch-limited read (only the 'all' read).
+      const placed = (locationId: unknown): boolean => covers === undefined || (typeof locationId === 'string' && covers(locationId));
       const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
       const movements = events
         .map((e) => payloadOf<Movement>(e))
+        .filter((m) => placed(m.locationId))
         .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
       // Cumulative WAC cogs and stock value PER PRODUCT at a cut point (summed across locations).
       const foldTo = (cutoff: string): Map<string, { cogs: number; value: number; onHand: number }> => {
@@ -6273,7 +6279,8 @@ export function inventoryAdapter(input: {
       const taxUnknown = new Set<string>();
       const deGross = (grossMinor: number, taxBps: number): number => Number((BigInt(grossMinor) * 10_000n) / BigInt(10_000 + taxBps));
       for (const e of sales) {
-        const sale = payloadOf<{ readonly lines: readonly { readonly productId: string; readonly lineTotalMinor: number }[] }>(e);
+        const sale = payloadOf<{ readonly locationId?: string; readonly lines: readonly { readonly productId: string; readonly lineTotalMinor: number }[] }>(e);
+        if (!placed(sale.locationId)) continue;
         for (const line of sale.lines) {
           const taxBps = taxByProduct.get(line.productId);
           if (taxBps === undefined) { taxUnknown.add(line.productId); continue; }
@@ -6290,7 +6297,8 @@ export function inventoryAdapter(input: {
       const returnedNetByProduct = new Map<string, number>();
       const returnedCogsByProduct = new Map<string, number>();
       for (const e of returns) {
-        const ret = payloadOf<{ readonly originalSaleId: string | null; readonly refundMinor: number; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly disposition: string }[] }>(e);
+        const ret = payloadOf<{ readonly locationId?: string; readonly originalSaleId: string | null; readonly refundMinor: number; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly disposition: string }[] }>(e);
+        if (!placed(ret.locationId)) continue;
         // A no-receipt return (originalSaleId null, M13-FR-01) has no bill to price its lines from: its refund
         // is still a real reduction of net sales, so it is allocated across its lines by quantity (the only
         // weight it has) rather than dropped — P-08, never a silent zero.

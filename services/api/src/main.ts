@@ -102,6 +102,7 @@ import { weighingVerificationRoutes } from '../../platform/src/facilities-metrol
 import { complianceRoutes } from '../../compliance/src/index';
 import { riskRegisterRoutes } from '../../compliance/src/risk';
 import { inventoryRoutes } from '../../inventory/src/index';
+import { branchOfLocationIn, type LocationBranches } from '../../inventory/src/location-scope';
 import { goodsReceiptRoutes, decideReceiptExcess } from '../../inventory/src/goods-receipt';
 import { asnRoutes } from '../../inventory/src/asn';
 import { shelfCountRoutes } from '../../inventory/src/shelf-count';
@@ -244,6 +245,10 @@ import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../..
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 
 const now = (): string => new Date().toISOString();
+
+/** PA-01-r1: which branch a stock location belongs to — the org hierarchy, read once per request. */
+const locationBranchesOf = (store: EventStore, clock: () => string): LocationBranches =>
+  async (tenantId) => branchOfLocationIn(await orgStructureAdapter({ store, now: clock }).nodes(tenantId));
 
 /**
  * Subscription plans (WP5 / ADR-0014 / M36-FR-01). These prices are the OWNER'S, set in answer to
@@ -622,7 +627,7 @@ export function buildSurface(deps: {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), valuation: empty([]),
       ageing: empty({ lots: [], unvaluedMinor: 0 }),
       performance: empty({ from: '', to: '', periodDays: 0, total: { cogs: { minor: 0, currency: 'INR' }, averageInventory: { minor: 0, currency: 'INR' } }, byProduct: [] }), now,
-    } : { ...inventoryAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    } : { ...inventoryAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) }),
     // Goods receipt / GRN capture (M07-FR-01/02/03 · D03-FR-02) — the durable cloud receiving record, the tenant's
     // receipt policy and the held-excess decision (F03).
     ...goodsReceiptRoutes(goodsReceiptDeps),
