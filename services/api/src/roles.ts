@@ -111,7 +111,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.journal.post', 'finance.posting.configure', 'finance.period.close', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       'b2b.account.manage', 'b2b.account.read', 'b2b.receivable.record', 'b2b.credit.check',
-      'b2b.commission.record', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
+      'b2b.commission.record', 'b2b.commission.approve', 'b2b.recurring.approve', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
       'concession.contract.manage', 'concession.sale.record', 'concession.charge.read', 'concession.tag.record',
       'scrap.sale.record', 'scrap.review.read', 'waste.view', 'count.view',
       'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read',

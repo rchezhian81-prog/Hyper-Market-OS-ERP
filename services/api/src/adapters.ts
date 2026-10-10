@@ -256,6 +256,10 @@ import type { ServiceabilityConfigDeps } from '../../orders/src/serviceability';
 import type { ServiceabilityPeriod } from '../../../packages/storefront/src/index';
 import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/index';
 import type { DeliveryServiceDeps, DeliveryServiceConfig, SlotBooking } from '../../orders/src/delivery-service';
+import type { B2BStockPort } from '../../finance/src/b2b-documents';
+import type { CommissionRuleDeps, CommissionRule } from '../../finance/src/b2b-commission';
+import type { B2BOrderingDeps, B2BQuoteRequest, RecurringSchedule, RecurringRun } from '../../finance/src/b2b-ordering';
+import { promise as promiseStock } from '../../orders/src/index';
 import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { AssignmentsDeps, WaveAssignment, RouteAssignment } from '../../fulfilment/src/assignments';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
@@ -11704,6 +11708,145 @@ export function deliveryServiceAdapter(input: {
       const placed = await orders.placedOrder(tenantId, orderId);
       if (placed === undefined) return Date.parse(input.now()) - Date.parse(bookedAt) > 2 * 60_000;
       return (await orders.orderState(tenantId, orderId))?.state === 'cancelled';
+    },
+  };
+}
+
+/**
+ * FUL-09: a B2B sales order's stock — the ORDINARY stock every channel sells from (P-02). The order's lines are held at
+ * its store under the same per-store promise guard the online orders use (so two orders never promise the last unit),
+ * all or nothing; a challan takes what left the building off the shelf as ordinary `sold` movements keyed on the challan
+ * line (once, however often it is re-sent), and in the same guarded batch the order's old holds are released and what is
+ * still to go is held again. A B2B hold does not lapse: it stands until the goods leave.
+ */
+export function b2bStockAdapter(input: { readonly store: EventStore; readonly now: () => string }): B2BStockPort {
+  const NEVER = '9999-12-31T23:59:59.999Z';
+  const inv = inventoryAdapter(input);
+  const orders = ordersAdapter({ store: input.store, now: input.now, holdMinutes: 0 });
+  const heldFor = async (tenantId: string, orderRef: string, locationId: string): Promise<readonly Reservation[]> =>
+    (await outstandingReservationsAt(input.store, tenantId, locationId, input.now())).filter((r) => r.orderId === orderRef);
+  return {
+    reserve: async (tenantId, orderRef, locationId, lines) => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if ((await heldFor(tenantId, orderRef, locationId)).length > 0) return { ok: true };
+        const version = await input.store.guardVersion(tenantId, reservationGuardKey(locationId));
+        const onHand = new Map<string, number>();
+        for (const l of lines) {
+          const rows = await inv.availability(tenantId, l.productId);
+          onHand.set(l.productId, rows.find((r) => r.productId === l.productId && r.locationId === locationId)?.onHandMinor ?? 0);
+        }
+        const result = promiseStock({
+          orderId: orderRef, lines, onHand, outstanding: await outstandingReservationsAt(input.store, tenantId, locationId, input.now()),
+          locationId, heldUntil: NEVER, reservationIdFor: (o, p) => `${o}-${p}`,
+        });
+        const short = result.lines.filter((l) => l.promisedMinor < l.requestedMinor);
+        if (short.length > 0) return { ok: false, shortages: short.map((l) => ({ productId: l.productId, requestedMinor: l.requestedMinor, promisedMinor: l.promisedMinor })) };
+        try {
+          await orders.holdReservations(tenantId, result.lines.flatMap((l) => (l.reservation === undefined ? [] : [l.reservation])), version);
+          return { ok: true };
+        } catch (err) {
+          if (!(err instanceof ConcurrencyConflictError)) throw err;
+        }
+      }
+      throw new ConcurrencyConflictError(reservationGuardKey(locationId), -1);
+    },
+    dispatch: async (tenantId, d) => {
+      const at = input.now();
+      const uomOf = async (productId: string): Promise<string> => {
+        const unit = (await posAdapter({ store: input.store, now: input.now }).catalogue(tenantId)).get(productId)?.baseUom;
+        return unit === undefined ? 'ea' : normaliseUom(unit) ?? unit;
+      };
+      // 1 · What left the building comes off the shelf, once per challan line.
+      for (const l of d.lines) {
+        await inv.appendMovement(tenantId, {
+          movementId: `b2b-dispatch-${d.orderRef}-${d.challanId}-${l.lineId}`, productId: l.productId, locationId: d.locationId,
+          kind: 'sold', quantityMinor: l.quantityMinor, uom: await uomOf(l.productId), occurredAt: at, enteredBy: d.by,
+          reason: `B2B challan ${d.challanId} for ${d.orderRef}`,
+        });
+      }
+      // 2 · The order's holds are released and what is still to go held again — one guarded batch, so nothing is unheld
+      //     in between for another order to take.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const version = await input.store.guardVersion(tenantId, reservationGuardKey(d.locationId));
+        const current = await heldFor(tenantId, d.orderRef, d.locationId);
+        if (current.some((r) => r.reservationId.endsWith(`@${d.challanId}`))) return; // this challan's re-hold is already done
+        const rehold: Reservation[] = d.remaining.map((r) => ({
+          reservationId: `${d.orderRef}-${r.productId}@${d.challanId}`, orderId: d.orderRef, productId: r.productId,
+          quantityMinor: r.quantityMinor, locationId: d.locationId, heldUntil: NEVER,
+        }));
+        try {
+          await input.store.appendBatch(tenantId, [
+            ...current.map((r) => ({ stream: forLocation(r.locationId), event: makeEvent({
+              id: `res-rel-${r.reservationId}`, type: 'ReservationReleased', occurredAt: at, idempotencyKey: `res-rel-${tenantId}-${r.reservationId}`, source: 'api/b2b',
+              payload: { reservationId: r.reservationId, orderId: r.orderId, productId: r.productId, locationId: r.locationId, at },
+            }) })),
+            ...rehold.map((r) => ({ stream: forLocation(r.locationId), event: makeEvent({
+              id: `res-${r.reservationId}`, type: 'ReservationHeld', occurredAt: at, idempotencyKey: `res-${tenantId}-${r.reservationId}`, source: 'api/b2b', payload: r,
+            }) })),
+          ], { guard: { key: reservationGuardKey(d.locationId), expectedVersion: version } });
+          return;
+        } catch (err) {
+          if (!(err instanceof ConcurrencyConflictError)) throw err;
+        }
+      }
+      throw new ConcurrencyConflictError(reservationGuardKey(d.locationId), -1);
+    },
+    held: async (tenantId, orderRef, locationId) => {
+      const byProduct = new Map<string, number>();
+      for (const r of await heldFor(tenantId, orderRef, locationId)) byProduct.set(r.productId, (byProduct.get(r.productId) ?? 0) + r.quantityMinor);
+      return [...byProduct].map(([productId, quantityMinor]) => ({ productId, quantityMinor }));
+    },
+  };
+}
+
+/** FUL-09 · M22-FR-03: salesperson commission rules — proposed, then approved by another; append-only, the latest approved in force. */
+export function commissionRuleAdapter(input: { readonly store: EventStore; readonly now: () => string }): CommissionRuleDeps {
+  const stream = (salespersonId: string): string => streamName('b2b-commission-rules', salespersonId);
+  const accruals = b2bCommissionAdapter(input);
+  return {
+    now: input.now,
+    rules: (tenantId, salespersonId) => allOf<CommissionRule>(input.store, tenantId, stream(salespersonId), 'B2BCommissionRuleRecorded'),
+    recordRule: async (tenantId, r) => {
+      const stage = r.approvedBy === undefined ? 'proposed' : 'approved';
+      await input.store.append(tenantId, stream(r.salespersonId), makeEvent({
+        id: `b2b-comm-rule-${r.ruleId}-${stage}`, type: 'B2BCommissionRuleRecorded', occurredAt: r.approvedAt ?? r.proposedAt,
+        idempotencyKey: `b2b-comm-rule-${tenantId}-${r.salespersonId}-${r.ruleId}-${stage}`, source: 'api/finance', payload: r,
+      }));
+    },
+    accruals: accruals.accruals,
+    recordAccrual: accruals.recordAccrual,
+  };
+}
+
+/** FUL-09: the B2B portal's quote requests, and the recurring orders with their runs — each its own append-only stream. */
+export function b2bOrderingAdapter(input: { readonly store: EventStore; readonly now: () => string }): Pick<B2BOrderingDeps, 'quoteRequests' | 'recordQuoteRequest' | 'schedules' | 'recordSchedule' | 'runs' | 'recordRun' | 'now'> {
+  const requests = streamName('b2b-ordering', 'quote-requests');
+  const schedules = streamName('b2b-ordering', 'recurring');
+  const runs = streamName('b2b-ordering', 'recurring-runs');
+  return {
+    now: input.now,
+    quoteRequests: (tenantId) => allOf<B2BQuoteRequest>(input.store, tenantId, requests, 'B2BQuoteRequested'),
+    recordQuoteRequest: async (tenantId, r) => {
+      await input.store.append(tenantId, requests, makeEvent({
+        id: `b2b-qr-${r.requestId}`, type: 'B2BQuoteRequested', occurredAt: r.at, idempotencyKey: `b2b-qr-${tenantId}-${r.requestId}`, source: 'api/finance', payload: r,
+      }));
+    },
+    schedules: (tenantId) => allOf<RecurringSchedule>(input.store, tenantId, schedules, 'B2BRecurringOrderRecorded'),
+    recordSchedule: async (tenantId, s) => {
+      const stage = s.approvedBy === undefined ? 'proposed' : 'approved';
+      await input.store.append(tenantId, schedules, makeEvent({
+        id: `b2b-rec-${s.scheduleId}-${stage}`, type: 'B2BRecurringOrderRecorded', occurredAt: s.approvedAt ?? s.proposedAt,
+        idempotencyKey: `b2b-rec-${tenantId}-${s.scheduleId}-${stage}`, source: 'api/finance', payload: s,
+      }));
+    },
+    runs: (tenantId) => allOf<RecurringRun>(input.store, tenantId, runs, 'B2BRecurringOrderRun'),
+    recordRun: async (tenantId, r) => {
+      await input.store.append(tenantId, runs, makeEvent({
+        id: `b2b-run-${r.scheduleId}-${r.on}-${r.at}`, type: 'B2BRecurringOrderRun', occurredAt: r.at,
+        // A generated day is one fact; an exception is recorded each time the day is tried and fails.
+        idempotencyKey: r.outcome === 'generated' ? `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-generated` : `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-${r.at}`,
+        source: 'api/finance', payload: r,
+      }));
     },
   };
 }
