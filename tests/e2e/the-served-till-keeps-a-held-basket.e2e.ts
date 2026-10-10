@@ -110,4 +110,50 @@ describe.skipIf(!HAVE_BROWSER)('the served till keeps a held basket through a re
     const states = (await readLog(join(dir, 'held-bills.log'))).flatMap((r) => (r.ok ? [(JSON.parse(r.record) as { state: string }).state] : []));
     expect(states).toEqual(['suspended', 'resumed']);
   });
+
+  it('a held basket can be given up from More, with a preset reason: the store computer keeps it on the record with who and why, and it can no longer be recalled (PF-05)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sre-served-till-give-up-'));
+    dirs.push(dir);
+    const edge: EdgeProcess = (await startEdge({
+      EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY,
+      EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '8090', EDGE_LANE_ID: 'lane-1', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps',
+      ...await prepareTillBox({ dir, key: KEY }),
+    }, () => {}))!;
+    stops.push(() => edge.stop());
+    const context = await browser.newContext();
+    stops.push(() => context.close());
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${edge.screens!.port}/pos/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession !== undefined, undefined, { timeout: 15_000 });
+    await signInOnScreen(page);
+    await page.evaluate(() => {
+      (globalThis as unknown as PosWindow).posSession!.scan({ productId: 'P1', description: 'Toor dal 1kg', unitPriceMinor: 12_000, qty: 1 });
+    });
+    await page.click('#hold');
+    await page.waitForFunction(() => (globalThis as unknown as { document: { getElementById(id: string): { textContent: string } | null } }).document.getElementById('hold')?.textContent === 'Recall', undefined, { timeout: 5_000 });
+
+    // More → Give up a held basket → the basket → the reason.
+    await page.click('#more');
+    await page.click('#pay-kinds button:has-text("Give up a held basket")');
+    await page.waitForSelector('#pay:not([hidden]) #pay-title:has-text("Which held basket is being given up?")');
+    await page.click('#pay-kinds button:has-text("Toor dal 1kg")');
+    await page.waitForSelector('#pay:not([hidden]) #pay-title:has-text("Why is it being given up?")');
+    await page.click('#pay-kinds button:has-text("Customer left without it")');
+    await page.waitForSelector('#refusal:not([hidden])');
+    expect(await page.textContent('#refusal-text')).toContain('Basket given up');
+    await page.click('#refusal-ok');
+
+    // Nothing is on hold any more: the screen no longer says a basket is on hold, and More no longer offers to give one up.
+    await page.waitForFunction(() => (globalThis as unknown as { document: { getElementById(id: string): { textContent: string } | null } }).document.getElementById('empty')?.textContent?.includes('on hold') === false, undefined, { timeout: 5_000 });
+    await page.click('#more');
+    expect(await page.locator('#pay-kinds button:has-text("Give up a held basket")').count()).toBe(0);
+    await page.click('#pay-cancel');
+
+    // The store computer kept it — never deleted — with who gave it up and why.
+    const records = (await readLog(join(dir, 'held-bills.log'))).flatMap((r) => (r.ok ? [JSON.parse(r.record) as Record<string, unknown>] : []));
+    expect(records.map((r) => r['state'])).toEqual(['suspended', 'abandoned']);
+    expect(JSON.stringify(records[1])).toContain('u-lanecash');
+    expect(JSON.stringify(records[1])).toContain('customer_left');
+  });
 });
+

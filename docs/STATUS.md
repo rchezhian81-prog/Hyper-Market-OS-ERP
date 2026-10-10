@@ -5,6 +5,28 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 4 · PF-05 finished — the till can give up a held basket, with a reason (10 October 2026)
+
+- **Owner instruction (10 Oct 2026):** finish PF-05's one open gap.
+- **What changed:** with a basket held for this till, **More → Give up a held basket** lists the held baskets. The
+  cashier picks one, then a preset reason:
+  - customer left without it;
+  - customer could not pay;
+  - held by mistake;
+  - rung again on a new bill.
+
+  The store computer records it with the signed-in cashier and the reason. The basket is kept on the record and never
+  deleted (hard rule #6), and it can no longer be recalled. The option is in More so that Recall stays one tap. The
+  words are in English and Tamil.
+- **Proof:**
+  - Browser (real Chromium, the served till on a real store computer): hold → More → give up → reason → "Basket given
+    up". The screen no longer says a basket is on hold, and More no longer offers it. The store computer's log reads
+    held, then given up, with the cashier and the reason.
+  - The new test fails on the old till screen.
+  - The other 28 till browser tests pass.
+- **Not yet:** staff UAT (SP-10) pending. Held baskets are still kept per store computer.
+- **Next:** part 3b of DF-3 (the demo store computer takes its setup from head office).
+
 ## Wave 4 · PA-06 = DF-3-c-3a — staff sign in on the phones with their till PIN; the work is recorded as theirs (10 October 2026)
 
 - **Owner decision OB-30 "A"** (10 Oct 2026): each person signs in on the warehouse, picker or driver phone with their

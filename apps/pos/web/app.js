@@ -78,6 +78,8 @@ const WORDS = {
     onHold: 'A basket is on hold. Tap Recall to bring it back.',
     noneHeld: 'No basket is on hold for this till.',
     recallWhich: 'Which held basket?',
+    giveUp: 'Give up a held basket', giveUpWhich: 'Which held basket is being given up?', whyGiveUp: 'Why is it being given up?',
+    givenUp: 'Basket given up. It stays on the record with your name and the reason.',
     tapTerminal: 'What did the card machine say?',
     approved: 'Approved', declined: 'Declined', noAnswer: 'It has not answered',
     more: 'More', pickup: 'Cash to safe', closeTill: 'Close till', refund: 'Refund',
@@ -189,6 +191,8 @@ const WORDS = {
     onHold: 'ஒரு கூடை நிறுத்தி வைக்கப்பட்டுள்ளது. திரும்பப் பெற தட்டவும்.',
     noneHeld: 'இந்த டில்லுக்கு நிறுத்தி வைத்த கூடை எதுவும் இல்லை.',
     recallWhich: 'எந்த நிறுத்திய கூடை?',
+    giveUp: 'நிறுத்திய கூடையைக் கைவிடு', giveUpWhich: 'எந்த நிறுத்திய கூடை கைவிடப்படுகிறது?', whyGiveUp: 'ஏன் கைவிடப்படுகிறது?',
+    givenUp: 'கூடை கைவிடப்பட்டது. உங்கள் பெயரும் காரணமும் பதிவில் இருக்கும்.',
     tapTerminal: 'கார்டு இயந்திரம் என்ன சொன்னது?',
     approved: 'ஏற்கப்பட்டது', declined: 'மறுக்கப்பட்டது', noAnswer: 'பதில் இல்லை',
     more: 'மேலும்', pickup: 'பணத்தை பெட்டகத்திற்கு', closeTill: 'டில்லை மூடு', refund: 'திரும்பப் பணம்',
@@ -272,6 +276,14 @@ const VOID_REASONS = [
   { code: 'wrong_item', en: 'Wrong item', ta: 'தவறான பொருள்' },
   { code: 'price_query', en: 'Price query', ta: 'விலை சந்தேகம்' },
   { code: 'damaged', en: 'Damaged', ta: 'சேதமடைந்தது' },
+];
+
+/** Why a held basket is given up, preset (PF-05) — kept on the store computer's record with who gave it up, never deleted. */
+const GIVE_UP_REASONS = [
+  { code: 'customer_left', en: 'Customer left without it', ta: 'வாடிக்கையாளர் வாங்காமல் சென்றார்' },
+  { code: 'customer_no_money', en: 'Customer could not pay', ta: 'வாடிக்கையாளரால் பணம் செலுத்த முடியவில்லை' },
+  { code: 'held_by_mistake', en: 'Held by mistake', ta: 'தவறாக நிறுத்தப்பட்டது' },
+  { code: 'rung_again', en: 'Rung again on a new bill', ta: 'புதிய பில்லில் மீண்டும் போடப்பட்டது' },
 ];
 
 /** Refund reasons, preset — free text at a till is a reason nobody can report on afterwards (M15). */
@@ -765,6 +777,28 @@ el('void').addEventListener('click', async () => {
  * one till only. The stand-in shell (no bundle) keeps the old in-memory flag.
  */
 let heldCount = 0;
+const heldBasketOption = (b) => ({
+  value: b.billId,
+  label: `${b.firstItem}${b.lineCount > 1 ? ` +${b.lineCount - 1}` : ''} · ${inr(b.valueMinor)} · ${new Date(b.heldAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+});
+
+/**
+ * Give up a held basket (PF-05's last piece): the customer left, or it was held by mistake. The cashier picks the basket
+ * and a preset reason; the STORE COMPUTER records it with the signed-in person and keeps the basket on its record —
+ * nothing is deleted (hard rule #6) — and it can no longer be recalled. Under More, so Recall stays one tap.
+ */
+async function giveUpHeldBasket() {
+  const baskets = await session.heldAtTill();
+  if (baskets.length === 0) { tell(t('read'), t('noneHeld')); await refreshHeld(); return; }
+  const pick = await choose(t('giveUpWhich'), baskets.map(heldBasketOption));
+  if (pick === null || pick === undefined) return;
+  const why = await choose(t('whyGiveUp'), GIVE_UP_REASONS.map((r) => ({ value: r.code, label: r[lang] ?? r.en })));
+  if (why === null || why === undefined) return;
+  const r = await session.abandonAtTill(pick, why);
+  tell(t('read'), r.ok ? t('givenUp') : r.laneMessage);
+  await refreshHeld();
+}
+
 async function refreshHeld() {
   if (!session.heldAtTill) return;
   try { heldCount = (await session.heldAtTill()).length; } catch { heldCount = 0; }
@@ -785,10 +819,7 @@ el('hold').addEventListener('click', async () => {
   } else {
     const baskets = await session.heldAtTill();
     if (baskets.length === 0) { tell(t('read'), t('noneHeld')); return; }
-    const pick = baskets.length === 1 ? baskets[0].billId : await choose(t('recallWhich'), baskets.map((b) => ({
-      value: b.billId,
-      label: `${b.firstItem}${b.lineCount > 1 ? ` +${b.lineCount - 1}` : ''} · ${inr(b.valueMinor)} · ${new Date(b.heldAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-    })));
+    const pick = baskets.length === 1 ? baskets[0].billId : await choose(t('recallWhich'), baskets.map(heldBasketOption));
     if (pick === null || pick === undefined) return;
     const r = await session.recallAtTill(pick);
     if (!r.ok || r.repriceRequired) tell(t('read'), r.laneMessage);
@@ -958,6 +989,8 @@ el('more').addEventListener('click', async () => {
     // A return WITHOUT a receipt is offered only when the store computer gave this till a no-receipt cap and a price
     // list to name the item from (SP-9b-i · M13-FR-01). Without them the option is not there — the till never guesses a limit.
     ...(session.noReceiptReturn && session.noReceiptReturn() !== null ? [{ value: 'no_receipt', label: t('noReceipt') }] : []),
+    // PF-05: a held basket can be given up, with a reason — offered only when the store computer holds one for this till.
+    ...(session.abandonAtTill && heldCount > 0 ? [{ value: 'give_up', label: t('giveUp') }] : []),
     ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill') }] : []),
   ];
   const what = await choose(t('more'), options);
@@ -967,6 +1000,7 @@ el('more').addEventListener('click', async () => {
   if (what === 'exchange') return startExchange();
   if (what === 'no_receipt') return startNoReceiptReturn();
   if (what === 'close') return closeTheTill();
+  if (what === 'give_up') return giveUpHeldBasket();
 });
 
 // ── Cash on the store computer (SP-4c · F10 · M14-FR-01) ─────────────────────────────────────────────────────────────
