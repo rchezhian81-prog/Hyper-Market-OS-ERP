@@ -10,6 +10,7 @@ import { makeEvent } from '../../packages/contracts/src/event';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-relay';
 import { STREAM_FOR } from '../../services/api/src/adapters';
+import { withTillPeople, issueTillPins, signInOnPhone, type TillPerson } from '../support/till-operator';
 
 /**
  * **A picker handheld's outcomes and pack reach head office through the store box's DEVICE socket — enrolled once, durable at
@@ -41,7 +42,9 @@ const KEY = ['picker', 'handheld', 'edge', 'signing', 'key'].join('-').padEnd(48
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab';
 const AT = '2026-10-01T10:00:00.000Z';
 const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
-const packJson = (deviceStatus = 'registered', withWave = true): string => JSON.stringify({
+/** DF-3-c (OB-30 "A"): the people who may hold the phone, with the job's permission head office re-checks. */
+const PHONE_PEOPLE: readonly TillPerson[] = [{ userId: 'u-picker', displayName: 'Picker One', permissions: ['fulfilment.pack.record'] }, { userId: 'u-driver', displayName: 'Driver One', permissions: ['delivery.attempt.record'] }];
+const packJson = (deviceStatus = 'registered', withWave = true): string => JSON.stringify(withTillPeople({
   version: 1,
   policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privilegedActions: [] },
   lossPreventionRules: [],
@@ -56,7 +59,7 @@ const packJson = (deviceStatus = 'registered', withWave = true): string => JSON.
     },
   } : {}),
   devices: [{ deviceId: 'hh-02', kind: 'handheld', status: deviceStatus, label: 'Aisle picker', enrolment: { codeHash: enrolmentCodeHash(CODE), expiresAt: '2099-01-01T00:00:00.000Z' } }],
-});
+}, PHONE_PEOPLE));
 
 const cleanups: Array<() => Promise<void>> = [];
 const savedFetch = globalThis.fetch;
@@ -86,7 +89,11 @@ const item = (e: ReturnType<typeof makeEvent>) => ({ key: e.idempotencyKey, even
 const deviceBase = (edge: EdgeProcess): string => `http://127.0.0.1:${edge.devices!.port}`;
 const enrol = async (edge: EdgeProcess, code = CODE, deviceId = 'hh-02', next?: string): Promise<{ status: number; cookie: string | undefined; body: Record<string, unknown> }> => {
   const res = await savedFetch(`${deviceBase(edge)}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId, code, ...(next === undefined ? {} : { next }) }) });
-  return { status: res.status, cookie: res.headers.get('set-cookie')?.split(';')[0], body: (await res.json()) as Record<string, unknown> };
+  const device = res.headers.get('set-cookie')?.split(';')[0];
+  const body = (await res.json()) as Record<string, unknown>;
+  // DF-3-c (OB-30 "A"): an enrolled phone is then signed in by the person holding it, with the till PIN.
+  const cookie = res.status === 200 && device !== undefined ? await signInOnPhone(deviceBase(edge), device, 'u-picker', 'picker') : device;
+  return { status: res.status, cookie, body };
 };
 const postBatch = async (edge: EdgeProcess, cookie: string | undefined, items: unknown[], source = 'picker'): Promise<{ status: number; acks: DeviceAck[]; body: Record<string, unknown> }> => {
   const res = await savedFetch(`${deviceBase(edge)}/lane/outbox`, {
@@ -115,6 +122,7 @@ async function boxWithoutCloud(dir?: string): Promise<EdgeProcess> {
   const d = dir ?? await tempDir('sre-picker-handheld-nocloud-');
   const packFile = join(d, 'store-pack.json');
   await writeFile(packFile, packJson(), 'utf8');
+  await issueTillPins(d, KEY, PHONE_PEOPLE.map((p) => p.userId));
   const edge = (await startEdge({ ...EDGE_ENV, EDGE_DATA_DIR: d, EDGE_PACK_FILE: packFile }, () => {}))!;
   cleanups.push(async () => { await edge.stop(); });
   return edge;
@@ -166,6 +174,7 @@ async function cloud(): Promise<Cloud> {
   const start = async (deviceStatus = 'registered', withWave = true): Promise<EdgeProcess> => {
     const packFile = join(dir, 'store-pack.json');
     await writeFile(packFile, packJson(deviceStatus, withWave), 'utf8');
+    await issueTillPins(dir, KEY, PHONE_PEOPLE.map((p) => p.userId));
     const edge = (await startEdge({
       ...EDGE_ENV, EDGE_DATA_DIR: dir, EDGE_PACK_FILE: packFile,
       CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
@@ -374,7 +383,14 @@ describe('the picker handheld: enrol → device socket → box (durable) → hea
     const edge = await c.start('registered', false);
     expect((await edge.refreshAssignmentsFeed!()).status).toBe('updated');
     const { cookie } = await enrol(edge);
-    const shellOf = async (box: EdgeProcess, screen: string) => (await savedFetch(`${deviceBase(box)}/${screen}/`, { headers: { accept: 'text/html', cookie: cookie! } })).text();
+    // DF-3-c: ONE person per phone at a time — each screen is opened by its own person signing in on the phone, which ends
+    // whoever held it before; `holding` is the phone's cookie for whoever signed in last.
+    const deviceCookie = cookie!.split('; ')[0]!;
+    let holding = cookie!;
+    const shellOf = async (box: EdgeProcess, screen: 'picker' | 'driver') => {
+      holding = await signInOnPhone(deviceBase(box), deviceCookie, screen === 'driver' ? 'u-driver' : 'u-picker', screen);
+      return (await savedFetch(`${deviceBase(box)}/${screen}/`, { headers: { accept: 'text/html', cookie: holding } })).text();
+    };
     const picker = await shellOf(edge, 'picker');
     expect(picker).toContain('"waveId":"W-HQ"');
     expect(picker).toContain('"pickerId":"u-picker"');
@@ -407,7 +423,7 @@ describe('the picker handheld: enrol → device socket → box (durable) → hea
 
     // The picker packs W-HQ through the box: head office no longer lists it as open, the next pull drops it from the phone.
     const events = [resolved('h1', 'picked', { productId: 'p-rice', orderRef: 'ORD-HQ', description: 'Rice 5kg', requiredQty: 1, pickedQty: 1, finalPriceMinor: 100_00 }, 'W-HQ'), packedWave({ lineCount: 1, totalValueMinor: 100_00 }, 'W-HQ')];
-    expect((await postBatch(third, cookie, events.map(item))).acks.map((a) => a.status)).toEqual(['accepted', 'accepted']);
+    expect((await postBatch(third, holding, events.map(item))).acks.map((a) => a.status)).toEqual(['accepted', 'accepted']);
     expect((await third.syncOnce!()).sent).toBe(2);
     const open = (await c.h.request({ method: 'GET', path: '/v1/fulfilment/assignments', userId: 'u-owner', tenantId: A, query: { storeId: 'store-1' } })).body as { waves: unknown[]; routes: { routeId: string }[] };
     expect(open.waves).toEqual([]);
@@ -425,21 +441,21 @@ describe('the picker handheld: enrol → device socket → box (durable) → hea
     expect(JSON.stringify(refused.body)).toContain('picker_lacks_authority');
   });
 
-  it('a picker head office does not know is flagged, not refused; a payload head office cannot read is a visible dead-letter on the box with the code in its reason, survives a restart, and recorded nothing', async () => {
+  it('a line naming a picker who never held this phone is refused at the box by name (DF-3-c); a payload head office cannot read is a visible dead-letter on the box with the code in its reason, survives a restart, and recorded nothing', async () => {
     const c = await cloud();
     const first = await c.start();
     const { cookie } = await enrol(first);
     const stranger = resolved('l1', 'picked', { pickedBy: 'u-stranger' });
     const unreadable = resolved('l2', 'pending'); // not an outcome — a line nobody resolved sends nothing
-    expect((await postBatch(first, cookie, [item(stranger), item(unreadable)])).acks.map((a) => a.status)).toEqual(['accepted', 'accepted']);
+    const acks = (await postBatch(first, cookie, [item(stranger), item(unreadable)])).acks;
+    expect(acks.map((a) => a.status)).toEqual(['refused', 'accepted']);
+    // DF-3-c (OB-30 "A"): the phone is signed in as u-picker; a line naming anybody else never leaves the box.
+    expect(acks[0]?.reason).toBe('the record names u-stranger, who has not been signed in on this phone this shift');
     const pass = await first.syncOnce!();
-    expect(pass.sent).toBe(1);
+    expect(pass.sent).toBe(0);
     expect(pass.dead).toBe(1);
-    const wave = await waveAt(c.h);
-    expect(wave.lines).toEqual([expect.objectContaining({ lineId: 'l1', governanceFlags: ['picker_unknown'] })]);
-    expect(wave.flags).toEqual(['picker_unknown']);
     const status = await statusOf(first, cookie!, ['pick:W-1:l1:picked', 'pick:W-1:l2:pending']);
-    expect(status[0]?.state).toBe('posted');
+    expect(status[0]?.state).toBe('unknown'); // never taken
     expect(status[1]?.state).toBe('refused');
     expect(status[1]?.reason).toMatch(/not_readable_as_a_pick_outcome/);
     await first.stop();
@@ -448,7 +464,6 @@ describe('the picker handheld: enrol → device socket → box (durable) → hea
     const after = await statusOf(second, cookie!, ['pick:W-1:l2:pending']);
     expect(after[0]?.state).toBe('refused');
     expect(after[0]?.reason).toMatch(/not_readable_as_a_pick_outcome/);
-    expect((await waveAt(c.h)).lines).toHaveLength(1);
   });
 
   it('a picker\'s batch cannot ride as the warehouse, and a warehouse type cannot ride as the picker — refused at the box, never taken', async () => {

@@ -10,6 +10,11 @@ import type { ScreenInput } from '../../edge/store-edge/src/screen-data';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
 import { makeEvent } from '../../packages/contracts/src/event';
 import type { RelayReply } from '../../packages/sync/src/device-relay';
+import { TillOperators, loadTillCredentials } from '../../edge/store-edge/src/till-operators';
+import { phoneOperatorsOf } from '../../edge/store-edge/src/handheld-sign-in';
+import { tillPinKey } from '../../packages/identity/src/till-pin';
+import { peopleFrom, permissionsOf } from '../../edge/store-edge/src/screen-navigation';
+import { withTillPeople, issueTillPins, pinOf } from '../support/till-operator';
 
 /**
  * **The store box's DEVICE socket serves the handheld screens and the device routes to ENROLLED handhelds, and nothing
@@ -25,7 +30,8 @@ import type { RelayReply } from '../../packages/sync/src/device-relay';
 
 const NOW = '2026-09-30T10:00:00.000Z';
 const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
-const PACK = {
+const SIGNING = ['device', 'socket', 'unit', 'key'].join('-').padEnd(48, '0');
+const BASE_PACK = {
   version: 1,
   policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
   warehouse: {
@@ -38,6 +44,10 @@ const PACK = {
     { deviceId: 'till-1', kind: 'pos_lane', status: 'registered', label: 'Lane 1' },
   ],
 };
+// DF-3-c (OB-30 "A"): the people who may hold a phone — the warehouse worker, with the job's permission head office re-checks.
+const PACK = withTillPeople(BASE_PACK, [
+  { userId: 'u-worker', displayName: 'Worker One', permissions: ['inventory.movement.append'] },
+]) as typeof BASE_PACK;
 
 describe('the device socket', () => {
   const dirs: string[] = [];
@@ -49,25 +59,33 @@ describe('the device socket', () => {
     for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
   });
 
-  interface Started { base: string; relayed: { source: string; deviceId: string; items: readonly unknown[] }[]; devices: { current: PackDevice[] | undefined }; server: DeviceServer }
+  interface Started { base: string; relayed: { source: string; deviceId: string; items: readonly unknown[]; phoneHolder?: string }[]; devices: { current: PackDevice[] | undefined }; server: DeviceServer }
   async function start(opts: { host?: string; devices?: PackDevice[] | undefined } = {}): Promise<Started> {
     const dir = await mkdtemp(join(tmpdir(), 'sre-device-socket-'));
     dirs.push(dir);
-    const register = await DeviceEnrolments.open({ dataDir: dir, capacityBytes: 10 * 1024 * 1024 });
-    registers.push(register);
+    const enrolments = await DeviceEnrolments.open({ dataDir: dir, capacityBytes: 10 * 1024 * 1024 });
+    registers.push(enrolments);
     const pack = readPack(PACK, NOW);
+    await issueTillPins(dir, SIGNING, ['u-worker']);
+    const register = await TillOperators.open({
+      dataDir: dir, capacityBytes: 10 * 1024 * 1024, key: tillPinKey(SIGNING),
+      credentials: () => loadTillCredentials(join(dir, 'till-credentials.json')),
+      pack: { people: () => (pack.people.known ? peopleFrom(pack.people.value) : null), permissionsOf: (u) => permissionsOf(u, pack) },
+      now: () => NOW,
+    });
     const snapshot = (): ScreenInput => ({ pack, sales: [], unreadableRecords: 0, outbox: new SyncOutbox(), now: NOW, tradingDay: '2026-09-30' });
     const relayed: Started['relayed'] = [];
     const devices = { current: 'devices' in opts ? opts.devices : (PACK.devices as PackDevice[]) };
     const server = await startDeviceServer({
-      port: 0, ...(opts.host === undefined ? {} : { host: opts.host }), appsDir: 'apps', snapshot, enrolments: register,
+      port: 0, ...(opts.host === undefined ? {} : { host: opts.host }), appsDir: 'apps', snapshot, enrolments,
       devices: () => devices.current,
       relayDeviceEvents: async (batch): Promise<RelayReply> => {
-        relayed.push({ source: batch.source, deviceId: batch.deviceId, items: batch.items });
+        relayed.push({ source: batch.source, deviceId: batch.deviceId, items: batch.items, ...(batch.phoneHolder === undefined ? {} : { phoneHolder: batch.phoneHolder }) });
         return { acks: batch.items.map((raw) => ({ key: (raw as { key: string }).key, status: 'accepted' as const })) };
       },
       deviceEventStatus: (keys) => keys.map((key) => ({ key, state: 'pending' as const, attempts: 0 })),
       syncStatus: () => ({ cloud: 'not_configured', unsent: 0, deadLettered: 0, lastSentAt: null, lastContactAt: null, now: NOW, staffMessage: '' }),
+      operators: phoneOperatorsOf(register),
       now: () => NOW,
     });
     servers.push(server);
@@ -79,7 +97,13 @@ describe('the device socket', () => {
     return { status: res.status, body: (await res.json()) as Record<string, unknown>, cookie: res.headers.get('set-cookie') ?? undefined };
   };
   const cookieHeader = (setCookie: string): string => setCookie.split(';')[0]!;
-  const event = (id: string) => makeEvent({ id: `wh-move-${id}`, type: 'WarehouseMovementApplied', occurredAt: NOW, idempotencyKey: `wh-move:${id}`, source: 'A-1', payload: { commandId: id } });
+  const event = (id: string, movedBy = 'u-worker') => makeEvent({ id: `wh-move-${id}`, type: 'WarehouseMovementApplied', occurredAt: NOW, idempotencyKey: `wh-move:${id}`, source: 'A-1', payload: { commandId: id, movedBy } });
+  /** DF-3-c: the person signs in on the phone with the till PIN; the device cookie and the session cookie together. */
+  const signIn = async (base: string, deviceCookie: string, staffId = 'u-worker', screen = 'warehouse'): Promise<string> => {
+    const res = await fetch(`${base}/device/sign-in?screen=${screen}`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', cookie: deviceCookie }, body: JSON.stringify({ staffId, pin: pinOf(staffId) }) });
+    expect(res.status).toBe(200);
+    return `${deviceCookie}; ${cookieHeader(res.headers.get('set-cookie')!)}`;
+  };
 
   it('binds to loopback unless told otherwise, and names the handheld screens it serves', async () => {
     const { server } = await start();
@@ -129,8 +153,13 @@ describe('the device socket', () => {
     expect(ok.status).toBe(200);
     expect(ok.body).toEqual({ enrolled: true, deviceId: 'hh-01', next: '/warehouse/' });
     expect(ok.cookie).toMatch(new RegExp(`^${DEVICE_COOKIE}=hh-01\\.[0-9a-f]{64}; Path=/; HttpOnly; SameSite=Strict; Max-Age=\\d+$`));
-    const cookie = cookieHeader(ok.cookie!);
-    expect(cookieValue(cookie, DEVICE_COOKIE)).toMatch(/^hh-01\.[0-9a-f]{64}$/);
+    const deviceCookie = cookieHeader(ok.cookie!);
+    expect(cookieValue(deviceCookie, DEVICE_COOKIE)).toMatch(/^hh-01\.[0-9a-f]{64}$/);
+    // DF-3-c: an enrolled phone with nobody signed in gets the sign-in page, not the work.
+    const away = await fetch(`${base}/warehouse/`, { headers: { accept: 'text/html', cookie: deviceCookie }, redirect: 'manual' });
+    expect(away.status).toBe(302);
+    expect(away.headers.get('location')).toBe('/device/sign-in?screen=warehouse');
+    const cookie = await signIn(base, deviceCookie);
 
     const shell = await fetch(`${base}/warehouse/`, { headers: { accept: 'text/html', cookie } });
     expect(shell.status).toBe(200);
@@ -197,13 +226,13 @@ describe('the device socket', () => {
 
   it('relays a handheld batch with the device named, answers status and sync-status, and refuses a batch that claims to be the manager', async () => {
     const { base, relayed } = await start();
-    const cookie = cookieHeader((await enrol(base, 'hh-01', CODE)).cookie!);
+    const cookie = await signIn(base, cookieHeader((await enrol(base, 'hh-01', CODE)).cookie!));
     const e = event('c1');
     const res = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: e.idempotencyKey, event: e }] }) });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ acks: [{ key: 'wh-move:c1', status: 'accepted' }] });
     expect(relayed).toHaveLength(1);
-    expect(relayed[0]).toMatchObject({ source: 'warehouse', deviceId: 'hh-01' });
+    expect(relayed[0]).toMatchObject({ source: 'warehouse', deviceId: 'hh-01', phoneHolder: 'u-worker' });
 
     const asManager = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'manager', items: [{ key: e.idempotencyKey, event: e }] }) });
     expect(asManager.status).toBe(403);
@@ -246,5 +275,57 @@ describe('the device socket', () => {
       const res = await fetch(`${base}/lane/sync-status`, { headers: { cookie } });
       expect(res.status, cookie).toBe(403);
     }
+  });
+
+  it('DF-3-c (OB-30 "A"): a person signs in on the phone with the till PIN; a wrong PIN, a person without the job and a missing session are refused; a record naming someone else is refused by name', async () => {
+    const { base, relayed } = await start();
+    const deviceCookie = cookieHeader((await enrol(base, 'hh-01', CODE)).cookie!);
+    // The sign-in page itself: staff ID and PIN, a plain form for the job asked.
+    const page = await (await fetch(`${base}/device/sign-in?screen=picker`, { headers: { cookie: deviceCookie } })).text();
+    expect(page).toContain('Sign in on this phone');
+    expect(page).toContain('action="/device/sign-in?screen=picker"');
+    // A wrong PIN — one answer, no session cookie.
+    const wrongPin = String((Number(pinOf('u-worker')) + 1) % 1_000_000).padStart(6, '1');
+    const wrong = await fetch(`${base}/device/sign-in?screen=warehouse`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', cookie: deviceCookie }, body: JSON.stringify({ staffId: 'u-worker', pin: wrongPin }) });
+    expect(wrong.status).toBe(401);
+    expect(await wrong.json()).toMatchObject({ signedIn: false, refusedBecause: 'wrong_staff_id_or_pin' });
+    expect(wrong.headers.get('set-cookie')).toBeNull();
+    // The worker does not hold the picker's permission: refused for the picker's job, by name.
+    const notPicker = await fetch(`${base}/device/sign-in?screen=picker`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', cookie: deviceCookie }, body: JSON.stringify({ staffId: 'u-worker', pin: pinOf('u-worker') }) });
+    expect(notPicker.status).toBe(401);
+    expect(await notPicker.json()).toMatchObject({ refusedBecause: 'no_handheld_authority' });
+    // A plain form post (what the phone's page sends) signs in and goes to the work.
+    const form = await fetch(`${base}/device/sign-in?screen=warehouse`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: deviceCookie }, body: new URLSearchParams({ staffId: 'u-worker', pin: pinOf('u-worker') }).toString(), redirect: 'manual' });
+    expect(form.status).toBe(303);
+    expect(form.headers.get('location')).toBe('/warehouse/');
+    expect(form.headers.get('set-cookie')).toMatch(/^sre_operator=[^;]+; Path=\/; HttpOnly; SameSite=Strict; Max-Age=43200$/);
+    const cookie = `${deviceCookie}; ${cookieHeader(form.headers.get('set-cookie')!)}`;
+    // The screen names the signed-in person and shows who is holding the phone.
+    const html = await (await fetch(`${base}/warehouse/`, { headers: { accept: 'text/html', cookie } })).text();
+    expect(html).toContain('"workerId":"u-worker"');
+    expect(html).toContain('Signed in: <strong>Worker One</strong>');
+    // The picker's screen needs the picker's sign-in, even with a live warehouse session.
+    expect((await fetch(`${base}/picker/`, { headers: { accept: 'text/html', cookie }, redirect: 'manual' })).headers.get('location')).toBe('/device/sign-in?screen=picker');
+
+    // No session → nothing taken, and not a refusal (401: the phone keeps the items).
+    const e1 = event('c1');
+    const noOne = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: deviceCookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: e1.idempotencyKey, event: e1 }] }) });
+    expect(noOne.status).toBe(401);
+    expect(relayed).toHaveLength(0);
+    // A record naming somebody else is refused by name; the worker's own goes through, in order.
+    const other = event('c2', 'u-someone-else');
+    const mixed = await fetch(`${base}/lane/outbox`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ source: 'warehouse', items: [{ key: other.idempotencyKey, event: other }, { key: e1.idempotencyKey, event: e1 }] }) });
+    expect(await mixed.json()).toEqual({ acks: [
+      { key: 'wh-move:c2', status: 'refused', reason: 'the record names u-someone-else, who has not been signed in on this phone this shift' },
+      { key: 'wh-move:c1', status: 'accepted' },
+    ] });
+    expect(relayed).toHaveLength(1);
+    expect(relayed[0]!.items).toHaveLength(1);
+
+    // Sign out: the cookie is cleared and the work is gone from the phone until somebody signs in again.
+    const out = await fetch(`${base}/device/sign-out?screen=warehouse`, { method: 'POST', headers: { cookie }, redirect: 'manual' });
+    expect(out.status).toBe(303);
+    expect(out.headers.get('location')).toBe('/device/sign-in?screen=warehouse');
+    expect((await fetch(`${base}/warehouse/`, { headers: { accept: 'text/html', cookie }, redirect: 'manual' })).status).toBe(302);
   });
 });

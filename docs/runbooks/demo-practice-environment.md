@@ -325,7 +325,7 @@ the screens in a browser — those are SP-10 (§7).
 | Public origin (customer app, guest; the API) | `https://<the box>` — the address is in the owner's own records and in the GitHub `demo` environment, never in the repository | anyone; browse as a guest; the DEMO banner shows |
 | Till | `http://127.0.0.1:8091/pos/` on the store PC | the cashier signs in with **staff ID** = the demo user id (`pilot-cashier`) **and their till PIN**, issued once on the store PC by the administrator (`till/start-till.sh till-pin --user pilot-cashier --by "<name>"`, in-store-install Step 2b); the store PC checks it (ADR-0020) |
 | ERP screens (manager, buying, goods receipt, indents, cash office, day book, suppliers, …) | `http://127.0.0.1:8091/<screen>/` on the store PC | run as the person the pack names (`pilot-manager`), see §4.3 |
-| Handhelds | `http://<store PC>:8092/warehouse/`, `/picker/`, `/driver/` on the staff wifi | enrolled by device code, §4.4 |
+| Handhelds | `http://<store PC>:8092/warehouse/`, `/picker/`, `/driver/` on the staff wifi | enrolled by device code, §4.4; then each person signs in on the phone with their staff ID and **the same till PIN** (OB-30) — issue one for each phone user like the cashier's |
 | Demo accounts (synthetic) | `pilot-owner`, `pilot-manager`, `pilot-cashier`, `pilot-accountant`, `pilot-ca`, `pilot-platform-admin`, `pilot-supplier` | seeded by `db/seed/pilot`; roles as in `db/seed/pilot/dataset.ts` |
 
 Role restrictions are enforced by head office on every write: a cashier cannot set a price, a buyer cannot approve

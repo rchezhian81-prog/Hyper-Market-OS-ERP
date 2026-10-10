@@ -19,7 +19,7 @@
 import { randomBytes } from 'node:crypto';
 import type { OpenFileLog } from './file-log';
 import { openFileLog, readLog } from './file-log';
-import type { CheckOutcome, SignInRefusal } from './till-operators';
+import type { CheckOutcome, CheckRefusal, SignInRefusal } from './till-operators';
 
 /** The permission a manager needs to approve a refund at the till — the one head office re-checks on every synced refund. */
 export const APPROVAL_AUTHORITY = 'pos.return.approve';
@@ -31,7 +31,7 @@ const KINDS: readonly ApprovalKind[] = ['refund', 'no_receipt_return', 'exchange
 
 export type ApprovalRefusal =
   | SignInRefusal
-  | 'operator_not_signed_in' | 'operator_session_ended' | 'operator_on_another_lane' | 'operator_lost_till_authority'
+  | CheckRefusal
   | 'self_approval' | 'approval_not_readable'
   | 'approval_required' | 'approval_unknown' | 'approval_expired' | 'approval_already_used' | 'approval_does_not_match';
 

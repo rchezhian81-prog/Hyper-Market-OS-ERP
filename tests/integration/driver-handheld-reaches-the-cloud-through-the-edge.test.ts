@@ -9,6 +9,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-relay';
+import { withTillPeople, issueTillPins, signInOnPhone, type TillPerson } from '../support/till-operator';
 
 /**
  * **A driver's phone's stop outcomes, settlement and cash handover reach head office through the store box's DEVICE socket —
@@ -39,7 +40,9 @@ const KEY = ['driver', 'handheld', 'edge', 'signing', 'key'].join('-').padEnd(48
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac';
 const AT = '2026-10-01T10:00:00.000Z';
 const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
-const packJson = (deviceStatus = 'registered'): string => JSON.stringify({
+/** DF-3-c (OB-30 "A"): the people who may hold the phone, with the job's permission head office re-checks. */
+const PHONE_PEOPLE: readonly TillPerson[] = [{ userId: 'u-driver', displayName: 'Driver One', permissions: ['delivery.attempt.record'] }];
+const packJson = (deviceStatus = 'registered'): string => JSON.stringify(withTillPeople({
   version: 1,
   policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privilegedActions: [] },
   lossPreventionRules: [],
@@ -51,7 +54,7 @@ const packJson = (deviceStatus = 'registered'): string => JSON.stringify({
     ],
   },
   devices: [{ deviceId: 'hh-03', kind: 'handheld', status: deviceStatus, label: 'Van phone', enrolment: { codeHash: enrolmentCodeHash(CODE), expiresAt: '2099-01-01T00:00:00.000Z' } }],
-});
+}, PHONE_PEOPLE));
 
 const cleanups: Array<() => Promise<void>> = [];
 const savedFetch = globalThis.fetch;
@@ -82,7 +85,11 @@ const item = (e: ReturnType<typeof makeEvent>) => ({ key: e.idempotencyKey, even
 const deviceBase = (edge: EdgeProcess): string => `http://127.0.0.1:${edge.devices!.port}`;
 const enrol = async (edge: EdgeProcess, code = CODE, deviceId = 'hh-03', next?: string): Promise<{ status: number; cookie: string | undefined; body: Record<string, unknown> }> => {
   const res = await savedFetch(`${deviceBase(edge)}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId, code, ...(next === undefined ? {} : { next }) }) });
-  return { status: res.status, cookie: res.headers.get('set-cookie')?.split(';')[0], body: (await res.json()) as Record<string, unknown> };
+  const device = res.headers.get('set-cookie')?.split(';')[0];
+  const body = (await res.json()) as Record<string, unknown>;
+  // DF-3-c (OB-30 "A"): an enrolled phone is then signed in by the person holding it, with the till PIN.
+  const cookie = res.status === 200 && device !== undefined ? await signInOnPhone(deviceBase(edge), device, 'u-driver', 'driver') : device;
+  return { status: res.status, cookie, body };
 };
 const postBatch = async (edge: EdgeProcess, cookie: string | undefined, items: unknown[], source = 'driver'): Promise<{ status: number; acks: DeviceAck[]; body: Record<string, unknown> }> => {
   const res = await savedFetch(`${deviceBase(edge)}/lane/outbox`, {
@@ -111,6 +118,7 @@ async function boxWithoutCloud(dir?: string): Promise<EdgeProcess> {
   const d = dir ?? await tempDir('sre-driver-handheld-nocloud-');
   const packFile = join(d, 'store-pack.json');
   await writeFile(packFile, packJson(), 'utf8');
+  await issueTillPins(d, KEY, PHONE_PEOPLE.map((p) => p.userId));
   const edge = (await startEdge({ ...EDGE_ENV, EDGE_DATA_DIR: d, EDGE_PACK_FILE: packFile }, () => {}))!;
   cleanups.push(async () => { await edge.stop(); });
   return edge;
@@ -146,6 +154,7 @@ async function cloud(): Promise<Cloud> {
   const start = async (deviceStatus = 'registered'): Promise<EdgeProcess> => {
     const packFile = join(dir, 'store-pack.json');
     await writeFile(packFile, packJson(deviceStatus), 'utf8');
+    await issueTillPins(dir, KEY, PHONE_PEOPLE.map((p) => p.userId));
     const edge = (await startEdge({
       ...EDGE_ENV, EDGE_DATA_DIR: dir, EDGE_PACK_FILE: packFile,
       CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
@@ -321,21 +330,23 @@ describe('the driver\'s phone: enrol → device socket → box (durable) → hea
     expect((await orderAt(c.h, 'ORD-7')).history.map((h) => h['event'])).toEqual(['depart', 'fail', 'rto']);
   });
 
-  it('a stop the order cannot reach from where head office has it is recorded and SAID; an unknown driver is flagged; a card COD method is a visible dead-letter that survives a restart and recorded nothing', async () => {
+  it('a stop the order cannot reach from where head office has it is recorded and SAID; a stop naming a driver who never held this phone is refused at the box by name (DF-3-c); a card COD method is a visible dead-letter that survives a restart and recorded nothing', async () => {
     const c = await cloud();
     const first = await c.start();
     const { cookie } = await enrol(first);
     const skipped = stopAt('s1', 'delivered', { codCollectedMinor: 250_00, codMethod: 'cash', proofKind: 'otp' }); // delivered with no departure seen
     const stranger = stopAt('s2', 'out_for_delivery', { driverId: 'u-stranger' });
     const card = stopAt('s2', 'delivered', { codCollectedMinor: 0, codMethod: 'card', proofKind: 'otp' });
-    expect((await postBatch(first, cookie, [skipped, stranger, card].map(item))).acks.map((a) => a.status)).toEqual(['accepted', 'accepted', 'accepted']);
+    const acks = (await postBatch(first, cookie, [skipped, stranger, card].map(item))).acks;
+    expect(acks.map((a) => a.status)).toEqual(['accepted', 'refused', 'accepted']);
+    // DF-3-c (OB-30 "A"): the phone is signed in as u-driver; a stop naming anybody else never leaves the box.
+    expect(acks[1]?.reason).toBe('the record names u-stranger, who has not been signed in on this phone this shift');
     const pass = await first.syncOnce!();
-    expect(pass.sent).toBe(2);
+    expect(pass.sent).toBe(1);
     expect(pass.dead).toBe(1);
     const view = await routeAt(c.h);
     expect(view.stops).toEqual([
       expect.objectContaining({ stopId: 's1', state: 'delivered', orderStep: 'disagrees', governanceFlags: ['order_state_disagrees'] }),
-      expect.objectContaining({ stopId: 's2', state: 'out_for_delivery', governanceFlags: ['driver_unknown'] }),
     ]);
     expect((await orderAt(c.h, 'ORD-1')).state).toBe('assigned'); // not applied blindly
     const status = await statusOf(first, cookie!, ['stop:R-1:s2:delivered']);
@@ -346,7 +357,7 @@ describe('the driver\'s phone: enrol → device socket → box (durable) → hea
     const second = await c.start();
     const after = await statusOf(second, cookie!, ['stop:R-1:s2:delivered']);
     expect(after[0]?.state).toBe('refused');
-    expect((await routeAt(c.h)).stops).toHaveLength(2);
+    expect((await routeAt(c.h)).stops).toHaveLength(1);
   });
 
   it('a driver\'s batch cannot ride as the picker, and a picker type cannot ride as the driver — refused at the box, never taken', async () => {

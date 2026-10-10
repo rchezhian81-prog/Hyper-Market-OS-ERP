@@ -201,3 +201,18 @@ export async function approvalFromLane(
   if (body.approved !== true || typeof body.approvalId !== 'string') throw new Error(`approval refused: ${body.laneMessage ?? res.status}`);
   return body.approvalId;
 }
+
+/**
+ * DF-3-c (OB-30 "A"): sign a person in on an ENROLLED phone with the same PIN as the till — what the phone's sign-in page
+ * posts. Resolves the cookie header the phone then carries: its device credential and the person's session together.
+ */
+export async function signInOnPhone(base: string, deviceCookie: string, staffId: string, screen: 'warehouse' | 'picker' | 'driver' = 'warehouse'): Promise<string> {
+  const res = await fetch(`${base}/device/sign-in?screen=${screen}`, {
+    method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', cookie: deviceCookie },
+    body: JSON.stringify({ staffId, pin: pinOf(staffId) }),
+  });
+  const body = await res.json() as { signedIn?: boolean; laneMessage?: string };
+  const session = res.headers.get('set-cookie')?.split(';')[0];
+  if (body.signedIn !== true || session === undefined) throw new Error(`phone sign-in refused: ${body.laneMessage ?? res.status}`);
+  return `${deviceCookie}; ${session}`;
+}

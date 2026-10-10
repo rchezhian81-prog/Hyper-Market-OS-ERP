@@ -8,6 +8,8 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
+import { withTillPeople, issueTillPins } from '../support/till-operator';
+import { signInOnPhonePage } from '../support/phone-sign-in-page';
 
 /**
  * **A warehouse handheld, in a real browser, enrols on the store box's device socket and its scans reach the box
@@ -41,7 +43,9 @@ const TENANT = 't-sre';
 const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
 const HANDHELD = { viewport: { width: 360, height: 640 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 
-const PACK_JSON = JSON.stringify({
+// DF-3-c (OB-30 "A"): the person who signs in on the phone, with the job's permission head office re-checks.
+const PHONE_PERSON = 'u-worker';
+const PACK_JSON = JSON.stringify(withTillPeople({
   version: 1,
   policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
   lossPreventionRules: [],
@@ -54,7 +58,7 @@ const PACK_JSON = JSON.stringify({
     goodsIn: [{ productId: 'p-good', batchId: null, quantityMinor: 6, uom: 'EA', state: 'on_hand', expiry: null }],
   },
   devices: [{ deviceId: 'hh-01', kind: 'handheld', status: 'registered', label: 'Racking 1', enrolment: { codeHash: enrolmentCodeHash(CODE), expiresAt: '2099-01-01T00:00:00.000Z' } }],
-});
+}, [{ userId: PHONE_PERSON, permissions: ['inventory.movement.append'] }]));
 
 interface HandheldWindow {
   readonly laneWriteBase?: string;
@@ -86,6 +90,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     dirs.push(dir);
     const packFile = join(dir, 'store-pack.json');
     await writeFile(packFile, PACK_JSON, 'utf8');
+    await issueTillPins(dir, KEY, [PHONE_PERSON]);
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
@@ -134,11 +139,17 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
 
     await page.fill('#code', 'abcde fghjk lmnpq rstuv'); // typed in lower case with spaces — normalized, still the code
     await page.click('button[type="submit"]');
+    await signInOnPhonePage(page, 'warehouse', PHONE_PERSON);
     await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/warehouse/', undefined, { timeout: 15_000 });
     await ready(page);
     expect(await page.textContent('#who')).toContain('u-worker');
     expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).deviceId)).toBe('hh-01');
     expect(await page.textContent('#queue-text')).toContain('nothing sent yet');
+    // DF-3-c (OB-30 "A"): the phone says who is holding it, with the one button that hands it over.
+    expect(await page.textContent('[data-phone-holder]')).toContain('Signed in: u-worker');
+    await page.click('[data-phone-holder] button[type="submit"]');
+    await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/device/sign-in', undefined, { timeout: 15_000 });
+    expect(await page.evaluate(() => (globalThis as unknown as HandheldWindow).warehouseSession)).toBeUndefined();
   });
 
   it('receive + delivery complete + put away + a blind count → saved here → with the store computer (durable on the box); reload → all still listed, nothing re-sent', async () => {
@@ -147,6 +158,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await page.fill('#deviceId', 'hh-01');
     await page.fill('#code', CODE);
     await page.click('button[type="submit"]');
+    await signInOnPhonePage(page, 'warehouse', PHONE_PERSON);
     await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/warehouse/', undefined, { timeout: 15_000 });
     await ready(page);
 
@@ -235,6 +247,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld enrols on the box\'s devi
     await page.fill('#deviceId', 'hh-01');
     await page.fill('#code', CODE);
     await page.click('button[type="submit"]');
+    await signInOnPhonePage(page, 'warehouse', PHONE_PERSON);
     await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/warehouse/', undefined, { timeout: 15_000 });
     await ready(page);
     expect(await page.textContent('#recv-temp')).toContain('not taken');

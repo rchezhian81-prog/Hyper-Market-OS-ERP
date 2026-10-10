@@ -32,11 +32,15 @@ import { join } from 'node:path';
 import { APP_SHELL, routeOf, redirectFor, safeFile, injectPayload } from './screen-server';
 import { GLOBAL_FOR, payloadFor, catalogueFreshness, type ScreenInput, type ScreenName } from './screen-data';
 import {
-  readRelayBatch, isHandheldSource, DEVICE_OUTBOX_PATH, DEVICE_OUTBOX_STATUS_PATH,
-  type BoxItemStatus, type RelayReply,
+  readRelayBatch, readRelayItem, isHandheldSource, isRelayable, DEVICE_OUTBOX_PATH, DEVICE_OUTBOX_STATUS_PATH,
+  type BoxItemStatus, type DeviceAck, type HandheldSource, type RelayReply,
 } from '../../../packages/sync/src/device-relay';
 import type { DeviceEnrolments, PackDevice } from './device-enrolments';
 import type { LaneSyncStatus } from './sync-status';
+import type { CheckOutcome, SignInOutcome } from './till-operators';
+import {
+  HANDHELD_AUTHORITY, asPhoneHolder, personNamedBy, phoneHolderStrip, phoneSignInPage, withPhoneHolderStrip,
+} from './handheld-sign-in';
 
 /** Loopback unless a deployment names the shop's address explicitly — the device socket never widens by itself. */
 export const DEVICE_HOST = '127.0.0.1';
@@ -45,6 +49,29 @@ export const HANDHELD_SCREENS: readonly ScreenName[] = ['warehouse', 'picker', '
 export const DEVICE_COOKIE = 'sre_device';
 export const DEVICE_ENROL_ROUTE = '/device/enrol';
 export const DEVICE_SYNC_STATUS_ROUTE = '/lane/sync-status';
+/** DF-3-c (OB-30 "A"): the person holding the phone signs in here with their staff ID and the till PIN, and out again. */
+export const PHONE_SIGN_IN_ROUTE = '/device/sign-in';
+export const PHONE_SIGN_OUT_ROUTE = '/device/sign-out';
+/** The phone holder's session: HttpOnly, SameSite=Strict, the box keeps only its hash. Twelve hours, like a till shift. */
+export const OPERATOR_COOKIE = 'sre_operator';
+const OPERATOR_COOKIE_SECONDS = 12 * 3600;
+
+/**
+ * Who is holding the phone (DF-3-c · OB-30 "A"): the box's till register, addressed by the DEVICE. Absent → nobody can
+ * sign in on a phone, so no phone screen is served and no phone record is taken (fail closed).
+ */
+export interface PhoneOperators {
+  signIn(input: { readonly staffId: string; readonly pin: string; readonly deviceId: string; readonly authority: string }): Promise<SignInOutcome>;
+  check(token: string | undefined, deviceId: string): CheckOutcome;
+  signOut(token: string | undefined): Promise<boolean>;
+  /** Has this person held this phone — now, or within the last shift (the box's own log and clock)? */
+  heldRecently(userId: string, deviceId: string): boolean;
+}
+
+/** The handheld screen a sign-in is for — one of the three, or the warehouse's when nothing (or nonsense) was named. */
+export function phoneScreenOf(requested: unknown): HandheldSource {
+  return typeof requested === 'string' && isHandheldSource(requested) ? requested : 'warehouse';
+}
 /**
  * Where a freshly enrolled device is sent. The screen it ASKED for when it was turned away (`?next=/picker/`, carried by the
  * redirect and posted back by the enrolment page) — validated against the handheld screens this socket serves, so the
@@ -59,7 +86,7 @@ export function homeAfterEnrol(requested: unknown): string {
 }
 
 /** A device's batch, with the device this socket authenticated it from — the box logs who handed what. */
-export type DeviceRelayHandler = (batch: { readonly source: string; readonly items: readonly unknown[]; readonly deviceId: string }) => Promise<RelayReply>;
+export type DeviceRelayHandler = (batch: { readonly source: string; readonly items: readonly unknown[]; readonly deviceId: string; readonly phoneHolder?: string }) => Promise<RelayReply>;
 export type DeviceStatusHandler = (keys: readonly string[]) => readonly BoxItemStatus[];
 
 export interface DeviceServer {
@@ -192,6 +219,28 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c));
 }
 
+/** A small form body (`application/x-www-form-urlencoded`) or JSON, as fields. */
+async function readFormOrJson(req: IncomingMessage, maxBytes: number): Promise<Record<string, string> | null> {
+  const type = (req.headers['content-type'] ?? '').toLowerCase();
+  if (type.startsWith('application/json')) {
+    const read = await readJsonBody(req, maxBytes);
+    if (!read.ok || read.body === null || typeof read.body !== 'object') return null;
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(read.body as Record<string, unknown>)) if (typeof v === 'string') out[k] = v;
+    return out;
+  }
+  if (!type.startsWith('application/x-www-form-urlencoded')) { req.resume(); return null; }
+  const raw = await new Promise<string | null>((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (c: Buffer) => { size += c.length; if (size > maxBytes) { resolve(null); req.destroy(); return; } chunks.push(c); });
+    req.on('end', () => { resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('error', () => { resolve(null); });
+  });
+  if (raw === null) return null;
+  return Object.fromEntries(new URLSearchParams(raw));
+}
+
 export function startDeviceServer(input: {
   readonly port: number;
   /** The address to bind — `DEVICE_HOST` (loopback) unless a deployment names the shop's address. */
@@ -205,6 +254,8 @@ export function startDeviceServer(input: {
   readonly relayDeviceEvents: DeviceRelayHandler;
   readonly deviceEventStatus: DeviceStatusHandler;
   readonly syncStatus: () => LaneSyncStatus;
+  /** Who is holding each phone (DF-3-c). Null → nobody can sign in, so nothing is served or taken (fail closed). */
+  readonly operators: PhoneOperators | null;
   readonly now: () => string;
   /** Largest device batch accepted. A body cap is a denial-of-service control. */
   readonly maxBytes?: number;
@@ -258,6 +309,40 @@ export function startDeviceServer(input: {
         return;
       }
 
+      // ── Who is holding the phone (DF-3-c · OB-30 "A") ──
+      const operatorToken = cookieValue(req.headers.cookie, OPERATOR_COOKIE);
+      const holder = input.operators === null ? null : input.operators.check(operatorToken, auth.deviceId);
+      if (pathname === PHONE_SIGN_IN_ROUTE) {
+        const screen = phoneScreenOf(url.searchParams.get('screen'));
+        const action = `${PHONE_SIGN_IN_ROUTE}?screen=${screen}`;
+        if (req.method === 'GET') { send(res, 200, TYPES['.html']!, phoneSignInPage({ screen, action, message: null })); return; }
+        if (req.method !== 'POST') { send(res, 405, 'text/plain; charset=utf-8', 'sign-in is a POST'); return; }
+        const wantsJson = (req.headers.accept ?? '').includes('application/json');
+        const fields = await readFormOrJson(req, 4096);
+        const answer = (status: number, message: string, refusedBecause: string): void => {
+          if (wantsJson) sendJson(res, status, { signedIn: false, refusedBecause, laneMessage: message });
+          else send(res, status, TYPES['.html']!, phoneSignInPage({ screen, action, message }));
+        };
+        if (fields === null) { answer(400, 'The sign-in could not be read. Key your staff ID and PIN again.', 'not_readable'); return; }
+        if (input.operators === null) { answer(503, 'This store computer cannot sign anybody in on a phone. Tell the manager.', 'no_sign_in_here'); return; }
+        const outcome = await input.operators.signIn({ staffId: fields['staffId'] ?? '', pin: fields['pin'] ?? '', deviceId: auth.deviceId, authority: HANDHELD_AUTHORITY[screen] });
+        if (!outcome.signedIn) { answer(outcome.refusedBecause === 'locked' || outcome.refusedBecause === 'lane_locked' ? 429 : 401, outcome.laneMessage, outcome.refusedBecause); return; }
+        const cookie = `${OPERATOR_COOKIE}=${encodeURIComponent(outcome.token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${OPERATOR_COOKIE_SECONDS}`;
+        if (wantsJson) { sendJson(res, 200, { signedIn: true, userId: outcome.userId, displayName: outcome.displayName, expiresAt: outcome.expiresAt, next: `/${screen}/` }, { 'set-cookie': cookie }); return; }
+        res.writeHead(303, { location: `/${screen}/`, 'set-cookie': cookie, ...SECURITY_HEADERS });
+        res.end();
+        return;
+      }
+      if (pathname === PHONE_SIGN_OUT_ROUTE) {
+        if (req.method !== 'POST') { send(res, 405, 'text/plain; charset=utf-8', 'sign-out is a POST'); return; }
+        req.resume();
+        if (input.operators !== null) await input.operators.signOut(operatorToken);
+        const screen = phoneScreenOf(url.searchParams.get('screen'));
+        res.writeHead(303, { location: `${PHONE_SIGN_IN_ROUTE}?screen=${screen}`, 'set-cookie': `${OPERATOR_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`, ...SECURITY_HEADERS });
+        res.end();
+        return;
+      }
+
       // ── The device routes: the same paths as the loopback lane socket, so the shared drain works unchanged ──
       if (req.method === 'POST' && pathname === DEVICE_OUTBOX_PATH) {
         if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
@@ -269,8 +354,30 @@ export function startDeviceServer(input: {
         if (!batch.ok) { sendJson(res, 400, { acks: [], reason: batch.reason }); return; }
         // A handheld speaks as a handheld. `manager` — and any surface nobody reviewed — is refused before the box is asked.
         if (!isHandheldSource(batch.source)) { sendJson(res, 403, { acks: [], reason: `${batch.source} is not a handheld surface this socket relays for` }); return; }
+        // DF-3-c: nobody signed in on this phone → nothing is taken. Not a refusal: the phone keeps every item and retries
+        // once somebody signs in (a 401 is "not now", never "never").
+        if (holder === null || !holder.ok) {
+          sendJson(res, 401, { acks: [], reason: holder === null ? 'this store computer cannot sign anybody in on a phone' : holder.laneMessage });
+          return;
+        }
+        // Each record must name a person who held THIS phone this shift — the box's log and clock decide. Anything
+        // else is refused by name (a person must look), never re-stamped (hard rule #10).
+        const verdicts: (DeviceAck | null)[] = batch.items.map((raw) => {
+          const read = readRelayItem(raw);
+          if (!read.ok) return null; // the box's relay refuses a malformed item with its own reason
+          if (!isRelayable(read.item.event.type, batch.source)) return null; // and a type this surface may not send, by its allow-list
+          const named = personNamedBy(read.item.event);
+          if (!named.ok) return { key: read.item.key, status: 'refused', reason: named.reason };
+          if (!input.operators!.heldRecently(named.userId, auth.deviceId)) {
+            return { key: read.item.key, status: 'refused', reason: `the record names ${named.userId}, who has not been signed in on this phone this shift` };
+          }
+          return null;
+        });
         try {
-          sendJson(res, 200, await input.relayDeviceEvents({ source: batch.source, items: batch.items, deviceId: auth.deviceId }));
+          const passed = batch.items.filter((_, i) => verdicts[i] === null);
+          const relayed = passed.length === 0 ? { acks: [] } : await input.relayDeviceEvents({ source: batch.source, items: passed, deviceId: auth.deviceId, phoneHolder: holder.userId });
+          let next = 0;
+          sendJson(res, 200, { acks: verdicts.map((v) => v ?? relayed.acks[next++]!) });
         } catch (e) {
           // The box failed mid-batch: no verdict on any item; the device keeps them all and tries again.
           sendJson(res, 500, { acks: [], reason: e instanceof Error ? e.message : String(e) });
@@ -315,8 +422,15 @@ export function startDeviceServer(input: {
       const extension = file.slice(file.lastIndexOf('.'));
       const type = TYPES[extension] ?? 'application/octet-stream';
       if (extension !== '.html') { send(res, 200, type, body); return; }
+      // DF-3-c: the working screen only for the person signed in on this phone, for THIS job — otherwise the sign-in page.
+      const screen = route.screen as HandheldSource;
+      if (holder === null || !holder.ok || holder.authority !== HANDHELD_AUTHORITY[screen]) {
+        redirect(res, `${PHONE_SIGN_IN_ROUTE}?screen=${screen}`);
+        return;
+      }
       const snap = input.snapshot();
-      send(res, 200, type, injectPayload(body.toString('utf8'), GLOBAL_FOR[route.screen], payloadFor(route.screen, snap), {
+      const page = withPhoneHolderStrip(body.toString('utf8'), phoneHolderStrip({ displayName: holder.displayName, signOutAction: `${PHONE_SIGN_OUT_ROUTE}?screen=${screen}` }));
+      send(res, 200, type, injectPayload(page, GLOBAL_FOR[route.screen], asPhoneHolder(screen, payloadFor(route.screen, snap, holder.userId), holder.userId), {
         catalogueFreshness: catalogueFreshness(snap),
         // Same origin: the shell's drain and badge post to `/lane/…` on THIS socket, under the device's cookie.
         laneWriteBase: '',

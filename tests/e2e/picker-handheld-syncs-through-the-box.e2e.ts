@@ -8,6 +8,8 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
+import { withTillPeople, issueTillPins } from '../support/till-operator';
+import { signInOnPhonePage } from '../support/phone-sign-in-page';
 
 /**
  * **A picker handheld, in a real browser, enrols on the store box's device socket and its outcomes and pack reach the box
@@ -40,7 +42,9 @@ const TENANT = 't-sre';
 const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
 const HANDHELD = { viewport: { width: 360, height: 640 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 
-const PACK_JSON = JSON.stringify({
+// DF-3-c (OB-30 "A"): the person who signs in on the phone, with the job's permission head office re-checks.
+const PHONE_PERSON = 'u-picker';
+const PACK_JSON = JSON.stringify(withTillPeople({
   version: 1,
   policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privilegedActions: [] },
   lossPreventionRules: [],
@@ -52,7 +56,7 @@ const PACK_JSON = JSON.stringify({
     ],
   },
   devices: [{ deviceId: 'hh-02', kind: 'handheld', status: 'registered', label: 'Aisle picker', enrolment: { codeHash: enrolmentCodeHash(CODE), expiresAt: '2099-01-01T00:00:00.000Z' } }],
-});
+}, [{ userId: PHONE_PERSON, permissions: ['fulfilment.pack.record'] }]));
 
 interface HandheldWindow {
   readonly laneWriteBase?: string;
@@ -84,6 +88,7 @@ describe.skipIf(!HAVE_BROWSER)('the picker handheld enrols on the box\'s device 
     dirs.push(dir);
     const packFile = join(dir, 'store-pack.json');
     await writeFile(packFile, PACK_JSON, 'utf8');
+    await issueTillPins(dir, KEY, [PHONE_PERSON]);
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
@@ -131,6 +136,7 @@ describe.skipIf(!HAVE_BROWSER)('the picker handheld enrols on the box\'s device 
 
     await page.fill('#code', CODE);
     await page.click('button[type="submit"]');
+    await signInOnPhonePage(page, 'picker', PHONE_PERSON);
     await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/picker/', undefined, { timeout: 15_000 });
     await ready(page);
     expect(await page.textContent('#wave')).toContain('W-1');
@@ -145,6 +151,7 @@ describe.skipIf(!HAVE_BROWSER)('the picker handheld enrols on the box\'s device 
     await page.fill('#deviceId', 'hh-02');
     await page.fill('#code', CODE);
     await page.click('button[type="submit"]');
+    await signInOnPhonePage(page, 'picker', PHONE_PERSON);
     await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/picker/', undefined, { timeout: 15_000 });
     await ready(page);
 

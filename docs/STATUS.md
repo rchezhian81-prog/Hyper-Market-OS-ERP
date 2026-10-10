@@ -5,6 +5,47 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 4 · PA-06 = DF-3-c-3a — staff sign in on the phones with their till PIN; the work is recorded as theirs (10 October 2026)
+
+- **Owner decision OB-30 "A"** (10 Oct 2026): each person signs in on the warehouse, picker or driver phone with their
+  staff ID and the same personal PIN as the till.
+- **What changed:**
+  - **An enrolled phone now asks who is holding it.** The person keys their staff ID and till PIN. The store computer
+    checks it itself — no internet needed — with the same PIN records, wrong-PIN lock and log as the till.
+  - **The person must have the job** in the current store setup (warehouse, picking or delivery). These are the same
+    permissions head office checks on that work.
+  - **The screen becomes theirs:** the warehouse screen records them as the worker; the picker sees their own wave; the
+    driver sees their own route. Work head office gave to somebody else by name is not shown to them.
+  - **One person per phone at a time.** The next person signing in signs the first out ("Signed in: <name>" bar with a
+    Sign out button).
+  - **Every record a phone sends must name a person who held that phone this shift.** The store computer judges this
+    from its own log and clock, never the phone's clock. Anything else is refused by name and shown on the phone. With
+    nobody signed in, the store computer takes nothing, and the phone keeps its work until someone signs in.
+  - **A leaver** (role removed, or PIN withdrawn) cannot sign in, and a phone still signed in as them stops sending at
+    once. What they did while they held the job still reaches head office as theirs.
+  - The hosted copy's phone screens run as the person the front door signed in.
+- **Proof:**
+  - **Connected test** (real store computer and real head office, 4 cases):
+    - two people on one phone, with each scan reaching head office as the person who did it;
+    - restart and offline sign-in;
+    - a leaver and a withdrawn PIN;
+    - the hosted screen.
+  - **Updated** the device-socket unit test (new sign-in case), the three phone-to-head-office tests and the four phone
+    browser tests, which now go through the real sign-in page and sign out in the browser.
+  - The new tests fail on the old code.
+- **Not yet / honest limits:**
+  - On the hosted copy, phone records are not person-checked by the store computer; the front door's sign-in is trusted,
+    as for the ERP screens.
+  - Signing out does not first send the phone's waiting work. It stays the first person's and is still taken for twelve
+    hours.
+  - Every phone user needs a till PIN issued by the administrator.
+  - Staff UAT (SP-10) is pending.
+- **Next:** part 3b:
+  - the demo store computer takes its setup from head office;
+  - retire the demo-only builder;
+  - the buying screen as the signed-in person;
+  - the warehouse practice delivery and bins;
+  - settle the quantity scale.
 ## Wave 5 · PF-09 step 1 — a sale earns loyalty points and a return takes them back (head office) (10 October 2026)
 
 - **The audit's finding (HIGH):** head office could keep loyalty points safely, but nothing connected a sale or a return

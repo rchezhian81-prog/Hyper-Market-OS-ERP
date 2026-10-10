@@ -706,12 +706,13 @@ export function shelfMapFor(input: ScreenInput): ShelfMap | null {
  * dispatcher wrote their route by hand — a picker who thinks a list is sequenced when it is not
  * walks it trusting an order that was never applied.
  */
-export function pickerPayload(input: ScreenInput): Record<string, unknown> | null {
+export function pickerPayload(input: ScreenInput, pickerId?: string): Record<string, unknown> | null {
   // HA-1: head office's assignment is the normal source; a wave written by hand into the pack file is the override, and
   // the screen is told which of the two it is holding — never left to assume.
   const handWritten = input.pack.wave.known && input.pack.wave.value !== null ? input.pack.wave.value : null;
   const assigned = input.pack.assignments.known ? input.pack.assignments.value : null;
-  const wave = handWritten ?? assigned?.waves[0] ?? null;
+  // DF-3-c: a picker signed in on the phone is given THEIR wave — the first is only for a box that does not know who is asking.
+  const wave = handWritten ?? (pickerId === undefined ? assigned?.waves[0] : assigned?.waves.find((w) => w.pickerId === pickerId)) ?? null;
   if (wave === null) return null;
   const source = {
     assignedBy: handWritten !== null ? 'this box\'s pack file — a wave written by hand' : `head office, as of ${assigned!.asAt}`,
@@ -2459,6 +2460,9 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */
-export function payloadFor(screen: ScreenName, input: ScreenInput): Record<string, unknown> | null {
+export function payloadFor(screen: ScreenName, input: ScreenInput, personId?: string): Record<string, unknown> | null {
+  // DF-3-c: the picker's and driver's work is chosen for the person signed in on the phone, when the box knows who that is.
+  if (personId !== undefined && screen === 'picker') return pickerPayload(input, personId);
+  if (personId !== undefined && screen === 'driver') return driverPayload(input, personId);
   return BUILDERS[screen](input);
 }
