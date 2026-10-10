@@ -207,7 +207,8 @@ import { auditSearchRoutes } from '../../finance/src/audit-search';
 import { storedAuditTrailRoutes } from '../../finance/src/audit-trail-store';
 import { reportingRoutes } from '../../reporting/src/index';
 import { consolidationRoutes } from '../../reporting/src/consolidation-route';
-import { scheduledBriefRoutes } from '../../reporting/src/scheduled-brief';
+import { scheduledBriefRoutes, type ScheduledBriefDeps } from '../../reporting/src/scheduled-brief';
+import { startBriefWorker } from '../../reporting/src/brief-worker';
 import { ownerAlertsRoutes } from '../../reporting/src/owner-alerts';
 import { drillThroughRoutes } from '../../reporting/src/drill-through';
 import type { Producer } from '../../../packages/reporting/src/index';
@@ -322,6 +323,8 @@ export function buildSurface(deps: {
    * test adapter here to prove the send path.
    */
   readonly notificationTransport?: NotificationTransport;
+  /** EA-07: handed the composed brief-scheduler deps, so `startApi` can run the brief WORKER over the same ones. */
+  readonly onBriefDeps?: (deps: ScheduledBriefDeps) => void;
   /**
    * Reachability of what the shop cannot trade without. A real call every time it is asked, not a
    * flag something set earlier — a cached "reachable: true" is a health check that reports the
@@ -418,6 +421,7 @@ export function buildSurface(deps: {
   // The named-report producers over governed source records (EA-06) — shared by the report route and the governed drill
   // (EA-05), so a drill reaches exactly the records the report's figure was summed from.
   const producers = store === undefined ? undefined : reportProducers({ store, now, calendar: shopCalendar, loyaltyRule });
+  const withBriefDeps = (d: ScheduledBriefDeps): ScheduledBriefDeps => { deps.onBriefDeps?.(d); return d; };
   // The durable domain audit trail (M34-FR-01): one sealed chain per tenant. Producers (slice 1: the
   // credential lifecycle) seal into it; the stored read routes search / reconstruct / verify it. No
   // store → no durable trail, so a producer simply records nothing (its recordAudit is left unset).
@@ -1369,8 +1373,20 @@ export function buildSurface(deps: {
     // additive). The transport that delivers it to the phone is the deployment step.
     ...scheduledBriefRoutes(store === undefined
       ? { schedule: () => undefined, setSchedule: () => {}, recordSent: () => {}, now }
-      : {
+      : withBriefDeps({
           ...scheduledBriefAdapter({ store, now }),
+          // EA-07 OUTBOX: a due brief goes onto the PA-08 queue (the queue's own sender delivers, retries, dead-letters
+          // visibly), and the day is acknowledged only when the queue says it was delivered.
+          outbox: (() => {
+            const nq = notificationQueueAdapter({ store, now });
+            return {
+              enqueue: nq.record,
+              item: async (tenantId: string, id: string) => {
+                const it = (await nq.queue(tenantId)).find(id);
+                return it === undefined ? undefined : { state: it.state, reason: it.reason };
+              },
+            };
+          })(),
           // EA-07: the day's figures from the SAME governed producer as the sales-by-day report, stamped with its source
           // freshness; head office has no cost of goods or banked cash for the day, so those are said "not available".
           calendar: shopCalendar,
@@ -1388,7 +1404,7 @@ export function buildSurface(deps: {
           },
           recipient: async (tenantId) => (await effectiveGrants(store, tenantId)).find((g) => g.roleId === OWNER_ROLE_ID)?.userId,
           ...(deps.notificationTransport === undefined ? {} : { transport: deps.notificationTransport }),
-        }),
+        })),
     ...platformRoutes(store === undefined ? {
       probe: probes, flags: empty({}), setFlag: () => {},
       settings, exportTenant: emptyExportBundle,
@@ -1685,7 +1701,9 @@ export async function startApi(
   // authenticator so a revocation bites on the next request here and within the refresh window elsewhere.
   const revocations = new TokenRevocationList(tokenRevocationAdapter({ store }));
 
+  let briefDeps: ScheduledBriefDeps | undefined;
   const built = buildRouter(buildSurface({
+    onBriefDeps: (d) => { briefDeps = d; },
     signingKey: settings['PACK_SIGNING_KEY']!,
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
@@ -1812,10 +1830,23 @@ export async function startApi(
   const routeCount = built.router!.list().length;
   out(`sre-api listening on ${port}, ${routeCount} routes\n`);
 
+  // EA-07: the owner's daily brief WORKER — only for the shops an operator names (head office never looks across shops,
+  // OB-21). Each tick runs one scheduler pass per shop on its own trading calendar; due briefs go onto the PA-08 queue.
+  const briefTenants = (env['BRIEF_WORKER_TENANT_IDS'] ?? '').split(',').map((t) => t.trim()).filter((t) => t !== '');
+  const everySeconds = Number(env['BRIEF_WORKER_EVERY_SECONDS'] ?? '300');
+  const stopBriefWorker = briefTenants.length === 0 || briefDeps === undefined ? undefined : startBriefWorker({
+    deps: briefDeps, tenants: briefTenants, everyMs: (Number.isFinite(everySeconds) && everySeconds >= 10 ? everySeconds : 300) * 1000,
+    report: (ticks) => {
+      for (const t of ticks) if (!t.ok || t.ran.length > 0) out(`${JSON.stringify({ briefWorker: t.tenantId, ok: t.ok, detail: t.detail, ran: t.ran.map((r) => ({ day: r.tradingDay, outcome: r.outcome })) })}\n`);
+    },
+  });
+  if (stopBriefWorker !== undefined) out(`brief worker: briefing ${briefTenants.length} shop(s) every ${everySeconds}s\n`);
+
   return {
     port,
     routeCount,
     stop: async () => {
+      stopBriefWorker?.();
       await server.stop();
       await db.end();
     },
