@@ -227,6 +227,8 @@ export interface BuyingPorts {
 export interface ProposePurchaseOrderInput {
   readonly poId: string;
   readonly supplierId: string;
+  /** OB-37: the store the order is delivered to — a place in head office's organisation. */
+  readonly deliverToLocationId: string;
   readonly lines: readonly { readonly productId: string; readonly orderedQty: number; readonly unitCostMinor: number }[];
 }
 
@@ -245,6 +247,7 @@ export interface ProposePurchaseOrderPort {
   post(input: {
     readonly poId: string;
     readonly supplierId: string;
+    readonly deliverToLocationId: string;
     readonly lines: readonly { readonly productId: string; readonly orderedQty: number; readonly unitCost: Money }[];
   }): Promise<ProposePurchaseOrderOutcome>;
 }
@@ -447,12 +450,17 @@ export function createBuyingSession(config: BuyingConfig, ports: BuyingPorts, ou
       if (input.supplierId.trim() === '') {
         return { proposed: false, reason: 'no supplier is chosen for this order' };
       }
+      // OB-37: every order names the store it is delivered to — the receiving staff there expect it.
+      if (input.deliverToLocationId.trim() === '') {
+        return { proposed: false, reason: 'no store is chosen for this order to be delivered to' };
+      }
       // The cloud is the authority — it attributes the requisitioner to the authenticated buyer and refuses a
       // blocked supplier. The proposal carries NO approver: issuing is a separate §28 act the buyer may not do,
       // and a dropped link or a refusal comes back as `proposed: false`, never a false "raised".
       return port().post({
         poId: input.poId,
         supplierId: input.supplierId,
+        deliverToLocationId: input.deliverToLocationId.trim(),
         lines: input.lines.map((l) => ({ productId: l.productId, orderedQty: l.orderedQty, unitCost: inr(l.unitCostMinor) })),
       });
     },

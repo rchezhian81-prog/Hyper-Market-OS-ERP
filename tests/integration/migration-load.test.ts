@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness } from '../support/api-harness';
+import { deliveryPlaces } from '../support/approved-supplier';
 import { planLoad, executeLoad, type ExtractBundle, type LoadRequest, type LoadPlanOk } from '../../packages/migration/src/index';
 
 // MG-05 — the ACTUAL load, end to end through the real API: a checked extract goes into a named, empty,
@@ -103,7 +104,14 @@ describe('MG-05 actual load — a checked extract lands in an empty real tenant 
     expect(supplier.status).toBe(200);
     expect(JSON.stringify(supplier.body)).toContain('Kaveri Traders');
     expect(JSON.stringify(supplier.body)).toContain('33AAAAA0000A1Z9');
-    const po = await h.request({ method: 'POST', path: '/v1/purchase/orders/po-first', userId: OPERATOR, tenantId: REAL, idempotencyKey: 'po-first', body: { supplierId: 'SUP-1', lines: [{ productId: 'P-RICE', orderedQty: 10, unitCost: { minor: 36_000, currency: 'INR' } }] } });
+    // OB-32: a migrated supplier arrives PROPOSED — no order until finance approves it (a person other than the loader).
+    const poBody = { supplierId: 'SUP-1', deliverToLocationId: 'STORE-MAIN', lines: [{ productId: 'P-RICE', orderedQty: 10, unitCost: { minor: 36_000, currency: 'INR' } }] };
+    const early = await h.request({ method: 'POST', path: '/v1/purchase/orders/po-early', userId: OPERATOR, tenantId: REAL, idempotencyKey: 'po-early', body: poBody });
+    expect((early.body as { error?: { code?: string } }).error?.code).toBe('supplier_not_approved');
+    await h.provisionRole(REAL, 'u-finance', 'accountant');
+    await deliveryPlaces(h, REAL, 'STORE-MAIN'); // OB-37: an order names the store it is delivered to
+    expect((await h.request({ method: 'POST', path: '/v1/purchase/suppliers/SUP-1/approval', userId: 'u-finance', tenantId: REAL, idempotencyKey: 'sup-ok', body: { reason: 'GST certificate checked' } })).status).toBe(200);
+    const po = await h.request({ method: 'POST', path: '/v1/purchase/orders/po-first', userId: OPERATOR, tenantId: REAL, idempotencyKey: 'po-first', body: poBody });
     expect(po.status).toBe(201);
     expect(po.body).toMatchObject({ order: { supplierId: 'SUP-1' } });
   });
