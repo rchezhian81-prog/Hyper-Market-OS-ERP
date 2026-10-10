@@ -131,13 +131,46 @@ describe('the migration pipeline over the real authenticated surface', () => {
     expect(bodyOf(opening).events[0].appendOnly).toBe(true);
   });
 
+  it('a stock delta lands as real stock movements, ONCE — a retry under a new HTTP key and a restart change nothing (GT-04)', async () => {
+    const h = await seededHarness();
+    const changes = [
+      // Received at the old store after the final extract: 10 at ₹360; then 3 sold on the old till.
+      { changeKey: 'd-in-1', entity: 'stock', legacyId: 'P-RICE', operation: 'update', changedAt: '2026-09-12T08:00:00Z', deltaQty: 10, locationId: 'S1', uom: 'ea', unitCostMinor: 36_000 },
+      { changeKey: 'd-out-1', entity: 'stock', legacyId: 'P-RICE', operation: 'update', changedAt: '2026-09-12T09:00:00Z', deltaQty: -3, locationId: 'S1', uom: 'ea' },
+    ];
+    const onHand = async (harness: typeof h): Promise<number | undefined> =>
+      (bodyOf(await harness.request({ method: 'GET', path: '/v1/inventory/availability', userId: OWNER, tenantId: T, query: { productId: 'P-RICE' } })) as { rows: { locationId: string; onHandMinor: number }[] }).rows.find((r) => r.locationId === 'S1')?.onHandMinor;
+
+    const first = bodyOf(await post(h, '/v1/migration/deltas', OWNER, 'dl-a', { changes, extractCutoff: '2026-09-12T00:00:00Z' }));
+    expect(first).toMatchObject({ applied: 2, refused: 0 });
+    expect(await onHand(h)).toBe(7);
+    const valued = bodyOf(await h.request({ method: 'GET', path: '/v1/inventory/valuation', userId: OWNER, tenantId: T, query: { productId: 'P-RICE' } })) as { rows: { value: { minor: number } }[] };
+    expect(valued.rows[0]?.value.minor).toBe(7 * 36_000);
+
+    // The same delta re-sent under a NEW HTTP idempotency key: head office's own record says it is in — no second effect.
+    const retry = bodyOf(await post(h, '/v1/migration/deltas', OWNER, 'dl-b', { changes, extractCutoff: '2026-09-12T00:00:00Z' }));
+    expect(retry).toMatchObject({ applied: 0, duplicatesIgnored: 2 });
+    // After a restart (a fresh process over the same store): still once.
+    const restarted = apiHarness({ store: h.store });
+    const third = bodyOf(await restarted.request({ method: 'POST', path: '/v1/migration/deltas', userId: OWNER, tenantId: T, idempotencyKey: 'dl-c', body: { changes, extractCutoff: '2026-09-12T00:00:00Z' } }));
+    expect(third).toMatchObject({ applied: 0, duplicatesIgnored: 2 });
+    expect(await onHand(restarted)).toBe(7);
+    // The source identity survives on the stock ledger: each movement is named for its change.
+    const moved = await h.store.readStream(T, 'inventory', { type: 'InventoryMoved' });
+    expect(moved.map((e) => (e.event.payload as { movementId: string }).movementId).sort()).toEqual(['delta-d-in-1', 'delta-d-out-1']);
+    // And the cutover's delta check now reads head office's record of it.
+    const decision = bodyOf(await post(h, '/v1/migration/cutover/decision', OWNER, 'cut-d', { evidence: {} }));
+    expect((decision.checks as { check: string; state: string }[]).find((c) => c.check === 'delta_applied')?.state).toBe('passed');
+  });
+
   it('a forged all-green cutover body gets NO GO — the gate reads head office\'s records, not the caller (GT-03)', async () => {
     const h = await seededHarness();
+    // A change this version cannot apply is refused by name — never counted as applied (GT-04).
     const delta = await post(h, '/v1/migration/deltas', OWNER, 'dl1', {
       changes: [{ changeKey: 'c1', entity: 'sale', legacyId: 'S1', operation: 'insert', changedAt: '2026-09-12T09:00:00Z', deltaMinor: 5000 }],
       extractCutoff: '2026-09-12T00:00:00Z',
     });
-    expect(bodyOf(delta).applied).toBe(1);
+    expect(bodyOf(delta)).toMatchObject({ applied: 0, refused: 1 });
 
     const cutover = await post(h, '/v1/migration/cutover/decision', OWNER, 'cut1', {
       evidence: {

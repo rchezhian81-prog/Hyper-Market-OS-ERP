@@ -268,7 +268,7 @@ import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../p
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
 import { salesSummary, ingestContribution } from '../../../packages/reporting/src/index';
 import type { Producer, SaleFact, BranchContribution, BranchMembership } from '../../../packages/reporting/src/index';
-import type { MigrationDeps, ParallelRunPolicy, RecordedParallelDay, RecordedRollback } from '../../migration/src/index';
+import type { MigrationDeps, ParallelRunPolicy, RecordedParallelDay, RecordedRollback, AppliedDelta } from '../../migration/src/index';
 import type { ParallelDifference } from '../../../packages/migration/src/cutover';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
@@ -9826,6 +9826,24 @@ export function migrationAdapter(input: {
     // GT-02: a rollback is DECIDED (RollbackDecided), then — only with execution evidence — PERFORMED (RollbackPerformed).
     // Both facts are kept (hard rule #6); one row per decision, at its latest state. An old RollbackPerformed with no
     // execution evidence stays on the register but never demonstrates a rollback (`ledgerCutoverEvidence`).
+    // GT-04: what a delta APPLIED — each change once, with its stock movement in the same atomic write.
+    appliedDeltaKeys: async (tenantId) =>
+      (await allOf<AppliedDelta>(input.store, tenantId, streamName(STREAM.migration, 'delta'), 'MigrationDeltaApplied')).map((d) => d.changeKey),
+    deltaAppliedAt: async (tenantId) =>
+      (await allOf<AppliedDelta>(input.store, tenantId, streamName(STREAM.migration, 'delta'), 'MigrationDeltaApplied')).map((d) => d.appliedAt).sort().at(-1),
+    applyDeltaChange: async (tenantId, applied, movement) => {
+      await input.store.appendBatch(tenantId, [
+        movementEvent(tenantId, movement),
+        {
+          stream: streamName(STREAM.migration, 'delta'),
+          event: makeEvent({
+            id: `delta-${applied.changeKey}`, type: 'MigrationDeltaApplied', occurredAt: applied.appliedAt,
+            // The change's own key: the same change re-sent under any HTTP key, or after a restart, collapses to one.
+            idempotencyKey: `delta-${tenantId}-${applied.changeKey}`, source: 'api/migration', payload: applied,
+          }),
+        },
+      ]);
+    },
     rollbacks: async (tenantId) => {
       const decided = await allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackDecided');
       const performed = await allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackPerformed');

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { migrationRoutes, type MigrationDeps } from '../../services/migration/src/index';
+import { migrationRoutes, type MigrationDeps, type AppliedDelta } from '../../services/migration/src/index';
+import type { Movement } from '../../services/inventory/src/index';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 import type { LoadTarget, TargetKind } from '../../packages/migration/src/trial';
 import type { ControlTotal } from '../../packages/migration/src/reconcile';
@@ -87,40 +88,75 @@ describe('POST /v1/migration/opening-events (MG-08)', () => {
   });
 });
 
-describe('POST /v1/migration/deltas (MG-09)', () => {
-  const change = (over: Record<string, unknown> = {}) => ({
-    changeKey: 'chg-1', entity: 'sale', legacyId: 'S1', operation: 'insert', changedAt: '2026-09-12T09:00:00Z', deltaMinor: 5000, ...over,
+describe('POST /v1/migration/deltas (MG-09) — applied means a real effect, once (audit GT-04)', () => {
+  const stock = (over: Record<string, unknown> = {}) => ({
+    changeKey: 'chg-1', entity: 'stock', legacyId: 'P-RICE', operation: 'update', changedAt: '2026-09-12T09:00:00Z',
+    deltaQty: -3, locationId: 'S1', uom: 'ea', ...over,
   });
+  /** Head office's own record of what a delta applied, and the movements it wrote. */
+  const store = () => {
+    const applied: AppliedDelta[] = [];
+    const movements: Movement[] = [];
+    const d: MigrationDeps = {
+      ...deps(),
+      appliedDeltaKeys: () => applied.map((a) => a.changeKey),
+      applyDeltaChange: (_t, a, m) => { applied.push(a); movements.push(m); },
+    };
+    return { applied, movements, route: routeFor(migrationRoutes(d), 'POST', '/v1/migration/deltas') };
+  };
+  interface Body { applied: number; duplicatesIgnored: number; refused: number; lines: { changeKey: string; outcome: string; effect?: string }[]; ignoredFromCaller?: string[]; appliedKeys: string[] }
 
-  it('applies a post-cutoff change once and reports the net movement', async () => {
-    const res = await deltaRoute().handler(ctx({ body: { changes: [change()], extractCutoff: '2026-09-12T00:00:00Z' } }));
+  it('a stock change after the cutoff becomes a real stock movement — a legacy sale is "sold", a receipt is "received" at cost', async () => {
+    const s = store();
+    const res = await s.route.handler(ctx({ body: { changes: [stock(), stock({ changeKey: 'chg-2', deltaQty: 10, unitCostMinor: 36_000 })], extractCutoff: '2026-09-12T00:00:00Z' } }));
     expect(res.status).toBe(200);
-    const r = res.body as { applied: number; netValueMinor: number };
-    expect(r.applied).toBe(1);
-    expect(r.netValueMinor).toBe(5000);
+    const r = res.body as Body;
+    expect(r.applied).toBe(2);
+    expect(s.movements).toEqual([
+      expect.objectContaining({ movementId: 'delta-chg-1', productId: 'P-RICE', locationId: 'S1', kind: 'sold', quantityMinor: 3, uom: 'ea', occurredAt: '2026-09-12T09:00:00Z', enteredBy: 'u-migrator' }),
+      expect.objectContaining({ movementId: 'delta-chg-2', kind: 'received', quantityMinor: 10, unitCostMinor: 36_000 }),
+    ]);
+    // The source identity is kept on the record: the change key, the legacy id, the cutoff.
+    expect(s.applied[0]).toMatchObject({ changeKey: 'chg-1', legacyId: 'P-RICE', extractCutoff: '2026-09-12T00:00:00Z', effect: 'stock movement delta-chg-1', appliedBy: 'u-migrator' });
   });
 
-  it('treats a re-sent change as already applied (a success, so a run can resume)', async () => {
-    const res = await deltaRoute().handler(ctx({ body: {
-      changes: [change()], extractCutoff: '2026-09-12T00:00:00Z', alreadyApplied: ['chg-1'],
-    } }));
-    const r = res.body as { applied: number; duplicatesIgnored: number };
-    expect(r.applied).toBe(0);
-    expect(r.duplicatesIgnored).toBe(1);
+  it('a re-sent change is already applied from HEAD OFFICE\'s record — the caller\'s list is ignored, and no second movement', async () => {
+    const s = store();
+    await s.route.handler(ctx({ body: { changes: [stock()], extractCutoff: '2026-09-12T00:00:00Z' } }));
+    const again = (await s.route.handler(ctx({ body: { changes: [stock()], extractCutoff: '2026-09-12T00:00:00Z', alreadyApplied: [] } }))).body as Body;
+    expect(again).toMatchObject({ applied: 0, duplicatesIgnored: 1 });
+    expect(again.ignoredFromCaller).toEqual([expect.stringMatching(/alreadyApplied/)]);
+    expect(s.movements).toHaveLength(1);
+    // And a caller cannot skip a change by claiming it was already applied.
+    const s2 = store();
+    const claimed = (await s2.route.handler(ctx({ body: { changes: [stock()], extractCutoff: '2026-09-12T00:00:00Z', alreadyApplied: ['chg-1'] } }))).body as Body;
+    expect(claimed.applied).toBe(1);
+    expect(s2.movements).toHaveLength(1);
   });
 
-  it('refuses a change dated before the extract cutoff (already loaded)', async () => {
-    const res = await deltaRoute().handler(ctx({ body: {
-      changes: [change({ changeKey: 'chg-old', changedAt: '2026-09-11T09:00:00Z' })],
+  it('an entity this version cannot apply is REFUSED by name — never counted as applied', async () => {
+    const s = store();
+    const r = (await s.route.handler(ctx({ body: { changes: [stock({ changeKey: 'chg-s', entity: 'sale', deltaMinor: 5000 })], extractCutoff: '2026-09-12T00:00:00Z' } }))).body as Body;
+    expect(r).toMatchObject({ applied: 0, refused: 1 });
+    expect(r.lines[0]).toMatchObject({ outcome: 'refused_unsupported_entity' });
+    expect(s.applied).toEqual([]);
+    expect(r.appliedKeys).toEqual([]);
+  });
+
+  it('refuses a change dated before the extract cutoff (already loaded), and a stock change missing where or what unit', async () => {
+    const s = store();
+    const r = (await s.route.handler(ctx({ body: {
+      changes: [stock({ changeKey: 'chg-old', changedAt: '2026-09-11T09:00:00Z' }), stock({ changeKey: 'chg-noloc', locationId: undefined }), stock({ changeKey: 'chg-in-nocost', deltaQty: 4 })],
       extractCutoff: '2026-09-12T00:00:00Z',
-    } }));
-    const r = res.body as { refused: number; applied: number };
-    expect(r.refused).toBe(1);
-    expect(r.applied).toBe(0);
+    } }))).body as Body;
+    expect(r).toMatchObject({ applied: 0, refused: 3 });
+    expect(r.lines.map((l) => l.outcome)).toEqual(['refused_before_cutoff', 'refused_incomplete', 'refused_incomplete']);
+    expect(s.movements).toEqual([]);
   });
 
-  it('refuses a production target and a malformed body', async () => {
-    expect((await thrown(() => deltaRoute('production').handler(ctx({ body: { changes: [change()], extractCutoff: '2026-09-12T00:00:00Z' } })))).body.code).toBe('target_is_production');
-    expect((await thrown(() => deltaRoute().handler(ctx({ body: { changes: [change()] } })))).status).toBe(400);
+  it('refuses a production target, a malformed body, and — 503 — a deployment that cannot record what it applies', async () => {
+    expect((await thrown(() => deltaRoute('production').handler(ctx({ body: { changes: [stock()], extractCutoff: '2026-09-12T00:00:00Z' } })))).body.code).toBe('target_is_production');
+    expect((await thrown(() => store().route.handler(ctx({ body: { changes: [stock()] } })))).status).toBe(400);
+    expect(await thrown(() => deltaRoute().handler(ctx({ body: { changes: [stock()], extractCutoff: '2026-09-12T00:00:00Z' } })))).toMatchObject({ status: 503, body: { code: 'delta_store_not_wired' } });
   });
 });
