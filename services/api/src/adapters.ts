@@ -101,7 +101,7 @@ import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off
 import { recipeDigest, type ProductionDeps, type StoredRun, type StoredRelease } from '../../inventory/src/production';
 import type { WeighedCostingDeps, StoredWeighedRun } from '../../inventory/src/weighed-costing';
 import type { Recipe } from '../../../packages/production/src/recipe';
-import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine, PartnerAuditEntry } from '../../purchase/src/supplier-portal';
+import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, SubmissionReview, StatementLine, PartnerAuditEntry } from '../../purchase/src/supplier-portal';
 import type { ConcessionDeps, ConcessionContract, ConcessionSale, DepositMovement } from '../../finance/src/concession';
 import type { ScrapDeps, ScrapSale } from '../../finance/src/scrap';
 import type { FacilitiesDeps, MaintenanceSchedule, ScheduledTask, SafetyIncident } from '../../platform/src/facilities';
@@ -186,6 +186,8 @@ import { COLD_CHAIN_CLASS_DEFAULTS } from '../../../packages/fulfilment/src/pack
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
 import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/ageing-source';
 import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch, StoredMatchPolicy } from '../../purchase/src/index';
+import { capturePortalInvoice } from '../../purchase/src/index';
+import type { Asn } from '../../../packages/receiving/src/asn';
 import { foldAllSupplierAccounts, foldSupplierAccount, type SupplierAccountDeps, type SupplierPayment, type DebitNoteIssue } from '../../purchase/src/supplier-account';
 import type { SupplierMasterDeps, SupplierRecord, SupplierBankState } from '../../purchase/src/supplier-master';
 import type { PayablesDeps, PayablesJournal, PayablesExceptionRecord } from '../../finance/src/payables';
@@ -1360,6 +1362,13 @@ const SUPPLIER_PAYMENTS_STREAM = streamName(STREAM.purchase, 'supplier-payments'
 const DEBIT_NOTE_ISSUES_STREAM = streamName(STREAM.purchase, 'debit-note-issues');
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
+/** SF-09: the ASNs a buyer accepted from the supplier portal — the register the ASN compare reads. */
+const ASN_REGISTER_STREAM = streamName(STREAM.purchase, 'asns');
+/** SF-09: an accepted ASN by its id (the latest record wins; an ASN is accepted once). */
+export async function acceptedAsn(store: EventStore, tenantId: string, asnId: string): Promise<Asn | undefined> {
+  const all = await allOf<Asn>(store, tenantId, ASN_REGISTER_STREAM, 'AsnAccepted');
+  return all.filter((a) => a.asnId === asnId).at(-1);
+}
 // Partner-action audit is TENANT-WIDE (one stream, every partner) so `findProbing` can see a supplier
 // trying doors across the shop — the whole point is a view no single partner's stream would give (M24-FR-04).
 const PORTAL_AUDIT_STREAM = streamName(STREAM.purchase, 'portal-audit');
@@ -7533,6 +7542,24 @@ export function supplierPortalAdapter(input: {
           payload: { userId, partnerId },
         }));
       }
+    },
+
+    // SF-09: the order a supplier's document names, from head office's order register — whose it is is never the body's.
+    orderSupplier: async (tenantId, poId) => (await foldPurchaseOrders(input.store, tenantId)).get(poId)?.supplierId,
+    reviews: (tenantId, partnerId) => allOf<SubmissionReview>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierSubmissionReviewed'),
+    recordReview: async (tenantId, review) => {
+      await input.store.append(tenantId, forPortalPartner(review.partnerId), makeEvent({
+        id: `portal-review-${review.submissionId}`, type: 'SupplierSubmissionReviewed', occurredAt: review.reviewedAt,
+        // Once per submission: a second decision is refused by the route; a retried one collapses here.
+        idempotencyKey: `portal-review-${tenantId}-${review.partnerId}-${review.submissionId}`, source: 'api/purchase', payload: review,
+      }));
+    },
+    // SF-09: an accepted invoice goes onto the SAME supplier-invoice register the screen and the API capture into.
+    captureInvoice: (tenantId, i) => capturePortalInvoice(purchaseAdapter(input), tenantId, i),
+    recordAsn: async (tenantId, asn, at) => {
+      await input.store.append(tenantId, ASN_REGISTER_STREAM, makeEvent({
+        id: `asn-${asn.asnId}`, type: 'AsnAccepted', occurredAt: at, idempotencyKey: `asn-${tenantId}-${asn.asnId}`, source: 'api/purchase', payload: asn as unknown as Record<string, unknown>,
+      }));
     },
 
     recordSubmission: async (tenantId, partnerId, record) => {

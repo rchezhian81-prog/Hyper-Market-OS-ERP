@@ -465,6 +465,41 @@ export interface Commitments {
   readonly valueMinor: number;
 }
 
+/**
+ * SF-09 (Batch 2) — an invoice a SUPPLIER submitted through the portal, accepted by a BUYER on review, becomes a supplier
+ * invoice on the SAME register the screen and the API capture into: its own lines as the supplier sent them, re-read and
+ * re-checked here (OB-31 units, every line multiplies, the lines add up), the supplier login as the capturer, the buyer
+ * as the reviewer — and NO checker: checking the bill is the three-way match, a second person's own act. An id already
+ * on the register is refused by name; nothing is written twice. Returns the record, or the refusal in words.
+ */
+export async function capturePortalInvoice(deps: PurchaseDeps, tenantId: string, input: {
+  readonly invoiceId: string; readonly supplierId: string; readonly poId: string | null; readonly declaredTotalMinor: number;
+  readonly lines: unknown; readonly submittedBy: string; readonly reviewedBy: string; readonly submissionId: string; readonly branchId: string | null;
+}): Promise<{ readonly ok: true; readonly record: SupplierInvoiceRecord } | { readonly ok: false; readonly code: string; readonly detail: string }> {
+  const read = readInvoiceLines(input.lines, await unitsOfLines(deps, tenantId, input.lines));
+  if (!read.ok) return { ok: false, code: read.code === 'line_does_not_multiply' ? 'invoice_line_does_not_multiply' : 'not_readable_as_a_supplier_invoice', detail: read.detail };
+  const totalMinor = sumOf(read.lines);
+  if (totalMinor !== input.declaredTotalMinor) return { ok: false, code: 'does_not_add_up_to_the_invoice_total', detail: `the lines add up to ${totalMinor} and the invoice says ${input.declaredTotalMinor}` };
+  if ((await deps.invoice(tenantId, input.invoiceId)) !== undefined || (await deps.invoiceIdUsed?.(tenantId, input.invoiceId)) === true) {
+    return { ok: false, code: 'invoice_id_already_used', detail: `invoice ${input.invoiceId} is already on head office's register — one bill is one record` };
+  }
+  const flags: InvoiceFlag[] = ['no_approval'];
+  await orderForInvoice(deps, tenantId, input.poId, input.supplierId, flags);
+  const at = deps.now();
+  const record: SupplierInvoiceRecord = {
+    invoiceId: input.invoiceId, supplierId: input.supplierId, poId: input.poId, lines: read.lines, declaredTotalMinor: input.declaredTotalMinor, totalMinor, currency: 'INR',
+    capturedBy: input.submittedBy, capturedAt: at, approvedBy: null, approvedAt: null, source: `supplier-portal/${input.submissionId}`, governanceFlags: flags,
+  };
+  await deps.recordInvoice(tenantId, record);
+  await deps.recordAudit?.(tenantId, {
+    actorId: input.reviewedBy, action: 'invoice.capture.portal', objectType: 'supplier_invoice', objectId: input.invoiceId,
+    at, origin: { tenantId, branchId: input.branchId }, before: null,
+    after: { supplierId: input.supplierId, poId: input.poId ?? '', lines: String(read.lines.length), totalMinor: String(totalMinor), submittedBy: input.submittedBy, submissionId: input.submissionId, flags: flags.join(',') },
+    correlationId: input.invoiceId,
+  });
+  return { ok: true, record };
+}
+
 export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
   return [
     {
