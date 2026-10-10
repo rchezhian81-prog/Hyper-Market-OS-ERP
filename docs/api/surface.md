@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 842 | 514 | 514 | 64 | 282 |
+| 13 | 845 | 517 | 517 | 64 | 282 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -201,6 +201,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/floor/indents/:indentId/issues/:issueId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/floor/indents/:indentId/issues/:issueId/receipt` | `inventory.movement.append` | core | yes |
 | POST | `/v1/floor/indents/:indentId/issues/:issueId/receipt/synced` | `inventory.indent.sync` | core | yes |
+| POST | `/v1/floor/indents/:indentId/issues/:issueId/shortfall/resolution` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/floor/indents/:indentId/issues/:issueId/synced` | `inventory.indent.sync` | core | yes |
 | POST | `/v1/floor/indents/:indentId/rejection` | `inventory.indent.approve` | core | yes |
 | POST | `/v1/floor/indents/:indentId/returns/:returnId` | `inventory.indent.request` | core | yes |
@@ -231,6 +232,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/goods-receipt/:grnId/excess/decide` | `inventory.adjustment.approve` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/excess/returned` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/lines/:lineId/disposition` | `inventory.adjustment.approve` | core | yes |
+| POST | `/v1/inventory/goods-receipt/:grnId/lines/:lineId/returned` | `inventory.movement.append` | core | yes |
 | POST | `/v1/inventory/goods-receipt/:grnId/synced` | `inventory.receipt.sync` | core | yes |
 | POST | `/v1/inventory/movements` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/near-expiry` | `inventory.availability.read` | core | — |
@@ -303,6 +305,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/warehouse/transfers/:transferId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/warehouse/transfers/:transferId/dispatch` | `inventory.movement.append` | core | yes |
 | POST | `/v1/warehouse/transfers/:transferId/receive` | `inventory.movement.append` | core | yes |
+| POST | `/v1/warehouse/transfers/:transferId/shortfall/resolution` | `inventory.adjustment.approve` | core | yes |
 | GET | `/v1/waste/compare` | `reporting.report.read` | core | — |
 | POST | `/v1/waste/coverage` | `inventory.movement.append` | core | yes |
 | POST | `/v1/waste/records/:wasteId` | `inventory.movement.append` | core | yes |

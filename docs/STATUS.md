@@ -5,6 +5,54 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Batch 2 — supplier to shelf proven on the real database (10 October 2026)
+
+- **Owner instruction (10 Oct 2026):** four coordinated batches against one assignment matrix
+  (`docs/registers/assignment-matrix-2026-10-10.md`, #756). This entry is Batch 2's first integration.
+- **What changed:**
+  - **The supplier-to-shelf journey runs as one connected test** on head office's real routes and real PostgreSQL. Nine
+    different people take part: buyer, finance, owner, receiver, quality checker, back-store worker, floor manager,
+    floor receiver and floor staff. The steps:
+    - supplier proposed and approved;
+    - order issued (₹3,000);
+    - 60 of 100 received, with 6 too warm and 4 with no reading held;
+    - quality check: the receiver cannot do it, 6 go back, 4 are released;
+    - put away to a bin;
+    - indent issued from that bin;
+    - floor counts 28 of 30;
+    - the shortfall is resolved by a different manager with a reason (1 found, 1 lost ₹30), and the exception is kept;
+    - stock and value conserved (₹1,620 = back store + floor + lost);
+    - three-way match and debit note: ₹1,800 payable − ₹180 = ₹1,620 owed;
+    - the rejected stock is handed back to the supplier, recorded once.
+  - **Fixed along the way:**
+    - an issue from the back store now lowers the bin it names;
+    - two issues, or two counts of the same issue, can no longer both land (the second count used to vanish
+      silently);
+    - a floor or transfer shortfall can now be resolved accountably;
+    - rejected stock can be physically returned to the supplier;
+    - the store computer's sync no longer treats a write that lost a race as delivered (it retries; it used to be
+      dropped).
+  - **FUL-01 closed:** production consumes ingredients and adds the made goods as ordinary stock at the run's cost,
+    with value conserved.
+  - **FUL-08 closed:** recipes are versioned, and every run names its version.
+  - **GT-06 closed:** a supplier migration file writes real suppliers into the supplier master (name, checked GSTIN),
+    which are read back and usable on an order.
+- **Proof:**
+  - `tests/integration/supplier-to-shelf-journey.test.ts`: the journey plus three races (receivers, issues, counts), in
+    memory and on real PostgreSQL, run 6 times.
+  - `production-moves-ordinary-stock.test.ts`, `warehouse-transfers.test.ts`, the migration-load tests and a sync
+    transport unit test.
+  - 15 existing browser tests for these screens re-run green.
+  - The new routes (shortfall resolution, line return) have **no screen yet**, so nothing new is browser-verified.
+- **Still open in Batch 2:**
+  - **Weighed goods:** kg quantities and per-gram cost are not consistent across receiving and valuation, and receiving
+    does not check the line's unit against the product (SF-11, quantity scale).
+  - A purchase order accepts an unknown supplier id.
+  - A plain transfer's receipt has no "different person counts" rule.
+  - The confirmed-lost shortfall is not posted as an inventory-loss journal (Batch 3).
+  - SF-09 supplier portal submissions, SF-10 exports and FUL-13 production pages are not started.
+  - Staff UAT is pending.
+
 ## Wave 4 · PF-05 finished — the till can give up a held basket, with a reason (10 October 2026)
 
 - **Owner instruction (10 Oct 2026):** finish PF-05's one open gap.

@@ -18,8 +18,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 971. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
-- Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 79 · Real PostgreSQL 57 · Browser (stub cloud) 45 · Browser (connected) 2 · Device 0 · Staff UAT 0.
+- Evidence test files scanned: 973. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 80 · Real PostgreSQL 59 · Browser (stub cloud) 45 · Browser (connected) 2 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 24 · ENGINE_ONLY 1 · INTEGRATION_TESTED 16 · PARTIALLY_WIRED 52 · WIRED 11.
 - Labels that do NOT hold: none.
 
@@ -32,12 +32,12 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M03 | INTEGRATION_TESTED | 16 | 14 | · | 2 | · | · | · | ✓ an integration test cites it |
 | M04 | WIRED | 7 | 7 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M05 | E2E_VERIFIED | 12 | 13 | 2 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M06 | E2E_VERIFIED | 11 | 13 | 3 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M07 | E2E_VERIFIED | 9 | 20 | 2 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M08 | E2E_VERIFIED | 14 | 32 | 6 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M09 | E2E_VERIFIED | 12 | 22 | 3 | 6 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M10 | E2E_VERIFIED | 20 | 20 | 1 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M11 | INTEGRATION_TESTED | 4 | 4 | · | 1 | · | · | · | ✓ an integration test cites it |
+| M06 | E2E_VERIFIED | 11 | 14 | 4 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M07 | E2E_VERIFIED | 9 | 21 | 3 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M08 | E2E_VERIFIED | 14 | 34 | 8 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M09 | E2E_VERIFIED | 12 | 23 | 4 | 6 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M10 | E2E_VERIFIED | 20 | 21 | 2 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M11 | INTEGRATION_TESTED | 4 | 5 | 1 | 1 | · | · | · | ✓ an integration test cites it |
 | M12 | E2E_VERIFIED | 15 | 20 | 3 | 9 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | M13 | INTEGRATION_TESTED | 24 | 22 | 5 | 3 | · | · | · | ✓ an integration test cites it |
 | M14 | E2E_VERIFIED | 17 | 14 | 2 | 5 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
@@ -89,11 +89,11 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | A10 | E2E_VERIFIED | 9 | 5 | 1 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | WF-01 | PARTIALLY_WIRED | · | · | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-02 | PARTIALLY_WIRED | · | · | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-03 | PARTIALLY_WIRED | · | · | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-03 | PARTIALLY_WIRED | · | 1 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-04 | PARTIALLY_WIRED | · | · | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-05 | PARTIALLY_WIRED | · | · | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-06 | PARTIALLY_WIRED | 4 | 3 | 1 | 3 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-07 | PARTIALLY_WIRED | 2 | 2 | 1 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-06 | PARTIALLY_WIRED | 4 | 4 | 2 | 3 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-07 | PARTIALLY_WIRED | 2 | 3 | 2 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-08 | PARTIALLY_WIRED | · | · | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-09 | PARTIALLY_WIRED | · | · | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | WF-10 | E2E_VERIFIED | 1 | 3 | 2 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
@@ -141,12 +141,12 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **M03** — browser: `screens-open-offline.e2e.ts`, `unsellable-screen.e2e.ts`
 - **M04** — browser: `merchandising-count-and-refill.e2e.ts`
 - **M05** — browser: `catalogue-price-change-delivery.e2e.ts`, `catalogue-promotion-launch-delivery.e2e.ts`, `pricing-promotions-menu-links.e2e.ts`, `the-served-till-gives-the-launched-offer.e2e.ts` · real PostgreSQL: `one-customer.test.ts`, `the-store-trades-a-day.test.ts`
-- **M06** — browser: `buying-po-delivery.e2e.ts`, `suppliers-delivery.e2e.ts` · real PostgreSQL: `a-receipt-is-judged-against-what-is-left-on-the-order.test.ts`, `maker-checker-is-two-people.test.ts`, `the-store-buys-what-it-sells.test.ts`
-- **M07** — browser: `goods-receipt-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `warehouse-handheld-delivery.e2e.ts`, `warehouse-handheld-syncs-through-the-box.e2e.ts` · real PostgreSQL: `a-receipt-is-judged-against-what-is-left-on-the-order.test.ts`, `the-store-buys-what-it-sells.test.ts`
-- **M08** — browser: `indents-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `stock-health-delivery.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`, `floor-indents-handheld-issue.test.ts`, `the-store-buys-what-it-sells.test.ts`, `the-till-exchanges.test.ts`, `the-till-returns-without-a-receipt.test.ts`, `write-guards-on-postgresql.test.ts`
-- **M09** — browser: `indents-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `warehouse-handheld-delivery.e2e.ts`, `warehouse-handheld-issues-to-floor.e2e.ts`, `warehouse-handheld-syncs-through-the-box.e2e.ts`, `warehouse-supervisor-delivery.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`, `floor-indents-handheld-issue.test.ts`, `the-store-buys-what-it-sells.test.ts`
-- **M10** — browser: `expiry-recall-delivery.e2e.ts`, `unsellable-screen.e2e.ts`, `warehouse-handheld-delivery.e2e.ts` · real PostgreSQL: `the-store-buys-what-it-sells.test.ts`
-- **M11** — browser: `production-delivery.e2e.ts`
+- **M06** — browser: `buying-po-delivery.e2e.ts`, `suppliers-delivery.e2e.ts` · real PostgreSQL: `a-receipt-is-judged-against-what-is-left-on-the-order.test.ts`, `maker-checker-is-two-people.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-store-buys-what-it-sells.test.ts`
+- **M07** — browser: `goods-receipt-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `warehouse-handheld-delivery.e2e.ts`, `warehouse-handheld-syncs-through-the-box.e2e.ts` · real PostgreSQL: `a-receipt-is-judged-against-what-is-left-on-the-order.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-store-buys-what-it-sells.test.ts`
+- **M08** — browser: `indents-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `stock-health-delivery.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`, `floor-indents-handheld-issue.test.ts`, `production-moves-ordinary-stock.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-store-buys-what-it-sells.test.ts`, `the-till-exchanges.test.ts`, `the-till-returns-without-a-receipt.test.ts`, `write-guards-on-postgresql.test.ts`
+- **M09** — browser: `indents-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `warehouse-handheld-delivery.e2e.ts`, `warehouse-handheld-issues-to-floor.e2e.ts`, `warehouse-handheld-syncs-through-the-box.e2e.ts`, `warehouse-supervisor-delivery.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`, `floor-indents-handheld-issue.test.ts`, `supplier-to-shelf-journey.test.ts`, `the-store-buys-what-it-sells.test.ts`
+- **M10** — browser: `expiry-recall-delivery.e2e.ts`, `unsellable-screen.e2e.ts`, `warehouse-handheld-delivery.e2e.ts` · real PostgreSQL: `supplier-to-shelf-journey.test.ts`, `the-store-buys-what-it-sells.test.ts`
+- **M11** — browser: `production-delivery.e2e.ts` · real PostgreSQL: `production-moves-ordinary-stock.test.ts`
 - **M12** — browser: `core-one-lane.test.ts`, `the-served-till-closes.e2e.ts`, `the-served-till-keeps-a-held-basket.e2e.ts`, `the-served-till-never-repeats-a-receipt-number.e2e.ts`, `the-served-till-records-a-card-payment-first.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts`, `the-served-till-takes-a-sale.e2e.ts`, `the-store-trades-a-day.e2e.ts`, `the-till-asks-the-age-question.e2e.ts` · connected: `the-store-trades-a-day.e2e.ts` · real PostgreSQL: `the-shop-reaches-the-cloud.test.ts`, `the-store-buys-what-it-sells.test.ts`, `the-store-trades-a-day.test.ts`
 - **M13** — browser: `return-governance-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts` · real PostgreSQL: `refund-approval-is-the-approvers-own-act.test.ts`, `returns-guard-the-refund.test.ts`, `the-till-exchanges.test.ts`, `the-till-returns-without-a-receipt.test.ts`, `write-guards-on-postgresql.test.ts`
 - **M14** — browser: `cash-office-signoff-delivery.e2e.ts`, `day-reopen-delivery.e2e.ts`, `manager-day-close-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-closes.e2e.ts` · real PostgreSQL: `day-close-honestly.test.ts`, `refund-approval-is-the-approvers-own-act.test.ts`
@@ -172,8 +172,8 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **A06** — browser: `operations-dismiss-delivery.e2e.ts` · real PostgreSQL: `ai-proposes-people-decide.test.ts`
 - **A08** — browser: `data-quality-dismiss-delivery.e2e.ts`, `screens-open-offline.e2e.ts` · real PostgreSQL: `ai-proposes-people-decide.test.ts`
 - **A10** — browser: `workforce-dismiss-delivery.e2e.ts` · real PostgreSQL: `ai-proposes-people-decide.test.ts`
-- **WF-06** — browser: `indents-delivery.e2e.ts`, `merchandising-count-and-refill.e2e.ts`, `warehouse-handheld-issues-to-floor.e2e.ts` · real PostgreSQL: `floor-indents-handheld-issue.test.ts`
-- **WF-07** — browser: `indents-delivery.e2e.ts` · real PostgreSQL: `floor-indents-handheld-issue.test.ts`
+- **WF-06** — browser: `indents-delivery.e2e.ts`, `merchandising-count-and-refill.e2e.ts`, `warehouse-handheld-issues-to-floor.e2e.ts` · real PostgreSQL: `floor-indents-handheld-issue.test.ts`, `supplier-to-shelf-journey.test.ts`
+- **WF-07** — browser: `indents-delivery.e2e.ts` · real PostgreSQL: `floor-indents-handheld-issue.test.ts`, `supplier-to-shelf-journey.test.ts`
 - **WF-10** — browser: `the-served-till-takes-a-sale.e2e.ts`, `the-store-trades-a-day.e2e.ts` · connected: `the-store-trades-a-day.e2e.ts` · real PostgreSQL: `the-shop-reaches-the-cloud.test.ts`, `the-store-trades-a-day.test.ts`
 - **QG-02** — browser: `the-till-and-manager-meet-the-interaction-budget.e2e.ts`
 - **QG-04** — browser: `risk-acceptance-delivery.e2e.ts` · real PostgreSQL: `offline-sync-slice.test.ts`
