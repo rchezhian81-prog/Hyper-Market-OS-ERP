@@ -107,6 +107,7 @@ function depsOver(record: GrnRecord) {
     commitExcessDecision: (_t, rec, movements, _k, poReceipt) => { current = rec; appended.push({ kind: 'excess', movements: [...movements], poReceipt }); },
     commitDisposition: (_t, rec, movements) => { current = rec; appended.push({ kind: 'disposition', movements: [...movements], poReceipt: undefined }); },
     commitExcessReturn: (_t, rec, movements) => { current = rec; appended.push({ kind: 'excess-return', movements: [...movements], poReceipt: undefined }); },
+    commitLineReturn: (_t, rec) => { current = rec; },
   };
   return { deps, appended, current: () => current };
 }

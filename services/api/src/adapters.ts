@@ -5960,7 +5960,8 @@ export function goodsReceiptAdapter(input: {
   const fold = async (tenantId: string): Promise<readonly GrnRecord[]> => {
     const byId = new Map<string, GrnRecord>();
     for (const e of await input.store.readStream(tenantId, grnStream)) {
-      if (e.event.type === 'GoodsReceived' || e.event.type === 'GoodsReceiptExcessDecided' || e.event.type === 'GoodsReceiptLineDisposed' || e.event.type === 'GoodsReceiptExcessReturned') {
+      if (e.event.type === 'GoodsReceived' || e.event.type === 'GoodsReceiptExcessDecided' || e.event.type === 'GoodsReceiptLineDisposed' || e.event.type === 'GoodsReceiptExcessReturned'
+        || e.event.type === 'GoodsReceiptLineReturned') {
         const g = payloadOf<GrnRecord>(e);
         byId.set(g.grnId, g);
       }
@@ -6048,6 +6049,17 @@ export function goodsReceiptAdapter(input: {
         },
         ...movements.map((m) => movementEvent(tenantId, m)),
       ]);
+    },
+    // Batch 2: a quarantined line's physical return to the supplier — the receipt's next state, once per line.
+    commitLineReturn: async (tenantId, record, key) => {
+      await input.store.append(tenantId, grnStream, makeEvent({
+        id: `grn-line-return-${key}`,
+        type: 'GoodsReceiptLineReturned',
+        occurredAt: record.lineReturns?.at(-1)?.returnedAt ?? input.now(),
+        idempotencyKey: `grn-line-return-${tenantId}-${key}`,
+        source: 'api/inventory',
+        payload: record,
+      }));
     },
     // The product master's word on tracking (F03): the published catalogue is the master the whole estate runs on.
     // Wave 3 · SF-07: batch tracking from the published catalogue (F03, as before); the handling class and cold-chain limits

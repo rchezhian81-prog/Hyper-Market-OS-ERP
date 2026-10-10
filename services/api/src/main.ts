@@ -387,7 +387,7 @@ export function buildSurface(deps: {
   const goodsReceiptDeps = store === undefined ? {
     grn: empty(undefined), all: empty([]), commit: () => {}, now,
     productRule: empty(undefined), receiptPolicy: empty(undefined), recordReceiptPolicy: () => {}, commitExcessDecision: () => {},
-    purchaseOrder: empty(undefined), commitDisposition: () => {}, commitExcessReturn: () => {},
+    purchaseOrder: empty(undefined), commitDisposition: () => {}, commitExcessReturn: () => {}, commitLineReturn: () => {},
   } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
   const syncedGoodsReceiptDeps = store === undefined ? {
     ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined),

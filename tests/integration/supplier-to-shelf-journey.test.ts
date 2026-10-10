@@ -273,6 +273,24 @@ async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<vo
   expect(account.totals).toMatchObject({ invoicedMinor: DELIVERED * COST, accruedMinor: DELIVERED * COST, withheldMinor: 0, debitNotesMinor: WARM * COST, paidMinor: 0, owedMinor: (DELIVERED - WARM) * COST });
   row('10 invoice three-way match + liability', 'POST /v1/approvals/requests · /v1/purchase/invoices/:id/capture · …/match · …/debit-notes/:ref/issue · GET …/account', 'bill for 60 matches order + receipt: payable ₹1,800.00; debit note ₹180.00 for the 6 returned; owed ₹1,620.00',
     `payable ${String(matched['payableMinor'])}; debit note ${String(note['valueMinor'])}; owed ${account.totals['owedMinor']}`);
+
+  // ── 11. The 6 too-warm tubs physically go back on the supplier's van: recorded once, beside the debit note. Until then the
+  //       account shows them waiting for collection; a line that was released (L3) or never decided cannot be "returned". ──
+  type LineReturns = { pendingLineReturns: { grnId: string; lineId: string; quantityMinor: number; debitNoteRef: string; returned: boolean; returnedBy: string | null }[] };
+  const waiting = await ok(call('GET', `/v1/purchase/suppliers/${SUPPLIER}/account`, FINANCE), 200) as unknown as LineReturns;
+  expect(waiting.pendingLineReturns).toEqual([expect.objectContaining({ grnId: GRN, lineId: 'L2', quantityMinor: WARM, debitNoteRef: `DN-${GRN}-L2`, returned: false, returnedBy: null })]);
+  const notReturn = await call('POST', `/v1/inventory/goods-receipt/${GRN}/lines/L3/returned`, BACKSTORE, { reason: 'wrong line' }, 'ret-L3');
+  expect(notReturn.status).toBe(409);
+  expect(codeOf(notReturn)).toBe('line_not_disposed_for_return');
+  const handed = await ok(call('POST', `/v1/inventory/goods-receipt/${GRN}/lines/L2/returned`, BACKSTORE, { reason: 'collected by the Kaveri Dairy van driver, gate pass 0417' }, 'ret-L2'), 201);
+  expect(handed).toMatchObject({ lineId: 'L2', quantityMinor: WARM, valueMinor: WARM * COST, returnedBy: BACKSTORE, debitNoteRef: `DN-${GRN}-L2`, movementIds: [], alreadyReturned: false });
+  expect(await ok(call('POST', `/v1/inventory/goods-receipt/${GRN}/lines/L2/returned`, BACKSTORE, { reason: 'again' }, 'ret-L2-again'), 200)).toMatchObject({ alreadyReturned: true });
+  const collected = await ok(call('GET', `/v1/purchase/suppliers/${SUPPLIER}/account`, FINANCE), 200) as unknown as LineReturns & { totals: Record<string, number> };
+  expect(collected.pendingLineReturns).toEqual([expect.objectContaining({ lineId: 'L2', returned: true, returnedBy: BACKSTORE })]);
+  expect(collected.totals['owedMinor']).toBe((DELIVERED - WARM) * COST); // the hand-over moves no money and no stock
+  expect(await picture()).toEqual(p);
+  row('11 rejected stock back to the supplier', 'POST /v1/inventory/goods-receipt/:grnId/lines/:lineId/returned · GET …/account', 'L2 waits for collection beside DN; released L3 refused; hand-over recorded once; owed and stock unchanged',
+    `waiting ${String(waiting.pendingLineReturns[0]?.returned)}; L3 ${codeOf(notReturn)}; returned by ${String(handed['returnedBy'])}; owed ${collected.totals['owedMinor']}`);
 }
 
 
@@ -384,7 +402,9 @@ describe.each(backings)('supplier to shelf, connected — on $name (Batch 2 acce
     const landed = counts.filter((c) => c.status === 201);
     expect(landed).toHaveLength(1);
     const other = counts.find((c) => c !== landed[0])!;
-    expect(other.status === 409 ? codeOf(other) : (other.body as { alreadyReceived?: boolean }).alreadyReceived).toEqual(other.status === 409 ? 'concurrent_change' : true);
+    // refused by the guard, or by name because the other count had just landed — or (read after it landed) told it is received
+    if (other.status === 409) expect(['concurrent_change', 'issue_already_received']).toContain(codeOf(other));
+    else expect(other.body).toMatchObject({ alreadyReceived: true });
     const floor = await onHand(FLOOR);
     const landedCount = (landed[0]!.body as { indent: { totals: { receivedMinor: number } } }).indent.totals.receivedMinor;
     expect(floor).toBe(landedCount);

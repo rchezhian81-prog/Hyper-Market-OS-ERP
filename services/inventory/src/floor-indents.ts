@@ -441,6 +441,8 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           planReceipt({ indent, issueId, receivedBy: ctx.userId, counted });
           const transfer = await deps.transferOf(ctx.tenantId, issue.transferId);
           if (transfer === undefined) throw notFound(`transfer ${issue.transferId}`);
+          // Batch 2: another count of this issue landed between reading the indent and reading its transfer — said as that.
+          if (transfer.state === 'received') throw new IndentRefusedError(indentId, 'issue_already_received', `issue ${issueId} was counted in a moment ago by someone else — read the indent; nothing was recorded`);
           const result = receiveTransfer({ transfer, counted: arrivedOf(counted), receivedBy: ctx.userId, at: now, currency: (b['currency'] as CurrencyCode | undefined) ?? 'INR' });
           // SP-8c: damaged units arrived (out of transit) and are written off at the floor in the same write — never on the shelf.
           const damaged = damagedOf(counted, result.transfer);
