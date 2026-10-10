@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { testModePaymentProvider, type TestModePaymentProvider } from '../../packages/orders/src/payment-verification';
+import { seedSubstitutionTruth } from '../support/substitution-truth';
 
 /**
  * **The storefront's own surface, through the real authenticated API (M20-FR-02/FR-03 · M18-FR-01/FR-02 · §31 · §35 · #3 · #6).**
@@ -136,5 +137,27 @@ describe('the storefront places, pays and reads its own orders (M20)', () => {
     const refused = await post(off, '/v1/storefront/orders/so-1', C1, 'p1', BASKET);
     expect(refused.status).toBe(403);
     expect(codeOf(refused)).toBe('feature_not_entitled');
+  });
+});
+
+describe('FUL-14: the customer\'s own substitution rules and their own yes are what a swap rests on', () => {
+  it('a "contact me" customer\'s standing rule makes the picker ask; the customer\'s own yes in the app lets the swap through; another customer cannot answer for the order', async () => {
+    const h = await seeded();
+    await seedSubstitutionTruth(h, T, [
+      { productId: 'MILK', name: 'Milk 1L', priceMinor: 5_000, brand: 'aavin', categoryId: 'dairy' },
+      { productId: 'MILK-ALT', name: 'Milk 1L alt', priceMinor: 4_000, brand: 'arokya', categoryId: 'dairy' },
+    ]);
+    expect((await h.request({ method: 'PUT', path: '/v1/storefront/substitution-preferences', userId: C1, tenantId: T, idempotencyKey: 'pref', body: { rules: { preference: 'contact_me' } } })).status).toBe(200);
+    expect((await post(h, '/v1/storefront/orders/so-sub', C1, 'p-sub', { lines: [{ productId: 'MILK', quantityMinor: 2 }], locationId: 'L1' })).status).toBe(201);
+    const offer = { lineId: 'l1', orderedProductId: 'MILK', orderedName: 'Milk', orderedUnitPriceMinor: 0, orderedQuantityMinor: 2, substituteProductId: 'MILK-ALT', substituteName: 'Alt', substituteUnitPriceMinor: 0, substituteQuantityMinor: 2, offeredAt: AT };
+    const asked = await post(h, '/v1/orders/so-sub/substitute', OWNER, 's1', { offer, decision: 'confirmed' });
+    expect(codeOf(asked)).toBe('customer_consent_required');
+    // Another customer cannot answer for this order — refused and recorded.
+    expect((await post(h, '/v1/storefront/orders/so-sub/substitutions/l1', C2, 'c2', { substituteProductId: 'MILK-ALT', decision: 'confirmed' })).status).toBe(403);
+    // The customer says yes in the app.
+    expect((await post(h, '/v1/storefront/orders/so-sub/substitutions/l1', C1, 'c1', { substituteProductId: 'MILK-ALT', decision: 'confirmed' })).status).toBe(201);
+    const swapped = await post(h, '/v1/orders/so-sub/substitute', OWNER, 's2', { offer, decision: 'confirmed' });
+    expect(swapped.status).toBe(201);
+    expect(swapped.body).toMatchObject({ outcome: 'substituted', eligibility: 'needs_confirmation', consent: { given: 'customer', by: C1 }, chargeMinor: 8_000 });
   });
 });

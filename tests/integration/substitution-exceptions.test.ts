@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { seedSubstitutionTruth, recordOrderRules, paidOnline, SWAP_PRODUCTS } from '../support/substitution-truth';
+import { approvedRequestId } from '../support/approval-request';
+import { actionDetails } from '../../services/identity/src/approval-requests';
 
 // API-07 M19-FR-01 / P-08 — the tenant-wide substitution EXCEPTION worklist. Recording a swap is not the
 // end of it: some swaps owe the customer money back, need a COD/collect adjustment, were charged above the
@@ -22,8 +25,6 @@ const offer = (over: Record<string, unknown> = {}) => ({
   substituteProductId: 'MILK-ALT', substituteName: 'Milk 1L alt', substituteUnitPriceMinor: 4_000, substituteQuantityMinor: 2,
   offeredAt: '2026-09-24T10:00:00.000Z', ...over,
 });
-const orderedAttrs = { productId: 'MILK', name: 'Milk 1L', brand: 'aavin', categoryId: 'dairy' };
-const attrs = (over: Record<string, unknown> = {}) => ({ productId: 'MILK-ALT', name: 'Milk 1L alt', brand: 'arokya', categoryId: 'dairy', ...over });
 
 const sub = (h: ApiHarness, u: string, t: string, orderId: string, body: unknown) =>
   h.request({ method: 'POST', path: `/v1/orders/${orderId}/substitute`, userId: u, tenantId: t, idempotencyKey: `sub-${t}-${orderId}`, body });
@@ -34,15 +35,28 @@ const exceptions = (h: ApiHarness, u: string, t: string) =>
 interface Queue { readonly exceptions: readonly { orderId: string; lineId: string; kind: string; amountMinor: number }[]; readonly count: number; readonly atRiskMinor: number }
 
 /** Record one swap per order, each producing a different exception kind (or none). */
+// FUL-14: every fact a swap is decided from is STORED — the published prices and attributes, the order's payment, the
+// customer's rules on the order, the customer's yes to a higher price and a second person's approval.
 async function seedSwaps(h: ApiHarness, u: string, t: string): Promise<void> {
-  await place(h, u, t, 'ord-a'); // cheaper prepaid swap → refund_due 2000
-  await sub(h, u, t, 'ord-a', { offer: offer(), decision: 'confirmed', rules: { preference: 'best_match' }, orderedAttrs, substituteAttrs: attrs(), tender: 'prepaid' });
-  await place(h, u, t, 'ord-b'); // dearer COD approved above cap → above_cap_charge 8000
-  await sub(h, u, t, 'ord-b', { offer: offer({ substituteUnitPriceMinor: 9_000 }), decision: 'confirmed', rules: { preference: 'best_match' }, orderedAttrs, substituteAttrs: attrs(), tender: 'cod', approvedAboveCap: true });
-  await place(h, u, t, 'ord-c'); // policy-refused controlled item → policy_short_pick 0
-  await sub(h, u, t, 'ord-c', { offer: offer(), decision: 'confirmed', rules: { preference: 'best_match' }, orderedAttrs, substituteAttrs: attrs({ ageRestricted: true }) });
-  await place(h, u, t, 'ord-d'); // same-price swap → owes nothing → NOT an exception
-  await sub(h, u, t, 'ord-d', { offer: offer({ substituteUnitPriceMinor: 5_000 }), decision: 'confirmed', rules: { preference: 'best_match' }, orderedAttrs, substituteAttrs: attrs(), tender: 'prepaid' });
+  await seedSubstitutionTruth(h, t, SWAP_PRODUCTS);
+  await h.provisionRole(t, 'u-picker-lead', 'store_manager');
+  const ready = async (orderId: string) => { await place(h, u, t, orderId); await recordOrderRules(h, t, u, orderId, { preference: 'best_match' }); };
+  await ready('ord-a'); // cheaper prepaid swap → refund_due 2000
+  await paidOnline(h, t, u, 'ord-a', 10_000);
+  expect((await sub(h, u, t, 'ord-a', { offer: offer(), decision: 'confirmed' })).status).toBe(201);
+  await ready('ord-b'); // dearer COD approved above cap → above_cap_charge 8000
+  const approvalId = await approvedRequestId(h, t, 'u-picker-lead', u, {
+    kind: 'substitution_above_cap', subjectRef: 'ord-b/l1', valueMinor: 8_000,
+    details: actionDetails({ substituteProductId: 'MILK-DEAR', substituteQuantityMinor: 2 }, { orderId: 'ord-b', lineId: 'l1' }),
+  });
+  expect((await sub(h, 'u-picker-lead', t, 'ord-b', { offer: offer({ substituteProductId: 'MILK-DEAR' }), decision: 'confirmed', approvalId, customerAcceptsHigherPrice: true, contact: { method: 'phone', reference: 'call-ord-b' } })).status).toBe(201);
+  // policy-refused controlled item on a cash-on-delivery order → the line is short and the door collects ₹100 less: a collect
+  // adjustment of 10000 (FUL-14: its tender is read from the order, so the money is never left out)
+  await ready('ord-c');
+  expect((await sub(h, u, t, 'ord-c', { offer: offer({ substituteProductId: 'BEER' }), decision: 'confirmed' })).status).toBe(201);
+  await ready('ord-d'); // same-price swap → owes nothing → NOT an exception
+  await paidOnline(h, t, u, 'ord-d', 10_000);
+  expect((await sub(h, u, t, 'ord-d', { offer: offer({ substituteProductId: 'MILK-SAME' }), decision: 'confirmed' })).status).toBe(201);
 }
 
 describe('tenant-wide substitution exception worklist (M19-FR-01 / P-08)', () => {
@@ -55,11 +69,11 @@ describe('tenant-wide substitution exception worklist (M19-FR-01 / P-08)', () =>
     expect(res.status).toBe(200);
     const q = res.body as Queue;
     expect(q.count).toBe(3); // ord-d (same price) does not appear
-    expect(q.atRiskMinor).toBe(10_000); // 8000 + 2000 + 0
+    expect(q.atRiskMinor).toBe(20_000); // 10000 + 8000 + 2000 — the refused line on a cash-on-delivery order is ₹100 less to collect (FUL-14: its tender is now read)
     expect(q.exceptions.map((e) => [e.orderId, e.kind, e.amountMinor])).toEqual([
+      ['ord-c', 'collect_adjustment', 10_000],
       ['ord-b', 'above_cap_charge', 8_000],
       ['ord-a', 'refund_due', 2_000],
-      ['ord-c', 'policy_short_pick', 0],
     ]);
   });
 
@@ -89,7 +103,7 @@ describe('tenant-wide substitution exception worklist (M19-FR-01 / P-08)', () =>
     const restarted = apiHarness({ store: h.store });
     const q = (await exceptions(restarted, 'u-owner', A)).body as Queue;
     expect(q.count).toBe(3);
-    expect(q.atRiskMinor).toBe(10_000);
+    expect(q.atRiskMinor).toBe(20_000);
   });
 
   it('gates the worklist on order.read — a cashier cannot read the shop-wide money-at-risk view', async () => {

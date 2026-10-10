@@ -31,6 +31,7 @@ import {
   type SubstitutionSettlementKind,
 } from '../../../packages/orders/src/substitution-money';
 import { paymentPosition, type OrderPayment, type OrderPaymentResolution } from '../../../packages/orders/src/payment-refunds';
+import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 
 export interface Reservation {
   readonly reservationId: string;
@@ -189,6 +190,56 @@ export interface StoredSubstitution {
   readonly settlementMinor?: number;
   /** True only when a dearer substitute was charged ABOVE the original price under explicit approval. */
   readonly aboveCap?: boolean;
+  /** FUL-14: decided from stored truth (prices, attributes, rules, tender), with the consent and approval it rested on. */
+  readonly fromStoredTruth?: boolean;
+  readonly consent?: SubstitutionConsent;
+  readonly aboveCapApprovedBy?: string;
+  readonly rulesSource?: 'order' | 'customer';
+}
+
+/**
+ * FUL-14 — the customer's say on a substitution, as it was given: by the customer themself, signed in (`customer`), or told
+ * to a member of staff who wrote down how and where (`staff_contact`). Kept on the substitution it allowed.
+ */
+export interface SubstitutionConsent {
+  readonly orderId: string;
+  readonly lineId: string;
+  readonly substituteProductId: string;
+  readonly decision: 'confirmed' | 'declined';
+  /** The customer agreed to pay MORE than the original line for this substitute. */
+  readonly acceptsHigherPrice: boolean;
+  readonly given: 'customer' | 'staff_contact';
+  readonly by: string;
+  /** For `staff_contact`: how the customer was reached and the reference a person can check (a call log, a message id). */
+  readonly contact?: { readonly method: string; readonly reference: string };
+  readonly at: string;
+}
+
+/** FUL-14 — the customer's substitution rules for one order: from the order itself, or the customer's standing rules. */
+export interface StoredSubstitutionRules {
+  readonly rules: CustomerSubstitutionRules;
+  readonly source: 'order' | 'customer';
+  readonly recordedBy: string;
+  readonly contact?: { readonly method: string; readonly reference: string };
+  readonly at: string;
+}
+
+/**
+ * FUL-14 — the stored truth a substitution is decided from: never the picker's body. Present in the running system; when
+ * it is, a substitution reads the ordered line from the order, the prices and attributes from the published catalogue and
+ * product master, the tender from the order's payment, the rules from what the customer said, and a consent from what the
+ * customer (or a documented contact) said — and FAILS CLOSED when any fact a "confirmed" swap needs is missing.
+ */
+export interface SubstitutionTruthDeps {
+  readonly product: (tenantId: string, productId: string) => Promise<{ readonly unitPriceMinor?: number; readonly attrs?: ProductAttributes; readonly name?: string } | undefined>;
+  readonly rulesFor: (tenantId: string, orderId: string) => Promise<StoredSubstitutionRules | undefined>;
+  readonly tenderOf: (tenantId: string, orderId: string) => Promise<TenderMode>;
+  readonly consents: (tenantId: string, orderId: string) => Promise<readonly SubstitutionConsent[]>;
+  readonly recordConsent: (tenantId: string, c: SubstitutionConsent) => Promise<void>;
+  readonly recordOrderRules: (tenantId: string, orderId: string, r: StoredSubstitutionRules) => Promise<void>;
+  readonly recordCustomerRules: (tenantId: string, customerRef: string, r: StoredSubstitutionRules) => Promise<void>;
+  /** Head office's maker-checker engine — an above-cap charge spends an approval a second person gave. */
+  readonly approvals?: ApprovalPort;
 }
 
 /** One line of an order that could not be reserved in full — ordered more than was held (M18-FR-02). */
@@ -334,6 +385,8 @@ export interface OrdersDeps {
   readonly paymentResolution?: (tenantId: string, orderId: string) => Promise<OrderPaymentResolution | undefined> | OrderPaymentResolution | undefined;
   /** FUL-05: the one fulfilment command, run when the store hands a packed order over at the counter (`collect`). */
   readonly afterOrderFact?: (tenantId: string, orderId: string, by: string) => Promise<unknown>;
+  /** FUL-14: substitution from stored truth. Absent on a bare stub (the body's facts are then used, as before). */
+  readonly substitutionTruth?: SubstitutionTruthDeps;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -358,7 +411,7 @@ const strList = (v: unknown): readonly string[] => (Array.isArray(v) ? v.filter(
 /** The optional M19-FR-01 substitution POLICY inputs: the customer's rules + the two products' attributes.
  *  Absent → a plain M18 substitution (no eligibility gate). All-or-nothing: eligibility runs only when the
  *  customer rules and BOTH product attribute sets are readable. */
-const readSubRules = (v: unknown): CustomerSubstitutionRules | undefined => {
+export const readSubRules = (v: unknown): CustomerSubstitutionRules | undefined => {
   if (typeof v !== 'object' || v === null) return undefined;
   const r = v as Record<string, unknown>;
   if (typeof r['preference'] !== 'string' || !SUB_PREFERENCES.includes(r['preference'] as SubstitutionPreference)) return undefined;
@@ -395,6 +448,154 @@ const isChannelOrder = (v: unknown): v is ChannelOrder =>
   && isStr((v as Record<string, unknown>)['orderId'])
   && isNonNegInt((v as Record<string, unknown>)['valueMinor'])
   && isStr((v as Record<string, unknown>)['state']);
+
+const CONTACT_METHODS: readonly string[] = ['phone', 'whatsapp', 'sms', 'in_person'];
+/** A documented contact: how the customer was reached and a reference a person can check — or undefined. */
+export const readContact = (v: unknown): { readonly method: string; readonly reference: string } | undefined => {
+  if (typeof v !== 'object' || v === null) return undefined;
+  const c = v as Record<string, unknown>;
+  return typeof c['method'] === 'string' && CONTACT_METHODS.includes(c['method']) && isStr(c['reference']) ? { method: c['method'], reference: c['reference'] } : undefined;
+};
+
+/**
+ * FUL-14 — a substitution decided from STORED TRUTH (M19-FR-01 · M18-FR-04 · §28 · P-08). The picker's body says only
+ * which line, which substitute, how many and what the customer said; everything else is read:
+ *   • the ordered product and quantity from the ORDER (a product not on it is refused);
+ *   • both prices from the published catalogue and both products' attributes from the product master;
+ *   • the tender from the order's own payment; the rules from what the customer said (on the order, or standing);
+ *   • a "confirmed" swap the policy says needs the customer's yes rests on a recorded CONSENT — the customer's own, signed
+ *     in, or a documented contact (method and reference) — and a charge ABOVE the original price also needs the customer's
+ *     yes to the higher price AND an approval a second person gave (`substitution_above_cap`);
+ *   • a fact a "confirmed" swap needs that is missing FAILS CLOSED: nothing is recorded and the gap is named. A declined or
+ *     unanswered line needs nothing but the order — it is a short pick, charged nothing.
+ */
+async function substituteFromStoredTruth(deps: OrdersDeps, truth: SubstitutionTruthDeps, input: {
+  readonly tenantId: string; readonly userId: string; readonly orderId: string; readonly order: OrderStateView;
+  readonly offer: SubstitutionOffer; readonly decision: SubstitutionDecision; readonly body: Record<string, unknown>; readonly now: string;
+}): Promise<Record<string, unknown>> {
+  const { tenantId, orderId, offer: asked } = input;
+  const orderedLine = input.order.lines.find((l) => l.productId === asked.orderedProductId);
+  if (orderedLine === undefined) {
+    throw apiError(422, {
+      code: 'not_on_the_order',
+      whatHappened: `${asked.orderedProductId} is not on order ${orderId} — a substitution replaces a line the customer ordered.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Pick the line from the order as it was placed. Nothing was changed.',
+    });
+  }
+  // Typed approvals are names, not approvals (ADR-0024): refused by name before anything is read further.
+  if (input.body['approvedAboveCap'] === true && !isStr(input.body['approvalId'])) {
+    throw apiError(422, {
+      code: 'above_cap_needs_an_approval',
+      whatHappened: '"approvedAboveCap" is a claim in the request, not an approval. Charging above the original price needs an approval a second person gave in their own session (kind substitution_above_cap).',
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Ask for the approval (POST /v1/approvals/requests, kind substitution_above_cap) and send its approvalId. Nothing was changed.',
+    });
+  }
+  const [orderedFacts, substituteFacts, stored, tender] = await Promise.all([
+    truth.product(tenantId, asked.orderedProductId), truth.product(tenantId, asked.substituteProductId),
+    truth.rulesFor(tenantId, orderId), truth.tenderOf(tenantId, orderId),
+  ]);
+  const offer: SubstitutionOffer = {
+    ...asked,
+    orderedName: orderedFacts?.name ?? asked.orderedName, substituteName: substituteFacts?.name ?? asked.substituteName,
+    orderedQuantityMinor: orderedLine.quantityMinor,
+    orderedUnitPriceMinor: orderedFacts?.unitPriceMinor ?? 0, substituteUnitPriceMinor: substituteFacts?.unitPriceMinor ?? 0,
+  };
+  let effective: SubstitutionDecision = input.decision;
+  let eligibility: SubstitutionEligibility | undefined;
+  let policyReason: string | undefined;
+  let consent: SubstitutionConsent | undefined;
+  let aboveCapApprovedBy: string | undefined;
+  let spend: (() => Promise<void>) | undefined;
+  if (input.decision === 'confirmed') {
+    const missing = [
+      orderedFacts?.unitPriceMinor === undefined ? `the published price of ${asked.orderedProductId}` : '',
+      substituteFacts?.unitPriceMinor === undefined ? `the published price of ${asked.substituteProductId}` : '',
+      orderedFacts?.attrs === undefined ? `the product master of ${asked.orderedProductId}` : '',
+      substituteFacts?.attrs === undefined ? `the product master of ${asked.substituteProductId}` : '',
+      stored === undefined ? 'the customer\'s substitution rules (none on the order or on the customer)' : '',
+    ].filter((x) => x !== '');
+    if (missing.length > 0) {
+      throw apiError(409, {
+        code: 'substitution_facts_missing',
+        whatHappened: `A substitute cannot be confirmed without ${missing.join('; ')}. The shop does not swap on facts it does not hold.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Record what is missing (publish the product, or record the customer\'s rules — POST /v1/orders/:orderId/substitution-preference with how they were contacted), or short-pick the line (decision declined). Nothing was changed.',
+      });
+    }
+    const assessed = assessSubstitution({ lineId: offer.lineId, ordered: orderedFacts!.attrs!, substitute: substituteFacts!.attrs!, rules: stored!.rules });
+    eligibility = assessed.eligibility;
+    policyReason = assessed.reason;
+    if (assessed.eligibility === 'refused') effective = 'declined';
+    const dearer = offer.substituteUnitPriceMinor * offer.substituteQuantityMinor > offer.orderedUnitPriceMinor * offer.orderedQuantityMinor;
+    const wantsAboveCap = dearer && isStr(input.body['approvalId']);
+    if (effective === 'confirmed' && (assessed.eligibility === 'needs_confirmation' || wantsAboveCap)) {
+      // The customer's own yes, recorded — or a documented contact, recorded here.
+      const contact = readContact(input.body['contact']);
+      const recorded = (await truth.consents(tenantId, orderId)).filter((c) => c.lineId === offer.lineId && c.substituteProductId === offer.substituteProductId);
+      const own = recorded[recorded.length - 1];
+      consent = own ?? (contact === undefined ? undefined : {
+        orderId, lineId: offer.lineId, substituteProductId: offer.substituteProductId, decision: 'confirmed',
+        acceptsHigherPrice: input.body['customerAcceptsHigherPrice'] === true, given: 'staff_contact', by: input.userId, contact, at: input.now,
+      });
+      if (consent === undefined || consent.decision !== 'confirmed') {
+        throw apiError(409, {
+          code: consent === undefined ? 'customer_consent_required' : 'customer_declined_this_substitute',
+          whatHappened: consent === undefined
+            ? `${offer.substituteName} needs the customer's yes (${assessed.detail}). No yes is recorded: not from the customer in the app, and no documented contact was given.`
+            : `The customer said no to ${offer.substituteName}.`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: consent === undefined
+            ? 'Ask the customer. Record their answer with how you reached them ({ "contact": { "method": "phone" | "whatsapp" | "sms" | "in_person", "reference": "…" } }), or short-pick the line. Nothing was changed.'
+            : 'Short-pick the line (decision declined). Nothing was changed.',
+        });
+      }
+      if (wantsAboveCap && !consent.acceptsHigherPrice) {
+        throw apiError(409, {
+          code: 'customer_did_not_accept_the_higher_price',
+          whatHappened: `Charging above the original price needs the customer's yes to the higher price; the recorded consent does not say so.`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Ask the customer about the higher price, or substitute at the original price (no approvalId). Nothing was changed.',
+        });
+      }
+    }
+    if (effective === 'confirmed' && wantsAboveCap) {
+      const extra = offer.substituteUnitPriceMinor * offer.substituteQuantityMinor - offer.orderedUnitPriceMinor * offer.orderedQuantityMinor;
+      const opened = await approvalNamedIn(truth.approvals, {
+        tenantId, approvalId: input.body['approvalId'], typedField: 'approvedAboveCap', typedValue: undefined,
+        kind: 'substitution_above_cap', subjectRef: `${orderId}/${offer.lineId}`,
+        details: actionDetails({ substituteProductId: offer.substituteProductId, substituteQuantityMinor: offer.substituteQuantityMinor }, { orderId, lineId: offer.lineId }),
+        valueMinor: extra, maker: input.userId, usedBy: `substitution:${orderId}/${offer.lineId}`, now: input.now,
+      });
+      aboveCapApprovedBy = opened?.decision.decidedBy;
+      spend = opened?.spend;
+    }
+  }
+  const result = applySubstitution({ offer, decision: effective });
+  const money = settleSubstitutionMoney({ offer, decision: effective, tender, approvedAboveCap: aboveCapApprovedBy !== undefined });
+  await spend?.();
+  if (consent !== undefined && consent.given === 'staff_contact') await truth.recordConsent(tenantId, consent);
+  const sub: StoredSubstitution = {
+    orderId, lineId: result.lineId, decision: input.decision, outcome: result.outcome,
+    pickProductId: result.pickProductId ?? null, pickQuantityMinor: result.pickQuantityMinor,
+    chargeMinor: money.chargeMinor, refundMinor: result.refundMinor, at: input.now,
+    ...(eligibility === undefined ? {} : { eligibility }), ...(policyReason === undefined ? {} : { policyReason }),
+    tender, settlementKind: money.settlementKind, settlementMinor: money.settlementMinor, aboveCap: money.aboveCap,
+    fromStoredTruth: true, ...(consent === undefined ? {} : { consent }), ...(aboveCapApprovedBy === undefined ? {} : { aboveCapApprovedBy }),
+    ...(stored === undefined ? {} : { rulesSource: stored.source }),
+  };
+  await deps.recordSubstitution(tenantId, sub);
+  return {
+    orderId, lineId: result.lineId, outcome: result.outcome, pickProductId: result.pickProductId ?? null, pickQuantityMinor: result.pickQuantityMinor,
+    chargeMinor: money.chargeMinor, refundMinor: result.refundMinor, refundDue: result.refundMinor > 0, tellTheCustomer: money.tellTheCustomer,
+    tender, settlementKind: money.settlementKind, settlementMinor: money.settlementMinor, aboveCap: money.aboveCap,
+    ...(eligibility === undefined ? {} : { eligibility, policyReason }),
+    prices: { orderedUnitPriceMinor: offer.orderedUnitPriceMinor, substituteUnitPriceMinor: offer.substituteUnitPriceMinor },
+    fromStoredTruth: true, ...(consent === undefined ? {} : { consent: { given: consent.given, by: consent.by } }),
+    ...(aboveCapApprovedBy === undefined ? {} : { aboveCapApprovedBy }),
+  };
+}
 
 export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
   return [
@@ -603,6 +804,13 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
         }
 
         const decision = b.decision as SubstitutionDecision;
+        // FUL-14: in the running system the swap is decided from stored truth, never from the picker's body.
+        if (deps.substitutionTruth !== undefined) {
+          const sub = await substituteFromStoredTruth(deps, deps.substitutionTruth, {
+            tenantId: ctx.tenantId, userId: ctx.userId, orderId, order: current, offer, decision, body: b as Record<string, unknown>, now: deps.now(),
+          });
+          return { status: 201, body: sub };
+        }
 
         // M19-FR-01 POLICY gate (optional): when the caller supplies the customer's rules and both
         // products' attributes, the eligibility engine decides whether the swap may be offered at all.
@@ -656,6 +864,33 @@ export function ordersRoutes(deps: OrdersDeps): readonly Route[] {
             ...(money !== undefined ? { tender, settlementKind: money.settlementKind, settlementMinor: money.settlementMinor, aboveCap: money.aboveCap } : {}),
           },
         };
+      },
+    },
+    // FUL-14: what the customer said about substitutes on THIS order, told to a member of staff — recorded with how they were
+    // reached, so a later swap rests on it rather than on whatever the picker types.
+    {
+      api: 'API-07', method: 'POST', path: '/v1/orders/:orderId/substitution-preference',
+      permission: 'order.lifecycle.manage', idempotent: true,
+      handler: async (ctx) => {
+        const orderId = ctx.params['orderId'] ?? '';
+        if (deps.substitutionTruth === undefined) throw apiError(404, { code: 'not_available', whatHappened: 'Substitution rules are not kept by this composition.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const rules = readSubRules(b['rules']);
+        const contact = readContact(b['contact']);
+        if (rules === undefined || contact === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_substitution_rules',
+            whatHappened: 'Recording a customer\'s substitution rules needs { rules: { preference: no_substitution | best_match | contact_me, blockedBrands?, blockedCategories?, avoidAllergens?, weightToleranceBps? }, contact: { method: phone | whatsapp | sms | in_person, reference } } — what they said and how you reached them.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send what the customer said and how. Nothing was changed.',
+          });
+        }
+        if ((await deps.orderState(ctx.tenantId, orderId)) === undefined) {
+          throw apiError(404, { code: 'order_unknown', whatHappened: `No order "${orderId}" has been placed.`, wasItSaved: 'not_saved', nextSafeAction: 'Check the order reference. Nothing was changed.' });
+        }
+        const record: StoredSubstitutionRules = { rules, source: 'order', recordedBy: ctx.userId, contact, at: deps.now() };
+        await deps.substitutionTruth.recordOrderRules(ctx.tenantId, orderId, record);
+        return { status: 201, body: { orderId, ...record } };
       },
     },
     // Record the un-promised remainder of an order as a backorder (M18-FR-02 "backorders the rest per

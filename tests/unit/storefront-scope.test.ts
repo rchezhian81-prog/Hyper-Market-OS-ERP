@@ -78,9 +78,12 @@ async function thrown(fn: () => unknown): Promise<Thrown> {
 const BODY = { lines: [{ productId: 'MILK', quantityMinor: 2 }], locationId: 'L1', payment: { providerRef: 'tok_1', amountMinor: 10_000, result: 'authorised' } };
 
 describe('storefront routes over a stubbed ledger', () => {
-  it('seven routes, all behind the customer_app entitlement; the register is a staff read', () => {
+  it('nine routes, all behind the customer_app entitlement; the register is a staff read', () => {
     const { routes } = stub();
     expect(routes.map((r) => [r.method, r.path, r.permission, r.entitlement])).toEqual([
+      // FUL-14: the customer's own substitution rules, and their own answer on a substitute.
+      ['PUT', '/v1/storefront/substitution-preferences', 'storefront.order.place', 'customer_app'],
+      ['POST', '/v1/storefront/orders/:orderId/substitutions/:lineId', 'storefront.order.place', 'customer_app'],
       ['POST', '/v1/storefront/orders/:orderId', 'storefront.order.place', 'customer_app'],
       // FUL-03 / FUL-07: pay for what was promised after a shortage, ask the provider again, cancel before paying.
       ['POST', '/v1/storefront/orders/:orderId/payment', 'storefront.order.place', 'customer_app'],

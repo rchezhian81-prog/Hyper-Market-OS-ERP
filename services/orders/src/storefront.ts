@@ -20,7 +20,7 @@ import {
 import {
   looksLikeCardNumber, paymentPosition, refundPosition, type OrderPayment, type PaymentResult,
 } from '../../../packages/orders/src/payment-refunds';
-import { promiseAndHold, type OrdersDeps, type PlacedOrder } from './index';
+import { promiseAndHold, readSubRules, type OrdersDeps, type PlacedOrder, type StoredSubstitutionRules, type SubstitutionConsent } from './index';
 import { quoteOrder, type PaymentVerifier } from '../../../packages/orders/src/payment-verification';
 import { transitionOrder } from '../../../packages/orders/src/index';
 import type { PaymentRefundDeps } from './payments';
@@ -157,6 +157,50 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
   };
 
   return [
+    // FUL-14: the signed-in customer's own standing substitution rules — what every one of their orders is swapped by.
+    {
+      api: 'API-07', method: 'PUT', path: '/v1/storefront/substitution-preferences',
+      permission: 'storefront.order.place', entitlement: 'customer_app', idempotent: true,
+      handler: async (ctx) => {
+        if (deps.substitutionTruth === undefined) throw apiError(404, { code: 'not_available', whatHappened: 'Substitution rules are not kept by this composition.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
+        const rules = readSubRules((ctx.body as { rules?: unknown } | undefined)?.rules);
+        if (rules === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_substitution_rules',
+            whatHappened: 'Your substitution choice needs { rules: { preference: no_substitution | best_match | contact_me, blockedBrands?, blockedCategories?, avoidAllergens? } }.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Choose again. Nothing was changed.',
+          });
+        }
+        const record: StoredSubstitutionRules = { rules, source: 'customer', recordedBy: ctx.userId, at: deps.now() };
+        await deps.substitutionTruth.recordCustomerRules(ctx.tenantId, ctx.userId, record);
+        return { status: 200, body: record };
+      },
+    },
+    // FUL-14: the customer answers about a substitute on their OWN order — the recorded consent a swap that needs a yes rests on.
+    {
+      api: 'API-07', method: 'POST', path: '/v1/storefront/orders/:orderId/substitutions/:lineId',
+      permission: 'storefront.order.place', entitlement: 'customer_app', idempotent: true,
+      handler: async (ctx) => {
+        const orderId = ctx.params['orderId'] ?? '';
+        const lineId = ctx.params['lineId'] ?? '';
+        if (deps.substitutionTruth === undefined) throw apiError(404, { code: 'not_available', whatHappened: 'Substitution answers are not kept by this composition.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
+        await ownOrRefused(ctx.tenantId, ctx.userId, orderId, 'place');
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isStr(lineId) || !isStr(b['substituteProductId']) || (b['decision'] !== 'confirmed' && b['decision'] !== 'declined')) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_substitution_answer',
+            whatHappened: 'Your answer needs { substituteProductId, decision: confirmed | declined, acceptsHigherPrice? }.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Answer again. Nothing was changed.',
+          });
+        }
+        const consent: SubstitutionConsent = {
+          orderId, lineId, substituteProductId: b['substituteProductId'] as string, decision: b['decision'] as 'confirmed' | 'declined',
+          acceptsHigherPrice: b['acceptsHigherPrice'] === true, given: 'customer', by: ctx.userId, at: deps.now(),
+        };
+        await deps.substitutionTruth.recordConsent(ctx.tenantId, consent);
+        return { status: 201, body: consent };
+      },
+    },
     {
       // Place an order as the signed-in customer: reserve in the same breath, record the checkout's payment answer.
       // Body: { lines: [{ productId, quantityMinor }], locationId, payment?: { providerRef, amountMinor, result, reason? } }.

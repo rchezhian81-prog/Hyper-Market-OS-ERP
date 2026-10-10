@@ -70,7 +70,7 @@ import type { ReturnsDeps, ReturnRecord, RecordedRefund, OriginalSale, RecordedR
 import type { ExchangeDeps } from '../../pos/src/exchanges';
 import type { NoReceiptReturnsDeps } from '../../pos/src/no-receipt-returns';
 import type { ApprovalUse, RefundApproval, RefundApprovalDeps, RefundApprovalState } from '../../pos/src/refund-approvals';
-import type { ApprovalDecision, ApprovalRequest, ApprovalRequestDeps, ApprovalState } from '../../identity/src/approval-requests';
+import type { ApprovalDecision, ApprovalRequest, ApprovalRequestDeps, ApprovalState, ApprovalPort } from '../../identity/src/approval-requests';
 import type { RefusedDecision } from '../../migration/src/decisions';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { ControlTotal, TotalSignature } from '../../../packages/migration/src/reconcile';
@@ -243,9 +243,10 @@ import type { OwnedException } from '../../../packages/orders/src/substitution-e
 import type { PaymentRefundDeps } from '../../orders/src/payments';
 import type { StorefrontDeps } from '../../orders/src/storefront';
 import type { StorefrontAccessRefusal } from '../../../packages/orders/src/storefront-scope';
-import { testModeRefundProcessor, type OrderPayment, type OrderPaymentResolution, type OrderRefund, type OrderRefundOutcome, type RefundProcessor } from '../../../packages/orders/src/payment-refunds';
+import { testModeRefundProcessor, paymentPosition, type OrderPayment, type OrderPaymentResolution, type OrderRefund, type OrderRefundOutcome, type RefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import type {
   Reservation, OrdersDeps, PlacedOrder, OrderTransition, OrderStateView, StoredSubstitution, StoredBackorder,
+  SubstitutionTruthDeps, StoredSubstitutionRules, SubstitutionConsent,
 } from '../../orders/src/index';
 import type { ServiceabilityConfigDeps } from '../../orders/src/serviceability';
 import type { ServiceabilityPeriod } from '../../../packages/storefront/src/index';
@@ -9171,6 +9172,73 @@ export function assignmentsAdapter(input: {
     },
     wavePacked: async (tenantId, waveId) => (await waves.pack(tenantId, waveId)) !== undefined,
     routeSettled: async (tenantId, routeId) => (await runs.settlement(tenantId, routeId)) !== undefined,
+  };
+}
+
+/**
+ * FUL-14: the stored truth a substitution is decided from — the catalogue's price, the product master's attributes, the
+ * order's payment, the customer's rules (on the order, else standing) and the consents recorded per order.
+ */
+export function substitutionTruthAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly orders: Pick<OrdersDeps, 'orderPayment' | 'paymentResolution'> & { readonly placedOrder: (tenantId: string, orderId: string) => Promise<PlacedOrder | undefined> | PlacedOrder | undefined };
+  readonly approvals?: ApprovalPort;
+}): SubstitutionTruthDeps {
+  const forOrderSubs = (orderId: string): string => streamName(STREAM.orders, 'substitution-truth', orderId);
+  const forCustomerRules = (customerRef: string): string => streamName(STREAM.orders, 'substitution-rules', customerRef);
+  const pos = posAdapter(input);
+  const master = productMasterAdapter(input);
+  return {
+    ...(input.approvals === undefined ? {} : { approvals: input.approvals }),
+    product: async (tenantId, productId) => {
+      const [published, record] = await Promise.all([pos.catalogue(tenantId), master.product(tenantId, productId)]);
+      const p = published.get(productId);
+      if (p === undefined && record === undefined) return undefined;
+      return {
+        name: record?.name ?? p?.name,
+        ...(p === undefined ? {} : { unitPriceMinor: p.unitPriceMinor }),
+        ...(record === undefined ? {} : { attrs: {
+          productId, name: record.name,
+          ...(record.brand === undefined ? {} : { brand: record.brand }),
+          ...(record.primaryCategoryId === null ? {} : { categoryId: record.primaryCategoryId }),
+          // An allergen declaration only when one was made: `undefined` is "nobody has said", never "none".
+          ...(record.safety?.allergens === undefined ? {} : { allergens: record.safety.allergens.map((a) => a.trim().toLowerCase()) }),
+          ageRestricted: record.safety?.minimumAge !== undefined,
+        } }),
+      };
+    },
+    rulesFor: async (tenantId, orderId) => {
+      const own = await latest<StoredSubstitutionRules>(input.store, tenantId, forOrderSubs(orderId), 'OrderSubstitutionRulesRecorded');
+      if (own !== undefined) return own;
+      const placed = await input.orders.placedOrder(tenantId, orderId);
+      return placed?.customerRef === undefined ? undefined
+        : latest<StoredSubstitutionRules>(input.store, tenantId, forCustomerRules(placed.customerRef), 'CustomerSubstitutionRulesRecorded');
+    },
+    tenderOf: async (tenantId, orderId) => {
+      const pay = paymentPosition(await input.orders.orderPayment?.(tenantId, orderId), await input.orders.paymentResolution?.(tenantId, orderId));
+      if (pay.state === 'authorised') return 'prepaid';
+      return (await input.orders.placedOrder(tenantId, orderId))?.fulfilment === 'pickup' ? 'pay_at_store' : 'cod';
+    },
+    consents: (tenantId, orderId) => allOf<SubstitutionConsent>(input.store, tenantId, forOrderSubs(orderId), 'SubstitutionConsentRecorded'),
+    recordConsent: async (tenantId, c) => {
+      await input.store.append(tenantId, forOrderSubs(c.orderId), makeEvent({
+        id: `sub-consent-${c.orderId}-${c.lineId}-${c.substituteProductId}-${c.at}`, type: 'SubstitutionConsentRecorded', occurredAt: c.at,
+        idempotencyKey: `sub-consent-${tenantId}-${c.orderId}-${c.lineId}-${c.substituteProductId}-${c.given}-${c.at}`, source: 'api/orders', payload: c,
+      }));
+    },
+    recordOrderRules: async (tenantId, orderId, r) => {
+      await input.store.append(tenantId, forOrderSubs(orderId), makeEvent({
+        id: `sub-rules-${orderId}-${r.at}`, type: 'OrderSubstitutionRulesRecorded', occurredAt: r.at,
+        idempotencyKey: `sub-rules-${tenantId}-${orderId}-${r.at}`, source: 'api/orders', payload: r,
+      }));
+    },
+    recordCustomerRules: async (tenantId, customerRef, r) => {
+      await input.store.append(tenantId, forCustomerRules(customerRef), makeEvent({
+        id: `cust-sub-rules-${customerRef}-${r.at}`, type: 'CustomerSubstitutionRulesRecorded', occurredAt: r.at,
+        idempotencyKey: `cust-sub-rules-${tenantId}-${customerRef}-${r.at}`, source: 'api/orders', payload: r,
+      }));
+    },
   };
 }
 
