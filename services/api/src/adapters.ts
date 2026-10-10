@@ -1375,8 +1375,25 @@ const forRefundIndex = streamName(STREAM.orders, 'refunds');
 // read or place against another customer's order (hard rule #6).
 const forCustomerOrders = (customerRef: string): string => streamName(STREAM.orders, 'customer', customerRef);
 const forStorefrontRefusals = streamName(STREAM.orders, 'access-refusals');
+// SF-10 · M30-FR-02: a tenant-wide INDEX of placed orders (desk and storefront alike), appended beside each order's own
+// stream — the same shape as the customer index — so the governed export folds every order without walking unknown ids.
+const forOrderIndex = streamName(STREAM.orders, 'index');
 // M19-FR-01 / Item 2: the kept ownership state of substitution exceptions — latest per exception id.
 const forExceptionOwnership = streamName(STREAM.orders, 'substitution-exception-ownership');
+/**
+ * SF-10 · M30-FR-02: every placed order with its CURRENT state — the order index, each order folded exactly as
+ * `GET /v1/orders/:orderId` folds it (the placed record plus its last transition). A read; it writes nothing.
+ */
+export async function ordersForExport(store: EventStore, tenantId: string): Promise<readonly (PlacedOrder & { readonly currentState: string })[]> {
+  const placed = await allOf<PlacedOrder>(store, tenantId, forOrderIndex, 'OrderPlaced');
+  const out: (PlacedOrder & { readonly currentState: string })[] = [];
+  for (const o of placed) {
+    const transitions = await allOf<OrderTransition>(store, tenantId, forOrder(o.orderId), 'OrderTransitioned');
+    out.push({ ...o, currentState: transitions.at(-1)?.to ?? o.state });
+  }
+  return out;
+}
+
 /** SP-7a: every captured supplier invoice, on one register — the record the match, the payable and the statement read. */
 const SUPPLIER_INVOICES_STREAM = streamName(STREAM.purchase, 'invoices');
 // SP-7b: the tenant's three-way-match tolerances — the owner's, latest wins, every version on the ledger.
@@ -1789,6 +1806,16 @@ export function payslipStoreAdapter(input: { readonly store: EventStore; readonl
       return all.sort((a, b) => b.period.localeCompare(a.period))[0]; // most recent pay period
     },
   };
+}
+
+/**
+ * SF-10 · M30-FR-02: every issued payslip in the shop, latest issue per (employee, period) — the SAME fold `payslipsFor`
+ * runs for one person, over the whole payslip register, for the governed payroll export. A read; it writes nothing.
+ */
+export async function allIssuedPayslips(store: EventStore, tenantId: string): Promise<readonly IssuedPayslip[]> {
+  const byKey = new Map<string, IssuedPayslip>();
+  for (const p of await allOf<IssuedPayslip>(store, tenantId, PAYSLIPS_STREAM, 'PayslipIssued')) byKey.set(`${p.employeeId}|${p.period}`, p);
+  return [...byKey.values()];
 }
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forSaleReturns, forOrderPack, supplierInvoices: SUPPLIER_INVOICES_STREAM } as const;
@@ -8881,6 +8908,15 @@ export function ordersAdapter(input: {
         type: 'OrderPlaced',
         occurredAt: order.placedAt,
         idempotencyKey: `ord-placed-${tenantId}-${order.orderId}`,
+        source: 'api/orders',
+        payload: order,
+      }));
+      // SF-10: and on the shop-wide order index, so the export reads every order. Idempotent on the order id.
+      await input.store.append(tenantId, forOrderIndex, makeEvent({
+        id: `ord-placed-idx-${order.orderId}`,
+        type: 'OrderPlaced',
+        occurredAt: order.placedAt,
+        idempotencyKey: `ord-placed-idx-${tenantId}-${order.orderId}`,
         source: 'api/orders',
         payload: order,
       }));
