@@ -406,6 +406,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       'identity.self.read',
       'storefront.order.place', 'storefront.order.read',
+      // FUL-06: the customer's OWN consent and data-subject requests, scoped from the session (never an id sent).
+      'customer.privacy.self',
     ],
   },
   {

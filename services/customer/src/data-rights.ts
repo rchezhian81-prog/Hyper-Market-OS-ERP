@@ -178,6 +178,19 @@ export function dataRightsRoutes(deps: DataRightsDeps): readonly Route[] {
       },
     },
     {
+      // The DPO's queue (audit FUL-06): every request still to be worked — raised by a customer in the app or recorded
+      // here — oldest due first, so a customer's self-service request is visible to the officer the moment it lands.
+      // `?state=all` includes closed ones. A read never writes.
+      api: 'API-06', method: 'GET', path: '/v1/privacy/data-requests',
+      permission: 'privacy.request.manage',
+      handler: async (ctx) => {
+        const all = await deps.requests(ctx.tenantId);
+        const open = ctx.query['state'] === 'all' ? [...all] : all.filter((r) => r.state === 'raised' || r.state === 'verified');
+        const queue = open.sort((a, b) => a.dueBy.localeCompare(b.dueBy) || a.raisedAt.localeCompare(b.raisedAt));
+        return { status: 200, body: { queue, count: queue.length, asAt: deps.now() } };
+      },
+    },
+    {
       // Read one request's current state — where it is in the lifecycle and when it is due.
       api: 'API-06', method: 'GET', path: '/v1/privacy/data-requests/:requestId',
       permission: 'privacy.request.manage',

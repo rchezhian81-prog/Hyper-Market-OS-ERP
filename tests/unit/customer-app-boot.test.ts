@@ -234,30 +234,94 @@ describe('the privacy centre, through the assembled app', () => {
     expect(withConsent().consent().every((c) => c.granted === false)).toBe(true);
   });
 
-  it('turns a consent on and off again through one call each way', () => {
-    const shop = withConsent();
-    expect(shop.setConsent('marketing', 'sms', true).ok).toBe(true);
+  // FUL-06: a scripted shop that KEEPS what it is told (the real API is proven in
+  // tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts). `online` flips the road.
+  const scriptedShop = () => {
+    const held = new Map<string, boolean>();
+    const raised: { requestId: string; kind: string }[] = [];
+    let online = true;
+    const transport = {
+      placeOrder: () => Promise.resolve({ reached: false as const, why: 'no_connection' as const, detail: 'n/a' }),
+      privacy: (r: { method: string; path: string; body?: unknown }) => {
+        if (!online) return Promise.resolve({ reached: false as const, why: 'no_connection' as const, detail: 'offline' });
+        const consent = () => [...held].map(([k, granted]) => ({ purpose: k.split('|')[0], channel: k.split('|')[1], granted }));
+        if (r.method === 'GET') return Promise.resolve({ reached: true as const, status: 200, body: { consent: consent(), requests: raised.map((x) => ({ ...x, state: 'raised', dueBy: '2026-09-09' })) } });
+        if (r.path === '/consent') {
+          const b = r.body as { purpose: string; channel: string; given: boolean };
+          held.set(`${b.purpose}|${b.channel}`, b.given);
+          return Promise.resolve({ reached: true as const, status: 201, body: { saved: true, granted: b.given, tellTheCustomer: 'Saved.' } });
+        }
+        const requestId = r.path.slice('/requests/'.length);
+        const kind = (r.body as { kind: string }).kind;
+        raised.push({ requestId, kind });
+        return Promise.resolve({ reached: true as const, status: 201, body: { requestId, kind, state: 'raised', dueBy: '2026-09-09', tellTheCustomer: kind === 'erasure' ? 'invoices and tax records have to be kept' : 'Nobody needs to be contacted' } });
+      },
+    };
+    return { transport, held, raised, goOffline: () => { online = false; } };
+  };
+  const signedInShop = (shopSide: ReturnType<typeof scriptedShop>) => {
+    const shop = bootShop(data({
+      consentPurposes: [{ purpose: 'order_updates', channel: 'sms', required: true }, { purpose: 'marketing', channel: 'sms' }],
+    }), forgetfulBasket(), nextId, shopSide.transport)!;
+    shop.signedIn('session-token');
+    return shop;
+  };
+
+  it('turns a consent on and off again through one call each way — and the switch moves only when the shop has it', async () => {
+    const side = scriptedShop();
+    const shop = signedInShop(side);
+    expect((await shop.setConsent('marketing', 'sms', true)).ok).toBe(true);
+    expect(side.held.get('marketing|sms')).toBe(true);
     expect(shop.consent().find((c) => c.purpose === 'marketing')?.granted).toBe(true);
-    expect(shop.setConsent('marketing', 'sms', false).ok).toBe(true);
+    expect((await shop.setConsent('marketing', 'sms', false)).ok).toBe(true);
     expect(shop.consent().find((c) => c.purpose === 'marketing')?.granted).toBe(false);
   });
 
-  it('will not switch off something the shop cannot deliver without', () => {
-    expect(withConsent().setConsent('order_updates', 'sms', false))
-      .toEqual({ ok: false, refusal: 'required_for_service' });
+  it('offline, nothing is saved and the switch does not move — and the customer is told', async () => {
+    const side = scriptedShop();
+    const shop = signedInShop(side);
+    side.goOffline();
+    const out = await shop.setConsent('marketing', 'sms', true);
+    expect(out).toMatchObject({ ok: false, refusal: 'not_saved_no_connection' });
+    expect(out.tellTheCustomer).toMatch(/Not saved/);
+    expect(shop.consent().find((c) => c.purpose === 'marketing')?.granted).toBe(false);
   });
 
-  it('raises a data request from the phone, with no staff involved (QG-02)', () => {
-    const shop = bootShop(data({ privacySlaDays: 30 }), forgetfulBasket(), nextId)!;
-    const raised = shop.raise('export', AT);
+  it('signed out, nothing is sent', async () => {
+    const side = scriptedShop();
+    const shop = bootShop(data({ consentPurposes: [{ purpose: 'marketing', channel: 'sms' }] }), forgetfulBasket(), nextId, side.transport)!;
+    expect(await shop.setConsent('marketing', 'sms', true)).toMatchObject({ ok: false, refusal: 'not_signed_in' });
+    expect(side.held.size).toBe(0);
+  });
+
+  it('will not switch off something the shop cannot deliver without', async () => {
+    expect(await withConsent().setConsent('order_updates', 'sms', false))
+      .toMatchObject({ ok: false, refusal: 'required_for_service' });
+  });
+
+  it('raises a data request ON THE SHOP from the phone, with no staff involved (QG-02)', async () => {
+    const side = scriptedShop();
+    const shop = signedInShop(side);
+    const raised = await shop.raise('export', AT);
+    expect(raised.ok).toBe(true);
+    if (!raised.ok) return;
     expect(raised.request.state).toBe('raised');
-    expect(raised.request.tenantId).toBe('t1');
-    expect(raised.request.customerRef).toBe('c1');
+    expect(side.raised).toEqual([{ requestId: raised.request.requestId, kind: 'export' }]);
     expect(raised.tellTheCustomer).toMatch(/Nobody needs to be contacted/i);
+    expect(shop.myRequests().map((r) => r.requestId)).toEqual([raised.request.requestId]);
   });
 
-  it('warns on the erasure request that it cannot be complete', () => {
-    const raised = bootShop(data(), forgetfulBasket(), nextId)!.raise('erasure', AT);
+  it('a request that did not reach the shop is not called received', async () => {
+    const side = scriptedShop();
+    const shop = signedInShop(side);
+    side.goOffline();
+    const raised = await shop.raise('erasure', AT);
+    expect(raised).toMatchObject({ ok: false, refusal: 'not_saved_no_connection' });
+    expect(side.raised).toEqual([]);
+  });
+
+  it('warns on the erasure request that it cannot be complete', async () => {
+    const raised = await signedInShop(scriptedShop()).raise('erasure', AT);
     expect(raised.tellTheCustomer).toMatch(/invoices and tax records/i);
   });
 });

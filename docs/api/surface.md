@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 880 | 538 | 538 | 73 | 284 |
+| 13 | 884 | 540 | 540 | 73 | 285 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -407,6 +407,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/loyalty/referrals/:referralId` | `loyalty.coupon.issue` | `loyalty` | yes |
 | GET | `/v1/loyalty/rule` | `loyalty.points.read` | core | — |
 | GET | `/v1/loyalty/wallets` | `loyalty.points.read` | core | — |
+| GET | `/v1/me/privacy` | `customer.privacy.self` | core | — |
+| POST | `/v1/me/privacy/consent` | `customer.privacy.self` | core | yes |
+| POST | `/v1/me/privacy/requests/:requestId` | `customer.privacy.self` | core | yes |
 | POST | `/v1/notifications/can-send` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id/delivered` | `notification.send.check` | core | yes |
@@ -420,6 +423,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/notifications/templates/:templateId/approval` | `document.template.manage` | core | yes |
 | POST | `/v1/privacy/breach/assess` | `customer.consent.write` | core | yes |
 | POST | `/v1/privacy/consent-notice/check` | `customer.consent.read` | core | yes |
+| GET | `/v1/privacy/data-requests` | `privacy.request.manage` | core | — |
 | GET | `/v1/privacy/data-requests/:requestId` | `privacy.request.manage` | core | — |
 | POST | `/v1/privacy/data-requests/:requestId` | `privacy.request.manage` | core | yes |
 | POST | `/v1/privacy/data-requests/:requestId/erasure-approval` | `privacy.erasure.approve` | core | yes |
