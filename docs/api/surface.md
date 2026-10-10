@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 845 | 517 | 517 | 64 | 282 |
+| 13 | 853 | 519 | 519 | 66 | 282 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -402,6 +402,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/loyalty/offers` | `loyalty.coupon.issue` | `loyalty` | yes |
 | POST | `/v1/loyalty/referrals/:referralId` | `loyalty.coupon.issue` | `loyalty` | yes |
 | GET | `/v1/loyalty/rule` | `loyalty.points.read` | core | — |
+| GET | `/v1/loyalty/wallets` | `loyalty.points.read` | core | — |
 | POST | `/v1/notifications/can-send` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id/delivered` | `notification.send.check` | core | yes |
@@ -430,6 +431,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/service/cases/:caseId` | `service.case.manage` | core | yes |
 | POST | `/v1/service/cases/:caseId/compensation` | `service.case.manage` | core | yes |
 | GET | `/v1/service/cases/:caseId/compensations` | `service.case.read` | core | — |
+| POST | `/v1/service/cases/:caseId/compensations/:compensationId/fulfil` | `service.case.manage` | core | yes |
 | GET | `/v1/service/cases/:caseId/drafts` | `service.case.read` | core | — |
 | POST | `/v1/service/cases/:caseId/drafts/:draftId` | `service.case.manage` | core | yes |
 | POST | `/v1/service/cases/:caseId/drafts/:draftId/decision` | `service.case.manage` | core | yes |
@@ -566,7 +568,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/concession/contracts/:contractId/tags/:tagId/reverse` | `concession.tag.record` | `dept.concession` | yes |
 | POST | `/v1/concession/stock-access` | `concession.charge.read` | `dept.concession` | yes |
 | POST | `/v1/concession/tags/synced` | `concession.tag.sync` | `dept.concession` | yes |
+| GET | `/v1/concession/trading-breaches` | `concession.charge.read` | `dept.concession` | — |
+| GET | `/v1/concession/trading-feed` | `concession.tag.sync` | `dept.concession` | — |
 | POST | `/v1/concession/valuation` | `concession.charge.read` | `dept.concession` | yes |
+| GET | `/v1/finance/bank-statements` | `settlement.review.read` | core | — |
+| POST | `/v1/finance/bank-statements` | `settlement.batch.import` | core | yes |
 | POST | `/v1/finance/credit-notes` | `finance.creditnote.issue` | core | yes |
 | GET | `/v1/finance/credit-notes/reconciliation` | `finance.creditnote.issue` | core | — |
 | GET | `/v1/finance/day-book/:tradingDay` | `finance.period.read` | core | — |
@@ -607,6 +613,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/gstr1/submissions` | `finance.gstr.read` | core | — |
 | GET | `/v1/finance/gstr1/table-12` | `finance.gstr.read` | core | — |
 | POST | `/v1/finance/journals` | `finance.journal.post` | core | yes |
+| GET | `/v1/finance/loyalty-liability` | `finance.period.read` | core | — |
 | POST | `/v1/finance/outward-supplies/:documentId` | `finance.gstr.generate` | core | yes |
 | GET | `/v1/finance/payables` | `finance.period.read` | core | — |
 | POST | `/v1/finance/payables/post` | `finance.journal.post` | core | yes |
@@ -614,6 +621,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/periods/:period/close` | `finance.period.close` | core | yes |
 | POST | `/v1/finance/periods/:period/control-totals` | `finance.period.read` | core | yes |
 | POST | `/v1/finance/periods/:period/evidence-pack` | `finance.period.read` | core | yes |
+| GET | `/v1/finance/periods/:period/independent-evidence` | `finance.period.read` | core | — |
 | POST | `/v1/finance/periods/:period/reopen` | `finance.period.close` | core | yes |
 | GET | `/v1/finance/posting-map` | `finance.period.read` | core | — |
 | PUT | `/v1/finance/posting-map` | `finance.posting.configure` | core | yes |

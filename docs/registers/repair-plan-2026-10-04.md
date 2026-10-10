@@ -210,8 +210,8 @@ the write guard (`write_guards`, `guardVersion`, `ConcurrencyConflictError`), pr
 
 ### Wave 5 — reconcile the full core store day (audit step 5) · size L
 - **PF-08** an open shift blocks the day close; nobody can type a zero variance (**DONE 9 Oct 2026** — the box refuses the close while a till of the day is open; head office's direct shift close retired, OB-27 "A"); **PF-09** a sale earns and a return
-  reverses loyalty and value durably (**step 1 DONE 10 Oct 2026** — head office earns per the owner's rule and takes back on return; OB-28 "C and 1", OB-29 "A"; the till's number entry and spending next); **PF-13** a concession decision blocks a counter before money; **PF-12** the
-  finance close joins imported independent evidence (code side; connectors stay gates).
+  reverses loyalty and value durably (**step 1 DONE 10 Oct 2026** — head office earns per the owner's rule and takes back on return; OB-28 "C and 1", OB-29 "A"; **steps 2–3 DONE 10 Oct 2026** — member by mobile, spend at the till offline within the owner's cap, liability reconciled); **PF-13** a concession decision blocks a counter before money (**DONE 10 Oct 2026**); **PF-12** the
+  finance close joins imported independent evidence (code side; connectors stay gates) (**DONE 10 Oct 2026**).
 - **EA-01** every owner figure says the last complete source sync, not the read time; **EA-02** split tenders report
   by tender; **EA-04** the company report page and export use the production route; **EA-05 / EA-06** drill-through
   from governed records; the store-core report producers first.
