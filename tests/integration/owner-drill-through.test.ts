@@ -27,42 +27,17 @@ async function seeded(): Promise<ApiHarness> {
 }
 
 describe('owner drill-through — "show me", and it had better add up (M29-FR-02)', () => {
-  it('reconciles when the rows add up to the headline, and logs the drill', async () => {
+  it('the caller-rows drill is RETIRED (EA-05): 410, nothing computed, nothing logged — the governed drill is the drill', async () => {
+    // The reconcile / loud-discrepancy / withheld-scope behaviour now runs ONLY over head office's own records:
+    // tests/integration/a-drill-reaches-its-day-and-only-the-readers-branches.test.ts and reports-reconcile-to-their-sources.
     const h = await seeded();
     const res = await drill(h, 'u-owner', {
       metric: 'fresh_margin', kpiValueMinor: 100000, branchScope: 'all',
-      transactions: [txn({ transactionId: 't1', amountMinor: 40000 }), txn({ transactionId: 't2', amountMinor: 30000 }), txn({ transactionId: 't3', amountMinor: 30000 })],
+      transactions: [txn({ transactionId: 't1', amountMinor: 40000 }), txn({ transactionId: 't2', amountMinor: 60000 })],
     });
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ reconciles: true, shownTotalMinor: 100000, withheldCount: 0, provenance: 'supplied_by_caller' });
-    expect((res.body as { transactions: unknown[] }).transactions).toHaveLength(3);
-
-    // The drill is logged (§28) — and survives a restart.
-    const restarted = apiHarness({ store: h.store });
-    const log = (await audits(restarted, 'u-owner')).body as { audits: { userId: string; metric: string; reconciled: boolean; transactionsShown: number }[]; count: number };
-    expect(log.count).toBe(1);
-    expect(log.audits[0]).toMatchObject({ userId: 'u-owner', metric: 'fresh_margin', reconciled: true, transactionsShown: 3 });
-  });
-
-  it('shouts a LOUD discrepancy when the rows do not add up to the figure they came from', async () => {
-    const h = await seeded();
-    const res = await drill(h, 'u-owner', {
-      metric: 'fresh_margin', kpiValueMinor: 100000, branchScope: 'all',
-      transactions: [txn({ transactionId: 't1', amountMinor: 40000 }), txn({ transactionId: 't2', amountMinor: 30000 })], // sum 70000
-    });
-    expect(res.body).toMatchObject({ reconciles: false });
-    expect((res.body as { discrepancy?: string }).discrepancy).toContain('DO NOT ADD UP');
-  });
-
-  it('withholds out-of-scope rows, recomputes the shown total, and says the headline includes them', async () => {
-    const h = await seeded();
-    const res = await drill(h, 'u-owner', {
-      metric: 'sales', kpiValueMinor: 100000, branchScope: ['b1'], // only b1 in scope
-      transactions: [txn({ transactionId: 't1', branchId: 'b1', amountMinor: 60000 }), txn({ transactionId: 't2', branchId: 'b2', amountMinor: 40000 })],
-    });
-    expect(res.body).toMatchObject({ reconciles: true, shownTotalMinor: 60000, withheldCount: 1, withheldTotalMinor: 40000 });
-    expect((res.body as { transactions: unknown[] }).transactions).toHaveLength(1);
-    expect((res.body as { detail: string }).detail).toContain('not shown');
+    expect(res.status).toBe(410);
+    expect(codeOf(res)).toBe('caller_rows_not_accepted');
+    expect(((await audits(h, 'u-owner')).body as { count: number }).count).toBe(0);
   });
 
   it('ranks a metric across a dimension (unattributed grouped, not dropped), and is gated', async () => {
@@ -79,8 +54,8 @@ describe('owner drill-through — "show me", and it had better add up (M29-FR-02
 
     // Gating + validation.
     expect((await drill(h, 'u-cash', { metric: 'm', kpiValueMinor: 0, transactions: [] }, 'dr-cash')).status).toBe(403);
+    expect((res.body as { provenance: string }).provenance).toBe('supplied_by_caller'); // a calculator over sent rows, and says so
     expect((await compare(h, 'u-cash', { dimension: 'branch', metric: 'm', transactions: [] }, 'cmp-cash')).status).toBe(403);
     expect((await audits(h, 'u-cash')).status).toBe(403);
-    expect(codeOf(await drill(h, 'u-owner', { metric: 'm', transactions: [] }, 'dr-bad'))).toBe('not_readable_as_a_drill');
   });
 });
