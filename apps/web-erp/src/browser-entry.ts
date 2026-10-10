@@ -195,7 +195,7 @@ import {
   type AdapterHealthView, type AdapterHealthState,
 } from './integration-health-session';
 import {
-  createGoodsReceiptSession,
+  createGoodsReceiptSession, type GrnReturnLineView, type GrnLineReturnPort, type LineReturnPostResult,
   type GoodsReceiptPorts, type GoodsReceiptSession, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView,
 } from './goods-receipt-session';
 import {
@@ -2759,12 +2759,42 @@ const EMPTY_GOODS_RECEIPT: GoodsReceiptData = Object.freeze({});
 export function goodsReceiptPortsFromData(
   data: GoodsReceiptScreenData | undefined,
   snapshot?: GoodsReceiptData,
+  returnPort?: GrnLineReturnPort,
 ): GoodsReceiptPorts {
   const held = new Set(data?.permissions ?? []);
   return {
     snapshot: () => snapshot ?? data?.snapshot ?? EMPTY_GOODS_RECEIPT,
     // Default-deny: an absent permission list can read nothing (the server would refuse it anyway).
     mayRead: () => held.has(INVENTORY_READ_PERMISSION),
+    // Batch 2: recording a supplier return is the route's own right (`inventory.movement.append`).
+    mayRecordReturn: () => held.has(WRITE_OFF_APPEND_PERMISSION),
+    returnPort: () => returnPort ?? null,
+  };
+}
+
+/** Batch 2 — the authenticated POST that a disposed line has physically gone back to the supplier, under the reader's own
+ *  session: exactly `{ reason }`; who recorded it is the caller, never a body field. A fresh key per attempt (the server is
+ *  idempotent per line by state: the same line again is 200 "already returned"). */
+export function openGrnLineReturnPort(): GrnLineReturnPort {
+  return {
+    post: async ({ grnId, lineId, reason }): Promise<LineReturnPostResult> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      const key = globalThis.crypto?.randomUUID?.() ?? `grn-line-return-${grnId}-${lineId}-${reason.length}`;
+      try {
+        const res = await fetchFn(`/v1/inventory/goods-receipt/${encodeURIComponent(grnId)}/lines/${encodeURIComponent(lineId)}/returned`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ reason }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { alreadyReturned?: boolean; whatHappened?: string; error?: { whatHappened?: string } };
+        if (res.status >= 200 && res.status < 300) return { result: body.alreadyReturned === true ? 'already_returned' : 'returned' };
+        return { result: 'refused', reason: body.error?.whatHappened ?? body.whatHappened ?? 'head office did not record the return' };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
   };
 }
 
@@ -2772,17 +2802,41 @@ export function goodsReceiptPortsFromData(
 export function bootGoodsReceipt(
   data: GoodsReceiptScreenData | undefined,
   snapshot?: GoodsReceiptData,
+  returnPort?: GrnLineReturnPort,
 ): GoodsReceiptSession | null {
   if (data === undefined) return null;
   return createGoodsReceiptSession(
     { userId: data.userId === undefined ? null : data.userId },
-    goodsReceiptPortsFromData(data, snapshot),
+    goodsReceiptPortsFromData(data, snapshot, returnPort),
   );
 }
 
 /** Read the live GRN list — one GET, read-only — and fold it into the review snapshot. Returns null when nothing
  *  could be read, so the shell keeps whatever it was showing. Each delivery's checked outcome (its valued
  *  discrepancies and whether it needs a second person) is carried through as-is; nothing is recomputed here. */
+/** Batch 2: the held lines a second person disposed of as a RETURN, and whether each has gone back — head office's record
+ *  (`dispositions`, `lineReturns`, `governanceFlags`), never recomputed: a line is "waiting" until head office lists its return. */
+function returnLinesOf(g: Record<string, unknown>, lines: readonly Record<string, unknown>[]): GrnReturnLineView[] {
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const dispositions = Array.isArray(g['dispositions']) ? g['dispositions'] as Record<string, unknown>[] : [];
+  const returns = Array.isArray(g['lineReturns']) ? g['lineReturns'] as Record<string, unknown>[] : [];
+  const flags = Array.isArray(g['governanceFlags']) ? (g['governanceFlags'] as unknown[]).filter((f): f is string => typeof f === 'string') : [];
+  const needsCount = g['assembledFrom'] !== undefined && g['assembledFrom'] !== null && (flags.includes('cold_chain_held_but_on_hand') || flags.includes('scan_posting_disagrees'));
+  const money = (v: unknown) => (typeof v === 'object' && v !== null ? v as { minor?: number; currency?: string } : {});
+  return dispositions.filter((d) => d['disposition'] === 'return').flatMap((d): GrnReturnLineView[] => {
+    const lineId = String(d['lineId'] ?? '');
+    const line = lines.find((l) => l['lineId'] === lineId);
+    if (line === undefined || num(line['quarantinedMinor']) <= 0) return [];
+    const gone = returns.find((r) => r['lineId'] === lineId);
+    return [{
+      lineId, productId: String(d['productId'] ?? line['productId'] ?? ''), quantityMinor: num(line['quarantinedMinor']), uom: String(line['uom'] ?? 'ea'),
+      valueMinor: num(gone?.['valueMinor'] ?? d['valueMinor']), currency: String(gone?.['currency'] ?? money(line['unitCost']).currency ?? 'INR'),
+      decidedBy: String(d['decidedBy'] ?? ''), state: gone === undefined ? 'awaiting_return' : 'returned',
+      returnedBy: gone === undefined ? null : String(gone['returnedBy'] ?? ''), needsCount: gone === undefined && needsCount,
+    }];
+  });
+}
+
 export async function fetchGoodsReceipt(): Promise<GoodsReceiptData | null> {
   const body = await getInventory('/v1/inventory/goods-receipt');
   if (body === null || !Array.isArray(body['receipts'])) return null;
@@ -2815,6 +2869,7 @@ export async function fetchGoodsReceipt(): Promise<GoodsReceiptData | null> {
       quarantinedMinor: lines.reduce((s, l) => s + num(l['quarantinedMinor']), 0),
       rejectedMinor: lines.reduce((s, l) => s + num(l['rejectedMinor']), 0),
       discrepancies,
+      returnLines: returnLinesOf(g, lines),
     };
   });
 
@@ -5831,14 +5886,15 @@ if (browserWindow !== undefined) {
   // inventory.availability.read), then the shell refreshes the GRN list with a live GET. It changes nothing —
   // receiving is captured on the handheld, on the offline dock (§31); this only reviews the outcome.
   const goodsReceiptData = browserWindow.goodsReceiptData;
-  const goodsReceipt = bootGoodsReceipt(goodsReceiptData, undefined);
+  const grnLineReturnPort = openGrnLineReturnPort();
+  const goodsReceipt = bootGoodsReceipt(goodsReceiptData, undefined, grnLineReturnPort);
   if (goodsReceipt !== null) {
     browserWindow.goodsReceiptSession = goodsReceipt;
     browserWindow.goodsReceipt = {
       refresh: fetchGoodsReceipt,
       present: (snapshot) => createGoodsReceiptSession(
         { userId: goodsReceiptData?.userId === undefined ? null : goodsReceiptData.userId },
-        goodsReceiptPortsFromData(goodsReceiptData, snapshot),
+        goodsReceiptPortsFromData(goodsReceiptData, snapshot, grnLineReturnPort),
       ),
     };
   }

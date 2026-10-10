@@ -2,12 +2,14 @@ import { describe, it, expect } from 'vitest';
 import {
   GOODS_RECEIPT_COPY, COPY_KEYS, createGoodsReceiptSession,
   type GoodsReceiptPorts, type GoodsReceiptData, type GrnRecordView, type GrnDiscrepancyView,
+  type GrnLineReturnPort, type GrnReturnLineView, type LineReturnPostResult, type LineReturnOutcome, quantityForPerson,
 } from '../../apps/web-erp/src/goods-receipt-session';
 import { bilingualGaps } from '../../packages/ui/src/index';
 
 // The goods-receipt REVIEW screen (M07-FR-02/03 · API-04 · P-03 control-by-exception · P-08 no silent failure).
 // A read-only manager view over the durable GRN records: deliveries needing a second person first (§28), then
-// the ones with a valued difference from the order (worst money first), then the clean ones. Nothing here writes.
+// the ones with a valued difference from the order (worst money first), then the clean ones. Its one write (Batch 2)
+// records a held line disposed of as a return as gone back to the supplier — through a port, proven below.
 
 const session = (
   data: GoodsReceiptData,
@@ -157,5 +159,65 @@ describe('the summary and freshness are facts on the page', () => {
   it('the overall "as of" is the timestamp the list was read', () => {
     const view = session({ receipts: [grn()], asAt: '2026-09-19T08:30:00.000Z' }).view('en');
     expect(view.asOf).toBe('2026-09-19T08:30:00.000Z');
+  });
+});
+
+describe('Batch 2 · a held line disposed of as a RETURN is recorded as gone back to the supplier', () => {
+  const ret = (over: Partial<GrnReturnLineView> = {}): GrnReturnLineView => ({
+    lineId: 'l2', productId: 'p-paneer', quantityMinor: 2_500, uom: 'kg', valueMinor: 75_000, currency: 'INR', decidedBy: 'u-acct',
+    state: 'awaiting_return', returnedBy: null, needsCount: false, ...over,
+  });
+  const data: GoodsReceiptData = { receipts: [
+    grn({ grnId: 'g-held', number: 'GRN-3', returnLines: [ret()] }),
+    grn({ grnId: 'g-scan', number: 'GRN-4', returnLines: [ret({ lineId: 'l1', productId: 'p-milk', quantityMinor: 6, uom: 'ea', needsCount: true })] }),
+    grn({ grnId: 'g-done', number: 'GRN-5', returnLines: [ret({ state: 'returned', returnedBy: 'u-mgr' })] }),
+  ] };
+  const withPort = (answer: LineReturnPostResult = { result: 'returned' }, over: Partial<GoodsReceiptPorts> = {}) => {
+    const sent: unknown[] = [];
+    const returnPort: GrnLineReturnPort = { post: async (i) => { sent.push(i); return answer; } };
+    return { sent, ports: { mayRecordReturn: () => true, returnPort: () => returnPort, ...over } };
+  };
+
+  it('offers only the waiting line (never one needing a count, never one gone); every state in words; kg read as kg (OB-31)', async () => {
+    const { sent, ports } = withPort();
+    const s = session(data, ports);
+    const v = s.view('en');
+    expect(v.canRecordReturn).toBe(true);
+    expect(v.awaitingReturn.map((a) => `${a.grnId}|${a.line.lineId}`)).toEqual(['g-held|l2']);
+    expect(v.awaitingReturn[0]!.line.quantityLabel).toBe('2.5 kg');
+    const labels = v.receipts.flatMap((r) => r.returnLines.map((l) => l.stateLabel));
+    expect(labels).toEqual(expect.arrayContaining(['Waiting to go back to the supplier', 'Gone back to the supplier', 'Count it first — handheld scans may have put it on the shelf']));
+    expect(await s.recordReturn({ grnId: 'g-held', lineId: 'l2', reason: 'driver collected it' })).toEqual({ outcome: 'returned' });
+    expect(sent).toEqual([{ grnId: 'g-held', lineId: 'l2', reason: 'driver collected it' }]);
+    expect(s.presentReturnOutcome('ta', { outcome: 'returned' }).tone).toBe('ok');
+  });
+
+  it('refuses — with nothing sent — a line needing a count, one already gone, an unknown one, no reason, no right, no link, nobody named', async () => {
+    const cases: [Partial<GoodsReceiptPorts>, string | null, { grnId: string; lineId: string; reason: string }, string][] = [
+      [{}, 'u-mgr', { grnId: 'g-scan', lineId: 'l1', reason: 'collected' }, 'needs_count'],
+      [{}, 'u-mgr', { grnId: 'g-done', lineId: 'l2', reason: 'collected' }, 'not_awaiting'],
+      [{}, 'u-mgr', { grnId: 'g-held', lineId: 'l9', reason: 'collected' }, 'line_unknown'],
+      [{}, 'u-mgr', { grnId: 'g-held', lineId: 'l2', reason: ' ' }, 'reason_missing'],
+      [{ mayRecordReturn: () => false }, 'u-mgr', { grnId: 'g-held', lineId: 'l2', reason: 'collected' }, 'not_permitted'],
+      [{ returnPort: () => null }, 'u-mgr', { grnId: 'g-held', lineId: 'l2', reason: 'collected' }, 'no_link'],
+      [{}, null, { grnId: 'g-held', lineId: 'l2', reason: 'collected' }, 'not_permitted'],
+    ];
+    for (const [over, userId, input, outcome] of cases) {
+      const { sent, ports } = withPort({ result: 'returned' }, over);
+      const s = session(data, ports, userId);
+      expect(await s.recordReturn(input), outcome).toEqual({ outcome });
+      expect(sent, outcome).toEqual([]);
+      expect(s.presentReturnOutcome('en', { outcome } as LineReturnOutcome).label.length, outcome).toBeGreaterThan(0);
+    }
+    expect(session(data, { mayRecordReturn: () => false }).view('en')).toMatchObject({ canRecordReturn: false, awaitingReturn: [] });
+  });
+
+  it('passes the cloud\'s refusal on verbatim; a quantity reads in its own unit', async () => {
+    const { ports } = withPort({ result: 'refused', reason: 'Line l2 has no disposition yet' });
+    const s = session(data, ports);
+    const o = await s.recordReturn({ grnId: 'g-held', lineId: 'l2', reason: 'collected' });
+    expect(o).toEqual({ outcome: 'refused', reason: 'Line l2 has no disposition yet' });
+    expect(s.presentReturnOutcome('en', o).label).toContain('Line l2 has no disposition yet');
+    expect([quantityForPerson(12, 'EA'), quantityForPerson(250, 'kg'), quantityForPerson(1_500, 'L')]).toEqual(['12 ea', '0.25 kg', '1.5 L']);
   });
 });

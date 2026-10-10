@@ -29,8 +29,9 @@ import { readLog } from '../../edge/store-edge/src/file-log';
  *     box, "posted" only on the box's word), and — without the rights — sees no control and a plain not-permitted state;
  *   • (Batch 2) RESOLVES an issue that arrived short — offered only to a person who neither issued nor counted it, a click
  *     POSTs exactly `{ reasonCode, note, lines }` (only what turned up, no resolver in the body) to the issue's resolution
- *     URL, the register is re-read and says who resolved it and what was lost; the issuer and the counter are refused ON
- *     THE SCREEN with nothing sent; a cloud refusal is shown verbatim.
+ *     URL, the register is re-read and the resolved indent has left it (it needs nobody); an issue already resolved on an
+ *     indent still open says who resolved it and what was lost; the issuer and the counter are refused ON THE SCREEN with
+ *     nothing sent; a cloud refusal is shown verbatim.
  *
  * Head office delivery from the box is proven by `tests/integration/floor-indents-synced.test.ts`.
  * The browser binary is the environment's pre-installed Chromium; where none is present the suite SKIPS.
@@ -90,9 +91,16 @@ function cloudList(): CloudRow[] {
   ];
 }
 
-/** Batch 2: an issue the floor counted in 3 short (u-back issued it, u-floor2 counted it) — its shortfall still open. */
+/** Batch 2: an issue the floor counted in 3 short (u-back issued it, u-floor2 counted it) — its shortfall still open; and an
+ *  indent still owed whose first issue's shortfall u-acct already resolved (2 lost at ₹50). */
 function shortList(): CloudRow[] {
   return [
+    { indentId: 'ind-5', state: 'issuing', requestedBy: 'u-floor', requestedAt: '2026-09-30T05:00:00.000Z', approvedBy: 'u-mgr', fromLocationId: 'S1-BACK', toLocationId: 'S1', reason: null,
+      flags: ['partial_issue', 'partial_receipt'], attention: ['owed_by_back_store'], needsAttention: true,
+      totals: { lines: [cloudLine({ allocatedMinor: 20, issuedMinor: 10, receivedMinor: 8, shortfallMinor: 2, outstandingMinor: 10 })] },
+      issues: [{ issueId: 'is-0', issuedBy: 'u-back', issuedAt: '2026-09-30T05:30:00.000Z', state: 'received', receivedBy: 'u-floor2',
+        lines: [{ productId: 'RICE', batchId: null, quantityMinor: 10 }], shortfall: [{ productId: 'RICE', batchId: null, quantityMinor: 2, valueMinor: 10_000 }],
+        shortfallResolution: { resolvedBy: 'u-acct', reasonCode: 'theft_suspected', lines: [{ productId: 'RICE', lostMinor: 2, lostValueMinor: 10_000 }] } }] },
     { indentId: 'ind-4', state: 'received', requestedBy: 'u-floor', requestedAt: '2026-09-30T06:00:00.000Z', approvedBy: 'u-mgr', fromLocationId: 'S1-BACK', toLocationId: 'S1', reason: null,
       flags: ['partial_receipt'], attention: ['arrived_short'], needsAttention: true,
       totals: { lines: [cloudLine({ allocatedMinor: 20, issuedMinor: 20, receivedMinor: 17, shortfallMinor: 3 })] },
@@ -147,11 +155,10 @@ async function startShellCloudAndSocket(rec: Recorder): Promise<{ base: string; 
             json(rec.resolutionStatus, { error: { code: 'shortfall_already_resolved', whatHappened: 'u-other resolved this shortfall at 09:00; a second resolution would be a second truth.', wasItSaved: 'not_saved', nextSafeAction: 'Read the indent again.' } });
             return;
           }
-          const found = ((body['lines'] ?? []) as { foundMinor: number }[]).reduce((s, l) => s + l.foundMinor, 0);
-          // The cloud's own state change: the issue now carries its resolution (resolved by the CALLER, never a body field).
-          rec.rows = rec.rows.map((r) => (r.indentId !== indentId ? r : { ...r, issues: r.issues.map((i) => (i.issueId !== issueId ? i : {
-            ...i, shortfallResolution: { resolvedBy: 'u-mgr', reasonCode: String(body['reasonCode']), lines: [{ productId: 'RICE', lostMinor: 3 - found, lostValueMinor: (3 - found) * 45_000 }] },
-          })) }));
+          // The cloud's own state change, as the real register makes it: a received indent whose only shortfall is now
+          // resolved needs nobody, so `?open=true` no longer lists it (tests/integration/the-screens-drive-the-real-routes).
+          void issueId;
+          rec.rows = rec.rows.filter((r) => r.indentId !== indentId);
           json(201, { alreadyResolved: false });
           return;
         }
@@ -424,6 +431,11 @@ describe.skipIf(!HAVE_BROWSER)('the floor indent screen, end to end in a real br
     await page.waitForSelector('#resolver:not([hidden])');
     expect(await page.getAttribute('#rows li.row[data-indent-id="ind-4"] ul.issues li', 'data-short')).toBe('open');
     expect((await page.textContent('#rows li.row[data-indent-id="ind-4"] ul.issues li')) ?? '').toContain('short: RICE × 3');
+    // An issue already resolved says by whom and what was lost — in words — and is not offered again.
+    expect(await page.getAttribute('#rows li.row[data-indent-id="ind-5"] ul.issues li', 'data-short')).toBe('resolved');
+    const resolvedText = (await page.textContent('#rows li.row[data-indent-id="ind-5"] ul.issues li')) ?? '';
+    expect(resolvedText).toContain('shortfall resolved by u-acct');
+    expect(resolvedText).toContain('lost ₹100.00');
     expect(await page.$$eval('#resolve-issue option', (els) => els.map((e) => (e as unknown as { value: string }).value))).toEqual(['ind-4|is-2']);
     // The reasons are the stock adjustment's own, in words.
     expect(await page.$$eval('#resolve-reason option', (els) => els.map((e) => (e as unknown as { value: string }).value))).toEqual(['damaged', 'expired', 'miscount', 'found', 'theft_suspected', 'other']);
@@ -444,11 +456,8 @@ describe.skipIf(!HAVE_BROWSER)('the floor indent screen, end to end in a real br
       body: { reasonCode: 'miscount', note: 'searched the back store and the trolley bay', lines: [{ productId: 'RICE', foundMinor: 1 }] },
     });
     await page.waitForFunction(() => ((globalThis as unknown as IndentsWindow).document.getElementById('result-text')?.textContent ?? '').includes('Shortfall resolved'), undefined, { timeout: 10_000 });
-    // Re-read: the issue says who resolved it and what was lost, and is offered no more.
-    await page.waitForSelector('#rows li.row[data-indent-id="ind-4"] ul.issues li[data-short="resolved"]', { timeout: 10_000 });
-    const issueText = (await page.textContent('#rows li.row[data-indent-id="ind-4"] ul.issues li')) ?? '';
-    expect(issueText).toContain('shortfall resolved by u-mgr');
-    expect(issueText).toContain('lost ₹900.00');
+    // Re-read: the resolved indent needs nobody and has left the open register; nothing is offered any more.
+    await page.waitForFunction(() => (globalThis as unknown as IndentsWindow).document.querySelectorAll('#rows li.row[data-indent-id="ind-4"]').length === 0, undefined, { timeout: 10_000 });
     expect(await page.$$eval('#resolve-issue option', (els) => els.length)).toBe(0);
     expect(((await page.textContent('#resolve-none')) ?? '').length).toBeGreaterThan(0);
   });

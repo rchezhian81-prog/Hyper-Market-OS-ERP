@@ -628,11 +628,13 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1: only the caller's branches' indents
         const all = (await deps.indents(ctx.tenantId)).filter((i) => scope.covers(i.toLocationId) || scope.covers(i.fromLocationId));
         const CLOSED: readonly string[] = ['received', 'rejected', 'cancelled'];
+        const needing = (i: FloorIndent): boolean => indentAttention(i).length > 0;
+        // Batch 2 (P-03 · P-08): "open" keeps an indent that is closed in STATE but still needs a person — a received indent
+        // whose shortfall nobody has resolved is not done; hiding it would hide a valued loss from the floor screen.
         const kept = all
           .filter((i) => (isStr(q['toLocationId']) ? i.toLocationId === q['toLocationId'] : true))
           .filter((i) => (isStr(q['state']) ? i.state === q['state'] : true))
-          .filter((i) => (q['open'] === 'true' ? !CLOSED.includes(i.state) : true));
-        const needing = (i: FloorIndent): boolean => indentAttention(i).length > 0;
+          .filter((i) => (q['open'] === 'true' ? !CLOSED.includes(i.state) || needing(i) : true));
         // Awaiting approval FIRST (a decision nobody has made outranks a trolley in progress, P-03), then oldest first.
         const rank = (i: FloorIndent): number => (i.state === 'requested' ? 0 : 1);
         const first = kept.filter(needing).sort((a, b) => rank(a) - rank(b) || a.requestedAt.localeCompare(b.requestedAt) || a.indentId.localeCompare(b.indentId));
