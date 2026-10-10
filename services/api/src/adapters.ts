@@ -259,7 +259,7 @@ import type { AssignmentsDeps, WaveAssignment, RouteAssignment } from '../../ful
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
 import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent, type MessageTemplateVersion } from '../../customer/src/notification-queue';
-import type { NotificationTransport } from '../../../packages/notifications/src/index';
+import type { NotificationTransport, MessagingBudget } from '../../../packages/notifications/src/index';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { StockLossDeps, StockLossJournal } from '../../finance/src/stock-losses';
 import type { B2BPostingDeps, B2BPostable, B2BJournal } from '../../finance/src/b2b-postings';
@@ -9116,6 +9116,14 @@ export function notificationQueueAdapter(input: {
     },
     consentRecords: (tenantId, customerId) => allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
     ...(input.transport === undefined ? {} : { transport: input.transport }),
+    // PA-08 round 4: the owner's messaging budget — a new version each change, the newest in force.
+    budget: (tenantId) => latest<MessagingBudget>(input.store, tenantId, streamName(STREAM.org, 'messaging-budget'), 'MessagingBudgetSet'),
+    recordBudget: async (tenantId, b) => {
+      await input.store.append(tenantId, streamName(STREAM.org, 'messaging-budget'), makeEvent({
+        id: `msg-budget-v${b.version}`, type: 'MessagingBudgetSet', occurredAt: b.setAt,
+        idempotencyKey: `msg-budget-${tenantId}-v${b.version}`, source: 'api/customer', payload: b,
+      }));
+    },
     record: async (tenantId, event, key) => {
       const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
       await input.store.append(tenantId, stream, makeEvent({

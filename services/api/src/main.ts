@@ -25,6 +25,7 @@ import { SqlSnapshotStore, type SnapshotStore } from '../../../packages/persiste
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { pgPoolClient } from '../../../packages/persistence/src/pg-client';
+import { scopedTo } from '../../../packages/persistence/src/sql-client';
 import { DurableTenantSettings, SETTINGS } from '../../../packages/tenant/src/index';
 import {
   buildRouter, loadConfig, startHttpServer, CLOUD_API_CONFIG, SqlIdempotencyStore, SqlAuditSink,
@@ -220,7 +221,8 @@ import { segmentRoutes } from '../../customer/src/segments';
 import { customerDuplicatesRoutes } from '../../customer/src/duplicates';
 import { campaignRoutes } from '../../customer/src/campaigns';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
-import { notificationQueueRoutes } from '../../customer/src/notification-queue';
+import { notificationQueueRoutes, drainNotificationQueue } from '../../customer/src/notification-queue';
+import { startNotificationWorker, type NotificationWorker } from '../../customer/src/notification-worker';
 import { NotificationQueue, type NotificationTransport } from '../../../packages/notifications/src/index';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { drReadinessRoutes } from '../../platform/src/dr-readiness';
@@ -1562,6 +1564,8 @@ export interface RunningApi {
   /** The port actually bound — the configured one, or the ephemeral one the kernel chose for `PORT=0`. */
   readonly port: number;
   readonly routeCount: number;
+  /** PA-08: the notification sender running on its own timer — present only when a message provider is configured. */
+  readonly notificationWorker?: NotificationWorker;
   /** Stops accepting, lets in-flight requests finish, then closes the database pool. */
   readonly stop: () => Promise<void>;
 }
@@ -1573,10 +1577,22 @@ export interface RunningApi {
  * can start the SAME service on an ephemeral port against a real database and stop it, instead of a copy that could
  * drift from what the container runs.
  */
+/**
+ * The outbound providers a deployment plugs in (PA-08). None is configured by `main()` today: every message provider is
+ * an external gate (credentials, certification; the SMS provider is release R4, OB-29). A provider adapter, once
+ * certified, is handed in here — and the notification worker starts with it. Tests hand in the recording adapter.
+ */
+export interface ApiProviders {
+  readonly notificationTransport?: NotificationTransport;
+  /** How often the notification worker passes over every shop (default 30 s). */
+  readonly notificationWorkerIntervalMs?: number;
+}
+
 export async function startApi(
   env: Readonly<Record<string, string | undefined>> = process.env,
   out: (text: string) => void = (text) => { process.stdout.write(text); },
   err: (text: string) => void = (text) => { process.stderr.write(text); },
+  providers: ApiProviders = {},
 ): Promise<RunningApi | undefined> {
   // 1 — Configuration. Every problem at once, then stop.
   const config = loadConfig(CLOUD_API_CONFIG, env);
@@ -1692,6 +1708,7 @@ export async function startApi(
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
     revocations,
+    ...(providers.notificationTransport === undefined ? {} : { notificationTransport: providers.notificationTransport }),
     ...(identityDirectory === undefined ? {} : { identityDirectory }),
     ...(settings['IDP_OIDC_TENANT_ID'] === undefined ? {} : { identityDirectoryTenantId: settings['IDP_OIDC_TENANT_ID'] }),
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
@@ -1814,10 +1831,33 @@ export async function startApi(
   const routeCount = built.router!.list().length;
   out(`sre-api listening on ${port}, ${routeCount} routes\n`);
 
+  // PA-08 round 4: the notification sender runs HERE, on its own timer, for every registered shop — the queue no longer
+  // waits for somebody to press "drain". With no provider configured there is nothing to send through: said plainly,
+  // and every message stays queued and visible until one is.
+  let notificationWorker: NotificationWorker | undefined;
+  const transport = providers.notificationTransport;
+  if (transport === undefined) {
+    out('notifications: no message provider is configured — messages stay queued (visible) until one is certified and configured\n');
+  } else {
+    const queueDeps = notificationQueueAdapter({ store, now, transport });
+    const register = scopedTo(pgPoolClient(db), '*');
+    notificationWorker = startNotificationWorker({
+      // Only the shops that have ever queued a message (the stream-type index answers it) — not every tenant on file.
+      tenants: async () => (await register.query<{ tenant_id: string }>("SELECT DISTINCT tenant_id::text AS tenant_id FROM event_ledger WHERE type = 'NotificationQueue' ORDER BY 1", [])).map((r) => r.tenant_id),
+      drain: (tenantId) => drainNotificationQueue(queueDeps, tenantId, 'system:notification-worker'),
+      intervalMs: providers.notificationWorkerIntervalMs ?? 30_000,
+      now,
+      say: (line) => { out(`${line}\n`); },
+    });
+    out(`notifications: the sender runs every ${Math.round((providers.notificationWorkerIntervalMs ?? 30_000) / 1000)} s through ${transport.name}\n`);
+  }
+
   return {
     port,
     routeCount,
+    ...(notificationWorker === undefined ? {} : { notificationWorker }),
     stop: async () => {
+      if (notificationWorker !== undefined) await notificationWorker.stop();
       await server.stop();
       await db.end();
     },
