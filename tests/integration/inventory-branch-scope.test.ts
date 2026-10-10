@@ -163,6 +163,33 @@ describe('every stock family keeps to the caller\'s branches (PA-01-r1 sweep)', 
   });
 });
 
+describe('waste, scrap and packaging keep to the caller\'s branches (PA-01-r1 sweep, the families named in Wave 2b-ii)', () => {
+  it('br-2\'s waste, scrap and packaging cannot be recorded or read by the br-1 manager; coverage of br-2 cannot be dropped', async () => {
+    const h = await twoBranches(apiHarness(), A);
+    const waste = (branchId: string) => ({ branchId, departmentId: 'grocery', productId: 'P1', source: 'damage', at: AT, valueMinor: 1_000, disposal: 'landfill' });
+    expect(codeOf(await post(h, MGR1, '/v1/waste/records/W2', waste('br-2'), 'w2'))).toBe('outside_your_branch_scope');
+    expect((await post(h, MGR1, '/v1/waste/records/W1', waste('br-1'), 'w1')).status).toBeLessThan(300);
+    const window = { from: '2026-08-01', to: '2026-08-31' };
+    expect(codeOf(await get(h, MGR1, '/v1/waste/report', { branchId: 'br-2', ...window }))).toBe('outside_your_branch_scope');
+    expect((await get(h, MGR1, '/v1/waste/report', { branchId: 'br-1', ...window })).status).toBe(200);
+    expect(codeOf(await get(h, MGR1, '/v1/waste/compare', { branchId: 'br-2', from1: '2026-07-01', to1: '2026-07-31', from2: '2026-08-01', to2: '2026-08-31' }))).toBe('outside_your_branch_scope');
+    // coverage is one list for the shop: the owner sets both branches; the br-1 manager may not drop br-2's row
+    const both = { expected: [{ branchId: 'br-1', departmentId: 'grocery' }, { branchId: 'br-2', departmentId: 'grocery' }] };
+    expect((await post(h, OWNER, '/v1/waste/coverage', both, 'cov-owner')).status).toBeLessThan(300);
+    expect(codeOf(await post(h, MGR1, '/v1/waste/coverage', { expected: [{ branchId: 'br-1', departmentId: 'grocery' }] }, 'cov-drop'))).toBe('outside_your_branch_scope');
+    expect(codeOf(await post(h, MGR1, '/v1/waste/coverage', { expected: [...both.expected, { branchId: 'br-2', departmentId: 'bakery' }] }, 'cov-add'))).toBe('outside_your_branch_scope');
+    expect((await post(h, MGR1, '/v1/waste/coverage', { expected: [...both.expected, { branchId: 'br-1', departmentId: 'bakery' }] }, 'cov-mine')).status).toBeLessThan(300);
+    // scrap: br-2's review is refused by name
+    expect(codeOf(await get(h, MGR1, '/v1/scrap/review', { branchId: 'br-2', ...window }))).toBe('outside_your_branch_scope');
+    // packaging: a movement or a position at br-2 is refused by name
+    expect((await post(h, OWNER, '/v1/packaging/items/BAG', { name: 'Carry bag', kind: 'carry_bag', returnable: false }, 'bag')).status).toBeLessThan(300);
+    expect(codeOf(await post(h, MGR1, '/v1/packaging/items/BAG/movements/m2', { branchId: 'br-2', kind: 'received', qty: 100, at: AT }, 'pm2'))).toBe('outside_your_branch_scope');
+    expect((await post(h, MGR1, '/v1/packaging/items/BAG/movements/m1', { branchId: 'br-1', kind: 'received', qty: 100, at: AT }, 'pm1')).status).toBeLessThan(300);
+    expect(codeOf(await get(h, MGR1, '/v1/packaging/items/BAG/position', { branchId: 'br-2' }))).toBe('outside_your_branch_scope');
+    expect((await get(h, OWNER, '/v1/packaging/items/BAG/position', { branchId: 'br-2' })).status).toBe(200);
+  });
+});
+
 // ── on real PostgreSQL ────────────────────────────────────────────────────────────────────────────────────────
 const DATABASE_URL = process.env['DATABASE_URL'];
 const PG_TENANT = `e${Date.now().toString(16).slice(-7)}-eeee-4eee-8eee-${'e'.repeat(12)}`;

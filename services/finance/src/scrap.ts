@@ -7,7 +7,7 @@
 // RATE, not the person. The rule is the pure `reviewScrap` in `packages/waste` — another unfed engine.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, assertBranchInScope } from '../../kernel/src/index';
 import {
   reviewScrap,
   type ScrapSale, type ScrapCategory, type ScrapDisposal,
@@ -49,6 +49,7 @@ export function scrapRoutes(deps: ScrapDeps): readonly Route[] {
             nextSafeAction: 'Send the disposal details. Nothing was recorded.',
           });
         }
+        assertBranchInScope(ctx, b['branchId'] as string); // PA-01-r1: only at a branch the caller holds
         const sale: ScrapSale = {
           scrapId: b['scrapId'] as string, tenantId: ctx.tenantId, branchId: b['branchId'] as string,
           category: b['category'] as ScrapCategory, disposal: b['disposal'] as ScrapDisposal,
@@ -69,8 +70,9 @@ export function scrapRoutes(deps: ScrapDeps): readonly Route[] {
       permission: 'scrap.sale.record', idempotent: true,
       handler: async (ctx) => {
         const scrapId = ctx.params['scrapId'] ?? '';
-        const known = (await deps.scrapSales(ctx.tenantId)).some((s) => s.scrapId === scrapId);
-        if (!known) throw notFound(`scrap sale ${scrapId}`);
+        const known = (await deps.scrapSales(ctx.tenantId)).find((s) => s.scrapId === scrapId);
+        if (known === undefined) throw notFound(`scrap sale ${scrapId}`);
+        assertBranchInScope(ctx, known.branchId); // PA-01-r1: a direct id at another branch stays outside
         await deps.recordPosted(ctx.tenantId, scrapId, deps.now());
         return { status: 200, body: { scrapId, postedToFinance: true } };
       },
@@ -83,6 +85,7 @@ export function scrapRoutes(deps: ScrapDeps): readonly Route[] {
         if (typeof branchId !== 'string' || branchId.trim() === '' || !isDate(from) || !isDate(to)) {
           throw apiError(400, { code: 'review_needs_a_branch_and_window', whatHappened: 'A scrap review needs ?branchId=&from=YYYY-MM-DD&to=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send the branch and window. A review reads, it never writes.' });
         }
+        assertBranchInScope(ctx, branchId); // PA-01-r1: another branch's scrap is refused by name
         const review = reviewScrap({ branchId, sales: await deps.scrapSales(ctx.tenantId), from, to });
         return { status: 200, body: { ...review, asAt: deps.now() } };
       },

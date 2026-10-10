@@ -8,7 +8,7 @@
 // The rule is the pure `buildSustainabilityReport` / `compareWaste` in `packages/waste/src/sustainability.ts`.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertBranchInScope } from '../../kernel/src/index';
 import {
   buildSustainabilityReport, compareWaste,
   type WasteRecord, type WasteSource, type CoverageInput,
@@ -59,6 +59,7 @@ export function wasteRoutes(deps: WasteDeps): readonly Route[] {
             nextSafeAction: 'Send the waste fields. Nothing was recorded.',
           });
         }
+        assertBranchInScope(ctx, b['branchId'] as string); // PA-01-r1: waste is recorded only at a branch the caller holds
         const record: WasteRecord = {
           wasteId, branchId: b['branchId'] as string, departmentId: b['departmentId'] as string,
           productId: b['productId'] as string, source: b['source'] as WasteSource, at: b['at'] as string,
@@ -82,6 +83,22 @@ export function wasteRoutes(deps: WasteDeps): readonly Route[] {
           throw apiError(400, { code: 'not_readable_as_coverage', whatHappened: 'Coverage needs { expected: [{ branchId, departmentId }] } and optional departmentNames.', wasItSaved: 'not_saved', nextSafeAction: 'Send the expected reporting units. Nothing was set.' });
         }
         const expected = (expectedRaw as { branchId: string; departmentId: string }[]).map((e) => ({ branchId: e.branchId, departmentId: e.departmentId }));
+        // PA-01-r1: coverage is one list for the shop. A branch-limited caller may name only branches they hold, and may not
+        // drop or change another branch's rows (the list is replaced whole, so those must come back exactly as stored).
+        if (ctx.scope !== 'all') {
+          const held = new Set(ctx.scope ?? []);
+          const outside = (rows: readonly { branchId: string; departmentId: string }[]) => rows.filter((r) => !held.has(r.branchId));
+          const keyOf = (rows: readonly { branchId: string; departmentId: string }[]): string =>
+            rows.map((r) => `${r.branchId}\u001f${r.departmentId}`).sort().join('\n');
+          const stored = outside((await deps.coverage(ctx.tenantId)).expected);
+          const sent = outside(expected);
+          if (keyOf(stored) !== keyOf(sent)) {
+            // name the branch whose rows would change: one sent that is not stored, else one stored that was dropped
+            const storedKeys = new Set(stored.map((r) => `${r.branchId}\u001f${r.departmentId}`));
+            const changed = sent.find((r) => !storedKeys.has(`${r.branchId}\u001f${r.departmentId}`)) ?? stored[0];
+            assertBranchInScope(ctx, changed?.branchId ?? '(another branch)');
+          }
+        }
         const namesRaw = (b['departmentNames'] as Record<string, unknown> | undefined) ?? {};
         const departmentNames: Record<string, string> = {};
         for (const [k, v] of Object.entries(namesRaw)) if (typeof v === 'string') departmentNames[k] = v;
@@ -99,6 +116,7 @@ export function wasteRoutes(deps: WasteDeps): readonly Route[] {
         const from = ctx.query['from'];
         const to = ctx.query['to'];
         if (!isStr(branchId) || !isDate(from) || !isDate(to)) throw apiError(400, { code: 'report_needs_branch_and_window', whatHappened: 'The waste report needs ?branchId=, ?from=YYYY-MM-DD and ?to=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send all three. A report reads, it never writes.' });
+        assertBranchInScope(ctx, branchId); // PA-01-r1: another branch's report is refused by name
         const cov = await deps.coverage(ctx.tenantId);
         const report = buildSustainabilityReport({
           branchId, from, to, waste: await deps.records(ctx.tenantId),
@@ -121,6 +139,7 @@ export function wasteRoutes(deps: WasteDeps): readonly Route[] {
         }
         const cov = await deps.coverage(ctx.tenantId);
         const waste = await deps.records(ctx.tenantId);
+        assertBranchInScope(ctx, branchId); // PA-01-r1
         const r1 = buildSustainabilityReport({ branchId, from: from1, to: to1, waste, coverage: { expected: cov.expected }, departmentNames: cov.departmentNames });
         const r2 = buildSustainabilityReport({ branchId, from: from2, to: to2, waste, coverage: { expected: cov.expected }, departmentNames: cov.departmentNames });
         const trend = compareWaste({
