@@ -305,6 +305,9 @@ const REPORTING_RECORDS: readonly Producer[] = [
   // purchase-order register and goods receipts, and the loyalty points ledger (PF-09).
   'sales_rung_at_the_till', 'stock_movements_recorded', 'cost_prices_on_the_catalogue', 'departments_on_the_catalogue',
   'what_was_ordered_from_suppliers', 'what_arrived_from_suppliers', 'loyalty_points_accrued',
+  // Round 4: the posted day book (M23), the imported settlement and bank files (PF-12), and each store computer's own
+  // report of what it holds unsent (PA-04) — each read by its report's producer.
+  'journals_posted_to_the_ledger', 'bank_and_gateway_statements', 'the_boxs_own_outbox',
 ];
 /** The named reports head office can work out — each with a producer over governed source rows (EA-06). */
 const REPORTING_PRODUCED: readonly string[] = PRODUCED_AT_HEAD_OFFICE;

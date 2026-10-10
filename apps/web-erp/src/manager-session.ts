@@ -105,7 +105,8 @@ export interface ManagerPorts {
    * writes the locked day durably, and queues `StoreDayClosed` for head office on its own sync agent.
    * The screen shows whatever the box decides; it never reports a close the box did not make.
    */
-  requestDayClose?(input: { readonly dayCloseId: string; readonly closedBy: string }): Promise<BoxCloseOutcome>;
+  /** Round 4: `closerPin` is the closer's own till PIN, keyed by them — the box verifies it (a typed name closes nothing). */
+  requestDayClose?(input: { readonly dayCloseId: string; readonly closedBy: string; readonly closerPin?: string }): Promise<BoxCloseOutcome>;
 }
 
 /**
@@ -440,6 +441,8 @@ export interface CloseInput {
   readonly closedAtLocal: string;
   /** ISO-8601 UTC timestamp for the event. */
   readonly closedAt: string;
+  /** Round 4: the manager's own till PIN, keyed by them at the close — passed to the store computer only, never kept. */
+  readonly closerPin?: string;
 }
 
 export type CloseAttempt =
@@ -858,7 +861,8 @@ export function createManagerSession(
       if (config.manager === null) {
         return { closed: false, reason: 'nobody is named on this screen, so it cannot close the day' };
       }
-      return post({ dayCloseId: input.dayCloseId, closedBy: config.manager.userId });
+      // Round 4: with the manager's OWN till PIN — the box verifies the person and their authority before it locks anything.
+      return post({ dayCloseId: input.dayCloseId, closedBy: config.manager.userId, ...(input.closerPin === undefined || input.closerPin === '' ? {} : { closerPin: input.closerPin }) });
     },
 
     exceptions: () => ports.openExceptions(config.tradingDay),

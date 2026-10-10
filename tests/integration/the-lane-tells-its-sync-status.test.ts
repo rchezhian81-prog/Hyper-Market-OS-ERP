@@ -1,12 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import type { LaneSyncStatus } from '../../edge/store-edge/src/sync-status';
-import { prepareTillBox, signInAtLane, operatorHeader, receiptNumberAt } from '../support/till-operator';
+import { prepareTillBox, signInAtLane, operatorHeader, receiptNumberAt, pinOf } from '../support/till-operator';
 
 /** The literal path — the edge exports no name for it on purpose (hard rule #1, tests/unit/store-edge.test.ts). */
 const LANE_SYNC_STATUS_ROUTE = '/lane/sync-status';
@@ -58,8 +58,8 @@ async function laneWithCloud(): Promise<{ h: ApiHarness; edge: EdgeProcess; setO
   await h.provisionRole(A, 'u-mgr', 'store_manager');
   const dir = await mkdtemp(join(tmpdir(), 'sre-lane-status-cloud-'));
   cleanups.push(async () => { await rm(dir, { recursive: true, force: true }); });
-  const packFile = join(dir, 'store-pack.json');
-  await writeFile(packFile, PACK_JSON, 'utf8');
+  // Round 4: the manager who closes the day is in the pack with their own till PIN (the box verifies the closer).
+  const tillEnv = await prepareTillBox({ dir, key: KEY, people: [{ userId: 'u-mgr', displayName: 'Manager', manager: true }], pack: JSON.parse(PACK_JSON) as Record<string, unknown> });
 
   let online = true;
   globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {
@@ -81,7 +81,7 @@ async function laneWithCloud(): Promise<{ h: ApiHarness; edge: EdgeProcess; setO
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
     CLOUD_API_URL: 'https://cloud.example.test',
     CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-mgr', tenantId: A }),
-    EDGE_PACK_FILE: packFile,
+    ...tillEnv,
   }, () => {}))!;
   cleanups.push(async () => { await edge.stop(); });
   return { h, edge, setOnline: (v) => { online = v; } };
@@ -138,7 +138,7 @@ describe('a box with a cloud says what its passes found', () => {
     expect((await statusOf(edge)).body.cloud).toBe('unknown');
 
     // Something to send: a day close queued on the box. Draining it is a send that head office acknowledges.
-    const closed = await edge.closeDay({ dayCloseId: 'dc-1', closedBy: 'u-mgr' });
+    const closed = await edge.closeDay({ dayCloseId: 'dc-1', closedBy: 'u-mgr', closerPin: pinOf('u-mgr') });
     expect(closed.closed).toBe(true);
     expect((await statusOf(edge)).body.unsent).toBe(1);
     await edge.syncOnce!();

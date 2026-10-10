@@ -611,6 +611,18 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
  * exception on the owner's own screen, naming the products, because the person who can fix a
  * missing cost price is exactly the person reading it.
  */
+/** Round 4: today's bills that `costTheDay` could not cost — their count, takings and tender mix (each payment by its own kind). */
+function uncostedOf(sales: readonly LoggedSale[], costed: ReadonlySet<string>): { bills: number; takenMinor: number; tenderMix: Record<string, number> } {
+  const out = { bills: 0, takenMinor: 0, tenderMix: {} as Record<string, number> };
+  for (const sale of sales) {
+    if (costed.has(sale.id)) continue;
+    out.bills += 1;
+    out.takenMinor += sale.total ?? 0;
+    for (const part of tenderPartsOf(sale)) out.tenderMix[part.kind] = (out.tenderMix[part.kind] ?? 0) + part.amountMinor;
+  }
+  return out;
+}
+
 export function ownerPayload(input: ScreenInput): Record<string, unknown> | null {
   if (!input.pack.policies.known) return null;
   const policies = input.pack.policies.value;
@@ -640,6 +652,9 @@ export function ownerPayload(input: ScreenInput): Record<string, unknown> | null
       // "never synced" about the shop that has been trading all day in front of him.
       lastSyncedAt: input.now,
       sales: day.facts,
+      // Round 4 (P-08): the bills that could not be costed, with what they took and how it was paid — the owner app
+      // shows the takings and says the margin is not known, instead of "no sales".
+      uncosted: uncostedOf(today.sales, new Set(day.facts.map((f) => f.saleId))),
       exceptions,
       // Out of every day's figures, so it is named where the owner will see it rather than
       // becoming an unexplained difference against the till roll.

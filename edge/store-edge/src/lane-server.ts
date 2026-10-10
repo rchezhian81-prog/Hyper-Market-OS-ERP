@@ -260,7 +260,15 @@ export interface LaneOperatorPort {
 
 /** What the box does when the manager asks to close the day — the authoritative `EdgeProcess.closeDay`. */
 export type LaneDayCloseHandler = (
-  req: { readonly dayCloseId: string; readonly closedBy: string },
+  req: {
+    readonly dayCloseId: string;
+    /** Who says they are closing — only ever checked against the person the box verifies (their PIN or their signed-in session). */
+    readonly closedBy?: string;
+    /** The closer's own till PIN, keyed by them on the manager screen; goes to the PIN register only, never written. */
+    readonly closerPin?: string;
+    /** The person this box already verified for the request (their till session or the hosted sign-in). */
+    readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+  },
 ) => Promise<
   | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
   | { readonly closed: false; readonly reason: string }
@@ -996,7 +1004,15 @@ export function startLaneServer(input: {
             return;
           }
           try {
-            send(res, 200, await doClose({ dayCloseId, closedBy }), cors);
+            // Round 4 (P-04, hard rule #4): the close is the closer's OWN act — their till PIN (to the PIN register only,
+            // never logged or echoed) or the session this box verified for the request. A typed name alone closes nothing.
+            const verifiedPerson = verifiedPersonOf(req);
+            const closerPin = typeof b['closerPin'] === 'string' && b['closerPin'] !== '' ? (b['closerPin'] as string) : undefined;
+            send(res, 200, await doClose({
+              dayCloseId, closedBy,
+              ...(verifiedPerson === undefined ? {} : { verifiedPerson }),
+              ...(closerPin === undefined ? {} : { closerPin }),
+            }), cors);
           } catch (e) {
             send(res, 200, { closed: false, reason: e instanceof Error ? e.message : String(e) }, cors);
           }

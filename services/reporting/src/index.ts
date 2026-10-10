@@ -59,6 +59,12 @@ export function figure(input: {
   /** Minutes after which it should not be relied on. Default 60. */
   readonly staleAfterMinutes?: number;
   readonly notAvailableBecause?: string;
+  /**
+   * Round 4 (P-08): when the source's store computer has since said it holds NOTHING unsent (its report to head office,
+   * at this time, later than `asAt`), an old figure is old because nothing new happened — not because the sync is broken.
+   * The figure still says how old it is; it no longer tells the owner to wait for a sync that has nothing to bring.
+   */
+  readonly nothingUnsentAt?: string;
 }): Figure {
   const lagging = input.laggingAfterMinutes ?? 5;
   const stale = input.staleAfterMinutes ?? 60;
@@ -89,7 +95,9 @@ export function figure(input: {
       ? `${input.name}: ${input.valueMinor} as at ${input.asAt}`
       : staleness === 'lagging'
         ? `${input.name}: ${input.valueMinor} as at ${input.asAt} — ${Math.round(ageMinutes)} minutes behind, catching up`
-        : `${input.name}: ${input.valueMinor} as at ${input.asAt} — ${Math.round(ageMinutes / 60)} hour(s) old. Do not make a decision on this figure until the sync recovers`,
+        : input.nothingUnsentAt !== undefined && Date.parse(input.nothingUnsentAt) >= Date.parse(input.asAt)
+          ? `${input.name}: ${input.valueMinor} as at ${input.asAt} — ${Math.round(ageMinutes / 60)} hour(s) old because nothing newer happened: the store computer said at ${input.nothingUnsentAt} it had nothing waiting to send`
+          : `${input.name}: ${input.valueMinor} as at ${input.asAt} — ${Math.round(ageMinutes / 60)} hour(s) old. Do not make a decision on this figure until the sync recovers`,
   };
 }
 

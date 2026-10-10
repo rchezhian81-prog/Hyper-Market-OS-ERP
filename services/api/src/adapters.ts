@@ -19,6 +19,8 @@
 //   • **Streams are per tenant and per domain.** `tenantId` is the argument to every call, not a
 //     column somebody remembers to filter on (OB-01).
 
+import { returnedValue as returnedValueOf } from '../../../packages/finance/src/day-book';
+import { latestStoreReports, nothingUnsentAtFor } from './report-producers';
 import { createHash, randomUUID } from 'node:crypto';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
@@ -10572,9 +10574,17 @@ export function reportingAdapter(input: {
         : timed.reduce((oldest, t) => (Date.parse(t) < Date.parse(oldest) ? t : oldest));
       const now = input.now();
       const never = 'no till has ever sent a sale to head office, so there is nothing to report yet';
+      // Round 4 (P-08): an old figure from a store that has since said it holds nothing unsent is old because nothing new
+      // happened — said so, instead of "wait for the sync".
+      const nothingUnsentAt = nothingUnsentAtFor(await latestStoreReports(input.store, tenantId), await salesWatermarks(tenantId, events));
       const of = (name: string, valueMinor: number, unit: Figure['unit']): Figure =>
-        figure({ name, ...(asAt === null ? { notAvailableBecause: never } : { valueMinor }), unit, asAt, now, ...thresholds });
+        figure({ name, ...(asAt === null ? { notAvailableBecause: never } : { valueMinor }), unit, asAt, now, ...thresholds, ...(nothingUnsentAt === undefined ? {} : { nothingUnsentAt }) });
 
+      // Round 4 (M29 · P-08): the day's returns, valued exactly as the day book values them (OB-34 points share included),
+      // shown BESIDE "Sales today" with the net — "Sales today" keeps its meaning. Only when a return happened, so a day
+      // with none reads as before.
+      const returnedToday = (await dayBookAdapter({ store: input.store, now: input.now }).returnsOn(tenantId, today))
+        .reduce((t, r) => t + returnedValueOf(r), 0);
       return [
         of('Sales today', summary.grossSalesMinor, 'minor_currency'),
         of('Sales today — receipts', summary.basketCount, 'count'),
@@ -10582,6 +10592,10 @@ export function reportingAdapter(input: {
         // payment on a split bill under its own kind (EA-02), so the tender figures add back to "Sales today".
         ...Object.keys(summary.tenderMix).sort()
           .map((kind) => of(`Sales today — ${kind}`, summary.tenderMix[kind]!, 'minor_currency')),
+        ...(returnedToday === 0 ? [] : [
+          of('Returned today', returnedToday, 'minor_currency'),
+          of('Sales today net of returns', summary.grossSalesMinor - returnedToday, 'minor_currency'),
+        ]),
       ];
     },
 

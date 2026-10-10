@@ -128,6 +128,8 @@ const TILL_CASH_CURSOR = 'sync-cursor-till-cash';
 
 /** Who may ask to reopen a locked day at the store computer (2b-vi-c-4): anyone who may see the locked days. */
 const REOPEN_AUTHORITY = 'till.dayclose.read';
+/** Round 4: the authority a person needs to CLOSE the day on the box — the one head office re-checks (OB-36). */
+const CLOSE_AUTHORITY = 'till.dayclose.read';
 /** Who may approve a reopen — the permission head office re-checks on every synced reopen (§28). */
 const APPROVE_REOPEN_AUTHORITY = 'till.dayclose.approve';
 
@@ -308,7 +310,15 @@ export interface EdgeProcess {
    * checked. Available with or without a cloud — the day locks locally regardless (P-01).
    */
   readonly closeDay: (
-    req: { readonly dayCloseId: string; readonly closedBy: string },
+    req: {
+      readonly dayCloseId: string;
+      /** Who says they are closing — only ever checked against the person the box verifies (their PIN or their signed-in session). */
+      readonly closedBy?: string;
+      /** The closer's own till PIN, keyed by them on the manager screen; goes to the PIN register only, never written. */
+      readonly closerPin?: string;
+      /** The person this box already verified for the request (their till session or the hosted sign-in). */
+      readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+    },
   ) => Promise<
     | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
     | { readonly closed: false; readonly reason: string }
@@ -1475,13 +1485,23 @@ export async function startEdge(
   // then queued; its own sync agent carries it to the cloud (`StoreDayClosed`), restart-safe. Offline
   // makes no difference to the lock — the day is locked locally; the cloud simply hears about it later.
   const closeDay = async (
-    req: { readonly dayCloseId: string; readonly closedBy: string },
+    req: {
+      readonly dayCloseId: string;
+      /** Who says they are closing — only ever checked against the person the box verifies (their PIN or their signed-in session). */
+      readonly closedBy?: string;
+      /** The closer's own till PIN, keyed by them on the manager screen; goes to the PIN register only, never written. */
+      readonly closerPin?: string;
+      /** The person this box already verified for the request (their till session or the hosted sign-in). */
+      readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+    },
   ): Promise<
     | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
     | { readonly closed: false; readonly reason: string }
   > => {
     const input = snapshot();
     const rule = packCutoff(input.pack);
+    // Round 4: the day close names the STORE this box is (its setup's store id), not the tenant.
+    const storeIdHere = (input.pack.policies.known ? (input.pack.policies.value.storeId ?? input.pack.policies.value.branchId) : undefined) ?? tenantId;
     // The day being closed is the most-recently-ENDED trading day: the previous trading date relative
     // to now. The engine refuses to close a day whose cut-off has not passed (currentTradingDate must
     // be later than the day closed), so closing the previous date is the only one that can succeed.
@@ -1516,7 +1536,7 @@ export async function startEdge(
     // survives a restart, so we do not use the engine's own enqueue here). A blocker throws; surface it.
     try {
       decideDayClose({
-        id: req.dayCloseId, storeId: tenantId, tradingDay: dayToClose, closedBy: req.closedBy,
+        id: req.dayCloseId, storeId: storeIdHere, tradingDay: dayToClose, closedBy: (req.closedBy ?? '').trim() || (req.verifiedPerson?.userId ?? 'unconfirmed'),
         closedAtLocal: wallClockIn(input.now), closedAt: input.now, tradingDayRule: rule,
         unresolvedExceptions, unsentSyncItems, openShifts,
       }, new SyncOutbox());
@@ -1524,11 +1544,37 @@ export async function startEdge(
       return { closed: false, reason: e instanceof Error ? e.message : String(e) };
     }
 
+    // Round 4 (P-04 · hard rule #4 · §28): the close is the CLOSER's own act, verified HERE, offline, after the gates and BEFORE anything is written — never a typed name.
+    //   • their own staff ID and till PIN, checked by the same PIN register as the till's sign-in (same guess limits), or
+    //   • the session this box already verified for the request (their till sign-in / the hosted sign-in);
+    // and either way they must hold the day-close authority in the store's setup from head office (`till.dayclose.read`,
+    // the same authority head office re-checks after the fact — OB-36). A cashier is refused before anything is locked.
+    if (tillOperators === null) {
+      return { closed: false, reason: 'this store computer cannot check people here, so it cannot close the day — tell the manager' };
+    }
+    const named = (req.closedBy ?? '').trim();
+    let closer: string | undefined;
+    if (typeof req.closerPin === 'string' && req.closerPin !== '') {
+      if (named === '') return { closed: false, reason: 'the person closing the day must give their staff ID with their till PIN' };
+      const who = await tillOperators.verifyPerson({ staffId: named, pin: req.closerPin, laneId: laneIdOfThisBox() ?? '', authority: CLOSE_AUTHORITY, lacking: 'no_approval_authority' });
+      if (!who.ok) return { closed: false, reason: `the person closing the day was not confirmed: ${who.laneMessage}` };
+      closer = who.userId;
+    } else if (req.verifiedPerson !== undefined && req.verifiedPerson.userId.trim() !== '') {
+      const vp = req.verifiedPerson.userId.trim();
+      if (named !== '' && named !== vp) return { closed: false, reason: 'the day can only be closed in the name of the person signed in here' };
+      if (!(permissionsOf(vp, snapshot().pack) ?? []).includes(CLOSE_AUTHORITY)) {
+        return { closed: false, reason: `${vp} does not hold the authority to close the day — a manager must close it with their own till PIN` };
+      }
+      closer = vp;
+    }
+    if (closer === undefined) {
+      return { closed: false, reason: 'the person closing the day must confirm it is them — their staff ID and till PIN; a typed name closes nothing' };
+    }
     // Durable-write-then-enqueue, the same order as every other seam: the locked day is on the disk
     // before it is called done, then queued. `dayCloseEventFrom` re-mints the identical event on restart.
     const record = JSON.stringify({
-      dayCloseId: req.dayCloseId, storeId: tenantId, tradingDay: dayToClose,
-      closedBy: req.closedBy, closedAt: input.now, locked: true,
+      dayCloseId: req.dayCloseId, storeId: storeIdHere, tradingDay: dayToClose,
+      closedBy: closer, closedAt: input.now, locked: true,
     });
     await dayCloseLog.append(record);
     const event = dayCloseEventFrom(record, 0);
@@ -1624,7 +1670,8 @@ export async function startEdge(
     // `StoreDayReopened` (both on this run and on a restart re-queue), routed to `.../reopen/synced`.
     // The box seals the reopen for the person it verified when that person is the reopener (2b-vi-c-3): the seal covers
     // the body head office receives, word for word. Anybody else — or nobody verified — and the reopen goes unsealed.
-    const relayed = { dayCloseId: req.dayCloseId, storeId: tenantId, tradingDay: close.tradingDay, reopenedBy: req.reopenedBy, approvedBy: req.approvedBy, reason: req.reason };
+    const reopenPack = snapshot().pack;
+    const relayed = { dayCloseId: req.dayCloseId, storeId: (reopenPack.policies.known ? (reopenPack.policies.value.storeId ?? reopenPack.policies.value.branchId) : undefined) ?? tenantId, tradingDay: close.tradingDay, reopenedBy: req.reopenedBy, approvedBy: req.approvedBy, reason: req.reason };
     const deciderVerified = sealDecision(sealKey, { tenantId, kind: 'day_reopen', recordId: req.dayCloseId, record: relayed, laneId: lane, userId: reopener.userId, via: reopener.via });
     const approverVerified = sealDecision(sealKey, { tenantId, kind: 'day_reopen_approval', recordId: req.dayCloseId, record: relayed, laneId: lane, userId: approver.userId, via: 'pin' });
     const record = JSON.stringify({ ...relayed, reopenedAt: now, deciderVerified, approverVerified });

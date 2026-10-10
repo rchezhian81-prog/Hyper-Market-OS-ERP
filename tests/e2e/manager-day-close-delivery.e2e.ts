@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
+import { prepareTillBox, pinOf } from '../support/till-operator';
 
 /**
  * **The store manager closes the day, in a real browser, and it reaches the store computer (M14-FR-04 · P-01).**
@@ -78,11 +79,15 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
   async function boxWithScreen(): Promise<{ edge: EdgeProcess; base: string }> {
     const dir = await mkdtemp(join(tmpdir(), 'sre-mgr-dayclose-'));
     dirs.push(dir);
-    const packFile = join(dir, 'store-pack.json');
-    await writeFile(packFile, PACK_JSON, 'utf8');
+    // Round 4: the box knows its lane and its people — the manager (who may close the day) and a cashier — each with their
+    // own till PIN; the close is the manager's OWN act, verified on the box.
+    const tillEnv = await prepareTillBox({
+      dir, key: KEY, pack: JSON.parse(PACK_JSON) as Record<string, unknown>,
+      people: [{ userId: 'u-mgr', displayName: 'Manager', manager: true }, { userId: 'u-lanecash', displayName: 'Cashier' }],
+    });
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
-      EDGE_LANE_PORT: '0', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
+      EDGE_LANE_PORT: '0', EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', ...tillEnv,
     }, () => {}))!;
     stops.push(() => edge.stop());
     return { edge, base: `http://127.0.0.1:${edge.screens!.port}` };
@@ -110,8 +115,23 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
       .toBe(`http://127.0.0.1:${edge.lane!.port}`);
     expect(await page.evaluate(() => (globalThis as unknown as BrowserGlobals).managerSession?.canCloseViaBox)).toBe(true);
 
-    // A clean day → the close button is offered. Tap it: this posts to the box, cross-port.
+    // A clean day → the close button is offered, with the manager's own PIN field beside it.
     await page.waitForSelector('#do-close:not([hidden])', { timeout: 10_000 });
+    await page.waitForSelector('#close-pin-row:not([hidden])', { timeout: 10_000 });
+    // Round 4: somebody else's PIN (the cashier's) under the manager's name is refused BY THE BOX — nothing is locked.
+    await page.fill('#close-pin', pinOf('u-lanecash'));
+    await page.click('#do-close');
+    await page.waitForFunction(
+      () => ((globalThis as unknown as BrowserGlobals).document.getElementById('banner-title')?.textContent ?? '').toLowerCase().includes('cannot close'),
+      undefined, { timeout: 10_000 },
+    );
+    expect((await page.textContent('#banner-text'))?.toLowerCase()).toMatch(/not confirmed/);
+    expect(await page.inputValue('#close-pin')).toBe(''); // the PIN never stays on the screen
+    expect(await readLog(edge.dayCloseLog.path)).toEqual([]);
+    // The manager keys their OWN PIN: this posts to the box, cross-port, and the box verifies them.
+    await page.click('#check-close');
+    await page.waitForSelector('#do-close:not([hidden])', { timeout: 10_000 });
+    await page.fill('#close-pin', pinOf('u-mgr'));
     await page.click('#do-close');
 
     // The screen shows the box's success — locked — not a browser-only "done".
@@ -130,7 +150,8 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
     const closed = records.filter((r) => r.ok === true).map((r) => JSON.parse(r.record) as { dayCloseId: string; closedBy: string; locked: boolean });
     expect(closed).toHaveLength(1);
     expect(closed[0]?.locked).toBe(true);
-    expect(closed[0]?.closedBy).toBe('u-mgr'); // the manager the PACK names travels with the ask — never a stand-in
+    expect(closed[0]?.closedBy).toBe('u-mgr'); // the manager the box VERIFIED by their own PIN — never a typed name
+    expect(JSON.stringify(records)).not.toContain(pinOf('u-mgr'));
     expect(closed[0]?.dayCloseId).toMatch(/^dc-/); // the screen minted it
   });
 
@@ -144,6 +165,7 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
     await edge.node.commit('S-LATE', saleRecord('S-LATE'));
     expect(edge.outbox.pending().length).toBe(1);
 
+    await page.fill('#close-pin', pinOf('u-mgr'));
     await page.click('#do-close');
 
     // The box refuses, and the screen surfaces ITS reason (unsent items) rather than a false all-clear.

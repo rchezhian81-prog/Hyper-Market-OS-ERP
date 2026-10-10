@@ -11,7 +11,7 @@ import { bootWarehouse, withChosenDelivery } from '../../apps/warehouse-app/src/
 import type { WarehouseSession, WarehouseAssignment } from '../../apps/warehouse-app/src/warehouse-session';
 import { DeviceOutbox, noDeviceStore } from '../../packages/sync/src/device-outbox';
 import { drainToBox, boxStatus } from '../../packages/sync/src/device-drain';
-import { issueTillPins, signInTill, managerApprovesOn, signInOnPhone } from '../support/till-operator';
+import { issueTillPins, signInTill, managerApprovesOn, signInOnPhone, pinOf } from '../support/till-operator';
 import { TEST_IDP } from '../support/api-harness';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
@@ -559,13 +559,22 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     vi.setSystemTime(nextMorning);
     edge = await restartBox(edge);
     // The manager's screen asks the box to close the day (POST /lane/day-close — the served route the manager screen uses).
-    const closedDay = await laneDayClose2(edge, { dayCloseId: `dc-${tradingDay}`, closedBy: MANAGER });
+    // It is the closer's OWN act (P-04 · hard rule #4): a typed name, a cashier (even with her own PIN) and the manager's name
+    // with the cashier's PIN are refused ON THE BOX, offline-capable, before anything is locked.
+    const typed = await laneDayClose2(edge, { dayCloseId: `dc-${tradingDay}`, closedBy: MANAGER });
+    const byCashier = await laneDayClose2(edge, { dayCloseId: `dc-${tradingDay}`, closedBy: CASHIER, closerPin: pinOf(CASHIER) });
+    const borrowed = await laneDayClose2(edge, { dayCloseId: `dc-${tradingDay}`, closedBy: MANAGER, closerPin: pinOf(CASHIER) });
+    for (const refused of [typed, byCashier, borrowed]) expect(refused, JSON.stringify(refused)).toMatchObject({ closed: false });
+    expect(await readLog(edge.dayCloseLog.path)).toEqual([]);
+    expect(edge.dayCloseOutbox.unsentCount()).toBe(0);
+    const closedDay = await laneDayClose2(edge, { dayCloseId: `dc-${tradingDay}`, closedBy: MANAGER, closerPin: pinOf(MANAGER) });
     expect(closedDay, JSON.stringify(closedDay)).toMatchObject({ closed: true, tradingDay, locked: true });
+    expect(JSON.stringify(await readLog(edge.dayCloseLog.path))).not.toContain(pinOf(MANAGER));
     expect(await edge.syncOnce!(), JSON.stringify(edge.dayCloseOutbox.deadLetters())).toMatchObject({ dead: 0, remaining: 0 });
-    const dayCloses = ((await call('GET', '/v1/pos/day-close', OWNER)).body as { dayCloses: { dayCloseId: string; locked: boolean; closedBy: string; closeFlags: string[] }[] }).dayCloses;
-    expect(dayCloses).toEqual(expect.arrayContaining([expect.objectContaining({ dayCloseId: `dc-${tradingDay}`, locked: true, closedBy: MANAGER, closeFlags: [] })]));
-    process.stdout.write(`\nDAYCLOSE ${JSON.stringify(dayCloses).slice(0, 800)}\n`);
-    row('10 payment + shift reconciliation, day close on the box', `blind count ₹${counted / 100} vs the box's expected (float ₹${FLOAT / 100} + cash ₹${(S1_CASH + S2_CASH + S3_TOTAL) / 100} − refund ₹${moneyBack / 100}) → variance ${(shift as { varianceMinor: number }).varianceMinor} · day locked ${tradingDay} on the box by ${MANAGER} → head office`);
+    const dayCloses = ((await call('GET', '/v1/pos/day-close', OWNER)).body as { dayCloses: { dayCloseId: string; storeId: string; locked: boolean; closedBy: string; closeFlags: string[] }[] }).dayCloses;
+    // Head office records ONE close, in the verified manager's name, for the STORE (not the tenant), with no closer flag.
+    expect(dayCloses).toEqual([expect.objectContaining({ dayCloseId: `dc-${tradingDay}`, storeId: STORE, locked: true, closedBy: MANAGER, closeFlags: [] })]);
+    row('10 payment + shift reconciliation, day close on the box', `blind count ₹${counted / 100} vs the box's expected (float ₹${FLOAT / 100} + cash ₹${(S1_CASH + S2_CASH + S3_TOTAL) / 100} − refund ₹${moneyBack / 100}) → variance ${(shift as { varianceMinor: number }).varianceMinor} · day close refused on the box for a typed name (${String(typed['reason']).slice(0, 60)}…), for the cashier with her own PIN and for the manager's name with the cashier's PIN — nothing locked · locked by ${MANAGER} with their OWN PIN → head office: closedBy ${MANAGER}, store ${STORE}, no closer flag`);
 
     // ═══ 10 (money side). The day book, the provider's settlement file for the card and UPI tenders, the bank statement ═════
     await ok(call('PUT', '/v1/finance/posting-map', FINANCE, DEFAULT_RETAIL_POSTING_MAP, 'map'), 'posting map');
@@ -611,6 +620,9 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
       expect(q.unsentCount()).toBe(0);
       expect(q.deadLetters()).toEqual([]);
     }
+    // The box tells head office what it holds — its catalogue, its setup and how much it has unsent (its sync loop does
+    // this every pass; called here once, as the loop would).
+    expect(await edge.reportHeldVersions!()).toBe(true);
     row('11 sync to head office: booked once', `head office holds exactly S-1/S-2/S-3 (${sales.map((r) => r.totalMinor).join(' + ')}), the return, the float, the shift (no over/short) and the locked day — after a cut, a restart, a lost reply and a duplicate replay; every box queue empty, no dead letters`);
 
     // ═══ 12. Owner reporting: the owner's reports equal the journey's own numbers, with freshness shown ═════════════════════
@@ -653,34 +665,45 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     // yet today" while the box itself counted 3 bills / the whole takings as `uncostable` (which the owner app does not show).
     const uncostable = (ownerData as unknown as { uncostable?: { sales: number; takenMinor: number } }).uncostable;
     expect(uncostable).toMatchObject({ sales: 3, takenMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL });
-    const todayRight = today12.kpis.grossSalesMinor === S1_TOTAL + S2_TOTAL + S3_TOTAL && today12.kpis.basketCount === 3;
-    row('12b owner Today (box) equals the journey', `owner app booted on the box's /owner/ page: gross ${today12.kpis.grossSalesMinor}, bills ${today12.kpis.basketCount}, headline "${today12.headline}" · the box's own payload: ${uncostable?.sales ?? 0} uncostable bills, ₹${(uncostable?.takenMinor ?? 0) / 100} taken (not shown by the app) · freshness shown: ${JSON.stringify(today12.freshness).slice(0, 80)}`, todayRight ? 'PASS' : 'GAP');
-    // RETURNS: neither the owner's Today nor any head-office report shows the day's returns or sales net of them.
-    const returnsShown = [byDay, mix].some((r) => r.figures.some((f) => /return|refund/i.test(f.name))) ;
-    const catalogueIds = ((await call('GET', '/v1/reports/catalogue', OWNER)).body as { reports: { report: { id: string }; availability: { available: boolean } }[] }).reports;
-    const blocked = catalogueIds.filter((r) => ['gst', 'reconciliation', 'profitability', 'sync_health', 'data_freshness'].includes(r.report.id) && !r.availability.available).map((r) => r.report.id);
-    row('12 owner reporting equals the journey, freshness shown', `HO reports for ${tradingDay}: taken ${fig(byDay, 'Taken')} on ${fig(byDay, 'Bills')} bills = S-1+S-2+S-3 · tenders cash ${fig(mix, 'cash')} / card ${fig(mix, 'card')} / UPI ${fig(mix, 'upi')} / points ${fig(mix, 'loyalty_points')} · stock per place rice ${riceFloor} floor + ${riceBack} back, tomato ${tomFloor} g + ${tomBack} g, value ${fig(stock, 'Value on hand')} · points ${fig(loyalty, 'Points outstanding')} · trolley shortfall valued ${RICE.cost} on exceptions · freshness on every figure (${byDay.worstStaleness}) · NOT SHOWN: returns/refunds or sales net of returns (${returnsShown ? 'shown' : 'absent'} — HO "Taken" ${grossSales} includes the ₹${RICE.price / 100} returned) · reports blocked though their records exist: ${blocked.join(', ')}`, returnsShown ? 'PASS' : 'GAP');
+    expect(today12.takings).toEqual({ bills: 3, takenMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, marginUnknownBills: 3, tenderMix: { cash: S1_CASH + S2_CASH + S3_TOTAL, card: S2_CARD, upi: S1_UPI, loyalty_points: S2_POINTS_SPENT * 100 } });
+    expect(today12.headline).toMatch(/^3 bills today, ₹1,980\.00 taken — margin not known/);
+    expect(today12.headline).not.toMatch(/No sales recorded/);
+    expect(today12.freshness).toBeDefined();
+    row('12b owner Today (box) shows the takings', `owner app booted on the box's /owner/ page: "${today12.headline}" · takings ${today12.takings.takenMinor} on ${today12.takings.bills} bills, tenders ${JSON.stringify(today12.takings.tenderMix)} · margin not known for ${today12.takings.marginUnknownBills} bills (which cost the box uses is an owner decision) · freshness shown`);
+    // RETURNS beside the takings — "Taken" keeps its meaning; what came back and the net are shown with it, valued as the
+    // books value them (the ₹472 cash refund + the ₹8 of points given back = the ₹480 rice returned).
+    expect(fig(byDay, 'Returned')).toBe(RICE.price);
+    expect(fig(byDay, 'Returns')).toBe(1);
+    expect(fig(byDay, 'Taken net of returns')).toBe(grossSales - RICE.price);
+    expect(fig(mix, 'refunded — cash')).toBe(moneyBack);
+    expect(fig(mix, 'refunded — loyalty_points')).toBe(RICE.price - moneyBack);
+    // The five reports that were "not recorded": now produced from the real sources.
+    const gst = await report('gst');
+    const bank = await report('reconciliation');
+    const profit = await report('profitability');
+    const sync = await report('sync_health');
+    const fresh = await report('data_freshness');
+    const gstPosted = -(balanceOf('gst_output_cgst') + balanceOf('gst_output_sgst'));
+    expect(fig(gst, 'GST collected')).toBe(gstPosted);
+    expect(fig(gst, 'GST collected — CGST')).toBe(-balanceOf('gst_output_cgst'));
+    expect(gst.figures.find((f) => f.name === 'GST paid on purchases')).toMatchObject({ notAvailableBecause: expect.stringMatching(/supplier bills are not posted/) });
+    expect(bank.figures.filter((f) => / — difference$/.test(f.name)).map((f) => f.valueMinor)).toEqual([0, 0]);
+    expect(fig(bank, 'Card and UPI takings for ' + month + ' — ours')).toBe(electronic);
+    expect(fig(bank, 'Provider payouts received in ' + month + ' — theirs')).toBe(electronic - fees);
+    expect(fig(profit, 'Revenue net of GST and returns')).toBe(-balanceOf('sales_revenue'));
+    expect(profit.figures.find((f) => f.name === 'Profit')).toMatchObject({ notAvailableBecause: expect.stringMatching(/owner decision/) });
+    expect(fig(sync, 'Records not yet sent')).toBe(0);
+    expect(sync.rows).toEqual([expect.objectContaining({ storeId: STORE, unsent: '0' })]);
+    expect(fresh.rows.map((r) => r['source'])).toEqual(expect.arrayContaining([`store:${STORE}`, 'stock ledger', `store:${STORE} report`]));
+    // Freshness is TRUTHFUL the morning after: the figure is old because nothing newer happened (the box said it holds
+    // nothing unsent), not "wait for the sync".
+    const takenDetail = byDay.figures.find((f) => f.name === 'Taken') as unknown as { detail: string };
+    expect(takenDetail.detail).toMatch(/nothing newer happened: the store computer said at .* it had nothing waiting to send/);
+    expect(takenDetail.detail).not.toMatch(/until the sync recovers/);
+    row('12 owner reporting equals the journey, freshness shown', `HO reports for ${tradingDay}: taken ${fig(byDay, 'Taken')} on ${fig(byDay, 'Bills')} bills = S-1+S-2+S-3 · returned ${fig(byDay, 'Returned')} on ${fig(byDay, 'Returns')} return · net ${fig(byDay, 'Taken net of returns')} · tenders in: cash ${fig(mix, 'cash')} / card ${fig(mix, 'card')} / UPI ${fig(mix, 'upi')} / points ${fig(mix, 'loyalty_points')}; refunded: cash ${fig(mix, 'refunded — cash')} / points ${fig(mix, 'refunded — loyalty_points')} · stock per place rice ${riceFloor} floor + ${riceBack} back, tomato ${tomFloor} g + ${tomBack} g, value ${fig(stock, 'Value on hand')} · points ${fig(loyalty, 'Points outstanding')} · trolley shortfall valued ${RICE.cost} on exceptions · GST collected ${fig(gst, 'GST collected')} (= the books) · bank: card+UPI ${electronic} = settled, payout ${electronic - fees} = bank, differences 0 · profitability: revenue ${fig(profit, 'Revenue net of GST and returns')}, profit not available (cost basis is an owner decision) · not yet sent ${fig(sync, 'Records not yet sent')} (the box's own report) · freshness on every figure, truthful: "${takenDetail.detail.replace(/^Taken: \d+ as at /, '').slice(0, 90)}…"`);
 
-    // ═══ Found on the way, proved here: the box locks a day on a TYPED name ════════════════════════════════════════════════
-    // The day close the manager's screen posts names its closer in the body; the box checks no sign-in, PIN or role. The next
-    // trading day a CASHIER's name closes and locks the day; head office only flags it afterwards (OB-36 re-check).
-    vi.setSystemTime(new Date(nextMorning.getTime() + 86_400_000));
-    edge = await restartBox(edge);
-    const day2 = tradingDateOf(new Date().toISOString(), makeTradingDayRule('00:00'));
-    const prevDay = new Date(Date.parse(`${day2}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10);
-    const cashierClose = await laneDayClose2(edge, { dayCloseId: `dc-${prevDay}`, closedBy: CASHIER });
-    expect(await edge.syncOnce!()).toMatchObject({ dead: 0 });
-    const listed = (await call('GET', '/v1/pos/day-close', OWNER)).body as { dayCloses: { dayCloseId: string; closedBy: string; closeFlags: string[] }[]; flaggedCloses: { dayCloseId: string; closeFlags: string[] }[] };
-    const flagged = listed.dayCloses.find((d) => d.dayCloseId === `dc-${prevDay}`);
-    // Head office re-checks the named closer (OB-36) and the owner's day-close list now SHOWS it (it used to drop it).
-    expect(flagged).toMatchObject({ closedBy: CASHIER, closeFlags: ['closer_lacks_authority'] });
-    expect(listed.flaggedCloses).toEqual([expect.objectContaining({ dayCloseId: `dc-${prevDay}`, closeFlags: ['closer_lacks_authority'] })]);
-    row('(found) day close identity on the box', `POST /lane/day-close with closedBy=${CASHIER} (no sign-in, no PIN): box answered ${JSON.stringify(cashierClose)} · head office recorded closedBy ${flagged?.closedBy ?? '—'} and flagged it [${(flagged?.closeFlags ?? []).join(',')}] on the owner's list — after the box had already locked the day`, cashierClose['closed'] === true ? 'GAP' : 'PASS');
   }, 300_000);
 
-  // ── PENDING SOFTWARE found by this acceptance (each is a GAP row in the printed table) ─────────────────────────────────
-  it.todo('GAP 12b — the owner\'s Today on the store computer shows the day\'s sales: head office\'s store setup carries no product cost (`products[].unitCostMinor`), so every bill is "uncostable" and the owner app (which ignores `uncostable`) says "No sales recorded yet today" while ₹1,980 was taken — needs the cost basis decided and sent, and the app to show takings it cannot cost');
-  it.todo('GAP 12 — an owner report shows the day\'s RETURNS/refunds and sales net of returns: `sales_by_day`/`tender_mix` and the box Today report gross takings only (the ₹480 return and ₹472 cash refund appear nowhere on an owner report)');
-  it.todo('GAP 12 — the GST, Money-in-the-bank, Profitability, Anything-not-sent-yet and How-current reports run once their records exist: they stay "the shop does not record it" after the day book is posted and the bank statement imported');
-  it.todo('GAP (found) — the store computer closes and locks a day only for a signed-in person with day-close authority: POST /lane/day-close takes `closedBy` as a typed name (no session, no PIN, no role check on the box); head office only flags it afterwards');
+  // ── Still an OWNER DECISION (not built): which cost the store computer's Today uses for the margin (A price list, B head
+  //    office's running average, C none) — until then the Today says the margin is not known and shows the takings (12b).
 });
