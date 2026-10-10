@@ -17,13 +17,15 @@ import { applyMovement, type Bin, type BinContents, type MovementCommand } from 
 import {
   requestIndent, approveIndent, rejectIndent, planIssue, applyIssue, planReceipt, applyReceipt, cancelIndent,
   planReturn, applyReturnRequest, returnTransfer, planReturnAcceptance, applyReturnAcceptance, indentTotals, indentAttention,
-  planShortfallResolution, applyShortfallResolution, type FoundLine, type ShortfallResolution,
+  planShortfallResolution, applyShortfallResolution, type ShortfallResolution,
   IndentRefusedError,
   type FloorIndent, type IndentLine, type IssueLine, type ReceivedLine, type ShortfallLine, type DamagedLine, type IndentRefusal,
 } from '../../../packages/warehouse/src/indents';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
-import { dispatchPostings, receivePostings } from './warehouse-transfers';
+import { dispatchPostings, receivePostings, readFound, sameResolution, foundPostings } from './warehouse-transfers';
+
+export { readFound, foundPostings };
 import { checkMovement, type Movement } from './index';
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
 
@@ -172,42 +174,6 @@ export function readCounted(v: unknown): ReceivedLine[] | undefined {
     out.push({ productId: raw['productId'], batchId: isStr(raw['batchId']) ? raw['batchId'] : null, quantityMinor: raw['quantityMinor'], ...(isInt(raw['damagedMinor']) && (raw['damagedMinor'] as number) > 0 ? { damagedMinor: raw['damagedMinor'] as number } : {}) });
   }
   return out;
-}
-
-/** Batch 2: what the resolver says turned up — [{ productId, batchId?, foundMinor (whole, zero or more), foundAtLocationId? }]. */
-export function readFound(v: unknown): FoundLine[] | undefined {
-  if (v === undefined) return [];
-  if (!Array.isArray(v)) return undefined;
-  const out: FoundLine[] = [];
-  for (const raw of v) {
-    if (!isObj(raw) || !isStr(raw['productId']) || !isInt(raw['foundMinor']) || (raw['foundMinor'] as number) < 0
-      || (raw['batchId'] !== undefined && raw['batchId'] !== null && !isStr(raw['batchId']))
-      || (raw['foundAtLocationId'] !== undefined && !isStr(raw['foundAtLocationId']))) return undefined;
-    const batchId = isStr(raw['batchId']) ? raw['batchId'] : null;
-    if (out.some((f) => f.productId === raw['productId'] && f.batchId === batchId)) return undefined; // one line per product and batch
-    out.push({ productId: raw['productId'], batchId, foundMinor: raw['foundMinor'] as number, ...(isStr(raw['foundAtLocationId']) ? { foundAtLocationId: raw['foundAtLocationId'] } : {}) });
-  }
-  return out;
-}
-
-/** The same resolution again? Same reason and the same found figures per line — the replay answer, not a second truth. */
-const sameResolution = (prior: ShortfallResolution, reasonCode: string, found: readonly FoundLine[]): boolean =>
-  prior.reasonCode === reasonCode
-  && prior.lines.every((l) => l.foundMinor === (found.find((f) => f.productId === l.productId && f.batchId === l.batchId)?.foundMinor ?? 0));
-
-/**
- * Batch 2: the compensating movements for units that TURNED UP — `adjusted` at the place they were found, at the quantity
- * found. Two people, as every `adjusted` movement needs (§28 · `checkMovement`): raised by the count that said they were
- * missing (the receiver), approved by the resolver. Keyed on the transfer, so a replay cannot post twice.
- */
-export function foundPostings(transfer: Transfer, issue: { readonly receivedBy?: string }, resolution: ShortfallResolution): Movement[] {
-  return resolution.lines.filter((l) => l.foundMinor > 0).map((l, i): Movement => ({
-    movementId: `${transfer.transferId}-found-${i + 1}`, productId: l.productId, locationId: l.foundAtLocationId ?? transfer.toLocationId, kind: 'adjusted',
-    quantityMinor: l.foundMinor, uom: transfer.lines.find((t) => t.productId === l.productId && t.batchId === l.batchId)?.uom ?? 'EA',
-    occurredAt: resolution.resolvedAt, enteredBy: issue.receivedBy ?? resolution.resolvedBy, approvedBy: resolution.resolvedBy,
-    reason: `transfer ${transfer.transferId} shortfall resolved by ${resolution.resolvedBy}: ${l.foundMinor} of ${l.missingMinor} found at ${l.foundAtLocationId ?? transfer.toLocationId} (${resolution.reasonCode}) — ${resolution.note}`,
-    ...(l.batchId === null ? {} : { batchId: l.batchId }),
-  }));
 }
 
 export const shortfallOf = (discrepancies: readonly TransferDiscrepancy[]): ShortfallLine[] =>

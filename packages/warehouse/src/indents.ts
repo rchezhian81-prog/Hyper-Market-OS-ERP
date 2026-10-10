@@ -20,7 +20,9 @@
 // every surface that drives it — a route, a screen, a handheld relay — gets the same refusal.
 
 import type { Money } from '../../contracts/src/money';
-import type { Transfer } from './transfers';
+import { judgeShortfallResolution, type Transfer, type ShortfallLine, type FoundLine, type ShortfallResolution, type ShortfallResolutionLine } from './transfers';
+
+export type { ShortfallLine, FoundLine, ShortfallResolution, ShortfallResolutionLine };
 
 export type IndentState =
   | 'requested'   // the floor asked; nobody has decided
@@ -63,12 +65,6 @@ export interface ReceivedLine {
   readonly damagedMinor?: number;
 }
 
-export interface ShortfallLine {
-  readonly productId: string;
-  readonly batchId: string | null;
-  readonly quantityMinor: number;
-  readonly valueMinor: number;
-}
 
 /** SP-8c: units that arrived DAMAGED — they left transit (they are in the building) and were written off at the floor at the
  *  cost they left with. A valued exception with an owner, never silently on the shelf and never silently gone. */
@@ -100,35 +96,6 @@ export interface IndentIssue {
   readonly governanceFlags?: readonly string[];
   /** SP-8b: the relay (the store box) that carried the receipt, beside — never instead of — the receiver. */
   readonly relayed?: RelayedBy;
-}
-
-/** Batch 2: one product's part of a shortfall resolution — what was missing, what turned up (where), what is accepted as lost. */
-export interface ShortfallResolutionLine {
-  readonly productId: string;
-  readonly batchId: string | null;
-  readonly missingMinor: number;
-  readonly foundMinor: number;
-  /** Where the found units were — the floor (the receiving place) or the back store (they never left). */
-  readonly foundAtLocationId: string | null;
-  readonly lostMinor: number;
-  /** The lost units at the cost they left the back store with. */
-  readonly lostValueMinor: number;
-}
-
-/**
- * Batch 2 (M09-FR-03 · M08-FR-03 · M08-FR-04 · P-08 · §28): a valued shortfall is RESOLVED by a person who neither issued
- * nor counted the stock, with a reason code — once. Units that turned up come back through a compensating, two-person
- * `adjusted` movement (raised by the count, approved by the resolver); the rest is confirmed lost at its value. The
- * shortfall itself stays on the record beside its resolution (hard rule #6).
- */
-export interface ShortfallResolution {
-  readonly resolvedBy: string;
-  readonly resolvedAt: string;
-  readonly reasonCode: string;
-  readonly note: string;
-  readonly lines: readonly ShortfallResolutionLine[];
-  /** The M08 movement ids the found units came back on (empty when nothing was found). */
-  readonly movementIds: readonly string[];
 }
 
 /** SP-8b: a step that arrived through the store box's device queue — who relayed it, from which surface, for which store. */
@@ -471,15 +438,6 @@ export function applyReceipt(indent: FloorIndent, issueId: string, receipt: {
 
 // ── resolve a shortfall (Batch 2) ────────────────────────────────────────────────────────────────────────────
 
-/** What the resolver says turned up, per product on the shortfall (anything not named was not found). */
-export interface FoundLine {
-  readonly productId: string;
-  readonly batchId: string | null;
-  readonly foundMinor: number;
-  /** Where it turned up — the indent's floor (default) or its back store. */
-  readonly foundAtLocationId?: string;
-}
-
 /**
  * Judge a shortfall resolution. The issue must have been received short and not yet resolved; the resolver is neither the
  * person who issued nor the person who counted it (§28 — "cannot self-approve material variance"); every found line is on
@@ -498,35 +456,13 @@ export function planShortfallResolution(input: {
   const issue = indent.issues.find((i) => i.issueId === input.issueId);
   if (issue === undefined) refuse(indent.indentId, 'issue_unknown', `there is no issue ${input.issueId} on this indent`);
   if (issue!.state !== 'received') refuse(indent.indentId, 'issue_not_received', `issue ${input.issueId} has not been counted in at the floor yet — there is no shortfall to resolve`);
-  const shortfall = issue!.shortfall ?? [];
-  if (shortfall.length === 0) refuse(indent.indentId, 'nothing_short', `issue ${input.issueId} arrived in full — there is nothing to resolve`);
-  if (issue!.shortfallResolution !== undefined) {
-    refuse(indent.indentId, 'shortfall_already_resolved', `${issue!.shortfallResolution.resolvedBy} resolved this shortfall at ${issue!.shortfallResolution.resolvedAt}; a second resolution would be a second truth`);
-  }
-  if (input.resolvedBy === issue!.receivedBy) refuse(indent.indentId, 'counter_cannot_resolve', `${input.resolvedBy} counted this delivery and cannot also resolve its shortfall (§28) — a second person decides`);
-  if (input.resolvedBy === issue!.issuedBy) refuse(indent.indentId, 'issuer_cannot_resolve', `${input.resolvedBy} issued this stock and cannot also resolve its shortfall (§28) — a second person decides`);
-  for (const f of input.found) {
-    if (!isNonNegInt(f.foundMinor)) refuse(indent.indentId, 'not_on_shortfall', `${f.productId}: a found quantity is a whole number, zero or more`);
-    if (!shortfall.some((s) => s.productId === f.productId && s.batchId === f.batchId)) {
-      refuse(indent.indentId, 'not_on_shortfall', `${f.productId}${f.batchId === null ? '' : ` · ${f.batchId}`} is not on the shortfall of issue ${input.issueId}`);
-    }
-    if (f.foundAtLocationId !== undefined && f.foundAtLocationId !== indent.toLocationId && f.foundAtLocationId !== indent.fromLocationId) {
-      refuse(indent.indentId, 'not_on_shortfall', `${f.productId}: stock from this issue can only turn up at ${indent.toLocationId} or ${indent.fromLocationId}, not ${f.foundAtLocationId}`);
-    }
-  }
-  const lines = shortfall.map((s): ShortfallResolutionLine => {
-    const named = input.found.filter((f) => f.productId === s.productId && f.batchId === s.batchId);
-    const found = sum(named.map((f) => f.foundMinor));
-    if (found > s.quantityMinor) refuse(indent.indentId, 'more_found_than_missing', `${s.productId}: ${found} found, but only ${s.quantityMinor} went missing — count again`);
-    const lost = s.quantityMinor - found;
-    const unit = s.quantityMinor === 0 ? 0 : s.valueMinor / s.quantityMinor;
-    return {
-      productId: s.productId, batchId: s.batchId, missingMinor: s.quantityMinor, foundMinor: found,
-      foundAtLocationId: found === 0 ? null : named.find((f) => f.foundMinor > 0)?.foundAtLocationId ?? indent.toLocationId,
-      lostMinor: lost, lostValueMinor: Math.round(unit * lost),
-    };
+  const judged = judgeShortfallResolution({
+    what: `issue ${input.issueId}`, shortfall: issue!.shortfall ?? [], prior: issue!.shortfallResolution,
+    sentBy: issue!.issuedBy, countedBy: issue!.receivedBy, fromLocationId: indent.fromLocationId, toLocationId: indent.toLocationId,
+    resolvedBy: input.resolvedBy, found: input.found, reasonCode: input.reasonCode, note: input.note, at: input.at,
   });
-  return { resolvedBy: input.resolvedBy, resolvedAt: input.at, reasonCode: input.reasonCode, note: input.note, lines, movementIds: [] };
+  if (!judged.ok) return refuse(indent.indentId, judged.code, judged.why);
+  return judged.resolution;
 }
 
 export function applyShortfallResolution(indent: FloorIndent, issueId: string, resolution: ShortfallResolution): FloorIndent {

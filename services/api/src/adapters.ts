@@ -91,7 +91,7 @@ import type { Bin, BinContents } from '../../../packages/warehouse/src/movements
 import { binKey } from '../../../packages/warehouse/src/movements';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
-import type { AvailableLot, Transfer, TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import { shortfallLinesOf, type AvailableLot, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
 import { recipeDigest, type ProductionDeps, type StoredRun, type StoredRelease } from '../../inventory/src/production';
@@ -2714,6 +2714,8 @@ export function salesHistoryAdapter(input: { readonly store: EventStore; readonl
 export const refundGuardKey = (saleId: string): string => `refund:${saleId}`;
 /** The write-guard key for everything that leaves one location's stock by transfer (Wave 2a · SF-04). */
 export const stockGuardKey = (locationId: string): string => `stock:${locationId}`;
+/** Batch 2: one plain transfer's own write guard — two resolutions of its shortfall cannot both land. */
+export const transferGuardKey = (transferId: string): string => `transfer:${transferId}`;
 /** Batch 2: one floor indent's own write guard — two counts (or two resolutions) of one issue cannot both land. */
 export const indentGuardKey = (indentId: string): string => `indent:${indentId}`;
 /** SF-02 — a purchase order's write guard: every receipt, cancellation, amendment and posting against it moves it. */
@@ -5283,6 +5285,39 @@ export function transfersAdapter(input: {
     recordReceived: async (tenantId, transfer, movements, discrepancies, posted) => {
       await input.store.appendBatch(tenantId, transferBatch(tenantId, transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted, input.now()), posted));
     },
+
+    // Batch 2: the valued shortfall the transfer's own receipt record raised.
+    shortfallOf: async (tenantId, transferId) => {
+      for (const e of await input.store.readStream(tenantId, transfersStream, { type: 'TransferReceived' })) {
+        const p = payloadOf<{ transfer: Transfer; discrepancies?: readonly TransferDiscrepancy[] }>(e);
+        if (p.transfer.transferId === transferId) return shortfallLinesOf(p.discrepancies ?? []);
+      }
+      return [];
+    },
+    // Batch 2: a transfer some floor indent's issue travels on — resolved on the indent, never twice.
+    belongsToIndent: async (tenantId, transferId) => {
+      for (const e of await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'indents'))) {
+        if ((e.event.payload as { indent?: FloorIndent }).indent?.issues.some((i) => i.transferId === transferId) === true) return true;
+      }
+      return false;
+    },
+    transferVersion: (tenantId, transferId) => input.store.guardVersion(tenantId, transferGuardKey(transferId)),
+    // Batch 2: the resolved transfer and the found units' `adjusted` movements, one atomic batch under the transfer's guard.
+    recordShortfallResolved: async (tenantId, transfer, posted, expectedVersion) => {
+      const at = input.now();
+      const digest = createHash('sha256').update(JSON.stringify(transfer.shortfallResolution ?? null)).digest('hex').slice(0, 16);
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: transfersStream,
+          event: makeEvent({
+            id: `transfer-shortfall-resolved-${transfer.transferId}`, type: 'TransferShortfallResolved', occurredAt: at,
+            idempotencyKey: `transfer-shortfall-resolved-${tenantId}-${transfer.transferId}-${digest}`, source: 'api/inventory',
+            payload: { transfer },
+          }),
+        },
+        ...movementEntries(tenantId, posted),
+      ], expectedVersion === undefined ? undefined : { guard: { key: transferGuardKey(transfer.transferId), expectedVersion } });
+    },
   };
 }
 
@@ -6234,6 +6269,17 @@ export function inventoryAdapter(input: {
               foundMinor: l.foundMinor, lostMinor: l.lostMinor, lostValueMinor: l.lostValueMinor, movementIds: r.movementIds,
             });
           }
+        }
+      }
+      for (const e of await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'transfers'), { type: 'TransferShortfallResolved' })) {
+        const t = payloadOf<{ transfer: Transfer }>(e).transfer;
+        const r = t.shortfallResolution;
+        if (r === undefined) continue;
+        for (const l of r.lines) {
+          resolvedByTransfer.set(`${t.transferId}\u001f${l.productId}\u001f${l.batchId ?? ''}`, {
+            resolvedBy: r.resolvedBy, resolvedAt: r.resolvedAt, reasonCode: r.reasonCode, note: r.note,
+            foundMinor: l.foundMinor, lostMinor: l.lostMinor, lostValueMinor: l.lostValueMinor, movementIds: r.movementIds,
+          });
         }
       }
       const out: TransferShortfall[] = [];
