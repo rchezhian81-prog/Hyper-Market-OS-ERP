@@ -8,6 +8,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { STREAM } from '../../services/api/src/adapters';
 
 /**
  * **Supplier to shelf, connected — Batch 2's acceptance (M06 · M07 · M08 · M09 · M10 · WF-03 · WF-06 · WF-07 · §28 · P-08 ·
@@ -242,6 +243,15 @@ async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<vo
   expect(codeOf(await call('POST', resolutionPath, FLOOR_MGR, { ...resolution, lines: [{ productId: PRODUCT, batchId: BATCH, foundMinor: 0 }] }, 'res-different'))).toBe('shortfall_already_resolved');
   const found = (resolved['posted'] as { movementId: string; kind: string; quantityMinor: number; enteredBy: string; approvedBy?: string; locationId: string }[]);
   expect(found).toEqual([expect.objectContaining({ movementId: `${INDENT}:is-1-found-1`, kind: 'adjusted', quantityMinor: FOUND, locationId: FLOOR, enteredBy: SHELF, approvedBy: FLOOR_MGR })]);
+  // What finance posts the inventory-loss journal from (Batch 3): the event carries a `loss` — where, who, why, the unit, the
+  // cost per whole unit the stock left the back store with, how much was lost and what that is worth.
+  const resolvedEvents = await h.store.readStream(t, [STREAM.warehouse, 'indents'].join('\u001f'), { type: 'FloorIndentShortfallResolved' });
+  expect((resolvedEvents.at(-1)!.event.payload as { loss: unknown }).loss).toEqual({
+    source: 'floor_indent', transferId: `${INDENT}:is-1`, indentId: INDENT, issueId: 'is-1', fromLocationId: BACK, toLocationId: FLOOR,
+    resolvedBy: FLOOR_MGR, resolvedAt: expect.any(String), reasonCode: 'theft_suspected', note: resolution.note, currency: 'INR',
+    lines: [{ productId: PRODUCT, batchId: BATCH, uom: 'ea', lostMinor: LOST, unitCostMinor: COST, lostValueMinor: LOST * COST }],
+    lostValueMinor: LOST * COST, foundMovementIds: [`${INDENT}:is-1-found-1`],
+  });
   const after = await ok(call('GET', '/v1/inventory/exceptions', OWNER), 200) as { transferShortfalls: { transferId: string; resolution?: { resolvedBy: string } | null }[] };
   expect(after.transferShortfalls).toEqual([expect.objectContaining({ transferId: `${INDENT}:is-1`, resolution: expect.objectContaining({ resolvedBy: FLOOR_MGR }) })]);
   const indentNow = await ok(call('GET', `/v1/floor/indents/${INDENT}`, OWNER), 200) as { attention: string[] };

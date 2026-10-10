@@ -96,6 +96,10 @@ export interface ShortfallResolutionLine {
   readonly lostMinor: number;
   /** The lost units at the cost they left the source with. */
   readonly lostValueMinor: number;
+  /** The line's unit (OB-31: quantities in its smallest steps — grams for kg). Set by `costedResolution`. */
+  readonly uom?: string;
+  /** The cost per WHOLE unit the stock left the source with (the source's average at dispatch). Set by `costedResolution`. */
+  readonly unitCostMinor?: number;
 }
 
 /**
@@ -165,6 +169,59 @@ export function judgeShortfallResolution(input: {
     });
   }
   return { ok: true, resolution: { resolvedBy: input.resolvedBy, resolvedAt: input.at, reasonCode: input.reasonCode, note: input.note, lines, movementIds: [] } };
+}
+
+/**
+ * Batch 2 · for finance (Batch 3's inventory-loss journal): each resolution line costed at what the stock LEFT the source
+ * with — the transfer's own `lineCostsMinor` (the source's average at dispatch), else the line's cost — in its unit, and the
+ * lost value recomputed from that cost (OB-31: steps × per-unit cost, rounded once). Pure.
+ */
+export function costedResolution(resolution: ShortfallResolution, transfer: Transfer): ShortfallResolution {
+  return {
+    ...resolution,
+    lines: resolution.lines.map((l) => {
+      const i = transfer.lines.findIndex((t) => t.productId === l.productId && t.batchId === l.batchId);
+      if (i < 0) return l;
+      const line = transfer.lines[i]!;
+      const unitCostMinor = transfer.lineCostsMinor?.[i] ?? line.unitCost.minor;
+      return { ...l, uom: line.uom, unitCostMinor, lostValueMinor: valueAtUnitCost(l.lostMinor, line.uom, unitCostMinor) };
+    }),
+  };
+}
+
+/**
+ * Batch 2 — the shape a confirmed-lost shortfall is handed to finance in (the `loss` field of `FloorIndentShortfallResolved`
+ * and `TransferShortfallResolved`): where it went missing, who resolved it and why, and per line the unit, the cost per whole
+ * unit, how much was lost and what that is worth. Only lines with something lost are listed; `lostValueMinor` is their sum.
+ */
+export interface ShortfallLoss {
+  readonly source: 'floor_indent' | 'transfer';
+  readonly transferId: string;
+  readonly indentId: string | null;
+  readonly issueId: string | null;
+  readonly fromLocationId: string;
+  readonly toLocationId: string;
+  readonly resolvedBy: string;
+  readonly resolvedAt: string;
+  readonly reasonCode: string;
+  readonly note: string;
+  readonly currency: 'INR';
+  readonly lines: readonly { readonly productId: string; readonly batchId: string | null; readonly uom: string; readonly lostMinor: number; readonly unitCostMinor: number; readonly lostValueMinor: number }[];
+  readonly lostValueMinor: number;
+  /** The compensating `adjusted` movements for what turned up (not a loss — listed so finance can tie the story out). */
+  readonly foundMovementIds: readonly string[];
+}
+
+export function shortfallLossOf(input: { readonly source: ShortfallLoss['source']; readonly transfer: Transfer; readonly resolution: ShortfallResolution; readonly indentId?: string; readonly issueId?: string }): ShortfallLoss {
+  const lines = input.resolution.lines.filter((l) => l.lostMinor > 0).map((l) => ({
+    productId: l.productId, batchId: l.batchId, uom: l.uom ?? 'ea', lostMinor: l.lostMinor, unitCostMinor: l.unitCostMinor ?? 0, lostValueMinor: l.lostValueMinor,
+  }));
+  return {
+    source: input.source, transferId: input.transfer.transferId, indentId: input.indentId ?? null, issueId: input.issueId ?? null,
+    fromLocationId: input.transfer.fromLocationId, toLocationId: input.transfer.toLocationId,
+    resolvedBy: input.resolution.resolvedBy, resolvedAt: input.resolution.resolvedAt, reasonCode: input.resolution.reasonCode, note: input.resolution.note,
+    currency: 'INR', lines, lostValueMinor: lines.reduce((s, l) => s + l.lostValueMinor, 0), foundMovementIds: input.resolution.movementIds,
+  };
 }
 
 /** The valued shortfall lines of a receipt's discrepancies (what was dispatched and did not arrive). */

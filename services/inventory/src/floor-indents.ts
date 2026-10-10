@@ -12,7 +12,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound, concurrentChange } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { dispatchTransfer, receiveTransfer, TransferRefusedError, type Transfer, type TransferLine, type AvailableLot, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import { dispatchTransfer, receiveTransfer, TransferRefusedError, costedResolution, type Transfer, type TransferLine, type AvailableLot, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { applyMovement, type Bin, type BinContents, type MovementCommand } from '../../../packages/warehouse/src/movements';
 import {
   requestIndent, approveIndent, rejectIndent, planIssue, applyIssue, planReceipt, applyReceipt, cancelIndent,
@@ -492,7 +492,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
             const check = checkMovement(m);
             if (!check.ok) throw apiError(422, { code: check.refusedBecause ?? 'movement_refused', whatHappened: check.detail, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
           }
-          const resolution: ShortfallResolution = { ...planned, movementIds: posted.map((m) => m.movementId) };
+          const resolution: ShortfallResolution = { ...costedResolution(planned, transfer), movementIds: posted.map((m) => m.movementId) };
           const next = applyShortfallResolution(indent, issueId, resolution);
           await deps.recordShortfallResolved(ctx.tenantId, next, issueId, posted, indentVersion);
           await audit(ctx.tenantId, {

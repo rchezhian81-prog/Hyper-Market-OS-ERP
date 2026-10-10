@@ -95,7 +95,7 @@ import type { Bin, BinContents } from '../../../packages/warehouse/src/movements
 import { binKey } from '../../../packages/warehouse/src/movements';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
-import { shortfallLinesOf, type AvailableLot, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import { shortfallLinesOf, shortfallLossOf, type AvailableLot, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
 import { recipeDigest, type ProductionDeps, type StoredRun, type StoredRelease } from '../../inventory/src/production';
@@ -5334,7 +5334,8 @@ export function transfersAdapter(input: {
           event: makeEvent({
             id: `transfer-shortfall-resolved-${transfer.transferId}`, type: 'TransferShortfallResolved', occurredAt: at,
             idempotencyKey: `transfer-shortfall-resolved-${tenantId}-${transfer.transferId}-${digest}`, source: 'api/inventory',
-            payload: { transfer },
+            // Batch 2: `loss` is the shape finance posts the inventory-loss journal from (Batch 3).
+            payload: { transfer, ...(transfer.shortfallResolution === undefined ? {} : { loss: shortfallLossOf({ source: 'transfer', transfer, resolution: transfer.shortfallResolution }) }) },
           }),
         },
         ...movementEntries(tenantId, posted),
@@ -5470,11 +5471,24 @@ export function floorIndentsAdapter(input: {
     recordShortfallResolved: async (tenantId, indent, issueId, posted, expectedIndentVersion) => {
       const at = input.now();
       await input.store.appendBatch(tenantId, [
-        stepEvent(tenantId, 'FloorIndentShortfallResolved', indent, 'shortfall-resolved', guardedSub(issueId, indent, expectedIndentVersion), at),
+        lossStep(tenantId, stepEvent(tenantId, 'FloorIndentShortfallResolved', indent, 'shortfall-resolved', guardedSub(issueId, indent, expectedIndentVersion), at), indent, issueId, await foldTransferAggregates(input.store, tenantId)),
         ...movementEntries(tenantId, posted),
       ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
   };
+}
+
+/**
+ * Batch 2: a floor-indent shortfall resolution's event carries the `loss` summary finance posts from (Batch 3) beside the
+ * indent — the same `ShortfallLoss` shape a plain transfer's resolution carries.
+ */
+function lossStep(tenantId: string, step: { stream: string; event: DomainEvent }, indent: FloorIndent, issueId: string, transfers: readonly Transfer[]): { stream: string; event: DomainEvent } {
+  void tenantId;
+  const issue = indent.issues.find((i) => i.issueId === issueId);
+  const transfer = issue === undefined ? undefined : transfers.find((t) => t.transferId === issue.transferId);
+  if (issue?.shortfallResolution === undefined || transfer === undefined) return step;
+  const loss = shortfallLossOf({ source: 'floor_indent', transfer, resolution: issue.shortfallResolution, indentId: indent.indentId, issueId });
+  return { ...step, event: { ...step.event, payload: { ...(step.event.payload as Record<string, unknown>), loss } } };
 }
 
 /** The transfer aggregates (latest state each) — shared by the transfers adapter and the inventory reads (SP-5). */

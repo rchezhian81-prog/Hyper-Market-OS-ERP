@@ -34,7 +34,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, concurrentChange, notFound } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
-  dispatchTransfer, receiveTransfer, proposeAllocation, TransferRefusedError, judgeShortfallResolution,
+  dispatchTransfer, receiveTransfer, proposeAllocation, TransferRefusedError, judgeShortfallResolution, costedResolution,
   type Transfer, type TransferLine, type TransferApproval, type AvailableLot, type AllocationNeed,
   type FoundLine, type ShortfallLine, type ShortfallResolution, type ShortfallRefusal,
 } from '../../../packages/warehouse/src/transfers';
@@ -386,11 +386,12 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         });
         if (!judged.ok) throw apiError(SHORTFALL_STATUS[judged.code], { code: judged.code, whatHappened: judged.why, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed. Read the transfer and its exception, then try again.' });
         const posted = foundPostings(transfer, { ...(transfer.receivedBy === undefined ? {} : { receivedBy: transfer.receivedBy }) }, judged.resolution);
+        const costed = costedResolution(judged.resolution, transfer);
         for (const m of posted) {
           const check = checkMovement(m);
           if (!check.ok) throw apiError(422, { code: check.refusedBecause ?? 'movement_refused', whatHappened: check.detail, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
         }
-        const resolution: ShortfallResolution = { ...judged.resolution, movementIds: posted.map((m) => m.movementId) };
+        const resolution: ShortfallResolution = { ...costed, movementIds: posted.map((m) => m.movementId) };
         try {
           await deps.recordShortfallResolved(ctx.tenantId, { ...transfer, shortfallResolution: resolution }, posted, version);
         } catch (e) {
