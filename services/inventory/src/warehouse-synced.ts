@@ -28,6 +28,7 @@ import { MOVEMENT_KINDS, STOCK_STATES, assertBinsInScope, type WarehouseDeps } f
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import type { Movement } from './index';
 import { coldChainVerdict, type ColdChainVerdict, type ProductReceiptRules, type ReceiptPolicy } from '../../../packages/receiving/src/index';
+import { normaliseUom } from '../../../packages/contracts/src/quantity';
 
 export const WAREHOUSE_SYNC_FLAGS = Object.freeze([
   'mover_unknown', 'mover_lacks_authority', 'receiver_unknown', 'receiver_lacks_authority', 'held_out_of_stock',
@@ -36,6 +37,9 @@ export const WAREHOUSE_SYNC_FLAGS = Object.freeze([
   'after_assembly',
   // Wave 3 · SF-07 part 3: a cold-chain scan with no reading, or one out of the product's limits — recorded, NOT put on-hand.
   'cold_chain_held',
+  // OB-31 "A" (round 4 acceptance): the scan named a unit other than the product master's — the master's unit is recorded
+  // (a count is in the PRODUCT's smallest step) and this says so, never a silent correction (P-08).
+  'unit_from_master',
 ] as const);
 export type WarehouseSyncFlag = (typeof WAREHOUSE_SYNC_FLAGS)[number];
 
@@ -210,6 +214,19 @@ export interface ReceivingScanDeps {
   readonly productRule?: (tenantId: string, productId: string) => Promise<ProductReceiptRules | undefined> | ProductReceiptRules | undefined;
   /** Wave 3 · SF-07 part 3 — the tenant's receipt policy (its cold-chain maximum stands behind a product's own). */
   readonly receiptPolicy?: (tenantId: string) => Promise<Pick<ReceiptPolicy, 'coldChainMaxC'> | undefined> | Pick<ReceiptPolicy, 'coldChainMaxC'> | undefined;
+  /**
+   * OB-31 "A" (round 4 acceptance): the product master's unit (else the published pack's). The handheld counts in the
+   * product's smallest step but does not know the unit (it fills 'EA'); head office records the master's unit, so a kilogram
+   * product received on the phone is GRAMS on the ledger, never "each". Absent → the scan's own unit, as before.
+   */
+  readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
+  /**
+   * M07-FR-02 (round 4 acceptance): the unit cost the ISSUED order head office holds agreed for this product (minor, per whole
+   * unit — per kg for a kg product). A scan against that order posts its stock at that cost, so goods received on the phone
+   * are valued (M08) and a discrepancy or debit note carries a value; the invoice match then measures the bill against it.
+   * Undefined (no order, the order does not name the product) → posted uncosted, as before.
+   */
+  readonly orderUnitCost?: (tenantId: string, poId: string, productId: string) => Promise<number | undefined> | number | undefined;
   readonly now: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
@@ -266,6 +283,12 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
         // SP-6b: the delivery was already assembled into its GRN — this scan is still the truth about goods in the building,
         // so it is recorded and posted exactly as before, and SAID, so the receipt is reviewed against its late scans.
         if (deps.receiptExists !== undefined && (await deps.receiptExists(ctx.tenantId, s.grnId))) flags.push('after_assembly');
+        // OB-31 "A": the master's unit, never the phone's default; a different unit named by the scan is said, not hidden.
+        const masterUnit = deps.productUom === undefined ? undefined : normaliseUom((await deps.productUom(ctx.tenantId, s.productId)) ?? '');
+        if (masterUnit !== undefined && normaliseUom(s.uom) !== masterUnit) flags.push('unit_from_master');
+        const uom = masterUnit ?? s.uom;
+        // M07-FR-02: the cost the issued order agreed for these goods — head office's own record, never the body.
+        const unitCostMinor = s.poId === null || deps.orderUnitCost === undefined ? undefined : await deps.orderUnitCost(ctx.tenantId, s.poId, s.productId);
 
         // Wave 3 · SF-07 part 3: a cold-chain item (the product master's word) with no reading, or one out of its limits, is
         // recorded but NOT put on-hand — the same limits the receipt is judged by; its assembled line is held for a second person.
@@ -284,8 +307,9 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
           if (!(await deps.isKnown(ctx.tenantId, onHandMovementId))) {
             await deps.appendMovement(ctx.tenantId, {
               movementId: onHandMovementId, productId: s.productId, locationId: s.storeId, kind: 'received',
-              quantityMinor: s.quantityMinor, uom: s.uom, occurredAt: s.at, enteredBy: s.receivedBy,
+              quantityMinor: s.quantityMinor, uom, occurredAt: s.at, enteredBy: s.receivedBy,
               reason: `receiving scan ${commandId} for ${s.grnId}`,
+              ...(unitCostMinor === undefined ? {} : { unitCostMinor }),
               ...(s.batchId !== null ? { batchId: s.batchId } : {}),
               ...(s.expiry !== null ? { expiry: s.expiry } : {}),
             });
@@ -295,7 +319,7 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
         }
 
         const record: ReceivingScanRecord = {
-          commandId, grnId: s.grnId, productId: s.productId, batchId: s.batchId, quantityMinor: s.quantityMinor, uom: s.uom,
+          commandId, grnId: s.grnId, productId: s.productId, batchId: s.batchId, quantityMinor: s.quantityMinor, uom,
           source: s.source, poId: s.poId, state: s.state, expiry: s.expiry, receivedBy: s.receivedBy, relayedBy: ctx.userId,
           storeId: s.storeId, at: s.at, onHandMovementId, governanceFlags: flags,
           ...(s.temperatureC === undefined ? {} : { temperatureC: s.temperatureC }),
@@ -307,7 +331,7 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
           at: now, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
           before: null,
           after: {
-            commandId, productId: s.productId, quantityMinor: String(s.quantityMinor), uom: s.uom, state: s.state, poId: s.poId ?? '',
+            commandId, productId: s.productId, quantityMinor: String(s.quantityMinor), uom, state: s.state, poId: s.poId ?? '',
             storeId: s.storeId, onHandMovementId: onHandMovementId ?? '', relayedBy: ctx.userId, flags: flags.join(','),
           },
           correlationId: s.grnId,

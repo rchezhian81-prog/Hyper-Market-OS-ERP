@@ -4625,6 +4625,9 @@ export function receivingScanAdapter(input: {
     // Wave 3 · SF-07 part 3: the goods receipt's own rule (product master + class defaults) and policy, for the scan's cold-chain check.
     productRule: (tenantId, productId) => goodsReceiptAdapter(input).productRule(tenantId, productId),
     receiptPolicy: (tenantId) => goodsReceiptAdapter(input).receiptPolicy(tenantId),
+    // OB-31 "A" and M07-FR-02 (round 4 acceptance): the master's unit and the issued order's agreed cost for a phone scan.
+    productUom: (tenantId, productId) => productUomFrom(input, tenantId, productId),
+    orderUnitCost: (tenantId, poId, productId) => orderUnitCostFrom(input, tenantId, poId, productId),
     recordScan: async (tenantId, scan) => {
       await input.store.append(tenantId, scansStream, makeEvent({
         id: `recv-scan-${scan.commandId}`,
@@ -7260,6 +7263,16 @@ export async function supplierInvoiceIdUsed(store: EventStore, tenantId: string,
 }
 
 /** OB-31: the unit head office counts a product in — the product master's base unit, else the published pack's. */
+/**
+ * M07-FR-02 (round 4 acceptance): the unit cost (minor, per whole unit) an ISSUED purchase order agreed for a product — the
+ * cost a receipt against that order is posted at. Undefined when the order is unknown, not issued, or does not name it.
+ */
+export async function orderUnitCostFrom(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, poId: string, productId: string): Promise<number | undefined> {
+  const po = (await foldPurchaseOrders(input.store, tenantId)).get(poId);
+  if (po === undefined || po.status !== 'issued') return undefined;
+  return po.lines.find((l) => l.productId === productId)?.unitCost.minor;
+}
+
 export async function productUomFrom(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, productId: string): Promise<string | undefined> {
   const master = await productMasterAdapter(input).product(tenantId, productId);
   if (master?.baseUom !== undefined) return master.baseUom;

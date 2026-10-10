@@ -235,6 +235,9 @@ export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
             reopenReason: reopen?.reason ?? null,
             reopenedAt: reopen?.reopenedAt ?? null,
             governanceFlags: reopen?.governanceFlags ?? [],
+            // OB-36 "A" (round 4 acceptance): what head office found when it re-checked the person the store named as the
+            // CLOSER (closer_unknown / closer_lacks_authority) — recorded on the close, and shown here, never dropped.
+            closeFlags: c.governanceFlags ?? [],
           };
         });
         return {
@@ -245,6 +248,9 @@ export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
             // The reopens a person still needs to look at — a §28 breach nobody has resolved.
             flaggedReopens: rows.filter((r) => r.governanceFlags.length > 0)
               .map((r) => ({ dayCloseId: r.dayCloseId, tradingDay: r.tradingDay, reopenedBy: r.reopenedBy, approvedBy: r.approvedBy, governanceFlags: r.governanceFlags })),
+            // The closes a person still needs to look at — a day locked under the name of someone without that authority.
+            flaggedCloses: rows.filter((r) => r.closeFlags.length > 0)
+              .map((r) => ({ dayCloseId: r.dayCloseId, tradingDay: r.tradingDay, closedBy: r.closedBy, closeFlags: r.closeFlags })),
             asAt: deps.now(),
           },
         };
