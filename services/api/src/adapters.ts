@@ -7980,7 +7980,9 @@ export function loyaltyWalletsAdapter(input: {
     storeCredit: async (tenantId, memberRef) => {
       const mine = (await value.instrumentsForOwner(tenantId, memberRef))
         .filter((i) => i.kind === 'store_credit')
-        .sort((a, b) => a.issuedAt.localeCompare(b.issuedAt) || a.instrumentId.localeCompare(b.instrumentId));
+        // Oldest first by issue time; two issued in the same millisecond keep the order head office recorded them (the
+        // index is append-ordered and the sort is stable) — never the alphabetical order of their ids.
+        .sort((a, b) => a.issuedAt.localeCompare(b.issuedAt));
       return Promise.all(mine.map(async (instrument) => {
         // The guard version first, then the history it protects (Wave 2a).
         const version = await input.store.guardVersion(tenantId, `stored-value:${instrument.instrumentId}`);
