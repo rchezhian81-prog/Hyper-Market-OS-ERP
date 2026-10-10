@@ -25,9 +25,11 @@ const MILK: StorefrontProduct = {
   productId: 'MILK', name: 'Aavin Milk 1L', categoryId: 'dairy', unitPriceMinor: 60_00, uom: 'each',
   barcodes: ['8901234567891'], status: 'active', availableMinor: 5, availabilityAgeMinutes: 1,
 };
+let heldSlot = { startsAt: '2026-10-10T17:00:00.000Z', endsAt: '2026-10-10T19:00:00.000Z' };
 const data = (over: Partial<ShopData> = {}): ShopData => ({
   tenantId: T, customerRef: C1, products: [MILK], packVersion: 3, locationId: 'L1',
-  slots: [{ slotId: 'S-17', startsAt: '2026-10-10T17:00:00.000Z', endsAt: '2026-10-10T19:00:00.000Z', capacity: 4, booked: 0, kind: 'delivery' }],
+  // FUL-03: the slot the app offers is one head office's OWN delivery service offers (tomorrow's first) — the shop checks it.
+  slots: [{ slotId: 'S-17', startsAt: heldSlot.startsAt, endsAt: heldSlot.endsAt, capacity: 4, booked: 0, kind: 'delivery' }],
   policy: { radiusMetres: 10_000, deliveryFeeMinor: 40_00 }, deliveryFeeMinor: 40_00,
   storeLocation: { lat: 11.0168, lon: 76.9558 }, deliveryLocation: { lat: 11.0200, lon: 76.9600 },
   ...over,
@@ -51,6 +53,11 @@ async function seeded(entitled = true): Promise<ApiHarness> {
   await ok('/v1/prices/list/MILK/entries/e1', { scope: 'store', scopeRef: 'L1', priceMinor: 60_00, mrpMinor: 70_00, costMinor: 40_00, marginFloorBps: 0, currency: 'INR', effectiveFrom: today }, 'price');
   await ok('/v1/catalogue/pack', { storeId: 'L1', asOf: today }, 'pack');
   await ok('/v1/serviceability/periods/2026-01-01', { radiusMetres: 10_000, deliveryFeeMinor: 40_00 }, 'svc');
+  // FUL-03: how the store delivers, held at head office (OA-11: the main store, 8 slots 9 am–9 pm, 10 orders each).
+  expect((await h.request({ method: 'PUT', path: '/v1/serviceability/delivery-service', userId: OWNER, tenantId: T, idempotencyKey: 'dsvc', body: { storeLocation: { lat: 11.0168, lon: 76.9558 }, slotsPerDay: 8, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot: 10, leadMinutes: 60 } })).status).toBe(200);
+  const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  const svc = await h.request({ method: 'GET', path: '/v1/serviceability/delivery-service', userId: OWNER, tenantId: T, query: { day: tomorrow } });
+  heldSlot = (svc.body as { slots: { startsAt: string; endsAt: string }[] }).slots[0]!;
   return h;
 }
 

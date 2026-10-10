@@ -566,13 +566,17 @@ export function bootShop(
     // 2. The real thing. The amount is the session's own payable (items + fee) — the shop records
     //    it as the checkout's answer and invents nothing.
     const payable = dry.state.order?.payableMinor ?? 0;
-    const slotKind = (data?.slots ?? []).find((sl) => sl.slotId === state.slotId)?.kind;
+    const chosen = (data?.slots ?? []).find((sl) => sl.slotId === state.slotId);
+    const slotKind = chosen?.kind;
     const answer = await transport.placeOrder({
       orderId, token, locationId,
       lines: state.lines.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor })),
       payment: { providerRef, amountMinor: payable, result },
       // The shop quotes its own delivery fee for a delivery (FUL-03).
       ...(slotKind === undefined ? {} : { fulfilment: slotKind }),
+      // …and checks the slot and the address against its own record (FUL-03) — what the app saw is only a view.
+      ...(chosen === undefined || slotKind !== 'delivery' ? {} : { deliverySlot: { startsAt: chosen.startsAt, endsAt: chosen.endsAt } }),
+      ...(slotKind !== 'delivery' || deliveryLocation === undefined ? {} : { deliveryLocation }),
     });
 
     if (!answer.reached) {

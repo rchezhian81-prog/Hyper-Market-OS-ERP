@@ -78,6 +78,9 @@ const WORDS = {
     onHold: 'A basket is on hold. Tap Recall to bring it back.',
     noneHeld: 'No basket is on hold for this till.',
     recallWhich: 'Which held basket?',
+    noSale: 'Open drawer (no sale)', noSaleDone: 'Recorded — open the drawer', noSaleHint: 'A manager approves opening the drawer with no sale',
+    priceChange: 'Change price of the selected line', newPrice: 'New price for one unit (₹) — lower than now', priceChanged: 'Price changed',
+    overrideHint: 'A manager who is not you approves this', overrideReason: 'Manager: why is this allowed?',
     giveUp: 'Give up a held basket', giveUpWhich: 'Which held basket is being given up?', whyGiveUp: 'Why is it being given up?',
     givenUp: 'Basket given up. It stays on the record with your name and the reason.',
     tapTerminal: 'What did the card machine say?',
@@ -204,6 +207,9 @@ const WORDS = {
     onHold: 'ஒரு கூடை நிறுத்தி வைக்கப்பட்டுள்ளது. திரும்பப் பெற தட்டவும்.',
     noneHeld: 'இந்த டில்லுக்கு நிறுத்தி வைத்த கூடை எதுவும் இல்லை.',
     recallWhich: 'எந்த நிறுத்திய கூடை?',
+    noSale: 'டிராயரைத் திற (விற்பனை இல்லை)', noSaleDone: 'பதிவாகியது — டிராயரைத் திறக்கலாம்', noSaleHint: 'விற்பனை இல்லாமல் டிராயரைத் திறக்க மேலாளர் அனுமதிக்க வேண்டும்',
+    priceChange: 'தேர்ந்த வரியின் விலையை மாற்று', newPrice: 'ஒரு அலகுக்கான புதிய விலை (₹) — இப்போதையதை விடக் குறைவு', priceChanged: 'விலை மாற்றப்பட்டது',
+    overrideHint: 'உங்களைத் தவிர வேறு ஒரு மேலாளர் அனுமதிக்க வேண்டும்', overrideReason: 'மேலாளர்: இது ஏன் அனுமதிக்கப்படுகிறது?',
     giveUp: 'நிறுத்திய கூடையைக் கைவிடு', giveUpWhich: 'எந்த நிறுத்திய கூடை கைவிடப்படுகிறது?', whyGiveUp: 'ஏன் கைவிடப்படுகிறது?',
     givenUp: 'கூடை கைவிடப்பட்டது. உங்கள் பெயரும் காரணமும் பதிவில் இருக்கும்.',
     tapTerminal: 'கார்டு இயந்திரம் என்ன சொன்னது?',
@@ -310,6 +316,22 @@ const GIVE_UP_REASONS = [
   { code: 'customer_no_money', en: 'Customer could not pay', ta: 'வாடிக்கையாளரால் பணம் செலுத்த முடியவில்லை' },
   { code: 'held_by_mistake', en: 'Held by mistake', ta: 'தவறாக நிறுத்தப்பட்டது' },
   { code: 'rung_again', en: 'Rung again on a new bill', ta: 'புதிய பில்லில் மீண்டும் போடப்பட்டது' },
+];
+
+/** Why the drawer is opened with no sale, preset (PF-07 · M15) — recorded with the cashier and the approving manager. */
+const NO_SALE_REASONS = [
+  { code: 'change_for_customer', en: 'Change for a customer', ta: 'வாடிக்கையாளருக்குச் சில்லறை' },
+  { code: 'correct_last_tender', en: 'Correct the last payment', ta: 'கடைசி கட்டணத்தைச் சரிசெய்ய' },
+  { code: 'check_drawer', en: 'Check the drawer', ta: 'டிராயரைச் சரிபார்க்க' },
+  { code: 'other', en: 'Other', ta: 'மற்றவை' },
+];
+
+/** Why a price is lowered at the till, preset (PF-07 · M12-FR-04) — recorded with the cashier and the approving manager. */
+const PRICE_CHANGE_REASONS = [
+  { code: 'shelf_label_lower', en: 'Shelf label shows a lower price', ta: 'அலமாரி விலைச்சீட்டில் குறைந்த விலை' },
+  { code: 'damaged_pack', en: 'Damaged pack, sold as is', ta: 'சேதமடைந்த பொதி, அப்படியே விற்பனை' },
+  { code: 'near_expiry', en: 'Near expiry', ta: 'காலாவதி நெருங்குகிறது' },
+  { code: 'price_match', en: 'Price match approved', ta: 'விலை ஒப்பீடு அனுமதிக்கப்பட்டது' },
 ];
 
 /** Refund reasons, preset — free text at a till is a reason nobody can report on afterwards (M15). */
@@ -1096,6 +1118,10 @@ el('more').addEventListener('click', async () => {
     // PF-05: a held basket can be given up, with a reason — offered only when the store computer holds one for this till.
     ...(session.abandonAtTill && heldCount > 0 ? [{ value: 'give_up', label: t('giveUp') }] : []),
     ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill') }] : []),
+    // SUPERVISOR OVERRIDES (PF-07 · M12-FR-04): each needs a manager's approval and is recorded on the store computer
+    // first. Changing a price needs a selected line.
+    ...(session.noSaleAtTill ? [{ value: 'no_sale', label: t('noSale') }] : []),
+    ...(session.priceChangeAtTill && selectedLineId ? [{ value: 'price_change', label: t('priceChange') }] : []),
     // The customer's loyalty membership, by the mobile number they joined with (PF-09 step 2 · OB-28 "1").
     ...(session.setLoyaltyMobile === undefined ? [] : session.loyaltyMemberLast4() === null
       ? [{ value: 'member', label: t('member') }]
@@ -1110,8 +1136,41 @@ el('more').addEventListener('click', async () => {
   if (what === 'close') return closeTheTill();
   if (what === 'give_up') return giveUpHeldBasket();
   if (what === 'member') return nameLoyaltyMember();
+  if (what === 'no_sale') return openDrawerNoSale();
+  if (what === 'price_change') return changeLinePrice();
   if (what === 'member_remove') { session.setLoyaltyMobile(null); tell(t('member'), t('memberRemoved')); return undefined; }
 });
+
+/**
+ * Open the drawer with NO SALE (PF-07 · M15-FR-01): a manager approves with their own PIN, the store computer records it
+ * with the cashier and the manager, and only then is the cashier told to open the drawer. No approval, no record — no drawer.
+ */
+async function openDrawerNoSale() {
+  const approval = await managerApproves({ kind: 'no_sale', valueMinor: 0, hint: t('noSaleHint'), reasons: NO_SALE_REASONS, reasonTitle: 'overrideReason' });
+  if (!approval) return;
+  const r = await session.noSaleAtTill(approval.reason, { approvalId: approval.approvalId });
+  tell(r.ok ? t('noSaleDone') : t('read'), r.laneMessage);
+}
+
+/**
+ * Lower the selected line's price (PF-07 · M12-FR-04): the new unit price, a manager's approval for exactly what it takes
+ * off the line, recorded on the store computer — and only then does the line change.
+ */
+async function changeLinePrice() {
+  const lineId = selectedLineId;
+  if (!lineId) { tell(t('read'), t('tapLineFirst')); return; }
+  const typed = await ask({ title: t('newPrice'), mode: 'number', initial: '' });
+  if (typed === null || typed === '') return;
+  const toUnitMinor = Math.round(Number(typed) * 100);
+  const value = session.priceChangeValue(lineId, toUnitMinor);
+  if (!value.ok) { tell(t('read'), value.laneMessage); return; }
+  const approval = await managerApproves({ kind: 'price_override', billRef: session.currentBillRef(), valueMinor: value.reductionMinor, hint: t('overrideHint'), reasons: PRICE_CHANGE_REASONS, reasonTitle: 'overrideReason' });
+  if (!approval) return;
+  const r = await session.priceChangeAtTill(lineId, toUnitMinor, approval.reason, { approvalId: approval.approvalId });
+  if (!r.ok) { tell(t('read'), r.laneMessage); return; }
+  tell(t('priceChanged'), r.laneMessage);
+  render();
+}
 
 /**
  * Name the loyalty member on this bill by the mobile number they joined with (PF-09 step 2). Keyed on the till's own
@@ -1217,13 +1276,13 @@ function askScanOrKey({ title, hint = '' }) {
  * approving themselves, and issues an approval bound to this kind, bill, amount and cashier, used once. Resolves the
  * approval for the refund to carry, or `null` once the cashier has been told why not.
  */
-async function managerApproves({ kind, billRef, valueMinor, hint }) {
+async function managerApproves({ kind, billRef, valueMinor, hint, reasons = REFUND_REASONS, reasonTitle = 'refundApproveReason' }) {
   if (!session.approveAtTill) { tell(t('read'), t('noStoreBox')); return null; }
   const by = await askScanOrKey({ title: t('refundManagerId'), hint });
   if (by === null || by === '' || by === '0') { tell(t('read'), t('refundNeedManager')); return null; }
   const pin = await ask({ title: t('managerPinTitle'), mode: 'number', hint: t('managerPinHint'), initial: '', mask: true });
   if (pin === null || pin === '') { tell(t('read'), t('refundNeedManager')); return null; }
-  const reason = await ask({ title: t('refundApproveReason'), mode: 'choice', choices: REFUND_REASONS });
+  const reason = await ask({ title: t(reasonTitle), mode: 'choice', choices: reasons });
   if (!reason) return null;
   const outcome = await session.approveAtTill({ managerId: String(by), pin: String(pin), kind, ...(billRef ? { billRef } : {}), valueMinor, reason });
   if (!outcome.approved) { tell(t('approvalRefused'), outcome.laneMessage); return null; }

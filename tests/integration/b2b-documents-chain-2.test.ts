@@ -26,8 +26,11 @@ const setLimit = (h: ApiHarness, t: string, u: string, cust: string, creditLimit
   h.request({ method: 'POST', path: `/v1/b2b/accounts/${cust}`, userId: u, tenantId: t, idempotencyKey: `lim-${cust}`, body: { creditLimitMinor } });
 const quote = (h: ApiHarness, t: string, u: string, cust: string, id: string, lines: unknown) =>
   h.request({ method: 'POST', path: `/v1/b2b/documents/${cust}/quotations/${id}`, userId: u, tenantId: t, idempotencyKey: `q-${id}`, body: { lines } });
-const order = (h: ApiHarness, t: string, u: string, cust: string, id: string, fromQuotationId: string) =>
-  h.request({ method: 'POST', path: `/v1/b2b/documents/${cust}/orders/${id}`, userId: u, tenantId: t, idempotencyKey: `o-${id}`, body: { fromQuotationId } });
+// FUL-09: a sales order holds its stock at a named store, so the store has rice on the shelf first (a receipt, once per tenant).
+const order = async (h: ApiHarness, t: string, u: string, cust: string, id: string, fromQuotationId: string) => {
+  for (const p of ['p1', 'p2']) await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: 'u-owner', tenantId: t, idempotencyKey: `stock-${t}-${p}`, body: { movementId: `stock-${t}-${p}`, productId: p, locationId: 'S1', kind: 'received', quantityMinor: 1_000, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: 'u-owner' } });
+  return h.request({ method: 'POST', path: `/v1/b2b/documents/${cust}/orders/${id}`, userId: u, tenantId: t, idempotencyKey: `o-${id}`, body: { fromQuotationId, locationId: 'S1' } });
+};
 const proforma = (h: ApiHarness, t: string, u: string, cust: string, id: string, fromOrderId: string) =>
   h.request({ method: 'POST', path: `/v1/b2b/documents/${cust}/proformas/${id}`, userId: u, tenantId: t, idempotencyKey: `pf-${id}`, body: { fromOrderId } });
 const challan = (h: ApiHarness, t: string, u: string, cust: string, id: string, fromOrderId: string, dispatched: unknown) =>

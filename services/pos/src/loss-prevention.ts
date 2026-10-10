@@ -22,7 +22,7 @@ import {
 } from '../../../packages/loss-prevention/src/cases';
 import { buildOpenCaseWorklist } from '../../../packages/loss-prevention/src/worklist';
 import {
-  evaluateLossPrevention, type LpRule, type ActivityEvent, type SignalKind,
+  evaluateLossPrevention, type LpRule, type ActivityEvent, type SignalKind, type LpException,
 } from '../../../packages/loss-prevention/src/loss-prevention';
 
 const KINDS: readonly EvidenceKind[] = ['transaction_record', 'cctv_reference', 'witness_statement', 'stock_count', 'settlement_record', 'note'];
@@ -248,19 +248,36 @@ export function lpRulesRoutes(deps: LpRulesDeps): readonly Route[] {
 // day. What breaches a rule is RAISED once (and again only when it grows or escalates), linked to the transactions, and
 // listed for the owner with the case opened from it, if any. The evaluate route above stays, labelled a preview.
 
-/** One till action head office keeps as loss-prevention evidence. */
+/**
+ * One till action head office keeps as loss-prevention evidence: a VOID (a line taken off a bill), a NO-SALE (the drawer
+ * opened with no sale) or a PRICE OVERRIDE (a line's price lowered at the till). A no-sale and an override carry the
+ * manager who approved them on the box (the one-use till approval, PF-02); a void needs none.
+ */
 export interface TillActivity {
   readonly activityId: string;
-  readonly kind: 'void';
+  readonly kind: 'void' | 'no_sale' | 'price_override';
   readonly laneId: string;
   readonly cashierId: string;
-  readonly billRef: string;
-  readonly lineId: string;
-  readonly productId: string;
-  readonly description: string;
+  /** The bill (a void and an override always; a no-sale only when one was open). */
+  readonly billRef?: string;
+  readonly lineId?: string;
+  readonly productId?: string;
+  readonly description?: string;
+  /** A void: the line's value; an override: what it took off the line; a no-sale: 0. */
   readonly valueMinor: number;
+  /** A price override: the unit price before and after, and the quantity it applied to. */
+  readonly fromUnitMinor?: number;
+  readonly toUnitMinor?: number;
+  readonly quantityMinor?: number;
   readonly reason: string;
   readonly at: string;
+  /** The shop's trading day the box dated it by (its cut-off); absent on a box that predates it. */
+  readonly tradingDay?: string;
+  /** The manager the box verified for a no-sale or an override, and the approval spent. */
+  readonly approvedBy?: string;
+  readonly approvalId?: string;
+  /** Whether head office's own grants say the approver holds the override authority (false = surfaced, P-08). */
+  readonly approverAuthorityHeld?: boolean;
   /** How the box verified the cashier (pin / verified sign-in), when it said. */
   readonly via?: string;
   readonly relayedBy: string;
@@ -283,24 +300,85 @@ export interface RaisedException {
 export interface LpActivityDeps {
   readonly activity: (tenantId: string, activityId: string) => Promise<TillActivity | undefined> | TillActivity | undefined;
   readonly recordActivity: (tenantId: string, a: TillActivity) => Promise<void> | void;
-  /** The voids head office holds for one calendar day (UTC), as rule activity. */
-  readonly voidsOn: (tenantId: string, day: string) => Promise<readonly ActivityEvent[]> | readonly ActivityEvent[];
-  /** The refunds head office banked that day (UTC), as rule activity — processed by whom, for how much. */
+  /** The till actions head office holds for one trading day — voids, no-sales and price overrides. */
+  readonly heldOn: (tenantId: string, day: string) => Promise<readonly TillActivity[]> | readonly TillActivity[];
+  /** The refunds head office banked that trading day, as rule activity — processed by whom, for how much. */
   readonly refundsOn: (tenantId: string, day: string) => Promise<readonly ActivityEvent[]> | readonly ActivityEvent[];
   readonly rules: (tenantId: string) => Promise<readonly LpRule[]> | readonly LpRule[];
   readonly raised: (tenantId: string) => Promise<readonly RaisedException[]> | readonly RaisedException[];
   readonly recordRaised: (tenantId: string, r: RaisedException) => Promise<void> | void;
   readonly cases: (tenantId: string) => Promise<readonly InvestigationCase[]> | readonly InvestigationCase[];
+  /** Whether a person holds the override authority (`pos.override.approve`) in head office's own grants. */
+  readonly mayApproveOverride?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /** The shop's trading day an instant belongs to (its time zone and cut-off); absent = the UTC date. */
+  readonly tradingDayOf?: (tenantId: string, atIso: string) => Promise<string> | string;
   readonly now: () => string;
 }
 
 const isIsoDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const exceptionIdOf = (day: string, e: { cashierId: string; kind: string; breach: string }): string => `lpx-${day}-${e.cashierId}-${e.kind}-${e.breach}`;
 
-/** Run the store's rules over the day's authoritative record. */
+/** How a till action counts for the rules: a void as a void, a no-sale as a no-sale, a price override as a discount. */
+export function asRuleActivity(a: TillActivity): ActivityEvent {
+  const txnId = a.kind === 'no_sale' ? a.activityId : `${a.billRef ?? a.activityId}:${a.lineId ?? a.activityId}`;
+  if (a.kind === 'no_sale') return { txnId, kind: 'no_sale', cashierId: a.cashierId, at: a.at };
+  return { txnId, kind: a.kind === 'void' ? 'void' : 'discount', cashierId: a.cashierId, at: a.at, valueMinor: a.valueMinor };
+}
+
+/** Run the store's rules over the day's authoritative record — and surface any override head office cannot stand behind. */
 async function exceptionsOn(deps: LpActivityDeps, tenantId: string, day: string) {
-  const activity = [...await deps.voidsOn(tenantId, day), ...await deps.refundsOn(tenantId, day)];
-  return evaluateLossPrevention(activity, await deps.rules(tenantId)).map((x) => ({ ...x, exceptionId: exceptionIdOf(day, x), day }));
+  const held = await deps.heldOn(tenantId, day);
+  const activity = [...held.map(asRuleActivity), ...await deps.refundsOn(tenantId, day)];
+  const judged: (LpException | (Omit<LpException, 'breach'> & { readonly breach: 'approver_without_authority' }))[] = evaluateLossPrevention(activity, await deps.rules(tenantId));
+  // An override approved by someone head office's grants say may NOT approve one is never a rule question: it is raised
+  // whatever the thresholds (§28 · P-08) — linked to each such override.
+  const unauthorised = held.filter((a) => a.kind !== 'void' && a.approverAuthorityHeld === false);
+  for (const cashierId of [...new Set(unauthorised.map((a) => a.cashierId))]) {
+    for (const kind of ['no_sale', 'discount'] as const) {
+      const mine = unauthorised.filter((a) => a.cashierId === cashierId && asRuleActivity(a).kind === kind);
+      if (mine.length === 0) continue;
+      judged.push({ cashierId, kind, breach: 'approver_without_authority', observed: mine.length, limit: 0, severity: 'escalate', linkedTxnIds: mine.map((a) => asRuleActivity(a).txnId) });
+    }
+  }
+  return judged.map((x) => ({ ...x, exceptionId: exceptionIdOf(day, x), day }));
+}
+
+const dayOf = async (deps: LpActivityDeps, tenantId: string, atIso: string): Promise<string> =>
+  deps.tradingDayOf === undefined ? atIso.slice(0, 10) : await deps.tradingDayOf(tenantId, atIso);
+
+/** Read a relayed till action, or say why not. */
+function readTillActivity(activityId: string, b: Record<string, unknown>): Omit<TillActivity, 'relayedBy' | 'approverAuthorityHeld'> | undefined {
+  const whole = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
+  const kind = b['kind'];
+  if (activityId === '' || b['activityId'] !== activityId || !isStr(b['laneId']) || !isStr(b['cashierId']) || !isStr(b['reason'])
+    || typeof b['at'] !== 'string' || Number.isNaN(Date.parse(b['at'])) || !whole(b['valueMinor'])
+    || (b['tradingDay'] !== undefined && !isIsoDay(b['tradingDay']))) return undefined;
+  const common = {
+    activityId, laneId: b['laneId'] as string, cashierId: b['cashierId'] as string, valueMinor: b['valueMinor'] as number,
+    reason: b['reason'] as string, at: b['at'] as string,
+    ...(isIsoDay(b['tradingDay']) ? { tradingDay: b['tradingDay'] } : {}),
+    ...(isStr(b['via']) ? { via: b['via'] as string } : {}),
+  };
+  const line = isStr(b['billRef']) && isStr(b['lineId']) && isStr(b['productId']) && typeof b['description'] === 'string'
+    ? { billRef: b['billRef'] as string, lineId: b['lineId'] as string, productId: b['productId'] as string, description: b['description'] as string }
+    : undefined;
+  if (kind === 'void') return line === undefined ? undefined : { ...common, kind, ...line };
+  // A no-sale and an override name the manager who approved them on the box, and that is never the cashier (§28).
+  if (!isStr(b['approvedBy']) || !isStr(b['approvalId']) || b['approvedBy'] === b['cashierId']) return undefined;
+  const approval = { approvedBy: b['approvedBy'] as string, approvalId: b['approvalId'] as string };
+  if (kind === 'no_sale') {
+    if (b['valueMinor'] !== 0) return undefined;
+    return { ...common, kind, ...approval, ...(isStr(b['billRef']) ? { billRef: b['billRef'] as string } : {}) };
+  }
+  if (kind === 'price_override') {
+    if (line === undefined || !whole(b['fromUnitMinor']) || !whole(b['toUnitMinor']) || !whole(b['quantityMinor'])
+      || (b['toUnitMinor'] as number) >= (b['fromUnitMinor'] as number) || (b['quantityMinor'] as number) <= 0 || (b['valueMinor'] as number) <= 0) return undefined;
+    return {
+      ...common, kind, ...line, ...approval,
+      fromUnitMinor: b['fromUnitMinor'] as number, toUnitMinor: b['toUnitMinor'] as number, quantityMinor: b['quantityMinor'] as number,
+    };
+  }
+  return undefined;
 }
 
 export function lpActivityRoutes(deps: LpActivityDeps): readonly Route[] {
@@ -314,23 +392,21 @@ export function lpActivityRoutes(deps: LpActivityDeps): readonly Route[] {
       handler: async (ctx) => {
         const activityId = (ctx.params['activityId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        if (activityId === '' || b['activityId'] !== activityId || b['kind'] !== 'void' || !isStr(b['laneId']) || !isStr(b['cashierId'])
-          || !isStr(b['billRef']) || !isStr(b['lineId']) || !isStr(b['productId']) || typeof b['description'] !== 'string'
-          || !Number.isSafeInteger(b['valueMinor']) || (b['valueMinor'] as number) < 0 || !isStr(b['reason']) || typeof b['at'] !== 'string' || Number.isNaN(Date.parse(b['at']))) {
-          refuse('not_readable_as_till_activity', 'This could not be read as a till void — it needs the activityId matching the path, the lane, the cashier, the bill, the line, the product, its value, the reason and when.', 400);
+        const read = readTillActivity(activityId, b);
+        if (read === undefined) {
+          refuse('not_readable_as_till_activity', 'This could not be read as a till action — a void needs the activityId matching the path, the lane, the cashier, the bill, the line, the product, its value, the reason and when; a no-sale and a price override also need the manager who approved them (never the cashier), and an override the price before and after and the quantity.', 400);
         }
         const prior = await deps.activity(ctx.tenantId, activityId);
         if (prior !== undefined) return { status: 200, body: { activityId, recorded: true, alreadyRecorded: true } };
-        const a: TillActivity = {
-          activityId, kind: 'void', laneId: b['laneId'] as string, cashierId: b['cashierId'] as string, billRef: b['billRef'] as string,
-          lineId: b['lineId'] as string, productId: b['productId'] as string, description: b['description'] as string,
-          valueMinor: b['valueMinor'] as number, reason: b['reason'] as string, at: b['at'] as string,
-          ...(isStr(b['via']) ? { via: b['via'] as string } : {}), relayedBy: ctx.userId,
-        };
+        // The approver is checked against head office's OWN grants. One who may not approve is kept as evidence and
+        // raised — never dropped (hard rule #6) and never silently believed (P-08).
+        const authority = read!.approvedBy === undefined || deps.mayApproveOverride === undefined
+          ? {} : { approverAuthorityHeld: await deps.mayApproveOverride(ctx.tenantId, read!.approvedBy) };
+        const a: TillActivity = { ...read!, ...authority, relayedBy: ctx.userId };
         await deps.recordActivity(ctx.tenantId, a);
 
         // Judge the day on the shop's own record and RAISE what breaches — once, and again only when it grows or escalates.
-        const day = a.at.slice(0, 10);
+        const day = a.tradingDay ?? await dayOf(deps, ctx.tenantId, a.at);
         const raisedBefore = new Map((await deps.raised(ctx.tenantId)).map((r) => [r.exceptionId, r] as const));
         const raisedNow: string[] = [];
         for (const x of await exceptionsOn(deps, ctx.tenantId, day)) {
@@ -346,13 +422,17 @@ export function lpActivityRoutes(deps: LpActivityDeps): readonly Route[] {
       },
     },
     {
-      // The till's voids head office holds, for a day — the evidence itself, with who, why and how much.
+      // The till actions head office holds, for a trading day — the evidence itself, with who, why, how much and (for a
+      // no-sale or an override) which manager approved it.
       api: 'API-05', method: 'GET', path: '/v1/loss-prevention/activity',
       permission: 'lp.case.read',
       handler: async (ctx) => {
-        const day = isIsoDay(ctx.query['day']) ? ctx.query['day'] : deps.now().slice(0, 10);
-        const voids = await deps.voidsOn(ctx.tenantId, day);
-        return { status: 200, body: { day, count: voids.length, voids, asAt: deps.now() } };
+        const day = isIsoDay(ctx.query['day']) ? ctx.query['day'] : await dayOf(deps, ctx.tenantId, deps.now());
+        const held = await deps.heldOn(ctx.tenantId, day);
+        const voids = held.filter((a) => a.kind === 'void').map(asRuleActivity);
+        const noSales = held.filter((a) => a.kind === 'no_sale');
+        const overrides = held.filter((a) => a.kind === 'price_override');
+        return { status: 200, body: { day, count: held.length, voids, noSales, overrides, asAt: deps.now() } };
       },
     },
     {
@@ -361,7 +441,7 @@ export function lpActivityRoutes(deps: LpActivityDeps): readonly Route[] {
       api: 'API-05', method: 'GET', path: '/v1/loss-prevention/exceptions',
       permission: 'lp.case.read',
       handler: async (ctx) => {
-        const day = isIsoDay(ctx.query['day']) ? ctx.query['day'] : deps.now().slice(0, 10);
+        const day = isIsoDay(ctx.query['day']) ? ctx.query['day'] : await dayOf(deps, ctx.tenantId, deps.now());
         const raised = new Map((await deps.raised(ctx.tenantId)).map((r) => [r.exceptionId, r] as const));
         const cases = await deps.cases(ctx.tenantId);
         const exceptions = (await exceptionsOn(deps, ctx.tenantId, day)).map((x) => {
@@ -369,7 +449,7 @@ export function lpActivityRoutes(deps: LpActivityDeps): readonly Route[] {
           const c = cases.find((k) => k.raisedFromRef === x.exceptionId);
           return { ...x, ...(r === undefined ? {} : { raisedAt: r.raisedAt }), ...(c === undefined ? {} : { caseId: c.caseId, caseState: c.state }) };
         });
-        return { status: 200, body: { day, count: exceptions.length, exceptions, source: 'the shop\'s own record — voids held and refunds banked', asAt: deps.now() } };
+        return { status: 200, body: { day, count: exceptions.length, exceptions, source: 'the shop\'s own record — voids, no-sales and price overrides held, refunds banked', asAt: deps.now() } };
       },
     },
   ];

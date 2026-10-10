@@ -259,6 +259,13 @@ import type {
 } from '../../orders/src/index';
 import type { ServiceabilityConfigDeps } from '../../orders/src/serviceability';
 import type { ServiceabilityPeriod } from '../../../packages/storefront/src/index';
+import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/index';
+import type { DeliveryServiceDeps, DeliveryServiceConfig, SlotBooking } from '../../orders/src/delivery-service';
+import type { B2BStockPort } from '../../finance/src/b2b-documents';
+import type { Customer360Deps, CustomerPurchase, CustomerReturn, CustomerMerge, HouseholdLink, ProfileView } from '../../customer/src/customer-360';
+import type { CommissionRuleDeps, CommissionRule } from '../../finance/src/b2b-commission';
+import type { B2BOrderingDeps, B2BQuoteRequest, RecurringSchedule, RecurringRun } from '../../finance/src/b2b-ordering';
+import { promise as promiseStock } from '../../orders/src/index';
 import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { AssignmentsDeps, WaveAssignment, RouteAssignment } from '../../fulfilment/src/assignments';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
@@ -5118,10 +5125,28 @@ export function lpRulesAdapter(input: {
 export function lpActivityAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /**
+   * The shop's calendar (time zone + trading-day cut-off) from store setup, so a day is judged by the SHOP's trading day
+   * — a void at 00:30 belongs to the day still trading (PF-07). Absent = the UTC calendar date.
+   */
+  readonly calendar?: (tenantId: string) => Promise<TradingCalendar>;
 }): LpActivityDeps {
   const activityStream = streamName(STREAM.lossPrevention, 'activity');
   const raisedStream = streamName(STREAM.lossPrevention, 'raised');
-  const dayRange = (day: string) => ({ from: `${day}T00:00:00.000Z`, to: `${day}T23:59:59.999Z` });
+  const tradingDayOf = async (tenantId: string, atIso: string): Promise<string> => {
+    if (input.calendar === undefined) return atIso.slice(0, 10);
+    try { return tradingDayIn(atIso, await input.calendar(tenantId)); } catch { return atIso.slice(0, 10); }
+  };
+  const dayRange = async (tenantId: string, day: string): Promise<{ from: string; to: string }> => {
+    if (input.calendar !== undefined) {
+      try {
+        const w = tradingDayWindow(day, await input.calendar(tenantId));
+        // [from, to) as an inclusive read window.
+        return { from: w.from, to: new Date(Date.parse(w.to) - 1).toISOString() };
+      } catch { /* an unreadable calendar falls back to the UTC date — said by the route's day */ }
+    }
+    return { from: `${day}T00:00:00.000Z`, to: `${day}T23:59:59.999Z` };
+  };
   const rules = lpRulesAdapter(input);
   const cases = lpCasesAdapter(input);
   return {
@@ -5133,14 +5158,23 @@ export function lpActivityAdapter(input: {
         idempotencyKey: `till-activity-${tenantId}-${a.activityId}`, source: 'api/pos', payload: a,
       }));
     },
-    voidsOn: async (tenantId, day) => {
-      const { from, to } = dayRange(day);
-      return (await allOf<TillActivity>(input.store, tenantId, activityStream, 'TillActivityRecorded'))
-        .filter((a) => a.at >= from && a.at <= to)
-        .map((a) => ({ txnId: `${a.billRef}:${a.lineId}`, kind: 'void' as const, cashierId: a.cashierId, at: a.at, valueMinor: a.valueMinor }));
+    // Voids, no-sales and price overrides of one trading day: the day the box dated it by, else the shop's calendar.
+    heldOn: async (tenantId, day) => {
+      const out: TillActivity[] = [];
+      for (const a of await allOf<TillActivity>(input.store, tenantId, activityStream, 'TillActivityRecorded')) {
+        if ((a.tradingDay ?? await tradingDayOf(tenantId, a.at)) === day) out.push(a);
+      }
+      return out;
+    },
+    tradingDayOf,
+    // §28: the override authority from head office's OWN grants (owner + store manager), never the relay's word.
+    mayApproveOverride: async (tenantId, userId) => {
+      const grants = await effectiveGrants(input.store, tenantId);
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('pos.override.approve'));
     },
     refundsOn: async (tenantId, day) => {
-      const { from, to } = dayRange(day);
+      const { from, to } = await dayRange(tenantId, day);
       const returns = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from, to });
       return returns.map((e) => payloadOf<{ readonly returnId: string; readonly processedBy: string; readonly processedAt: string; readonly refundMinor: number }>(e))
         .map((r) => ({ txnId: r.returnId, kind: 'refund' as const, cashierId: r.processedBy, at: r.processedAt, valueMinor: r.refundMinor }));
@@ -11964,5 +11998,318 @@ export function displayFundingAdapter(input: { readonly store: EventStore; reado
       }
       return out;
     },
+  };
+}
+
+/**
+ * FUL-03: head office's own delivery service — where the store is, its daily slots — and the slot bookings, each slot on
+ * its own write guard so the last place is taken once. The configuration is append-only, the latest in force; a booking
+ * stops counting once its order is cancelled (or was never placed, after a short grace for a placement in flight).
+ */
+export function deliveryServiceAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly timeZone: (tenantId: string) => Promise<string> | string;
+}): DeliveryServiceDeps {
+  const configStream = streamName(STREAM.delivery, 'service');
+  const slotStream = (startsAt: string): string => streamName(STREAM.delivery, 'slot', startsAt.replace(/[^0-9TZ]/g, ''));
+  const guardKey = (startsAt: string): string => `delivery-slot:${startsAt}`;
+  const orders = ordersAdapter({ store: input.store, now: input.now, holdMinutes: 30 });
+  return {
+    now: input.now,
+    timeZone: input.timeZone,
+    config: async (tenantId) => (await allOf<DeliveryServiceConfig>(input.store, tenantId, configStream, 'DeliveryServiceSet')).at(-1),
+    recordConfig: async (tenantId, c, key) => {
+      await input.store.append(tenantId, configStream, makeEvent({
+        id: `delivery-service-${key}`, type: 'DeliveryServiceSet', occurredAt: c.setAt,
+        idempotencyKey: `delivery-service-${tenantId}-${key}`, source: 'api/orders', payload: c,
+      }));
+    },
+    policyOn: async (tenantId, day) => resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter(input).schedule(tenantId), on: day }).policy,
+    slotVersion: (tenantId, startsAt) => input.store.guardVersion(tenantId, guardKey(startsAt)),
+    bookings: (tenantId, startsAt) => allOf<SlotBooking>(input.store, tenantId, slotStream(startsAt), 'DeliverySlotBooked'),
+    recordBooking: async (tenantId, b, expectedVersion) => {
+      await input.store.appendBatch(tenantId, [{ stream: slotStream(b.slotStartsAt), event: makeEvent({
+        id: `slot-booking-${b.orderId}`, type: 'DeliverySlotBooked', occurredAt: b.bookedAt,
+        idempotencyKey: `slot-booking-${tenantId}-${b.orderId}`, source: 'api/orders', payload: b,
+      }) }], { guard: { key: guardKey(b.slotStartsAt), expectedVersion } });
+    },
+    releasedOrder: async (tenantId, orderId, bookedAt) => {
+      const placed = await orders.placedOrder(tenantId, orderId);
+      if (placed === undefined) return Date.parse(input.now()) - Date.parse(bookedAt) > 2 * 60_000;
+      return (await orders.orderState(tenantId, orderId))?.state === 'cancelled';
+    },
+  };
+}
+
+/**
+ * FUL-09: a B2B sales order's stock — the ORDINARY stock every channel sells from (P-02). The order's lines are held at
+ * its store under the same per-store promise guard the online orders use (so two orders never promise the last unit),
+ * all or nothing; a challan takes what left the building off the shelf as ordinary `sold` movements keyed on the challan
+ * line (once, however often it is re-sent), and in the same guarded batch the order's old holds are released and what is
+ * still to go is held again. A B2B hold does not lapse: it stands until the goods leave.
+ */
+export function b2bStockAdapter(input: { readonly store: EventStore; readonly now: () => string }): B2BStockPort {
+  const NEVER = '9999-12-31T23:59:59.999Z';
+  const inv = inventoryAdapter(input);
+  const orders = ordersAdapter({ store: input.store, now: input.now, holdMinutes: 0 });
+  const heldFor = async (tenantId: string, orderRef: string, locationId: string): Promise<readonly Reservation[]> =>
+    (await outstandingReservationsAt(input.store, tenantId, locationId, input.now())).filter((r) => r.orderId === orderRef);
+  return {
+    reserve: async (tenantId, orderRef, locationId, lines) => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if ((await heldFor(tenantId, orderRef, locationId)).length > 0) return { ok: true };
+        const version = await input.store.guardVersion(tenantId, reservationGuardKey(locationId));
+        const onHand = new Map<string, number>();
+        for (const l of lines) {
+          const rows = await inv.availability(tenantId, l.productId);
+          onHand.set(l.productId, rows.find((r) => r.productId === l.productId && r.locationId === locationId)?.onHandMinor ?? 0);
+        }
+        const result = promiseStock({
+          orderId: orderRef, lines, onHand, outstanding: await outstandingReservationsAt(input.store, tenantId, locationId, input.now()),
+          locationId, heldUntil: NEVER, reservationIdFor: (o, p) => `${o}-${p}`,
+        });
+        const short = result.lines.filter((l) => l.promisedMinor < l.requestedMinor);
+        if (short.length > 0) return { ok: false, shortages: short.map((l) => ({ productId: l.productId, requestedMinor: l.requestedMinor, promisedMinor: l.promisedMinor })) };
+        try {
+          await orders.holdReservations(tenantId, result.lines.flatMap((l) => (l.reservation === undefined ? [] : [l.reservation])), version);
+          return { ok: true };
+        } catch (err) {
+          if (!(err instanceof ConcurrencyConflictError)) throw err;
+        }
+      }
+      throw new ConcurrencyConflictError(reservationGuardKey(locationId), -1);
+    },
+    dispatch: async (tenantId, d) => {
+      const at = input.now();
+      const uomOf = async (productId: string): Promise<string> => {
+        const unit = (await posAdapter({ store: input.store, now: input.now }).catalogue(tenantId)).get(productId)?.baseUom;
+        return unit === undefined ? 'ea' : normaliseUom(unit) ?? unit;
+      };
+      // 1 · What left the building comes off the shelf, once per challan line.
+      for (const l of d.lines) {
+        await inv.appendMovement(tenantId, {
+          movementId: `b2b-dispatch-${d.orderRef}-${d.challanId}-${l.lineId}`, productId: l.productId, locationId: d.locationId,
+          kind: 'sold', quantityMinor: l.quantityMinor, uom: await uomOf(l.productId), occurredAt: at, enteredBy: d.by,
+          reason: `B2B challan ${d.challanId} for ${d.orderRef}`,
+        });
+      }
+      // 2 · The order's holds are released and what is still to go held again — one guarded batch, so nothing is unheld
+      //     in between for another order to take.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const version = await input.store.guardVersion(tenantId, reservationGuardKey(d.locationId));
+        const current = await heldFor(tenantId, d.orderRef, d.locationId);
+        if (current.some((r) => r.reservationId.endsWith(`@${d.challanId}`))) return; // this challan's re-hold is already done
+        const rehold: Reservation[] = d.remaining.map((r) => ({
+          reservationId: `${d.orderRef}-${r.productId}@${d.challanId}`, orderId: d.orderRef, productId: r.productId,
+          quantityMinor: r.quantityMinor, locationId: d.locationId, heldUntil: NEVER,
+        }));
+        try {
+          await input.store.appendBatch(tenantId, [
+            ...current.map((r) => ({ stream: forLocation(r.locationId), event: makeEvent({
+              id: `res-rel-${r.reservationId}`, type: 'ReservationReleased', occurredAt: at, idempotencyKey: `res-rel-${tenantId}-${r.reservationId}`, source: 'api/b2b',
+              payload: { reservationId: r.reservationId, orderId: r.orderId, productId: r.productId, locationId: r.locationId, at },
+            }) })),
+            ...rehold.map((r) => ({ stream: forLocation(r.locationId), event: makeEvent({
+              id: `res-${r.reservationId}`, type: 'ReservationHeld', occurredAt: at, idempotencyKey: `res-${tenantId}-${r.reservationId}`, source: 'api/b2b', payload: r,
+            }) })),
+          ], { guard: { key: reservationGuardKey(d.locationId), expectedVersion: version } });
+          return;
+        } catch (err) {
+          if (!(err instanceof ConcurrencyConflictError)) throw err;
+        }
+      }
+      throw new ConcurrencyConflictError(reservationGuardKey(d.locationId), -1);
+    },
+    held: async (tenantId, orderRef, locationId) => {
+      const byProduct = new Map<string, number>();
+      for (const r of await heldFor(tenantId, orderRef, locationId)) byProduct.set(r.productId, (byProduct.get(r.productId) ?? 0) + r.quantityMinor);
+      return [...byProduct].map(([productId, quantityMinor]) => ({ productId, quantityMinor }));
+    },
+  };
+}
+
+/** FUL-09 · M22-FR-03: salesperson commission rules — proposed, then approved by another; append-only, the latest approved in force. */
+export function commissionRuleAdapter(input: { readonly store: EventStore; readonly now: () => string }): CommissionRuleDeps {
+  const stream = (salespersonId: string): string => streamName('b2b-commission-rules', salespersonId);
+  const accruals = b2bCommissionAdapter(input);
+  return {
+    now: input.now,
+    rules: (tenantId, salespersonId) => allOf<CommissionRule>(input.store, tenantId, stream(salespersonId), 'B2BCommissionRuleRecorded'),
+    recordRule: async (tenantId, r) => {
+      const stage = r.approvedBy === undefined ? 'proposed' : 'approved';
+      await input.store.append(tenantId, stream(r.salespersonId), makeEvent({
+        id: `b2b-comm-rule-${r.ruleId}-${stage}`, type: 'B2BCommissionRuleRecorded', occurredAt: r.approvedAt ?? r.proposedAt,
+        idempotencyKey: `b2b-comm-rule-${tenantId}-${r.salespersonId}-${r.ruleId}-${stage}`, source: 'api/finance', payload: r,
+      }));
+    },
+    accruals: accruals.accruals,
+    recordAccrual: accruals.recordAccrual,
+  };
+}
+
+/** FUL-09: the B2B portal's quote requests, and the recurring orders with their runs — each its own append-only stream. */
+export function b2bOrderingAdapter(input: { readonly store: EventStore; readonly now: () => string }): Pick<B2BOrderingDeps, 'quoteRequests' | 'recordQuoteRequest' | 'schedules' | 'recordSchedule' | 'runs' | 'recordRun' | 'now'> {
+  const requests = streamName('b2b-ordering', 'quote-requests');
+  const schedules = streamName('b2b-ordering', 'recurring');
+  const runs = streamName('b2b-ordering', 'recurring-runs');
+  return {
+    now: input.now,
+    quoteRequests: (tenantId) => allOf<B2BQuoteRequest>(input.store, tenantId, requests, 'B2BQuoteRequested'),
+    recordQuoteRequest: async (tenantId, r) => {
+      await input.store.append(tenantId, requests, makeEvent({
+        id: `b2b-qr-${r.requestId}`, type: 'B2BQuoteRequested', occurredAt: r.at, idempotencyKey: `b2b-qr-${tenantId}-${r.requestId}`, source: 'api/finance', payload: r,
+      }));
+    },
+    schedules: (tenantId) => allOf<RecurringSchedule>(input.store, tenantId, schedules, 'B2BRecurringOrderRecorded'),
+    recordSchedule: async (tenantId, s) => {
+      const stage = s.approvedBy === undefined ? 'proposed' : 'approved';
+      await input.store.append(tenantId, schedules, makeEvent({
+        id: `b2b-rec-${s.scheduleId}-${stage}`, type: 'B2BRecurringOrderRecorded', occurredAt: s.approvedAt ?? s.proposedAt,
+        idempotencyKey: `b2b-rec-${tenantId}-${s.scheduleId}-${stage}`, source: 'api/finance', payload: s,
+      }));
+    },
+    runs: (tenantId) => allOf<RecurringRun>(input.store, tenantId, runs, 'B2BRecurringOrderRun'),
+    recordRun: async (tenantId, r) => {
+      await input.store.append(tenantId, runs, makeEvent({
+        id: `b2b-run-${r.scheduleId}-${r.on}-${r.at}`, type: 'B2BRecurringOrderRun', occurredAt: r.at,
+        // A generated day is one fact; an exception is recorded each time the day is tried and fails.
+        idempotencyKey: r.outcome === 'generated' ? `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-generated` : `b2b-run-${tenantId}-${r.scheduleId}-${r.on}-${r.at}`,
+        source: 'api/finance', payload: r,
+      }));
+    },
+  };
+}
+
+/**
+ * FUL-10: the customer record DERIVED from the durable sale and return streams. A projector keeps a cursor on each stream
+ * and, on every read, folds what has arrived since: a banked sale that names a customer becomes a purchase on their record
+ * (and an order fact segmentation reads); a return against it becomes a return fact and CORRECTS that order fact (a new,
+ * latest fact with the net reduced — the purchase is never deleted). Every write is keyed on the sale or the return, so a
+ * re-run, a resent sale or two readers at once change nothing twice. Merges, household links and profile views are their
+ * own append-only facts.
+ */
+export function customer360Adapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly memberKey?: Buffer;
+}): Customer360Deps {
+  const cursorStream = streamName(STREAM.customer, 'facts-cursor');
+  const factsOf = (ref: string): string => streamName(STREAM.customer, 'facts', ref);
+  const mergesStream = streamName(STREAM.customer, 'merges');
+  const householdStream = streamName(STREAM.customer, 'households');
+  const viewsOf = (ref: string): string => streamName(STREAM.customer, 'profile-views', ref);
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const members = loyaltyMembersAdapter({ store: input.store, now: input.now, rule: () => ({ pointsPer100Inr: 0, pointValuePaise: 0 }) });
+
+  /** The order fact segmentation reads, for one sale, at its current net (sale less what came back). */
+  const recordOrderFact = async (tenantId: string, f: OrderFact & { readonly derivedFrom: string; readonly marginComplete: boolean }) => {
+    await input.store.append(tenantId, ORDER_FACTS_STREAM, makeEvent({
+      id: `cf-order-${f.orderId}-${f.netMinor}`, type: 'CustomerOrderFactRecorded', occurredAt: f.at,
+      idempotencyKey: `cf-order-${tenantId}-${f.orderId}-${f.netMinor}-${f.marginMinor}`, source: 'api/customer', payload: f,
+    }));
+  };
+
+  const catchUp = async (tenantId: string): Promise<{ readonly sales: number; readonly returns: number }> => {
+    const cursor = (await latest<{ salesSeq: number; returnsSeq: number }>(input.store, tenantId, cursorStream, 'CustomerFactsCursor')) ?? { salesSeq: 0, returnsSeq: 0 };
+    const sales = (await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', sinceSeq: cursor.salesSeq })).filter((e) => e.seq > cursor.salesSeq);
+    const returns = (await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', sinceSeq: cursor.returnsSeq })).filter((e) => e.seq > cursor.returnsSeq);
+    if (sales.length === 0 && returns.length === 0) return { sales: 0, returns: 0 };
+    // Weighted-average unit cost per (product, store) — the margin on a purchase, where the cost is known.
+    let costs: Map<string, { unitCostMinor: number; minorPerUnit: number }> | undefined;
+    const costOf = async (productId: string, locationId: string | undefined) => {
+      if (costs === undefined) {
+        costs = new Map();
+        for (const r of await inventoryAdapter(input).valuation(tenantId, undefined)) {
+          if (r.unitCostMinor !== 'not_known') costs.set(`${r.productId}@${r.locationId}`, { unitCostMinor: r.unitCostMinor, minorPerUnit: 1 });
+        }
+      }
+      return locationId === undefined ? undefined : costs.get(`${productId}@${locationId}`);
+    };
+    const marginOf = async (sale: IncomingSale): Promise<{ marginMinor: number; complete: boolean }> => {
+      let cost = 0; let complete = true;
+      for (const l of sale.lines) {
+        const c = await costOf(l.productId, sale.locationId);
+        if (c === undefined) { complete = false; continue; }
+        cost += Math.round((l.quantityMinor * c.unitCostMinor) / minorPerUnitOf(l.uom));
+      }
+      return { marginMinor: sale.totalMinor - cost, complete };
+    };
+    let lastSales = cursor.salesSeq;
+    for (const e of sales) {
+      lastSales = Math.max(lastSales, e.seq);
+      const sale = payloadOf<IncomingSale>(e);
+      const ref = typeof sale.customerRef === 'string' && sale.customerRef.trim() !== '' ? sale.customerRef : undefined;
+      if (ref === undefined) continue;
+      const p: CustomerPurchase = {
+        saleId: sale.saleId, customerRef: ref, receiptNumber: sale.receiptNumber, at: sale.committedAt, tradingDay: sale.tradingDay,
+        laneId: sale.laneId, ...(sale.locationId === undefined ? {} : { locationId: sale.locationId }), grossMinor: sale.totalMinor, lineCount: sale.lines.length,
+      };
+      await input.store.append(tenantId, factsOf(ref), makeEvent({
+        id: `cf-sale-${sale.saleId}`, type: 'CustomerPurchaseFact', occurredAt: sale.committedAt, idempotencyKey: `cf-sale-${tenantId}-${sale.saleId}`, source: 'api/customer', payload: p,
+      }));
+      const m = await marginOf(sale);
+      await recordOrderFact(tenantId, { orderId: sale.saleId, customerRef: ref, at: sale.committedAt, netMinor: sale.totalMinor, marginMinor: m.marginMinor, channel: 'store', derivedFrom: 'sale', marginComplete: m.complete });
+    }
+    let lastReturns = cursor.returnsSeq;
+    for (const e of returns) {
+      lastReturns = Math.max(lastReturns, e.seq);
+      const r = payloadOf<{ returnId: string; originalSaleId: string | null; processedAt: string; refundMinor: number; customerRef?: string; exchange?: unknown }>(e);
+      const held = r.originalSaleId === null ? undefined : await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${r.originalSaleId}`);
+      const sale = held === undefined ? undefined : held.event.payload as IncomingSale;
+      const ref = typeof sale?.customerRef === 'string' && sale.customerRef.trim() !== '' ? sale.customerRef : r.customerRef;
+      if (ref === undefined || ref.trim() === '') continue;
+      const ret: CustomerReturn = { returnId: r.returnId, customerRef: ref, saleId: r.originalSaleId, at: r.processedAt, refundMinor: r.refundMinor, exchange: r.exchange !== undefined };
+      await input.store.append(tenantId, factsOf(ref), makeEvent({
+        id: `cf-ret-${r.returnId}`, type: 'CustomerReturnFact', occurredAt: r.processedAt, idempotencyKey: `cf-ret-${tenantId}-${r.returnId}`, source: 'api/customer', payload: ret,
+      }));
+      // The correction: the sale's order fact again, net of everything that has come back against it.
+      if (sale !== undefined) {
+        const back = (await allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact')).filter((x) => x.saleId === sale.saleId)
+          .reduce((s, x) => s + x.refundMinor, 0);
+        const m = await marginOf(sale);
+        await recordOrderFact(tenantId, { orderId: sale.saleId, customerRef: ref, at: sale.committedAt, netMinor: Math.max(0, sale.totalMinor - back), marginMinor: m.marginMinor - back, channel: 'store', derivedFrom: 'sale_less_returns', marginComplete: m.complete });
+      }
+    }
+    await input.store.append(tenantId, cursorStream, makeEvent({
+      id: `cf-cursor-${lastSales}-${lastReturns}`, type: 'CustomerFactsCursor', occurredAt: input.now(),
+      idempotencyKey: `cf-cursor-${tenantId}-${lastSales}-${lastReturns}`, source: 'api/customer', payload: { salesSeq: lastSales, returnsSeq: lastReturns },
+    }));
+    return { sales: sales.length, returns: returns.length };
+  };
+
+  return {
+    now: input.now,
+    catchUp,
+    purchasesOf: (tenantId, ref) => allOf<CustomerPurchase>(input.store, tenantId, factsOf(ref), 'CustomerPurchaseFact'),
+    returnsOf: (tenantId, ref) => allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact'),
+    merges: (tenantId) => allOf<CustomerMerge>(input.store, tenantId, mergesStream, 'CustomerMergeRecorded'),
+    recordMerge: async (tenantId, m) => {
+      const stage = m.reversedBy !== undefined ? 'reversed' : m.approvedBy !== undefined ? 'approved' : 'proposed';
+      await input.store.append(tenantId, mergesStream, makeEvent({
+        id: `cust-merge-${m.mergeId}-${stage}`, type: 'CustomerMergeRecorded', occurredAt: m.reversedAt ?? m.approvedAt ?? m.proposedAt,
+        idempotencyKey: `cust-merge-${tenantId}-${m.mergeId}-${stage}`, source: 'api/customer', payload: m,
+      }));
+    },
+    households: (tenantId) => allOf<HouseholdLink>(input.store, tenantId, householdStream, 'CustomerHouseholdLinked'),
+    recordHousehold: async (tenantId, h) => {
+      await input.store.append(tenantId, householdStream, makeEvent({
+        id: `cust-hh-${h.customerRef}-${h.at}`, type: 'CustomerHouseholdLinked', occurredAt: h.at,
+        idempotencyKey: `cust-hh-${tenantId}-${h.customerRef}-${h.householdId}-${h.linked}-${h.at}`, source: 'api/customer', payload: h,
+      }));
+    },
+    loyaltyOf: async (tenantId, ref) => {
+      const balance = await customers.pointsBalance(tenantId, ref);
+      const history = await members.memberHistory(tenantId, ref);
+      const last = history[history.length - 1];
+      return { ...(balance === undefined ? {} : { pointsBalance: balance }), ...(last === undefined ? {} : { member: { status: last.status, mobileLast4: last.mobileLast4 } }) };
+    },
+    recordView: async (tenantId, v) => {
+      await input.store.append(tenantId, viewsOf(v.customerRef), makeEvent({
+        id: `cust-view-${v.customerRef}-${v.at}`, type: 'CustomerProfileViewed', occurredAt: v.at,
+        idempotencyKey: `cust-view-${tenantId}-${v.customerRef}-${v.viewedBy}-${v.at}`, source: 'api/customer', payload: v,
+      }));
+    },
+    views: (tenantId, ref) => allOf<ProfileView>(input.store, tenantId, viewsOf(ref), 'CustomerProfileViewed'),
   };
 }

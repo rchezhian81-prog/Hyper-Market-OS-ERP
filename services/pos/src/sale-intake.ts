@@ -62,6 +62,15 @@ export interface IncomingSaleLine {
     readonly confirmedBy?: string;
     readonly confirmedAt?: string;
   };
+  /**
+   * A price lowered at the till with a manager's approval (audit PF-07 · M12-FR-04): the unit price before, who approved
+   * it and the till action that holds the evidence (on the loss-prevention record). A record, never a control.
+   */
+  readonly priceOverride?: {
+    readonly fromUnitPriceMinor?: number;
+    readonly approvedBy?: string;
+    readonly activityId?: string;
+  };
 }
 
 export interface IncomingTender {
@@ -374,7 +383,18 @@ export function acceptSale(sale: IncomingSale, ctx: IntakeContext): IntakeResult
     }
 
     const difference = line.unitPriceMinor - product.unitPriceMinor;
-    if (!aboveMrp && Math.abs(difference) > priceTolerance) {
+    // A price the till LOWERED with a manager's approval (PF-07) from the catalogue's own price is explained by that
+    // approval: still listed, as informational, naming who approved it and the evidence — never "check the lane".
+    const override = line.priceOverride;
+    const approvedOverride = override !== undefined && typeof override.approvedBy === 'string' && override.approvedBy.trim() !== ''
+      && typeof override.fromUnitPriceMinor === 'number' && Math.abs(override.fromUnitPriceMinor - product.unitPriceMinor) <= priceTolerance
+      && line.unitPriceMinor < override.fromUnitPriceMinor;
+    if (!aboveMrp && approvedOverride && Math.abs(difference) > priceTolerance) {
+      add('price_differs_from_catalogue', 'informational',
+        `${product.sku} was charged at ${line.unitPriceMinor}, lowered at the till from ${product.unitPriceMinor} with ${override!.approvedBy}'s approval`,
+        `A manager approved this price change at the till; the evidence is on the loss-prevention record${typeof override!.activityId === 'string' ? ` (${override!.activityId})` : ''}. Nothing to do unless the store's override rules raise it.`,
+        { productId: line.productId, differenceMinor: difference });
+    } else if (!aboveMrp && Math.abs(difference) > priceTolerance) {
       // Usually nobody's fault: the lane priced from the pack it held, which is exactly what it is
       // supposed to do offline. The pack version says whether that explains it.
       const behind = ctx.currentPackVersion - sale.packVersion;

@@ -858,29 +858,64 @@ export async function startEdge(
    */
   const recordTillActivity: LaneTillActivityHandler = async ({ laneId, cashierId, via, body }) => {
     const str = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+    const whole = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+    const kind = body['kind'];
     const value = body['valueMinor'];
-    if (body['kind'] !== 'void' || !str(body['activityId']) || !str(body['billRef']) || !str(body['lineId']) || !str(body['productId'])
-      || typeof body['description'] !== 'string' || typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || !str(body['reason'])) {
-      return { recorded: false, refusedBecause: 'not_readable', laneMessage: 'The till did not say which line, how much and why. Nothing was removed — try again.' };
+    // What each kind must say. A void and a price override name the line; a no-sale (the drawer opened with no sale)
+    // names no line and moves no value (audit PF-07 · M15-FR-01 · M12-FR-04).
+    const readable = str(body['activityId']) && str(body['reason']) && (
+      (kind === 'void' && str(body['billRef']) && str(body['lineId']) && str(body['productId']) && typeof body['description'] === 'string' && whole(value))
+      || (kind === 'no_sale' && (value === undefined || value === 0) && (body['billRef'] === undefined || str(body['billRef'])))
+      || (kind === 'price_override' && str(body['billRef']) && str(body['lineId']) && str(body['productId']) && typeof body['description'] === 'string'
+        && whole(body['fromUnitMinor']) && whole(body['toUnitMinor']) && (body['toUnitMinor'] as number) < (body['fromUnitMinor'] as number)
+        && whole(body['quantityMinor']) && (body['quantityMinor'] as number) > 0 && whole(value) && (value as number) > 0));
+    if (!readable) {
+      return { recorded: false, refusedBecause: 'not_readable', laneMessage: kind === 'void'
+        ? 'The till did not say which line, how much and why. Nothing was removed — try again.'
+        : 'The till did not say what was done, to which line, for how much and why. Nothing was done — try again.' };
     }
     const key = `till-activity-${tenantId}-${body['activityId']}`;
     if (deviceEventKeys.has(key)) return { recorded: true, laneMessage: 'Already recorded.' };
+    // A SUPERVISOR OVERRIDE (no-sale, price change) needs a manager's approval issued on THIS box for exactly this — the
+    // one-use approval refunds use (PF-02) — spent by this action before anything is written. Offline: nothing here asks
+    // head office.
+    let approval: { readonly approvalId: string; readonly approvedBy: string } | undefined;
+    if (kind === 'no_sale' || kind === 'price_override') {
+      if (tillApprovals === null) return { recorded: false, refusedBecause: 'not_served', laneMessage: 'This store computer does not approve overrides. Nothing was done.' };
+      const spent = await tillApprovals.spendOverride({
+        approvalId: body['approvalId'], kind, billRef: kind === 'no_sale' ? null : body['billRef'] as string, valueMinor: kind === 'no_sale' ? 0 : value as number,
+        requestedBy: cashierId, laneId, activityId: body['activityId'] as string,
+      });
+      if (!spent.ok) return { recorded: false, refusedBecause: spent.refusedBecause, laneMessage: spent.laneMessage };
+      approval = spent.stamp;
+    }
     const at = new Date().toISOString();
+    // The trading day it belongs to, by the shop's cut-off from the pack — head office judges days by it.
+    const tradingDay = tradingDate(wallClockIn(at), packCutoff(pack));
+    const common = { activityId: body['activityId'], kind, laneId, cashierId, via, reason: (body['reason'] as string).trim(), at, tradingDay };
+    const payload = kind === 'void'
+      ? { ...common, billRef: body['billRef'], lineId: body['lineId'], productId: body['productId'], description: body['description'], valueMinor: value }
+      : kind === 'no_sale'
+        ? { ...common, ...(str(body['billRef']) ? { billRef: body['billRef'] } : {}), valueMinor: 0, approvalId: approval!.approvalId, approvedBy: approval!.approvedBy }
+        : {
+          ...common, billRef: body['billRef'], lineId: body['lineId'], productId: body['productId'], description: body['description'],
+          fromUnitMinor: body['fromUnitMinor'], toUnitMinor: body['toUnitMinor'], quantityMinor: body['quantityMinor'], valueMinor: value,
+          approvalId: approval!.approvalId, approvedBy: approval!.approvedBy,
+        };
     const event: DomainEvent = makeEvent({
       id: `till-activity-${body['activityId']}`, type: 'TillActivityRecorded', occurredAt: at, idempotencyKey: key, source: `store-box/${laneId}`,
-      payload: {
-        activityId: body['activityId'], kind: 'void', laneId, cashierId, via, billRef: body['billRef'], lineId: body['lineId'],
-        productId: body['productId'], description: body['description'], valueMinor: value, reason: (body['reason'] as string).trim(), at,
-      },
+      payload,
     });
     deviceEventKeys.add(key);
     const outcome = await commitLocally({ saleId: key, record: JSON.stringify(event), log: deviceEventsLog });
     if (!outcome.committed) {
       deviceEventKeys.delete(key);
-      return { recorded: false, refusedBecause: outcome.refusedBecause ?? 'could_not_write_durably', laneMessage: 'The store computer could not record the void, so the line stays on the bill. Tell the manager.' };
+      return { recorded: false, refusedBecause: outcome.refusedBecause ?? 'could_not_write_durably', laneMessage: kind === 'void'
+        ? 'The store computer could not record the void, so the line stays on the bill. Tell the manager.'
+        : 'The store computer could not record this, so nothing was done. Tell the manager.' };
     }
     deviceEventsOutbox.enqueue(event);
-    return { recorded: true, laneMessage: 'Recorded.' };
+    return { recorded: true, laneMessage: 'Recorded.', ...(approval === undefined ? {} : { approvedBy: approval.approvedBy }) };
   };
 
   /**

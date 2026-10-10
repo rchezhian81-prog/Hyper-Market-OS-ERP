@@ -84,7 +84,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.adjustment.sync', 'inventory.adjustment.approve',
       // SP-4 (ii): the owner sets the receiving tolerances the cloud applies to every delivery (never the body, F03).
       'inventory.receipt.policy.set', 'inventory.receipt.policy.read',
-      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.return.threshold.set', 'pos.return.window.set', 'pos.storecredit.cap.set', 'pos.return.noreceipt.cap.set', 'pos.restricted.check',
+      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.override.approve', 'pos.return.threshold.set', 'pos.return.window.set', 'pos.storecredit.cap.set', 'pos.return.noreceipt.cap.set', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.read', 'till.overshort.review',
       // SP-4c: the till's cash movements and shift closes relayed by the store box to the synced routes.
       'cash.movement.sync', 'till.shift.sync',
@@ -113,7 +113,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'finance.journal.post', 'finance.posting.configure', 'finance.period.close', 'finance.period.read', 'finance.period.sign', 'finance.creditnote.issue',
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       'b2b.account.manage', 'b2b.account.read', 'b2b.receivable.record', 'b2b.credit.check',
-      'b2b.commission.record', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
+      'b2b.commission.record', 'b2b.commission.approve', 'b2b.recurring.approve', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
+      // FUL-10: the customer's record (read, every look recorded), and one identity — merges proposed and approved by two people.
+      'customer.profile.read', 'customer.identity.manage', 'customer.identity.approve',
       'concession.contract.manage', 'concession.sale.record', 'concession.charge.read', 'concession.tag.record',
       'scrap.sale.record', 'scrap.review.read', 'waste.view', 'count.view',
       'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read',
@@ -180,6 +182,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'price.change.propose',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'b2b.credit.check', 'b2b.account.read', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
+      // FUL-10: reads a customer's record and PROPOSES merges / household links; approving a merge is the owner's.
+      'customer.profile.read', 'customer.identity.manage',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.commitment.read',
       'purchase.order.propose', 'purchase.order.receive', 'purchase.supplier.block',
       'purchase.performance.record', 'purchase.contract.manage',
@@ -194,7 +198,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // SP-8 (F08): the floor indent chain — a manager raises, approves (never their own) and reads the register.
       'inventory.indent.request', 'inventory.indent.approve', 'inventory.indent.read',
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
-      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.restricted.check',
+      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.override.approve', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.read', 'till.overshort.review',
       'till.dayclose.sync', 'till.dayclose.read',
       'lp.case.manage', 'lp.case.read', 'lp.rule.manage',
