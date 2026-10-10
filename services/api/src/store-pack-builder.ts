@@ -35,7 +35,7 @@ import { ROLE_CATALOGUE } from './roles';
 import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
 import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
 import { branchOfLocationIn } from '../../inventory/src/location-scope';
-import { isUom, precisionOf } from '../../../packages/contracts/src/quantity';
+import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { PackSigner } from '../../catalogue/src/pack';
 
 export interface StorePackBuildInput {
@@ -64,26 +64,24 @@ export const VIEWER_ONLY_SCREEN_SECTIONS: readonly string[] = Object.freeze([
 ]);
 
 /**
- * PA-06 3b(e) · OB-31 "A" — **the one quantity rule across store-pack sections.** A field whose name ends in `Minor` is
- * in the product's SMALLEST unit: grams for a product sold by the kilogram (OB-31), millilitres for one sold by the
- * litre, pieces for one sold each. A field named `qty` / `quantity` (the buying screen's orders, receipts and supplier
- * invoices) is in ORDER units — the unit the order and the supplier's invoice price (whole kg, whole pieces) — and is
- * always priced per that same unit, so the screen's line arithmetic (quantity × unit price = line total) holds. Money
- * stays per the product's base unit (cost per kg, OB-31). The builder converts at the one place a section crosses from
- * order units to stock units (the warehouse phone's open deliveries), with `minorPerUnit`.
+ * PA-06 3b(e) · OB-31 "A" — **the one quantity rule across store-pack sections** (the contract is
+ * packages/contracts/src/quantity.ts): every quantity in every section is an integer count of the product's SMALLEST STEP
+ * (grams for a kg product, millilitres for a litre product, items otherwise); every price or cost is per WHOLE unit (per
+ * kg, per item); a value is `valueAtUnitCost(quantity, uom, unitCost)`, rounded once. Head office's registers already
+ * hold quantities in steps (orders, receipts, invoices, the ledger, bins), so the builder passes them through and never
+ * scales them a second time; it names each line's unit, normalised (`normaliseUom`: each/EA/pcs → ea, KG → kg, ltr → L),
+ * so a screen can value a line without guessing.
  */
 export const PACK_QUANTITY_SCALE = Object.freeze({
-  products: { availableMinor: 'smallest unit (from the stock ledger)' },
-  warehouse: { 'ordered[].quantityMinor': 'smallest unit (converted from order units)', 'contents{}': 'smallest unit', 'bins[].capacityMinor': 'smallest unit' },
-  purchaseOrders: { 'lines[].qty': 'order units, priced per order unit (unitMinor)' },
-  receipts: { 'lines[].qty': 'order units' },
-  supplierInvoices: { 'lines[].quantity': 'order units, priced per order unit (unitPriceMinor)' },
+  products: { availableMinor: 'smallest step (from the stock ledger)', uom: 'normalised unit code' },
+  warehouse: { 'ordered[].quantityMinor': 'smallest step', 'openDeliveries[].ordered[].quantityMinor': 'smallest step', 'contents{}': 'smallest step', 'bins[].capacityMinor': 'smallest step' },
+  purchaseOrders: { 'lines[].qty': 'smallest step, priced per whole unit (unitMinor)', 'lines[].uom': 'normalised unit code' },
+  receipts: { 'lines[].qty': 'smallest step' },
+  supplierInvoices: { 'lines[].quantity': 'smallest step, priced per whole unit (unitPriceMinor)' },
 } as const);
 
-/** How many smallest units make one order unit of a product sold in `uom` (kg → 1000 grams; each → 1). */
-export function minorPerUnit(uom: string | undefined): number {
-  return uom !== undefined && isUom(uom) ? 10 ** precisionOf(uom) : 1;
-}
+/** A unit spelling as the pack names it: the stored code when the system knows it, else as given (and said so by its absence from the codes). */
+const unitCode = (code: string | undefined): string | undefined => (code === undefined ? undefined : normaliseUom(code) ?? code);
 
 export async function buildStorePackSections(input: StorePackBuildInput, tenantId: string, storeId: string): Promise<Record<string, unknown>> {
   const { store, now } = input;
@@ -123,7 +121,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
       return {
         productId: p.productId, name: p.name,
         categoryId: typeof m?.primaryCategoryId === 'string' && m.primaryCategoryId !== '' ? m.primaryCategoryId : 'uncategorised',
-        unitPriceMinor: p.unitPriceMinor, uom: p.baseUom, taxBps: p.taxBps, status: p.status, recallBlock: p.recallBlock === true,
+        unitPriceMinor: p.unitPriceMinor, uom: unitCode(p.baseUom), taxBps: p.taxBps, status: p.status, recallBlock: p.recallBlock === true,
         barcodes: barcodes.get(p.productId) ?? [],
         availableMinor: onHand.get(p.productId) ?? 0,
       };
@@ -142,7 +140,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // ── the work waiting: orders, receipts, bills ──────────────────────────────────────────────────────────────────
   // (The store's approvals list is not sent yet — the box-relayed decisions it serves are DF-3-b.)
   const orders = [...(await foldPurchaseOrders(store, tenantId)).values()];
-  sections['purchaseOrders'] = orders.map((po) => ({ poId: po.poId, supplierId: po.supplierId, lines: po.lines.map((l) => ({ productId: l.productId, qty: l.orderedQty, unitMinor: l.unitCost.minor })) }));
+  sections['purchaseOrders'] = orders.map((po) => ({ poId: po.poId, supplierId: po.supplierId, lines: po.lines.map((l) => ({ productId: l.productId, qty: l.orderedQty, unitMinor: l.unitCost.minor, ...(l.uom === undefined ? {} : { uom: unitCode(l.uom) }) })) }));
   sections['receipts'] = orders
     .map((po) => ({ poId: po.poId, lines: Object.entries(po.receivedByProduct).filter(([, qty]) => qty > 0).map(([productId, qty]) => ({ productId, qty })) }))
     .filter((r) => r.lines.length > 0);
@@ -214,7 +212,6 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   const bins = (await wh.bins(tenantId)).filter((b) => branchOf(b.storeId) === storeId);
   const binIds = new Set(bins.map((b) => b.binId));
   const contents = Object.fromEntries(Object.entries(await wh.contents(tenantId)).filter(([key, qty]) => binIds.has(key.split('|')[0]!) && qty !== 0));
-  const uomOf = new Map((published?.snapshot.products ?? []).map((p) => [p.productId, p.baseUom] as const));
   const receipts = await goodsReceiptAdapter({ store, now }).all(tenantId);
   const deliveries = openDeliveriesFor(orders, storeId, branchOf).map((d) => {
     const po = orders.find((o) => o.poId === d.poId)!;
@@ -224,7 +221,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     return {
       poId: d.poId, number: d.number, supplierId: d.supplierId, deliverToLocationId: d.deliverToLocationId, grnId,
       ordered: d.lines.filter((l) => l.openQty > 0).map((l) => ({
-        productId: l.productId, quantityMinor: l.openQty * minorPerUnit(uomOf.get(l.productId)),
+        // already in smallest steps on the order (OB-31) — passed through, never scaled twice
+        productId: l.productId, quantityMinor: l.openQty,
         unitCostMinor: costOf.get(l.productId)?.minor ?? 0, currency: costOf.get(l.productId)?.currency ?? 'INR',
       })),
     };

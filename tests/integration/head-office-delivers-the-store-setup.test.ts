@@ -201,7 +201,7 @@ describe('PA-06 — head office delivers each store its setup', () => {
       tenantId: A, version: 3, builtAt: new Date().toISOString(), scope: { tenantId: A, storeId: 'S1' },
       products: [
         { productId: 'rice', sku: 'rice', name: 'Rice loose', unitPriceMinor: 6_000, taxBps: 0, status: 'active', baseUom: 'kg' },
-        { productId: 'soap', sku: 'soap', name: 'Soap', unitPriceMinor: 3_000, taxBps: 0, status: 'active', baseUom: 'ea' },
+        { productId: 'soap', sku: 'soap', name: 'Soap', unitPriceMinor: 3_000, taxBps: 0, status: 'active', baseUom: 'each' },
       ],
       barcodes: [{ code: '8901', productId: 'soap' }],
     }, signature: 'x', publishedBy: 'u-owner', publishedAt: new Date().toISOString() } }));
@@ -213,7 +213,7 @@ describe('PA-06 — head office delivers each store its setup', () => {
     await approvedSuppliers(h, A, 'sup-1');
     await h.provisionRole(A, 'u-buyer', 'owner');
     const order = async (poId: string, to: string) => {
-      expect((await call('POST', `/v1/purchase/orders/${poId}`, { supplierId: 'sup-1', deliverToLocationId: to, lines: [{ productId: 'rice', orderedQty: 25, unitCost: { minor: 5_000, currency: 'INR' } }, { productId: 'soap', orderedQty: 10, unitCost: { minor: 2_000, currency: 'INR' } }] }, 'u-buyer')).status).toBe(201);
+      expect((await call('POST', `/v1/purchase/orders/${poId}`, { supplierId: 'sup-1', deliverToLocationId: to, lines: [{ productId: 'rice', orderedQty: 25_000, unitCost: { minor: 5_000, currency: 'INR' } }, { productId: 'soap', orderedQty: 10, unitCost: { minor: 2_000, currency: 'INR' } }] }, 'u-buyer')).status).toBe(201);
       expect((await call('POST', `/v1/purchase/orders/${poId}/approval`, { reason: 'stock' })).status).toBe(200);
     };
     await order('po-s1', 'WH');
@@ -231,11 +231,14 @@ describe('PA-06 — head office delivers each store its setup', () => {
     expect(w['barcodes']).toEqual([{ barcode: '8901', productId: 'soap', level: 'unit' }]);
     const open = w['openDeliveries'] as { poId: string; grnId: string; ordered: { productId: string; quantityMinor: number; unitCostMinor: number }[] }[];
     expect(open.map((d) => d.poId)).toEqual(['po-s1']); // S2's order is not this store's
-    // OB-31: 25 kg of rice is 25 000 grams on the phone, still costed per kg; soap is pieces
+    // OB-31: the order holds 25 kg of rice as 25 000 grams — passed to the phone as it is (never scaled twice), costed per kg
     expect(open[0]!.ordered).toEqual([
       { productId: 'rice', quantityMinor: 25_000, unitCostMinor: 5_000, currency: 'INR' },
       { productId: 'soap', quantityMinor: 10, unitCostMinor: 2_000, currency: 'INR' },
     ]);
+    // units are the stored codes: 'each' is named 'ea'
+    const packProducts = (JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope).sections['products'] as { productId: string; uom: string }[];
+    expect(packProducts.find((p) => p.productId === 'soap')?.uom).toBe('ea');
     // exactly one waiting: the phone receives against it directly
     expect(w).toMatchObject({ poId: 'po-s1', grnId: open[0]!.grnId });
     const devices = (JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope).sections['devices'] as { deviceId: string; enrolment?: { codeHash: string } }[];
