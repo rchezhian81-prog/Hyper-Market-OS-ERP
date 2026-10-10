@@ -95,7 +95,7 @@ describe('the supplier account is read from the registers, never typed (SP-7b ·
   it('an unmatched invoice is owed nothing; the match accrues the lowest of three; a RETURN of quarantined stock raises a debit note that nets the balance; refused stock is said and never owed; every figure is head office\'s own', async () => {
     const h = await seeded();
     // No invoice yet: the supplier is known (an order names them) and owed nothing; an unknown supplier is NOT a zero.
-    expect((await account(h)).body.totals).toEqual({ invoicedMinor: 0, accruedMinor: 0, withheldMinor: 0, debitNotesMinor: 0, paidMinor: 0, owedMinor: 0, unmatchedInvoices: 0, blockedInvoices: 0, pendingReturns: 0 });
+    expect((await account(h)).body.totals).toEqual({ invoicedMinor: 0, accruedMinor: 0, withheldMinor: 0, debitNotesMinor: 0, paidMinor: 0, owedMinor: 0, unmatchedInvoices: 0, blockedInvoices: 0, pendingReturns: 0, openingMinor: 0, openingPendingSignOffMinor: 0 });
     expect((await account(h, 's-nobody')).status).toBe(404);
 
     // The invoice arrives and is captured as the paper says it — until it is MATCHED nothing is owed and the whole of it is withheld.

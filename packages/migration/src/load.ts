@@ -87,12 +87,51 @@ export interface ExtractCustomer {
 
 export interface ExtractStockRow {
   readonly productId: string;
+  /** GT-05 (MG-08 "stock by location") — the store / warehouse / back-store location the stock sits at. Absent → the load's
+   *  `stockLocationId`. Each location gets its OWN opening goods receipt, so its on-hand is that location's, never pooled. */
+  readonly locationId?: string;
   readonly quantityMinor: number;
   readonly uom: string;
   readonly unitCostMinor: number;
   readonly batchId?: string;
   /** YYYY-MM-DD. A batch WITHOUT an expiry cannot be received as a batch (the receiving gate refuses it). */
   readonly expiry?: string;
+}
+
+/** GT-05 (MG-08 "loyalty/gift balances") — a gift card or store-credit balance still unspent at cutover. */
+export interface ExtractStoredValue {
+  readonly instrumentId: string;
+  readonly kind: 'gift_card' | 'store_credit';
+  /** The customer it belongs to — one of the extract's customers. */
+  readonly customerId: string;
+  /** The UNSPENT balance at the opening date, in paise (never the face value it was sold at). */
+  readonly balanceMinor: number;
+  /** YYYY-MM-DD, when the instrument carries one. */
+  readonly expiresOn?: string;
+}
+
+/** GT-05 (MG-08 "outstanding") — a credit customer's invoice still unpaid at cutover (the receivables ledger, M18). */
+export interface ExtractReceivable {
+  readonly customerId: string;
+  readonly invoiceId: string;
+  /** The invoice number the customer knows it by. */
+  readonly number: string;
+  readonly issuedOn: string;
+  readonly dueOn: string;
+  /** What is still OUTSTANDING on it, in paise. */
+  readonly outstandingMinor: number;
+}
+
+/** GT-05 (MG-08 "outstanding … accounting openings") — a supplier bill still unpaid at cutover (the supplier account). */
+export interface ExtractPayable {
+  readonly supplierId: string;
+  /** A stable id for the bill in the old system — one opening per id, so a re-run doubles nothing. */
+  readonly openingId: string;
+  readonly billNumber: string;
+  readonly billDate: string;
+  readonly dueOn?: string;
+  /** What is still OUTSTANDING on it, in paise. */
+  readonly outstandingMinor: number;
 }
 
 export interface ExtractBundle {
@@ -102,6 +141,12 @@ export interface ExtractBundle {
   readonly suppliers: readonly ExtractSupplier[];
   readonly customers: readonly ExtractCustomer[];
   readonly openingStock: readonly ExtractStockRow[];
+  /** GT-05 — unspent gift-card / store-credit balances. Optional: an extract without them loads none. */
+  readonly storedValue?: readonly ExtractStoredValue[];
+  /** GT-05 — credit customers' unpaid invoices. Needs the tenant's B2B feature; refused visibly otherwise. */
+  readonly receivables?: readonly ExtractReceivable[];
+  /** GT-05 — suppliers' unpaid bills. Recorded against the supplier master; owed once a second person signs the load off. */
+  readonly payables?: readonly ExtractPayable[];
 }
 
 // ── The request: who, where, under what evidence ─────────────────────────────────────────────────────
@@ -295,15 +340,74 @@ export function validateBundle(bundle: ExtractBundle): readonly string[] {
     customers.add(c.customerId);
     if (c.loyaltyPoints !== undefined && (!Number.isInteger(c.loyaltyPoints) || c.loyaltyPoints < 0)) problems.push(`customer "${c.customerId}": loyalty points must be a whole non-negative number`);
   }
+  const stockKeys = new Map<string, number>();
   bundle.openingStock.forEach((r, i) => {
+    if (r.locationId !== undefined && !isId(r.locationId)) problems.push(`opening stock row ${i + 1} (${r.productId}): location, when given, must name a location`);
+    // GT-05: the same product at the same location in the same batch twice would be received twice — a double count the
+    // old system's figure never had. Merge the rows in the cleaning step (MG-04).
+    const stockKey = `${r.productId}|${r.locationId ?? ''}|${r.batchId ?? ''}`;
+    const first = stockKeys.get(stockKey);
+    if (first !== undefined) problems.push(`opening stock row ${i + 1} (${r.productId}): same product, location and batch as row ${first} — receiving both would count it twice`);
+    else stockKeys.set(stockKey, i + 1);
     if (!products.has(r.productId)) problems.push(`opening stock row ${i + 1}: product "${r.productId}" is not in the extract`);
     if (!Number.isInteger(r.quantityMinor) || r.quantityMinor <= 0) problems.push(`opening stock row ${i + 1} (${r.productId}): quantity must be a positive whole number of minor units`);
     if (!isMinor(r.unitCostMinor)) problems.push(`opening stock row ${i + 1} (${r.productId}): unit cost must be whole non-negative minor units`);
     if (!isId(r.uom)) problems.push(`opening stock row ${i + 1} (${r.productId}): unit of measure is required`);
     if (r.expiry !== undefined && !isDate(r.expiry)) problems.push(`opening stock row ${i + 1} (${r.productId}): expiry must be YYYY-MM-DD`);
   });
+  const instruments = new Set<string>();
+  (bundle.storedValue ?? []).forEach((v, i) => {
+    const at = `stored value row ${i + 1} (${String(v.instrumentId)})`;
+    if (!isId(v.instrumentId)) { problems.push(`stored value row ${i + 1}: an instrument id is required`); return; }
+    if (instruments.has(v.instrumentId)) problems.push(`${at}: listed twice — the same card loaded twice would be value nobody paid for`);
+    instruments.add(v.instrumentId);
+    if (v.kind !== 'gift_card' && v.kind !== 'store_credit') problems.push(`${at}: kind must be gift_card or store_credit`);
+    if (!customers.has(v.customerId)) problems.push(`${at}: customer "${v.customerId}" is not in the extract`);
+    if (!Number.isSafeInteger(v.balanceMinor) || v.balanceMinor <= 0) problems.push(`${at}: the unspent balance must be whole paise above 0 (a spent card is not opened)`);
+    if (v.expiresOn !== undefined && !isDate(v.expiresOn)) problems.push(`${at}: expiry must be YYYY-MM-DD`);
+  });
+  const receivableIds = new Set<string>();
+  (bundle.receivables ?? []).forEach((r, i) => {
+    const at = `receivable row ${i + 1} (${String(r.customerId)}/${String(r.invoiceId)})`;
+    if (!isId(r.invoiceId) || !isId(r.customerId)) { problems.push(`receivable row ${i + 1}: customer and invoice id are required`); return; }
+    const key = `${r.customerId}|${r.invoiceId}`;
+    if (receivableIds.has(key)) problems.push(`${at}: listed twice`);
+    receivableIds.add(key);
+    if (!customers.has(r.customerId)) problems.push(`${at}: customer "${r.customerId}" is not in the extract`);
+    if (!isId(r.number)) problems.push(`${at}: the invoice number is required`);
+    if (!isDate(r.issuedOn) || !isDate(r.dueOn)) problems.push(`${at}: issue and due dates must be YYYY-MM-DD`);
+    else if (r.dueOn < r.issuedOn) problems.push(`${at}: due ${r.dueOn} is before it was issued ${r.issuedOn}`);
+    if (!Number.isSafeInteger(r.outstandingMinor) || r.outstandingMinor <= 0) problems.push(`${at}: the outstanding amount must be whole paise above 0 (a paid invoice is history, not an opening)`);
+  });
+  const openingIds = new Set<string>();
+  (bundle.payables ?? []).forEach((p, i) => {
+    const at = `payable row ${i + 1} (${String(p.supplierId)}/${String(p.openingId)})`;
+    if (!isId(p.openingId) || !isId(p.supplierId)) { problems.push(`payable row ${i + 1}: supplier and opening id are required`); return; }
+    if (openingIds.has(p.openingId)) problems.push(`${at}: opening id listed twice`);
+    openingIds.add(p.openingId);
+    if (!suppliers.has(p.supplierId)) problems.push(`${at}: supplier "${p.supplierId}" is not in the extract — a balance is owed to a supplier the master holds`);
+    if (!isId(p.billNumber)) problems.push(`${at}: the bill number is required`);
+    if (!isDate(p.billDate)) problems.push(`${at}: the bill date must be YYYY-MM-DD`);
+    if (p.dueOn !== undefined && !isDate(p.dueOn)) problems.push(`${at}: the due date must be YYYY-MM-DD`);
+    if (!Number.isSafeInteger(p.outstandingMinor) || p.outstandingMinor <= 0) problems.push(`${at}: the outstanding amount must be whole paise above 0`);
+  });
   return problems;
 }
+
+/** The opening-stock rows grouped by the location each opens at — the load's own location first, then in file order. */
+export function stockByLocation(bundle: ExtractBundle, defaultLocationId: string): ReadonlyMap<string, readonly ExtractStockRow[]> {
+  const out = new Map<string, ExtractStockRow[]>();
+  if (bundle.openingStock.some((r) => (r.locationId ?? defaultLocationId) === defaultLocationId)) out.set(defaultLocationId, []);
+  for (const r of bundle.openingStock) {
+    const loc = r.locationId ?? defaultLocationId;
+    out.set(loc, [...(out.get(loc) ?? []), r]);
+  }
+  return out;
+}
+
+/** The goods-receipt id an opening location is received under — stable, so a re-run lands on the same receipt. */
+export const openingGrnId = (loadId: string, locationId: string, defaultLocationId: string): string =>
+  locationId === defaultLocationId ? `opening-${loadId}` : `opening-${loadId}-${locationId}`;
 
 /**
  * The guards, then the ordered route calls. Refusals come first and each is its own reason, because
@@ -333,7 +437,14 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
   if (req.blockingExceptionsOpen > 0) {
     return refuse('blocking_exceptions_open', `${req.blockingExceptionsOpen} blocking exception(s) are still undecided (MG-04) — an unmatched tax code or negative stock must be decided by the owner in writing before anything loads`);
   }
-  const problems = validateBundle(bundle);
+  const problems = [...validateBundle(bundle)];
+  // GT-05: a batch already past its expiry on the count date is not opening stock — the receiving gate would refuse it,
+  // and the old system's figure would silently not arrive. It is a cleaning decision (write it off in the old books).
+  bundle.openingStock.forEach((r, i) => {
+    if (r.expiry !== undefined && isDate(r.expiry) && r.expiry < req.receivedOnDate) {
+      problems.push(`opening stock row ${i + 1} (${r.productId}${r.batchId === undefined ? '' : ` batch ${r.batchId}`}): expired ${r.expiry}, before the count date ${req.receivedOnDate} — write it off in the cleaning step, it cannot open as stock`);
+    }
+  });
   if (problems.length > 0) {
     return refuse('malformed_rows', `${problems.length} row(s) the routes would refuse — fix the file once, then plan again`, problems);
   }
@@ -389,6 +500,16 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
       idempotencyKey: key(`supplier-${s.partnerId}`),
     });
   }
+  for (const p of bundle.payables ?? []) {
+    // GT-05: a supplier bill still unpaid goes into the supplier's ACCOUNT as an opening balance — owed once a second
+    // person signs the load off against the old system's creditors' total (POST /v1/purchase/opening-balances/sign-off/:loadId).
+    steps.push({
+      group: 'supplier', what: `supplier opening ${p.supplierId}/${p.openingId}`,
+      path: `/v1/purchase/suppliers/${encodeURIComponent(p.supplierId)}/opening-balances/${encodeURIComponent(p.openingId)}`,
+      body: { billNumber: p.billNumber, billDate: p.billDate, ...(p.dueOn === undefined ? {} : { dueOn: p.dueOn }), amountMinor: p.outstandingMinor, openingDate: req.receivedOnDate, loadId: req.loadId },
+      idempotencyKey: key(`supplier-opening-${p.openingId}`),
+    });
+  }
   for (const c of bundle.customers) {
     // A migrated customer arrives with NO marketing consent (docs/requirements/data-requirements.md:
     // re-consent is a campaign, not a field) — recorded as such, with the evidence stated.
@@ -406,6 +527,26 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
         idempotencyKey: key(`points-${c.customerId}`),
       });
     }
+  }
+  for (const v of bundle.storedValue ?? []) {
+    // GT-05: an unspent gift card / store credit opens as an instrument with its UNSPENT balance — the stored-value
+    // liability the shop carries over, spendable from day one.
+    steps.push({
+      group: 'customer', what: `${v.kind.replace('_', ' ')} ${v.instrumentId} (${v.customerId})`,
+      path: '/v1/stored-value/instruments',
+      body: { instrumentId: v.instrumentId, kind: v.kind, ownerRef: v.customerId, faceValueMinor: v.balanceMinor, channel: 'store', ...(v.expiresOn === undefined ? {} : { expiresOn: v.expiresOn }) },
+      idempotencyKey: key(`stored-value-${v.instrumentId}`),
+    });
+  }
+  for (const r of bundle.receivables ?? []) {
+    // GT-05: a credit customer's unpaid invoice opens on the receivables ledger at what is still outstanding — aged from its
+    // own due date, so collections chase it from day one.
+    steps.push({
+      group: 'customer', what: `receivable ${r.customerId}/${r.invoiceId}`,
+      path: `/v1/b2b/collections/${encodeURIComponent(r.customerId)}/invoices/${encodeURIComponent(r.invoiceId)}`,
+      body: { number: r.number, issuedOn: r.issuedOn, dueOn: r.dueOn, grossMinor: r.outstandingMinor },
+      idempotencyKey: key(`receivable-${r.customerId}-${r.invoiceId}`),
+    });
   }
   if (bundle.openingStock.length > 0) {
     // One opening goods receipt through the REAL receiving gate. A product is received as batch-tracked
@@ -433,21 +574,27 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
     }
     // The product rules (what is batch-tracked) and the tolerances are head office's own (F03, SP-4 (ii)) — the body
     // carries the counted lines only; the gate reads the rule from the published product master.
-    steps.push({
-      group: 'stock', what: `opening stock (${bundle.openingStock.length} line(s)) at ${req.stockLocationId}`,
-      path: `/v1/inventory/goods-receipt/${encodeURIComponent(`opening-${req.loadId}`)}`,
-      body: {
-        warehouseId: req.stockLocationId,
-        receivedOnDate: req.receivedOnDate,
-        currency: req.currency,
-        lines: bundle.openingStock.map((r, i) => ({
-          lineId: `L${i + 1}`, productId: r.productId, orderedMinor: r.quantityMinor, countedMinor: r.quantityMinor,
-          uom: r.uom, unitCost: { minor: r.unitCostMinor, currency: req.currency }, condition: 'good',
-          ...(batchTracked.get(r.productId) === true ? { batchId: r.batchId, expiry: r.expiry } : {}),
-        })),
-      },
-      idempotencyKey: key('opening-stock'),
-    });
+    // GT-05: ONE opening receipt per LOCATION (MG-08 "stock by location"), each its own ledger receipt at its own place.
+    const lineNo = new Map<ExtractStockRow, number>();
+    bundle.openingStock.forEach((r, i) => lineNo.set(r, i + 1));
+    for (const [locationId, rows] of stockByLocation(bundle, req.stockLocationId)) {
+      const own = locationId === req.stockLocationId;
+      steps.push({
+        group: 'stock', what: `opening stock (${rows.length} line(s)) at ${locationId}`,
+        path: `/v1/inventory/goods-receipt/${encodeURIComponent(openingGrnId(req.loadId, locationId, req.stockLocationId))}`,
+        body: {
+          warehouseId: locationId,
+          receivedOnDate: req.receivedOnDate,
+          currency: req.currency,
+          lines: rows.map((r) => ({
+            lineId: `L${lineNo.get(r)!}`, productId: r.productId, orderedMinor: r.quantityMinor, countedMinor: r.quantityMinor,
+            uom: r.uom, unitCost: { minor: r.unitCostMinor, currency: req.currency }, condition: 'good',
+            ...(batchTracked.get(r.productId) === true ? { batchId: r.batchId, expiry: r.expiry } : {}),
+          })),
+        },
+        idempotencyKey: key(own ? 'opening-stock' : `opening-stock-${locationId}`),
+      });
+    }
   }
 
   const counts: Record<LoadGroup, number> = { tax: 0, product: 0, barcode: 0, price: 0, supplier: 0, customer: 0, stock: 0 };
@@ -518,4 +665,153 @@ export async function executeLoad(
     if (!ok && options.stopOnFirstFailure === true) break;
   }
   return { loadId: plan.loadId, tenantId: plan.tenantId, operator: plan.operator, steps: outcomes, landed, failed, ok: outcomes.length === plan.steps.length && outcomes.every((o) => o.ok) };
+}
+
+// ── GT-05 read-back: the opening state as the DOMAINS now report it, against the extract (MG-06 · MG-08) ─────────────
+//
+// A load that "returned 201" has not been proven. The proof is reading every opening back through the routes the shop runs
+// on — the stock ledger's availability and valuation, the receipt's batch lines, the loyalty, stored-value and receivables
+// ledgers, the supplier opening register — and comparing each figure, per location / batch / account, to the extract. Every
+// line says what was expected, what the system holds and whether they agree; one disagreement fails the whole read-back.
+
+/** A GET as the named operator — the test harness in-process, or the operator's script over HTTP. */
+export interface ReadBackClient {
+  request(input: {
+    readonly method: 'GET';
+    readonly path: string;
+    readonly userId: string;
+    readonly tenantId: string;
+    readonly query?: Readonly<Record<string, string>>;
+  }): Promise<{ readonly status: number; readonly body: unknown }>;
+}
+
+export type OpeningDomain = 'stock_location' | 'stock_batch' | 'stock_value' | 'points' | 'stored_value' | 'receivable' | 'payable';
+
+export interface OpeningCheckLine {
+  readonly domain: OpeningDomain;
+  /** What is compared: `product@location`, `product@location#batch`, a product's value, a customer, an instrument, a supplier. */
+  readonly key: string;
+  readonly expected: number;
+  /** What the system reports — `null` when it reports nothing at all for this key (never read as zero). */
+  readonly actual: number | null;
+  readonly agrees: boolean;
+  readonly note?: string;
+}
+
+export interface OpeningReadBack {
+  readonly loadId: string;
+  readonly lines: readonly OpeningCheckLine[];
+  readonly differences: readonly OpeningCheckLine[];
+  /** Per domain: Σ expected and Σ actual (a null actual adds 0 here — its line still disagrees). */
+  readonly totals: Readonly<Partial<Record<OpeningDomain, { readonly expected: number; readonly actual: number }>>>;
+  /** Every supplier opening of this load is signed off by a second person — until then they are recorded, not owed. */
+  readonly payablesSignedOff: boolean;
+  readonly agrees: boolean;
+}
+
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/**
+ * Read the opening state back through the API and compare it to the extract. Pure apart from the injected client. The
+ * tenant should hold only this load's openings (a rehearsal / cutover tenant): any other activity shows as a difference,
+ * which is the point — an opening figure nobody can explain is exactly what MG-08 exists to stop.
+ */
+export async function readBackOpening(
+  client: ReadBackClient,
+  bundle: ExtractBundle,
+  req: Pick<LoadRequest, 'tenantId' | 'operator' | 'loadId' | 'stockLocationId' | 'receivedOnDate'>,
+): Promise<OpeningReadBack> {
+  const get = async (path: string, query?: Readonly<Record<string, string>>): Promise<{ status: number; body: Record<string, unknown> }> => {
+    const res = await client.request({ method: 'GET', path, userId: req.operator, tenantId: req.tenantId, ...(query === undefined ? {} : { query }) });
+    return { status: res.status, body: (res.body ?? {}) as Record<string, unknown> };
+  };
+  const lines: OpeningCheckLine[] = [];
+  const line = (domain: OpeningDomain, key: string, expected: number, actual: number | null, note?: string, agrees = actual === expected): void => {
+    lines.push({ domain, key, expected, actual, agrees, ...(note === undefined ? {} : { note }) });
+  };
+
+  // Stock — by location (the ledger's availability), by batch (each location's opening receipt), and by value.
+  const byLocation = stockByLocation(bundle, req.stockLocationId);
+  if (bundle.openingStock.length > 0) {
+    const avail = await get('/v1/inventory/availability');
+    const rows = (Array.isArray(avail.body['rows']) ? avail.body['rows'] : []) as { productId?: unknown; locationId?: unknown; onHandMinor?: unknown }[];
+    const expectedAt = new Map<string, number>();
+    for (const [loc, rs] of byLocation) for (const r of rs) expectedAt.set(`${r.productId}@${loc}`, (expectedAt.get(`${r.productId}@${loc}`) ?? 0) + r.quantityMinor);
+    for (const [key, expected] of expectedAt) {
+      const row = rows.find((x) => `${String(x.productId)}@${String(x.locationId)}` === key);
+      line('stock_location', key, expected, row === undefined ? null : num(row.onHandMinor));
+    }
+    for (const [loc, rs] of byLocation) {
+      const grnId = openingGrnId(req.loadId, loc, req.stockLocationId);
+      const grn = await get(`/v1/inventory/goods-receipt/${encodeURIComponent(grnId)}`);
+      const captured = ((grn.body['grn'] as { captured?: { lines?: unknown } } | undefined)?.captured?.lines ?? []) as {
+        productId?: unknown; batchId?: unknown; sellableMinor?: unknown; quarantinedMinor?: unknown; heldMinor?: unknown;
+      }[];
+      for (const r of rs) {
+        if (r.batchId === undefined) continue;
+        const key = `${r.productId}@${loc}#${r.batchId}`;
+        const got = Array.isArray(captured) ? captured.filter((l) => l.productId === r.productId && l.batchId === r.batchId) : [];
+        if (grn.status !== 200 || got.length === 0) {
+          line('stock_batch', key, r.quantityMinor, null, grn.status === 200 ? 'received WITHOUT its batch' : `opening receipt ${grnId} not readable (${grn.status})`);
+          continue;
+        }
+        const inBuilding = got.reduce((s, l) => s + (num(l.sellableMinor) ?? 0) + (num(l.quarantinedMinor) ?? 0) + (num(l.heldMinor) ?? 0), 0);
+        const held = got.reduce((s, l) => s + (num(l.quarantinedMinor) ?? 0), 0);
+        line('stock_batch', key, r.quantityMinor, inBuilding, held > 0 ? `${held} held in quarantine on receipt (near its expiry) — counted, not sellable` : undefined);
+      }
+    }
+    const valuation = await get('/v1/inventory/valuation');
+    const vrows = (Array.isArray(valuation.body['rows']) ? valuation.body['rows'] : []) as { productId?: unknown; value?: { minor?: unknown } }[];
+    const expectedValue = new Map<string, number>();
+    for (const r of bundle.openingStock) expectedValue.set(r.productId, (expectedValue.get(r.productId) ?? 0) + r.quantityMinor * r.unitCostMinor);
+    for (const [productId, expected] of expectedValue) {
+      const mine = vrows.filter((x) => x.productId === productId);
+      line('stock_value', productId, expected, mine.length === 0 ? null : mine.reduce((s, x) => s + (num(x.value?.minor) ?? 0), 0));
+    }
+  }
+
+  // Loyalty points and stored value — per customer, per instrument (and the instrument must belong to that customer).
+  for (const c of bundle.customers) {
+    if (c.loyaltyPoints === undefined || c.loyaltyPoints === 0) continue;
+    const res = await get(`/v1/customers/${encodeURIComponent(c.customerId)}/points`);
+    line('points', c.customerId, c.loyaltyPoints, res.status === 200 ? num(res.body['pointsBalance']) : null);
+  }
+  for (const v of bundle.storedValue ?? []) {
+    const res = await get(`/v1/stored-value/instruments/${encodeURIComponent(v.instrumentId)}`);
+    const actual = res.status === 200 ? num(res.body['balanceMinor']) : null;
+    const wrongOwner = res.status === 200 && res.body['ownerRef'] !== v.customerId;
+    line('stored_value', v.instrumentId, v.balanceMinor, actual,
+      wrongOwner ? `belongs to ${String(res.body['ownerRef'])}, not ${v.customerId}` : undefined, actual === v.balanceMinor && !wrongOwner);
+  }
+
+  // Receivables — per credit customer, the outstanding the ageing reports.
+  const receivableBy = new Map<string, number>();
+  for (const r of bundle.receivables ?? []) receivableBy.set(r.customerId, (receivableBy.get(r.customerId) ?? 0) + r.outstandingMinor);
+  for (const [customerId, expected] of receivableBy) {
+    const res = await get(`/v1/b2b/collections/${encodeURIComponent(customerId)}/ageing`, { asOf: req.receivedOnDate });
+    line('receivable', customerId, expected, res.status === 200 ? num(res.body['totalOutstandingMinor']) : null, res.status === 200 ? undefined : `ageing not readable (${res.status})`);
+  }
+
+  // Payables — per supplier, the openings recorded under this load; and whether a second person has signed them off.
+  let payablesSignedOff = true;
+  const payableBy = new Map<string, number>();
+  for (const p of bundle.payables ?? []) payableBy.set(p.supplierId, (payableBy.get(p.supplierId) ?? 0) + p.outstandingMinor);
+  if (payableBy.size > 0) {
+    const res = await get('/v1/purchase/opening-balances', { loadId: req.loadId });
+    const openings = (Array.isArray(res.body['openings']) ? res.body['openings'] : []) as { supplierId?: unknown; amountMinor?: unknown; signed?: unknown }[];
+    payablesSignedOff = openings.length > 0 && openings.every((o) => o.signed === true);
+    for (const [supplierId, expected] of payableBy) {
+      const mine = openings.filter((o) => o.supplierId === supplierId);
+      line('payable', supplierId, expected, mine.length === 0 ? null : mine.reduce((s, o) => s + (num(o.amountMinor) ?? 0), 0),
+        mine.some((o) => o.signed !== true) ? 'recorded, awaiting a second person\'s sign-off — not owed until then' : undefined);
+    }
+  }
+
+  const totals: Partial<Record<OpeningDomain, { expected: number; actual: number }>> = {};
+  for (const l of lines) {
+    const t = totals[l.domain] ?? { expected: 0, actual: 0 };
+    totals[l.domain] = { expected: t.expected + l.expected, actual: t.actual + (l.actual ?? 0) };
+  }
+  const differences = lines.filter((l) => !l.agrees);
+  return { loadId: req.loadId, lines, differences, totals, payablesSignedOff, agrees: differences.length === 0 };
 }

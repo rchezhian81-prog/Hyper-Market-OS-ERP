@@ -43,7 +43,7 @@ describe('foldSupplierAccount — what is owed is read from the registers, never
     ]);
     expect(a.totals).toEqual({
       invoicedMinor: 18_000, accruedMinor: 11_000, withheldMinor: 7000, debitNotesMinor: 0, paidMinor: 0, owedMinor: 11_000,
-      unmatchedInvoices: 1, blockedInvoices: 1, pendingReturns: 0,
+      unmatchedInvoices: 1, blockedInvoices: 1, pendingReturns: 0, openingMinor: 0, openingPendingSignOffMinor: 0,
     });
     expect(needsAttention(a)).toBe(true);
     // Another supplier's invoice never reaches this account.

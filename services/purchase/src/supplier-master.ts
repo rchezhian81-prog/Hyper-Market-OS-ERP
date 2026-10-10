@@ -83,7 +83,7 @@ export interface SupplierBankState {
 
 export type AttentionReason =
   | 'no_master_record' | 'awaiting_approval' | 'blocked' | 'possible_duplicate' | 'duplicate_bank_account' | 'no_verified_bank_account'
-  | 'unmatched_invoices' | 'blocked_invoices' | 'withheld' | 'pending_returns' | 'over_invoiced';
+  | 'unmatched_invoices' | 'blocked_invoices' | 'withheld' | 'pending_returns' | 'over_invoiced' | 'opening_awaiting_sign_off';
 
 export interface SupplierListRow {
   readonly supplierId: string;
@@ -177,6 +177,7 @@ export function attentionReasons(input: {
   if (input.account.totals.withheldMinor > 0) out.push('withheld');
   if (input.account.totals.pendingReturns > 0) out.push('pending_returns');
   if (input.account.invoices.some((i) => i.flags.includes('order_over_invoiced'))) out.push('over_invoiced');
+  if (input.account.totals.openingPendingSignOffMinor > 0) out.push('opening_awaiting_sign_off');
   return out;
 }
 

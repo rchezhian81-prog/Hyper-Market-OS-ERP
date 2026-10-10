@@ -23,6 +23,7 @@ import type { Route } from '../../kernel/src/index';
 import { notFound } from '../../kernel/src/index';
 import type { PayablesAccount } from '../../../packages/finance/src/payables';
 import type { SupplierInvoiceRecord, StoredMatch } from './index';
+import type { AccountOpening } from './supplier-openings';
 
 /** One line of a goods receipt as the account reads it — a structural subset of the inventory service's `CheckedLine`. */
 export interface ReceiptLineForAccount {
@@ -188,7 +189,11 @@ export interface SupplierAccountTotals {
   readonly debitNotesMinor: number;
   /** Σ payments recorded against the supplier (SP-7c). */
   readonly paidMinor: number;
-  /** accrued − debit notes − paid: the balance the supplier's statement should show. */
+  /** GT-05 — Σ SIGNED opening balances carried from the old system (supplier-openings.ts). */
+  readonly openingMinor: number;
+  /** GT-05 — Σ opening balances recorded but not yet signed off by a second person: shown, NOT owed. */
+  readonly openingPendingSignOffMinor: number;
+  /** accrued + signed openings − debit notes − paid: the balance the supplier's statement should show. */
   readonly owedMinor: number;
   readonly unmatchedInvoices: number;
   readonly blockedInvoices: number;
@@ -205,6 +210,8 @@ export interface SupplierAccountStatement extends PayablesAccount {
   /** Batch 2 — quarantined lines disposed of as returns, and whether they have physically gone back. */
   readonly pendingLineReturns: readonly PendingLineReturn[];
   readonly payments: readonly SupplierPayment[];
+  /** GT-05 — the legacy bills still outstanding at cutover, each with its sign-off state. */
+  readonly openings: readonly AccountOpening[];
   readonly totals: SupplierAccountTotals;
   readonly asAt: string;
 }
@@ -227,6 +234,8 @@ export interface SupplierAccountInput {
   readonly payments?: readonly SupplierPayment[];
   /** SP-7c — every debit note issued under a number (all suppliers). */
   readonly debitNoteIssues?: readonly DebitNoteIssue[];
+  /** GT-05 — every opening balance (all suppliers), with its sign-off state. Optional for callers that have none. */
+  readonly openings?: readonly AccountOpening[];
   readonly asAt: string;
 }
 
@@ -298,13 +307,16 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
   const debitNotesMinor = debitNotes.reduce((s, d) => s + d.valueMinor, 0);
   const payments = (input.payments ?? []).filter((p) => p.supplierId === input.supplierId);
   const paidMinor = payments.reduce((s, p) => s + p.amountMinor, 0);
+  const openings = (input.openings ?? []).filter((o) => o.supplierId === input.supplierId);
+  const openingMinor = openings.filter((o) => o.signed).reduce((s, o) => s + o.amountMinor, 0);
   return {
     supplierId: input.supplierId, currency: 'INR',
-    invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, pendingLineReturns, payments,
+    invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, pendingLineReturns, payments, openings,
     totals: {
       invoicedMinor: invoices.reduce((s, i) => s + i.invoicedMinor, 0),
       accruedMinor, withheldMinor: invoices.reduce((s, i) => s + i.withheldMinor, 0),
-      debitNotesMinor, paidMinor, owedMinor: accruedMinor - debitNotesMinor - paidMinor,
+      openingMinor, openingPendingSignOffMinor: openings.filter((o) => !o.signed).reduce((s, o) => s + o.amountMinor, 0),
+      debitNotesMinor, paidMinor, owedMinor: accruedMinor + openingMinor - debitNotesMinor - paidMinor,
       unmatchedInvoices: invoices.filter((i) => !i.matched).length,
       blockedInvoices: invoices.filter((i) => i.blocked).length,
       pendingReturns: pendingSupplierReturns.filter((p) => !p.returned).length,
@@ -320,6 +332,7 @@ export function foldAllSupplierAccounts(input: Omit<SupplierAccountInput, 'suppl
 } {
   const supplierIds = [...new Set([
     ...input.invoices.map((i) => i.supplierId), ...input.orders.map((o) => o.supplierId), ...(input.payments ?? []).map((p) => p.supplierId),
+    ...(input.openings ?? []).map((o) => o.supplierId),
   ])].sort();
   const accounts = supplierIds.map((supplierId) => foldSupplierAccount({ ...input, supplierId }));
   const known = new Set(input.orders.map((o) => o.poId));
@@ -336,7 +349,8 @@ export function foldAllSupplierAccounts(input: Omit<SupplierAccountInput, 'suppl
 
 /** Whether an account needs a person: something unmatched, blocked, withheld, or a return not yet made (P-03). */
 export const needsAttention = (a: SupplierAccountStatement): boolean =>
-  a.totals.unmatchedInvoices > 0 || a.totals.blockedInvoices > 0 || a.totals.withheldMinor > 0 || a.totals.pendingReturns > 0;
+  a.totals.unmatchedInvoices > 0 || a.totals.blockedInvoices > 0 || a.totals.withheldMinor > 0 || a.totals.pendingReturns > 0
+  || a.totals.openingPendingSignOffMinor > 0;
 
 export interface SupplierAccountDeps {
   readonly invoices: (tenantId: string) => Promise<readonly SupplierInvoiceRecord[]> | readonly SupplierInvoiceRecord[];
@@ -347,16 +361,18 @@ export interface SupplierAccountDeps {
   /** SP-7c — every payment recorded against any supplier, and every debit note issued under a number. */
   readonly payments: (tenantId: string) => Promise<readonly SupplierPayment[]> | readonly SupplierPayment[];
   readonly debitNoteIssues: (tenantId: string) => Promise<readonly DebitNoteIssue[]> | readonly DebitNoteIssue[];
+  /** GT-05 — every opening balance with its sign-off state (supplier-openings.ts). Optional: a stub has none. */
+  readonly openingBalances?: (tenantId: string) => Promise<readonly AccountOpening[]> | readonly AccountOpening[];
   readonly now: () => string;
 }
 
 /** The registers the account folds from, read once — shared by the account routes, the master (SP-7c) and finance. */
 export async function accountRegisters(deps: SupplierAccountDeps, tenantId: string): Promise<Omit<SupplierAccountInput, 'supplierId'>> {
-  const [invoices, matches, orders, receipts, payments, debitNoteIssues] = await Promise.all([
+  const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings] = await Promise.all([
     deps.invoices(tenantId), deps.latestMatches(tenantId), deps.purchaseOrders(tenantId), deps.receipts(tenantId),
-    deps.payments(tenantId), deps.debitNoteIssues(tenantId),
+    deps.payments(tenantId), deps.debitNoteIssues(tenantId), deps.openingBalances?.(tenantId) ?? [],
   ]);
-  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, asAt: deps.now() };
+  return { invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, asAt: deps.now() };
 }
 const registers = accountRegisters;
 
@@ -392,7 +408,7 @@ export function supplierAccountRoutes(deps: SupplierAccountDeps): readonly Route
         const supplierId = (ctx.params['supplierId'] ?? '').trim();
         const regs = await registers(deps, ctx.tenantId);
         const known = regs.invoices.some((i) => i.supplierId === supplierId) || regs.orders.some((o) => o.supplierId === supplierId)
-          || (regs.payments ?? []).some((p) => p.supplierId === supplierId);
+          || (regs.payments ?? []).some((p) => p.supplierId === supplierId) || (regs.openings ?? []).some((o) => o.supplierId === supplierId);
         if (!known) throw notFound(`supplier ${supplierId}`);
         return { status: 200, body: foldSupplierAccount({ ...regs, supplierId }) };
       },

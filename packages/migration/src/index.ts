@@ -154,6 +154,10 @@ export {
   type ExtractCustomer, type ExtractStockRow, type BarcodeKind, type LoadRequest, type LoadRefusal,
   type LoadGroup, type LoadStep, type LoadPlan, type LoadPlanOk, type LoadPlanRefused, type LoadClient,
   type LoadStepOutcome, type LoadReport,
+  // GT-05 (MG-08): opening state — stock by location/batch, stored value, receivables, supplier openings — and its read-back.
+  readBackOpening, stockByLocation, openingGrnId,
+  type ExtractStoredValue, type ExtractReceivable, type ExtractPayable,
+  type ReadBackClient, type OpeningDomain, type OpeningCheckLine, type OpeningReadBack,
 } from './load';
 
 export {

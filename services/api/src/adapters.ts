@@ -187,6 +187,7 @@ import { agedStockLots, type DatedMovement } from '../../../packages/stock/src/a
 import type { BankChangeRequest, PurchaseDeps, SupplierInvoiceRecord, StoredMatch, StoredMatchPolicy } from '../../purchase/src/index';
 import { foldAllSupplierAccounts, foldSupplierAccount, type SupplierAccountDeps, type SupplierPayment, type DebitNoteIssue } from '../../purchase/src/supplier-account';
 import type { SupplierMasterDeps, SupplierRecord, SupplierBankState } from '../../purchase/src/supplier-master';
+import { openingsWithSignOff, type SupplierOpeningDeps, type SupplierOpeningBalance, type SupplierOpeningSignOff } from '../../purchase/src/supplier-openings';
 import type { PayablesDeps, PayablesJournal, PayablesExceptionRecord } from '../../finance/src/payables';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
 import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
@@ -1357,6 +1358,8 @@ const MATCH_POLICY_STREAM = streamName(STREAM.purchase, 'match-policy');
 const SUPPLIERS_STREAM = streamName(STREAM.purchase, 'suppliers');
 const SUPPLIER_PAYMENTS_STREAM = streamName(STREAM.purchase, 'supplier-payments');
 const DEBIT_NOTE_ISSUES_STREAM = streamName(STREAM.purchase, 'debit-note-issues');
+/** GT-05 — opening supplier balances carried from the old system, and the second person's sign-off of each load. */
+const SUPPLIER_OPENINGS_STREAM = streamName(STREAM.purchase, 'supplier-openings');
 /** Each supplier partner's portal config and submissions fold one stream — one partner, not the shop. */
 const forPortalPartner = (partnerId: string): string => streamName(STREAM.purchase, 'partner', partnerId);
 // Partner-action audit is TENANT-WIDE (one stream, every partner) so `findProbing` can see a supplier
@@ -7277,6 +7280,37 @@ export function supplierAccountAdapter(input: {
     receipts,
     payments: (tenantId) => allOf<SupplierPayment>(input.store, tenantId, SUPPLIER_PAYMENTS_STREAM, 'SupplierPaymentRecorded'),
     debitNoteIssues: (tenantId) => allOf<DebitNoteIssue>(input.store, tenantId, DEBIT_NOTE_ISSUES_STREAM, 'SupplierDebitNoteIssued'),
+    openingBalances: async (tenantId) => openingsWithSignOff(
+      await allOf<SupplierOpeningBalance>(input.store, tenantId, SUPPLIER_OPENINGS_STREAM, 'SupplierOpeningBalanceRecorded'),
+      await allOf<SupplierOpeningSignOff>(input.store, tenantId, SUPPLIER_OPENINGS_STREAM, 'SupplierOpeningBalancesSignedOff'),
+    ),
+  };
+}
+
+/**
+ * GT-05 (MG-08) — the opening supplier balances register: one append-only fact per legacy bill, keyed on its opening id (two
+ * writers of one id meet on the key; the one that stands is returned), and one sign-off per load, keyed on the load.
+ */
+export function supplierOpeningsAdapter(input: { readonly store: EventStore; readonly now: () => string }): SupplierOpeningDeps {
+  return {
+    now: input.now,
+    record: (tenantId, supplierId) => latestSupplierRecord(input.store, tenantId, supplierId),
+    openings: (tenantId) => allOf<SupplierOpeningBalance>(input.store, tenantId, SUPPLIER_OPENINGS_STREAM, 'SupplierOpeningBalanceRecorded'),
+    recordOpening: async (tenantId, opening) => {
+      const r = await input.store.append(tenantId, SUPPLIER_OPENINGS_STREAM, makeEvent({
+        id: `supplier-opening-${opening.openingId}-${randomUUID()}`, type: 'SupplierOpeningBalanceRecorded', occurredAt: opening.recordedAt,
+        idempotencyKey: `supplier-opening-${tenantId}-${opening.openingId}`, source: 'api/purchase', payload: opening,
+      }));
+      return r.record.event.payload as SupplierOpeningBalance;
+    },
+    signOffs: (tenantId) => allOf<SupplierOpeningSignOff>(input.store, tenantId, SUPPLIER_OPENINGS_STREAM, 'SupplierOpeningBalancesSignedOff'),
+    recordSignOff: async (tenantId, signOff) => {
+      const r = await input.store.append(tenantId, SUPPLIER_OPENINGS_STREAM, makeEvent({
+        id: `supplier-opening-signoff-${signOff.loadId}-${randomUUID()}`, type: 'SupplierOpeningBalancesSignedOff', occurredAt: signOff.signedAt,
+        idempotencyKey: `supplier-opening-signoff-${tenantId}-${signOff.loadId}`, source: 'api/purchase', payload: signOff,
+      }));
+      return r.record.event.payload as SupplierOpeningSignOff;
+    },
   };
 }
 
@@ -7374,11 +7408,11 @@ export function payablesAdapter(input: { readonly store: EventStore; readonly no
     now: input.now,
     postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
     supplierAccounts: async (tenantId) => {
-      const [invoices, matches, orders, receipts, payments, debitNoteIssues] = await Promise.all([
+      const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings] = await Promise.all([
         registers.invoices(tenantId), registers.latestMatches(tenantId), registers.purchaseOrders(tenantId), registers.receipts(tenantId),
-        registers.payments(tenantId), registers.debitNoteIssues(tenantId),
+        registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId),
       ]);
-      return foldAllSupplierAccounts({ invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, asAt: input.now() }).accounts;
+      return foldAllSupplierAccounts({ invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, asAt: input.now() }).accounts;
     },
     payablesJournals: async (tenantId) =>
       (await allOf<JournalEntry | PayablesJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
@@ -7404,11 +7438,11 @@ export function supplierPortalAdapter(input: {
   const registers = supplierAccountAdapter(input);
   /** The supplier account (SP-7b) as statement lines for the partner whose id is the supplier's — nothing when it names no supplier. */
   const accountStatementLines = async (tenantId: string, partnerId: string): Promise<readonly StatementLine[]> => {
-    const [invoices, matches, orders, receipts, payments, debitNoteIssues] = await Promise.all([
+    const [invoices, matches, orders, receipts, payments, debitNoteIssues, openings] = await Promise.all([
       registers.invoices(tenantId), registers.latestMatches(tenantId), registers.purchaseOrders(tenantId), registers.receipts(tenantId),
-      registers.payments(tenantId), registers.debitNoteIssues(tenantId),
+      registers.payments(tenantId), registers.debitNoteIssues(tenantId), registers.openingBalances!(tenantId),
     ]);
-    const a = foldSupplierAccount({ supplierId: partnerId, invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, asAt: input.now() });
+    const a = foldSupplierAccount({ supplierId: partnerId, invoices, matchOf: (id) => matches.get(id), orders, receipts, payments, debitNoteIssues, openings, asAt: input.now() });
     const lines: StatementLine[] = [];
     for (const i of a.invoices) {
       if (!i.matched) continue;

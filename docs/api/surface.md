@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 853 | 519 | 519 | 66 | 282 |
+| 13 | 856 | 521 | 521 | 66 | 282 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -151,6 +151,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/invoices/:invoiceId/synced` | `purchase.invoice.sync` | core | yes |
 | GET | `/v1/purchase/match-policy` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/match-policy` | `purchase.match.policy.set` | core | yes |
+| GET | `/v1/purchase/opening-balances` | `purchase.commitment.read` | core | — |
+| POST | `/v1/purchase/opening-balances/sign-off/:loadId` | `purchase.supplier.approve` | core | yes |
 | GET | `/v1/purchase/orders` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/orders/:poId` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/orders/:poId` | `purchase.order.propose` | core | yes |
@@ -174,6 +176,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/suppliers/:supplierId/bank-details` | `purchase.supplier.bank` | core | yes |
 | POST | `/v1/purchase/suppliers/:supplierId/block-status` | `purchase.supplier.block` | core | yes |
 | POST | `/v1/purchase/suppliers/:supplierId/debit-notes/:debitNoteRef/issue` | `purchase.invoice.match` | core | yes |
+| POST | `/v1/purchase/suppliers/:supplierId/opening-balances/:openingId` | `purchase.invoice.capture` | core | yes |
 | POST | `/v1/purchase/suppliers/:supplierId/payments/:paymentId` | `purchase.supplier.pay` | core | yes |
 | POST | `/v1/purchase/suppliers/:supplierId/receipts/:poId` | `purchase.performance.record` | core | yes |
 | GET | `/v1/purchase/suppliers/:supplierId/scorecard` | `purchase.commitment.read` | core | — |
