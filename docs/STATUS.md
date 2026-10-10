@@ -29,7 +29,7 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
   - **Real Keycloak in CI:** a new required-to-be job "Identity server suites (real Keycloak)". It is proven locally;
     its first CI run is this PR.
   - **Branch protection:** main is unprotected and has no rulesets. This session gets 403 when it tries to set them.
-     lists the six checks to require. This is an administrator action.
+    `docs/runbooks/branch-protection.md` lists the six checks to require. This is an administrator action.
 - **Batch 3 — sales and closing:**
   - **PF-09 closed:**
     - the till names the member by mobile number (the other session's step 2, kept);
