@@ -91,6 +91,27 @@ export interface PilotFoundation {
   readonly gstRegistrations: readonly SeedGstRegistration[];
   /** Org nodes in dependency order: company before branch before warehouse. */
   readonly org: readonly SeedOrgNode[];
+  /**
+   * PA-06 part 3b (DF-3-c-3b): the demo store's setup, set at HEAD OFFICE through the same routes the owner uses — the
+   * store's settings, its working rules and the three-way-match tolerances — so the demo store computer takes its setup
+   * from head office like any store (OB-26 "A"), never from a file built on the box.
+   */
+  readonly storeSetup: SeedStoreSetup;
+}
+
+/** The store settings, rules and match policy head office holds for the demo store — each value's source is named. */
+export interface SeedStoreSetup {
+  readonly storeId: string;
+  /** POST /v1/stores/:storeId/settings. */
+  readonly settings: {
+    readonly tradingDayCutoff: string; readonly staleAfterSeconds: number; readonly countApprovalThresholdMinor: number;
+    readonly handoverToleranceMinor: number; readonly cashVarianceToleranceMinor: number; readonly privacySlaDays: number;
+    readonly warehouseId: string;
+  };
+  /** POST /v1/stores/:storeId/rules — every value (head office defaults none). */
+  readonly rules: Readonly<Record<string, unknown>>;
+  /** POST /v1/purchase/match-policy (OC-13). */
+  readonly matchPolicy: { readonly quantityToleranceBps: number; readonly priceToleranceBps: number; readonly immaterialMinor: number };
 }
 
 const COMPANY_ID = 'pilot-demo-co';
@@ -130,6 +151,35 @@ export const PILOT_FOUNDATION: PilotFoundation = {
       parentId: BRANCH_ID, companyId: COMPANY_ID, activate: true,
     },
   ],
+  storeSetup: {
+    storeId: BRANCH_ID,
+    // The figures the demo store computer used to read from the box-built file (the retired demo builder), now head
+    // office's record. OC-06: the trading day ends at 00:00. The till tolerances are the seeded shift close's (₹100).
+    settings: {
+      tradingDayCutoff: '00:00', staleAfterSeconds: 900, countApprovalThresholdMinor: 100_000,
+      handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: WAREHOUSE_ID,
+    },
+    rules: {
+      approvalLimitMinor: 500_000, marginFloorBps: 2_000,
+      // the seeded receiving policy's near-expiry window (PILOT_TRADING_PARTNERS.receiptPolicy.nearExpiryDays)
+      nearExpiryDays: 30,
+      reporting: { laggingAfterMinutes: 5, staleAfterMinutes: 60 },
+      service: { returnWindowDays: 7, approvalThresholdMinor: 200_000, noReceiptCapMinor: 50_000, agentAuthorityMinor: 5_000, compensationCapMinor: 50_000 },
+      journalPrefixes: { takings: 'TK', tax: 'TX', refunds: 'RF' }, dormantAfterDays: 60, aiStaleAfterMinutes: 60,
+      // OB-08 (owner, 6 Aug 2026): a shelf count stays worth acting on for 120 minutes; a facing below half (5000 bp) is a refill.
+      merchandising: { refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'store_manager' },
+      writeOffMaterialThresholdMinor: 50_000,
+      checklist: [
+        { itemId: 'close-1', description: 'Count every till blind and hand the sheets to the cash office (demo)', blocking: true },
+        { itemId: 'close-2', description: 'Lock the back store and the safe (demo)', blocking: true },
+        { itemId: 'close-3', description: 'Walk the chiller and note the temperatures (demo)', blocking: false },
+        { itemId: 'close-4', description: 'Pull the near-expiry lines from today\'s list (demo)', blocking: false },
+        { itemId: 'close-5', description: 'Confirm tomorrow\'s deliveries with the back store (demo)', blocking: false },
+      ],
+    },
+    // OC-13 (docs/registers/owner-configuration.md): 1% on price, 0% on quantity, ₹1 immaterial.
+    matchPolicy: { quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100 },
+  },
 };
 
 /** The pilot branch id later slices scope stock, tills and orders to. */

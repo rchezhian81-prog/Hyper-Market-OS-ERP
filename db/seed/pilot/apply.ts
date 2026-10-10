@@ -189,6 +189,14 @@ export async function applyPilotFoundation(
     );
   }
 
+  // 7. PA-06 part 3b: the demo store's setup is HEAD OFFICE's record — its settings, its working rules and the match
+  //    tolerances, set through the owner's own routes — so the demo store computer takes it from head office (OB-26 "A").
+  const setup = foundation.storeSetup;
+  const store = encodeURIComponent(setup.storeId);
+  await post(`store settings ${setup.storeId}`, `/v1/stores/${store}/settings`, { ...setup.settings }, `seed-store-settings-${setup.storeId}-${digestOf(setup.settings)}`);
+  await post(`store rules ${setup.storeId}`, `/v1/stores/${store}/rules`, { ...setup.rules }, `seed-store-rules-${setup.storeId}-${digestOf(setup.rules)}`);
+  await post('three-way-match tolerances (OC-13)', '/v1/purchase/match-policy', { ...setup.matchPolicy }, `seed-match-policy-${digestOf(setup.matchPolicy)}`);
+
   return { tenantId, steps, ok: steps.every((s) => s.ok) };
 }
 
