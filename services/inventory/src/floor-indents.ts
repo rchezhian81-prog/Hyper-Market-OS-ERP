@@ -9,7 +9,8 @@
 // never a receipt (hard rule #2).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, concurrentChange } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { dispatchTransfer, receiveTransfer, TransferRefusedError, type Transfer, type TransferLine, type AvailableLot, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { applyMovement, type Bin, type BinContents, type MovementCommand } from '../../../packages/warehouse/src/movements';
@@ -88,13 +89,22 @@ export interface FloorIndentsDeps {
   readonly recordIndent: (tenantId: string, indent: FloorIndent, type: IndentEventType) => Promise<void> | void;
   /** An ISSUE: the indent, the transfer proposed AND dispatched, and its `transferred_out` movements — ONE atomic write.
    *  SP-8c: a handheld issue also names the back-store BIN it took from; its bin movement(s) ride the same write. */
-  readonly recordIssued: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], posted: readonly Movement[], binMovements?: readonly BinMovementRecord[]) => Promise<void> | void;
+  readonly recordIssued: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], posted: readonly Movement[], binMovements?: readonly BinMovementRecord[], expectedStockVersion?: number) => Promise<void> | void;
   /** A floor RECEIPT: the indent, the received transfer and its `transferred_in` movements — ONE atomic write. */
-  readonly recordReceipt: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[]) => Promise<void> | void;
+  readonly recordReceipt: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[], expectedIndentVersion?: number) => Promise<void> | void;
   /** A RETURN accepted at the back store: the indent and the return's transfer proposed, dispatched and received in one step, with both legs' movements — ONE atomic write. */
   readonly recordReturnAccepted: (tenantId: string, indent: FloorIndent, transfer: Transfer, dispatchMovements: readonly StockMovement[], receiveMovements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[]) => Promise<void> | void;
   /** Batch 2: a shortfall RESOLVED — the indent step and the found units' compensating `adjusted` movements, ONE atomic write. */
-  readonly recordShortfallResolved: (tenantId: string, indent: FloorIndent, issueId: string, posted: readonly Movement[]) => Promise<void> | void;
+  readonly recordShortfallResolved: (tenantId: string, indent: FloorIndent, issueId: string, posted: readonly Movement[], expectedIndentVersion?: number) => Promise<void> | void;
+  /**
+   * Batch 2 · the write guards on the indent chain (Wave 2a's pattern, SF-04). The back store's STOCK guard — the same one a
+   * transfer dispatch takes — read before the stock an issue is judged on, so two issues (two indents, or two issues of one
+   * indent) cannot spend the same stock; and the INDENT's own guard, read before the indent a floor receipt or a shortfall
+   * resolution is judged on, so two counts of one issue cannot both land. The loser is a named 409 \`concurrent_change\`,
+   * nothing saved. Optional: a bare stub runs unguarded.
+   */
+  readonly stockVersion?: (tenantId: string, locationId: string) => Promise<number> | number;
+  readonly indentVersion?: (tenantId: string, indentId: string) => Promise<number> | number;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /** SP-8c: head office's bin register, so an issue that names a bin lowers the same bin it took from — on the handheld's
    *  relayed route AND the direct route (Batch 2: the direct route named the bin and left it full). Optional: a cloud without
@@ -125,6 +135,7 @@ export const refusedBy = (e: unknown): never => {
   if (e instanceof IndentRefusedError) {
     throw apiError(REFUSAL_STATUS[e.code], { code: e.code, whatHappened: e.why, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed. Correct the request and try again, or read the indent.' });
   }
+  if (e instanceof ConcurrencyConflictError) throw concurrentChange('this floor indent or the back store\'s stock');
   if (e instanceof TransferRefusedError) {
     throw apiError(422, { code: 'issue_refused', whatHappened: e.why, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was moved. Check the back store\'s stock and the batch, then issue again.' });
   }
@@ -381,6 +392,8 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           const unitCostsMinor = await costsFor(ctx.tenantId, indent.fromLocationId, [...new Set(lines.map((l) => l.productId))]);
           const plan = planIssue({ indent, issueId, issuedBy: ctx.userId, lines, unitCostsMinor, currency, at: now });
           // The transfer engine's own §28 (dispatcher ≠ requester) and stock checks (SP-4/SP-5): head office's lots at the back store.
+          // The back store's stock guard first, then the stock it protects (Batch 2 · SF-04's pattern).
+          const stockVersion = deps.stockVersion === undefined ? undefined : await deps.stockVersion(ctx.tenantId, indent.fromLocationId);
           const available = await deps.availableAt(ctx.tenantId, indent.fromLocationId, plan.transfer.lines);
           const dispatched = dispatchTransfer({ transfer: plan.transfer, approval: { subjectRef: plan.transfer.transferId, status: 'approved', decidedBy: ctx.userId }, available, at: now });
           const lineCostsMinor = plan.transfer.lines.map((l) => unitCostsMinor[l.productId] ?? null);
@@ -392,7 +405,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
             uomOf: (productId, batchId) => plan.transfer.lines.find((t) => t.productId === productId && t.batchId === batchId)?.uom ?? 'EA',
           });
           const next = applyIssue(indent, picks.disagrees ? { ...plan.issue, governanceFlags: ['bin_disagrees'] } : plan.issue);
-          await deps.recordIssued(ctx.tenantId, next, transfer, dispatched.movements, posted, picks.binMovements);
+          await deps.recordIssued(ctx.tenantId, next, transfer, dispatched.movements, posted, picks.binMovements, stockVersion);
           await audit(ctx.tenantId, {
             actorId: ctx.userId, action: 'floor_indent.issue', objectType: 'floor_indent', objectId: indentId, at: now, origin: origin(ctx.tenantId, ctx.branchId ?? null),
             before: { state: indent.state }, after: { state: next.state, issueId, transferId: transfer.transferId, issuedMinor: String(lines.reduce((s, l) => s + l.quantityMinor, 0)), posted: posted.map((m) => m.movementId).join(',') },
@@ -416,6 +429,8 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         if (indentId === '' || issueId === '' || counted === undefined || (b['currency'] !== undefined && !isCurrencyCode(b['currency'] as string))) {
           throw apiError(400, { code: 'not_readable_as_a_receipt', whatHappened: 'A floor receipt needs { counted: [{ productId, batchId?, quantityMinor (whole, zero or more) }] } — what the floor actually counted.', wasItSaved: 'not_saved', nextSafeAction: 'Send what was counted. Nothing was recorded.' });
         }
+        // The indent's own guard before the indent (Batch 2): two counts of one issue cannot both land.
+        const indentVersion = deps.indentVersion === undefined ? undefined : await deps.indentVersion(ctx.tenantId, indentId);
         const indent = await deps.indent(ctx.tenantId, indentId);
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         const issue = indent.issues.find((i) => i.issueId === issueId);
@@ -431,7 +446,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           const damaged = damagedOf(counted, result.transfer);
           const posted = [...receivePostings(result.transfer, result.movements, ctx.userId), ...damagePostings(result.transfer, damaged, ctx.userId, now)];
           const next = applyReceipt(indent, issueId, { receivedBy: ctx.userId, at: now, received: goodOf(receivedOf(result.movements, result.transfer), damaged), shortfall: shortfallOf(result.discrepancies), damaged });
-          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted);
+          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted, indentVersion);
           await audit(ctx.tenantId, {
             actorId: ctx.userId, action: 'floor_indent.receive', objectType: 'floor_indent', objectId: indentId, at: now, origin: origin(ctx.tenantId, ctx.branchId ?? null),
             before: { state: indent.state, issueId, issuedBy: issue.issuedBy },
@@ -465,6 +480,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         }
         const reasonCode = b['reasonCode'] as string;
         const note = (b['note'] as string).trim();
+        const indentVersion = deps.indentVersion === undefined ? undefined : await deps.indentVersion(ctx.tenantId, indentId);
         const indent = await deps.indent(ctx.tenantId, indentId);
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         const issue = indent.issues.find((i) => i.issueId === issueId);
@@ -485,7 +501,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           }
           const resolution: ShortfallResolution = { ...planned, movementIds: posted.map((m) => m.movementId) };
           const next = applyShortfallResolution(indent, issueId, resolution);
-          await deps.recordShortfallResolved(ctx.tenantId, next, issueId, posted);
+          await deps.recordShortfallResolved(ctx.tenantId, next, issueId, posted, indentVersion);
           await audit(ctx.tenantId, {
             actorId: ctx.userId, action: 'floor_indent.shortfall.resolve', objectType: 'floor_indent', objectId: indentId, at: now, origin: origin(ctx.tenantId, ctx.branchId ?? null),
             before: { issueId, issuedBy: issue.issuedBy, receivedBy: issue.receivedBy ?? '', missingMinor: String(resolution.lines.reduce((s, l) => s + l.missingMinor, 0)) },

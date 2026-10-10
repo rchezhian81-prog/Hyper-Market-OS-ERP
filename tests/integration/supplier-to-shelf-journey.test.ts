@@ -275,6 +275,36 @@ async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<vo
     `payable ${String(matched['payableMinor'])}; debit note ${String(note['valueMinor'])}; owed ${account.totals['owedMinor']}`);
 }
 
+
+/** The cast and places for the race cases: a product with 50 costed at the back store, and a PO of 100 issued. */
+async function raceSetup(h: ApiHarness, t: string) {
+  const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, idempotencyKey?: string, query?: Readonly<Record<string, string>>): Promise<Reply> =>
+    h.request({ method, path, userId, tenantId: t, ...(body === undefined ? {} : { body }), ...(idempotencyKey === undefined ? {} : { idempotencyKey }), ...(query === undefined ? {} : { query }) });
+  await h.seedOwner(t, OWNER);
+  for (const u of [BUYER, RECEIVER, 'u-recv2', BACKSTORE, 'u-back2', FLOOR_MGR, SHELF, 'u-shelf2']) await h.provisionRole(t, u, 'store_manager');
+  await h.provisionRole(t, FINANCE, 'accountant');
+  await h.provisionRole(t, FLOOR_ASK, 'cashier');
+  expect((await call('POST', `/v1/org/nodes/${COMPANY}`, OWNER, { kind: 'company', name: 'SRE Retail' }, `org-${COMPANY}`)).status).toBe(201);
+  expect((await call('POST', `/v1/org/nodes/${FLOOR}`, OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: COMPANY, companyId: COMPANY }, `org-${FLOOR}`)).status).toBe(201);
+  expect((await call('POST', `/v1/org/nodes/${BACK}`, OWNER, { kind: 'warehouse', name: 'Back store', parentId: FLOOR, companyId: COMPANY }, `org-${BACK}`)).status).toBe(201);
+  expect((await call('POST', '/v1/inventory/receipt-policy', OWNER, { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }, 'receipt-policy')).status).toBe(201);
+  expect((await call('POST', '/v1/catalogue/products/p-dal/publish', OWNER, {
+    product: { sku: 'DAL-1KG', name: 'Toor dal 1kg', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '0713', lifecycle: 'active', handling: 'ambient' },
+    categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }],
+  }, 'publish-dal')).status).toBe(201);
+  expect((await call('POST', `/v1/purchase/suppliers/${SUPPLIER}`, BUYER, { name: 'Kaveri Dairy', gstin: GSTIN }, 'sup')).status).toBe(201);
+  expect((await call('POST', `/v1/purchase/suppliers/${SUPPLIER}/approval`, FINANCE, { reason: 'documents checked' }, 'sup-ok')).status).toBe(200);
+  expect((await call('POST', '/v1/purchase/orders/po-race', BUYER, { supplierId: SUPPLIER, lines: [{ productId: 'p-dal', orderedQty: 100, unitCost: { minor: COST, currency: 'INR' } }] }, 'po-race')).status).toBe(201);
+  expect((await call('POST', '/v1/purchase/orders/po-race/approval', OWNER, { reason: 'ok' }, 'po-race-ok')).status).toBe(200);
+  const onHand = async (loc: string): Promise<number> =>
+    ((await call('GET', '/v1/inventory/availability', OWNER, undefined, undefined, { productId: 'p-dal' })).body as { rows: { locationId: string; onHandMinor: number }[] }).rows.filter((r) => r.locationId === loc).reduce((n, r) => n + r.onHandMinor, 0);
+  const receive = (grnId: string, userId: string, counted: number, key = grnId) => call('POST', `/v1/inventory/goods-receipt/${grnId}`, userId, {
+    warehouseId: BACK, receivedOnDate: new Date().toISOString().slice(0, 10), currency: 'INR', poId: 'po-race',
+    lines: [{ lineId: 'L1', productId: 'p-dal', orderedMinor: 100, countedMinor: counted, uom: 'ea', unitCost: { minor: COST, currency: 'INR' }, condition: 'good' }],
+  }, key);
+  return { call, onHand, receive };
+}
+
 // ── the backings: the in-memory store always; real PostgreSQL where DATABASE_URL is set ───────────────────────────────
 const DATABASE_URL = process.env['DATABASE_URL'];
 let pool: Pool | undefined;
@@ -298,5 +328,67 @@ describe.each(backings)('supplier to shelf, connected — on $name (Batch 2 acce
         console.log(`\n${name}\n${rows.map((r) => `| ${r.step} | ${r.route} | ${r.expected} | ${r.actual} |`).join('\n')}`);
       }
     }
+  }, 60_000);
+
+  it('two receivers book 60 against the same order of 100 at the same moment: the order never receives more than 100 — the loser is refused by name (or, if the first had landed, judged on the 40 left)', async () => {
+    const h = harness();
+    const t = randomUUID();
+    const { onHand, receive, call } = await raceSetup(h, t);
+    const [a, b] = await Promise.all([receive('grn-a', RECEIVER, 60), receive('grn-b', 'u-recv2', 60)]);
+    const statuses = [a.status, b.status].sort();
+    if (statuses[0] === 201 && statuses[1] === 201) {
+      expect(name).toBe('real PostgreSQL'); // only there can the first commit before the second reads the order
+    } else {
+      expect(statuses).toEqual([201, 409]);
+      const lost = a.status === 409 ? a : b;
+      expect(codeOf(lost)).toBe('concurrent_change');
+      const again = await receive(lost === a ? 'grn-a' : 'grn-b', lost === a ? RECEIVER : 'u-recv2', 60, 'again');
+      expect(again.status).toBe(201);
+      expect((again.body as { grn: { availableMinor: number; heldMinor: number } }).grn).toMatchObject({ availableMinor: 40, heldMinor: 20 });
+    }
+    expect(((await call('GET', '/v1/purchase/orders/po-race', OWNER)).body as { order: { receivedByProduct: Record<string, number> } }).order.receivedByProduct).toEqual({ 'p-dal': 100 });
+    expect(await onHand(BACK)).toBe(100);
+  }, 60_000);
+
+  it('two back-store workers issue the same back-store stock to two indents at once: never more than the back store holds — the loser is refused by name, nothing moved; and two counts of one issue cannot both land', async () => {
+    const h = harness();
+    const t = randomUUID();
+    const { onHand, receive, call } = await raceSetup(h, t);
+    expect((await receive('grn-1', RECEIVER, 50)).status).toBe(201);
+    expect(await onHand(BACK)).toBe(50);
+    for (const id of ['ind-a', 'ind-b']) {
+      expect((await call('POST', `/v1/floor/indents/${id}`, FLOOR_ASK, { fromLocationId: BACK, toLocationId: FLOOR, lines: [{ productId: 'p-dal', quantityMinor: 40, uom: 'ea' }] }, id)).status).toBe(201);
+      expect((await call('POST', `/v1/floor/indents/${id}/approval`, FLOOR_MGR, {}, `${id}-ok`)).status).toBe(200);
+    }
+    const [a, b] = await Promise.all([
+      call('POST', '/v1/floor/indents/ind-a/issues/is-1', BACKSTORE, { lines: [{ productId: 'p-dal', quantityMinor: 40 }] }, 'is-a'),
+      call('POST', '/v1/floor/indents/ind-b/issues/is-1', 'u-back2', { lines: [{ productId: 'p-dal', quantityMinor: 40 }] }, 'is-b'),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses[0]).toBe(201);
+    const lost = a.status === 201 ? b : a;
+    // the guard (409 concurrent_change), or — if the first had already landed — the engine on the true figure (422)
+    expect(['concurrent_change', 'issue_refused']).toContain(codeOf(lost));
+    expect(await onHand(BACK)).toBe(10);
+    const inTransit = ((await call('GET', '/v1/inventory/availability', OWNER, undefined, undefined, { productId: 'p-dal' })).body as { inTransit: { quantityMinor: number }[] }).inTransit;
+    expect(inTransit.reduce((n, r) => n + r.quantityMinor, 0)).toBe(40);
+
+    // Two people count the same issue in at once, differently: one lands; the other is refused (by the guard) or told it is
+    // already received — never a silent second count, never two receipts.
+    const won = a.status === 201 ? 'ind-a' : 'ind-b';
+    const [c1, c2] = await Promise.all([
+      call('POST', `/v1/floor/indents/${won}/issues/is-1/receipt`, SHELF, { counted: [{ productId: 'p-dal', quantityMinor: 40 }] }, 'rc-1'),
+      call('POST', `/v1/floor/indents/${won}/issues/is-1/receipt`, 'u-shelf2', { counted: [{ productId: 'p-dal', quantityMinor: 37 }] }, 'rc-2'),
+    ]);
+    const counts = [c1, c2];
+    const landed = counts.filter((c) => c.status === 201);
+    expect(landed).toHaveLength(1);
+    const other = counts.find((c) => c !== landed[0])!;
+    expect(other.status === 409 ? codeOf(other) : (other.body as { alreadyReceived?: boolean }).alreadyReceived).toEqual(other.status === 409 ? 'concurrent_change' : true);
+    const floor = await onHand(FLOOR);
+    const landedCount = (landed[0]!.body as { indent: { totals: { receivedMinor: number } } }).indent.totals.receivedMinor;
+    expect(floor).toBe(landedCount);
+    const indent = (await call('GET', `/v1/floor/indents/${won}`, OWNER)).body as { totals: { receivedMinor: number; shortfallMinor: number } };
+    expect(indent.totals.receivedMinor + indent.totals.shortfallMinor).toBe(40);
   }, 60_000);
 });

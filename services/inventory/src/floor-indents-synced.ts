@@ -155,6 +155,9 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           const unitCostsMinor = await costsFor(ctx.tenantId, indent.fromLocationId, [...new Set(lines.map((l) => l.productId))]);
           const plan = planIssue({ indent, issueId, issuedBy, lines, unitCostsMinor, currency, at });
           // The transfer engine's own §28 (dispatcher ≠ requester) and stock checks against head office's lots at the back store.
+          // Batch 2: the back store's stock guard before the stock it protects (SF-04's pattern). A relayed issue that loses the
+          // race is a 409 concurrent_change, nothing saved — the box sends it again and it is judged on the stock as it is then.
+          const stockVersion = deps.stockVersion === undefined ? undefined : await deps.stockVersion(ctx.tenantId, indent.fromLocationId);
           const available = await deps.availableAt(ctx.tenantId, indent.fromLocationId, plan.transfer.lines);
           const dispatched = dispatchTransfer({ transfer: plan.transfer, approval: { subjectRef: plan.transfer.transferId, status: 'approved', decidedBy: issuedBy }, available, at });
           const lineCostsMinor = plan.transfer.lines.map((l) => unitCostsMinor[l.productId] ?? null);
@@ -171,7 +174,7 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           if (disagrees && !flags.includes('bin_disagrees')) flags.push('bin_disagrees');
 
           const next = applyIssue(indent, { ...plan.issue, governanceFlags: flags, relayed });
-          await deps.recordIssued(ctx.tenantId, next, transfer, dispatched.movements, posted, binMovements);
+          await deps.recordIssued(ctx.tenantId, next, transfer, dispatched.movements, posted, binMovements, stockVersion);
           await audit(ctx.tenantId, {
             actorId: issuedBy, action: 'floor_indent.issue', objectType: 'floor_indent', objectId: indentId, at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
             before: { state: indent.state },
@@ -209,6 +212,7 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
             wasItSaved: 'not_saved', nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
           });
         }
+        const indentVersion = deps.indentVersion === undefined ? undefined : await deps.indentVersion(ctx.tenantId, indentId);
         const indent = await deps.indent(ctx.tenantId, indentId);
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         const issue = indent.issues.find((i) => i.issueId === issueId);
@@ -226,7 +230,7 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           const next = applyReceipt(indent, issueId, {
             receivedBy: b['receivedBy'], at: b['at'], received: goodOf(receivedOf(result.movements, result.transfer), damaged), shortfall: shortfallOf(result.discrepancies), damaged, governanceFlags: flags, relayed,
           });
-          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted);
+          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted, indentVersion);
           await audit(ctx.tenantId, {
             actorId: b['receivedBy'], action: 'floor_indent.receive', objectType: 'floor_indent', objectId: indentId, at: b['at'], origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
             before: { state: indent.state, issueId, issuedBy: issue.issuedBy },

@@ -2714,6 +2714,8 @@ export function salesHistoryAdapter(input: { readonly store: EventStore; readonl
 export const refundGuardKey = (saleId: string): string => `refund:${saleId}`;
 /** The write-guard key for everything that leaves one location's stock by transfer (Wave 2a · SF-04). */
 export const stockGuardKey = (locationId: string): string => `stock:${locationId}`;
+/** Batch 2: one floor indent's own write guard — two counts (or two resolutions) of one issue cannot both land. */
+export const indentGuardKey = (indentId: string): string => `indent:${indentId}`;
 /** SF-02 — a purchase order's write guard: every receipt, cancellation, amendment and posting against it moves it. */
 export const purchaseOrderGuardKey = (poId: string): string => `purchase-order:${poId}`;
 
@@ -5323,6 +5325,10 @@ export function floorIndentsAdapter(input: {
     }),
   });
 
+  /** Batch 2: a guarded step's key suffix — the version it was decided on and a digest of the aggregate it records. */
+  const guardedSub = (sub: string, indent: FloorIndent, expectedVersion: number | undefined): string =>
+    expectedVersion === undefined ? sub : `${sub}-v${expectedVersion}-${createHash('sha256').update(JSON.stringify(indent)).digest('hex').slice(0, 16)}`;
+
   return {
     now: input.now,
     indent: async (tenantId, indentId) => (await foldIndents(tenantId)).get(indentId),
@@ -5353,11 +5359,18 @@ export function floorIndentsAdapter(input: {
       await input.store.append(tenantId, indentsStream, stepEvent(tenantId, type, indent, step, sub, at).event);
     },
     // An ISSUE: the indent step, the transfer proposed + dispatched, and the `transferred_out` movements — one atomic batch.
-    recordIssued: async (tenantId, indent, transfer, movements, posted, binMovements = []) => {
+    // Batch 2 · the write guards on the chain: the back store's stock guard (the SAME key a transfer dispatch takes, SF-04)
+    // and the indent's own.
+    stockVersion: (tenantId, locationId) => input.store.guardVersion(tenantId, stockGuardKey(locationId)),
+    indentVersion: (tenantId, indentId) => input.store.guardVersion(tenantId, indentGuardKey(indentId)),
+    recordIssued: async (tenantId, indent, transfer, movements, posted, binMovements = [], expectedStockVersion) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
-        stepEvent(tenantId, 'FloorIndentIssued', indent, 'issued', issue?.issueId ?? transfer.transferId, at),
+        // A guarded step's key carries a digest of what it records (Batch 2): two DIFFERENT writes racing under one issue id
+        // cannot both dedupe into a silent "success" — the loser stages its own step, meets the moved guard and is refused by
+        // name. (An exact replay never reaches here: the route answers "already issued" from the record first.)
+        stepEvent(tenantId, 'FloorIndentIssued', indent, 'issued', guardedSub(issue?.issueId ?? transfer.transferId, indent, expectedStockVersion), at),
         { stream: TRANSFERS_STREAM, event: transferProposedEvent(tenantId, { ...transfer, state: 'proposed', approvedBy: undefined, dispatchedAt: undefined, lineCostsMinor: undefined }, at) },
         { stream: TRANSFERS_STREAM, event: transferDispatchedEvent(tenantId, transfer, movements, posted, at) },
         ...movementEntries(tenantId, posted),
@@ -5367,18 +5380,18 @@ export function floorIndentsAdapter(input: {
           stream: warehouseMovementsStream,
           event: makeEvent({ id: `wh-move-${m.commandId}`, type: 'WarehouseMovementRecorded', occurredAt: at, idempotencyKey: `wh-move-${tenantId}-${m.commandId}`, source: 'api/inventory', payload: { commandId: m.commandId, movements: m.movements } }),
         })),
-      ]);
+      ], expectedStockVersion === undefined ? undefined : { guard: { key: stockGuardKey(transfer.fromLocationId), expectedVersion: expectedStockVersion } });
     },
     // A floor RECEIPT: the indent step, the received transfer and the `transferred_in` movements — one atomic batch.
-    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted) => {
+    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
-        stepEvent(tenantId, 'FloorIndentReceived', indent, 'received', issue?.issueId ?? transfer.transferId, at),
+        stepEvent(tenantId, 'FloorIndentReceived', indent, 'received', guardedSub(issue?.issueId ?? transfer.transferId, indent, expectedIndentVersion), at),
         // The transfer's own record carries what it brought IN; a damaged write-off (SP-8c) rides the same batch as a movement only.
         { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted.filter((m) => m.kind === 'transferred_in'), at) },
         ...movementEntries(tenantId, posted),
-      ]);
+      ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
     // A RETURN accepted at the back store: the indent step and the return's transfer proposed, dispatched and received in
     // one step — a trolley walk — with the `transferred_out` (floor) and `transferred_in` (back store) movements.
@@ -5396,12 +5409,12 @@ export function floorIndentsAdapter(input: {
     },
     // Batch 2: a shortfall RESOLVED — the indent step and the found units' compensating `adjusted` movements, one atomic batch
     // (each idempotent on its own key, so a replay posts nothing twice).
-    recordShortfallResolved: async (tenantId, indent, issueId, posted) => {
+    recordShortfallResolved: async (tenantId, indent, issueId, posted, expectedIndentVersion) => {
       const at = input.now();
       await input.store.appendBatch(tenantId, [
-        stepEvent(tenantId, 'FloorIndentShortfallResolved', indent, 'shortfall-resolved', issueId, at),
+        stepEvent(tenantId, 'FloorIndentShortfallResolved', indent, 'shortfall-resolved', guardedSub(issueId, indent, expectedIndentVersion), at),
         ...movementEntries(tenantId, posted),
-      ]);
+      ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
   };
 }
