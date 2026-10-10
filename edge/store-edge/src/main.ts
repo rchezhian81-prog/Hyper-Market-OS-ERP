@@ -83,6 +83,8 @@ import { ReceiptNumbers } from './receipt-numbers';
 import { HeldBills } from './held-bills';
 import { PaymentAttempts, type PaymentProviderPort } from './payment-attempts';
 import { LoyaltyWallets } from './loyalty-wallets';
+import { ConcessionTrading } from './concession-trading';
+import { pullConcessionTradingFeed, type ConcessionTradingPullOutcome } from '../../sync-agent/src/concession-trading-feed';
 import { httpWalletFeedSource, pullWalletFeed, type WalletFeedPullOutcome } from '../../sync-agent/src/loyalty-wallets-feed';
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
@@ -358,6 +360,8 @@ export interface EdgeProcess {
   readonly refreshLoyaltyWallets: (() => Promise<WalletFeedPullOutcome>) | null;
   /** PF-09 step 3: the box's copy of the loyalty balances and its record of till spends. */
   readonly loyaltyWallets: LoyaltyWallets;
+  /** PF-13: pull the partner counters' agreement terms now. Null without a cloud. Rides the same loop. */
+  readonly refreshConcessionTrading: (() => Promise<ConcessionTradingPullOutcome>) | null;
   /** PA-06 = DF-3-a: pull this store's setup from head office now. Null unless the box is set to take it from head office. */
   readonly refreshStorePack: (() => Promise<StorePackPullOutcome>) | null;
   /** Where this box's store setup came from, which version, and whether it is out of date (P-08). */
@@ -1000,6 +1004,8 @@ export async function startEdge(
   // PF-09 step 3: the members' balances as this box last pulled them, and every spend the till made — read back from the sale
   // log, so a reboot with the cable out still knows what this box has already let each member spend.
   const loyaltyWallets = await LoyaltyWallets.open({ dataDir: settings['EDGE_DATA_DIR']!, tenantId, saleRecords: salesRecords });
+  // PF-13: the partner counters' agreement terms as this box last pulled them.
+  const concessionTrading = await ConcessionTrading.open({ dataDir: settings['EDGE_DATA_DIR']!, tenantId });
   if (loyaltyWallets.heldCopy() !== undefined) say(`loyalty balances as of ${loyaltyWallets.heldCopy()!.feed.generatedAt} restored from disk.`);
 
   const node = createEdgeNode({
@@ -1278,6 +1284,14 @@ export async function startEdge(
       note: (spends) => { loyaltyWallets.note(spends); },
       serialise: (fn) => loyaltyWallets.serialise(fn),
       availability: (memberRef, tradingDay) => loyaltyWallets.availability(memberRef, tradingDay),
+    },
+    // PF-13: a new partner-counter sale line is decided by the box's own trading day, for the store this box is.
+    concessionTrading: {
+      check: (record) => concessionTrading.check(
+        record,
+        tradingDate(wallClockIn(new Date().toISOString()), packCutoff(pack)),
+        (pack.policies.known ? pack.policies.value.branchId : undefined) ?? undefined,
+      ),
     },
     closeDay: (req) => {
       const fn = dayCloseRelay.current;
@@ -1589,7 +1603,7 @@ export async function startEdge(
     syncStatusRelay.current = () => laneSyncStatus({ configured: false, queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
     return {
       log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, tillCashLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox, node, lane, screens, devices, enrolments, syncStatus,
-      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, refreshStorePack: null, refreshLoyaltyWallets: null, loyaltyWallets, storeSetup: storeSetupStatus, reportHeldVersions: null, syncOnce: null,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, refreshStorePack: null, refreshLoyaltyWallets: null, loyaltyWallets, refreshConcessionTrading: null, storeSetup: storeSetupStatus, reportHeldVersions: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -1830,6 +1844,12 @@ export async function startEdge(
     return outcome;
   };
 
+  // PF-13: the counters' agreement terms ride the same loop; a failure keeps what this box holds.
+  const refreshConcessionTrading = async (): Promise<ConcessionTradingPullOutcome> => pullConcessionTradingFeed({
+    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch, now: new Date().toISOString(),
+    receiver: { tenantId, heldFeed: () => concessionTrading.heldFeed(), takeFeed: (feed, receivedAt) => concessionTrading.takeFeed(feed, receivedAt) },
+  });
+
   const refreshIndentsFeed = async (): Promise<IndentsFeedPullOutcome> => {
     const outcome = await pullIndentsFeed({ source: indentsSource, receiver: indentsReceiver, now: new Date().toISOString() });
     if (outcome.status === 'updated') {
@@ -2031,6 +2051,12 @@ export async function startEdge(
     } catch (e) {
       say(`floor indents refresh failed: ${e instanceof Error ? e.message : String(e)}. The handheld keeps the indents this box holds.`);
     }
+    // PF-13: the counters' agreement terms too — the counters keep what this box holds on a failure.
+    try {
+      await refreshConcessionTrading();
+    } catch (e) {
+      say(`partner counter agreements refresh failed: ${e instanceof Error ? e.message : String(e)}. The counters keep what this box holds.`);
+    }
     // PF-09 step 3: the loyalty balances ride the same loop too — the till keeps what this box holds on a failure.
     try {
       await refreshLoyaltyWallets();
@@ -2089,6 +2115,7 @@ export async function startEdge(
     refreshAssignmentsFeed,
     refreshLoyaltyWallets,
     loyaltyWallets,
+    refreshConcessionTrading,
     refreshStorePack,
     storeSetup: storeSetupStatus,
     reportHeldVersions,

@@ -187,7 +187,7 @@ import { AccessControl } from '../../../packages/rbac/src/rbac';
 import { financeRoutes } from '../../finance/src/index';
 import { dayBookRoutes } from '../../finance/src/day-book';
 import { payablesRoutes } from '../../finance/src/payables';
-import { concessionTagRoutes } from '../../finance/src/concession-tags';
+import { concessionTagRoutes, concessionTradingRoutes } from '../../finance/src/concession-tags';
 import { observedHealthRoutes } from '../../platform/src/observed-health';
 import { apiManifestRoutes } from '../../platform/src/api-manifest';
 import { documentTemplateRoutes } from '../../platform/src/document-templates';
@@ -1017,6 +1017,10 @@ export function buildSurface(deps: {
     // Concession docket tags (M27-FR-03): the till's line-by-line attribution lands here, append-only, and
     // reaches the period charge + settlement through the concession adapter's `sales`.
     ...concessionTagRoutes(store === undefined ? {
+      contract: empty(undefined), tags: empty([]), appendTag: () => {}, rolesOf: empty([]), contractsFor: empty([]), now,
+    } : concessionTagsAdapter({ store, now })),
+    // PF-13: the counters' trading feed the store computers pull, and the lines taken on a day a counter could not trade.
+    ...concessionTradingRoutes(store === undefined ? {
       contract: empty(undefined), tags: empty([]), appendTag: () => {}, rolesOf: empty([]), contractsFor: empty([]), now,
     } : concessionTagsAdapter({ store, now })),
     ...scrapRoutes(store === undefined ? {

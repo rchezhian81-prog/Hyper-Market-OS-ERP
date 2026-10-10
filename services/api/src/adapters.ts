@@ -205,7 +205,7 @@ import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../fi
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
-import type { ConcessionTagDeps } from '../../finance/src/concession-tags';
+import type { ConcessionTagDeps, ConcessionTradingBreach } from '../../finance/src/concession-tags';
 import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlertRules } from '../../platform/src/observed-health';
 import type { DocumentTemplateDeps, DocumentTemplateVersion } from '../../platform/src/document-templates';
 import { adapterHealth } from '../../../packages/integration/src/index';
@@ -10723,6 +10723,9 @@ export function dayBookAdapter(input: { readonly store: EventStore; readonly now
   };
 }
 
+/** PF-13: concession lines taken on a day their counter could not trade — one tenant-wide stream, kept for a person. */
+const CONCESSION_TRADING_BREACHES = streamName(STREAM.settlement, 'concession-trading-breaches');
+
 // ── Concession docket tags (M27-FR-03) ────────────────────────────────────────────────────────
 // Every capture and every correction is an appended version of the tag on the contract's tag stream;
 // "current" is the longest history. The contract read is the concession adapter's own.
@@ -10742,6 +10745,22 @@ export function concessionTagsAdapter(input: { readonly store: EventStore; reado
       }
       return contracts;
     },
+    allContracts: async (tenantId) => {
+      const indexed = await allOf<{ readonly contractId: string }>(input.store, tenantId, CONCESSION_CONTRACT_INDEX, 'ConcessionContractIndexed');
+      const contracts: ConcessionContract[] = [];
+      for (const contractId of [...new Set(indexed.map((c) => c.contractId))]) {
+        const c = await latest<ConcessionContract>(input.store, tenantId, forConcession(contractId), 'ConcessionContractSet');
+        if (c !== undefined) contracts.push(c);
+      }
+      return contracts;
+    },
+    recordTradingBreach: async (tenantId, breach) => {
+      await input.store.append(tenantId, CONCESSION_TRADING_BREACHES, makeEvent({
+        id: `concession-breach-${breach.tagId}`, type: 'ConcessionTradingBreach', occurredAt: breach.recordedAt,
+        idempotencyKey: `concession-breach-${tenantId}-${breach.tagId}`, source: 'api/finance', payload: breach,
+      }));
+    },
+    tradingBreaches: (tenantId) => allOf<ConcessionTradingBreach>(input.store, tenantId, CONCESSION_TRADING_BREACHES, 'ConcessionTradingBreach'),
     appendTag: async (tenantId, tag) => {
       const version = tag.history.length;
       await input.store.append(tenantId, forConcessionTags(tag.contractId), makeEvent({

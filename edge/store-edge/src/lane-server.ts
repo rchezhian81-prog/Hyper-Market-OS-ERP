@@ -466,6 +466,11 @@ export function startLaneServer(input: {
    * sale paying with points or store credit is refused before the disk: nothing here could check it.
    */
   readonly loyalty?: LaneLoyaltyPort;
+  /**
+   * The partner counters' trading decisions (PF-13): a NEW concession sale line for a counter whose agreement does not
+   * allow trading today is refused before the disk. Absent → no decision here (the line is kept; head office flags it).
+   */
+  readonly concessionTrading?: { check(record: Record<string, unknown>): import('./concession-trading').CounterCheck };
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -1387,6 +1392,16 @@ export function startLaneServer(input: {
           tenderUse = input.payments.checkTenders({ laneId: input.operators.laneId, saleId: id, tenders: ((parsed ?? {}) as Record<string, unknown>)['tenders'] });
           if (!tenderUse.ok) {
             send(res, 200, { committed: false, refusedBecause: tenderUse.refusedBecause, laneMessage: tenderUse.laneMessage }, cors);
+            return;
+          }
+        }
+
+        // A PARTNER COUNTER (PF-13): a new sale line for a counter whose agreement lapsed is stopped before the disk — before
+        // money changes hands. A return or cancellation already happened and is always kept.
+        if (isTag && input.concessionTrading !== undefined && parsed !== null && typeof parsed === 'object') {
+          const counter = input.concessionTrading.check(parsed as Record<string, unknown>);
+          if (!counter.ok) {
+            send(res, 200, { committed: false, refusedBecause: counter.refusedBecause, blockedBy: counter.blockedBy, laneMessage: counter.laneMessage }, cors);
             return;
           }
         }
