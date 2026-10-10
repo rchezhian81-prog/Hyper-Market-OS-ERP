@@ -14,7 +14,9 @@ import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa11ab';
 const MOBILE = '98400 31313';
 const MEMBER = memberRefFor(loyaltyMemberKey(TEST_PACK_KEY), MOBILE)!;
-const DAY = '2026-10-10';
+// The trading day and the moment of each sale are TODAY and NOW: a member earns only on a sale made after they joined
+// (`wasMemberAt`), and the member is enrolled at run time — a fixed clock time made this pass only before 06:00 UTC.
+const DAY = new Date().toISOString().slice(0, 10);
 
 async function shop(): Promise<ApiHarness> {
   const h = apiHarness();
@@ -33,7 +35,7 @@ async function shop(): Promise<ApiHarness> {
 }
 
 const sale = (saleId: string, totalMinor: number, tenders: readonly Record<string, unknown>[]) => ({
-  saleId, receiptNumber: `R-${saleId}`, laneId: 'lane-1', cashierId: 'u-cash', tradingDay: DAY, committedAt: `${DAY}T06:00:00.000Z`,
+  saleId, receiptNumber: `R-${saleId}`, laneId: 'lane-1', cashierId: 'u-cash', tradingDay: DAY, committedAt: new Date().toISOString(),
   totalMinor, currency: 'INR', packVersion: 1, customerRef: MEMBER,
   lines: [{ productId: 'P1', quantityMinor: 2, uom: 'each', unitPriceMinor: totalMinor / 2, lineTotalMinor: totalMinor, taxRateBps: 0 }],
   tenders,
