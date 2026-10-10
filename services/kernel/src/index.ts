@@ -34,6 +34,7 @@ export {
   type StoredResult, type IdempotencyStore, type AuditSink, type KernelOptions,
   type OutboundFinding, type RequestObservation,
   type AccessResolver, type EntitlementResolver,
+  type SessionChannel, type ChannelVerdict, type ChannelGuard,
 } from './pipeline';
 
 export {

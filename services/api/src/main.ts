@@ -150,6 +150,7 @@ import { directoryLocationOf, keycloakDirectory, type IdentityDirectory } from '
 import { peopleRoutes } from '../../identity/src/people';
 import { shopRealmsFrom, type ShopRealm } from '../../identity/src/shop-realms';
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../identity/src/revocation';
+import { sessionChannelsOf } from './session-channels';
 import { delegationRoutes } from '../../identity/src/delegation';
 import { approvalDecisionRoutes, type ApprovalDecisionRecord, type AppliedDecision } from '../../identity/src/approval-decisions';
 import { emergencyAccessRoutes } from '../../identity/src/emergency-access';
@@ -1626,6 +1627,10 @@ export async function startApi(
     // a tenant with no grants still authorises nothing — but now for the right reason, and a
     // provisioned tenant's owner and staff can actually act.
     access: tenantAccessResolver(store, ROLE_CATALOGUE),
+    // A sign-in issued FOR a support or remote session (PA-10 · M33-FR-02/03) is checked against that session on
+    // every request — live, this person's, and (support) inside the owner's granted scopes — and its token is
+    // revoked through the SAME list as above once the session expires, is ended or is terminated.
+    channels: sessionChannelsOf({ store, revocations, now }),
     // Per-tenant FEATURE ENTITLEMENT (M36-FR-01 · §35). A route that names an optional/paid feature is
     // refused for a tenant whose plan has not enabled it — default-deny, on top of the permission check.
     // Reads the SAME `TenantEntitlementSet` fold the `/v1/platform/entitlements` API writes, so enabling a
