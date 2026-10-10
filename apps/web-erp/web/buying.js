@@ -147,6 +147,10 @@ const words = (map, key) => (map[key]?.[lang] ?? map[key]?.en ?? String(key).rep
  * order, and only one of those is an argument to have with a supplier.
  */
 const GAP_WORDS = {
+  who_is_buying: {
+    en: 'Nobody is signed in on this screen, so nothing can be saved or ordered. Sign in as yourself to buy.',
+    ta: 'இந்தத் திரையில் யாரும் உள்நுழையவில்லை. எனவே எதையும் சேமிக்கவோ ஆர்டர் செய்யவோ முடியாது. வாங்க உங்கள் பெயரில் உள்நுழையுங்கள்.',
+  },
   what_this_shop_stocks: {
     en: 'It has not been told what this shop stocks, so every line will be reported as an item we do not carry.',
     ta: 'இந்தக் கடையில் என்ன பொருட்கள் உள்ளன என்று தெரியவில்லை. எனவே எல்லா வரிகளும் "நாங்கள் வைத்திருக்காத பொருள்" என்று காட்டப்படும்.',

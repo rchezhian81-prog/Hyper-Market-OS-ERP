@@ -887,9 +887,16 @@ export interface PackMerchandisingPolicy {
   readonly permissions?: readonly string[];
 }
 
-/** Who buys, who may check them, and the tolerances this tenant matches on. All per-tenant. */
+/**
+ * The tolerances this tenant matches on, and who may check a buyer. All per-tenant.
+ *
+ * PA-06 part 3b (DF-3-c-3b): WHO buys is never the pack's word — the buying screen runs as the person who signed in
+ * (`asSignedInPerson`), and with nobody signed in it names nobody and saves nothing. A `buyerId` an older pack still
+ * carries is read and ignored.
+ */
 export interface PackBuyingPolicy {
-  readonly buyerId: string;
+  /** @deprecated ignored: the buyer is the signed-in person. */
+  readonly buyerId?: string;
   /**
    * Who may approve a capture or an order.
    *

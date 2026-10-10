@@ -95,6 +95,9 @@ describe('PA-06 — head office delivers each store its setup', () => {
     expect(verifyStorePack(signer, onDisk, { tenantId: A, storeId: 'S1', heldVersion: null, now: onDisk.issuedAt })).toEqual({ accepted: true });
     expect(onDisk.sections['policies']).toMatchObject({ storeId: 'S1', branchName: 'SRE Hyper Market', tradingDayCutoff: '02:00', warehouseId: 'WH' });
     expect((onDisk.sections['roleAssignments'] as { userId: string }[]).map((g) => g.userId).sort()).toEqual(['u-box', 'u-mgr', 'u-owner']);
+    // PA-06 part 3b: the buying screen's tolerances are head office's match policy in force (OC-13 until the owner sets
+    // one); no buyer is named — the screen runs as the signed-in person.
+    expect(onDisk.sections['buyingPolicy']).toEqual({ approvers: [], quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100 });
 
     // PA-06-r1: the same content signed again (head office builds on request, so each answer is a newer version with a
     // later expiry) is checked and RENEWS the held envelope — on disk too — so the box never runs out of date on a setup
@@ -179,6 +182,15 @@ describe('PA-06 — head office delivers each store its setup', () => {
     cut = false;
     expect((await restarted.refreshStorePack!()).status).toBe('updated');
     expect(restarted.storeSetup()).toMatchObject({ expired: false });
+  });
+
+  it('PA-06 part 3b: the buying screen takes the match policy the owner set; the store computer serves it with no named buyer', async () => {
+    await call('POST', '/v1/stores/S1/settings', SETTINGS);
+    expect((await call('POST', '/v1/purchase/match-policy', { quantityToleranceBps: 50, priceToleranceBps: 200, immaterialMinor: 1_000 })).status).toBe(201);
+    const edge = await boot();
+    expect((await edge.refreshStorePack!()).status).toBe('updated');
+    const onDisk = JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope;
+    expect(onDisk.sections['buyingPolicy']).toEqual({ approvers: [], quantityToleranceBps: 50, priceToleranceBps: 200, immaterialMinor: 1_000 });
   });
 
   it('PA-06-r1: an out-of-date setup whose contents head office still holds is RENEWED by the next pull — not kept expired', async () => {

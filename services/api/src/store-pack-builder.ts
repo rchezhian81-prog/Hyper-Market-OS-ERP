@@ -19,7 +19,9 @@
 //   checklist and the  ← the store's working rules head office holds (POST /v1/stores/:storeId/rules); every screen's
 //   screen policies       viewer is the person who signed in (no person is named here)
 //
-// Not yet built here (DF-3-c): the buying screen (its buyer is a named person), the practice warehouse/wave/route, counts.
+//   buyingPolicy       ← the three-way-match policy head office applies (no buyer is named: the screen runs as the
+//                        signed-in person — PA-06 part 3b)
+// Not yet built here (DF-3-c): the practice warehouse delivery and bins, counts.
 
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
@@ -30,6 +32,7 @@ import {
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE } from './roles';
+import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
 import type { PackSigner } from '../../catalogue/src/pack';
 
 export interface StorePackBuildInput {
@@ -111,6 +114,13 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   sections['receipts'] = orders
     .map((po) => ({ poId: po.poId, lines: Object.entries(po.receivedByProduct).filter(([, qty]) => qty > 0).map(([productId, qty]) => ({ productId, qty })) }))
     .filter((r) => r.lines.length > 0);
+  // PA-06 part 3b (DF-3-c-3b): the buying screen's tolerances are the match policy head office applies (OC-13; the
+  // default in force until the owner sets one). WHO buys is never named here — the screen runs as the signed-in person.
+  const matchPolicy = (await purchaseAdapter({ store, now }).matchPolicy(tenantId)) ?? DEFAULT_MATCH_POLICY;
+  sections['buyingPolicy'] = {
+    approvers: [],
+    quantityToleranceBps: matchPolicy.quantityToleranceBps, priceToleranceBps: matchPolicy.priceToleranceBps, immaterialMinor: matchPolicy.immaterialMinor,
+  };
   sections['supplierInvoices'] = (await purchaseAdapter({ store, now }).invoices(tenantId))
     .map((inv) => ({ invoiceId: inv.invoiceId, lines: inv.lines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitPriceMinor: l.unitPriceMinor, lineTotalMinor: l.lineTotalMinor })) }));
 

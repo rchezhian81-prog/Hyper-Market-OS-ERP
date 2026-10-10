@@ -1013,6 +1013,30 @@ describe('the box plans the driver’s route itself (M19-FR-03)', () => {
  * goods-in door would be running.
  */
 describe('the buyer’s screen is fed, and fed only what the box actually knows', () => {
+  // PA-06 part 3b: the buyer is the person who SIGNED IN (the relay's X-Sre-User), never the pack's named person — so the
+  // screen is served signed in, as u-buyer, unless a case says otherwise.
+  const serveSignedIn = (snap: () => ScreenInput): Promise<string> => serve(snap, true);
+  const buyingAs = (base: string, userId = 'u-buyer'): Promise<Record<string, unknown> | null> => payloadFromScreen(base, 'buying', { 'x-sre-user': userId });
+
+  it('PA-06 part 3b: the buyer is whoever signed in — with nobody signed in, nobody is named and nothing can be saved', async () => {
+    // the pack still names `u-buyer` (an older pack): it is never used
+    const unsigned = await serve(snapshotOf());
+    const nobody = (await payloadFromScreen(unsigned, 'buying'))!;
+    expect(nobody['buyerId']).toBeNull();
+    expect(buyingGaps(nobody as never)[0]).toBe('who_is_buying');
+    expect(bootBuying(nobody as never)).toBeNull(); // no session: nothing is saved under a stand-in name
+    // the manager signs in on the buying screen: the manager is the buyer, and not one of their own approvers
+    const signedIn = await serve(snapshotOf(), true);
+    const manager = (await buyingAs(signedIn, 'u-manager'))!;
+    expect(manager['buyerId']).toBe('u-manager');
+    expect(manager['approvers']).toEqual(['u-buyer']);
+    expect(buyingGaps(manager as never)).not.toContain('who_is_buying');
+    const session = bootBuying(manager as never)!;
+    const preview = session.previewInvoice({ text: ['productId,quantity,unitPriceMinor,lineTotalMinor', 'p1,10,9000,90000'].join('\n'), declaredTotalMinor: 90_000 });
+    const saved = session.captureInvoice({ invoiceId: 'INV-SIGNED', supplierId: 'sup-1', preview });
+    expect(saved.ok).toBe(true);
+  });
+
   /** A clean two-line invoice for the products the pack carries: 10 × ₹90 = ₹900.00 */
   const FILE = [
     'productId,quantity,unitPriceMinor,lineTotalMinor',
@@ -1023,7 +1047,7 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
   it('serves the buyer their OWN page, not the manager’s', async () => {
     // Both screens live in `apps/web-erp/web` and share one bundle. A bare `/buying` that resolved
     // to `index.html` would put a day close in front of somebody who came to capture an invoice.
-    const base = await serve(snapshotOf());
+    const base = await serveSignedIn(snapshotOf());
     const html = await (await fetch(`${base}/buying`)).text();
     expect(html).toContain('id="declared-total"');
     expect(html, 'the manager’s screen was served to the buyer').not.toContain('id="close-title"');
@@ -1035,16 +1059,16 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
   it('removes the buyer from their own approver list before the page is even built', async () => {
     // The pack lists `u-buyer` among the approvers — a tenant misconfiguration, and exactly the
     // one that separation of duties is supposed to survive. It must never reach the screen.
-    const base = await serve(snapshotOf());
-    const payload = (await payloadFromScreen(base, 'buying'))!;
+    const base = await serveSignedIn(snapshotOf());
+    const payload = (await buyingAs(base))!;
     expect(payload['approvers']).toEqual(['u-manager']);
     expect(payload['buyerId']).toBe('u-buyer');
   });
 
   it('captures a whole supplier invoice in one go, under the buyer’s own name', async () => {
     // Audit finding A-03: eighty lines retyped by hand every week. This is the replacement.
-    const base = await serve(snapshotOf());
-    const payload = (await payloadFromScreen(base, 'buying'))!;
+    const base = await serveSignedIn(snapshotOf());
+    const payload = (await buyingAs(base))!;
     const buying = bootBuying(payload as never)!;
 
     const preview = buying.previewInvoice({ text: FILE, declaredTotalMinor: TOTAL });
@@ -1061,8 +1085,8 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
   });
 
   it('needs no checker on the payload the box actually served — the check is a second person’s own act at head office', async () => {
-    const base = await serve(snapshotOf());
-    const buying = bootBuying((await payloadFromScreen(base, 'buying'))! as never)!;
+    const base = await serveSignedIn(snapshotOf());
+    const buying = bootBuying((await buyingAs(base))! as never)!;
     const preview = buying.previewInvoice({ text: FILE, declaredTotalMinor: TOTAL });
     const outcome = buying.captureInvoice({ invoiceId: 'INV-2', supplierId: 'sup-1', preview });
     expect(outcome.ok).toBe(true);
@@ -1072,8 +1096,8 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     // The control total is the only figure in the flow that does not come from the file. A file
     // whose lines are each perfect and whose sum is short is a file missing a line, and nothing
     // else in the system can notice.
-    const base = await serve(snapshotOf());
-    const buying = bootBuying((await payloadFromScreen(base, 'buying'))! as never)!;
+    const base = await serveSignedIn(snapshotOf());
+    const buying = bootBuying((await buyingAs(base))! as never)!;
     const preview = buying.previewInvoice({ text: FILE, declaredTotalMinor: TOTAL + 45_00 });
 
     expect(preview.problems).toEqual([]); // every line is individually fine
@@ -1088,14 +1112,14 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
 
   it('will not call an uncaptured invoice agreed with the order', async () => {
     // *Not checked* is not *clean*. Three documents cannot agree when we are holding two of them.
-    const base = await serve(snapshotOf());
-    const buying = bootBuying((await payloadFromScreen(base, 'buying'))! as never)!;
+    const base = await serveSignedIn(snapshotOf());
+    const buying = bootBuying((await buyingAs(base))! as never)!;
     const result = buying.match({ poId: 'PO-1', invoiceId: 'INV-NEVER-CAPTURED' });
     expect(result.blocked).toBe(true);
   });
 
   it('matches a captured invoice against what was ordered and what arrived', async () => {
-    const base = await serve(snapshotOf({
+    const base = await serveSignedIn(snapshotOf({
       pack: pack({
         supplierInvoices: known([{
           invoiceId: 'INV-9',
@@ -1103,7 +1127,7 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
         }]),
       }),
     }));
-    const buying = bootBuying((await payloadFromScreen(base, 'buying'))! as never)!;
+    const buying = bootBuying((await buyingAs(base))! as never)!;
     const result = buying.match({ poId: 'PO-1', invoiceId: 'INV-9' });
     expect(result.blocked).toBe(false);
     expect(result.payableMinor).toBe(900_00);
@@ -1112,7 +1136,7 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
   it('adds up two deliveries against one order rather than losing the first', async () => {
     // Half on Monday and the rest on Thursday is an ordinary week. Overwriting would report that
     // only Thursday's half arrived, and the match would withhold payment for goods on the shelf.
-    const base = await serve(snapshotOf({
+    const base = await serveSignedIn(snapshotOf({
       pack: pack({
         receipts: known([
           { poId: 'PO-1', lines: [{ productId: 'p1', qty: 4 }] },
@@ -1124,7 +1148,7 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
         }]),
       }),
     }));
-    const payload = (await payloadFromScreen(base, 'buying'))!;
+    const payload = (await buyingAs(base))!;
     const received = payload['received'] as Record<string, { qty: number }[]>;
     expect(received['PO-1']?.[0]?.qty).toBe(10);
 
@@ -1135,8 +1159,8 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
   it('serves the buyer nothing at all when the box has no buying policy', async () => {
     // A screen inventing its own match tolerances would be deciding, on its own authority, how big
     // a price difference is worth nobody's attention.
-    const base = await serve(snapshotOf({ pack: pack({ buyingPolicy: notKnown('never sent') }) }));
-    expect(await payloadFromScreen(base, 'buying')).toBeNull();
+    const base = await serveSignedIn(snapshotOf({ pack: pack({ buyingPolicy: notKnown('never sent') }) }));
+    expect(await buyingAs(base)).toBeNull();
     expect(bootBuying(undefined)).toBeNull();
   });
 
@@ -1144,16 +1168,16 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
     // Every gap here already fails toward a refusal. That is the safe direction and still not
     // honest on its own: "this was never ordered" looks identical whether the supplier invented
     // the line or the box was simply never sent the order, and only one is an argument to have.
-    const base = await serve(snapshotOf({
+    const base = await serveSignedIn(snapshotOf({
       pack: pack({ purchaseOrders: notKnown('never sent'), receipts: notKnown('never sent') }),
     }));
-    const payload = (await payloadFromScreen(base, 'buying'))!;
+    const payload = (await buyingAs(base))!;
     expect('ordered' in payload, '"ordered" must be absent, not empty').toBe(false);
     expect(buyingGaps(payload as never)).toEqual(['what_was_ordered', 'what_arrived']);
   });
 
   it('an empty approver list is no longer a gap: the buyer captures alone and the check is at head office (2b-vi-c-4)', async () => {
-    const base = await serve(snapshotOf({
+    const base = await serveSignedIn(snapshotOf({
       pack: pack({
         buyingPolicy: known({
           buyerId: 'u-buyer', approvers: ['u-buyer'], // only the buyer — stripped, leaving nobody
@@ -1161,7 +1185,7 @@ describe('the buyer’s screen is fed, and fed only what the box actually knows'
         }),
       }),
     }));
-    const payload = (await payloadFromScreen(base, 'buying'))!;
+    const payload = (await buyingAs(base))!;
     expect(payload['approvers']).toEqual([]);
     expect(buyingGaps(payload as never) as readonly string[]).not.toContain('who_may_approve');
   });
