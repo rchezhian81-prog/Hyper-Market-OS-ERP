@@ -2,6 +2,7 @@
 // the one the pricing routes judge a head-office price by (M05 · PA audit): never a figure sent with the price.
 
 import type { ApiHarness } from './api-harness';
+import { aBranch } from './a-branch';
 
 export const STORE_RULES = {
   approvalLimitMinor: 500_000, marginFloorBps: 2_000, nearExpiryDays: 30,
@@ -20,4 +21,10 @@ export async function storeRules(h: ApiHarness, tenantId: string, ownerId: strin
     body: { ...STORE_RULES, marginFloorBps },
   });
   if (res.status >= 300) throw new Error(`store rules not set: ${res.status} ${JSON.stringify(res.body)}`);
+}
+
+/** A store head office knows (the company and the branch under it), with its rules set — for a test whose prices name it. */
+export async function aStoreWithRules(h: ApiHarness, tenantId: string, ownerId: string, storeId: string, marginFloorBps: number): Promise<void> {
+  await aBranch(h, tenantId, ownerId, storeId);
+  await storeRules(h, tenantId, ownerId, storeId, marginFloorBps);
 }
