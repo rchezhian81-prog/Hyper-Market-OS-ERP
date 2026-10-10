@@ -21,7 +21,7 @@
 // items left is complete and carries them, visible, into the next shift (M25-FR-02).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound, requireActorIsCaller } from '../../kernel/src/index';
+import { apiError, notFound, requireActorIsCaller, assertRecordBranchInScope, recordsInScope, assertBranchInScope } from '../../kernel/src/index';
 import { assessChecklist, type ChecklistItem, type ChecklistResult } from '../../../packages/workforce/src/workforce';
 import { deciderSealFlags } from '../../pos/src/store-seal';
 
@@ -112,6 +112,10 @@ export function checklistStoreRoutes(deps: ChecklistStoreDeps): readonly Route[]
         if (checklist === undefined) throw apiError(400, NOT_READABLE_CHECKLIST);
         // The signature is the signer's own act (2b-vi-c, audit PA-03): `signedBy` names the caller or is absent.
         requireActorIsCaller(ctx, (ctx.body ?? {}) as Record<string, unknown>, 'signedBy');
+        // PA-01-r1: a checklist is its branch's — the one named and the one already on file must both be the caller's.
+        assertRecordBranchInScope(ctx, checklist.branchId);
+        const before = await deps.checklist(ctx.tenantId, checklistId);
+        if (before !== undefined) assertRecordBranchInScope(ctx, before.branchId);
         await deps.putChecklist(ctx.tenantId, checklist, ctx.idempotencyKey ?? `checklist-${checklistId}-${deps.now()}`);
         return { status: 200, body: { checklist, assessment: assessStored(checklist) } };
       },
@@ -139,6 +143,10 @@ export function checklistStoreRoutes(deps: ChecklistStoreDeps): readonly Route[]
         const signatureFlags = checklist.signedBy === undefined ? [] : deciderSealFlags(deps.tillSealKey, {
           tenantId: ctx.tenantId, kind: 'checklist', recordId: checklistId, named: checklist.signedBy, record: ctx.body,
         });
+        // PA-01-r1: the box relays its own store's checklists only (it names its store when the screen did not).
+        assertRecordBranchInScope(ctx, checklist.branchId);
+        const prior = await deps.checklist(ctx.tenantId, checklistId);
+        if (prior !== undefined) assertRecordBranchInScope(ctx, prior.branchId);
         const kept: StoredChecklist = signatureFlags.length === 0 ? checklist : { ...checklist, signatureFlags };
         await deps.putChecklist(ctx.tenantId, kept, ctx.idempotencyKey ?? `checklist-synced-${checklistId}-${deps.now()}`);
         return { status: 200, body: { checklist: kept, assessment: assessStored(kept), synced: true, flags: signatureFlags } };
@@ -151,9 +159,9 @@ export function checklistStoreRoutes(deps: ChecklistStoreDeps): readonly Route[]
       handler: async (ctx) => {
         const kind = (ctx.query['kind'] ?? '').trim();
         const branchId = (ctx.query['branchId'] ?? '').trim();
-        let stored = await deps.checklists(ctx.tenantId);
+        // PA-01-r1: the caller's branches (and shop-wide ones); another branch asked for is refused by name.
+        let stored = recordsInScope(ctx, await deps.checklists(ctx.tenantId), (c) => c.branchId, branchId);
         if (kind !== '') stored = stored.filter((c) => c.kind === kind);
-        if (branchId !== '') stored = stored.filter((c) => c.branchId === branchId);
         const checklists = stored.map((c) => ({ ...c, assessment: assessStored(c) }));
         // The shop cannot run past a blocking item outstanding — surface that count first (P-03).
         const blocked = checklists.filter((c) => c.assessment.outcome === 'blocked_item').length;
@@ -170,6 +178,7 @@ export function checklistStoreRoutes(deps: ChecklistStoreDeps): readonly Route[]
         if (checklistId === '') throw notFound('checklist ');
         const stored = await deps.checklist(ctx.tenantId, checklistId);
         if (stored === undefined) throw notFound(`checklist ${checklistId}`);
+        if (typeof stored.branchId === 'string' && stored.branchId !== '') assertBranchInScope(ctx, stored.branchId); // PA-01-r1
         return { status: 200, body: { checklist: stored, assessment: assessStored(stored) } };
       },
     },

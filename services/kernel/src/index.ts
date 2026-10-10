@@ -11,7 +11,7 @@ export {
 } from './errors';
 
 export {
-  scopeOf, branchInScope, assertBranchInScope, narrowScope, withinScope, outsideBranchScope, scopeNotHeld,
+  scopeOf, branchInScope, assertBranchInScope, narrowScope, withinScope, outsideBranchScope, scopeNotHeld, assertRecordBranchInScope, recordsInScope, shopWideRecord,
   actorIsTheCaller, requireActorIsCaller, secondPersonIsASeparateAct, documentsVerifiedByTheCaller,
   type VerifiableDocument,
 } from './scope';

@@ -21,7 +21,7 @@
 // `concession.contract.manage`; reads/decisions are `concession.charge.read`.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, assertBranchInScope } from '../../kernel/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import {
   computePeriodCharge, settleConcession, mayConcessionTrade, depositPosition, valueOwnStock, checkStockAccess,
@@ -104,6 +104,10 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
           kind: 'concession_contract', subjectRef: contractId, details: actionDetails(ctx.body, { contractId }), valueMinor: null,
           maker: ctx.userId, usedBy: `concession-contract:${contractId}`, now: deps.now(),
         });
+        // PA-01-r1: a contract at a branch the caller holds; one on file for another branch is not rewritten.
+        assertBranchInScope(ctx, b['branchId'] as string);
+        const before = await deps.contract(ctx.tenantId, contractId);
+        if (before !== undefined) assertBranchInScope(ctx, before.branchId);
         const contract: ConcessionContract = {
           contractId, tenantId: ctx.tenantId, branchId: b['branchId'] as string,
           concessionaireId: b['concessionaireId'] as string, name: b['name'] as string,
@@ -144,6 +148,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
           });
         }
         const contract = await deps.contract(ctx.tenantId, contractId);
+        if (contract !== undefined) assertBranchInScope(ctx, contract.branchId); // PA-01-r1: another branch's contract stays outside
         if (contract === undefined) throw notFound(`concession contract ${contractId}`);
 
         const sale: ConcessionSale = {
@@ -166,6 +171,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
         const from = ctx.query['from']; const to = ctx.query['to'];
         if (!isDate(from) || !isDate(to)) throw apiError(400, { code: 'charge_needs_a_window', whatHappened: 'A period charge needs ?from=YYYY-MM-DD&to=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send the window. A charge reads, it never writes.' });
         const contract = await deps.contract(ctx.tenantId, contractId);
+        if (contract !== undefined) assertBranchInScope(ctx, contract.branchId); // PA-01-r1: another branch's contract stays outside
         if (contract === undefined) throw notFound(`concession contract ${contractId}`);
         const metered = ctx.query['meteredUtilitiesMinor'];
         const charge = computePeriodCharge({
@@ -189,6 +195,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
           throw apiError(400, { code: 'settlement_needs_a_window_and_banked', whatHappened: 'A settlement needs ?from=&to=YYYY-MM-DD and ?bankedForThemMinor= (what the tills actually banked for this concession, from the day-close).', wasItSaved: 'not_saved', nextSafeAction: 'Send the window and the banked figure. A settlement reads, it never writes.' });
         }
         const contract = await deps.contract(ctx.tenantId, contractId);
+        if (contract !== undefined) assertBranchInScope(ctx, contract.branchId); // PA-01-r1: another branch's contract stays outside
         if (contract === undefined) throw notFound(`concession contract ${contractId}`);
         const sales = await deps.sales(ctx.tenantId, contractId);
         const charge = computePeriodCharge({ contract, sales, from, to });
@@ -205,6 +212,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
       handler: async (ctx) => {
         const contractId = ctx.params['contractId'] ?? '';
         const contract = await deps.contract(ctx.tenantId, contractId);
+        if (contract !== undefined) assertBranchInScope(ctx, contract.branchId); // PA-01-r1: another branch's contract stays outside
         if (contract === undefined) throw notFound(`concession contract ${contractId}`);
         const today = isDate(ctx.query['today']) ? (ctx.query['today'] as string) : deps.now().slice(0, 10);
         const warn = Number(ctx.query['warnWithinDays']);
@@ -294,6 +302,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
             nextSafeAction: 'Send the branch and the lots to value. A valuation reads, it never writes.',
           });
         }
+        assertBranchInScope(ctx, b['branchId'] as string); // PA-01-r1
         return { status: 200, body: { ...valueOwnStock({ branchId: b['branchId'] as string, lots: lots as OwnedLot[] }), asAt: deps.now() } };
       },
     },
@@ -309,6 +318,7 @@ export function concessionRoutes(deps: ConcessionDeps): readonly Route[] {
       entitlement: 'dept.concession',
       handler: async (ctx) => {
         const branchId = ctx.params['branchId'] ?? '';
+        assertBranchInScope(ctx, branchId); // PA-01-r1: another branch's stock valuation is refused by name
         const result = await deps.storeValuation(ctx.tenantId, branchId);
         return { status: 200, body: { ...result, asAt: deps.now() } };
       },
