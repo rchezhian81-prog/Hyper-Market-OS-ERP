@@ -228,6 +228,7 @@ import type { ErasureExecutionDeps, PiiEntry, ErasureApproval, DomainHolding } f
 import type { PrivacyTombstone } from '../../../packages/customer/src/index';
 import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
 import type { CampaignDeps, CampaignPlanRecord } from '../../customer/src/campaigns';
+import type { CampaignSendDeps, CampaignFrequencyPolicy, CampaignSendRecord, DeliveryCallback } from '../../customer/src/campaign-send';
 import type { AiDraft, SatisfactionScore, CompensationPolicy, SlaView } from '../../../packages/service-desk/src/index';
 import { assessFirstResponse } from '../../../packages/service-desk/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
@@ -11773,5 +11774,50 @@ export function privacyDomainHoldingsAdapter(input: { readonly store: EventStore
       holdings.push({ category: 'consent_history', domain: 'customer consent', recordCount: consents.length, retentionBasis: 'audit_evidence', state: 'held' });
     }
     return holdings;
+  };
+}
+
+// ── PF-10: campaign send — frequency history from the PA-08 queue, the queue's enqueue, delivery reports ─────────────
+
+const CAMPAIGN_SEND_STREAM = streamName(STREAM.service, 'campaign-sends');
+const CAMPAIGN_FREQUENCY_STREAM = streamName(STREAM.service, 'campaign-frequency');
+const CAMPAIGN_DELIVERY_STREAM = streamName(STREAM.service, 'campaign-delivery');
+
+export function campaignSendAdapter(input: { readonly store: EventStore; readonly now: () => string }): CampaignSendDeps {
+  // The SAME queue, template register and consent ledger the PA-08 routes use — one record each (P-02).
+  const q = notificationQueueAdapter(input);
+  return {
+    now: input.now,
+    consentRecords: (tenantId, customerId) => allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
+    templates: q.templates!,
+    queueEvents: q.events!,
+    queue: q.queue,
+    enqueue: q.record,
+    frequencyPolicy: (tenantId) => latest<CampaignFrequencyPolicy>(input.store, tenantId, CAMPAIGN_FREQUENCY_STREAM, 'CampaignFrequencyPolicySet'),
+    recordFrequencyPolicy: async (tenantId, p) => {
+      await input.store.append(tenantId, CAMPAIGN_FREQUENCY_STREAM, makeEvent({
+        id: `campaign-frequency-${p.setAt}`, type: 'CampaignFrequencyPolicySet', occurredAt: p.setAt,
+        idempotencyKey: `campaign-frequency-${tenantId}-${p.capPerWindow}-${p.windowDays}-${p.setAt}`, source: 'api/customer', payload: p,
+      }));
+    },
+    sends: async (tenantId, campaignId) =>
+      (await allOf<CampaignSendRecord>(input.store, tenantId, CAMPAIGN_SEND_STREAM, 'CampaignSent')).filter((s) => s.campaignId === campaignId),
+    recordSend: async (tenantId, r, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, CAMPAIGN_SEND_STREAM, makeEvent({
+        id: `campaign-send-${r.campaignId}-${d}`, type: 'CampaignSent', occurredAt: r.at,
+        idempotencyKey: `campaign-send-${tenantId}-${r.campaignId}-${d}`, source: 'api/customer', payload: r,
+      }));
+    },
+    callbacks: async (tenantId, campaignId) =>
+      (await allOf<DeliveryCallback>(input.store, tenantId, CAMPAIGN_DELIVERY_STREAM, 'CampaignDeliveryReported')).filter((c) => c.campaignId === campaignId),
+    recordCallback: async (tenantId, c, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, CAMPAIGN_DELIVERY_STREAM, makeEvent({
+        id: `campaign-delivery-${c.messageId}-${d}`, type: 'CampaignDeliveryReported', occurredAt: c.recordedAt,
+        // A provider re-sending the same report collapses; a new status (delivered → read) is a new, append-only fact.
+        idempotencyKey: `campaign-delivery-${tenantId}-${d}`, source: 'api/customer', payload: c,
+      }));
+    },
   };
 }

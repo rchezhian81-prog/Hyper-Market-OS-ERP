@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 884 | 540 | 540 | 73 | 285 |
+| 13 | 889 | 543 | 543 | 73 | 286 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -437,7 +437,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/privacy/pii/:customerRef/:category` | `privacy.request.manage` | core | yes |
 | POST | `/v1/privacy/retention/sweep` | `customer.consent.write` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/attribution` | `customer.campaign.read` | core | yes |
+| POST | `/v1/service/campaigns/:campaignId/messages/:messageId/status` | `notification.send.check` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/plan` | `customer.campaign.send` | core | yes |
+| POST | `/v1/service/campaigns/:campaignId/send` | `customer.campaign.send` | core | yes |
+| GET | `/v1/service/campaigns/:campaignId/status` | `customer.campaign.read` | core | — |
+| GET | `/v1/service/campaigns/frequency-policy` | `customer.campaign.read` | core | — |
+| PUT | `/v1/service/campaigns/frequency-policy` | `customer.campaign.policy` | core | yes |
 | POST | `/v1/service/campaigns/journeys/:kind/candidates` | `customer.campaign.send` | core | yes |
 | GET | `/v1/service/campaigns/plans` | `customer.campaign.read` | core | — |
 | GET | `/v1/service/cases` | `service.case.read` | core | — |

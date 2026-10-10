@@ -95,6 +95,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'loyalty.coupon.issue', 'loyalty.coupon.redeem', 'loyalty.coupon.read',
       'service.case.manage', 'service.case.read', 'service.compensation.approve', 'customer.segment.read', 'customer.segment.manage',
       'customer.campaign.send', 'customer.campaign.read',
+      // PF-10: the owner sets the campaign frequency cap (M21-FR-01: sends only within frequency rules).
+      'customer.campaign.policy',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage', 'order.backorder.manage',
       'order.payment.record', 'order.refund.issue', 'order.refund.approve',
       // M19-FR-01 / Item 2: work any substitution-exception queue and manage them (reassign, escalation sweep).
