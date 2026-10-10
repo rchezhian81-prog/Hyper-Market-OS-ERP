@@ -165,21 +165,40 @@ describe('POST /v1/migration/parallel-run/differences/:differenceId/own — a na
 });
 
 describe('POST /v1/migration/cutover/rollback and what the cutover decision now reads from the ledger', () => {
-  it('records a performed rollback; the decision then knows rollback and parallel position without being told', async () => {
+  it('a rollback is DECIDED at one click, PERFORMED only on execution evidence; only then does the decision read it (GT-02)', async () => {
     const { routes, rec } = await withPolicy();
     const post = routeFor(routes, 'POST', '/v1/migration/parallel-run/days/:businessDate');
     for (const d of ['2026-10-01', '2026-10-02', '2026-10-03']) await post.handler(ctx({ userId: 'u-recon', ...clean(d) }));
     const rb = await routeFor(routes, 'POST', '/v1/migration/cutover/rollback').handler(ctx({ body: { cutoverId: 'cut-1', trigger: 'owner_decision', legacySystemAvailable: true } }));
     expect(rb.status).toBe(201);
-    expect(rec.rollbacks).toEqual([expect.objectContaining({ cutoverId: 'cut-1', performed: true, decidedBy: 'u-owner', decidedAt: NOW, evidenceRetained: true, shopKeepsTrading: true })]);
-    const decision = await routeFor(routes, 'POST', '/v1/migration/cutover/decision').handler(ctx({ body: { cutoverId: 'cut-1', evidence: {
-      reconciliation: { tenantId: 't-sre', assessments: [], open: [], unsigned: [], qg07Passed: true, detail: 'signed' },
-      exceptions: { tenantId: 't-sre', clearForCutover: true, blockingUnresolved: [], detail: 'clear' },
-      edgeUnsyncedItems: 0, deltaAppliedAt: '2026-10-03T22:00:00Z', namedTeam: [{ userId: 'u-owner', role: 'owner' }], ownerGoBy: 'u-owner',
-    } } }));
-    const d = decision.body as { decision: { go: boolean; failed: string[] } };
-    expect(d.decision.failed).toEqual([]);
-    expect(d.decision.go).toBe(true);
+    // The click records a DECISION — never "performed" before anybody has seen the old system trade.
+    expect(rec.rollbacks).toEqual([expect.objectContaining({ cutoverId: 'cut-1', performed: false, state: 'decided', decidedBy: 'u-owner', decidedAt: NOW, evidenceRetained: true, shopKeepsTrading: true })]);
+    const decide = () => routeFor(routes, 'POST', '/v1/migration/cutover/decision').handler(ctx({ body: { cutoverId: 'cut-1', evidence: {} } }));
+    const before = (await decide()).body as { checks: { check: string; state: string }[] };
+    expect(before.checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('failed');
+    expect(before.checks.find((c) => c.check === 'parallel_run_sufficient')?.state).toBe('passed'); // from the ledger
+
+    // Confirmed with the old system's first bill after the decision, by the signed-in person who saw it.
+    const confirm = routeFor(routes, 'POST', '/v1/migration/cutover/rollback/:cutoverId/confirmation');
+    expect(await thrown(() => confirm.handler(ctx({ userId: 'u-mgr', params: { cutoverId: 'cut-1' }, body: { legacyFirstBillRef: 'OLD-1', legacyTradingFrom: '2026-10-10T19:00:00.000Z' } })))).toMatchObject({ status: 422, body: { code: 'trading_before_the_decision' } });
+    const ok = await confirm.handler(ctx({ userId: 'u-mgr', params: { cutoverId: 'cut-1' }, body: { legacyFirstBillRef: 'OLD-1', legacyTradingFrom: NOW } }));
+    expect(ok.status).toBe(201);
+    expect(rec.rollbacks.at(-1)).toMatchObject({ performed: true, state: 'performed', execution: { confirmedBy: 'u-mgr', legacyFirstBillRef: 'OLD-1' } });
+    expect(await thrown(() => confirm.handler(ctx({ params: { cutoverId: 'cut-1' }, body: { legacyFirstBillRef: 'OLD-2', legacyTradingFrom: NOW } })))).toMatchObject({ status: 409, body: { code: 'already_performed' } });
+    const after = (await decide()).body as { checks: { check: string; state: string }[] };
+    expect(after.checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('passed');
+  });
+
+  it('a rollback decided with the old system unavailable can never be confirmed — and is not "gone back"', async () => {
+    const { routes, rec } = await withPolicy();
+    const rb = await routeFor(routes, 'POST', '/v1/migration/cutover/rollback').handler(ctx({ body: { cutoverId: 'cut-1', trigger: 'data_corruption', legacySystemAvailable: false } }));
+    expect(rb.status).toBe(201);
+    expect(rec.rollbacks[0]).toMatchObject({ performed: false, state: 'legacy_unavailable' });
+    expect((rb.body as { nextSafeAction: string }).nextSafeAction).toMatch(/cannot be performed/);
+    const confirm = routeFor(routes, 'POST', '/v1/migration/cutover/rollback/:cutoverId/confirmation');
+    expect(await thrown(() => confirm.handler(ctx({ params: { cutoverId: 'cut-1' }, body: { legacyFirstBillRef: 'OLD-1', legacyTradingFrom: NOW } })))).toMatchObject({ status: 422, body: { code: 'legacy_unavailable' } });
+    expect(await thrown(() => confirm.handler(ctx({ params: { cutoverId: 'cut-9' }, body: { legacyFirstBillRef: 'OLD-1', legacyTradingFrom: NOW } })))).toMatchObject({ status: 404, body: { code: 'no_rollback_decided' } });
+    expect(rec.rollbacks).toHaveLength(1); // nothing confirmed, the decision kept
   });
   it('without a recorded rollback or run, the decision still fails those checks — absent is never a pass', async () => {
     const { routes } = stub();

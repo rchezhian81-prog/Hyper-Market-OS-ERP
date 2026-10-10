@@ -196,14 +196,28 @@ describe('the rollback is the deliverable, not the cutover', () => {
 });
 
 describe('a rollback needs no committee, and unwinds no evidence', () => {
-  it('is performed by the person on the night', () => {
+  it('is DECIDED by the person on the night — and is not performed until the old system is seen trading (GT-02)', () => {
     const r = performRollback({
       cutoverId: 'cut-1', trigger: 'control_total_failed', decidedBy: 'u-manager',
       legacySystemAvailable: true, now: '2026-09-15T05:40:00Z',
     });
-    expect(r.performed).toBe(true);
+    expect(r.performed).toBe(false);
+    expect(r.state).toBe('decided');
     expect(r.evidenceRetained).toBe(true);
+    expect(r.detail).toContain('NOT yet performed');
     expect(r.detail).toContain('every piece of migration evidence is retained for the second attempt');
+
+    const seen = cutover.confirmRollback(r, { confirmedBy: 'u-owner', confirmedAt: '2026-09-15T06:05:00Z', legacyTradingFrom: '2026-09-15T05:55:00Z', legacyFirstBillRef: 'OLD-7781' });
+    expect(seen.ok).toBe(true);
+    if (!seen.ok) return;
+    expect(seen.rollback).toMatchObject({ performed: true, state: 'performed', execution: { legacyFirstBillRef: 'OLD-7781', confirmedBy: 'u-owner' } });
+    expect(cutover.confirmRollback(seen.rollback, { confirmedBy: 'u-x', confirmedAt: '2026-09-15T06:10:00Z', legacyTradingFrom: '2026-09-15T06:00:00Z', legacyFirstBillRef: 'OLD-2' })).toMatchObject({ ok: false, refusal: 'already_performed' });
+  });
+
+  it('refuses a confirmation with no bill to look at, or with trading from before the decision', () => {
+    const r = performRollback({ cutoverId: 'cut-1', trigger: 'owner_decision', decidedBy: 'u-m', legacySystemAvailable: true, now: '2026-09-15T05:40:00Z' });
+    expect(cutover.confirmRollback(r, { confirmedBy: 'u-o', confirmedAt: '2026-09-15T06:00:00Z', legacyTradingFrom: '2026-09-15T05:50:00Z', legacyFirstBillRef: ' ' })).toMatchObject({ ok: false, refusal: 'no_bill_reference' });
+    expect(cutover.confirmRollback(r, { confirmedBy: 'u-o', confirmedAt: '2026-09-15T06:00:00Z', legacyTradingFrom: '2026-09-15T05:00:00Z', legacyFirstBillRef: 'OLD-1' })).toMatchObject({ ok: false, refusal: 'trading_before_the_decision' });
   });
 
   it('says so loudly when the legacy system is NOT there to fall back to', () => {
@@ -212,6 +226,9 @@ describe('a rollback needs no committee, and unwinds no evidence', () => {
       legacySystemAvailable: false, now: '2026-09-15T05:40:00Z',
     });
     expect(r.detail).toContain('MG-12 does not retire it on the strength of one good night');
+    expect(r).toMatchObject({ performed: false, state: 'legacy_unavailable' });
+    // Nothing to confirm: a rollback onto a system that is not there is not a rollback.
+    expect(cutover.confirmRollback(r, { confirmedBy: 'u-o', confirmedAt: '2026-09-15T06:00:00Z', legacyTradingFrom: '2026-09-15T05:50:00Z', legacyFirstBillRef: 'OLD-1' })).toMatchObject({ ok: false, refusal: 'legacy_unavailable' });
   });
 
   it('exposes no approval gate on the rollback path, and no way to discard the evidence', () => {

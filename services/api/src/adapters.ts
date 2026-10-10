@@ -9823,7 +9823,16 @@ export function migrationAdapter(input: {
       for (const d of all) byId.set(d.differenceId, d);
       return [...byId.values()];
     },
-    rollbacks: (tenantId) => allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackPerformed'),
+    // GT-02: a rollback is DECIDED (RollbackDecided), then — only with execution evidence — PERFORMED (RollbackPerformed).
+    // Both facts are kept (hard rule #6); one row per decision, at its latest state. An old RollbackPerformed with no
+    // execution evidence stays on the register but never demonstrates a rollback (`ledgerCutoverEvidence`).
+    rollbacks: async (tenantId) => {
+      const decided = await allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackDecided');
+      const performed = await allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackPerformed');
+      const byDecision = new Map<string, RecordedRollback>();
+      for (const r of [...decided, ...performed]) byDecision.set(`${r.cutoverId}|${r.decidedAt}`, r);
+      return [...byDecision.values()];
+    },
     recordParallelPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
         id: `parallel-policy-${policy.cutoverId}-${policy.setAt}`, type: 'ParallelRunPolicySet', occurredAt: policy.setAt,
@@ -9845,9 +9854,14 @@ export function migrationAdapter(input: {
       }));
     },
     recordRollback: async (tenantId, rollback) => {
+      // The decision and its confirmation are two facts with two keys — a confirmation never collapses onto the decision.
+      const performed = rollback.state === 'performed';
       await input.store.append(tenantId, STREAM.migration, makeEvent({
-        id: `rollback-${rollback.cutoverId}-${rollback.decidedAt}`, type: 'RollbackPerformed', occurredAt: rollback.decidedAt,
-        idempotencyKey: `rollback-${tenantId}-${rollback.cutoverId}-${rollback.decidedAt}`, source: 'api/migration', payload: rollback,
+        id: `rollback-${rollback.cutoverId}-${rollback.decidedAt}-${performed ? 'performed' : 'decided'}`,
+        type: performed ? 'RollbackPerformed' : 'RollbackDecided',
+        occurredAt: performed ? rollback.execution!.confirmedAt : rollback.decidedAt,
+        idempotencyKey: `rollback-${tenantId}-${rollback.cutoverId}-${rollback.decidedAt}-${performed ? 'performed' : 'decided'}`,
+        source: 'api/migration', payload: rollback,
       }));
     },
 

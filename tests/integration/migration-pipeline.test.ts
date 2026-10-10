@@ -131,7 +131,7 @@ describe('the migration pipeline over the real authenticated surface', () => {
     expect(bodyOf(opening).events[0].appendOnly).toBe(true);
   });
 
-  it('applies a delta once and returns a GO cutover decision when every check passes', async () => {
+  it('a forged all-green cutover body gets NO GO — the gate reads head office\'s records, not the caller (GT-03)', async () => {
     const h = await seededHarness();
     const delta = await post(h, '/v1/migration/deltas', OWNER, 'dl1', {
       changes: [{ changeKey: 'c1', entity: 'sale', legacyId: 'S1', operation: 'insert', changedAt: '2026-09-12T09:00:00Z', deltaMinor: 5000 }],
@@ -152,7 +152,11 @@ describe('the migration pipeline over the real authenticated surface', () => {
       },
     });
     expect(cutover.status).toBe(200);
-    expect(bodyOf(cutover).decision.go).toBe(true);
+    // Head office holds no signed totals, no run, no performed rollback and no applied delta for this tenant, and the
+    // owner gave no GO by their own act — so the typed-in greens change nothing, and each is named as ignored.
+    expect(bodyOf(cutover).decision.go).toBe(false);
+    expect(bodyOf(cutover).decision.failed).toEqual(expect.arrayContaining(['control_totals_signed', 'rollback_demonstrated', 'parallel_run_sufficient', 'delta_applied', 'owner_go']));
+    expect(bodyOf(cutover).ignoredFromCaller).toEqual(expect.arrayContaining(['reconciliation', 'parallel', 'exceptions', 'deltaAppliedAt', 'rollbackDemonstratedAt', 'ownerGoBy']));
     expect(bodyOf(cutover).decision.shopKeepsTrading).toBe(true);
   });
 });

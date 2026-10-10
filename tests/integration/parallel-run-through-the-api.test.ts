@@ -69,7 +69,7 @@ describe('MG-10 parallel run through the API', () => {
     expect(await h.store.readStream(T, 'migration', { type: 'ParallelDayCompared' })).toHaveLength(1);
   });
 
-  it('a recorded rollback and the recorded run feed the cutover decision from the ledger; a replayed day is one day', async () => {
+  it('a performed rollback and the recorded run feed the cutover decision from the ledger; a forged body feeds nothing; a replayed day is one day', async () => {
     const h = await seeded();
     await put(h, '/v1/migration/parallel-run/policy', OWNER, 'p1', POLICY);
     for (const [i, d] of ['2026-10-01', '2026-10-02', '2026-10-03'].entries()) await post(h, `/v1/migration/parallel-run/days/${d}`, RECON, `d${i}`, clean);
@@ -78,14 +78,28 @@ describe('MG-10 parallel run through the API', () => {
     expect(((await get(h, '/v1/migration/parallel-run')).body as { days: unknown[] }).days).toHaveLength(3);
     const rb = await post(h, '/v1/migration/cutover/rollback', OWNER, 'rb1', { cutoverId: 'cut-1', trigger: 'owner_decision', legacySystemAvailable: true });
     expect(rb.status).toBe(201);
+    expect((rb.body as { rollback: { performed: boolean; state: string } }).rollback).toMatchObject({ performed: false, state: 'decided' });
     expect((await post(h, '/v1/migration/cutover/rollback', RECON, 'rb2', { cutoverId: 'cut-1', trigger: 'owner_decision', legacySystemAvailable: true })).status).toBe(403);
-    const decision = await post(h, '/v1/migration/cutover/decision', OWNER, 'cut', { cutoverId: 'cut-1', evidence: {
+    const decide = async (key: string) => (await post(h, '/v1/migration/cutover/decision', OWNER, key, { cutoverId: 'cut-1', evidence: {
+      // The audit's forged body (GT-03): every gate typed green. None of it may stand in for head office's records.
       reconciliation: { tenantId: T, assessments: [], open: [], unsigned: [], qg07Passed: true, detail: 'signed' },
       exceptions: { tenantId: T, clearForCutover: true, blockingUnresolved: [], detail: 'clear' },
-      edgeUnsyncedItems: 0, deltaAppliedAt: '2026-10-03T22:00:00Z', namedTeam: [{ userId: OWNER, role: 'owner' }], ownerGoBy: OWNER,
-    } });
-    expect(decision.status).toBe(200);
-    expect((decision.body as { decision: { go: boolean; failed: string[] } }).decision).toMatchObject({ go: true, failed: [] });
+      edgeUnsyncedItems: 0, deltaAppliedAt: '2026-10-03T22:00:00Z', rollbackDemonstratedAt: '2026-10-03T22:00:00Z',
+      namedTeam: [{ userId: OWNER, role: 'owner' }], ownerGoBy: OWNER,
+    } })).body as { decision: { go: boolean; failed: string[] }; checks: { check: string; state: string }[]; ignoredFromCaller: string[] };
+    const before = await decide('cut-a');
+    // The run comes from the ledger; the rollback is only DECIDED, so it is not demonstrated — whatever the body says.
+    expect(before.checks.find((c) => c.check === 'parallel_run_sufficient')?.state).toBe('passed');
+    expect(before.checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('failed');
+    expect(before.ignoredFromCaller).toEqual(expect.arrayContaining(['reconciliation', 'exceptions', 'deltaAppliedAt', 'rollbackDemonstratedAt', 'ownerGoBy']));
+    // Performed: the old system's first bill after the decision, recorded by the person who saw it.
+    expect((await post(h, '/v1/migration/cutover/rollback/cut-1/confirmation', OWNER, 'rbc', { legacyFirstBillRef: 'OLD-88', legacyTradingFrom: new Date(Date.now() + 1_000).toISOString() })).status).toBe(201);
+    const after = await decide('cut-b');
+    expect(after.checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('passed');
+    // Still NO GO: no control totals are recorded, no delta has been applied with real effects, and nobody signed in
+    // as the owner said GO — a typed "ownerGoBy" is not the owner's act.
+    expect(after.decision.go).toBe(false);
+    expect(after.decision.failed).toEqual(expect.arrayContaining(['control_totals_signed', 'delta_applied', 'owner_go']));
   });
 
   it('a second tenant sees none of it (tenant isolation)', async () => {

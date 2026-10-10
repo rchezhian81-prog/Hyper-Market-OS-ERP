@@ -18,7 +18,7 @@ import {
 } from '../../../packages/migration/src/trial';
 import {
   recordControlTotal, assessReconciliation, buildOpeningEvents, signControlTotal,
-  type ControlTotal, type OpeningKind, type ReconciliationReport,
+  type ControlTotal, type OpeningKind,
 } from '../../../packages/migration/src/reconcile';
 import {
   inventorySources, sealExtract, verifyExtract, simpleHasher,
@@ -28,9 +28,9 @@ import {
   approveMapping, assessCoverage,
   type MappingTable, type MappingEntry, type MappingDomain,
 } from '../../../packages/migration/src/mapping';
-import { detectExceptions, type OutstandingExceptions } from '../../../packages/migration/src/cleaning';
+import { detectExceptions, outstandingExceptions } from '../../../packages/migration/src/cleaning';
 import type { LegacyDataset } from '../../../packages/migration/src/synthetic';
-import { decideCutover, type ParallelRunPosition } from '../../../packages/migration/src/cutover';
+import { decideCutover } from '../../../packages/migration/src/cutover';
 import { buildCutoverChecklist, type CutoverEvidence, type TeamMember } from '../../../packages/migration/src/cutover-checklist';
 import {
   buildVerificationReport, renderVerificationReport,
@@ -279,6 +279,11 @@ export interface MigrationDeps {
   readonly refusedDecisions?: (tenantId: string) => Promise<readonly RefusedDecision[]> | readonly RefusedDecision[];
   readonly recordRefusedDecision?: (tenantId: string, decision: RefusedDecision) => Promise<void> | void;
   readonly holdsPermission?: (tenantId: string, userId: string, permission: string) => Promise<boolean> | boolean;
+  /**
+   * When head office last APPLIED a delta with real domain effects (audit GT-03/GT-04) — read from its own record, never
+   * from a caller. Absent (not wired, or nothing applied) fails the cutover's delta check.
+   */
+  readonly deltaAppliedAt?: (tenantId: string) => Promise<string | undefined> | string | undefined;
   /** The store computer's seal key (ADR-0023, amended 2b-vi-c-3): a relayed decision's decider is checked against the
    *  box's seal. Absent on a bare stub — then nothing is checked and nothing is claimed. */
   readonly tillSealKey?: Buffer;
@@ -812,22 +817,60 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         const team = ev['namedTeam'];
         if (team !== undefined && (!Array.isArray(team) || !team.every(isTeamMember))) malformed();
 
+        // GT-03 — the gate's evidence is the SERVER's. Every check head office has a record for is answered from that
+        // record and NOTHING the caller sends can stand in for it: a forged all-green body cannot override open control
+        // totals, blocking exceptions, an unclean parallel run or a rollback nobody performed. The caller's parts for
+        // those checks are ignored and named in the answer. GO itself is an authenticated act: the owner, signed in,
+        // saying `ownerGo: true` — never a name typed into `ownerGoBy`.
+        const ignoredFromCaller: string[] = [];
+        for (const [part, present] of [['reconciliation', recon], ['parallel', parallel], ['exceptions', exceptions], ['deltaAppliedAt', deltaAppliedAt], ['rollbackDemonstratedAt', rollbackDemonstratedAt], ['ownerGoBy', ownerGoBy]] as const) {
+          if (present !== undefined) ignoredFromCaller.push(part);
+        }
+        const ledger = await ledgerCutoverEvidence(deps, ctx.tenantId);
+        const totals = deps.controlTotals === undefined ? [] : await deps.controlTotals(ctx.tenantId);
+        const serverReconciliation = totals.length === 0 ? undefined : assessReconciliation({ tenantId: ctx.tenantId, totals });
+        // The exception register answers only once a cleaning pass has run (an extraction is recorded, or it holds
+        // exceptions); an empty register with no extraction is "never run", which is not "clear".
+        const register = deps.exceptions === undefined ? undefined : await deps.exceptions(ctx.tenantId);
+        const cleaningRan = register !== undefined && (register.length > 0 || (await deps.extractionOperator(ctx.tenantId)) !== undefined);
+        const serverExceptions = cleaningRan ? outstandingExceptions(register!) : undefined;
+        const serverDelta = deps.deltaAppliedAt === undefined ? undefined : await deps.deltaAppliedAt(ctx.tenantId);
+        const ownerId = await deps.ownerId(ctx.tenantId);
+        const ownerGo = isObj(b) && b['ownerGo'] === true && ownerId !== undefined && ctx.userId === ownerId ? ctx.userId : undefined;
+        if (isObj(b) && b['ownerGo'] === true && ownerGo === undefined) ignoredFromCaller.push('ownerGo (only the owner, signed in, gives GO)');
+        // The named team: only people this shop has provisioned (a role here) count — a typed stranger is no team.
+        let verifiedTeam: readonly TeamMember[] | undefined;
+        if (team !== undefined) {
+          const known: TeamMember[] = [];
+          for (const m of team as readonly TeamMember[]) {
+            const roles = deps.rolesOf === undefined ? [] : await deps.rolesOf(ctx.tenantId, m.userId);
+            if (roles.length > 0) known.push(m); else ignoredFromCaller.push(`namedTeam:${m.userId} (not a person this shop has provisioned)`);
+          }
+          verifiedTeam = known;
+        }
+
         const evidence: CutoverEvidence = {
-          ...(recon === undefined ? {} : { reconciliation: recon as unknown as ReconciliationReport }),
-          ...(parallel === undefined ? {} : { parallel: parallel as unknown as ParallelRunPosition }),
-          ...(exceptions === undefined ? {} : { exceptions: exceptions as unknown as OutstandingExceptions }),
+          ...(serverReconciliation === undefined ? {} : { reconciliation: serverReconciliation }),
+          ...(ledger.parallel === undefined ? {} : { parallel: ledger.parallel }),
+          ...(serverExceptions === undefined ? {} : { exceptions: serverExceptions }),
+          // The store box's own unsent count: head office has no record of it yet, so it is still the caller's number,
+          // said so in the answer (`callerSupplied`). Absent is not nought.
           ...(edge === undefined ? {} : { edgeUnsyncedItems: edge as number }),
-          ...(deltaAppliedAt === undefined ? {} : { deltaAppliedAt: deltaAppliedAt as string }),
-          ...(rollbackDemonstratedAt === undefined ? {} : { rollbackDemonstratedAt: rollbackDemonstratedAt as string }),
-          ...(ownerGoBy === undefined ? {} : { ownerGoBy: ownerGoBy as string }),
-          ...(team === undefined ? {} : { namedTeam: team as readonly TeamMember[] }),
+          ...(serverDelta === undefined ? {} : { deltaAppliedAt: serverDelta }),
+          ...(ledger.rollbackDemonstratedAt === undefined ? {} : { rollbackDemonstratedAt: ledger.rollbackDemonstratedAt }),
+          ...(ownerGo === undefined ? {} : { ownerGoBy: ownerGo }),
+          ...(verifiedTeam === undefined ? {} : { namedTeam: verifiedTeam }),
         };
-        // The parallel-run position and the performed rollback come from the LEDGER when the caller does not
-        // supply them (B3) — two checks that used to rest on typed-in fields now rest on recorded facts. A
-        // caller's explicit part still wins, so the earlier evidence-by-hand path keeps working.
-        const derived = buildCutoverChecklist({ cutoverId, tenantId: ctx.tenantId, evidence: { ...(await ledgerCutoverEvidence(deps, ctx.tenantId)), ...evidence } });
+        const derived = buildCutoverChecklist({ cutoverId, tenantId: ctx.tenantId, evidence });
         const decision = decideCutover(derived.checklist);
-        return { status: 200, body: { decision, checks: derived.checks, notKnown: derived.notKnown, detail: derived.detail } };
+        return {
+          status: 200,
+          body: {
+            decision, checks: derived.checks, notKnown: derived.notKnown, detail: derived.detail,
+            ignoredFromCaller,
+            callerSupplied: edge === undefined ? [] : ['edgeUnsyncedItems'],
+          },
+        };
       },
     },
     {
