@@ -19,6 +19,7 @@
 // loads). The demo tenant is refused by id (G4: demo data cannot mix with real data).
 
 import { assertNonProduction, type LoadTarget } from './trial';
+import { validateGstin, InvalidGstinError } from '../../org/src/hierarchy';
 import { validateProduct, CategoryNotFoundError, type Category, type ProductRecord, type RegulatedKind } from '../../product/src/product';
 
 const REGULATED: readonly RegulatedKind[] = ['food', 'packed', 'weighed', 'age_restricted', 'drug', 'hazardous'];
@@ -268,10 +269,23 @@ export function validateBundle(bundle: ExtractBundle): readonly string[] {
     }
   }
   const suppliers = new Set<string>();
+  const gstins = new Map<string, string>();
   for (const s of bundle.suppliers) {
     if (!isId(s.partnerId) || !isId(s.name)) { problems.push(`supplier "${s.partnerId}": code and name are required`); continue; }
     if (suppliers.has(s.partnerId)) problems.push(`supplier "${s.partnerId}": listed twice`);
     suppliers.add(s.partnerId);
+    // GT-06: the supplier's tax identity is carried, so it must be right — a mistyped GSTIN (checksum) or one GSTIN on
+    // two supplier codes is refused visibly here, before anything lands, never loaded and found at the first return.
+    if (s.gstin !== undefined && s.gstin.trim() !== '') {
+      let gstin: string;
+      try { gstin = validateGstin(s.gstin); } catch (e) {
+        problems.push(`supplier "${s.partnerId}": GSTIN "${s.gstin}" is not valid — ${e instanceof InvalidGstinError ? e.why : 'unreadable'}`);
+        continue;
+      }
+      const holder = gstins.get(gstin);
+      if (holder !== undefined && holder !== s.partnerId) problems.push(`supplier "${s.partnerId}": GSTIN ${gstin} is already "${holder}"'s — one tax registration names one supplier`);
+      gstins.set(gstin, s.partnerId);
+    }
   }
   const customers = new Set<string>();
   for (const c of bundle.customers) {
@@ -363,12 +377,14 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
     });
   }
   for (const s of bundle.suppliers) {
-    // A migrated supplier exists with NO portal grant and NO login: those are configured later, by a
+    // GT-06: the supplier lands in the SUPPLIER MASTER (M06-FR-01) with its name and GSTIN — the record a buyer selects on
+    // a purchase order — not as an empty portal configuration. It lands PROPOSED: a different person with the authority
+    // approves it before anyone pays it (§28). No portal grant and no login are created: those are configured later, by a
     // person, when the supplier is onboarded to the portal (M24). Nothing here lets anyone in.
     steps.push({
       group: 'supplier', what: `supplier ${s.partnerId}`,
-      path: `/v1/supplier-portal/partners/${encodeURIComponent(s.partnerId)}`,
-      body: { grants: [], documents: [], requiredDocuments: [], logins: [] },
+      path: `/v1/purchase/suppliers/${encodeURIComponent(s.partnerId)}`,
+      body: { name: s.name.trim(), ...(s.gstin === undefined || s.gstin.trim() === '' ? {} : { gstin: s.gstin.trim().toUpperCase() }) },
       idempotencyKey: key(`supplier-${s.partnerId}`),
     });
   }
