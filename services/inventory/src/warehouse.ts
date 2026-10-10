@@ -14,6 +14,7 @@
 // append-only movement ledger (contents PROJECTED from it, never stored — hard rule #2) and the reads.
 
 import type { Route } from '../../kernel/src/index';
+import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   applyMovement, suggestPutAway, binOccupancy,
@@ -109,7 +110,7 @@ export function warehouseRoutes(deps: WarehouseDeps): readonly Route[] {
         const command: MovementCommand = {
           commandId, kind: b['kind'] as MovementKind, storeId: b['storeId'] as string,
           productId: b['productId'] as string, batchId: nbin(b['batchId']), quantityMinor: b['quantityMinor'] as number,
-          uom: b['uom'] as string, fromBinId: nbin(b['fromBinId']), toBinId: nbin(b['toBinId']),
+          uom: normaliseUom(b['uom'] as string) ?? (b['uom'] as string), fromBinId: nbin(b['fromBinId']), toBinId: nbin(b['toBinId']), // OB-31: one spelling
           movedBy: ctx.userId, at: deps.now(),
           ...((STOCK_STATES as readonly string[]).includes(b['stockState'] as string) ? { stockState: b['stockState'] as StockState } : {}),
           ...(isStr(b['reason']) ? { reason: b['reason'] as string } : {}),

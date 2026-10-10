@@ -24,7 +24,16 @@ export interface MatchLine {
   readonly invoicedQty: number;
   readonly orderedUnitMinor: number;
   readonly invoicedUnitMinor: number;
+  /** OB-31: quantity steps per whole priced unit — 1000 for a kg product counted in grams; absent ⇒ 1. */
+  readonly minorPerUnit?: number;
 }
+
+/** OB-31: qty steps × per-unit price ÷ steps per unit, rounded once half up (exact for items). */
+const valueOf = (qty: number, unitMinor: number, scale = 1): number => {
+  if (scale === 1) return qty * unitMinor;
+  const n = qty * unitMinor;
+  return Math.sign(n) * Math.floor((Math.abs(n) * 2 + scale) / (2 * scale));
+};
 
 export type MatchStatus = 'matched' | 'within_tolerance' | 'blocked';
 
@@ -87,7 +96,7 @@ export function threeWayMatch(input: {
   const lines = input.lines.map((l): LineMatch => {
     const payQty = Math.min(l.orderedQty, l.receivedQty, l.invoicedQty);
     const payUnit = Math.min(l.orderedUnitMinor, l.invoicedUnitMinor);
-    const payableMinor = payQty * payUnit;
+    const payableMinor = valueOf(payQty, payUnit, l.minorPerUnit);
 
     const quantityDifference = l.invoicedQty - l.receivedQty;
     const priceDifferenceMinor = l.invoicedUnitMinor - l.orderedUnitMinor;
@@ -96,7 +105,7 @@ export function threeWayMatch(input: {
       : Math.abs(quantityDifference * 10_000 / l.orderedQty) > qTol;
     const pOut = l.orderedUnitMinor === 0 ? priceDifferenceMinor !== 0
       : Math.abs(priceDifferenceMinor * 10_000 / l.orderedUnitMinor) > pTol;
-    const value = Math.abs(l.invoicedQty * l.invoicedUnitMinor - payableMinor);
+    const value = Math.abs(valueOf(l.invoicedQty, l.invoicedUnitMinor, l.minorPerUnit) - payableMinor);
 
     const status: MatchStatus = !qOut && !pOut ? 'matched'
       : value <= immaterial ? 'within_tolerance' : 'blocked';
@@ -110,7 +119,7 @@ export function threeWayMatch(input: {
   });
 
   const payableMinor = lines.reduce((t, l) => t + l.payableMinor, 0);
-  const invoicedMinor = input.lines.reduce((t, l) => t + l.invoicedQty * l.invoicedUnitMinor, 0);
+  const invoicedMinor = input.lines.reduce((t, l) => t + valueOf(l.invoicedQty, l.invoicedUnitMinor, l.minorPerUnit), 0);
   const blocked = lines.some((l) => l.status === 'blocked');
 
   return {
