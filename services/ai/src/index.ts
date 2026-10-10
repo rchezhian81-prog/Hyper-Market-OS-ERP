@@ -20,15 +20,15 @@
 //   • **The budget is enforced before the call, not reported after it.** A spend limit checked
 //     afterwards is a record of the overspend.
 
-import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import type { Route, RequestContext } from '../../kernel/src/index';
+import { apiError, recordsInScope, assertRecordBranchInScope, scopeOf } from '../../kernel/src/index';
 import {
   AGENTS,
   FORBIDDEN_TOOLS,
   type AgentDefinition,
   type AgentId as EngineAgentId,
 } from '../../../packages/ai/src/index';
-import type { DataQualityWorklistItem, DataQualityFinding, DataQualityWorklist } from '../../../packages/product/src/index';
+import type { DataQualityWorklistItem, DataQualityFinding } from '../../../packages/product/src/index';
 import type { MappingQualityFinding } from '../../../packages/import/src/index';
 import type { OperationsFinding } from '../../../packages/ops/src/index';
 import type { WorkforceFinding } from '../../../packages/workforce/src/index';
@@ -44,13 +44,32 @@ export type StewardWorklistEntry =
   | ({ readonly source: 'product' } & DataQualityWorklistItem<DataQualityFinding>)
   | ({ readonly source: 'mapping' } & DataQualityWorklistItem<MappingQualityFinding>);
 
-/** The steward's inbox: product and mapping suggestions folded with the stewards' dismissals. */
-export interface StewardWorklist {
-  readonly open: readonly StewardWorklistEntry[];
-  readonly dismissed: readonly StewardWorklistEntry[];
+/**
+ * What every entry in a shared AI inbox carries besides the finding itself (audit EA-09 · AI-NFR-02/04/07 · PA-01):
+ *   • `branchId` — the branch the governed record behind the finding belongs to (a task's branch, the branch an alert's
+ *     rule watches), or `null` when that record belongs to the whole shop (the product master, an import source, a
+ *     head-office component). The inbox is limited to the reader's branches by the SERVER's scope rule, never the page's;
+ *   • `evidence` — the governed record(s) the finding rests on. An entry with none is withheld (and counted), the same
+ *     rule a run's proposal obeys: a recommendation nobody can check is not shown;
+ *   • `wouldRequire` — the ordinary route a PERSON calls to act on it. Named, never invoked: the AI commits nothing.
+ */
+export interface InboxAnnotation {
+  readonly branchId: string | null;
+  readonly evidence: readonly EvidenceItem[];
+  readonly wouldRequire: string;
+}
+export type InboxEntry<E> = E & InboxAnnotation;
+
+/** A shared inbox: the live findings (each annotated) folded with the people's dismissals. */
+export interface InboxWorklist<E> {
+  readonly open: readonly InboxEntry<E>[];
+  readonly dismissed: readonly InboxEntry<E>[];
   readonly openCount: number;
   readonly dismissedCount: number;
 }
+
+/** The steward's inbox: product and mapping suggestions folded with the stewards' dismissals. */
+export type StewardWorklist = InboxWorklist<StewardWorklistEntry>;
 
 /**
  * The Operations operator's inbox (A06): the live operational-incident recommendations folded with the
@@ -58,7 +77,7 @@ export interface StewardWorklist {
  * real alert behind it). Re-derived every read from the live alerts, so an acknowledged/cleared incident
  * leaves the list on its own — the inbox never drifts from the live alert board. It commits nothing.
  */
-export type OperationsWorklist = DataQualityWorklist<OperationsFinding>;
+export type OperationsWorklist = InboxWorklist<DataQualityWorklistItem<OperationsFinding>>;
 
 /**
  * The Workforce/SOP manager's inbox (A10): the day's guidance — the ESCALATED (critical + overdue) and OVERDUE
@@ -67,7 +86,7 @@ export type OperationsWorklist = DataQualityWorklist<OperationsFinding>;
  * the live daily tasks, so a task that is completed/assigned the ordinary way leaves the list on its own — the
  * inbox never drifts from the task board. It commits nothing.
  */
-export type WorkforceWorklist = DataQualityWorklist<WorkforceFinding>;
+export type WorkforceWorklist = InboxWorklist<DataQualityWorklistItem<WorkforceFinding>>;
 
 /**
  * Who the ten agents are — sourced from the tested authority engine (`packages/ai`), not a second
@@ -252,7 +271,82 @@ export interface AiDeps {
     disposition: { readonly findingId: string; readonly dismissed: boolean; readonly reason: string; readonly by: string; readonly at: string },
     key: string,
   ) => Promise<void> | void;
+  /**
+   * EA-09: whether a model provider is configured behind the governed call (`POST /v1/ai/agents/:agent/model-calls`,
+   * services/ai/src/model-gateway.ts — the ONLY path to a model). The three shared inboxes are deterministic either
+   * way; the inbox says which, so nobody reads a rule's output as a model's. Absent → none configured.
+   */
+  readonly modelProviderConfigured?: () => boolean;
   readonly now: () => string;
+}
+
+/** EA-09: what each inbox states about how its findings were made and who decides — on every reply. */
+export interface InboxGovernance {
+  readonly basis: 'deterministic_rules';
+  readonly calledAModel: false;
+  readonly modelPath: string;
+  readonly modelProvider: 'none_configured' | 'configured_behind_the_governed_call';
+  readonly said: string;
+  readonly decidedBy: string;
+}
+
+export function inboxGovernance(agent: AgentId, providerConfigured: boolean): InboxGovernance {
+  return {
+    basis: 'deterministic_rules',
+    calledAModel: false,
+    modelPath: `POST /v1/ai/agents/${agent}/model-calls`,
+    modelProvider: providerConfigured ? 'configured_behind_the_governed_call' : 'none_configured',
+    said: providerConfigured
+      ? `${agent}'s findings here come from tested deterministic rules over governed records; no model was called for this list. A model is reached only through the governed call (admission, budget, kill switch, audit).`
+      : `No model provider is configured, so ${agent} works on tested deterministic rules over governed records only — no model was called. A model would be reached only through the governed call.`,
+    decidedBy: 'a person — every finding is a recommendation; the person acts through the ordinary route it names (wouldRequire), or sets it aside with a reason. The AI commits nothing (hard rule #5).',
+  };
+}
+
+type FindingEntry = { readonly finding: { readonly findingId: string } } & InboxAnnotation;
+
+/**
+ * EA-09 · PA-01: the inbox a READER sees — limited to the branches the SERVER says this caller holds for the route's
+ * permission (a `?branchId=` they do not hold is refused by name, never widened), shop-wide entries shown when no
+ * branch is asked for, and any entry without evidence withheld and counted.
+ */
+function scopedInbox<E extends FindingEntry>(ctx: Pick<RequestContext, 'scope' | 'query'>, worklist: { readonly open: readonly E[]; readonly dismissed: readonly E[] }) {
+  const askedRaw = ctx.query?.['branchId'];
+  const asked = typeof askedRaw === 'string' && askedRaw.trim() !== '' ? askedRaw.trim() : undefined;
+  const inScopeOpen = recordsInScope(ctx, worklist.open, (e) => e.branchId, asked);
+  const inScopeDismissed = recordsInScope(ctx, worklist.dismissed, (e) => e.branchId, asked);
+  const open = inScopeOpen.filter((e) => e.evidence.length > 0);
+  const dismissed = inScopeDismissed.filter((e) => e.evidence.length > 0);
+  return {
+    open, dismissed, openCount: open.length, dismissedCount: dismissed.length,
+    withheldWithoutEvidence: inScopeOpen.length + inScopeDismissed.length - open.length - dismissed.length,
+    scope: { held: scopeOf(ctx), asked: asked ?? null, shopWideIncluded: asked === undefined },
+  };
+}
+
+/** Validate a `?branchId=` even when nothing is shown (agent off), so the refusal does not depend on the switch. */
+function checkAskedScope(ctx: Pick<RequestContext, 'scope' | 'query'>): { readonly held: ReturnType<typeof scopeOf>; readonly asked: string | null } {
+  const askedRaw = ctx.query?.['branchId'];
+  const asked = typeof askedRaw === 'string' && askedRaw.trim() !== '' ? askedRaw.trim() : undefined;
+  recordsInScope(ctx, [], () => null, asked);
+  return { held: scopeOf(ctx), asked: asked ?? null };
+}
+
+/**
+ * EA-09: a person's set-aside names a finding that must be on the inbox now (open or set aside), and its branch must be
+ * one they hold — a shop-wide finding is company-wide work. Refused by name otherwise; nothing is written.
+ */
+function assertDismissable<E extends FindingEntry>(ctx: Pick<RequestContext, 'scope'>, worklist: { readonly open: readonly E[]; readonly dismissed: readonly E[] }, findingId: string): void {
+  const entry = [...worklist.open, ...worklist.dismissed].find((e) => e.finding.findingId === findingId);
+  if (entry === undefined) {
+    throw apiError(404, {
+      code: 'unknown_finding',
+      whatHappened: `There is no finding "${findingId}" on this inbox now — it may have been resolved the ordinary way, or the id is wrong.`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Re-read the inbox and choose a finding from it. Nothing was changed.',
+    });
+  }
+  assertRecordBranchInScope(ctx, entry.branchId);
 }
 
 /** The governance catalogue this route returns — who the agents are and what no agent may ever do. */
@@ -346,11 +440,13 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
       handler: async (ctx) => {
         const killed = await deps.killSwitchOn(ctx.tenantId);
         const enabled = (await deps.enabledAgents(ctx.tenantId)).includes('A08');
+        const scope = checkAskedScope(ctx); // EA-09: a branch not held is refused whether or not the agent is on
         if (killed || !enabled) {
           return {
             status: 200,
             body: {
-              agentActive: false,
+              agentActive: false, scope: { ...scope, shopWideIncluded: scope.asked === null },
+              governance: inboxGovernance('A08', deps.modelProviderConfigured?.() ?? false),
               open: [], dismissed: [], openCount: 0, dismissedCount: 0,
               note: killed
                 ? 'The AI kill switch is on, so the Data Quality agent is stopped and shows no suggestions. Turn it off to see them again — nothing else in the shop is affected.'
@@ -360,7 +456,8 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
           };
         }
         const worklist = await deps.dataQualityWorklist(ctx.tenantId);
-        return { status: 200, body: { agentActive: true, ...worklist, committedAnything: false } };
+        // EA-09: the reader's branches only (server-derived scope), evidence on every entry, and how it was made.
+        return { status: 200, body: { agentActive: true, ...scopedInbox(ctx, worklist), governance: inboxGovernance('A08', deps.modelProviderConfigured?.() ?? false), committedAnything: false } };
       },
     },
     {
@@ -386,6 +483,8 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
             nextSafeAction: 'Send { "findingId": "…", "reason": "…" } to dismiss, or { "findingId": "…", "reopen": true } to reopen. Nothing was changed.',
           });
         }
+        // EA-09: the finding must be on the inbox now, and in a branch this person holds (shop-wide → company-wide).
+        assertDismissable(ctx, await deps.dataQualityWorklist(ctx.tenantId), findingId);
         const at = deps.now();
         await deps.recordDataQualityDisposition(
           ctx.tenantId,
@@ -407,11 +506,13 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
       handler: async (ctx) => {
         const killed = await deps.killSwitchOn(ctx.tenantId);
         const enabled = (await deps.enabledAgents(ctx.tenantId)).includes('A06');
+        const scope = checkAskedScope(ctx); // EA-09: a branch not held is refused whether or not the agent is on
         if (killed || !enabled) {
           return {
             status: 200,
             body: {
-              agentActive: false,
+              agentActive: false, scope: { ...scope, shopWideIncluded: scope.asked === null },
+              governance: inboxGovernance('A06', deps.modelProviderConfigured?.() ?? false),
               open: [], dismissed: [], openCount: 0, dismissedCount: 0,
               note: killed
                 ? 'The AI kill switch is on, so the Operations agent is stopped and shows no recommendations. Turn it off to see them again — nothing else in the shop is affected.'
@@ -421,7 +522,8 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
           };
         }
         const worklist = await deps.operationsWorklist(ctx.tenantId);
-        return { status: 200, body: { agentActive: true, ...worklist, committedAnything: false } };
+        // EA-09: the reader's branches only (server-derived scope), evidence on every entry, and how it was made.
+        return { status: 200, body: { agentActive: true, ...scopedInbox(ctx, worklist), governance: inboxGovernance('A06', deps.modelProviderConfigured?.() ?? false), committedAnything: false } };
       },
     },
     {
@@ -446,6 +548,8 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
             nextSafeAction: 'Send { "findingId": "…", "reason": "…" } to dismiss, or { "findingId": "…", "reopen": true } to reopen. Nothing was changed.',
           });
         }
+        // EA-09: the finding must be on the inbox now, and in a branch this person holds (shop-wide → company-wide).
+        assertDismissable(ctx, await deps.operationsWorklist(ctx.tenantId), findingId);
         const at = deps.now();
         await deps.recordOperationsDisposition(
           ctx.tenantId,
@@ -468,11 +572,13 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
       handler: async (ctx) => {
         const killed = await deps.killSwitchOn(ctx.tenantId);
         const enabled = (await deps.enabledAgents(ctx.tenantId)).includes('A10');
+        const scope = checkAskedScope(ctx); // EA-09: a branch not held is refused whether or not the agent is on
         if (killed || !enabled) {
           return {
             status: 200,
             body: {
-              agentActive: false,
+              agentActive: false, scope: { ...scope, shopWideIncluded: scope.asked === null },
+              governance: inboxGovernance('A10', deps.modelProviderConfigured?.() ?? false),
               open: [], dismissed: [], openCount: 0, dismissedCount: 0,
               note: killed
                 ? 'The AI kill switch is on, so the Workforce guidance agent is stopped and shows no tasks. Turn it off to see them again — nothing else in the shop is affected.'
@@ -482,7 +588,8 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
           };
         }
         const worklist = await deps.workforceWorklist(ctx.tenantId);
-        return { status: 200, body: { agentActive: true, ...worklist, committedAnything: false } };
+        // EA-09: the reader's branches only (server-derived scope), evidence on every entry, and how it was made.
+        return { status: 200, body: { agentActive: true, ...scopedInbox(ctx, worklist), governance: inboxGovernance('A10', deps.modelProviderConfigured?.() ?? false), committedAnything: false } };
       },
     },
     {
@@ -508,6 +615,8 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
             nextSafeAction: 'Send { "findingId": "…", "reason": "…" } to dismiss, or { "findingId": "…", "reopen": true } to reopen. Nothing was changed.',
           });
         }
+        // EA-09: the finding must be on the inbox now, and in a branch this person holds (shop-wide → company-wide).
+        assertDismissable(ctx, await deps.workforceWorklist(ctx.tenantId), findingId);
         const at = deps.now();
         await deps.recordWorkforceDisposition(
           ctx.tenantId,

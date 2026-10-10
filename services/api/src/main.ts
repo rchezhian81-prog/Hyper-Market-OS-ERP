@@ -1629,7 +1629,7 @@ export function buildSurface(deps: {
       ...(deps.modelTransport === undefined ? {} : { transport: deps.modelTransport }),
       ...(deps.modelPricing === undefined ? {} : { pricing: deps.modelPricing }),
     })),
-    ...aiRoutes(store === undefined ? {
+    ...aiRoutes({ ...(store === undefined ? {
       // Stopped by default, matching the adapter. A kill switch that defaults off is an agent
       // running because nobody has told it not to.
       killSwitchOn: empty(true), setKillSwitch: () => {},
@@ -1673,7 +1673,7 @@ export function buildSurface(deps: {
       // desk board reads, so A05 flags the same open, unanswered cases breaching their first-response SLA
       // that a human sees. A05 flags only; a service agent replies (hard rule #5).
       serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
-    })),
+    })), modelProviderConfigured: () => deps.modelTransport !== undefined }),
   ];
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.

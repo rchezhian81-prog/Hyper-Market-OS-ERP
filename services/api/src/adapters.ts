@@ -306,7 +306,7 @@ import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
 import type { Signature } from '../../../packages/migration/src/verification-report';
 import type { HistoryExclusion } from '../../../packages/migration/src/history';
-import type { AgentId, Budget, Proposal, EvidenceItem as AiEvidenceItem, AiDeps } from '../../ai/src/index';
+import type { AgentId, Budget, Proposal, EvidenceItem as AiEvidenceItem, AiDeps, InboxEntry } from '../../ai/src/index';
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
@@ -11128,6 +11128,21 @@ function serviceGuidanceProposals(views: readonly { readonly serviceCase: Servic
   }));
 }
 
+/**
+ * EA-09: annotate a shared-inbox entry from the SAME draft proposal a run of the agent raises for that finding (the ids
+ * are the same by construction) — its evidence and the route a person acts through — and the branch of the governed
+ * record behind it (`null` = shop-wide). An entry with no matching proposal carries no evidence, so the inbox withholds it.
+ */
+function annotateInbox<E extends { readonly finding: { readonly findingId: string } }>(
+  proposals: readonly Omit<Proposal, 'committed'>[], branchOf: (entry: E) => string | null,
+): (entry: E) => InboxEntry<E> {
+  const byId = new Map(proposals.map((p) => [p.proposalId, p]));
+  return (entry) => {
+    const p = byId.get(entry.finding.findingId);
+    return { ...entry, branchId: branchOf(entry), evidence: p?.evidence ?? [], wouldRequire: p?.wouldRequire ?? '' };
+  };
+}
+
 export function aiAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -11392,13 +11407,18 @@ export function aiAdapter(input: {
 
       // Merge the two folds into one worklist, each entry tagged by its source so the screen can label
       // it. Product suggestions lead (the everyday catalogue gaps), then the mapping suggestions.
+      // EA-09: both legs rest on shop-wide records (one product master, P-02; import sources are head office's), so
+      // their branch is null — every reader sees them, only a company-wide steward sets one aside.
+      const now = input.now();
+      const product = annotateInbox<{ readonly source: 'product' } & (typeof productWL.open)[number]>(dataQualityProposals(productFindings, now), () => null);
+      const mapping = annotateInbox<{ readonly source: 'mapping' } & (typeof mappingWL.open)[number]>(mappingQualityProposals(mappingFindings, now), () => null);
       const open = [
-        ...productWL.open.map((i) => ({ source: 'product' as const, ...i })),
-        ...mappingWL.open.map((i) => ({ source: 'mapping' as const, ...i })),
+        ...productWL.open.map((i) => product({ source: 'product' as const, ...i })),
+        ...mappingWL.open.map((i) => mapping({ source: 'mapping' as const, ...i })),
       ];
       const dismissed = [
-        ...productWL.dismissed.map((i) => ({ source: 'product' as const, ...i })),
-        ...mappingWL.dismissed.map((i) => ({ source: 'mapping' as const, ...i })),
+        ...productWL.dismissed.map((i) => product({ source: 'product' as const, ...i })),
+        ...mappingWL.dismissed.map((i) => mapping({ source: 'mapping' as const, ...i })),
       ];
       return { open, dismissed, openCount: open.length, dismissedCount: dismissed.length };
     },
@@ -11434,7 +11454,10 @@ export function aiAdapter(input: {
       const findings = input.operationsAlerts === undefined
         ? []
         : recommendOperationsRunbooks(liveNotCleared(await input.operationsAlerts(tenantId)));
-      return buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+      const wl = buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+      // EA-09: the branch is the one the alert's rule watches (a store computer's own component); none = shop-wide.
+      const annotate = annotateInbox<(typeof wl.open)[number]>(operationsProposals(findings, input.now()), (e) => e.finding.branchId ?? null);
+      return { ...wl, open: wl.open.map(annotate), dismissed: wl.dismissed.map(annotate) };
     },
 
     /**
@@ -11466,10 +11489,12 @@ export function aiAdapter(input: {
       for (const d of await allOf<SuggestionDisposition>(input.store, tenantId, STREAM.ai, 'AiWorkforceDismissed')) {
         latest.set(d.findingId, d); // occurrence order → the last decision on a finding wins
       }
-      const findings = input.dailyTasks === undefined
-        ? []
-        : taskGuidanceFindings(assessDailyTasks({ tasks: await input.dailyTasks(tenantId), now: input.now() }));
-      return buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+      const report = input.dailyTasks === undefined ? undefined : assessDailyTasks({ tasks: await input.dailyTasks(tenantId), now: input.now() });
+      const findings = report === undefined ? [] : taskGuidanceFindings(report);
+      const wl = buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+      // EA-09: the branch is the task's own (a task naming none is shop-wide).
+      const annotate = annotateInbox<(typeof wl.open)[number]>(workforceGuidanceProposals(report?.assessments ?? [], input.now()), (e) => e.finding.branchId ?? null);
+      return { ...wl, open: wl.open.map(annotate), dismissed: wl.dismissed.map(annotate) };
     },
 
     /**
