@@ -41,7 +41,7 @@ describe('the till spends points and store credit, decided on the box, applied o
       expect((await h.request({ method: 'PUT', path: `/v1/platform/setup/${key}`, userId: 'u-owner', tenantId: A, idempotencyKey: `set-${key}`, body: { value } })).status).toBeLessThan(300);
     await set('loyalty.points_per_100_inr', 1);
     await set('loyalty.point_value_paise', 100);       // one point = ₹1
-    await set('loyalty.till_spend_cap_paise', 50_000); // ₹500 a day at the till
+    // The till spend limit is NOT set here: the owner's default (OB-33 "A") is ₹500 a member a day at a store computer.
     expect((await h.request({ method: 'POST', path: '/v1/loyalty/members', userId: 'u-mgr', tenantId: A, idempotencyKey: 'join', body: { mobile: MOBILE, consent: true, verifiedHow: 'seen_on_phone' } })).status).toBe(201);
     // The member already holds 50 points (an earlier ₹5,000 bill) and ₹300 of store credit.
     expect((await h.request({ method: 'POST', path: '/v1/sales', userId: 'u-box', tenantId: A, idempotencyKey: 'earlier', body: {
