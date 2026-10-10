@@ -37,6 +37,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { CurrencyCode } from '../../../packages/contracts/src/money';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { Movement } from './index';
+import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, type LocationBranches } from './location-scope';
 
 /** The count-approval threshold applied when the tenant has set none — and the record says so (`default_threshold`). */
@@ -235,7 +236,7 @@ export async function reconcileBlindCount(deps: CountsDeps, tenantId: string, c:
   const thresholdMinor = policy?.approvalThresholdMinor ?? DEFAULT_COUNT_APPROVAL_THRESHOLD_MINOR;
 
   const varianceMinor = c.countedMinor - expected;
-  const valueMinor = Math.abs(varianceMinor) * (unitValue ?? 0);
+  const valueMinor = valueAtUnitCost(Math.abs(varianceMinor), c.uom, unitValue ?? 0); // OB-31
   // A count of a bin head office does not have cannot be judged at all — it waits for a person like a material one.
   const material = binUnknown || (varianceMinor !== 0 && (unitValue === undefined || valueMinor >= thresholdMinor));
   const at = deps.now();

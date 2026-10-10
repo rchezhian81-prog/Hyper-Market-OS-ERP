@@ -10,7 +10,8 @@
 // packages/adjustment, the append-only ledger and the sync outbox; counts are
 // captured offline and reconciled on sync (§31). Idempotent on the count id.
 
-import { multiplyByInteger, type Money } from '../../contracts/src/money';
+import { money, type Money } from '../../contracts/src/money';
+import { valueAtUnitCost } from '../../contracts/src/quantity';
 import { commitAdjustment, type CommitAdjustmentInput } from '../../adjustment/src/adjustment';
 import type { DecidedRequest } from '../../approvals/src/approvals';
 import type { Ledger } from '../../ledger/src/ledger';
@@ -92,7 +93,8 @@ export function reconcileCount(
 
   const expectedMinor = onHandMinor(stockLedger, input.productId);
   const varianceMinor = input.countedMinor - expectedMinor; // counted − expected
-  const varianceValue = multiplyByInteger(input.valuePerUnit, Math.abs(varianceMinor));
+  // OB-31: the variance in smallest steps (grams for kg) at the per-whole-unit value, rounded once.
+  const varianceValue = money(valueAtUnitCost(Math.abs(varianceMinor), input.uom, input.valuePerUnit.minor), input.valuePerUnit.currency);
 
   if (varianceMinor === 0) {
     // The aisle reconciles to the ledger — nothing to correct (M09-FR-04).

@@ -30,6 +30,7 @@ import { requestApproval, decide, type Approver } from '../../../packages/approv
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { assertLocationInScope, stockReadScope, locationIsItsOwnBranch, type LocationBranches } from '../../inventory/src/location-scope';
+import { normaliseUom, valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 
 /** A durable purchase order — proposed by a buyer, and (once a second person approves) issued. */
 export interface StoredPurchaseOrder {
@@ -75,6 +76,8 @@ export interface PurchaseOrderDeps {
   readonly orgLocation?: (tenantId: string, locationId: string) => Promise<{ readonly kind: string; readonly status: string } | undefined> | { readonly kind: string; readonly status: string } | undefined;
   /** OB-37 · PA-01-r1: which branch a location belongs to — the deliver-to store must be inside the buyer's branches. */
   readonly locationBranches?: LocationBranches;
+  /** OB-31: the unit the product master counts a product in (orderedQty is in its smallest steps), or undefined. */
+  readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
   readonly supplierStatus?: (tenantId: string, supplierId: string) => Promise<'active' | 'proposed' | undefined> | 'active' | 'proposed' | undefined;
   /** Record a proposed PO. Idempotent on the PO id. */
   readonly propose: (tenantId: string, po: StoredPurchaseOrder, key: string) => Promise<void> | void;
@@ -257,10 +260,14 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         }
         await requireApprovedSupplier(deps, ctx.tenantId, b['supplierId']);
         const deliverToLocationId = await requireDeliverTo(deps, ctx, b['deliverToLocationId']);
-        const poLines: PurchaseOrderLineInput[] = (lines as RawLine[]).map((l) => ({
-          productId: l.productId, orderedQty: l.orderedQty, unitCost: money(l.unitCost.minor, currency),
-        }));
-        const totalMinor = poLines.reduce((s, l) => s + l.unitCost.minor * l.orderedQty, 0);
+        // OB-31: each line in the product's own unit (orderedQty in its smallest steps — grams for kg), priced per whole unit.
+        const poLines: PurchaseOrderLineInput[] = [];
+        for (const l of lines as RawLine[]) {
+          const master = deps.productUom === undefined ? undefined : await deps.productUom(ctx.tenantId, l.productId);
+          const uom = master === undefined ? undefined : normaliseUom(master) ?? master;
+          poLines.push({ productId: l.productId, orderedQty: l.orderedQty, unitCost: money(l.unitCost.minor, currency), ...(uom === undefined ? {} : { uom }) });
+        }
+        const totalMinor = poLines.reduce((s, l) => s + valueAtUnitCost(l.orderedQty, l.uom ?? 'ea', l.unitCost.minor), 0);
         const po: StoredPurchaseOrder = {
           poId,
           number: isStr(b['number']) ? b['number'] : poId,

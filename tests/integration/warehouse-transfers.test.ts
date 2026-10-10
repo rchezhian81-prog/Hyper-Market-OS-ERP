@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { STREAM } from '../../services/api/src/adapters';
 
 // Warehouse-to-store & inter-store transfers (M09-FR-03, API-04) end to end through the real API. A
 // transfer moves through an explicit IN-TRANSIT state held at the destination (the van is a place);
@@ -155,6 +156,17 @@ describe('warehouse transfers: in-transit at destination, separate approver, val
     expect((await availability(h)).rows.find((x) => x.locationId === 'S1')?.onHandMinor).toBe(8);
   });
 
+  it('Batch 2 round 2: the person who DISPATCHED a transfer cannot count it in — refused by name, nothing received; a different person can', async () => {
+    const h = await seeded(20);
+    await propose(h, A, 'u-owner', 't1', proposal());
+    await dispatch(h, A, 'u-boss', 't1', {});
+    const self = await receive(h, A, 'u-boss', 't1', { counted: [{ productId: 'P1', batchId: null, quantityMinor: 10 }] });
+    expect(self.status).toBe(422);
+    expect(codeOf(self)).toBe('dispatcher_cannot_receive');
+    expect((await availability(h)).inTransit).toEqual([expect.objectContaining({ transferId: 't1', quantityMinor: 10 })]);
+    expect((await receive(h, A, 'u-owner', 't1', { counted: [{ productId: 'P1', batchId: null, quantityMinor: 10 }] }, 'trc-t1-other')).status).toBe(200);
+  });
+
   it('Batch 2: a plain transfer\'s shortfall is RESOLVED by a third person, once — 1 found at the store (a two-person adjustment), 1 lost at its value; the exception stays, marked resolved', async () => {
     const h = await seeded(20, 5_000);
     await h.provisionRole(A, 'u-store', 'store_manager');
@@ -171,6 +183,9 @@ describe('warehouse transfers: in-transit at destination, separate approver, val
     const ok = await resolve('u-area', body, 'r-ok');
     expect(ok.status).toBe(201);
     expect(ok.body).toMatchObject({ resolution: { resolvedBy: 'u-area', lines: [{ missingMinor: 2, foundMinor: 1, foundAtLocationId: 'S1', lostMinor: 1, lostValueMinor: 5_000 }] }, posted: [expect.objectContaining({ kind: 'adjusted', quantityMinor: 1, locationId: 'S1', enteredBy: 'u-store', approvedBy: 'u-area' })] });
+    // Finance's shape (Batch 3 posts the inventory-loss journal from it): the lost unit at the cost it LEFT the warehouse with.
+    const ev = await h.store.readStream(A, [STREAM.warehouse, 'transfers'].join('\u001f'), { type: 'TransferShortfallResolved' });
+    expect((ev.at(-1)!.event.payload as { loss: unknown }).loss).toMatchObject({ source: 'transfer', transferId: 't1', indentId: null, fromLocationId: 'WH', toLocationId: 'S1', resolvedBy: 'u-area', reasonCode: 'miscount', lines: [{ productId: 'P1', uom: 'EA', lostMinor: 1, unitCostMinor: 5_000, lostValueMinor: 5_000 }], lostValueMinor: 5_000 });
     expect((await resolve('u-area', body, 'r-ok-again')).body).toMatchObject({ alreadyResolved: true });
     expect(codeOf(await resolve('u-area', { ...body, lines: [] }, 'r-different'))).toBe('shortfall_already_resolved');
     expect((await availability(h)).rows.find((x) => x.locationId === 'S1')?.onHandMinor).toBe(9);

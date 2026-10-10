@@ -49,6 +49,8 @@ import {
 } from '../../../packages/receiving/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { Movement } from './index';
+import { unitsPerLevel, type PackHierarchy } from '../../../packages/product/src/pack';
+import { valueAtUnitCost, normaliseUom, minorPerUnit } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, stockReadScope, locationIsItsOwnBranch, type LocationBranches } from './location-scope';
 import type { RequestContext } from '../../kernel/src/index';
 
@@ -80,6 +82,8 @@ export const RECEIPT_FLAGS = Object.freeze([
   'handling_unknown', 'cold_chain_held_but_on_hand',
   // OB-37: the order this receipt folds into was raised before orders named their store — the store could not be checked.
   'order_store_not_named',
+  // OB-31 · SF-11: a line was counted in a pack level (case, inner …) and converted to the product's base unit.
+  'counted_in_packs',
 ] as const);
 export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
 
@@ -283,6 +287,10 @@ export interface GoodsReceiptDeps {
   readonly now: () => string;
   /** F03 — the product's receiving rules from the PRODUCT MASTER; `undefined` when the product is not on it. */
   readonly productRule: (tenantId: string, productId: string) => Promise<ProductReceiptRules | undefined> | ProductReceiptRules | undefined;
+  /** OB-31 · SF-11: the unit the product master counts the product in (its base unit), or undefined when it does not know it. */
+  readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
+  /** OB-31 · SF-11: the product's pack levels (base → inner → case …) from the master, for a line counted in packs. */
+  readonly packOf?: (tenantId: string, productId: string) => Promise<PackHierarchy | undefined> | PackHierarchy | undefined;
   /** F03 — the tenant's receiving tolerance policy, or `undefined` when none has been set (the default applies, flagged). */
   readonly receiptPolicy: (tenantId: string) => Promise<StoredReceiptPolicy | undefined> | StoredReceiptPolicy | undefined;
   readonly recordReceiptPolicy: (tenantId: string, policy: StoredReceiptPolicy) => Promise<void> | void;
@@ -415,6 +423,40 @@ export function orderPositions(po: PurchaseOrderForReceipt): Readonly<Record<str
     out[productId] = { ordered, receivedBefore, cancelled, remaining: Math.max(0, ordered - receivedBefore - cancelled) };
   }
   return out;
+}
+
+/**
+ * OB-31 "A" · SF-11 — the unit a receipt line is counted in, judged against the PRODUCT MASTER at the boundary:
+ *   • the product's own unit in any accepted spelling (ea/each/EA, kg/KG …) → the line is stored in the master's code;
+ *   • a pack level the master defines (case, inner …) → the count is CONVERTED to the base unit's smallest steps
+ *     (2 cases of 24 = 48 items; 2 bags of 25 kg = 50000 g) and the record says `counted_in_packs`;
+ *   • anything else → refused by name (`unit_not_the_products`): a "case" booked as one item is a 24× error on the shelf.
+ * A product the master does not know keeps its line (its spelling normalised) — that is already flagged elsewhere.
+ * The line's unit COST is always per whole BASE unit (per item, per kg), whatever the line was counted in.
+ */
+export async function lineInProductUnit(
+  deps: Pick<GoodsReceiptDeps, 'productUom' | 'packOf'>, tenantId: string, line: CapturedLine, flags: ReceiptFlag[],
+): Promise<CapturedLine> {
+  const productUom = deps.productUom === undefined ? undefined : await deps.productUom(tenantId, line.productId);
+  const said = normaliseUom(line.uom);
+  if (productUom === undefined) return said === undefined ? line : { ...line, uom: said };
+  const base = normaliseUom(productUom) ?? productUom;
+  if (said !== undefined && said === base) return { ...line, uom: base };
+  if (said === undefined && line.uom.trim() === productUom) return line;
+  const pack = deps.packOf === undefined ? undefined : await deps.packOf(tenantId, line.productId);
+  const level = pack?.levels.find((l) => l.level.toLowerCase() === line.uom.trim().toLowerCase());
+  if (pack !== undefined && level !== undefined) {
+    const baseUnits = unitsPerLevel(pack, level.level);
+    const steps = baseUnits * (normaliseUom(base) === undefined ? 1 : minorPerUnit(normaliseUom(base)!));
+    if (!flags.includes('counted_in_packs')) flags.push('counted_in_packs');
+    return { ...line, uom: base, countedMinor: line.countedMinor * steps, orderedMinor: line.orderedMinor * steps };
+  }
+  throw apiError(422, {
+    code: 'unit_not_the_products',
+    whatHappened: `${line.productId} is counted in "${base}" on the product master, but line ${line.lineId} says "${line.uom}" — not that unit and not one of its pack levels, so the quantity would mean something else on the shelf (OB-31).`,
+    wasItSaved: 'not_saved',
+    nextSafeAction: `Count the line in "${base}" (or a pack level the product master defines), then send it again. Nothing was recorded.`,
+  });
 }
 
 /**
@@ -709,7 +751,7 @@ export async function returnRejectedExcess(deps: GoodsReceiptDeps, input: {
   const excessReturn: ExcessReturn = {
     returnedBy: input.returnedBy, returnedAt, reason: input.reason,
     quantityMinor: held.reduce((s, l) => s + l.heldMinor, 0),
-    valueMinor: held.reduce((s, l) => s + l.heldMinor * l.unitCost.minor, 0),
+    valueMinor: held.reduce((s, l) => s + valueAtUnitCost(l.heldMinor, l.uom, l.unitCost.minor), 0), // OB-31
     currency: held[0]?.unitCost.currency ?? 'INR',
     movementIds: movements.map((m) => m.movementId), via: 'direct',
   };
@@ -766,7 +808,7 @@ export async function returnDisposedLine(deps: GoodsReceiptDeps, input: {
   }
   const returnedAt = deps.now();
   const lineReturn: LineReturn = {
-    lineId: line.lineId, productId: line.productId, quantityMinor: line.quarantinedMinor, valueMinor: line.quarantinedMinor * line.unitCost.minor,
+    lineId: line.lineId, productId: line.productId, quantityMinor: line.quarantinedMinor, valueMinor: valueAtUnitCost(line.quarantinedMinor, line.uom, line.unitCost.minor),
     currency: line.unitCost.currency, returnedBy: input.returnedBy, returnedAt, reason: input.reason, movementIds: [],
   };
   const returned: GrnRecord = { ...rec, lineReturns: [...(rec.lineReturns ?? []), lineReturn] };
@@ -824,7 +866,7 @@ export async function decideLineDisposition(deps: GoodsReceiptDeps, input: {
   const disposition: LineDisposition = {
     lineId: line.lineId, productId: line.productId, quantityMinor: quantity, disposition: input.disposition,
     decidedBy: input.decidedBy, decidedAt, reason: input.reason,
-    valueMinor: line.unitCost.minor * quantity, currency: line.unitCost.currency,
+    valueMinor: valueAtUnitCost(quantity, line.uom, line.unitCost.minor), currency: line.unitCost.currency, // OB-31
     movementIds: movements.map((m) => m.movementId), via: input.via,
   };
   const released = movements.reduce((n, m) => n + m.quantityMinor, 0);
@@ -884,8 +926,11 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         const flags: ReceiptFlag[] = [];
         // The ORDER — head office's own, never the body (SP-6 · F01/F07): the ordered quantity on each line is the order's,
         // and only an ISSUED order is folded into. No / unknown / unissued order is said and the delivery still comes in.
+        // OB-31 · SF-11: every line in the product's own unit (spelling normalised, packs converted) — or refused by name.
+        const inUnits: CapturedLine[] = [];
+        for (const l of lines as CapturedLine[]) inUnits.push(await lineInProductUnit(deps, ctx.tenantId, l, flags));
         const order = await orderForReceipt(deps, ctx.tenantId, isStr(b['poId']) ? b['poId'] : null, flags, b['warehouseId'] as string);
-        const aligned = alignToOrder(lines as CapturedLine[], order.ordered, flags);
+        const aligned = alignToOrder(inUnits, order.ordered, flags);
         // The product master's rules and the tenant's policy — never the body (F03). Unknown is SAID, then the safe fallback.
         const master = await rulesFromMaster(deps, ctx.tenantId, aligned.map((l) => l.productId));
         if (master.unverified) flags.push('product_rules_unverified'); sayHandling(flags, master);

@@ -20,6 +20,7 @@
 // Idempotent per grnId: the same receipt again is 200 `alreadyReceived` — a re-sync never double-counts stock (§31.1).
 
 import type { Route } from '../../kernel/src/index';
+import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope } from './location-scope';
 import { apiError } from '../../kernel/src/index';
 import {
@@ -76,7 +77,7 @@ function readRelayedReceipt(body: unknown): RelayedReceipt | undefined {
     const temperatureC = l['temperatureC'];
     if (!(temperatureC === undefined || (typeof temperatureC === 'number' && Number.isFinite(temperatureC)))) return undefined;
     lines.push({
-      productId: l['productId'], quantityMinor: l['quantityMinor'], uom: l['uom'], batchId: isStr(batchId) ? batchId : null,
+      productId: l['productId'], quantityMinor: l['quantityMinor'], uom: normaliseUom(l['uom'] as string) ?? l['uom'], batchId: isStr(batchId) ? batchId : null, // OB-31: one spelling
       ...(temperatureC === undefined ? {} : { temperatureC }),
     });
   }
