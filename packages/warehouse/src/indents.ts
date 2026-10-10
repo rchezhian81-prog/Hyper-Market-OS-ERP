@@ -20,7 +20,9 @@
 // every surface that drives it — a route, a screen, a handheld relay — gets the same refusal.
 
 import type { Money } from '../../contracts/src/money';
-import type { Transfer } from './transfers';
+import { judgeShortfallResolution, type Transfer, type ShortfallLine, type FoundLine, type ShortfallResolution, type ShortfallResolutionLine } from './transfers';
+
+export type { ShortfallLine, FoundLine, ShortfallResolution, ShortfallResolutionLine };
 
 export type IndentState =
   | 'requested'   // the floor asked; nobody has decided
@@ -63,12 +65,6 @@ export interface ReceivedLine {
   readonly damagedMinor?: number;
 }
 
-export interface ShortfallLine {
-  readonly productId: string;
-  readonly batchId: string | null;
-  readonly quantityMinor: number;
-  readonly valueMinor: number;
-}
 
 /** SP-8c: units that arrived DAMAGED — they left transit (they are in the building) and were written off at the floor at the
  *  cost they left with. A valued exception with an owner, never silently on the shelf and never silently gone. */
@@ -94,6 +90,8 @@ export interface IndentIssue {
   readonly shortfall?: readonly ShortfallLine[];
   /** SP-8c: arrived damaged — written off at the floor, valued; on the register beside the shortfall. */
   readonly damaged?: readonly DamagedLine[];
+  /** Batch 2: how the shortfall was RESOLVED — by whom, why, what was found and what was lost. Absent while it is open. */
+  readonly shortfallResolution?: ShortfallResolution;
   /** SP-8b: what head office found when a RELAYED receipt named its receiver — a breach is flagged, never silently applied. */
   readonly governanceFlags?: readonly string[];
   /** SP-8b: the relay (the store box) that carried the receipt, beside — never instead of — the receiver. */
@@ -170,7 +168,10 @@ export type IndentRefusal =
   | 'indent_not_requested' | 'self_approval' | 'over_allocation' | 'nothing_allocated' | 'not_on_indent'
   | 'indent_not_approved' | 'requester_cannot_issue' | 'over_issue' | 'issue_unknown' | 'issue_already_received'
   | 'issuer_cannot_receive' | 'not_on_issue' | 'indent_not_open' | 'nothing_received' | 'over_return'
-  | 'return_unknown' | 'return_already_accepted' | 'returner_cannot_accept' | 'not_on_return';
+  | 'return_unknown' | 'return_already_accepted' | 'returner_cannot_accept' | 'not_on_return'
+  // Batch 2 — resolving a shortfall:
+  | 'issue_not_received' | 'nothing_short' | 'counter_cannot_resolve' | 'issuer_cannot_resolve' | 'more_found_than_missing'
+  | 'not_on_shortfall' | 'shortfall_already_resolved';
 
 export class IndentRefusedError extends Error {
   constructor(
@@ -203,6 +204,8 @@ export interface IndentLineTotals {
   readonly inTransitMinor: number;
   /** Dispatched and never arrived — carried as a valued exception, never quietly lost. */
   readonly shortfallMinor: number;
+  /** Batch 2: of the shortfall, what nobody has resolved yet (found or confirmed lost) — what still needs a person. */
+  readonly unresolvedShortfallMinor: number;
   /** SP-8c: arrived damaged and written off at the floor — never on the shelf, never quietly lost. */
   readonly damagedMinor: number;
   /** Sent back to the back store and accepted there. */
@@ -219,6 +222,7 @@ export interface IndentTotals {
   readonly receivedMinor: number;
   readonly inTransitMinor: number;
   readonly shortfallMinor: number;
+  readonly unresolvedShortfallMinor: number;
   readonly damagedMinor: number;
   readonly returnedMinor: number;
   readonly outstandingMinor: number;
@@ -232,13 +236,14 @@ export function indentTotals(indent: FloorIndent): IndentTotals {
     const issued = sum(indent.issues.map((i) => sum(i.lines.filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
     const received = sum(indent.issues.map((i) => sum((i.received ?? []).filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
     const shortfall = sum(indent.issues.map((i) => sum((i.shortfall ?? []).filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
+    const unresolved = sum(indent.issues.filter((i) => i.shortfallResolution === undefined).map((i) => sum((i.shortfall ?? []).filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
     const damaged = sum(indent.issues.map((i) => sum((i.damaged ?? []).filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
     const inTransit = sum(indent.issues.filter((i) => i.state === 'in_transit').map((i) => sum(i.lines.filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
     const returned = sum(indent.returns.filter((r) => r.state === 'accepted').map((r) => sum((r.received ?? []).filter((l) => l.productId === line.productId).map((l) => l.quantityMinor))));
     const outstanding = OPEN_FOR_ISSUE.includes(indent.state) && !indent.remainderCancelled ? Math.max(0, allocated - issued) : 0;
     return {
       productId: line.productId, uom: line.uom, requestedMinor: line.requestedMinor, allocatedMinor: allocated,
-      issuedMinor: issued, receivedMinor: received, inTransitMinor: inTransit, shortfallMinor: shortfall, damagedMinor: damaged, returnedMinor: returned, outstandingMinor: outstanding,
+      issuedMinor: issued, receivedMinor: received, inTransitMinor: inTransit, shortfallMinor: shortfall, unresolvedShortfallMinor: unresolved, damagedMinor: damaged, returnedMinor: returned, outstandingMinor: outstanding,
     };
   });
   const total = (pick: (l: IndentLineTotals) => number): number => sum(lines.map(pick));
@@ -246,6 +251,7 @@ export function indentTotals(indent: FloorIndent): IndentTotals {
     lines,
     requestedMinor: total((l) => l.requestedMinor), allocatedMinor: total((l) => l.allocatedMinor), issuedMinor: total((l) => l.issuedMinor),
     receivedMinor: total((l) => l.receivedMinor), inTransitMinor: total((l) => l.inTransitMinor), shortfallMinor: total((l) => l.shortfallMinor),
+    unresolvedShortfallMinor: total((l) => l.unresolvedShortfallMinor),
     damagedMinor: total((l) => l.damagedMinor), returnedMinor: total((l) => l.returnedMinor), outstandingMinor: total((l) => l.outstandingMinor),
   };
 }
@@ -430,6 +436,39 @@ export function applyReceipt(indent: FloorIndent, issueId: string, receipt: {
   return { ...next, state: closed ? 'received' : next.state };
 }
 
+// ── resolve a shortfall (Batch 2) ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Judge a shortfall resolution. The issue must have been received short and not yet resolved; the resolver is neither the
+ * person who issued nor the person who counted it (§28 — "cannot self-approve material variance"); every found line is on
+ * the shortfall, found where the stock could be (the floor or the back store), never more than went missing. Pure.
+ */
+export function planShortfallResolution(input: {
+  readonly indent: FloorIndent;
+  readonly issueId: string;
+  readonly resolvedBy: string;
+  readonly found: readonly FoundLine[];
+  readonly reasonCode: string;
+  readonly note: string;
+  readonly at: string;
+}): ShortfallResolution {
+  const { indent } = input;
+  const issue = indent.issues.find((i) => i.issueId === input.issueId);
+  if (issue === undefined) refuse(indent.indentId, 'issue_unknown', `there is no issue ${input.issueId} on this indent`);
+  if (issue!.state !== 'received') refuse(indent.indentId, 'issue_not_received', `issue ${input.issueId} has not been counted in at the floor yet — there is no shortfall to resolve`);
+  const judged = judgeShortfallResolution({
+    what: `issue ${input.issueId}`, shortfall: issue!.shortfall ?? [], prior: issue!.shortfallResolution,
+    sentBy: issue!.issuedBy, countedBy: issue!.receivedBy, fromLocationId: indent.fromLocationId, toLocationId: indent.toLocationId,
+    resolvedBy: input.resolvedBy, found: input.found, reasonCode: input.reasonCode, note: input.note, at: input.at,
+  });
+  if (!judged.ok) return refuse(indent.indentId, judged.code, judged.why);
+  return judged.resolution;
+}
+
+export function applyShortfallResolution(indent: FloorIndent, issueId: string, resolution: ShortfallResolution): FloorIndent {
+  return { ...indent, issues: indent.issues.map((i) => (i.issueId === issueId ? { ...i, shortfallResolution: resolution } : i)) };
+}
+
 // ── cancel (the unissued remainder only — stock on the trolley must still be received) ───────────────────────
 
 export function cancelIndent(input: { readonly indent: FloorIndent; readonly cancelledBy: string; readonly at: string; readonly reason: string }): FloorIndent {
@@ -528,7 +567,7 @@ export function indentAttention(indent: FloorIndent): readonly string[] {
   if (indent.state === 'requested') out.push('awaiting_approval');
   if (t.outstandingMinor > 0) out.push('owed_by_back_store');
   if (t.inTransitMinor > 0) out.push('on_the_trolley');
-  if (t.shortfallMinor > 0) out.push('arrived_short');
+  if (t.unresolvedShortfallMinor > 0) out.push('arrived_short');
   if (t.damagedMinor > 0) out.push('arrived_damaged');
   if (indent.returns.some((r) => r.state === 'requested')) out.push('return_awaiting_back_store');
   return out;

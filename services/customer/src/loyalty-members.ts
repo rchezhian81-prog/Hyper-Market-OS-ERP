@@ -34,6 +34,8 @@ export interface MemberRecord {
 export interface LoyaltyRule {
   readonly pointsPer100Inr: number;
   readonly pointValuePaise: number;
+  /** The most one member may spend at the till per store computer per day (PF-09 step 3). 0 / absent = off. */
+  readonly tillSpendCapPaise?: number;
 }
 
 export interface LoyaltyMemberDeps {

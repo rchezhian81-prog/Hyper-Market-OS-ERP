@@ -20,6 +20,8 @@ import {
   type Bin, type MovementCommand, type MovementKind, type BinContents,
 } from '../../../packages/warehouse/src/movements';
 import type { StockMovement, StockState } from '../../../packages/stock/src/position';
+import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
+import type { RequestContext } from '../../kernel/src/index';
 
 export const MOVEMENT_KINDS: readonly MovementKind[] = ['put_away', 'bin_to_bin', 'pick', 'pack', 'dispatch', 'return_to_bin'];
 const ZONES = ['ambient', 'chilled', 'frozen', 'secure', 'quarantine'] as const;
@@ -34,7 +36,26 @@ export interface WarehouseDeps {
   readonly appliedCommandIds: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly recordBin: (tenantId: string, bin: Bin) => Promise<void> | void;
   readonly recordMovement: (tenantId: string, commandId: string, movements: readonly StockMovement[]) => Promise<void> | void;
+  /** PA-01-r1: which branch a store/location belongs to (the org hierarchy); absent → a store id is its own branch. */
+  readonly locationBranches?: LocationBranches;
   readonly now: () => string;
+}
+
+/**
+ * PA-01-r1: a bin is its store's. A movement or bin write must name a store inside the caller's branches, and every bin
+ * it touches that already exists must sit in such a store too — a br-1 manager cannot empty br-2's bin by naming br-1.
+ */
+export async function assertBinsInScope(
+  ctx: Pick<RequestContext, 'scope' | 'tenantId'>, deps: Pick<WarehouseDeps, 'bins' | 'locationBranches'>,
+  storeId: string, binIds: readonly (string | null)[],
+): Promise<void> {
+  await assertLocationInScope(ctx, storeId, deps.locationBranches);
+  if (ctx.scope === 'all') return;
+  const bins = await deps.bins(ctx.tenantId);
+  for (const id of binIds) {
+    const bin = id === null ? undefined : bins.find((b) => b.binId === id);
+    if (bin !== undefined) await assertLocationInScope(ctx, bin.storeId, deps.locationBranches);
+  }
 }
 
 export function warehouseRoutes(deps: WarehouseDeps): readonly Route[] {
@@ -56,6 +77,8 @@ export function warehouseRoutes(deps: WarehouseDeps): readonly Route[] {
             nextSafeAction: 'Send the bin definition. Nothing was recorded.',
           });
         }
+        // PA-01-r1: the store named AND the store the bin already belongs to must both be the caller's (no re-homing).
+        await assertBinsInScope(ctx, deps, b.storeId, [binId]);
         const bin: Bin = {
           binId, storeId: b.storeId, capacityMinor: b.capacityMinor as number, pickable: b.pickable,
           ...(isStr(b.zone) ? { zone: b.zone as Bin['zone'] } : {}),
@@ -92,6 +115,7 @@ export function warehouseRoutes(deps: WarehouseDeps): readonly Route[] {
           ...(isStr(b['reason']) ? { reason: b['reason'] as string } : {}),
         };
 
+        await assertBinsInScope(ctx, deps, command.storeId, [command.fromBinId, command.toBinId]);
         const result = applyMovement({
           command,
           appliedCommandIds: await deps.appliedCommandIds(ctx.tenantId),
@@ -122,6 +146,7 @@ export function warehouseRoutes(deps: WarehouseDeps): readonly Route[] {
         const binId = ctx.params['binId'] ?? '';
         const bin = (await deps.bins(ctx.tenantId)).find((x) => x.binId === binId);
         if (bin === undefined) throw notFound(`bin ${binId}`);
+        await assertLocationInScope(ctx, bin.storeId, deps.locationBranches); // a direct id outside my branches stays outside
         const contents = await deps.contents(ctx.tenantId);
         const held = Object.entries(contents)
           .filter(([key, qty]) => key.startsWith(`${binId}|`) && qty !== 0)
@@ -148,10 +173,12 @@ export function warehouseRoutes(deps: WarehouseDeps): readonly Route[] {
             nextSafeAction: 'Send the product and quantity. Nothing was changed.',
           });
         }
+        // PA-01-r1: suggest only among the caller's own stores' bins (narrowed to ?branchId= when asked).
+        const scope = await stockReadScope(ctx, deps.locationBranches);
         const suggestion = suggestPutAway({
           productId: b.productId, batchId: nbin(b.batchId), quantityMinor: b.quantityMinor as number,
           ...((STOCK_STATES as readonly string[]).includes(b.state as string) ? { state: b.state as StockState } : {}),
-          bins: await deps.bins(ctx.tenantId), contents: await deps.contents(ctx.tenantId),
+          bins: (await deps.bins(ctx.tenantId)).filter((x) => scope.covers(x.storeId)), contents: await deps.contents(ctx.tenantId),
         });
         return { status: 200, body: suggestion };
       },

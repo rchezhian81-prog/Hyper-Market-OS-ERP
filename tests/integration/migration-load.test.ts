@@ -34,7 +34,7 @@ const bundle: ExtractBundle = {
       priceMinor: 2_500, mrpMinor: 2_500, costMinor: 1_800, marginFloorBps: 500,
     },
   ],
-  suppliers: [{ partnerId: 'SUP-1', name: 'Kaveri Traders' }],
+  suppliers: [{ partnerId: 'SUP-1', name: 'Kaveri Traders', gstin: '33AAAAA0000A1Z9' }],
   customers: [{ customerId: 'C-1', loyaltyPoints: 120 }, { customerId: 'C-2' }],
   openingStock: [
     { productId: 'P-RICE', quantityMinor: 40, uom: 'each', unitCostMinor: 36_000, batchId: 'B1', expiry: '2027-03-31' },
@@ -96,6 +96,16 @@ describe('MG-05 actual load — a checked extract lands in an empty real tenant 
 
     const consent = await h.request({ method: 'GET', path: '/v1/customers/C-2/consent', userId: OPERATOR, tenantId: REAL });
     expect((consent.body as { records: { purpose: string; given: boolean }[] }).records).toEqual([expect.objectContaining({ purpose: 'marketing', given: false })]);
+
+    // GT-06: the supplier reads back from the SUPPLIER MASTER with its name and GSTIN — proposed, for finance to approve —
+    // and it can be chosen on a purchase order.
+    const supplier = await h.request({ method: 'GET', path: '/v1/purchase/suppliers/SUP-1', userId: OPERATOR, tenantId: REAL });
+    expect(supplier.status).toBe(200);
+    expect(JSON.stringify(supplier.body)).toContain('Kaveri Traders');
+    expect(JSON.stringify(supplier.body)).toContain('33AAAAA0000A1Z9');
+    const po = await h.request({ method: 'POST', path: '/v1/purchase/orders/po-first', userId: OPERATOR, tenantId: REAL, idempotencyKey: 'po-first', body: { supplierId: 'SUP-1', lines: [{ productId: 'P-RICE', orderedQty: 10, unitCost: { minor: 36_000, currency: 'INR' } }] } });
+    expect(po.status).toBe(201);
+    expect(po.body).toMatchObject({ order: { supplierId: 'SUP-1' } });
   });
 
   it('re-running the same load is ONE load: nothing doubles (idempotent keys, never-double-count receipt)', async () => {
@@ -111,6 +121,9 @@ describe('MG-05 actual load — a checked extract lands in an empty real tenant 
     expect(points.body).toMatchObject({ pointsBalance: 120 });
     const products = (await h.request({ method: 'GET', path: '/v1/catalogue/products', userId: OPERATOR, tenantId: REAL })).body as { products: unknown[] };
     expect(products.products).toHaveLength(2);
+    // GT-06: the re-run keeps ONE supplier, unchanged.
+    const suppliers = (await h.request({ method: 'GET', path: '/v1/purchase/suppliers', userId: OPERATOR, tenantId: REAL })).body as { suppliers: { supplierId: string }[] };
+    expect(suppliers.suppliers.map((x) => x.supplierId)).toEqual(['SUP-1']);
   });
 
   it('a route\'s own refusal (a price below cost with no approver) is a visible failed line; the rest still land', async () => {

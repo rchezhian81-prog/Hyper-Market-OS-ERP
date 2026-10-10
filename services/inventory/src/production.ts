@@ -9,15 +9,43 @@
 // released); and cost follows the food that survived (trim/spillage carried by the output, not written
 // off). This surface only wires those rules to the API and persists the evidence.
 //
-// Why production keeps its OWN append-only stream, LAYERED on M08 (as counts and the warehouse do):
-// `produceBatch` works in the state-aware stock model (on_hand → consumed, → quarantine), which M08's
-// simple on-hand ledger (a kind + a positive quantity, no states) cannot express. So the raw-material
-// on-hand a run is checked against is the M08 position MINUS what prior production runs at that
-// location have already consumed — repeated runs deplete correctly even though M08 is not mutated here.
-// Append-only (#2); idempotent on the run id.
+// Batch 2 · FUL-01 (audit HIGH): production MOVES ORDINARY STOCK. A committed run appends, in the SAME atomic write as
+// the run record, one `consumed_in_production` M08 movement per ingredient it used up — so every other reader (availability,
+// transfers, the till's stock, valuation) sees the flour leave — and the finished batch stays OUT of on-hand (quarantine)
+// until quality releases it; the release appends one `produced` movement for the batch at the run's own output unit cost
+// (when every ingredient was costed; otherwise it enters unvalued and says so). The ingredients' value moves into the output
+// (never cost of goods sold twice). The run's own stream still keeps the evidence (cost, yield, exceptions). A run recorded
+// before this change carried no M08 movements; only those runs are still subtracted privately (`priorConsumption`), so old
+// evidence and new ledger never count the same flour twice. Append-only (#2); idempotent on the run id.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, featureNotEntitled } from '../../kernel/src/index';
+import { apiError, featureNotEntitled, concurrentChange } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
+import type { Movement } from './index';
+import { createHash } from 'node:crypto';
+
+/**
+ * Batch 2 · FUL-08: a digest over the COMPLETE recipe — every input (product, quantity, unit), the output, shelf life and
+ * yield rules — order-independent in its inputs. Two recipes differ exactly when their digests differ; nothing about the
+ * recipe can change without the digest changing (the old key carried only the number of inputs, so 100 g → 150 g flour
+ * "saved" and changed nothing).
+ */
+export function recipeDigest(recipe: Recipe): string {
+  const canonical = {
+    recipeId: recipe.recipeId, departmentId: recipe.departmentId, outputProductId: recipe.outputProductId,
+    outputQuantityMinor: recipe.outputQuantityMinor, outputUom: recipe.outputUom, shelfLifeHours: recipe.shelfLifeHours,
+    expectedYieldBp: recipe.expectedYieldBp ?? null, yieldToleranceBp: recipe.yieldToleranceBp ?? null,
+    inputs: [...recipe.inputs].map((i) => [i.productId, i.quantityMinor, i.uom] as const).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1])),
+  };
+  return createHash('sha256').update(JSON.stringify(canonical)).digest('hex').slice(0, 32);
+}
+
+/** Batch 2 · FUL-08: what registering a recipe did — the version now current and whether it changed anything. */
+export interface RecipeRegistration {
+  readonly version: number;
+  readonly digest: string;
+  readonly changed: boolean;
+}
 import {
   produceBatch, validateRecipe, InvalidRecipeError, InsufficientMaterialError,
   type Recipe, type RecipeInput, type ProductionException,
@@ -30,6 +58,7 @@ import {
 } from '../../../packages/production/src/departments';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, money, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
+import { assertLocationInScope, locationInScope, type LocationBranches } from './location-scope';
 
 /** A committed production run, recorded as the evidence a later report reads. */
 export interface StoredRun {
@@ -54,8 +83,13 @@ export interface StoredRun {
   readonly exceptions: readonly ProductionException[];
   /** What this run consumed — layered onto M08 so the next run sees depleted ingredients. */
   readonly consumed: readonly RecipeInput[];
+  /** Batch 2 · FUL-08: the digest of the exact recipe version this run was made to (absent on older runs). */
+  readonly recipeDigest?: string;
   readonly producedBy: string;
   readonly at: string;
+  /** Batch 2 · FUL-01: the M08 movements this run posted for its ingredients — absent on a run recorded before production
+   *  moved ordinary stock (its consumption is then only on this stream and is still subtracted privately). */
+  readonly ledgerMovementIds?: readonly string[];
   /** Quality-release state, set by the adapter's fold of release events (M11-FR-03). */
   readonly released?: boolean;
   readonly releasedBy?: string | null;
@@ -69,25 +103,37 @@ export interface StoredRelease {
   readonly releasedBy: string;
   readonly quantityMinor: number;
   readonly releasedAt: string;
+  /** Batch 2 · FUL-01: the `produced` M08 movement the release posted (absent on a release recorded before). */
+  readonly ledgerMovementIds?: readonly string[];
 }
 
 export interface ProductionDeps {
+  /** PA-01-r1: which branch a stock location belongs to — a run moves stock there, so it is the caller's branch business. */
+  readonly locationBranches?: LocationBranches;
   /** The registered recipe, or nothing when the box has never been told it. */
   readonly recipe: (tenantId: string, recipeId: string) => Promise<Recipe | undefined> | Recipe | undefined;
-  readonly recordRecipe: (tenantId: string, recipe: Recipe) => Promise<void> | void;
+  /** Record a recipe VERSION (FUL-08): a recipe identical to the current one is no new version; any change is the next
+   *  version, kept beside the earlier ones (append-only). Returns what it did; a bare stub may return nothing. */
+  readonly recordRecipe: (tenantId: string, recipe: Recipe) => Promise<RecipeRegistration | void> | RecipeRegistration | void;
   /** The registered ingredient cost per smallest unit (M11-FR-02), or nothing when unknown. */
   readonly ingredientCost: (tenantId: string, productId: string) => Promise<Money | undefined> | Money | undefined;
   readonly recordCost: (tenantId: string, productId: string, cost: Money) => Promise<void> | void;
   /** Authoritative M08 on-hand for (product, location) — the base a run is checked against. */
   readonly onHand: (tenantId: string, productId: string, locationId: string) => Promise<number> | number;
   /** What prior production runs at a location have already consumed, per product. */
+  /** What prior runs at a location consumed that is NOT on the M08 ledger (runs recorded before FUL-01), per product. */
   readonly priorConsumption: (tenantId: string, locationId: string) => Promise<Readonly<Record<string, number>>> | Readonly<Record<string, number>>;
   readonly runExists: (tenantId: string, runId: string) => Promise<boolean> | boolean;
   readonly runs: (tenantId: string) => Promise<readonly StoredRun[]> | readonly StoredRun[];
   /** One run with its release state merged, or nothing. */
   readonly run: (tenantId: string, runId: string) => Promise<StoredRun | undefined> | StoredRun | undefined;
-  readonly recordRun: (tenantId: string, run: StoredRun) => Promise<void> | void;
-  readonly recordRelease: (tenantId: string, release: StoredRelease) => Promise<void> | void;
+  /** The run record and its ingredients' `consumed_in_production` movements — ONE atomic write (FUL-01). With the location's
+   *  stock guard read before the stock the run was judged on, two runs cannot both use the same flour. */
+  readonly recordRun: (tenantId: string, run: StoredRun, movements: readonly Movement[], expectedStockVersion?: number) => Promise<void> | void;
+  /** The release record and the finished batch's `produced` movement — ONE atomic write (FUL-01). */
+  readonly recordRelease: (tenantId: string, release: StoredRelease, movements: readonly Movement[]) => Promise<void> | void;
+  /** The location's stock guard (SF-04's key) — optional; a bare stub runs unguarded. */
+  readonly stockVersion?: (tenantId: string, locationId: string) => Promise<number> | number;
   /** The production departments this tenant has switched on (M11-FR-04). */
   readonly enabledDepartments: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly recordDepartmentEnabled: (tenantId: string, departmentId: string) => Promise<void> | void;
@@ -151,8 +197,14 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
           }
           throw e;
         }
-        await deps.recordRecipe(ctx.tenantId, recipe);
-        return { status: 201, body: { recipeId, outputProductId: recipe.outputProductId } };
+        const registered = await deps.recordRecipe(ctx.tenantId, recipe);
+        return {
+          status: 201,
+          body: {
+            recipeId, outputProductId: recipe.outputProductId, digest: recipeDigest(recipe),
+            ...(registered === undefined ? {} : { version: registered.version, changed: registered.changed }),
+          },
+        };
       },
     },
     {
@@ -177,6 +229,7 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
             nextSafeAction: 'Send the run. Nothing was recorded.',
           });
         }
+        await assertLocationInScope(ctx, b.locationId, deps.locationBranches); // PA-01-r1
         if (await deps.runExists(ctx.tenantId, runId)) {
           throw apiError(409, {
             code: 'run_already_committed',
@@ -205,8 +258,10 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
 
         const currency = (b.currency as CurrencyCode) ?? 'INR';
         const at = deps.now();
-        // Available = the authoritative M08 on-hand for each ingredient, MINUS what prior runs at this
-        // location already consumed, so repeated runs deplete rather than re-issuing the same stock.
+        // The location's stock guard first, then the stock it protects (FUL-01 · SF-04's pattern).
+        const stockVersion = deps.stockVersion === undefined ? undefined : await deps.stockVersion(ctx.tenantId, b.locationId);
+        // Available = the authoritative M08 on-hand for each ingredient (which now carries every FUL-01 run's consumption),
+        // MINUS what runs recorded before FUL-01 consumed privately, so no flour is counted twice.
         const prior = await deps.priorConsumption(ctx.tenantId, b.locationId);
         const available: Record<string, number> = {};
         for (const input of recipe.inputs) {
@@ -254,9 +309,20 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
           inputCostMinor: result.inputCost.minor, outputUnitCostMinor: result.outputUnitCost.minor, currency,
           costKnown, uncostedProducts,
           yieldBp: result.yieldBp, yieldVerdict: result.yieldVerdict, exceptions: result.exceptions,
-          consumed, producedBy: ctx.userId, at,
+          consumed, recipeDigest: recipeDigest(recipe), producedBy: ctx.userId, at,
         };
-        await deps.recordRun(ctx.tenantId, run);
+        // FUL-01: the ingredients leave ordinary stock in the SAME write as the run record.
+        const movements: Movement[] = consumed.map((c, i): Movement => ({
+          movementId: `prod-run:${runId}:in-${i + 1}`, productId: c.productId, locationId: b.locationId as string, kind: 'consumed_in_production',
+          quantityMinor: c.quantityMinor, uom: c.uom, occurredAt: at, enteredBy: ctx.userId,
+          reason: `production run ${runId} (${recipe.recipeId}) → ${result.outputQuantityMinor} ${recipe.outputUom} of ${result.outputProductId} batch ${result.outputBatchId}`,
+        }));
+        try {
+          await deps.recordRun(ctx.tenantId, { ...run, ledgerMovementIds: movements.map((m) => m.movementId) }, movements, stockVersion);
+        } catch (e) {
+          if (e instanceof ConcurrencyConflictError) throw concurrentChange(`the stock at ${b.locationId}`);
+          throw e;
+        }
         return {
           status: 201,
           body: {
@@ -291,6 +357,7 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         if (run === undefined) {
           throw apiError(404, { code: 'run_not_found', whatHappened: `No production run "${runId}".`, wasItSaved: 'not_saved', nextSafeAction: 'Commit the run first, then release it.' });
         }
+        await assertLocationInScope(ctx, run.locationId, deps.locationBranches); // PA-01-r1
         if (run.released === true) {
           throw apiError(409, { code: 'batch_already_released', whatHappened: `Run ${runId}'s batch has already been released.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed — the batch is already sellable.' });
         }
@@ -304,7 +371,16 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
           // quarantine. Reported with the engine's own reason so the audit trail can act on it.
           throw apiError(422, { code: result.outcome, whatHappened: result.detail, wasItSaved: 'not_saved', nextSafeAction: 'The batch stays in quarantine. Fix the cause and, where the batch is still good, release it again.' });
         }
-        await deps.recordRelease(ctx.tenantId, { runId, batchId: run.outputBatchId, releasedBy: ctx.userId, quantityMinor: run.outputQuantityMinor, releasedAt: at });
+        // FUL-01: the released batch becomes ORDINARY on-hand stock — batch and expiry carried — at the run's own output unit
+        // cost when every ingredient was costed; otherwise it enters unvalued (said on the valuation read, never priced at 0).
+        const produced: Movement = {
+          movementId: `prod-run:${runId}:out`, productId: run.outputProductId, locationId: run.locationId, kind: 'produced',
+          quantityMinor: run.outputQuantityMinor, uom: run.outputUom, occurredAt: at, enteredBy: ctx.userId,
+          batchId: run.outputBatchId, expiry: run.expiresAt.slice(0, 10),
+          reason: `production run ${runId} batch ${run.outputBatchId} released by ${ctx.userId}`,
+          ...(run.costKnown ? { unitCostMinor: run.outputUnitCostMinor } : {}),
+        };
+        await deps.recordRelease(ctx.tenantId, { runId, batchId: run.outputBatchId, releasedBy: ctx.userId, quantityMinor: run.outputQuantityMinor, releasedAt: at, ledgerMovementIds: [produced.movementId] }, [produced]);
         return { status: 200, body: { runId, batchId: run.outputBatchId, released: true, releasedBy: ctx.userId, releasedAt: at, movements: result.movements } };
       },
     },
@@ -428,7 +504,10 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
       handler: async (ctx) => {
         const locationId = ctx.query['locationId'];
         const all = await deps.runs(ctx.tenantId);
-        const runs = isStr(locationId) ? all.filter((r) => r.locationId === locationId) : all;
+        if (isStr(locationId)) await assertLocationInScope(ctx, locationId, deps.locationBranches); // PA-01-r1
+        const visible: (typeof all)[number][] = [];
+        for (const r of all) if (await locationInScope(ctx, r.locationId, deps.locationBranches)) visible.push(r);
+        const runs = isStr(locationId) ? visible.filter((r) => r.locationId === locationId) : visible;
         return { status: 200, body: { runs, asAt: deps.now() } };
       },
     },

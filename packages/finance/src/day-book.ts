@@ -22,7 +22,22 @@ import { extractInclusiveGst } from './inclusive-tax';
 import { PAYABLES_POSTING_RULES } from './payables';
 import type { CurrencyCode } from '../../contracts/src/money';
 
-export type DayBookSourceKind = 'sale' | 'return';
+export type DayBookSourceKind = 'sale' | 'return' | 'loyalty';
+
+/**
+ * A loyalty fact of the day, valued (PF-09 step 3 · M17-FR-01 "liability updated (M23)"): points a sale EARNED are the
+ * shop's new liability; points a return TOOK BACK release it. Valued at the point value in force when they were earned.
+ * The day book sums them per kind (`loyalty:earn`, `loyalty:takeback`); which accounts they post to is the CA's mapping.
+ * (Points SPENT at the till are a tender — `tender:loyalty_points` — and store credit issued on a refund is
+ * `refund:store_credit`; both already post through the sale and return streams.)
+ */
+export interface DayBookLoyalty {
+  /** `earn:<saleId>` or `takeback:<returnId>` — one per fact, so a re-run posts each once. */
+  readonly sourceId: string;
+  readonly kind: 'earn' | 'takeback';
+  readonly points: number;
+  readonly valueMinor: number;
+}
 
 /** A synced sale as the day book needs it — a structural subset of the till's `IncomingSale`. */
 export interface DayBookSaleLine {
@@ -121,6 +136,8 @@ export interface DayBookInput {
    * owes its tender leg, and posts exactly that leg once the mapping names the kind.
    */
   readonly alreadyPosted: ReadonlyMap<string, ReadonlySet<string>>;
+  /** The day's valued loyalty facts (PF-09 step 3). Absent → none. */
+  readonly loyalty?: readonly DayBookLoyalty[];
 }
 
 export interface DayBook {
@@ -131,7 +148,7 @@ export interface DayBook {
   readonly skipped: readonly string[];
   /** Sources that carried no money at all (a zero-value return) — nothing to post, and said so. */
   readonly zeroValue: readonly string[];
-  readonly counted: { readonly sales: number; readonly returns: number };
+  readonly counted: { readonly sales: number; readonly returns: number; readonly loyalty?: number };
 }
 
 const ZERO: TaxSplit = { total: 0, net: 0, tax: 0, cgst: 0, sgst: 0 };
@@ -297,6 +314,13 @@ export function buildDayBook(input: DayBookInput): DayBook {
     }
   }
 
+  for (const l of input.loyalty ?? []) {
+    const kind = `loyalty:${l.kind}`;
+    if (covered(kind, l.sourceId)) { skipped.push(l.sourceId); continue; }
+    touched.push(l.sourceId);
+    if (l.valueMinor !== 0) add(kind, 'loyalty', l.sourceId, { amount: l.valueMinor });
+  }
+
   const aggregates = [...acc.values()]
     .filter((a) => Object.values(a.components).some((v) => v !== 0))
     .sort((a, b) => a.kind.localeCompare(b.kind))
@@ -305,7 +329,7 @@ export function buildDayBook(input: DayBookInput): DayBook {
   const zeroValue = touched.filter((id) => !inAnAggregate.has(id));
   return {
     tradingDay: input.tradingDay, aggregates, exceptions, skipped, zeroValue,
-    counted: { sales: input.sales.length, returns: input.returns.length },
+    counted: { sales: input.sales.length, returns: input.returns.length, ...(input.loyalty === undefined ? {} : { loyalty: input.loyalty.length }) },
   };
 }
 
@@ -402,12 +426,14 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
         { account: 'sales_clearing', side: 'credit', component: 'total' },
       ],
     },
-    ...(['cash', 'card', 'upi', 'store_credit', 'exchange_credit'] as const).flatMap((tender) => {
+    ...(['cash', 'card', 'upi', 'store_credit', 'exchange_credit', 'loyalty_points'] as const).flatMap((tender) => {
       const account = tender === 'cash' ? 'cash_in_hand'
         : tender === 'card' ? 'card_receivable'
           : tender === 'upi' ? 'upi_receivable'
             : tender === 'store_credit' ? 'store_credit_liability'
-              : 'exchange_credit_clearing';
+              // PF-09 step 3: points spent at the till reduce what the shop owes its members.
+              : tender === 'loyalty_points' ? 'loyalty_points_liability'
+                : 'exchange_credit_clearing';
       return [
         {
           kind: `tender:${tender}`,
@@ -425,6 +451,22 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
         },
       ];
     }),
+    // PF-09 step 3 (M17-FR-01 → M23): points earned are owed to the member; points a return takes back are released.
+    // Suggested as an expense against the liability; whether the CA defers revenue instead is the CA's mapping.
+    {
+      kind: 'loyalty:earn',
+      legs: [
+        { account: 'loyalty_expense', side: 'debit', component: 'amount' },
+        { account: 'loyalty_points_liability', side: 'credit', component: 'amount' },
+      ],
+    },
+    {
+      kind: 'loyalty:takeback',
+      legs: [
+        { account: 'loyalty_points_liability', side: 'debit', component: 'amount' },
+        { account: 'loyalty_expense', side: 'credit', component: 'amount' },
+      ],
+    },
     // SP-7b (M23-FR-01): the supplier account — a matched invoice's payable, its reversal, a debit note — through a
     // goods-received-not-invoiced clearing (`payables.ts`). Suggested like the rest; the accountant commits it.
     ...PAYABLES_POSTING_RULES,

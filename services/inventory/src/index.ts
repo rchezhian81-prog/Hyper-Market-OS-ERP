@@ -24,6 +24,7 @@ import type { ProductValuation } from '../../../packages/stock/src/valuation';
 import type { AgeingSource } from '../../../packages/stock/src/ageing-source';
 import { stockAgeing, inventoryTurns, gmroi, stockoutImpact, type Ratio, type StockoutInput } from '../../../packages/stock/src/metrics';
 import { isCurrencyCode, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
+import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 
 // --- small readers for the one stateless "what-if" on this surface --------------
 // Every other route here reads the append-only ledger; the stockout estimate is the
@@ -51,7 +52,13 @@ export type MovementKind =
   | 'received' | 'sold' | 'returned' | 'transferred_in' | 'transferred_out'
   | 'adjusted' | 'wasted' | 'counted'
   /** SP-7b: a rejected over-delivery the handheld's scans had put on-hand goes back to the supplier (goods-receipt.ts). */
-  | 'returned_to_supplier';
+  | 'returned_to_supplier'
+  /** Batch 2 · FUL-01: an ingredient a committed production run used up (production.ts) — its value moves into the run's
+   *  output, it is not a cost of goods sold. Only the production routes post it. */
+  | 'consumed_in_production'
+  /** Batch 2 · FUL-01: a finished production batch released by quality (production.ts) — on-hand at the run's own
+   *  output unit cost. Only the production release posts it. */
+  | 'produced';
 
 /**
  * Who owns a lot of stock on the store's shelves (M27-FR-02, M08 ownership field). Absent on a
@@ -63,9 +70,18 @@ export type StockOwnership = 'own' | 'concession' | 'consignment' | 'customer_pr
 
 /** What each kind does to on-hand. Declared, never inferred from a sign on the quantity. */
 export const EFFECT_ON_HAND: Readonly<Record<MovementKind, 1 | -1>> = {
-  received: 1, returned: 1, transferred_in: 1, counted: 1, adjusted: 1,
-  sold: -1, transferred_out: -1, wasted: -1, returned_to_supplier: -1,
+  received: 1, returned: 1, transferred_in: 1, counted: 1, adjusted: 1, produced: 1,
+  sold: -1, transferred_out: -1, wasted: -1, returned_to_supplier: -1, consumed_in_production: -1,
 };
+
+/** Batch 2 · FUL-01: the kinds only the production routes post — never accepted on the plain movements route. */
+export const PRODUCTION_ONLY_KINDS: readonly MovementKind[] = ['consumed_in_production', 'produced'];
+
+/**
+ * An issue whose VALUE moves on rather than being spent (valuation's `isTransferOut`): stock sent to another of our own
+ * places, or an ingredient used up in production (its value is carried by the output). Never cost of goods sold.
+ */
+export const movesValueOnward = (kind: MovementKind): boolean => kind === 'transferred_out' || kind === 'consumed_in_production';
 
 export interface Movement {
   readonly movementId: string;
@@ -277,7 +293,7 @@ export interface InventoryDeps {
    * valuation, so the three reconcile. The route buckets these by age; `unvaluedMinor` carries any
    * uncosted on-hand so it is stated, never priced at a guess (P-08).
    */
-  readonly ageing: (tenantId: string, productId?: string) => Promise<AgeingSource> | AgeingSource;
+  readonly ageing: (tenantId: string, productId?: string, covers?: (locationId: string) => boolean) => Promise<AgeingSource> | AgeingSource;
   /**
    * The period inputs for stock productivity (M08-FR-04): cost of goods sold and average inventory
    * over `[from, to]`, both at weighted-average cost, plus net (ex-tax) sales and gross margin when
@@ -286,7 +302,11 @@ export interface InventoryDeps {
    * (not zero) when a sold product has no known tax rate — the route then reports GMROI as not
    * meaningful rather than inventing a margin (P-08).
    */
-  readonly performance: (tenantId: string, opts: { readonly from: string; readonly to: string }) => Promise<StockPerformanceInputs> | StockPerformanceInputs;
+  readonly performance: (tenantId: string, opts: {
+    readonly from: string; readonly to: string;
+    /** PA-01-r1: only movements, sales and returns at locations this covers (absent → every location). */
+    readonly covers?: (locationId: string) => boolean;
+  }) => Promise<StockPerformanceInputs> | StockPerformanceInputs;
   /**
    * SP-5 (F05 · M08-FR-02): stock IN TRANSIT to a destination — dispatched, not yet received. Read from the transfer
    * aggregates (the authoritative record of what is on the van), never folded into on-hand: visible at the destination,
@@ -298,6 +318,12 @@ export interface InventoryDeps {
    * engine values and raises as exceptions. Surfaced on the exceptions read beside negative stock (P-08, #10).
    */
   readonly transferShortfalls?: (tenantId: string) => Promise<readonly TransferShortfall[]> | readonly TransferShortfall[];
+  /**
+   * PA-01-r1: which branch each stock location belongs to (the org hierarchy). Every read is narrowed to the caller's
+   * branches and every movement refused outside them. Absent → a location is its own branch key (fail closed for a
+   * branch-limited caller at any location that is not literally one of their branches).
+   */
+  readonly locationBranches?: LocationBranches;
   readonly now: () => string;
 }
 
@@ -328,6 +354,17 @@ export interface TransferShortfall {
   readonly value: Money;
   readonly receivedAt: string;
   readonly detail: string;
+  /** Batch 2: how a person resolved it (found / confirmed lost, who, why) — `null` while it is still open. Never removed. */
+  readonly resolution?: {
+    readonly resolvedBy: string;
+    readonly resolvedAt: string;
+    readonly reasonCode: string;
+    readonly note: string;
+    readonly foundMinor: number;
+    readonly lostMinor: number;
+    readonly lostValueMinor: number;
+    readonly movementIds: readonly string[];
+  } | null;
 }
 
 /** One row of period inputs for turns/GMROI — for the whole store, or for one product. */
@@ -375,6 +412,16 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         // who genuinely holds the authority (none of which this sync route can enforce, and where `enteredBy`
         // and `approvedBy` are unverified body strings). Refuse it here rather than let a loss through the
         // ungoverned door. Upward corrections (`adjusted`) still flow here — they add stock, they do not remove it.
+        if ((PRODUCTION_ONLY_KINDS as readonly string[]).includes(m.kind)) {
+          throw apiError(422, {
+            code: 'production_uses_the_production_routes',
+            whatHappened: `A "${m.kind}" movement is posted only by a committed production run or its quality release — never typed here.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Commit the run at POST /v1/production/runs/:runId and release it at …/release. Nothing was appended here.',
+          });
+        }
+        // PA-01-r1: stock moves only at a location inside the caller's branches — refused by name, nothing appended.
+        if (typeof m.locationId === 'string') await assertLocationInScope(ctx, m.locationId, deps.locationBranches);
         if (m.kind === 'wasted') {
           throw apiError(422, {
             code: 'write_off_uses_the_write_off_route',
@@ -428,21 +475,25 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
         const productId = ctx.query['productId'];
-        const rows = await deps.availability(ctx.tenantId, productId);
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        const rows = (await deps.availability(ctx.tenantId, productId)).filter((r) => scope.covers(r.locationId));
         // SP-5 (F05): what is on the van is visible at its destination — beside on-hand, never inside it (M08-FR-02).
-        const inTransit = deps.inTransit === undefined ? [] : await deps.inTransit(ctx.tenantId, productId);
-        return { status: 200, body: { rows, inTransit, asAt: deps.now() } };
+        const inTransit = (deps.inTransit === undefined ? [] : await deps.inTransit(ctx.tenantId, productId)).filter((r) => scope.covers(r.locationId));
+        return { status: 200, body: { rows, inTransit, scope: scope.scope, asAt: deps.now() } };
       },
     },
     {
       api: 'API-04', method: 'GET', path: '/v1/inventory/exceptions',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
-        const rows = await deps.availability(ctx.tenantId);
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        const rows = (await deps.availability(ctx.tenantId)).filter((r) => scope.covers(r.locationId));
         // SP-5 (F05): a transfer shortfall is stock that left one place and never reached the other — an exception with a
         // value and an owner, listed here beside negative stock so nobody has to know to look for it (P-08).
-        const transferShortfalls = deps.transferShortfalls === undefined ? [] : await deps.transferShortfalls(ctx.tenantId);
-        return { status: 200, body: { negative: negativeStock(rows), transferShortfalls, asAt: deps.now() } };
+        // PA-01-r1: a shortfall is the caller's when either end of the transfer is in their branches.
+        const transferShortfalls = (deps.transferShortfalls === undefined ? [] : await deps.transferShortfalls(ctx.tenantId))
+          .filter((t) => scope.covers(t.locationId) || scope.covers(t.fromLocationId));
+        return { status: 200, body: { negative: negativeStock(rows), transferShortfalls, scope: scope.scope, asAt: deps.now() } };
       },
     },
     {
@@ -451,11 +502,15 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       api: 'API-04', method: 'GET', path: '/v1/inventory/valuation',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
-        const rows = await deps.valuation(ctx.tenantId, ctx.query['productId']);
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        // Valued per product AND location (the average is pooled per location), so keeping only the caller's locations
+        // keeps exactly their figures.
+        const rows = (await deps.valuation(ctx.tenantId, ctx.query['productId'])).filter((r) => scope.covers(r.locationId));
         return {
           status: 200,
           body: {
             rows,
+            scope: scope.scope,
             totalValueMinor: rows.reduce((s, r) => s + r.value.minor, 0),
             method: 'weighted_average',
             asAt: deps.now(),
@@ -471,12 +526,13 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       api: 'API-04', method: 'GET', path: '/v1/inventory/ageing',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
-        const { lots, unvaluedMinor } = await deps.ageing(ctx.tenantId, ctx.query['productId']);
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        const { lots, unvaluedMinor } = await deps.ageing(ctx.tenantId, ctx.query['productId'], scope.everything ? undefined : scope.covers);
         const asAt = deps.now();
         const report = stockAgeing(lots, asAt.slice(0, 10), 'INR');
         return {
           status: 200,
-          body: { ...report, unvaluedMinor, method: 'weighted_average', asAt },
+          body: { ...report, unvaluedMinor, scope: scope.scope, method: 'weighted_average', asAt },
         };
       },
     },
@@ -493,7 +549,8 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         const asAt = deps.now();
         const to = ctx.query['to'] ?? asAt;
         const from = ctx.query['from'] ?? new Date(Date.parse(to) - 365 * 86_400_000).toISOString();
-        const inp = await deps.performance(ctx.tenantId, { from, to });
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        const inp = await deps.performance(ctx.tenantId, { from, to, ...(scope.everything ? {} : { covers: scope.covers }) });
         // Turns/GMROI for one row (store or product), each ratio honest about when it is not meaningful.
         const figuresOf = (row: StockPerformanceRow): Record<string, unknown> => {
           const turns = inventoryTurns({ cogs: row.cogs, averageInventory: row.averageInventory, periodDays: inp.periodDays });
@@ -521,6 +578,7 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
             byProduct: inp.byProduct.map((p) => ({ productId: p.productId, ...figuresOf(p) })),
             method: 'weighted_average',
             revenueBasis: 'net_of_tax; net_of_returns (resell cost reversed)',
+            scope: scope.scope,
             asAt,
           },
         };

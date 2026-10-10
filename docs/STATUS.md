@@ -5,6 +5,128 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Batches 1 and 3 integrated — branch limits on stock, renewed store setup, loyalty spend, independent evidence (10 October 2026)
+
+- **Owner decisions recorded:** **OB-31 "A"** weighed goods counted in grams everywhere (cost per kg); **OB-32 "A"** a
+  purchase order needs a supplier from the master, approved by finance. Both are being built in Batch 2.
+- **Batch 1 — foundation:**
+  - **PA-01-r1 closed.** A branch-limited manager can no longer read or move another branch's stock:
+    - the families covered: movements, availability, value, ageing, bins, transfers, write-offs, counts, adjustments,
+      receipts, indents, near-expiry, waste, scrap and packaging;
+    - the lead added the same rule to Batch 2's new routes (shortfall resolutions, supplier line return, production
+      runs);
+    - proved in memory and on real PostgreSQL, across a restart and a second instance.
+  - **Still leaking — PA-01 stays open:** workforce checklists and tasks, attendance cost, facilities, concession,
+    device registry, compliance status, price-integrity audit, audit search and branch lifecycle.
+  - **PA-06-r1 closed:** a renewed store setup with the same contents is checked and kept (new expiry, survives a
+    restart); a forged, wrong-store, older or expired one is refused.
+  - **PA-05 closed:** a branch rename is kept as a new version (it used to be answered and lost).
+  - **PA-06 part 3b, partly done:**
+    - done: the practice seed sets the store settings, rules and match policy at head office through the real routes
+      (OC-06, OB-08 120 min / 5000 bp, OC-13); the buying screen buys as the signed-in person, never the setup's named
+      buyer (browser-verified);
+    - waiting on a decision: which open delivery head office sends to the warehouse phone.
+  - **Real Keycloak in CI:** a new required-to-be job "Identity server suites (real Keycloak)". It is proven locally;
+    its first CI run is this PR.
+  - **Branch protection:** main is unprotected and has no rulesets. This session gets 403 when it tries to set them.
+    `docs/runbooks/branch-protection.md` lists the six checks to require. This is an administrator action.
+- **Batch 3 — sales and closing:**
+  - **PF-09 closed:**
+    - the till names the member by mobile number (the other session's step 2, kept);
+    - points and store credit can be spent at the till offline, within an owner daily cap that is **off until set**;
+    - head office applies each spend once and flags a double spend;
+    - liability is posted and reconciled to the paisa.
+  - **PF-12 closed (code side):** bank statement and settlement files are imported with who/when/file, and the month
+    closes on that evidence. The live bank and acquirer connectors remain external gates.
+  - **PF-13 closed:** a lapsed partner counter is stopped at the till before money, offline (browser-verified).
+  - **PF-11 closed:** a granted goodwill credit or points is carried out once.
+  - **The sale-to-day-close journey runs on the real box and real PostgreSQL:**
+    - split card + cash, a member, a manager-approved return to store credit, credit and points spent, the same sale
+      relayed twice, a network cut and a restart, a blind shift close, the day close, the day book, settlement and bank;
+    - stock, drawer, card tenders, payout, points and credit liability all reconcile.
+- **Proof:**
+  - the new tests named above, each failing on the code before it;
+  - 44 intersecting Batch 1 + 2 tests;
+  - full typecheck and lint clean after integration;
+  - the full gate runs on this PR.
+- **Not yet / honest limits:**
+  - PF-07 no-sale/override (the till has no such control);
+  - FUL-03/05/07/14 (the storefront still trusts the app's payment result);
+  - lot capture at the till (needs a decision);
+  - the box's own identity lacks the day-close permission (a real defect; needs a decision on the role);
+  - PA-09, PA-10;
+  - Batch 4 still running;
+  - staff UAT pending.
+
+## Wave 5 · PF-09 step 2 — the till names a loyalty member by mobile number (10 October 2026; built by the other session, kept and integrated with Batch 3)
+
+- **Owner decision OB-28 "1":** the cashier keys the customer's mobile number.
+- **What changed:**
+  - On the till: **More → Loyalty member** opens the till's own number keypad. The cashier keys the 10 digits; the till
+    shows only the **last four** ("Member ••••2345 is on this bill"). A number that is not a mobile is refused in English
+    or Tamil. **More → Remove loyalty member** takes it off. A new bill starts with no member.
+  - **The phone number is never written anywhere.** It stays in the till page's memory and goes to the store computer
+    with the sale; the store computer turns it into the private member code *before* saving, so its disk holds the code
+    only. A code sent by the till itself is ignored — only the store computer makes one.
+  - The sale carries the member code to head office, which adds the points by your rule (step 1). With no internet the
+    sale is kept on the store computer and the points are added when the line returns.
+- **Proved:** through the real till and store computer — a bad number refused; the sale on the store computer's disk
+  contains the member code and not one digit-run of the number; when the line returns the member holds 12 points for a
+  ₹1,250 sale; a forged code dropped. In a real browser — More → Loyalty member → keypad shows ••••2345 only; Remove is
+  offered; the disk holds the code, not the number. **Mutation check:** switching off the swap fails the test. Full
+  `pnpm run check` green with the real database.
+- **Not yet / honest limits:** step 3 — spending points and store credit at the till. A held bill does not keep its
+  member: re-key the number after recalling it. Staff UAT (SP-10) pending.
+- **Next:** PF-09 step 3 — spending points and store credit at the till.
+
+## Coordinated programme · Batch 2 — supplier to shelf proven on the real database (10 October 2026)
+
+- **Owner instruction (10 Oct 2026):** four coordinated batches against one assignment matrix
+  (`docs/registers/assignment-matrix-2026-10-10.md`, #756). This entry is Batch 2's first integration.
+- **What changed:**
+  - **The supplier-to-shelf journey runs as one connected test** on head office's real routes and real PostgreSQL. Nine
+    different people take part: buyer, finance, owner, receiver, quality checker, back-store worker, floor manager,
+    floor receiver and floor staff. The steps:
+    - supplier proposed and approved;
+    - order issued (₹3,000);
+    - 60 of 100 received, with 6 too warm and 4 with no reading held;
+    - quality check: the receiver cannot do it, 6 go back, 4 are released;
+    - put away to a bin;
+    - indent issued from that bin;
+    - floor counts 28 of 30;
+    - the shortfall is resolved by a different manager with a reason (1 found, 1 lost ₹30), and the exception is kept;
+    - stock and value conserved (₹1,620 = back store + floor + lost);
+    - three-way match and debit note: ₹1,800 payable − ₹180 = ₹1,620 owed;
+    - the rejected stock is handed back to the supplier, recorded once.
+  - **Fixed along the way:**
+    - an issue from the back store now lowers the bin it names;
+    - two issues, or two counts of the same issue, can no longer both land (the second count used to vanish
+      silently);
+    - a floor or transfer shortfall can now be resolved accountably;
+    - rejected stock can be physically returned to the supplier;
+    - the store computer's sync no longer treats a write that lost a race as delivered (it retries; it used to be
+      dropped).
+  - **FUL-01 closed:** production consumes ingredients and adds the made goods as ordinary stock at the run's cost,
+    with value conserved.
+  - **FUL-08 closed:** recipes are versioned, and every run names its version.
+  - **GT-06 closed:** a supplier migration file writes real suppliers into the supplier master (name, checked GSTIN),
+    which are read back and usable on an order.
+- **Proof:**
+  - `tests/integration/supplier-to-shelf-journey.test.ts`: the journey plus three races (receivers, issues, counts), in
+    memory and on real PostgreSQL, run 6 times.
+  - `production-moves-ordinary-stock.test.ts`, `warehouse-transfers.test.ts`, the migration-load tests and a sync
+    transport unit test.
+  - 15 existing browser tests for these screens re-run green.
+  - The new routes (shortfall resolution, line return) have **no screen yet**, so nothing new is browser-verified.
+- **Still open in Batch 2:**
+  - **Weighed goods:** kg quantities and per-gram cost are not consistent across receiving and valuation, and receiving
+    does not check the line's unit against the product (SF-11, quantity scale).
+  - A purchase order accepts an unknown supplier id.
+  - A plain transfer's receipt has no "different person counts" rule.
+  - The confirmed-lost shortfall is not posted as an inventory-loss journal (Batch 3).
+  - SF-09 supplier portal submissions, SF-10 exports and FUL-13 production pages are not started.
+  - Staff UAT is pending.
+
 ## Wave 4 · PF-05 finished — the till can give up a held basket, with a reason (10 October 2026)
 
 - **Owner instruction (10 Oct 2026):** finish PF-05's one open gap.

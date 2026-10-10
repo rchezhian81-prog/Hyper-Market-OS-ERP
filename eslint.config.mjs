@@ -13,6 +13,9 @@ export default tseslint.config(
       '**/build/**',
       '**/coverage/**',
       '**/.turbo/**',
+      // Tool working copies (parallel agent worktrees under .claude/worktrees): whole duplicate checkouts of this repo,
+      // never part of the product; linting them reports every file twice and on other branches' code.
+      '.claude/**',
       // Build artifacts from `pnpm build:pos|owner|erp`. They are git-ignored, machine-written and
       // never edited by hand, so linting them reports on esbuild's output rather than on anybody's
       // code — and a tree-shaken export that nothing in the bundle happens to call is not a finding.

@@ -23,7 +23,7 @@ const releaseJob = CI.slice(CI.indexOf('\n  release:\n'));
 describe('the release job deploys only a merged, verified main commit', () => {
   it('exists, needs all five verification jobs — including the browser and performance suites (GT-01) — and runs only for a push to main', () => {
     expect(CI.indexOf('\n  release:\n')).toBeGreaterThan(0);
-    expect(releaseJob).toMatch(/needs:\s*\[verify, integration, deploy, browser, performance\]/);
+    expect(releaseJob).toMatch(/needs:\s*\[verify, integration, deploy, browser, performance, identity\]/);
     expect(releaseJob).toMatch(/if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
     expect(releaseJob).toMatch(/environment: demo/);
   });

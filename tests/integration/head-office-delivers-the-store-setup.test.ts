@@ -95,12 +95,24 @@ describe('PA-06 — head office delivers each store its setup', () => {
     expect(verifyStorePack(signer, onDisk, { tenantId: A, storeId: 'S1', heldVersion: null, now: onDisk.issuedAt })).toEqual({ accepted: true });
     expect(onDisk.sections['policies']).toMatchObject({ storeId: 'S1', branchName: 'SRE Hyper Market', tradingDayCutoff: '02:00', warehouseId: 'WH' });
     expect((onDisk.sections['roleAssignments'] as { userId: string }[]).map((g) => g.userId).sort()).toEqual(['u-box', 'u-mgr', 'u-owner']);
+    // PA-06 part 3b: the buying screen's tolerances are head office's match policy in force (OC-13 until the owner sets
+    // one); no buyer is named — the screen runs as the signed-in person.
+    expect(onDisk.sections['buyingPolicy']).toEqual({ approvers: [], quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100 });
 
-    // The same content again is not news; a restart comes back on head office's setup, not the file.
-    expect((await edge.refreshStorePack!()).status).toBe('unchanged');
+    // PA-06-r1: the same content signed again (head office builds on request, so each answer is a newer version with a
+    // later expiry) is checked and RENEWS the held envelope — on disk too — so the box never runs out of date on a setup
+    // head office keeps renewing. A restart comes back on head office's setup, not the file.
+    const later = Date.now() + 2;
+    await new Promise<void>((resolve) => { const tick = (): void => { if (Date.now() >= later) resolve(); else setImmediate(tick); }; tick(); });
+    expect((await edge.refreshStorePack!()).status).toBe('renewed');
+    const renewed = JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope;
+    expect(renewed.contentHash).toBe(onDisk.contentHash);
+    expect(renewed.version).toBeGreaterThan(onDisk.version);
+    expect(Date.parse(renewed.expiresAt)).toBeGreaterThan(Date.parse(onDisk.expiresAt));
+    expect(edge.storeSetup()).toMatchObject({ source: 'head-office', version: renewed.version, expiresAt: renewed.expiresAt, expired: false });
     await edge.stop(); edges.pop();
     const again = await boot({ EDGE_PACK_FILE: join(dir, 'old-pack.json') });
-    expect(again.storeSetup()).toMatchObject({ source: 'head-office', version: onDisk.version });
+    expect(again.storeSetup()).toMatchObject({ source: 'head-office', version: renewed.version });
   });
 
   it('always current: a person granted later reaches the store on the next pull; a person whose grant ends leaves it', async () => {
@@ -170,6 +182,39 @@ describe('PA-06 — head office delivers each store its setup', () => {
     cut = false;
     expect((await restarted.refreshStorePack!()).status).toBe('updated');
     expect(restarted.storeSetup()).toMatchObject({ expired: false });
+  });
+
+  it('PA-06 part 3b: the buying screen takes the match policy the owner set; the store computer serves it with no named buyer', async () => {
+    await call('POST', '/v1/stores/S1/settings', SETTINGS);
+    expect((await call('POST', '/v1/purchase/match-policy', { quantityToleranceBps: 50, priceToleranceBps: 200, immaterialMinor: 1_000 })).status).toBe(201);
+    const edge = await boot();
+    expect((await edge.refreshStorePack!()).status).toBe('updated');
+    const onDisk = JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope;
+    expect(onDisk.sections['buyingPolicy']).toEqual({ approvers: [], quantityToleranceBps: 50, priceToleranceBps: 200, immaterialMinor: 1_000 });
+  });
+
+  it('PA-06-r1: an out-of-date setup whose contents head office still holds is RENEWED by the next pull — not kept expired', async () => {
+    await call('POST', '/v1/stores/S1/settings', SETTINGS);
+    const edge = await boot();
+    expect((await edge.refreshStorePack!()).status).toBe('updated');
+    const current = JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope;
+    await edge.stop(); edges.pop();
+    // The box held the SAME contents, signed long ago and now past expiry (as it would after a week of "unchanged").
+    const stale = signStorePack(signer, { tenantId: A, storeId: 'S1', issuedAt: '2026-01-01T00:00:00.000Z', sections: current.sections });
+    expect(stale.contentHash).toBe(current.contentHash);
+    await writeFile(join(dir, 'store-pack.json'), JSON.stringify(stale));
+    const restarted = await boot();
+    expect(restarted.storeSetup()).toMatchObject({ source: 'head-office', version: stale.version, expired: true });
+    const renewed = await restarted.refreshStorePack!();
+    expect(renewed).toMatchObject({ status: 'renewed', expired: false });
+    expect(restarted.storeSetup()).toMatchObject({ source: 'head-office', expired: false });
+    const onDisk = JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope;
+    expect(onDisk.contentHash).toBe(current.contentHash);
+    expect(onDisk.version).toBeGreaterThan(stale.version);
+    expect(verifyStorePack(signer, onDisk, { tenantId: A, storeId: 'S1', heldVersion: stale.version, now: new Date().toISOString() })).toEqual({ accepted: true });
+    // and it survives a restart
+    await restarted.stop(); edges.pop();
+    expect((await boot()).storeSetup()).toMatchObject({ source: 'head-office', version: onDisk.version, expired: false });
   });
 
   it('store settings are head office\'s record: owner sets them (a new version each change), a manager may not, a bad value is refused', async () => {

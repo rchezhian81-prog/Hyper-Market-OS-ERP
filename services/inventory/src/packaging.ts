@@ -11,7 +11,7 @@
 // is the pure `projectPackaging` in `packages/waste/src/packaging.ts`.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, assertBranchInScope } from '../../kernel/src/index';
 import {
   projectPackaging,
   type PackagingItem, type PackagingKind, type PackagingMovement, type PackagingMovementKind,
@@ -80,6 +80,7 @@ export function packagingRoutes(deps: PackagingDeps): readonly Route[] {
           || (b['reference'] !== undefined && !isStr(b['reference']))) {
           throw apiError(400, { code: 'not_readable_as_a_movement', whatHappened: 'A packaging movement needs a branch, a kind (received/issued_to_customer/issued_to_delivery/returned/written_off), a positive whole quantity and a timestamp.', wasItSaved: 'not_saved', nextSafeAction: 'Send the movement fields. Nothing was recorded.' });
         }
+        assertBranchInScope(ctx, b['branchId'] as string); // PA-01-r1: packaging moves only at a branch the caller holds
         if (await deps.item(ctx.tenantId, packagingId) === undefined) throw notFound(`packaging item ${packagingId}`);
         const movement: PackagingMovement = {
           movementId, packagingId, branchId: b['branchId'] as string,
@@ -99,6 +100,7 @@ export function packagingRoutes(deps: PackagingDeps): readonly Route[] {
       handler: async (ctx) => {
         const packagingId = ctx.params['packagingId'] ?? '';
         const branchId = ctx.query['branchId'];
+        if (isStr(branchId)) assertBranchInScope(ctx, branchId); // PA-01-r1: another branch's position is refused by name
         if (!isStr(branchId)) throw apiError(400, { code: 'position_needs_a_branch', whatHappened: 'A packaging position needs ?branchId= to project against.', wasItSaved: 'not_saved', nextSafeAction: 'Send the branch. A position reads, it never writes.' });
         const item = await deps.item(ctx.tenantId, packagingId);
         if (item === undefined) throw notFound(`packaging item ${packagingId}`);

@@ -179,10 +179,26 @@ from a chat or a remote-support tool, and no value below is ever written anywher
 5. Set `IDP_OIDC_ISSUER` and `IDP_OIDC_JWKS_URL` for the API and restart it. Its log says
    `identity server: 1 signing key(s) held for …`.
 
-## The proof against a real Keycloak (opt-in suite)
+## Supported is not the same as switched on (read this before saying "the shop has proper sign-in")
 
-`tests/integration/keycloak-real.test.ts` runs against a real Keycloak with this realm imported. It is not part of the
-automatic checks (they have no Keycloak); it is run, and its result recorded, with every change that touches identity.
+Two different statements, and only the first one is true by default:
+
+| Statement | What makes it true | Where it is proved |
+|---|---|---|
+| **Identity support is implemented** — the product can sign people in through Keycloak (code + PKCE, a second factor for privileged people, lockout, people's sign-ins given and ended from head office, a shop's own realm, the front door) | The code in this repository | Since 10 October 2026, automatically on every pull request: the CI check **"Identity server suites (real Keycloak)"** starts Keycloak 26.0.7 with `infra/keycloak/realm-sre-store.json` and runs `scripts/identity-proof.sh` (the four suites below, each on a fresh database, nothing allowed to skip) |
+| **Identity is enabled in a deployed environment** — the people of a real shop actually sign in through it | An administrator, on that server: the `identity` profile started (`COMPOSE_PROFILES=identity`), its passwords and addresses set in `.env`, the front door switched to `nginx.identity.conf`, head office connected (sections above) | Only by checking THAT server: its front door sends a visitor to the identity server's page, and `/login/verify` answers 401 with no session. Nothing in CI can prove this, and nothing in the repository switches it on |
+
+A green identity check means the first row. Until an administrator has done the second row on a server, that server still
+uses the pilot sign-in, and every status report must say so.
+
+## The proof against a real Keycloak (automatic since 10 October 2026; can still be run by hand)
+
+`tests/integration/keycloak-real.test.ts` runs against a real Keycloak with this realm imported. It skips itself when no
+Keycloak is configured (a developer's machine), so a skipped run is never proof. The automatic build's **identity** job
+runs it, with `keycloak-shop-realms`, `keycloak-provisioning` and `identity-front-door`, through `scripts/identity-proof.sh`
+(which refuses a run where any of them skipped). To run the same by hand against your own Keycloak:
+`KEYCLOAK_PROOF_BASE=… KEYCLOAK_PROOF_ADMIN_PASSWORD_FILE=… KEYCLOAK_PROOF_TENANT=… PROOF_PG_URL=postgres://<user>@<host>:5432 bash scripts/identity-proof.sh`
+(the user must be allowed to create databases and roles). The steps below describe one suite at a time.
 
 1. Start Keycloak 26 (container `quay.io/keycloak/keycloak:26.0.7`, or the release archive with Java 21) with this realm
    in its import folder. Set:

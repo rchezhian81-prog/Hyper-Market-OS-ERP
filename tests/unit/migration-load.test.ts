@@ -33,7 +33,7 @@ const bundle: ExtractBundle = {
       priceMinor: 2_500, mrpMinor: 2_500, costMinor: 1_800, marginFloorBps: 500,
     },
   ],
-  suppliers: [{ partnerId: 'SUP-1', name: 'Kaveri Traders', gstin: '33AAAAA0000A1Z5' }],
+  suppliers: [{ partnerId: 'SUP-1', name: 'Kaveri Traders', gstin: '33AAAAA0000A1Z9' }],
   customers: [{ customerId: 'C-1', loyaltyPoints: 120 }, { customerId: 'C-2' }],
   openingStock: [
     { productId: 'P-RICE', quantityMinor: 40, uom: 'each', unitCostMinor: 36_000, batchId: 'B1', expiry: '2027-03-31' },
@@ -135,9 +135,19 @@ describe('planLoad — the ordered steps', () => {
     const price = okPlan().steps.find((s) => s.what === 'price P-SOAP')!;
     expect(price.body).toEqual({ productId: 'P-SOAP', priceMinor: 2_500, mrpMinor: 2_500, costMinor: 1_800, currency: 'INR', marginFloorBps: 500, storeId: 'STORE-MAIN' });
   });
-  it('a migrated supplier has NO portal grants and NO logins — access is configured later by a person', () => {
+  it('GT-06: a migrated supplier goes into the SUPPLIER MASTER with its name and GSTIN — never only portal configuration; NO portal grants and NO logins are created', () => {
     const supplier = okPlan().steps.find((s) => s.group === 'supplier')!;
-    expect(supplier.body).toEqual({ grants: [], documents: [], requiredDocuments: [], logins: [] });
+    expect(supplier.path).toBe('/v1/purchase/suppliers/SUP-1');
+    expect(supplier.body).toEqual({ name: 'Kaveri Traders', gstin: '33AAAAA0000A1Z9' });
+    expect(okPlan().steps.some((s) => s.path.startsWith('/v1/supplier-portal/'))).toBe(false);
+  });
+  it('GT-06: a malformed or mistyped GSTIN, and one GSTIN on two supplier codes, are named problems before anything is sent', () => {
+    const withSuppliers = (suppliers: { partnerId: string; name: string; gstin?: string }[]) => validateBundle({ ...bundle, suppliers });
+    expect(withSuppliers([{ partnerId: 'SUP-1', name: 'Kaveri Traders', gstin: '33AAAAA0000A1Z5' }]).join(' ')).toMatch(/SUP-1.*check character/);
+    expect(withSuppliers([{ partnerId: 'SUP-1', name: 'Kaveri Traders', gstin: 'GST-UNKNOWN' }]).join(' ')).toMatch(/SUP-1.*15 characters/);
+    expect(withSuppliers([{ partnerId: 'SUP-1', name: 'Kaveri Traders', gstin: '33AAAAA0000A1Z9' }, { partnerId: 'SUP-2', name: 'Kaveri Traders (old code)', gstin: '33aaaaa0000a1z9' }]).join(' '))
+      .toMatch(/SUP-2.*also supplier "SUP-1"/);
+    expect(withSuppliers([{ partnerId: 'SUP-1', name: 'Kaveri Traders' }])).toEqual([]);
   });
   it('a migrated customer arrives with consent recorded as NOT given, with the evidence stated; points only when there are some', () => {
     const steps = okPlan().steps.filter((s) => s.group === 'customer');
@@ -252,7 +262,7 @@ describe('bundleFromFiles — the CSV extract, every conversion stated', () => {
         [['P-RICE', 'Ponni rice 5 kg', 'each', 'staples', '1006', '450.00', '420', '360.00', '8901234567890|INT-1', '', 'IN', '5 kg', 'SRE Hyper Market', 'Active', 'SRE'],
          ['P-BAD', '', 'each', 'staples', '1006', '10', '9', '', '', '', '', '', '', '', '']],
       ),
-      suppliers: rows(['supplier_code', 'supplier_name', 'GSTIN'], [['SUP-1', 'Kaveri Traders', '33AAAAA0000A1Z5']]),
+      suppliers: rows(['supplier_code', 'supplier_name', 'GSTIN'], [['SUP-1', 'Kaveri Traders', '33AAAAA0000A1Z9']]),
       customers: rows(['customer-code', 'loyalty points'], [['C-1', '120'], ['C-2', ''], ['C-3', 'lots']]),
       openingStock: rows(['item_code', 'qty', 'uom', 'cost', 'batch', 'expiry'], [['P-RICE', '40', 'each', '360', 'B1', '2027-03-31'], ['P-RICE', 'x', 'each', '360', '', '']]),
     });
@@ -267,7 +277,7 @@ describe('bundleFromFiles — the CSV extract, every conversion stated', () => {
       barcodes: [{ code: '8901234567890', kind: 'ean' }, { code: 'INT-1', kind: 'internal' }],
       priceMinor: 42_000, mrpMinor: 45_000, costMinor: 36_000, marginFloorBps: 0,
     }]);
-    expect(mapped.bundle.suppliers).toEqual([{ partnerId: 'SUP-1', name: 'Kaveri Traders', gstin: '33AAAAA0000A1Z5' }]);
+    expect(mapped.bundle.suppliers).toEqual([{ partnerId: 'SUP-1', name: 'Kaveri Traders', gstin: '33AAAAA0000A1Z9' }]);
     expect(mapped.bundle.customers).toEqual([{ customerId: 'C-1', loyaltyPoints: 120 }, { customerId: 'C-2' }]);
     expect(mapped.bundle.openingStock).toEqual([{ productId: 'P-RICE', quantityMinor: 40, uom: 'each', unitCostMinor: 36_000, batchId: 'B1', expiry: '2027-03-31' }]);
     expect(mapped.problems).toEqual([

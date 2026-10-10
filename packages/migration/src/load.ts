@@ -20,6 +20,7 @@
 
 import { assertNonProduction, type LoadTarget } from './trial';
 import { validateProduct, CategoryNotFoundError, type Category, type ProductRecord, type RegulatedKind } from '../../product/src/product';
+import { validateGstin, InvalidGstinError } from '../../org/src/hierarchy';
 
 const REGULATED: readonly RegulatedKind[] = ['food', 'packed', 'weighed', 'age_restricted', 'drug', 'hazardous'];
 
@@ -268,10 +269,24 @@ export function validateBundle(bundle: ExtractBundle): readonly string[] {
     }
   }
   const suppliers = new Set<string>();
+  const gstins = new Map<string, string>();
   for (const s of bundle.suppliers) {
     if (!isId(s.partnerId) || !isId(s.name)) { problems.push(`supplier "${s.partnerId}": code and name are required`); continue; }
     if (suppliers.has(s.partnerId)) problems.push(`supplier "${s.partnerId}": listed twice`);
     suppliers.add(s.partnerId);
+    // GT-06 (Batch 2): a supplier's GST identity is checked here — a malformed or mistyped GSTIN, or one GSTIN on two
+    // supplier codes, is a named problem before anything is sent (never loaded and "fixed later").
+    if (s.gstin !== undefined) {
+      try {
+        const gstin = validateGstin(s.gstin);
+        const holder = gstins.get(gstin);
+        if (holder !== undefined && holder !== s.partnerId) problems.push(`supplier "${s.partnerId}": GSTIN ${gstin} is also supplier "${holder}" — one registration is one supplier; merge them in the cleaning step first`);
+        gstins.set(gstin, s.partnerId);
+      } catch (err) {
+        if (!(err instanceof InvalidGstinError)) throw err;
+        problems.push(`supplier "${s.partnerId}": ${err.message}`);
+      }
+    }
   }
   const customers = new Set<string>();
   for (const c of bundle.customers) {
@@ -363,12 +378,14 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
     });
   }
   for (const s of bundle.suppliers) {
-    // A migrated supplier exists with NO portal grant and NO login: those are configured later, by a
-    // person, when the supplier is onboarded to the portal (M24). Nothing here lets anyone in.
+    // GT-06 (Batch 2): a migrated supplier goes into the SUPPLIER MASTER — its name and GSTIN, through the same route a buyer
+    // uses — so it can be read back and chosen on a purchase order. It arrives PROPOSED: finance approves it (maker ≠
+    // approver, M06-FR-01), and its bank details are verified separately. No portal grant and no login are created here:
+    // those are configured later, by a person, when the supplier is onboarded to the portal (M24). Nothing lets anyone in.
     steps.push({
       group: 'supplier', what: `supplier ${s.partnerId}`,
-      path: `/v1/supplier-portal/partners/${encodeURIComponent(s.partnerId)}`,
-      body: { grants: [], documents: [], requiredDocuments: [], logins: [] },
+      path: `/v1/purchase/suppliers/${encodeURIComponent(s.partnerId)}`,
+      body: { name: s.name.trim(), ...(s.gstin === undefined ? {} : { gstin: validateGstin(s.gstin) }) },
       idempotencyKey: key(`supplier-${s.partnerId}`),
     });
   }

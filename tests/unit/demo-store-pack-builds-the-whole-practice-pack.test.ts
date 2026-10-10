@@ -88,7 +88,8 @@ describe('DF-2 — the whole practice pack, from what exists', () => {
     expect(ownerPayload(box)).not.toBeNull();
     const b = buyingPayload(box);
     expect(b).not.toBeNull();
-    expect(b!['buyerId']).toBe('pilot-manager');
+    // PA-06 part 3b: the box never takes the pack's named buyer — the buyer is whoever signs in (asSignedInPerson).
+    expect(b!['buyerId']).toBeNull();
     expect(b!['approvers']).toEqual(['pilot-owner']);
     expect(JSON.stringify(b)).toContain('po-demo-7');
     expect(box.pack.purchaseOrders.known && box.pack.purchaseOrders.value).toEqual([

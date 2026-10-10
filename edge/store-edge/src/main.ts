@@ -82,6 +82,10 @@ import { TillApprovals } from './till-approvals';
 import { ReceiptNumbers } from './receipt-numbers';
 import { HeldBills } from './held-bills';
 import { PaymentAttempts, type PaymentProviderPort } from './payment-attempts';
+import { LoyaltyWallets } from './loyalty-wallets';
+import { ConcessionTrading } from './concession-trading';
+import { pullConcessionTradingFeed, type ConcessionTradingPullOutcome } from '../../sync-agent/src/concession-trading-feed';
+import { httpWalletFeedSource, pullWalletFeed, type WalletFeedPullOutcome } from '../../sync-agent/src/loyalty-wallets-feed';
 import { peopleFrom, permissionsOf } from './screen-navigation';
 import { tillPinKey } from '../../../packages/identity/src/till-pin';
 import { sealDecision, sealTillFact, tillSealKey } from '../../../packages/identity/src/till-seal';
@@ -101,6 +105,7 @@ import {
   type TillCashRecord, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus, type TillCashRefusal,
 } from './till-cash';
 import type { CashMovementKind } from '../../../packages/cash/src/cash';
+import { loyaltyMemberKey, memberRefFor } from '../../../packages/loyalty/src/earn-rule';
 import { makeTradingDayRule, tradingDate, wallClockIn, type TradingDayRule } from '../../../packages/calendar/src/trading-day';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -348,6 +353,15 @@ export interface EdgeProcess {
   readonly refreshIndentsFeed: (() => Promise<IndentsFeedPullOutcome>) | null;
   /** HA-1: pull head office's open wave / route assignments for this store now. Null without a cloud or a store id. */
   readonly refreshAssignmentsFeed: (() => Promise<AssignmentsFeedPullOutcome>) | null;
+  /**
+   * PF-09 step 3: pull head office's loyalty balances (member codes, points, store credit, the owner's rule and till spend
+   * cap) now, so the till can let a member spend with the cable out. Null without a cloud. Rides the same loop.
+   */
+  readonly refreshLoyaltyWallets: (() => Promise<WalletFeedPullOutcome>) | null;
+  /** PF-09 step 3: the box's copy of the loyalty balances and its record of till spends. */
+  readonly loyaltyWallets: LoyaltyWallets;
+  /** PF-13: pull the partner counters' agreement terms now. Null without a cloud. Rides the same loop. */
+  readonly refreshConcessionTrading: (() => Promise<ConcessionTradingPullOutcome>) | null;
   /** PA-06 = DF-3-a: pull this store's setup from head office now. Null unless the box is set to take it from head office. */
   readonly refreshStorePack: (() => Promise<StorePackPullOutcome>) | null;
   /** Where this box's store setup came from, which version, and whether it is out of date (P-08). */
@@ -790,6 +804,8 @@ export async function startEdge(
    */
   // The seal key (ADR-0023): derived from the pack signing key under the seal's own label — never written anywhere.
   const sealKey = tillSealKey(settings['PACK_SIGNING_KEY']!);
+  // The loyalty member-code key head office uses too — both from the pack signing key (PF-09).
+  const loyaltyKey = loyaltyMemberKey(settings['PACK_SIGNING_KEY']!);
   const relayDeviceEvents: LaneDeviceRelayHandler = async (batch) => {
     const acks: DeviceAck[] = [];
     for (const raw of batch.items) {
@@ -984,6 +1000,13 @@ export async function startEdge(
       return typeof id === 'string' && id !== '' ? [[id, canonicalHash(rec)] as const] : [];
     }),
   );
+
+  // PF-09 step 3: the members' balances as this box last pulled them, and every spend the till made — read back from the sale
+  // log, so a reboot with the cable out still knows what this box has already let each member spend.
+  const loyaltyWallets = await LoyaltyWallets.open({ dataDir: settings['EDGE_DATA_DIR']!, tenantId, saleRecords: salesRecords });
+  // PF-13: the partner counters' agreement terms as this box last pulled them.
+  const concessionTrading = await ConcessionTrading.open({ dataDir: settings['EDGE_DATA_DIR']!, tenantId });
+  if (loyaltyWallets.heldCopy() !== undefined) say(`loyalty balances as of ${loyaltyWallets.heldCopy()!.feed.generatedAt} restored from disk.`);
 
   const node = createEdgeNode({
     tenantId,
@@ -1253,6 +1276,23 @@ export async function startEdge(
     relayDeviceEvents,
     deviceEventStatus,
     recordTillActivity,
+    // PF-09 step 2: the cashier's keyed mobile number becomes the loyalty member code HERE, before the disk (P-04).
+    memberCode: (mobile: string) => memberRefFor(loyaltyKey, mobile),
+    // PF-09 step 3: a sale paying with points or store credit is decided against this box's copy, one at a time.
+    loyalty: {
+      check: (record) => loyaltyWallets.check(record),
+      note: (spends) => { loyaltyWallets.note(spends); },
+      serialise: (fn) => loyaltyWallets.serialise(fn),
+      availability: (memberRef, tradingDay) => loyaltyWallets.availability(memberRef, tradingDay),
+    },
+    // PF-13: a new partner-counter sale line is decided by the box's own trading day, for the store this box is.
+    concessionTrading: {
+      check: (record) => concessionTrading.check(
+        record,
+        tradingDate(wallClockIn(new Date().toISOString()), packCutoff(pack)),
+        (pack.policies.known ? pack.policies.value.branchId : undefined) ?? undefined,
+      ),
+    },
     closeDay: (req) => {
       const fn = dayCloseRelay.current;
       return fn !== undefined ? fn(req) : Promise.resolve({ closed: false as const, reason: 'the box is still starting up — try the day close again in a moment' });
@@ -1563,7 +1603,7 @@ export async function startEdge(
     syncStatusRelay.current = () => laneSyncStatus({ configured: false, queues: queuesNow(), lastPackStatus: undefined, lastContactAt: null, now: new Date().toISOString() });
     return {
       log, returnsLog, completionsLog, dayCloseLog, concessionTagsLog, deviceEventsLog, tillCashLog, outbox, returnsOutbox, completionsOutbox, dayCloseOutbox, concessionTagsOutbox, deviceEventsOutbox, tillCashOutbox, node, lane, screens, devices, enrolments, syncStatus,
-      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, refreshStorePack: null, storeSetup: storeSetupStatus, reportHeldVersions: null, syncOnce: null,
+      agent: null, returnsAgent: null, completionsAgent: null, dayCloseAgent: null, concessionTagsAgent: null, deviceEventsAgent: null, tillCashAgent: null, refreshPack: null, refreshMigrationFeed: null, refreshPublishedTemplates: null, refreshIndentsFeed: null, refreshAssignmentsFeed: null, refreshStorePack: null, refreshLoyaltyWallets: null, loyaltyWallets, refreshConcessionTrading: null, storeSetup: storeSetupStatus, reportHeldVersions: null, syncOnce: null,
       // The day still locks with no cloud — that is the point of P-01. It queues durably and goes up when
       // a cloud is configured and reachable; nothing is told a lie in the meantime. Reopen is the same.
       closeDay,
@@ -1788,6 +1828,28 @@ export async function startEdge(
     return outcome;
   };
 
+  // PF-09 step 3: the loyalty balances ride the same loop — taken when newer and this shop's, written to disk before they are
+  // believed; on a failure the till keeps the copy this box holds and says how old it is.
+  const walletsSource = httpWalletFeedSource({ baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch });
+  let lastWalletsStatus: WalletFeedPullOutcome['status'] | undefined;
+  const refreshLoyaltyWallets = async (): Promise<WalletFeedPullOutcome> => {
+    const outcome = await pullWalletFeed({
+      source: walletsSource, now: new Date().toISOString(),
+      receiver: { tenantId, heldFeed: () => loyaltyWallets.heldFeed(), takeFeed: (feed, receivedAt) => loyaltyWallets.takeFeed(feed, receivedAt) },
+    });
+    if (outcome.status !== lastWalletsStatus) {
+      say(outcome.status === 'updated' ? `loyalty balances as of ${outcome.asOf} taken.` : `loyalty balances not refreshed (${outcome.reason ?? outcome.status}); the till keeps the copy as of ${outcome.asOf ?? 'never'}.`);
+    }
+    lastWalletsStatus = outcome.status;
+    return outcome;
+  };
+
+  // PF-13: the counters' agreement terms ride the same loop; a failure keeps what this box holds.
+  const refreshConcessionTrading = async (): Promise<ConcessionTradingPullOutcome> => pullConcessionTradingFeed({
+    baseUrl: cloudUrl, token: cloudToken, fetch: globalThis.fetch, now: new Date().toISOString(),
+    receiver: { tenantId, heldFeed: () => concessionTrading.heldFeed(), takeFeed: (feed, receivedAt) => concessionTrading.takeFeed(feed, receivedAt) },
+  });
+
   const refreshIndentsFeed = async (): Promise<IndentsFeedPullOutcome> => {
     const outcome = await pullIndentsFeed({ source: indentsSource, receiver: indentsReceiver, now: new Date().toISOString() });
     if (outcome.status === 'updated') {
@@ -1831,6 +1893,15 @@ export async function startEdge(
           }
           heldStorePack = env;
           pack = withHeldFeeds(readPack(packPayloadOf(env), receivedAt));
+        },
+        // PA-06-r1: the same setup signed again — keep the renewed envelope (version, issue, expiry); nothing is rebuilt.
+        renew: async (env) => {
+          try {
+            await writeHeldStorePack(settings['EDGE_DATA_DIR']!, env);
+          } catch (e) {
+            say(`the renewed store setup could not be saved to disk (${e instanceof Error ? e.message : String(e)}). It is in use now and will be pulled again next time.`);
+          }
+          heldStorePack = env;
         },
       },
     });
@@ -1989,6 +2060,18 @@ export async function startEdge(
     } catch (e) {
       say(`floor indents refresh failed: ${e instanceof Error ? e.message : String(e)}. The handheld keeps the indents this box holds.`);
     }
+    // PF-13: the counters' agreement terms too — the counters keep what this box holds on a failure.
+    try {
+      await refreshConcessionTrading();
+    } catch (e) {
+      say(`partner counter agreements refresh failed: ${e instanceof Error ? e.message : String(e)}. The counters keep what this box holds.`);
+    }
+    // PF-09 step 3: the loyalty balances ride the same loop too — the till keeps what this box holds on a failure.
+    try {
+      await refreshLoyaltyWallets();
+    } catch (e) {
+      say(`loyalty balances refresh failed: ${e instanceof Error ? e.message : String(e)}. The till keeps the balances this box holds.`);
+    }
     // HA-1: the assignments ride the same loop too — the phones keep what this box holds on a failure.
     if (refreshAssignmentsFeed !== null) {
       try {
@@ -2039,6 +2122,9 @@ export async function startEdge(
     refreshPublishedTemplates,
     refreshIndentsFeed,
     refreshAssignmentsFeed,
+    refreshLoyaltyWallets,
+    loyaltyWallets,
+    refreshConcessionTrading,
     refreshStorePack,
     storeSetup: storeSetupStatus,
     reportHeldVersions,

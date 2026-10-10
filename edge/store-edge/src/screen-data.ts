@@ -1095,13 +1095,15 @@ export function buyingPayload(input: ScreenInput): Record<string, unknown> | nul
   const policy = input.pack.buyingPolicy.value;
 
   const payload: Record<string, unknown> = {
-    buyerId: policy.buyerId,
+    // PA-06 part 3b: the buyer is the person who SIGNED IN, never whoever the pack named. Built here as nobody; the
+    // screen server re-addresses it to the signed-in person (`asSignedInPerson`), and with nobody signed in the screen
+    // says so and saves nothing.
+    buyerId: null,
     // SP-7a: the store this screen serves, so the buyer's durable invoice queue is keyed per store like the manager's.
     ...(input.pack.policies.known ? { storeId: input.pack.policies.value.storeId } : {}),
-    // The buyer is removed here rather than trusted to leave themselves alone. Separation of duties
-    // enforced only by the list somebody was shown is not enforced at all (§28); the session model
-    // refuses a self-approval as well, and this stops it ever being offered.
-    approvers: policy.approvers.filter((who) => who !== policy.buyerId),
+    // The buyer is removed from this list on the box, by `asSignedInPerson`, rather than trusted to leave themselves
+    // alone. Separation of duties enforced only by the list somebody was shown is not enforced at all (§28).
+    approvers: Array.isArray(policy.approvers) ? [...policy.approvers] : [],
     quantityToleranceBps: policy.quantityToleranceBps,
     priceToleranceBps: policy.priceToleranceBps,
     immaterialMinor: policy.immaterialMinor,

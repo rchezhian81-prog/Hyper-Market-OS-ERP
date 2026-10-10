@@ -59,7 +59,116 @@ export interface Transfer {
    * proposer, so the value that arrives at the destination is the value that left. Index-aligned with `lines`.
    */
   readonly lineCostsMinor?: readonly (number | null)[];
+  /** Batch 2: who counted it in at the destination (set by `receiveTransfer`; absent on transfers received before). */
+  readonly receivedBy?: string;
+  /** Batch 2: how a person resolved the transfer's receipt shortfall — absent while it is open (plain transfers). */
+  readonly shortfallResolution?: ShortfallResolution;
 }
+
+// ── Batch 2: resolving a receipt shortfall (shared by plain transfers and floor-indent issues) ─────────────────
+
+/** A valued shortfall line: dispatched and never arrived. */
+export interface ShortfallLine {
+  readonly productId: string;
+  readonly batchId: string | null;
+  readonly quantityMinor: number;
+  readonly valueMinor: number;
+}
+
+/** What the resolver says turned up, per product on the shortfall (anything not named was not found). */
+export interface FoundLine {
+  readonly productId: string;
+  readonly batchId: string | null;
+  readonly foundMinor: number;
+  /** Where it turned up — the destination (default) or the source (it never left). */
+  readonly foundAtLocationId?: string;
+}
+
+/** One product's part of a shortfall resolution — what was missing, what turned up (where), what is accepted as lost. */
+export interface ShortfallResolutionLine {
+  readonly productId: string;
+  readonly batchId: string | null;
+  readonly missingMinor: number;
+  readonly foundMinor: number;
+  /** Where the found units were — the destination or the source. */
+  readonly foundAtLocationId: string | null;
+  readonly lostMinor: number;
+  /** The lost units at the cost they left the source with. */
+  readonly lostValueMinor: number;
+}
+
+/**
+ * Batch 2 (M09-FR-03 · M08-FR-03 · M08-FR-04 · P-08 · §28): a valued shortfall is RESOLVED by a person who neither sent
+ * nor counted the stock, with a reason code — once. Units that turned up come back through a compensating, two-person
+ * `adjusted` movement (raised by the count, approved by the resolver); the rest is confirmed lost at its value. The
+ * shortfall itself stays on the record beside its resolution (hard rule #6).
+ */
+export interface ShortfallResolution {
+  readonly resolvedBy: string;
+  readonly resolvedAt: string;
+  readonly reasonCode: string;
+  readonly note: string;
+  readonly lines: readonly ShortfallResolutionLine[];
+  /** The M08 movement ids the found units came back on (empty when nothing was found). */
+  readonly movementIds: readonly string[];
+}
+
+export type ShortfallRefusal =
+  | 'nothing_short' | 'shortfall_already_resolved' | 'counter_cannot_resolve' | 'issuer_cannot_resolve'
+  | 'not_on_shortfall' | 'more_found_than_missing';
+
+/**
+ * Judge a shortfall resolution — pure, no throw: the refusal names its code. The receipt must be short and not yet
+ * resolved; the resolver is neither the sender nor the counter (§28 — "cannot self-approve material variance"); every
+ * found line is on the shortfall, found at the source or the destination, never more than went missing.
+ */
+export function judgeShortfallResolution(input: {
+  readonly what: string;
+  readonly shortfall: readonly ShortfallLine[];
+  readonly prior: ShortfallResolution | undefined;
+  readonly sentBy: string | undefined;
+  readonly countedBy: string | undefined;
+  readonly fromLocationId: string;
+  readonly toLocationId: string;
+  readonly resolvedBy: string;
+  readonly found: readonly FoundLine[];
+  readonly reasonCode: string;
+  readonly note: string;
+  readonly at: string;
+}): { readonly ok: true; readonly resolution: ShortfallResolution } | { readonly ok: false; readonly code: ShortfallRefusal; readonly why: string } {
+  const no = (code: ShortfallRefusal, why: string) => ({ ok: false as const, code, why });
+  if (input.shortfall.length === 0) return no('nothing_short', `${input.what} arrived in full — there is nothing to resolve`);
+  if (input.prior !== undefined) return no('shortfall_already_resolved', `${input.prior.resolvedBy} resolved this shortfall at ${input.prior.resolvedAt}; a second resolution would be a second truth`);
+  if (input.resolvedBy === input.countedBy) return no('counter_cannot_resolve', `${input.resolvedBy} counted ${input.what} and cannot also resolve its shortfall (§28) — a second person decides`);
+  if (input.resolvedBy === input.sentBy) return no('issuer_cannot_resolve', `${input.resolvedBy} sent ${input.what} and cannot also resolve its shortfall (§28) — a second person decides`);
+  for (const f of input.found) {
+    if (!Number.isInteger(f.foundMinor) || f.foundMinor < 0) return no('not_on_shortfall', `${f.productId}: a found quantity is a whole number, zero or more`);
+    if (!input.shortfall.some((s) => s.productId === f.productId && s.batchId === f.batchId)) {
+      return no('not_on_shortfall', `${f.productId}${f.batchId === null ? '' : ` · ${f.batchId}`} is not on the shortfall of ${input.what}`);
+    }
+    if (f.foundAtLocationId !== undefined && f.foundAtLocationId !== input.toLocationId && f.foundAtLocationId !== input.fromLocationId) {
+      return no('not_on_shortfall', `${f.productId}: stock from ${input.what} can only turn up at ${input.toLocationId} or ${input.fromLocationId}, not ${f.foundAtLocationId}`);
+    }
+  }
+  const lines: ShortfallResolutionLine[] = [];
+  for (const s of input.shortfall) {
+    const named = input.found.filter((f) => f.productId === s.productId && f.batchId === s.batchId);
+    const found = named.reduce((n, f) => n + f.foundMinor, 0);
+    if (found > s.quantityMinor) return no('more_found_than_missing', `${s.productId}: ${found} found, but only ${s.quantityMinor} went missing — count again`);
+    const lost = s.quantityMinor - found;
+    const unit = s.quantityMinor === 0 ? 0 : s.valueMinor / s.quantityMinor;
+    lines.push({
+      productId: s.productId, batchId: s.batchId, missingMinor: s.quantityMinor, foundMinor: found,
+      foundAtLocationId: found === 0 ? null : named.find((f) => f.foundMinor > 0)?.foundAtLocationId ?? input.toLocationId,
+      lostMinor: lost, lostValueMinor: Math.round(unit * lost),
+    });
+  }
+  return { ok: true, resolution: { resolvedBy: input.resolvedBy, resolvedAt: input.at, reasonCode: input.reasonCode, note: input.note, lines, movementIds: [] } };
+}
+
+/** The valued shortfall lines of a receipt's discrepancies (what was dispatched and did not arrive). */
+export const shortfallLinesOf = (discrepancies: readonly TransferDiscrepancy[]): ShortfallLine[] =>
+  discrepancies.filter((d) => d.differenceMinor < 0).map((d) => ({ productId: d.productId, batchId: d.batchId, quantityMinor: -d.differenceMinor, valueMinor: d.value.minor }));
 
 export interface TransferApproval {
   readonly subjectRef: string;
@@ -285,7 +394,7 @@ export function receiveTransfer(input: {
   });
 
   return {
-    transfer: { ...transfer, state: 'received', receivedAt: input.at },
+    transfer: { ...transfer, state: 'received', receivedAt: input.at, receivedBy: input.receivedBy },
     movements,
     discrepancies,
   };

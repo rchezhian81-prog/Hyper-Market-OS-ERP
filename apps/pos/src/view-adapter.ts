@@ -9,6 +9,14 @@ import { money, type CurrencyCode } from '../../../packages/contracts/src/money'
 import type { Uom } from '../../../packages/contracts/src/quantity';
 import { rate } from '../../../packages/contracts/src/rate';
 import type { Tender } from '../../../packages/tender/src/tender';
+
+/** One part of a split payment (PF-09 step 3 · M12-FR-03). Amounts in paise. */
+export interface SplitPart {
+  readonly kind: 'cash' | 'card' | 'upi' | 'loyalty_points' | 'store_credit';
+  readonly amountMinor: number;
+  /** A card/UPI part: the store computer's attempt reference it was approved under. */
+  readonly ref?: string;
+}
 import { minimumAgeOf, type CatalogueCache, type ScanBatchContext } from '../../../packages/catalogue/src/catalogue';
 import type { PosSession, SyncBadge } from './session';
 import { presentSyncBadge, type StatusPresentation } from '../../../packages/a11y/src/signals';
@@ -129,6 +137,20 @@ export interface PosView {
   }): Promise<string>;
 
   /**
+   * Take a SPLIT payment (M12-FR-03 "split tenders balance to the total"; PF-09 step 3): cash, card, UPI, loyalty points
+   * and store credit in any mix, each part an amount. A card or UPI part names the store computer's attempt it was
+   * approved under (`ref`, audit PF-06) — a part without one is not paid, so the sale does not commit. Points and store
+   * credit are decided by the store computer against its copy of the member's balances; it refuses the sale before the
+   * disk when they do not cover it, in the cashier's words. Only cash may cover more than is owed (change).
+   */
+  tenderSplit(input: {
+    readonly saleId: string;
+    readonly receiptNumber: string;
+    readonly atIsoUtc: string;
+    readonly parts: readonly SplitPart[];
+  }): Promise<string>;
+
+  /**
    * The cashier checked identification: the customer IS at least `minimumAge` (M12-FR-04 · Wave 2b PF-03). Recorded in the
    * basket in the signed-in person's name, so the next scan of an item needing that age or less goes on. Throws when
    * nobody is signed in (`NoOperatorError`, with `laneMessage`).
@@ -136,6 +158,10 @@ export interface PosView {
   confirmAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer;
   /** The customer could not show they are old enough: the item is not sold, and the refusal is kept as evidence. */
   refuseAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer;
+  /** Name (or clear, with null) the loyalty member on this bill by mobile number (PF-09 step 2). */
+  setLoyaltyMobile(raw: string | null): { readonly ok: boolean; readonly last4?: string; readonly laneMessage?: string };
+  /** The last four digits of the member on this bill, or null. */
+  loyaltyMemberLast4(): string | null;
   /** The highest age this basket's customer has been confirmed to be (0 = not checked). */
   ageConfirmedAtLeast(): number;
 
@@ -224,6 +250,14 @@ export function createPosView(
       return session.refuseAge(minimumAge, atIsoUtc, productId);
     },
 
+    setLoyaltyMobile(raw: string | null) {
+      return session.setLoyaltyMobile(raw);
+    },
+
+    loyaltyMemberLast4(): string | null {
+      return session.loyaltyMemberLast4();
+    },
+
     ageConfirmedAtLeast(): number {
       return session.ageConfirmedAtLeast();
     },
@@ -283,6 +317,19 @@ export function createPosView(
       const status: Tender['status'] = input.outcome === 'approved' ? 'authorized'
         : input.outcome === 'declined' ? 'declined' : 'uncertain';
       const tenders: Tender[] = [{ kind: input.kind, amount: payable, status, ...(input.ref === undefined ? {} : { ref: input.ref }) }];
+      const sale = await session.commit(input.saleId, input.receiptNumber, input.atIsoUtc, tenders);
+      return sale.number;
+    },
+
+    async tenderSplit(input): Promise<string> {
+      const currency = session.totals().payable.currency;
+      const tenders: Tender[] = input.parts.map((part) => ({
+        kind: part.kind,
+        amount: money(part.amountMinor, currency),
+        // A card/UPI part is paid only on the attempt the store computer recorded as approved; without it, not paid.
+        status: part.kind === 'card' || part.kind === 'upi' ? (part.ref === undefined || part.ref === '' ? 'uncertain' : 'authorized') : 'settled',
+        ...(part.ref === undefined || part.ref === '' ? {} : { ref: part.ref }),
+      }));
       const sale = await session.commit(input.saleId, input.receiptNumber, input.atIsoUtc, tenders);
       return sale.number;
     },

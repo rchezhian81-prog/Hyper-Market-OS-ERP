@@ -105,6 +105,18 @@ export const SETTINGS = {
     defaultValue: 0,
   } as TenantSetting<number>,
   /**
+   * The most one loyalty member may spend at the till — points at their value plus store credit — on one store computer
+   * in one trading day, in paise (PF-09 step 3 · M17-FR-01 / M17-FR-03 "offline burn within caps to prevent
+   * double-spend"). The store computer decides a spend against its copy of head office's balances, which another store
+   * computer or the app may be spending at the same moment; this limit bounds what such a race can cost. ZERO by default,
+   * and zero means spending at the till is OFF — the owner sets the limit; this codebase never assumes one.
+   */
+  LOYALTY_TILL_SPEND_CAP_PAISE: {
+    key: 'loyalty.till_spend_cap_paise',
+    label: 'Most a loyalty member may spend at the till per day, points plus store credit (paise; 0 = off)',
+    defaultValue: 0,
+  } as TenantSetting<number>,
+  /**
    * The in-store production departments this tenant actually operates
    * (OB-04 / AVR-12). Empty by default: the roadmap's rule is that a module is
    * never built or enabled for a department the store does not have (§2.2).

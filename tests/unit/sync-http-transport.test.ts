@@ -314,6 +314,14 @@ describe('retryable versus rejected — the distinction that decides whether a s
     expect(r.status === 'rejected' && r.reason).not.toContain('cannot both be right');
   });
 
+  it('Batch 2: treats a 409 `concurrent_change` (a write guard lost the race, nothing saved) as RETRYABLE — never accepted as already on file', async () => {
+    expect(classify(409, 'concurrent_change')).toBe('retryable');
+    const fetchFn = (async () => new Response(JSON.stringify({ error: { code: 'concurrent_change', wasItSaved: 'not_saved' } }), { status: 409 })) as unknown as typeof globalThis.fetch;
+    const r = await transportOn(fetchFn).send(sale());
+    expect(r.status).toBe('retryable');
+    expect(r.status === 'accepted' ? '' : r.reason).toMatch(/concurrent_change, nothing saved/);
+  });
+
   it('treats a 409 with NO readable reason as retryable — ambiguous is never assumed delivered', async () => {
     expect(classify(409)).toBe('retryable');
     const r = await transportOn(fakeFetch(409).fn).send(sale()); // body '{}' carries no error code

@@ -18,7 +18,7 @@ const FILES = {
     'P-RICE,Ponni raw rice 5 kg,each,staples,1006,450.00,420.00,360.00,8901234567890,none,IN,active',
     'P-SOAP,Dish wash bar,each,home,3402,25.00,25.00,18.00,8901234567891|INT-77,,,active',
   ].join('\n'),
-  'suppliers.csv': ['supplier_code,supplier_name,gstin', 'SUP-1,Kaveri Traders,33AAAAA0000A1Z5'].join('\n'),
+  'suppliers.csv': ['supplier_code,supplier_name,gstin', 'SUP-1,Kaveri Traders,33AAAAA0000A1Z9'].join('\n'),
   'customers.csv': ['customer_code,loyalty_points', 'C-1,120', 'C-2,'].join('\n'),
   'opening-stock.csv': ['item_code,qty,uom,cost,batch,expiry', 'P-RICE,40,each,360.00,B1,2027-03-31', 'P-SOAP,200,each,18.00,,'].join('\n'),
 } as const;

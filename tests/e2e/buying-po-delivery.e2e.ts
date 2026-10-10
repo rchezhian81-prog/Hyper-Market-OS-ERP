@@ -273,6 +273,23 @@ describe.skipIf(!HAVE_BROWSER)('buyer PO-propose delivery, end to end in a real 
     }
   });
 
+  it('PA-06 part 3b: with nobody signed in the screen names nobody, says so, and saves nothing under a stand-in name', async () => {
+    const rec: Recorder = { buyingData: { buyerId: null, productIds: ['p1', 'p2'] }, orderStatus: 201, orderBody: {}, requests: [] };
+    const srv = await startShellAndCloud(rec);
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await page.goto(`${srv.base}/`, { waitUntil: 'load' });
+      await page.waitForSelector('#gaps:not([hidden])', { timeout: 10_000 });
+      expect((await page.textContent('#gaps-list')) ?? '').toMatch(/Nobody is signed in/);
+      expect(await page.evaluate(() => (globalThis as unknown as BrowserGlobals).buyingSession === undefined)).toBe(true);
+      expect((await page.textContent('#whoami')) ?? '').toBe('');
+      expect(rec.requests).toHaveLength(0);
+    } finally {
+      await context.close(); await srv.stop();
+    }
+  });
+
   it('the buyer\'s capture never offers a checker, even when the box sends an approvers list (§28)', async () => {
     const rec: Recorder = {
       // The box still serves an approvers list (other flows read it). The invoice capture must ignore it:

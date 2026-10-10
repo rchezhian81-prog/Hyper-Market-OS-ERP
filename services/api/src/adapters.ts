@@ -54,6 +54,10 @@ import type { RecallDeps } from '../../inventory/src/recall';
 import { RecallRegistry, type RecallRecord } from '../../../packages/traceability/src/index';
 import type { QualityHoldDeps } from '../../inventory/src/quality-hold';
 import type { LoyaltyMemberDeps, LoyaltyRule, MemberRecord } from '../../customer/src/loyalty-members';
+import type { LoyaltyWalletDeps, SpendApplied } from '../../customer/src/loyalty-wallets';
+import type { LoyaltyLiabilityDeps } from '../../finance/src/loyalty-liability';
+import { fulfilCompensation, type FulfilmentPorts, type CompensationFulfilment } from '../../customer/src/compensation-fulfilment';
+import { monthEvidence, type IndependentEvidenceDeps, type ImportedStatement } from '../../finance/src/independent-evidence';
 import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack } from '../../customer/src/loyalty-effects';
 import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
 import type { QualityHold } from '../../../packages/quality/src/index';
@@ -91,10 +95,10 @@ import type { Bin, BinContents } from '../../../packages/warehouse/src/movements
 import { binKey } from '../../../packages/warehouse/src/movements';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
-import type { AvailableLot, Transfer, TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import { shortfallLinesOf, type AvailableLot, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
-import type { ProductionDeps, StoredRun, StoredRelease } from '../../inventory/src/production';
+import { recipeDigest, type ProductionDeps, type StoredRun, type StoredRelease } from '../../inventory/src/production';
 import type { WeighedCostingDeps, StoredWeighedRun } from '../../inventory/src/weighed-costing';
 import type { Recipe } from '../../../packages/production/src/recipe';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine, PartnerAuditEntry } from '../../purchase/src/supplier-portal';
@@ -172,7 +176,7 @@ import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } from '../../../packages/audit/src/index';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
-import { project, projectBatches, EFFECT_ON_HAND } from '../../inventory/src/index';
+import { project, projectBatches, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
@@ -202,11 +206,11 @@ import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../fi
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
-import type { ConcessionTagDeps } from '../../finance/src/concession-tags';
+import type { ConcessionTagDeps, ConcessionTradingBreach } from '../../finance/src/concession-tags';
 import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlertRules } from '../../platform/src/observed-health';
 import type { DocumentTemplateDeps, DocumentTemplateVersion } from '../../platform/src/document-templates';
 import { adapterHealth } from '../../../packages/integration/src/index';
-import type { DayBookSale } from '../../../packages/finance/src/index';
+import type { DayBookSale, DayBookLoyalty } from '../../../packages/finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
@@ -225,6 +229,7 @@ import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import type { CouponDeps } from '../../customer/src/coupons';
 import type { Coupon, Redemption } from '../../../packages/loyalty/src/coupons';
+import { balanceOf } from '../../../packages/loyalty/src/stored-value';
 import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
 import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalogue';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
@@ -2377,9 +2382,11 @@ export function posAdapter(input: {
     },
 
     recordExceptions: async (tenantId, exceptions) => {
-      for (const [i, ex] of exceptions.entries()) {
+      for (const ex of exceptions) {
         await input.store.append(tenantId, STREAM.saleExceptions, makeEvent({
-          id: `saleex-${ex.saleId}-${i}`,
+          // The kind, not the position, names it: a later finding on the same sale (a loyalty spend that could not be
+          // covered, PF-09 step 3) must not collide with the intake's own first finding.
+          id: `saleex-${ex.saleId}-${ex.kind}`,
           type: 'SaleExceptionRaised',
           occurredAt: input.now(),
           idempotencyKey: `saleex-${tenantId}-${ex.saleId}-${ex.kind}`,
@@ -2652,7 +2659,9 @@ export function nearExpiryAdapter(input: { readonly store: EventStore; readonly 
   return {
     now: input.now,
     nearExpiry: async (tenantId, opts) => {
-      const moves = (await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })).map((e) => payloadOf<Movement>(e));
+      const moves = (await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })).map((e) => payloadOf<Movement>(e))
+        // PA-01-r1: a branch-limited read folds only its own locations' receipts, sales and waste.
+        .filter((m) => opts.covers === undefined || opts.covers(m.locationId));
       const receipts: ReceiptWithExpiry[] = moves
         .filter((m) => m.kind === 'received' && typeof m.batchId === 'string' && m.batchId !== '')
         .map((m) => ({
@@ -2714,6 +2723,10 @@ export function salesHistoryAdapter(input: { readonly store: EventStore; readonl
 export const refundGuardKey = (saleId: string): string => `refund:${saleId}`;
 /** The write-guard key for everything that leaves one location's stock by transfer (Wave 2a · SF-04). */
 export const stockGuardKey = (locationId: string): string => `stock:${locationId}`;
+/** Batch 2: one plain transfer's own write guard — two resolutions of its shortfall cannot both land. */
+export const transferGuardKey = (transferId: string): string => `transfer:${transferId}`;
+/** Batch 2: one floor indent's own write guard — two counts (or two resolutions) of one issue cannot both land. */
+export const indentGuardKey = (indentId: string): string => `indent:${indentId}`;
 /** SF-02 — a purchase order's write guard: every receipt, cancellation, amendment and posting against it moves it. */
 export const purchaseOrderGuardKey = (poId: string): string => `purchase-order:${poId}`;
 
@@ -3488,7 +3501,7 @@ export function concessionAdapter(input: {
           ms.map((m): ValuationMovement => ({
             productId: m.productId, locationId: m.locationId,
             effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-            isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
             ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
           })),
           'INR',
@@ -4243,6 +4256,9 @@ export function auditTrailAdapter(input: { readonly store: EventStore }): AuditT
  * per node id (a company/branch/warehouse/department can be edited and activated; append-only, hard rule
  * #2); GST registrations are one per GSTIN. The hierarchy rules run in the route on the tested engine.
  */
+/** An org node as one canonical string (its fields in name order) — what "the same node" means for PA-05. */
+const nodeJson = (n: OrgNode): string => JSON.stringify(Object.keys(n).sort().map((k) => [k, (n as unknown as Record<string, unknown>)[k]]));
+
 export function orgStructureAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -4269,13 +4285,21 @@ export function orgStructureAdapter(input: {
       return [...byGstin.values()];
     },
     recordNode: async (tenantId, node) => {
+      // Audit PA-05: the key used to be the node's STRUCTURE (kind, parent, company, GSTIN, status) without its name, so a
+      // rename collapsed into the earlier record as a "duplicate" — the route said 201 and the old name stayed. Now:
+      // exactly what is held already → nothing to record; anything else (a rename, a rename BACK, an activation) is a new
+      // version of the node, keyed on its version number and its whole content. The latest-wins fold reads it.
+      const versions = (await input.store.readStream(tenantId, ORG_NODES_STREAM, { type: 'OrgNodeSet' }))
+        .map((e) => payloadOf<OrgNode>(e)).filter((n) => n.nodeId === node.nodeId);
+      const held = versions[versions.length - 1];
+      if (held !== undefined && nodeJson(held) === nodeJson(node)) return;
+      const version = versions.length + 1;
+      const digest = createHash('sha256').update(nodeJson(node)).digest('hex').slice(0, 16);
       await input.store.append(tenantId, ORG_NODES_STREAM, makeEvent({
-        id: `org-node-${node.nodeId}-${node.status}`,
+        id: `org-node-${node.nodeId}-v${version}`,
         type: 'OrgNodeSet',
         occurredAt: input.now(),
-        // Keyed on the node + its shape + status: re-sending the same state collapses, an edit or an
-        // activation is a new fact the latest-wins fold takes.
-        idempotencyKey: `org-node-${tenantId}-${node.nodeId}-${node.kind}-${node.parentId ?? 'root'}-${node.companyId ?? 'none'}-${node.gstin ?? 'none'}-${node.status}`,
+        idempotencyKey: `org-node-${tenantId}-${node.nodeId}-v${version}-${digest}`,
         source: 'api/platform',
         payload: node,
       }));
@@ -4458,7 +4482,8 @@ async function permissionsHeldBy(store: EventStore, tenantId: string, userId: st
  * `transferred_in` that arrived with the sending location's unit cost recorded at dispatch — the value that left the
  * source is the value that enters the destination. Every valuation reader maps through this ONE rule.
  */
-const carriesCost = (m: Movement): boolean => m.kind === 'received' || (m.kind === 'transferred_in' && m.unitCostMinor !== undefined);
+const carriesCost = (m: Movement): boolean => m.kind === 'received'
+  || ((m.kind === 'transferred_in' || m.kind === 'produced') && m.unitCostMinor !== undefined); // FUL-01: a released batch enters at the run's cost
 
 /**
  * The cloud's own unit cost for a product (SP-2b · F07): the weighted average of what it cost to buy, folded from the
@@ -4473,7 +4498,7 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
   const rows = weightedAverageValuation(
     moves.map((m): ValuationMovement => ({
       productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-      isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
     })),
     'INR',
@@ -5280,6 +5305,39 @@ export function transfersAdapter(input: {
     recordReceived: async (tenantId, transfer, movements, discrepancies, posted) => {
       await input.store.appendBatch(tenantId, transferBatch(tenantId, transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted, input.now()), posted));
     },
+
+    // Batch 2: the valued shortfall the transfer's own receipt record raised.
+    shortfallOf: async (tenantId, transferId) => {
+      for (const e of await input.store.readStream(tenantId, transfersStream, { type: 'TransferReceived' })) {
+        const p = payloadOf<{ transfer: Transfer; discrepancies?: readonly TransferDiscrepancy[] }>(e);
+        if (p.transfer.transferId === transferId) return shortfallLinesOf(p.discrepancies ?? []);
+      }
+      return [];
+    },
+    // Batch 2: a transfer some floor indent's issue travels on — resolved on the indent, never twice.
+    belongsToIndent: async (tenantId, transferId) => {
+      for (const e of await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'indents'))) {
+        if ((e.event.payload as { indent?: FloorIndent }).indent?.issues.some((i) => i.transferId === transferId) === true) return true;
+      }
+      return false;
+    },
+    transferVersion: (tenantId, transferId) => input.store.guardVersion(tenantId, transferGuardKey(transferId)),
+    // Batch 2: the resolved transfer and the found units' `adjusted` movements, one atomic batch under the transfer's guard.
+    recordShortfallResolved: async (tenantId, transfer, posted, expectedVersion) => {
+      const at = input.now();
+      const digest = createHash('sha256').update(JSON.stringify(transfer.shortfallResolution ?? null)).digest('hex').slice(0, 16);
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: transfersStream,
+          event: makeEvent({
+            id: `transfer-shortfall-resolved-${transfer.transferId}`, type: 'TransferShortfallResolved', occurredAt: at,
+            idempotencyKey: `transfer-shortfall-resolved-${tenantId}-${transfer.transferId}-${digest}`, source: 'api/inventory',
+            payload: { transfer },
+          }),
+        },
+        ...movementEntries(tenantId, posted),
+      ], expectedVersion === undefined ? undefined : { guard: { key: transferGuardKey(transfer.transferId), expectedVersion } });
+    },
   };
 }
 
@@ -5323,6 +5381,10 @@ export function floorIndentsAdapter(input: {
     }),
   });
 
+  /** Batch 2: a guarded step's key suffix — the version it was decided on and a digest of the aggregate it records. */
+  const guardedSub = (sub: string, indent: FloorIndent, expectedVersion: number | undefined): string =>
+    expectedVersion === undefined ? sub : `${sub}-v${expectedVersion}-${createHash('sha256').update(JSON.stringify(indent)).digest('hex').slice(0, 16)}`;
+
   return {
     now: input.now,
     indent: async (tenantId, indentId) => (await foldIndents(tenantId)).get(indentId),
@@ -5353,11 +5415,18 @@ export function floorIndentsAdapter(input: {
       await input.store.append(tenantId, indentsStream, stepEvent(tenantId, type, indent, step, sub, at).event);
     },
     // An ISSUE: the indent step, the transfer proposed + dispatched, and the `transferred_out` movements — one atomic batch.
-    recordIssued: async (tenantId, indent, transfer, movements, posted, binMovements = []) => {
+    // Batch 2 · the write guards on the chain: the back store's stock guard (the SAME key a transfer dispatch takes, SF-04)
+    // and the indent's own.
+    stockVersion: (tenantId, locationId) => input.store.guardVersion(tenantId, stockGuardKey(locationId)),
+    indentVersion: (tenantId, indentId) => input.store.guardVersion(tenantId, indentGuardKey(indentId)),
+    recordIssued: async (tenantId, indent, transfer, movements, posted, binMovements = [], expectedStockVersion) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
-        stepEvent(tenantId, 'FloorIndentIssued', indent, 'issued', issue?.issueId ?? transfer.transferId, at),
+        // A guarded step's key carries a digest of what it records (Batch 2): two DIFFERENT writes racing under one issue id
+        // cannot both dedupe into a silent "success" — the loser stages its own step, meets the moved guard and is refused by
+        // name. (An exact replay never reaches here: the route answers "already issued" from the record first.)
+        stepEvent(tenantId, 'FloorIndentIssued', indent, 'issued', guardedSub(issue?.issueId ?? transfer.transferId, indent, expectedStockVersion), at),
         { stream: TRANSFERS_STREAM, event: transferProposedEvent(tenantId, { ...transfer, state: 'proposed', approvedBy: undefined, dispatchedAt: undefined, lineCostsMinor: undefined }, at) },
         { stream: TRANSFERS_STREAM, event: transferDispatchedEvent(tenantId, transfer, movements, posted, at) },
         ...movementEntries(tenantId, posted),
@@ -5367,18 +5436,18 @@ export function floorIndentsAdapter(input: {
           stream: warehouseMovementsStream,
           event: makeEvent({ id: `wh-move-${m.commandId}`, type: 'WarehouseMovementRecorded', occurredAt: at, idempotencyKey: `wh-move-${tenantId}-${m.commandId}`, source: 'api/inventory', payload: { commandId: m.commandId, movements: m.movements } }),
         })),
-      ]);
+      ], expectedStockVersion === undefined ? undefined : { guard: { key: stockGuardKey(transfer.fromLocationId), expectedVersion: expectedStockVersion } });
     },
     // A floor RECEIPT: the indent step, the received transfer and the `transferred_in` movements — one atomic batch.
-    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted) => {
+    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
-        stepEvent(tenantId, 'FloorIndentReceived', indent, 'received', issue?.issueId ?? transfer.transferId, at),
+        stepEvent(tenantId, 'FloorIndentReceived', indent, 'received', guardedSub(issue?.issueId ?? transfer.transferId, indent, expectedIndentVersion), at),
         // The transfer's own record carries what it brought IN; a damaged write-off (SP-8c) rides the same batch as a movement only.
         { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted.filter((m) => m.kind === 'transferred_in'), at) },
         ...movementEntries(tenantId, posted),
-      ]);
+      ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
     // A RETURN accepted at the back store: the indent step and the return's transfer proposed, dispatched and received in
     // one step — a trolley walk — with the `transferred_out` (floor) and `transferred_in` (back store) movements.
@@ -5393,6 +5462,15 @@ export function floorIndentsAdapter(input: {
         { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, receiveMovements, discrepancies, posted.filter((m) => m.kind === 'transferred_in'), at) },
         ...movementEntries(tenantId, posted),
       ]);
+    },
+    // Batch 2: a shortfall RESOLVED — the indent step and the found units' compensating `adjusted` movements, one atomic batch
+    // (each idempotent on its own key, so a replay posts nothing twice).
+    recordShortfallResolved: async (tenantId, indent, issueId, posted, expectedIndentVersion) => {
+      const at = input.now();
+      await input.store.appendBatch(tenantId, [
+        stepEvent(tenantId, 'FloorIndentShortfallResolved', indent, 'shortfall-resolved', guardedSub(issueId, indent, expectedIndentVersion), at),
+        ...movementEntries(tenantId, posted),
+      ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
   };
 }
@@ -5638,17 +5716,26 @@ export function productionAdapter(input: {
       return latest;
     },
 
+    // FUL-08: an explicit VERSION per recipe, judged by a digest over the COMPLETE recipe. The same recipe as the current
+    // version collapses; any change — even 100 g → 150 g flour with the same number of inputs — is the next version, kept
+    // beside the earlier ones. Returning to an older recipe is a new version too (never a silent collapse onto history).
     recordRecipe: async (tenantId, recipe) => {
+      const digest = recipeDigest(recipe);
+      const history = (await allOf<Recipe & { readonly digest?: string; readonly version?: number }>(input.store, tenantId, productionStream, 'RecipeRegistered'))
+        .filter((r) => r.recipeId === recipe.recipeId);
+      const current = history.at(-1);
+      const currentDigest = current === undefined ? undefined : current.digest ?? recipeDigest(current);
+      if (currentDigest === digest) return { version: current?.version ?? history.length, digest, changed: false };
+      const version = history.length + 1;
       await input.store.append(tenantId, productionStream, makeEvent({
-        id: `recipe-${recipe.recipeId}`,
+        id: `recipe-${recipe.recipeId}-v${version}`,
         type: 'RecipeRegistered',
         occurredAt: input.now(),
-        // A light signature in the key so re-registering the SAME recipe collapses, but a genuinely
-        // changed recipe (different output, input count or shelf life) is a new fact and supersedes.
-        idempotencyKey: `recipe-${tenantId}-${recipe.recipeId}-${recipe.outputQuantityMinor}-${recipe.inputs.length}-${recipe.shelfLifeHours}`,
+        idempotencyKey: `recipe-${tenantId}-${recipe.recipeId}-v${version}-${digest}`,
         source: 'api/inventory',
-        payload: recipe,
+        payload: { ...recipe, digest, version },
       }));
+      return { version, digest, changed: true };
     },
 
     ingredientCost: async (tenantId, productId) => {
@@ -5676,10 +5763,11 @@ export function productionAdapter(input: {
       return here?.onHandMinor ?? 0;
     },
 
+    // FUL-01: only runs recorded BEFORE production posted its consumption to M08 — a newer run's flour is already off the ledger.
     priorConsumption: async (tenantId, locationId) => {
       const consumed: Record<string, number> = {};
       for (const run of await foldRuns(tenantId)) {
-        if (run.locationId !== locationId) continue;
+        if (run.locationId !== locationId || run.ledgerMovementIds !== undefined) continue;
         for (const c of run.consumed) consumed[c.productId] = (consumed[c.productId] ?? 0) + c.quantityMinor;
       }
       return consumed;
@@ -5692,30 +5780,46 @@ export function productionAdapter(input: {
 
     run: async (tenantId, runId) => (await foldRuns(tenantId)).find((r) => r.runId === runId),
 
-    recordRun: async (tenantId, run) => {
-      await input.store.append(tenantId, productionStream, makeEvent({
-        id: `prod-run-${run.runId}`,
-        type: 'ProductionRunCommitted',
-        occurredAt: run.at,
-        // The run's own id — a re-sent run collapses rather than consuming the ingredients twice
-        // (append-only, #2). A re-make is a NEW run id.
-        idempotencyKey: `prod-run-${tenantId}-${run.runId}`,
-        source: 'api/inventory',
-        payload: run,
-      }));
+    // FUL-01: the run record and its ingredients' M08 movements commit together, under the location's stock guard.
+    recordRun: async (tenantId, run, movements, expectedStockVersion) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: productionStream,
+          event: makeEvent({
+            id: `prod-run-${run.runId}`,
+            type: 'ProductionRunCommitted',
+            occurredAt: run.at,
+            // The run's own id — a re-sent run collapses rather than consuming the ingredients twice
+            // (append-only, #2). A re-make is a NEW run id.
+            idempotencyKey: `prod-run-${tenantId}-${run.runId}`,
+            source: 'api/inventory',
+            payload: run,
+          }),
+        },
+        ...movementEntries(tenantId, movements),
+      ], expectedStockVersion === undefined ? undefined : { guard: { key: stockGuardKey(run.locationId), expectedVersion: expectedStockVersion } });
     },
 
-    recordRelease: async (tenantId, release) => {
-      await input.store.append(tenantId, productionStream, makeEvent({
-        id: `prod-release-${release.runId}`,
-        type: 'ProductionBatchReleased',
-        occurredAt: release.releasedAt,
-        // The run's own id — a re-sent release collapses (append-only, #2); the batch is released once.
-        idempotencyKey: `prod-release-${tenantId}-${release.runId}`,
-        source: 'api/inventory',
-        payload: release,
-      }));
+    // FUL-01: the release record and the finished batch's `produced` movement commit together.
+    recordRelease: async (tenantId, release, movements) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: productionStream,
+          event: makeEvent({
+            id: `prod-release-${release.runId}`,
+            type: 'ProductionBatchReleased',
+            occurredAt: release.releasedAt,
+            // The run's own id — a re-sent release collapses (append-only, #2); the batch is released once.
+            idempotencyKey: `prod-release-${tenantId}-${release.runId}`,
+            source: 'api/inventory',
+            payload: release,
+          }),
+        },
+        ...movementEntries(tenantId, movements),
+      ]);
     },
+
+    stockVersion: (tenantId, locationId) => input.store.guardVersion(tenantId, stockGuardKey(locationId)),
 
     enabledDepartments: async (tenantId) => {
       const enabled = await allOf<{ departmentId: string }>(input.store, tenantId, productionStream, 'ProductionDepartmentEnabled');
@@ -5845,7 +5949,7 @@ export function settlementAdapter(input: {
 
     importedBatchIds: async (tenantId) => (await batches(tenantId)).map((b) => b.batchId),
 
-    recordBatch: async (tenantId, batch) => {
+    recordBatch: async (tenantId, batch, provenance) => {
       await input.store.append(tenantId, STREAM.settlement, makeEvent({
         id: `settle-batch-${batch.batchId}`,
         type: 'SettlementBatchImported',
@@ -5855,7 +5959,8 @@ export function settlementAdapter(input: {
         // backstop at the ledger, where the guarantee actually has to hold.)
         idempotencyKey: `settle-batch-${tenantId}-${batch.batchId}`,
         source: 'api/finance',
-        payload: batch,
+        // Who brought the file in, and when (PF-12): independent evidence keeps its provenance.
+        payload: provenance === undefined ? batch : { ...batch, provenance },
       }));
     },
 
@@ -5938,7 +6043,8 @@ export function goodsReceiptAdapter(input: {
   const fold = async (tenantId: string): Promise<readonly GrnRecord[]> => {
     const byId = new Map<string, GrnRecord>();
     for (const e of await input.store.readStream(tenantId, grnStream)) {
-      if (e.event.type === 'GoodsReceived' || e.event.type === 'GoodsReceiptExcessDecided' || e.event.type === 'GoodsReceiptLineDisposed' || e.event.type === 'GoodsReceiptExcessReturned') {
+      if (e.event.type === 'GoodsReceived' || e.event.type === 'GoodsReceiptExcessDecided' || e.event.type === 'GoodsReceiptLineDisposed' || e.event.type === 'GoodsReceiptExcessReturned'
+        || e.event.type === 'GoodsReceiptLineReturned') {
         const g = payloadOf<GrnRecord>(e);
         byId.set(g.grnId, g);
       }
@@ -6026,6 +6132,17 @@ export function goodsReceiptAdapter(input: {
         },
         ...movements.map((m) => movementEvent(tenantId, m)),
       ]);
+    },
+    // Batch 2: a quarantined line's physical return to the supplier — the receipt's next state, once per line.
+    commitLineReturn: async (tenantId, record, key) => {
+      await input.store.append(tenantId, grnStream, makeEvent({
+        id: `grn-line-return-${key}`,
+        type: 'GoodsReceiptLineReturned',
+        occurredAt: record.lineReturns?.at(-1)?.returnedAt ?? input.now(),
+        idempotencyKey: `grn-line-return-${tenantId}-${key}`,
+        source: 'api/inventory',
+        payload: record,
+      }));
     },
     // The product master's word on tracking (F03): the published catalogue is the master the whole estate runs on.
     // Wave 3 · SF-07: batch tracking from the published catalogue (F03, as before); the handling class and cold-chain limits
@@ -6161,6 +6278,31 @@ export function inventoryAdapter(input: {
     // transfers' own discrepancy records. Listed beside negative stock until a person owns it (P-08, #10).
     transferShortfalls: async (tenantId) => {
       const received = await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'transfers'), { type: 'TransferReceived' });
+      // Batch 2: a floor-indent shortfall a second person RESOLVED stays listed, beside its resolution (hard rule #6).
+      const resolvedByTransfer = new Map<string, NonNullable<TransferShortfall['resolution']>>();
+      for (const e of await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'indents'), { type: 'FloorIndentShortfallResolved' })) {
+        for (const issue of payloadOf<{ indent: FloorIndent }>(e).indent.issues) {
+          const r = issue.shortfallResolution;
+          if (r === undefined) continue;
+          for (const l of r.lines) {
+            resolvedByTransfer.set(`${issue.transferId}\u001f${l.productId}\u001f${l.batchId ?? ''}`, {
+              resolvedBy: r.resolvedBy, resolvedAt: r.resolvedAt, reasonCode: r.reasonCode, note: r.note,
+              foundMinor: l.foundMinor, lostMinor: l.lostMinor, lostValueMinor: l.lostValueMinor, movementIds: r.movementIds,
+            });
+          }
+        }
+      }
+      for (const e of await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'transfers'), { type: 'TransferShortfallResolved' })) {
+        const t = payloadOf<{ transfer: Transfer }>(e).transfer;
+        const r = t.shortfallResolution;
+        if (r === undefined) continue;
+        for (const l of r.lines) {
+          resolvedByTransfer.set(`${t.transferId}\u001f${l.productId}\u001f${l.batchId ?? ''}`, {
+            resolvedBy: r.resolvedBy, resolvedAt: r.resolvedAt, reasonCode: r.reasonCode, note: r.note,
+            foundMinor: l.foundMinor, lostMinor: l.lostMinor, lostValueMinor: l.lostValueMinor, movementIds: r.movementIds,
+          });
+        }
+      }
       const out: TransferShortfall[] = [];
       for (const e of received) {
         const p = payloadOf<{ transfer: Transfer; discrepancies?: readonly TransferDiscrepancy[] }>(e);
@@ -6170,6 +6312,7 @@ export function inventoryAdapter(input: {
             transferId: p.transfer.transferId, productId: d.productId, batchId: d.batchId, fromLocationId: p.transfer.fromLocationId, locationId: p.transfer.toLocationId,
             dispatchedMinor: d.dispatchedMinor, receivedMinor: d.receivedMinor, differenceMinor: d.differenceMinor, value: d.value,
             receivedAt: p.transfer.receivedAt ?? e.event.occurredAt, detail: d.detail,
+            resolution: resolvedByTransfer.get(`${p.transfer.transferId}\u001f${d.productId}\u001f${d.batchId ?? ''}`) ?? null,
           });
         }
       }
@@ -6192,7 +6335,7 @@ export function inventoryAdapter(input: {
         movements.map((m): ValuationMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
         'INR',
@@ -6207,16 +6350,18 @@ export function inventoryAdapter(input: {
      * reconciles to the valuation's stock value. Filtered by product BEFORE folding, so a single
      * product's ageing (and its unvalued quantity) is exactly its own.
      */
-    ageing: async (tenantId, productId) => {
+    ageing: async (tenantId, productId, covers) => {
       const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
       const movements = events
         .map((e) => payloadOf<Movement>(e))
-        .filter((m) => productId === undefined || m.productId === productId);
+        .filter((m) => productId === undefined || m.productId === productId)
+        // PA-01-r1: only the caller's locations — lots are pooled per location, so this is exactly their stock.
+        .filter((m) => covers === undefined || covers(m.locationId));
       return agedStockLots(
         movements.map((m): DatedMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
           occurredAt: m.occurredAt, batchId: m.batchId ?? null,
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
@@ -6232,10 +6377,14 @@ export function inventoryAdapter(input: {
      * two-point (opening+closing)/2. If ANY sold product has no known tax rate, net sales and gross
      * margin are left ABSENT so the route reports GMROI as not meaningful rather than guessing (P-08).
      */
-    performance: async (tenantId, { from, to }) => {
+    performance: async (tenantId, { from, to, covers }) => {
+      // PA-01-r1: a branch-limited read folds only its own locations' movements, sales and returns. A sale or return that
+      // names no location cannot be placed in a branch, so it is in no branch-limited read (only the 'all' read).
+      const placed = (locationId: unknown): boolean => covers === undefined || (typeof locationId === 'string' && covers(locationId));
       const events = await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' });
       const movements = events
         .map((e) => payloadOf<Movement>(e))
+        .filter((m) => placed(m.locationId))
         .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
       // Cumulative WAC cogs and stock value PER PRODUCT at a cut point (summed across locations).
       const foldTo = (cutoff: string): Map<string, { cogs: number; value: number; onHand: number }> => {
@@ -6245,7 +6394,7 @@ export function inventoryAdapter(input: {
             .map((m): ValuationMovement => ({
               productId: m.productId, locationId: m.locationId,
               effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-              isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
               ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
             })),
           'INR',
@@ -6273,7 +6422,8 @@ export function inventoryAdapter(input: {
       const taxUnknown = new Set<string>();
       const deGross = (grossMinor: number, taxBps: number): number => Number((BigInt(grossMinor) * 10_000n) / BigInt(10_000 + taxBps));
       for (const e of sales) {
-        const sale = payloadOf<{ readonly lines: readonly { readonly productId: string; readonly lineTotalMinor: number }[] }>(e);
+        const sale = payloadOf<{ readonly locationId?: string; readonly lines: readonly { readonly productId: string; readonly lineTotalMinor: number }[] }>(e);
+        if (!placed(sale.locationId)) continue;
         for (const line of sale.lines) {
           const taxBps = taxByProduct.get(line.productId);
           if (taxBps === undefined) { taxUnknown.add(line.productId); continue; }
@@ -6290,7 +6440,8 @@ export function inventoryAdapter(input: {
       const returnedNetByProduct = new Map<string, number>();
       const returnedCogsByProduct = new Map<string, number>();
       for (const e of returns) {
-        const ret = payloadOf<{ readonly originalSaleId: string | null; readonly refundMinor: number; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly disposition: string }[] }>(e);
+        const ret = payloadOf<{ readonly locationId?: string; readonly originalSaleId: string | null; readonly refundMinor: number; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number; readonly disposition: string }[] }>(e);
+        if (!placed(ret.locationId)) continue;
         // A no-receipt return (originalSaleId null, M13-FR-01) has no bill to price its lines from: its refund
         // is still a real reduction of net sales, so it is allocated across its lines by quantity (the only
         // weight it has) rather than dropped — P-08, never a silent zero.
@@ -7472,19 +7623,13 @@ export function financeAdapter(input: {
     },
 
     /**
-     * No control total can be built from this system alone, and saying so is the honest answer.
-     *
-     * A control total needs two figures reached two different ways — that is the whole point, and
-     * `closePeriod` refuses a pair that shares a derivation by name. Everything this API holds for
-     * a period comes down the same path: the till banks a sale, the sale becomes a journal. Adding
-     * those two up and comparing them is one figure written twice.
-     *
-     * The genuine second sources are outside: the bank statement, the filed return, the counted
-     * shelf. Until one of those is fed in, this returns nothing, the period does not close, and
-     * the refusal says why. A month that closes because nobody checked it is the outcome worth
-     * refusing — `packages/migration/src/banking-verification.ts` is the same control at migration.
+     * No control total can be built from this system ALONE, and it does not try: every check pairs a figure from the books
+     * with the same figure from OUTSIDE — the provider's settlement files and the bank's statements, imported with their
+     * provenance (Wave 5 · PF-12, `services/finance/src/independent-evidence.ts`). A month with nothing imported to compare
+     * still has no check, does not close, and the refusal says why. `closePeriod` still refuses a pair that shares a
+     * derivation by name.
      */
-    controlTotals: () => [],
+    controlTotals: async (tenantId, period) => (await independentEvidenceAdapter(input).evidenceFor(tenantId, period)).checks,
 
     /** Who posted into the month — the separation-of-duties check reads this, so it must be real. */
     postersIn: async (tenantId, period) => [...new Set(
@@ -7809,6 +7954,172 @@ export function loyaltyEffectsAdapter(input: {
       ], { guard: { key: `points:${t.memberRef}`, expectedVersion } });
     },
     now: input.now,
+  };
+}
+
+/**
+ * Loyalty wallets (PF-09 step 3): the feed the store computers pull, and the spends a banked sale applies. A spend's points
+ * leave under the member's points guard and its store credit leaves each instrument under that instrument's guard (Wave 2a),
+ * so a till spend applied here can never race a desk redemption or a take-back into a negative balance. Each spend's own
+ * fact lives on the member's spend stream — the feed lists them, so a box can tell its applied spends from its pending ones.
+ */
+const forMemberSpends = (memberRef: string): string => streamName(STREAM.loyalty, 'spends', memberRef);
+
+export function loyaltyWalletsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly rule: (tenantId: string) => Promise<LoyaltyRule> | LoyaltyRule;
+}): LoyaltyWalletDeps {
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const value = storedValueAdapter({ store: input.store, now: input.now });
+  return {
+    rule: input.rule,
+    allMembers: (tenantId) => allOf<MemberRecord>(input.store, tenantId, LOYALTY_MEMBERS, 'LoyaltyMember'),
+    pointsBalance: customers.pointsBalance,
+    pointsVersion: (tenantId, memberRef) => input.store.guardVersion(tenantId, `points:${memberRef}`),
+    storeCredit: async (tenantId, memberRef) => {
+      const mine = (await value.instrumentsForOwner(tenantId, memberRef))
+        .filter((i) => i.kind === 'store_credit')
+        // Oldest first by issue time; two issued in the same millisecond keep the order head office recorded them (the
+        // index is append-ordered and the sort is stable) — never the alphabetical order of their ids.
+        .sort((a, b) => a.issuedAt.localeCompare(b.issuedAt));
+      return Promise.all(mine.map(async (instrument) => {
+        // The guard version first, then the history it protects (Wave 2a).
+        const version = await input.store.guardVersion(tenantId, `stored-value:${instrument.instrumentId}`);
+        return { instrument, version, movements: await value.movements(tenantId, instrument.instrumentId) };
+      }));
+    },
+    spendsApplied: (tenantId, memberRef) => allOf<SpendApplied>(input.store, tenantId, forMemberSpends(memberRef), 'LoyaltySpendApplied'),
+    recordPointsSpend: async (tenantId, memberRef, m, expectedVersion) => {
+      const movement: RecordedPointsMovement = { movementId: m.movementId, customerId: memberRef, delta: -m.points, reason: 'burn', sourceRef: m.sourceRef, at: m.at };
+      await input.store.appendBatch(tenantId, [{ stream: forCustomerPoints(memberRef), event: makeEvent({
+        id: `points-${m.movementId}`, type: 'PointsMovement', occurredAt: m.at,
+        idempotencyKey: `points-${tenantId}-${m.movementId}`, source: 'api/customer', payload: movement,
+      }) }], { guard: { key: `points:${memberRef}`, expectedVersion } });
+    },
+    recordCreditSpend: async (tenantId, instrumentId, m, expectedVersion) => {
+      await value.recordMovement(tenantId, instrumentId, m, expectedVersion);
+    },
+    recordSpendApplied: async (tenantId, fact) => {
+      await input.store.append(tenantId, forMemberSpends(fact.memberRef), makeEvent({
+        id: `loyalty-spend-${fact.ref}`, type: 'LoyaltySpendApplied', occurredAt: fact.at,
+        idempotencyKey: `loyalty-spend-${tenantId}-${fact.ref}`, source: 'api/customer', payload: fact,
+      }));
+    },
+    now: input.now,
+  };
+}
+
+/**
+ * The loyalty liability, both sides (PF-09 step 3): what every member holds (their points, from their movements; every
+ * store-credit instrument's balance) and what the books carry (the credit balance of an account across every posted
+ * journal). Two derivations; the route compares them exactly.
+ */
+export function loyaltyLiabilityAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly rule: (tenantId: string) => Promise<LoyaltyRule> | LoyaltyRule;
+}): LoyaltyLiabilityDeps {
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const value = storedValueAdapter({ store: input.store, now: input.now });
+  return {
+    now: input.now,
+    outstanding: async (tenantId) => {
+      const codes = [...new Set((await allOf<MemberRecord>(input.store, tenantId, LOYALTY_MEMBERS, 'LoyaltyMember')).map((m) => m.memberRef))];
+      let points = 0;
+      for (const code of codes) points += Math.max(0, (await customers.pointsBalance(tenantId, code)) ?? 0);
+      const instruments = (await allOf<Instrument>(input.store, tenantId, STORED_VALUE_INDEX, 'StoredValueIssued')).filter((i) => i.kind === 'store_credit');
+      let storeCreditMinor = 0;
+      for (const i of instruments) storeCreditMinor += Math.max(0, balanceOf(await value.movements(tenantId, i.instrumentId), i.instrumentId));
+      return { points, pointValuePaise: (await input.rule(tenantId)).pointValuePaise, storeCreditMinor };
+    },
+    creditBalance: async (tenantId, accountCode) => {
+      const journals = await allOf<JournalEntry>(input.store, tenantId, STREAM.finance, 'JournalPosted');
+      let balance = 0;
+      for (const j of journals) for (const l of j.lines) if (l.accountCode === accountCode) balance += l.creditMinor - l.debitMinor;
+      return balance;
+    },
+  };
+}
+
+/**
+ * Independent evidence for the close (PF-12): bank statements on their own stream with their provenance, and the month's
+ * comparison built from the sales ledger's card/UPI tenders, every imported provider settlement file and every statement.
+ */
+const BANK_STATEMENTS = streamName(STREAM.settlement, 'bank-statements');
+
+export function independentEvidenceAdapter(input: { readonly store: EventStore; readonly now: () => string }): IndependentEvidenceDeps {
+  const statements = (tenantId: string) => allOf<ImportedStatement>(input.store, tenantId, BANK_STATEMENTS, 'BankStatementImported');
+  return {
+    now: input.now,
+    statements,
+    recordStatement: async (tenantId, statement) => {
+      await input.store.append(tenantId, BANK_STATEMENTS, makeEvent({
+        id: `bank-statement-${statement.statementId}`, type: 'BankStatementImported', occurredAt: statement.provenance.importedAt,
+        // The statement's own id — importing the same statement twice collapses (the route also refuses it by name).
+        idempotencyKey: `bank-statement-${tenantId}-${statement.statementId}`, source: 'api/finance', payload: statement,
+      }));
+    },
+    evidenceFor: async (tenantId, period) => {
+      const start = Date.parse(`${period}-01T00:00:00.000Z`);
+      const from = new Date(start - 2 * 86_400_000).toISOString();
+      const to = new Date(start + 33 * 86_400_000).toISOString();
+      const sales = (await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to }))
+        .map((e) => e.event.payload as IncomingSale)
+        .filter((sale) => (sale.tradingDay !== '' ? sale.tradingDay : sale.committedAt).slice(0, 7) === period);
+      const tenders = sales.flatMap((sale) => sale.tenders
+        .filter((t) => typeof t.ref === 'string' && t.ref.trim() !== '')
+        .map((t) => ({ ref: t.ref as string, kind: t.kind, amountMinor: t.amountMinor, saleId: sale.saleId })));
+      const batches = await allOf<SettlementBatch>(input.store, tenantId, STREAM.settlement, 'SettlementBatchImported');
+      return monthEvidence({ period, tenders, batches, statements: await statements(tenantId) });
+    },
+  };
+}
+
+/**
+ * PF-11: carrying a granted compensation out — store credit through the stored-value records (keyed on the
+ * compensation, so a retry issues nothing twice), points through the customer's points under their write guard — and
+ * every attempt's status on the compensation stream (append-only; the latest per compensation is its state).
+ */
+const SERVICE_FULFILMENT_STREAM = streamName(STREAM.service, 'compensation-fulfilment');
+
+export function compensationFulfilmentAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly pointValuePaise: (tenantId: string) => Promise<number>;
+}): Pick<ServiceCaseDeps, 'fulfilCompensation' | 'recordFulfilment' | 'fulfilments'> {
+  const value = storedValueAdapter({ store: input.store, now: input.now });
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const ports: FulfilmentPorts = {
+    now: input.now,
+    pointValuePaise: input.pointValuePaise,
+    issueStoreCredit: async (tenantId, instrument, opening) => {
+      if (await value.instrument(tenantId, instrument.instrumentId) !== undefined) return; // issued already — once
+      await value.recordIssue(tenantId, instrument, opening);
+    },
+    addPoints: async (tenantId, customerRef, m) => {
+      for (let attempt = 0; ; attempt += 1) {
+        const version = await input.store.guardVersion(tenantId, `points:${customerRef}`);
+        try {
+          await customers.recordPointsMovement(tenantId, customerRef, { movementId: m.movementId, customerId: customerRef, delta: m.points, reason: 'earn', sourceRef: m.sourceRef, at: m.at }, version);
+          return;
+        } catch (err) {
+          if (err instanceof ConcurrencyConflictError && attempt < 4) continue;
+          throw err;
+        }
+      }
+    },
+  };
+  return {
+    fulfilCompensation: (tenantId, i) => fulfilCompensation(ports, tenantId, i),
+    recordFulfilment: async (tenantId, f) => {
+      await input.store.append(tenantId, SERVICE_FULFILMENT_STREAM, makeEvent({
+        id: `comp-fulfil-${f.compensationId}-${f.at}`, type: 'CompensationFulfilment', occurredAt: f.at,
+        idempotencyKey: `comp-fulfil-${tenantId}-${f.compensationId}-${f.status}-${f.at}`, source: 'api/customer', payload: f,
+      }));
+    },
+    fulfilments: async (tenantId, caseId) =>
+      (await allOf<CompensationFulfilment>(input.store, tenantId, SERVICE_FULFILMENT_STREAM, 'CompensationFulfilment')).filter((f) => f.caseId === caseId),
   };
 }
 
@@ -10579,8 +10890,34 @@ export function dayBookAdapter(input: { readonly store: EventStore; readonly now
     exceptionsOn: async (tenantId, day) =>
       (await allOf<DayBookExceptionRecord>(input.store, tenantId, STREAM.finance, 'DayBookExceptionRaised'))
         .filter((e) => e.tradingDay === day),
+    // PF-09 step 3: the points the day's sales earned and the day's returns took back, valued at the earn's point value.
+    loyaltyOn: async (tenantId, sales, returns) => {
+      const factsOf = async (saleId: string) => {
+        const events = await input.store.readStream(tenantId, streamName(STREAM.loyalty, 'sale', saleId));
+        const earn = events.find((e) => e.event.type === 'LoyaltySaleEarned');
+        return {
+          earn: earn === undefined ? undefined : payloadOf<SaleEarn>(earn),
+          takeBacks: events.filter((e) => e.event.type === 'LoyaltyReturnTakenBack').map((e) => payloadOf<ReturnTakeBack>(e)),
+        };
+      };
+      const out: DayBookLoyalty[] = [];
+      for (const sale of sales) {
+        const { earn } = await factsOf(sale.saleId);
+        if (earn !== undefined && earn.points > 0) out.push({ sourceId: `earn:${sale.saleId}`, kind: 'earn', points: earn.points, valueMinor: earn.points * (earn.pointValuePaise ?? 0) });
+      }
+      for (const ret of returns) {
+        if (ret.originalSaleId === null) continue;
+        const { earn, takeBacks } = await factsOf(ret.originalSaleId);
+        const t = takeBacks.find((x) => x.returnId === ret.returnId);
+        if (earn !== undefined && t !== undefined && t.taken > 0) out.push({ sourceId: `takeback:${ret.returnId}`, kind: 'takeback', points: t.taken, valueMinor: t.taken * (earn.pointValuePaise ?? 0) });
+      }
+      return out;
+    },
   };
 }
+
+/** PF-13: concession lines taken on a day their counter could not trade — one tenant-wide stream, kept for a person. */
+const CONCESSION_TRADING_BREACHES = streamName(STREAM.settlement, 'concession-trading-breaches');
 
 // ── Concession docket tags (M27-FR-03) ────────────────────────────────────────────────────────
 // Every capture and every correction is an appended version of the tag on the contract's tag stream;
@@ -10601,6 +10938,22 @@ export function concessionTagsAdapter(input: { readonly store: EventStore; reado
       }
       return contracts;
     },
+    allContracts: async (tenantId) => {
+      const indexed = await allOf<{ readonly contractId: string }>(input.store, tenantId, CONCESSION_CONTRACT_INDEX, 'ConcessionContractIndexed');
+      const contracts: ConcessionContract[] = [];
+      for (const contractId of [...new Set(indexed.map((c) => c.contractId))]) {
+        const c = await latest<ConcessionContract>(input.store, tenantId, forConcession(contractId), 'ConcessionContractSet');
+        if (c !== undefined) contracts.push(c);
+      }
+      return contracts;
+    },
+    recordTradingBreach: async (tenantId, breach) => {
+      await input.store.append(tenantId, CONCESSION_TRADING_BREACHES, makeEvent({
+        id: `concession-breach-${breach.tagId}`, type: 'ConcessionTradingBreach', occurredAt: breach.recordedAt,
+        idempotencyKey: `concession-breach-${tenantId}-${breach.tagId}`, source: 'api/finance', payload: breach,
+      }));
+    },
+    tradingBreaches: (tenantId) => allOf<ConcessionTradingBreach>(input.store, tenantId, CONCESSION_TRADING_BREACHES, 'ConcessionTradingBreach'),
     appendTag: async (tenantId, tag) => {
       const version = tag.history.length;
       await input.store.append(tenantId, forConcessionTags(tag.contractId), makeEvent({

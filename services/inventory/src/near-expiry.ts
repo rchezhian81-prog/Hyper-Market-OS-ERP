@@ -7,13 +7,16 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { ExpiryActionItem } from '../../../packages/fefo/src/index';
+import { stockReadScope, type LocationBranches } from './location-scope';
 
 export interface NearExpiryDeps {
   /** Fold the ledger to the batches on hand now that are expired or within `nearExpiryDays` of expiry. */
   readonly nearExpiry: (
     tenantId: string,
-    opts: { readonly asOf: string; readonly nearExpiryDays: number },
+    opts: { readonly asOf: string; readonly nearExpiryDays: number; readonly covers?: (locationId: string) => boolean },
   ) => Promise<readonly ExpiryActionItem[]> | readonly ExpiryActionItem[];
+  /** PA-01-r1: which branch a location belongs to (the org hierarchy); absent → a location is its own branch key. */
+  readonly locationBranches?: LocationBranches;
   readonly now: () => string;
 }
 
@@ -39,7 +42,8 @@ export function nearExpiryRoutes(deps: NearExpiryDeps): readonly Route[] {
             nextSafeAction: 'Call GET /v1/inventory/near-expiry?withinDays=7 — a read never changes anything.',
           });
         }
-        const items = await deps.nearExpiry(ctx.tenantId, { asOf, nearExpiryDays });
+        const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1: only the caller's branches' stock
+        const items = await deps.nearExpiry(ctx.tenantId, { asOf, nearExpiryDays, ...(scope.everything ? {} : { covers: scope.covers }) });
         const disposeCount = items.filter((i) => i.action === 'dispose').length;
         return {
           status: 200,
@@ -50,6 +54,7 @@ export function nearExpiryRoutes(deps: NearExpiryDeps): readonly Route[] {
             disposeCount,
             asOf,
             nearExpiryDays,
+            scope: scope.scope,
           },
         };
       },

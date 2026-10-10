@@ -41,7 +41,7 @@ export interface SettlementRoutesDeps {
   /** Batch ids already imported, so importing one twice is refused rather than doubling its credits. */
   readonly importedBatchIds: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   /** Record an accepted batch (its lines become the credits the review reconciles against). */
-  readonly recordBatch: (tenantId: string, batch: SettlementBatch) => Promise<void> | void;
+  readonly recordBatch: (tenantId: string, batch: SettlementBatch, provenance?: { readonly importedBy: string; readonly importedAt: string; readonly sourceName?: string }) => Promise<void> | void;
   /** Every credit line the shop has imported (bounded — a handful of batches a day). */
   readonly credits: (tenantId: string) => Promise<readonly SettlementLine[]> | readonly SettlementLine[];
   /** Electronic tenders captured in `[fromIso, toIso)`, for the review's ageing window. */
@@ -122,7 +122,11 @@ export function settlementRoutes(deps: SettlementRoutesDeps): readonly Route[] {
           });
         }
 
-        await deps.recordBatch(ctx.tenantId, batch);
+        const sourceName = (ctx.body as { sourceName?: unknown }).sourceName;
+        await deps.recordBatch(ctx.tenantId, batch, {
+          importedBy: ctx.userId, importedAt: deps.now(),
+          ...(typeof sourceName === 'string' && sourceName.trim() !== '' ? { sourceName: sourceName.trim().slice(0, 200) } : {}),
+        });
         // Seal the batch import — who brought which provider's settlement file in, its net figure and how
         // many lines. Aggregates only; no per-line reference and NO tender instrument (hard rule #3).
         await deps.recordAudit?.(ctx.tenantId, {

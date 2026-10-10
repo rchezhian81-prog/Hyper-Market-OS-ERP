@@ -31,6 +31,7 @@ const HTML = readFileSync('apps/web-erp/web/buying.html', 'utf8');
 const MODEL = readFileSync('apps/web-erp/src/buying-session.ts', 'utf8');
 const ENTRY = readFileSync('apps/web-erp/src/browser-entry.ts', 'utf8');
 const SCREEN_DATA = readFileSync('edge/store-edge/src/screen-data.ts', 'utf8');
+const NAVIGATION = readFileSync('edge/store-edge/src/screen-navigation.ts', 'utf8');
 
 /** Comments discuss these on purpose, so only real code counts. */
 const code = (source: string): string => source
@@ -172,9 +173,19 @@ describe('what the box did not say is said', () => {
 
 describe('the box strips the buyer out of their own approver list', () => {
   it('filters the buyer server-side, not on the screen that would offer them', () => {
-    // Separation of duties enforced only by the list somebody was shown is not enforced at all.
+    // Separation of duties enforced only by the list somebody was shown is not enforced at all. Since PA-06 part 3b the
+    // buyer is the SIGNED-IN person, so the box strips them where it names them: in `asSignedInPerson`.
     const builder = code(SCREEN_DATA).slice(code(SCREEN_DATA).indexOf('export function buyingPayload'));
-    expect(builder).toMatch(/approvers: policy\.approvers\.filter\(\(who\) => who !== policy\.buyerId\)/);
+    expect(builder).toMatch(/buyerId: null,/); // the pack never names the buyer
+    expect(builder).not.toMatch(/policy\.buyerId/);
+    const nav = code(NAVIGATION).slice(code(NAVIGATION).indexOf('export function asSignedInPerson'));
+    expect(nav).toMatch(/out\['buyerId'\] = userId;/);
+    expect(nav).toMatch(/out\['approvers'\] = \(payload\['approvers'\] as unknown\[\]\)\.filter\(\(who\) => who !== userId\)/);
+  });
+
+  it('never boots a buyer under a stand-in name — no signed-in buyer, no session (PA-06 part 3b)', () => {
+    expect(code(ENTRY)).not.toMatch(/buyerId: data\.buyerId \?\? 'buyer'/);
+    expect(code(ENTRY)).toMatch(/if \(buyerId === undefined\) return null;/);
   });
 
   it('serves the buyer’s screen nothing at all when it has no buying policy', () => {
