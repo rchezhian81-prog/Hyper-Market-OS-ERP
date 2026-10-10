@@ -9629,10 +9629,9 @@ export function billingAdapter(input: {
 }
 
 /**
- * The tender a basket is booked under for the tender-mix KPI: the largest single tender on the
- * receipt (a split payment is attributed to where most of the money actually came from), or
- * `unrecorded` when the lane banked a sale with no tender detail — which is itself worth seeing on
- * the dashboard, not hiding (P-08).
+ * The label a bill is shown under in a drill or a basket view: its largest single tender, or `unrecorded` when the
+ * lane banked a sale with no tender detail — itself worth seeing (P-08). A LABEL only: the tender mix counts every
+ * payment on a split bill under its own kind, by its own amount (`tenderSplit`, audit EA-02).
  */
 function primaryTender(tenders: readonly IncomingTender[]): string {
   if (tenders.length === 0) return 'unrecorded';
@@ -9708,6 +9707,8 @@ export function reportingAdapter(input: {
         totalMinor: s.totalMinor,
         netMinor: 0, taxMinor: 0, cogsMinor: 0, units: 0, // not on the cloud event; never surfaced
         tender: primaryTender(s.tenders),
+        // Every payment by its own kind and amount (EA-02): a ₹250 card + ₹50 cash bill is ₹250 card and ₹50 cash.
+        tenders: s.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amountMinor })),
         currency: s.currency as CurrencyCode,
       }));
       const summary = salesSummary(facts, (todays[0]?.currency as CurrencyCode) ?? 'INR');

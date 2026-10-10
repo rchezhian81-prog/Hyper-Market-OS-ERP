@@ -522,6 +522,14 @@ describe('margin is only served where it can genuinely be worked out', () => {
     expect(day.billCount).toBe(2);
   });
 
+  it('carries every payment on a split bill by kind and amount, and reports it that way (audit EA-02)', () => {
+    const split = sale({ total: 300_00, tenders: [{ kind: 'card', amount: { minor: 250_00 } }, { kind: 'cash', amount: { minor: 50_00 } }] });
+    const day = costTheDay([split], PRODUCTS);
+    expect(day.facts[0]?.tenders).toEqual([{ kind: 'card', amountMinor: 250_00 }, { kind: 'cash', amountMinor: 50_00 }]);
+    const served = (reportingPayload(input({ sales: [split] }))!['sales'] as Record<string, unknown>[])[0]!;
+    expect(served['tenders']).toEqual([{ kind: 'card', amountMinor: 250_00 }, { kind: 'cash', amountMinor: 50_00 }]);
+  });
+
   it('treats a product present in the pack but with no cost price as uncostable', () => {
     const noCost: PackProduct[] = [{ ...PRODUCTS[0]!, unitCostMinor: undefined }];
     const day = costTheDay([sale()], noCost);

@@ -22,7 +22,7 @@
 // shop is least supervised. The rules are data from the pack (M15-FR-01); the evaluation is local.
 
 import { evaluateLossPrevention, type ActivityEvent, type LpException, type LpRule } from '../../../packages/loss-prevention/src/index';
-import type { SaleFact } from '../../../packages/reporting/src/index';
+import type { SaleFact, TenderPart } from '../../../packages/reporting/src/index';
 import type { PackProduct } from './store-pack';
 
 /** One sale as it was written to this box's disk by a lane (see `apps/pos/src/session.ts`). */
@@ -202,9 +202,10 @@ export function costTheDay(
       totalMinor: total,
       cogsMinor: cogs,
       units: basketUnits(lines),
-      // The first tender is the one the day is reported by. A split payment is rare and reporting
-      // it under its first kind is a choice; reporting it under none would lose the sale entirely.
+      // The bill's label is its first tender; the tender MIX takes every payment by its own amount (audit EA-02), so a
+      // ₹250 card + ₹50 cash bill is never reported as ₹300 card.
       tender: sale.tenders?.[0]?.kind ?? 'unknown',
+      tenders: tenderPartsOf(sale),
       currency: 'INR',
     });
   }
@@ -216,6 +217,20 @@ export function costTheDay(
     takenMinor: taken,
     billCount: sales.length,
   };
+}
+
+/**
+ * The payments on a logged bill, by kind and amount (audit EA-02). A payment with no readable kind or amount is left
+ * out rather than guessed — the tender mix then shows the unexplained part of the bill as a tender difference.
+ */
+export function tenderPartsOf(sale: LoggedSale): readonly TenderPart[] {
+  const parts: TenderPart[] = [];
+  for (const t of sale.tenders ?? []) {
+    const minor = t.amount?.minor;
+    if (typeof t.kind !== 'string' || t.kind === '' || typeof minor !== 'number' || !Number.isInteger(minor)) continue;
+    parts.push({ kind: t.kind, amountMinor: minor });
+  }
+  return parts;
 }
 
 /**

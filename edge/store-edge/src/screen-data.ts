@@ -47,7 +47,7 @@ import { planDispatch, type DispatchPlan } from '../../../packages/fulfilment/sr
 import { generateDeliverySlots } from '../../../packages/storefront/src/checkout';
 import { ShelfMap, type ShelfLocation } from '../../../packages/merchandising/src/index';
 import {
-  basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tradingDaysHeld,
+  basketUnits, costTheDay, exceptionsFor, activityFrom, lineCostMinor, salesOn, tenderPartsOf, tradingDaysHeld,
   type LoggedSale,
 } from './read-model';
 import type { StorePack, PackRoutingPolicy, PackSlot, PackGstReconciliationPolicy, PackCategoryPolicyPolicy, PackGstReturnsPolicy, PackWastePolicy, PackWriteOffCapturePolicy, PackCountsPolicy, PackFleetPolicy, PackProductPublishReviewPolicy, PackDataQualityPolicy, PackOperationsInboxPolicy, PackLossPreventionPolicy, PackSubstitutionExceptionPolicy, PackDayBookPolicy, PackDocumentTemplatePolicy, PackReturnGovernancePolicy, PackCashOfficePolicy, PackRiskAcceptancePolicy, PackDayReopenPolicy, PackStockHealthPolicy, PackStoredValuePolicy, PackIntegrationHealthPolicy, PackGoodsReceiptPolicy, PackSuppliersPolicy, PackIndentsPolicy, PackDataIoPolicy, PackWorkforceInboxPolicy, PackEssPolicy, PackRosteringPolicy, PackChecklistPolicy, PackProductionPolicy, PackFacilitiesPolicy } from './store-pack';
@@ -1364,6 +1364,8 @@ export function reportingPayload(input: ScreenInput): Record<string, unknown> | 
       ...(costable ? { cogsMinor: cogs } : {}),
       ...(lines === undefined ? {} : { units: basketUnits(lines) }),
       tender: sale.tenders?.[0]?.kind ?? 'unknown',
+      // Every payment by its own kind and amount (audit EA-02): the tender report splits a bill across what paid it.
+      tenders: tenderPartsOf(sale),
     };
   });
 
