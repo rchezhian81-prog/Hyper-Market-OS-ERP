@@ -10325,6 +10325,9 @@ export function aiAdapter(input: {
    * the SAME reader the `/v1/inventory/near-expiry` route uses (`nearExpiryAdapter(...).nearExpiry`).
    */
   readonly nearExpiry?: NearExpiryDeps['nearExpiry'];
+  /** EA-08 — A01's read-only insights and A02's stock-out reorder drafts, from the governed readers (ai-insights.ts). */
+  readonly ownerInsights?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
+  readonly purchaseSuggestions?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
 }): AiDeps {
   return {
     now: input.now,
@@ -10410,8 +10413,22 @@ export function aiAdapter(input: {
      * Every other agent still returns nothing — it becomes reachable when its own data source is
      * wired (and, for a model-backed agent, a provider is chosen, OB-02).
      */
+    // EA-08: every run is recorded — the run, its server-metered cost, and each accepted proposal onto the register —
+    // in ONE atomic write, idempotent on the run id.
+    recordRun: async (tenantId, run) => {
+      await input.store.appendBatch(tenantId, [
+        { stream: STREAM.ai, event: makeEvent({ id: `ai-run-${run.runId}`, type: 'AiRunRecorded', occurredAt: run.at, idempotencyKey: `ai-run-${tenantId}-${run.runId}`, source: 'api/ai', payload: run }) },
+        { stream: STREAM.ai, event: makeEvent({ id: `ai-cost-${run.runId}`, type: 'AiRunCosted', occurredAt: run.at, idempotencyKey: `ai-cost-${tenantId}-${run.runId}`, source: 'api/ai', payload: { runId: run.runId, agent: run.agent, costMinor: run.costMinor, calledAModel: run.calledAModel } }) },
+        ...run.proposals.map((p) => ({ stream: STREAM.ai, event: makeEvent({ id: `ai-proposal-${p.proposalId}`, type: 'AiProposalRaised', occurredAt: run.at, idempotencyKey: `ai-proposal-${tenantId}-${p.proposalId}`, source: 'api/ai', payload: p }) })),
+      ]);
+    },
+
     run: async (tenantId, agent) => {
       const now = input.now();
+      // A01 Owner Intelligence — read-only insights from the governed reports; proposes no action (EA-08).
+      if (agent === 'A01') return input.ownerInsights === undefined ? [] : input.ownerInsights(tenantId);
+      // A02 Purchase — stock-outs with recent demand, as DRAFTS for a buyer; no quantity invented, no order raised.
+      if (agent === 'A02') return input.purchaseSuggestions === undefined ? [] : input.purchaseSuggestions(tenantId);
       // A08 Data Quality — the product master + import history.
       if (agent === 'A08') {
         const proposals: Omit<Proposal, 'committed'>[] = [];

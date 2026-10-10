@@ -33,6 +33,8 @@ import {
 } from '../../kernel/src/index';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from './access';
 import { reportProducers, PRODUCED_AT_HEAD_OFFICE, documentSourceResolver } from './report-producers';
+import { ownerInsights, purchaseSuggestions } from './ai-insights';
+import { tradingDayIn } from '../../../packages/calendar/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { tillSealKey } from '../../../packages/identity/src/till-seal';
@@ -1388,6 +1390,9 @@ export function buildSurface(deps: {
       workforceWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordWorkforceDisposition: () => {}, now,
     } : aiAdapter({
       store, now,
+      // EA-08: A01 reads the same governed report producers the owner's reports do; A02 the stock and sales ledgers.
+      ownerInsights: async (t) => ownerInsights(producers!, t, now(), tradingDayIn(now(), await shopCalendar(t))),
+      purchaseSuggestions: (t) => purchaseSuggestions(store, t, now()),
       // The Data Quality agent (A08) reads the live product master + barcode register — the tested
       // folds reused verbatim (same pattern as the export domains above), never a second copy.
       products: (t) => productMasterAdapter({ store, now }).products(t),
