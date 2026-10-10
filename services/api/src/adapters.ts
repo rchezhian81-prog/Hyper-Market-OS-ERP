@@ -257,6 +257,7 @@ import type { ServiceabilityPeriod } from '../../../packages/storefront/src/inde
 import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/index';
 import type { DeliveryServiceDeps, DeliveryServiceConfig, SlotBooking } from '../../orders/src/delivery-service';
 import type { B2BStockPort } from '../../finance/src/b2b-documents';
+import type { Customer360Deps, CustomerPurchase, CustomerReturn, CustomerMerge, HouseholdLink, ProfileView } from '../../customer/src/customer-360';
 import type { CommissionRuleDeps, CommissionRule } from '../../finance/src/b2b-commission';
 import type { B2BOrderingDeps, B2BQuoteRequest, RecurringSchedule, RecurringRun } from '../../finance/src/b2b-ordering';
 import { promise as promiseStock } from '../../orders/src/index';
@@ -11848,5 +11849,138 @@ export function b2bOrderingAdapter(input: { readonly store: EventStore; readonly
         source: 'api/finance', payload: r,
       }));
     },
+  };
+}
+
+/**
+ * FUL-10: the customer record DERIVED from the durable sale and return streams. A projector keeps a cursor on each stream
+ * and, on every read, folds what has arrived since: a banked sale that names a customer becomes a purchase on their record
+ * (and an order fact segmentation reads); a return against it becomes a return fact and CORRECTS that order fact (a new,
+ * latest fact with the net reduced — the purchase is never deleted). Every write is keyed on the sale or the return, so a
+ * re-run, a resent sale or two readers at once change nothing twice. Merges, household links and profile views are their
+ * own append-only facts.
+ */
+export function customer360Adapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly memberKey?: Buffer;
+}): Customer360Deps {
+  const cursorStream = streamName(STREAM.customer, 'facts-cursor');
+  const factsOf = (ref: string): string => streamName(STREAM.customer, 'facts', ref);
+  const mergesStream = streamName(STREAM.customer, 'merges');
+  const householdStream = streamName(STREAM.customer, 'households');
+  const viewsOf = (ref: string): string => streamName(STREAM.customer, 'profile-views', ref);
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const members = loyaltyMembersAdapter({ store: input.store, now: input.now, rule: () => ({ pointsPer100Inr: 0, pointValuePaise: 0 }) });
+
+  /** The order fact segmentation reads, for one sale, at its current net (sale less what came back). */
+  const recordOrderFact = async (tenantId: string, f: OrderFact & { readonly derivedFrom: string; readonly marginComplete: boolean }) => {
+    await input.store.append(tenantId, ORDER_FACTS_STREAM, makeEvent({
+      id: `cf-order-${f.orderId}-${f.netMinor}`, type: 'CustomerOrderFactRecorded', occurredAt: f.at,
+      idempotencyKey: `cf-order-${tenantId}-${f.orderId}-${f.netMinor}-${f.marginMinor}`, source: 'api/customer', payload: f,
+    }));
+  };
+
+  const catchUp = async (tenantId: string): Promise<{ readonly sales: number; readonly returns: number }> => {
+    const cursor = (await latest<{ salesSeq: number; returnsSeq: number }>(input.store, tenantId, cursorStream, 'CustomerFactsCursor')) ?? { salesSeq: 0, returnsSeq: 0 };
+    const sales = (await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', sinceSeq: cursor.salesSeq })).filter((e) => e.seq > cursor.salesSeq);
+    const returns = (await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', sinceSeq: cursor.returnsSeq })).filter((e) => e.seq > cursor.returnsSeq);
+    if (sales.length === 0 && returns.length === 0) return { sales: 0, returns: 0 };
+    // Weighted-average unit cost per (product, store) — the margin on a purchase, where the cost is known.
+    let costs: Map<string, { unitCostMinor: number; minorPerUnit: number }> | undefined;
+    const costOf = async (productId: string, locationId: string | undefined) => {
+      if (costs === undefined) {
+        costs = new Map();
+        for (const r of await inventoryAdapter(input).valuation(tenantId, undefined)) {
+          if (r.unitCostMinor !== 'not_known') costs.set(`${r.productId}@${r.locationId}`, { unitCostMinor: r.unitCostMinor, minorPerUnit: 1 });
+        }
+      }
+      return locationId === undefined ? undefined : costs.get(`${productId}@${locationId}`);
+    };
+    const marginOf = async (sale: IncomingSale): Promise<{ marginMinor: number; complete: boolean }> => {
+      let cost = 0; let complete = true;
+      for (const l of sale.lines) {
+        const c = await costOf(l.productId, sale.locationId);
+        if (c === undefined) { complete = false; continue; }
+        cost += Math.round((l.quantityMinor * c.unitCostMinor) / minorPerUnitOf(l.uom));
+      }
+      return { marginMinor: sale.totalMinor - cost, complete };
+    };
+    let lastSales = cursor.salesSeq;
+    for (const e of sales) {
+      lastSales = Math.max(lastSales, e.seq);
+      const sale = payloadOf<IncomingSale>(e);
+      const ref = typeof sale.customerRef === 'string' && sale.customerRef.trim() !== '' ? sale.customerRef : undefined;
+      if (ref === undefined) continue;
+      const p: CustomerPurchase = {
+        saleId: sale.saleId, customerRef: ref, receiptNumber: sale.receiptNumber, at: sale.committedAt, tradingDay: sale.tradingDay,
+        laneId: sale.laneId, ...(sale.locationId === undefined ? {} : { locationId: sale.locationId }), grossMinor: sale.totalMinor, lineCount: sale.lines.length,
+      };
+      await input.store.append(tenantId, factsOf(ref), makeEvent({
+        id: `cf-sale-${sale.saleId}`, type: 'CustomerPurchaseFact', occurredAt: sale.committedAt, idempotencyKey: `cf-sale-${tenantId}-${sale.saleId}`, source: 'api/customer', payload: p,
+      }));
+      const m = await marginOf(sale);
+      await recordOrderFact(tenantId, { orderId: sale.saleId, customerRef: ref, at: sale.committedAt, netMinor: sale.totalMinor, marginMinor: m.marginMinor, channel: 'store', derivedFrom: 'sale', marginComplete: m.complete });
+    }
+    let lastReturns = cursor.returnsSeq;
+    for (const e of returns) {
+      lastReturns = Math.max(lastReturns, e.seq);
+      const r = payloadOf<{ returnId: string; originalSaleId: string | null; processedAt: string; refundMinor: number; customerRef?: string; exchange?: unknown }>(e);
+      const held = r.originalSaleId === null ? undefined : await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${r.originalSaleId}`);
+      const sale = held === undefined ? undefined : held.event.payload as IncomingSale;
+      const ref = typeof sale?.customerRef === 'string' && sale.customerRef.trim() !== '' ? sale.customerRef : r.customerRef;
+      if (ref === undefined || ref.trim() === '') continue;
+      const ret: CustomerReturn = { returnId: r.returnId, customerRef: ref, saleId: r.originalSaleId, at: r.processedAt, refundMinor: r.refundMinor, exchange: r.exchange !== undefined };
+      await input.store.append(tenantId, factsOf(ref), makeEvent({
+        id: `cf-ret-${r.returnId}`, type: 'CustomerReturnFact', occurredAt: r.processedAt, idempotencyKey: `cf-ret-${tenantId}-${r.returnId}`, source: 'api/customer', payload: ret,
+      }));
+      // The correction: the sale's order fact again, net of everything that has come back against it.
+      if (sale !== undefined) {
+        const back = (await allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact')).filter((x) => x.saleId === sale.saleId)
+          .reduce((s, x) => s + x.refundMinor, 0);
+        const m = await marginOf(sale);
+        await recordOrderFact(tenantId, { orderId: sale.saleId, customerRef: ref, at: sale.committedAt, netMinor: Math.max(0, sale.totalMinor - back), marginMinor: m.marginMinor - back, channel: 'store', derivedFrom: 'sale_less_returns', marginComplete: m.complete });
+      }
+    }
+    await input.store.append(tenantId, cursorStream, makeEvent({
+      id: `cf-cursor-${lastSales}-${lastReturns}`, type: 'CustomerFactsCursor', occurredAt: input.now(),
+      idempotencyKey: `cf-cursor-${tenantId}-${lastSales}-${lastReturns}`, source: 'api/customer', payload: { salesSeq: lastSales, returnsSeq: lastReturns },
+    }));
+    return { sales: sales.length, returns: returns.length };
+  };
+
+  return {
+    now: input.now,
+    catchUp,
+    purchasesOf: (tenantId, ref) => allOf<CustomerPurchase>(input.store, tenantId, factsOf(ref), 'CustomerPurchaseFact'),
+    returnsOf: (tenantId, ref) => allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact'),
+    merges: (tenantId) => allOf<CustomerMerge>(input.store, tenantId, mergesStream, 'CustomerMergeRecorded'),
+    recordMerge: async (tenantId, m) => {
+      const stage = m.reversedBy !== undefined ? 'reversed' : m.approvedBy !== undefined ? 'approved' : 'proposed';
+      await input.store.append(tenantId, mergesStream, makeEvent({
+        id: `cust-merge-${m.mergeId}-${stage}`, type: 'CustomerMergeRecorded', occurredAt: m.reversedAt ?? m.approvedAt ?? m.proposedAt,
+        idempotencyKey: `cust-merge-${tenantId}-${m.mergeId}-${stage}`, source: 'api/customer', payload: m,
+      }));
+    },
+    households: (tenantId) => allOf<HouseholdLink>(input.store, tenantId, householdStream, 'CustomerHouseholdLinked'),
+    recordHousehold: async (tenantId, h) => {
+      await input.store.append(tenantId, householdStream, makeEvent({
+        id: `cust-hh-${h.customerRef}-${h.at}`, type: 'CustomerHouseholdLinked', occurredAt: h.at,
+        idempotencyKey: `cust-hh-${tenantId}-${h.customerRef}-${h.householdId}-${h.linked}-${h.at}`, source: 'api/customer', payload: h,
+      }));
+    },
+    loyaltyOf: async (tenantId, ref) => {
+      const balance = await customers.pointsBalance(tenantId, ref);
+      const history = await members.memberHistory(tenantId, ref);
+      const last = history[history.length - 1];
+      return { ...(balance === undefined ? {} : { pointsBalance: balance }), ...(last === undefined ? {} : { member: { status: last.status, mobileLast4: last.mobileLast4 } }) };
+    },
+    recordView: async (tenantId, v) => {
+      await input.store.append(tenantId, viewsOf(v.customerRef), makeEvent({
+        id: `cust-view-${v.customerRef}-${v.at}`, type: 'CustomerProfileViewed', occurredAt: v.at,
+        idempotencyKey: `cust-view-${tenantId}-${v.customerRef}-${v.viewedBy}-${v.at}`, source: 'api/customer', payload: v,
+      }));
+    },
+    views: (tenantId, ref) => allOf<ProfileView>(input.store, tenantId, viewsOf(ref), 'CustomerProfileViewed'),
   };
 }

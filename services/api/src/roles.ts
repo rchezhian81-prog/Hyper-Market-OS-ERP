@@ -112,6 +112,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'settlement.batch.import', 'settlement.review.read', 'settlement.investigation.manage',
       'b2b.account.manage', 'b2b.account.read', 'b2b.receivable.record', 'b2b.credit.check',
       'b2b.commission.record', 'b2b.commission.approve', 'b2b.recurring.approve', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
+      // FUL-10: the customer's record (read, every look recorded), and one identity — merges proposed and approved by two people.
+      'customer.profile.read', 'customer.identity.manage', 'customer.identity.approve',
       'concession.contract.manage', 'concession.sale.record', 'concession.charge.read', 'concession.tag.record',
       'scrap.sale.record', 'scrap.review.read', 'waste.view', 'count.view',
       'shelf.count.record', 'shelf.count.read', 'planogram.compliance.read', 'planogram.publish', 'merchandising.space.read', 'merchandising.display.manage', 'merchandising.range.manage', 'merchandising.range.read', 'approvals.delegation.grant', 'approvals.delegation.read',
@@ -178,6 +180,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'price.change.propose',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'b2b.credit.check', 'b2b.account.read', 'b2b.commission.read', 'b2b.document.issue', 'b2b.document.read',
+      // FUL-10: reads a customer's record and PROPOSES merges / household links; approving a merge is the owner's.
+      'customer.profile.read', 'customer.identity.manage',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.commitment.read',
       'purchase.order.propose', 'purchase.order.receive', 'purchase.supplier.block',
       'purchase.performance.record', 'purchase.contract.manage',
