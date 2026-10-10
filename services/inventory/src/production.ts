@@ -58,6 +58,7 @@ import {
 } from '../../../packages/production/src/departments';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, money, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
+import { assertLocationInScope, locationInScope, type LocationBranches } from './location-scope';
 
 /** A committed production run, recorded as the evidence a later report reads. */
 export interface StoredRun {
@@ -107,6 +108,8 @@ export interface StoredRelease {
 }
 
 export interface ProductionDeps {
+  /** PA-01-r1: which branch a stock location belongs to — a run moves stock there, so it is the caller's branch business. */
+  readonly locationBranches?: LocationBranches;
   /** The registered recipe, or nothing when the box has never been told it. */
   readonly recipe: (tenantId: string, recipeId: string) => Promise<Recipe | undefined> | Recipe | undefined;
   /** Record a recipe VERSION (FUL-08): a recipe identical to the current one is no new version; any change is the next
@@ -226,6 +229,7 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
             nextSafeAction: 'Send the run. Nothing was recorded.',
           });
         }
+        await assertLocationInScope(ctx, b.locationId, deps.locationBranches); // PA-01-r1
         if (await deps.runExists(ctx.tenantId, runId)) {
           throw apiError(409, {
             code: 'run_already_committed',
@@ -353,6 +357,7 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         if (run === undefined) {
           throw apiError(404, { code: 'run_not_found', whatHappened: `No production run "${runId}".`, wasItSaved: 'not_saved', nextSafeAction: 'Commit the run first, then release it.' });
         }
+        await assertLocationInScope(ctx, run.locationId, deps.locationBranches); // PA-01-r1
         if (run.released === true) {
           throw apiError(409, { code: 'batch_already_released', whatHappened: `Run ${runId}'s batch has already been released.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed — the batch is already sellable.' });
         }
@@ -499,7 +504,10 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
       handler: async (ctx) => {
         const locationId = ctx.query['locationId'];
         const all = await deps.runs(ctx.tenantId);
-        const runs = isStr(locationId) ? all.filter((r) => r.locationId === locationId) : all;
+        if (isStr(locationId)) await assertLocationInScope(ctx, locationId, deps.locationBranches); // PA-01-r1
+        const visible: (typeof all)[number][] = [];
+        for (const r of all) if (await locationInScope(ctx, r.locationId, deps.locationBranches)) visible.push(r);
+        const runs = isStr(locationId) ? visible.filter((r) => r.locationId === locationId) : visible;
         return { status: 200, body: { runs, asAt: deps.now() } };
       },
     },

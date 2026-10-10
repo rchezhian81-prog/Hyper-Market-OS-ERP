@@ -124,6 +124,12 @@ export function asSignedInPerson(payload: Record<string, unknown> | null, userId
   for (const [key, value] of Object.entries(payload)) {
     if (isRecord(value) && typeof value['userId'] === 'string' && Array.isArray(value['permissions'])) out[key] = readdress(value);
   }
+  // PA-06 part 3b: the buying screen's buyer is the signed-in person, and never one of their own approvers (§28) — the
+  // buyer is removed here, on the box, not trusted to leave themselves alone on the screen.
+  if ('buyerId' in payload) {
+    out['buyerId'] = userId;
+    if (Array.isArray(payload['approvers'])) out['approvers'] = (payload['approvers'] as unknown[]).filter((who) => who !== userId);
+  }
   return out;
 }
 

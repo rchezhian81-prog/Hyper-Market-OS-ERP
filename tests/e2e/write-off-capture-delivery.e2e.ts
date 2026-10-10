@@ -153,7 +153,9 @@ async function call(ho: HeadOffice, userId: string, method: Method, path: string
   }
   try {
     const out = await matched.route.handler({
-      tenantId: TENANT, userId, branchId: null, params: matched.params, query, body, traceId: 'trace-e2e',
+      // The pipeline also puts the caller's branch scope on the context (PA-01 / PA-01-r1); these people's grants are
+      // company-wide, so their scope is 'all'. Without it a handler holds nothing and refuses every location (fail closed).
+      tenantId: TENANT, userId, branchId: null, scope: 'all', params: matched.params, query, body, traceId: 'trace-e2e',
       ...(method === 'GET' ? {} : { idempotencyKey: 'key' }),
     });
     return { status: out.status, body: out.body };

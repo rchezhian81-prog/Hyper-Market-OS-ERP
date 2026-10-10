@@ -24,7 +24,8 @@ import { apiError } from '../../kernel/src/index';
 import { applyMovement, type MovementCommand, type MovementKind } from '../../../packages/warehouse/src/movements';
 import type { StockState } from '../../../packages/stock/src/position';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { MOVEMENT_KINDS, STOCK_STATES, type WarehouseDeps } from './warehouse';
+import { MOVEMENT_KINDS, STOCK_STATES, assertBinsInScope, type WarehouseDeps } from './warehouse';
+import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import type { Movement } from './index';
 import { coldChainVerdict, type ColdChainVerdict, type ProductReceiptRules, type ReceiptPolicy } from '../../../packages/receiving/src/index';
 
@@ -116,6 +117,8 @@ export function syncedWarehouseRoutes(deps: SyncedWarehouseDeps): readonly Route
             nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — a movement that cannot be read still happened in the racking.',
           });
         }
+        // PA-01-r1: the box relays only its own store's racking — a store or bin outside the relayer's branches is refused.
+        await assertBinsInScope(ctx, deps, r.command.storeId, [r.command.fromBinId, r.command.toBinId]);
         // The handheld's own command id keys the ledger: a re-sent scan is ONE movement (§31.1).
         const applied = await deps.appliedCommandIds(ctx.tenantId);
         if (applied.includes(commandId)) {
@@ -193,6 +196,8 @@ export interface ReceivingScanRecord {
 
 export interface ReceivingScanDeps {
   readonly permissionsOfUser: Permissions;
+  /** PA-01-r1: which branch a store belongs to (the org hierarchy); absent → a store id is its own branch. */
+  readonly locationBranches?: LocationBranches;
   /** Append one `received` movement to the M08 ledger (the inventory adapter's own). */
   readonly appendMovement: (tenantId: string, m: Movement) => Promise<void> | void;
   readonly isKnown: (tenantId: string, movementId: string) => Promise<boolean> | boolean;
@@ -252,6 +257,7 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
             nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — goods that were scanned in are in the building.',
           });
         }
+        await assertLocationInScope(ctx, s.storeId, deps.locationBranches); // PA-01-r1: only the relayer's own store
         if (await deps.scanExists(ctx.tenantId, commandId)) {
           const prior = (await deps.scansOf(ctx.tenantId, s.grnId)).find((r) => r.commandId === commandId);
           return { status: 200, body: { commandId, grnId: s.grnId, recorded: true, alreadyRecorded: true, onHand: prior?.onHandMovementId !== null, flags: prior?.governanceFlags ?? [] } };
@@ -318,7 +324,8 @@ export function receivingScanRoutes(deps: ReceivingScanDeps): readonly Route[] {
         if (!isStr(grnId)) {
           throw apiError(400, { code: 'not_readable_as_a_scan_query', whatHappened: 'Reading receiving scans needs a grnId.', wasItSaved: 'not_saved', nextSafeAction: 'Send ?grnId=…. Nothing was changed.' });
         }
-        const scans = await deps.scansOf(ctx.tenantId, grnId);
+        const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1: only scans at the caller's stores
+        const scans = (await deps.scansOf(ctx.tenantId, grnId)).filter((r) => scope.covers(r.storeId));
         return {
           status: 200,
           body: { grnId, scans, count: scans.length, receivedMinor: scans.reduce((n, r) => n + (r.onHandMovementId === null ? 0 : r.quantityMinor), 0), asAt: deps.now() },

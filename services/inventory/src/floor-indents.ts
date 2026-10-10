@@ -27,7 +27,22 @@ import { dispatchPostings, receivePostings, readFound, sameResolution, foundPost
 
 export { readFound, foundPostings };
 import { checkMovement, type Movement } from './index';
+import { locationInScope, stockReadScope, type LocationBranches } from './location-scope';
+import { outsideBranchScope, type RequestContext } from '../../kernel/src/index';
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
+
+/**
+ * PA-01-r1: an indent is the business of the branch its back store and floor sit in. Acting on, or reading, an indent
+ * needs either end inside the caller's branches — a br-1 manager cannot approve, issue or read br-2's indents.
+ */
+export async function assertIndentInScope(
+  ctx: Pick<RequestContext, 'scope' | 'tenantId'>, branches: LocationBranches | undefined,
+  ends: { readonly fromLocationId: string; readonly toLocationId: string } | undefined,
+): Promise<void> {
+  if (ends === undefined || ctx.scope === 'all') return;
+  if (await locationInScope(ctx, ends.fromLocationId, branches) || await locationInScope(ctx, ends.toLocationId, branches)) return;
+  throw outsideBranchScope(ends.toLocationId);
+}
 
 export type IndentEventType =
   | 'FloorIndentRequested' | 'FloorIndentApproved' | 'FloorIndentRejected' | 'FloorIndentCancelled' | 'FloorIndentReturnRequested';
@@ -75,6 +90,8 @@ export async function binPicksFor(
 }
 
 export interface FloorIndentsDeps {
+  /** PA-01-r1: which branch a location belongs to (the org hierarchy); absent → a location is its own branch key. */
+  readonly locationBranches?: LocationBranches;
   readonly indent: (tenantId: string, indentId: string) => Promise<FloorIndent | undefined> | FloorIndent | undefined;
   readonly indents: (tenantId: string) => Promise<readonly FloorIndent[]> | readonly FloorIndent[];
   /** The transfer an issue travels on — the same aggregate the transfer routes read (one truth, SP-5). */
@@ -251,7 +268,9 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
             wasItSaved: 'not_saved', nextSafeAction: 'Send the indent. Nothing was recorded.',
           });
         }
+        await assertIndentInScope(ctx, deps.locationBranches, { fromLocationId: b['fromLocationId'], toLocationId: b['toLocationId'] }); // PA-01-r1
         const existing = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, existing);
         if (existing !== undefined) return { status: 200, body: { indent: presentIndent(existing), alreadyRecorded: true } };
         for (const [role, locationId] of [['fromLocationId', b['fromLocationId']], ['toLocationId', b['toLocationId']]] as const) {
           if (!(await deps.knownLocation(ctx.tenantId, locationId))) {
@@ -294,6 +313,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           }
         }
         const indent = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         if (indent.state !== 'requested' && indent.approvedBy !== undefined) return { status: 200, body: { indent: presentIndent(indent), alreadyApproved: true } };
         const available = await deps.onHandAt(ctx.tenantId, indent.fromLocationId, indent.lines.map((l) => l.productId));
@@ -320,6 +340,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['reason'])) throw apiError(400, { code: 'rejection_needs_a_reason', whatHappened: 'Rejecting an indent needs { reason }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the reason. Nothing was changed.' });
         const indent = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         if (indent.state === 'rejected') return { status: 200, body: { indent: presentIndent(indent), alreadyRejected: true } };
         const now = deps.now();
@@ -349,6 +370,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           throw apiError(400, { code: 'not_readable_as_an_issue', whatHappened: 'An issue needs the indentId and issueId in the path and { lines: [{ productId, batchId?, quantityMinor (whole, above zero) }] }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the issued lines. Nothing was moved.' });
         }
         const indent = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         const prior = indent.issues.find((i) => i.issueId === issueId);
         if (prior !== undefined) return { status: 200, body: { indent: presentIndent(indent), issue: prior, alreadyIssued: true } };
@@ -398,6 +420,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         // The indent's own guard before the indent (Batch 2): two counts of one issue cannot both land.
         const indentVersion = deps.indentVersion === undefined ? undefined : await deps.indentVersion(ctx.tenantId, indentId);
         const indent = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         const issue = indent.issues.find((i) => i.issueId === issueId);
         if (issue === undefined) throw notFound(`issue ${issueId} on floor indent ${indentId}`);
@@ -451,6 +474,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         const indentVersion = deps.indentVersion === undefined ? undefined : await deps.indentVersion(ctx.tenantId, indentId);
         const indent = await deps.indent(ctx.tenantId, indentId);
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
         const issue = indent.issues.find((i) => i.issueId === issueId);
         if (issue === undefined) throw notFound(`issue ${issueId} on floor indent ${indentId}`);
         const prior = issue.shortfallResolution;
@@ -493,6 +517,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['reason'])) throw apiError(400, { code: 'cancel_needs_a_reason', whatHappened: 'Cancelling an indent needs { reason }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the reason. Nothing was changed.' });
         const indent = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         if (indent.remainderCancelled) return { status: 200, body: { indent: presentIndent(indent), alreadyCancelled: true } };
         const now = deps.now();
@@ -521,6 +546,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           throw apiError(400, { code: 'not_readable_as_a_return', whatHappened: 'A return needs the indentId and returnId in the path and { lines: [{ productId, batchId?, quantityMinor }], reason }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the lines and the reason. Nothing was recorded.' });
         }
         const indent = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         const prior = indent.returns.find((r) => r.returnId === returnId);
         if (prior !== undefined) return { status: 200, body: { indent: presentIndent(indent), return: prior, alreadyRecorded: true } };
@@ -554,6 +580,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           throw apiError(400, { code: 'not_readable_as_a_receipt', whatHappened: 'Accepting a return needs { counted: [{ productId, batchId?, quantityMinor }] } — what the back store counted in.', wasItSaved: 'not_saved', nextSafeAction: 'Send what was counted. Nothing was recorded.' });
         }
         const indent = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         const ret = indent.returns.find((r) => r.returnId === returnId);
         if (ret === undefined) throw notFound(`return ${returnId} on floor indent ${indentId}`);
@@ -584,6 +611,7 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
       permission: 'inventory.indent.read',
       handler: async (ctx) => {
         const indent = await deps.indent(ctx.tenantId, (ctx.params['indentId'] ?? '').trim());
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
         if (indent === undefined) throw notFound(`floor indent ${ctx.params['indentId']}`);
         return { status: 200, body: presentIndent(indent) };
       },
@@ -596,7 +624,8 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
       permission: 'inventory.indent.read',
       handler: async (ctx) => {
         const q = ctx.query ?? {};
-        const all = await deps.indents(ctx.tenantId);
+        const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1: only the caller's branches' indents
+        const all = (await deps.indents(ctx.tenantId)).filter((i) => scope.covers(i.toLocationId) || scope.covers(i.fromLocationId));
         const CLOSED: readonly string[] = ['received', 'rejected', 'cancelled'];
         const kept = all
           .filter((i) => (isStr(q['toLocationId']) ? i.toLocationId === q['toLocationId'] : true))

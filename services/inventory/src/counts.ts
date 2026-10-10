@@ -37,6 +37,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { CurrencyCode } from '../../../packages/contracts/src/money';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { Movement } from './index';
+import { assertLocationInScope, type LocationBranches } from './location-scope';
 
 /** The count-approval threshold applied when the tenant has set none — and the record says so (`default_threshold`). */
 export const DEFAULT_COUNT_APPROVAL_THRESHOLD_MINOR = 100_000;
@@ -160,6 +161,8 @@ export interface CountsDeps {
   readonly unitValueMinor: (tenantId: string, productId: string) => Promise<number | undefined> | number | undefined;
   /** SP-4 (F07): the tenant's count policy, or `undefined` when never set (the default applies, flagged). */
   readonly countPolicy: (tenantId: string) => Promise<CountPolicy | undefined> | CountPolicy | undefined;
+  /** PA-01-r1: which branch a location belongs to (the org hierarchy); absent → a location is its own branch key. */
+  readonly locationBranches?: LocationBranches;
   /**
    * SP-3b (W2): head office's bin contents for (bin, product) across every batch — the base a BIN-level count is
    * reconciled against; `undefined` when the bin is not one head office has. Optional so a bare deps stub may omit it.
@@ -281,9 +284,12 @@ export async function decideCount(deps: CountsDeps, input: {
   readonly decision: 'approved' | 'rejected'; readonly reason: string; readonly branchId: string | null;
   /** How the decision arrived — for the audit line. */
   readonly via: 'direct' | 'relayed';
+  /** PA-01-r1: refuse (throws, by name) when the count's location is outside the decider's branches. */
+  readonly assertInScope?: (locationId: string) => Promise<void>;
 }): Promise<CountDecisionOutcome> {
   const rec = await deps.reconciliation(input.tenantId, input.countId);
   if (rec === undefined) return { ok: false, refusedBecause: 'count_unknown', detail: `No count ${input.countId} is on file here.` };
+  await input.assertInScope?.(rec.locationId);
   if (rec.decision !== undefined) {
     if (rec.decision === input.decision) return { ok: true, record: rec, alreadyDecided: true };
     return { ok: false, refusedBecause: 'count_already_decided', detail: `Count ${input.countId} was already ${rec.decision} by ${rec.approvedBy ?? 'someone'} at ${rec.decidedAt ?? '?'}; a different decision now would be a second truth.`, record: rec };
@@ -344,6 +350,7 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
             nextSafeAction: 'Send the blind count. Nothing was recorded. The expected quantity is computed by the system, never sent.',
           });
         }
+        await assertLocationInScope(ctx, b['locationId'], deps.locationBranches); // PA-01-r1: only the caller's branches
         if (await deps.countExists(ctx.tenantId, countId)) {
           throw apiError(409, {
             code: 'count_already_reconciled',
@@ -393,7 +400,8 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
             wasItSaved: 'not_saved', nextSafeAction: 'Send the decision with a reason. Nothing was changed.',
           });
         }
-        const out = await decideCount(deps, { tenantId: ctx.tenantId, countId, decidedBy: ctx.userId, decision, reason: b['reason'].trim(), branchId: ctx.branchId ?? null, via: 'direct' });
+        const out = await decideCount(deps, { tenantId: ctx.tenantId, countId, decidedBy: ctx.userId, decision, reason: b['reason'].trim(), branchId: ctx.branchId ?? null, via: 'direct',
+          assertInScope: (locationId) => assertLocationInScope(ctx, locationId, deps.locationBranches) });
         if (!out.ok) {
           throw apiError(refusalStatus[out.refusedBecause], { code: out.refusedBecause, whatHappened: out.detail, wasItSaved: 'not_saved', nextSafeAction: out.refusedBecause === 'self_approval' ? 'A different person with approval authority must decide it. Nothing was changed.' : 'Nothing was changed.' });
         }
@@ -417,6 +425,7 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
             nextSafeAction: 'Send ?productId=…&locationId=…. Nothing was changed.',
           });
         }
+        await assertLocationInScope(ctx, locationId, deps.locationBranches); // PA-01-r1: a named location outside is refused
         const recs = await deps.reconciliations(ctx.tenantId, productId, locationId);
         const systemOnHandMinor = await deps.onHand(ctx.tenantId, productId, locationId);
         // Bin counts (SP-3b) are LISTED here with their bin; a bin count's posted correction is at the location on M08 like any

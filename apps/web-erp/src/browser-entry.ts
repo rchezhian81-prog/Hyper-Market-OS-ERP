@@ -304,7 +304,8 @@ export interface ManagerData {
 
 /** What the buyer's screen was last told. Absent means this box knows nothing about buying. */
 export interface BuyingData {
-  readonly buyerId?: string;
+  /** The person who signed in (PA-06 part 3b) — the store computer's word, never the pack's. Absent/null: nobody. */
+  readonly buyerId?: string | null;
   /** The store this screen serves (SP-7a) — the buyer's durable queue is keyed per store, like the manager's. */
   readonly storeId?: string;
   /** Who may check this buyer's work. The box has already removed the buyer from it (§28). */
@@ -4708,6 +4709,8 @@ export function openManagerRelay(
  * screen has to say which (P-08).
  */
 export const BUYING_GAPS = Object.freeze([
+  // PA-06 part 3b: nobody is signed in, so there is nobody to save an invoice or raise an order AS — never a stand-in.
+  'who_is_buying',
   'what_this_shop_stocks',
   'what_was_ordered',
   'what_arrived',
@@ -4715,9 +4718,14 @@ export const BUYING_GAPS = Object.freeze([
 ] as const);
 export type BuyingGap = (typeof BUYING_GAPS)[number];
 
+/** The signed-in buyer the store computer named, or undefined when nobody is signed in. */
+const buyerOf = (data: BuyingData | undefined): string | undefined =>
+  typeof data?.buyerId === 'string' && data.buyerId.trim() !== '' ? data.buyerId : undefined;
+
 /** Everything the buyer's screen was not given. Empty means it was told all of it. */
 export function buyingGaps(data: BuyingData | undefined): readonly BuyingGap[] {
   const gaps: BuyingGap[] = [];
+  if (buyerOf(data) === undefined) gaps.push('who_is_buying');
   if (data?.productIds === undefined) gaps.push('what_this_shop_stocks');
   if (data?.ordered === undefined) gaps.push('what_was_ordered');
   if (data?.received === undefined) gaps.push('what_arrived');
@@ -4836,10 +4844,13 @@ export function openBuyingRelay(laneWriteBase: string | undefined, session: Buyi
  */
 export function bootBuying(data: BuyingData | undefined, proposeOrder?: ProposePurchaseOrderPort, outbox?: SyncOutbox): BuyingSession | null {
   if (data === undefined) return null;
+  // PA-06 part 3b: no signed-in buyer, no session — an invoice is never saved, nor an order raised, under a stand-in name.
+  const buyerId = buyerOf(data);
+  if (buyerId === undefined) return null;
   return createBuyingSession(
     {
       tenantId: 'tenant',
-      buyerId: data.buyerId ?? 'buyer',
+      buyerId,
       currency: 'INR',
       // Defaults matching `threeWayMatch`'s own: no quantity tolerance, 1% on price, ₹1 immaterial.
       quantityToleranceBps: data.quantityToleranceBps ?? 0,
@@ -5325,6 +5336,8 @@ if (browserWindow !== undefined) {
   // the same one; an invoice captured here is on the device before the screen says "saved", and survives a reload.
   const buyingOutbox = browserWindow.buyingData === undefined ? undefined : openBuyingOutbox(browserWindow.buyingData.storeId ?? 'store-1');
   const buying = bootBuying(browserWindow.buyingData, openProposePurchaseOrderPort(), buyingOutbox);
+  // Told about buying but nobody signed in: the screen still says what it was not told — first, who is buying.
+  if (browserWindow.buyingData !== undefined) browserWindow.buyingGaps = buyingGaps(browserWindow.buyingData);
   if (buying !== null && buyingOutbox !== undefined) {
     browserWindow.buyingSession = buying;
     browserWindow.buyingGaps = buyingGaps(browserWindow.buyingData);

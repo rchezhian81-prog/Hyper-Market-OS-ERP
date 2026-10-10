@@ -61,9 +61,15 @@ export interface StorePackReceiver {
   held(): StorePackEnvelope | undefined;
   /** Take a verified, newer pack as this store's setup from now on. */
   take(pack: StorePackEnvelope, receivedAt: string): Promise<void>;
+  /**
+   * PA-06-r1: keep a verified, newer envelope whose CONTENTS are what the box already trades on — its new version, issue
+   * and expiry — without rebuilding anything from it. Absent → the envelope is taken whole with `take`.
+   */
+  renew?(pack: StorePackEnvelope, receivedAt: string): Promise<void>;
 }
 
-export type StorePackPullStatus = 'updated' | 'unchanged' | 'refused' | 'not_set_up' | 'offline';
+/** `renewed`: head office signed the same setup again (newer version, later expiry) and the box now holds that signature. */
+export type StorePackPullStatus = 'updated' | 'renewed' | 'unchanged' | 'refused' | 'not_set_up' | 'offline';
 export interface StorePackPullOutcome {
   readonly status: StorePackPullStatus;
   readonly heldVersion: number | null;
@@ -92,13 +98,22 @@ export async function pullStorePack(input: { readonly source: StorePackSource; r
   if (fetched.status === 'not_set_up') return describe('not_set_up', `Head office has no setup for store ${input.receiver.storeId} yet (${fetched.reason}).`);
   const held = input.receiver.held();
   const body = fetched.body as Partial<StorePackEnvelope> | null;
-  // The same content re-issued (a newer version, the same fingerprint) is not news — keep the held one, quietly.
-  if (held !== undefined && body !== null && typeof body === 'object' && body.contentHash === held.contentHash && body.storeId === held.storeId) {
+  const sameContents = held !== undefined && body !== null && typeof body === 'object' && body.contentHash === held.contentHash;
+  // Exactly the envelope already held (same contents, same version): not news — nothing to check, nothing to keep.
+  if (sameContents && body.version === held.version && body.storeId === held.storeId) {
     return describe('unchanged', 'Head office\'s store setup has not changed.');
   }
+  // Anything else is checked in full — the same contents too (PA-06-r1): a renewed signature is only kept when it is
+  // genuine, this shop's, this store's, newer and in date; a forged, foreign, older or expired one is refused as before.
   const verdict = verifyStorePack(input.signer, fetched.body, { tenantId: input.receiver.tenantId, storeId: input.receiver.storeId, heldVersion: held?.version ?? null, now: input.now });
   if (!verdict.accepted) return describe('refused', `${verdict.staffMessage[0]!.toUpperCase()}${verdict.staffMessage.slice(1)}.`);
-  await input.receiver.take(fetched.body as StorePackEnvelope, input.now);
+  const envelope = fetched.body as StorePackEnvelope;
+  if (sameContents) {
+    // The same setup, signed again: keep the new signature and expiry; nothing in it needs rebuilding.
+    await (input.receiver.renew ?? input.receiver.take).call(input.receiver, envelope, input.now);
+    return describe('renewed', `Head office's store setup has not changed; its signature is renewed until ${envelope.expiresAt}.`);
+  }
+  await input.receiver.take(envelope, input.now);
   return describe('updated', 'A new store setup from head office is in use.');
 }
 

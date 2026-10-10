@@ -20,6 +20,7 @@
 // Idempotent per grnId: the same receipt again is 200 `alreadyReceived` — a re-sync never double-counts stock (§31.1).
 
 import type { Route } from '../../kernel/src/index';
+import { assertLocationInScope } from './location-scope';
 import { apiError } from '../../kernel/src/index';
 import {
   captureReceipt, availableFromReceipt, heldFromReceipt, IncompleteCaptureError,
@@ -104,6 +105,8 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
             nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it — goods that were booked in are in the building.',
           });
         }
+        // PA-01-r1: the box books in deliveries at its own store only.
+        await assertLocationInScope(ctx, r.warehouseId, deps.locationBranches);
         // Never double-count: a GRN already recorded is returned unchanged (a retry after a lost reply, §31.1).
         const existing = await deps.grn(ctx.tenantId, grnId);
         if (existing !== undefined) {

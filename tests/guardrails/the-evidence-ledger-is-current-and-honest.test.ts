@@ -78,7 +78,7 @@ describe('the test-scope statement and the ledger agree', () => {
       expect(scope, `statement names "${name}"`).toContain(name);
       expect(ci, `workflow has "${name}"`).toContain(`name: ${name}`);
     }
-    expect(ci).toMatch(/needs: \[verify, integration, deploy, browser, performance\]/);
+    expect(ci).toMatch(/needs: \[verify, integration, deploy, browser, performance, identity\]/);
   });
 
   it('the statement states the label rule the script applies, kind by kind', () => {

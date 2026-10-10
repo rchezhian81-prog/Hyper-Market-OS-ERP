@@ -1832,6 +1832,15 @@ export async function startEdge(
           heldStorePack = env;
           pack = withHeldFeeds(readPack(packPayloadOf(env), receivedAt));
         },
+        // PA-06-r1: the same setup signed again — keep the renewed envelope (version, issue, expiry); nothing is rebuilt.
+        renew: async (env) => {
+          try {
+            await writeHeldStorePack(settings['EDGE_DATA_DIR']!, env);
+          } catch (e) {
+            say(`the renewed store setup could not be saved to disk (${e instanceof Error ? e.message : String(e)}). It is in use now and will be pulled again next time.`);
+          }
+          heldStorePack = env;
+        },
       },
     });
     if (outcome.status === 'updated' || (outcome.status !== 'unchanged' && outcome.status !== lastStorePackStatus)) say(outcome.staffMessage);

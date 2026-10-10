@@ -22,6 +22,7 @@ import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
+import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 
 const LOSS_TYPES: readonly LossType[] = ['wastage', 'damage', 'expiry', 'donation', 'destruction'];
 
@@ -102,6 +103,8 @@ export interface WriteOffDeps {
    * as worth ₹0 and skipped the second person and the evidence.
    */
   readonly unitCostAt?: (tenantId: string, locationId: string, productId: string) => Promise<number | undefined> | number | undefined;
+  /** PA-01-r1: which branch a location belongs to (the org hierarchy); absent → a location is its own branch key. */
+  readonly locationBranches?: LocationBranches;
   readonly now: () => string;
 }
 
@@ -142,6 +145,8 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
         // else's inventory written off by our staff is a bill we cannot argue with. The rule runs on the
         // tested `checkStockAccess` engine; it only ever fires once non-own stock is present (every
         // store-owned product is unaffected), so it cannot disturb an ordinary loss.
+        // PA-01-r1: a loss is written off only at a location inside the caller's branches.
+        await assertLocationInScope(ctx, b['locationId'] as string, deps.locationBranches);
         const others = await deps.ownersOfStockAt(ctx.tenantId, b['productId'] as string, b['locationId'] as string);
         if (others.length > 0) {
           const owner = others[0]!;
@@ -277,6 +282,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
             nextSafeAction: 'Send the product, the place and the quantity. Nothing was changed.',
           });
         }
+        await assertLocationInScope(ctx, locationId, deps.locationBranches); // PA-01-r1: another branch's cost is not read
         const priced = await lossValueOf(deps, ctx.tenantId, productId, locationId, qty);
         const thresholdMinor = (await deps.writeOffThreshold(ctx.tenantId)) ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR;
         return {
@@ -324,12 +330,13 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
       handler: async (ctx) => {
         const locationId = ctx.query['locationId'];
         const productId = ctx.query['productId'];
+        const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1: only the caller's branches
         const all = await deps.writeOffs(ctx.tenantId);
-        const filtered = all.filter((r) =>
-          (locationId === undefined || r.locationId === locationId)
+        const filtered = all.filter((r) => scope.covers(r.locationId)
+          && (locationId === undefined || r.locationId === locationId)
           && (productId === undefined || r.productId === productId));
         const totalLossMinor = filtered.reduce((s, r) => s + Math.abs(r.valueMinor), 0);
-        return { status: 200, body: { count: filtered.length, totalLossMinor, writeOffs: filtered, asAt: deps.now() } };
+        return { status: 200, body: { count: filtered.length, totalLossMinor, writeOffs: filtered, scope: scope.scope, asAt: deps.now() } };
       },
     },
   ];

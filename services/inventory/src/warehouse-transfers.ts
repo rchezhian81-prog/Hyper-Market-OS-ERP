@@ -42,6 +42,19 @@ import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/a
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
 import { checkMovement, type Movement } from './index';
+import { assertLocationInScope, locationInScope, type LocationBranches } from './location-scope';
+import { outsideBranchScope, type RequestContext } from '../../kernel/src/index';
+
+/**
+ * PA-01-r1: a transfer is the business of the branches at its two ends. Proposing or reading one needs either end in the
+ * caller's branches; dispatching needs the SOURCE (the stock leaves there); receiving needs the DESTINATION.
+ */
+async function assertEitherEndInScope(
+  ctx: Pick<RequestContext, 'scope' | 'tenantId'>, branches: LocationBranches | undefined, fromLocationId: string, toLocationId: string,
+): Promise<void> {
+  if (await locationInScope(ctx, fromLocationId, branches) || await locationInScope(ctx, toLocationId, branches)) return;
+  throw outsideBranchScope(fromLocationId);
+}
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isInt = (v: unknown): v is number => Number.isInteger(v);
@@ -87,6 +100,8 @@ export function foundPostings(transfer: Transfer, issue: { readonly receivedBy?:
 }
 
 export interface TransfersDeps {
+  /** PA-01-r1: which branch a location belongs to (the org hierarchy); absent → a location is its own branch key. */
+  readonly locationBranches?: LocationBranches;
   readonly transfer: (tenantId: string, transferId: string) => Promise<Transfer | undefined> | Transfer | undefined;
   /**
    * SP-4 (F07): head office's OWN stock at the source for the transfer's lines — the on-hand position per product, the
@@ -216,6 +231,7 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         if (!isStr(b.fromLocationId) || !isStr(b.toLocationId) || lines === null) {
           throw apiError(400, { code: 'not_readable_as_a_transfer', whatHappened: 'A transfer needs a fromLocationId, a toLocationId and at least one line (productId, whole quantityMinor, uom, unitCost).', wasItSaved: 'not_saved', nextSafeAction: 'Send the transfer. Nothing was recorded.' });
         }
+        await assertEitherEndInScope(ctx, deps.locationBranches, b.fromLocationId, b.toLocationId);
         if ((await deps.transfer(ctx.tenantId, transferId)) !== undefined) {
           throw apiError(409, { code: 'transfer_already_exists', whatHappened: `Transfer ${transferId} already exists.`, wasItSaved: 'not_saved', nextSafeAction: 'Use a new id. Nothing was changed.' });
         }
@@ -256,6 +272,7 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         }
         const transfer = await deps.transfer(ctx.tenantId, transferId);
         if (transfer === undefined) throw notFound(`transfer ${transferId}`);
+        await assertLocationInScope(ctx, transfer.fromLocationId, deps.locationBranches); // the stock leaves the caller's branch
         // SF-03: a transfer proposed before the unit check is checked again before anything moves.
         await assertUnitsAreTheProducts(deps, ctx.tenantId, transfer.lines);
         const approval: TransferApproval = { subjectRef: transferId, status: 'approved', decidedBy: ctx.userId };
@@ -302,6 +319,7 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         }
         const transfer = await deps.transfer(ctx.tenantId, transferId);
         if (transfer === undefined) throw notFound(`transfer ${transferId}`);
+        await assertLocationInScope(ctx, transfer.toLocationId, deps.locationBranches); // it arrives in the caller's branch
         try {
           const result = receiveTransfer({ transfer, counted, receivedBy: ctx.userId, at: deps.now(), currency: (b.currency as CurrencyCode) ?? 'INR' });
           // SP-5 (F05): what arrived becomes on-hand at the destination on the M08 ledger, at the cost it left with.
@@ -339,6 +357,7 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         const version = deps.transferVersion === undefined ? undefined : await deps.transferVersion(ctx.tenantId, transferId);
         const transfer = await deps.transfer(ctx.tenantId, transferId);
         if (transfer === undefined) throw notFound(`transfer ${transferId}`);
+        await assertEitherEndInScope(ctx, deps.locationBranches, transfer.fromLocationId, transfer.toLocationId); // PA-01-r1
         if (deps.belongsToIndent !== undefined && await deps.belongsToIndent(ctx.tenantId, transferId)) {
           throw apiError(409, { code: 'resolve_on_the_indent', whatHappened: `Transfer ${transferId} carries a floor indent issue; its shortfall is resolved on the indent.`, wasItSaved: 'not_saved', nextSafeAction: 'Use POST /v1/floor/indents/:indentId/issues/:issueId/shortfall/resolution. Nothing was changed.' });
         }
@@ -375,6 +394,7 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
       handler: async (ctx) => {
         const transfer = await deps.transfer(ctx.tenantId, ctx.params['transferId'] ?? '');
         if (transfer === undefined) throw notFound(`transfer ${ctx.params['transferId']}`);
+        await assertEitherEndInScope(ctx, deps.locationBranches, transfer.fromLocationId, transfer.toLocationId);
         return { status: 200, body: transfer };
       },
     },

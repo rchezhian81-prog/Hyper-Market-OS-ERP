@@ -49,6 +49,15 @@ import {
 } from '../../../packages/receiving/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { Movement } from './index';
+import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
+import type { RequestContext } from '../../kernel/src/index';
+
+/** PA-01-r1: a receipt is its warehouse's — acting on one outside the caller's branches is refused by name. */
+async function assertReceiptInScope(ctx: Pick<RequestContext, 'scope' | 'tenantId'>, deps: Pick<GoodsReceiptDeps, 'grn' | 'locationBranches'>, grnId: string): Promise<void> {
+  if (ctx.scope === 'all') return;
+  const record = await deps.grn(ctx.tenantId, grnId);
+  if (record !== undefined) await assertLocationInScope(ctx, record.warehouseId, deps.locationBranches);
+}
 
 /** The tolerance policy applied when the tenant has set none — and the record says so (`default_policy`). */
 export const DEFAULT_RECEIPT_POLICY: ReceiptPolicy = Object.freeze({ excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 30 });
@@ -247,6 +256,8 @@ export interface OrderGuard {
 }
 
 export interface GoodsReceiptDeps {
+  /** PA-01-r1: which branch a warehouse/location belongs to (the org hierarchy); absent → its own branch key. */
+  readonly locationBranches?: LocationBranches;
   /** The GRN with this id, or undefined — for the idempotency (never-double-count) check. */
   readonly grn: (tenantId: string, grnId: string) => Promise<GrnRecord | undefined> | GrnRecord | undefined;
   /** Every GRN — the receiving / discrepancy review surface. */
@@ -834,6 +845,9 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             nextSafeAction: 'Send the counted lines. The product rules and tolerances are head office\'s own.',
           });
         }
+        // PA-01-r1: received only into a warehouse inside the caller's branches (and never over another branch's receipt).
+        await assertLocationInScope(ctx, b['warehouseId'] as string, deps.locationBranches);
+        await assertReceiptInScope(ctx, deps, grnId);
         // Never double-count: a GRN already recorded is returned unchanged (a re-scan / re-sync, §31.1).
         const existing = await deps.grn(ctx.tenantId, grnId);
         if (existing !== undefined) {
@@ -916,6 +930,7 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             nextSafeAction: 'Send { decision, reason }. Nothing was changed.',
           });
         }
+        await assertReceiptInScope(ctx, deps, grnId); // PA-01-r1
         const out = await decideReceiptExcess(deps, {
           tenantId: ctx.tenantId, grnId, decidedBy: ctx.userId, decision, reason: b['reason'].trim(), branchId: ctx.branchId ?? null, via: 'direct',
         });
@@ -957,6 +972,7 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             nextSafeAction: 'Send { reason }. Nothing was changed.',
           });
         }
+        await assertReceiptInScope(ctx, deps, grnId); // PA-01-r1
         const out = await returnRejectedExcess(deps, { tenantId: ctx.tenantId, grnId, returnedBy: ctx.userId, reason: b['reason'].trim(), branchId: ctx.branchId ?? null });
         if (!out.ok) {
           throw apiError(out.refusedBecause === 'receipt_unknown' ? 404 : 409, {
@@ -993,6 +1009,7 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             nextSafeAction: 'Send { reason }. Nothing was changed.',
           });
         }
+        await assertReceiptInScope(ctx, deps, grnId); // PA-01-r1
         const out = await returnDisposedLine(deps, { tenantId: ctx.tenantId, grnId, lineId, returnedBy: ctx.userId, reason: b['reason'].trim(), branchId: ctx.branchId ?? null });
         if (!out.ok) {
           throw apiError(out.refusedBecause === 'receipt_unknown' || out.refusedBecause === 'line_unknown' ? 404 : 409, {
@@ -1027,6 +1044,7 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             nextSafeAction: 'Send { disposition, reason }. Nothing was changed.',
           });
         }
+        await assertReceiptInScope(ctx, deps, grnId); // PA-01-r1
         const out = await decideLineDisposition(deps, {
           tenantId: ctx.tenantId, grnId, lineId, decidedBy: ctx.userId, disposition: disposition as LineDispositionKind,
           reason: b['reason'].trim(), branchId: ctx.branchId ?? null, via: 'direct',
@@ -1060,6 +1078,7 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         const grnId = (ctx.params['grnId'] ?? '').trim();
         const record = await deps.grn(ctx.tenantId, grnId);
         if (record === undefined) throw notFound(`goods receipt ${grnId}`);
+        await assertLocationInScope(ctx, record.warehouseId, deps.locationBranches); // PA-01-r1: a direct id stays outside
         return { status: 200, body: { grn: record, awaitsDecision: awaitsDecision(record), awaitingDisposition: linesAwaitingDisposition(record).map((l) => l.lineId) } };
       },
     },
@@ -1068,7 +1087,8 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
       api: 'API-04', method: 'GET', path: '/v1/inventory/goods-receipt',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
-        const all = [...(await deps.all(ctx.tenantId))];
+        const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1: only the caller's branches' receipts
+        const all = (await deps.all(ctx.tenantId)).filter((g) => scope.covers(g.warehouseId));
         const waiting = all.filter(awaitsDecision);
         const ordered = [...waiting, ...all.filter((g) => !awaitsDecision(g))];
         return {

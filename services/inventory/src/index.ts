@@ -24,6 +24,7 @@ import type { ProductValuation } from '../../../packages/stock/src/valuation';
 import type { AgeingSource } from '../../../packages/stock/src/ageing-source';
 import { stockAgeing, inventoryTurns, gmroi, stockoutImpact, type Ratio, type StockoutInput } from '../../../packages/stock/src/metrics';
 import { isCurrencyCode, type Money, type CurrencyCode } from '../../../packages/contracts/src/money';
+import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 
 // --- small readers for the one stateless "what-if" on this surface --------------
 // Every other route here reads the append-only ledger; the stockout estimate is the
@@ -292,7 +293,7 @@ export interface InventoryDeps {
    * valuation, so the three reconcile. The route buckets these by age; `unvaluedMinor` carries any
    * uncosted on-hand so it is stated, never priced at a guess (P-08).
    */
-  readonly ageing: (tenantId: string, productId?: string) => Promise<AgeingSource> | AgeingSource;
+  readonly ageing: (tenantId: string, productId?: string, covers?: (locationId: string) => boolean) => Promise<AgeingSource> | AgeingSource;
   /**
    * The period inputs for stock productivity (M08-FR-04): cost of goods sold and average inventory
    * over `[from, to]`, both at weighted-average cost, plus net (ex-tax) sales and gross margin when
@@ -301,7 +302,11 @@ export interface InventoryDeps {
    * (not zero) when a sold product has no known tax rate — the route then reports GMROI as not
    * meaningful rather than inventing a margin (P-08).
    */
-  readonly performance: (tenantId: string, opts: { readonly from: string; readonly to: string }) => Promise<StockPerformanceInputs> | StockPerformanceInputs;
+  readonly performance: (tenantId: string, opts: {
+    readonly from: string; readonly to: string;
+    /** PA-01-r1: only movements, sales and returns at locations this covers (absent → every location). */
+    readonly covers?: (locationId: string) => boolean;
+  }) => Promise<StockPerformanceInputs> | StockPerformanceInputs;
   /**
    * SP-5 (F05 · M08-FR-02): stock IN TRANSIT to a destination — dispatched, not yet received. Read from the transfer
    * aggregates (the authoritative record of what is on the van), never folded into on-hand: visible at the destination,
@@ -313,6 +318,12 @@ export interface InventoryDeps {
    * engine values and raises as exceptions. Surfaced on the exceptions read beside negative stock (P-08, #10).
    */
   readonly transferShortfalls?: (tenantId: string) => Promise<readonly TransferShortfall[]> | readonly TransferShortfall[];
+  /**
+   * PA-01-r1: which branch each stock location belongs to (the org hierarchy). Every read is narrowed to the caller's
+   * branches and every movement refused outside them. Absent → a location is its own branch key (fail closed for a
+   * branch-limited caller at any location that is not literally one of their branches).
+   */
+  readonly locationBranches?: LocationBranches;
   readonly now: () => string;
 }
 
@@ -409,6 +420,8 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
             nextSafeAction: 'Commit the run at POST /v1/production/runs/:runId and release it at …/release. Nothing was appended here.',
           });
         }
+        // PA-01-r1: stock moves only at a location inside the caller's branches — refused by name, nothing appended.
+        if (typeof m.locationId === 'string') await assertLocationInScope(ctx, m.locationId, deps.locationBranches);
         if (m.kind === 'wasted') {
           throw apiError(422, {
             code: 'write_off_uses_the_write_off_route',
@@ -462,21 +475,25 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
         const productId = ctx.query['productId'];
-        const rows = await deps.availability(ctx.tenantId, productId);
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        const rows = (await deps.availability(ctx.tenantId, productId)).filter((r) => scope.covers(r.locationId));
         // SP-5 (F05): what is on the van is visible at its destination — beside on-hand, never inside it (M08-FR-02).
-        const inTransit = deps.inTransit === undefined ? [] : await deps.inTransit(ctx.tenantId, productId);
-        return { status: 200, body: { rows, inTransit, asAt: deps.now() } };
+        const inTransit = (deps.inTransit === undefined ? [] : await deps.inTransit(ctx.tenantId, productId)).filter((r) => scope.covers(r.locationId));
+        return { status: 200, body: { rows, inTransit, scope: scope.scope, asAt: deps.now() } };
       },
     },
     {
       api: 'API-04', method: 'GET', path: '/v1/inventory/exceptions',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
-        const rows = await deps.availability(ctx.tenantId);
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        const rows = (await deps.availability(ctx.tenantId)).filter((r) => scope.covers(r.locationId));
         // SP-5 (F05): a transfer shortfall is stock that left one place and never reached the other — an exception with a
         // value and an owner, listed here beside negative stock so nobody has to know to look for it (P-08).
-        const transferShortfalls = deps.transferShortfalls === undefined ? [] : await deps.transferShortfalls(ctx.tenantId);
-        return { status: 200, body: { negative: negativeStock(rows), transferShortfalls, asAt: deps.now() } };
+        // PA-01-r1: a shortfall is the caller's when either end of the transfer is in their branches.
+        const transferShortfalls = (deps.transferShortfalls === undefined ? [] : await deps.transferShortfalls(ctx.tenantId))
+          .filter((t) => scope.covers(t.locationId) || scope.covers(t.fromLocationId));
+        return { status: 200, body: { negative: negativeStock(rows), transferShortfalls, scope: scope.scope, asAt: deps.now() } };
       },
     },
     {
@@ -485,11 +502,15 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       api: 'API-04', method: 'GET', path: '/v1/inventory/valuation',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
-        const rows = await deps.valuation(ctx.tenantId, ctx.query['productId']);
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        // Valued per product AND location (the average is pooled per location), so keeping only the caller's locations
+        // keeps exactly their figures.
+        const rows = (await deps.valuation(ctx.tenantId, ctx.query['productId'])).filter((r) => scope.covers(r.locationId));
         return {
           status: 200,
           body: {
             rows,
+            scope: scope.scope,
             totalValueMinor: rows.reduce((s, r) => s + r.value.minor, 0),
             method: 'weighted_average',
             asAt: deps.now(),
@@ -505,12 +526,13 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
       api: 'API-04', method: 'GET', path: '/v1/inventory/ageing',
       permission: 'inventory.availability.read',
       handler: async (ctx) => {
-        const { lots, unvaluedMinor } = await deps.ageing(ctx.tenantId, ctx.query['productId']);
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        const { lots, unvaluedMinor } = await deps.ageing(ctx.tenantId, ctx.query['productId'], scope.everything ? undefined : scope.covers);
         const asAt = deps.now();
         const report = stockAgeing(lots, asAt.slice(0, 10), 'INR');
         return {
           status: 200,
-          body: { ...report, unvaluedMinor, method: 'weighted_average', asAt },
+          body: { ...report, unvaluedMinor, scope: scope.scope, method: 'weighted_average', asAt },
         };
       },
     },
@@ -527,7 +549,8 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         const asAt = deps.now();
         const to = ctx.query['to'] ?? asAt;
         const from = ctx.query['from'] ?? new Date(Date.parse(to) - 365 * 86_400_000).toISOString();
-        const inp = await deps.performance(ctx.tenantId, { from, to });
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        const inp = await deps.performance(ctx.tenantId, { from, to, ...(scope.everything ? {} : { covers: scope.covers }) });
         // Turns/GMROI for one row (store or product), each ratio honest about when it is not meaningful.
         const figuresOf = (row: StockPerformanceRow): Record<string, unknown> => {
           const turns = inventoryTurns({ cogs: row.cogs, averageInventory: row.averageInventory, periodDays: inp.periodDays });
@@ -555,6 +578,7 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
             byProduct: inp.byProduct.map((p) => ({ productId: p.productId, ...figuresOf(p) })),
             method: 'weighted_average',
             revenueBasis: 'net_of_tax; net_of_returns (resell cost reversed)',
+            scope: scope.scope,
             asAt,
           },
         };

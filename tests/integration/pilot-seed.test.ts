@@ -9,7 +9,7 @@ import { apiHarness } from '../support/api-harness';
 import { applyPilotFoundation, applyPilotCatalogue, applyPilotTradingPartners, applyPilotTransactions } from '../../db/seed/pilot/apply';
 import {
   PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_TRANSACTIONS, PILOT_DEMO_SUPPLIER_LOGIN,
-  PILOT_DEMO_TENANT, PILOT_DEMO_BRANCH, PILOT_DEMO_GSTIN, SEED_MARKER,
+  PILOT_DEMO_TENANT, PILOT_DEMO_BRANCH, PILOT_DEMO_WAREHOUSE, PILOT_DEMO_GSTIN, SEED_MARKER,
 } from '../../db/seed/pilot/dataset';
 
 const OWNER = PILOT_FOUNDATION.genesisOwner.userId;
@@ -81,6 +81,30 @@ describe('pilot seed — foundation (Phase 4a)', () => {
     expect(res.status).toBe(200);
     const entitled = (res.body as { entitled: readonly string[] }).entitled;
     for (const feature of PILOT_FOUNDATION.entitlements) expect(entitled).toContain(feature);
+  });
+
+  it('PA-06 part 3b: the demo store\'s settings, rules and match tolerances are set at head office, and its store computer can take its setup from there', async () => {
+    const h = apiHarness();
+    await applyPilotFoundation(h, PILOT_FOUNDATION, { throwOnError: true });
+    const setup = PILOT_FOUNDATION.storeSetup;
+    expect(setup.storeId).toBe(PILOT_DEMO_BRANCH);
+    // OB-08 and OC-13, as documented — not the practice file's figures
+    expect(setup.rules['merchandising']).toEqual({ refillAtBp: 5_000, countStaleAfterMinutes: 120, refillRole: 'store_manager' });
+    const policy = await h.request({ method: 'GET', path: '/v1/purchase/match-policy', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect((policy.body as { policy: Record<string, unknown> }).policy).toMatchObject({ quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100 });
+    // the demo store computer's own identity reads its setup from head office — signed, for this store
+    const pack = await h.request({ method: 'GET', path: `/v1/store-packs/${PILOT_DEMO_BRANCH}`, userId: 'pilot-store-edge', tenantId: PILOT_DEMO_TENANT });
+    expect(pack.status).toBe(200);
+    const sections = (pack.body as { storeId: string; sections: Record<string, Record<string, unknown>> });
+    expect(sections.storeId).toBe(PILOT_DEMO_BRANCH);
+    expect(sections.sections['policies']).toMatchObject({ storeId: PILOT_DEMO_BRANCH, tradingDayCutoff: '00:00', warehouseId: PILOT_DEMO_WAREHOUSE, handoverToleranceMinor: 10_000 });
+    expect(sections.sections['merchandisingPolicy']).toMatchObject({ refillAtBp: 5_000, countStaleAfterMinutes: 120 });
+    expect(sections.sections['checklist']).toHaveLength(5);
+    // re-running changes nothing: the same values land under the same keys
+    const again = await applyPilotFoundation(h, PILOT_FOUNDATION);
+    expect(again.steps.filter((x) => !x.ok)).toEqual([]);
+    const rules = await h.request({ method: 'GET', path: `/v1/stores/${PILOT_DEMO_BRANCH}/rules`, userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect((rules.body as { rules: { version: number } }).rules.version).toBe(1);
   });
 
   it('demo data cannot leak across tenants — a different tenant sees none of it', async () => {
