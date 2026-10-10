@@ -58,7 +58,7 @@ import type { LoyaltyWalletDeps, SpendApplied } from '../../customer/src/loyalty
 import type { LoyaltyLiabilityDeps } from '../../finance/src/loyalty-liability';
 import { fulfilCompensation, type FulfilmentPorts, type CompensationFulfilment } from '../../customer/src/compensation-fulfilment';
 import { monthEvidence, type IndependentEvidenceDeps, type ImportedStatement } from '../../finance/src/independent-evidence';
-import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack } from '../../customer/src/loyalty-effects';
+import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack, ReturnGiveBack } from '../../customer/src/loyalty-effects';
 import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
 import type { QualityHold } from '../../../packages/quality/src/index';
 import type { SalesHistoryDeps } from '../../inventory/src/sales-history';
@@ -230,6 +230,7 @@ import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/
 import type { CouponDeps } from '../../customer/src/coupons';
 import type { Coupon, Redemption } from '../../../packages/loyalty/src/coupons';
 import { balanceOf } from '../../../packages/loyalty/src/stored-value';
+import { spendRefFor } from '../../../packages/loyalty/src/wallet';
 import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
 import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalogue';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
@@ -7931,6 +7932,7 @@ export function loyaltyEffectsAdapter(input: {
       return {
         ...(earn === undefined ? {} : { earn: payloadOf<SaleEarn>(earn) }),
         takeBacks: events.filter((e) => e.event.type === 'LoyaltyReturnTakenBack').map((e) => payloadOf<ReturnTakeBack>(e)),
+        giveBacks: events.filter((e) => e.event.type === 'LoyaltyReturnGaveBack').map((e) => payloadOf<ReturnGiveBack>(e)),
       };
     },
     pointsBalance: customers.pointsBalance,
@@ -7952,6 +7954,27 @@ export function loyaltyEffectsAdapter(input: {
           idempotencyKey: `loyalty-takeback-${tenantId}-${saleId}-${t.returnId}`, source: 'api/customer', payload: t,
         }) },
       ], { guard: { key: `points:${t.memberRef}`, expectedVersion } });
+    },
+    // OB-34 "A": the points a bill was paid with — read from the member's own applied-spend fact for that bill.
+    pointsSpentOnSale: async (tenantId, saleId) => {
+      const held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
+      if (held === undefined) return undefined;
+      const sale = held.event.payload as { readonly customerRef?: unknown; readonly totalMinor?: unknown };
+      if (typeof sale.customerRef !== 'string' || typeof sale.totalMinor !== 'number') return undefined;
+      const ref = spendRefFor(saleId, 'loyalty_points');
+      const fact = (await allOf<SpendApplied>(input.store, tenantId, streamName(STREAM.loyalty, 'spends', sale.customerRef), 'LoyaltySpendApplied')).find((f) => f.ref === ref);
+      if (fact === undefined || (fact.pointsApplied ?? 0) <= 0) return undefined;
+      return { memberRef: fact.memberRef, saleTotalMinor: sale.totalMinor, pointsApplied: fact.pointsApplied ?? 0, appliedMinor: fact.appliedMinor };
+    },
+    // The give-back and its points movement are ONE write under the member's points guard, like a take-back.
+    recordGiveBack: async (tenantId, saleId, g, at, expectedVersion) => {
+      await input.store.appendBatch(tenantId, [
+        ...(g.points > 0 ? [pointsEntry(tenantId, { movementId: `giveback-${g.returnId}`, customerId: g.memberRef, delta: g.points, reason: 'burn_reversal', sourceRef: `return:${g.returnId}`, at })] : []),
+        { stream: forSaleLoyalty(saleId), event: makeEvent({
+          id: `loyalty-giveback-${g.returnId}`, type: 'LoyaltyReturnGaveBack', occurredAt: at,
+          idempotencyKey: `loyalty-giveback-${tenantId}-${saleId}-${g.returnId}`, source: 'api/customer', payload: g,
+        }) },
+      ], { guard: { key: `points:${g.memberRef}`, expectedVersion } });
     },
     now: input.now,
   };
@@ -10860,7 +10883,16 @@ export function dayBookAdapter(input: { readonly store: EventStore; readonly now
     returnsOn: async (tenantId, day) => {
       const { from, to } = window(day);
       const events = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from, to });
-      return events.map((e) => payloadOf<ReturnRecord>(e)).filter((r) => r.processedAt.slice(0, 10) === day);
+      const returns = events.map((e) => payloadOf<ReturnRecord>(e)).filter((r) => r.processedAt.slice(0, 10) === day);
+      // OB-34 "A": the value of the points each return gave back to the member (head office's give-back fact, on the
+      // sale's loyalty stream) rides on the return, so the day book reverses the whole returned value.
+      return Promise.all(returns.map(async (r) => {
+        if (r.originalSaleId === null) return r;
+        const given = (await input.store.readStream(tenantId, streamName(STREAM.loyalty, 'sale', r.originalSaleId)))
+          .filter((e) => e.event.type === 'LoyaltyReturnGaveBack').map((e) => payloadOf<ReturnGiveBack>(e))
+          .find((g) => g.returnId === r.returnId);
+        return given === undefined || given.valueMinor <= 0 ? r : { ...r, pointsGivenBackMinor: given.valueMinor };
+      }));
     },
     originalSales: async (tenantId, saleIds) => {
       const out = new Map<string, DayBookSale>();

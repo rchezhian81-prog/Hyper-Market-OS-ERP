@@ -33,8 +33,9 @@ export interface RecordedPointsMovement {
   readonly movementId: string;
   readonly customerId: string;
   readonly delta: number;
-  /** `earn_reversal`: points a return took back from what its sale earned (PF-09-a) — a negative delta. */
-  readonly reason: PointsKind | 'earn_reversal';
+  /** `earn_reversal`: points a return took back from what its sale earned (PF-09-a) — a negative delta.
+   *  `burn_reversal`: points the member PAID WITH on a bill that a return gave back (OB-34 "A") — a positive delta. */
+  readonly reason: PointsKind | 'earn_reversal' | 'burn_reversal';
   readonly sourceRef: string | null;
   readonly at: string;
 }

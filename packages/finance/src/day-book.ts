@@ -78,6 +78,12 @@ export interface DayBookReturn {
   readonly refundTender: string;
   readonly lines: readonly DayBookReturnLine[];
   readonly exchange?: DayBookExchange;
+  /**
+   * OB-34 "A": the value of the points the member PAID WITH that this return gave back to them (head office's give-back
+   * fact). It is part of the returned goods' value — so the sales return reverses revenue and GST on the whole of it — and
+   * it leaves the shop as a `refund:loyalty_points` leg (the points liability is owed again), not as money.
+   */
+  readonly pointsGivenBackMinor?: number;
 }
 
 export type DayBookExceptionReason =
@@ -205,21 +211,23 @@ function splitSale(sale: DayBookSale, taxRateOf: DayBookInput['taxRateOf']): Spl
 
 /** The value a return credits back: the refund, or on an exchange what was applied plus any refunded balance. */
 export function returnedValue(ret: DayBookReturn): number {
-  if (ret.exchange === undefined) return ret.refundMinor;
-  return ret.exchange.appliedMinor + (ret.exchange.balance === 'refund' ? ret.exchange.balanceMinor : 0);
+  const points = Math.max(0, ret.pointsGivenBackMinor ?? 0);
+  if (ret.exchange === undefined) return ret.refundMinor + points;
+  return ret.exchange.appliedMinor + (ret.exchange.balance === 'refund' ? ret.exchange.balanceMinor : 0) + points;
 }
 
 /** How the returned value left the shop — by which tender, how much. */
 export function refundLegs(ret: DayBookReturn): readonly DayBookTender[] {
+  const points: readonly DayBookTender[] = (ret.pointsGivenBackMinor ?? 0) > 0 ? [{ kind: 'loyalty_points', amountMinor: ret.pointsGivenBackMinor! }] : [];
   if (ret.exchange === undefined) {
-    return ret.refundMinor > 0 ? [{ kind: ret.refundTender, amountMinor: ret.refundMinor }] : [];
+    return [...(ret.refundMinor > 0 ? [{ kind: ret.refundTender, amountMinor: ret.refundMinor }] : []), ...points];
   }
   const legs: DayBookTender[] = [];
   if (ret.exchange.appliedMinor > 0) legs.push({ kind: 'exchange_credit', amountMinor: ret.exchange.appliedMinor });
   if (ret.exchange.balance === 'refund' && ret.exchange.balanceMinor > 0) {
     legs.push({ kind: ret.exchange.balanceTender ?? ret.refundTender, amountMinor: ret.exchange.balanceMinor });
   }
-  return legs;
+  return [...legs, ...points];
 }
 
 function splitReturn(ret: DayBookReturn, original: DayBookSale | undefined, taxRateOf: DayBookInput['taxRateOf']): Split {

@@ -42,7 +42,7 @@ import type { PaymentVerifier } from '../../../packages/orders/src/payment-verif
 import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/index';
 import { loyaltyLiabilityRoutes } from '../../finance/src/loyalty-liability';
 import { independentEvidenceRoutes } from '../../finance/src/independent-evidence';
-import { earnOnSale, takeBackOnReturn } from '../../customer/src/loyalty-effects';
+import { earnOnSale, takeBackOnReturn, giveBackOnReturn } from '../../customer/src/loyalty-effects';
 import { labellingRoutes } from '../../catalogue/src/labelling';
 import { masterDataRoutes } from '../../catalogue/src/master-data';
 import { categoryPolicyRoutes } from '../../catalogue/src/category-policy';
@@ -786,7 +786,17 @@ export function buildSurface(deps: {
       storeCreditCap: () => undefined, recordStoreCreditCap: () => {},
       flaggedReturns: empty([]), now,
     } : { ...returnsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, tillSealKey: sealKey,
-      loyaltyOnReturn: (t, saleId, returnId, refundMinor) => takeBackOnReturn(loyaltyEffects!, t, saleId, returnId, refundMinor) }),
+      // OB-34 "A": a return gives back the points the member PAID WITH, in proportion to the goods coming back; and on such
+      // a bill the earn is taken back against those goods too (its refund is only the money share). An exchange gives
+      // nothing back (its goods are credited in full) and takes back against its credit, as before.
+      loyaltyOnReturn: async (t, saleId, returnId, refundMinor, returned) => {
+        const giveBack = returned === undefined || returned.exchange
+          ? undefined
+          : await giveBackOnReturn(loyaltyEffects!, t, saleId, returnId, returned.valueMinor);
+        const paidWithPoints = giveBack !== undefined && giveBack.outcome !== 'no_points_spent';
+        const takeBack = await takeBackOnReturn(loyaltyEffects!, t, saleId, returnId, paidWithPoints ? returned!.valueMinor : refundMinor);
+        return paidWithPoints ? { ...takeBack, givenBack: giveBack } : takeBack;
+      } }),
     // Head office's maker-checker engine (ADR-0024 · M02-FR-03): the maker asks, a different person with the authority
     // approves or rejects in their own session, and the action then uses that approval once.
     // The adapter is stateless over the store, so the routes and every action that uses an approval read the same truth.

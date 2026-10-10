@@ -222,18 +222,27 @@ export function spendsOfSaleRecord(record: unknown, fallbackTradingDay = ''): re
 }
 
 /**
- * How much of a bill may still be refunded as money or store credit when part of it was paid with POINTS (PF-09 step 3).
- * Points are not money: refunding the points-paid part in cash or credit would turn points into rupees. So a refund
- * against such a bill is capped at the part not paid with points, less what was already refunded. Undefined when the
- * bill used no points (the ordinary refund rules apply unchanged). What happens to the points themselves on a return is
- * the owner's decision (recorded in the report); until then they are not given back at the till.
+ * How much of a bill may still be refunded as money or store credit when part of it was paid with POINTS (PF-09 step 3 ·
+ * OB-34 "A"). Points are not money: refunding the points-paid part in cash or credit would turn points into rupees. The
+ * points the member spent come back to them as POINTS, in proportion to the returned part (head office gives them back
+ * when the return arrives), so the money side of a return is its MONEY SHARE: the returned goods (at the bill's own
+ * prices, cumulative over every return of the bill) × the part of the bill not paid with points ÷ the bill, rounded up to
+ * the paise, less what was already refunded — and never past the part not paid with points. Undefined when the bill used
+ * no points (the ordinary refund rules apply unchanged). Without `returnedValueMinor` (a caller that cannot value the
+ * goods) the cap is the coarse one: the whole part not paid with points, less what was already refunded.
  */
 export function refundRoomOutsidePoints(input: {
   readonly totalMinor: number;
   readonly tenders: readonly { readonly kind: string; readonly amountMinor: number }[] | undefined;
   readonly priorRefundsMinor: number;
+  /** Goods coming back on THIS return plus every earlier return of the bill, valued at the bill's own prices. */
+  readonly returnedValueMinor?: number;
 }): number | undefined {
   const points = (input.tenders ?? []).filter((t) => t.kind === 'loyalty_points').reduce((n, t) => n + t.amountMinor, 0);
   if (points <= 0) return undefined;
-  return Math.max(0, input.totalMinor - points - input.priorRefundsMinor);
+  const moneyPart = Math.max(0, input.totalMinor - points);
+  const share = input.returnedValueMinor === undefined || input.totalMinor <= 0
+    ? moneyPart
+    : Math.min(moneyPart, Math.ceil((Math.min(input.totalMinor, Math.max(0, input.returnedValueMinor)) * moneyPart) / input.totalMinor));
+  return Math.max(0, share - input.priorRefundsMinor);
 }
