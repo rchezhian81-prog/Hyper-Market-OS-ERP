@@ -280,7 +280,7 @@ import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/index';
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
-import { latestDomainReports, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
+import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
@@ -11148,7 +11148,7 @@ export function aiAdapter(input: {
       // A06 Operations — explain the live operational incidents and recommend a runbook for each.
       if (agent === 'A06') {
         if (input.operationsAlerts === undefined) return [];
-        const findings = recommendOperationsRunbooks(await input.operationsAlerts(tenantId));
+        const findings = recommendOperationsRunbooks(liveNotCleared(await input.operationsAlerts(tenantId)));
         return operationsProposals(findings, now);
       }
       // A07 Security/Fraud — prioritise the open investigations by exposure. NO autonomous sanctions.
@@ -11272,7 +11272,7 @@ export function aiAdapter(input: {
       }
       const findings = input.operationsAlerts === undefined
         ? []
-        : recommendOperationsRunbooks(await input.operationsAlerts(tenantId));
+        : recommendOperationsRunbooks(liveNotCleared(await input.operationsAlerts(tenantId)));
       return buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
     },
 
@@ -11540,6 +11540,23 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
         payload: record,
       }));
     },
+    // PA-12: the store computers' own sync reports are lane signals — the stalest store's last complete sync (its
+    // stalest queue), and what their queues still hold or had refused.
+    storeLanes: async (tenantId) => {
+      const latestByStore = latestPerStore(await syncWatermarksAdapter({ store: input.store }).records(tenantId));
+      if (latestByStore.size === 0) return undefined;
+      let stalest: { at: string | null; store: string } | undefined;
+      let unsent = 0; let deadLettered = 0;
+      for (const [storeId, r] of latestByStore) {
+        const times = r.domains.map((d) => d.completeThrough);
+        const storeAt = times.some((t) => t === null) ? null
+          : (times as string[]).reduce((a, b) => (Date.parse(b) < Date.parse(a) ? b : a));
+        if (stalest === undefined || stalest.at !== null && (storeAt === null || Date.parse(storeAt) < Date.parse(stalest.at))) stalest = { at: storeAt, store: storeId };
+        unsent += r.domains.reduce((n, d) => n + d.unsent, 0);
+        deadLettered += r.domains.reduce((n, d) => n + d.deadLettered, 0);
+      }
+      return { stalestCompleteAt: stalest!.at, stalestStore: stalest!.store, unsent, deadLettered, stores: latestByStore.size };
+    },
     alertRules: (tenantId) => latest<StoredAlertRules>(input.store, tenantId, ALERT_RULES_STREAM, 'AlertRulesDefined'),
     defineAlertRules: async (tenantId, rules) => {
       await input.store.append(tenantId, ALERT_RULES_STREAM, makeEvent({
@@ -11717,4 +11734,10 @@ export function syncWatermarksAdapter(input: { readonly store: EventStore }): {
       }));
     },
   };
+}
+
+
+/** The alerts still in play — a cleared one (PA-12) is history, not an incident to advise on. */
+function liveNotCleared<T extends { readonly state: string }>(alerts: readonly T[]): readonly (T & { readonly state: 'open' | 'acknowledged' | 'escalated' })[] {
+  return alerts.filter((a): a is T & { readonly state: 'open' | 'acknowledged' | 'escalated' } => a.state !== 'cleared');
 }

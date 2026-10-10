@@ -139,6 +139,8 @@ describe('observed operational health (M35-FR-03, API-11)', () => {
     expect(dup.status).toBe(409);
     expect(codeOf(dup)).toBe('backup_already_recorded');
     const o = (await get(h, '/v1/platform/operational-health/observed', MGR)).body as Observed;
-    expect(component(o, 'backup')).toMatchObject({ status: 'unknown' }); // an unencrypted backup does not count
+    // An unencrypted backup does not count as a backup — and (PA-12) the latest one failing is itself an exception,
+    // said at once: degraded, naming why, rather than a quiet "unknown".
+    expect(component(o, 'backup')).toMatchObject({ status: 'degraded', detail: expect.stringMatching(/latest backup \(b-1, .*\) is not encrypted/) as unknown as string });
   });
 });

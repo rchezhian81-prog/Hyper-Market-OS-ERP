@@ -14,6 +14,7 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { startApi, type RunningApi, type ApiProviders } from '../../services/api/src/main';
 import type { NotificationWorker } from '../../services/customer/src/notification-worker';
+import type { OpsAlertWorker } from '../../services/platform/src/ops-alert-worker';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { seedInitialAdmins } from '../../services/api/src/access';
 import { OWNER_ROLE_ID, STORE_MANAGER_ROLE_ID } from '../../services/api/src/roles';
@@ -55,6 +56,8 @@ export interface RealCloud {
   readonly said: readonly string[];
   /** PA-08: the notification sender the API started on its own timer (only when a provider was handed in). */
   readonly notificationWorker?: NotificationWorker;
+  /** PA-12: the ops-alert worker the API started on its own timer. */
+  readonly opsAlertWorker?: OpsAlertWorker;
   stop(): Promise<void>;
 }
 
@@ -134,6 +137,7 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
     packSigningKey: input.packSigningKey,
     said,
     ...(running.notificationWorker === undefined ? {} : { notificationWorker: running.notificationWorker }),
+    ...(running.opsAlertWorker === undefined ? {} : { opsAlertWorker: running.opsAlertWorker }),
     token,
     request,
     grant: async (userId, roleId, requestedBy = REQUESTER) => {

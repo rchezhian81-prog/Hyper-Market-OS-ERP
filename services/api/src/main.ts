@@ -223,6 +223,7 @@ import { campaignRoutes } from '../../customer/src/campaigns';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { notificationQueueRoutes, drainNotificationQueue } from '../../customer/src/notification-queue';
 import { startNotificationWorker, type NotificationWorker } from '../../customer/src/notification-worker';
+import { startOpsAlertWorker, type OpsAlertWorker } from '../../platform/src/ops-alert-worker';
 import { NotificationQueue, type NotificationTransport } from '../../../packages/notifications/src/index';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { drReadinessRoutes } from '../../platform/src/dr-readiness';
@@ -1566,6 +1567,8 @@ export interface RunningApi {
   readonly routeCount: number;
   /** PA-08: the notification sender running on its own timer — present only when a message provider is configured. */
   readonly notificationWorker?: NotificationWorker;
+  /** PA-12: the ops-alert worker — raises, escalates and delivers alerts to their named people on its own timer. */
+  readonly opsAlertWorker?: OpsAlertWorker;
   /** Stops accepting, lets in-flight requests finish, then closes the database pool. */
   readonly stop: () => Promise<void>;
 }
@@ -1586,6 +1589,8 @@ export interface ApiProviders {
   readonly notificationTransport?: NotificationTransport;
   /** How often the notification worker passes over every shop (default 30 s). */
   readonly notificationWorkerIntervalMs?: number;
+  /** PA-12: how often the ops-alert worker passes over every shop with alert rules (default 60 s). */
+  readonly opsAlertWorkerIntervalMs?: number;
 }
 
 export async function startApi(
@@ -1852,11 +1857,27 @@ export async function startApi(
     out(`notifications: the sender runs every ${Math.round((providers.notificationWorkerIntervalMs ?? 30_000) / 1000)} s through ${transport.name}\n`);
   }
 
+  // PA-12 round 4: alerts reach their named people by themselves — a failed or missed backup, a store whose sync has
+  // stopped or whose queue holds refused items is raised to the owner the rules name, escalated when nobody answers,
+  // and delivered into that person's inbox (and to their phone once a message provider is configured). Always on:
+  // the inbox needs no provider.
+  const alertRegister = scopedTo(pgPoolClient(db), '*');
+  const opsAlertWorker = startOpsAlertWorker({
+    tenants: async () => (await alertRegister.query<{ tenant_id: string }>("SELECT DISTINCT tenant_id::text AS tenant_id FROM event_ledger WHERE type = 'AlertRulesDefined' ORDER BY 1", [])).map((r) => r.tenant_id),
+    deps: observedHealthAdapter({ store, now }),
+    ...(transport === undefined ? {} : { transport }),
+    intervalMs: providers.opsAlertWorkerIntervalMs ?? 60_000,
+    now,
+    say: (line) => { out(`${line}\n`); },
+  });
+
   return {
     port,
     routeCount,
     ...(notificationWorker === undefined ? {} : { notificationWorker }),
+    opsAlertWorker,
     stop: async () => {
+      await opsAlertWorker.stop();
       if (notificationWorker !== undefined) await notificationWorker.stop();
       await server.stop();
       await db.end();

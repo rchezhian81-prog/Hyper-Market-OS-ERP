@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 884 | 540 | 540 | 73 | 285 |
+| 13 | 885 | 540 | 540 | 73 | 285 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -830,6 +830,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/platform/alerts` | `platform.health.read` | core | — |
 | POST | `/v1/platform/alerts/:alertId/acknowledge` | `platform.alert.manage` | core | yes |
 | POST | `/v1/platform/alerts/escalate` | `platform.alert.manage` | core | yes |
+| GET | `/v1/platform/alerts/inbox` | `platform.health.read` | core | — |
 | POST | `/v1/platform/alerts/raise` | `platform.alert.manage` | core | yes |
 | GET | `/v1/platform/api-manifest` | `platform.partner.read` | core | — |
 | POST | `/v1/platform/backups/:backupId/taken` | `platform.backup.record` | core | yes |
