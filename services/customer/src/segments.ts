@@ -108,6 +108,8 @@ export interface SegmentDeps {
   readonly complaintFacts: (tenantId: string) => Promise<readonly ComplaintFact[]> | readonly ComplaintFact[];
   /** Persist an order fact (latest-per-orderId). */
   readonly recordOrderFact: (tenantId: string, fact: OrderFact) => Promise<void> | void;
+  /** FUL-12 prevent-restore: was this subject erased? A new profile fact for them is refused, never re-created silently. */
+  readonly erasedSubject?: (tenantId: string, customerRef: string) => Promise<boolean> | boolean;
   /** Persist a complaint fact (latest-per-caseId). */
   readonly recordComplaintFact: (tenantId: string, fact: ComplaintFact) => Promise<void> | void;
   /** A customer's consent ledger (per purpose+channel) — the SAME record the send-gate reads (P-02). */
@@ -234,6 +236,9 @@ export function segmentRoutes(deps: SegmentDeps): readonly Route[] {
         if (!isOrder(fact)) {
           throw apiError(400, { code: 'not_readable_as_an_order_fact', whatHappened: 'An order fact needs { customerRef, at (date), netMinor (whole), marginMinor (whole), channel (store/app/web/phone) }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the order fields. Nothing was recorded.' });
         }
+        if (await deps.erasedSubject?.(ctx.tenantId, fact.customerRef as string) === true) {
+          throw apiError(409, { code: 'subject_was_erased', whatHappened: 'This customer exercised their right to erasure; a new profile fact would re-create their marketing profile.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded. Re-creating their data needs a new, lawful basis recorded first, not a silent restore.' });
+        }
         await deps.recordOrderFact(ctx.tenantId, fact);
         return { status: 201, body: { orderId: fact.orderId, customerRef: fact.customerRef } };
       },
@@ -247,6 +252,9 @@ export function segmentRoutes(deps: SegmentDeps): readonly Route[] {
         const fact = { caseId: ctx.params['caseId'] ?? '', customerRef: b['customerRef'], at: b['at'], resolved: b['resolved'] };
         if (!isComplaint(fact)) {
           throw apiError(400, { code: 'not_readable_as_a_complaint_fact', whatHappened: 'A complaint fact needs { customerRef, at (date), resolved (boolean) }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the complaint fields. Nothing was recorded.' });
+        }
+        if (await deps.erasedSubject?.(ctx.tenantId, fact.customerRef as string) === true) {
+          throw apiError(409, { code: 'subject_was_erased', whatHappened: 'This customer exercised their right to erasure; a new profile fact would re-create their marketing profile.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded. Re-creating their data needs a new, lawful basis recorded first, not a silent restore.' });
         }
         await deps.recordComplaintFact(ctx.tenantId, fact);
         return { status: 201, body: { caseId: fact.caseId, customerRef: fact.customerRef } };

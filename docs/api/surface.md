@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 880 | 538 | 538 | 73 | 284 |
+| 13 | 892 | 544 | 544 | 73 | 286 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -129,6 +129,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 |---|---|---|---|---|
 | GET | `/v1/export` | `export.read` | core | — |
 | POST | `/v1/export/:domain` | `export.read` | core | yes |
+| GET | `/v1/export/coverage` | `export.read` | core | — |
 | GET | `/v1/exports` | `export.read` | core | — |
 | POST | `/v1/import/commit` | `purchase.import.record` | core | yes |
 | GET | `/v1/import/commits` | `purchase.import.read` | core | — |
@@ -407,6 +408,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/loyalty/referrals/:referralId` | `loyalty.coupon.issue` | `loyalty` | yes |
 | GET | `/v1/loyalty/rule` | `loyalty.points.read` | core | — |
 | GET | `/v1/loyalty/wallets` | `loyalty.points.read` | core | — |
+| GET | `/v1/me/privacy` | `customer.privacy.self` | core | — |
+| POST | `/v1/me/privacy/consent` | `customer.privacy.self` | core | yes |
+| POST | `/v1/me/privacy/requests/:requestId` | `customer.privacy.self` | core | yes |
 | POST | `/v1/notifications/can-send` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id/delivered` | `notification.send.check` | core | yes |
@@ -420,6 +424,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/notifications/templates/:templateId/approval` | `document.template.manage` | core | yes |
 | POST | `/v1/privacy/breach/assess` | `customer.consent.write` | core | yes |
 | POST | `/v1/privacy/consent-notice/check` | `customer.consent.read` | core | yes |
+| GET | `/v1/privacy/data-requests` | `privacy.request.manage` | core | — |
 | GET | `/v1/privacy/data-requests/:requestId` | `privacy.request.manage` | core | — |
 | POST | `/v1/privacy/data-requests/:requestId` | `privacy.request.manage` | core | yes |
 | POST | `/v1/privacy/data-requests/:requestId/erasure-approval` | `privacy.erasure.approve` | core | yes |
@@ -433,7 +438,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/privacy/pii/:customerRef/:category` | `privacy.request.manage` | core | yes |
 | POST | `/v1/privacy/retention/sweep` | `customer.consent.write` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/attribution` | `customer.campaign.read` | core | yes |
+| POST | `/v1/service/campaigns/:campaignId/messages/:messageId/status` | `notification.send.check` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/plan` | `customer.campaign.send` | core | yes |
+| POST | `/v1/service/campaigns/:campaignId/send` | `customer.campaign.send` | core | yes |
+| GET | `/v1/service/campaigns/:campaignId/status` | `customer.campaign.read` | core | — |
+| GET | `/v1/service/campaigns/frequency-policy` | `customer.campaign.read` | core | — |
+| PUT | `/v1/service/campaigns/frequency-policy` | `customer.campaign.policy` | core | yes |
 | POST | `/v1/service/campaigns/journeys/:kind/candidates` | `customer.campaign.send` | core | yes |
 | GET | `/v1/service/campaigns/plans` | `customer.campaign.read` | core | — |
 | GET | `/v1/service/cases` | `service.case.read` | core | — |
@@ -952,6 +962,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | Method | Path | Permission | Feature | Idempotent |
 |---|---|---|---|---|
 | GET | `/v1/ai/agents` | `ai.proposal.read` | core | — |
+| POST | `/v1/ai/agents/:agent/model-calls` | `ai.agent.run` | core | yes |
 | POST | `/v1/ai/agents/:agent/runs` | `ai.agent.run` | core | yes |
 | PUT | `/v1/ai/agents/enabled` | `ai.agent.enable` | core | yes |
 | GET | `/v1/ai/budget` | `ai.budget.read` | core | — |
@@ -959,6 +970,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/ai/data-quality/dismissals` | `ai.suggestion.dismiss` | core | yes |
 | GET | `/v1/ai/data-quality/worklist` | `ai.proposal.read` | core | — |
 | PUT | `/v1/ai/kill-switch` | `ai.killswitch.set` | core | yes |
+| GET | `/v1/ai/model-calls` | `ai.budget.read` | core | — |
 | POST | `/v1/ai/operations/dismissals` | `ai.suggestion.dismiss` | core | yes |
 | GET | `/v1/ai/operations/worklist` | `ai.proposal.read` | core | — |
 | GET | `/v1/ai/proposals` | `ai.proposal.read` | core | — |

@@ -33,6 +33,7 @@ import {
 } from '../../kernel/src/index';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from './access';
 import { reportProducers, PRODUCED_AT_HEAD_OFFICE } from './report-producers';
+import { shoppingAlternatives } from './ai-shopping';
 import { ownerInsights, purchaseSuggestions } from './ai-insights';
 import { tradingDayIn } from '../../../packages/calendar/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
@@ -189,7 +190,7 @@ import { engineCategory } from '../../catalogue/src/categories';
 import { categoryRoutes } from '../../catalogue/src/categories';
 import { storePackRoutes } from '../../platform/src/store-packs';
 import { buildStorePackSections } from './store-pack-builder';
-import { dataExportRoutes, buildExportDomains } from '../../purchase/src/data-export';
+import { dataExportRoutes, buildExportDomains, type ExportSale, type ExportJournal } from '../../purchase/src/data-export';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import { financeRoutes } from '../../finance/src/index';
 import { dayBookRoutes } from '../../finance/src/day-book';
@@ -207,17 +208,20 @@ import { auditSearchRoutes } from '../../finance/src/audit-search';
 import { storedAuditTrailRoutes } from '../../finance/src/audit-trail-store';
 import { reportingRoutes } from '../../reporting/src/index';
 import { consolidationRoutes } from '../../reporting/src/consolidation-route';
-import { scheduledBriefRoutes } from '../../reporting/src/scheduled-brief';
+import { scheduledBriefRoutes, type ScheduledBriefDeps } from '../../reporting/src/scheduled-brief';
+import { startBriefWorker } from '../../reporting/src/brief-worker';
 import { ownerAlertsRoutes } from '../../reporting/src/owner-alerts';
 import { drillThroughRoutes } from '../../reporting/src/drill-through';
 import type { Producer } from '../../../packages/reporting/src/index';
 import { customerRoutes } from '../../customer/src/index';
 import { dataRightsRoutes } from '../../customer/src/data-rights';
+import { privacySelfRoutes, privacySelfUnwired } from '../../customer/src/privacy-self';
 import { erasureExecutionRoutes } from '../../customer/src/erasure-execution';
 import { serviceCaseRoutes } from '../../customer/src/service-cases';
 import { segmentRoutes } from '../../customer/src/segments';
 import { customerDuplicatesRoutes } from '../../customer/src/duplicates';
 import { campaignRoutes } from '../../customer/src/campaigns';
+import { campaignSendRoutes, campaignSendUnwired } from '../../customer/src/campaign-send';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { notificationQueueRoutes } from '../../customer/src/notification-queue';
 import { NotificationQueue, type NotificationTransport } from '../../../packages/notifications/src/index';
@@ -249,8 +253,10 @@ import { assignmentRoutes } from '../../fulfilment/src/assignments';
 import { syncedDriverRunRoutes } from '../../fulfilment/src/driver-runs';
 import { migrationRoutes } from '../../migration/src/index';
 import { aiRoutes } from '../../ai/src/index';
+import { modelGatewayRoutes } from '../../ai/src/model-gateway';
+import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import {
-  dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants,
+  STREAM, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -320,6 +326,12 @@ export function buildSurface(deps: {
    * test adapter here to prove the send path.
    */
   readonly notificationTransport?: NotificationTransport;
+  /** EA-08: the model provider adapter and its tier pricing. NEVER set by `startApi` (no provider is chosen — an external
+   *  gate); tests pass the deterministic simulator to prove admission, metering, audit and evaluations. */
+  readonly modelTransport?: ModelTransport;
+  readonly modelPricing?: Readonly<Record<ModelTier, TierPricing>>;
+  /** EA-07: handed the composed brief-scheduler deps, so `startApi` can run the brief WORKER over the same ones. */
+  readonly onBriefDeps?: (deps: ScheduledBriefDeps) => void;
   /**
    * Reachability of what the shop cannot trade without. A real call every time it is asked, not a
    * flag something set earlier — a cached "reachable: true" is a health check that reports the
@@ -416,6 +428,7 @@ export function buildSurface(deps: {
   // The named-report producers over governed source records (EA-06) — shared by the report route and the governed drill
   // (EA-05), so a drill reaches exactly the records the report's figure was summed from.
   const producers = store === undefined ? undefined : reportProducers({ store, now, calendar: shopCalendar, loyaltyRule });
+  const withBriefDeps = (d: ScheduledBriefDeps): ScheduledBriefDeps => { deps.onBriefDeps?.(d); return d; };
   // The durable domain audit trail (M34-FR-01): one sealed chain per tenant. Producers (slice 1: the
   // credential lifecycle) seal into it; the stored read routes search / reconstruct / verify it. No
   // store → no durable trail, so a producer simply records nothing (its recordAudit is left unset).
@@ -671,6 +684,11 @@ export function buildSurface(deps: {
           domains: buildExportDomains({
             products: async (t) => productMasterAdapter({ store, now }).products(t),
             importCommits: (t) => dataImportAdapter({ store, now }).commits(t),
+            // SF-10: the further governed domains, each from its own ledger's read model.
+            sales: async (t) => (await store.readStream(t, STREAM.sales, { type: 'SaleCommitted' })).map((e) => e.event.payload as ExportSale),
+            stock: async (t) => inventoryAdapter({ store, now }).availability(t),
+            suppliers: async (t) => supplierMasterAdapter({ store, now }).records(t),
+            journals: async (t) => (await store.readStream(t, STREAM.finance, { type: 'JournalPosted' })).map((e) => e.event.payload as ExportJournal),
           }),
           access: tenantAccessResolver(store, ROLE_CATALOGUE),
           ...dataExportAdapter({ store, now }),
@@ -914,11 +932,18 @@ export function buildSurface(deps: {
     ...dataRightsRoutes(store === undefined
       ? { request: empty(undefined), requests: empty([]), record: () => {}, now }
       : dataRightsAdapter({ store, now })),
+    // FUL-06: the signed-in customer's own privacy centre — consent and rights saved on the SAME ledgers the senders and
+    // the DPO read, scoped from the session, read back after every write.
+    ...privacySelfRoutes(store === undefined ? privacySelfUnwired(now) : (() => {
+      const c = customerAdapter({ store, now });
+      const r = dataRightsAdapter({ store, now });
+      return { consentRecords: c.consentRecords, appendConsent: c.appendConsent, requests: r.requests, recordRequest: r.record, now };
+    })()),
     // Erasure EXECUTION (M20-FR-04 / DPDP) — locate PII, checker approval, two-person execute + tombstone,
     // processor notices. DEVELOPMENT-APPROVED; legal confirmation required.
     ...erasureExecutionRoutes(store === undefined
       ? { request: empty(undefined), recordRequest: () => {}, recordPii: () => {}, piiFor: empty([]), recordApproval: () => {}, approvalFor: empty(undefined), recordTombstone: () => {}, tombstonesFor: empty([]), tombstoneFor: empty(undefined), enqueueNotice: () => {}, now }
-      : erasureExecutionAdapter({ store, now })),
+      : { ...erasureExecutionAdapter({ store, now }), domainHoldings: privacyDomainHoldingsAdapter({ store, now }) }),
     // Service-desk cases + SLA clocks (M21-FR-04) — open/first-response/resolve + SLA + breached queue.
     ...serviceCaseRoutes(store === undefined
       ? { serviceCase: empty(undefined), serviceCases: empty([]), recordCase: () => {}, compensations: empty([]), recordCompensation: () => {},
@@ -940,6 +965,9 @@ export function buildSurface(deps: {
     ...campaignRoutes(store === undefined
       ? { consentRecords: empty([]), plans: empty([]), recordPlan: () => {}, now }
       : campaignAdapter({ store, now })),
+    // PF-10: the campaign SEND — frequency history from the PA-08 queue, approved recipients enqueued on it, provider
+    // delivery reports recorded against each message.
+    ...campaignSendRoutes(store === undefined ? campaignSendUnwired(now) : campaignSendAdapter({ store, now })),
     ...storedValueRoutes(store === undefined ? {
       instrument: empty(undefined), movements: empty([]), recordIssue: () => {}, recordMovement: () => {},
       instrumentsForOwner: empty([]), movementsForOwner: empty([]), allMovements: empty([]), now,
@@ -1357,8 +1385,20 @@ export function buildSurface(deps: {
     // additive). The transport that delivers it to the phone is the deployment step.
     ...scheduledBriefRoutes(store === undefined
       ? { schedule: () => undefined, setSchedule: () => {}, recordSent: () => {}, now }
-      : {
+      : withBriefDeps({
           ...scheduledBriefAdapter({ store, now }),
+          // EA-07 OUTBOX: a due brief goes onto the PA-08 queue (the queue's own sender delivers, retries, dead-letters
+          // visibly), and the day is acknowledged only when the queue says it was delivered.
+          outbox: (() => {
+            const nq = notificationQueueAdapter({ store, now });
+            return {
+              enqueue: nq.record,
+              item: async (tenantId: string, id: string) => {
+                const it = (await nq.queue(tenantId)).find(id);
+                return it === undefined ? undefined : { state: it.state, reason: it.reason };
+              },
+            };
+          })(),
           // EA-07: the day's figures from the SAME governed producer as the sales-by-day report, stamped with its source
           // freshness; head office has no cost of goods or banked cash for the day, so those are said "not available".
           calendar: shopCalendar,
@@ -1376,7 +1416,7 @@ export function buildSurface(deps: {
           },
           recipient: async (tenantId) => (await effectiveGrants(store, tenantId)).find((g) => g.roleId === OWNER_ROLE_ID)?.userId,
           ...(deps.notificationTransport === undefined ? {} : { transport: deps.notificationTransport }),
-        }),
+        })),
     ...platformRoutes(store === undefined ? {
       probe: probes, flags: empty({}), setFlag: () => {},
       settings, exportTenant: emptyExportBundle,
@@ -1492,6 +1532,16 @@ export function buildSurface(deps: {
       // 2b-vi-c-3: a decision relayed from the store's migration screen is checked against the store computer's seal.
       tillSealKey: sealKey,
     }),
+    // EA-08: the governed model call — admission before the call, reservation, metering, immutable hash-chained audit.
+    // No provider in production (an external gate): an admitted call is audited and answered no_provider.
+    ...modelGatewayRoutes(store === undefined ? {
+      killSwitchOn: () => true, enabledAgents: () => [], budget: () => ({ capMinor: 0, spentMinor: 0, periodEnds: now() }), openReservedMinor: () => 0,
+      reserve: () => {}, settle: () => {}, audits: () => [], appendAudit: () => {}, now,
+    } : modelGatewayAdapter({
+      store, now,
+      ...(deps.modelTransport === undefined ? {} : { transport: deps.modelTransport }),
+      ...(deps.modelPricing === undefined ? {} : { pricing: deps.modelPricing }),
+    })),
     ...aiRoutes(store === undefined ? {
       // Stopped by default, matching the adapter. A kill switch that defaults off is an agent
       // running because nobody has told it not to.
@@ -1506,6 +1556,7 @@ export function buildSurface(deps: {
       // EA-08: A01 reads the same governed report producers the owner's reports do; A02 the stock and sales ledgers.
       ownerInsights: async (t) => ownerInsights(producers!, t, now(), tradingDayIn(now(), await shopCalendar(t))),
       purchaseSuggestions: (t) => purchaseSuggestions(store, t, now()),
+      shoppingAlternatives: (t) => shoppingAlternatives(store, t, now()),
       // The Data Quality agent (A08) reads the live product master + barcode register — the tested
       // folds reused verbatim (same pattern as the export domains above), never a second copy.
       products: (t) => productMasterAdapter({ store, now }).products(t),
@@ -1673,7 +1724,9 @@ export async function startApi(
   // authenticator so a revocation bites on the next request here and within the refresh window elsewhere.
   const revocations = new TokenRevocationList(tokenRevocationAdapter({ store }));
 
+  let briefDeps: ScheduledBriefDeps | undefined;
   const built = buildRouter(buildSurface({
+    onBriefDeps: (d) => { briefDeps = d; },
     signingKey: settings['PACK_SIGNING_KEY']!,
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
@@ -1800,10 +1853,23 @@ export async function startApi(
   const routeCount = built.router!.list().length;
   out(`sre-api listening on ${port}, ${routeCount} routes\n`);
 
+  // EA-07: the owner's daily brief WORKER — only for the shops an operator names (head office never looks across shops,
+  // OB-21). Each tick runs one scheduler pass per shop on its own trading calendar; due briefs go onto the PA-08 queue.
+  const briefTenants = (env['BRIEF_WORKER_TENANT_IDS'] ?? '').split(',').map((t) => t.trim()).filter((t) => t !== '');
+  const everySeconds = Number(env['BRIEF_WORKER_EVERY_SECONDS'] ?? '300');
+  const stopBriefWorker = briefTenants.length === 0 || briefDeps === undefined ? undefined : startBriefWorker({
+    deps: briefDeps, tenants: briefTenants, everyMs: (Number.isFinite(everySeconds) && everySeconds >= 10 ? everySeconds : 300) * 1000,
+    report: (ticks) => {
+      for (const t of ticks) if (!t.ok || t.ran.length > 0) out(`${JSON.stringify({ briefWorker: t.tenantId, ok: t.ok, detail: t.detail, ran: t.ran.map((r) => ({ day: r.tradingDay, outcome: r.outcome })) })}\n`);
+    },
+  });
+  if (stopBriefWorker !== undefined) out(`brief worker: briefing ${briefTenants.length} shop(s) every ${everySeconds}s\n`);
+
   return {
     port,
     routeCount,
     stop: async () => {
+      stopBriefWorker?.();
       await server.stop();
       await db.end();
     },

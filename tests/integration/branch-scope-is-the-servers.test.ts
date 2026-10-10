@@ -97,24 +97,12 @@ describe('branch scope is the server\'s — the audit\'s reproductions inverted 
     expect((await putEmployee(restarted, A, MGR1, 'br-1', 'E2', emp('br-2', 1), 'again')).status).toBe(403);
   });
 
-  it('a drill-through cannot widen its scope by body: br-2 rows are withheld for a br-1 manager, and asking for br-2 or for everything is refused by name', async () => {
+  it('the caller-rows drill is retired (EA-05) — scope on the governed drill is proven over head office\'s own bills', async () => {
+    // tests/integration/a-drill-reaches-its-day-and-only-the-readers-branches.test.ts: a branch-limited manager sees
+    // only their branch's bills AND headline; asking for another branch, or for everything, is refused by name.
     const h = await company(apiHarness(), A);
-    const drill = (body: Record<string, unknown>, key: string) =>
-      h.request({ method: 'POST', path: '/v1/reporting/drill', userId: MGR1, tenantId: A, branchId: 'br-1', idempotencyKey: key, body: {
-        metric: 'sales', kpiValueMinor: 100_000,
-        transactions: [
-          { transactionId: 't1', at: '2026-08-20T10:00:00.000Z', branchId: 'br-1', amountMinor: 60_000, description: 'till 1' },
-          { transactionId: 't2', at: '2026-08-20T10:00:00.000Z', branchId: 'br-2', amountMinor: 40_000, description: 'till 2' },
-        ], ...body,
-      } });
-    const mine = await drill({}, 'd1');
-    expect(mine.status).toBe(200);
-    const body = mine.body as { shownTotalMinor?: number; withheld?: unknown[]; rows?: { branchId: string }[]; transactions?: { branchId: string }[] };
-    const rows = body.rows ?? body.transactions ?? [];
-    expect(rows.every((r) => r.branchId === 'br-1')).toBe(true);
-    expect(codeOf(await drill({ branchScope: ['br-2'] }, 'd2'))).toBe('scope_not_held');
-    expect(codeOf(await drill({ branchScope: 'all' }, 'd3'))).toBe('scope_not_held');
-    expect((await drill({ branchScope: ['br-1'] }, 'd4')).status).toBe(200);
+    const old = await h.request({ method: 'POST', path: '/v1/reporting/drill', userId: MGR1, tenantId: A, branchId: 'br-1', idempotencyKey: 'd1', body: { metric: 'sales', kpiValueMinor: 1, transactions: [] } });
+    expect([403, 410]).toContain(old.status);
   });
 });
 

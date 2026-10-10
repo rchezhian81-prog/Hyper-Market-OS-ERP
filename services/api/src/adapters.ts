@@ -224,10 +224,13 @@ import { collapseConsent } from '../../customer/src/segments';
 import { assembleProfiles, draftMarketingAudiences } from '../../../packages/customer/src/index';
 import type { SegmentPolicy, OrderFact, ComplaintFact, CustomerProfile as SegCustomerProfile, CustomerConsent as SegCustomerConsent, MarketingAudienceDraft } from '../../../packages/customer/src/index';
 import type { DataRightsDeps, DataSubjectRequest } from '../../customer/src/data-rights';
-import type { ErasureExecutionDeps, PiiEntry, ErasureApproval } from '../../customer/src/erasure-execution';
+import type { ErasureExecutionDeps, PiiEntry, ErasureApproval, DomainHolding } from '../../customer/src/erasure-execution';
 import type { PrivacyTombstone } from '../../../packages/customer/src/index';
 import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
 import type { CampaignDeps, CampaignPlanRecord } from '../../customer/src/campaigns';
+import type { CampaignSendDeps, CampaignFrequencyPolicy, CampaignSendRecord, DeliveryCallback } from '../../customer/src/campaign-send';
+import type { ModelGatewayDeps, ModelCallAudit } from '../../ai/src/model-gateway';
+import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import type { AiDraft, SatisfactionScore, CompensationPolicy, SlaView } from '../../../packages/service-desk/src/index';
 import { assessFirstResponse } from '../../../packages/service-desk/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
@@ -7972,10 +7975,21 @@ export function segmentDataAdapter(input: {
         payload: policy,
       }));
     },
-    orderFacts: async (tenantId) =>
-      latestPerId(await allOf<OrderFact>(input.store, tenantId, ORDER_FACTS_STREAM, 'CustomerOrderFactRecorded'), (o) => o.orderId),
-    complaintFacts: async (tenantId) =>
-      latestPerId(await allOf<ComplaintFact>(input.store, tenantId, COMPLAINT_FACTS_STREAM, 'CustomerComplaintFactRecorded'), (c) => c.caseId),
+    // FUL-12: a customer whose marketing profile was erased reads as an anonymous ref — the totals survive for the
+    // shop's own figures, the person is no longer linkable (anonymisation as a compensating fact, never a deletion).
+    orderFacts: async (tenantId) => {
+      const anon = await anonymisedProfiles(input.store, tenantId);
+      return latestPerId(await allOf<OrderFact>(input.store, tenantId, ORDER_FACTS_STREAM, 'CustomerOrderFactRecorded'), (o) => o.orderId)
+        .map((o) => (anon.has(o.customerRef) ? { ...o, customerRef: anon.get(o.customerRef)! } : o));
+    },
+    complaintFacts: async (tenantId) => {
+      const anon = await anonymisedProfiles(input.store, tenantId);
+      return latestPerId(await allOf<ComplaintFact>(input.store, tenantId, COMPLAINT_FACTS_STREAM, 'CustomerComplaintFactRecorded'), (c) => c.caseId)
+        .map((c) => (anon.has(c.customerRef) ? { ...c, customerRef: anon.get(c.customerRef)! } : c));
+    },
+    // FUL-12 prevent-restore: a new profile fact for an erased subject is refused at the route.
+    erasedSubject: async (tenantId, customerRef) =>
+      (await allOf<PrivacyTombstone>(input.store, tenantId, TOMBSTONE_STREAM, 'PrivacyTombstoneSealed')).some((t) => t.customerRef === customerRef),
     recordOrderFact: async (tenantId, fact) => {
       await input.store.append(tenantId, ORDER_FACTS_STREAM, makeEvent({
         id: `order-fact-${fact.orderId}`,
@@ -10552,6 +10566,27 @@ export function migrationAdapter(input: {
         },
       ]);
     },
+    // GT-04 money: a legacy sale's ledger vouchers and the applied record in ONE atomic write, keyed on the change — the
+    // vouchers on the SAME finance stream (and with the same event keys) the day book's own journals use, so the day
+    // book, the period close and every ledger read see them; a retry under any key or after a restart is the same, once.
+    applyDeltaSale: async (tenantId, applied, journals) => {
+      await input.store.appendBatch(tenantId, [
+        ...journals.map((j) => ({
+          stream: STREAM.finance,
+          event: makeEvent({ id: `je-${j.entryId}`, type: 'JournalPosted', occurredAt: applied.appliedAt, idempotencyKey: `je-${tenantId}-${j.entryId}`, source: 'api/migration', payload: j }),
+        })),
+        {
+          stream: streamName(STREAM.migration, 'delta'),
+          event: makeEvent({
+            id: `delta-${applied.changeKey}`, type: 'MigrationDeltaApplied', occurredAt: applied.appliedAt,
+            idempotencyKey: `delta-${tenantId}-${applied.changeKey}`, source: 'api/migration', payload: applied,
+          }),
+        },
+      ]);
+    },
+    postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    periodStates: (tenantId) => financeAdapter(input).periodStates(tenantId),
+    nextOpenPeriod: (tenantId) => financeAdapter(input).nextOpenPeriod(tenantId),
     rollbacks: async (tenantId) => {
       const decided = await allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackDecided');
       const performed = await allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackPerformed');
@@ -10998,6 +11033,8 @@ export function aiAdapter(input: {
    * without it A09 drafts nothing. `draftMarketingAudiences` runs here over what it returns.
    */
   readonly marketingDraft?: (tenantId: string) => Promise<{ readonly profiles: readonly SegCustomerProfile[]; readonly consents: readonly SegCustomerConsent[] }>;
+  /** EA-08: the Customer Shopping agent's (A04) in-stock alternatives, from the product master, pack and stock ledger. */
+  readonly shoppingAlternatives?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
   /**
    * The tenant's service-desk cases (M21), for the Service agent (A05). Optional, same shape as the others:
    * without it A05 surfaces nothing. The tested serviceCases fold the desk board reads; A05 runs the tested
@@ -11114,6 +11151,8 @@ export function aiAdapter(input: {
       if (agent === 'A01') return input.ownerInsights === undefined ? [] : input.ownerInsights(tenantId);
       // A02 Purchase — stock-outs with recent demand, as DRAFTS for a buyer; no quantity invented, no order raised.
       if (agent === 'A02') return input.purchaseSuggestions === undefined ? [] : input.purchaseSuggestions(tenantId);
+      // A04 Customer Shopping — in-stock alternatives for what has run out, as DRAFTS the customer confirms (EA-08).
+      if (agent === 'A04') return input.shoppingAlternatives === undefined ? [] : input.shoppingAlternatives(tenantId);
       // A08 Data Quality — the product master + import history.
       if (agent === 'A08') {
         const proposals: Omit<Proposal, 'committed'>[] = [];
@@ -11648,5 +11687,191 @@ export function heldVersionsAdapter(input: { readonly store: EventStore }): {
         idempotencyKey: `held-${tenantId}-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}${observed}`, source: 'api/platform', payload: r,
       }));
     },
+  };
+}
+
+// ── FUL-12: erasure over the REAL domain stores ──────────────────────────────────────────────────────────────────────
+
+/** The append-only anonymisation facts a privacy erasure leaves in the customer domains (one per category per request). */
+const PRIVACY_REDACTION_STREAM = streamName(STREAM.privacy, 'redactions');
+
+interface CustomerDataAnonymised {
+  readonly customerRef: string;
+  readonly category: string;
+  readonly requestId: string;
+  /** The ref the domain's reads show instead of the person — unlinkable without the redaction record. */
+  readonly anonymousRef: string;
+  readonly at: string;
+}
+
+/** customerRef → anonymous ref, for every customer whose marketing profile an erasure anonymised. */
+async function anonymisedProfiles(store: EventStore, tenantId: string): Promise<ReadonlyMap<string, string>> {
+  const all = await allOf<CustomerDataAnonymised>(store, tenantId, PRIVACY_REDACTION_STREAM, 'CustomerDataAnonymised');
+  return new Map(all.filter((r) => r.category === 'marketing_profile').map((r) => [r.customerRef, r.anonymousRef]));
+}
+
+/** The marker a minimised service case carries instead of the customer's own words. */
+export const MINIMISED_TEXT = (requestId: string): string => `[removed under privacy request ${requestId}]`;
+
+/**
+ * The customer's holdings in the real domains (audit FUL-12 · M16-FR-03 · M20-FR-04). DEVELOPMENT-APPROVED; the
+ * retention bases below are the product's working policy and still need the owner's authorisation and a lawyer's
+ * confirmation before any real customer's data is erased (the matrix residual).
+ *
+ *   • marketing_profile — the order/complaint facts segmentation profiles from. Profiling has no legal hold: ERASED by
+ *     anonymisation (an append-only fact; the segmentation reads then show an anonymous ref; totals survive).
+ *   • service_cases — complaint handling is audit evidence, but the customer's own words are not needed to keep it:
+ *     MINIMISED (each case's summary/resolution re-recorded as a redacted state; the case, its dates and SLA survive).
+ *   • storefront_orders — tax invoices: RETAINED in full until the end of the eighth financial year after the last one.
+ *   • consent_history — the proof of what the shop was permitted to do: RETAINED as audit evidence.
+ */
+export function privacyDomainHoldingsAdapter(input: { readonly store: EventStore; readonly now: () => string }):
+  (tenantId: string, customerRef: string) => Promise<readonly DomainHolding[]> {
+  const cases = serviceCaseAdapter(input);
+  const anonymousRefFor = (tenantId: string, customerRef: string, requestId: string): string =>
+    `anon-${createHash('sha256').update(`${tenantId}|${customerRef}|${requestId}`).digest('hex').slice(0, 16)}`;
+  const recordAnonymised = async (tenantId: string, r: CustomerDataAnonymised): Promise<void> => {
+    await input.store.append(tenantId, PRIVACY_REDACTION_STREAM, makeEvent({
+      id: `anonymised-${r.requestId}-${r.category}`, type: 'CustomerDataAnonymised', occurredAt: r.at,
+      idempotencyKey: `anonymised-${tenantId}-${r.requestId}-${r.category}`, source: 'api/privacy', payload: r,
+    }));
+  };
+  /** The eighth financial year after the latest invoice ends 31 March (Indian FY) — the working retention date. */
+  const taxRetainUntil = (latestIso: string): string => {
+    const d = new Date(latestIso);
+    const fyEndYear = d.getUTCMonth() >= 3 ? d.getUTCFullYear() + 1 : d.getUTCFullYear();
+    return `${fyEndYear + 8}-03-31`;
+  };
+
+  return async (tenantId, customerRef) => {
+    const holdings: DomainHolding[] = [];
+
+    // marketing_profile — counted on the RAW facts; once anonymised the domain reads no longer show the person.
+    const anon = await anonymisedProfiles(input.store, tenantId);
+    const orderFacts = (await allOf<OrderFact>(input.store, tenantId, ORDER_FACTS_STREAM, 'CustomerOrderFactRecorded')).filter((o) => o.customerRef === customerRef);
+    const complaintFacts = (await allOf<ComplaintFact>(input.store, tenantId, COMPLAINT_FACTS_STREAM, 'CustomerComplaintFactRecorded')).filter((c) => c.customerRef === customerRef);
+    const profileCount = new Set(orderFacts.map((o) => o.orderId)).size + new Set(complaintFacts.map((c) => c.caseId)).size;
+    if (profileCount > 0) {
+      holdings.push({
+        category: 'marketing_profile', domain: 'customer segmentation', recordCount: anon.has(customerRef) ? 0 : profileCount,
+        state: anon.has(customerRef) ? 'erased' : 'held',
+        erase: async (requestId) => {
+          await recordAnonymised(tenantId, { customerRef, category: 'marketing_profile', requestId, anonymousRef: anonymousRefFor(tenantId, customerRef, requestId), at: input.now() });
+          return { recordsAffected: profileCount, note: `${profileCount} profile fact(s) anonymised in customer segmentation` };
+        },
+      });
+    }
+
+    // service_cases — minimised in place by a new, redacted state of each case.
+    const mine = (await cases.serviceCases(tenantId)).filter((c) => c.customerRef === customerRef);
+    if (mine.length > 0) {
+      const redacted = (c: ServiceCase): boolean => c.summary.startsWith('[removed under privacy request');
+      const open = mine.filter((c) => !redacted(c));
+      holdings.push({
+        category: 'service_cases', domain: 'service desk', recordCount: mine.length,
+        retentionBasis: 'audit_evidence', minimisable: true, state: open.length === 0 ? 'minimised' : 'held',
+        minimise: async (requestId) => {
+          for (const c of open) {
+            const next: ServiceCase = { ...c, summary: MINIMISED_TEXT(requestId), ...(c.resolution === undefined ? {} : { resolution: MINIMISED_TEXT(requestId) }) };
+            await cases.recordCase(tenantId, c.caseId, next, `${c.caseId}-minimised-${requestId}`);
+          }
+          return { recordsAffected: open.length, note: `${open.length} service case(s) minimised — the customer's words removed, the case and its dates kept` };
+        },
+      });
+    }
+
+    // storefront_orders — tax invoices, kept in full.
+    const orders = await allOf<PlacedOrder>(input.store, tenantId, forCustomerOrders(customerRef), 'OrderPlaced');
+    if (orders.length > 0) {
+      const latestAt = orders.map((o) => o.placedAt).sort().at(-1)!;
+      holdings.push({ category: 'storefront_orders', domain: 'orders', recordCount: orders.length, retentionBasis: 'tax_invoice', retainUntil: taxRetainUntil(latestAt), state: 'held' });
+    }
+
+    // consent_history — the proof of permission, kept as audit evidence.
+    const consents = await allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerRef), 'ConsentRecorded');
+    if (consents.length > 0) {
+      holdings.push({ category: 'consent_history', domain: 'customer consent', recordCount: consents.length, retentionBasis: 'audit_evidence', state: 'held' });
+    }
+    return holdings;
+  };
+}
+
+// ── PF-10: campaign send — frequency history from the PA-08 queue, the queue's enqueue, delivery reports ─────────────
+
+const CAMPAIGN_SEND_STREAM = streamName(STREAM.service, 'campaign-sends');
+const CAMPAIGN_FREQUENCY_STREAM = streamName(STREAM.service, 'campaign-frequency');
+const CAMPAIGN_DELIVERY_STREAM = streamName(STREAM.service, 'campaign-delivery');
+
+export function campaignSendAdapter(input: { readonly store: EventStore; readonly now: () => string }): CampaignSendDeps {
+  // The SAME queue, template register and consent ledger the PA-08 routes use — one record each (P-02).
+  const q = notificationQueueAdapter(input);
+  return {
+    now: input.now,
+    consentRecords: (tenantId, customerId) => allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
+    templates: q.templates!,
+    queueEvents: q.events!,
+    queue: q.queue,
+    enqueue: q.record,
+    frequencyPolicy: (tenantId) => latest<CampaignFrequencyPolicy>(input.store, tenantId, CAMPAIGN_FREQUENCY_STREAM, 'CampaignFrequencyPolicySet'),
+    recordFrequencyPolicy: async (tenantId, p) => {
+      await input.store.append(tenantId, CAMPAIGN_FREQUENCY_STREAM, makeEvent({
+        id: `campaign-frequency-${p.setAt}`, type: 'CampaignFrequencyPolicySet', occurredAt: p.setAt,
+        idempotencyKey: `campaign-frequency-${tenantId}-${p.capPerWindow}-${p.windowDays}-${p.setAt}`, source: 'api/customer', payload: p,
+      }));
+    },
+    sends: async (tenantId, campaignId) =>
+      (await allOf<CampaignSendRecord>(input.store, tenantId, CAMPAIGN_SEND_STREAM, 'CampaignSent')).filter((s) => s.campaignId === campaignId),
+    recordSend: async (tenantId, r, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, CAMPAIGN_SEND_STREAM, makeEvent({
+        id: `campaign-send-${r.campaignId}-${d}`, type: 'CampaignSent', occurredAt: r.at,
+        idempotencyKey: `campaign-send-${tenantId}-${r.campaignId}-${d}`, source: 'api/customer', payload: r,
+      }));
+    },
+    callbacks: async (tenantId, campaignId) =>
+      (await allOf<DeliveryCallback>(input.store, tenantId, CAMPAIGN_DELIVERY_STREAM, 'CampaignDeliveryReported')).filter((c) => c.campaignId === campaignId),
+    recordCallback: async (tenantId, c, key) => {
+      const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, CAMPAIGN_DELIVERY_STREAM, makeEvent({
+        id: `campaign-delivery-${c.messageId}-${d}`, type: 'CampaignDeliveryReported', occurredAt: c.recordedAt,
+        // A provider re-sending the same report collapses; a new status (delivered → read) is a new, append-only fact.
+        idempotencyKey: `campaign-delivery-${tenantId}-${d}`, source: 'api/customer', payload: c,
+      }));
+    },
+  };
+}
+
+// ── EA-08: the governed model call — admission, reservation, metering, immutable audit ──────────────────────────────
+
+export function modelGatewayAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly transport?: ModelTransport;
+  readonly pricing?: Readonly<Record<ModelTier, TierPricing>>;
+}): ModelGatewayDeps {
+  const ai = aiAdapter({ store: input.store, now: input.now });
+  return {
+    now: input.now,
+    killSwitchOn: ai.killSwitchOn,
+    enabledAgents: ai.enabledAgents,
+    budget: ai.budget,
+    openReservedMinor: async (tenantId) => {
+      const reserved = await allOf<{ readonly callId: string; readonly amountMinor: number }>(input.store, tenantId, STREAM.ai, 'AiCostReserved');
+      const settled = new Set((await allOf<{ readonly runId: string }>(input.store, tenantId, STREAM.ai, 'AiRunCosted')).map((c) => c.runId));
+      return reserved.filter((r) => !settled.has(r.callId)).reduce((t, r) => t + r.amountMinor, 0);
+    },
+    reserve: async (tenantId, r) => {
+      await input.store.append(tenantId, STREAM.ai, makeEvent({ id: `ai-reserve-${r.callId}`, type: 'AiCostReserved', occurredAt: r.at, idempotencyKey: `ai-reserve-${tenantId}-${r.callId}`, source: 'api/ai', payload: r }));
+    },
+    settle: async (tenantId, s) => {
+      // The SAME AiRunCosted fact the budget sums — the actual, metered cost, keyed on the call.
+      await input.store.append(tenantId, STREAM.ai, makeEvent({ id: `ai-cost-${s.callId}`, type: 'AiRunCosted', occurredAt: s.at, idempotencyKey: `ai-cost-${tenantId}-${s.callId}`, source: 'api/ai', payload: { runId: s.callId, agent: s.agent, costMinor: s.actualMinor, reservedMinor: s.reservedMinor, calledAModel: true } }));
+    },
+    audits: (tenantId) => allOf<ModelCallAudit>(input.store, tenantId, streamName(STREAM.ai, 'model-calls'), 'AiModelCallAudited'),
+    appendAudit: async (tenantId, a) => {
+      await input.store.append(tenantId, streamName(STREAM.ai, 'model-calls'), makeEvent({ id: `ai-model-call-${a.callId}`, type: 'AiModelCallAudited', occurredAt: a.at, idempotencyKey: `ai-model-call-${tenantId}-${a.callId}`, source: 'api/ai', payload: a }));
+    },
+    ...(input.pricing === undefined ? {} : { pricing: () => input.pricing }),
+    ...(input.transport === undefined ? {} : { transport: input.transport }),
   };
 }
