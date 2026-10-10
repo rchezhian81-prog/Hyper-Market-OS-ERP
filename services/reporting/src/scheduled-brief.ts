@@ -22,6 +22,8 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import { tradingDayIn, type TradingCalendar } from '../../../packages/calendar/src/index';
+import type { NotificationTransport } from '../../../packages/notifications/src/index';
 import {
   buildScheduledBrief, briefsDue, type BriefFigures, type AttentionLine, type Narrative, type BriefLanguage,
 } from '../../../packages/owner-control/src/index';
@@ -39,6 +41,18 @@ export interface StoredSchedule {
   readonly sentDays: readonly string[];
   readonly language?: BriefLanguage;
   readonly staleAfterMinutes?: number;
+  /** When the schedule was first set — the first day a brief is owed. */
+  readonly since?: string;
+}
+
+/** What one scheduled run did for one day (EA-07). */
+export interface BriefRunLine {
+  readonly tradingDay: string;
+  readonly reason: 'scheduled' | 'missed_catch_up';
+  readonly outcome: 'sent' | 'composed_not_sent' | 'send_failed_will_retry';
+  readonly detail: string;
+  readonly lines: readonly string[];
+  readonly deterministic: boolean;
 }
 
 export interface ScheduledBriefDeps {
@@ -46,6 +60,29 @@ export interface ScheduledBriefDeps {
   readonly setSchedule: (tenantId: string, config: { dueAt: readonly [number, number]; language?: BriefLanguage; staleAfterMinutes?: number }, by: string, key: string) => Promise<void> | void;
   readonly recordSent: (tenantId: string, tradingDay: string, by: string, key: string) => Promise<void> | void;
   readonly now: () => string;
+  /** The shop's trading calendar (zone + cut-off) — "due at 08:00" is the SHOP's 08:00 (EA-07). */
+  readonly calendar?: (tenantId: string) => Promise<TradingCalendar> | TradingCalendar;
+  /** The day's figures from head office's governed producers — the numbers ARE the brief (EA-07). */
+  readonly dayFigures?: (tenantId: string, tradingDay: string) => Promise<BriefFigures> | BriefFigures;
+  /** Who the brief goes to: the shop's owner. */
+  readonly recipient?: (tenantId: string) => Promise<string | undefined> | string | undefined;
+  /** The phone transport. Absent until a real provider is certified (the SMS provider is R4, OB-29). */
+  readonly transport?: NotificationTransport;
+}
+
+/** The shop's wall-clock "now" as YYYY-MM-DDTHH:MM, in its own zone — what a local due time is measured against. */
+export function shopWallClock(nowIso: string, timeZone: string): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(nowIso)).map((p) => [p.type, p.value]));
+  return `${parts['year']}-${parts['month']}-${parts['day']}T${parts['hour']}:${parts['minute']}`;
+}
+
+/** Every calendar day from `from` to `to` inclusive (YYYY-MM-DD), oldest first. */
+function daysBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let d = Date.parse(`${from}T00:00:00Z`); d <= Date.parse(`${to}T00:00:00Z`); d += 86_400_000) out.push(new Date(d).toISOString().slice(0, 10));
+  return out;
 }
 
 function readDueAt(v: unknown): readonly [number, number] | undefined {
@@ -146,6 +183,55 @@ export function scheduledBriefRoutes(deps: ScheduledBriefDeps): readonly Route[]
         if (s === undefined) throw noSchedule();
         const due = briefsDue({ schedule: { scheduleId: s.scheduleId, dueAt: s.dueAt, sentDays: s.sentDays }, tradingDays, now: deps.now() });
         return { status: 200, body: { due, count: due.length, asAt: deps.now() } };
+      },
+    },
+    {
+      // RUN — the brief that sends itself (EA-07 · M29-FR-04). One pass of the scheduler, which an operator's timer calls
+      // (infra: a systemd timer, like the backup): which briefs are due by the SHOP's clock (missed days carried, labelled
+      // late), each composed from head office's governed figures with NO AI (the numbers are the brief), sent to the owner
+      // through the phone transport, and acknowledged as sent ONLY when the transport took it. A day not sent stays due —
+      // the next run retries it. With no transport configured (production today; SMS is R4) each due brief is composed
+      // and said to be unsent, never marked sent.
+      api: 'API-10', method: 'POST', path: '/v1/reporting/brief-schedule/run',
+      permission: 'owner.brief.manage', idempotent: true,
+      handler: async (ctx) => {
+        const s = await deps.schedule(ctx.tenantId);
+        if (s === undefined) throw noSchedule();
+        if (deps.calendar === undefined || deps.dayFigures === undefined) {
+          throw apiError(503, { code: 'brief_producers_not_wired', whatHappened: 'Head office cannot work out the day\'s figures here, so no brief was composed.', wasItSaved: 'not_saved', nextSafeAction: 'Run the brief on the full head-office service.' });
+        }
+        const now = deps.now();
+        const calendar = await deps.calendar(ctx.tenantId);
+        const today = tradingDayIn(now, calendar);
+        const wall = shopWallClock(now, calendar.timeZone);
+        const firstDay = s.since === undefined ? today : tradingDayIn(s.since, calendar);
+        // At most a week back: a brief older than that is history, not a brief.
+        const weekAgo = new Date(Date.parse(`${today}T00:00:00Z`) - 6 * 86_400_000).toISOString().slice(0, 10);
+        const tradingDays = daysBetween(firstDay > weekAgo ? firstDay : weekAgo, today);
+        const due = briefsDue({ schedule: { scheduleId: s.scheduleId, dueAt: s.dueAt, sentDays: s.sentDays }, tradingDays, now: `${today}${wall.slice(10)}:00Z` });
+        const recipient = await deps.recipient?.(ctx.tenantId);
+        const ran: BriefRunLine[] = [];
+        for (const d of due) {
+          const brief = buildScheduledBrief({
+            figures: await deps.dayFigures(ctx.tenantId, d.tradingDay), attention: [],
+            ...(s.language === undefined ? {} : { language: s.language }),
+            ...(s.staleAfterMinutes === undefined ? {} : { staleAfterMinutes: s.staleAfterMinutes }),
+          });
+          const lines = d.reason === 'missed_catch_up' ? [`LATE — the brief for ${d.tradingDay}, which did not go out on time.`, ...brief.lines] : [...brief.lines];
+          const base = { tradingDay: d.tradingDay, reason: d.reason, lines, deterministic: brief.deterministic };
+          if (deps.transport === undefined || recipient === undefined) {
+            ran.push({ ...base, outcome: 'composed_not_sent', detail: deps.transport === undefined ? 'no phone transport is configured yet (the SMS provider is release R4) — composed, NOT sent, still due' : 'the shop has no owner on record to send it to — composed, NOT sent' });
+            continue;
+          }
+          const sent = await deps.transport.send({ messageId: `brief-${ctx.tenantId}-${d.tradingDay}`, channel: 'whatsapp', customerId: recipient, text: lines.join('\n') });
+          if (sent.ok) {
+            await deps.recordSent(ctx.tenantId, d.tradingDay, ctx.userId, `sent-${d.tradingDay}`);
+            ran.push({ ...base, outcome: 'sent', detail: `${deps.transport.name} took it (${sent.providerRef})` });
+          } else {
+            ran.push({ ...base, outcome: 'send_failed_will_retry', detail: `${sent.reason} — still due; the next run retries it` });
+          }
+        }
+        return { status: 200, body: { ran, shopClock: wall, today, asAt: now } };
       },
     },
     {

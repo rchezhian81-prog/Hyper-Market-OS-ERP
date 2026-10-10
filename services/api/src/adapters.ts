@@ -795,6 +795,8 @@ export function scheduledBriefAdapter(input: {
       const events = await allOf<BriefScheduleEvent>(input.store, tenantId, stream, 'BriefSchedule');
       let config: { dueAt: readonly [number, number]; language?: BriefLanguage; staleAfterMinutes?: number } | undefined;
       const sent = new Set<string>();
+      // EA-07: the first day a brief is owed is the day the schedule was first set.
+      const since = events.find((e) => e.change === 'set')?.at;
       for (const e of events) {
         if (e.change === 'set' && e.dueAt !== undefined) {
           config = { dueAt: e.dueAt, ...(e.language !== undefined ? { language: e.language } : {}), ...(e.staleAfterMinutes !== undefined ? { staleAfterMinutes: e.staleAfterMinutes } : {}) };
@@ -803,7 +805,7 @@ export function scheduledBriefAdapter(input: {
         }
       }
       if (config === undefined) return undefined;
-      return { scheduleId: SCHEDULE_ID, dueAt: config.dueAt, sentDays: [...sent].sort(), ...(config.language !== undefined ? { language: config.language } : {}), ...(config.staleAfterMinutes !== undefined ? { staleAfterMinutes: config.staleAfterMinutes } : {}) };
+      return { scheduleId: SCHEDULE_ID, dueAt: config.dueAt, sentDays: [...sent].sort(), ...(since === undefined ? {} : { since }), ...(config.language !== undefined ? { language: config.language } : {}), ...(config.staleAfterMinutes !== undefined ? { staleAfterMinutes: config.staleAfterMinutes } : {}) };
     },
     setSchedule: async (tenantId, cfg, by, key) => {
       const d = createHash('sha256').update(key).digest('hex').slice(0, 16);

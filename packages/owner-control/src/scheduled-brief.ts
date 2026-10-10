@@ -29,15 +29,22 @@
 
 export type BriefLanguage = 'en' | 'ta';
 
+/**
+ * The day's figures. A figure the producer CANNOT work out is left out (`undefined`) and the brief says
+ * "not available" in its place — never ₹0, which is a number somebody acts on (audit EA-07: head office has no
+ * cost of goods, so it has no margin; a brief that printed "Margin: ₹0.00" would be a lie read every morning).
+ */
 export interface BriefFigures {
   readonly tradingDay: string;
-  readonly netSalesMinor: number;
-  readonly marginMinor: number;
-  readonly marginBps: number;
-  readonly basketCount: number;
-  readonly cashBankedMinor: number;
-  /** How old the underlying data is, in minutes. Always stated (P-08). */
-  readonly dataAgeMinutes: number;
+  /** What the tills took, GST included — the figure head office holds for every bill (EA-07). */
+  readonly grossTakenMinor?: number;
+  readonly netSalesMinor?: number;
+  readonly marginMinor?: number;
+  readonly marginBps?: number;
+  readonly basketCount?: number;
+  readonly cashBankedMinor?: number;
+  /** How old the underlying data is, in minutes. Always stated (P-08); `undefined` means nothing has ever arrived. */
+  readonly dataAgeMinutes?: number;
 }
 
 export interface AttentionLine {
@@ -84,6 +91,9 @@ const WORDS: Record<BriefLanguage, Record<string, string>> = {
     staleWarning: 'THESE NUMBERS ARE NOT LIVE — the last update was',
     minutesAgo: 'minutes ago.',
     noNarrative: 'The written summary was not available this morning; the figures above are complete and correct.',
+    notAvailable: 'not available',
+    taken: 'Taken at the tills (incl. GST)',
+    neverArrived: 'THESE NUMBERS ARE NOT LIVE — nothing has arrived from the shop yet.',
   },
   ta: {
     sales: 'விற்பனை',
@@ -95,6 +105,9 @@ const WORDS: Record<BriefLanguage, Record<string, string>> = {
     staleWarning: 'இந்த எண்கள் நேரலை அல்ல — கடைசி புதுப்பிப்பு',
     minutesAgo: 'நிமிடங்களுக்கு முன்பு.',
     noNarrative: 'இன்று காலை எழுத்துச் சுருக்கம் கிடைக்கவில்லை; மேலே உள்ள எண்கள் முழுமையானவை.',
+    notAvailable: 'கிடைக்கவில்லை',
+    taken: 'கல்லாவில் பெற்றது (ஜிஎஸ்டி உட்பட)',
+    neverArrived: 'இந்த எண்கள் நேரலை அல்ல — கடையிலிருந்து இன்னும் எதுவும் வரவில்லை.',
   },
 };
 
@@ -121,19 +134,24 @@ export function buildScheduledBrief(input: {
 }): ScheduledBrief {
   const language = input.language ?? 'en';
   const w = WORDS[language];
-  const stale = input.figures.dataAgeMinutes > (input.staleAfterMinutes ?? 120);
+  const age = input.figures.dataAgeMinutes;
+  const stale = age === undefined || age > (input.staleAfterMinutes ?? 120);
+  const money = (v: number | undefined): string => (v === undefined ? w['notAvailable']! : rupees(v));
 
   const top = [...input.attention].sort((a, b) => b.valueMinor - a.valueMinor).slice(0, 3);
 
   const lines: string[] = [];
   if (stale) {
-    lines.push(`${w['staleWarning']} ${input.figures.dataAgeMinutes} ${w['minutesAgo']}`);
+    lines.push(age === undefined ? w['neverArrived']! : `${w['staleWarning']} ${age} ${w['minutesAgo']}`);
   }
+  if (input.figures.grossTakenMinor !== undefined) lines.push(`${w['taken']}: ${rupees(input.figures.grossTakenMinor)}`);
   lines.push(
-    `${w['sales']}: ${rupees(input.figures.netSalesMinor)}`,
-    `${w['margin']}: ${rupees(input.figures.marginMinor)} (${(input.figures.marginBps / 100).toFixed(2)}%)`,
-    `${w['baskets']}: ${input.figures.basketCount}`,
-    `${w['cash']}: ${rupees(input.figures.cashBankedMinor)}`,
+    `${w['sales']}: ${money(input.figures.netSalesMinor)}`,
+    input.figures.marginMinor === undefined || input.figures.marginBps === undefined
+      ? `${w['margin']}: ${w['notAvailable']}`
+      : `${w['margin']}: ${rupees(input.figures.marginMinor)} (${(input.figures.marginBps / 100).toFixed(2)}%)`,
+    `${w['baskets']}: ${input.figures.basketCount === undefined ? w['notAvailable'] : input.figures.basketCount}`,
+    `${w['cash']}: ${money(input.figures.cashBankedMinor)}`,
   );
   lines.push(
     top.length === 0
