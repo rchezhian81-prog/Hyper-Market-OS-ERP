@@ -229,6 +229,8 @@ import type { PrivacyTombstone } from '../../../packages/customer/src/index';
 import type { ServiceCaseDeps, ServiceCase, CompensationRecord, DraftDecisionRecord } from '../../customer/src/service-cases';
 import type { CampaignDeps, CampaignPlanRecord } from '../../customer/src/campaigns';
 import type { CampaignSendDeps, CampaignFrequencyPolicy, CampaignSendRecord, DeliveryCallback } from '../../customer/src/campaign-send';
+import type { ModelGatewayDeps, ModelCallAudit } from '../../ai/src/model-gateway';
+import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import type { AiDraft, SatisfactionScore, CompensationPolicy, SlaView } from '../../../packages/service-desk/src/index';
 import { assessFirstResponse } from '../../../packages/service-desk/src/index';
 import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-points';
@@ -11018,6 +11020,8 @@ export function aiAdapter(input: {
    * without it A09 drafts nothing. `draftMarketingAudiences` runs here over what it returns.
    */
   readonly marketingDraft?: (tenantId: string) => Promise<{ readonly profiles: readonly SegCustomerProfile[]; readonly consents: readonly SegCustomerConsent[] }>;
+  /** EA-08: the Customer Shopping agent's (A04) in-stock alternatives, from the product master, pack and stock ledger. */
+  readonly shoppingAlternatives?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
   /**
    * The tenant's service-desk cases (M21), for the Service agent (A05). Optional, same shape as the others:
    * without it A05 surfaces nothing. The tested serviceCases fold the desk board reads; A05 runs the tested
@@ -11134,6 +11138,8 @@ export function aiAdapter(input: {
       if (agent === 'A01') return input.ownerInsights === undefined ? [] : input.ownerInsights(tenantId);
       // A02 Purchase — stock-outs with recent demand, as DRAFTS for a buyer; no quantity invented, no order raised.
       if (agent === 'A02') return input.purchaseSuggestions === undefined ? [] : input.purchaseSuggestions(tenantId);
+      // A04 Customer Shopping — in-stock alternatives for what has run out, as DRAFTS the customer confirms (EA-08).
+      if (agent === 'A04') return input.shoppingAlternatives === undefined ? [] : input.shoppingAlternatives(tenantId);
       // A08 Data Quality — the product master + import history.
       if (agent === 'A08') {
         const proposals: Omit<Proposal, 'committed'>[] = [];
@@ -11819,5 +11825,40 @@ export function campaignSendAdapter(input: { readonly store: EventStore; readonl
         idempotencyKey: `campaign-delivery-${tenantId}-${d}`, source: 'api/customer', payload: c,
       }));
     },
+  };
+}
+
+// ── EA-08: the governed model call — admission, reservation, metering, immutable audit ──────────────────────────────
+
+export function modelGatewayAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly transport?: ModelTransport;
+  readonly pricing?: Readonly<Record<ModelTier, TierPricing>>;
+}): ModelGatewayDeps {
+  const ai = aiAdapter({ store: input.store, now: input.now });
+  return {
+    now: input.now,
+    killSwitchOn: ai.killSwitchOn,
+    enabledAgents: ai.enabledAgents,
+    budget: ai.budget,
+    openReservedMinor: async (tenantId) => {
+      const reserved = await allOf<{ readonly callId: string; readonly amountMinor: number }>(input.store, tenantId, STREAM.ai, 'AiCostReserved');
+      const settled = new Set((await allOf<{ readonly runId: string }>(input.store, tenantId, STREAM.ai, 'AiRunCosted')).map((c) => c.runId));
+      return reserved.filter((r) => !settled.has(r.callId)).reduce((t, r) => t + r.amountMinor, 0);
+    },
+    reserve: async (tenantId, r) => {
+      await input.store.append(tenantId, STREAM.ai, makeEvent({ id: `ai-reserve-${r.callId}`, type: 'AiCostReserved', occurredAt: r.at, idempotencyKey: `ai-reserve-${tenantId}-${r.callId}`, source: 'api/ai', payload: r }));
+    },
+    settle: async (tenantId, s) => {
+      // The SAME AiRunCosted fact the budget sums — the actual, metered cost, keyed on the call.
+      await input.store.append(tenantId, STREAM.ai, makeEvent({ id: `ai-cost-${s.callId}`, type: 'AiRunCosted', occurredAt: s.at, idempotencyKey: `ai-cost-${tenantId}-${s.callId}`, source: 'api/ai', payload: { runId: s.callId, agent: s.agent, costMinor: s.actualMinor, reservedMinor: s.reservedMinor, calledAModel: true } }));
+    },
+    audits: (tenantId) => allOf<ModelCallAudit>(input.store, tenantId, streamName(STREAM.ai, 'model-calls'), 'AiModelCallAudited'),
+    appendAudit: async (tenantId, a) => {
+      await input.store.append(tenantId, streamName(STREAM.ai, 'model-calls'), makeEvent({ id: `ai-model-call-${a.callId}`, type: 'AiModelCallAudited', occurredAt: a.at, idempotencyKey: `ai-model-call-${tenantId}-${a.callId}`, source: 'api/ai', payload: a }));
+    },
+    ...(input.pricing === undefined ? {} : { pricing: () => input.pricing }),
+    ...(input.transport === undefined ? {} : { transport: input.transport }),
   };
 }

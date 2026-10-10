@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 889 | 543 | 543 | 73 | 286 |
+| 13 | 891 | 544 | 544 | 73 | 286 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -961,6 +961,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | Method | Path | Permission | Feature | Idempotent |
 |---|---|---|---|---|
 | GET | `/v1/ai/agents` | `ai.proposal.read` | core | — |
+| POST | `/v1/ai/agents/:agent/model-calls` | `ai.agent.run` | core | yes |
 | POST | `/v1/ai/agents/:agent/runs` | `ai.agent.run` | core | yes |
 | PUT | `/v1/ai/agents/enabled` | `ai.agent.enable` | core | yes |
 | GET | `/v1/ai/budget` | `ai.budget.read` | core | — |
@@ -968,6 +969,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/ai/data-quality/dismissals` | `ai.suggestion.dismiss` | core | yes |
 | GET | `/v1/ai/data-quality/worklist` | `ai.proposal.read` | core | — |
 | PUT | `/v1/ai/kill-switch` | `ai.killswitch.set` | core | yes |
+| GET | `/v1/ai/model-calls` | `ai.budget.read` | core | — |
 | POST | `/v1/ai/operations/dismissals` | `ai.suggestion.dismiss` | core | yes |
 | GET | `/v1/ai/operations/worklist` | `ai.proposal.read` | core | — |
 | GET | `/v1/ai/proposals` | `ai.proposal.read` | core | — |
