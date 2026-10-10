@@ -72,6 +72,7 @@ import type { GrantOutcome, ReturnCheck } from './till-approvals';
 import type { IssueOutcome, ReceiptNumberStatus, UseCheck } from './receipt-numbers';
 import type { HoldOutcome, RecallOutcome, HeldSummary } from './held-bills';
 import type { AttemptAnswer, TenderCheck, Attempt } from './payment-attempts';
+import { refundRoomOutsidePoints } from '../../../packages/loyalty/src/wallet';
 
 /** The one address this may listen on. Named so the test can assert on it. */
 export const LANE_HOST = '127.0.0.1';
@@ -186,6 +187,21 @@ const LANE_PAYMENTS_RECOVER_ROUTE = '/lane/payment-attempts/recover';
  * then queued for head office, where the store's rules run on it.
  */
 const LANE_TILL_ACTIVITY_ROUTE = '/lane/till-activity';
+
+/**
+ * A LOYALTY MEMBER'S BALANCE on this box (PF-09 step 3): `POST /lane/loyalty/wallet` with `{ mobile, tradingDay }` — what
+ * the member may spend here now (points at the owner's value, store credit, what today's till limit still allows) and how
+ * old the box's copy is. The number travels in the body, never the URL, and is never written (P-04).
+ */
+const LANE_LOYALTY_WALLET_ROUTE = '/lane/loyalty/wallet';
+
+/** The box's copy of the members' balances and its record of till spends (`LoyaltyWallets`). */
+export interface LaneLoyaltyPort {
+  check(record: Record<string, unknown>): import('./loyalty-wallets').SpendCheck;
+  note(spends: readonly import('../../../packages/loyalty/src/wallet').LocalSpend[]): void;
+  serialise<T>(fn: () => Promise<T>): Promise<T>;
+  availability(memberRef: string, tradingDay: string): import('../../../packages/loyalty/src/wallet').WalletAvailability;
+}
 export type LaneTillActivityHandler = (input: {
   readonly laneId: string; readonly cashierId: string; readonly via: string; readonly body: Record<string, unknown>;
 }) => Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage: string }>;
@@ -445,6 +461,11 @@ export function startLaneServer(input: {
   readonly payments?: LanePaymentAttemptsPort;
   /** Till actions kept as evidence (audit PF-07) — the box's `recordTillActivity`. */
   readonly recordTillActivity?: LaneTillActivityHandler;
+  /**
+   * The members' balances and the till's spends (PF-09 step 3). Wired beside `memberCode` on every store box. Absent → a
+   * sale paying with points or store credit is refused before the disk: nothing here could check it.
+   */
+  readonly loyalty?: LaneLoyaltyPort;
 }): Promise<LaneServer> {
   const maxBytes = input.maxBytes ?? 256 * 1024;
 
@@ -626,6 +647,31 @@ export function startLaneServer(input: {
         } catch (e) {
           send(res, 200, refused(e instanceof Error ? e.message : String(e)), cors);
         }
+      })();
+      return;
+    }
+
+    // A LOYALTY MEMBER'S BALANCE (PF-09 step 3): what they may spend here now, from the box's copy. Only for a person signed
+    // in at this till; the number is read from the body and turned into the member code, never kept.
+    if (req.method === 'POST' && pathname === LANE_LOYALTY_WALLET_ROUTE) {
+      const refused = (refusedBecause: string, laneMessage: string) => ({ known: false, refusedBecause, laneMessage });
+      const ops = input.operators;
+      if (input.loyalty === undefined || input.memberCode === undefined) { send(res, 404, refused('not_served', 'This store computer does not keep loyalty balances.'), cors); req.resume(); return; }
+      const authRefusal = laneCallRefusal(req.headers.origin, req.headers['content-type']);
+      if (authRefusal !== undefined) { send(res, authRefusal.status, refused('unauthorized_request', authRefusal.reason), cors); req.resume(); return; }
+      if (ops !== undefined) {
+        const check = ops.check(operatorTokenOf(req), ops.laneId);
+        if (!check.ok) { send(res, 200, refused(check.refusedBecause, check.laneMessage), cors); req.resume(); return; }
+      }
+      void (async () => {
+        const body = await readJsonBody(req, res, cors, (reason) => refused('not_readable', reason));
+        if (body === undefined) return;
+        const b = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+        const memberRef = typeof b['mobile'] === 'string' ? input.memberCode!(b['mobile']) : undefined;
+        if (memberRef === undefined) { send(res, 200, refused('number_not_valid', 'That is not a 10-digit mobile number.'), { ...cors, 'cache-control': 'no-store' }); return; }
+        const tradingDay = typeof b['tradingDay'] === 'string' ? b['tradingDay'] : '';
+        const a = input.loyalty!.availability(memberRef, tradingDay);
+        send(res, 200, { ...a, last4: (b['mobile'] as string).replace(/\D/g, '').slice(-4) }, { ...cors, 'cache-control': 'no-store' });
       })();
       return;
     }
@@ -1163,14 +1209,14 @@ export function startLaneServer(input: {
       || pathname === LANE_APPROVALS_ROUTE || pathname === LANE_RECEIPT_NUMBERS_ROUTE
       || pathname === LANE_HELD_BILLS_ROUTE || pathname === LANE_HELD_BILLS_RECALL_ROUTE || pathname === LANE_HELD_BILLS_ABANDON_ROUTE
       || pathname === LANE_PAYMENTS_ROUTE || pathname === LANE_PAYMENTS_ANSWER_ROUTE || pathname === LANE_PAYMENTS_RECOVER_ROUTE
-      || pathname === LANE_TILL_ACTIVITY_ROUTE)) {
+      || pathname === LANE_TILL_ACTIVITY_ROUTE || pathname === LANE_LOYALTY_WALLET_ROUTE)) {
       res.writeHead(isLoopbackOrigin(req.headers.origin) ? 204 : 403, { 'content-length': '0', ...cors });
       res.end();
       return;
     }
 
     if (req.method !== 'POST' || route === undefined) {
-      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`, `POST ${LANE_APPROVALS_ROUTE}`, `POST ${LANE_RECEIPT_NUMBERS_ROUTE}`, `GET ${LANE_RECEIPT_NUMBERS_ROUTE}`, `POST ${LANE_HELD_BILLS_ROUTE}`, `GET ${LANE_HELD_BILLS_ROUTE}`, `POST ${LANE_HELD_BILLS_RECALL_ROUTE}`, `POST ${LANE_HELD_BILLS_ABANDON_ROUTE}`, `POST ${LANE_PAYMENTS_ROUTE}`, `GET ${LANE_PAYMENTS_ROUTE}`, `POST ${LANE_PAYMENTS_ANSWER_ROUTE}`, `POST ${LANE_PAYMENTS_RECOVER_ROUTE}`, `POST ${LANE_TILL_ACTIVITY_ROUTE}`].join(', ');
+      const serves = [...LANE_ROUTES.map((r) => `POST ${r}`), `POST ${LANE_DAY_CLOSE_ROUTE}`, `POST ${LANE_DAY_REOPEN_ROUTE}`, `POST ${LANE_DEVICE_OUTBOX_ROUTE}`, `POST ${LANE_CASH_MOVEMENTS_ROUTE}`, `POST ${LANE_SHIFT_CLOSE_ROUTE}`, `GET ${LANE_LOOKUP_ROUTE}?receipt=…`, `GET ${LANE_SYNC_STATUS_ROUTE}`, `GET ${LANE_DEVICE_OUTBOX_STATUS_ROUTE}?keys=…`, `GET ${LANE_TILL_CASH_ROUTE}`, `GET ${LANE_OPERATOR_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_IN_ROUTE}`, `POST ${LANE_OPERATOR_SIGN_OUT_ROUTE}`, `POST ${LANE_APPROVALS_ROUTE}`, `POST ${LANE_RECEIPT_NUMBERS_ROUTE}`, `GET ${LANE_RECEIPT_NUMBERS_ROUTE}`, `POST ${LANE_HELD_BILLS_ROUTE}`, `GET ${LANE_HELD_BILLS_ROUTE}`, `POST ${LANE_HELD_BILLS_RECALL_ROUTE}`, `POST ${LANE_HELD_BILLS_ABANDON_ROUTE}`, `POST ${LANE_PAYMENTS_ROUTE}`, `GET ${LANE_PAYMENTS_ROUTE}`, `POST ${LANE_PAYMENTS_ANSWER_ROUTE}`, `POST ${LANE_PAYMENTS_RECOVER_ROUTE}`, `POST ${LANE_TILL_ACTIVITY_ROUTE}`, `POST ${LANE_LOYALTY_WALLET_ROUTE}`].join(', ');
       send(res, 404, { error: `the lane socket serves: ${serves}` }, cors);
       return;
     }
@@ -1246,6 +1292,35 @@ export function startLaneServer(input: {
           }
           parsed = { ...rest, ...(memberRef === undefined ? {} : { customerRef: memberRef }) };
         }
+        // A refund's customer (store credit is issued to them): a keyed mobile number becomes the member code HERE too, so
+        // no phone number reaches the refund log either (PF-09 step 3 · P-04). Any other reference is carried as before.
+        if (isReturn && parsed !== null && typeof parsed === 'object' && input.memberCode !== undefined) {
+          const { customerMobile, ...rest } = parsed as Record<string, unknown>;
+          const keyed = typeof customerMobile === 'string' && customerMobile.trim() !== '' ? customerMobile
+            : typeof rest['customerRef'] === 'string' && input.memberCode(rest['customerRef']) !== undefined ? rest['customerRef'] : undefined;
+          const memberRef = keyed === undefined ? undefined : input.memberCode(keyed);
+          parsed = { ...rest, ...(memberRef === undefined ? {} : { customerRef: memberRef }) };
+          if (keyed !== undefined && memberRef === undefined) delete (parsed as Record<string, unknown>)['customerRef'];
+        }
+        // A bill partly paid with POINTS (PF-09 step 3): its refund in money or credit is capped at the part not paid with
+        // points — refunding the rest would turn points into rupees. Checked before the disk, in the cashier's words.
+        if (isReturn && parsed !== null && typeof parsed === 'object') {
+          const r = parsed as Record<string, unknown>;
+          const originalId = typeof r['originalSaleId'] === 'string' ? r['originalSaleId'] : undefined;
+          const refundMinor = typeof r['refundMinor'] === 'number' ? r['refundMinor'] : 0;
+          const bill = originalId === undefined ? undefined : await input.node.lookupSale(originalId).catch(() => undefined);
+          if (bill !== undefined) {
+            const prior = bill.refunds.filter((x) => x.returnId !== id).reduce((n, x) => n + x.refundMinor, 0);
+            const room = refundRoomOutsidePoints({ totalMinor: bill.sale.totalMinor, tenders: bill.sale.tenders, priorRefundsMinor: prior });
+            if (room !== undefined && refundMinor > room) {
+              send(res, 200, {
+                committed: false, refusedBecause: 'refund_includes_points',
+                laneMessage: `Part of this bill was paid with loyalty points, which cannot be given back as money. At most ₹${(room / 100).toFixed(2)} can be refunded here. Nothing was saved.`,
+              }, cors);
+              return;
+            }
+          }
+        }
 
         // WHO rang it (ADR-0020 §5): a sale names its cashier, a refund the person processing it — and that person must be
         // the one signed in at this till. Refused BEFORE the disk; on success the box stamps who it verified and how.
@@ -1314,6 +1389,37 @@ export function startLaneServer(input: {
             send(res, 200, { committed: false, refusedBecause: tenderUse.refusedBecause, laneMessage: tenderUse.laneMessage }, cors);
             return;
           }
+        }
+
+        // POINTS AND STORE CREDIT (PF-09 step 3): a sale that spends a member's value is decided against this box's copy of
+        // the balances — and saved — one at a time, so two tills cannot spend the same value between the check and the disk.
+        const spends = !isTag && !isReturn && Array.isArray((parsed as Record<string, unknown>)['tenders'])
+          && ((parsed as Record<string, unknown>)['tenders'] as unknown[]).some((t) => t !== null && typeof t === 'object' && (((t as Record<string, unknown>)['kind'] === 'loyalty_points') || (t as Record<string, unknown>)['kind'] === 'store_credit'));
+        if (spends && input.loyalty === undefined) {
+          send(res, 200, { committed: false, refusedBecause: 'loyalty_not_on_this_box', laneMessage: 'This store computer cannot check points or store credit, so they cannot be spent here. Take another payment. Nothing was saved.' }, cors);
+          return;
+        }
+        if (spends) {
+          const loyalty = input.loyalty!;
+          try {
+            await loyalty.serialise(async () => {
+              const decided = loyalty.check(parsed as Record<string, unknown>);
+              if (!decided.ok) {
+                send(res, 200, { committed: false, refusedBecause: decided.refusedBecause, laneMessage: decided.laneMessage }, cors);
+                return;
+              }
+              const outcome = await input.node.commit(id, JSON.stringify(decided.record));
+              if (outcome.committed) {
+                loyalty.note(decided.spends);
+                if (numberUse?.ok === true) await numberUse.record();
+                if (tenderUse?.ok === true) await tenderUse.record();
+              }
+              send(res, 200, loyaltyNote === undefined ? outcome : { ...outcome, loyalty: loyaltyNote }, cors);
+            });
+          } catch (e) {
+            send(res, 200, refusal(noun, e instanceof Error ? e.message : String(e)), cors);
+          }
+          return;
         }
 
         try {

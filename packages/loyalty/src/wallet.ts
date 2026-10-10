@@ -220,3 +220,20 @@ export function spendsOfSaleRecord(record: unknown, fallbackTradingDay = ''): re
     return [{ ref: spendRefFor(saleId, t['kind']), saleId, memberRef, kind: t['kind'], amountMinor, tradingDay }];
   });
 }
+
+/**
+ * How much of a bill may still be refunded as money or store credit when part of it was paid with POINTS (PF-09 step 3).
+ * Points are not money: refunding the points-paid part in cash or credit would turn points into rupees. So a refund
+ * against such a bill is capped at the part not paid with points, less what was already refunded. Undefined when the
+ * bill used no points (the ordinary refund rules apply unchanged). What happens to the points themselves on a return is
+ * the owner's decision (recorded in the report); until then they are not given back at the till.
+ */
+export function refundRoomOutsidePoints(input: {
+  readonly totalMinor: number;
+  readonly tenders: readonly { readonly kind: string; readonly amountMinor: number }[] | undefined;
+  readonly priorRefundsMinor: number;
+}): number | undefined {
+  const points = (input.tenders ?? []).filter((t) => t.kind === 'loyalty_points').reduce((n, t) => n + t.amountMinor, 0);
+  if (points <= 0) return undefined;
+  return Math.max(0, input.totalMinor - points - input.priorRefundsMinor);
+}

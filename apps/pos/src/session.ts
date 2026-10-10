@@ -764,6 +764,14 @@ export class PosSession {
   }
 
   /** The last four digits of the member named on this bill, or null — for the screen; the full number is never shown. */
+  /**
+   * The keyed number, for the STORE COMPUTER only — to ask what the member may spend (PF-09 step 3). It goes to the box in
+   * a request body, which turns it into the member code; it is never written by the till or shown beyond the last four.
+   */
+  loyaltyMobileForBox(): string | undefined {
+    return this.loyaltyMobile;
+  }
+
   loyaltyMemberLast4(): string | null {
     return this.loyaltyMobile === undefined ? null : this.loyaltyMobile.slice(-4);
   }

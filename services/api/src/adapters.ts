@@ -55,6 +55,7 @@ import { RecallRegistry, type RecallRecord } from '../../../packages/traceabilit
 import type { QualityHoldDeps } from '../../inventory/src/quality-hold';
 import type { LoyaltyMemberDeps, LoyaltyRule, MemberRecord } from '../../customer/src/loyalty-members';
 import type { LoyaltyWalletDeps, SpendApplied } from '../../customer/src/loyalty-wallets';
+import type { LoyaltyLiabilityDeps } from '../../finance/src/loyalty-liability';
 import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack } from '../../customer/src/loyalty-effects';
 import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
 import type { QualityHold } from '../../../packages/quality/src/index';
@@ -207,7 +208,7 @@ import type { ConcessionTagDeps } from '../../finance/src/concession-tags';
 import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlertRules } from '../../platform/src/observed-health';
 import type { DocumentTemplateDeps, DocumentTemplateVersion } from '../../platform/src/document-templates';
 import { adapterHealth } from '../../../packages/integration/src/index';
-import type { DayBookSale } from '../../../packages/finance/src/index';
+import type { DayBookSale, DayBookLoyalty } from '../../../packages/finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
@@ -226,6 +227,7 @@ import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import type { CouponDeps } from '../../customer/src/coupons';
 import type { Coupon, Redemption } from '../../../packages/loyalty/src/coupons';
+import { balanceOf } from '../../../packages/loyalty/src/stored-value';
 import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
 import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalogue';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
@@ -7866,6 +7868,38 @@ export function loyaltyWalletsAdapter(input: {
   };
 }
 
+/**
+ * The loyalty liability, both sides (PF-09 step 3): what every member holds (their points, from their movements; every
+ * store-credit instrument's balance) and what the books carry (the credit balance of an account across every posted
+ * journal). Two derivations; the route compares them exactly.
+ */
+export function loyaltyLiabilityAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly rule: (tenantId: string) => Promise<LoyaltyRule> | LoyaltyRule;
+}): LoyaltyLiabilityDeps {
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const value = storedValueAdapter({ store: input.store, now: input.now });
+  return {
+    now: input.now,
+    outstanding: async (tenantId) => {
+      const codes = [...new Set((await allOf<MemberRecord>(input.store, tenantId, LOYALTY_MEMBERS, 'LoyaltyMember')).map((m) => m.memberRef))];
+      let points = 0;
+      for (const code of codes) points += Math.max(0, (await customers.pointsBalance(tenantId, code)) ?? 0);
+      const instruments = (await allOf<Instrument>(input.store, tenantId, STORED_VALUE_INDEX, 'StoredValueIssued')).filter((i) => i.kind === 'store_credit');
+      let storeCreditMinor = 0;
+      for (const i of instruments) storeCreditMinor += Math.max(0, balanceOf(await value.movements(tenantId, i.instrumentId), i.instrumentId));
+      return { points, pointValuePaise: (await input.rule(tenantId)).pointValuePaise, storeCreditMinor };
+    },
+    creditBalance: async (tenantId, accountCode) => {
+      const journals = await allOf<JournalEntry>(input.store, tenantId, STREAM.finance, 'JournalPosted');
+      let balance = 0;
+      for (const j of journals) for (const l of j.lines) if (l.accountCode === accountCode) balance += l.creditMinor - l.debitMinor;
+      return balance;
+    },
+  };
+}
+
 export function dataRightsAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -10633,6 +10667,29 @@ export function dayBookAdapter(input: { readonly store: EventStore; readonly now
     exceptionsOn: async (tenantId, day) =>
       (await allOf<DayBookExceptionRecord>(input.store, tenantId, STREAM.finance, 'DayBookExceptionRaised'))
         .filter((e) => e.tradingDay === day),
+    // PF-09 step 3: the points the day's sales earned and the day's returns took back, valued at the earn's point value.
+    loyaltyOn: async (tenantId, sales, returns) => {
+      const factsOf = async (saleId: string) => {
+        const events = await input.store.readStream(tenantId, streamName(STREAM.loyalty, 'sale', saleId));
+        const earn = events.find((e) => e.event.type === 'LoyaltySaleEarned');
+        return {
+          earn: earn === undefined ? undefined : payloadOf<SaleEarn>(earn),
+          takeBacks: events.filter((e) => e.event.type === 'LoyaltyReturnTakenBack').map((e) => payloadOf<ReturnTakeBack>(e)),
+        };
+      };
+      const out: DayBookLoyalty[] = [];
+      for (const sale of sales) {
+        const { earn } = await factsOf(sale.saleId);
+        if (earn !== undefined && earn.points > 0) out.push({ sourceId: `earn:${sale.saleId}`, kind: 'earn', points: earn.points, valueMinor: earn.points * (earn.pointValuePaise ?? 0) });
+      }
+      for (const ret of returns) {
+        if (ret.originalSaleId === null) continue;
+        const { earn, takeBacks } = await factsOf(ret.originalSaleId);
+        const t = takeBacks.find((x) => x.returnId === ret.returnId);
+        if (earn !== undefined && t !== undefined && t.taken > 0) out.push({ sourceId: `takeback:${ret.returnId}`, kind: 'takeback', points: t.taken, valueMinor: t.taken * (earn.pointValuePaise ?? 0) });
+      }
+      return out;
+    },
   };
 }
 

@@ -119,9 +119,16 @@ const WORDS = {
     refundGiving: 'Refunding',
     refundHow: 'How is the refund given?',
     storeCredit: 'Store credit',
-    refundCustomerId: 'Store credit: scan the customer loyalty card or key their number',
-    refundCustomerHint: 'Store credit is money on the customer account — it must go to a named customer',
-    refundNeedCustomer: 'Store credit must go to a customer. Scan their loyalty card or key their number — or choose a different refund method.',
+    refundCustomerId: 'Store credit: key the loyalty member\'s mobile number',
+    refundCustomerHint: 'Store credit is money on the member\'s account — it goes to the mobile number they joined with',
+    refundNeedCustomer: 'Store credit must go to a loyalty member. Key their mobile number — or choose a different refund method.',
+    split: 'Split / points / store credit',
+    splitLeft: 'Still to pay',
+    points: 'Points',
+    upTo: 'up to',
+    splitNoMember: 'No loyalty member on this bill, so points and store credit are not offered. Name the member first (More → Loyalty member).',
+    splitWallet: 'Member ••••{last4}: {points} points ({pointsValue}), store credit {credit}. Balances as of {asOf}.',
+    pointsWhole: 'Points are spent whole: one point is worth {value}.',
     refundCondition: 'What condition is the item in?',
     dispResell: 'Good — back on the shelf',
     dispDamaged: 'Damaged — not for sale',
@@ -236,9 +243,16 @@ const WORDS = {
     refundGiving: 'திரும்பத் தருவது',
     refundHow: 'திரும்பப் பணம் எப்படித் தரப்படுகிறது?',
     storeCredit: 'கடை வரவு',
-    refundCustomerId: 'கடை வரவு: வாடிக்கையாளர் விசுவாச அட்டையை ஸ்கேன் செய்யவும் அல்லது அவர்களின் எண்ணை உள்ளிடவும்',
+    refundCustomerId: 'கடை வரவு: லாயல்டி உறுப்பினரின் கைபேசி எண்ணை உள்ளிடவும்',
     refundCustomerHint: 'கடை வரவு என்பது வாடிக்கையாளர் கணக்கில் உள்ள பணம் — அது ஒரு பெயரிடப்பட்ட வாடிக்கையாளருக்கே செல்ல வேண்டும்',
-    refundNeedCustomer: 'கடை வரவு ஒரு வாடிக்கையாளருக்கே செல்ல வேண்டும். அவர்களின் விசுவாச அட்டையை ஸ்கேன் செய்யவும் அல்லது எண்ணை உள்ளிடவும் — அல்லது வேறு முறையைத் தேர்ந்தெடுக்கவும்.',
+    refundNeedCustomer: 'கடை வரவு ஒரு லாயல்டி உறுப்பினருக்கே செல்ல வேண்டும். அவர்களின் கைபேசி எண்ணை உள்ளிடவும் — அல்லது வேறு முறையைத் தேர்ந்தெடுக்கவும்.',
+    split: 'பிரித்துச் செலுத்து / புள்ளிகள் / கடை வரவு',
+    splitLeft: 'இன்னும் செலுத்த வேண்டியது',
+    points: 'புள்ளிகள்',
+    upTo: 'அதிகபட்சம்',
+    splitNoMember: 'இந்த பில்லில் லாயல்டி உறுப்பினர் இல்லை, எனவே புள்ளிகள் மற்றும் கடை வரவு வழங்கப்படவில்லை. முதலில் உறுப்பினரைச் சேர்க்கவும் (மேலும் → லாயல்டி உறுப்பினர்).',
+    splitWallet: 'உறுப்பினர் ••••{last4}: {points} புள்ளிகள் ({pointsValue}), கடை வரவு {credit}. {asOf} நிலவரப்படி இருப்பு.',
+    pointsWhole: 'புள்ளிகள் முழுமையாகவே செலவிடப்படும்: ஒரு புள்ளி {value} மதிப்புடையது.',
     refundCondition: 'பொருளின் நிலை என்ன?',
     dispResell: 'நல்லது — அலமாரிக்குத் திரும்ப',
     dispDamaged: 'சேதம் — விற்பனைக்கு அல்ல',
@@ -859,8 +873,11 @@ el('tender').addEventListener('click', async () => {
     { value: 'cash', label: `${t('cash')} — ${inr(payable)}` },
     { value: 'card', label: `${t('card')} — ${inr(payable)}` },
     { value: 'upi', label: `${t('upi')} — ${inr(payable)}` },
+    // A split across tenders, and a loyalty member's points and store credit (M12-FR-03 · PF-09 step 3).
+    ...(session.tenderSplit ? [{ value: 'split', label: t('split') }] : []),
   ]);
   if (kind === null) return;
+  if (kind === 'split') return splitPayment(payable);
   if (kind !== 'cash') return takeCardOrUpi(kind, payable);
 
   const changeFor = (rupees) => Math.round(rupees * 100) - payable;
@@ -979,6 +996,81 @@ async function takeCardOrUpi(kind, payable) {
       atIsoUtc: new Date().toISOString(), kind, outcome, ...(ref ? { ref } : {}),
     });
     tell(`${t('approved')} — ${kind === 'card' ? t('card') : t('upi')}`, withReceiptNotice(receipt));
+    session.newSale();
+    void refreshBadge();
+    selectedLineId = null;
+    render();
+  } catch (e) {
+    tell(t('read'), e && e.laneMessage ? e.laneMessage : String(e && e.message ? e.message : e));
+  }
+}
+
+/**
+ * A SPLIT payment (M12-FR-03 · PF-09 step 3): part by part until the bill is covered — cash, card, UPI, and for a named
+ * loyalty member their points and store credit, as far as the store computer says they may spend here now. A card or UPI
+ * part is an attempt recorded on the store computer before the machine is asked (PF-06). Only the last part may be cash
+ * over the amount (change). The store computer decides the points and credit again before the disk and says no, in
+ * words, if its copy no longer covers them — nothing is then saved and the customer pays another way.
+ */
+async function splitPayment(payable) {
+  let wallet = null;
+  if (session.loyaltyWallet && session.loyaltyMemberLast4 && session.loyaltyMemberLast4() !== null) {
+    wallet = await session.loyaltyWallet();
+    if (!wallet.ok) { tell(t('read'), wallet.laneMessage); wallet = null; }
+    else {
+      tell(t('member'), t('splitWallet').replace('{last4}', wallet.last4 || session.loyaltyMemberLast4()).replace('{points}', String(wallet.points))
+        .replace('{pointsValue}', inr(wallet.pointsValueMinor)).replace('{credit}', inr(wallet.storeCreditMinor)).replace('{asOf}', wallet.asOf ? new Date(wallet.asOf).toLocaleString() : '—'));
+    }
+  } else if (session.loyaltyWallet) {
+    tell(t('read'), t('splitNoMember'));
+  }
+  const parts = [];
+  let remaining = payable;
+  let change = 0;
+  let walletSpent = 0;
+  while (remaining > 0) {
+    const used = new Set(parts.map((p) => p.kind));
+    const capLeft = wallet ? wallet.capRemainingMinor - walletSpent : 0;
+    const pointsMax = wallet && wallet.pointValuePaise > 0
+      ? Math.min(remaining, wallet.pointsValueMinor, capLeft) - (Math.min(remaining, wallet.pointsValueMinor, capLeft) % wallet.pointValuePaise) : 0;
+    const creditMax = wallet ? Math.min(remaining, wallet.storeCreditMinor, capLeft) : 0;
+    const kind = await choose(`${t('splitLeft')} ${inr(remaining)}`, [
+      { value: 'cash', label: t('cash') },
+      { value: 'card', label: t('card') },
+      { value: 'upi', label: t('upi') },
+      ...(pointsMax > 0 && !used.has('loyalty_points') ? [{ value: 'loyalty_points', label: `${t('points')} — ${t('upTo')} ${inr(pointsMax)}` }] : []),
+      ...(creditMax > 0 && !used.has('store_credit') ? [{ value: 'store_credit', label: `${t('storeCredit')} — ${t('upTo')} ${inr(creditMax)}` }] : []),
+    ]);
+    if (kind === null) return;
+    const max = kind === 'loyalty_points' ? pointsMax : kind === 'store_credit' ? creditMax : remaining;
+    const typed = await ask({ title: `${kind === 'loyalty_points' ? t('points') : kind === 'store_credit' ? t('storeCredit') : t(kind)} — ${t('splitLeft')} ${inr(remaining)}`, mode: 'number', hint: kind === 'cash' ? `${t('notEnough')} ${inr(remaining)}` : `${t('upTo')} ${inr(max)}`, initial: kind === 'cash' ? '0' : String(max / 100),
+      // One tap: the notes that cover what is left, or the most this part may be.
+      quick: kind === 'cash' ? quickCash(remaining) : [{ label: `${t('upTo')} ${inr(max)}`, value: String(max / 100) }] });
+    if (typed === null) return;
+    const amountMinor = Math.round(Number(typed) * 100);
+    if (!(amountMinor > 0)) continue;
+    if (kind !== 'cash' && amountMinor > max) { tell(t('read'), `${t('upTo')} ${inr(max)}`); continue; }
+    if (kind === 'loyalty_points' && amountMinor % wallet.pointValuePaise !== 0) { tell(t('read'), t('pointsWhole').replace('{value}', inr(wallet.pointValuePaise))); continue; }
+    if (kind === 'card' || kind === 'upi') {
+      const ref = await cardAttempt(kind, amountMinor);
+      if (ref === null) return;
+      parts.push({ kind, amountMinor, ...(ref ? { ref } : {}) });
+    } else if (kind === 'cash') {
+      // Cash over what is owed is change: the bill records what it covered, the drawer the change handed back.
+      const covered = Math.min(amountMinor, remaining);
+      change = amountMinor - covered;
+      parts.push({ kind, amountMinor: covered });
+    } else {
+      walletSpent += amountMinor;
+      parts.push({ kind, amountMinor });
+    }
+    remaining -= Math.min(amountMinor, remaining);
+  }
+  const receiptNumber = await takeReceiptNumber();
+  if (receiptNumber === null) return;
+  try {
+    const receipt = await session.tenderSplit({ saleId: `S-${receiptNumber}`, receiptNumber, atIsoUtc: new Date().toISOString(), parts });
+    tell(change > 0 ? `${t('changeDue')}: ${inr(change)}` : t('approved'), withReceiptNotice(receipt));
     session.newSale();
     void refreshBadge();
     selectedLineId = null;

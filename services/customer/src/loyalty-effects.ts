@@ -24,7 +24,11 @@ export interface LoyaltyOutcome {
   readonly detail: string;
 }
 
-export interface SaleEarn { readonly memberRef: string; readonly points: number; readonly saleTotalMinor: number }
+export interface SaleEarn {
+  readonly memberRef: string; readonly points: number; readonly saleTotalMinor: number;
+  /** The point value in force when the points were earned — what the liability is booked at (PF-09 step 3). */
+  readonly pointValuePaise?: number;
+}
 export interface ReturnTakeBack {
   readonly returnId: string; readonly memberRef: string; readonly refundMinor: number;
   readonly owed: number; readonly taken: number; readonly shortfall: number;
@@ -69,7 +73,7 @@ export async function earnOnSale(
   const paidWithPoints = (sale.tenders ?? []).filter((t) => t.kind === 'loyalty_points').reduce((n, t) => n + (Number.isSafeInteger(t.amountMinor) ? t.amountMinor : 0), 0);
   const points = pointsEarned(Math.max(0, sale.totalMinor - paidWithPoints), rule.pointsPer100Inr);
   if (points === 0) return { outcome: 'nothing_to_earn', points: 0, detail: 'The sale was too small to earn a whole point.' };
-  await deps.recordEarn(tenantId, sale.saleId, { memberRef: sale.customerRef, points, saleTotalMinor: sale.totalMinor }, deps.now());
+  await deps.recordEarn(tenantId, sale.saleId, { memberRef: sale.customerRef, points, saleTotalMinor: sale.totalMinor, pointValuePaise: rule.pointValuePaise }, deps.now());
   return { outcome: 'earned', points, detail: `${points} point(s) earned.` };
 }
 

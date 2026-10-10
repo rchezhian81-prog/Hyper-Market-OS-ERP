@@ -9,6 +9,14 @@ import { money, type CurrencyCode } from '../../../packages/contracts/src/money'
 import type { Uom } from '../../../packages/contracts/src/quantity';
 import { rate } from '../../../packages/contracts/src/rate';
 import type { Tender } from '../../../packages/tender/src/tender';
+
+/** One part of a split payment (PF-09 step 3 · M12-FR-03). Amounts in paise. */
+export interface SplitPart {
+  readonly kind: 'cash' | 'card' | 'upi' | 'loyalty_points' | 'store_credit';
+  readonly amountMinor: number;
+  /** A card/UPI part: the store computer's attempt reference it was approved under. */
+  readonly ref?: string;
+}
 import { minimumAgeOf, type CatalogueCache, type ScanBatchContext } from '../../../packages/catalogue/src/catalogue';
 import type { PosSession, SyncBadge } from './session';
 import { presentSyncBadge, type StatusPresentation } from '../../../packages/a11y/src/signals';
@@ -126,6 +134,20 @@ export interface PosView {
     readonly outcome: 'approved' | 'declined' | 'no_answer';
     /** The store computer's attempt reference the machine was asked under (audit PF-06). */
     readonly ref?: string;
+  }): Promise<string>;
+
+  /**
+   * Take a SPLIT payment (M12-FR-03 "split tenders balance to the total"; PF-09 step 3): cash, card, UPI, loyalty points
+   * and store credit in any mix, each part an amount. A card or UPI part names the store computer's attempt it was
+   * approved under (`ref`, audit PF-06) — a part without one is not paid, so the sale does not commit. Points and store
+   * credit are decided by the store computer against its copy of the member's balances; it refuses the sale before the
+   * disk when they do not cover it, in the cashier's words. Only cash may cover more than is owed (change).
+   */
+  tenderSplit(input: {
+    readonly saleId: string;
+    readonly receiptNumber: string;
+    readonly atIsoUtc: string;
+    readonly parts: readonly SplitPart[];
   }): Promise<string>;
 
   /**
@@ -295,6 +317,19 @@ export function createPosView(
       const status: Tender['status'] = input.outcome === 'approved' ? 'authorized'
         : input.outcome === 'declined' ? 'declined' : 'uncertain';
       const tenders: Tender[] = [{ kind: input.kind, amount: payable, status, ...(input.ref === undefined ? {} : { ref: input.ref }) }];
+      const sale = await session.commit(input.saleId, input.receiptNumber, input.atIsoUtc, tenders);
+      return sale.number;
+    },
+
+    async tenderSplit(input): Promise<string> {
+      const currency = session.totals().payable.currency;
+      const tenders: Tender[] = input.parts.map((part) => ({
+        kind: part.kind,
+        amount: money(part.amountMinor, currency),
+        // A card/UPI part is paid only on the attempt the store computer recorded as approved; without it, not paid.
+        status: part.kind === 'card' || part.kind === 'upi' ? (part.ref === undefined || part.ref === '' ? 'uncertain' : 'authorized') : 'settled',
+        ...(part.ref === undefined || part.ref === '' ? {} : { ref: part.ref }),
+      }));
       const sale = await session.commit(input.saleId, input.receiptNumber, input.atIsoUtc, tenders);
       return sale.number;
     },
