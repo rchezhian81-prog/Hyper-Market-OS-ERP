@@ -16,13 +16,15 @@ import { applyMovement, type Bin, type BinContents, type MovementCommand } from 
 import {
   requestIndent, approveIndent, rejectIndent, planIssue, applyIssue, planReceipt, applyReceipt, cancelIndent,
   planReturn, applyReturnRequest, returnTransfer, planReturnAcceptance, applyReturnAcceptance, indentTotals, indentAttention,
+  planShortfallResolution, applyShortfallResolution, type FoundLine, type ShortfallResolution,
   IndentRefusedError,
   type FloorIndent, type IndentLine, type IssueLine, type ReceivedLine, type ShortfallLine, type DamagedLine, type IndentRefusal,
 } from '../../../packages/warehouse/src/indents';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { dispatchPostings, receivePostings } from './warehouse-transfers';
-import type { Movement } from './index';
+import { checkMovement, type Movement } from './index';
+import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
 
 export type IndentEventType =
   | 'FloorIndentRequested' | 'FloorIndentApproved' | 'FloorIndentRejected' | 'FloorIndentCancelled' | 'FloorIndentReturnRequested';
@@ -91,6 +93,8 @@ export interface FloorIndentsDeps {
   readonly recordReceipt: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[]) => Promise<void> | void;
   /** A RETURN accepted at the back store: the indent and the return's transfer proposed, dispatched and received in one step, with both legs' movements — ONE atomic write. */
   readonly recordReturnAccepted: (tenantId: string, indent: FloorIndent, transfer: Transfer, dispatchMovements: readonly StockMovement[], receiveMovements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[]) => Promise<void> | void;
+  /** Batch 2: a shortfall RESOLVED — the indent step and the found units' compensating `adjusted` movements, ONE atomic write. */
+  readonly recordShortfallResolved: (tenantId: string, indent: FloorIndent, issueId: string, posted: readonly Movement[]) => Promise<void> | void;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   /** SP-8c: head office's bin register, so an issue that names a bin lowers the same bin it took from — on the handheld's
    *  relayed route AND the direct route (Batch 2: the direct route named the bin and left it full). Optional: a cloud without
@@ -112,6 +116,8 @@ const REFUSAL_STATUS: Readonly<Record<IndentRefusal, number>> = Object.freeze({
   indent_not_approved: 409, requester_cannot_issue: 422, over_issue: 422, issue_unknown: 404, issue_already_received: 409,
   issuer_cannot_receive: 422, not_on_issue: 422, indent_not_open: 409, nothing_received: 409, over_return: 422,
   return_unknown: 404, return_already_accepted: 409, returner_cannot_accept: 422, not_on_return: 422,
+  issue_not_received: 409, nothing_short: 409, counter_cannot_resolve: 422, issuer_cannot_resolve: 422, more_found_than_missing: 422,
+  not_on_shortfall: 422, shortfall_already_resolved: 409,
 });
 
 /** The engine's refusal, as the API says it — nothing saved, and the next safe step in words. */
@@ -155,6 +161,42 @@ export function readCounted(v: unknown): ReceivedLine[] | undefined {
     out.push({ productId: raw['productId'], batchId: isStr(raw['batchId']) ? raw['batchId'] : null, quantityMinor: raw['quantityMinor'], ...(isInt(raw['damagedMinor']) && (raw['damagedMinor'] as number) > 0 ? { damagedMinor: raw['damagedMinor'] as number } : {}) });
   }
   return out;
+}
+
+/** Batch 2: what the resolver says turned up — [{ productId, batchId?, foundMinor (whole, zero or more), foundAtLocationId? }]. */
+export function readFound(v: unknown): FoundLine[] | undefined {
+  if (v === undefined) return [];
+  if (!Array.isArray(v)) return undefined;
+  const out: FoundLine[] = [];
+  for (const raw of v) {
+    if (!isObj(raw) || !isStr(raw['productId']) || !isInt(raw['foundMinor']) || (raw['foundMinor'] as number) < 0
+      || (raw['batchId'] !== undefined && raw['batchId'] !== null && !isStr(raw['batchId']))
+      || (raw['foundAtLocationId'] !== undefined && !isStr(raw['foundAtLocationId']))) return undefined;
+    const batchId = isStr(raw['batchId']) ? raw['batchId'] : null;
+    if (out.some((f) => f.productId === raw['productId'] && f.batchId === batchId)) return undefined; // one line per product and batch
+    out.push({ productId: raw['productId'], batchId, foundMinor: raw['foundMinor'] as number, ...(isStr(raw['foundAtLocationId']) ? { foundAtLocationId: raw['foundAtLocationId'] } : {}) });
+  }
+  return out;
+}
+
+/** The same resolution again? Same reason and the same found figures per line — the replay answer, not a second truth. */
+const sameResolution = (prior: ShortfallResolution, reasonCode: string, found: readonly FoundLine[]): boolean =>
+  prior.reasonCode === reasonCode
+  && prior.lines.every((l) => l.foundMinor === (found.find((f) => f.productId === l.productId && f.batchId === l.batchId)?.foundMinor ?? 0));
+
+/**
+ * Batch 2: the compensating movements for units that TURNED UP — `adjusted` at the place they were found, at the quantity
+ * found. Two people, as every `adjusted` movement needs (§28 · `checkMovement`): raised by the count that said they were
+ * missing (the receiver), approved by the resolver. Keyed on the transfer, so a replay cannot post twice.
+ */
+export function foundPostings(transfer: Transfer, issue: { readonly receivedBy?: string }, resolution: ShortfallResolution): Movement[] {
+  return resolution.lines.filter((l) => l.foundMinor > 0).map((l, i): Movement => ({
+    movementId: `${transfer.transferId}-found-${i + 1}`, productId: l.productId, locationId: l.foundAtLocationId ?? transfer.toLocationId, kind: 'adjusted',
+    quantityMinor: l.foundMinor, uom: transfer.lines.find((t) => t.productId === l.productId && t.batchId === l.batchId)?.uom ?? 'EA',
+    occurredAt: resolution.resolvedAt, enteredBy: issue.receivedBy ?? resolution.resolvedBy, approvedBy: resolution.resolvedBy,
+    reason: `transfer ${transfer.transferId} shortfall resolved by ${resolution.resolvedBy}: ${l.foundMinor} of ${l.missingMinor} found at ${l.foundAtLocationId ?? transfer.toLocationId} (${resolution.reasonCode}) — ${resolution.note}`,
+    ...(l.batchId === null ? {} : { batchId: l.batchId }),
+  }));
 }
 
 export const shortfallOf = (discrepancies: readonly TransferDiscrepancy[]): ShortfallLine[] =>
@@ -397,6 +439,63 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
             correlationId: indentId,
           });
           return { status: 201, body: { indent: presentIndent(next), issue: next.issues.find((i) => i.issueId === issueId), posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies, damaged, alreadyReceived: false } };
+        } catch (e) { return refusedBy(e); }
+      },
+    },
+    {
+      // Batch 2 — RESOLVE a valued shortfall, accountably (M09-FR-03 · M08-FR-03 · M08-FR-04 · §28 · P-08 · hard rules #2 #6 #10).
+      // Body: { lines?: [{ productId, batchId?, foundMinor, foundAtLocationId? }], reasonCode, note }. A person who neither
+      // issued nor counted the stock says what turned up and why the rest is gone: found units come back on a compensating
+      // two-person `adjusted` movement in the same write; the rest is confirmed LOST at the cost it left with. Once: the
+      // same resolution again is 200, a different one is 409. The shortfall stays on the record beside its resolution.
+      api: 'API-04', method: 'POST', path: '/v1/floor/indents/:indentId/issues/:issueId/shortfall/resolution',
+      permission: 'inventory.adjustment.approve', idempotent: true,
+      handler: async (ctx) => {
+        const indentId = (ctx.params['indentId'] ?? '').trim();
+        const issueId = (ctx.params['issueId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const found = readFound(b['lines']);
+        if (indentId === '' || issueId === '' || found === undefined || !isAdjustmentReason(b['reasonCode']) || !isStr(b['note']) || (b['note'] as string).trim().length < 4) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_resolution',
+            whatHappened: `Resolving a shortfall needs a reasonCode (${ADJUSTMENT_REASON_CODES.join(' / ')}), a note saying what was done to look for the stock, and optionally lines [{ productId, batchId?, foundMinor, foundAtLocationId? }] for what turned up (one line per product and batch).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { reasonCode, note, lines? }. Nothing was changed.',
+          });
+        }
+        const reasonCode = b['reasonCode'] as string;
+        const note = (b['note'] as string).trim();
+        const indent = await deps.indent(ctx.tenantId, indentId);
+        if (indent === undefined) throw notFound(`floor indent ${indentId}`);
+        const issue = indent.issues.find((i) => i.issueId === issueId);
+        if (issue === undefined) throw notFound(`issue ${issueId} on floor indent ${indentId}`);
+        const prior = issue.shortfallResolution;
+        if (prior !== undefined && sameResolution(prior, reasonCode, found)) {
+          return { status: 200, body: { indent: presentIndent(indent), resolution: prior, alreadyResolved: true } };
+        }
+        const now = deps.now();
+        try {
+          const planned = planShortfallResolution({ indent, issueId, resolvedBy: ctx.userId, found, reasonCode, note, at: now });
+          const transfer = await deps.transferOf(ctx.tenantId, issue.transferId);
+          if (transfer === undefined) throw notFound(`transfer ${issue.transferId}`);
+          const posted = foundPostings(transfer, issue, planned);
+          for (const m of posted) {
+            const check = checkMovement(m);
+            if (!check.ok) throw apiError(422, { code: check.refusedBecause ?? 'movement_refused', whatHappened: check.detail, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
+          }
+          const resolution: ShortfallResolution = { ...planned, movementIds: posted.map((m) => m.movementId) };
+          const next = applyShortfallResolution(indent, issueId, resolution);
+          await deps.recordShortfallResolved(ctx.tenantId, next, issueId, posted);
+          await audit(ctx.tenantId, {
+            actorId: ctx.userId, action: 'floor_indent.shortfall.resolve', objectType: 'floor_indent', objectId: indentId, at: now, origin: origin(ctx.tenantId, ctx.branchId ?? null),
+            before: { issueId, issuedBy: issue.issuedBy, receivedBy: issue.receivedBy ?? '', missingMinor: String(resolution.lines.reduce((s, l) => s + l.missingMinor, 0)) },
+            after: {
+              reasonCode, note, foundMinor: String(resolution.lines.reduce((s, l) => s + l.foundMinor, 0)), lostMinor: String(resolution.lines.reduce((s, l) => s + l.lostMinor, 0)),
+              lostValueMinor: String(resolution.lines.reduce((s, l) => s + l.lostValueMinor, 0)), posted: resolution.movementIds.join(','),
+            },
+            correlationId: indentId,
+          });
+          return { status: 201, body: { indent: presentIndent(next), resolution, posted, alreadyResolved: false } };
         } catch (e) { return refusedBy(e); }
       },
     },

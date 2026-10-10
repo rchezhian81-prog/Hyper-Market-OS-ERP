@@ -5394,6 +5394,15 @@ export function floorIndentsAdapter(input: {
         ...movementEntries(tenantId, posted),
       ]);
     },
+    // Batch 2: a shortfall RESOLVED — the indent step and the found units' compensating `adjusted` movements, one atomic batch
+    // (each idempotent on its own key, so a replay posts nothing twice).
+    recordShortfallResolved: async (tenantId, indent, issueId, posted) => {
+      const at = input.now();
+      await input.store.appendBatch(tenantId, [
+        stepEvent(tenantId, 'FloorIndentShortfallResolved', indent, 'shortfall-resolved', issueId, at),
+        ...movementEntries(tenantId, posted),
+      ]);
+    },
   };
 }
 
@@ -6161,6 +6170,20 @@ export function inventoryAdapter(input: {
     // transfers' own discrepancy records. Listed beside negative stock until a person owns it (P-08, #10).
     transferShortfalls: async (tenantId) => {
       const received = await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'transfers'), { type: 'TransferReceived' });
+      // Batch 2: a floor-indent shortfall a second person RESOLVED stays listed, beside its resolution (hard rule #6).
+      const resolvedByTransfer = new Map<string, NonNullable<TransferShortfall['resolution']>>();
+      for (const e of await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'indents'), { type: 'FloorIndentShortfallResolved' })) {
+        for (const issue of payloadOf<{ indent: FloorIndent }>(e).indent.issues) {
+          const r = issue.shortfallResolution;
+          if (r === undefined) continue;
+          for (const l of r.lines) {
+            resolvedByTransfer.set(`${issue.transferId}\u001f${l.productId}\u001f${l.batchId ?? ''}`, {
+              resolvedBy: r.resolvedBy, resolvedAt: r.resolvedAt, reasonCode: r.reasonCode, note: r.note,
+              foundMinor: l.foundMinor, lostMinor: l.lostMinor, lostValueMinor: l.lostValueMinor, movementIds: r.movementIds,
+            });
+          }
+        }
+      }
       const out: TransferShortfall[] = [];
       for (const e of received) {
         const p = payloadOf<{ transfer: Transfer; discrepancies?: readonly TransferDiscrepancy[] }>(e);
@@ -6170,6 +6193,7 @@ export function inventoryAdapter(input: {
             transferId: p.transfer.transferId, productId: d.productId, batchId: d.batchId, fromLocationId: p.transfer.fromLocationId, locationId: p.transfer.toLocationId,
             dispatchedMinor: d.dispatchedMinor, receivedMinor: d.receivedMinor, differenceMinor: d.differenceMinor, value: d.value,
             receivedAt: p.transfer.receivedAt ?? e.event.occurredAt, detail: d.detail,
+            resolution: resolvedByTransfer.get(`${p.transfer.transferId}\u001f${d.productId}\u001f${d.batchId ?? ''}`) ?? null,
           });
         }
       }

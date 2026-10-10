@@ -328,6 +328,17 @@ export interface TransferShortfall {
   readonly value: Money;
   readonly receivedAt: string;
   readonly detail: string;
+  /** Batch 2: how a person resolved it (found / confirmed lost, who, why) — `null` while it is still open. Never removed. */
+  readonly resolution?: {
+    readonly resolvedBy: string;
+    readonly resolvedAt: string;
+    readonly reasonCode: string;
+    readonly note: string;
+    readonly foundMinor: number;
+    readonly lostMinor: number;
+    readonly lostValueMinor: number;
+    readonly movementIds: readonly string[];
+  } | null;
 }
 
 /** One row of period inputs for turns/GMROI — for the whole store, or for one product. */

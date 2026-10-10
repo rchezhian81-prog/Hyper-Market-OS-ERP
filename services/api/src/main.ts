@@ -367,7 +367,7 @@ export function buildSurface(deps: {
   // records through the same engine.
   const floorIndentDeps = store === undefined ? {
     indent: empty(undefined), indents: empty([]), transferOf: empty(undefined), knownLocation: empty(true), onHandAt: empty([]), availableAt: empty([]), unitCostAt: empty(undefined),
-    recordIndent: () => {}, recordIssued: () => {}, recordReceipt: () => {}, recordReturnAccepted: () => {}, permissionsOfUser: empty(undefined), now,
+    recordIndent: () => {}, recordIssued: () => {}, recordReceipt: () => {}, recordReturnAccepted: () => {}, recordShortfallResolved: () => {}, permissionsOfUser: empty(undefined), now,
   } : { ...floorIndentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
   // SP-4: one deps object per count / adjustment surface, so the direct routes, the relayed routes and the manager's
   // relayed APPROVAL DECISION all act on the same records through the same decide steps.
