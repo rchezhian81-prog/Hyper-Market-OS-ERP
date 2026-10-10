@@ -6,6 +6,7 @@ import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { STREAM } from '../../services/api/src/adapters';
 import { SqlIdempotencyStore } from '../../services/kernel/src/index';
+import { makeEvent } from '../../packages/contracts/src/event';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
@@ -43,6 +44,21 @@ describe.each(backings)('FUL-05 — one command advances the order and posts sto
     await h.provisionRole(T, 'u-mgr', 'store_manager');
     const call = (method: 'GET' | 'POST', path: string, body?: unknown, user = 'u-owner') =>
       h.request({ method, path, userId: user, tenantId: T, ...(method === 'POST' ? { idempotencyKey: `${path}-${JSON.stringify(body ?? {})}`, body: body ?? {} } : {}) });
+    // FUL-04 (Batch 2): the desk packs under HEAD OFFICE's rules — the handling class from the product master, name and
+    // price from the published catalogue, quantities from the order register. The desk sends only what it observed.
+    await h.store.append(T, STREAM.catalogue, makeEvent({
+      id: `pack-${T}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${T}-v1`, source: 'test/catalogue',
+      payload: { snapshot: { tenantId: T, version: 1, builtAt: AT, scope: { tenantId: T, storeId: 'store-1' }, barcodes: [], products: [
+        { productId: 'MILK', sku: 'MILK', name: 'Milk', unitPriceMinor: 6_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false },
+        { productId: 'DAL', sku: 'DAL', name: 'Dal', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'ea', batchTracked: false },
+      ] } },
+    }));
+    for (const [id, name] of [['MILK', 'Milk'], ['DAL', 'Dal']] as const) {
+      expect((await call('POST', `/v1/catalogue/products/${id}/publish`, {
+        product: { sku: id, name, baseUom: 'each', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'active', handling: 'ambient' },
+        categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }],
+      })).status).toBe(201);
+    }
     for (const [id, productId, qty] of [['r-milk', 'MILK', 10], ['r-dal', 'DAL', 10]] as const) {
       expect((await call('POST', '/v1/inventory/movements', { movementId: id, productId, locationId: 'store-1', kind: 'received', quantityMinor: qty, uom: 'ea', occurredAt: AT, enteredBy: 'u-owner', unitCostMinor: 3_000 })).status).toBeLessThan(300);
     }
@@ -59,11 +75,8 @@ describe.each(backings)('FUL-05 — one command advances the order and posts sto
       if (paidMinor !== undefined) expect((await call('POST', `/v1/orders/${orderId}/payment`, { providerRef: `tok_${orderId}`, amountMinor: paidMinor, result: 'authorised' }, 'u-mgr')).status).toBeLessThan(300);
       expect((await call('POST', `/v1/orders/${orderId}/transition`, { event: 'confirm' })).status).toBe(200);
       const packed = await call('POST', `/v1/fulfilment/orders/${orderId}/pack`, {
-        lines: [
-          { lineId: 'milk', productId: 'MILK', name: 'Milk', handling: 'ambient', orderedMinor: 2, pickedMinor: 2, uom: 'ea', unitPriceMinor: 6_000 },
-          { lineId: 'dal', productId: 'DAL', name: 'Dal', handling: 'ambient', orderedMinor: 1, pickedMinor: 1, uom: 'ea', unitPriceMinor: 16_000 },
-        ],
-        crateAssignment: { milk: 'c1', dal: 'c1' },
+        lines: [{ productId: 'MILK', pickedMinor: 2 }, { productId: 'DAL', pickedMinor: 1 }],
+        crateAssignment: { MILK: 'c1', DAL: 'c1' },
       }, 'u-mgr');
       expect(packed.status).toBe(200);
       expect(packed.body).toMatchObject({ fulfilment: { state: 'packed', steps: [{ event: 'pick' }, { event: 'pack' }], waiting: 'no_door_outcome' } });
@@ -97,7 +110,7 @@ describe.each(backings)('FUL-05 — one command advances the order and posts sto
     expect(door.body).toMatchObject({ fulfilment: { waiting: 'awaiting_handback' } });
     expect(await s.sales()).toHaveLength(0);
     // One milk came back to the store.
-    const back = await s.call('POST', '/v1/fulfilment/orders/o-part/handback', { lines: [{ lineId: 'milk', quantityMinor: 1 }] }, 'u-mgr');
+    const back = await s.call('POST', '/v1/fulfilment/orders/o-part/handback', { lines: [{ lineId: 'MILK', quantityMinor: 1 }] }, 'u-mgr');
     expect(back.status).toBe(201);
     expect(back.body).toMatchObject({ applied: { state: 'delivered', settlement: { outcome: 'partially_delivered', keptMinor: 22_000, refundDueMinor: 6_000 } } });
     expect(await s.stock()).toEqual({ MILK: 1, DAL: 1 });
@@ -127,10 +140,16 @@ describe.each(backings)('FUL-05 — one command advances the order and posts sto
     expect((await s.sales())[0]!.tenders).toEqual([{ kind: 'cash', amountMinor: 20_000 }, { kind: 'cod_due', amountMinor: 8_000 }]);
   });
 
-  it('an order no one confirmed is not advanced: its pack is said, not posted', async () => {
+  it('an order no one confirmed is not advanced: the desk cannot pack it, and nothing is posted', async () => {
+    // Integration of FUL-04 and FUL-05 (10 Oct 2026): head office refuses to pack an order nobody confirmed (FUL-04's
+    // rule) — the order is not advanced and no stock or money moves, which is what FUL-05 required of it.
     const s = await shop();
     expect((await s.call('POST', '/v1/orders/o-new/promise', { lines: [{ productId: 'MILK', quantityMinor: 1 }], locationId: 'store-1' })).status).toBe(200);
-    const packed = await s.call('POST', '/v1/fulfilment/orders/o-new/pack', { lines: [{ lineId: 'milk', productId: 'MILK', name: 'Milk', handling: 'ambient', orderedMinor: 1, pickedMinor: 1, uom: 'ea', unitPriceMinor: 6_000 }], crateAssignment: { milk: 'c1' } }, 'u-mgr');
-    expect(packed.body).toMatchObject({ fulfilment: { state: 'placed', waiting: 'not_confirmed' } });
+    const packed = await s.call('POST', '/v1/fulfilment/orders/o-new/pack', { lines: [{ productId: 'MILK', pickedMinor: 1 }], crateAssignment: { MILK: 'c1' } }, 'u-mgr');
+    expect(packed.status).toBe(409);
+    expect((packed.body as { error?: { code?: string } }).error?.code).toBe('order_not_packable');
+    expect((await s.call('GET', '/v1/orders/o-new')).body).toMatchObject({ state: 'placed' });
+    expect(await s.sales()).toHaveLength(0);
+    expect(await s.stock()).toEqual({ MILK: 0, DAL: 0 });
   });
 });
