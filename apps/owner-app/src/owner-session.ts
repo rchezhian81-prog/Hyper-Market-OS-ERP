@@ -59,6 +59,8 @@ export interface BranchPayload {
   readonly sales: readonly SaleFact[];
   readonly exceptions: BuildBriefInput['exceptions'];
   readonly approvals: readonly PendingApproval[];
+  /** Round 4: today's bills the store computer could not cost — takings shown, margin not known. */
+  readonly uncosted?: BuildBriefInput['uncosted'];
 }
 
 export interface OwnerConfig {
@@ -308,6 +310,7 @@ export function createOwnerSession(
       lastSyncedAt: payload.lastSyncedAt,
       staleAfterSeconds: config.staleAfterSeconds,
       sales: payload.sales,
+      ...(payload.uncosted === undefined ? {} : { uncosted: payload.uncosted }),
       exceptions: payload.exceptions,
       // A request the owner has already decided is not still waiting on them. Leaving it in the
       // inbox is how the same purchase order gets approved twice from a phone with no signal.

@@ -311,6 +311,11 @@
         <p class="lead" id="close-lead">Check what is still open before you close. A closed day is locked.</p>
         <button id="check-close" type="button" class="wide">Check what is still open</button>
         <div class="blockers" id="blockers"></div>
+        <!-- Round 4: the close is the manager's own act — they key their own till PIN; the store computer checks it. -->
+        <div id="close-pin-row" hidden>
+          <label for="close-pin" id="close-pin-label">Your till PIN — you key it yourself</label>
+          <input id="close-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" />
+        </div>
         <button id="do-close" type="button" class="primary wide" hidden>Close the day now</button>
       </section>
     </main>

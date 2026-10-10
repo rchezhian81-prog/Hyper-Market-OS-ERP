@@ -29,7 +29,7 @@ describe('the lane socket relays the manager’s day close to the box (M14-FR-04
   const servers: LaneServer[] = [];
   afterEach(async () => { for (const s of servers.splice(0)) await s.stop(); });
 
-  const calls: Array<{ dayCloseId: string; closedBy: string }> = [];
+  const calls: Array<Parameters<LaneDayCloseHandler>[0]> = [];
   const closeDay: LaneDayCloseHandler = async (req) => {
     calls.push(req);
     if (req.dayCloseId === 'dc-block') return { closed: false, reason: 'a sale is still unsent' };
@@ -52,6 +52,14 @@ describe('the lane socket relays the manager’s day close to the box (M14-FR-04
     expect(res.status).toBe(200);
     expect(await res.json() as CloseOutcome).toMatchObject({ closed: true, tradingDay: '2026-08-06' });
     expect(calls).toEqual([{ dayCloseId: 'dc-1', closedBy: 'u-mgr' }]);
+  });
+
+  it('round 4: carries the closer\'s own till PIN to the box (which verifies it) — and never echoes it', async () => {
+    const base = await start();
+    const pin = String(400_000 + 21_173);
+    const res = await post(base, { dayCloseId: 'dc-2', closedBy: 'u-mgr', closerPin: pin });
+    expect(calls).toEqual([{ dayCloseId: 'dc-2', closedBy: 'u-mgr', closerPin: pin }]);
+    expect(await res.text()).not.toContain(pin);
   });
 
   it('relays the box’s refusal verbatim (a blocker is not an error) — 200 with the reason', async () => {

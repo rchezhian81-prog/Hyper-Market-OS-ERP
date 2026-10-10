@@ -60,12 +60,22 @@ export interface BuildBriefInput {
   readonly sales: readonly SaleFact[];
   readonly exceptions: readonly LpException[];
   readonly approvals: readonly PendingApproval[];
+  /**
+   * Round 4 (P-08): today's bills the store computer could NOT cost (a product with no cost in its setup) — their takings
+   * are real and are shown; only their margin is not known. Absent / zero bills = every bill was costed.
+   */
+  readonly uncosted?: { readonly bills: number; readonly takenMinor: number; readonly tenderMix: Readonly<Record<string, number>> };
 }
 
 export interface OwnerBrief {
   readonly asOf: string;
   /** The day's numbers, computed exactly from committed sales. */
   readonly kpis: SalesSummary;
+  /**
+   * Round 4: EVERY bill today and what they took, by tender — the costed ones (in `kpis`) and the ones whose margin is not
+   * known (`marginUnknownBills`) together. The takings are never hidden because a cost is missing.
+   */
+  readonly takings: { readonly bills: number; readonly takenMinor: number; readonly tenderMix: Readonly<Record<string, number>>; readonly marginUnknownBills: number };
   /** How current the numbers are — always shown, never implied (P-08). */
   readonly freshness: Freshness;
   /** Plain-sentence summary of the day, numbers beside the words. */
@@ -169,17 +179,35 @@ export function buildBrief(input: BuildBriefInput): OwnerBrief {
         ? ' These numbers are NOT live — the branch has not synced recently.'
         : ' No data has synced from this branch yet.';
 
+  const unc = input.uncosted !== undefined && input.uncosted.bills > 0 ? input.uncosted : undefined;
+  const tenderMix: Record<string, number> = { ...kpis.tenderMix };
+  for (const [kind, minor] of Object.entries(unc?.tenderMix ?? {})) tenderMix[kind] = (tenderMix[kind] ?? 0) + minor;
+  const takings = {
+    bills: kpis.basketCount + (unc?.bills ?? 0),
+    takenMinor: kpis.grossSalesMinor + (unc?.takenMinor ?? 0),
+    tenderMix,
+    marginUnknownBills: unc?.bills ?? 0,
+  };
+  const plural = (n: number): string => `${n} bill${n === 1 ? '' : 's'}`;
+  // Round 4 (P-08): a bill whose margin cannot be worked out is still a sale — its takings are said, and so is the fact
+  // that its margin is not known. Never "No sales recorded" while the till took money.
   const headline =
-    kpis.basketCount === 0
+    takings.bills === 0
       ? `No sales recorded yet today.${staleNote}`
-      : `${kpis.basketCount} bill${kpis.basketCount === 1 ? '' : 's'} today, ` +
-        `${rupees(kpis.grossSalesMinor)} taken, ` +
-        `margin ${rupees(kpis.marginMinor)} (${(kpis.marginPctBps / 100).toFixed(1)}%), ` +
-        `average basket ${rupees(kpis.avgBasketMinor)}.${staleNote}`;
+      : kpis.basketCount === 0
+        ? `${plural(takings.bills)} today, ${rupees(takings.takenMinor)} taken — margin not known: ` +
+          `the store computer has no cost for products on ${unc!.bills === 1 ? 'this bill' : 'these bills'}.${staleNote}`
+        : `${plural(kpis.basketCount)} today, ` +
+          `${rupees(kpis.grossSalesMinor)} taken, ` +
+          `margin ${rupees(kpis.marginMinor)} (${(kpis.marginPctBps / 100).toFixed(1)}%), ` +
+          `average basket ${rupees(kpis.avgBasketMinor)}.` +
+          (unc === undefined ? '' : ` Also ${plural(unc.bills)} (${rupees(unc.takenMinor)}) whose margin is not known — products with no cost.`) +
+          staleNote;
 
   return {
     asOf: input.asOf,
     kpis,
+    takings,
     freshness: dataFreshness,
     headline,
     attention: pickAttention(alerts, approvals),

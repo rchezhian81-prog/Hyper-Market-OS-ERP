@@ -42,7 +42,7 @@ const WORDS = {
     live: 'Live · synced', notLive: 'NOT LIVE — last synced', neverSynced: 'No data has ever reached this phone',
     justNow: 'just now', minutesAgo: 'min ago', hoursAgo: 'hours ago',
     sales: 'Sales', margin: 'Margin', bills: 'Bills', averageBasket: 'Average basket',
-    tapToSee: 'Tap to see every sale', approve: 'Approve', reject: 'Reject', cancel: 'Cancel',
+    marginNotKnown: 'Not known', tapToSee: 'Tap to see every sale', approve: 'Approve', reject: 'Reject', cancel: 'Cancel',
     close: 'Close', ok: 'OK', total: 'Total', askedBy: 'asked for by', noValue: 'no value',
     whyApprove: 'Why are you approving this?', whyReject: 'Why are you rejecting this?',
     read: 'Please read this', decided: 'Decided', willSend: 'It will be sent as soon as there is a signal.',
@@ -68,7 +68,7 @@ const WORDS = {
     live: 'நேரலை · ஒத்திசைவு', notLive: 'நேரலை அல்ல — கடைசி ஒத்திசைவு', neverSynced: 'இந்த ஃபோனுக்கு இதுவரை எந்தத் தகவலும் வரவில்லை',
     justNow: 'இப்போதுதான்', minutesAgo: 'நிமிடங்களுக்கு முன்', hoursAgo: 'மணி நேரத்திற்கு முன்',
     sales: 'விற்பனை', margin: 'லாபம்', bills: 'பில்கள்', averageBasket: 'சராசரி கூடை',
-    tapToSee: 'ஒவ்வொரு விற்பனையையும் பார்க்கத் தட்டவும்', approve: 'ஒப்புதல்', reject: 'மறு', cancel: 'ரத்து',
+    marginNotKnown: 'தெரியவில்லை', tapToSee: 'ஒவ்வொரு விற்பனையையும் பார்க்கத் தட்டவும்', approve: 'ஒப்புதல்', reject: 'மறு', cancel: 'ரத்து',
     close: 'மூடு', ok: 'சரி', total: 'மொத்தம்', askedBy: 'கேட்டவர்', noValue: 'மதிப்பு இல்லை',
     whyApprove: 'ஏன் ஒப்புதல் அளிக்கிறீர்கள்?', whyReject: 'ஏன் மறுக்கிறீர்கள்?',
     read: 'இதைப் படிக்கவும்', decided: 'முடிவு பதிவாகியது', willSend: 'சிக்னல் கிடைத்தவுடன் அனுப்பப்படும்.',
@@ -129,10 +129,12 @@ const SUBJECT_WORDS = {
 };
 
 /** The four figures on the brief, and which model KPI each reads. */
+// Round 4 (P-08): sales and bills are EVERY bill's (`takings`) — a bill the store computer cannot cost still took money;
+// the margin says "not known" when no bill today could be costed.
 const KPI_TILES = [
-  { kpi: 'grossSales', label: 'sales', from: (k) => inr(k.grossSalesMinor) },
-  { kpi: 'margin', label: 'margin', from: (k) => inr(k.marginMinor) },
-  { kpi: 'baskets', label: 'bills', from: (k) => String(k.basketCount) },
+  { kpi: 'grossSales', label: 'sales', from: (k, tk) => inr(tk ? tk.takenMinor : k.grossSalesMinor) },
+  { kpi: 'margin', label: 'margin', from: (k, tk) => (tk && tk.marginUnknownBills > 0 && k.basketCount === 0 ? t('marginNotKnown') : inr(k.marginMinor)) },
+  { kpi: 'baskets', label: 'bills', from: (k, tk) => String(tk ? tk.bills : k.basketCount) },
   { kpi: 'averageBasket', label: 'averageBasket', from: (k) => inr(k.avgBasketMinor) },
 ];
 
@@ -292,12 +294,12 @@ function renderAttention(items) {
   }));
 }
 
-function renderKpis(kpis) {
+function renderKpis(kpis, takings) {
   el('kpis').replaceChildren(...KPI_TILES.map((tile) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'kpi';
-    for (const [cls, text] of [['label', t(tile.label)], ['value', tile.from(kpis)], ['more', t('tapToSee')]]) {
+    for (const [cls, text] of [['label', t(tile.label)], ['value', tile.from(kpis, takings)], ['more', t('tapToSee')]]) {
       const part = document.createElement('div');
       part.className = cls;
       part.textContent = text;
@@ -543,7 +545,7 @@ function render() {
   renderBranches();
   renderRecheck();
   renderAttention(brief.attention);
-  renderKpis(brief.kpis);
+  renderKpis(brief.kpis, brief.takings);
   renderApprovals(brief.approvals);
   renderAlerts(brief.alerts);
   renderQueued();

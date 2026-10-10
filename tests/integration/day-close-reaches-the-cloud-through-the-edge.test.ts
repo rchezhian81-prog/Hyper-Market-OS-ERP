@@ -3,7 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiHarness, TEST_IDP, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
-import { prepareTillBox, pinOf, type TillPerson } from '../support/till-operator';
+import { prepareTillBox, pinOf, operatorHeader, type TillPerson } from '../support/till-operator';
+import { readLog } from '../../edge/store-edge/src/file-log';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 
@@ -119,7 +120,7 @@ describe('the store day close reaches head office through the real edge (M14-FR-
     const s = await scene({ withPack: true });
     const edge = await s.boot();
 
-    const outcome = await edge.closeDay({ dayCloseId: 'dc-1', closedBy: 'u-mgr' });
+    const outcome = await edge.closeDay({ dayCloseId: 'dc-1', closedBy: 'u-mgr', closerPin: pinOf('u-mgr') });
     expect(outcome.closed).toBe(true);
     expect(edge.dayCloseAgent?.health().unsentCount).toBe(1); // queued, not yet drained
 
@@ -131,11 +132,41 @@ describe('the store day close reaches head office through the real edge (M14-FR-
     expect(body.dayCloses[0]).toMatchObject({ dayCloseId: 'dc-1', locked: true, reopened: false, closedBy: 'u-mgr' });
   });
 
+  it('round 4 (P-04 · hard rule #4): the close is the closer\'s OWN act — a typed name, a wrong PIN, a cashier and a session without the authority are refused on the box, offline, and nothing is locked or sent', async () => {
+    const s = await scene({ withPack: true });
+    const edge = await s.boot();
+    s.setOnline(false);
+    const lane = `http://127.0.0.1:${edge.lane!.port}/lane/day-close`;
+    const post = async (body: Record<string, unknown>, headers: Record<string, string> = {}) =>
+      (await savedFetch(lane, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) })).json() as Promise<{ closed: boolean; reason?: string }>;
+    // A name typed on a screen closes nothing.
+    expect(await post({ dayCloseId: 'dc-typed', closedBy: 'u-mgr' })).toMatchObject({ closed: false, reason: expect.stringMatching(/till PIN/) });
+    // The manager's name with somebody else's PIN.
+    expect(await post({ dayCloseId: 'dc-wrong', closedBy: 'u-mgr', closerPin: pinOf('u-lanecash') })).toMatchObject({ closed: false, reason: expect.stringMatching(/not confirmed/) });
+    // The cashier's own, correct PIN: a cashier does not hold the day-close authority in the store's setup.
+    expect(await post({ dayCloseId: 'dc-cash', closedBy: 'u-lanecash', closerPin: pinOf('u-lanecash') })).toMatchObject({ closed: false, reason: expect.stringMatching(/not confirmed/) });
+    // The cashier signed in at the till (a verified session) is still not a closer — and cannot close in the manager's name.
+    const signIn = await (await savedFetch(`http://127.0.0.1:${edge.lane!.port}/lane/operator/sign-in`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ staffId: 'u-lanecash', pin: pinOf('u-lanecash') }) })).json() as { token: string };
+    const token = signIn.token;
+    expect(await post({ dayCloseId: 'dc-sess', closedBy: 'u-lanecash' }, operatorHeader(token))).toMatchObject({ closed: false, reason: expect.stringMatching(/authority/) });
+    expect(await post({ dayCloseId: 'dc-sess2', closedBy: 'u-mgr' }, operatorHeader(token))).toMatchObject({ closed: false, reason: expect.stringMatching(/till PIN|person signed in/) });
+    expect(edge.dayCloseAgent?.health().unsentCount).toBe(0);
+    expect(await readLog(edge.dayCloseLog.path)).toEqual([]);
+    // The manager, with their OWN PIN, offline: locked on the box, in the name the box verified.
+    expect(await post({ dayCloseId: 'dc-ok', closedBy: 'u-mgr', closerPin: pinOf('u-mgr') })).toMatchObject({ closed: true, locked: true });
+    const written = (await readLog(edge.dayCloseLog.path)).map((r) => JSON.parse((r as { record: string }).record) as Record<string, unknown>);
+    expect(written).toEqual([expect.objectContaining({ dayCloseId: 'dc-ok', closedBy: 'u-mgr' })]);
+    expect(JSON.stringify(written)).not.toContain(pinOf('u-mgr'));
+    s.setOnline(true);
+    await edge.syncOnce!();
+    expect((await dayCloses(s.h)).dayCloses).toEqual([expect.objectContaining({ dayCloseId: 'dc-ok', closedBy: 'u-mgr', locked: true })]);
+  });
+
   it('REFUSES to close when the exception register was never checked (no loss-prevention rules) — nothing reaches the cloud', async () => {
     const s = await scene({ withPack: false }); // emptyPack → lossPreventionRules not known
     const edge = await s.boot();
 
-    const outcome = await edge.closeDay({ dayCloseId: 'dc-x', closedBy: 'u-mgr' });
+    const outcome = await edge.closeDay({ dayCloseId: 'dc-x', closedBy: 'u-mgr', closerPin: pinOf('u-mgr') });
     expect(outcome.closed).toBe(false);
     if (outcome.closed) return;
     expect(outcome.reason).toMatch(/loss-prevention rules/);
@@ -152,7 +183,7 @@ describe('the store day close reaches head office through the real edge (M14-FR-
     await edge.node.commit('S9', saleRecord('S9'));
     expect(edge.outbox.pending().length).toBe(1);
 
-    const outcome = await edge.closeDay({ dayCloseId: 'dc-2', closedBy: 'u-mgr' });
+    const outcome = await edge.closeDay({ dayCloseId: 'dc-2', closedBy: 'u-mgr', closerPin: pinOf('u-mgr') });
     expect(outcome.closed).toBe(false);
     if (outcome.closed) return;
     expect(outcome.reason).toMatch(/unsent|not yet reconciled/i);
@@ -163,7 +194,7 @@ describe('the store day close reaches head office through the real edge (M14-FR-
     const edge = await s.boot();
 
     s.setOnline(false);
-    const outcome = await edge.closeDay({ dayCloseId: 'dc-3', closedBy: 'u-mgr' });
+    const outcome = await edge.closeDay({ dayCloseId: 'dc-3', closedBy: 'u-mgr', closerPin: pinOf('u-mgr') });
     expect(outcome.closed).toBe(true); // the day LOCKS locally with the cable out (P-01)
     await edge.syncOnce!(); // cannot reach the cloud — stays queued, durable on the disk
     expect(edge.dayCloseAgent?.health().unsentCount).toBe(1);
@@ -188,7 +219,7 @@ describe('the controlled reopen reaches head office through the real edge (M14-F
     const edge = await s.boot();
 
     // Close first, and let it reach the cloud (a day must be locked before it can be reopened).
-    expect((await edge.closeDay({ dayCloseId: 'dc-r1', closedBy: 'u-owner' })).closed).toBe(true);
+    expect((await edge.closeDay({ dayCloseId: 'dc-r1', closedBy: 'u-owner', closerPin: pinOf('u-owner') })).closed).toBe(true);
     await edge.syncOnce!();
     expect((await dayCloses(s.h)).lockedCount).toBe(1);
 
@@ -210,7 +241,7 @@ describe('the controlled reopen reaches head office through the real edge (M14-F
   it('REFUSES at the box an approver without the authority in the pack, a missing approver PIN, a wrong PIN, and an unconfirmed reopener (2b-vi-c-4)', async () => {
     const s = await scene({ withPack: true });
     const edge = await s.boot();
-    expect((await edge.closeDay({ dayCloseId: 'dc-r2', closedBy: 'u-owner' })).closed).toBe(true);
+    expect((await edge.closeDay({ dayCloseId: 'dc-r2', closedBy: 'u-owner', closerPin: pinOf('u-owner') })).closed).toBe(true);
     await edge.syncOnce!();
     const ask = (over: Record<string, unknown>) => edge.reopenDay({ dayCloseId: 'dc-r2', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-acct', ...PINS, ...over });
     // The store manager may see the locked days but not approve a reopen: the box says so, before anything is written.
@@ -228,7 +259,7 @@ describe('the controlled reopen reaches head office through the real edge (M14-F
   it('REFUSES a self-approved reopen at the box (§28) — nothing reaches the cloud', async () => {
     const s = await scene({ withPack: true });
     const edge = await s.boot();
-    expect((await edge.closeDay({ dayCloseId: 'dc-r3', closedBy: 'u-owner' })).closed).toBe(true);
+    expect((await edge.closeDay({ dayCloseId: 'dc-r3', closedBy: 'u-owner', closerPin: pinOf('u-owner') })).closed).toBe(true);
     await edge.syncOnce!();
 
     // The reopener names themselves as the approver — the engine's §28 gate throws, the box refuses.
@@ -247,7 +278,7 @@ describe('the controlled reopen reaches head office through the real edge (M14-F
     const s = await scene({ withPack: true });
     await s.h.provisionRole(A, 'u-acct', 'accountant');
     const edge = await s.boot();
-    expect((await edge.closeDay({ dayCloseId: 'dc-r5', closedBy: 'u-owner' })).closed).toBe(true);
+    expect((await edge.closeDay({ dayCloseId: 'dc-r5', closedBy: 'u-owner', closerPin: pinOf('u-owner') })).closed).toBe(true);
     await edge.syncOnce!();
     // The person the box verified for the request is the owner (the hosted sign-in) — but somebody else's session does not count.
     expect(await edge.reopenDay({ dayCloseId: 'dc-r5', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-acct', approverPin: pinOf('u-acct'), verifiedPerson: { userId: 'u-lanecash', via: 'verified_sign_in', laneId: 'lane-1' } }))
@@ -272,7 +303,7 @@ describe('the controlled reopen reaches head office through the real edge (M14-F
     const s = await scene({ withPack: true });
     await s.h.provisionRole(A, 'u-acct', 'accountant');
     const edge = await s.boot();
-    expect((await edge.closeDay({ dayCloseId: 'dc-r4', closedBy: 'u-owner' })).closed).toBe(true);
+    expect((await edge.closeDay({ dayCloseId: 'dc-r4', closedBy: 'u-owner', closerPin: pinOf('u-owner') })).closed).toBe(true);
     const reopen = await edge.reopenDay({ dayCloseId: 'dc-r4', reopenedBy: 'u-owner', reason: 'recount', approvedBy: 'u-acct', ...PINS });
     expect(reopen.reopened).toBe(true);
     await edge.stop(); // both the close and the reopen are on the disk, undrained

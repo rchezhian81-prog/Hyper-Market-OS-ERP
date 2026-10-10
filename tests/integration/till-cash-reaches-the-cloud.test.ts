@@ -7,7 +7,7 @@ import { sealedCashMovement, sealedShiftClose } from '../support/store-seal';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge } from '../../edge/store-edge/src/main';
 import { bootPos, laneDurable, laneCashMovement, laneShiftClose, laneTillCash } from '../../apps/pos/src/browser-entry';
-import { prepareTillBox, holdSignedInAt } from '../support/till-operator';
+import { prepareTillBox, holdSignedInAt, pinOf } from '../support/till-operator';
 
 /**
  * **The till's cash reaches head office and is RE-VERIFIED there — never refused, always said (SP-4c · F10 · M14-FR-01 ·
@@ -173,7 +173,7 @@ describe('the till\'s cash reaches the cloud through the REAL edge, and is not r
     dir = await mkdtemp(join(tmpdir(), 'sre-till-cash-cloud-'));
     // The pack names Meena with till authority and her till PIN is issued on this box (ADR-0020).
     await prepareTillBox({
-      dir, key: KEY, people: [{ userId: 'u-meena', displayName: 'Meena' }],
+      dir, key: KEY, people: [{ userId: 'u-meena', displayName: 'Meena' }, { userId: 'u-mgr', displayName: 'Manager', manager: true }],
       pack: {
         policies: { storeId: 'store-1', branchId: 'store-1', branchName: 'Main', tradingDayCutoff: '02:00', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, cashVarianceToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
         lossPreventionRules: [],
@@ -241,14 +241,14 @@ describe('the till\'s cash reaches the cloud through the REAL edge, and is not r
     expect(await till.till.moveCash({ kind: 'float_issue', amountMinor: 200_000, at: '2026-10-01T09:00:00.000Z', movementId: 'cm-pf08-float' })).toMatchObject({ committed: true });
     expect((await edge.syncOnce!()).dead).toBe(0);
 
-    const refused = await edge.closeDay({ dayCloseId: 'dc-pf08', closedBy: 'u-mgr' });
+    const refused = await edge.closeDay({ dayCloseId: 'dc-pf08', closedBy: 'u-mgr', closerPin: pinOf('u-mgr') });
     expect(refused.closed).toBe(false);
     expect((refused as { reason: string }).reason).toMatch(/1 till shift\(s\) still open — till lane-1 \(held by u-meena/);
 
     // The cashier counts and closes the drawer; with nothing unsent, the day closes.
     expect(await till.till.close({ shiftId: 'sh-pf08', closedAt: '2026-10-01T20:00:00.000Z', countedMinor: 200_000 })).toMatchObject({ closed: true, varianceMinor: 0 });
     expect((await edge.syncOnce!()).dead).toBe(0);
-    expect(await edge.closeDay({ dayCloseId: 'dc-pf08', closedBy: 'u-mgr' })).toMatchObject({ closed: true, locked: true });
+    expect(await edge.closeDay({ dayCloseId: 'dc-pf08', closedBy: 'u-mgr', closerPin: pinOf('u-mgr') })).toMatchObject({ closed: true, locked: true });
     await edge.stop();
   }, 30_000);
 });
