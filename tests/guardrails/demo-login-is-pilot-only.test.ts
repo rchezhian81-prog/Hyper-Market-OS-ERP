@@ -144,7 +144,10 @@ describe('the DEMO store box pack + day-close redirect (ADR-0016)', () => {
     const edge = serviceBlock(PILOT, 'edge');
     expect(edge).toMatch(/EDGE_STORE_PACK_SOURCE: head-office/);
     expect(edge).toMatch(/EDGE_STORE_ID: \$\{EDGE_STORE_ID:-pilot-demo-branch\}/);
-    expect(edge).not.toMatch(/EDGE_PACK_FILE|DEMO_STORE_PACK_DIR/);
+    // OB-38 "A": the file already on the server stays mounted read-only as the fallback until head office's setup arrives
+    // (the box replaces it entirely then); nothing in the repository builds it, and the base file never names one.
+    expect(edge).toMatch(/OB-38/);
+    expect(edge).toMatch(/:\/etc\/store-pack:ro/);
     expect(BASE).not.toMatch(/EDGE_PACK_FILE/);
   });
 

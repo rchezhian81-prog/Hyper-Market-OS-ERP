@@ -51,6 +51,11 @@ services:
       # The demo-only file built on the box is retired; the seed sets the demo store up at head office.
       EDGE_STORE_PACK_SOURCE: head-office
       EDGE_STORE_ID: ${EDGE_STORE_ID:-pilot-demo-branch}
+      # OB-38 "A" (owner, 10 Oct 2026): until head office has this store set up (the administrator re-runs the demo seed —
+      # a named person runs every load), the box keeps trading on the setup file ALREADY on the server, and says so; the
+      # moment head office answers with a signed setup, that replaces the file entirely (main.ts, P-02). Nothing on the
+      # demo goes blank between the deploy and the seed. Remove this fallback once the head-office setup is confirmed.
+      EDGE_PACK_FILE: /etc/store-pack/store-pack.json
       # OB-16: the screens are reached ONLY through the relay behind the sign-in (nginx.pilot.conf sets X-Sre-User from
       # the gate's answer), so the box runs each ERP screen as the person who signed in. Never set on a store box.
       EDGE_SCREEN_TRUST_FORWARDED_USER: '1'
@@ -60,6 +65,9 @@ services:
       # Which till this box is (SP-4b · F09). Without it the served till refuses to take payment, as it should on a box
       # nobody has told; the hosted copy is one till.
       EDGE_LANE_ID: lane-1
+    volumes:
+      # OB-38: the transitional fallback above — the file already on the server, read-only; no builder in the repo makes it.
+      - ${DEMO_STORE_PACK_DIR:-/etc/sre-pilot/store-pack}:/etc/store-pack:ro
 
   # The DEMO FRONT, behind the proxy: every app shell, the demo identity bridge (H-11), the demo sign-in's cookie
   # turned into a bearer token for /v1 (H-01), and the demo store box's relay — all behind the demo sign-in
