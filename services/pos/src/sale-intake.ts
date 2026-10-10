@@ -63,6 +63,8 @@ export interface IncomingTender {
   readonly amountMinor: number;
   /** A provider token or reference. Never a card number (hard rule #3). */
   readonly ref?: string;
+  /** On a `loyalty_points` tender: the whole points the store computer took for this amount (PF-09 step 3). */
+  readonly points?: number;
 }
 
 export interface IncomingSale {
@@ -137,7 +139,10 @@ export type SaleExceptionKind =
   /** The sale names no lane — the till was never told which lane it is (F09). */
   | 'sale_names_no_lane'
   /** The sale carries no trading day — it cannot be placed in a day's books (F09 · M01-FR-02). */
-  | 'sale_names_no_trading_day';
+  | 'sale_names_no_trading_day'
+  /** Points or store credit spent at the till that the member's true balance could not cover when the sale arrived —
+   *  another channel spent the same value first (PF-09 step 3 · M17-FR-04 · hard rule #10). Valued; a person settles it. */
+  | 'loyalty_value_spent_twice';
 
 /** How fast a person has to act, which is not the same as how large the number is. */
 export type ExceptionSeverity = 'critical' | 'material' | 'informational';

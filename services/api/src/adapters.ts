@@ -54,6 +54,7 @@ import type { RecallDeps } from '../../inventory/src/recall';
 import { RecallRegistry, type RecallRecord } from '../../../packages/traceability/src/index';
 import type { QualityHoldDeps } from '../../inventory/src/quality-hold';
 import type { LoyaltyMemberDeps, LoyaltyRule, MemberRecord } from '../../customer/src/loyalty-members';
+import type { LoyaltyWalletDeps, SpendApplied } from '../../customer/src/loyalty-wallets';
 import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack } from '../../customer/src/loyalty-effects';
 import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
 import type { QualityHold } from '../../../packages/quality/src/index';
@@ -2377,9 +2378,11 @@ export function posAdapter(input: {
     },
 
     recordExceptions: async (tenantId, exceptions) => {
-      for (const [i, ex] of exceptions.entries()) {
+      for (const ex of exceptions) {
         await input.store.append(tenantId, STREAM.saleExceptions, makeEvent({
-          id: `saleex-${ex.saleId}-${i}`,
+          // The kind, not the position, names it: a later finding on the same sale (a loyalty spend that could not be
+          // covered, PF-09 step 3) must not collide with the intake's own first finding.
+          id: `saleex-${ex.saleId}-${ex.kind}`,
           type: 'SaleExceptionRaised',
           occurredAt: input.now(),
           idempotencyKey: `saleex-${tenantId}-${ex.saleId}-${ex.kind}`,
@@ -7807,6 +7810,57 @@ export function loyaltyEffectsAdapter(input: {
           idempotencyKey: `loyalty-takeback-${tenantId}-${saleId}-${t.returnId}`, source: 'api/customer', payload: t,
         }) },
       ], { guard: { key: `points:${t.memberRef}`, expectedVersion } });
+    },
+    now: input.now,
+  };
+}
+
+/**
+ * Loyalty wallets (PF-09 step 3): the feed the store computers pull, and the spends a banked sale applies. A spend's points
+ * leave under the member's points guard and its store credit leaves each instrument under that instrument's guard (Wave 2a),
+ * so a till spend applied here can never race a desk redemption or a take-back into a negative balance. Each spend's own
+ * fact lives on the member's spend stream — the feed lists them, so a box can tell its applied spends from its pending ones.
+ */
+const forMemberSpends = (memberRef: string): string => streamName(STREAM.loyalty, 'spends', memberRef);
+
+export function loyaltyWalletsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly rule: (tenantId: string) => Promise<LoyaltyRule> | LoyaltyRule;
+}): LoyaltyWalletDeps {
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const value = storedValueAdapter({ store: input.store, now: input.now });
+  return {
+    rule: input.rule,
+    allMembers: (tenantId) => allOf<MemberRecord>(input.store, tenantId, LOYALTY_MEMBERS, 'LoyaltyMember'),
+    pointsBalance: customers.pointsBalance,
+    pointsVersion: (tenantId, memberRef) => input.store.guardVersion(tenantId, `points:${memberRef}`),
+    storeCredit: async (tenantId, memberRef) => {
+      const mine = (await value.instrumentsForOwner(tenantId, memberRef))
+        .filter((i) => i.kind === 'store_credit')
+        .sort((a, b) => a.issuedAt.localeCompare(b.issuedAt) || a.instrumentId.localeCompare(b.instrumentId));
+      return Promise.all(mine.map(async (instrument) => {
+        // The guard version first, then the history it protects (Wave 2a).
+        const version = await input.store.guardVersion(tenantId, `stored-value:${instrument.instrumentId}`);
+        return { instrument, version, movements: await value.movements(tenantId, instrument.instrumentId) };
+      }));
+    },
+    spendsApplied: (tenantId, memberRef) => allOf<SpendApplied>(input.store, tenantId, forMemberSpends(memberRef), 'LoyaltySpendApplied'),
+    recordPointsSpend: async (tenantId, memberRef, m, expectedVersion) => {
+      const movement: RecordedPointsMovement = { movementId: m.movementId, customerId: memberRef, delta: -m.points, reason: 'burn', sourceRef: m.sourceRef, at: m.at };
+      await input.store.appendBatch(tenantId, [{ stream: forCustomerPoints(memberRef), event: makeEvent({
+        id: `points-${m.movementId}`, type: 'PointsMovement', occurredAt: m.at,
+        idempotencyKey: `points-${tenantId}-${m.movementId}`, source: 'api/customer', payload: movement,
+      }) }], { guard: { key: `points:${memberRef}`, expectedVersion } });
+    },
+    recordCreditSpend: async (tenantId, instrumentId, m, expectedVersion) => {
+      await value.recordMovement(tenantId, instrumentId, m, expectedVersion);
+    },
+    recordSpendApplied: async (tenantId, fact) => {
+      await input.store.append(tenantId, forMemberSpends(fact.memberRef), makeEvent({
+        id: `loyalty-spend-${fact.ref}`, type: 'LoyaltySpendApplied', occurredAt: fact.at,
+        idempotencyKey: `loyalty-spend-${tenantId}-${fact.ref}`, source: 'api/customer', payload: fact,
+      }));
     },
     now: input.now,
   };

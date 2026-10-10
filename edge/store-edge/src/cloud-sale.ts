@@ -40,10 +40,13 @@ function toCloudTender(t: unknown): IncomingTender {
   const r = (t ?? {}) as Rec;
   const amountMinor = int(r['amountMinor']) ?? int((r['amount'] as Rec | undefined)?.['minor']);
   const ref = str(r['ref']);
+  // The whole points a `loyalty_points` tender spent — stamped by the store computer before the disk (PF-09 step 3).
+  const points = typeof r['points'] === 'number' && Number.isSafeInteger(r['points']) && r['points'] > 0 ? r['points'] : undefined;
   return {
     kind: str(r['kind']) ?? '',
     ...(amountMinor === undefined ? {} : { amountMinor }),
     ...(ref === undefined ? {} : { ref }),
+    ...(points === undefined ? {} : { points }),
   } as IncomingTender;
 }
 

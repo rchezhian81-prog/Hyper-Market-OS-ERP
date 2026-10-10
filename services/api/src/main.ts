@@ -37,6 +37,7 @@ import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { tillSealKey } from '../../../packages/identity/src/till-seal';
 import { loyaltyMemberKey } from '../../../packages/loyalty/src/earn-rule';
 import { loyaltyMemberRoutes } from '../../customer/src/loyalty-members';
+import { loyaltyWalletRoutes, spendOnSale } from '../../customer/src/loyalty-wallets';
 import { earnOnSale, takeBackOnReturn } from '../../customer/src/loyalty-effects';
 import { labellingRoutes } from '../../catalogue/src/labelling';
 import { masterDataRoutes } from '../../catalogue/src/master-data';
@@ -236,7 +237,7 @@ import { aiRoutes } from '../../ai/src/index';
 import {
   dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter,
   customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, serviceCaseAdapter, campaignAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter,
-  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter,
+  reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -356,9 +357,12 @@ export function buildSurface(deps: {
   const loyaltyRule = async (tenantId: string) => ({
     pointsPer100Inr: await settings.value(tenantId, SETTINGS.LOYALTY_POINTS_PER_100_INR),
     pointValuePaise: await settings.value(tenantId, SETTINGS.LOYALTY_POINT_VALUE_PAISE),
+    tillSpendCapPaise: await settings.value(tenantId, SETTINGS.LOYALTY_TILL_SPEND_CAP_PAISE),
   });
   // What a sale and a return do to a member's points (PF-09-a) — one composition shared by the sale and return routes.
   const loyaltyEffects = store === undefined ? undefined : loyaltyEffectsAdapter({ store, now, rule: loyaltyRule });
+  // What the store computers may let a member spend, and what a till spend does when its sale arrives (PF-09 step 3).
+  const loyaltyWallets = store === undefined ? undefined : loyaltyWalletsAdapter({ store, now, rule: loyaltyRule });
   // The durable domain audit trail (M34-FR-01): one sealed chain per tenant. Producers (slice 1: the
   // credential lifecycle) seal into it; the stored read routes search / reconstruct / verify it. No
   // store → no durable trail, so a producer simply records nothing (its recordAudit is left unset).
@@ -757,7 +761,10 @@ export function buildSurface(deps: {
       saleHoldingReceipt: empty(undefined), isBanked: empty(false),
       bankSale: () => {}, recordExceptions: () => {}, openExceptions: empty([]), now,
       permissionsOfUser: empty(undefined),
-    } : { ...posAdapter({ store, now }), tillSealKey: sealKey, loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale) }),
+    } : {
+      ...posAdapter({ store, now }), tillSealKey: sealKey, loyaltyOnSale: (t, sale) => earnOnSale(loyaltyEffects!, t, sale),
+      loyaltySpendOnSale: (t, sale) => spendOnSale(loyaltyWallets!, t, sale),
+    }),
     ...returnsRoutes(store === undefined ? {
       originalSale: empty(undefined), priorReturns: empty([]), priorRefunds: empty([]),
       recordReturn: () => {}, refundThreshold: () => undefined, recordRefundThreshold: () => {}, canApproveRefund: () => Promise.resolve(false),
@@ -821,6 +828,12 @@ export function buildSurface(deps: {
     ...loyaltyMemberRoutes(store === undefined
       ? { memberHistory: empty([]), recordMember: () => {}, pointsBalance: empty(undefined), rule: loyaltyRule, now }
       : loyaltyMembersAdapter({ store, now, memberKey: loyaltyKey, rule: loyaltyRule })),
+    // PF-09 step 3: the wallet feed the store computers pull (member codes and balances; never a phone number).
+    ...loyaltyWalletRoutes(loyaltyWallets ?? {
+      rule: loyaltyRule, allMembers: empty([]), pointsBalance: empty(undefined), pointsVersion: empty(0),
+      storeCredit: async () => [], spendsApplied: async () => [], recordPointsSpend: async () => {}, recordCreditSpend: async () => {},
+      recordSpendApplied: async () => {}, now,
+    }),
     // Data-subject rights lifecycle (M20-FR-04 / DPDP) — raise/verify/fulfil/erasure-plan + overdue.
     ...dataRightsRoutes(store === undefined
       ? { request: empty(undefined), requests: empty([]), record: () => {}, now }
