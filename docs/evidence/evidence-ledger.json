@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 992,
+  "testFiles": 998,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -21,7 +21,7 @@
   "totals": {
     "unit": 81,
     "integration": 80,
-    "realDb": 59,
+    "realDb": 60,
     "browser": 45,
     "connected": 2,
     "device": 0,
@@ -34,8 +34,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 19,
-        "integration": 16,
-        "realDb": 6,
+        "integration": 17,
+        "realDb": 7,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -66,6 +66,7 @@
         "integration": [
           "tests/integration/an-org-rename-is-kept.test.ts",
           "tests/integration/branch-lifecycle.test.ts",
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/document-templates.test.ts",
           "tests/integration/head-office-delivers-the-store-setup.test.ts",
@@ -83,6 +84,7 @@
         ],
         "realDb": [
           "tests/integration/an-org-rename-is-kept.test.ts",
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/inventory-branch-scope.test.ts",
           "tests/integration/number-series.test.ts",
@@ -106,8 +108,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 24,
-        "integration": 20,
-        "realDb": 7,
+        "integration": 21,
+        "realDb": 8,
         "browser": 5,
         "connected": 0,
         "device": 0,
@@ -147,6 +149,7 @@
           "tests/integration/approval-decision-synced-route.test.ts",
           "tests/integration/approval-delegation.test.ts",
           "tests/integration/authorization-is-enforced.test.ts",
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/emergency-access.test.ts",
           "tests/integration/head-office-delivers-the-store-setup.test.ts",
@@ -165,6 +168,7 @@
         "realDb": [
           "tests/integration/access-lifecycle.test.ts",
           "tests/integration/authorization-is-enforced.test.ts",
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/inventory-branch-scope.test.ts",
           "tests/integration/keycloak-provisioning.test.ts",
@@ -350,8 +354,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 11,
-        "integration": 14,
-        "realDb": 4,
+        "integration": 15,
+        "realDb": 5,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -373,6 +377,7 @@
         ],
         "integration": [
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
+          "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/duplicate-bank.test.ts",
           "tests/integration/goods-receipt-assembled.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts",
@@ -389,6 +394,7 @@
         ],
         "realDb": [
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
+          "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
@@ -409,8 +415,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 21,
-        "realDb": 3,
+        "integration": 22,
+        "realDb": 4,
         "browser": 4,
         "connected": 0,
         "device": 0,
@@ -431,6 +437,7 @@
         "integration": [
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
           "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
+          "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/buyer-invoice-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/goods-receipt-assembled.test.ts",
@@ -453,6 +460,7 @@
         ],
         "realDb": [
           "tests/integration/a-receipt-is-judged-against-what-is-left-on-the-order.test.ts",
+          "tests/integration/an-order-names-its-store.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
@@ -1526,8 +1534,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
-        "integration": 18,
-        "realDb": 3,
+        "integration": 19,
+        "realDb": 4,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -1549,6 +1557,7 @@
           "tests/integration/ai-workforce-worklist.test.ts",
           "tests/integration/attendance-store.test.ts",
           "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/cert-store.test.ts",
           "tests/integration/checklist-store.test.ts",
@@ -1566,6 +1575,7 @@
         ],
         "realDb": [
           "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/inventory-branch-scope.test.ts"
         ],
@@ -1586,8 +1596,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 2,
-        "integration": 8,
-        "realDb": 1,
+        "integration": 9,
+        "realDb": 2,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -1600,6 +1610,7 @@
         ],
         "integration": [
           "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/cold-room-breach-holds-stock.test.ts",
           "tests/integration/facilities-assets.test.ts",
           "tests/integration/facilities-durability.test.ts",
@@ -1609,7 +1620,8 @@
           "tests/integration/second-person-is-a-separate-act.test.ts"
         ],
         "realDb": [
-          "tests/integration/beyond-the-till.test.ts"
+          "tests/integration/beyond-the-till.test.ts",
+          "tests/integration/branch-scope-every-family.test.ts"
         ],
         "browser": [
           "tests/e2e/facilities-delivery.e2e.ts"
@@ -1626,8 +1638,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 6,
-        "integration": 6,
-        "realDb": 0,
+        "integration": 7,
+        "realDb": 1,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -1644,13 +1656,16 @@
         ],
         "integration": [
           "tests/integration/a-lapsed-counter-is-stopped-before-money.test.ts",
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/concession-store-valuation.test.ts",
           "tests/integration/concession-tags-reach-settlement.test.ts",
           "tests/integration/concession-write-off-guard.test.ts",
           "tests/integration/concession.test.ts",
           "tests/integration/till-concession-tags-reach-the-cloud-through-the-edge.test.ts"
         ],
-        "realDb": [],
+        "realDb": [
+          "tests/integration/branch-scope-every-family.test.ts"
+        ],
         "browser": [
           "tests/e2e/a-lapsed-counter-is-refused-on-the-tag-panel.e2e.ts",
           "tests/e2e/till-concession-tag-through-the-box.e2e.ts"
@@ -1892,8 +1907,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 20,
-        "integration": 18,
-        "realDb": 2,
+        "integration": 19,
+        "realDb": 3,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -1924,6 +1939,7 @@
         ],
         "integration": [
           "tests/integration/background-jobs.test.ts",
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/config-rollback.test.ts",
           "tests/integration/licence-expiry.test.ts",
           "tests/integration/platform-device-enrolment.test.ts",
@@ -1943,6 +1959,7 @@
           "tests/security/the-platform-admin-cannot-post-a-business-transaction.test.ts"
         ],
         "realDb": [
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/two-shops-one-system.test.ts",
           "tests/migration/tenants-register.test.ts"
         ],
@@ -1963,8 +1980,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
-        "integration": 10,
-        "realDb": 2,
+        "integration": 11,
+        "realDb": 3,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -1984,6 +2001,7 @@
         "integration": [
           "tests/integration/audit-search.test.ts",
           "tests/integration/audit-trail-store.test.ts",
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/compliance-obligation-lifecycle.test.ts",
           "tests/integration/compliance-obligations.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
@@ -1994,6 +2012,7 @@
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
+          "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/physical-to-system.test.ts"
         ],

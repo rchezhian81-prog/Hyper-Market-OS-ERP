@@ -67,10 +67,12 @@ function toCloudItem(i: unknown): CloudChecklistItem {
  * carried only when present, so the cloud can tell "unsigned" from "signed by this person" (an unsigned checklist
  * is not a record — the tested `assessChecklist` says so).
  */
-export function toCloudChecklist(record: unknown): CloudChecklistCompletion {
+export function toCloudChecklist(record: unknown, storeId?: string): CloudChecklistCompletion {
   const r = (record !== null && typeof record === 'object' ? record : {}) as Rec;
   const signedBy = str(r['signedBy']);
-  const branchId = str(r['branchId']);
+  // PA-01-r1: a checklist done at this store is this store's — the box names its own store (the same basis as a sale's
+  // location) when the screen did not, so head office files it under the branch the box's own grant reaches.
+  const branchId = str(r['branchId']) ?? str(storeId);
   const forDate = str(r['forDate']);
   const items: readonly CloudChecklistItem[] = Array.isArray(r['items'])
     ? (r['items'] as unknown[]).map(toCloudItem)

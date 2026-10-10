@@ -100,7 +100,7 @@ async function cloud(): Promise<{
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'cashier');
+  await h.provisionRole(A, 'u-box', 'store_computer');
   const dir = await tempDir('sre-mgr-decisions-cloud-');
   const packFile = join(dir, 'store-pack.json');
   await writeFile(packFile, PACK_JSON, 'utf8');

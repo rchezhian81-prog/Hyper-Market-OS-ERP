@@ -57,6 +57,40 @@ export function narrowScope(ctx: Scoped, requested?: BranchScope): BranchScope {
   return [...requested];
 }
 
+/**
+ * A record whose branch is OPTIONAL (a checklist, a task, an obligation, an audit entry): a branch-limited caller acts
+ * only on records that name one of their branches. A record naming no branch belongs to the whole shop, so only a
+ * company-wide caller ('all') may write it — refused by name, never silently filed somewhere (PA-01-r1).
+ */
+export function assertRecordBranchInScope(ctx: Scoped, branchId: string | null | undefined): void {
+  if (scopeOf(ctx) === 'all') return;
+  if (branchId === undefined || branchId === null || branchId.trim() === '') throw shopWideRecord();
+  assertBranchInScope(ctx, branchId);
+}
+
+export const shopWideRecord = (): ApiError => apiError(403, {
+  code: 'shop_wide_record_needs_company_scope',
+  whatHappened: 'This record names no branch, so it belongs to the whole shop — and this account\'s authority covers only some branches.',
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Name the branch it belongs to (one your role covers), or ask someone with company-wide authority. Nothing was changed.',
+});
+
+/**
+ * The rows a READ returns, for records whose branch may be absent: what the caller holds, narrowed to the branch they
+ * asked for (refused by name when not held). A row naming no branch is shop-wide — nobody else's branch — so it is shown
+ * to every reader when no branch is asked for; another branch's rows never are.
+ */
+export function recordsInScope<T>(ctx: Scoped, rows: readonly T[], branchOf: (row: T) => string | null | undefined, requested?: string): T[] {
+  const scope = narrowScope(ctx, requested === undefined || requested.trim() === '' ? undefined : [requested]);
+  return rows.filter((r) => {
+    const b = branchOf(r);
+    const asked = requested !== undefined && requested.trim() !== '';
+    if (b === undefined || b === null || b === '') return !asked;
+    if (scope === 'all') return !asked || b === requested;
+    return scope.includes(b);
+  });
+}
+
 /** Keep only the rows whose branch the scope covers. */
 export function withinScope<T extends { readonly branchId: string }>(scope: BranchScope, rows: readonly T[]): readonly T[] {
   return scope === 'all' ? rows : rows.filter((r) => scope.includes(r.branchId));

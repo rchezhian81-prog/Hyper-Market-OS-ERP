@@ -12,7 +12,7 @@
 // readiness; this is the ruling, and the caller applies it. That separation is what makes it auditable.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertBranchInScope } from '../../kernel/src/index';
 import {
   evaluateTransition,
   type BranchState, type BranchTransition, type TransitionRequest, type BranchReadiness, type ClosureApproval,
@@ -48,6 +48,7 @@ export function branchLifecycleRoutes(): readonly Route[] {
             nextSafeAction: 'Send the request, the branch’s current state and what is actually true at the branch now.',
           });
         }
+        assertBranchInScope(ctx, request['branchId'] as string); // PA-01-r1: a transition for a branch the caller holds
         const result = evaluateTransition({
           request: request as unknown as TransitionRequest,
           currentState: currentState as BranchState,

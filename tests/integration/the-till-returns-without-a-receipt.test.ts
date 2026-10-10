@@ -56,7 +56,7 @@ describeOrSkip('the till returns without a receipt — cap, item, manager at the
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
     await cloud.grant(MANAGER, 'store_manager');
     await cloud.grant(CASHIER, 'cashier');
-    await cloud.grant(BOX, 'cashier');
+    await cloud.grant(BOX, 'store_computer'); // OB-36 "A": the store computer's own role
     expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'setup-tz-utc')).status).toBe(200);
     await ok(call('POST', `/v1/org/nodes/${COMPANY}`, OWNER, { kind: 'company', name: 'SRE Retail' }, `org-${COMPANY}`), 201);
     await ok(call('POST', `/v1/org/nodes/${STORE}`, OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: COMPANY, companyId: COMPANY }, `org-${STORE}`), 201);

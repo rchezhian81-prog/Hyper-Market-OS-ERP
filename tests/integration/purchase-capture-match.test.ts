@@ -66,7 +66,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.provisionRole(A, 'u-buyer', 'store_manager');   // captures; holds match too — but may never check their own capture
   await h.provisionRole(A, 'u-checker', 'store_manager'); // the second person
   await h.provisionRole(A, 'u-cash', 'cashier');          // no purchase right at all
-  await h.provisionRole(A, 'u-box', 'cashier');           // the store box's sync identity
+  await h.provisionRole(A, 'u-box', 'store_computer');           // the store box's sync identity
   expect((await post(h, '/v1/purchase/orders/po-1', 'u-buyer', { supplierId: 's-1', deliverToLocationId: 'store-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'p2', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-1')).status).toBe(201);
   expect((await post(h, '/v1/purchase/orders/po-1/approval', 'u-owner', { reason: 'fixture' }, 'po-1-approve')).status).toBe(200);
   expect((await post(h, '/v1/inventory/goods-receipt/grn-1', 'u-owner', {

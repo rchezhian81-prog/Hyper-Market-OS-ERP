@@ -15,7 +15,7 @@
 // a client (M34-FR-01, hard rule #6). Gated `audit.retention.read`.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, narrowScope, scopeNotHeld, assertBranchInScope } from '../../kernel/src/index';
 import {
   AuditTrail, InMemoryAuditStore,
   type AuditRecord, type AuditQuery, type AuditObjectType,
@@ -51,7 +51,11 @@ export function storedAuditTrailRoutes(deps: StoredAuditTrailDeps): readonly Rou
       api: 'API-09', method: 'GET', path: '/v1/audit/trail',
       permission: 'audit.retention.read',
       handler: async (ctx) => {
-        const records = await deps.records(ctx.tenantId);
+        // PA-01-r1: a branch-limited reader searches only the records made at their branches (narrowed to ?branchId= when
+        // asked; another branch refused by name). A record with no branch is head office's — company-wide readers only.
+        const asked = ctx.query['branchId'];
+        const scope = narrowScope(ctx, isStr(asked) ? [asked] : undefined);
+        const records = (await deps.records(ctx.tenantId)).filter((r) => scope === 'all' || (r.origin.branchId !== null && scope.includes(r.origin.branchId)));
         const matches = trailOf(records).search(queryFrom(ctx.query));
         return { status: 200, body: { matches, total: matches.length } };
       },
@@ -61,6 +65,9 @@ export function storedAuditTrailRoutes(deps: StoredAuditTrailDeps): readonly Rou
       api: 'API-09', method: 'GET', path: '/v1/audit/trail/verify',
       permission: 'audit.retention.read',
       handler: async (ctx) => {
+        // PA-01-r1: the chain is one for the whole shop — verifying it reads every branch's records, so it is a
+        // company-wide act; a branch-limited reader is refused by name rather than shown a chain with holes.
+        if (narrowScope(ctx) !== 'all') throw scopeNotHeld(['all branches']);
         const records = await deps.records(ctx.tenantId);
         return { status: 200, body: trailOf(records).verify() };
       },
@@ -79,6 +86,12 @@ export function storedAuditTrailRoutes(deps: StoredAuditTrailDeps): readonly Rou
           });
         }
         const records = await deps.records(ctx.tenantId);
+        // PA-01-r1: an object's history is rebuilt only when every record of it is at a branch the caller holds — never a
+        // partial rebuild that looks whole.
+        for (const r of records) {
+          if (r.objectType !== ctx.query['objectType'] || r.objectId !== ctx.query['objectId']) continue;
+          if (r.origin.branchId === null) { if (narrowScope(ctx) !== 'all') throw scopeNotHeld(['all branches']); } else assertBranchInScope(ctx, r.origin.branchId);
+        }
         const { state, history } = trailOf(records).reconstruct(
           ctx.query['objectType'] as AuditObjectType, ctx.query['objectId'] as string,
         );

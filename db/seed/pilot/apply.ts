@@ -196,6 +196,10 @@ export async function applyPilotFoundation(
   await post(`store settings ${setup.storeId}`, `/v1/stores/${store}/settings`, { ...setup.settings }, `seed-store-settings-${setup.storeId}-${digestOf(setup.settings)}`);
   await post(`store rules ${setup.storeId}`, `/v1/stores/${store}/rules`, { ...setup.rules }, `seed-store-rules-${setup.storeId}-${digestOf(setup.rules)}`);
   await post('three-way-match tolerances (OC-13)', '/v1/purchase/match-policy', { ...setup.matchPolicy }, `seed-match-policy-${digestOf(setup.matchPolicy)}`);
+  for (const rule of setup.lossPreventionRules) {
+    const { kind, ...limits } = rule;
+    await post(`loss-prevention rule ${kind}`, `/v1/loss-prevention/rules/${encodeURIComponent(kind)}`, limits, `seed-lp-rule-${kind}-${digestOf(limits)}`);
+  }
 
   return { tenantId, steps, ok: steps.every((s) => s.ok) };
 }

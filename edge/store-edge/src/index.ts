@@ -475,7 +475,7 @@ export function createEdgeNode(input: {
           // Translated to the cloud's synced-completion contract before it leaves. The route template
           // reads `checklistId`/`taskId` from the payload to address the record; the cloud re-verifies
           // the relayed signer and records into the SAME durable store the online routes use.
-          payload: completionKind === 'checklist' ? toCloudChecklist(body) : toCloudTaskCompletion(body),
+          payload: completionKind === 'checklist' ? toCloudChecklist(body, input.storeId?.()) : toCloudTaskCompletion(body),
         }));
       }
       return outcome;

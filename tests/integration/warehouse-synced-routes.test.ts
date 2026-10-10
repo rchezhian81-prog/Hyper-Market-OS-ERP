@@ -45,7 +45,7 @@ async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-worker', 'store_manager'); // holds inventory.movement.append — may move and receive stock
-  await h.provisionRole(A, 'u-box', 'cashier');          // the store box's sync identity
+  await h.provisionRole(A, 'u-box', 'store_computer');          // the store box's sync identity
   await h.provisionRole(A, 'u-cust', 'customer');        // no inventory authority
   for (const [binId, capacity] of [['BIN-A', 1000], ['BIN-B', 50]] as const) {
     expect((await h.request({ method: 'POST', path: `/v1/warehouse/bins/${binId}`, userId: 'u-owner', tenantId: A, idempotencyKey: `bin-${binId}`, body: { storeId: 'store-1', capacityMinor: capacity, pickable: true, zone: 'ambient' } })).status).toBe(201);

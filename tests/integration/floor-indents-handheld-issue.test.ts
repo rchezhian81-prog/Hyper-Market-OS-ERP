@@ -67,7 +67,7 @@ const binHeld = async (h: ApiHarness, t: string, binId: string): Promise<Record<
 async function seeded(h: ApiHarness, t: string): Promise<void> {
   await h.seedOwner(t, 'u-owner');
   for (const u of ['u-floor', 'u-mgr', 'u-back', 'u-floor2']) await h.provisionRole(t, u, 'store_manager');
-  await h.provisionRole(t, 'u-box', 'cashier');
+  await h.provisionRole(t, 'u-box', 'store_computer');
   const node = (id: string, body: Body) => post(h, t, 'u-owner', `/v1/org/nodes/${id}`, body, `org-${id}`);
   expect((await node('C1', { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
   expect((await node(FLOOR, { kind: 'branch', name: 'Store 1', parentId: 'C1', companyId: 'C1' })).status).toBe(201);

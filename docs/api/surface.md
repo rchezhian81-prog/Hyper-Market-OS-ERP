@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 853 | 519 | 519 | 66 | 282 |
+| 13 | 855 | 519 | 519 | 66 | 282 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -139,6 +139,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/purchase/commitments` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/contracts/:contractId` | `purchase.contract.manage` | core | yes |
 | GET | `/v1/purchase/contracts/alerts` | `purchase.commitment.read` | core | — |
+| GET | `/v1/purchase/deliveries/open` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/import-jobs` | `purchase.import.read` | core | — |
 | POST | `/v1/purchase/import-jobs/:jobId` | `purchase.import.record` | core | yes |
 | GET | `/v1/purchase/import-quality` | `purchase.import.read` | core | — |
@@ -213,6 +214,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/inventory/ageing` | `inventory.availability.read` | core | — |
 | POST | `/v1/inventory/asn/compare` | `inventory.availability.read` | core | yes |
 | GET | `/v1/inventory/availability` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/batches` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/count-policy` | `inventory.count.policy.read` | core | — |
 | POST | `/v1/inventory/count-policy` | `inventory.count.policy.set` | core | yes |
 | GET | `/v1/inventory/counts` | `inventory.availability.read` | core | — |

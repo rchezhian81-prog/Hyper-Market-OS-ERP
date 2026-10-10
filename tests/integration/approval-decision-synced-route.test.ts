@@ -37,7 +37,7 @@ async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // holds pos.return.approve, price.change.approve, …
-  await h.provisionRole(A, 'u-box', 'cashier');       // the store box's sync identity: approvals.decision.sync
+  await h.provisionRole(A, 'u-box', 'store_computer');       // the store box's sync identity: approvals.decision.sync
   await h.provisionRole(A, 'u-cashier', 'cashier');   // a maker; no approval authority
   return h;
 }

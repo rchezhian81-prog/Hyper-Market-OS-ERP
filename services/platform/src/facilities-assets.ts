@@ -10,7 +10,7 @@
 // the pure `assessAssets` / `summariseDowntime` / `reportEnergy` in `packages/facilities`.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, assertBranchInScope } from '../../kernel/src/index';
 import {
   assessAssets, summariseDowntime, reportEnergy,
   type Asset, type AssetKind, type AssetCriticality,
@@ -67,6 +67,7 @@ export function facilitiesAssetsRoutes(deps: FacilitiesAssetsDeps): readonly Rou
             nextSafeAction: 'Send the asset fields. Nothing was registered.',
           });
         }
+        assertBranchInScope(ctx, b['branchId'] as string); // PA-01-r1: only at a branch the caller holds
         const asset: Asset = {
           assetId, tenantId: ctx.tenantId, branchId: b['branchId'] as string, name: b['name'] as string,
           kind: b['kind'] as AssetKind, criticality: b['criticality'] as AssetCriticality,
@@ -142,6 +143,7 @@ export function facilitiesAssetsRoutes(deps: FacilitiesAssetsDeps): readonly Rou
         const branchId = ctx.query['branchId'];
         const asAt = ctx.query['asOf'];
         if (!isStr(branchId) || !isDate(asAt)) throw apiError(400, { code: 'health_needs_branch_and_date', whatHappened: 'Asset health needs ?branchId= and ?asOf=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send both. A report reads, it never writes.' });
+        assertBranchInScope(ctx, branchId); // PA-01-r1
         const warnRaw = ctx.query['warnWithinDays'];
         const warnWithinDays = warnRaw !== undefined && /^\d+$/.test(warnRaw) ? Number(warnRaw) : undefined;
         const health = assessAssets({ branchId, assets: await deps.assets(ctx.tenantId), services: await deps.services(ctx.tenantId), asAt, ...(warnWithinDays !== undefined ? { warnWithinDays } : {}) });
@@ -172,6 +174,7 @@ export function facilitiesAssetsRoutes(deps: FacilitiesAssetsDeps): readonly Rou
           || (b['assetId'] !== undefined && !isStr(b['assetId']))) {
           throw apiError(400, { code: 'not_readable_as_a_reading', whatHappened: 'An energy reading needs a branch, a date, kilowatt-hours, a cost in minor units, and a source (meter/bill/estimate).', wasItSaved: 'not_saved', nextSafeAction: 'Send the reading fields. Nothing was recorded.' });
         }
+        assertBranchInScope(ctx, b['branchId'] as string); // PA-01-r1: only at a branch the caller holds
         const reading: EnergyReading = {
           branchId: b['branchId'] as string, onDate: b['onDate'] as string,
           kilowattHours: b['kilowattHours'] as number, costMinor: b['costMinor'] as number,
@@ -191,6 +194,7 @@ export function facilitiesAssetsRoutes(deps: FacilitiesAssetsDeps): readonly Rou
         const from = ctx.query['from'];
         const to = ctx.query['to'];
         if (!isStr(branchId) || !isDate(from) || !isDate(to)) throw apiError(400, { code: 'energy_needs_branch_and_window', whatHappened: 'The energy report needs ?branchId=, ?from=YYYY-MM-DD and ?to=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send all three. A report reads, it never writes.' });
+        assertBranchInScope(ctx, branchId); // PA-01-r1
         const report = reportEnergy({ branchId, readings: await deps.energyReadings(ctx.tenantId), from, to });
         return { status: 200, body: report };
       },

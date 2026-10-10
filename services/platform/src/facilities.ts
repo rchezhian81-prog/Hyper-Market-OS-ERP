@@ -8,7 +8,7 @@
 // / `findOverdue` in `packages/facilities` — another complete engine nothing fed on the cloud.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound, requireActorIsCaller, secondPersonIsASeparateAct } from '../../kernel/src/index';
+import { apiError, notFound, requireActorIsCaller, secondPersonIsASeparateAct, assertBranchInScope, narrowScope } from '../../kernel/src/index';
 import {
   assessCompletion, findOverdue, closeIncident, buildComplianceEvidence,
   type MaintenanceSchedule, type ScheduledTask, type ScheduleCategory, type ScheduleFrequency,
@@ -59,6 +59,10 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
             nextSafeAction: 'Send the schedule fields. Nothing was set.',
           });
         }
+        // PA-01-r1: a schedule is set for a branch the caller holds, and one on file for another branch is not rewritten.
+        assertBranchInScope(ctx, b['branchId'] as string);
+        const before = (await deps.schedules(ctx.tenantId)).find((s) => s.scheduleId === scheduleId);
+        if (before !== undefined) assertBranchInScope(ctx, before.branchId);
         const schedule: MaintenanceSchedule = {
           scheduleId, tenantId: ctx.tenantId, branchId: b['branchId'] as string, title: b['title'] as string,
           category: b['category'] as ScheduleCategory, frequency: b['frequency'] as ScheduleFrequency,
@@ -83,7 +87,9 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
         if (!isDate(dueOn)) {
           throw apiError(400, { code: 'task_needs_a_due_date', whatHappened: 'A scheduled task needs a due date (YYYY-MM-DD).', wasItSaved: 'not_saved', nextSafeAction: 'Send { "dueOn": "YYYY-MM-DD" }. Nothing was raised.' });
         }
-        if (!(await deps.schedules(ctx.tenantId)).some((s) => s.scheduleId === scheduleId)) throw notFound(`facilities schedule ${scheduleId}`);
+        const parent = (await deps.schedules(ctx.tenantId)).find((s) => s.scheduleId === scheduleId);
+        if (parent === undefined) throw notFound(`facilities schedule ${scheduleId}`);
+        assertBranchInScope(ctx, parent.branchId); // PA-01-r1
         await deps.recordTaskDue(ctx.tenantId, { taskId, scheduleId, dueOn });
         return { status: 201, body: { taskId, scheduleId, dueOn } };
       },
@@ -105,6 +111,7 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
         if (due === undefined) throw notFound(`facilities task ${taskId}`);
         const schedule = (await deps.schedules(ctx.tenantId)).find((s) => s.scheduleId === due.scheduleId);
         if (schedule === undefined) throw notFound(`facilities schedule ${due.scheduleId}`);
+        assertBranchInScope(ctx, schedule.branchId); // PA-01-r1: another branch's task is not done from here
 
         const task: ScheduledTask = {
           taskId, scheduleId: due.scheduleId, dueOn: due.dueOn,
@@ -144,6 +151,7 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
         if (stored === undefined) throw notFound(`facilities task ${taskId}`);
         const schedule = (await deps.schedules(ctx.tenantId)).find((s) => s.scheduleId === stored.scheduleId);
         if (schedule === undefined) throw notFound(`facilities schedule ${stored.scheduleId}`);
+        assertBranchInScope(ctx, schedule.branchId); // PA-01-r1
         if (stored.completedOn === undefined || (stored.completedBy ?? '').trim() === '') {
           throw apiError(422, {
             code: 'nothing_to_verify',
@@ -177,7 +185,11 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
       handler: async (ctx) => {
         const asAt = ctx.query['asOf'];
         if (!isDate(asAt)) throw apiError(400, { code: 'overdue_needs_a_date', whatHappened: 'The overdue list needs ?asOf=YYYY-MM-DD to measure lateness against.', wasItSaved: 'not_saved', nextSafeAction: 'Send the date. A list reads, it never writes.' });
-        const overdue = findOverdue({ schedules: await deps.schedules(ctx.tenantId), tasks: await deps.tasks(ctx.tenantId), asAt });
+        // PA-01-r1: the caller's branches (narrowed to ?branchId= when asked; another branch refused by name).
+        const asked = ctx.query['branchId'];
+        const scope = narrowScope(ctx, isStr(asked) ? [asked] : undefined);
+        const schedules = (await deps.schedules(ctx.tenantId)).filter((s) => scope === 'all' || scope.includes(s.branchId));
+        const overdue = findOverdue({ schedules, tasks: await deps.tasks(ctx.tenantId), asAt });
         return { status: 200, body: { overdue, complianceRisks: overdue.filter((o) => o.level === 'compliance_risk').length, asAt: deps.now() } };
       },
     },
@@ -199,6 +211,10 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
             nextSafeAction: 'Send the incident fields. Nothing was raised.',
           });
         }
+        // PA-01-r1: raised only at a branch the caller holds; one on file for another branch is not rewritten.
+        assertBranchInScope(ctx, b['branchId'] as string);
+        const earlier = (await deps.incidents(ctx.tenantId)).find((i) => i.incidentId === incidentId);
+        if (earlier !== undefined) assertBranchInScope(ctx, earlier.branchId);
         const incident: SafetyIncident = {
           incidentId, tenantId: ctx.tenantId, branchId: b['branchId'] as string,
           kind: b['kind'] as IncidentKind, severity: b['severity'] as IncidentSeverity,
@@ -230,6 +246,7 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
         }
         const incident = (await deps.incidents(ctx.tenantId)).find((i) => i.incidentId === incidentId);
         if (incident === undefined) throw notFound(`facilities incident ${incidentId}`);
+        assertBranchInScope(ctx, incident.branchId); // PA-01-r1
         const at = deps.now();
         const result = closeIncident({
           incident, closedBy: ctx.userId, actionTaken: b['actionTaken'] as string, at,
@@ -258,6 +275,7 @@ export function facilitiesRoutes(deps: FacilitiesDeps): readonly Route[] {
         const from = ctx.query['from'];
         const to = ctx.query['to'];
         if (!isStr(branchId) || !isDate(from) || !isDate(to)) throw apiError(400, { code: 'evidence_needs_branch_and_window', whatHappened: 'The compliance evidence pack needs ?branchId=, ?from=YYYY-MM-DD and ?to=YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send all three. A pack reads, it never writes.' });
+        assertBranchInScope(ctx, branchId); // PA-01-r1: another branch's evidence pack is refused by name
         const pack = buildComplianceEvidence({
           branchId, from, to,
           schedules: await deps.schedules(ctx.tenantId),

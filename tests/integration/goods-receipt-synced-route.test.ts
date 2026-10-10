@@ -61,7 +61,7 @@ async function seeded(): Promise<ApiHarness> {
   await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
   await deliveryPlaces(h, A, 'wh-store'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // holds inventory.movement.append — may receive goods
-  await h.provisionRole(A, 'u-box', 'cashier');       // the store box's sync identity: inventory.receipt.sync
+  await h.provisionRole(A, 'u-box', 'store_computer');       // the store box's sync identity: inventory.receipt.sync
   await h.provisionRole(A, 'u-cust', 'customer');     // no inventory authority at all
   await h.store.append(A, STREAM.catalogue, makeEvent({
     id: `pack-${A}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${A}-v1`, source: 'test/catalogue',

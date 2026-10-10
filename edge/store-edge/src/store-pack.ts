@@ -1022,6 +1022,17 @@ export interface PackWarehouseSupervisor {
   readonly currency?: string;
 }
 
+/** OB-37: one delivery this store is waiting for — an issued order naming this store, with what is still to arrive. */
+export interface PackOpenDelivery {
+  readonly poId: string;
+  readonly number: string;
+  readonly supplierId: string;
+  readonly deliverToLocationId: string;
+  /** The goods-receipt id this delivery is received under (head office's next one for the order). */
+  readonly grnId: string;
+  readonly ordered: readonly PackWarehouseOrdered[];
+}
+
 /**
  * The warehouse work the cloud assigned this box (M09 / OA-9) — the bins, the catalogue for
  * scanning, what is on order, what is awaiting put-away and what is under recall. The offline
@@ -1037,6 +1048,8 @@ export interface PackWarehouse {
   readonly goodsIn?: readonly PackWarehouseGoodsIn[];
   readonly barcodes?: readonly PackWarehouseBarcode[];
   readonly ordered?: readonly PackWarehouseOrdered[];
+  /** OB-37: every delivery this store is waiting for; the receiver chooses one on the phone (with one, it is preset). */
+  readonly openDeliveries?: readonly PackOpenDelivery[];
   readonly grnId?: string;
   /** SP-6b: the purchase order the delivery is against — named on the handheld's "delivery complete" so head office folds the GRN into it. */
   readonly poId?: string;
