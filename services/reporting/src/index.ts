@@ -9,13 +9,18 @@
 // figure**, not in a banner somebody has learned to ignore. And a figure that cannot be computed
 // at all returns `not_available` with the reason — never a zero. A zero is a number people act on.
 
-import type { Route } from '../../kernel/src/index';
+import type { Route, BranchScope } from '../../kernel/src/router';
+import { apiError } from '../../kernel/src/errors';
+import { narrowScope } from '../../kernel/src/scope';
 import {
+  REPORTS,
+  availability,
   reportCatalogue,
   whatWouldUnlockMost,
   type Producer,
   type CatalogueEntry,
 } from '../../../packages/reporting/src/index';
+import type { SourceTransaction } from '../../../packages/owner-control/src/index';
 
 export type Staleness = 'live' | 'lagging' | 'stale';
 
@@ -179,8 +184,25 @@ export interface CatalogueInputs {
   readonly produced: readonly string[];
 }
 
+/** What a named-report producer hands back (audit EA-06): figures, the rows behind them, and their sources. */
+export interface ProducedReportView {
+  readonly figures: readonly Figure[];
+  readonly rows: readonly Readonly<Record<string, string>>[];
+  readonly sources: readonly SourceFreshness[];
+  /** Figure name → the source transactions it is the exact sum of (the governed drill, EA-05). */
+  readonly drill: Readonly<Record<string, readonly SourceTransaction[]>>;
+  readonly tradingDay?: string;
+}
+
 export interface ReportingDeps {
+  /** The owner's dashboard figures. Only ever asked for the dashboard — a named report goes to `produce`. */
   readonly figures: (tenantId: string, name: string) => Promise<readonly Figure[]> | readonly Figure[];
+  /**
+   * Produce one named report from governed source records (audit EA-06). Only reports the catalogue says are produced
+   * are ever asked for; absent, every named report is refused as not produced by this version — never answered with
+   * the dashboard's figures.
+   */
+  readonly produce?: (tenantId: string, reportId: string, options: { readonly tradingDay?: string; readonly scope: BranchScope }) => Promise<ProducedReportView>;
   /**
    * The sources behind the figures and how current each is, judged from the newest record that reached here from each
    * (audit EA-01). Optional so a bare wiring still serves; when present the dashboard carries them and is never
@@ -237,12 +259,59 @@ export function reportingRoutes(deps: ReportingDeps): readonly Route[] {
       },
     },
     {
+      // One named report (audit EA-06): dispatched by name to its own producer, over the governed source records, in
+      // the reader's server-derived branch scope (§28). An unknown name is refused (404) and a report this shop or
+      // this version cannot produce is refused by name with the reason (409) — never answered with unrelated figures.
+      // ?day=YYYY-MM-DD picks the shop's trading day for a day report (default today); ?scope=br-1,br-2 narrows.
       api: 'API-10', method: 'GET', path: '/v1/reports/:name',
       permission: 'reporting.report.read',
-      handler: async (ctx) => ({
-        status: 200,
-        body: dashboard(await deps.figures(ctx.tenantId, ctx.params['name'] ?? ''), deps.now(), await deps.sources?.(ctx.tenantId)),
-      }),
+      handler: async (ctx) => {
+        const name = ctx.params['name'] ?? '';
+        const report = REPORTS.find((r) => r.id === name);
+        if (report === undefined) {
+          throw apiError(404, {
+            code: 'no_such_report',
+            whatHappened: `There is no report called "${name}".`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Pick a report from GET /v1/reports/catalogue.',
+          });
+        }
+        const { records, produced } = (await deps.catalogueInputs?.(ctx.tenantId)) ?? { records: [], produced: [] };
+        const can = availability(report, records, deps.produce === undefined ? [] : produced);
+        if (!can.available) {
+          throw apiError(409, {
+            code: can.blockedBy,
+            whatHappened: `${report.name} cannot be produced: ${can.why}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: can.blockedBy === 'the_shop_does_not_record_it'
+              ? `Start recording ${can.missing.join(', ')} and the report begins working.`
+              : 'This version cannot work it out yet; the catalogue lists what it can.',
+          });
+        }
+        const day = ctx.query['day'];
+        if (day !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_day',
+            whatHappened: `"${day}" is not a trading day (YYYY-MM-DD).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send ?day=YYYY-MM-DD, or leave it off for today.',
+          });
+        }
+        const scopeQ = ctx.query['scope'];
+        const requested = typeof scopeQ === 'string' && scopeQ.trim() !== '' ? scopeQ.split(',').map((x) => x.trim()).filter((x) => x !== '') : undefined;
+        const scope = narrowScope(ctx, requested);
+        const out = await deps.produce!(ctx.tenantId, report.id, { ...(day === undefined ? {} : { tradingDay: day }), scope });
+        return {
+          status: 200,
+          body: {
+            report: { id: report.id, family: report.family, name: report.name, answers: report.answers },
+            ...(out.tradingDay === undefined ? {} : { tradingDay: out.tradingDay }),
+            scope,
+            ...dashboard(out.figures, deps.now(), out.sources),
+            rows: out.rows,
+          },
+        };
+      },
     },
   ];
 }

@@ -32,6 +32,7 @@ import {
   type Route,
 } from '../../kernel/src/index';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from './access';
+import { reportProducers, PRODUCED_AT_HEAD_OFFICE } from './report-producers';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
 import { tillSealKey } from '../../../packages/identity/src/till-seal';
@@ -267,8 +268,15 @@ const PROPOSED_PLANS: readonly BillingPlan[] = [
  * rest honestly as "not recorded yet" / "this version cannot produce it" rather than pretending.
  * These move to per-tenant configuration as the shop's recorded facts become tenant settings (M02).
  */
-const REPORTING_RECORDS: readonly Producer[] = ['sales_rung_at_the_till'];
-const REPORTING_PRODUCED: readonly string[] = ['sales_by_day'];
+const REPORTING_RECORDS: readonly Producer[] = [
+  // What head office genuinely records in this build, each through its own governed write path: the till's sales
+  // (SaleCommitted), the stock ledger (InventoryMoved) with receipt costs, the product master's departments, the
+  // purchase-order register and goods receipts, and the loyalty points ledger (PF-09).
+  'sales_rung_at_the_till', 'stock_movements_recorded', 'cost_prices_on_the_catalogue', 'departments_on_the_catalogue',
+  'what_was_ordered_from_suppliers', 'what_arrived_from_suppliers', 'loyalty_points_accrued',
+];
+/** The named reports head office can work out — each with a producer over governed source rows (EA-06). */
+const REPORTING_PRODUCED: readonly string[] = PRODUCED_AT_HEAD_OFFICE;
 
 /**
  * How long a click-and-collect reservation holds stock.
@@ -353,6 +361,11 @@ export function buildSurface(deps: {
   // versioned store the setup answers write to (a setting change and its rollback share one history).
   const settings = deps.settings ?? inMemorySettings();
   // PF-09-a · OB-28 "C": the owner's loyalty rule, read from store setup at request time (zero = loyalty off).
+  // The shop's trading calendar from store setup (M01-FR-02) — one reader for the dashboard and the named reports.
+  const shopCalendar = async (tenantId: string) => ({
+    timeZone: await settings.value(tenantId, SETTINGS.STORE_TIME_ZONE),
+    tradingDayCutoff: await settings.value(tenantId, SETTINGS.TRADING_DAY_CUTOFF),
+  });
   const loyaltyRule = async (tenantId: string) => ({
     pointsPer100Inr: await settings.value(tenantId, SETTINGS.LOYALTY_POINTS_PER_100_INR),
     pointValuePaise: await settings.value(tenantId, SETTINGS.LOYALTY_POINT_VALUE_PAISE),
@@ -1198,10 +1211,9 @@ export function buildSurface(deps: {
           store, now, records: REPORTING_RECORDS, produced: REPORTING_PRODUCED,
           // The shop's calendar from the SAME durable settings the owner answers in store setup (M01-FR-02), read at
           // request time — "today" on the dashboard is the shop's trading day, not this server's date (F14).
-          calendar: async (tenantId) => ({
-            timeZone: await settings.value(tenantId, SETTINGS.STORE_TIME_ZONE),
-            tradingDayCutoff: await settings.value(tenantId, SETTINGS.TRADING_DAY_CUTOFF),
-          }),
+          calendar: shopCalendar,
+          // Each named report by its own producer over governed source records (EA-06) — never the dashboard's figures.
+          produce: reportProducers({ store, now, calendar: shopCalendar, loyaltyRule }).produce,
         })),
     // Company-wide consolidation (M01/M29/D13, owner decision) — branches POST contributions + memberships,
     // the head office GETs the roll-up for a node/family/period. Idempotent by revision, effective-dated,

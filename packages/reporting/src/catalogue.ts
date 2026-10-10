@@ -172,7 +172,8 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     id: 'units_by_category', family: 'sales', name: 'What is selling, by department',
     answers: 'how many items each department sold today',
     needs: ['sales_rung_at_the_till', 'departments_on_the_catalogue'],
-    columns: [{ name: 'department', type: 'text' }, { name: 'units', type: 'integer' }]
+    // `totalMinor` is what the till charged on the department's lines — head office holds it per line (EA-06).
+    columns: [{ name: 'department', type: 'text' }, { name: 'units', type: 'integer' }, { name: 'totalMinor', type: 'money_minor' }]
   },
   {
     id: 'margin', family: 'sales', name: 'Margin',
@@ -186,6 +187,7 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     id: 'purchases_by_supplier', family: 'purchasing', name: 'Purchases by supplier',
     answers: 'what the shop has ordered from each supplier',
     needs: ['what_was_ordered_from_suppliers'],
+    columns: [{ name: 'supplierId', type: 'text' }, { name: 'orders', type: 'integer' }, { name: 'orderedMinor', type: 'money_minor' }]
   },
   {
     id: 'supplier_service', family: 'purchasing', name: 'Supplier service',
@@ -203,6 +205,10 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     id: 'stock_on_hand', family: 'stock', name: 'Stock on hand',
     answers: 'what the shop is holding, and what it is worth',
     needs: ['stock_movements_recorded', 'cost_prices_on_the_catalogue'],
+    columns: [
+      { name: 'productId', type: 'text' }, { name: 'locationId', type: 'text' }, { name: 'onHandMinor', type: 'integer' },
+      { name: 'valueMinor', type: 'money_minor' }, { name: 'unitCostMinor', type: 'text' },
+    ]
   },
   {
     id: 'shrinkage', family: 'stock', name: 'Shrinkage',
@@ -230,6 +236,8 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     id: 'loyalty', family: 'customer', name: 'Loyalty',
     answers: 'points earned and spent, and what they cost the shop',
     needs: ['loyalty_points_accrued'],
+    // The member code is personal data (a code made from the mobile number) — redacted unless the reader may see it.
+    columns: [{ name: 'memberRef', type: 'text', sensitive: true }, { name: 'points', type: 'integer' }, { name: 'valueMinor', type: 'money_minor' }]
   },
   {
     id: 'marketing', family: 'customer', name: 'Campaigns and complaints',

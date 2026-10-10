@@ -1270,7 +1270,7 @@ async function latest<T>(
  */
 const PART = '\u001f';
 
-function streamName(...parts: readonly string[]): string {
+export function streamName(...parts: readonly string[]): string {
   for (const part of parts) {
     if (part.includes(PART)) {
       // Refused rather than stripped: a stripped separator is a silently different stream, which
@@ -9659,6 +9659,8 @@ export function reportingAdapter(input: {
    * defaults (5 and 60) the figure engine applies.
    */
   readonly thresholds?: { readonly laggingAfterMinutes: number; readonly staleAfterMinutes: number };
+  /** The named-report producers (EA-06, `report-producers.ts`); absent, every named report is refused as not produced. */
+  readonly produce?: ReportingDeps['produce'];
 }): ReportingDeps {
   const thresholds = input.thresholds ?? {};
   /** Where a sale came from (audit EA-01): the store location the lane sells from, else the lane itself. */
@@ -9683,6 +9685,7 @@ export function reportingAdapter(input: {
   };
   return {
     now: input.now,
+    ...(input.produce === undefined ? {} : { produce: input.produce }),
 
     // Drives the tested `reportCatalogue` engine on the running path (CORE-01). The values are
     // declaration, not derivation: the catalogue is a shop-wide statement, so it comes from
