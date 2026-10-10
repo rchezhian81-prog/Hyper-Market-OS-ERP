@@ -218,7 +218,9 @@ import { notificationQueueRoutes } from '../../customer/src/notification-queue';
 import { NotificationQueue } from '../../../packages/notifications/src/index';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { drReadinessRoutes } from '../../platform/src/dr-readiness';
-import { branchLifecycleRoutes } from '../../platform/src/branch-lifecycle';
+import { branchLifecycleRoutes, branchTransitionRoutes } from '../../platform/src/branch-lifecycle';
+import { branchTransitionsAdapter } from './branch-transitions';
+import { NO_APPROVALS } from '../../identity/src/approval-requests';
 import { documentsRoutes } from '../../platform/src/documents';
 import { suspendedBillsRoutes } from '../../pos/src/suspended-bills';
 import { quotationsRoutes } from '../../pos/src/quotations';
@@ -1065,8 +1067,18 @@ export function buildSurface(deps: {
     ...drReadinessRoutes(store === undefined
       ? { recordDrill: () => {}, drills: empty([]), now }
       : drReadinessAdapter({ store, now })),
-    // Branch open/close lifecycle (M01-FR-04) — governed transition decision; stateless ruling.
+    // Branch open/close lifecycle (M01-FR-04) — `evaluate` is a stateless PREVIEW on supplied figures; the governed
+    // COMMAND (PA-04) measures the branch from head office's own records, needs the owner's approval on the
+    // maker-checker engine, persists the transition and, on a permanent close, revokes the branch's access.
     ...branchLifecycleRoutes(),
+    ...branchTransitionRoutes(store === undefined ? {
+      branch: async () => undefined,
+      readiness: async () => { throw new Error('no store: a branch cannot be measured'); },
+      approvals: NO_APPROVALS,
+      commit: async () => { throw new Error('no store: a branch transition cannot be kept'); },
+      transitions: async () => [],
+      now,
+    } : branchTransitionsAdapter({ store, now })),
     // Notification delivery queue (M31-FR-04) — the durable outbox behind the send-guard: enqueue, mark
     // delivered, record a failure that retries then dead-letters after maxAttempts (kept, never dropped —
     // hard rule #6), and read the pending + dead-letter lists. The channel transport is a deployment step.

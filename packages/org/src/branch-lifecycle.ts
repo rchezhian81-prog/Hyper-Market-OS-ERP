@@ -41,6 +41,14 @@ export interface BranchReadiness {
   readonly openDocuments: number;
   /** Items the edge has not yet synced to the cloud (§31). */
   readonly unsentSyncItems: number;
+  /**
+   * Set when head office cannot vouch for `unsentSyncItems` — the store computer never reported its unsent count, or its
+   * last report is older than the store's own staleness limit. The reason, in plain words. A missing signal is not a
+   * zero (P-08), so a permanent close is blocked on it.
+   */
+  readonly syncStateUnknown?: string;
+  /** Tills with a cashier still holding the drawer — a shift nobody closed. */
+  readonly openShifts?: number;
   /** Sync conflicts and reconciliation exceptions nobody has resolved. */
   readonly unresolvedExceptions: number;
   /** Users still holding access to this branch. */
@@ -73,6 +81,8 @@ export interface Blocker {
     | 'cash_remains'
     | 'open_documents'
     | 'unsent_sync'
+    | 'sync_state_unknown'
+    | 'open_shifts'
     | 'unresolved_exceptions'
     | 'not_configured'
     | 'no_devices'
@@ -214,6 +224,18 @@ export function evaluateTransition(input: {
         blockers.push({
           code: 'unsent_sync',
           detail: `${readiness.unsentSyncItems} item(s) never reached the cloud — closing now would lose them (§31)`,
+        });
+      }
+      if (readiness.syncStateUnknown !== undefined) {
+        blockers.push({
+          code: 'sync_state_unknown',
+          detail: `head office cannot tell whether the store computer still holds unsent items: ${readiness.syncStateUnknown}`,
+        });
+      }
+      if ((readiness.openShifts ?? 0) !== 0) {
+        blockers.push({
+          code: 'open_shifts',
+          detail: `${readiness.openShifts} till(s) still held by a cashier — close each shift first`,
         });
       }
       if (readiness.unresolvedExceptions !== 0) {

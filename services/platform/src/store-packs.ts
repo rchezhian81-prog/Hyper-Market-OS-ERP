@@ -193,6 +193,11 @@ export interface HeldVersionsReport {
   readonly catalogueVersion: number | null;
   /** The store setup from head office it trades on (null: none yet). */
   readonly storePackVersion: number | null;
+  /**
+   * PA-04: how many records the store computer still holds unsent to head office, across every queue, when it reported.
+   * Absent on a report from a box that does not say — head office then cannot vouch for the store's sync (P-08).
+   */
+  readonly unsentItems?: number;
   readonly reportedBy: string;
   readonly reportedAt: string;
 }
@@ -250,7 +255,8 @@ export function storePackRoutes(deps: StorePackDeps): readonly Route[] {
     },
     {
       // DF-3-b-2 (SF-08 hand-over): the store computer says which catalogue and which setup it trades on — so head office
-      // sees which stores have (and have not yet) taken a new recall or hold. Its own store only.
+      // sees which stores have (and have not yet) taken a new recall or hold — and (PA-04) how many records it still holds
+      // unsent, which a branch's permanent close reads. Its own store only.
       api: 'API-01', method: 'POST', path: '/v1/store-packs/:storeId/held',
       permission: 'store.pack.read', idempotent: true,
       handler: async (ctx) => {
@@ -266,7 +272,14 @@ export function storePackRoutes(deps: StorePackDeps): readonly Route[] {
         if (catalogueVersion === undefined || storePackVersion === undefined || deps.recordHeldVersions === undefined) {
           throw apiError(400, { code: 'not_readable_as_held_versions', whatHappened: 'A report needs { catalogueVersion, storePackVersion } — each a whole number, or null when nothing is held.', wasItSaved: 'not_saved', nextSafeAction: 'Send both.' });
         }
-        const r: HeldVersionsReport = { storeId, catalogueVersion, storePackVersion, reportedBy: ctx.userId, reportedAt: deps.now() };
+        const unsent = b['unsentItems'];
+        if (unsent !== undefined && !(typeof unsent === 'number' && Number.isInteger(unsent) && unsent >= 0)) {
+          throw apiError(400, { code: 'not_readable_as_held_versions', whatHappened: 'unsentItems, when sent, is a whole number of records still to send.', wasItSaved: 'not_saved', nextSafeAction: 'Send the count, or leave it out.' });
+        }
+        const r: HeldVersionsReport = {
+          storeId, catalogueVersion, storePackVersion, ...(unsent === undefined ? {} : { unsentItems: unsent as number }),
+          reportedBy: ctx.userId, reportedAt: deps.now(),
+        };
         await deps.recordHeldVersions(ctx.tenantId, r);
         return { status: 200, body: { held: r } };
       },

@@ -1276,7 +1276,7 @@ async function latest<T>(
  */
 const PART = '\u001f';
 
-function streamName(...parts: readonly string[]): string {
+export function streamName(...parts: readonly string[]): string {
   for (const part of parts) {
     if (part.includes(PART)) {
       // Refused rather than stripped: a stripped separator is a silently different stream, which
@@ -4261,6 +4261,31 @@ export function auditTrailAdapter(input: { readonly store: EventStore }): AuditT
 /** An org node as one canonical string (its fields in name order) — what "the same node" means for PA-05. */
 const nodeJson = (n: OrgNode): string => JSON.stringify(Object.keys(n).sort().map((k) => [k, (n as unknown as Record<string, unknown>)[k]]));
 
+/**
+ * The next version of an org node, as a batch entry — or undefined when exactly that is already held (nothing to record).
+ * One rule for every writer of a node (the org register's routes, and a governed branch transition, PA-04), so a node's
+ * versions never fork.
+ */
+export async function orgNodeVersionEntry(store: EventStore, tenantId: string, node: OrgNode, at: string): Promise<BatchEntry | undefined> {
+  const versions = (await store.readStream(tenantId, ORG_NODES_STREAM, { type: 'OrgNodeSet' }))
+    .map((e) => payloadOf<OrgNode>(e)).filter((n) => n.nodeId === node.nodeId);
+  const held = versions[versions.length - 1];
+  if (held !== undefined && nodeJson(held) === nodeJson(node)) return undefined;
+  const version = versions.length + 1;
+  const digest = createHash('sha256').update(nodeJson(node)).digest('hex').slice(0, 16);
+  return {
+    stream: ORG_NODES_STREAM,
+    event: makeEvent({
+      id: `org-node-${node.nodeId}-v${version}`,
+      type: 'OrgNodeSet',
+      occurredAt: at,
+      idempotencyKey: `org-node-${tenantId}-${node.nodeId}-v${version}-${digest}`,
+      source: 'api/platform',
+      payload: node,
+    }),
+  };
+}
+
 export function orgStructureAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -4291,20 +4316,8 @@ export function orgStructureAdapter(input: {
       // rename collapsed into the earlier record as a "duplicate" — the route said 201 and the old name stayed. Now:
       // exactly what is held already → nothing to record; anything else (a rename, a rename BACK, an activation) is a new
       // version of the node, keyed on its version number and its whole content. The latest-wins fold reads it.
-      const versions = (await input.store.readStream(tenantId, ORG_NODES_STREAM, { type: 'OrgNodeSet' }))
-        .map((e) => payloadOf<OrgNode>(e)).filter((n) => n.nodeId === node.nodeId);
-      const held = versions[versions.length - 1];
-      if (held !== undefined && nodeJson(held) === nodeJson(node)) return;
-      const version = versions.length + 1;
-      const digest = createHash('sha256').update(nodeJson(node)).digest('hex').slice(0, 16);
-      await input.store.append(tenantId, ORG_NODES_STREAM, makeEvent({
-        id: `org-node-${node.nodeId}-v${version}`,
-        type: 'OrgNodeSet',
-        occurredAt: input.now(),
-        idempotencyKey: `org-node-${tenantId}-${node.nodeId}-v${version}-${digest}`,
-        source: 'api/platform',
-        payload: node,
-      }));
+      const entry = await orgNodeVersionEntry(input.store, tenantId, node, input.now());
+      if (entry !== undefined) await input.store.append(tenantId, entry.stream, entry.event);
     },
     recordRegistration: async (tenantId, registration) => {
       await input.store.append(tenantId, ORG_REGISTRATIONS_STREAM, makeEvent({
@@ -11165,10 +11178,12 @@ export function heldVersionsAdapter(input: { readonly store: EventStore }): {
       return latest;
     },
     recordHeldVersions: async (tenantId, r) => {
+      // One report per (store, versions): the same versions said again collapse onto the first. A report that carries the
+      // box's unsent count (PA-04) is an OBSERVATION at a moment — each one is kept, so the latest count is the one read.
+      const observed = r.unsentItems === undefined ? '' : `-u${r.unsentItems}-${r.reportedAt}`;
       await input.store.append(tenantId, HELD_VERSIONS_STREAM, makeEvent({
-        id: `held-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}`, type: 'StoreHeldVersionsReported', occurredAt: r.reportedAt,
-        // One report per (store, versions): the same versions said again collapse onto the first.
-        idempotencyKey: `held-${tenantId}-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}`, source: 'api/platform', payload: r,
+        id: `held-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}${observed}`, type: 'StoreHeldVersionsReported', occurredAt: r.reportedAt,
+        idempotencyKey: `held-${tenantId}-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}${observed}`, source: 'api/platform', payload: r,
       }));
     },
   };

@@ -248,6 +248,6 @@ describe('what an action asks approval FOR, and the common typed-name rule (2b-v
       expect(spec.label.length).toBeGreaterThan(0);
       expect(spec.validForMinutes).toBe(24 * 60);
     }
-    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(23);
+    expect(Object.keys(APPROVAL_KINDS)).toHaveLength(24); // + branch_transition (PA-04)
   });
 });
