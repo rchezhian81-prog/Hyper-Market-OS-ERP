@@ -3,7 +3,7 @@
 // One function per section, each reading the register that already holds the truth — nothing typed twice (P-02), and a
 // section head office has nothing for is LEFT OUT so the store computer says it was not told (store-pack.ts: "a pack that
 // never arrived is not an empty pack"). This replaces, section by section, what the demo-only builder
-// (db/seed/pilot/store-pack.ts) made from the seed file:
+// (db/seed/pilot/store-pack.ts, retired in PA-06 3b) made from the seed file:
 //
 //   policies          ← the store's settings head office holds (POST /v1/stores/:storeId/settings) + its org register name
 //   products          ← the signed catalogue head office published + the product master's category + the stock ledger at
@@ -28,7 +28,7 @@ import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
 import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, PRODUCT_SPEC, PRODUCT_LABEL, templateView } from '../../purchase/src/import-templates';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
-  catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter,
+  catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE } from './roles';
@@ -101,13 +101,20 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     };
   }
 
+  // A place is this store's when the hierarchy puts it under the store, or when it is the back store the store's own
+  // settings name (a back store may sit under the company in the hierarchy).
+  const ownPlaces = new Set([storeId, ...(settings?.warehouseId !== undefined && settings.warehouseId !== null ? [settings.warehouseId] : [])]);
+  const placed = branchOfLocationIn(await orgStructureAdapter({ store, now }).nodes(tenantId));
+  const branchOf = (locationId: string): string => (ownPlaces.has(locationId) ? storeId : placed(locationId));
+
   // ── products: what head office published, its category, the ledger at this store ───────────────────────────────
   const published = await catalogueAdapter({ store, now, signer: input.signer }).currentPack(tenantId);
   if (published !== undefined) {
     const master = new Map((await productMasterAdapter({ store, now }).products(tenantId)).map((p) => [p.productId, p] as const));
     const onHand = new Map<string, number>();
     for (const row of await inventoryAdapter({ store, now }).availability(tenantId)) {
-      if (row.locationId === storeId) onHand.set(row.productId, (onHand.get(row.productId) ?? 0) + row.onHandMinor);
+      // the store's stock: on its floor and in its back store (every place the store holds)
+      if (branchOf(row.locationId) === storeId) onHand.set(row.productId, (onHand.get(row.productId) ?? 0) + row.onHandMinor);
     }
     const barcodes = new Map<string, string[]>();
     for (const b of published.snapshot.barcodes) barcodes.set(b.productId, [...(barcodes.get(b.productId) ?? []), b.code]);
@@ -203,10 +210,6 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // ── OB-37 · PA-06 3b(d): the warehouse phone's section — the bins and stock of this store and its back store, and the
   // deliveries this store is waiting for (issued orders naming it as the place they are delivered to). No worker is
   // named: the phone runs as the person who signed in on it (OB-30). Quantities by the one rule (PACK_QUANTITY_SCALE).
-  // A place is this store's when the hierarchy puts it under the store, or when it is the back store the store's own
-  // settings name (a back store may sit under the company in the hierarchy).
-  const placed = branchOfLocationIn(await orgStructureAdapter({ store, now }).nodes(tenantId));
-  const branchOf = (locationId: string): string => (here.has(locationId) ? storeId : placed(locationId));
   const wh = warehouseAdapter({ store, now });
   const bins = (await wh.bins(tenantId)).filter((b) => branchOf(b.storeId) === storeId);
   const binIds = new Set(bins.map((b) => b.binId));
@@ -236,6 +239,15 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     // Exactly one delivery waiting: the phone receives against it directly; with several, the receiver chooses on the phone.
     ...(only === undefined ? {} : { grnId: only.grnId, poId: only.poId, ordered: only.ordered }),
   };
+
+  // ── the store's devices: head office's fleet register for this store, with any enrolment code's FINGERPRINT and expiry
+  // (never the code). The box enrols a phone against exactly this — no longer a list an operator copies into a file.
+  sections['devices'] = (await deviceRegistryAdapter({ store, now }).fleet(tenantId))
+    .filter((d) => branchOf(d.branchId) === storeId)
+    .map((d) => ({
+      deviceId: d.deviceId, kind: d.kind, status: d.status, label: d.label, branchId: d.branchId,
+      ...(d.enrolment === undefined ? {} : { enrolment: { codeHash: d.enrolment.codeHash, expiresAt: d.enrolment.expiresAt } }),
+    }));
 
   // ── the store's own exception thresholds ───────────────────────────────────────────────────────────────────────
   sections['lossPreventionRules'] = await lpRulesAdapter({ store, now }).rules(tenantId);

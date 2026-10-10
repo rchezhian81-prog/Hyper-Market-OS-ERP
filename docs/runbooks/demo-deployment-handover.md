@@ -290,7 +290,10 @@ Open `$H/customer/` in a browser: the **DEMO / PILOT — NOT PRODUCTION** banner
 
 After the DF-1 release (3 Oct 2026, OB-12): sign in at `$H/login/` and you land on the **demo home**, which lists the pages that work on
 this demo and names the store-computer-fed shells as such. Do not judge the demo by `/erp/` — the Store manager shell shows
-"Not known" until a store computer (or, on the demo, the DF-2 pack) feeds it.
+"Not known" until a store computer feeds it. Since PA-06 3b (10 Oct 2026) the demo store computer takes its setup from
+head office (`EDGE_STORE_PACK_SOURCE=head-office`, `EDGE_STORE_ID=pilot-demo-branch` in the pilot compose file) — there
+is no pack file to build or mount; the seed sets the demo store up at head office. Its `CLOUD_API_TOKEN` must be minted for
+`pilot-store-edge` (the store computer role, OB-36).
 
 **Known after the sign-in-gate release (H-14, `docs/STATUS.md` 3 Oct 2026):** the demo till at `$H/store/pos/` will list the five
 seeded products under "Products nobody can sell" with `unknown unit of measure "each"` / `"litre"` until a person corrects their units

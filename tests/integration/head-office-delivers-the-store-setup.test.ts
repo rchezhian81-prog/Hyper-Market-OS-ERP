@@ -218,6 +218,10 @@ describe('PA-06 — head office delivers each store its setup', () => {
     };
     await order('po-s1', 'WH');
     await order('po-s2', 'S2');
+    // the store's phones: head office's fleet register (and a code's fingerprint), never a list copied into a file
+    expect((await call('POST', '/v1/platform/devices/hh-1/register', { branchId: 'S1', kind: 'handheld', label: 'Back store phone' })).status).toBe(201);
+    expect((await call('POST', '/v1/platform/devices/hh-9/register', { branchId: 'S2', kind: 'handheld', label: 'Other store' })).status).toBe(201);
+    expect((await call('POST', '/v1/platform/devices/hh-1/enrolment', {})).status).toBeLessThan(300);
     const edge = await boot();
     expect((await edge.refreshStorePack!()).status).toBe('updated');
     const w = (JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope).sections['warehouse'] as Record<string, unknown>;
@@ -234,7 +238,10 @@ describe('PA-06 — head office delivers each store its setup', () => {
     ]);
     // exactly one waiting: the phone receives against it directly
     expect(w).toMatchObject({ poId: 'po-s1', grnId: open[0]!.grnId });
-    // the box serves it to the phone as the store computer read it
+    const devices = (JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope).sections['devices'] as { deviceId: string; enrolment?: { codeHash: string } }[];
+    expect(devices.map((d) => d.deviceId)).toEqual(['hh-1']);
+    expect(devices[0]!.enrolment?.codeHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(devices)).not.toMatch(/"code"/); // the code itself never travels
     expect(edge.storeSetup()).toMatchObject({ source: 'head-office' });
   });
 

@@ -12,10 +12,10 @@ import { tenantAccessResolver, tenantEntitlementResolver } from '../../services/
 import { ROLE_CATALOGUE } from '../../services/api/src/roles';
 import { STREAM, effectiveGrants } from '../../services/api/src/adapters';
 import { hostedSeedClient, hostedSeedRefusals, publishPilotPack } from '../../db/seed/pilot/hosted';
-import { buildDemoStorePack } from '../../db/seed/pilot/store-pack';
+import { packPayloadOf } from '../../edge/store-edge/src/store-pack-held';
+import type { StorePackEnvelope } from '../../services/platform/src/store-packs';
 import { readPack } from '../../edge/store-edge/src/store-pack';
 import { posPayload, type ScreenInput } from '../../edge/store-edge/src/screen-data';
-import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import {
   applyPilotFoundation, applyPilotCatalogue, applyPilotTradingPartners, applyPilotTransactions,
 } from '../../db/seed/pilot/apply';
@@ -126,7 +126,7 @@ describe('demo price list for the demo store box (ADR-0016)', () => {
     expect([200, 201]).toContain(again.status);
   }, 60_000);
 
-  it('the DEMO store pack built from the published list feeds the edge till screen with those products and prices', async () => {
+  it('PA-06 3b: the demo store computer takes its setup from HEAD OFFICE — the published list feeds the till; the rest is head office\'s record', async () => {
     const { store, baseUrl } = await liveApi();
     const client = hostedSeedClient({ baseUrl, idp: IDP, store, operator: 'test-operator', tenantId: PILOT_DEMO_TENANT });
     await applyPilotFoundation(client, PILOT_FOUNDATION, { throwOnError: true });
@@ -134,28 +134,14 @@ describe('demo price list for the demo store box (ADR-0016)', () => {
     await applyPilotTradingPartners(client, PILOT_TRADING_PARTNERS, OWNER, { throwOnError: true });
     expect([200, 201]).toContain((await publishPilotPack(client, OWNER, PILOT_DEMO_BRANCH, '2026-09-28')).status);
 
-    const get = (path: string) => client.request({ method: 'GET', path, userId: OWNER, tenantId: PILOT_DEMO_TENANT });
-    const [pack, master, stock] = [await get('/v1/catalogue/pack'), await get('/v1/catalogue/products'), await get('/v1/inventory/availability')];
-    expect([pack.status, master.status, stock.status]).toEqual([200, 200, 200]);
-    // DF-2: the cloud's own records feed the rest of the pack — read exactly as the runner reads them.
-    const [orders, invoices, decisions] = [await get('/v1/purchase/orders'), await get('/v1/purchase/invoices'), await get('/v1/approvals/decisions')];
-    expect([orders.status, invoices.status, decisions.status]).toEqual([200, 200, 200]);
-    const built = buildDemoStorePack({
-      snapshot: (pack.body as { snapshot: CatalogueSnapshot }).snapshot,
-      master: (master.body as { products: [] }).products,
-      availability: (stock.body as { rows: [] }).rows,
-      foundation: PILOT_FOUNDATION, trading: PILOT_TRADING_PARTNERS, transactions: PILOT_TRANSACTIONS, roles: ROLE_CATALOGUE,
-      cloud: {
-        purchaseOrders: (orders.body as { orders: [] }).orders,
-        supplierInvoices: (invoices.body as { invoices: [] }).invoices,
-        approvalDecisions: (decisions.body as { decisions: [] }).decisions,
-        counts: [],
-      },
-      builtBy: 'test-operator', builtAt: '2026-09-28T10:00:00.000Z',
-    });
+    // Exactly what the demo store computer asks for, under its own identity (EDGE_STORE_PACK_SOURCE=head-office).
+    const res = await client.request({ method: 'GET', path: `/v1/store-packs/${PILOT_DEMO_BRANCH}`, userId: 'pilot-store-edge', tenantId: PILOT_DEMO_TENANT });
+    expect(res.status).toBe(200);
+    const env = res.body as StorePackEnvelope;
+    expect(env).toMatchObject({ tenantId: PILOT_DEMO_TENANT, storeId: PILOT_DEMO_BRANCH });
 
-    // Through the EDGE's own reader and till payload — exactly what the demo box will do at boot.
-    const edgePack = readPack(JSON.parse(JSON.stringify(built)) as unknown, '2026-09-28T10:00:00.000Z');
+    // Through the EDGE's own reader and till payload — exactly what the demo box does once it has pulled it.
+    const edgePack = readPack(packPayloadOf(env), env.issuedAt);
     expect(edgePack.products.known).toBe(true);
     const till = posPayload({ pack: edgePack } as unknown as ScreenInput);
     expect(till).not.toBeNull();
@@ -163,18 +149,19 @@ describe('demo price list for the demo store box (ADR-0016)', () => {
     const byId = new Map(products.map((p) => [p.productId, p.unitPriceMinor] as const));
     for (const p of PILOT_CATALOGUE.products) expect(byId.get(p.productId)).toBe(p.price.priceMinor);
 
-    // Honest gaps: no cost (the published pack carries none). DF-2: the rest of the practice pack is BUILT, and every
-    // section the box reads back is one it can use — the manager is named, the buyer sees the cloud's orders, the
-    // approvals are the cloud's pending ones (known, even when none wait), the people are the cloud's role catalogue.
-    for (const p of built.products) expect(p).not.toHaveProperty('unitCostMinor');
-    expect(edgePack.approvals.known).toBe(true);
-    expect(edgePack.purchaseOrders.known).toBe(true);
-    expect(edgePack.roles.known && edgePack.roleAssignments.known && edgePack.managerPolicy.known).toBe(true);
-    expect(edgePack.managerPolicy.known && edgePack.managerPolicy.value.userId).toBe('pilot-manager');
-    expect(edgePack.warehouse.known && edgePack.wave.known && edgePack.route.known && edgePack.checklist.known).toBe(true);
+    // Honest gaps: no cost (the published pack carries none). Every other section the box reads back is head office's:
+    // the approvals waiting (known, even when none wait), the orders, the people from the role catalogue, the store's
+    // rules and checklist, the loss-prevention limits, and the warehouse phone's bins and open deliveries. Nobody is
+    // named on a screen: each runs as the person who signs in (OB-16, OB-30).
+    const sections = env.sections as { products: Record<string, unknown>[] };
+    for (const p of sections.products) expect(p).not.toHaveProperty('unitCostMinor');
+    expect(edgePack.approvals.known && edgePack.purchaseOrders.known && edgePack.roles.known && edgePack.roleAssignments.known).toBe(true);
+    expect(edgePack.managerPolicy.known && edgePack.managerPolicy.value.userId).toBeFalsy();
+    expect(edgePack.warehouse.known && edgePack.checklist.known && edgePack.lossPreventionRules.known).toBe(true);
+    expect(edgePack.lossPreventionRules.known && edgePack.lossPreventionRules.value.length).toBe(PILOT_FOUNDATION.storeSetup.lossPreventionRules.length);
     // Categories come from the product master, not a guess; stock from the ledger (the seeded receipt).
-    expect(built.products.every((p) => p['categoryId'] !== 'uncategorised')).toBe(true);
-    expect(built.products.some((p) => Number(p['availableMinor']) > 0)).toBe(true);
+    expect(sections.products.every((p) => p['categoryId'] !== 'uncategorised')).toBe(true);
+    expect(sections.products.some((p) => Number(p['availableMinor']) > 0)).toBe(true);
   }, 60_000);
 
   it('the store box machine login cannot publish prices (it may only read the pack)', async () => {

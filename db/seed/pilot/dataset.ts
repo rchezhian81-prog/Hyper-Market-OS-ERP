@@ -114,6 +114,8 @@ export interface SeedStoreSetup {
   readonly rules: Readonly<Record<string, unknown>>;
   /** POST /v1/purchase/match-policy (OC-13). */
   readonly matchPolicy: { readonly quantityToleranceBps: number; readonly priceToleranceBps: number; readonly immaterialMinor: number };
+  /** POST /v1/loss-prevention/rules/:kind — the store's exception thresholds (the manager's day close is judged by them). */
+  readonly lossPreventionRules: readonly { readonly kind: string; readonly maxCount?: number; readonly maxTotalValueMinor?: number; readonly maxSingleValueMinor?: number; readonly escalateAtMultiple?: number }[];
 }
 
 const COMPANY_ID = 'pilot-demo-co';
@@ -181,6 +183,13 @@ export const PILOT_FOUNDATION: PilotFoundation = {
     },
     // OC-13 (docs/registers/owner-configuration.md): 1% on price, 0% on quantity, ₹1 immaterial.
     matchPolicy: { quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100 },
+    // The practice limits the demo store used (from the retired box-built file), now head office's record.
+    lossPreventionRules: [
+      { kind: 'refund', maxCount: 5, maxTotalValueMinor: 500_000, escalateAtMultiple: 2 },
+      { kind: 'void', maxCount: 10, escalateAtMultiple: 2 },
+      { kind: 'discount', maxTotalValueMinor: 200_000, maxSingleValueMinor: 50_000 },
+      { kind: 'no_sale', maxCount: 6 },
+    ],
   },
 };
 
