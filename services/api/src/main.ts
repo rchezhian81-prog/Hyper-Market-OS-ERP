@@ -1223,7 +1223,13 @@ export function buildSurface(deps: {
     // reconciled, scope-enforced (the tested @sre/reporting consolidation engine).
     ...consolidationRoutes(store === undefined
       ? { recordContribution: () => {}, contributions: empty([]), recordMembership: () => {}, memberships: empty([]), now }
-      : consolidationAdapter({ store, now })),
+      : {
+          ...consolidationAdapter({ store, now }),
+          // The export leg (EA-04): the caller's authority from the same per-tenant resolver the kernel uses, and the
+          // export audit ledger every other export writes to.
+          access: tenantAccessResolver(store, ROLE_CATALOGUE),
+          recordExport: dataExportAdapter({ store, now }).recordExport,
+        }),
     // Scheduled daily brief (M29-FR-04) — the brief that sends itself: a durable schedule (due time, language),
     // which briefs are due now (a MISSED day carried, never skipped), an append-only send record (a day sent
     // twice is one send), and a brief composed complete WITHOUT AI (the numbers are the brief; narrative is
