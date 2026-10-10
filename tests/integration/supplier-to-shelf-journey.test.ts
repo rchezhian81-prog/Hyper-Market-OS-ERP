@@ -129,7 +129,7 @@ async function journey(h: ApiHarness, t: string, rows: JourneyRow[]): Promise<vo
 
   // ── 2. The order: 100 tubs, proposed by the buyer, issued by the owner (M06-FR-02). ───────────────────────────────────
   const unitCost = { minor: COST, currency: 'INR' };
-  await ok(call('POST', `/v1/purchase/orders/${PO}`, BUYER, { supplierId: SUPPLIER, lines: [{ productId: PRODUCT, orderedQty: ORDERED, unitCost }] }, `po-${PO}`), 201);
+  await ok(call('POST', `/v1/purchase/orders/${PO}`, BUYER, { supplierId: SUPPLIER, deliverToLocationId: FLOOR, lines: [{ productId: PRODUCT, orderedQty: ORDERED, unitCost }] }, `po-${PO}`), 201);
   const selfPo = await call('POST', `/v1/purchase/orders/${PO}/approval`, BUYER, { reason: 'mine' }, 'po-self');
   expect(selfPo.status).toBeGreaterThanOrEqual(400);
   const issued = await ok(call('POST', `/v1/purchase/orders/${PO}/approval`, OWNER, { reason: 'within the month budget' }, 'po-approve'), 200);
@@ -312,7 +312,7 @@ async function raceSetup(h: ApiHarness, t: string) {
   }, 'publish-dal')).status).toBe(201);
   expect((await call('POST', `/v1/purchase/suppliers/${SUPPLIER}`, BUYER, { name: 'Kaveri Dairy', gstin: GSTIN }, 'sup')).status).toBe(201);
   expect((await call('POST', `/v1/purchase/suppliers/${SUPPLIER}/approval`, FINANCE, { reason: 'documents checked' }, 'sup-ok')).status).toBe(200);
-  expect((await call('POST', '/v1/purchase/orders/po-race', BUYER, { supplierId: SUPPLIER, lines: [{ productId: 'p-dal', orderedQty: 100, unitCost: { minor: COST, currency: 'INR' } }] }, 'po-race')).status).toBe(201);
+  expect((await call('POST', '/v1/purchase/orders/po-race', BUYER, { supplierId: SUPPLIER, deliverToLocationId: FLOOR, lines: [{ productId: 'p-dal', orderedQty: 100, unitCost: { minor: COST, currency: 'INR' } }] }, 'po-race')).status).toBe(201);
   expect((await call('POST', '/v1/purchase/orders/po-race/approval', OWNER, { reason: 'ok' }, 'po-race-ok')).status).toBe(200);
   const onHand = async (loc: string): Promise<number> =>
     ((await call('GET', '/v1/inventory/availability', OWNER, undefined, undefined, { productId: 'p-dal' })).body as { rows: { locationId: string; onHandMinor: number }[] }).rows.filter((r) => r.locationId === loc).reduce((n, r) => n + r.onHandMinor, 0);

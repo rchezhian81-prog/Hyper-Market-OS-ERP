@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { approvedRequestId, askForApproval, decide, sentWithApproval } from '../support/approval-request';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import type { StoredMatch } from '../../services/purchase/src/index';
@@ -75,8 +76,10 @@ async function seeded(): Promise<ApiHarness> {
   await h.provisionRole(A, 'u-acct', 'accountant');       // approves suppliers, records payments, posts payables
   await h.provisionRole(A, 'u-cash', 'cashier');
   await h.seedOwner(B, 'u-owner-b');
+  await approvedSuppliers(h, A, 's-1'); // OB-32: an order needs an approved supplier
+  await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
   expect((await post(h, '/v1/inventory/receipt-policy', 'u-owner', { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }, 'pol')).status).toBe(201);
-  expect((await post(h, '/v1/purchase/orders/po-1', 'u-buyer', { supplierId: 's-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'p2', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-1')).status).toBe(201);
+  expect((await post(h, '/v1/purchase/orders/po-1', 'u-buyer', { supplierId: 's-1', deliverToLocationId: 'store-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'p2', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-1')).status).toBe(201);
   expect((await post(h, '/v1/purchase/orders/po-1/approval', 'u-owner', { reason: 'fixture' }, 'po-1-approve')).status).toBe(200);
   expect((await post(h, '/v1/inventory/goods-receipt/grn-1', 'u-recv', { warehouseId: 'store-1', receivedOnDate: '2026-09-30', currency: 'INR', poId: 'po-1', lines: [rl('L1', 'p1', 10, 10, 500), rl('L2', 'p2', 2, 2, 1000), rl('L3', 'p2', 2, 2, 1000, { condition: 'damaged' })] }, 'grn-1')).status).toBe(201);
   expect((await capture(h, 'inv-1', 'cap-inv-1')).status).toBe(201);
@@ -108,47 +111,49 @@ describe('the supplier master — one record, one balance, paid safely (SP-7c)',
   });
   it('a purchase user PROPOSES a supplier, a DIFFERENT person approves it, a look-alike is said as a possible duplicate, the list says who needs a person and why; nothing for a cashier or another tenant', async () => {
     const h = await seeded();
-    // Before any master record the supplier the order names is on the list, said to have none.
+    // OB-32: the supplier the order names had to be in the master and approved before the order — it is on the list, active,
+    // with the account its order and bill made; only its bank account is still missing.
     let rows = (await list(h)).body;
-    expect(rows.suppliers).toEqual([expect.objectContaining({ supplierId: 's-1', name: null, status: 'no_master_record', needsAttention: true, attention: ['no_master_record', 'no_verified_bank_account'] })]);
+    expect(rows.suppliers).toEqual([expect.objectContaining({ supplierId: 's-1', status: 'active', needsAttention: true, attention: ['no_verified_bank_account'] })]);
     expect(rows.owedMinor).toBe(7000);
 
-    const created = await propose(h, 's-1', { name: 'Amma Traders', gstin: '33aaaaa0000a1z5', phone: '+91-98400-00000', paymentTermsDays: 30, documents: [{ documentId: 'd1', kind: 'gst_registration', reference: '33AAAAA0000A1Z5', validFrom: '2026-01-01', validUntil: '2027-12-31' }] });
+    const created = await propose(h, 's-4', { name: 'Amma Traders', gstin: '33aaaaa0000a1z5', phone: '+91-98400-00000', paymentTermsDays: 30, documents: [{ documentId: 'd1', kind: 'gst_registration', reference: '33AAAAA0000A1Z5', validFrom: '2026-01-01', validUntil: '2027-12-31' }] });
     expect(created.status).toBe(201);
-    expect(created.body).toMatchObject({ created: true, supplier: { supplierId: 's-1', name: 'Amma Traders', gstin: '33AAAAA0000A1Z5', status: 'proposed', createdBy: 'u-buyer', approvedBy: null, possibleDuplicates: [], version: 1, documents: [{ documentId: 'd1', kind: 'gst_registration' }] } });
+    expect(created.body).toMatchObject({ created: true, supplier: { supplierId: 's-4', name: 'Amma Traders', gstin: '33AAAAA0000A1Z5', status: 'proposed', createdBy: 'u-buyer', approvedBy: null, possibleDuplicates: [], version: 1, documents: [{ documentId: 'd1', kind: 'gst_registration' }] } });
     expect(codeOf(await propose(h, 's-bad', { gstin: 'x' }))).toBe('not_readable_as_a_supplier');
     expect(codeOf(await propose(h, 's-bad', { name: 'X', documents: [{ documentId: 'd', kind: 'passport', reference: 'r', validFrom: '2026-01-01', validUntil: '2027-01-01' }] }))).toBe('not_readable_as_a_supplier');
     // A second supplier with the same name (any case) is SAID to be a possible duplicate — not refused, not silently taken.
     const twin = await propose(h, 's-2', { name: 'amma traders', gstin: '29BBBBB0000B1Z9' });
     expect(twin.status).toBe(201);
-    expect((twin.body as { supplier: SupplierRecord }).supplier.possibleDuplicates).toEqual(['s-1']);
+    expect((twin.body as { supplier: SupplierRecord }).supplier.possibleDuplicates).toEqual(['s-4']);
     rows = (await list(h)).body;
-    expect(rows.suppliers.find((r) => r.supplierId === 's-1')).toMatchObject({ name: 'Amma Traders', status: 'proposed', attention: ['awaiting_approval', 'no_verified_bank_account'] });
+    expect(rows.suppliers.find((r) => r.supplierId === 's-4')).toMatchObject({ name: 'Amma Traders', status: 'proposed', attention: ['awaiting_approval'] }); // nothing owed to it yet
     expect(rows.suppliers.find((r) => r.supplierId === 's-2')).toMatchObject({ status: 'proposed', attention: ['awaiting_approval', 'possible_duplicate'] });
-    expect(rows).toMatchObject({ count: 2, needingAttentionCount: 2 });
+    expect(rows).toMatchObject({ count: 3, needingAttentionCount: 3 });
 
     // A store manager holds no approval right at all; the accountant (finance) approves; again is a no-op. And even someone
     // who holds BOTH rights (the owner) cannot approve a supplier they themselves proposed (§28).
-    expect((await approve(h, 's-1', 'u-buyer')).status).toBe(403);
-    expect((await approve(h, 's-1', 'u-checker')).status).toBe(403);
+    expect((await approve(h, 's-4', 'u-buyer')).status).toBe(403);
+    expect((await approve(h, 's-4', 'u-checker')).status).toBe(403);
     expect((await propose(h, 's-3', { name: 'Gamma Dairy' }, 'u-owner')).status).toBe(201);
     expect(codeOf(await approve(h, 's-3', 'u-owner'))).toBe('self_approval');
     expect((await one(h, 's-3')).body.supplier).toMatchObject({ status: 'proposed', approvedBy: null });
     expect((await approve(h, 's-3', 'u-acct')).body).toMatchObject({ alreadyApproved: false, supplier: { status: 'active', approvedBy: 'u-acct' } });
-    const approved = await approve(h, 's-1', 'u-acct');
+    const approved = await approve(h, 's-4', 'u-acct');
     expect(approved.status).toBe(200);
     expect(approved.body).toMatchObject({ alreadyApproved: false, supplier: { status: 'active', approvedBy: 'u-acct', version: 2 } });
-    expect((await approve(h, 's-1', 'u-acct', 'sup-approve-again')).body).toMatchObject({ alreadyApproved: true });
+    expect((await approve(h, 's-4', 'u-acct', 'sup-approve-again')).body).toMatchObject({ alreadyApproved: true });
     expect(codeOf(await approve(h, 's-nobody', 'u-acct'))).toBe('not_found');
     // An update by another purchase user is a new version; who created it never changes; the status holds.
-    const updated = await propose(h, 's-1', { name: 'Amma Traders Pvt Ltd', gstin: '33AAAAA0000A1Z5' }, 'u-checker', 'sup-s-1-v3');
+    const updated = await propose(h, 's-4', { name: 'Amma Traders Pvt Ltd', gstin: '33AAAAA0000A1Z5' }, 'u-checker', 'sup-s-4-v3');
     expect(updated.status).toBe(200);
     expect(updated.body).toMatchObject({ created: false, supplier: { name: 'Amma Traders Pvt Ltd', status: 'active', createdBy: 'u-buyer', updatedBy: 'u-checker', approvedBy: 'u-acct', version: 3 } });
 
-    const s1 = await one(h, 's-1');
-    expect(s1.status).toBe(200);
-    expect(s1.body).toMatchObject({ supplier: { version: 3 }, blocked: false, bank: null, duplicateBankAccount: false, attention: ['no_verified_bank_account'] });
-    expect(s1.body.account.totals).toMatchObject({ accruedMinor: 9000, debitNotesMinor: 2000, paidMinor: 0, owedMinor: 7000 });
+    const s4 = await one(h, 's-4');
+    expect(s4.status).toBe(200);
+    expect(s4.body).toMatchObject({ supplier: { version: 3 }, blocked: false, bank: null, duplicateBankAccount: false, attention: [] }); // nothing owed, so no bank account needed yet
+    // The account lives with the supplier the order named (s-1).
+    expect((await one(h, 's-1')).body.account.totals).toMatchObject({ accruedMinor: 9000, debitNotesMinor: 2000, paidMinor: 0, owedMinor: 7000 });
     expect((await one(h, 's-nobody')).status).toBe(404);
     expect((await list(h, 'u-cash')).status).toBe(403);
     expect((await one(h, 's-1', 'u-cash')).status).toBe(403);
@@ -158,7 +163,7 @@ describe('the supplier master — one record, one balance, paid safely (SP-7c)',
 
   it('the creator of a supplier can never approve its bank details (M06-FR-01 · §28); a verified account appears on the record; two suppliers sharing an account are both flagged', async () => {
     const h = await seeded();
-    expect((await propose(h, 's-1', { name: 'Amma Traders' })).status).toBe(201);
+    expect((await propose(h, 's-1', { name: 'Amma Traders' })).status).toBe(200); // already in the master, approved (OB-32): an update
     expect((await propose(h, 's-2', { name: 'Beta Foods' })).status).toBe(201);
     // The store manager who created the supplier cannot approve where its money goes — they hold no bank-approval
     // authority at all, so the engine refuses them (ADR-0024).
@@ -177,7 +182,7 @@ describe('the supplier master — one record, one balance, paid safely (SP-7c)',
     const s1 = (await one(h, 's-1')).body;
     // Who asked is the signed-in owner, never a name in the body; who verified is the accountant who approved it.
     expect(s1.bank).toEqual({ accountRef: 'tok-acct-1', requestedBy: 'u-owner', verifiedBy: 'u-acct', changedAt: '2026-09-30T08:00:00.000Z' });
-    expect(s1.attention).toEqual(['awaiting_approval']);
+    expect(s1.attention).toEqual([]); // approved (OB-32) and its bank account now verified
     // The other supplier is pointed at the SAME account — both are flagged (M15-FR-03), on the list and on the record.
     expect((await bank(h, 's-2', 'tok-acct-1', 'u-acct', 'bank-3')).status).toBe(200);
     const rows = (await list(h)).body.suppliers;
@@ -188,7 +193,7 @@ describe('the supplier master — one record, one balance, paid safely (SP-7c)',
 
   it('a PAYMENT is a fact a second person approved, recorded once, refused for a blocked supplier / no verified bank account / a shared account / the payer as approver / more than owed — and it nets the account and posts through the mapping', async () => {
     const h = await seeded();
-    expect((await propose(h, 's-1', { name: 'Amma Traders' })).status).toBe(201);
+    expect((await propose(h, 's-1', { name: 'Amma Traders' })).status).toBe(200); // already in the master, approved (OB-32)
     expect((await approve(h, 's-1', 'u-acct')).status).toBe(200);
     // Nobody may pay who may not: the store manager and the cashier hold no payment right.
     expect((await pay(h, 's-1', 'p-mgr', {}, 'u-buyer')).status).toBe(403);
@@ -279,7 +284,7 @@ describe('the supplier master — one record, one balance, paid safely (SP-7c)',
     const h = await seeded();
     await h.provisionRole(A, 'u-sup', 'supplier');
     expect((await post(h, '/v1/supplier-portal/partners/s-1', 'u-owner', { grants: ['view_orders', 'view_statement'], documents: [], requiredDocuments: [], logins: ['u-sup'] }, 'partner-s-1')).status).toBe(201);
-    expect((await propose(h, 's-1', { name: 'Amma Traders' })).status).toBe(201);
+    expect((await propose(h, 's-1', { name: 'Amma Traders' })).status).toBe(200); // already in the master, approved (OB-32)
     expect((await approve(h, 's-1', 'u-acct')).status).toBe(200);
     expect((await pay(h, 's-1', 'p-cash-1', { method: 'cash', reference: 'voucher 3' })).status).toBe(201);
     // A second bill wholly withheld → disputed on the statement, never folded into the balance.

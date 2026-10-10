@@ -44,7 +44,7 @@ const WORDS = {
     buying: 'Buying', supplierInvoice: 'Supplier invoice', checkAgainst: 'Check against the order',
     raiseOrder: 'Raise an order',
     invoiceLead: "Paste the supplier's file, type the total printed on the paper, and see what is wrong before anything is saved.",
-    invoiceNumber: 'Invoice number', supplier: 'Supplier',
+    invoiceNumber: 'Invoice number', supplier: 'Supplier', deliverTo: 'Deliver to store',
     printedTotal: 'Total printed on the invoice (in rupees)', theLines: "The supplier's lines",
     checkThis: 'Check this invoice', saveInvoice: 'Save this invoice',
     readyToSave: 'This invoice adds up and every line is good',
@@ -80,7 +80,7 @@ const WORDS = {
     buying: 'கொள்முதல்', supplierInvoice: 'சப்ளையர் இன்வாய்ஸ்', checkAgainst: 'ஆர்டருடன் சரிபார்',
     raiseOrder: 'ஆர்டர் தயாரி',
     invoiceLead: 'சப்ளையரின் கோப்பை ஒட்டவும், தாளில் அச்சிடப்பட்ட மொத்தத்தைத் தட்டச்சு செய்யவும். எதுவும் சேமிக்கப்படும் முன் என்ன தவறு என்று பாருங்கள்.',
-    invoiceNumber: 'இன்வாய்ஸ் எண்', supplier: 'சப்ளையர்',
+    invoiceNumber: 'இன்வாய்ஸ் எண்', supplier: 'சப்ளையர்', deliverTo: 'டெலிவரி செய்ய வேண்டிய கடை',
     printedTotal: 'இன்வாய்ஸில் அச்சிடப்பட்ட மொத்தம் (ரூபாயில்)', theLines: 'சப்ளையரின் வரிகள்',
     checkThis: 'இந்த இன்வாய்ஸைச் சரிபார்', saveInvoice: 'இந்த இன்வாய்ஸைச் சேமி',
     readyToSave: 'இந்த இன்வாய்ஸ் சரியாகக் கூடுகிறது, எல்லா வரிகளும் நன்றாக உள்ளன',
@@ -529,6 +529,7 @@ el('raise-po').addEventListener('click', async () => {
   const out = await session.proposeToCloud({
     poId,
     supplierId: el('po-supplier').value.trim(),
+    deliverToLocationId: el('po-store').value.trim(),
     lines: poLines,
   });
   if (out.proposed) {
@@ -569,6 +570,7 @@ function paintChrome() {
   el('po-title').textContent = t('raiseOrder');
   el('po-lead').textContent = t('poLead');
   el('po-supplier-label').textContent = t('supplier');
+  el('po-store-label').textContent = t('deliverTo');
   el('po-product-label').textContent = t('itemCode');
   el('po-qty-label').textContent = t('howMany');
   el('po-cost-label').textContent = t('agreedPrice');

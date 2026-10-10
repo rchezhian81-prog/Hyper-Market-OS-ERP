@@ -49,7 +49,7 @@ import {
 } from '../../../packages/receiving/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { Movement } from './index';
-import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
+import { assertLocationInScope, stockReadScope, locationIsItsOwnBranch, type LocationBranches } from './location-scope';
 import type { RequestContext } from '../../kernel/src/index';
 
 /** PA-01-r1: a receipt is its warehouse's — acting on one outside the caller's branches is refused by name. */
@@ -78,6 +78,8 @@ export const RECEIPT_FLAGS = Object.freeze([
   // "A": received normally, said on the record so someone fills it in); and, on a receipt assembled from the handheld's
   // scans, a cold-chain line held for its temperature whose units the scans had already put on-hand.
   'handling_unknown', 'cold_chain_held_but_on_hand',
+  // OB-37: the order this receipt folds into was raised before orders named their store — the store could not be checked.
+  'order_store_not_named',
 ] as const);
 export type ReceiptFlag = (typeof RECEIPT_FLAGS)[number];
 
@@ -238,6 +240,8 @@ export interface PurchaseOrderForReceipt {
   readonly receivedByProduct?: Readonly<Record<string, number>>;
   /** SF-02 — what approved cancellations took off it, per product (absent = nothing). */
   readonly cancelledByProduct?: Readonly<Record<string, number>>;
+  /** OB-37: the store the order is delivered to — absent on an order raised before every order had to name one. */
+  readonly deliverToLocationId?: string;
 }
 
 /** SF-02 — one product's position on its order when a receipt was judged. */
@@ -414,17 +418,41 @@ export function orderPositions(po: PurchaseOrderForReceipt): Readonly<Record<str
 }
 
 /**
+ * OB-37: a receipt against an order is booked at a place that belongs to the order's store — the store itself or a place
+ * the org hierarchy puts under it (its back store). Anywhere else is refused by name: the goods were sent to one store and
+ * the stock would land at another. An order raised before orders named their store is received and SAID
+ * (`order_store_not_named`), never guessed.
+ */
+export async function assertReceivedAtOrderStore(
+  deps: Pick<GoodsReceiptDeps, 'locationBranches'>, tenantId: string, poId: string, po: PurchaseOrderForReceipt, receivedAt: string | undefined, flags: ReceiptFlag[],
+): Promise<void> {
+  if (receivedAt === undefined) return;
+  if (po.deliverToLocationId === undefined) { if (!flags.includes('order_store_not_named')) flags.push('order_store_not_named'); return; }
+  const branchOf = await (deps.locationBranches ?? locationIsItsOwnBranch)(tenantId);
+  if (receivedAt === po.deliverToLocationId || branchOf(receivedAt) === branchOf(po.deliverToLocationId)) return;
+  throw apiError(422, {
+    code: 'receipt_not_at_order_store',
+    whatHappened: `Purchase order ${poId} is delivered to ${po.deliverToLocationId}, but this delivery was booked in at ${receivedAt}, which is not that store (OB-37).`,
+    wasItSaved: 'not_saved',
+    nextSafeAction: `Book the delivery in at ${po.deliverToLocationId} (or its back store), or ask the buyer about the order. Nothing was recorded.`,
+  });
+}
+
+/**
  * The purchase order behind a receipt, from head office's own register — never the body (F07). No order, an unknown
  * order and an order not yet issued are each SAID as a flag and fold into nothing; the delivery is still received.
  */
 export async function orderForReceipt(
-  deps: Pick<GoodsReceiptDeps, 'purchaseOrder' | 'orderVersion'>, tenantId: string, poId: string | null, flags: ReceiptFlag[],
+  deps: Pick<GoodsReceiptDeps, 'purchaseOrder' | 'orderVersion' | 'locationBranches'>, tenantId: string, poId: string | null, flags: ReceiptFlag[],
+  /** OB-37: where the goods were received — checked against the store the order is delivered to. */
+  receivedAt?: string,
 ): Promise<OrderForReceipt> {
   if (poId === null) { flags.push('no_purchase_order'); return { poId, ordered: undefined, folds: false }; }
   // SF-02: the guard first, then the order it protects — so anything that lands on the order in between is caught.
   const expectedVersion = deps.orderVersion === undefined ? undefined : await deps.orderVersion(tenantId, poId);
   const po = await deps.purchaseOrder(tenantId, poId);
   if (po === undefined) { flags.push('order_unknown'); return { poId, ordered: undefined, folds: false }; }
+  await assertReceivedAtOrderStore(deps, tenantId, poId, po, receivedAt, flags);
   if (po.status !== 'issued') { flags.push('order_not_issued'); return { poId, ordered: po.orderedByProduct, folds: false }; }
   // SF-02: an issued order is measured by what REMAINS on it — never the original figure again. A second delivery of 60
   // against an order of 100 that already received 60 is judged against 40: 40 as ordered, 20 excess, held for a person.
@@ -856,7 +884,7 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         const flags: ReceiptFlag[] = [];
         // The ORDER — head office's own, never the body (SP-6 · F01/F07): the ordered quantity on each line is the order's,
         // and only an ISSUED order is folded into. No / unknown / unissued order is said and the delivery still comes in.
-        const order = await orderForReceipt(deps, ctx.tenantId, isStr(b['poId']) ? b['poId'] : null, flags);
+        const order = await orderForReceipt(deps, ctx.tenantId, isStr(b['poId']) ? b['poId'] : null, flags, b['warehouseId'] as string);
         const aligned = alignToOrder(lines as CapturedLine[], order.ordered, flags);
         // The product master's rules and the tenant's policy — never the body (F03). Unknown is SAID, then the safe fallback.
         const master = await rulesFromMaster(deps, ctx.tenantId, aligned.map((l) => l.productId));

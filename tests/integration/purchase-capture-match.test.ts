@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { sealedDecision } from '../support/store-seal';
 import { sentWithApproval } from '../support/approval-request';
 import { STREAM } from '../../services/api/src/adapters';
@@ -60,11 +61,13 @@ const matchesOnRecord = async (h: ApiHarness, invoiceId: string) =>
 async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
+  await approvedSuppliers(h, A, 's-1'); // OB-32: an order needs an approved supplier
+  await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-buyer', 'store_manager');   // captures; holds match too — but may never check their own capture
   await h.provisionRole(A, 'u-checker', 'store_manager'); // the second person
   await h.provisionRole(A, 'u-cash', 'cashier');          // no purchase right at all
   await h.provisionRole(A, 'u-box', 'store_computer');           // the store box's sync identity
-  expect((await post(h, '/v1/purchase/orders/po-1', 'u-buyer', { supplierId: 's-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'p2', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-1')).status).toBe(201);
+  expect((await post(h, '/v1/purchase/orders/po-1', 'u-buyer', { supplierId: 's-1', deliverToLocationId: 'store-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'p2', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-1')).status).toBe(201);
   expect((await post(h, '/v1/purchase/orders/po-1/approval', 'u-owner', { reason: 'fixture' }, 'po-1-approve')).status).toBe(200);
   expect((await post(h, '/v1/inventory/goods-receipt/grn-1', 'u-owner', {
     warehouseId: 'store-1', receivedOnDate: '2026-09-30', currency: 'INR', poId: 'po-1',
@@ -191,7 +194,7 @@ describe('a supplier invoice is captured as the paper says it and matched agains
     expect(((await capture(h, 'inv-unknown', { ...PAPER, poId: 'po-nope', approvedBy: 'u-checker' })).body as { flags: string[] }).flags).toEqual(['order_unknown']);
     expect(((await capture(h, 'inv-other', { ...PAPER, supplierId: 's-2', approvedBy: 'u-checker' })).body as { flags: string[] }).flags).toEqual(['supplier_differs_from_order']);
     // A proposed, unissued order: nobody committed to it, so the invoice cannot agree with it.
-    expect((await post(h, '/v1/purchase/orders/po-draft', 'u-buyer', { supplierId: 's-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }] }, 'po-draft')).status).toBe(201);
+    expect((await post(h, '/v1/purchase/orders/po-draft', 'u-buyer', { supplierId: 's-1', deliverToLocationId: 'store-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }] }, 'po-draft')).status).toBe(201);
     expect(((await capture(h, 'inv-draft', { ...PAPER, poId: 'po-draft', approvedBy: 'u-checker' })).body as { flags: string[] }).flags).toEqual(['order_not_issued']);
     expect((await match(h, 'inv-draft')).body).toMatchObject({ blocked: true, payableMinor: 0, flags: ['order_not_issued'], sources: { order: { status: 'proposed' }, received: 'none' } });
   });
