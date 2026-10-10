@@ -79,7 +79,10 @@ describe('the request the app makes', () => {
 describe('reading the shop\'s answer', () => {
   it('201 and 200 both mean the shop HAS the order; 200 is a retry that changed nothing', () => {
     const fresh = readShopAnswer({ status: 201, body: { orderId: 'ORD-7', payment: { state: 'authorised' }, tellTheCustomer: 'Your order is placed.' } });
-    expect(fresh).toEqual({ kind: 'placed', orderId: 'ORD-7', alreadyPlaced: false, paymentState: 'authorised', tellTheCustomer: 'Your order is placed.' });
+    expect(fresh).toEqual({ kind: 'placed', orderId: 'ORD-7', alreadyPlaced: false, paymentState: 'authorised', tellTheCustomer: 'Your order is placed.', needsCustomerDecision: false, shortages: [], amountMismatch: false });
+    // FUL-07: a shortage, the shop's quote and a mismatched amount are read as the shop said them.
+    expect(readShopAnswer({ status: 201, body: { orderId: 'ORD-8', state: 'placed', payment: { state: 'none' }, needsCustomerDecision: true, shortages: [{ productId: 'MILK', requestedMinor: 3, promisedMinor: 1 }], quote: { itemsMinor: 6000 }, amountMismatch: true } }))
+      .toMatchObject({ needsCustomerDecision: true, shortages: [{ productId: 'MILK', requestedMinor: 3, promisedMinor: 1 }], quoteMinor: 6000, amountMismatch: true, orderState: 'placed' });
     const again = readShopAnswer({ status: 200, body: { orderId: 'ORD-7', alreadyPlaced: true, payment: { state: 'pending' }, tellTheCustomer: 'waiting' } });
     expect(again).toMatchObject({ kind: 'placed', alreadyPlaced: true, paymentState: 'pending' });
   });

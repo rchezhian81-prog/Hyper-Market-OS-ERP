@@ -142,6 +142,8 @@ export interface PlacedOrder {
   readonly placedAt: string;
   /** Who placed it through the storefront (M20) — the authenticated subject, never a body field. Absent on a desk order. */
   readonly customerRef?: string;
+  /** How the storefront customer receives it (FUL-03): a delivery carries the shop's delivery fee in its quote. */
+  readonly fulfilment?: 'delivery' | 'pickup';
 }
 
 /** One lifecycle step, recorded append-only so the order's history is auditable end-to-end. */

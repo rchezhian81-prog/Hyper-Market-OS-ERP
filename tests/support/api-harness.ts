@@ -18,6 +18,7 @@ import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } fro
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
 import { STREAM } from '../../services/api/src/adapters';
 import { LocalIdp } from './local-idp';
+import type { PaymentVerifier } from '../../packages/orders/src/payment-verification';
 
 type Kernel = Parameters<typeof handle>[0];
 type IdempotencyStore = Kernel['idempotency'];
@@ -100,13 +101,15 @@ export function apiHarness(opts: {
   /** The migration target kind the surface runs against — defaults to the safe 'rehearsal'. Pass
    *  'production' to assert the never-touch-production guard (`assertSafeTarget` → 403). */
   migrationTargetKind?: 'rehearsal' | 'staging' | 'local' | 'production';
+  /** FUL-03: the payment provider the surface asks (the test-mode one in tests). Omitted → online payments stay pending. */
+  paymentVerifier?: PaymentVerifier;
 } = {}): ApiHarness {
   const store = opts.store ?? new InMemoryEventStore();
   const idempotency = opts.idempotency ?? new MemoryIdempotencyStore();
   // Token revocations (GAP-SEC-05): ONE list, backed by the same store as everything else, shared by the identity
   // routes (which record) and the authenticator (which refuses) — exactly as `main.ts` composes it.
   const revocations = new TokenRevocationList(tokenRevocationAdapter({ store }));
-  const built = buildRouter(buildSurface({ signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations }));
+  const built = buildRouter(buildSurface({ signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations, ...(opts.paymentVerifier === undefined ? {} : { paymentVerifier: opts.paymentVerifier }) }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 
   const kernel: Kernel = {

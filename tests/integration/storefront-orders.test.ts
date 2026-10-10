@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { testModePaymentProvider, type TestModePaymentProvider } from '../../packages/orders/src/payment-verification';
 
 /**
  * **The storefront's own surface, through the real authenticated API (M20-FR-02/FR-03 · M18-FR-01/FR-02 · §31 · §35 · #3 · #6).**
@@ -14,8 +15,12 @@ const T = 'ab000000-0000-4000-8000-000000000047';
 const OWNER = 'u-owner'; const C1 = 'cust-1'; const C2 = 'cust-2';
 const AT = '2026-10-10T10:00:00.000Z';
 
+// FUL-03: the payment provider is the test-mode one — a capture is registered by the test standing in for the bank,
+// never by the app's request.
+let provider: TestModePaymentProvider;
 async function seeded(entitled = true): Promise<ApiHarness> {
-  const h = apiHarness();
+  provider = testModePaymentProvider();
+  const h = apiHarness({ paymentVerifier: provider });
   await h.seedOwner(T, OWNER);
   await h.provisionRole(T, C1, 'customer');
   await h.provisionRole(T, C2, 'customer');
@@ -23,6 +28,15 @@ async function seeded(entitled = true): Promise<ApiHarness> {
   // Real stock at the store, from the real inventory ledger — what a promise reserves against.
   await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: OWNER, tenantId: T, idempotencyKey: 'mv-1', body: { movementId: 'mv-1', productId: 'MILK', locationId: 'L1', kind: 'received', quantityMinor: 5, uom: 'each', occurredAt: AT, enteredBy: OWNER } });
   return h;
+}
+/** Head office publishes milk at ₹50 for store L1 — the shop's own price, which the quote is made from (FUL-03). */
+async function publishMilk(h: ApiHarness): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+  const ok = async (path: string, body: unknown, key: string) => expect((await post(h, path, OWNER, key, body)).status, path).toBeLessThan(300);
+  await ok('/v1/catalogue/tax-classes/0401/rates/2017-07-01', { rateBps: 0 }, 'tax');
+  await ok('/v1/catalogue/products/MILK/publish', { product: { sku: 'MILK-1L', name: 'Milk 1L', baseUom: 'each', primaryCategoryId: 'dairy', taxClass: '0401', lifecycle: 'active' }, categories: [{ categoryId: 'dairy', name: 'Dairy', parentId: null }] }, 'pub');
+  await ok('/v1/prices/list/MILK/entries/e1', { scope: 'store', scopeRef: 'L1', priceMinor: 5_000, mrpMinor: 6_000, costMinor: 4_000, marginFloorBps: 0, currency: 'INR', effectiveFrom: today }, 'price');
+  await ok('/v1/catalogue/pack', { storeId: 'L1', asOf: today }, 'pack');
 }
 const post = (h: ApiHarness, path: string, userId: string, key: string, body: unknown) =>
   h.request({ method: 'POST', path, userId, tenantId: T, idempotencyKey: key, body });
@@ -32,8 +46,30 @@ const BASKET = { lines: [{ productId: 'MILK', quantityMinor: 3 }], locationId: '
 const PAID = { providerRef: 'tok_cust_1', amountMinor: 15_000, result: 'authorised' };
 
 describe('the storefront places, pays and reads its own orders (M20)', () => {
-  it('a customer places an order that reserves stock and records its payment; staff see who placed it; a second customer is promised only what is left', async () => {
+  it('FUL-03, THE AUDIT\'S CASE: an app that SAYS "authorised" with a made-up token and one paisa is not paid — pending, the mismatch named, and the desk cannot confirm it', async () => {
     const h = await seeded();
+    await publishMilk(h);
+    const claimed = await post(h, '/v1/storefront/orders/so-fake', C1, 'pf', { ...BASKET, payment: { providerRef: 'tok_made_up', amountMinor: 1, result: 'authorised' } });
+    expect(claimed.status).toBe(201);
+    expect(claimed.body).toMatchObject({ payment: { state: 'pending', paidMinor: 0 }, quote: { itemsMinor: 15_000 }, amountMismatch: true });
+    expect(codeOf(await post(h, '/v1/orders/so-fake/transition', OWNER, 'tf', { event: 'confirm' }))).toBe('payment_pending');
+    // The right amount but a token the provider never captured: still pending — the app's word alone is never "paid".
+    const unknown = await post(h, '/v1/storefront/orders/so-unk', C2, 'pu', { lines: [{ productId: 'MILK', quantityMinor: 1 }], locationId: 'L1', payment: { providerRef: 'tok_never', amountMinor: 5_000, result: 'authorised' } });
+    expect(unknown.body).toMatchObject({ payment: { state: 'pending' } });
+    expect(unknown.body).not.toHaveProperty('amountMismatch');
+    // The provider captures it later; the customer's app asks the shop to check — the provider's word makes it paid.
+    provider.capture('tok_never', 5_000);
+    expect((await post(h, '/v1/storefront/orders/so-unk/payment/check', C2, 'pc', {})).body).toMatchObject({ payment: { state: 'authorised', paidMinor: 5_000 } });
+    // With no published price there is no quote, and nothing is ever taken as paid.
+    const bare = await seeded();
+    provider.capture('tok_cust_1', 15_000);
+    expect((await post(bare, '/v1/storefront/orders/so-np', C1, 'pn', { ...BASKET, payment: PAID })).body).toMatchObject({ payment: { state: 'pending' }, quote: { unpriced: ['MILK'] } });
+  });
+
+  it('a customer places an order that reserves stock and records its payment (captured by the provider for the shop\'s quote); staff see who placed it; a second customer is promised only what is left', async () => {
+    const h = await seeded();
+    await publishMilk(h);
+    provider.capture('tok_cust_1', 15_000);
     const placed = await post(h, '/v1/storefront/orders/so-1', C1, 'p1', { ...BASKET, payment: PAID });
     expect(placed.status, JSON.stringify(placed.body)).toBe(201);
     expect(placed.body).toMatchObject({ orderId: 'so-1', state: 'placed', payment: { state: 'authorised', paidMinor: 15_000 }, promise: { outcome: 'promised' } });
@@ -45,6 +81,17 @@ describe('the storefront places, pays and reads its own orders (M20)', () => {
     const second = await post(h, '/v1/storefront/orders/so-2', C2, 'p2', { lines: [{ productId: 'MILK', quantityMinor: 3 }], locationId: 'L1' });
     expect(second.status).toBe(201);
     expect(second.body).toMatchObject({ promise: { outcome: 'partially_promised', lines: [{ productId: 'MILK', requestedMinor: 3, promisedMinor: 2 }] }, payment: { state: 'none' } });
+    // FUL-07: short → no payment taken; the customer is told and decides. They pay for the 2 the shop promised…
+    expect(second.body).toMatchObject({ needsCustomerDecision: true, shortages: [{ productId: 'MILK', requestedMinor: 3, promisedMinor: 2 }], quote: { itemsMinor: 10_000 } });
+    expect((second.body as { tellTheCustomer: string }).tellTheCustomer).toMatch(/not in stock/);
+    provider.capture('tok_cust_2', 10_000);
+    expect((await post(h, '/v1/storefront/orders/so-2/payment', C2, 'pay2', { providerRef: 'tok_cust_2', amountMinor: 10_000, result: 'authorised' })).body).toMatchObject({ payment: { state: 'authorised', paidMinor: 10_000 } });
+    // …and another short order is cancelled by its customer instead: its hold is released, nothing charged.
+    const third = await post(h, '/v1/storefront/orders/so-3c', C2, 'p3c', { lines: [{ productId: 'MILK', quantityMinor: 9 }], locationId: 'L1', payment: { providerRef: 'tok_x', amountMinor: 45_000, result: 'authorised' } });
+    expect(third.body).toMatchObject({ needsCustomerDecision: true, payment: { state: 'none' } });
+    expect((await post(h, '/v1/storefront/orders/so-3c/cancel', C2, 'c3c', {})).body).toMatchObject({ state: 'cancelled' });
+    expect(codeOf(await post(h, '/v1/storefront/orders/so-2/cancel', C2, 'c2', {}))).toBe('cancel_at_the_desk'); // paid — a refund is the shop's
+    expect(codeOf(await post(h, '/v1/storefront/orders/so-2/cancel', C1, 'c2x', {}))).toBe('not_your_order');
     // A retry of the first order (new idempotency key) reserves nothing twice.
     expect((await post(h, '/v1/storefront/orders/so-1', C1, 'p1-retry', { ...BASKET, payment: PAID })).body).toMatchObject({ alreadyPlaced: true });
     expect(((await get(h, '/v1/orders/so-1', OWNER)).body as { reservations: unknown[] }).reservations).toHaveLength(1);

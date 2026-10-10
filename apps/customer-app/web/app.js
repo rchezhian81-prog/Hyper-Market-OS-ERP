@@ -61,6 +61,9 @@ const WORDS = {
     codeNotAccepted: 'That code was not accepted. Please try again.',
     needSignIn: 'Please sign in first, so the shop knows whose order this is. Your basket is kept.',
     sendingOrder: 'Sending your order to the shop…', sendNow: 'Send my order now', shopSaidNo: 'The shop did not accept the order',
+    payAvailable: 'Pay for what the shop has', cancelOrder: 'Cancel the order', checkPayment: 'Check my payment',
+    shortageTitle: 'Not everything is in stock', shortageLine: '{name}: you asked for {asked}, the shop can send {can}.',
+    shortageTotal: 'The shop\'s price for what it can send: {amount}. Nothing has been charged.',
     privacyTitle: 'My information',
     privacyLead: 'You decide what we may do with your information. You can change any of this at any time, in one tap.',
     on: 'ON', off: 'OFF', requiredPurpose: 'We have to do this to deliver the order you placed — it is not marketing, and you cannot be sent anything else with it.',
@@ -120,6 +123,9 @@ const WORDS = {
     codeNotAccepted: 'அந்தக் குறியீடு ஏற்கப்படவில்லை. மீண்டும் முயலுங்கள்.',
     needSignIn: 'முதலில் உள்நுழையுங்கள் — இது யாருடைய ஆர்டர் என்று கடைக்குத் தெரிய வேண்டும். உங்கள் கூடை அப்படியே உள்ளது.',
     sendingOrder: 'உங்கள் ஆர்டர் கடைக்கு அனுப்பப்படுகிறது…', sendNow: 'என் ஆர்டரை இப்போது அனுப்பு', shopSaidNo: 'கடை ஆர்டரை ஏற்கவில்லை',
+    payAvailable: 'கடையில் உள்ளதற்கு பணம் செலுத்து', cancelOrder: 'ஆர்டரை ரத்து செய்', checkPayment: 'என் கட்டணத்தைச் சரிபார்',
+    shortageTitle: 'எல்லாம் கையிருப்பில் இல்லை', shortageLine: '{name}: நீங்கள் கேட்டது {asked}, கடை அனுப்பக்கூடியது {can}.',
+    shortageTotal: 'கடை அனுப்பக்கூடியதற்கான விலை: {amount}. எதுவும் வசூலிக்கப்படவில்லை.',
   },
 };
 let lang = 'en';
@@ -542,6 +548,17 @@ function showOutcome(outcome) {
     render();
     return;
   }
+  // FUL-07: the shop could not promise everything. Nothing has been charged; the customer sees what the shop can send
+  // and its price for that, and decides — pay for it, or cancel.
+  if (outcome.needsDecision) {
+    decision = { quoteMinor: outcome.quoteMinor };
+    const lines = (outcome.shortages ?? []).map((sh) => t('shortageLine')
+      .replace('{name}', productName(sh.productId)).replace('{asked}', String(sh.requestedMinor)).replace('{can}', String(sh.promisedMinor)));
+    tell(t('shortageTitle'), [...lines, t('shortageTotal').replace('{amount}', inr(outcome.quoteMinor ?? 0))].join(' '), 'bad');
+    show('order');
+    return;
+  }
+  decision = null;
   // The model's own words. "Prepared, not sent" is not a kind of placed, and rewording it here
   // would put a second, untested version of the most consequential sentence in the app.
   const prepared = !outcome.shopHasIt && outcome.state.stage === 'waiting_for_signal';
@@ -579,6 +596,20 @@ async function sendPrepared() {
 el('send-now').addEventListener('click', () => { void sendPrepared(); });
 window.addEventListener('online', () => { void sendPrepared(); });
 
+/** A shortage the customer has not answered yet (FUL-07) — the shop's quote for what it can send. */
+let decision = null;
+function productName(productId) {
+  const p = (window.shopData?.products ?? []).find((x) => x.productId === productId);
+  return p ? p.name : productId;
+}
+async function followUpAnd(run) {
+  for (const id of ['pay-available', 'cancel-order', 'check-payment']) el(id).disabled = true;
+  try { showOutcome(await run()); } finally { for (const id of ['pay-available', 'cancel-order', 'check-payment']) el(id).disabled = false; }
+}
+el('pay-available').addEventListener('click', () => followUpAnd(() => shop.payForWhatTheShopHas({ providerRef: window.shopPaymentRef ?? 'tok_pending', result: 'authorised' })));
+el('cancel-order').addEventListener('click', () => followUpAnd(() => shop.cancelOrder()));
+el('check-payment').addEventListener('click', () => followUpAnd(() => shop.checkPayment()));
+
 function renderOrder() {
   const line = shop.statusLine();
   const state = shop.state();
@@ -588,6 +619,13 @@ function renderOrder() {
   el('order-say').className = 'say' + (state.stage === 'waiting_for_signal' ? ' stop' : line ? ' done' : '');
   el('send-now').hidden = state.stage !== 'waiting_for_signal';
   el('send-now').textContent = t('sendNow');
+  // FUL-07: the two answers to a shortage; FUL-03: ask again about a payment the bank has not confirmed.
+  el('pay-available').hidden = decision === null;
+  el('cancel-order').hidden = decision === null;
+  el('check-payment').hidden = decision !== null || state.order === undefined || state.order.state !== 'payment_pending';
+  el('pay-available').textContent = t('payAvailable');
+  el('cancel-order').textContent = t('cancelOrder');
+  el('check-payment').textContent = t('checkPayment');
 }
 
 // ── The privacy centre ──────────────────────────────────────────────────────

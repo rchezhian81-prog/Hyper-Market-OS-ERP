@@ -3,7 +3,8 @@ import { scopeOrderToCustomer, probingCustomers, type StorefrontAccessRefusal } 
 import { storefrontRoutes, type StorefrontDeps } from '../../services/orders/src/storefront';
 import type { OrdersDeps, PlacedOrder } from '../../services/orders/src/index';
 import type { PaymentRefundDeps } from '../../services/orders/src/payments';
-import { testModeRefundProcessor, type OrderPayment } from '../../packages/orders/src/payment-refunds';
+import { testModeRefundProcessor, type OrderPayment, type OrderPaymentResolution } from '../../packages/orders/src/payment-refunds';
+import { testModePaymentProvider } from '../../packages/orders/src/payment-verification';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 
 /**
@@ -37,15 +38,18 @@ describe('scopeOrderToCustomer', () => {
 });
 
 function stub() {
-  const l = { placed: [] as PlacedOrder[], payments: [] as OrderPayment[], refusals: [] as StorefrontAccessRefusal[], held: 0 };
+  const l = { placed: [] as PlacedOrder[], payments: [] as OrderPayment[], resolutions: [] as OrderPaymentResolution[], refusals: [] as StorefrontAccessRefusal[], held: 0 };
+  // FUL-03: the provider (test mode) captured tok_1 for ₹100 — registered here, never by the app's request.
+  const provider = testModePaymentProvider();
+  provider.capture('tok_1', 10_000);
   const deps: OrdersDeps & PaymentRefundDeps & StorefrontDeps = {
     onHand: () => new Map([['MILK', 10]]), outstanding: () => [], holdReservations: (_t, rs) => { l.held += rs.length; }, holdMinutes: 60, now: () => NOW,
     recordPlaced: (_t, o) => { l.placed.push(o); },
     orderState: (_t, id) => { const o = l.placed.find((p) => p.orderId === id); return o === undefined ? undefined : { state: o.state, locationId: o.locationId, lines: o.lines }; },
     orderReservations: () => [], recordTransition: () => {}, releaseReservations: () => {},
     recordSubstitution: () => {}, orderSubstitutions: () => [], allSubstitutions: () => [], recordBackorder: () => {}, orderBackorders: () => [],
-    orderPayment: (_t, id) => l.payments.find((p) => p.orderId === id), paymentResolution: () => undefined,
-    recordPayment: (_t, p) => { l.payments.push(p); }, recordPaymentResolution: () => {},
+    orderPayment: (_t, id) => l.payments.find((p) => p.orderId === id), paymentResolution: (_t, id) => l.resolutions.find((r) => r.orderId === id),
+    recordPayment: (_t, p) => { l.payments.push(p); }, recordPaymentResolution: (_t, r) => { l.resolutions.push(r); },
     orderRefunds: () => [], refundOutcomes: () => [], recordRefund: () => {}, recordRefundOutcome: () => {},
     allPayments: () => l.payments, allPaymentResolutions: () => [], allRefunds: () => [], allRefundOutcomes: () => [],
     refundThreshold: () => 0, refundProcessor: testModeRefundProcessor(),
@@ -53,6 +57,9 @@ function stub() {
     ordersForCustomer: (_t, c) => l.placed.filter((p) => p.customerRef === c),
     recordAccessRefusal: (_t, r) => { l.refusals.push(r); },
     accessRefusals: () => l.refusals,
+    // The shop's own price (₹50 a milk) and the provider — the quote and the only word that makes a payment paid.
+    unitPriceOf: (_t, productId) => (productId === 'MILK' ? 5_000 : undefined),
+    paymentVerifier: provider,
   };
   return { l, routes: storefrontRoutes(deps) };
 }
@@ -71,10 +78,14 @@ async function thrown(fn: () => unknown): Promise<Thrown> {
 const BODY = { lines: [{ productId: 'MILK', quantityMinor: 2 }], locationId: 'L1', payment: { providerRef: 'tok_1', amountMinor: 10_000, result: 'authorised' } };
 
 describe('storefront routes over a stubbed ledger', () => {
-  it('four routes, all behind the customer_app entitlement; the register is a staff read', () => {
+  it('seven routes, all behind the customer_app entitlement; the register is a staff read', () => {
     const { routes } = stub();
     expect(routes.map((r) => [r.method, r.path, r.permission, r.entitlement])).toEqual([
       ['POST', '/v1/storefront/orders/:orderId', 'storefront.order.place', 'customer_app'],
+      // FUL-03 / FUL-07: pay for what was promised after a shortage, ask the provider again, cancel before paying.
+      ['POST', '/v1/storefront/orders/:orderId/payment', 'storefront.order.place', 'customer_app'],
+      ['POST', '/v1/storefront/orders/:orderId/payment/check', 'storefront.order.read', 'customer_app'],
+      ['POST', '/v1/storefront/orders/:orderId/cancel', 'storefront.order.place', 'customer_app'],
       ['GET', '/v1/storefront/access-refusals', 'order.read', 'customer_app'],
       ['GET', '/v1/storefront/orders', 'storefront.order.read', 'customer_app'],
       ['GET', '/v1/storefront/orders/:orderId', 'storefront.order.read', 'customer_app'],
@@ -88,7 +99,9 @@ describe('storefront routes over a stubbed ledger', () => {
     expect(res.status).toBe(201);
     expect(s.l.placed[0]).toMatchObject({ orderId: 'o1', customerRef: 'cust-1' });
     expect(s.l.held).toBe(1);
-    expect(s.l.payments[0]).toMatchObject({ orderId: 'o1', providerRef: 'tok_1', recordedBy: 'cust-1' });
+    // The app's "authorised" is recorded as a claim (pending); the provider's capture for the shop's quote resolves it.
+    expect(s.l.payments[0]).toMatchObject({ orderId: 'o1', providerRef: 'tok_1', recordedBy: 'cust-1', result: 'unknown' });
+    expect(s.l.resolutions[0]).toMatchObject({ orderId: 'o1', result: 'authorised', resolvedBy: 'provider:test_mode' });
     expect(res.body).toMatchObject({ state: 'placed', payment: { state: 'authorised', paidMinor: 10_000 }, promise: { outcome: 'promised' } });
     const again = await post.handler(ctx({ body: BODY }));
     expect(again.status).toBe(200);

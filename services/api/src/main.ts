@@ -38,6 +38,8 @@ import { tillSealKey } from '../../../packages/identity/src/till-seal';
 import { loyaltyMemberKey } from '../../../packages/loyalty/src/earn-rule';
 import { loyaltyMemberRoutes } from '../../customer/src/loyalty-members';
 import { loyaltyWalletRoutes, spendOnSale } from '../../customer/src/loyalty-wallets';
+import type { PaymentVerifier } from '../../../packages/orders/src/payment-verification';
+import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/index';
 import { loyaltyLiabilityRoutes } from '../../finance/src/loyalty-liability';
 import { independentEvidenceRoutes } from '../../finance/src/independent-evidence';
 import { earnOnSale, takeBackOnReturn } from '../../customer/src/loyalty-effects';
@@ -322,6 +324,11 @@ export function buildSurface(deps: {
   readonly identityDirectory?: IdentityDirectory;
   /** The one shop whose realm that directory provisions into (OB-15-d). Other shops: not connected. */
   readonly identityDirectoryTenantId?: string;
+  /**
+   * FUL-03: the payment provider that may say an online payment is paid. No live provider is connected (EX-03); tests and
+   * a demo pass the TEST-MODE provider. Omitted → every online payment stays pending until the bank's answer is recorded.
+   */
+  readonly paymentVerifier?: PaymentVerifier;
   /**
    * Where projection snapshots live (CORE-03). A `SqlSnapshotStore` in production, so bounded reads
    * survive a restart; omitted, adapters fall back to a process-local in-memory cache (still correct,
@@ -897,7 +904,19 @@ export function buildSurface(deps: {
     ...paymentRefundRoutes(ordersDeps),
     // The storefront's own surface (M20): a signed-in customer places and pays for an order that reserves stock in the
     // same breath, and reads back its own orders only — gated by the customer_app entitlement.
-    ...storefrontRoutes(ordersDeps),
+    ...storefrontRoutes({
+      ...ordersDeps,
+      // FUL-03: the shop's own quote — the store price head office last published — and the provider's word on payment.
+      ...(store === undefined ? {} : {
+        unitPriceOf: async (t: string, productId: string) => (await catalogueAdapter({ store, signer, now }).currentPack(t))?.snapshot.products.find((p) => p.productId === productId)?.unitPriceMinor,
+        deliveryFeeFor: async (t: string, goodsMinor: number) => {
+          const { policy } = resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter({ store, now }).schedule(t), on: now().slice(0, 10) });
+          const fee = policy.deliveryFeeMinor ?? 0;
+          return policy.freeDeliveryAboveMinor !== undefined && goodsMinor >= policy.freeDeliveryAboveMinor ? 0 : fee;
+        },
+      }),
+      ...(deps.paymentVerifier === undefined ? {} : { paymentVerifier: deps.paymentVerifier }),
+    }),
     // Serviceability configuration (M18-FR-01 / D08) — the per-tenant, effective-dated delivery radius/fee/
     // threshold/minimum. Resolve NEVER 404s: the D08 default (10 km) applies until the owner sets real radii.
     ...serviceabilityRoutes(store === undefined
