@@ -220,6 +220,7 @@ import { backupVerificationRoutes } from '../../platform/src/backup-verification
 import { drReadinessRoutes } from '../../platform/src/dr-readiness';
 import { branchLifecycleRoutes, branchTransitionRoutes } from '../../platform/src/branch-lifecycle';
 import { branchTransitionsAdapter } from './branch-transitions';
+import { documentSourcesAdapter } from './document-sources';
 import { NO_APPROVALS } from '../../identity/src/approval-requests';
 import { documentsRoutes } from '../../platform/src/documents';
 import { suspendedBillsRoutes } from '../../pos/src/suspended-bills';
@@ -1085,11 +1086,18 @@ export function buildSurface(deps: {
     ...notificationQueueRoutes(store === undefined
       ? { queue: () => new NotificationQueue(), record: () => {}, now }
       : notificationQueueAdapter({ store, now })),
-    // Versioned document templates (M31-FR-01/M36-FR-02) — append-only publish; a change is a new version.
+    // Versioned document templates (M31-FR-01/M36-FR-02) — append-only publish; a change is a new version. A business
+    // document is issued FROM its record (PA-09): the purchase order, goods receipt, sale or account it is about is read
+    // here, its number referenced (or allocated from the shop's gap-free series), its money and tax frozen with it; a
+    // reprint is the same frozen bytes, numbered and audited.
     ...documentsRoutes(store === undefined ? {
       versions: empty([]), recordPublish: () => {}, drafts: empty([]), recordDraft: () => {}, issued: empty(undefined), recordIssued: () => {},
       allVersions: empty([]), allIssued: empty([]), disposals: empty([]), recordDisposal: () => {}, now,
-    } : documentsAdapter({ store, now })),
+    } : {
+      ...documentsAdapter({ store, now }),
+      ...documentSourcesAdapter({ store, now, ...(deps.numberSeries === undefined ? {} : { numberSeries: deps.numberSeries }) }),
+      ...(auditTrail === undefined ? {} : { recordAudit: auditTrail.recordAudit }),
+    }),
     // Suspended (parked) bills (M15-FR-01/M12-FR-02) — park/resume/abandon; a recall is a claim, once.
     ...suspendedBillsRoutes(store === undefined ? {
       bills: empty([]), record: () => {}, now,
