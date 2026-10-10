@@ -368,11 +368,12 @@ describe('the parallel run', () => {
 // ── The rollback ────────────────────────────────────────────────────────────
 
 describe('rolling back needs nobody’s approval', () => {
-  it('performs it on the word of whoever is on the night', () => {
+  it('DECIDES it on the word of whoever is on the night — and never shows it performed before the old till trades (GT-02)', () => {
     const outcome = migration().rollback({ trigger: 'control_total_failed', legacySystemAvailable: true });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.result.performed).toBe(true);
+    expect(outcome.result.performed).toBe(false);
+    expect(outcome.result.state).toBe('decided');
     expect(outcome.result.decidedBy).toBe('u-owner');
     // Nothing about the migration record is unwound (hard rule #6).
     expect(outcome.result.evidenceRetained).toBe(true);

@@ -39,8 +39,8 @@
 
 import { type CurrencyCode } from '../../../packages/contracts/src/money';
 import {
-  exportPermission, freshness, reportCatalogue, salesSummary, whatWouldUnlockMost,
-  type CatalogueEntry, type Freshness, type Producer, type ReportDefinition, type SaleFact,
+  exportPermission, freshness, reportCatalogue, salesSummary, tenderSplit, whatWouldUnlockMost,
+  type CatalogueEntry, type Freshness, type Producer, type ReportDefinition, type SaleFact, type TenderPart,
 } from '../../../packages/reporting/src/index';
 import { AccessDeniedError, type AccessControl } from '../../../packages/rbac/src/index';
 import { figure, dashboard, type Dashboard, type Figure } from '../../../services/reporting/src/index';
@@ -62,7 +62,10 @@ export interface ReportableSale {
    * the shop, it is a fact about a half-written record, and averaging it in moves a real figure.
    */
   readonly units?: number;
+  /** The bill's main tender — a label. The tender report takes `tenders` when present (audit EA-02). */
   readonly tender: string;
+  /** Every payment on the bill by kind and amount. A split bill counts under each kind by what that kind paid. */
+  readonly tenders?: readonly TenderPart[];
 }
 
 /** What this surface can see about the shop, and what it honestly cannot. */
@@ -246,6 +249,7 @@ export function createReportingSession(
         cogsMinor: sale.cogsMinor,
         units: sale.units,
         tender: sale.tender,
+        ...(sale.tenders === undefined ? {} : { tenders: sale.tenders }),
         currency: config.currency,
       });
     }
@@ -310,8 +314,23 @@ export function createReportingSession(
       case 'sales_by_cashier':
         return byKey((s) => s.cashierId);
 
-      case 'tender_mix':
-        return byKey((s) => s.tender);
+      case 'tender_mix': {
+        // Each payment under its own kind, by its own amount (audit EA-02): a ₹250 card + ₹50 cash bill is ₹250 card
+        // and ₹50 cash — never ₹300 card. A bill counts once under every kind it used, and any part of a bill its
+        // payments do not explain is shown as a tender difference, so the kinds always add back to the takings.
+        const totals = new Map<string, { total: number; bills: number }>();
+        for (const sale of ports.sales()) {
+          for (const [kind, minor] of Object.entries(tenderSplit(sale))) {
+            const held = totals.get(kind) ?? { total: 0, bills: 0 };
+            totals.set(kind, { total: held.total + minor, bills: held.bills + 1 });
+          }
+        }
+        const ordered = [...totals.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+        return {
+          figures: ordered.map(([key, t]) => at(key, t.total, 'minor_currency')),
+          rows: ordered.map(([key, t]) => ({ key, totalMinor: String(t.total), bills: String(t.bills) })),
+        };
+      }
 
       case 'basket': {
         // Averaged only over the bills whose lines could actually be read. A record with no lines

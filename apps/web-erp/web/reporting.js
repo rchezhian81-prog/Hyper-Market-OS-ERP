@@ -49,7 +49,7 @@ const WORDS = {
     live: 'current', lagging: 'a few minutes behind, catching up',
     stale: 'too old to make a decision on',
     lastSpoke: 'Head office last spoke to this shop', neverSpoke: 'Head office has never sent anything to this shop',
-    minutesAgo: 'minutes ago', asAt: 'as at',
+    minutesAgo: 'minutes ago', asAt: 'as at', neverHeard: 'never — nothing has arrived yet',
     exported: 'File written', exportedNote: 'rows, with the column list beside them.',
     ok: 'OK', read: 'Please read this',
     sampleData: 'Sample data — this is not your shop.',
@@ -72,7 +72,7 @@ const WORDS = {
     live: 'தற்போதையது', lagging: 'சில நிமிடங்கள் பின்தங்கியுள்ளது, பிடிக்கிறது',
     stale: 'முடிவு எடுக்க முடியாத அளவுக்குப் பழையது',
     lastSpoke: 'தலைமை அலுவலகம் கடைசியாகப் பேசியது', neverSpoke: 'தலைமை அலுவலகம் இந்தக் கடைக்கு இதுவரை எதுவும் அனுப்பவில்லை',
-    minutesAgo: 'நிமிடங்களுக்கு முன்', asAt: 'இந்த நேரத்தில்',
+    minutesAgo: 'நிமிடங்களுக்கு முன்', asAt: 'இந்த நேரத்தில்', neverHeard: 'ஒருபோதும் இல்லை — இன்னும் எதுவும் வரவில்லை',
     exported: 'கோப்பு எழுதப்பட்டது', exportedNote: 'வரிகள், நெடுவரிசைப் பட்டியலுடன்.',
     ok: 'சரி', read: 'இதைப் படிக்கவும்',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
@@ -316,7 +316,7 @@ function figureBox(f) {
   asat.className = 'asat';
   // Words as well as the colour on the border: one man in twelve cannot tell the two apart, and
   // this is a screen people quote from.
-  asat.textContent = `${t('asAt')} ${f.asAt} · ${words(STALENESS_WORDS, f.staleness)}`;
+  asat.textContent = `${t('asAt')} ${f.asAt ?? t('neverHeard')} · ${words(STALENESS_WORDS, f.staleness)}`;
 
   box.append(name, value, asat);
   return box;

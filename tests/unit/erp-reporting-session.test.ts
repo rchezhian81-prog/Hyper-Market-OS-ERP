@@ -256,6 +256,22 @@ describe('the reports this shop can actually run', () => {
     expect(tender.result.figures.find((f) => f.name === 'upi')?.valueMinor).toBe(200_00);
   });
 
+  it('reports a split bill under each tender by what it paid, and the kinds add back to the takings (audit EA-02)', () => {
+    const outcome = session({
+      sales: () => [
+        sale({ saleId: 'S-1', totalMinor: 300_00, tender: 'card', tenders: [{ kind: 'card', amountMinor: 250_00 }, { kind: 'cash', amountMinor: 50_00 }] }),
+        sale({ saleId: 'S-2', totalMinor: 100_00, tender: 'cash', tenders: [{ kind: 'cash', amountMinor: 100_00 }] }),
+      ],
+    }).run('tender_mix');
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.figures.find((f) => f.name === 'card')?.valueMinor).toBe(250_00);
+    expect(outcome.result.figures.find((f) => f.name === 'cash')?.valueMinor).toBe(150_00);
+    expect(outcome.rows.find((r) => r['key'] === 'cash')?.['bills']).toBe('2');
+    const sum = outcome.result.figures.reduce((t, f) => t + (f.valueMinor ?? 0), 0);
+    expect(sum).toBe(400_00);
+  });
+
   it('leaves an uncostable sale OUT of the margin and counts it beside', () => {
     // Costing it at zero reports a 100% margin, which is a lie that reads as very good news.
     const outcome = session({

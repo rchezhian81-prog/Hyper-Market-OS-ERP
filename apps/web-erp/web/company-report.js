@@ -3,9 +3,11 @@
 // It holds no consolidation engine and no money maths. It asks the backend for a roll-up, then shows it
 // honestly: the total, a freshness badge (fresh / stale / missing — never stale shown as fresh), the branches
 // that are missing or withheld by the viewer's scope, whether the node reconciles to its children, and the
-// per-branch drill-down. Export fetches an open CSV from the one authorised export path. In production the
-// backend is the cloud reporting API running the production `consolidate`; in the browser E2E it is a local
-// Node server running the same engine.
+// per-branch drill-down. Export asks head office for an open CSV through the one authorised export path. Both go to
+// the PRODUCTION routes (audit EA-04) — `GET /v1/consolidation` and `POST /v1/consolidation/export` on the same origin,
+// under the signed-in person's own session — where the server decides their branch scope and logs every export.
+// Which company node and month to show come from the page address (?node=…&period=YYYY-MM); the month defaults to
+// this one.
 //
 // Every word on this page has a Tamil twin and follows the one language toggle (Stage G slice 5c · NFR-08); the
 // data the backend answers with (branch ids, numbers, the CSV) is shown as it is.
@@ -71,10 +73,15 @@ const branchName = (id) => BRANCH_NAMES[id] ?? id;
 const named = (ids) => ids.map((id) => `${branchName(id)} (${id})`).join(', ');
 
 async function getJson(path) {
-  const res = await fetch(path, { headers: { accept: 'application/json' } });
+  const res = await fetch(path, { headers: { accept: 'application/json' }, credentials: 'same-origin' });
   if (!res.ok) throw new Error(`head office answered ${res.status}`);
   return res.json();
 }
+
+// The company node and the month, from the page address; the month defaults to the current one.
+const PAGE = new URLSearchParams(window.location.search);
+const NODE = PAGE.get('node') || 'co-1';
+const PERIOD = /^\d{4}-\d{2}$/.test(PAGE.get('period') || '') ? PAGE.get('period') : new Date().toISOString().slice(0, 7);
 
 // ── The page's own words, repainted on every language change ────────────────────────────────────
 function paintWords() {
@@ -198,14 +205,14 @@ function renderExport() {
 
 function query() {
   const scope = scopeEl.value;
-  const params = new URLSearchParams({ node: 'co-1', family: familyEl.value, period: '2026-09' });
+  const params = new URLSearchParams({ node: NODE, family: familyEl.value, period: PERIOD });
   if (scope !== 'all') params.set('scope', scope);
   return params;
 }
 
 async function load() {
   try {
-    last = await getJson(`/consolidation?${query().toString()}`);
+    last = await getJson(`/v1/consolidation?${query().toString()}`);
   } catch {
     last = 'unreachable';
   }
@@ -218,14 +225,28 @@ async function load() {
 }
 
 $('export').addEventListener('click', async () => {
-  const res = await fetch(`/consolidation/export?${query().toString()}`, { headers: { accept: 'text/csv' } });
-  if (!res.ok) {
+  // One authorised, logged export at head office (EA-04): the server re-runs the roll-up in the reader's own scope.
+  const q = query();
+  const body = { node: q.get('node'), family: q.get('family'), period: q.get('period'), ...(q.has('scope') ? { scope: q.get('scope') } : {}) };
+  let res;
+  try {
+    res = await fetch('/v1/consolidation/export', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json', 'idempotency-key': (crypto.randomUUID && crypto.randomUUID()) || `export-${Date.now()}` },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+  } catch {
+    res = null;
+  }
+  if (res === null || !res.ok) {
     exportOutcome = { ok: false };
     renderExport();
     return;
   }
-  const csv = await res.text();
-  const dataRows = csv.trim().split('\n').length - 1; // minus the header
+  const out = await res.json();
+  const csv = String(out.csv ?? '');
+  const dataRows = typeof out.rows === 'number' ? out.rows : csv.trim().split('\n').length - 1; // minus the header
   exportOutcome = { ok: true, rows: dataRows };
   renderExport();
   const preview = $('preview');

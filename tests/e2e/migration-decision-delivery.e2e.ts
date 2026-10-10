@@ -290,17 +290,19 @@ describe.skipIf(!HAVE_BROWSER)('the operator settles an exception, end to end in
     }
   });
 
-  it('a named operator pulls the rollback: it is confirmed performed (MG-11 · the always-there safety valve)', async () => {
+  it('a named operator pulls the rollback: it is DECIDED at once, and never shown as done before the old till trades (MG-11 · GT-02)', async () => {
     const { page, teardown } = await openScreen(migrationData({ userId: 'u-owner' }));
     try {
       await page.click('#tab-where');
       await page.selectOption('#trigger', 'time_window_exceeded');
       await page.click('#rollback');
 
-      // The GOOD banner confirms the rollback was PERFORMED (not designed) and attributed to the person
-      // at the desk — and the shop keeps trading either way (P-01).
-      await page.waitForSelector('#banner.good:not([hidden])', { timeout: 10_000 });
-      expect(await bannerState(page)).toEqual({ hidden: false, good: true });
+      // The click records the DECISION, attributed to the person at the desk, needing nobody's approval — but it is
+      // not the green "done" banner: the rollback is performed only when the old system is seen taking a sale (GT-02).
+      await page.waitForSelector('#banner:not([hidden])', { timeout: 10_000 });
+      expect(await bannerState(page)).toEqual({ hidden: false, good: false });
+      expect(await page.textContent('#banner-title')).toMatch(/DECIDED — it is not done until the old till takes its first sale/);
+      expect(await page.textContent('#banner-text')).toMatch(/NOT yet performed/);
     } finally {
       await teardown();
     }

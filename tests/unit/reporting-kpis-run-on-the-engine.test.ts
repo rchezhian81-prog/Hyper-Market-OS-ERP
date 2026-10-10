@@ -69,17 +69,33 @@ describe('reporting figures are produced by the tested salesSummary engine (CORE
     expect(84_000 + 50_000).toBe(byName(figures, 'Sales today')?.valueMinor);
   });
 
-  it('attributes a split payment to its largest tender, and shows tenderless sales as unrecorded', async () => {
+  it('reports a split payment by tender, each kind by what it paid — the mix reconciles to the takings (audit EA-02)', async () => {
     const store = await shopWith([
-      // split basket: mostly card → booked to card
+      // ₹300 bill paid ₹250 card + ₹50 cash: ₹250 card, ₹50 cash — never ₹300 card and an absent ₹50 cash.
       { id: 'S1', totalMinor: 30_000, tenders: [{ kind: 'card', amountMinor: 25_000 }, { kind: 'cash', amountMinor: 5_000 }] },
+      { id: 'S2', totalMinor: 12_000, tenders: [{ kind: 'cash', amountMinor: 12_000 }] },
       // a sale banked with no tender detail — visible, not hidden
-      { id: 'S2', totalMinor: 10_000, tenders: [] },
+      { id: 'S3', totalMinor: 10_000, tenders: [] },
     ]);
     const figures = await reportingAdapter({ store, now: () => NOW, calendar: () => UTC }).figures(TENANT, 'dashboard');
 
-    expect(byName(figures, 'Sales today — card')?.valueMinor).toBe(30_000);
+    expect(byName(figures, 'Sales today — card')?.valueMinor).toBe(25_000);
+    expect(byName(figures, 'Sales today — cash')?.valueMinor).toBe(17_000);
     expect(byName(figures, 'Sales today — unrecorded')?.valueMinor).toBe(10_000);
+    // Reconciliation: the tender figures add back to the day's takings, to the paisa.
+    const tenderSum = figures.filter((f) => f.name.startsWith('Sales today — ') && f.name !== 'Sales today — receipts')
+      .reduce((t, f) => t + (f.valueMinor ?? 0), 0);
+    expect(tenderSum).toBe(byName(figures, 'Sales today')?.valueMinor);
+    expect(tenderSum).toBe(52_000);
+  });
+
+  it('a bill whose payments do not add to its total shows the gap as a tender difference, never folded into a kind', async () => {
+    const store = await shopWith([
+      { id: 'S1', totalMinor: 30_000, tenders: [{ kind: 'card', amountMinor: 25_000 }] },
+    ]);
+    const figures = await reportingAdapter({ store, now: () => NOW, calendar: () => UTC }).figures(TENANT, 'dashboard');
+    expect(byName(figures, 'Sales today — card')?.valueMinor).toBe(25_000);
+    expect(byName(figures, 'Sales today — tender_difference')?.valueMinor).toBe(5_000);
   });
 
   it('never emits a margin, net or tax figure — the cloud event cannot support one', async () => {

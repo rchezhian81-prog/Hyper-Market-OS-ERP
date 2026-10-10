@@ -42,9 +42,11 @@ const TOTAL: ControlTotal = {
 };
 const POLICY: ParallelRunPolicy = { cutoverId: 'cut-1', dailyReconcilerUserId: 'u-recon', requiredCleanDays: 3, maxParallelDays: 14, startedOn: '2026-10-01', setBy: 'u-owner', setAt: NOW };
 const DAY: RecordedParallelDay = { tenantId: T, businessDate: '2026-10-01', differences: [], clean: true, totalDifferenceMinor: 0, detail: 'agree', comparisons: [], recordedBy: 'u-recon', recordedAt: NOW };
-const rollback = (performed: boolean, decidedAt: string): RecordedRollback => ({
-  tenantId: T, cutoverId: 'cut-1', performed, trigger: 'owner_decision', decidedBy: 'u-owner', decidedAt,
-  legacySystemAvailable: true, shopKeepsTrading: true, evidenceRetained: true, detail: performed ? 'rolled back' : 'designed only',
+/** A rollback decided — and, when `performed`, CONFIRMED at `at` with the old system's first bill (GT-02). */
+const rollback = (performed: boolean, at: string): RecordedRollback => ({
+  tenantId: T, cutoverId: 'cut-1', performed, state: performed ? 'performed' : 'decided', trigger: 'owner_decision', decidedBy: 'u-owner', decidedAt: at,
+  legacySystemAvailable: true, shopKeepsTrading: true, evidenceRetained: true, detail: performed ? 'rolled back' : 'decided only',
+  ...(performed ? { execution: { confirmedBy: 'u-mgr', confirmedAt: at, legacyTradingFrom: at, legacyFirstBillRef: 'OLD-1001' } } : {}),
 });
 
 function stub(over: Partial<Ledger> = {}) {
@@ -125,6 +127,13 @@ describe('GET /v1/migration/screen — the feed the store box pulls (C3b)', () =
     const feed = await read(stub({ policy: POLICY }));
     expect(feed.parallelDays).toEqual([]);
     expect(feed.parallelDifferences).toEqual([]);
+  });
+
+  it('a record that says "performed" with no execution evidence behind it never demonstrates a rollback (GT-02)', async () => {
+    const { execution, ...claimed } = rollback(true, NOW);
+    void execution;
+    const feed = await read(stub({ rollbacks: [{ ...claimed, state: 'decided' }, claimed] }));
+    expect(feed).not.toHaveProperty('rollbackDemonstratedAt');
   });
 
   it('a rollback that was only DESIGNED leaves "demonstrated" absent, deliberately', async () => {

@@ -48,11 +48,11 @@ export {
 } from './history';
 
 export {
-  compareParallelDay, ownDifference, parallelRunPosition, decideCutover, performRollback,
+  compareParallelDay, ownDifference, parallelRunPosition, decideCutover, performRollback, confirmRollback,
   type ComparisonArea, type DayComparison, type DifferenceStatus, type ParallelDifference,
   type ParallelDayResult, type OwnRefusal, type OwnResult, type ParallelRunPosition,
   type CutoverCheck, type CutoverChecklist, type CutoverDecision, type RollbackTrigger,
-  type RollbackResult,
+  type RollbackResult, type RollbackState, type RollbackExecution, type RollbackConfirmationRefusal,
 } from './cutover';
 
 // The producer the eight-check gate never had. `decideCutover` has always taken a checklist of

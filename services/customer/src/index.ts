@@ -92,10 +92,14 @@ export function mayWeSend(input: {
     };
   }
 
-  // The LATEST record wins, whichever way it points. A withdrawal after a grant is a withdrawal.
-  const latest = input.records
-    .filter((r) => r.customerId === input.customerId && r.purpose === input.purpose && r.channel === input.channel)
-    .sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1))[0];
+  // The LATEST record wins, whichever way it points. A withdrawal after a grant is a withdrawal. Records arrive in the
+  // order they were recorded, so on an equal timestamp the later one wins — a withdrawal in the same millisecond as
+  // the grant is still a withdrawal (a sort that broke the tie either way could read it as consent).
+  let latest: ConsentRecord | undefined;
+  for (const r of input.records) {
+    if (r.customerId !== input.customerId || r.purpose !== input.purpose || r.channel !== input.channel) continue;
+    if (latest === undefined || r.recordedAt >= latest.recordedAt) latest = r;
+  }
 
   if (latest === undefined) {
     return {

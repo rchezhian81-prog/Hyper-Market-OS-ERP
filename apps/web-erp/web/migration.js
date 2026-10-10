@@ -46,7 +46,7 @@ const WORDS = {
     triggerTotals: 'A figure did not add up', triggerTrade: 'The shop cannot sell',
     triggerData: 'The data is wrong', triggerOwner: 'My decision',
     triggerTime: 'We have run out of time tonight',
-    rollback: 'Go back to the old system now', rolledBack: 'Gone back to the old system',
+    rollback: 'Go back to the old system now', rolledBack: 'Going back to the old system is DECIDED — it is not done until the old till takes its first sale',
     noFigures: 'No figures have been recorded yet. Nothing has been checked, which is not the same as everything agreeing.',
     oldSays: 'the old system says', cameAcross: 'came across', howWorkedOut: 'worked out by',
     signedBy: 'signed by', notSigned: 'NOT SIGNED', agrees: 'agrees exactly',
@@ -96,7 +96,7 @@ const WORDS = {
     triggerTotals: 'ஒரு கணக்கு பொருந்தவில்லை', triggerTrade: 'கடையால் விற்க முடியவில்லை',
     triggerData: 'தகவல் தவறாக உள்ளது', triggerOwner: 'என் முடிவு',
     triggerTime: 'இன்றிரவு நேரம் முடிந்துவிட்டது',
-    rollback: 'இப்போதே பழைய அமைப்புக்குத் திரும்பு', rolledBack: 'பழைய அமைப்புக்குத் திரும்பியது',
+    rollback: 'இப்போதே பழைய அமைப்புக்குத் திரும்பு', rolledBack: 'பழைய அமைப்புக்குத் திரும்ப முடிவு செய்யப்பட்டது — பழைய பில்லிங்கில் முதல் விற்பனை நடக்கும் வரை இது முடியவில்லை',
     noFigures: 'இதுவரை எந்தக் கணக்கும் பதிவு செய்யப்படவில்லை. எதுவும் சரிபார்க்கப்படவில்லை — எல்லாம் பொருந்துகிறது என்பது இதன் பொருள் அல்ல.',
     oldSays: 'பழைய அமைப்பு சொல்வது', cameAcross: 'இங்கே வந்தது', howWorkedOut: 'கணக்கிட்ட முறை',
     signedBy: 'கையெழுத்திட்டவர்', notSigned: 'கையெழுத்து இல்லை', agrees: 'சரியாகப் பொருந்துகிறது',
@@ -334,7 +334,8 @@ el('rollback').addEventListener('click', () => {
     tell(t('read'), `${words(ROLLBACK_REFUSAL_WORDS, outcome.refusal)} ${outcome.detail}`);
     return;
   }
-  tell(t('rolledBack'), outcome.result.detail, true);
+  // A decision, not a done thing (GT-02): never the green "done" banner until the old till has taken a sale.
+  tell(t('rolledBack'), outcome.result.detail);
   paintChrome();
 });
 

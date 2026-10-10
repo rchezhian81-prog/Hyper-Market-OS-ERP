@@ -299,9 +299,32 @@ export function decideCutover(checklist: CutoverChecklist): CutoverDecision {
 
 export type RollbackTrigger = 'control_total_failed' | 'edge_cannot_trade' | 'data_corruption' | 'owner_decision' | 'time_window_exceeded';
 
+/**
+ * Where a rollback stands (audit GT-02). A decision is NOT a rollback: the shop is back on the old system only when
+ * somebody has seen the old system take a sale after the decision.
+ *   • `decided` — the person on the night decided to go back; the old system has not yet been seen trading;
+ *   • `legacy_unavailable` — decided, but the old system is not there to take the shop; it can never be confirmed;
+ *   • `performed` — confirmed with execution evidence: the old system's first bill after the decision, and when it
+ *     started taking sales again.
+ */
+export type RollbackState = 'decided' | 'legacy_unavailable' | 'performed';
+
+/** The execution evidence that turns a decided rollback into a performed one (GT-02). */
+export interface RollbackExecution {
+  /** The signed-in person who saw the old system trading — never a typed name. */
+  readonly confirmedBy: string;
+  readonly confirmedAt: string;
+  /** When the old system started taking sales again. Not before the decision. */
+  readonly legacyTradingFrom: string;
+  /** The old system's first bill number after the decision — something anybody can go and look at. */
+  readonly legacyFirstBillRef: string;
+}
+
 export interface RollbackResult {
   readonly cutoverId: string;
+  /** True ONLY when execution evidence was recorded (`state: performed`). A decision alone is never performed. */
   readonly performed: boolean;
+  readonly state: RollbackState;
   readonly trigger: RollbackTrigger;
   readonly decidedBy: string;
   readonly decidedAt: string;
@@ -310,15 +333,20 @@ export interface RollbackResult {
   readonly shopKeepsTrading: true;
   /** Migration evidence survives a rollback — hard rule #6. Nothing is unwound. */
   readonly evidenceRetained: true;
+  /** Present only when performed: what was seen, by whom. */
+  readonly execution?: RollbackExecution;
   readonly detail: string;
 }
 
 /**
- * Roll back.
+ * Decide to roll back.
  *
  * **One clearly-labelled action**, and it needs no committee: the person on the night decides,
  * because a rollback that needs an approval chain gets performed an hour late, and the hour is
  * the whole cost.
+ *
+ * It returns a DECISION, never a performed rollback (audit GT-02): the old system is back only when somebody has seen
+ * it take a sale — `confirmRollback`. Until then nothing may say "gone back".
  *
  * Nothing about the migration record is unwound. The exceptions, totals, signatures and the
  * failed cutover itself are all retained (hard rule #6) — the second attempt is only cheaper
@@ -333,7 +361,8 @@ export function performRollback(input: {
 }): RollbackResult {
   return {
     cutoverId: input.cutoverId,
-    performed: true,
+    performed: false,
+    state: input.legacySystemAvailable ? 'decided' : 'legacy_unavailable',
     trigger: input.trigger,
     decidedBy: input.decidedBy,
     decidedAt: input.now,
@@ -341,7 +370,39 @@ export function performRollback(input: {
     shopKeepsTrading: true,
     evidenceRetained: true,
     detail: input.legacySystemAvailable
-      ? `rolled back on ${input.trigger} by ${input.decidedBy} — the legacy system takes the shop, and every piece of migration evidence is retained for the second attempt`
-      : `rolled back on ${input.trigger} by ${input.decidedBy}, but the legacy system is NOT available — this is why MG-12 does not retire it on the strength of one good night`,
+      ? `rollback decided on ${input.trigger} by ${input.decidedBy} — NOT yet performed: it is performed when somebody sees the old system take its first sale and records that bill; every piece of migration evidence is retained for the second attempt`
+      : `rollback decided on ${input.trigger} by ${input.decidedBy}, but the legacy system is NOT available, so it cannot be performed — this is why MG-12 does not retire it on the strength of one good night. Keep trading on the new system and call for help`,
+  };
+}
+
+export type RollbackConfirmationRefusal = 'legacy_unavailable' | 'already_performed' | 'no_bill_reference' | 'trading_before_the_decision' | 'not_a_time';
+
+/**
+ * Confirm a decided rollback with EXECUTION evidence (audit GT-02): the old system's first bill after the decision and
+ * when it started trading, seen by a signed-in person. Refused — with the reason — when the old system was not there,
+ * when it is already confirmed, when there is no bill to look at, or when the trading is said to predate the decision.
+ */
+export function confirmRollback(decided: RollbackResult, execution: RollbackExecution):
+  { readonly ok: true; readonly rollback: RollbackResult } | { readonly ok: false; readonly refusal: RollbackConfirmationRefusal; readonly detail: string } {
+  if (decided.state === 'performed') return { ok: false, refusal: 'already_performed', detail: `the rollback of ${decided.cutoverId} was already confirmed by ${decided.execution?.confirmedBy ?? 'someone'}` };
+  if (!decided.legacySystemAvailable || decided.state === 'legacy_unavailable') {
+    return { ok: false, refusal: 'legacy_unavailable', detail: 'the old system was recorded as NOT available when the rollback was decided, so there is nothing to confirm — a rollback onto a system that is not there is not a rollback' };
+  }
+  if (execution.legacyFirstBillRef.trim() === '') return { ok: false, refusal: 'no_bill_reference', detail: 'name the first bill the old system took after the decision — the evidence anybody can go and look at' };
+  if (Number.isNaN(Date.parse(execution.legacyTradingFrom)) || Number.isNaN(Date.parse(execution.confirmedAt))) {
+    return { ok: false, refusal: 'not_a_time', detail: 'when the old system started trading must be a time' };
+  }
+  if (Date.parse(execution.legacyTradingFrom) < Date.parse(decided.decidedAt)) {
+    return { ok: false, refusal: 'trading_before_the_decision', detail: `the old system's trading from ${execution.legacyTradingFrom} is before the rollback was decided at ${decided.decidedAt} — that bill does not show the rollback happened` };
+  }
+  return {
+    ok: true,
+    rollback: {
+      ...decided,
+      performed: true,
+      state: 'performed',
+      execution,
+      detail: `rolled back on ${decided.trigger}: decided by ${decided.decidedBy} at ${decided.decidedAt}; the old system has been taking sales since ${execution.legacyTradingFrom} (first bill ${execution.legacyFirstBillRef}), seen by ${execution.confirmedBy} — every piece of migration evidence is retained for the second attempt`,
+    },
   };
 }

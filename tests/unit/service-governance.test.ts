@@ -233,7 +233,8 @@ describe('API-13 — nothing an agent produces can commit anything', () => {
     });
     expect(a.status).toBe(503);
 
-    const broke = kernelFor(aiRoutes(deps({ budget: () => budget({ spentMinor: 500_000 }) })));
+    // The cost is the SERVER's (EA-08): a cost-bearing agent against a spent budget is refused, whatever the body says.
+    const broke = kernelFor(aiRoutes(deps({ budget: () => budget({ spentMinor: 500_000 }), runCost: () => ({ costMinor: 1_000, calledAModel: true }) })));
     const b = await handle(broke, {
       method: 'POST', path: '/v1/ai/agents/A02/runs', body: { estimatedCostMinor: 1_000 },
       headers: { authorization: 'Bearer good', 'idempotency-key': 'k-2' },

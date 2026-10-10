@@ -20,6 +20,7 @@ import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
 import { STREAM } from '../../services/api/src/adapters';
 import { LocalIdp } from './local-idp';
 import type { PaymentVerifier } from '../../packages/orders/src/payment-verification';
+import type { NotificationTransport } from '../../packages/notifications/src/index';
 
 type Kernel = Parameters<typeof handle>[0];
 type IdempotencyStore = Kernel['idempotency'];
@@ -106,13 +107,19 @@ export function apiHarness(opts: {
   paymentVerifier?: PaymentVerifier;
   /** The clock the session-channel guard reads (PA-10) — injected to drive a support session past its time box. */
   now?: () => string;
+  /** A notification transport for the send path (PA-08) — the recording test adapter; production has none. */
+  notificationTransport?: NotificationTransport;
 } = {}): ApiHarness {
   const store = opts.store ?? new InMemoryEventStore();
   const idempotency = opts.idempotency ?? new MemoryIdempotencyStore();
   // Token revocations (GAP-SEC-05): ONE list, backed by the same store as everything else, shared by the identity
   // routes (which record) and the authenticator (which refuses) — exactly as `main.ts` composes it.
   const revocations = new TokenRevocationList(tokenRevocationAdapter({ store }));
-  const built = buildRouter(buildSurface({ signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations, ...(opts.paymentVerifier === undefined ? {} : { paymentVerifier: opts.paymentVerifier }) }));
+  const built = buildRouter(buildSurface({
+    signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations,
+    ...(opts.paymentVerifier === undefined ? {} : { paymentVerifier: opts.paymentVerifier }),
+    ...(opts.notificationTransport === undefined ? {} : { notificationTransport: opts.notificationTransport }),
+  }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 
   const kernel: Kernel = {

@@ -258,7 +258,8 @@ import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../..
 import type { AssignmentsDeps, WaveAssignment, RouteAssignment } from '../../fulfilment/src/assignments';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
-import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
+import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent, type MessageTemplateVersion } from '../../customer/src/notification-queue';
+import type { NotificationTransport } from '../../../packages/notifications/src/index';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { StockLossDeps, StockLossJournal } from '../../finance/src/stock-losses';
 import type { B2BPostingDeps, B2BPostable, B2BJournal } from '../../finance/src/b2b-postings';
@@ -277,13 +278,13 @@ import { buildTenantExport } from '../../../packages/platform/src/lifecycle';
 import type { TenantBranding } from '../../../packages/platform/src/branding';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
-import { figure } from '../../reporting/src/index';
+import { figure, sourceFreshness } from '../../reporting/src/index';
 import type { ReportingDeps, Figure } from '../../reporting/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
 import { salesSummary, ingestContribution } from '../../../packages/reporting/src/index';
 import type { Producer, SaleFact, BranchContribution, BranchMembership } from '../../../packages/reporting/src/index';
-import type { MigrationDeps, ParallelRunPolicy, RecordedParallelDay, RecordedRollback } from '../../migration/src/index';
+import type { MigrationDeps, ParallelRunPolicy, RecordedParallelDay, RecordedRollback, AppliedDelta } from '../../migration/src/index';
 import type { ParallelDifference } from '../../../packages/migration/src/cutover';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
@@ -809,6 +810,8 @@ export function scheduledBriefAdapter(input: {
       const events = await allOf<BriefScheduleEvent>(input.store, tenantId, stream, 'BriefSchedule');
       let config: { dueAt: readonly [number, number]; language?: BriefLanguage; staleAfterMinutes?: number } | undefined;
       const sent = new Set<string>();
+      // EA-07: the first day a brief is owed is the day the schedule was first set.
+      const since = events.find((e) => e.change === 'set')?.at;
       for (const e of events) {
         if (e.change === 'set' && e.dueAt !== undefined) {
           config = { dueAt: e.dueAt, ...(e.language !== undefined ? { language: e.language } : {}), ...(e.staleAfterMinutes !== undefined ? { staleAfterMinutes: e.staleAfterMinutes } : {}) };
@@ -817,7 +820,7 @@ export function scheduledBriefAdapter(input: {
         }
       }
       if (config === undefined) return undefined;
-      return { scheduleId: SCHEDULE_ID, dueAt: config.dueAt, sentDays: [...sent].sort(), ...(config.language !== undefined ? { language: config.language } : {}), ...(config.staleAfterMinutes !== undefined ? { staleAfterMinutes: config.staleAfterMinutes } : {}) };
+      return { scheduleId: SCHEDULE_ID, dueAt: config.dueAt, sentDays: [...sent].sort(), ...(since === undefined ? {} : { since }), ...(config.language !== undefined ? { language: config.language } : {}), ...(config.staleAfterMinutes !== undefined ? { staleAfterMinutes: config.staleAfterMinutes } : {}) };
     },
     setSchedule: async (tenantId, cfg, by, key) => {
       const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
@@ -8558,6 +8561,8 @@ export function campaignAdapter(input: {
     // The SAME consent ledger the customer service reads (P-02) — folded per recipient at the send.
     consentRecords: (tenantId, customerId) =>
       allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
+    // PF-10: the same message-template register the notification queue enqueues from (PA-08).
+    templates: (tenantId) => allOf<MessageTemplateVersion>(input.store, tenantId, streamName(STREAM.org, 'message-templates'), 'MessageTemplateVersion'),
     plans: (tenantId) => allOf<CampaignPlanRecord>(input.store, tenantId, CAMPAIGN_PLAN_STREAM, 'CampaignPlanned'),
     recordPlan: async (tenantId, rec, key) => {
       const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
@@ -9089,11 +9094,25 @@ export function fulfilmentAdapter(input: {
 export function notificationQueueAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /** The delivery transport — absent in production until a real provider is certified (SMS is R4, OB-29). */
+  readonly transport?: NotificationTransport;
 }): NotificationQueueDeps {
   const stream = streamName(STREAM.org, 'notifications');
   return {
     now: input.now,
     queue: async (tenantId) => replayNotificationQueue(await allOf<NotificationQueueEvent>(input.store, tenantId, stream, 'NotificationQueue')),
+    events: (tenantId) => allOf<NotificationQueueEvent>(input.store, tenantId, stream, 'NotificationQueue'),
+    // PA-08: head office's own message-template register (drafted by one person, approved by another) and the SAME
+    // consent ledger the rest of the system reads (P-02).
+    templates: (tenantId) => allOf<MessageTemplateVersion>(input.store, tenantId, streamName(STREAM.org, 'message-templates'), 'MessageTemplateVersion'),
+    recordTemplate: async (tenantId, v) => {
+      await input.store.append(tenantId, streamName(STREAM.org, 'message-templates'), makeEvent({
+        id: `msg-template-${v.templateId}-v${v.version}-${v.state}`, type: 'MessageTemplateVersion', occurredAt: v.approvedAt ?? v.draftedAt,
+        idempotencyKey: `msg-template-${tenantId}-${v.templateId}-v${v.version}-${v.state}`, source: 'api/customer', payload: v,
+      }));
+    },
+    consentRecords: (tenantId, customerId) => allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
+    ...(input.transport === undefined ? {} : { transport: input.transport }),
     record: async (tenantId, event, key) => {
       const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
       await input.store.append(tenantId, stream, makeEvent({
@@ -10304,10 +10323,9 @@ export function billingAdapter(input: {
 }
 
 /**
- * The tender a basket is booked under for the tender-mix KPI: the largest single tender on the
- * receipt (a split payment is attributed to where most of the money actually came from), or
- * `unrecorded` when the lane banked a sale with no tender detail — which is itself worth seeing on
- * the dashboard, not hiding (P-08).
+ * The label a bill is shown under in a drill or a basket view: its largest single tender, or `unrecorded` when the
+ * lane banked a sale with no tender detail — itself worth seeing (P-08). A LABEL only: the tender mix counts every
+ * payment on a split bill under its own kind, by its own amount (`tenderSplit`, audit EA-02).
  */
 function primaryTender(tenders: readonly IncomingTender[]): string {
   if (tenders.length === 0) return 'unrecorded';
@@ -10330,9 +10348,38 @@ export function reportingAdapter(input: {
    */
   readonly records?: readonly Producer[];
   readonly produced?: readonly string[];
+  /**
+   * Minutes after which a figure is lagging, and stale. Per tenant when the composition says so; else the section-32
+   * defaults (5 and 60) the figure engine applies.
+   */
+  readonly thresholds?: { readonly laggingAfterMinutes: number; readonly staleAfterMinutes: number };
+  /** The named-report producers (EA-06, `report-producers.ts`); absent, every named report is refused as not produced. */
+  readonly produce?: ReportingDeps['produce'];
 }): ReportingDeps {
+  const thresholds = input.thresholds ?? {};
+  /** Where a sale came from (audit EA-01): the store location the lane sells from, else the lane itself. */
+  const sourceOf = (s: IncomingSale): string =>
+    (typeof s.locationId === 'string' && s.locationId !== '' ? `store:${s.locationId}` : `lane:${s.laneId}`);
+  /**
+   * The newest sale head office holds from each source — the sources seen in `todays` (the read already made), plus
+   * the source of the newest sale it has ever received (one index hit), so a shop that has not traded today is still
+   * judged by when it was last heard from rather than dropped. Empty only when no sale has ever arrived.
+   */
+  const salesWatermarks = async (tenantId: string, todays: readonly PersistedEvent[]): Promise<readonly { source: string; lastEventAt: string }[]> => {
+    const newest = new Map<string, string>();
+    const note = (e: PersistedEvent): void => {
+      const source = sourceOf(payloadOf<IncomingSale>(e));
+      const held = newest.get(source);
+      if (held === undefined || Date.parse(e.event.occurredAt) > Date.parse(held)) newest.set(source, e.event.occurredAt);
+    };
+    for (const e of todays) note(e);
+    const latestEver = await input.store.latestOfType(tenantId, STREAM.sales, 'SaleCommitted');
+    if (latestEver !== undefined) note(latestEver);
+    return [...newest.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([source, lastEventAt]) => ({ source, lastEventAt }));
+  };
   return {
     now: input.now,
+    ...(input.produce === undefined ? {} : { produce: input.produce }),
 
     // Drives the tested `reportCatalogue` engine on the running path (CORE-01). The values are
     // declaration, not derivation: the catalogue is a shop-wide statement, so it comes from
@@ -10383,24 +10430,45 @@ export function reportingAdapter(input: {
         totalMinor: s.totalMinor,
         netMinor: 0, taxMinor: 0, cogsMinor: 0, units: 0, // not on the cloud event; never surfaced
         tender: primaryTender(s.tenders),
+        // Every payment by its own kind and amount (EA-02): a ₹250 card + ₹50 cash bill is ₹250 card and ₹50 cash.
+        tenders: s.tenders.map((t) => ({ kind: t.kind, amountMinor: t.amountMinor })),
         currency: s.currency as CurrencyCode,
       }));
       const summary = salesSummary(facts, (todays[0]?.currency as CurrencyCode) ?? 'INR');
 
-      // As at now, because the ledger is read at request time — there is no cache between these
-      // figures and the events they are computed from, so there is nothing to be stale.
-      const asAt = input.now();
-      const money = (name: string, valueMinor: number): Figure =>
-        figure({ name, valueMinor, unit: 'minor_currency', asAt, now: asAt });
+      // As at the SOURCE's time, never the read time (audit EA-01): an 08:00 sale read at 16:00 is "as at 08:00, stale",
+      // not "as at 16:00, live". The store box drains its queue in order (edge/sync-agent ORDER), so the newest sale
+      // head office holds from a store is that store's sync watermark — everything it rang before then has arrived.
+      // The figure is as current as its STALEST source; a shop no till has ever reached is "not available", never 0.
+      const watermarks = await salesWatermarks(tenantId, events);
+      const asAt = watermarks.length === 0
+        ? null
+        : watermarks.map((w) => w.lastEventAt).reduce((oldest, t) => (Date.parse(t) < Date.parse(oldest) ? t : oldest));
+      const now = input.now();
+      const never = 'no till has ever sent a sale to head office, so there is nothing to report yet';
+      const of = (name: string, valueMinor: number, unit: Figure['unit']): Figure =>
+        figure({ name, ...(asAt === null ? { notAvailableBecause: never } : { valueMinor }), unit, asAt, now, ...thresholds });
 
       return [
-        money('Sales today', summary.grossSalesMinor),
-        figure({ name: 'Sales today — receipts', valueMinor: summary.basketCount, unit: 'count', asAt, now: asAt }),
-        // One figure per tender the day actually saw (deterministic order), each an exact Σ from the
-        // engine — the split the owner reaches for first: how much came in as cash, card, UPI.
+        of('Sales today', summary.grossSalesMinor, 'minor_currency'),
+        of('Sales today — receipts', summary.basketCount, 'count'),
+        // One figure per tender the day actually saw (deterministic order), each an exact sum from the engine — every
+        // payment on a split bill under its own kind (EA-02), so the tender figures add back to "Sales today".
         ...Object.keys(summary.tenderMix).sort()
-          .map((kind) => money(`Sales today — ${kind}`, summary.tenderMix[kind]!)),
+          .map((kind) => of(`Sales today — ${kind}`, summary.tenderMix[kind]!, 'minor_currency')),
       ];
+    },
+
+    // Each store's (or, for a lane that names no store location, each lane's) sales watermark, judged against now —
+    // the per-source freshness the dashboard carries (M29-FR-01 "freshness per branch/domain", EA-01).
+    sources: async (tenantId) => {
+      const calendar = await input.calendar(tenantId);
+      const window = tradingDayWindow(tradingDayIn(input.now(), calendar), calendar);
+      const events = await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: window.from, to: window.to });
+      const now = input.now();
+      const marks = await salesWatermarks(tenantId, events);
+      if (marks.length === 0) return [sourceFreshness({ source: 'any till', domain: 'sales', lastEventAt: null, now, ...thresholds })];
+      return marks.map((m) => sourceFreshness({ source: m.source, domain: 'sales', lastEventAt: m.lastEventAt, now, ...thresholds }));
     },
   };
 }
@@ -10449,7 +10517,34 @@ export function migrationAdapter(input: {
       for (const d of all) byId.set(d.differenceId, d);
       return [...byId.values()];
     },
-    rollbacks: (tenantId) => allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackPerformed'),
+    // GT-02: a rollback is DECIDED (RollbackDecided), then — only with execution evidence — PERFORMED (RollbackPerformed).
+    // Both facts are kept (hard rule #6); one row per decision, at its latest state. An old RollbackPerformed with no
+    // execution evidence stays on the register but never demonstrates a rollback (`ledgerCutoverEvidence`).
+    // GT-04: what a delta APPLIED — each change once, with its stock movement in the same atomic write.
+    appliedDeltaKeys: async (tenantId) =>
+      (await allOf<AppliedDelta>(input.store, tenantId, streamName(STREAM.migration, 'delta'), 'MigrationDeltaApplied')).map((d) => d.changeKey),
+    deltaAppliedAt: async (tenantId) =>
+      (await allOf<AppliedDelta>(input.store, tenantId, streamName(STREAM.migration, 'delta'), 'MigrationDeltaApplied')).map((d) => d.appliedAt).sort().at(-1),
+    applyDeltaChange: async (tenantId, applied, movement) => {
+      await input.store.appendBatch(tenantId, [
+        movementEvent(tenantId, movement),
+        {
+          stream: streamName(STREAM.migration, 'delta'),
+          event: makeEvent({
+            id: `delta-${applied.changeKey}`, type: 'MigrationDeltaApplied', occurredAt: applied.appliedAt,
+            // The change's own key: the same change re-sent under any HTTP key, or after a restart, collapses to one.
+            idempotencyKey: `delta-${tenantId}-${applied.changeKey}`, source: 'api/migration', payload: applied,
+          }),
+        },
+      ]);
+    },
+    rollbacks: async (tenantId) => {
+      const decided = await allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackDecided');
+      const performed = await allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackPerformed');
+      const byDecision = new Map<string, RecordedRollback>();
+      for (const r of [...decided, ...performed]) byDecision.set(`${r.cutoverId}|${r.decidedAt}`, r);
+      return [...byDecision.values()];
+    },
     recordParallelPolicy: async (tenantId, policy) => {
       await input.store.append(tenantId, STREAM.migration, makeEvent({
         id: `parallel-policy-${policy.cutoverId}-${policy.setAt}`, type: 'ParallelRunPolicySet', occurredAt: policy.setAt,
@@ -10471,9 +10566,14 @@ export function migrationAdapter(input: {
       }));
     },
     recordRollback: async (tenantId, rollback) => {
+      // The decision and its confirmation are two facts with two keys — a confirmation never collapses onto the decision.
+      const performed = rollback.state === 'performed';
       await input.store.append(tenantId, STREAM.migration, makeEvent({
-        id: `rollback-${rollback.cutoverId}-${rollback.decidedAt}`, type: 'RollbackPerformed', occurredAt: rollback.decidedAt,
-        idempotencyKey: `rollback-${tenantId}-${rollback.cutoverId}-${rollback.decidedAt}`, source: 'api/migration', payload: rollback,
+        id: `rollback-${rollback.cutoverId}-${rollback.decidedAt}-${performed ? 'performed' : 'decided'}`,
+        type: performed ? 'RollbackPerformed' : 'RollbackDecided',
+        occurredAt: performed ? rollback.execution!.confirmedAt : rollback.decidedAt,
+        idempotencyKey: `rollback-${tenantId}-${rollback.cutoverId}-${rollback.decidedAt}-${performed ? 'performed' : 'decided'}`,
+        source: 'api/migration', payload: rollback,
       }));
     },
 
@@ -10896,6 +10996,9 @@ export function aiAdapter(input: {
    * the SAME reader the `/v1/inventory/near-expiry` route uses (`nearExpiryAdapter(...).nearExpiry`).
    */
   readonly nearExpiry?: NearExpiryDeps['nearExpiry'];
+  /** EA-08 — A01's read-only insights and A02's stock-out reorder drafts, from the governed readers (ai-insights.ts). */
+  readonly ownerInsights?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
+  readonly purchaseSuggestions?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
 }): AiDeps {
   return {
     now: input.now,
@@ -10981,8 +11084,22 @@ export function aiAdapter(input: {
      * Every other agent still returns nothing — it becomes reachable when its own data source is
      * wired (and, for a model-backed agent, a provider is chosen, OB-02).
      */
+    // EA-08: every run is recorded — the run, its server-metered cost, and each accepted proposal onto the register —
+    // in ONE atomic write, idempotent on the run id.
+    recordRun: async (tenantId, run) => {
+      await input.store.appendBatch(tenantId, [
+        { stream: STREAM.ai, event: makeEvent({ id: `ai-run-${run.runId}`, type: 'AiRunRecorded', occurredAt: run.at, idempotencyKey: `ai-run-${tenantId}-${run.runId}`, source: 'api/ai', payload: run }) },
+        { stream: STREAM.ai, event: makeEvent({ id: `ai-cost-${run.runId}`, type: 'AiRunCosted', occurredAt: run.at, idempotencyKey: `ai-cost-${tenantId}-${run.runId}`, source: 'api/ai', payload: { runId: run.runId, agent: run.agent, costMinor: run.costMinor, calledAModel: run.calledAModel } }) },
+        ...run.proposals.map((p) => ({ stream: STREAM.ai, event: makeEvent({ id: `ai-proposal-${p.proposalId}`, type: 'AiProposalRaised', occurredAt: run.at, idempotencyKey: `ai-proposal-${tenantId}-${p.proposalId}`, source: 'api/ai', payload: p }) })),
+      ]);
+    },
+
     run: async (tenantId, agent) => {
       const now = input.now();
+      // A01 Owner Intelligence — read-only insights from the governed reports; proposes no action (EA-08).
+      if (agent === 'A01') return input.ownerInsights === undefined ? [] : input.ownerInsights(tenantId);
+      // A02 Purchase — stock-outs with recent demand, as DRAFTS for a buyer; no quantity invented, no order raised.
+      if (agent === 'A02') return input.purchaseSuggestions === undefined ? [] : input.purchaseSuggestions(tenantId);
       // A08 Data Quality — the product master + import history.
       if (agent === 'A08') {
         const proposals: Omit<Proposal, 'committed'>[] = [];
