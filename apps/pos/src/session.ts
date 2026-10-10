@@ -20,6 +20,7 @@ import type { SyncOutbox } from '../../../packages/sync/src/outbox';
 import type { CommitOutcome } from '../../../edge/store-edge/src/durability';
 import { makeTradingDayRule, tradingDateOf } from '../../../packages/calendar/src/index';
 import type { SuspendedLine, SuspendedAgeAnswer } from '../../../packages/suspended-sales/src/suspended-bill';
+import { normaliseMobile } from '../../../packages/loyalty/src/mobile';
 
 export interface PosSessionConfig {
   /**
@@ -223,6 +224,9 @@ export class PosSession {
   private operatorId: string | undefined;
   /** Every answer to the age question for THIS basket, in order (PF-03). Cleared with the basket, kept across hold/recall. */
   private readonly ageAnswerLog: AgeAnswer[] = [];
+  /** The loyalty member's mobile number for THIS bill (PF-09 step 2 · OB-28 "1"). Held in memory only and handed to the
+   *  store computer with the sale, which turns it into the member code before anything is written — never on a disk here. */
+  private loyaltyMobile: string | undefined;
   /** This basket's own reference (audit PF-06): the bill a card/UPI attempt is recorded against, until the next sale. */
   private billRefValue: string | undefined;
   /** Evaluation instant for effective-dated promotions, when the caller fixed one (`setNow`); else the lane's clock. */
@@ -665,6 +669,8 @@ export class PosSession {
       currency: totals.payable.currency,
       // Every answer to the age question on this bill, refusals included (PF-03 · M15 loss prevention).
       ...(this.ageAnswerLog.length === 0 ? {} : { ageAnswers: this.ageAnswerLog.slice() }),
+      // The member's number, for the STORE COMPUTER to turn into a member code before the disk (PF-09 step 2 · P-04).
+      ...(this.loyaltyMobile === undefined ? {} : { customerMobile: this.loyaltyMobile }),
     }));
     if (!outcome.committed) throw new LocalCommitRefusedError(saleId, outcome.laneMessage);
 
@@ -745,8 +751,27 @@ export class PosSession {
     return this.billRefValue;
   }
 
+  /**
+   * Name the loyalty member on this bill by their mobile number (PF-09 step 2), or clear it with `null`. A number that is
+   * not a 10-digit Indian mobile is refused with the cashier's words; nothing is set.
+   */
+  setLoyaltyMobile(raw: string | null): { readonly ok: boolean; readonly last4?: string; readonly laneMessage?: string } {
+    if (raw === null) { this.loyaltyMobile = undefined; return { ok: true }; }
+    const mobile = normaliseMobile(raw);
+    if (mobile === undefined) return { ok: false, laneMessage: 'That is not a 10-digit mobile number. Ask the customer again, or skip — the sale goes ahead without points.' };
+    this.loyaltyMobile = mobile;
+    return { ok: true, last4: mobile.slice(-4) };
+  }
+
+  /** The last four digits of the member named on this bill, or null — for the screen; the full number is never shown. */
+  loyaltyMemberLast4(): string | null {
+    return this.loyaltyMobile === undefined ? null : this.loyaltyMobile.slice(-4);
+  }
+
   /** Start a fresh basket on the same lane (after a commit). */
   newSale(): void {
+    // A new basket is a new customer: no member carries over (PF-09).
+    this.loyaltyMobile = undefined;
     this.billRefValue = undefined;
     this.lines.length = 0;
     this.seq = 0;

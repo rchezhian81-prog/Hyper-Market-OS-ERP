@@ -122,7 +122,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till takes its float, pickup and blin
     await signInThroughScreen(page); // staff ID, then the till PIN — checked by the box (ADR-0020)
 
     // No float out: the till offers to take one, and not a pickup or a close.
-    expect(await moreOffers(page)).toEqual(['Take float (open the till)', 'Refund', 'Exchange']);
+    expect(await moreOffers(page)).toEqual(['Take float (open the till)', 'Refund', 'Exchange', 'Loyalty member']);
     await choose(page, 'Take float (open the till)');
     await keyAmount(page, '2000');
     expect(await shown(page)).toMatchObject({ title: 'Float taken — the till is open', text: expect.stringContaining('₹2,000.00') });
@@ -132,7 +132,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till takes its float, pickup and blin
 
     // A ₹480 cash sale (rung NOW — the shift's window opened with the float a moment ago), then ₹500 to the safe.
     expect(await ring(page, 'S-1', new Date().toISOString())).toBe('R-lane-1-000001'); // the box's number (audit PF-04)
-    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Refund', 'Exchange', 'Close till']); // the float is out: no second float offered
+    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Refund', 'Exchange', 'Close till', 'Loyalty member']); // the float is out: no second float offered
     await choose(page, 'Cash to safe');
     await keyAmount(page, '500');
     expect(await shown(page)).toMatchObject({ title: 'Moved to the safe', text: expect.stringContaining('₹500.00') });
@@ -140,7 +140,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till takes its float, pickup and blin
     // A reload: the browser forgets everything; the till still knows a float is out, because the BOX knows.
     await open();
     await page.waitForFunction(() => (globalThis as unknown as PosWindow).posSession!.operator() === 'u-lanecash');
-    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Refund', 'Exchange', 'Close till']);
+    expect(await moreOffers(page)).toEqual(['Cash to safe', 'Refund', 'Exchange', 'Close till', 'Loyalty member']);
     await page.click('#pay-cancel');
 
     // Close: count the notes blind — nothing on the panel says what should be there. 2,000 + 480 − 500 = ₹1,980:
@@ -165,7 +165,7 @@ describe.skipIf(!HAVE_BROWSER)('the one-PC till takes its float, pickup and blin
     expect(edge.tillCashOutbox.unsentCount()).toBe(3);
 
     // A second shift, closed ₹300 short: the box asks why, the cashier picks a reason, the headline says call the manager.
-    expect(await moreOffers(page)).toEqual(['Take float (open the till)', 'Refund', 'Exchange']);
+    expect(await moreOffers(page)).toEqual(['Take float (open the till)', 'Refund', 'Exchange', 'Loyalty member']);
     await choose(page, 'Take float (open the till)');
     await keyAmount(page, '2000');
     await shown(page);

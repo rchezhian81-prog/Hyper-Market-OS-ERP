@@ -5,6 +5,27 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 5 · PF-09 step 2 — the till names a loyalty member by mobile number (10 October 2026)
+
+- **Owner decision OB-28 "1":** the cashier keys the customer's mobile number.
+- **What changed:**
+  - On the till: **More → Loyalty member** opens the till's own number keypad. The cashier keys the 10 digits; the till
+    shows only the **last four** ("Member ••••2345 is on this bill"). A number that is not a mobile is refused in English
+    or Tamil. **More → Remove loyalty member** takes it off. A new bill starts with no member.
+  - **The phone number is never written anywhere.** It stays in the till page's memory and goes to the store computer
+    with the sale; the store computer turns it into the private member code *before* saving, so its disk holds the code
+    only. A code sent by the till itself is ignored — only the store computer makes one.
+  - The sale carries the member code to head office, which adds the points by your rule (step 1). With no internet the
+    sale is kept on the store computer and the points are added when the line returns.
+- **Proved:** through the real till and store computer — a bad number refused; the sale on the store computer's disk
+  contains the member code and not one digit-run of the number; when the line returns the member holds 12 points for a
+  ₹1,250 sale; a forged code dropped. In a real browser — More → Loyalty member → keypad shows ••••2345 only; Remove is
+  offered; the disk holds the code, not the number. **Mutation check:** switching off the swap fails the test. Full
+  `pnpm run check` green with the real database.
+- **Not yet / honest limits:** step 3 — spending points and store credit at the till. A held bill does not keep its
+  member: re-key the number after recalling it. Staff UAT (SP-10) pending.
+- **Next:** PF-09 step 3 — spending points and store credit at the till.
+
 ## Wave 4 · PA-06 = DF-3-c-3a — staff sign in on the phones with their till PIN; the work is recorded as theirs (10 October 2026)
 
 - **Owner decision OB-30 "A"** (10 Oct 2026): each person signs in on the warehouse, picker or driver phone with their

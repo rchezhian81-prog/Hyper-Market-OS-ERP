@@ -18,7 +18,7 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 
 ## Totals
 
-- Evidence test files scanned: 971. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
+- Evidence test files scanned: 973. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
 - Requirements with at least one proof of each kind: Unit 81 · Integration (in-process) 79 · Real PostgreSQL 57 · Browser (stub cloud) 45 · Browser (connected) 2 · Device 0 · Staff UAT 0.
 - Labels: E2E_VERIFIED 24 · ENGINE_ONLY 1 · INTEGRATION_TESTED 16 · PARTIALLY_WIRED 52 · WIRED 11.
 - Labels that do NOT hold: none.
@@ -42,8 +42,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M13 | INTEGRATION_TESTED | 24 | 22 | 5 | 3 | · | · | · | ✓ an integration test cites it |
 | M14 | E2E_VERIFIED | 17 | 14 | 2 | 5 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M15 | E2E_VERIFIED | 14 | 12 | 1 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
-| M16 | WIRED | 8 | 9 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| M17 | E2E_VERIFIED | 7 | 10 | 3 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| M16 | WIRED | 8 | 10 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| M17 | E2E_VERIFIED | 7 | 11 | 3 | 4 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M18 | PARTIALLY_WIRED | 11 | 9 | 2 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M19 | PARTIALLY_WIRED | 18 | 10 | · | 5 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M20 | PARTIALLY_WIRED | 18 | 8 | 1 | 3 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
@@ -151,7 +151,7 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **M13** — browser: `return-governance-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts` · real PostgreSQL: `refund-approval-is-the-approvers-own-act.test.ts`, `returns-guard-the-refund.test.ts`, `the-till-exchanges.test.ts`, `the-till-returns-without-a-receipt.test.ts`, `write-guards-on-postgresql.test.ts`
 - **M14** — browser: `cash-office-signoff-delivery.e2e.ts`, `day-reopen-delivery.e2e.ts`, `manager-day-close-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-closes.e2e.ts` · real PostgreSQL: `day-close-honestly.test.ts`, `refund-approval-is-the-approvers-own-act.test.ts`
 - **M15** — browser: `loss-prevention-close-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `the-served-till-keeps-void-evidence.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts` · real PostgreSQL: `day-close-honestly.test.ts`
-- **M17** — browser: `return-governance-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `stored-value-oversight-delivery.e2e.ts` · real PostgreSQL: `household-pooling.test.ts`, `stored-value-liability.test.ts`, `write-guards-on-postgresql.test.ts`
+- **M17** — browser: `return-governance-delivery.e2e.ts`, `screens-open-offline.e2e.ts`, `stored-value-oversight-delivery.e2e.ts`, `the-served-till-names-a-member.e2e.ts` · real PostgreSQL: `household-pooling.test.ts`, `stored-value-liability.test.ts`, `write-guards-on-postgresql.test.ts`
 - **M19** — browser: `delivery-route-partial-delivery.e2e.ts`, `driver-handheld-syncs-through-the-box.e2e.ts`, `picker-handheld-syncs-through-the-box.e2e.ts`, `picker-substitution-delivery.e2e.ts`, `substitution-exception-claim-resolve.e2e.ts`
 - **M20** — browser: `customer-login.e2e.ts`, `customer-order-delivery.e2e.ts`, `erasure-console.e2e.ts` · real PostgreSQL: `concurrent-stock-cannot-be-spent-twice.test.ts`
 - **M22** — browser: `b2b-portal-delivery.e2e.ts`, `customer-login.e2e.ts` · real PostgreSQL: `b2b-reconcile-ar.test.ts`

@@ -136,6 +136,10 @@ export interface PosView {
   confirmAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer;
   /** The customer could not show they are old enough: the item is not sold, and the refusal is kept as evidence. */
   refuseAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer;
+  /** Name (or clear, with null) the loyalty member on this bill by mobile number (PF-09 step 2). */
+  setLoyaltyMobile(raw: string | null): { readonly ok: boolean; readonly last4?: string; readonly laneMessage?: string };
+  /** The last four digits of the member on this bill, or null. */
+  loyaltyMemberLast4(): string | null;
   /** The highest age this basket's customer has been confirmed to be (0 = not checked). */
   ageConfirmedAtLeast(): number;
 
@@ -222,6 +226,14 @@ export function createPosView(
 
     refuseAge(minimumAge: number, atIsoUtc: string, productId?: string): ViewAgeAnswer {
       return session.refuseAge(minimumAge, atIsoUtc, productId);
+    },
+
+    setLoyaltyMobile(raw: string | null) {
+      return session.setLoyaltyMobile(raw);
+    },
+
+    loyaltyMemberLast4(): string | null {
+      return session.loyaltyMemberLast4();
     },
 
     ageConfirmedAtLeast(): number {

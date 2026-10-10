@@ -141,6 +141,12 @@ const WORDS = {
     noReceiptOverCap: 'That is above the no-receipt limit —',
     noReceiptManagerHint: 'Every return without a receipt needs a manager — a different person from the cashier',
     exchange: 'Exchange',
+    member: 'Loyalty member',
+    memberRemove: 'Remove loyalty member ••••{last4}',
+    memberAsk: 'Customer\'s mobile number',
+    memberHint: 'Key the 10-digit number the customer joined with. Points are added when the sale reaches head office.',
+    memberSet: 'Member ••••{last4} is on this bill. Their points are added when the sale reaches head office.',
+    memberRemoved: 'No loyalty member on this bill now.',
     exchangeNeedsBasket: 'Scan the replacement items onto the bill first, then choose Exchange.',
     exchangeCredit: 'Credit for the goods coming back',
     exchangeEven: 'Even exchange — nothing to pay, nothing to refund',
@@ -249,6 +255,12 @@ const WORDS = {
     noReceiptOverCap: 'ரசீது இல்லாத வரம்பை விட அதிகம் —',
     noReceiptManagerHint: 'ரசீது இல்லாத ஒவ்வொரு திரும்பப் பெறலுக்கும் ஒரு மேலாளர் தேவை — காசாளர் அல்லாத வேறு ஒருவர்',
     exchange: 'பரிமாற்றம்',
+    member: 'லாயல்டி உறுப்பினர்',
+    memberRemove: 'லாயல்டி உறுப்பினரை நீக்கு ••••{last4}',
+    memberAsk: 'வாடிக்கையாளரின் கைபேசி எண்',
+    memberHint: 'வாடிக்கையாளர் சேர்ந்த 10 இலக்க எண்ணை உள்ளிடவும். விற்பனை தலைமை அலுவலகத்தை அடைந்ததும் புள்ளிகள் சேர்க்கப்படும்.',
+    memberSet: 'உறுப்பினர் ••••{last4} இந்த பில்லில் உள்ளார். விற்பனை தலைமை அலுவலகத்தை அடைந்ததும் புள்ளிகள் சேர்க்கப்படும்.',
+    memberRemoved: 'இந்த பில்லில் இப்போது லாயல்டி உறுப்பினர் இல்லை.',
     exchangeNeedsBasket: 'முதலில் மாற்றுப் பொருட்களை பில்லில் ஸ்கேன் செய்யவும், பிறகு பரிமாற்றம் தேர்வு செய்யவும்.',
     exchangeCredit: 'திரும்பும் பொருட்களுக்கான வரவு',
     exchangeEven: 'சம பரிமாற்றம் — செலுத்த வேண்டியதும் இல்லை, திரும்பத் தர வேண்டியதும் இல்லை',
@@ -959,6 +971,10 @@ el('more').addEventListener('click', async () => {
     // list to name the item from (SP-9b-i · M13-FR-01). Without them the option is not there — the till never guesses a limit.
     ...(session.noReceiptReturn && session.noReceiptReturn() !== null ? [{ value: 'no_receipt', label: t('noReceipt') }] : []),
     ...(cash === null || cash.shiftOpen ? [{ value: 'close', label: t('closeTill') }] : []),
+    // The customer's loyalty membership, by the mobile number they joined with (PF-09 step 2 · OB-28 "1").
+    ...(session.setLoyaltyMobile === undefined ? [] : session.loyaltyMemberLast4() === null
+      ? [{ value: 'member', label: t('member') }]
+      : [{ value: 'member_remove', label: t('memberRemove').replace('{last4}', session.loyaltyMemberLast4()) }]),
   ];
   const what = await choose(t('more'), options);
   if (what === 'float') return takeFloat();
@@ -967,7 +983,22 @@ el('more').addEventListener('click', async () => {
   if (what === 'exchange') return startExchange();
   if (what === 'no_receipt') return startNoReceiptReturn();
   if (what === 'close') return closeTheTill();
+  if (what === 'member') return nameLoyaltyMember();
+  if (what === 'member_remove') { session.setLoyaltyMobile(null); tell(t('member'), t('memberRemoved')); return undefined; }
 });
+
+/**
+ * Name the loyalty member on this bill by the mobile number they joined with (PF-09 step 2). Keyed on the till's own
+ * keypad; the number stays in this page's memory and goes to the store computer with the sale, which turns it into the
+ * member code before anything is written. Only the last four digits are ever shown.
+ */
+async function nameLoyaltyMember() {
+  const typed = await ask({ title: t('memberAsk'), mode: 'number', hint: t('memberHint'), initial: '' });
+  if (typed === null || typed === '' || typed === '0') return;
+  const outcome = session.setLoyaltyMobile(String(typed));
+  if (!outcome.ok) { tell(t('member'), outcome.laneMessage); return; }
+  tell(t('member'), t('memberSet').replace('{last4}', outcome.last4));
+}
 
 // ── Cash on the store computer (SP-4c · F10 · M14-FR-01) ─────────────────────────────────────────────────────────────
 //

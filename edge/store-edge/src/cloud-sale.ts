@@ -84,8 +84,12 @@ export function toCloudSale(record: unknown, packVersion: number, storeId?: stri
     // WHO the box verified rang it, sealed (ADR-0023) — carried exactly as written, for head office to check. Absent on
     // a record the box did not verify; head office flags that rather than guessing.
     ...(isObject(r['operatorVerified']) ? { operatorVerified: r['operatorVerified'] as IncomingSale['operatorVerified'] } : {}),
+    // The loyalty member CODE the box made from the number the cashier keyed (PF-09 step 2) — never a phone number.
+    ...(isMemberRef(r['customerRef']) ? { customerRef: r['customerRef'] } : {}),
   };
 }
+
+const isMemberRef = (v: unknown): v is string => typeof v === 'string' && /^m-[0-9a-f]{24}$/.test(v);
 
 const isObject = (v: unknown): boolean => v !== null && typeof v === 'object' && !Array.isArray(v);
 

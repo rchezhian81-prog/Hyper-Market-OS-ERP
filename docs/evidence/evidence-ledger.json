@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 971,
+  "testFiles": 973,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1008,7 +1008,7 @@
       "label": "WIRED",
       "counts": {
         "unit": 8,
-        "integration": 9,
+        "integration": 10,
         "realDb": 1,
         "browser": 0,
         "connected": 0,
@@ -1035,7 +1035,8 @@
           "tests/integration/customer-segments.test.ts",
           "tests/integration/data-rights.test.ts",
           "tests/integration/lot-trace.test.ts",
-          "tests/integration/one-customer.test.ts"
+          "tests/integration/one-customer.test.ts",
+          "tests/integration/till-names-a-loyalty-member.test.ts"
         ],
         "realDb": [
           "tests/integration/one-customer.test.ts"
@@ -1053,9 +1054,9 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 7,
-        "integration": 10,
+        "integration": 11,
         "realDb": 3,
-        "browser": 3,
+        "browser": 4,
         "connected": 0,
         "device": 0,
         "uat": 0
@@ -1080,6 +1081,7 @@
           "tests/integration/store-credit-refund.test.ts",
           "tests/integration/stored-value-liability.test.ts",
           "tests/integration/stored-value.test.ts",
+          "tests/integration/till-names-a-loyalty-member.test.ts",
           "tests/integration/write-guards-on-postgresql.test.ts"
         ],
         "realDb": [
@@ -1090,7 +1092,8 @@
         "browser": [
           "tests/e2e/return-governance-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts",
-          "tests/e2e/stored-value-oversight-delivery.e2e.ts"
+          "tests/e2e/stored-value-oversight-delivery.e2e.ts",
+          "tests/e2e/the-served-till-names-a-member.e2e.ts"
         ],
         "connected": [],
         "device": [],
