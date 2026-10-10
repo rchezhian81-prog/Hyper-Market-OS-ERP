@@ -12,6 +12,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { dispatchTransfer, receiveTransfer, TransferRefusedError, type Transfer, type TransferLine, type AvailableLot, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import { applyMovement, type Bin, type BinContents, type MovementCommand } from '../../../packages/warehouse/src/movements';
 import {
   requestIndent, approveIndent, rejectIndent, planIssue, applyIssue, planReceipt, applyReceipt, cancelIndent,
   planReturn, applyReturnRequest, returnTransfer, planReturnAcceptance, applyReturnAcceptance, indentTotals, indentAttention,
@@ -30,6 +31,42 @@ export type IndentEventType =
 export interface BinMovementRecord {
   readonly commandId: string;
   readonly movements: readonly StockMovement[];
+}
+
+/**
+ * SP-8c: the bin-level PICKS for an issue whose lines name the back-store bin they came from — judged by the same
+ * `applyMovement` engine the handheld runs, against head office's own bin register. A bin head office does not know, or
+ * whose contents cannot cover the line, is a DISAGREEMENT to be said (`bin_disagrees`), never forced: the location-level
+ * stock is the truth and it left the back store once. Each pick is keyed `<indent>:<issue>:<line>`, so a re-sent issue
+ * moves a bin once. Shared by the direct and the relayed issue routes.
+ */
+export async function binPicksFor(
+  deps: Pick<FloorIndentsDeps, 'bins' | 'contents' | 'appliedCommandIds'>,
+  input: { readonly tenantId: string; readonly indentId: string; readonly issueId: string; readonly lines: readonly IssueLine[]; readonly uomOf: (productId: string, batchId: string | null) => string; readonly movedBy: string; readonly at: string },
+): Promise<{ readonly binMovements: readonly BinMovementRecord[]; readonly disagrees: boolean }> {
+  const binMovements: BinMovementRecord[] = [];
+  let disagrees = false;
+  if (deps.bins === undefined || deps.contents === undefined || deps.appliedCommandIds === undefined || !input.lines.some((l) => isStr(l.binId))) return { binMovements, disagrees };
+  const bins = await deps.bins(input.tenantId);
+  const contents = await deps.contents(input.tenantId);
+  const applied = [...await deps.appliedCommandIds(input.tenantId)];
+  input.lines.forEach((l, i) => {
+    if (!isStr(l.binId)) return;
+    const commandId = `${input.indentId}:${input.issueId}:${i + 1}`;
+    if (applied.includes(commandId)) return;
+    const bin = bins.find((x) => x.binId === l.binId);
+    if (bin === undefined) { disagrees = true; return; }
+    const command: MovementCommand = {
+      commandId, kind: 'pick', storeId: bin.storeId, productId: l.productId, batchId: l.batchId, quantityMinor: l.quantityMinor,
+      uom: input.uomOf(l.productId, l.batchId), fromBinId: l.binId, toBinId: null, movedBy: input.movedBy, at: input.at,
+      reason: `indent ${input.indentId} issue ${input.issueId}`,
+    };
+    const result = applyMovement({ command, appliedCommandIds: applied, bins, contents });
+    if (!result.accepted) { disagrees = true; return; }
+    applied.push(commandId);
+    binMovements.push({ commandId, movements: result.movements });
+  });
+  return { binMovements, disagrees };
 }
 
 export interface FloorIndentsDeps {
@@ -55,6 +92,12 @@ export interface FloorIndentsDeps {
   /** A RETURN accepted at the back store: the indent and the return's transfer proposed, dispatched and received in one step, with both legs' movements — ONE atomic write. */
   readonly recordReturnAccepted: (tenantId: string, indent: FloorIndent, transfer: Transfer, dispatchMovements: readonly StockMovement[], receiveMovements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[]) => Promise<void> | void;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** SP-8c: head office's bin register, so an issue that names a bin lowers the same bin it took from — on the handheld's
+   *  relayed route AND the direct route (Batch 2: the direct route named the bin and left it full). Optional: a cloud without
+   *  bins flags, never fails. */
+  readonly bins?: (tenantId: string) => Promise<readonly Bin[]> | readonly Bin[];
+  readonly contents?: (tenantId: string) => Promise<BinContents> | BinContents;
+  readonly appliedCommandIds?: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
 }
 
@@ -301,14 +344,19 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           const lineCostsMinor = plan.transfer.lines.map((l) => unitCostsMinor[l.productId] ?? null);
           const transfer: Transfer = { ...dispatched.transfer, lineCostsMinor };
           const posted = dispatchPostings(transfer, dispatched.movements, ctx.userId);
-          const next = applyIssue(indent, plan.issue);
-          await deps.recordIssued(ctx.tenantId, next, transfer, dispatched.movements, posted);
+          // SP-8c on the direct route too: the bin a line names is lowered in the SAME write; a disagreement is said.
+          const picks = await binPicksFor(deps, {
+            tenantId: ctx.tenantId, indentId, issueId, lines, movedBy: ctx.userId, at: now,
+            uomOf: (productId, batchId) => plan.transfer.lines.find((t) => t.productId === productId && t.batchId === batchId)?.uom ?? 'EA',
+          });
+          const next = applyIssue(indent, picks.disagrees ? { ...plan.issue, governanceFlags: ['bin_disagrees'] } : plan.issue);
+          await deps.recordIssued(ctx.tenantId, next, transfer, dispatched.movements, posted, picks.binMovements);
           await audit(ctx.tenantId, {
             actorId: ctx.userId, action: 'floor_indent.issue', objectType: 'floor_indent', objectId: indentId, at: now, origin: origin(ctx.tenantId, ctx.branchId ?? null),
             before: { state: indent.state }, after: { state: next.state, issueId, transferId: transfer.transferId, issuedMinor: String(lines.reduce((s, l) => s + l.quantityMinor, 0)), posted: posted.map((m) => m.movementId).join(',') },
             correlationId: indentId,
           });
-          return { status: 201, body: { indent: presentIndent(next), issue: plan.issue, transferId: transfer.transferId, posted: posted.map((m) => m.movementId), lineCostsMinor, alreadyIssued: false } };
+          return { status: 201, body: { indent: presentIndent(next), issue: plan.issue, transferId: transfer.transferId, posted: posted.map((m) => m.movementId), lineCostsMinor, binMovements: picks.binMovements.map((m) => m.commandId), flags: picks.disagrees ? ['bin_disagrees'] : [], alreadyIssued: false } };
         } catch (e) { return refusedBy(e); }
       },
     },

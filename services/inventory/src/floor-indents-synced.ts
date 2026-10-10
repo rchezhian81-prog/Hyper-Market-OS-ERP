@@ -26,13 +26,12 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { dispatchTransfer, receiveTransfer, type Transfer } from '../../../packages/warehouse/src/transfers';
-import { applyMovement, type Bin, type BinContents, type MovementCommand } from '../../../packages/warehouse/src/movements';
 import { requestIndent, planIssue, applyIssue, planReceipt, applyReceipt, indentTotals, type FloorIndent, type RelayedBy } from '../../../packages/warehouse/src/indents';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { dispatchPostings, receivePostings } from './warehouse-transfers';
 import {
-  presentIndent, refusedBy, readIndentLines, readIssueLines, readCounted, receivedOf, shortfallOf, arrivedOf, damagedOf, goodOf, damagePostings,
-  type FloorIndentsDeps, type BinMovementRecord,
+  presentIndent, refusedBy, readIndentLines, readIssueLines, readCounted, receivedOf, shortfallOf, arrivedOf, damagedOf, goodOf, damagePostings, binPicksFor,
+  type FloorIndentsDeps,
 } from './floor-indents';
 
 export const INDENT_SYNC_FLAGS = Object.freeze([
@@ -51,10 +50,6 @@ const MOVE_PERMISSION = 'inventory.movement.append';
 
 export interface SyncedFloorIndentsDeps extends FloorIndentsDeps {
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
-  /** SP-8c: head office's bin register, so a handheld issue lowers the same bin it took from. Optional: a cloud without bins flags, never fails. */
-  readonly bins?: (tenantId: string) => Promise<readonly Bin[]> | readonly Bin[];
-  readonly contents?: (tenantId: string) => Promise<BinContents> | BinContents;
-  readonly appliedCommandIds?: (tenantId: string) => Promise<readonly string[]> | readonly string[];
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -169,28 +164,11 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           // SP-8c: lower the bin the handheld took from — in the SAME write as the stock movement. Head office's bin register
           // is judged with the same engine the handheld ran; a disagreement is flagged for a person, never forced and never
           // a second location-level posting.
-          const binMovements: BinMovementRecord[] = [];
-          if (deps.bins !== undefined && deps.contents !== undefined && deps.appliedCommandIds !== undefined && lines.some((l) => isStr(l.binId))) {
-            const bins = await deps.bins(ctx.tenantId);
-            const contents = await deps.contents(ctx.tenantId);
-            const applied = [...await deps.appliedCommandIds(ctx.tenantId)];
-            lines.forEach((l, i) => {
-              if (!isStr(l.binId)) return;
-              const commandId = `${indentId}:${issueId}:${i + 1}`;
-              if (applied.includes(commandId)) return;
-              const bin = bins.find((x) => x.binId === l.binId);
-              if (bin === undefined) { if (!flags.includes('bin_disagrees')) flags.push('bin_disagrees'); return; }
-              const command: MovementCommand = {
-                commandId, kind: 'pick', storeId: bin.storeId, productId: l.productId, batchId: l.batchId, quantityMinor: l.quantityMinor,
-                uom: plan.transfer.lines.find((t) => t.productId === l.productId && t.batchId === l.batchId)?.uom ?? 'EA',
-                fromBinId: l.binId, toBinId: null, movedBy: issuedBy, at, reason: `indent ${indentId} issue ${issueId}`,
-              };
-              const result = applyMovement({ command, appliedCommandIds: applied, bins, contents });
-              if (!result.accepted) { if (!flags.includes('bin_disagrees')) flags.push('bin_disagrees'); return; }
-              applied.push(commandId);
-              binMovements.push({ commandId, movements: result.movements });
-            });
-          }
+          const { binMovements, disagrees } = await binPicksFor(deps, {
+            tenantId: ctx.tenantId, indentId, issueId, lines, movedBy: issuedBy, at,
+            uomOf: (productId, batchId) => plan.transfer.lines.find((t) => t.productId === productId && t.batchId === batchId)?.uom ?? 'EA',
+          });
+          if (disagrees && !flags.includes('bin_disagrees')) flags.push('bin_disagrees');
 
           const next = applyIssue(indent, { ...plan.issue, governanceFlags: flags, relayed });
           await deps.recordIssued(ctx.tenantId, next, transfer, dispatched.movements, posted, binMovements);
