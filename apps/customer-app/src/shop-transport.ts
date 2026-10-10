@@ -39,6 +39,12 @@ export interface ShopOrderRequest {
   };
   /** Delivered or collected (FUL-03): the shop adds its own delivery fee to its quote for a delivery. */
   readonly fulfilment?: 'delivery' | 'pickup';
+  /**
+   * For a delivery (FUL-03): the slot the customer chose and where to deliver — the shop checks both against its OWN
+   * record (the slot offered and not full, the address inside its radius) and refuses the order otherwise.
+   */
+  readonly deliverySlot?: { readonly startsAt: string; readonly endsAt: string };
+  readonly deliveryLocation?: { readonly lat: number; readonly lon: number };
 }
 
 /** A follow-up on an order the shop already holds (FUL-03 / FUL-07): pay for what it promised, ask again, or cancel. */
@@ -156,6 +162,8 @@ export function httpShopTransport(options: HttpShopTransportOptions): ShopTransp
             locationId: request.locationId,
             ...(request.payment === undefined ? {} : { payment: request.payment }),
             ...(request.fulfilment === undefined ? {} : { fulfilment: request.fulfilment }),
+            ...(request.deliverySlot === undefined ? {} : { deliverySlot: request.deliverySlot }),
+            ...(request.deliveryLocation === undefined ? {} : { deliveryLocation: request.deliveryLocation }),
           }),
           signal: controller.signal,
         });

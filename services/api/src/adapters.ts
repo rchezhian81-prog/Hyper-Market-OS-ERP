@@ -254,6 +254,8 @@ import type {
 } from '../../orders/src/index';
 import type { ServiceabilityConfigDeps } from '../../orders/src/serviceability';
 import type { ServiceabilityPeriod } from '../../../packages/storefront/src/index';
+import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/index';
+import type { DeliveryServiceDeps, DeliveryServiceConfig, SlotBooking } from '../../orders/src/delivery-service';
 import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { AssignmentsDeps, WaveAssignment, RouteAssignment } from '../../fulfilment/src/assignments';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
@@ -11661,6 +11663,47 @@ export function heldVersionsAdapter(input: { readonly store: EventStore }): {
         id: `held-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}${observed}`, type: 'StoreHeldVersionsReported', occurredAt: r.reportedAt,
         idempotencyKey: `held-${tenantId}-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}${observed}`, source: 'api/platform', payload: r,
       }));
+    },
+  };
+}
+
+/**
+ * FUL-03: head office's own delivery service — where the store is, its daily slots — and the slot bookings, each slot on
+ * its own write guard so the last place is taken once. The configuration is append-only, the latest in force; a booking
+ * stops counting once its order is cancelled (or was never placed, after a short grace for a placement in flight).
+ */
+export function deliveryServiceAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly timeZone: (tenantId: string) => Promise<string> | string;
+}): DeliveryServiceDeps {
+  const configStream = streamName(STREAM.delivery, 'service');
+  const slotStream = (startsAt: string): string => streamName(STREAM.delivery, 'slot', startsAt.replace(/[^0-9TZ]/g, ''));
+  const guardKey = (startsAt: string): string => `delivery-slot:${startsAt}`;
+  const orders = ordersAdapter({ store: input.store, now: input.now, holdMinutes: 30 });
+  return {
+    now: input.now,
+    timeZone: input.timeZone,
+    config: async (tenantId) => (await allOf<DeliveryServiceConfig>(input.store, tenantId, configStream, 'DeliveryServiceSet')).at(-1),
+    recordConfig: async (tenantId, c, key) => {
+      await input.store.append(tenantId, configStream, makeEvent({
+        id: `delivery-service-${key}`, type: 'DeliveryServiceSet', occurredAt: c.setAt,
+        idempotencyKey: `delivery-service-${tenantId}-${key}`, source: 'api/orders', payload: c,
+      }));
+    },
+    policyOn: async (tenantId, day) => resolveServiceabilityPolicy({ schedule: await serviceabilityAdapter(input).schedule(tenantId), on: day }).policy,
+    slotVersion: (tenantId, startsAt) => input.store.guardVersion(tenantId, guardKey(startsAt)),
+    bookings: (tenantId, startsAt) => allOf<SlotBooking>(input.store, tenantId, slotStream(startsAt), 'DeliverySlotBooked'),
+    recordBooking: async (tenantId, b, expectedVersion) => {
+      await input.store.appendBatch(tenantId, [{ stream: slotStream(b.slotStartsAt), event: makeEvent({
+        id: `slot-booking-${b.orderId}`, type: 'DeliverySlotBooked', occurredAt: b.bookedAt,
+        idempotencyKey: `slot-booking-${tenantId}-${b.orderId}`, source: 'api/orders', payload: b,
+      }) }], { guard: { key: guardKey(b.slotStartsAt), expectedVersion } });
+    },
+    releasedOrder: async (tenantId, orderId, bookedAt) => {
+      const placed = await orders.placedOrder(tenantId, orderId);
+      if (placed === undefined) return Date.parse(input.now()) - Date.parse(bookedAt) > 2 * 60_000;
+      return (await orders.orderState(tenantId, orderId))?.state === 'cancelled';
     },
   };
 }
