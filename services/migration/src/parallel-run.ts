@@ -20,6 +20,10 @@
 //     sheet the reconciler signs each day.
 //   • ROLLBACK — performed, recorded, and thereafter the cutover checklist's "rollback demonstrated"
 //     comes from the ledger, not from a field the client typed.
+//   • ROLLBACK RECONCILED (audit GT-02 round 4) — a rollback is DEMONSTRATED only when its data reconciles: every bill
+//     and paisa the new system took before the switch-back is in the old system afterwards, counted by head office from
+//     its own sales ledger — and only once every store computer has synced past the switch-back (EA-01 watermarks), so
+//     a store still holding sales on its disk cannot make the count look complete.
 //
 // Everything is append-only. A day compared twice is two facts (the later one is the day's state); a
 // difference owned twice is refused by the engine. The cutover decision can now read the parallel-run
@@ -28,9 +32,9 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  compareParallelDay, ownDifference, parallelRunPosition, performRollback, confirmRollback,
+  compareParallelDay, ownDifference, parallelRunPosition, performRollback, confirmRollback, reconcileRollback,
   type ComparisonArea, type DayComparison, type ParallelDayResult, type ParallelDifference, type ParallelRunPosition,
-  type RollbackResult, type RollbackTrigger,
+  type RollbackResult, type RollbackTrigger, type RollbackReconciliation,
 } from '../../../packages/migration/src/cutover';
 import { assertSafeTarget } from './guards';
 import type { MigrationDeps } from './index';
@@ -156,9 +160,12 @@ export async function ledgerCutoverEvidence(deps: MigrationDeps, tenantId: strin
   const view = await parallelRunView(deps, tenantId);
   const rollbacks = deps.rollbacks === undefined ? [] : await deps.rollbacks(tenantId);
   // Only a rollback CONFIRMED with execution evidence counts (audit GT-02): a decision, or an old record that says
-  // "performed" with nothing seen behind it, never demonstrates one. The time is when it was seen working.
-  const latest = [...rollbacks].filter((r) => r.performed && r.state === 'performed' && r.execution !== undefined)
-    .map((r) => r.execution!.confirmedAt).sort().at(-1);
+  // "performed" with nothing seen behind it, never demonstrates one. And (round 4) only once its DATA reconciled — the
+  // old system holds every bill the new one took, with every store synced past the switch-back. The time is then.
+  const reconciliations = deps.rollbackReconciliations === undefined ? [] : await deps.rollbackReconciliations(tenantId);
+  const performed = new Set(rollbacks.filter((r) => r.performed && r.state === 'performed' && r.execution !== undefined).map((r) => `${r.cutoverId}|${r.decidedAt}`));
+  const latest = reconciliations.filter((c) => c.reconciled && performed.has(`${c.cutoverId}|${c.decidedAt}`))
+    .map((c) => c.at).sort().at(-1);
   return {
     ...(view === undefined ? {} : { parallel: view.position }),
     ...(latest === undefined ? {} : { rollbackDemonstratedAt: latest }),
@@ -410,7 +417,69 @@ export function parallelRunRoutes(deps: MigrationDeps): readonly Route[] {
         }
         const recorded: RecordedRollback = { ...confirmed.rollback, tenantId: ctx.tenantId };
         await deps.recordRollback!(ctx.tenantId, recorded);
-        return { status: 201, body: { rollback: recorded } };
+        return { status: 201, body: { rollback: recorded, nextSafeAction: 'Carry the new system\'s bills back into the old one, then reconcile the rollback (count and takings).' } };
+      },
+    },
+    {
+      // RECONCILE a performed rollback's data (audit GT-02 round 4): head office counts the bills and takings the new
+      // system took from `newSystemTradingFrom` to the switch-back, from ITS OWN sales ledger; the operator says what the
+      // old system holds from the carry-back. Refused while any store computer has not synced past the switch-back. A
+      // reconciliation that does not balance is recorded too (evidence), as not reconciled — and demonstrates nothing.
+      // Body: { newSystemTradingFrom, legacyCarriedBack: { count, totalMinor } }.
+      api: 'API-12', method: 'POST', path: '/v1/migration/cutover/rollback/:cutoverId/reconciliation',
+      permission: 'migration.cutover.decide', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const cutoverId = ctx.params['cutoverId'] ?? '';
+        const b = isObj(ctx.body) ? ctx.body : {};
+        const legacy = isObj(b['legacyCarriedBack']) ? b['legacyCarriedBack'] : undefined;
+        const whole = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+        if (!isStr(b['newSystemTradingFrom']) || legacy === undefined || !whole(legacy['count']) || !whole(legacy['totalMinor'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_rollback_reconciliation',
+            whatHappened: 'Reconciling a rollback needs { newSystemTradingFrom, legacyCarriedBack: { count, totalMinor } } — when the new system started taking sales, and what the old system now holds from the carry-back.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Count the carried-back bills and their total in the old system, then send them.',
+          });
+        }
+        if (deps.rollbacks === undefined || deps.recordRollbackReconciliation === undefined || deps.windowSales === undefined || deps.storeSalesSyncedThrough === undefined) notWired();
+        const latest = [...(await deps.rollbacks!(ctx.tenantId))].filter((r) => r.cutoverId === cutoverId)
+          .sort((x, y) => x.decidedAt.localeCompare(y.decidedAt) || Number(x.performed) - Number(y.performed)).at(-1);
+        if (latest === undefined) {
+          throw apiError(404, { code: 'no_rollback_decided', whatHappened: `No rollback of ${cutoverId} has been decided.`, wasItSaved: 'not_saved', nextSafeAction: 'Decide and confirm the rollback first.' });
+        }
+        const from = (b['newSystemTradingFrom'] as string).trim();
+        const to = latest.execution?.legacyTradingFrom;
+        const newSystem = to === undefined || Number.isNaN(Date.parse(from)) ? { count: 0, totalMinor: 0 } : await deps.windowSales!(ctx.tenantId, from, to);
+        const result = reconcileRollback({
+          rollback: latest, windowFrom: from, newSystem,
+          legacy: { count: legacy['count'] as number, totalMinor: legacy['totalMinor'] as number },
+          stores: await deps.storeSalesSyncedThrough!(ctx.tenantId), by: ctx.userId, at: deps.now(),
+        });
+        if (!result.ok) {
+          throw apiError(result.refusal === 'store_not_synced_through_switch_back' || result.refusal === 'no_store_sync_report' ? 409 : 422, {
+            code: result.refusal, whatHappened: result.detail, wasItSaved: 'not_saved',
+            nextSafeAction: result.refusal === 'not_performed' ? 'Confirm the rollback with the old system\'s first bill first.' : 'Nothing was recorded. Fix what is named and reconcile again.',
+          });
+        }
+        await deps.recordRollbackReconciliation!(ctx.tenantId, result.reconciliation);
+        return { status: 201, body: { reconciliation: result.reconciliation, demonstrated: result.reconciliation.reconciled } };
+      },
+    },
+    {
+      // The rollback as the ledger holds it — decision, execution evidence, every reconciliation — after any reload.
+      api: 'API-12', method: 'GET', path: '/v1/migration/cutover/rollback/:cutoverId',
+      permission: 'migration.parallel.read',
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const cutoverId = ctx.params['cutoverId'] ?? '';
+        const all = [...(deps.rollbacks === undefined ? [] : await deps.rollbacks(ctx.tenantId))].filter((r) => r.cutoverId === cutoverId)
+          .sort((x, y) => x.decidedAt.localeCompare(y.decidedAt) || Number(x.performed) - Number(y.performed));
+        if (all.length === 0) throw apiError(404, { code: 'no_rollback_decided', whatHappened: `No rollback of ${cutoverId} is on record.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing to show.' });
+        const reconciliations: readonly RollbackReconciliation[] = (deps.rollbackReconciliations === undefined ? [] : await deps.rollbackReconciliations(ctx.tenantId)).filter((c) => c.cutoverId === cutoverId);
+        const latest = all.at(-1)!;
+        const demonstrated = latest.state === 'performed' && reconciliations.some((c) => c.decidedAt === latest.decidedAt && c.reconciled);
+        return { status: 200, body: { rollback: latest, reconciliations, demonstrated, asAt: deps.now() } };
       },
     },
   ];

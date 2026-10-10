@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 885 | 540 | 540 | 73 | 285 |
+| 13 | 887 | 541 | 541 | 73 | 285 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -916,7 +916,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/migration/control-totals/sign` | `migration.controltotal.sign` | core | yes |
 | POST | `/v1/migration/cutover/decision` | `migration.cutover.decide` | core | yes |
 | POST | `/v1/migration/cutover/rollback` | `migration.cutover.decide` | core | yes |
+| GET | `/v1/migration/cutover/rollback/:cutoverId` | `migration.parallel.read` | core | — |
 | POST | `/v1/migration/cutover/rollback/:cutoverId/confirmation` | `migration.cutover.decide` | core | yes |
+| POST | `/v1/migration/cutover/rollback/:cutoverId/reconciliation` | `migration.cutover.decide` | core | yes |
 | POST | `/v1/migration/deltas` | `migration.delta.apply` | core | yes |
 | POST | `/v1/migration/discovery` | `migration.discovery.read` | core | yes |
 | GET | `/v1/migration/exceptions` | `migration.cleaning.read` | core | — |

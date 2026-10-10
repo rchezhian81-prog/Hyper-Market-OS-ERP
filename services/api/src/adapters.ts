@@ -287,7 +287,7 @@ import type { ConsolidationDeps } from '../../reporting/src/consolidation-route'
 import { salesSummary, ingestContribution } from '../../../packages/reporting/src/index';
 import type { Producer, SaleFact, BranchContribution, BranchMembership } from '../../../packages/reporting/src/index';
 import type { MigrationDeps, ParallelRunPolicy, RecordedParallelDay, RecordedRollback, AppliedDelta } from '../../migration/src/index';
-import type { ParallelDifference } from '../../../packages/migration/src/cutover';
+import type { ParallelDifference, RollbackReconciliation } from '../../../packages/migration/src/cutover';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
 import type { Signature } from '../../../packages/migration/src/verification-report';
@@ -10590,6 +10590,31 @@ export function migrationAdapter(input: {
         id: `parallel-diff-${difference.differenceId}-${difference.status}`, type: 'ParallelDifferenceRecorded', occurredAt: input.now(),
         idempotencyKey: `parallel-diff-${tenantId}-${difference.differenceId}-${state}`, source: 'api/migration', payload: difference,
       }));
+    },
+    // GT-02 round 4: each reconciliation of a rollback's data (append-only — one that did not balance stays too).
+    rollbackReconciliations: (tenantId) => allOf<RollbackReconciliation>(input.store, tenantId, STREAM.migration, 'RollbackReconciled'),
+    recordRollbackReconciliation: async (tenantId, c) => {
+      await input.store.append(tenantId, STREAM.migration, makeEvent({
+        id: `rollback-reconciled-${c.cutoverId}-${c.decidedAt}-${c.at}`, type: 'RollbackReconciled', occurredAt: c.at,
+        idempotencyKey: `rollback-reconciled-${tenantId}-${c.cutoverId}-${c.decidedAt}-${c.at}`, source: 'api/migration', payload: c,
+      }));
+    },
+    // The bills and takings head office holds for the new system's window — from ITS OWN sales ledger, by when each sale
+    // was rung (a day either side is read, then each sale is judged by its own time).
+    windowSales: async (tenantId, from, to) => {
+      const day = 86_400_000;
+      const events = await input.store.readStream(tenantId, STREAM.sales, {
+        type: 'SaleCommitted', from: new Date(Date.parse(from) - day).toISOString(), to: new Date(Date.parse(to) + day).toISOString(),
+      });
+      const inWindow = events.map((e) => payloadOf<IncomingSale>(e))
+        .filter((s) => Date.parse(s.committedAt) >= Date.parse(from) && Date.parse(s.committedAt) < Date.parse(to));
+      return { count: inWindow.length, totalMinor: inWindow.reduce((n, s) => n + s.totalMinor, 0) };
+    },
+    // Every store head office knows, and how far its computer says its sales have synced (EA-01); never heard → null.
+    storeSalesSyncedThrough: async (tenantId) => {
+      const view = await storeSyncView(input.store, tenantId, input.now);
+      const ids = [...new Set([...view.branches.keys(), ...view.sales.keys()])].sort();
+      return ids.map((storeId) => ({ storeId, completeThrough: view.sales.get(storeId)?.completeThrough ?? null }));
     },
     recordRollback: async (tenantId, rollback) => {
       // The decision and its confirmation are two facts with two keys — a confirmation never collapses onto the decision.
