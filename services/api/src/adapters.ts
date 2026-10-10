@@ -262,7 +262,7 @@ import { buildTenantExport } from '../../../packages/platform/src/lifecycle';
 import type { TenantBranding } from '../../../packages/platform/src/branding';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
-import { figure } from '../../reporting/src/index';
+import { figure, sourceFreshness } from '../../reporting/src/index';
 import type { ReportingDeps, Figure } from '../../reporting/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
@@ -9654,7 +9654,33 @@ export function reportingAdapter(input: {
    */
   readonly records?: readonly Producer[];
   readonly produced?: readonly string[];
+  /**
+   * Minutes after which a figure is lagging, and stale. Per tenant when the composition says so; else the section-32
+   * defaults (5 and 60) the figure engine applies.
+   */
+  readonly thresholds?: { readonly laggingAfterMinutes: number; readonly staleAfterMinutes: number };
 }): ReportingDeps {
+  const thresholds = input.thresholds ?? {};
+  /** Where a sale came from (audit EA-01): the store location the lane sells from, else the lane itself. */
+  const sourceOf = (s: IncomingSale): string =>
+    (typeof s.locationId === 'string' && s.locationId !== '' ? `store:${s.locationId}` : `lane:${s.laneId}`);
+  /**
+   * The newest sale head office holds from each source — the sources seen in `todays` (the read already made), plus
+   * the source of the newest sale it has ever received (one index hit), so a shop that has not traded today is still
+   * judged by when it was last heard from rather than dropped. Empty only when no sale has ever arrived.
+   */
+  const salesWatermarks = async (tenantId: string, todays: readonly PersistedEvent[]): Promise<readonly { source: string; lastEventAt: string }[]> => {
+    const newest = new Map<string, string>();
+    const note = (e: PersistedEvent): void => {
+      const source = sourceOf(payloadOf<IncomingSale>(e));
+      const held = newest.get(source);
+      if (held === undefined || Date.parse(e.event.occurredAt) > Date.parse(held)) newest.set(source, e.event.occurredAt);
+    };
+    for (const e of todays) note(e);
+    const latestEver = await input.store.latestOfType(tenantId, STREAM.sales, 'SaleCommitted');
+    if (latestEver !== undefined) note(latestEver);
+    return [...newest.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([source, lastEventAt]) => ({ source, lastEventAt }));
+  };
   return {
     now: input.now,
 
@@ -9713,20 +9739,39 @@ export function reportingAdapter(input: {
       }));
       const summary = salesSummary(facts, (todays[0]?.currency as CurrencyCode) ?? 'INR');
 
-      // As at now, because the ledger is read at request time — there is no cache between these
-      // figures and the events they are computed from, so there is nothing to be stale.
-      const asAt = input.now();
-      const money = (name: string, valueMinor: number): Figure =>
-        figure({ name, valueMinor, unit: 'minor_currency', asAt, now: asAt });
+      // As at the SOURCE's time, never the read time (audit EA-01): an 08:00 sale read at 16:00 is "as at 08:00, stale",
+      // not "as at 16:00, live". The store box drains its queue in order (edge/sync-agent ORDER), so the newest sale
+      // head office holds from a store is that store's sync watermark — everything it rang before then has arrived.
+      // The figure is as current as its STALEST source; a shop no till has ever reached is "not available", never 0.
+      const watermarks = await salesWatermarks(tenantId, events);
+      const asAt = watermarks.length === 0
+        ? null
+        : watermarks.map((w) => w.lastEventAt).reduce((oldest, t) => (Date.parse(t) < Date.parse(oldest) ? t : oldest));
+      const now = input.now();
+      const never = 'no till has ever sent a sale to head office, so there is nothing to report yet';
+      const of = (name: string, valueMinor: number, unit: Figure['unit']): Figure =>
+        figure({ name, ...(asAt === null ? { notAvailableBecause: never } : { valueMinor }), unit, asAt, now, ...thresholds });
 
       return [
-        money('Sales today', summary.grossSalesMinor),
-        figure({ name: 'Sales today — receipts', valueMinor: summary.basketCount, unit: 'count', asAt, now: asAt }),
-        // One figure per tender the day actually saw (deterministic order), each an exact Σ from the
-        // engine — the split the owner reaches for first: how much came in as cash, card, UPI.
+        of('Sales today', summary.grossSalesMinor, 'minor_currency'),
+        of('Sales today — receipts', summary.basketCount, 'count'),
+        // One figure per tender the day actually saw (deterministic order), each an exact sum from the engine — every
+        // payment on a split bill under its own kind (EA-02), so the tender figures add back to "Sales today".
         ...Object.keys(summary.tenderMix).sort()
-          .map((kind) => money(`Sales today — ${kind}`, summary.tenderMix[kind]!)),
+          .map((kind) => of(`Sales today — ${kind}`, summary.tenderMix[kind]!, 'minor_currency')),
       ];
+    },
+
+    // Each store's (or, for a lane that names no store location, each lane's) sales watermark, judged against now —
+    // the per-source freshness the dashboard carries (M29-FR-01 "freshness per branch/domain", EA-01).
+    sources: async (tenantId) => {
+      const calendar = await input.calendar(tenantId);
+      const window = tradingDayWindow(tradingDayIn(input.now(), calendar), calendar);
+      const events = await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: window.from, to: window.to });
+      const now = input.now();
+      const marks = await salesWatermarks(tenantId, events);
+      if (marks.length === 0) return [sourceFreshness({ source: 'any till', domain: 'sales', lastEventAt: null, now, ...thresholds })];
+      return marks.map((m) => sourceFreshness({ source: m.source, domain: 'sales', lastEventAt: m.lastEventAt, now, ...thresholds }));
     },
   };
 }
