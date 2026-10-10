@@ -85,6 +85,26 @@ export const SETTINGS = {
     defaultValue: false,
   } as TenantSetting<boolean>,
   /**
+   * The loyalty earn rule — points per ₹100 spent (PF-09-a · owner decision OB-28 "C" · AVR-14). ZERO by default, and
+   * zero means OFF: no sale earns points until the owner sets the rate, and the screens say the rule is not set. A
+   * setting, not a number in the code — the owner decides what the shop gives back and can change it without a release.
+   */
+  LOYALTY_POINTS_PER_100_INR: {
+    key: 'loyalty.points_per_100_inr',
+    label: 'Loyalty points earned per ₹100 spent (0 = loyalty off)',
+    defaultValue: 0,
+  } as TenantSetting<number>,
+  /**
+   * What one loyalty point is worth when spent, in paise (PF-09 · OB-28 "C"). Zero by default — the owner sets it. It
+   * values the points customers hold (the loyalty liability, M17-FR-01 / M23) and, once spending is built (PF-09-c),
+   * what a point takes off a bill.
+   */
+  LOYALTY_POINT_VALUE_PAISE: {
+    key: 'loyalty.point_value_paise',
+    label: 'Value of one loyalty point when spent (paise)',
+    defaultValue: 0,
+  } as TenantSetting<number>,
+  /**
    * The in-store production departments this tenant actually operates
    * (OB-04 / AVR-12). Empty by default: the roadmap's rule is that a module is
    * never built or enabled for a department the store does not have (§2.2).

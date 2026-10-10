@@ -90,6 +90,11 @@ export interface IncomingSale {
    * box's seal over that and this sale. Untrusted as it arrives — head office checks the seal, never takes it on trust.
    */
   readonly operatorVerified?: { readonly userId?: unknown; readonly via?: unknown; readonly laneId?: unknown; readonly seal?: unknown };
+  /**
+   * The loyalty member the cashier named (PF-09 · OB-28 "1"): the member CODE the store computer made from the mobile
+   * number keyed at the till — never the number itself (P-04). Optional: a walk-in buys with no personal data (M16-FR-01).
+   */
+  readonly customerRef?: string;
 }
 
 export type SaleExceptionKind =
