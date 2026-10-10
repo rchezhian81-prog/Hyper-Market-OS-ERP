@@ -61,6 +61,8 @@ describe('what leaves the phone', () => {
       orderId: out.ok ? out.orderId : '', token: 'tok-session-1', locationId: 'L1',
       lines: [{ productId: 'p1', quantityMinor: 2 }],
       payment: { providerRef: 'tok_2f9a41ce', amountMinor: 2 * 145_00 + 40_00, result: 'authorised' },
+      // The chosen slot is a delivery, so the shop quotes its own delivery fee (FUL-03).
+      fulfilment: 'delivery',
     });
     // And the customer sees a real, confirmed order — the session's tested sentence.
     expect(s.state().stage).toBe('sent');

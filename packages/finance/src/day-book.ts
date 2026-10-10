@@ -78,6 +78,12 @@ export interface DayBookReturn {
   readonly refundTender: string;
   readonly lines: readonly DayBookReturnLine[];
   readonly exchange?: DayBookExchange;
+  /**
+   * OB-34 "A": the value of the points the member PAID WITH that this return gave back to them (head office's give-back
+   * fact). It is part of the returned goods' value — so the sales return reverses revenue and GST on the whole of it — and
+   * it leaves the shop as a `refund:loyalty_points` leg (the points liability is owed again), not as money.
+   */
+  readonly pointsGivenBackMinor?: number;
 }
 
 export type DayBookExceptionReason =
@@ -205,21 +211,23 @@ function splitSale(sale: DayBookSale, taxRateOf: DayBookInput['taxRateOf']): Spl
 
 /** The value a return credits back: the refund, or on an exchange what was applied plus any refunded balance. */
 export function returnedValue(ret: DayBookReturn): number {
-  if (ret.exchange === undefined) return ret.refundMinor;
-  return ret.exchange.appliedMinor + (ret.exchange.balance === 'refund' ? ret.exchange.balanceMinor : 0);
+  const points = Math.max(0, ret.pointsGivenBackMinor ?? 0);
+  if (ret.exchange === undefined) return ret.refundMinor + points;
+  return ret.exchange.appliedMinor + (ret.exchange.balance === 'refund' ? ret.exchange.balanceMinor : 0) + points;
 }
 
 /** How the returned value left the shop — by which tender, how much. */
 export function refundLegs(ret: DayBookReturn): readonly DayBookTender[] {
+  const points: readonly DayBookTender[] = (ret.pointsGivenBackMinor ?? 0) > 0 ? [{ kind: 'loyalty_points', amountMinor: ret.pointsGivenBackMinor! }] : [];
   if (ret.exchange === undefined) {
-    return ret.refundMinor > 0 ? [{ kind: ret.refundTender, amountMinor: ret.refundMinor }] : [];
+    return [...(ret.refundMinor > 0 ? [{ kind: ret.refundTender, amountMinor: ret.refundMinor }] : []), ...points];
   }
   const legs: DayBookTender[] = [];
   if (ret.exchange.appliedMinor > 0) legs.push({ kind: 'exchange_credit', amountMinor: ret.exchange.appliedMinor });
   if (ret.exchange.balance === 'refund' && ret.exchange.balanceMinor > 0) {
     legs.push({ kind: ret.exchange.balanceTender ?? ret.refundTender, amountMinor: ret.exchange.balanceMinor });
   }
-  return legs;
+  return [...legs, ...points];
 }
 
 function splitReturn(ret: DayBookReturn, original: DayBookSale | undefined, taxRateOf: DayBookInput['taxRateOf']): Split {
@@ -426,14 +434,18 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
         { account: 'sales_clearing', side: 'credit', component: 'total' },
       ],
     },
-    ...(['cash', 'card', 'upi', 'store_credit', 'exchange_credit', 'loyalty_points'] as const).flatMap((tender) => {
+    // FUL-05: an online order's sale is paid by its prepayment (`online_prepaid`, held by the payment provider until it
+    // settles) or by the door's cash / UPI, and a cash-on-delivery remainder the customer still owes is `cod_due`.
+    ...(['cash', 'card', 'upi', 'store_credit', 'exchange_credit', 'loyalty_points', 'online_prepaid', 'cod_due'] as const).flatMap((tender) => {
       const account = tender === 'cash' ? 'cash_in_hand'
         : tender === 'card' ? 'card_receivable'
           : tender === 'upi' ? 'upi_receivable'
             : tender === 'store_credit' ? 'store_credit_liability'
               // PF-09 step 3: points spent at the till reduce what the shop owes its members.
               : tender === 'loyalty_points' ? 'loyalty_points_liability'
-                : 'exchange_credit_clearing';
+                : tender === 'online_prepaid' ? 'online_payment_clearing'
+                  : tender === 'cod_due' ? 'cod_receivable'
+                    : 'exchange_credit_clearing';
       return [
         {
           kind: `tender:${tender}`,
@@ -467,6 +479,33 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
         { account: 'loyalty_expense', side: 'credit', component: 'amount' },
       ],
     },
+    // FUL-09 (M22 → M23): a B2B tax invoice is owed by the customer (receivables) against revenue and the output tax on it;
+    // a collection is money received against those receivables. Suggested; which tax account (CGST+SGST or IGST by place of
+    // supply) is the CA's mapping.
+    {
+      kind: 'b2b:invoice',
+      legs: [
+        { account: 'trade_receivables', side: 'debit', component: 'total' },
+        { account: 'sales_revenue', side: 'credit', component: 'net' },
+        { account: 'gst_output', side: 'credit', component: 'tax' },
+      ],
+    },
+    {
+      kind: 'b2b:receipt',
+      legs: [
+        { account: 'bank_receipts_clearing', side: 'debit', component: 'amount' },
+        { account: 'trade_receivables', side: 'credit', component: 'amount' },
+      ],
+    },
+    // Stock confirmed lost when a floor indent's or a transfer's shortfall is resolved (Batch 2's valued loss): suggested as
+    // the loss expense against inventory. Whether the CA splits transit loss from shrinkage is the CA's mapping.
+    ...(['floor_indent', 'transfer'] as const).map((source) => ({
+      kind: `stock_loss:${source}`,
+      legs: [
+        { account: 'inventory_loss', side: 'debit' as const, component: 'amount' },
+        { account: 'inventory', side: 'credit' as const, component: 'amount' },
+      ],
+    })),
     // SP-7b (M23-FR-01): the supplier account — a matched invoice's payable, its reversal, a debit note — through a
     // goods-received-not-invoiced clearing (`payables.ts`). Suggested like the rest; the accountant commits it.
     ...PAYABLES_POSTING_RULES,

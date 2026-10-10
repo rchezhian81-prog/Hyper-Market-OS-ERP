@@ -182,89 +182,50 @@ CLOUD_API_URL=https://<the box's name or address>
 pnpm run till:install -- --lane lane-1 --from-compose-env till/cloud.env
 ```
 
-Then **on the box** mint the store token (`pnpm run token:store -- --tenant <the demo tenant UUID> --user pilot-cashier --ttl-hours 720`)
-and put it into the store PC's `till/till.env` as `CLOUD_API_TOKEN` by hand. For the demo the box signs in as the seeded
-`pilot-cashier` account, which holds every sync hop (cashier role); a dedicated `store-edge` login is a go-live step
-(UAT-05, `store-go-live-checklist.md`).
+Then **on the box** mint the store token (`pnpm run token:store -- --tenant <the demo tenant UUID> --user pilot-store-edge --ttl-hours 720`)
+and put it into the store PC's `till/till.env` as `CLOUD_API_TOKEN` by hand. The store computer signs in as the seeded
+`pilot-store-edge` machine identity, which holds the **store computer** role (OB-36 "A", 10 Oct 2026): exactly the sync
+and relay permissions a store computer needs, and nothing a person uses. No person's login is used for it.
 
 Add to `till/till.env`:
 
 ```
-EDGE_PACK_FILE=till/store-pack.json
+EDGE_STORE_PACK_SOURCE=head-office
+EDGE_STORE_ID=pilot-demo-branch
 EDGE_DEVICE_PORT=8092
 EDGE_DEVICE_HOST=<the store PC's address on the staff wifi>
 ```
 
-### 4.3 The practice store pack (`till/store-pack.json` on the store PC) — BUILT since DF-2 (4 Oct 2026), not typed
+### 4.3 The store setup — from head office, like any store (since PA-06 3b, 10 Oct 2026)
 
-The box pulls the **catalogue** (products, prices, barcodes) from the demo box's published pack. Everything else a
-screen needs — which store this is, who is on which screen, the handheld assignment, the picker's wave, the driver's
-route, the handheld fleet — comes from this file. **Since DF-2 (OB-12) a person builds it instead of typing it**, from
-the seed dataset, the cloud's role catalogue and the cloud's own purchase orders, invoices, pending approvals and
-count records (one commerce truth, P-02):
+The store computer takes **its whole setup from head office** (OB-26 "A"): it asks
+`GET /v1/store-packs/pilot-demo-branch` under its own credential, checks the signature, the shop, the store, that it is
+newer and not out of date, keeps it on its disk (`store-pack.json` in its data folder) and uses it — through a restart
+and with the internet off. It asks again on every sync pass, so a change made at head office reaches the store on the
+next pass; a setup head office signs again unchanged renews the one held (it never runs out of date while head office
+can be reached). The hosted demo box does exactly the same (`infra/compose/docker-compose.pilot.yml`).
 
-```
-# on the demo box (writes /etc/sre-pilot/store-pack/store-pack.json, then restart the edge)
-sudo -u deploy pnpm run demo:store-pack -- --operator "<your name>"
-docker restart sre-pilot-edge-1
-# on a store PC (writes the practice file the till reads at EDGE_PACK_FILE)
-pnpm run demo:store-pack -- --operator "<your name>" --out till/store-pack.json
-```
+**There is no file to build or copy any more.** The demo-only builder (`pnpm run demo:store-pack`) is retired. What the
+setup carries, and where head office keeps each part:
 
-The runner says what it wrote (products, people, screens with a named viewer, approvals waiting, orders, receipts,
-invoices, count records, the practice delivery / wave / route) and names any section it **left out because the cloud
-read did not answer** — that screen then says it was not told, which is true; nothing is invented. The builder is
-`db/seed/pilot/store-pack.ts`, proven through the box's own reader and screen payloads in
-`tests/unit/demo-store-pack-builds-the-whole-practice-pack.test.ts`. The shape it writes, for the record (the values
-below are the kind it fills in; the file on disk is the truth):
+| Part of the setup | Head office's record (set by the seed for the demo, by the owner for a real shop) |
+|---|---|
+| The store: name, trading-day cut-off, tolerances, back store | Store settings — `POST /v1/stores/:storeId/settings` |
+| Working rules, day-close checklist, merchandising figures (OB-08) | Store rules — `POST /v1/stores/:storeId/rules` |
+| Loss-prevention limits the day close is judged by | `POST /v1/loss-prevention/rules/:kind` |
+| Products, prices, barcodes, categories, stock on hand | The published catalogue, the product master, the stock ledger |
+| People and what each may do | The grants that reach this store and the role catalogue |
+| Buying tolerances | The three-way-match policy (OC-13) |
+| Orders, receipts, supplier invoices, approvals waiting, counts | Head office's own registers |
+| The warehouse phone: bins, stock in them, deliveries waiting (OB-37) | The bin register and the issued orders that name this store as the place they are delivered to |
+| The phones the store may enrol | The fleet register — `POST /v1/platform/devices/:deviceId/register` (§4.4) |
 
-```json
-{
-  "version": 1,
-  "policies": {
-    "storeId": "pilot-demo-branch", "branchId": "pilot-demo-branch", "branchName": "SRE Pilot Demo Hypermarket (demo)",
-    "warehouseId": "pilot-demo-wh", "tradingDayCutoff": "00:00", "staleAfterSeconds": 900,
-    "countApprovalThresholdMinor": 100000, "handoverToleranceMinor": 10000, "privilegedActions": []
-  },
-  "lossPreventionRules": [],
-  "managerPolicy": { "userId": "pilot-manager" },
-  "warehouse": {
-    "assignmentId": "practice-1", "workerId": "pilot-manager", "storeId": "pilot-demo-wh",
-    "bins": [{ "binId": "bin-demo-a1", "storeId": "pilot-demo-wh", "capacityMinor": 1000000, "pickable": true, "zone": "ambient" }],
-    "grnId": "practice-grn-1", "poId": null,
-    "ordered": [{ "productId": "prod-rice", "quantityMinor": 20, "unitCostMinor": 5000, "currency": "INR" }],
-    "barcodes": [{ "barcode": "8900000000123", "productId": "prod-rice", "level": "unit" }],
-    "goodsIn": []
-  },
-  "wave": {
-    "waveId": "practice-wave-1", "pickerId": "pilot-manager",
-    "lines": [
-      { "lineId": "l1", "orderRef": "ORD-practice-1", "productId": "prod-rice", "description": "Demo Ponni Rice 1kg (demo)", "bin": "bin-demo-a1", "requiredQty": 2, "uom": "ea", "unitPriceMinor": 6800 },
-      { "lineId": "l2", "orderRef": "ORD-practice-1", "productId": "prod-soap", "description": "Demo Bath Soap 100g (demo)", "bin": "bin-demo-a1", "requiredQty": 1, "uom": "ea", "unitPriceMinor": 3500 }
-    ]
-  },
-  "route": {
-    "routeId": "practice-route-1", "driverId": "pilot-manager",
-    "stops": [
-      { "stopId": "s1", "orderRef": "ORD-practice-1", "area": "Anna Nagar (demo)", "codMinor": 25000 },
-      { "stopId": "s2", "orderRef": "ORD-practice-2", "area": "Gandhipuram (demo)", "codMinor": 0 }
-    ]
-  },
-  "devices": []
-}
-```
+**Nobody is named on a screen.** Every ERP screen runs as the person who signed in (OB-16); the warehouse, picker and
+driver phones run as the person who signed in on the phone with their staff ID and till PIN (OB-30); the buying screen
+buys as the signed-in person. The picker's waves and the driver's routes come from head office's assignments feed.
 
-The ids above are the seeded demo tenant's (branch `pilot-demo-branch`, back store `pilot-demo-wh`, products
-`prod-rice`, `prod-soap`, bin `bin-demo-a1`, from `db/seed/pilot/dataset.ts`). The builder also writes `roles` and
-`roleAssignments` (the cloud's catalogue and the seeded people — what lets the store computer draw each person's
-menu), `buyingPolicy` / `pricingPolicy` / every `<screen>Policy` with the practice script's cast (§7) and that
-person's permissions, `approvals` (the cloud's pending ones), `purchaseOrders` / `receipts` / `supplierInvoices`
-(the cloud's), `countsQueue`, a five-item day-close `checklist` and `lossPreventionRules`, all marked (demo). The ERP screens on this PC run **as the
-person the pack names** (`managerPolicy.userId` — there is no interactive staff sign-in on the ERP screens in this
-release, KL-01); the warehouse, picker and driver screens act as the named worker, picker and driver. `pilot-manager`
-holds the store-manager role, which carries the rights each of those needs. Other per-screen policies (buying,
-goods receipt, counts, cash office, …) take the same shape — `"<screen>Policy": { "userId": "pilot-manager" }` — and
-`edge/store-edge/src/store-pack.ts` lists them all.
+To check it on the box's log: `store setup: version …, from head office` after the first pass; the manager's screen
+shows the branch name and the day-close checklist from head office.
 
 ### 4.4 Enrolling the phones (handhelds)
 
@@ -274,8 +235,8 @@ Per `in-store-install.md` Step 6, performed by `pilot-platform-admin` or `pilot-
 1. Register each phone: `POST /v1/platform/devices/<deviceId>/register` (kind `handheld`). Use ids like `hh-warehouse-1`,
    `hh-picker-1`, `hh-driver-1`.
 2. Issue each phone's one-time code: `POST /v1/platform/devices/<deviceId>/enrolment`. The answer shows the code **once**;
-   copy the returned `enrolment` block (it holds only the code's fingerprint and expiry) into the pack file's `devices`
-   list with the device's `deviceId`, `kind: "handheld"`, `status: "registered"` and a `label`. Restart the till.
+   write it down for the phone. Nothing is copied anywhere: the store setup carries the store's phones with only the
+   code's fingerprint and expiry, and the store computer has it after its next sync pass (a minute or so).
 3. On the phone, on the staff wifi, open `http://<the store PC's address>:8092/warehouse/` (or `/picker/`, `/driver/`):
    it is sent to **Enrol this handheld**; type the device id and the code; it comes back on the screen it asked for.
 4. The phone's list **Sent from this handheld / phone** shows each action as *saved here* → *with the store computer* →
@@ -324,7 +285,7 @@ the screens in a browser — those are SP-10 (§7).
 |---|---|---|
 | Public origin (customer app, guest; the API) | `https://<the box>` — the address is in the owner's own records and in the GitHub `demo` environment, never in the repository | anyone; browse as a guest; the DEMO banner shows |
 | Till | `http://127.0.0.1:8091/pos/` on the store PC | the cashier signs in with **staff ID** = the demo user id (`pilot-cashier`) **and their till PIN**, issued once on the store PC by the administrator (`till/start-till.sh till-pin --user pilot-cashier --by "<name>"`, in-store-install Step 2b); the store PC checks it (ADR-0020) |
-| ERP screens (manager, buying, goods receipt, indents, cash office, day book, suppliers, …) | `http://127.0.0.1:8091/<screen>/` on the store PC | run as the person the pack names (`pilot-manager`), see §4.3 |
+| ERP screens (manager, buying, goods receipt, indents, cash office, day book, suppliers, …) | `http://127.0.0.1:8091/<screen>/` on the store PC | run as the person who signed in at the front door (OB-16). Opened directly on the store PC with no front door, a screen names nobody and saves nothing — use the hosted demo's screens for the ERP part of the practice, see §4.3 |
 | Handhelds | `http://<store PC>:8092/warehouse/`, `/picker/`, `/driver/` on the staff wifi | enrolled by device code, §4.4; then each person signs in on the phone with their staff ID and **the same till PIN** (OB-30) — issue one for each phone user like the cashier's |
 | Demo accounts (synthetic) | `pilot-owner`, `pilot-manager`, `pilot-cashier`, `pilot-accountant`, `pilot-ca`, `pilot-platform-admin`, `pilot-supplier` | seeded by `db/seed/pilot`; roles as in `db/seed/pilot/dataset.ts` |
 
@@ -371,13 +332,13 @@ Cross-cutting, once per person: the DEMO banner is visible; a refused action say
   units for the handheld, as the hand-written file did. DF-3 must settle ONE scale for every pack section (found 4 Oct 2026).
 
 - The demo box is still on the 28 September release until §2 is done; this document is written for the release at `0bf098a` (PR #671) or later.
-- The ERP screens have no interactive staff sign-in on a store PC: the pack names one person per screen (KL-01, OA-4).
+- The ERP screens have no interactive staff sign-in on a store PC of their own: they run as the person the front door signed in (OB-16). Opened directly on the store PC, a screen names nobody and saves nothing (the store setup no longer names a person per screen — PA-06 3b).
   The till authenticates the cashier with a staff ID and till PIN the store PC verifies (ADR-0020, closes
   GAP-POS-LOGIN-01); a manager's approval at the till is the manager's own PIN, checked by the store PC, for that one
   refund (ADR-0021) — so `pilot-manager` needs a till PIN on the store PC too. Reopening a closed day takes the
   approver's own till PIN at the store computer (2b-vi-c-4), so whoever approves reopens (`pilot-owner` or the
   accountant) needs a till PIN on the box as well; on the internet copy the person reopening needs none.
-- The box signs in to head office as `pilot-cashier` for the demo; a dedicated `store-edge` login is a go-live step (UAT-05).
+- The store computer signs in to head office as `pilot-store-edge`, a machine identity with the store computer role (OB-36 "A").
 - Head office assigns waves and routes to phones since 3 Oct 2026 (HA-1: `POST /v1/fulfilment/waves/:waveId/assignment`, `POST /v1/delivery/routes/:routeId/assignment`; the box pulls the open ones). The pack file's `wave` / `route` sections below are the hand-written override and still work for a first practice session; the screen says which source it is holding. A head-office screen for assigning is not built yet — the two routes are called through the API.
 - No TLS on the shop-network leg to the phones (OA-16: staff-only wifi is the control).
 - Receipt printing, weighing scales and cash drawers are built but not attached (EX-09).

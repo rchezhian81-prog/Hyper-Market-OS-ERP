@@ -56,3 +56,24 @@ export function pointsToTakeBack(input: {
   const target = Math.min(input.earned, Math.floor((input.earned * refunded) / input.saleTotalMinor));
   return Math.max(0, target - input.priorTakenBack);
 }
+
+/**
+ * How many SPENT points this return gives back (OB-34 "A"): the points the member paid with on the bill, in proportion to
+ * the returned part of the bill (its goods at the bill's own prices) — cumulative over every return of the bill, rounded
+ * down, so two half returns give back what one whole return would, and never more than were spent.
+ */
+export function pointsToGiveBack(input: {
+  /** Points that actually left the member's balance for this bill. */
+  readonly spent: number;
+  readonly saleTotalMinor: number;
+  /** The goods coming back now, valued at the bill's own prices. */
+  readonly returnedValueMinor: number;
+  /** The goods that came back on earlier returns of the bill, valued the same way. */
+  readonly priorReturnedValueMinor: number;
+  readonly priorGivenBack: number;
+}): number {
+  if (input.spent <= 0 || input.saleTotalMinor <= 0 || input.returnedValueMinor <= 0) return 0;
+  const returned = Math.min(input.saleTotalMinor, Math.max(0, input.priorReturnedValueMinor) + input.returnedValueMinor);
+  const target = Math.min(input.spent, Math.floor((input.spent * returned) / input.saleTotalMinor));
+  return Math.max(0, target - input.priorGivenBack);
+}

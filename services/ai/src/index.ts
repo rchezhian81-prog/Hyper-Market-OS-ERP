@@ -112,6 +112,29 @@ export interface RunResult {
   readonly detail: string;
 }
 
+/** One recorded agent run (EA-08) — append-only, never edited. */
+export interface AiRunRecord {
+  readonly runId: string;
+  readonly agent: AgentId;
+  readonly by: string;
+  readonly at: string;
+  /** What the run cost, metered by the server — 0 for a deterministic agent that calls no model. */
+  readonly costMinor: number;
+  readonly calledAModel: boolean;
+  readonly proposals: readonly Proposal[];
+  readonly refused: readonly { readonly code?: string; readonly detail: string }[];
+}
+
+/**
+ * What a run costs, decided by the SERVER (audit EA-08): every agent in this build is deterministic — it reads governed
+ * records and calls no model — so a run costs nothing and is metered as 0. A model-backed agent would declare its cost
+ * here, and the budget is checked against THIS figure, never against a number the caller sends.
+ */
+export function serverRunCost(agent: AgentId): { readonly costMinor: number; readonly calledAModel: boolean } {
+  void agent; // every agent in this build is deterministic; a model-backed one gets its own line here
+  return { costMinor: 0, calledAModel: false };
+}
+
 export interface Budget {
   readonly capMinor: number;
   readonly spentMinor: number;
@@ -178,6 +201,14 @@ export interface AiDeps {
   /** Switch agents ON by name — nothing runs until it is, the opposite default to the kill switch. */
   readonly setEnabledAgents: (tenantId: string, agents: readonly AgentId[], by: string, at: string) => Promise<void> | void;
   readonly run: (tenantId: string, agent: AgentId) => Promise<Omit<Proposal, 'committed'>[]> | Omit<Proposal, 'committed'>[];
+  /**
+   * Record one run (audit EA-08 · AI-NFR-08/10): the immutable request/context/result audit — who ran which agent, when,
+   * what it cost (metered by the SERVER), the proposals it raised and the evidence each rests on — and raise each
+   * accepted proposal onto the proposal register. Optional so a bare wiring still answers; the full service records.
+   */
+  readonly recordRun?: (tenantId: string, run: AiRunRecord) => Promise<void> | void;
+  /** What a run of this agent costs — the SERVER's metered figure (default `serverRunCost`), never the caller's. */
+  readonly runCost?: (agent: AgentId) => { readonly costMinor: number; readonly calledAModel: boolean };
   readonly openProposals: (tenantId: string) => Promise<readonly Proposal[]> | readonly Proposal[];
   /**
    * The Data Quality steward's inbox: the live A08 findings folded with the stewards' dismissals.
@@ -255,11 +286,14 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
       permission: 'ai.agent.run', idempotent: true,
       handler: async (ctx) => {
         const agent = (ctx.params['agent'] ?? '') as AgentId;
+        // EA-08: the cost is the SERVER's (metered), never the caller's estimate — which is ignored, and said.
+        const cost = (deps.runCost ?? serverRunCost)(agent);
+        const callerEstimate = (ctx.body as { estimatedCostMinor?: unknown } | undefined)?.estimatedCostMinor;
         const gate = mayRun({
           agent,
           killSwitchOn: await deps.killSwitchOn(ctx.tenantId),
           budget: await deps.budget(ctx.tenantId),
-          estimatedCostMinor: Number((ctx.body as { estimatedCostMinor?: number })?.estimatedCostMinor ?? 0),
+          estimatedCostMinor: cost.costMinor,
           enabledAgents: await deps.enabledAgents(ctx.tenantId),
         });
         if (!gate.ok) {
@@ -274,11 +308,17 @@ export function aiRoutes(deps: AiDeps): readonly Route[] {
         const drafts = await deps.run(ctx.tenantId, agent);
         const accepted = drafts.map(acceptProposal);
         const refused = accepted.filter((r) => !r.ok);
+        const proposals = accepted.flatMap((r) => r.proposals ?? []);
+        const refusals = refused.map((r) => ({ ...(r.refusedBecause === undefined ? {} : { code: r.refusedBecause }), detail: r.detail }));
+        const at = deps.now();
+        const runId = `run-${agent}-${ctx.idempotencyKey ?? at}`;
+        await deps.recordRun?.(ctx.tenantId, { runId, agent, by: ctx.userId, at, costMinor: cost.costMinor, calledAModel: cost.calledAModel, proposals, refused: refusals });
         return {
           status: 200,
           body: {
-            proposals: accepted.flatMap((r) => r.proposals ?? []),
-            refused: refused.map((r) => ({ code: r.refusedBecause, detail: r.detail })),
+            runId, proposals, refused: refusals,
+            costMinor: cost.costMinor, calledAModel: cost.calledAModel,
+            ...(callerEstimate === undefined ? {} : { ignoredFromCaller: ['estimatedCostMinor (the server meters the cost)'] }),
             // Stated on every reply, so nothing downstream can read a proposal as an action.
             committedAnything: false,
           },

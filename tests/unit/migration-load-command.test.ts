@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runLoadCommand, readManifest, sealExtract, simpleHasher, type LoadManifest, type SealedExtract } from '../../packages/migration/src/index';
+import { aStoreWithRules } from '../support/store-rules';
 import { apiHarness } from '../support/api-harness';
 
 // The operator's load, stage by stage, without a terminal: manifest → seal → completeness → cleaning →
@@ -48,7 +49,7 @@ const base = (h = apiHarness()) => ({
 describe('runLoadCommand — the stages', () => {
   it('loads the folder into an empty real tenant and stock reads back (exit 0)', async () => {
     const { h, input } = base();
-    await h.seedOwner(REAL, OPERATOR);
+    await h.seedOwner(REAL, OPERATOR); await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the store's margin floor
     const out = await runLoadCommand(input);
     expect(out.lines.join('\n')).toContain('LOADED');
     expect(out).toMatchObject({ exitCode: 0, stage: 'load' });
@@ -58,7 +59,7 @@ describe('runLoadCommand — the stages', () => {
   });
   it('a dry run with an API checks the target and sends nothing (exit 0)', async () => {
     const { h, input } = base();
-    await h.seedOwner(REAL, OPERATOR);
+    await h.seedOwner(REAL, OPERATOR); await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the store's margin floor
     const out = await runLoadCommand({ ...input, dryRun: true });
     expect(out).toMatchObject({ exitCode: 0, stage: 'dry_run' });
     expect(out.lines.join('\n')).toContain('Target tenant holds no products');
@@ -108,7 +109,7 @@ describe('runLoadCommand — the stages', () => {
   });
   it('no cleaning report → refused; an undecided blocking exception → refused; a decision recorded on the CLOUD → proceeds (MG-04, C3c)', async () => {
     const { h, input } = base();
-    await h.seedOwner(REAL, OPERATOR);
+    await h.seedOwner(REAL, OPERATOR); await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the store's margin floor
     const BLOCKING = { exceptionId: 'EXC-00001', tenantId: REAL, kind: 'unmapped_tax_code', severity: 'blocking', confidence: 'certain', legacyIds: ['P-RICE'], evidence: 'hsn 1006 has no rate' };
     // Neither a file nor a recorded pass: refused, and the line names both places it looked.
     const none = await runLoadCommand({ ...input, exceptions: undefined });
@@ -140,7 +141,7 @@ describe('runLoadCommand — the stages', () => {
   });
   it('the cloud register is read as the operator: no right to read it → refused; a dry run with no API judges the file alone and says so', async () => {
     const { h, input } = base();
-    await h.seedOwner(REAL, OPERATOR);
+    await h.seedOwner(REAL, OPERATOR); await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the store's margin floor
     await h.provisionRole(REAL, 'u-ca', 'chartered_accountant'); // may sign totals; may NOT read the cleaning register
     const refused = await runLoadCommand({ ...input, manifest: manifest(FILES, { operator: 'u-ca' }), dryRun: true });
     expect(refused).toMatchObject({ exitCode: 1, stage: 'cleaning' });
@@ -151,7 +152,7 @@ describe('runLoadCommand — the stages', () => {
   });
   it('an unreadable row is refused at mapping, by file and line', async () => {
     const { h, input } = base();
-    await h.seedOwner(REAL, OPERATOR); // the cleaning stage reads the cloud register as the operator first (C3c)
+    await h.seedOwner(REAL, OPERATOR); await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the store's margin floor // the cleaning stage reads the cloud register as the operator first (C3c)
     const bad = { ...FILES, 'products.csv': `${FILES['products.csv']}\nP-X,,each,home,3402,10,9,,,,,active` };
     const out = await runLoadCommand({ ...input, files: bad, manifest: manifest(bad) });
     expect(out).toMatchObject({ exitCode: 1, stage: 'mapping' });
@@ -168,7 +169,7 @@ describe('runLoadCommand — the stages', () => {
   });
   it('re-running the same load into its own half-loaded target resumes and doubles nothing; a target holding someone else\'s product is refused', async () => {
     const { h, input } = base();
-    await h.seedOwner(REAL, OPERATOR);
+    await h.seedOwner(REAL, OPERATOR); await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the store's margin floor
     expect((await runLoadCommand(input)).exitCode).toBe(0);
     const again = await runLoadCommand(input);
     expect(again).toMatchObject({ exitCode: 0, stage: 'load' });
@@ -177,7 +178,7 @@ describe('runLoadCommand — the stages', () => {
     expect(avail.rows.map((r) => r.onHandMinor).sort((a, b) => a - b)).toEqual([40, 200]);
 
     const other = apiHarness();
-    await other.seedOwner(REAL, OPERATOR);
+    await other.seedOwner(REAL, OPERATOR); await aStoreWithRules(other, REAL, OPERATOR, 'STORE-MAIN', 0);
     await other.request({
       method: 'POST', path: '/v1/catalogue/products/P-THEIRS/publish', userId: OPERATOR, tenantId: REAL, idempotencyKey: 'theirs',
       body: { product: { sku: 'THEIRS', name: 'Somebody else\'s item', baseUom: 'each', primaryCategoryId: 'home', taxClass: '3402', lifecycle: 'active' }, categories: [{ categoryId: 'home', name: 'Home', parentId: null }] },
@@ -190,7 +191,7 @@ describe('runLoadCommand — the stages', () => {
   it('the demo tenant and a production box are refused by name', async () => {
     const { h, input } = base();
     await h.seedOwner(DEMO, OPERATOR);
-    await h.seedOwner(REAL, OPERATOR);
+    await h.seedOwner(REAL, OPERATOR); await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the store's margin floor
     const demo = await runLoadCommand({ ...input, manifest: manifest(FILES, { tenantId: DEMO }) });
     expect(demo).toMatchObject({ exitCode: 1, stage: 'plan' });
     expect(demo.lines.join('\n')).toContain('demo_tenant');
@@ -202,7 +203,7 @@ describe('runLoadCommand — the stages', () => {
   });
   it('a route\'s refusal mid-load is exit 1 with the line to work through; a re-run then completes', async () => {
     const { h, input } = base();
-    await h.seedOwner(REAL, OPERATOR);
+    await h.seedOwner(REAL, OPERATOR); await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the store's margin floor
     const belowCost = { ...FILES, 'products.csv': FILES['products.csv'].replace('25.00,25.00,18.00', '25.00,10.00,18.00') };
     const first = await runLoadCommand({ ...input, files: belowCost, manifest: manifest(belowCost) });
     expect(first).toMatchObject({ exitCode: 1, stage: 'load' });

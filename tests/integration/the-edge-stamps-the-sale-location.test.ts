@@ -53,7 +53,7 @@ describe('the edge stamps the sale\'s stock location from its store pack (Stage 
   beforeAll(async () => {
     h = apiHarness();
     await h.seedOwner(A, OWNER);
-    await h.provisionRole(A, SYNC, 'cashier'); // the box's sync identity
+    await h.provisionRole(A, SYNC, 'store_computer'); // the box's sync identity
     // The shop received 30 MILK at ITS store — the location the till's sales must draw from.
     expect((await h.request({
       method: 'POST', path: '/v1/inventory/movements', userId: OWNER, tenantId: A, idempotencyKey: 'mv-1',

@@ -34,7 +34,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, concurrentChange, notFound } from '../../kernel/src/index';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
-  dispatchTransfer, receiveTransfer, proposeAllocation, TransferRefusedError, judgeShortfallResolution,
+  dispatchTransfer, receiveTransfer, proposeAllocation, TransferRefusedError, judgeShortfallResolution, costedResolution,
   type Transfer, type TransferLine, type TransferApproval, type AvailableLot, type AllocationNeed,
   type FoundLine, type ShortfallLine, type ShortfallResolution, type ShortfallRefusal,
 } from '../../../packages/warehouse/src/transfers';
@@ -42,6 +42,7 @@ import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/a
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
 import { checkMovement, type Movement } from './index';
+import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, locationInScope, type LocationBranches } from './location-scope';
 import { outsideBranchScope, type RequestContext } from '../../kernel/src/index';
 
@@ -155,7 +156,8 @@ async function assertUnitsAreTheProducts(deps: TransfersDeps, tenantId: string, 
   if (deps.productUom === undefined) return;
   for (const line of lines) {
     const uom = await deps.productUom(tenantId, line.productId);
-    if (uom !== undefined && uom !== line.uom) {
+    // OB-31: judged on the one spelling (ea/each/EA are the same unit), never on how it was typed.
+    if (uom !== undefined && (normaliseUom(uom) ?? uom) !== (normaliseUom(line.uom) ?? line.uom)) {
       throw apiError(422, {
         code: 'unit_not_the_products',
         whatHappened: `${line.productId} is counted in "${uom}" on the product master, but this transfer line says "${line.uom}" — the quantity would mean something different at each end.`,
@@ -320,6 +322,16 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         const transfer = await deps.transfer(ctx.tenantId, transferId);
         if (transfer === undefined) throw notFound(`transfer ${transferId}`);
         await assertLocationInScope(ctx, transfer.toLocationId, deps.locationBranches); // it arrives in the caller's branch
+        // Round 2 (like indents — M09-FR-03 "receiver at destination confirms" · §28): the person who dispatched the transfer
+        // cannot also count it in. The destination's count is independent, or it is not a check.
+        if (transfer.state === 'in_transit' && transfer.approvedBy !== undefined && transfer.approvedBy === ctx.userId) {
+          throw apiError(422, {
+            code: 'dispatcher_cannot_receive',
+            whatHappened: `${ctx.userId} dispatched transfer ${transferId} and cannot also count it in at ${transfer.toLocationId} (§28) — the receiving count must be a different person's.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Have someone at the destination count it in. Nothing was received.',
+          });
+        }
         try {
           const result = receiveTransfer({ transfer, counted, receivedBy: ctx.userId, at: deps.now(), currency: (b.currency as CurrencyCode) ?? 'INR' });
           // SP-5 (F05): what arrived becomes on-hand at the destination on the M08 ledger, at the cost it left with.
@@ -374,11 +386,12 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         });
         if (!judged.ok) throw apiError(SHORTFALL_STATUS[judged.code], { code: judged.code, whatHappened: judged.why, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed. Read the transfer and its exception, then try again.' });
         const posted = foundPostings(transfer, { ...(transfer.receivedBy === undefined ? {} : { receivedBy: transfer.receivedBy }) }, judged.resolution);
+        const costed = costedResolution(judged.resolution, transfer);
         for (const m of posted) {
           const check = checkMovement(m);
           if (!check.ok) throw apiError(422, { code: check.refusedBecause ?? 'movement_refused', whatHappened: check.detail, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
         }
-        const resolution: ShortfallResolution = { ...judged.resolution, movementIds: posted.map((m) => m.movementId) };
+        const resolution: ShortfallResolution = { ...costed, movementIds: posted.map((m) => m.movementId) };
         try {
           await deps.recordShortfallResolved(ctx.tenantId, { ...transfer, shortfallResolution: resolution }, posted, version);
         } catch (e) {

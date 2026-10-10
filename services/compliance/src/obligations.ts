@@ -12,7 +12,7 @@
 // stored.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertRecordBranchInScope, recordsInScope, assertBranchInScope } from '../../kernel/src/index';
 import {
   registerObligation, expiryAlerts, isCompliant, closeObligation, missingEvidence, attachEvidence,
   MissingResponsiblePersonError,
@@ -80,6 +80,11 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
           if (err instanceof MissingResponsiblePersonError) throw apiError(400, { code: 'obligation_needs_a_person', whatHappened: err.message, wasItSaved: 'not_saved', nextSafeAction: 'Send responsible.userId and responsible.name — an alert that reaches a role reaches nobody.' });
           throw err;
         }
+        // PA-01-r1: an obligation for a branch the caller holds (a shop-wide one is company-wide work); one on file
+        // elsewhere is not rewritten.
+        assertRecordBranchInScope(ctx, obligation.branchId);
+        const onFile = (await deps.obligations(ctx.tenantId)).find((o) => o.obligationId === obligation.obligationId);
+        if (onFile !== undefined) assertRecordBranchInScope(ctx, onFile.branchId);
         await deps.recordRegister(ctx.tenantId, obligation);
         return { status: 201, body: { obligationId, kind, authority: obligation.authority, expiresOn: obligation.expiresOn ?? null } };
       },
@@ -93,7 +98,7 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
         const asOf = ctx.query['asOf'];
         if (asOf !== undefined && !DATE.test(asOf)) throw apiError(400, { code: 'alerts_date_invalid', whatHappened: '?asOf=, if given, must be YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid date or omit it for today.' });
         const on = asOf ?? today(deps);
-        const alerts = expiryAlerts(await deps.obligations(ctx.tenantId), on);
+        const alerts = expiryAlerts(recordsInScope(ctx, await deps.obligations(ctx.tenantId), (o) => o.branchId), on); // PA-01-r1
         return { status: 200, body: { asOf: on, count: alerts.length, alerts } };
       },
     },
@@ -106,7 +111,9 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
         if (asOf !== undefined && !DATE.test(asOf)) throw apiError(400, { code: 'status_date_invalid', whatHappened: '?asOf=, if given, must be YYYY-MM-DD.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid date or omit it for today.' });
         const on = asOf ?? today(deps);
         const branchId = ctx.query['branchId'];
-        const compliant = isCompliant(await deps.obligations(ctx.tenantId), on, branchId);
+        // PA-01-r1: a branch not held is refused by name; with none named, the caller's branches (and shop-wide ones).
+        if (typeof branchId === 'string' && branchId !== '') assertBranchInScope(ctx, branchId);
+        const compliant = isCompliant(recordsInScope(ctx, await deps.obligations(ctx.tenantId), (o) => o.branchId), on, branchId);
         return { status: 200, body: { asOf: on, ...(branchId === undefined ? {} : { branchId }), compliant } };
       },
     },
@@ -129,6 +136,7 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
           });
         }
         const current = (await deps.obligations(ctx.tenantId)).find((o) => o.obligationId === obligationId);
+        if (current !== undefined) assertRecordBranchInScope(ctx, current.branchId); // PA-01-r1
         if (current === undefined) throw notFound(obligationId);
         if (current.status === 'closed') {
           // Already closed — a no-op, so a retried close does not churn the reason.
@@ -159,6 +167,7 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
           throw apiError(400, { code: 'evidence_recorded_at_invalid', whatHappened: 'recordedAt, if given, must be an ISO-8601 timestamp.', wasItSaved: 'not_saved', nextSafeAction: 'Send a valid timestamp or omit it for now.' });
         }
         const current = (await deps.obligations(ctx.tenantId)).find((o) => o.obligationId === obligationId);
+        if (current !== undefined) assertRecordBranchInScope(ctx, current.branchId); // PA-01-r1
         if (current === undefined) throw notFound(obligationId);
         if ((current.evidence ?? []).some((e) => e.evidenceId === (b['evidenceId'] as string).trim())) {
           return { status: 200, body: { obligationId, evidenceCount: (current.evidence ?? []).length, alreadyOnFile: true } };
@@ -179,7 +188,7 @@ export function complianceRoutes(deps: ComplianceDeps): readonly Route[] {
       api: 'API-11', method: 'GET', path: '/v1/compliance/evidence-gaps',
       permission: 'compliance.obligation.read',
       handler: async (ctx) => {
-        const gaps = missingEvidence(await deps.obligations(ctx.tenantId));
+        const gaps = missingEvidence(recordsInScope(ctx, await deps.obligations(ctx.tenantId), (o) => o.branchId)); // PA-01-r1
         return { status: 200, body: { count: gaps.length, obligations: gaps } };
       },
     },

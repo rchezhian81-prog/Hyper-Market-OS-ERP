@@ -1,83 +1,119 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
+import { recordingTransport } from '../../packages/notifications/src/index';
 
-// Notification delivery queue, end to end (M31-FR-04, API-06). The durable outbox behind the send-guard: a
-// message is enqueued, marked delivered on success, or its failure recorded — and after maxAttempts failures
-// it moves to a VISIBLE dead-letter queue for a person, NEVER silently dropped (hard rule #6). The
-// retry-then-dead-letter state machine is the tested engine's, replayed over the append-only log. Gated
-// notification.send.check.
+// Notification delivery queue, end to end (M31-FR-03/04 · M21-FR-01 · audit PA-08 / PF-10, API-06). The audit queued a
+// WhatsApp message with nothing but `{ channel: 'whatsapp' }` and got 201. Now a notification is a full intent that head
+// office decides: an APPROVED template (drafted by one person, approved by another), a recipient whose OWN consent
+// ledger allows that purpose on that channel, and every placeholder filled. The sender re-checks consent IMMEDIATELY
+// before each send — a withdrawal after queuing WITHHOLDS the message (kept, never sent). Failures retry with backoff
+// and dead-letter, visible and never dropped (hard rule #6). The transport here is the RECORDING test adapter: no real
+// provider is configured (the SMS provider is release R4, OB-29), and production's drain says so.
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 
-const enqueue = (h: ApiHarness, u: string, id: string, channel: string, key = `e-${id}`) =>
-  h.request({ method: 'POST', path: `/v1/notifications/queue/${id}`, userId: u, tenantId: A, idempotencyKey: key, body: { channel } });
-const delivered = (h: ApiHarness, u: string, id: string, key = `d-${id}`) =>
-  h.request({ method: 'POST', path: `/v1/notifications/queue/${id}/delivered`, userId: u, tenantId: A, idempotencyKey: key });
-const failed = (h: ApiHarness, u: string, id: string, body: Record<string, unknown>, key: string) =>
-  h.request({ method: 'POST', path: `/v1/notifications/queue/${id}/failed`, userId: u, tenantId: A, idempotencyKey: key, body });
-const pending = (h: ApiHarness, u: string) =>
-  h.request({ method: 'GET', path: '/v1/notifications/queue/pending', userId: u, tenantId: A });
-const deadLetters = (h: ApiHarness, u: string) =>
-  h.request({ method: 'GET', path: '/v1/notifications/queue/dead-letters', userId: u, tenantId: A });
+const req = (h: ApiHarness, method: 'GET' | 'POST', path: string, u: string, body?: unknown, key?: string) =>
+  h.request({ method, path, userId: u, tenantId: A, ...(body === undefined ? {} : { body }), ...(key === undefined ? {} : { idempotencyKey: key }) });
+const consent = (h: ApiHarness, customerId: string, given: boolean, key: string) =>
+  req(h, 'POST', `/v1/customers/${customerId}/consent`, 'u-owner', { purpose: 'marketing', channel: 'whatsapp', given, evidence: given ? 'ticked the box at the desk' : 'asked us to stop on the phone' }, key);
+const enqueue = (h: ApiHarness, id: string, body: Record<string, unknown>, u = 'u-owner', key = `e-${id}`) =>
+  req(h, 'POST', `/v1/notifications/queue/${id}`, u, body, key);
+const drain = (h: ApiHarness, key: string, body: Record<string, unknown> = {}) => req(h, 'POST', '/v1/notifications/queue/drain', 'u-owner', body, key);
+const offer = (customerId: string, extra: Record<string, unknown> = {}) =>
+  ({ customerId, purpose: 'marketing', channel: 'whatsapp', templateId: 'diwali', values: { name: 'Meena' }, ...extra });
 
-async function cast(): Promise<ApiHarness> {
-  const h = apiHarness();
-  await h.seedOwner(A, 'u-owner');                // notification.send.check
+/** A shop with an APPROVED marketing WhatsApp template: drafted by the owner, approved by the store manager. */
+async function shop(transport = recordingTransport(), store = new InMemoryEventStore()): Promise<{ h: ApiHarness; transport: ReturnType<typeof recordingTransport> }> {
+  const h = apiHarness({ store, notificationTransport: transport });
+  await h.seedOwner(A, 'u-owner');                // notification.send.check, document.template.manage, customer.consent.write
+  await h.provisionRole(A, 'u-mgr', 'store_manager'); // document.template.manage
   await h.provisionRole(A, 'u-cash', 'cashier');  // none
-  return h;
+  expect((await req(h, 'POST', '/v1/notifications/templates/diwali', 'u-owner', { purpose: 'marketing', channel: 'whatsapp', body: 'Hello {name}, Diwali offers are in store this week.' }, 't1')).status).toBe(201);
+  expect((await req(h, 'POST', '/v1/notifications/templates/diwali/approval', 'u-mgr', { version: 1 }, 't1a')).status).toBe(200);
+  return { h, transport };
 }
 
-describe('notification queue: enqueue, deliver, retry then dead-letter — never dropped (M31-FR-04)', () => {
-  it('enqueues (idempotently), marks delivered, and drops it off the pending list', async () => {
-    const h = await cast();
-    expect((await enqueue(h, 'u-owner', 'n1', 'sms')).status).toBe(201);
-    expect((await enqueue(h, 'u-owner', 'n1', 'sms', 'e-n1-again')).body).toMatchObject({ alreadyQueued: true });
-    expect((await pending(h, 'u-owner')).body).toMatchObject({ count: 1 });
-
-    expect((await delivered(h, 'u-owner', 'n1')).body).toMatchObject({ id: 'n1', state: 'delivered' });
-    expect((await pending(h, 'u-owner')).body).toMatchObject({ count: 0 }); // no longer awaiting delivery
-
-    // Survives a restart.
-    const h2 = apiHarness({ store: h.store });
-    expect((await pending(h2, 'u-owner')).body).toMatchObject({ count: 0 });
+describe('a notification is a full, consent-checked intent — and the send re-checks consent (PA-08)', () => {
+  it('the audit\'s channel-only enqueue is refused; a template nobody approved is refused; the maker cannot approve their own', async () => {
+    const { h } = await shop();
+    expect(codeOf(await enqueue(h, 'n0', { channel: 'whatsapp' }))).toBe('enqueue_needs_a_full_intent');
+    expect((await req(h, 'POST', '/v1/notifications/templates/promo', 'u-owner', { purpose: 'marketing', channel: 'whatsapp', body: 'Sale!' }, 't2')).status).toBe(201);
+    expect(codeOf(await req(h, 'POST', '/v1/notifications/templates/promo/approval', 'u-owner', { version: 1 }, 't2a'))).toBe('maker_cannot_approve');
+    await consent(h, 'C-1', true, 'c1');
+    expect(codeOf(await enqueue(h, 'n1', offer('C-1', { templateId: 'promo' })))).toBe('template_not_approved');
+    // An approved template used for a purpose or channel it was not approved for is refused too.
+    expect(codeOf(await enqueue(h, 'n2', offer('C-1', { channel: 'sms' })))).toBe('template_not_approved');
+    expect(codeOf(await enqueue(h, 'n3', offer('C-1', { values: {} })))).toBe('template_value_missing');
   });
 
-  it('retries a failing send and dead-letters it after maxAttempts — kept, never dropped', async () => {
-    const h = await cast();
-    await enqueue(h, 'u-owner', 'n2', 'whatsapp');
-
-    // maxAttempts 3: two failures keep it pending, the third dead-letters it.
-    expect((await failed(h, 'u-owner', 'n2', { reason: 'no answer', maxAttempts: 3 }, 'f1')).body).toMatchObject({ state: 'pending', attempts: 1 });
-    expect((await failed(h, 'u-owner', 'n2', { reason: 'no answer', maxAttempts: 3 }, 'f2')).body).toMatchObject({ state: 'pending', attempts: 2 });
-    expect((await failed(h, 'u-owner', 'n2', { reason: 'number invalid', maxAttempts: 3 }, 'f3')).body).toMatchObject({ state: 'dead_letter', attempts: 3 });
-
-    // It is on the visible dead-letter queue, and off the pending list — never silently lost.
-    const dl = (await deadLetters(h, 'u-owner')).body as { deadLetters: { id: string; reason: string }[]; count: number };
-    expect(dl.count).toBe(1);
-    expect(dl.deadLetters[0]).toMatchObject({ id: 'n2', reason: 'number invalid' });
-    expect((await pending(h, 'u-owner')).body).toMatchObject({ count: 0 });
-
-    // Failing an already-dead-lettered send is a no-op (already resolved).
-    expect((await failed(h, 'u-owner', 'n2', { reason: 'again' }, 'f4')).body).toMatchObject({ state: 'dead_letter' });
-
-    // Durable across a restart.
-    const h2 = apiHarness({ store: h.store });
-    expect((await deadLetters(h2, 'u-owner')).body).toMatchObject({ count: 1 });
+  it('a customer with no consent on record, or who withdrew, is never queued — silence is not agreement', async () => {
+    const { h } = await shop();
+    expect(codeOf(await enqueue(h, 'n1', offer('C-SILENT')))).toBe('no_consent_on_record');
+    await consent(h, 'C-2', true, 'c2');
+    await consent(h, 'C-2', false, 'c2w');
+    expect(codeOf(await enqueue(h, 'n2', offer('C-2')))).toBe('consent_withdrawn');
+    expect((await req(h, 'GET', '/v1/notifications/queue/pending', 'u-owner')).body).toMatchObject({ count: 0 });
   });
 
-  it('rejects a missing channel / reason (400), 404s an unknown id, and gates on notification.send.check', async () => {
-    const h = await cast();
-    expect((await enqueue(h, 'u-owner', 'n3', '')).status).toBe(400);
-    await enqueue(h, 'u-owner', 'n3', 'email');
-    expect(codeOf(await failed(h, 'u-owner', 'n3', {}, 'f-noreason'))).toBe('failure_needs_a_reason');
+  it('queues the rendered message, sends it once through the transport, and keeps the receipt — durable across a restart', async () => {
+    const { h, transport } = await shop();
+    await consent(h, 'C-1', true, 'c1');
+    const q = await enqueue(h, 'n1', offer('C-1'));
+    expect(q.status).toBe(201);
+    expect(q.body).toMatchObject({ intent: { customerId: 'C-1', templateId: 'diwali', templateVersion: 1, text: 'Hello Meena, Diwali offers are in store this week.' } });
+    expect((await enqueue(h, 'n1', offer('C-1'), 'u-owner', 'e-n1-again')).body).toMatchObject({ alreadyQueued: true });
 
-    expect((await delivered(h, 'u-owner', 'ghost', 'd-ghost')).status).toBe(404);
-    expect((await failed(h, 'u-owner', 'ghost', { reason: 'x' }, 'f-ghost')).status).toBe(404);
+    const pass = (await drain(h, 'dr1')).body as { transport: string; outcome: { id: string; result: string }[] };
+    expect(pass.transport).toBe('recording-test-adapter');
+    expect(pass.outcome).toEqual([expect.objectContaining({ id: 'n1', result: 'delivered' })]);
+    expect(transport.sent).toEqual([{ messageId: 'n1', channel: 'whatsapp', customerId: 'C-1', text: 'Hello Meena, Diwali offers are in store this week.' }]);
+    // A second pass sends nothing more; a restart finds it delivered.
+    expect(((await drain(h, 'dr2')).body as { outcome: unknown[] }).outcome).toEqual([]);
+    const h2 = apiHarness({ store: h.store, notificationTransport: transport });
+    expect((await req(h2, 'GET', '/v1/notifications/queue/pending', 'u-owner')).body).toMatchObject({ count: 0 });
+    expect(transport.sent).toHaveLength(1);
+  });
 
-    // A cashier holds no notification.send.check → refused on write and read.
-    expect((await enqueue(h, 'u-cash', 'n9', 'sms', 'e-cash')).status).toBe(403);
-    expect((await pending(h, 'u-cash')).status).toBe(403);
-    expect((await deadLetters(h, 'u-cash')).status).toBe(403);
+  it('a customer who withdraws AFTER the message was queued is WITHHELD at the send — kept, visible, never sent', async () => {
+    const { h, transport } = await shop();
+    await consent(h, 'C-3', true, 'c3');
+    expect((await enqueue(h, 'n3', offer('C-3'))).status).toBe(201);
+    await consent(h, 'C-3', false, 'c3w');
+    const pass = (await drain(h, 'dr3')).body as { outcome: { id: string; result: string }[] };
+    expect(pass.outcome).toEqual([expect.objectContaining({ id: 'n3', result: 'withheld' })]);
+    expect(transport.sent).toEqual([]);
+    const withheld = (await req(h, 'GET', '/v1/notifications/queue/withheld', 'u-owner')).body as { withheld: { id: string; reason: string }[]; count: number };
+    expect(withheld.count).toBe(1);
+    expect(withheld.withheld[0]?.reason).toMatch(/consent no longer holds at the moment of sending/);
+  });
+
+  it('a failing send retries with backoff, a permanent failure dead-letters — never dropped', async () => {
+    const transport = recordingTransport();
+    const { h } = await shop(transport);
+    await consent(h, 'C-4', true, 'c4');
+    await consent(h, 'C-5', true, 'c5');
+    await enqueue(h, 'n4', offer('C-4'));
+    transport.failWith({ reason: 'provider timeout' }, 1);
+    expect(((await drain(h, 'dr4')).body as { outcome: { id: string; result: string }[] }).outcome).toEqual([expect.objectContaining({ id: 'n4', result: 'retry_later' })]);
+    // Straight away it is not due yet — the backoff is honoured, not hammered.
+    expect(((await drain(h, 'dr5')).body as { outcome: { id: string; result: string }[] }).outcome).toEqual([expect.objectContaining({ id: 'n4', result: 'not_yet_due' })]);
+    // A permanent failure (number not on the channel) goes straight to the visible dead-letter queue.
+    await enqueue(h, 'n5', offer('C-5'));
+    transport.failWith({ reason: 'not a WhatsApp number', permanent: true }, 1);
+    const pass = (await drain(h, 'dr6')).body as { outcome: { id: string; result: string }[] };
+    expect(pass.outcome).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'n5', result: 'dead_lettered' })]));
+    const dead = (await req(h, 'GET', '/v1/notifications/queue/dead-letters', 'u-owner')).body as { deadLetters: { id: string; reason: string }[] };
+    expect(dead.deadLetters).toEqual([expect.objectContaining({ id: 'n5', reason: 'not a WhatsApp number' })]);
+  });
+
+  it('with no transport configured (production today), the drain sends nothing and says why; and the queue is gated', async () => {
+    const h = apiHarness();
+    await h.seedOwner(A, 'u-owner');
+    await h.provisionRole(A, 'u-cash', 'cashier');
+    expect(codeOf(await drain(h, 'dr-none'))).toBe('no_transport_configured');
+    expect((await enqueue(h, 'n9', offer('C-1'), 'u-cash', 'e-cash')).status).toBe(403);
+    expect((await req(h, 'GET', '/v1/notifications/queue/pending', 'u-cash')).status).toBe(403);
   });
 });

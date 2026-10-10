@@ -611,7 +611,9 @@ describe.skipIf(!DATABASE_URL)('Stage 11 — the old shop arrives whole (real Po
       cutoverId: `cut-${RUN}`, trigger: 'control_total_failed', decidedBy: 'u-manager',
       legacySystemAvailable: true, now: '2026-09-15T05:40:00Z',
     });
-    expect(r.performed).toBe(true);
+    // GT-02: one decision — not yet a performed rollback until the old system is seen trading.
+    expect(r.performed).toBe(false);
+    expect(r.state).toBe('decided');
     expect(r.evidenceRetained).toBe(true);
     expect(r.shopKeepsTrading).toBe(true);
 

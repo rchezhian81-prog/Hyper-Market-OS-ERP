@@ -62,6 +62,8 @@ export interface DeliveryAttempt {
   /** The cash-on-delivery the order expected at that door (OB-09): what a partial delivery left uncollected, and what a
    *  customer who had no cash still owes. Optional — the direct route's older callers never sent it. */
   readonly codExpectedMinor?: number;
+  /** FUL-05: how the cash-on-delivery was taken — cash or UPI only (hard rule #3). Absent → cash (older callers). */
+  readonly codMethod?: 'cash' | 'upi';
 }
 
 export type AttemptRefusal = 'delivered_without_proof' | 'failure_without_a_reason' | 'cash_without_delivery';
@@ -216,8 +218,21 @@ export interface FulfilmentDeps {
   /** Record a delivery-state transition — append-only, in the human's name (the state machine already refused
    *  an out-of-order step and a proofless delivery before this is reached). */
   readonly recordDeliveryTransition: (tenantId: string, record: DeliveryStateRecord) => Promise<void> | void;
+  /** FUL-05: run the one fulfilment command for the order once this fact is recorded. Never fails the fact: a fault is said. */
+  readonly afterOrderFact?: (tenantId: string, orderId: string, by: string) => Promise<unknown>;
   readonly now: () => string;
 }
+
+/** FUL-05: the fulfilment command after a recorded fact — its answer, or its fault in words; never a failure of the fact. */
+export async function fulfilmentAfter(hook: ((tenantId: string, orderId: string, by: string) => Promise<unknown>) | undefined, tenantId: string, orderId: string, by: string): Promise<unknown> {
+  if (hook === undefined) return undefined;
+  try {
+    return await hook(tenantId, orderId, by);
+  } catch (err) {
+    return { outcome: 'not_applied', detail: `Recorded, but the order's fulfilment was not advanced: ${err instanceof Error ? err.message : String(err)}. Run POST /v1/fulfilment/orders/${orderId}/apply.` };
+  }
+}
+
 
 /** The lifecycle events the tested state machine accepts, for validating the caller's input. `pick_up`
  *  (parcels into the driver's custody) and `arrive` (driver at the door, before the outcome) are the
@@ -304,10 +319,11 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
         // The outcome is a word from the closed list (OB-09 added two) — never guessed at; the money fields are whole paisa.
         if (!ATTEMPT_OUTCOMES.includes(b.outcome as AttemptOutcome)
           || (b.cashCollectedMinor !== undefined && !isNonNegInt(b.cashCollectedMinor))
-          || (b.codExpectedMinor !== undefined && !isNonNegInt(b.codExpectedMinor))) {
+          || (b.codExpectedMinor !== undefined && !isNonNegInt(b.codExpectedMinor))
+          || (b.codMethod !== undefined && b.codMethod !== 'cash' && b.codMethod !== 'upi')) {
           throw apiError(400, {
             code: 'not_readable_as_a_delivery_attempt',
-            whatHappened: `A delivery attempt needs an outcome from: ${ATTEMPT_OUTCOMES.join(', ')} — and whole paisa in cashCollectedMinor / codExpectedMinor when present.`,
+            whatHappened: `A delivery attempt needs an outcome from: ${ATTEMPT_OUTCOMES.join(', ')} — and whole paisa in cashCollectedMinor / codExpectedMinor when present, and a codMethod of cash or upi (never a card, hard rule #3).`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the outcome the run register knows. The order still shows as out for delivery; do not leave the drop unrecorded.',
           });
@@ -393,7 +409,8 @@ export function fulfilmentRoutes(deps: FulfilmentDeps): readonly Route[] {
           ...(DELIVERS_GOODS.has(ev) && proof !== undefined ? { proofRef: proof.ref } : {}),
         };
         await deps.recordDeliveryTransition(ctx.tenantId, record);
-        return { status: 200, body: { orderId, state: to, final: isTerminalDelivery(to) } };
+        const fulfilment = await fulfilmentAfter(deps.afterOrderFact, ctx.tenantId, orderId, ctx.userId);
+        return { status: 200, body: { orderId, state: to, final: isTerminalDelivery(to), ...(fulfilment === undefined ? {} : { fulfilment }) } };
       },
     },
     {

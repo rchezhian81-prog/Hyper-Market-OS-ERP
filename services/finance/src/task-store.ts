@@ -17,7 +17,7 @@
 // because if every late task shouted for a manager the one that mattered would be lost in the noise.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertRecordBranchInScope, assertBranchInScope, recordsInScope, type RequestContext } from '../../kernel/src/index';
 import { assessDailyTasks, type DailyTask } from '../../../packages/workforce/src/workforce';
 
 /** A daily task as defined: what it is, the role it is routed to, when it is due, and whether it is critical. */
@@ -57,6 +57,13 @@ const readDefinition = (taskId: string, b: Record<string, unknown>): TaskDefinit
   };
 };
 
+/** PA-01-r1: completing a task that is on file for a branch outside the caller's is refused by name (a shop-wide task,
+ *  or one not yet defined, may be completed — it is nobody else's branch). */
+async function taskInScope(ctx: Pick<RequestContext, 'scope' | 'tenantId'>, deps: TaskStoreDeps, taskId: string): Promise<void> {
+  const task = (await deps.tasks(ctx.tenantId)).find((t) => t.taskId === taskId);
+  if (task !== undefined && typeof task.branchId === 'string' && task.branchId !== '') assertBranchInScope(ctx, task.branchId);
+}
+
 export function taskStoreRoutes(deps: TaskStoreDeps): readonly Route[] {
   return [
     {
@@ -74,6 +81,10 @@ export function taskStoreRoutes(deps: TaskStoreDeps): readonly Route[] {
             nextSafeAction: 'Send the task, the role it is for, when it is due, and whether it is critical.',
           });
         }
+        // PA-01-r1: a task is raised for a branch the caller holds; one already on file for another branch is not rewritten.
+        assertRecordBranchInScope(ctx, def.branchId);
+        const before = (await deps.tasks(ctx.tenantId)).find((t) => t.taskId === taskId);
+        if (before !== undefined) assertRecordBranchInScope(ctx, before.branchId);
         await deps.putTask(ctx.tenantId, def, ctx.idempotencyKey ?? `task-${taskId}-${deps.now()}`);
         return { status: 200, body: { task: def } };
       },
@@ -97,6 +108,7 @@ export function taskStoreRoutes(deps: TaskStoreDeps): readonly Route[] {
         const completion: TaskCompletion = {
           taskId, doneBy: b['doneBy'], doneAt: isStr(b['doneAt']) ? b['doneAt'] : deps.now(),
         };
+        await taskInScope(ctx, deps, taskId); // PA-01-r1: another branch's task is not completed from here
         await deps.completeTask(ctx.tenantId, completion, ctx.idempotencyKey ?? `taskdone-${taskId}-${deps.now()}`);
         return { status: 200, body: { completion } };
       },
@@ -125,6 +137,7 @@ export function taskStoreRoutes(deps: TaskStoreDeps): readonly Route[] {
         const completion: TaskCompletion = {
           taskId, doneBy: b['doneBy'], doneAt: isStr(b['doneAt']) ? b['doneAt'] : deps.now(),
         };
+        await taskInScope(ctx, deps, taskId); // PA-01-r1: another branch's task is not completed from here
         await deps.completeTask(ctx.tenantId, completion, ctx.idempotencyKey ?? `taskdone-synced-${taskId}-${deps.now()}`);
         return { status: 200, body: { completion, synced: true } };
       },
@@ -138,9 +151,9 @@ export function taskStoreRoutes(deps: TaskStoreDeps): readonly Route[] {
         const role = (ctx.query['role'] ?? '').trim();
         const branchId = (ctx.query['branchId'] ?? '').trim();
         const asOf = (ctx.query['asOf'] ?? '').trim();
-        let tasks = await deps.tasks(ctx.tenantId);
+        // PA-01-r1: the caller's branches' tasks (and shop-wide ones); another branch asked for is refused by name.
+        let tasks = recordsInScope(ctx, await deps.tasks(ctx.tenantId), (t) => t.branchId, branchId);
         if (role !== '') tasks = tasks.filter((t) => t.forRole === role);
-        if (branchId !== '') tasks = tasks.filter((t) => t.branchId === branchId);
         const report = assessDailyTasks({ tasks, now: asOf === '' ? deps.now() : asOf });
         return {
           status: 200,

@@ -119,7 +119,8 @@ export async function pullStorePack(input: { readonly source: StorePackSource; r
 
 /**
  * DF-3-b-2 (SF-08 hand-over): tell head office which catalogue and which store setup this box trades on, so it can see
- * which stores have taken a new recall or hold. Sent when what the box holds changes; a failure is retried next pass.
+ * which stores have taken a new recall or hold — and (PA-04) how many records it still holds unsent. Sent when that
+ * changes; a failure is retried next pass.
  */
 export function httpHeldVersionsReporter(options: {
   readonly baseUrl: string;
@@ -128,7 +129,7 @@ export function httpHeldVersionsReporter(options: {
   readonly storeId: string;
   readonly timeoutMs?: number;
   readonly fetch: typeof globalThis.fetch;
-}): (held: { catalogueVersion: number | null; storePackVersion: number | null }) => Promise<boolean> {
+}): (held: { catalogueVersion: number | null; storePackVersion: number | null; unsentItems?: number }) => Promise<boolean> {
   const timeoutMs = options.timeoutMs ?? 10_000;
   const base = options.baseUrl.replace(/\/+$/, '');
   return async (held) => {
@@ -139,7 +140,9 @@ export function httpHeldVersionsReporter(options: {
         method: 'POST',
         headers: {
           authorization: `Bearer ${options.token}`, 'content-type': 'application/json',
-          'idempotency-key': `held-${options.storeId}-${held.catalogueVersion ?? 'none'}-${held.storePackVersion ?? 'none'}`,
+          // A report carrying the unsent count (PA-04) is an observation at a moment: its own key, so a count said again
+          // later (0 → 3 → 0) is recorded again rather than answered with the first reply.
+          'idempotency-key': `held-${options.storeId}-${held.catalogueVersion ?? 'none'}-${held.storePackVersion ?? 'none'}${held.unsentItems === undefined ? '' : `-u${held.unsentItems}-${Date.now()}`}`,
         },
         body: JSON.stringify(held), signal: controller.signal,
       });

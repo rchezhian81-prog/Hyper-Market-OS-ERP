@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { deliveryPlaces } from '../support/approved-supplier';
 import { approvedRequestId } from '../support/approval-request';
 import { productMasterAdapter, supplierMasterAdapter, STREAM_FOR } from '../../services/api/src/adapters';
 import type { SupplierInvoiceRecord } from '../../services/purchase/src/index';
@@ -47,6 +48,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.provisionRole(A, 'u-mgr', 'store_manager');  // uploads
   await h.provisionRole(A, 'u-mgr2', 'store_manager'); // the second person
   await h.provisionRole(A, 'u-book', 'accountant');    // reads only
+  await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
   const now = () => '2026-10-09T09:00:00.000Z';
   const products = productMasterAdapter({ store: h.store, now });
   for (const l of BIG) {
@@ -57,7 +59,7 @@ async function seeded(): Promise<ApiHarness> {
     status: 'active', createdBy: 'u-owner', createdAt: now(), updatedBy: 'u-owner', updatedAt: now(), approvedBy: 'u-mgr', approvedAt: now(), possibleDuplicates: [], version: 1,
   });
   // An issued order for the small invoice, so it can be matched.
-  expect((await post(h, '/v1/purchase/orders/PO-7', 'u-mgr', { supplierId: 'S-1', lines: [{ productId: 'P-001', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'P-002', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-7')).status).toBe(201);
+  expect((await post(h, '/v1/purchase/orders/PO-7', 'u-mgr', { supplierId: 'S-1', deliverToLocationId: 'store-1', lines: [{ productId: 'P-001', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'P-002', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-7')).status).toBe(201);
   expect((await post(h, '/v1/purchase/orders/PO-7/approval', 'u-owner', { reason: 'fixture' }, 'po-7-ok')).status).toBe(200);
   return h;
 }

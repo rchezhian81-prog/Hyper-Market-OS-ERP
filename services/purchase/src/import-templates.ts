@@ -20,6 +20,7 @@
 //
 // Pure of storage: the registers are ports; the API adapter supplies head office's own folds.
 
+import { normaliseUom, valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import type { TemplateSpec, RowError } from '../../../packages/import/src/import-job';
 import type { StoredPurchaseOrder } from './purchase-orders';
 import { orderForInvoice, type SupplierInvoiceRecord, type SupplierInvoiceLine, type InvoiceFlag } from './index';
@@ -99,6 +100,8 @@ export const SUPPLIER_INVOICE_SPEC: TemplateSpec = Object.freeze({
 export const SUPPLIER_INVOICE_LABEL = 'Supplier invoices (one row per invoice line)';
 
 export interface SupplierInvoiceImportDeps {
+  /** OB-31: the unit the product master counts a product in (a weighed product's quantity is grams, its price per kg). */
+  readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
   /** Head office's product master ids. */
   readonly productIds: (tenantId: string) => Promise<readonly string[]>;
   /** Head office's supplier master ids. */
@@ -140,8 +143,12 @@ export function supplierInvoiceTemplate(deps: SupplierInvoiceImportDeps): Regist
       for (const { row, line } of rows.map((row, i) => ({ row, line: lineNumbers[i] ?? i + 2 }))) {
         const qty = n(row['quantity']); const unit = n(row['unitPriceMinor']); const total = n(row['lineTotalMinor']);
         if (Number.isInteger(qty) && qty <= 0) errors.push(err(line, 'quantity', `The quantity must be at least 1; it is ${row['quantity']}.`));
-        if (Number.isInteger(qty) && Number.isInteger(unit) && Number.isInteger(total) && qty * unit !== total) {
-          errors.push(err(line, 'lineTotalMinor', `${qty} × ${unit} is ${qty * unit}, but the line says ${total}.`));
+        // OB-31: in the product's own unit — a weighed product's quantity is grams and its price is per kg, valued once.
+        const uom = deps.productUom === undefined ? undefined : await deps.productUom(tenantId, (row['productId'] ?? '').trim());
+        const code = uom === undefined ? 'ea' : normaliseUom(uom) ?? 'ea';
+        if (Number.isInteger(qty) && Number.isInteger(unit) && Number.isInteger(total) && valueAtUnitCost(qty, code, unit) !== total) {
+          const worth = valueAtUnitCost(qty, code, unit);
+          errors.push(err(line, 'lineTotalMinor', code === 'ea' ? `${qty} × ${unit} is ${worth}, but the line says ${total}.` : `${qty} ${code === 'kg' ? 'g' : code === 'L' ? 'ml' : ''} at ${unit} a ${code} is ${worth}, but the line says ${total}.`));
         }
       }
       for (const g of groupByInvoice(rows, lineNumbers)) {
@@ -170,9 +177,13 @@ export function supplierInvoiceTemplate(deps: SupplierInvoiceImportDeps): Regist
       const out: ImportEffect[] = [];
       for (const g of groupByInvoice(rows, rows.map((_, i) => i + 2))) {
         const head = g.rows[0]!.row;
-        const lines: SupplierInvoiceLine[] = [...g.rows]
-          .sort((a, b) => n(a.row['line']) - n(b.row['line']))
-          .map(({ row }) => ({ productId: row['productId']!, quantity: n(row['quantity']), unitPriceMinor: n(row['unitPriceMinor']), lineTotalMinor: n(row['lineTotalMinor']) }));
+        const lines: SupplierInvoiceLine[] = [];
+        for (const { row } of [...g.rows].sort((a, b) => n(a.row['line']) - n(b.row['line']))) {
+          // OB-31: the line is recorded in the product's own unit (grams for kg), as the screen's and the API's lines are.
+          const master = deps.productUom === undefined ? undefined : await deps.productUom(tenantId, row['productId']!);
+          const uom = master === undefined ? undefined : normaliseUom(master);
+          lines.push({ productId: row['productId']!, quantity: n(row['quantity']), unitPriceMinor: n(row['unitPriceMinor']), lineTotalMinor: n(row['lineTotalMinor']), ...(uom === undefined ? {} : { uom }) });
+        }
         const poId = (head['poId'] ?? '').trim() === '' ? null : head['poId']!.trim();
         const flags: InvoiceFlag[] = [];
         if (!approverMayCheck) flags.push('no_approval');

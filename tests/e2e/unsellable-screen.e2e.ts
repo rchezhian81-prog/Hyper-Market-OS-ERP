@@ -32,7 +32,7 @@ const TENANT = 't-sre';
 const PRODUCTS = [
   { productId: 'OK', name: 'Sells fine', categoryId: 'grocery', unitPriceMinor: 10_000, uom: 'ea', barcodes: ['1000000000017'], availableMinor: 5, taxBps: 500, status: 'active' },
   { productId: 'NOTAX', name: 'No tax rate', nameTa: 'வரி விகிதம் இல்லை', categoryId: 'grocery', unitPriceMinor: 10_000, uom: 'ea', barcodes: ['1000000000024'], availableMinor: 5, status: 'active' },
-  { productId: 'UNIT', name: 'Odd unit', categoryId: 'grocery', unitPriceMinor: 10_000, uom: 'each', barcodes: [], availableMinor: 5, taxBps: 500, status: 'active' },
+  { productId: 'UNIT', name: 'Odd unit', categoryId: 'grocery', unitPriceMinor: 10_000, uom: 'bundle', barcodes: [], availableMinor: 5, taxBps: 500, status: 'active' },
   { productId: 'RECALLED', name: 'Recalled tin', categoryId: 'grocery', unitPriceMinor: 10_000, uom: 'ea', barcodes: ['1000000000031'], availableMinor: 5, taxBps: 500, status: 'active', recallBlock: true },
   { productId: 'DRAFT', name: 'Not yet listed', categoryId: 'grocery', unitPriceMinor: 10_000, uom: 'ea', barcodes: [], availableMinor: 0, taxBps: 500, status: 'draft' },
 ];
@@ -109,7 +109,7 @@ describe.skipIf(!HAVE_BROWSER)('products nobody can sell, on the real box in a r
     expect((await page.textContent('#summary')) ?? '').toContain('4 products nobody can sell');
     expect((await page.textContent('#summary')) ?? '').toContain('1 products the till can sell');
     expect((await page.textContent('#groups section.group[data-reason="recall_block"]')) ?? '').toContain('Expiry & recalls');
-    expect((await page.textContent('#groups section.group[data-reason="unknown_uom"]')) ?? '').toContain('unknown unit of measure "each"');
+    expect((await page.textContent('#groups section.group[data-reason="unknown_uom"]')) ?? '').toContain('unknown unit of measure "bundle"');
     // The state line reads as a state: an icon hidden from the reader and words for it.
     expect(await page.getAttribute('#state-icon', 'aria-hidden')).toBe('true');
     expect((await page.textContent('#state-text')) ?? '').toContain('refused at the till');
@@ -125,7 +125,7 @@ describe.skipIf(!HAVE_BROWSER)('products nobody can sell, on the real box in a r
     expect(till.products.map((p) => p.productId).sort()).toEqual(['DRAFT', 'OK', 'RECALLED']);
     expect(till.products.find((p) => p.productId === 'RECALLED')?.recallBlock).toBe(true);
     expect(till.excludedProducts?.map((e) => e.productId).sort()).toEqual(['NOTAX', 'UNIT']);
-    expect(till.excludedProducts?.find((e) => e.productId === 'UNIT')?.why).toBe('unknown unit of measure "each" on the catalogue');
+    expect(till.excludedProducts?.find((e) => e.productId === 'UNIT')?.why).toBe('unknown unit of measure "bundle" on the catalogue');
   });
 
   it('a clean catalogue says every product can be sold; a box with no catalogue says it cannot say — and shows the sample stand-in, never "all clear"', async () => {

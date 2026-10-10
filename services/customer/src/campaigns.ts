@@ -35,6 +35,7 @@ import {
   type Campaign, type Channel, type Purpose, type JourneyKind, type JourneyTrigger,
 } from '../../../packages/service-desk/src/index';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel as ConsentChannel } from './index';
+import { approvedTemplate, type MessageTemplateVersion } from './notification-queue';
 
 /** The append-only record of a campaign-send decision — who ran which campaign, to how many, excluding
  *  how many and why, and whether it was blocked outright. Counts only: the recipient lists are not
@@ -87,6 +88,11 @@ export interface CampaignDeps {
   /** The append-only campaign-decision log for the tenant. */
   readonly plans: (tenantId: string) => Promise<readonly CampaignPlanRecord[]> | readonly CampaignPlanRecord[];
   readonly recordPlan: (tenantId: string, rec: CampaignPlanRecord, key: string) => Promise<void> | void;
+  /**
+   * Head office's message-template register (audit PF-10 · PA-08): when present, whether the campaign's template is
+   * approved — for THIS purpose and channel — is read from it, and the caller's `templateApproved` is ignored and said.
+   */
+  readonly templates?: (tenantId: string) => Promise<readonly MessageTemplateVersion[]> | readonly MessageTemplateVersion[];
   readonly now: () => string;
 }
 
@@ -130,9 +136,14 @@ export function campaignRoutes(deps: CampaignDeps): readonly Route[] {
           return { customerRef, granted: [] }; // no_consent_on_record — silence is not agreement
         }));
 
+        // PF-10: the template's approval is head office's record when it keeps one — never the caller's say-so.
+        const stored = deps.templates === undefined ? undefined : approvedTemplate(await deps.templates(ctx.tenantId), b['templateId'] as string);
+        const templateApproved = deps.templates === undefined
+          ? (b['templateApproved'] as boolean)
+          : stored !== undefined && stored.purpose === purpose && stored.channel === channel;
         const campaign: Campaign = {
           campaignId, purpose, channel,
-          templateId: b['templateId'] as string, templateApproved: b['templateApproved'] as boolean,
+          templateId: b['templateId'] as string, templateApproved,
           containsPromotion: b['containsPromotion'] as boolean,
         };
         const plan = planCampaign({ campaign, audience, consents });
@@ -149,6 +160,7 @@ export function campaignRoutes(deps: CampaignDeps): readonly Route[] {
           status: 200,
           body: {
             campaignId, purpose, channel, blocked: plan.blocked,
+            templateApprovedFrom: deps.templates === undefined ? 'the request (no template register here)' : 'head office\'s template register',
             sendTo: plan.sendTo, sendToCount: plan.sendTo.length,
             excluded: plan.excluded, excludedCount: plan.excludedCount, excludedByReason: plan.excludedByReason,
             plannedBy: ctx.userId, at: now, detail: plan.detail,

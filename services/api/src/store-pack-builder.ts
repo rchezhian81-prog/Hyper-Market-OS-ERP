@@ -3,7 +3,7 @@
 // One function per section, each reading the register that already holds the truth — nothing typed twice (P-02), and a
 // section head office has nothing for is LEFT OUT so the store computer says it was not told (store-pack.ts: "a pack that
 // never arrived is not an empty pack"). This replaces, section by section, what the demo-only builder
-// (db/seed/pilot/store-pack.ts) made from the seed file:
+// (db/seed/pilot/store-pack.ts, retired in PA-06 3b) made from the seed file:
 //
 //   policies          ← the store's settings head office holds (POST /v1/stores/:storeId/settings) + its org register name
 //   products          ← the signed catalogue head office published + the product master's category + the stock ledger at
@@ -28,11 +28,14 @@ import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
 import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, PRODUCT_SPEC, PRODUCT_LABEL, templateView } from '../../purchase/src/import-templates';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
-  catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter,
+  catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE } from './roles';
 import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
+import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
+import { branchOfLocationIn } from '../../inventory/src/location-scope';
+import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import type { PackSigner } from '../../catalogue/src/pack';
 
 export interface StorePackBuildInput {
@@ -60,6 +63,26 @@ export const VIEWER_ONLY_SCREEN_SECTIONS: readonly string[] = Object.freeze([
   'integrationHealthPolicy', 'categoryPolicyPolicy',
 ]);
 
+/**
+ * PA-06 3b(e) · OB-31 "A" — **the one quantity rule across store-pack sections** (the contract is
+ * packages/contracts/src/quantity.ts): every quantity in every section is an integer count of the product's SMALLEST STEP
+ * (grams for a kg product, millilitres for a litre product, items otherwise); every price or cost is per WHOLE unit (per
+ * kg, per item); a value is `valueAtUnitCost(quantity, uom, unitCost)`, rounded once. Head office's registers already
+ * hold quantities in steps (orders, receipts, invoices, the ledger, bins), so the builder passes them through and never
+ * scales them a second time; it names each line's unit, normalised (`normaliseUom`: each/EA/pcs → ea, KG → kg, ltr → L),
+ * so a screen can value a line without guessing.
+ */
+export const PACK_QUANTITY_SCALE = Object.freeze({
+  products: { availableMinor: 'smallest step (from the stock ledger)', uom: 'normalised unit code' },
+  warehouse: { 'ordered[].quantityMinor': 'smallest step', 'openDeliveries[].ordered[].quantityMinor': 'smallest step', 'contents{}': 'smallest step', 'bins[].capacityMinor': 'smallest step' },
+  purchaseOrders: { 'lines[].qty': 'smallest step, priced per whole unit (unitMinor)', 'lines[].uom': 'normalised unit code' },
+  receipts: { 'lines[].qty': 'smallest step' },
+  supplierInvoices: { 'lines[].quantity': 'smallest step, priced per whole unit (unitPriceMinor)' },
+} as const);
+
+/** A unit spelling as the pack names it: the stored code when the system knows it, else as given (and said so by its absence from the codes). */
+const unitCode = (code: string | undefined): string | undefined => (code === undefined ? undefined : normaliseUom(code) ?? code);
+
 export async function buildStorePackSections(input: StorePackBuildInput, tenantId: string, storeId: string): Promise<Record<string, unknown>> {
   const { store, now } = input;
   const sections: Record<string, unknown> = {};
@@ -76,13 +99,20 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     };
   }
 
+  // A place is this store's when the hierarchy puts it under the store, or when it is the back store the store's own
+  // settings name (a back store may sit under the company in the hierarchy).
+  const ownPlaces = new Set([storeId, ...(settings?.warehouseId !== undefined && settings.warehouseId !== null ? [settings.warehouseId] : [])]);
+  const placed = branchOfLocationIn(await orgStructureAdapter({ store, now }).nodes(tenantId));
+  const branchOf = (locationId: string): string => (ownPlaces.has(locationId) ? storeId : placed(locationId));
+
   // ── products: what head office published, its category, the ledger at this store ───────────────────────────────
   const published = await catalogueAdapter({ store, now, signer: input.signer }).currentPack(tenantId);
   if (published !== undefined) {
     const master = new Map((await productMasterAdapter({ store, now }).products(tenantId)).map((p) => [p.productId, p] as const));
     const onHand = new Map<string, number>();
     for (const row of await inventoryAdapter({ store, now }).availability(tenantId)) {
-      if (row.locationId === storeId) onHand.set(row.productId, (onHand.get(row.productId) ?? 0) + row.onHandMinor);
+      // the store's stock: on its floor and in its back store (every place the store holds)
+      if (branchOf(row.locationId) === storeId) onHand.set(row.productId, (onHand.get(row.productId) ?? 0) + row.onHandMinor);
     }
     const barcodes = new Map<string, string[]>();
     for (const b of published.snapshot.barcodes) barcodes.set(b.productId, [...(barcodes.get(b.productId) ?? []), b.code]);
@@ -91,7 +121,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
       return {
         productId: p.productId, name: p.name,
         categoryId: typeof m?.primaryCategoryId === 'string' && m.primaryCategoryId !== '' ? m.primaryCategoryId : 'uncategorised',
-        unitPriceMinor: p.unitPriceMinor, uom: p.baseUom, taxBps: p.taxBps, status: p.status, recallBlock: p.recallBlock === true,
+        unitPriceMinor: p.unitPriceMinor, uom: unitCode(p.baseUom), taxBps: p.taxBps, status: p.status, recallBlock: p.recallBlock === true,
         barcodes: barcodes.get(p.productId) ?? [],
         availableMinor: onHand.get(p.productId) ?? 0,
       };
@@ -110,7 +140,7 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   // ── the work waiting: orders, receipts, bills ──────────────────────────────────────────────────────────────────
   // (The store's approvals list is not sent yet — the box-relayed decisions it serves are DF-3-b.)
   const orders = [...(await foldPurchaseOrders(store, tenantId)).values()];
-  sections['purchaseOrders'] = orders.map((po) => ({ poId: po.poId, supplierId: po.supplierId, lines: po.lines.map((l) => ({ productId: l.productId, qty: l.orderedQty, unitMinor: l.unitCost.minor })) }));
+  sections['purchaseOrders'] = orders.map((po) => ({ poId: po.poId, supplierId: po.supplierId, lines: po.lines.map((l) => ({ productId: l.productId, qty: l.orderedQty, unitMinor: l.unitCost.minor, ...(l.uom === undefined ? {} : { uom: unitCode(l.uom) }) })) }));
   sections['receipts'] = orders
     .map((po) => ({ poId: po.poId, lines: Object.entries(po.receivedByProduct).filter(([, qty]) => qty > 0).map(([productId, qty]) => ({ productId, qty })) }))
     .filter((r) => r.lines.length > 0);
@@ -174,6 +204,48 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   sections['countsQueue'] = counts;
   // Which catalogue head office has published — the store computer compares it with the one it holds (SF-08 hand-over).
   if (published !== undefined) sections['catalogueVersion'] = published.snapshot.version;
+
+  // ── OB-37 · PA-06 3b(d): the warehouse phone's section — the bins and stock of this store and its back store, and the
+  // deliveries this store is waiting for (issued orders naming it as the place they are delivered to). No worker is
+  // named: the phone runs as the person who signed in on it (OB-30). Quantities by the one rule (PACK_QUANTITY_SCALE).
+  const wh = warehouseAdapter({ store, now });
+  const bins = (await wh.bins(tenantId)).filter((b) => branchOf(b.storeId) === storeId);
+  const binIds = new Set(bins.map((b) => b.binId));
+  const contents = Object.fromEntries(Object.entries(await wh.contents(tenantId)).filter(([key, qty]) => binIds.has(key.split('|')[0]!) && qty !== 0));
+  const receipts = await goodsReceiptAdapter({ store, now }).all(tenantId);
+  const deliveries = openDeliveriesFor(orders, storeId, branchOf).map((d) => {
+    const po = orders.find((o) => o.poId === d.poId)!;
+    const costOf = new Map(po.lines.map((l) => [l.productId, l.unitCost] as const));
+    // One receipt per physical delivery: the next GRN number for this order (an earlier one already on file is done).
+    const grnId = `grn-${d.poId}-${receipts.filter((g) => g.poId === d.poId).length + 1}`;
+    return {
+      poId: d.poId, number: d.number, supplierId: d.supplierId, deliverToLocationId: d.deliverToLocationId, grnId,
+      ordered: d.lines.filter((l) => l.openQty > 0).map((l) => ({
+        // already in smallest steps on the order (OB-31) — passed through, never scaled twice
+        productId: l.productId, quantityMinor: l.openQty,
+        unitCostMinor: costOf.get(l.productId)?.minor ?? 0, currency: costOf.get(l.productId)?.currency ?? 'INR',
+      })),
+    };
+  });
+  const only = deliveries.length === 1 ? deliveries[0]! : undefined;
+  sections['warehouse'] = {
+    assignmentId: `warehouse-${storeId}`, workerId: '', storeId: settings?.warehouseId ?? storeId,
+    bins: bins.map((b) => ({ binId: b.binId, storeId: b.storeId, capacityMinor: b.capacityMinor, pickable: b.pickable, ...(b.zone === undefined ? {} : { zone: b.zone }) })),
+    contents,
+    ...(published === undefined ? {} : { barcodes: published.snapshot.barcodes.map((b) => ({ barcode: b.code, productId: b.productId, level: 'unit' })) }),
+    openDeliveries: deliveries,
+    // Exactly one delivery waiting: the phone receives against it directly; with several, the receiver chooses on the phone.
+    ...(only === undefined ? {} : { grnId: only.grnId, poId: only.poId, ordered: only.ordered }),
+  };
+
+  // ── the store's devices: head office's fleet register for this store, with any enrolment code's FINGERPRINT and expiry
+  // (never the code). The box enrols a phone against exactly this — no longer a list an operator copies into a file.
+  sections['devices'] = (await deviceRegistryAdapter({ store, now }).fleet(tenantId))
+    .filter((d) => branchOf(d.branchId) === storeId)
+    .map((d) => ({
+      deviceId: d.deviceId, kind: d.kind, status: d.status, label: d.label, branchId: d.branchId,
+      ...(d.enrolment === undefined ? {} : { enrolment: { codeHash: d.enrolment.codeHash, expiresAt: d.enrolment.expiresAt } }),
+    }));
 
   // ── the store's own exception thresholds ───────────────────────────────────────────────────────────────────────
   sections['lossPreventionRules'] = await lpRulesAdapter({ store, now }).rules(tenantId);

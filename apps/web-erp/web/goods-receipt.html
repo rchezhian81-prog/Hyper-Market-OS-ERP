@@ -12,9 +12,11 @@
       attached as window.goodsReceiptSession and built on the shared packages/ui primitives. It shows the
       deliveries needing a second person first (§28), then the ones with a valued difference from the order
       (worst money first), then the clean ones — each delivery with its valued discrepancies named. It is
-      read-only: it CHANGES nothing — receiving is captured on the handheld, on the offline dock. The list is
-      read live (GET /v1/inventory/goods-receipt) and Refresh re-reads it; offline the screen shows its sample
-      stand-in and says so. No prompt/confirm/alert.
+      read-only for receiving: it captures and approves nothing — receiving is captured on the handheld, on the offline
+      dock. Its one write (Batch 2) records that a held line a second person disposed of as a RETURN has physically gone
+      back to the supplier (an online write under the reader's session; it moves no stock). The list is read live
+      (GET /v1/inventory/goods-receipt) and Refresh re-reads it; offline the screen shows its sample stand-in and says
+      so. No prompt/confirm/alert.
     -->
     <link rel="stylesheet" href="./sre-foundation.css" />
     <style>
@@ -27,8 +29,9 @@
       h3 { margin:8px 0 0; font-size:16px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
       .bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; justify-content:space-between; }
       .asof { color:var(--muted); font-size:14px; } .summary { font-size:15px; font-weight:600; }
-      button.refresh { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
-      button.refresh:focus-visible, .lang:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+      button.refresh, button.act { min-height: var(--tap); padding:0 14px; border:0; border-radius:10px; font-size:15px; font-weight:700; background:var(--line); color:var(--ink); }
+      button.act { background:var(--accent, var(--line)); }
+      button:focus-visible, .lang:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
       ul.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
       li.row { background:var(--panel); border-radius:12px; padding:12px 14px; display:grid; gap:6px; border-left:6px solid var(--idle); }
       li.row.tone-ok { border-left-color:var(--ok); } li.row.tone-degraded { border-left-color:var(--degraded); }
@@ -43,6 +46,16 @@
       li.diff .d-word { font-weight:600; } li.diff .d-val { font-variant-numeric:tabular-nums; } li.diff .d-detail { color:var(--muted); }
       p.state { margin:0; padding:16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
       p.state .icon { font-size:18px; } p.state.tone-error { color:var(--danger-text); }
+      ul.returns { list-style:none; margin:4px 0 0; padding:0; display:grid; gap:4px; font-size:13px; }
+      ul.returns li { display:flex; gap:10px; flex-wrap:wrap; align-items:baseline; } ul.returns .r-word { font-weight:600; }
+      section.form { background:var(--panel); border-radius:12px; padding:14px; display:grid; gap:10px; }
+      section.form h3 { margin:0; }
+      section.form label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+      section.form input, section.form select { width:100%; box-sizing:border-box; min-height: var(--tap); padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); font:inherit; }
+      section.form .grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); }
+      p.note { margin:0; color:var(--muted); font-size:14px; }
+      p.result { margin:0; padding:12px 16px; background:var(--panel); border-radius:12px; color:var(--muted); font-size:15px; display:inline-flex; gap:8px; align-items:center; }
+      p.result .icon { font-size:18px; } p.result.tone-error { color:var(--danger-text); } p.result.tone-ok { color:var(--ink); }
       [hidden] { display:none !important; }
     </style>
   </head>
@@ -72,6 +85,25 @@
       <ul class="rows" id="rows" aria-label="Deliveries — what needs attention"></ul>
 
       <p class="state" id="state" hidden><span class="icon" id="state-icon" aria-hidden="true"></span><span id="state-text"></span></p>
+
+      <section class="form" id="returner" hidden aria-label="Going back to the supplier">
+        <h3 id="return-heading"></h3>
+        <p class="note" id="return-none" hidden></p>
+        <div class="grid" id="return-fields">
+          <div>
+            <label for="return-line" id="return-line-label"></label>
+            <select id="return-line"></select>
+          </div>
+          <div>
+            <label for="return-reason" id="return-reason-label"></label>
+            <input id="return-reason" type="text" autocomplete="off" />
+          </div>
+        </div>
+        <button id="return" class="act" type="button"></button>
+      </section>
+      <p class="note" id="no-return" hidden></p>
+
+      <p class="result" id="result" hidden role="status" aria-live="polite"><span class="icon" id="result-icon" aria-hidden="true"></span><span id="result-text"></span></p>
     </main>
 
     <!--SCREEN-DATA-->

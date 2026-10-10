@@ -18,7 +18,7 @@ import {
 } from '../../../packages/migration/src/trial';
 import {
   recordControlTotal, assessReconciliation, buildOpeningEvents, signControlTotal,
-  type ControlTotal, type OpeningKind, type ReconciliationReport,
+  type ControlTotal, type OpeningKind,
 } from '../../../packages/migration/src/reconcile';
 import {
   inventorySources, sealExtract, verifyExtract, simpleHasher,
@@ -28,9 +28,10 @@ import {
   approveMapping, assessCoverage,
   type MappingTable, type MappingEntry, type MappingDomain,
 } from '../../../packages/migration/src/mapping';
-import { detectExceptions, type OutstandingExceptions } from '../../../packages/migration/src/cleaning';
+import { detectExceptions, outstandingExceptions } from '../../../packages/migration/src/cleaning';
 import type { LegacyDataset } from '../../../packages/migration/src/synthetic';
-import { decideCutover, type ParallelRunPosition } from '../../../packages/migration/src/cutover';
+import { decideCutover } from '../../../packages/migration/src/cutover';
+import type { Movement } from '../../inventory/src/index';
 import { buildCutoverChecklist, type CutoverEvidence, type TeamMember } from '../../../packages/migration/src/cutover-checklist';
 import {
   buildVerificationReport, renderVerificationReport,
@@ -142,8 +143,48 @@ function isDeltaChange(v: unknown): v is DeltaChange {
     && typeof v['operation'] === 'string' && DELTA_OPS.includes(v['operation'])
     && typeof v['changedAt'] === 'string'
     && (v['deltaMinor'] === undefined || typeof v['deltaMinor'] === 'number')
-    && (v['deltaQty'] === undefined || typeof v['deltaQty'] === 'number');
+    && (v['deltaQty'] === undefined || typeof v['deltaQty'] === 'number')
+    && (v['locationId'] === undefined || typeof v['locationId'] === 'string')
+    && (v['uom'] === undefined || typeof v['uom'] === 'string')
+    && (v['unitCostMinor'] === undefined || typeof v['unitCostMinor'] === 'number');
 }
+
+/** One delta change applied with a real domain effect (GT-04) — the durable record that it happened, once. */
+export interface AppliedDelta {
+  readonly changeKey: string;
+  readonly entity: string;
+  readonly legacyId: string;
+  readonly operation: DeltaChange['operation'];
+  readonly changedAt: string;
+  readonly extractCutoff: string;
+  /** The domain record it produced — e.g. `stock movement delta-<changeKey>`. */
+  readonly effect: string;
+  readonly appliedBy: string;
+  readonly appliedAt: string;
+}
+
+/**
+ * The stock movement a `stock` delta change IS (GT-04): stock that left after the extract (a legacy sale) is `sold`,
+ * stock that arrived (a legacy receipt) is `received` at its unit cost. The legacy id is the product code the load used,
+ * and the movement keeps the change key as its id, so the source identity survives and a retry is the same movement.
+ */
+export function deltaStockMovement(c: DeltaChange, by: string): { readonly ok: true; readonly movement: Movement } | { readonly ok: false; readonly why: string } {
+  const qty = c.deltaQty;
+  if (qty === undefined || !Number.isInteger(qty) || qty === 0) return { ok: false, why: 'a stock change needs a whole, non-zero deltaQty (+ in, − out)' };
+  if (typeof c.locationId !== 'string' || c.locationId.trim() === '' || typeof c.uom !== 'string' || c.uom.trim() === '') return { ok: false, why: 'a stock change needs the locationId it moved at and its uom' };
+  if (qty > 0 && (c.unitCostMinor === undefined || !Number.isInteger(c.unitCostMinor) || c.unitCostMinor < 0)) return { ok: false, why: 'stock IN needs its unit cost (unitCostMinor) — stock with no cost would value at nothing' };
+  return {
+    ok: true,
+    movement: {
+      movementId: `delta-${c.changeKey}`, productId: c.legacyId, locationId: c.locationId.trim(),
+      kind: qty > 0 ? 'received' : 'sold', quantityMinor: Math.abs(qty), uom: c.uom.trim(), occurredAt: c.changedAt,
+      enteredBy: by, ...(qty > 0 ? { unitCostMinor: c.unitCostMinor! } : {}),
+    } as Movement,
+  };
+}
+
+/** The delta entities this build applies with a real domain effect. Anything else is refused by name, never "applied". */
+export const DELTA_ENTITIES_APPLIED: readonly string[] = Object.freeze(['stock']);
 
 const OPENING_KINDS: readonly string[] = ['stock', 'customer_outstanding', 'supplier_outstanding', 'loyalty_points', 'open_order'];
 
@@ -279,6 +320,18 @@ export interface MigrationDeps {
   readonly refusedDecisions?: (tenantId: string) => Promise<readonly RefusedDecision[]> | readonly RefusedDecision[];
   readonly recordRefusedDecision?: (tenantId: string, decision: RefusedDecision) => Promise<void> | void;
   readonly holdsPermission?: (tenantId: string, userId: string, permission: string) => Promise<boolean> | boolean;
+  /**
+   * When head office last APPLIED a delta with real domain effects (audit GT-03/GT-04) — read from its own record, never
+   * from a caller. Absent (not wired, or nothing applied) fails the cutover's delta check.
+   */
+  readonly deltaAppliedAt?: (tenantId: string) => Promise<string | undefined> | string | undefined;
+  /** The delta change keys head office has APPLIED with a real effect (GT-04) — its own record, never the caller's list. */
+  readonly appliedDeltaKeys?: (tenantId: string) => Promise<readonly string[]> | readonly string[];
+  /**
+   * Apply one delta change: its domain effect (a stock movement) AND the record that it was applied, in ONE atomic
+   * write keyed on the change — a retry under any HTTP key, or after a restart, is the same effect, once.
+   */
+  readonly applyDeltaChange?: (tenantId: string, applied: AppliedDelta, movement: Movement) => Promise<void> | void;
   /** The store computer's seal key (ADR-0023, amended 2b-vi-c-3): a relayed decision's decider is checked against the
    *  box's seal. Absent on a bare stub — then nothing is checked and nothing is claimed. */
   readonly tillSealKey?: Buffer;
@@ -743,23 +796,70 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         const b = ctx.body;
         const rawChanges = isObj(b) ? b['changes'] : undefined;
         const extractCutoff = isObj(b) ? b['extractCutoff'] : undefined;
-        const alreadyApplied = isObj(b) ? b['alreadyApplied'] : undefined;
+        const callerApplied = isObj(b) ? b['alreadyApplied'] : undefined;
         if (!Array.isArray(rawChanges) || !rawChanges.every(isDeltaChange)
           || typeof extractCutoff !== 'string' || extractCutoff === ''
-          || (alreadyApplied !== undefined && (!Array.isArray(alreadyApplied) || !alreadyApplied.every((k) => typeof k === 'string')))) {
+          || (callerApplied !== undefined && (!Array.isArray(callerApplied) || !callerApplied.every((k) => typeof k === 'string')))) {
           throw apiError(400, {
             code: 'not_readable_as_a_delta',
-            whatHappened: 'This payload could not be read as a delta. It needs the changes (each { changeKey, entity, legacyId, operation, changedAt }), the extractCutoff, and optionally the keys already applied by an earlier run.',
+            whatHappened: 'This payload could not be read as a delta. It needs the changes (each { changeKey, entity, legacyId, operation, changedAt, and for stock: deltaQty, locationId, uom, unitCostMinor for stock in }) and the extractCutoff.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Nothing was applied. Correct the delta and send it again.',
           });
         }
+        if (deps.appliedDeltaKeys === undefined || deps.applyDeltaChange === undefined) {
+          throw apiError(503, {
+            code: 'delta_store_not_wired',
+            whatHappened: 'Head office cannot record what a delta applies here, so nothing was applied — a delta counted but not applied is the fault this refuses.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Apply the delta on the full head-office service.',
+          });
+        }
+        // GT-04: what has been applied is HEAD OFFICE's record, never the caller's list (which is ignored, and said).
         const target = await deps.target(ctx.tenantId);
-        const result = applyDelta({
-          target, changes: rawChanges, extractCutoff,
-          ...(alreadyApplied === undefined ? {} : { alreadyApplied: alreadyApplied as readonly string[] }),
-        });
-        return { status: 200, body: result };
+        const judged = applyDelta({ target, changes: rawChanges, extractCutoff, alreadyApplied: await deps.appliedDeltaKeys(ctx.tenantId) });
+        const now = deps.now();
+        const lines: { changeKey: string; outcome: string; detail: string; effect?: string }[] = [];
+        let applied = 0;
+        let refused = 0;
+        let netQty = 0;
+        for (const [i, line] of judged.lines.entries()) {
+          const c = (rawChanges as DeltaChange[])[i]!;
+          if (line.outcome !== 'applied') {
+            if (line.outcome !== 'already_applied') refused += 1;
+            lines.push(line);
+            continue;
+          }
+          if (!DELTA_ENTITIES_APPLIED.includes(c.entity)) {
+            refused += 1;
+            lines.push({ changeKey: c.changeKey, outcome: 'refused_unsupported_entity', detail: `"${c.entity}" changes are not applied by this version (it applies: ${DELTA_ENTITIES_APPLIED.join(', ')}) — refused, never counted as applied; load it by its own route` });
+            continue;
+          }
+          const mapped = deltaStockMovement(c, ctx.userId);
+          if (!mapped.ok) {
+            refused += 1;
+            lines.push({ changeKey: c.changeKey, outcome: 'refused_incomplete', detail: mapped.why });
+            continue;
+          }
+          const effect = `stock movement ${mapped.movement.movementId}`;
+          await deps.applyDeltaChange(ctx.tenantId, {
+            changeKey: c.changeKey, entity: c.entity, legacyId: c.legacyId, operation: c.operation, changedAt: c.changedAt,
+            extractCutoff, effect, appliedBy: ctx.userId, appliedAt: now,
+          }, mapped.movement);
+          applied += 1;
+          netQty += c.deltaQty ?? 0;
+          lines.push({ changeKey: c.changeKey, outcome: 'applied', detail: `${line.detail} → ${effect}`, effect });
+        }
+        const duplicatesIgnored = judged.lines.filter((l) => l.outcome === 'already_applied').length;
+        return {
+          status: 200,
+          body: {
+            ok: judged.ok && refused === 0, applied, duplicatesIgnored, refused, lines, netQty,
+            appliedKeys: await deps.appliedDeltaKeys(ctx.tenantId),
+            ...(callerApplied === undefined ? {} : { ignoredFromCaller: ['alreadyApplied (head office keeps its own record of what was applied)'] }),
+            detail: `${applied} change(s) applied with a real effect, ${duplicatesIgnored} already applied before, ${refused} refused`,
+          },
+        };
       },
     },
     {
@@ -812,22 +912,60 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         const team = ev['namedTeam'];
         if (team !== undefined && (!Array.isArray(team) || !team.every(isTeamMember))) malformed();
 
+        // GT-03 — the gate's evidence is the SERVER's. Every check head office has a record for is answered from that
+        // record and NOTHING the caller sends can stand in for it: a forged all-green body cannot override open control
+        // totals, blocking exceptions, an unclean parallel run or a rollback nobody performed. The caller's parts for
+        // those checks are ignored and named in the answer. GO itself is an authenticated act: the owner, signed in,
+        // saying `ownerGo: true` — never a name typed into `ownerGoBy`.
+        const ignoredFromCaller: string[] = [];
+        for (const [part, present] of [['reconciliation', recon], ['parallel', parallel], ['exceptions', exceptions], ['deltaAppliedAt', deltaAppliedAt], ['rollbackDemonstratedAt', rollbackDemonstratedAt], ['ownerGoBy', ownerGoBy]] as const) {
+          if (present !== undefined) ignoredFromCaller.push(part);
+        }
+        const ledger = await ledgerCutoverEvidence(deps, ctx.tenantId);
+        const totals = deps.controlTotals === undefined ? [] : await deps.controlTotals(ctx.tenantId);
+        const serverReconciliation = totals.length === 0 ? undefined : assessReconciliation({ tenantId: ctx.tenantId, totals });
+        // The exception register answers only once a cleaning pass has run (an extraction is recorded, or it holds
+        // exceptions); an empty register with no extraction is "never run", which is not "clear".
+        const register = deps.exceptions === undefined ? undefined : await deps.exceptions(ctx.tenantId);
+        const cleaningRan = register !== undefined && (register.length > 0 || (await deps.extractionOperator(ctx.tenantId)) !== undefined);
+        const serverExceptions = cleaningRan ? outstandingExceptions(register!) : undefined;
+        const serverDelta = deps.deltaAppliedAt === undefined ? undefined : await deps.deltaAppliedAt(ctx.tenantId);
+        const ownerId = await deps.ownerId(ctx.tenantId);
+        const ownerGo = isObj(b) && b['ownerGo'] === true && ownerId !== undefined && ctx.userId === ownerId ? ctx.userId : undefined;
+        if (isObj(b) && b['ownerGo'] === true && ownerGo === undefined) ignoredFromCaller.push('ownerGo (only the owner, signed in, gives GO)');
+        // The named team: only people this shop has provisioned (a role here) count — a typed stranger is no team.
+        let verifiedTeam: readonly TeamMember[] | undefined;
+        if (team !== undefined) {
+          const known: TeamMember[] = [];
+          for (const m of team as readonly TeamMember[]) {
+            const roles = deps.rolesOf === undefined ? [] : await deps.rolesOf(ctx.tenantId, m.userId);
+            if (roles.length > 0) known.push(m); else ignoredFromCaller.push(`namedTeam:${m.userId} (not a person this shop has provisioned)`);
+          }
+          verifiedTeam = known;
+        }
+
         const evidence: CutoverEvidence = {
-          ...(recon === undefined ? {} : { reconciliation: recon as unknown as ReconciliationReport }),
-          ...(parallel === undefined ? {} : { parallel: parallel as unknown as ParallelRunPosition }),
-          ...(exceptions === undefined ? {} : { exceptions: exceptions as unknown as OutstandingExceptions }),
+          ...(serverReconciliation === undefined ? {} : { reconciliation: serverReconciliation }),
+          ...(ledger.parallel === undefined ? {} : { parallel: ledger.parallel }),
+          ...(serverExceptions === undefined ? {} : { exceptions: serverExceptions }),
+          // The store box's own unsent count: head office has no record of it yet, so it is still the caller's number,
+          // said so in the answer (`callerSupplied`). Absent is not nought.
           ...(edge === undefined ? {} : { edgeUnsyncedItems: edge as number }),
-          ...(deltaAppliedAt === undefined ? {} : { deltaAppliedAt: deltaAppliedAt as string }),
-          ...(rollbackDemonstratedAt === undefined ? {} : { rollbackDemonstratedAt: rollbackDemonstratedAt as string }),
-          ...(ownerGoBy === undefined ? {} : { ownerGoBy: ownerGoBy as string }),
-          ...(team === undefined ? {} : { namedTeam: team as readonly TeamMember[] }),
+          ...(serverDelta === undefined ? {} : { deltaAppliedAt: serverDelta }),
+          ...(ledger.rollbackDemonstratedAt === undefined ? {} : { rollbackDemonstratedAt: ledger.rollbackDemonstratedAt }),
+          ...(ownerGo === undefined ? {} : { ownerGoBy: ownerGo }),
+          ...(verifiedTeam === undefined ? {} : { namedTeam: verifiedTeam }),
         };
-        // The parallel-run position and the performed rollback come from the LEDGER when the caller does not
-        // supply them (B3) — two checks that used to rest on typed-in fields now rest on recorded facts. A
-        // caller's explicit part still wins, so the earlier evidence-by-hand path keeps working.
-        const derived = buildCutoverChecklist({ cutoverId, tenantId: ctx.tenantId, evidence: { ...(await ledgerCutoverEvidence(deps, ctx.tenantId)), ...evidence } });
+        const derived = buildCutoverChecklist({ cutoverId, tenantId: ctx.tenantId, evidence });
         const decision = decideCutover(derived.checklist);
-        return { status: 200, body: { decision, checks: derived.checks, notKnown: derived.notKnown, detail: derived.detail } };
+        return {
+          status: 200,
+          body: {
+            decision, checks: derived.checks, notKnown: derived.notKnown, detail: derived.detail,
+            ignoredFromCaller,
+            callerSupplied: edge === undefined ? [] : ['edgeUnsyncedItems'],
+          },
+        };
       },
     },
     {

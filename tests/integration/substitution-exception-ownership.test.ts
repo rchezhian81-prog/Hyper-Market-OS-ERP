@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { InMemoryEventStore } from '../../packages/persistence/src/event-store';
+import { makeEvent } from '../../packages/contracts/src/event';
+import { STREAM } from '../../services/api/src/adapters';
+import { seedSubstitutionTruth, recordOrderRules, paidOnline, SWAP_PRODUCTS } from '../support/substitution-truth';
 
 /**
  * M19-FR-01 / Item 2 (owner decision) — delivery-substitution exception OWNERSHIP on the real API.
@@ -21,8 +24,6 @@ const offer = (over: Record<string, unknown> = {}) => ({
   substituteProductId: 'MILK-ALT', substituteName: 'Milk 1L alt', substituteUnitPriceMinor: 4_000, substituteQuantityMinor: 2,
   offeredAt: '2026-09-24T10:00:00.000Z', ...over,
 });
-const orderedAttrs = { productId: 'MILK', name: 'Milk 1L', brand: 'aavin', categoryId: 'dairy' };
-const attrs = (over: Record<string, unknown> = {}) => ({ productId: 'MILK-ALT', name: 'Milk 1L alt', brand: 'arokya', categoryId: 'dairy', ...over });
 const sub = (h: ApiHarness, u: string, orderId: string, body: unknown) =>
   h.request({ method: 'POST', path: `/v1/orders/${orderId}/substitute`, userId: u, tenantId: A, idempotencyKey: `sub-${orderId}`, body });
 const get = (h: ApiHarness, path: string, u: string) => h.request({ method: 'GET', path, userId: u, tenantId: A });
@@ -38,10 +39,20 @@ async function seeded(store = new InMemoryEventStore()): Promise<ApiHarness> {
   await h.provisionRole(A, ACCT, 'accountant');
   await h.provisionRole(A, CASH, 'cashier');
   await h.provisionRole(A, CUST, 'customer');
+  // FUL-14: the swap is decided from stored truth — the published products, the order's payment, the customer's rules.
+  await seedSubstitutionTruth(h, A, SWAP_PRODUCTS);
   await place(h, OWNER, 'ord-a'); // cheaper prepaid swap → refund_due 2000 → finance queue
-  await sub(h, OWNER, 'ord-a', { offer: offer(), decision: 'confirmed', rules: { preference: 'best_match' }, orderedAttrs, substituteAttrs: attrs(), tender: 'prepaid' });
-  await place(h, OWNER, 'ord-c'); // policy-refused controlled item → policy_short_pick → customer-service desk
-  await sub(h, OWNER, 'ord-c', { offer: offer(), decision: 'confirmed', rules: { preference: 'best_match' }, orderedAttrs, substituteAttrs: attrs({ ageRestricted: true }) });
+  await recordOrderRules(h, A, OWNER, 'ord-a', { preference: 'best_match' });
+  await paidOnline(h, A, OWNER, 'ord-a', 10_000);
+  expect((await sub(h, OWNER, 'ord-a', { offer: offer(), decision: 'confirmed' })).status).toBe(201);
+  // policy-refused controlled item with NO tender on the record → policy_short_pick → customer-service desk. Since FUL-14 a
+  // swap recorded through the route always carries its tender (so a refusal is a money exception); a record from before
+  // carries none — this one is such a kept record, appended as the route then wrote it.
+  await place(h, OWNER, 'ord-c');
+  const legacy = { orderId: 'ord-c', lineId: 'l1', decision: 'confirmed', outcome: 'short_picked', pickProductId: null, pickQuantityMinor: 0, chargeMinor: 0, refundMinor: 0, at: new Date().toISOString(), eligibility: 'refused', policyReason: 'controlled_item' };
+  for (const [stream, key] of [[[STREAM.orders, 'ord-c'].join('\u001f'), 'ord-sub'], [[STREAM.orders, 'substitutions'].join('\u001f'), 'ord-sub-idx']] as const) {
+    await h.store.append(A, stream, makeEvent({ id: `${key}-ord-c-l1`, type: 'LineSubstituted', occurredAt: legacy.at, idempotencyKey: `${key}-${A}-ord-c-l1`, source: 'api/orders', payload: legacy }));
+  }
   return h;
 }
 const ID_A = 'ord-a:l1:refund_due';

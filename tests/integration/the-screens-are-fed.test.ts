@@ -609,17 +609,17 @@ describe('the served manager is the person the pack NAMES, in the pack\'s branch
 
 describe('a product with an unknown unit of measure never reaches the lane as a ₹NaN line (Stage G slice 5c)', () => {
   it('the box keeps it off the till and names it, like a missing tax rate', async () => {
-    const base = await serve(snapshotOf({ pack: pack({ products: known([{ ...PRODUCTS[0]!, uom: 'each' }]) }) }));
+    const base = await serve(snapshotOf({ pack: pack({ products: known([{ ...PRODUCTS[0]!, uom: 'bundle' }]) }) }));
     const payload = (await payloadFromScreen(base, 'pos'))!;
     expect(payload['products']).toEqual([]);
-    expect(payload['excludedProducts']).toEqual([{ productId: 'p1', name: 'Toor dal 1kg', why: 'unknown unit of measure "each" on the catalogue' }]);
+    expect(payload['excludedProducts']).toEqual([{ productId: 'p1', name: 'Toor dal 1kg', why: 'unknown unit of measure "bundle" on the catalogue' }]);
   });
 
   it('and should one arrive another way, the till refuses the scan by name', async () => {
     const base = await serve(snapshotOf());
     const served = (await payloadFromScreen(base, 'pos'))! as { products: { baseUom: string }[] };
-    const cache = new CatalogueCache({ ...served, products: served.products.map((p) => ({ ...p, baseUom: 'each' })) } as never);
-    expect(() => cache.scan('8901')).toThrow('Cannot sell Toor dal 1kg: its unit "each" is not one this till knows.');
+    const cache = new CatalogueCache({ ...served, products: served.products.map((p) => ({ ...p, baseUom: 'bundle' })) } as never);
+    expect(() => cache.scan('8901')).toThrow('Cannot sell Toor dal 1kg: its unit "bundle" is not one this till knows.');
   });
 });
 

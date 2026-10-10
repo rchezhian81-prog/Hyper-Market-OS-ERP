@@ -169,7 +169,7 @@ export async function assembleReceipt(deps: AssembledGoodsReceiptDeps, input: {
 
   // The ORDER — head office's own, never the body (SP-6 · F01/F07): named by the completion, else by the scans themselves.
   const poId = isStr(input.poId) ? input.poId : (scans.find((s) => s.poId !== null)?.poId ?? null);
-  const order = await orderForReceipt(deps, input.tenantId, poId, flags);
+  const order = await orderForReceipt(deps, input.tenantId, poId, flags, scans[0]!.storeId);
 
   const productIds = [...new Set(scans.map((s) => s.productId))];
   const master = await rulesFromMaster(deps, input.tenantId, productIds);

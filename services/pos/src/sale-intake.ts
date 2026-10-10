@@ -37,6 +37,12 @@ export interface IncomingSaleLine {
   readonly batchId?: string;
   /** The batch's use-by/expiry date (YYYY-MM-DD), where captured — carried for the recall record. */
   readonly batchExpiry?: string;
+  /**
+   * OB-35 "A": set ONLY by head office, when IT assigned this line's batch — the earliest-expiry batch on hand at the store
+   * (FEFO) — because the till sent none. It says the batch is an ASSIGNMENT, not a scan. A till cannot claim it: head
+   * office drops it from whatever arrives before it assigns anything.
+   */
+  readonly batchAssigned?: 'fefo';
   /** The HSN the lane priced this line under, FROZEN at the time of supply (from the pack it held). Carried
    *  so the GST return (GSTR-1, A5) files each sale under the HSN/rate that actually applied when it sold —
    *  correct even across a mid-period rate change. Absent on lanes that do not yet stamp it; the return then

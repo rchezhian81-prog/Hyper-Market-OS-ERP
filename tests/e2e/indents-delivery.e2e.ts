@@ -26,7 +26,12 @@ import { readLog } from '../../edge/store-edge/src/file-log';
  *     a line, every state in words), sees Approve offered ONLY for asks somebody else raised, has a click on Approve send
  *     exactly `{ reason }` keyed for idempotency with NO approver in the body, is refused on the screen for their OWN ask
  *     with nothing sent, sees the cloud's refusal verbatim, COUNTS IN an issue somebody else sent (queued, handed to the
- *     box, "posted" only on the box's word), and — without the rights — sees no control and a plain not-permitted state.
+ *     box, "posted" only on the box's word), and — without the rights — sees no control and a plain not-permitted state;
+ *   • (Batch 2) RESOLVES an issue that arrived short — offered only to a person who neither issued nor counted it, a click
+ *     POSTs exactly `{ reasonCode, note, lines }` (only what turned up, no resolver in the body) to the issue's resolution
+ *     URL, the register is re-read and the resolved indent has left it (it needs nobody); an issue already resolved on an
+ *     indent still open says who resolved it and what was lost; the issuer and the counter are refused ON THE SCREEN with
+ *     nothing sent; a cloud refusal is shown verbatim.
  *
  * Head office delivery from the box is proven by `tests/integration/floor-indents-synced.test.ts`.
  * The browser binary is the environment's pre-installed Chromium; where none is present the suite SKIPS.
@@ -65,7 +70,11 @@ const PACK_JSON = JSON.stringify({
 // ── the stub cloud + stub box socket, on one origin ──────────────────────────────────────────────────────────────
 
 interface CloudLine { productId: string; uom: string; requestedMinor: number; allocatedMinor: number; issuedMinor: number; receivedMinor: number; inTransitMinor: number; shortfallMinor: number; outstandingMinor: number }
-interface CloudIssue { issueId: string; issuedBy: string; issuedAt: string; state: 'in_transit' | 'received'; lines: { productId: string; batchId: string | null; quantityMinor: number }[] }
+interface CloudIssue {
+  issueId: string; issuedBy: string; issuedAt: string; state: 'in_transit' | 'received'; lines: { productId: string; batchId: string | null; quantityMinor: number }[];
+  receivedBy?: string; shortfall?: { productId: string; batchId: string | null; quantityMinor: number; valueMinor: number }[];
+  shortfallResolution?: { resolvedBy: string; reasonCode: string; lines: { productId: string; lostMinor: number; lostValueMinor: number }[] };
+}
 interface CloudRow {
   indentId: string; state: string; requestedBy: string; requestedAt: string; approvedBy: string | null; fromLocationId: string; toLocationId: string; reason: string | null;
   flags: string[]; attention: string[]; needsAttention: boolean; totals: { lines: CloudLine[] }; issues: CloudIssue[];
@@ -82,6 +91,24 @@ function cloudList(): CloudRow[] {
   ];
 }
 
+/** Batch 2: an issue the floor counted in 3 short (u-back issued it, u-floor2 counted it) — its shortfall still open; and an
+ *  indent still owed whose first issue's shortfall u-acct already resolved (2 lost at ₹50). */
+function shortList(): CloudRow[] {
+  return [
+    { indentId: 'ind-5', state: 'issuing', requestedBy: 'u-floor', requestedAt: '2026-09-30T05:00:00.000Z', approvedBy: 'u-mgr', fromLocationId: 'S1-BACK', toLocationId: 'S1', reason: null,
+      flags: ['partial_issue', 'partial_receipt'], attention: ['owed_by_back_store'], needsAttention: true,
+      totals: { lines: [cloudLine({ allocatedMinor: 20, issuedMinor: 10, receivedMinor: 8, shortfallMinor: 2, outstandingMinor: 10 })] },
+      issues: [{ issueId: 'is-0', issuedBy: 'u-back', issuedAt: '2026-09-30T05:30:00.000Z', state: 'received', receivedBy: 'u-floor2',
+        lines: [{ productId: 'RICE', batchId: null, quantityMinor: 10 }], shortfall: [{ productId: 'RICE', batchId: null, quantityMinor: 2, valueMinor: 10_000 }],
+        shortfallResolution: { resolvedBy: 'u-acct', reasonCode: 'theft_suspected', lines: [{ productId: 'RICE', lostMinor: 2, lostValueMinor: 10_000 }] } }] },
+    { indentId: 'ind-4', state: 'received', requestedBy: 'u-floor', requestedAt: '2026-09-30T06:00:00.000Z', approvedBy: 'u-mgr', fromLocationId: 'S1-BACK', toLocationId: 'S1', reason: null,
+      flags: ['partial_receipt'], attention: ['arrived_short'], needsAttention: true,
+      totals: { lines: [cloudLine({ allocatedMinor: 20, issuedMinor: 20, receivedMinor: 17, shortfallMinor: 3 })] },
+      issues: [{ issueId: 'is-2', issuedBy: 'u-back', issuedAt: '2026-09-30T06:30:00.000Z', state: 'received', receivedBy: 'u-floor2',
+        lines: [{ productId: 'RICE', batchId: null, quantityMinor: 20 }], shortfall: [{ productId: 'RICE', batchId: null, quantityMinor: 3, valueMinor: 135_000 }] }] },
+  ];
+}
+
 interface WriteRequest { readonly path: string; readonly idempotencyKey: string | undefined; readonly body: Record<string, unknown> }
 interface HandedItem { readonly key: string; readonly event: { type: string; payload: Record<string, unknown> } }
 interface Recorder {
@@ -89,11 +116,12 @@ interface Recorder {
   listStatus: number;          // the register GET: 200 authorised, 403 not
   rows: CloudRow[];
   approvalStatus: number;      // 200 approves; 422 refuses
+  resolutionStatus: number;    // 201 resolves; 409 refuses
   readonly gets: string[];
   readonly writes: WriteRequest[];
   readonly handed: HandedItem[]; // what the screen handed to the (stub) box socket
 }
-const recorder = (over: Partial<Recorder>): Recorder => ({ indentsData: {}, listStatus: 200, rows: cloudList(), approvalStatus: 200, gets: [], writes: [], handed: [], ...over });
+const recorder = (over: Partial<Recorder>): Recorder => ({ indentsData: {}, listStatus: 200, rows: cloudList(), approvalStatus: 200, resolutionStatus: 201, gets: [], writes: [], handed: [], ...over });
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -121,7 +149,19 @@ async function startShellCloudAndSocket(rec: Recorder): Promise<{ base: string; 
         const key = req.headers['idempotency-key'];
         const body = await readJson(req);
         rec.writes.push({ path, idempotencyKey: typeof key === 'string' ? key : undefined, body });
-        const [, , , , indentId = ''] = path.split('/'); // '', v1, floor, indents, <id>, approval
+        const [, , , , indentId = '', , issueId = ''] = path.split('/'); // '', v1, floor, indents, <id>, approval | issues, <issueId>, shortfall, resolution
+        if (path.endsWith('/shortfall/resolution')) {
+          if (rec.resolutionStatus >= 400) {
+            json(rec.resolutionStatus, { error: { code: 'shortfall_already_resolved', whatHappened: 'u-other resolved this shortfall at 09:00; a second resolution would be a second truth.', wasItSaved: 'not_saved', nextSafeAction: 'Read the indent again.' } });
+            return;
+          }
+          // The cloud's own state change, as the real register makes it: a received indent whose only shortfall is now
+          // resolved needs nobody, so `?open=true` no longer lists it (tests/integration/the-screens-drive-the-real-routes).
+          void issueId;
+          rec.rows = rec.rows.filter((r) => r.indentId !== indentId);
+          json(201, { alreadyResolved: false });
+          return;
+        }
         if (rec.approvalStatus >= 400) {
           json(rec.approvalStatus, { code: 'nothing_allocated', whatHappened: 'None of RICE is at S1-BACK, so nothing could be allocated.', wasItSaved: 'not_saved', nextSafeAction: 'Reject the indent, or wait for stock.' });
           return;
@@ -382,6 +422,75 @@ describe.skipIf(!HAVE_BROWSER)('the floor indent screen, end to end in a real br
     // A second look in Tamil says the same state in Tamil.
     await page.click('#lang');
     expect((await page.textContent('#saved li.saved .pill')) ?? '').toContain('தலைமை அலுவலகத்தில்');
+  });
+
+  it('Batch 2 · Resolve a shortfall: offered only to someone who neither issued nor counted it; a click POSTs exactly { reasonCode, note, lines } (no resolver), then the register says who resolved it and what was lost', async () => {
+    const rec = recorder({ rows: shortList(), indentsData: readerWith('u-mgr', ['inventory.indent.read', 'inventory.adjustment.approve']) });
+    const page = await open(rec);
+    await page.waitForFunction(rowsRendered, undefined, { timeout: 10_000 });
+    await page.waitForSelector('#resolver:not([hidden])');
+    expect(await page.getAttribute('#rows li.row[data-indent-id="ind-4"] ul.issues li', 'data-short')).toBe('open');
+    expect((await page.textContent('#rows li.row[data-indent-id="ind-4"] ul.issues li')) ?? '').toContain('short: RICE × 3');
+    // An issue already resolved says by whom and what was lost — in words — and is not offered again.
+    expect(await page.getAttribute('#rows li.row[data-indent-id="ind-5"] ul.issues li', 'data-short')).toBe('resolved');
+    const resolvedText = (await page.textContent('#rows li.row[data-indent-id="ind-5"] ul.issues li')) ?? '';
+    expect(resolvedText).toContain('shortfall resolved by u-acct');
+    expect(resolvedText).toContain('lost ₹100.00');
+    expect(await page.$$eval('#resolve-issue option', (els) => els.map((e) => (e as unknown as { value: string }).value))).toEqual(['ind-4|is-2']);
+    // The reasons are the stock adjustment's own, in words.
+    expect(await page.$$eval('#resolve-reason option', (els) => els.map((e) => (e as unknown as { value: string }).value))).toEqual(['damaged', 'expired', 'miscount', 'found', 'theft_suspected', 'other']);
+    // A note too short is refused on the screen; nothing is sent.
+    await page.fill('#resolve-lines li[data-product-id="RICE"] input.found', '1');
+    await page.selectOption('#resolve-reason', 'miscount');
+    await page.fill('#resolve-note', 'no');
+    await page.click('#resolve');
+    await page.waitForSelector('#result:not([hidden])');
+    expect((await page.textContent('#result-text')) ?? '').toContain('Say what was done');
+    expect(rec.writes).toHaveLength(0);
+
+    await page.fill('#resolve-note', 'searched the back store and the trolley bay');
+    await page.click('#resolve');
+    expect(await waitFor(() => rec.writes.length === 1)).toBe(true);
+    expect(rec.writes[0]).toEqual({
+      path: '/v1/floor/indents/ind-4/issues/is-2/shortfall/resolution', idempotencyKey: expect.any(String),
+      body: { reasonCode: 'miscount', note: 'searched the back store and the trolley bay', lines: [{ productId: 'RICE', foundMinor: 1 }] },
+    });
+    await page.waitForFunction(() => ((globalThis as unknown as IndentsWindow).document.getElementById('result-text')?.textContent ?? '').includes('Shortfall resolved'), undefined, { timeout: 10_000 });
+    // Re-read: the resolved indent needs nobody and has left the open register; nothing is offered any more.
+    await page.waitForFunction(() => (globalThis as unknown as IndentsWindow).document.querySelectorAll('#rows li.row[data-indent-id="ind-4"]').length === 0, undefined, { timeout: 10_000 });
+    expect(await page.$$eval('#resolve-issue option', (els) => els.length)).toBe(0);
+    expect(((await page.textContent('#resolve-none')) ?? '').length).toBeGreaterThan(0);
+  });
+
+  it('Batch 2 · the issuer and the counter are refused ON THE SCREEN with nothing sent; a cloud refusal is shown verbatim; without the right a word says so', async () => {
+    for (const [who, outcome] of [['u-floor2', 'counter_cannot_resolve'], ['u-back', 'issuer_cannot_resolve']] as const) {
+      const rec = recorder({ rows: shortList(), indentsData: readerWith(who, ['inventory.indent.read', 'inventory.adjustment.approve']) });
+      const page = await open(rec);
+      await page.waitForFunction(rowsRendered, undefined, { timeout: 10_000 });
+      await page.waitForSelector('#resolver:not([hidden])');
+      expect(await page.$$eval('#resolve-issue option', (els) => els.length)).toBe(0);
+      expect(await page.evaluate(() => (globalThis as unknown as { indentsSession: { resolve(i: unknown): Promise<{ outcome: string }> } }).indentsSession.resolve({
+        indentId: 'ind-4', issueId: 'is-2', reasonCode: 'miscount', note: 'searched everywhere', found: [],
+      }))).toEqual({ outcome });
+      expect(rec.writes).toHaveLength(0);
+    }
+
+    const refusing = recorder({ rows: shortList(), resolutionStatus: 409, indentsData: readerWith('u-mgr', ['inventory.indent.read', 'inventory.adjustment.approve']) });
+    const page = await open(refusing);
+    await page.waitForFunction(rowsRendered, undefined, { timeout: 10_000 });
+    await page.waitForSelector('#resolver:not([hidden])');
+    await page.fill('#resolve-note', 'searched the back store');
+    await page.click('#resolve');
+    await page.waitForFunction(() => ((globalThis as unknown as IndentsWindow).document.getElementById('result-text')?.textContent ?? '').includes('Head office refused'), undefined, { timeout: 10_000 });
+    const text = (await page.textContent('#result-text')) ?? '';
+    expect(text).toContain('a second resolution would be a second truth');
+    expect(text).not.toContain('Shortfall resolved');
+    expect(refusing.writes[0]!.body).toEqual({ reasonCode: 'damaged', note: 'searched the back store', lines: [] });
+
+    const without = await open(recorder({ rows: shortList(), indentsData: readerWith('u-x', ['inventory.indent.read']) }));
+    await without.waitForFunction(rowsRendered, undefined, { timeout: 10_000 });
+    expect(await without.isHidden('#resolver')).toBe(true);
+    expect((await without.textContent('#no-resolve')) ?? '').toContain('resolving a shortfall needs');
   });
 
   it('a reader without the rights: with only the read right sees the register and no control; with none sees a plain not-permitted state', async () => {

@@ -45,6 +45,11 @@ export interface PricingDeps {
    *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
   readonly approvals?: ApprovalPort;
   /**
+   * M05: the margin floor the OWNER set for a store (its store rules, basis points) — what a head-office price is judged by.
+   * Undefined when nobody has set it. Present in the running system; a bare stub without it judges by the body's figure.
+   */
+  readonly marginFloorFor?: (tenantId: string, storeId: string) => Promise<number | undefined> | number | undefined;
+  /**
    * Seal this price change into the tamper-evident domain audit trail (M34-FR-01), attributed to the
    * acting user. Optional — the running system provides it; a bare deps stub may omit it. The actor is
    * ALWAYS the caller (`ctx.userId`), never client-supplied; a price is a public shelf figure, so it is
@@ -85,7 +90,10 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           refuse('amounts_not_whole_minor_units', 'price, mrp and cost must be whole minor units (paise).');
         }
         if (typeof b.currency !== 'string' || !isCurrencyCode(b.currency)) refuse('currency_not_recognised', 'Give a known ISO 4217 currency, e.g. INR.');
-        if (!Number.isInteger(b.marginFloorBps) || b.marginFloorBps! < 0 || b.marginFloorBps! > 9999) {
+        // M05: in the running system the floor is the STORE's (its rules), never the request's; a sent figure is only read
+        // when there are no store rules to read (a bare composition), and must then be readable.
+        const sentFloor = b.marginFloorBps;
+        if (deps.marginFloorFor === undefined && (!Number.isInteger(sentFloor) || sentFloor! < 0 || sentFloor! > 9999)) {
           refuse('margin_floor_out_of_range', 'marginFloorBps must be an integer 0–9999.');
         }
         const currency = b.currency as CurrencyCode;
@@ -105,12 +113,30 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           value: null, status: 'approved', decidedBy: opened.decision.decidedBy, reason: opened.decision.reason, decidedAt: opened.decision.decidedAt,
         });
 
+        // SF-01: where the price becomes operative — the store named, else every store head office knows. A change that
+        // could reach no till is refused rather than "saved" and never charged (the audit's finding).
+        const storeIds = typeof b.storeId === 'string' && b.storeId.trim() !== ''
+          ? [b.storeId.trim()]
+          : deps.storesToPrice === undefined ? [] : [...new Set(await deps.storesToPrice(ctx.tenantId))].sort();
+        if (deps.storesToPrice !== undefined && storeIds.length === 0) {
+          refuse('no_store_to_price', 'Head office knows no store for this price to apply to — no branch is set up and no catalogue has been published for a store, so no till would ever charge it.');
+        }
+        let marginFloorBps = sentFloor as number;
+        if (deps.marginFloorFor !== undefined) {
+          const floors = await Promise.all(storeIds.map(async (storeId) => ({ storeId, floor: await deps.marginFloorFor!(ctx.tenantId, storeId) })));
+          const unset = floors.filter((f) => f.floor === undefined).map((f) => f.storeId);
+          if (unset.length > 0 || floors.length === 0) {
+            refuse('margin_floor_not_set', `No margin floor has been set for ${unset.length > 0 ? unset.join(', ') : 'any store'} — a price is judged by the floor the owner set in the store's rules (POST /v1/stores/:storeId/rules), never by one sent with the price.`);
+          }
+          // A price for several stores is judged at the strictest of their floors.
+          marginFloorBps = Math.max(...floors.map((f) => f.floor as number));
+        }
         const check = checkPrice({
           id,
           proposedPrice: money(b.priceMinor!, currency),
           mrp: money(b.mrpMinor!, currency),
           cost: money(b.costMinor!, currency),
-          marginFloorBps: b.marginFloorBps!,
+          marginFloorBps,
           setBy,
           ...(approval === undefined ? {} : { approval }),
         });
@@ -136,14 +162,6 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           id, productId: b.productId!, priceMinor: b.priceMinor!, currency, setBy,
           verdict: check.verdict, approvedBy: approval?.decidedBy ?? null, reason: check.reason, at: deps.now(),
         };
-        // SF-01: where the price becomes operative — the store named, else every store head office knows. A change that
-        // could reach no till is refused rather than "saved" and never charged (the audit's finding).
-        const storeIds = typeof b.storeId === 'string' && b.storeId.trim() !== ''
-          ? [b.storeId.trim()]
-          : deps.storesToPrice === undefined ? [] : [...new Set(await deps.storesToPrice(ctx.tenantId))].sort();
-        if (deps.storesToPrice !== undefined && storeIds.length === 0) {
-          refuse('no_store_to_price', 'Head office knows no store for this price to apply to — no branch is set up and no catalogue has been published for a store, so no till would ever charge it.');
-        }
         await deps.recordPriceChange(ctx.tenantId, record, storeIds);
         // Seal the price change into the audit trail — who moved this product's price, to what, and (for a
         // below-cost/below-floor change) who approved it (§28). No card or tender data is anywhere near a
@@ -160,7 +178,16 @@ export function pricingRoutes(deps: PricingDeps): readonly Route[] {
           correlationId: record.id,
         });
         // `operativeAt` says where the price now applies (from today); the till charges it from the next published pack.
-        return { status: 201, body: { productId: record.productId, priceMinor: record.priceMinor, verdict: check.verdict, approvedBy: record.approvedBy, operativeAt: storeIds, effectiveFrom: record.at.slice(0, 10) } };
+        return {
+          status: 201,
+          body: {
+            productId: record.productId, priceMinor: record.priceMinor, verdict: check.verdict, approvedBy: record.approvedBy, operativeAt: storeIds, effectiveFrom: record.at.slice(0, 10),
+            // Which floor it was judged by — the store's, said, with the figure the request sent beside it when it sent one.
+            marginFloor: deps.marginFloorFor === undefined
+              ? { appliedBps: marginFloorBps, source: 'request' }
+              : { appliedBps: marginFloorBps, source: 'store_rules', stores: storeIds, ...(Number.isInteger(sentFloor) && sentFloor !== marginFloorBps ? { sentBpsNotUsed: sentFloor } : {}) },
+          },
+        };
       },
     },
   ];

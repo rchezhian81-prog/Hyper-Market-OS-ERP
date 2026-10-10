@@ -44,6 +44,8 @@ const WORDS = {
     noWorkBody: 'Nothing is wrong. When work is assigned to you it will appear here on its own.',
     sample: 'Sample assignment — this is not real work.',
     receive: 'Receive a delivery', putAway: 'Put away — scan the bin',
+    deliveries: 'Deliveries waiting for this store', chooseDelivery: 'Choose the delivery at the door first',
+    receivingThis: 'receiving now', chooseThis: 'receive this one',
     doneReceiving: 'Delivery complete — send the receipt',
     tempLabel: 'Arrival temperature (chilled or frozen goods)', tempNotTaken: 'not taken',
     tempTitle: 'Arrival temperature, °C', tempHint: 'Probe the goods and key the reading, for example 3.5 or -18. It goes with every scan until you change it.', tempNone: 'No reading',
@@ -116,6 +118,8 @@ const WORDS = {
     noWorkBody: 'எந்தப் பிரச்சனையும் இல்லை. உங்களுக்கு வேலை ஒதுக்கப்பட்டால் அது தானாகவே இங்கே தோன்றும்.',
     sample: 'மாதிரி வேலை — இது உண்மையான வேலை அல்ல.',
     receive: 'பொருள் வரவு பெறு', putAway: 'அடுக்கு — இடத்தை ஸ்கேன் செய்',
+    deliveries: 'இந்தக் கடைக்கு வர வேண்டிய சரக்குகள்', chooseDelivery: 'முதலில் வாசலில் உள்ள சரக்கைத் தேர்ந்தெடுக்கவும்',
+    receivingThis: 'இப்போது பெறப்படுகிறது', chooseThis: 'இதைப் பெறு',
     doneReceiving: 'வரவு முடிந்தது — ரசீதை அனுப்பு',
     tempLabel: 'வந்தபோது வெப்பநிலை (குளிர்/உறைந்த பொருட்கள்)', tempNotTaken: 'எடுக்கப்படவில்லை',
     tempTitle: 'வந்தபோது வெப்பநிலை, °C', tempHint: 'பொருளை அளந்து அளவை அழுத்தவும், உதாரணமாக 3.5 அல்லது -18. மாற்றும் வரை ஒவ்வொரு ஸ்கேனுடனும் செல்லும்.', tempNone: 'அளவு இல்லை',
@@ -441,6 +445,7 @@ function render() {
 
   el('goods-in-heading').textContent = t('goodsIn');
   el('receive').textContent = t('receive');
+  renderDeliveries();
   renderTemp();
   // SP-6b: "Delivery complete" appears once something has been received here for this delivery and not yet sent as one receipt.
   el('done-receiving').textContent = t('doneReceiving');
@@ -615,6 +620,29 @@ async function syncToBox() {
   render();
 }
 setInterval(() => { void syncToBox(); }, 10_000);
+
+// ── OB-37: the store's open deliveries ──────────────────────────────────────
+// Each issued order that names this store, with what is still to arrive. Choosing one reloads the phone on it (the box
+// serves the same page; the choice rides in the address), so every scan is received against the order at the door.
+function renderDeliveries() {
+  const list = (data && Array.isArray(data.openDeliveries)) ? data.openDeliveries : [];
+  el('deliveries-heading').hidden = list.length === 0;
+  el('deliveries-heading').textContent = t('deliveries');
+  el('deliveries').replaceChildren(...list.map((d) => {
+    const row = document.createElement('a');
+    row.className = 'row';
+    row.href = `?delivery=${encodeURIComponent(d.poId)}`;
+    const current = data.poId === d.poId;
+    row.setAttribute('aria-current', current ? 'true' : 'false');
+    const units = d.ordered.reduce((n, o) => n + o.quantityMinor, 0);
+    row.textContent = `${d.number} · ${d.supplierId} · ${d.ordered.length} × ${units} — ${current ? t('receivingThis') : t('chooseThis')}`;
+    return row;
+  }));
+  // Several waiting and none chosen: nothing is received under a made-up delivery.
+  const mustChoose = list.length > 1 && !(data && data.grnId);
+  el('receive').disabled = mustChoose;
+  el('receive').title = mustChoose ? t('chooseDelivery') : '';
+}
 
 // ── Actions ─────────────────────────────────────────────────────────────────
 el('receive').addEventListener('click', async () => {

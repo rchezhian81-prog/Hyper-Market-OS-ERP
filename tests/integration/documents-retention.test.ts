@@ -28,9 +28,32 @@ const retDocuments = (h: ApiHarness, u: string, today?: string) =>
 const dispose = (h: ApiHarness, u: string, documentId: string, body: unknown, key: string) =>
   h.request({ method: 'POST', path: `/v1/documents/${documentId}/disposal`, userId: u, tenantId: A, idempotencyKey: key, body });
 
-const INV_V1 = { kind: 'tax_invoice', body: 'INV v1 {{total}}', createdBy: 'u-designer', approvedBy: 'u-owner', changeNote: 'initial', at: '2026-07-01T00:00:00Z' };
-const INV_V2 = { ...INV_V1, body: 'INV v2 {{total}}', changeNote: 'new address', at: '2026-08-01T00:00:00Z' };
-const RCPT_V1 = { kind: 'receipt', body: 'RCPT {{total}}', createdBy: 'u-designer', approvedBy: 'u-owner', changeNote: 'initial', at: '2026-07-01T00:00:00Z' };
+const INV_V1 = { kind: 'tax_invoice', body: 'INV v1 {{number}} {{total}}', createdBy: 'u-designer', approvedBy: 'u-owner', changeNote: 'initial', at: '2026-07-01T00:00:00Z' };
+const INV_V2 = { ...INV_V1, body: 'INV v2 {{number}} {{total}}', changeNote: 'new address', at: '2026-08-01T00:00:00Z' };
+// An ordinary (non-statutory) document with free words: a notification. (Since PA-09 a receipt or invoice is issued from
+// its sale, with the money read on the server — so the statutory tax invoice below comes from a real banked sale.)
+const RCPT_V1 = { kind: 'notification', body: 'NOTE {{total}}', createdBy: 'u-designer', approvedBy: 'u-owner', changeNote: 'initial', at: '2026-07-01T00:00:00Z' };
+
+/** Bank a sale through the till's own route, its line carrying the GST rate it was sold at. */
+const bankSale = async (h: ApiHarness, saleId: string): Promise<void> => {
+  const res = await h.request({
+    method: 'POST', path: '/v1/sales', userId: 'u-owner', tenantId: A, idempotencyKey: `sale-${saleId}`,
+    body: {
+      saleId, receiptNumber: `R-${saleId}`, laneId: 'lane-1', cashierId: 'u-owner', tradingDay: '2026-09-01', committedAt: '2026-09-01T10:00:00.000Z',
+      totalMinor: 11800, currency: 'INR', packVersion: 1,
+      lines: [{ productId: 'P1', quantityMinor: 1, uom: 'each', unitPriceMinor: 11800, lineTotalMinor: 11800, taxRateBps: 1800 }],
+      tenders: [{ kind: 'cash', amountMinor: 11800 }],
+    },
+  });
+  expect(res.status).toBe(202);
+};
+/** Issue a tax invoice FROM a banked sale; resolves the document id head office gave it. */
+const invoiceFor = async (h: ApiHarness, saleId: string, key: string, over: Record<string, unknown> = {}): Promise<string> => {
+  await bankSale(h, saleId);
+  const res = await issue(h, 'u-owner', 'inv', { source: { type: 'sale', id: saleId }, ...over }, key);
+  expect(res.status).toBe(201);
+  return (res.body as { documentId: string }).documentId;
+};
 
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
@@ -45,7 +68,7 @@ describe('document retention & archival (M31): assess versions, propose document
     const h = await cast();
     await publish(h, 'u-owner', 'inv', INV_V1, 'p-v1');
     await publish(h, 'u-owner', 'inv', INV_V2, 'p-v2'); // a change is a NEW version; v2 is current now
-    await issue(h, 'u-owner', 'inv', { documentId: 'd1', kind: 'tax_invoice', subjectRef: 'sale-1', data: { total: '100' } }, 'i-d1');
+    await invoiceFor(h, 'sale-1', 'i-d1');
 
     const body = (await retTemplates(h, 'u-owner')).body as {
       count: number; disposableCount: number;
@@ -65,11 +88,11 @@ describe('document retention & archival (M31): assess versions, propose document
     await publish(h, 'u-owner', 'rcpt', RCPT_V1, 'p-rcpt');
     await publish(h, 'u-owner', 'inv', INV_V1, 'p-inv');
 
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-hold', kind: 'receipt', subjectRef: 's1', data: { total: '1' }, retainUntil: '2020-01-01', legalHold: true }, 'i-hold');
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-none', kind: 'receipt', subjectRef: 's2', data: { total: '2' } }, 'i-none');
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-future', kind: 'receipt', subjectRef: 's3', data: { total: '3' }, retainUntil: '2099-01-01' }, 'i-future');
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-expired', kind: 'receipt', subjectRef: 's4', data: { total: '4' }, retainUntil: '2020-01-01' }, 'i-expired');
-    await issue(h, 'u-owner', 'inv', { documentId: 'd-tax', kind: 'tax_invoice', subjectRef: 's5', data: { total: '5' }, retainUntil: '2020-01-01' }, 'i-tax');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-hold', kind: 'notification', subjectRef: 's1', data: { total: '1' }, retainUntil: '2020-01-01', legalHold: true }, 'i-hold');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-none', kind: 'notification', subjectRef: 's2', data: { total: '2' } }, 'i-none');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-future', kind: 'notification', subjectRef: 's3', data: { total: '3' }, retainUntil: '2099-01-01' }, 'i-future');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-expired', kind: 'notification', subjectRef: 's4', data: { total: '4' }, retainUntil: '2020-01-01' }, 'i-expired');
+    const dTax = await invoiceFor(h, 's5', 'i-tax', { retainUntil: '2020-01-01' });
 
     const body = (await retDocuments(h, 'u-owner', '2026-09-04')).body as {
       today: string; proposedForDisposalCount: number;
@@ -79,7 +102,7 @@ describe('document retention & archival (M31): assess versions, propose document
     expect(by['d-hold']).toBe('keep');       // a legal hold beats any retention date
     expect(by['d-none']).toBe('keep');       // silence never means discard
     expect(by['d-future']).toBe('keep');     // still within its retention window
-    expect(by['d-tax']).toBe('keep');        // a tax invoice is statutory — never proposed, past date or not
+    expect(by[dTax]).toBe('keep');           // a tax invoice is statutory — never proposed, past date or not
     expect(by['d-expired']).toBe('propose_disposal'); // the only one whose retention has ended
     expect(body.proposedForDisposalCount).toBe(1);
   });
@@ -93,16 +116,17 @@ describe('document retention & archival (M31): assess versions, propose document
 });
 
 describe('document DISPOSAL execution (M31): an authorised human disposes only what retention allows — never held/statutory', () => {
+  let dTax = '';
   async function seeded(): Promise<ApiHarness> {
     const h = await cast();
     await publish(h, 'u-owner', 'rcpt', RCPT_V1, 'p-rcpt');
     await publish(h, 'u-owner', 'inv', INV_V1, 'p-inv');
     // past retention, ordinary kind → the one thing that MAY be disposed
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-expired', kind: 'receipt', subjectRef: 's4', data: { total: '4' }, retainUntil: '2020-01-01' }, 'i-expired');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-expired', kind: 'notification', subjectRef: 's4', data: { total: '4' }, retainUntil: '2020-01-01' }, 'i-expired');
     // never-disposable cases
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-hold', kind: 'receipt', subjectRef: 's1', data: { total: '1' }, retainUntil: '2020-01-01', legalHold: true }, 'i-hold');
-    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-future', kind: 'receipt', subjectRef: 's3', data: { total: '3' }, retainUntil: '2099-01-01' }, 'i-future');
-    await issue(h, 'u-owner', 'inv', { documentId: 'd-tax', kind: 'tax_invoice', subjectRef: 's5', data: { total: '5' }, retainUntil: '2020-01-01' }, 'i-tax');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-hold', kind: 'notification', subjectRef: 's1', data: { total: '1' }, retainUntil: '2020-01-01', legalHold: true }, 'i-hold');
+    await issue(h, 'u-owner', 'rcpt', { documentId: 'd-future', kind: 'notification', subjectRef: 's3', data: { total: '3' }, retainUntil: '2099-01-01' }, 'i-future');
+    dTax = await invoiceFor(h, 's5', 'i-tax', { retainUntil: '2020-01-01' });
     return h;
   }
 
@@ -126,7 +150,7 @@ describe('document DISPOSAL execution (M31): an authorised human disposes only w
   it('REFUSES a legal-held, a statutory, and a still-in-retention document (hard rule #6)', async () => {
     const h = await seeded();
     expect(codeOf(await dispose(h, 'u-owner', 'd-hold', { reason: 'x' }, 'x2'))).toBe('disposal_refused_legal_hold');
-    expect(codeOf(await dispose(h, 'u-owner', 'd-tax', { reason: 'x' }, 'x3'))).toBe('disposal_refused_statutory');
+    expect(codeOf(await dispose(h, 'u-owner', dTax, { reason: 'x' }, 'x3'))).toBe('disposal_refused_statutory');
     expect(codeOf(await dispose(h, 'u-owner', 'd-future', { reason: 'x' }, 'x4'))).toBe('disposal_refused_within_retention');
     // and none of them was recorded as disposed
     expect(((await retDocuments(h, 'u-owner')).body as { disposedCount: number }).disposedCount).toBe(0);

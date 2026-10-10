@@ -4,6 +4,8 @@ import {
   freshness,
   MixedCurrencyError,
   InvalidFreshnessTimeError,
+  tenderSplit,
+  TENDER_DIFFERENCE,
   type SaleFact,
 } from '../../packages/reporting/src/index';
 
@@ -39,6 +41,7 @@ describe('salesSummary', () => {
     expect(summary.unitsSold).toBe(6);
     expect(summary.avgBasketMinor).toBe(118_00);
     expect(summary.tenderMix).toEqual({ cash: 118_00, upi: 118_00 });
+    expect(summary.tenderBills).toEqual({ cash: 1, upi: 1 });
   });
 
   it('returns a zeroed summary for no sales', () => {
@@ -47,6 +50,23 @@ describe('salesSummary', () => {
     expect(summary.marginPctBps).toBe(0);
     expect(summary.avgBasketMinor).toBe(0);
     expect(summary.basketCount).toBe(0);
+  });
+
+  it('splits a bill across the tenders that paid it, by amount, and counts it under each (audit EA-02)', () => {
+    const summary = salesSummary([
+      fact({ saleId: 's1', totalMinor: 300_00, tender: 'card', tenders: [{ kind: 'card', amountMinor: 250_00 }, { kind: 'cash', amountMinor: 50_00 }] }),
+      fact({ saleId: 's2', totalMinor: 118_00, tender: 'cash' }),
+    ]);
+    expect(summary.tenderMix).toEqual({ card: 250_00, cash: 168_00 });
+    expect(summary.tenderBills).toEqual({ card: 1, cash: 2 });
+    expect(Object.values(summary.tenderMix).reduce((a, b) => a + b, 0)).toBe(summary.grossSalesMinor);
+  });
+
+  it('shows the part of a bill its tenders do not explain as a tender difference, so the mix still reconciles', () => {
+    const split = tenderSplit({ totalMinor: 300_00, tender: 'card', tenders: [{ kind: 'card', amountMinor: 250_00 }] });
+    expect(split).toEqual({ card: 250_00, [TENDER_DIFFERENCE]: 50_00 });
+    const over = tenderSplit({ totalMinor: 100_00, tender: 'cash', tenders: [{ kind: 'cash', amountMinor: 120_00 }] });
+    expect(over).toEqual({ cash: 120_00, [TENDER_DIFFERENCE]: -20_00 });
   });
 
   it('refuses to blend currencies', () => {

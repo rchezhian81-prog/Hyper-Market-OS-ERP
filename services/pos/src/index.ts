@@ -7,6 +7,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import type { CatalogueProduct } from '../../../packages/catalogue/src/catalogue';
 import { checkOperatorStamp } from '../../../packages/identity/src/till-seal';
+import { assignSaleLots, type LotOnHand } from './sale-lots';
 import {
   acceptSale, summariseIntake,
   type IncomingSale, type IntakeContext, type IntakeResult, type SaleException,
@@ -20,6 +21,11 @@ export {
 } from './sale-intake';
 
 export interface PosDeps {
+  /**
+   * OB-35 "A": the batches on hand where this sale's stock is drawn from, earliest expiry first per product (Batch 2's
+   * `fefoBatchesAt` over the batch projection). Absent → no assignment is made (the finding fires as before).
+   */
+  readonly lotsOnHand?: (tenantId: string, sale: IncomingSale) => Promise<(productId: string) => readonly LotOnHand[]>;
   readonly catalogue: (tenantId: string) => Promise<ReadonlyMap<string, CatalogueProduct>> | ReadonlyMap<string, CatalogueProduct>;
   readonly currentPackVersion: (tenantId: string) => Promise<number> | number;
   /**
@@ -82,8 +88,8 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
       api: 'API-05', method: 'POST', path: '/v1/sales',
       permission: 'pos.sale.sync', idempotent: true,
       handler: async (ctx) => {
-        const sale = readSale(ctx.body);
-        if (sale === undefined) {
+        const arrived = readSale(ctx.body);
+        if (arrived === undefined) {
           // The one refusal in this service, and it is not a judgement about the sale — it is that
           // what arrived cannot be read as one, so there is nothing to bank.
           throw apiError(400, {
@@ -93,6 +99,18 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
             nextSafeAction: 'Do not discard it at the lane. Keep it in the outbox and raise it — a sale that cannot be sent is still a sale that happened.',
           });
         }
+
+        // OB-35 "A": a batch-tracked line the till sent with no batch is assigned the earliest-expiry batch on hand at the
+        // store, recorded on the sale and marked as an assignment. Only on first banking — a resend keeps what was banked.
+        // A till's own claim to an assignment is never trusted: it is dropped first.
+        const unclaimed: IncomingSale = arrived.lines.some((l) => 'batchAssigned' in l)
+          ? { ...arrived, lines: arrived.lines.map((l) => { const { batchAssigned: _a, ...rest } = l; void _a; return rest; }) }
+          : arrived;
+        const catalogue = await deps.catalogue(ctx.tenantId);
+        const alreadyBanked = await deps.isBanked(ctx.tenantId, unclaimed.saleId);
+        const sale = alreadyBanked || deps.lotsOnHand === undefined
+          ? unclaimed
+          : assignSaleLots(unclaimed, (p) => catalogue.get(p)?.batchTracked === true, await deps.lotsOnHand(ctx.tenantId, unclaimed)).sale;
 
         // Who rang it — re-verified from THEIR grants (SP-4b · F09): unknown is `null`, a finding; not looked up is absent.
         const cashierId = typeof sale.cashierId === 'string' ? sale.cashierId.trim() : '';
@@ -104,10 +122,10 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           fact: 'sale', tenantId: ctx.tenantId, recordId: sale.saleId, amountMinor: sale.totalMinor, named: cashierId, stamp: sale.operatorVerified,
         });
         const intake = acceptSale(sale, {
-          catalogue: await deps.catalogue(ctx.tenantId),
+          catalogue,
           currentPackVersion: await deps.currentPackVersion(ctx.tenantId),
           saleHoldingThisReceipt: await deps.saleHoldingReceipt(ctx.tenantId, sale.receiptNumber),
-          alreadyBanked: await deps.isBanked(ctx.tenantId, sale.saleId),
+          alreadyBanked,
           now: deps.now(),
           ...(cashierGrants === undefined ? {} : { cashierGrants }),
           ...(cashierSeal === undefined ? {} : { cashierSeal }),

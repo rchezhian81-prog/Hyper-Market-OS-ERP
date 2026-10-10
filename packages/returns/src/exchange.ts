@@ -70,7 +70,7 @@ export interface ExchangeAssessment {
  * rounded to the paise. A product sold on two lines at two prices is valued at the bill's average for
  * that product — the register is per product, not per line, so this is the only consistent choice.
  */
-export function returnedValueAtOriginalPrices(sale: OriginalSale, lines: readonly ReturnRequestLine[]): number {
+export function returnedValueAtOriginalPrices(sale: OriginalSale, lines: readonly Pick<ReturnRequestLine, 'productId' | 'quantityMinor'>[]): number {
   const byProduct = new Map<string, { qty: number; total: number }>();
   for (const l of sale.lines) {
     const cur = byProduct.get(l.productId) ?? { qty: 0, total: 0 };

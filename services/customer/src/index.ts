@@ -33,8 +33,9 @@ export interface RecordedPointsMovement {
   readonly movementId: string;
   readonly customerId: string;
   readonly delta: number;
-  /** `earn_reversal`: points a return took back from what its sale earned (PF-09-a) — a negative delta. */
-  readonly reason: PointsKind | 'earn_reversal';
+  /** `earn_reversal`: points a return took back from what its sale earned (PF-09-a) — a negative delta.
+   *  `burn_reversal`: points the member PAID WITH on a bill that a return gave back (OB-34 "A") — a positive delta. */
+  readonly reason: PointsKind | 'earn_reversal' | 'burn_reversal';
   readonly sourceRef: string | null;
   readonly at: string;
 }
@@ -91,10 +92,14 @@ export function mayWeSend(input: {
     };
   }
 
-  // The LATEST record wins, whichever way it points. A withdrawal after a grant is a withdrawal.
-  const latest = input.records
-    .filter((r) => r.customerId === input.customerId && r.purpose === input.purpose && r.channel === input.channel)
-    .sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1))[0];
+  // The LATEST record wins, whichever way it points. A withdrawal after a grant is a withdrawal. Records arrive in the
+  // order they were recorded, so on an equal timestamp the later one wins — a withdrawal in the same millisecond as
+  // the grant is still a withdrawal (a sort that broke the tie either way could read it as consent).
+  let latest: ConsentRecord | undefined;
+  for (const r of input.records) {
+    if (r.customerId !== input.customerId || r.purpose !== input.purpose || r.channel !== input.channel) continue;
+    if (latest === undefined || r.recordedAt >= latest.recordedAt) latest = r;
+  }
 
   if (latest === undefined) {
     return {

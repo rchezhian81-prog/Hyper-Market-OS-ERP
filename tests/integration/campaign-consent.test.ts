@@ -31,6 +31,12 @@ async function seeded(): Promise<ApiHarness> {
   await consent(h, 'u-mgr', 'c-no', { purpose: 'marketing', channel: 'email', given: false, evidence: 'unsubscribed via the link' }, 'k-no');
   await consent(h, 'u-mgr', 'c-sms', { purpose: 'marketing', channel: 'sms', given: true, evidence: 'consented for SMS at the till' }, 'k-sms');
   // c-none has no consent record at all.
+  // Head office's message-template register (PF-10): the newsletter (marketing, email) and the dispatch notice
+  // (transactional, email) are drafted by the owner and APPROVED by the manager — a different person (§28).
+  const tpl = (id: string, purpose: string, key: string) => h.request({ method: 'POST', path: `/v1/notifications/templates/${id}`, userId: 'u-owner', tenantId: A, idempotencyKey: key, body: { purpose, channel: 'email', body: 'Hello from SRE' } });
+  const approve = (id: string, key: string) => h.request({ method: 'POST', path: `/v1/notifications/templates/${id}/approval`, userId: 'u-mgr', tenantId: A, idempotencyKey: key, body: { version: 1 } });
+  await tpl('t-newsletter', 'marketing', 'tpl-n'); await approve('t-newsletter', 'tpl-na');
+  await tpl('t-dispatch', 'transactional', 'tpl-d'); await approve('t-dispatch', 'tpl-da');
   return h;
 }
 
@@ -54,9 +60,14 @@ describe('campaign send-gate: consent per recipient, from the real ledger (M21-F
 
   it('blocks the whole campaign when the template is not approved — no partial send', async () => {
     const h = await seeded();
-    const res = await plan(h, 'u-mgr', 'camp-2', marketingEmail({ templateApproved: false, audience: ['c-yes', 'c-no'] }), 'p2');
+    // A template nobody approved is blocked — even when the request CLAIMS it is approved (PF-10: the register decides).
+    await h.request({ method: 'POST', path: '/v1/notifications/templates/t-draft', userId: 'u-owner', tenantId: A, idempotencyKey: 'tpl-x', body: { purpose: 'marketing', channel: 'email', body: 'Unreviewed words' } });
+    const res = await plan(h, 'u-mgr', 'camp-2', marketingEmail({ templateId: 't-draft', templateApproved: true, audience: ['c-yes', 'c-no'] }), 'p2');
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ blocked: true, sendTo: [], excludedCount: 2, excludedByReason: { template_not_approved: 2 } });
+    expect(res.body).toMatchObject({ blocked: true, sendTo: [], excludedCount: 2, excludedByReason: { template_not_approved: 2 }, templateApprovedFrom: "head office's template register" });
+    // And an approved template used on a channel it was not approved for is not approved for that send.
+    const sms = await plan(h, 'u-mgr', 'camp-2b', marketingEmail({ channel: 'sms', audience: ['c-sms'] }), 'p2b');
+    expect(sms.body).toMatchObject({ blocked: true });
   });
 
   it('lets a transactional message ride the contract, but refuses a promotion smuggled into it', async () => {

@@ -37,7 +37,7 @@ describe('the PO proposal POSTs to head office and reports back honestly (M06-FR
       return { status: 201, json: async () => ({ order: { status: 'proposed', requisitionedBy: 'u-buyer', totalMinor: 60000 }, openCommitment: null }) };
     }) as unknown as typeof fetch;
 
-    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-1', supplierId: 'sup-1', lines: LINES });
+    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-1', supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: LINES });
 
     expect(outcome).toEqual({ proposed: true, requisitionedBy: 'u-buyer', totalMinor: 60000 });
     expect(calls).toHaveLength(1);
@@ -63,7 +63,7 @@ describe('the PO proposal POSTs to head office and reports back honestly (M06-FR
       json: async () => ({ order: { status: 'proposed', requisitionedBy: 'u-buyer', totalMinor: 60000 }, openCommitment: null, alreadyProposed: true }),
     })) as unknown as typeof fetch;
 
-    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-1', supplierId: 'sup-1', lines: LINES });
+    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-1', supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: LINES });
     expect(outcome).toEqual({ proposed: true, requisitionedBy: 'u-buyer', totalMinor: 60000 });
   });
 
@@ -73,14 +73,14 @@ describe('the PO proposal POSTs to head office and reports back honestly (M06-FR
       json: async () => ({ code: 'purchase_order_currency_mismatch', whatHappened: 'Every line must be priced in one known currency.' }),
     })) as unknown as typeof fetch;
 
-    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-2', supplierId: 'sup-1', lines: LINES });
+    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-2', supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: LINES });
     expect(outcome).toEqual({ proposed: false, reason: 'Every line must be priced in one known currency.' });
   });
 
   it('turns a dropped link into a refusal-with-reason, not an order (P-08)', async () => {
     (globalThis as { fetch?: typeof fetch }).fetch = (async () => { throw new Error('ECONNREFUSED'); }) as unknown as typeof fetch;
 
-    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-3', supplierId: 'sup-1', lines: LINES });
+    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-3', supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: LINES });
     expect(outcome.proposed).toBe(false);
     if (outcome.proposed) return;
     expect(outcome.reason).toMatch(/no connection to head office/i);
@@ -91,13 +91,13 @@ describe('the PO proposal POSTs to head office and reports back honestly (M06-FR
       status: 200, json: async () => ({ ok: true }),
     })) as unknown as typeof fetch;
 
-    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-4', supplierId: 'sup-1', lines: LINES });
+    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-4', supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: LINES });
     expect(outcome.proposed).toBe(false);
   });
 
   it('refuses plainly when the runtime has no fetch at all', async () => {
     delete (globalThis as { fetch?: typeof fetch }).fetch;
-    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-5', supplierId: 'sup-1', lines: LINES });
+    const outcome = await openProposePurchaseOrderPort().post({ poId: 'PO-5', supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: LINES });
     expect(outcome.proposed).toBe(false);
     if (outcome.proposed) return;
     expect(outcome.reason).toMatch(/no connection to head office/i);

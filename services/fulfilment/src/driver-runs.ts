@@ -30,7 +30,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { canTransitionDelivery, transitionDelivery, type DeliveryEvent, type DeliveryState } from '../../../packages/fulfilment/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
-import { checkAttempt, type AttemptOutcome, type DeliveryAttempt, type DeliveryStateRecord } from './index';
+import { checkAttempt, fulfilmentAfter, type AttemptOutcome, type DeliveryAttempt, type DeliveryStateRecord } from './index';
 
 export const STOP_STATES: readonly DeliveryState[] = ['assigned', 'picked_up', 'out_for_delivery', 'attempted', 'delivered', 'partially_delivered', 'failed', 'returned_to_origin'];
 const STEPS: readonly DeliveryEvent[] = ['pick_up', 'depart', 'arrive', 'deliver', 'deliver_partial', 'fail', 'reattempt', 'rto'];
@@ -172,6 +172,8 @@ export interface SyncedDriverRunDeps {
   readonly recordAttempt: (tenantId: string, attempt: DeliveryAttempt) => Promise<void> | void;
   readonly now: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** FUL-05: run the one fulfilment command for the order once a stop is recorded. Never fails the stop: a fault is said. */
+  readonly afterOrderFact?: (tenantId: string, orderId: string, by: string) => Promise<unknown>;
 }
 
 /** The latest outcome per stop, in first-seen order — the register folded to the route as it stands. */
@@ -262,6 +264,7 @@ export function attemptFromStop(s: RelayedStop, routeId: string, stopId: string)
     // The exact reason, verbatim — never paraphrased into the category it mapped to.
     ...(s.failureReason === null ? {} : { notes: s.failureReason }),
     ...(s.codCollectedMinor > 0 ? { cashCollectedMinor: s.codCollectedMinor } : {}),
+    ...(s.codCollectedMinor > 0 && s.codMethod !== null ? { codMethod: s.codMethod } : {}),
     codExpectedMinor: s.codExpectedMinor,
   };
 }
@@ -406,8 +409,10 @@ export function syncedDriverRunRoutes(deps: SyncedDriverRunDeps): readonly Route
           },
           correlationId: routeId,
         });
+        // FUL-05: the order's fulfilment runs on what the door said — in the driver's name.
+        const fulfilment = await fulfilmentAfter(deps.afterOrderFact, ctx.tenantId, r.orderRef, r.driverId);
         // 202: it happened at the door; this records that head office now holds it.
-        return { status: 202, body: { routeId, stopId, state: r.state, recorded: true, flags, orderStep, runAttempt } };
+        return { status: 202, body: { routeId, stopId, state: r.state, recorded: true, flags, orderStep, runAttempt, ...(fulfilment === undefined ? {} : { fulfilment }) } };
       },
     },
     {

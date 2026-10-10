@@ -37,6 +37,16 @@ export interface ShopOrderRequest {
     readonly result: ShopPaymentResult;
     readonly reason?: string;
   };
+  /** Delivered or collected (FUL-03): the shop adds its own delivery fee to its quote for a delivery. */
+  readonly fulfilment?: 'delivery' | 'pickup';
+}
+
+/** A follow-up on an order the shop already holds (FUL-03 / FUL-07): pay for what it promised, ask again, or cancel. */
+export interface ShopOrderFollowUp {
+  readonly orderId: string;
+  readonly token: string;
+  readonly action: 'payment' | 'payment/check' | 'cancel';
+  readonly body?: unknown;
 }
 
 export type ShopAnswer =
@@ -45,6 +55,8 @@ export type ShopAnswer =
 
 export interface ShopTransport {
   placeOrder(request: ShopOrderRequest): Promise<ShopAnswer>;
+  /** Optional on a scripted shop: a follow-up on an order already placed. */
+  followUp?(request: ShopOrderFollowUp): Promise<ShopAnswer>;
 }
 
 /** What the shop's answer means for the customer's order. */
@@ -56,6 +68,14 @@ export type ShopVerdict =
     readonly alreadyPlaced: boolean;
     readonly paymentState: string;
     readonly tellTheCustomer: string;
+    /** FUL-07: the shop could not promise everything — the customer decides before anything is charged. */
+    readonly needsCustomerDecision: boolean;
+    readonly shortages: readonly { readonly productId: string; readonly requestedMinor: number; readonly promisedMinor: number }[];
+    /** The shop's own price for what it promised (FUL-03) — what the customer pays, not the app's sum. */
+    readonly quoteMinor?: number;
+    /** The amount the app sent is not the shop's price: not taken as paid. */
+    readonly amountMismatch: boolean;
+    readonly orderState?: string;
   }
   | { readonly kind: 'signed_out' }
   | { readonly kind: 'refused'; readonly code: string; readonly whatHappened: string }
@@ -68,12 +88,20 @@ export function readShopAnswer(answer: { readonly status: number; readonly body:
   const body = isObj(answer.body) ? answer.body : {};
   if (answer.status === 201 || answer.status === 200) {
     const payment = isObj(body['payment']) ? body['payment'] : {};
+    const quote = isObj(body['quote']) ? body['quote'] : {};
+    const shortages = Array.isArray(body['shortages']) ? (body['shortages'] as unknown[]).flatMap((x) => (isObj(x) && typeof x['productId'] === 'string' && typeof x['requestedMinor'] === 'number' && typeof x['promisedMinor'] === 'number'
+      ? [{ productId: x['productId'], requestedMinor: x['requestedMinor'], promisedMinor: x['promisedMinor'] }] : [])) : [];
     return {
       kind: 'placed',
       orderId: typeof body['orderId'] === 'string' ? body['orderId'] : '',
       alreadyPlaced: body['alreadyPlaced'] === true,
       paymentState: typeof payment['state'] === 'string' ? payment['state'] : 'none',
       tellTheCustomer: typeof body['tellTheCustomer'] === 'string' ? body['tellTheCustomer'] : '',
+      needsCustomerDecision: body['needsCustomerDecision'] === true,
+      shortages,
+      ...(typeof quote['itemsMinor'] === 'number' ? { quoteMinor: quote['itemsMinor'] } : {}),
+      amountMismatch: body['amountMismatch'] === true,
+      ...(typeof body['state'] === 'string' ? { orderState: body['state'] } : {}),
     };
   }
   if (answer.status === 401) return { kind: 'signed_out' };
@@ -127,6 +155,7 @@ export function httpShopTransport(options: HttpShopTransportOptions): ShopTransp
             lines: request.lines.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor })),
             locationId: request.locationId,
             ...(request.payment === undefined ? {} : { payment: request.payment }),
+            ...(request.fulfilment === undefined ? {} : { fulfilment: request.fulfilment }),
           }),
           signal: controller.signal,
         });
@@ -138,6 +167,29 @@ export function httpShopTransport(options: HttpShopTransportOptions): ShopTransp
         return aborted
           ? { reached: false, why: 'timed_out', detail: `the shop did not answer within ${timeoutMs}ms — nothing is confirmed` }
           : { reached: false, why: 'network_error', detail: 'the request could not reach the shop — nothing is confirmed' };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    followUp: async (request) => {
+      if (options.isOnline !== undefined && !options.isOnline()) {
+        return { reached: false, why: 'no_connection', detail: 'this device reports no connection, so nothing was sent' };
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => { controller.abort(); }, timeoutMs);
+      try {
+        const res = await options.fetch(`${base}/v1/storefront/orders/${encodeURIComponent(request.orderId)}/${request.action}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${request.token}`, 'idempotency-key': `storefront-${request.action.replace('/', '-')}-${request.orderId}` },
+          body: JSON.stringify(request.body ?? {}),
+          signal: controller.signal,
+        });
+        let body: unknown = undefined;
+        try { body = await res.json(); } catch { body = undefined; }
+        return { reached: true, status: res.status, body };
+      } catch (e) {
+        const aborted = e instanceof Error && e.name === 'AbortError';
+        return { reached: false, why: aborted ? 'timed_out' : 'network_error', detail: 'the request could not reach the shop — nothing is confirmed' };
       } finally {
         clearTimeout(timer);
       }

@@ -14,7 +14,7 @@
 // elsewhere — the price list and the ESL/shelf feeds); this endpoint is the verdict, not a new store.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertBranchInScope } from '../../kernel/src/index';
 import {
   auditPriceIntegrity,
   type DisplayedPrice, type PriceSurface,
@@ -39,6 +39,7 @@ export function priceIntegrityRoutes(): readonly Route[] {
             nextSafeAction: 'Send the branch, the till prices and every surface’s displayed price.',
           });
         }
+        assertBranchInScope(ctx, b['branchId']); // PA-01-r1: an audit for a branch the caller holds
         const requiredSurfaces = Array.isArray(b['requiredSurfaces'])
           ? (b['requiredSurfaces'] as string[]).filter((s): s is PriceSurface => SURFACES.includes(s as PriceSurface))
           : undefined;

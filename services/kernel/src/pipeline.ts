@@ -39,7 +39,38 @@ export interface Principal {
   readonly authTime?: number;
   /** `amr` — the authentication methods the IdP recorded, from the SIGNED token. */
   readonly amr?: readonly string[];
+  /** `jti` — the token's own id, from the SIGNED token, so a channel that ends can revoke exactly this token. */
+  readonly tokenId?: string;
+  /**
+   * The support or remote session this token was issued FOR (M33-FR-02/03 · PA-10), from the SIGNED token's
+   * `support_session_id` / `remote_session_id` claim. A token that names one is good only while that session is
+   * live, only for the person it was granted to, and — for support — only for the scopes the owner granted. The
+   * kernel asks the `channels` guard on EVERY request; absent the guard, such a token is refused (fail-closed).
+   */
+  readonly channel?: SessionChannel;
 }
+
+/** The session a token is bound to: a support-access session (owner-approved, time-boxed) or a remote session. */
+export interface SessionChannel {
+  readonly kind: 'support' | 'remote';
+  readonly sessionId: string;
+}
+
+/** The guard's answer for one request on a bound channel. */
+export interface ChannelVerdict {
+  readonly ok: boolean;
+  /** Machine code for a refusal: `session_channel_not_active`, `session_channel_not_yours`, `outside_session_grant`, `unknown_session_channel`. */
+  readonly code?: string;
+  /** Plain-English reason for a refusal. */
+  readonly why?: string;
+}
+
+/**
+ * Checks a bound channel against its live session, per request: is it still active (not ended, not past its
+ * time box, not terminated), is it this person's, and does the grant cover this route's permission. The guard
+ * may also END an expired session and REVOKE the token as a side effect (terminate on expiry).
+ */
+export type ChannelGuard = (principal: Principal, permission: string) => Promise<ChannelVerdict> | ChannelVerdict;
 
 export interface HttpRequest {
   readonly method: Method;
@@ -276,6 +307,12 @@ export interface KernelOptions {
    * step-up route omits it) and defaults to `Date.now`; injected in a test that drives freshness.
    */
   readonly now?: () => number;
+  /**
+   * The support/remote session guard (M33-FR-02/03 · PA-10). Consulted on EVERY request whose signed token is
+   * bound to a session; a bound token with no guard wired is refused (fail-closed). Tokens bound to nothing
+   * never reach it.
+   */
+  readonly channels?: ChannelGuard;
 }
 
 /** In-memory idempotency, tenant-scoped. Real deployments swap the port for PostgreSQL. */
@@ -405,6 +442,20 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
     if (opts.rateLimit !== undefined) {
       const perTenant = await opts.rateLimit.take(`tenant:${principal.tenantId}`);
       if (!perTenant.allowed) throw rateLimited(perTenant.retryAfterSeconds);
+    }
+
+    // A token issued FOR a support or remote session (PA-10 · M33-FR-02/03) is only as good as that session,
+    // checked HERE on every request — not once at sign-in. Ended, terminated, past its time box, someone else's,
+    // or (support) a permission the owner did not grant → refused, even though the token itself still verifies.
+    // Before the role check, so a closed channel learns nothing more about what its holder could have done.
+    if (principal.channel !== undefined) {
+      if (opts.channels === undefined) {
+        throw apiError(403, { code: 'session_channel_unchecked', whatHappened: `This sign-in is bound to ${principal.channel.kind} session '${principal.channel.sessionId}', and this service cannot check that session, so it is refused.`, wasItSaved: 'not_saved', nextSafeAction: 'Use a service that checks support and remote sessions, or sign in normally.' });
+      }
+      const verdict = await opts.channels(principal, route.permission);
+      if (!verdict.ok) {
+        throw apiError(403, { code: verdict.code ?? 'session_channel_not_active', whatHappened: `This sign-in is bound to ${principal.channel.kind} session '${principal.channel.sessionId}', which does not allow this request${verdict.why === undefined ? '.' : `: ${verdict.why}`}`, wasItSaved: 'not_saved', nextSafeAction: principal.channel.kind === 'support' ? 'Support access is time-boxed and owner-approved: file a new request for what you need.' : 'The remote session is closed: open a new one.' });
+      }
     }
 
     // Authorization is per-tenant: a resolver reads THIS tenant's grants; a ready AccessControl is

@@ -6,7 +6,7 @@
 // tested) means the bundled shell behaves exactly like the model it wraps.
 
 import { money, type CurrencyCode } from '../../../packages/contracts/src/money';
-import type { Uom } from '../../../packages/contracts/src/quantity';
+import { normaliseUom, type Uom } from '../../../packages/contracts/src/quantity';
 import { rate } from '../../../packages/contracts/src/rate';
 import type { Tender } from '../../../packages/tender/src/tender';
 
@@ -195,7 +195,8 @@ export function createPosView(
         description: input.description,
         unitPrice: money(input.unitPriceMinor, currency),
         quantityMinor: input.qty,
-        uom: (input.uom ?? 'ea') as Uom,
+        // OB-31 "A": the unit's spelling is normalised ('each' → 'ea', 'KG' → 'kg'); a weighed line's qty is in grams.
+        uom: (normaliseUom(input.uom ?? 'ea') ?? input.uom ?? 'ea') as Uom,
         ...(minimumAge === undefined ? {} : { minimumAge }),
       });
     },

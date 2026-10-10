@@ -16,7 +16,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.seedOwner(T, OWNER);
   await h.provisionRole(T, MGR, 'store_manager');
   await h.provisionRole(T, CA, 'chartered_accountant');
-  await h.provisionRole(T, SYNC, 'cashier');          // the store box's sync identity
+  await h.provisionRole(T, SYNC, 'store_computer');          // the store box's sync identity
   await h.provisionRole(T, LOADER, 'store_manager');
   await h.provisionRole(T, RECON, 'store_manager');
   return h;
@@ -73,6 +73,8 @@ describe('GET /v1/migration/screen through the API (C3b)', () => {
     expect((await put(h, '/v1/migration/parallel-run/policy', OWNER, 'p1', POLICY)).status).toBe(201);
     expect((await post(h, '/v1/migration/parallel-run/days/2026-10-01', RECON, 'd1', clean)).status).toBe(201);
     expect((await post(h, '/v1/migration/cutover/rollback', OWNER, 'rb1', { cutoverId: 'cut-1', trigger: 'owner_decision', legacySystemAvailable: true })).status).toBe(201);
+    // GT-02: decided is not performed — the old system's first bill after the decision makes it performed.
+    expect((await post(h, '/v1/migration/cutover/rollback/cut-1/confirmation', OWNER, 'rbc1', { legacyFirstBillRef: 'OLD-1001', legacyTradingFrom: new Date(Date.now() + 1_000).toISOString() })).status).toBe(201);
     // A decision relayed by the box under someone who may not decide — refused, kept, and now visible in the feed.
     await h.provisionRole(T, 'u-cash', 'cashier');
     expect((await post(h, '/v1/migration/exceptions/EX-2/resolution/synced', SYNC, 'sy1', { action: 'correct', decidedBy: 'u-cash', reason: 'fixed it' })).status).toBe(202);
@@ -85,7 +87,7 @@ describe('GET /v1/migration/screen through the API (C3b)', () => {
     expect(feed.totals?.[0]).toMatchObject({ totalId: 'CT-STOCK', signature: { signedBy: OWNER } });
     expect(feed.parallelDays?.map((d) => [d.businessDate, d.clean, d.recordedBy])).toEqual([['2026-10-01', true, RECON]]);
     expect(feed.parallelDifferences).toEqual([]);
-    expect(feed.rollbacks).toEqual([expect.objectContaining({ performed: true })]);
+    expect(feed.rollbacks).toEqual([expect.objectContaining({ performed: true, state: 'performed', execution: expect.objectContaining({ legacyFirstBillRef: 'OLD-1001', confirmedBy: OWNER }) })]);
     expect(feed.refusedDecisions).toEqual([expect.objectContaining({ attemptedBy: 'u-cash' })]);
     expect(feed.verification.extractionOperatorKnown).toBe(true);
     // The same read is the desk's read — the same content, stamped with the cloud's clock at each read.

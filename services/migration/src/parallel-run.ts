@@ -28,7 +28,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  compareParallelDay, ownDifference, parallelRunPosition, performRollback,
+  compareParallelDay, ownDifference, parallelRunPosition, performRollback, confirmRollback,
   type ComparisonArea, type DayComparison, type ParallelDayResult, type ParallelDifference, type ParallelRunPosition,
   type RollbackResult, type RollbackTrigger,
 } from '../../../packages/migration/src/cutover';
@@ -155,7 +155,10 @@ export function renderParallelSheet(view: ParallelRunView, days: readonly Record
 export async function ledgerCutoverEvidence(deps: MigrationDeps, tenantId: string): Promise<{ readonly parallel?: ParallelRunPosition; readonly rollbackDemonstratedAt?: string }> {
   const view = await parallelRunView(deps, tenantId);
   const rollbacks = deps.rollbacks === undefined ? [] : await deps.rollbacks(tenantId);
-  const latest = [...rollbacks].filter((r) => r.performed).map((r) => r.decidedAt).sort().at(-1);
+  // Only a rollback CONFIRMED with execution evidence counts (audit GT-02): a decision, or an old record that says
+  // "performed" with nothing seen behind it, never demonstrates one. The time is when it was seen working.
+  const latest = [...rollbacks].filter((r) => r.performed && r.state === 'performed' && r.execution !== undefined)
+    .map((r) => r.execution!.confirmedAt).sort().at(-1);
   return {
     ...(view === undefined ? {} : { parallel: view.position }),
     ...(latest === undefined ? {} : { rollbackDemonstratedAt: latest }),
@@ -327,8 +330,9 @@ export function parallelRunRoutes(deps: MigrationDeps): readonly Route[] {
       },
     },
     {
-      // Roll back — performed and RECORDED, so the cutover checklist's "rollback demonstrated" is a fact from
-      // the ledger. Body: { cutoverId, trigger, legacySystemAvailable }. The shop keeps trading either way.
+      // DECIDE to roll back (audit GT-02) — recorded at once, needing nobody's approval, but recorded as DECIDED, never
+      // as performed: the old system is back only when somebody has seen it take a sale (the confirmation below).
+      // Body: { cutoverId, trigger, legacySystemAvailable }. The shop keeps trading either way.
       api: 'API-12', method: 'POST', path: '/v1/migration/cutover/rollback',
       permission: 'migration.cutover.decide', idempotent: true,
       handler: async (ctx) => {
@@ -343,11 +347,68 @@ export function parallelRunRoutes(deps: MigrationDeps): readonly Route[] {
           });
         }
         if (deps.recordRollback === undefined) notWired();
-        const result = performRollback({
+        const decided = performRollback({
           cutoverId: b['cutoverId'] as string, trigger: b['trigger'] as RollbackTrigger, decidedBy: ctx.userId,
           legacySystemAvailable: b['legacySystemAvailable'] as boolean, now: deps.now(),
         });
-        const recorded: RecordedRollback = { ...result, tenantId: ctx.tenantId };
+        const recorded: RecordedRollback = { ...decided, tenantId: ctx.tenantId };
+        await deps.recordRollback!(ctx.tenantId, recorded);
+        return {
+          status: 201,
+          body: {
+            rollback: recorded,
+            nextSafeAction: decided.state === 'legacy_unavailable'
+              ? 'The old system is not there to take the shop, so this rollback cannot be performed. Keep trading on the new system and call for help.'
+              : 'Switch the tills to the old system, take the first sale on it, then confirm the rollback with that bill number.',
+          },
+        };
+      },
+    },
+    {
+      // CONFIRM a decided rollback with EXECUTION evidence (audit GT-02): the old system's first bill after the decision
+      // and when it started trading, seen by the signed-in person confirming. Only then is the rollback PERFORMED — and
+      // only a performed one demonstrates the cutover checklist's "rollback demonstrated". A rollback decided with the
+      // old system unavailable is refused: there is nothing to confirm. Body: { legacyFirstBillRef, legacyTradingFrom }.
+      api: 'API-12', method: 'POST', path: '/v1/migration/cutover/rollback/:cutoverId/confirmation',
+      permission: 'migration.cutover.decide', idempotent: true,
+      handler: async (ctx) => {
+        await assertSafeTarget(deps, ctx.tenantId);
+        const cutoverId = ctx.params['cutoverId'] ?? '';
+        const b = isObj(ctx.body) ? ctx.body : {};
+        if (!isStr(b['legacyFirstBillRef']) || !isStr(b['legacyTradingFrom'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_rollback_confirmation',
+            whatHappened: 'Confirming a rollback needs { legacyFirstBillRef, legacyTradingFrom } — the old system\'s first bill after the decision and when it started taking sales.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Take a sale on the old system, then send its bill number and the time.',
+          });
+        }
+        if (deps.recordRollback === undefined || deps.rollbacks === undefined) notWired();
+        const decided = [...(await deps.rollbacks!(ctx.tenantId))].filter((r) => r.cutoverId === cutoverId)
+          .sort((x, y) => x.decidedAt.localeCompare(y.decidedAt)).at(-1);
+        if (decided === undefined) {
+          throw apiError(404, {
+            code: 'no_rollback_decided',
+            whatHappened: `No rollback of ${cutoverId} has been decided, so there is nothing to confirm.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Decide the rollback first (one button, no approval needed).',
+          });
+        }
+        const confirmed = confirmRollback(decided, {
+          confirmedBy: ctx.userId, confirmedAt: deps.now(),
+          legacyTradingFrom: (b['legacyTradingFrom'] as string).trim(), legacyFirstBillRef: (b['legacyFirstBillRef'] as string).trim(),
+        });
+        if (!confirmed.ok) {
+          throw apiError(confirmed.refusal === 'already_performed' ? 409 : 422, {
+            code: confirmed.refusal,
+            whatHappened: confirmed.detail,
+            wasItSaved: 'not_saved',
+            nextSafeAction: confirmed.refusal === 'legacy_unavailable'
+              ? 'There is no old system to go back to. Keep trading on the new system; the decision stays on the record.'
+              : 'Nothing was confirmed. Correct what is named and send again.',
+          });
+        }
+        const recorded: RecordedRollback = { ...confirmed.rollback, tenantId: ctx.tenantId };
         await deps.recordRollback!(ctx.tenantId, recorded);
         return { status: 201, body: { rollback: recorded } };
       },

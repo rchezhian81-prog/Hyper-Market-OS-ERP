@@ -73,7 +73,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
     for (const u of [BUYER, RECEIVER, CHECKER, MANAGER, BACKSTORE, SHELF]) await cloud.grant(u, 'store_manager');
     await cloud.grant(CASHIER, 'cashier');
-    await cloud.grant(BOX, 'cashier');
+    await cloud.grant(BOX, 'store_computer'); // OB-36 "A": the store computer's own role
     await cloud.grant(ACCT, 'accountant');
     // The box in this run keeps this machine's clock (UTC); the owner tells head office so (F14 fixed).
     expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'setup-tz-utc')).status).toBe(200);
@@ -169,7 +169,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     await ok(call('POST', `/v1/purchase/suppliers/${SUPPLIER}/approval`, OWNER, { reason: 'GST certificate and FSSAI licence checked' }, 'sup-approve'), 200);
 
     // ── 2. The order: proposed by the buyer, ISSUED by the owner (M06-FR-02). Until issued nothing is committed.
-    const proposed = await ok(call('POST', `/v1/purchase/orders/${PO}`, BUYER, { supplierId: SUPPLIER, lines: [{ productId: PRODUCT, orderedQty: ORDERED, unitCost }] }, `po-${PO}`), 201);
+    const proposed = await ok(call('POST', `/v1/purchase/orders/${PO}`, BUYER, { supplierId: SUPPLIER, deliverToLocationId: STORE, lines: [{ productId: PRODUCT, orderedQty: ORDERED, unitCost }] }, `po-${PO}`), 201);
     expect(proposed['order']).toMatchObject({ status: 'proposed', requisitionedBy: BUYER, totalMinor: ORDERED * COST });
     expect(codeOf(await call('POST', `/v1/purchase/orders/${PO}/approval`, BUYER, { reason: 'mine' }, 'po-approve-self'))).toBeDefined(); // refused: the requisitioner cannot issue
     const issued = await ok(call('POST', `/v1/purchase/orders/${PO}/approval`, OWNER, { reason: 'within the month budget' }, 'po-approve'), 200);

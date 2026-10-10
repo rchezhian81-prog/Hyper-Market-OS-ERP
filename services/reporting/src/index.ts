@@ -9,13 +9,18 @@
 // figure**, not in a banner somebody has learned to ignore. And a figure that cannot be computed
 // at all returns `not_available` with the reason — never a zero. A zero is a number people act on.
 
-import type { Route } from '../../kernel/src/index';
+import type { Route, BranchScope } from '../../kernel/src/router';
+import { apiError } from '../../kernel/src/errors';
+import { narrowScope } from '../../kernel/src/scope';
 import {
+  REPORTS,
+  availability,
   reportCatalogue,
   whatWouldUnlockMost,
   type Producer,
   type CatalogueEntry,
 } from '../../../packages/reporting/src/index';
+import type { SourceTransaction } from '../../../packages/owner-control/src/index';
 
 export type Staleness = 'live' | 'lagging' | 'stale';
 
@@ -24,8 +29,12 @@ export interface Figure {
   /** `undefined` means it could not be computed. Never substituted with zero. */
   readonly valueMinor?: number;
   readonly unit: 'minor_currency' | 'count' | 'basis_points';
-  /** When the underlying data was last synchronised. Mandatory — there is no way to omit it. */
-  readonly asAt: string;
+  /**
+   * When the underlying data was last true — the SOURCE's time (the newest record that reached here from the source the
+   * figure is built from), never the moment somebody read it (audit EA-01). Mandatory — there is no way to omit it.
+   * `null` means the source has never sent anything: the figure is then not available and `stale`, never "fresh".
+   */
+  readonly asAt: string | null;
   readonly staleness: Staleness;
   /** Present when the figure could not be produced. */
   readonly notAvailableBecause?: string;
@@ -42,7 +51,8 @@ export function figure(input: {
   readonly name: string;
   readonly valueMinor?: number;
   readonly unit: Figure['unit'];
-  readonly asAt: string;
+  /** The source's own last time (see `Figure.asAt`); `null` when the source has never been heard from. */
+  readonly asAt: string | null;
   readonly now: string;
   /** Minutes after which a figure is lagging. Per-tenant. Default 5 (§32). */
   readonly laggingAfterMinutes?: number;
@@ -50,9 +60,18 @@ export function figure(input: {
   readonly staleAfterMinutes?: number;
   readonly notAvailableBecause?: string;
 }): Figure {
-  const ageMinutes = Math.max(0, (Date.parse(input.now) - Date.parse(input.asAt)) / 60_000);
   const lagging = input.laggingAfterMinutes ?? 5;
   const stale = input.staleAfterMinutes ?? 60;
+  if (input.asAt === null) {
+    // Never heard from the source. Not "0 minutes ago" — the freshest possible answer — and never a number.
+    const because = input.notAvailableBecause ?? 'nothing has arrived from the source yet';
+    return {
+      name: input.name, unit: input.unit, asAt: null, staleness: 'stale',
+      notAvailableBecause: because,
+      detail: `${input.name}: not available — ${because}`,
+    };
+  }
+  const ageMinutes = Math.max(0, (Date.parse(input.now) - Date.parse(input.asAt)) / 60_000);
   const staleness: Staleness = ageMinutes > stale ? 'stale' : ageMinutes > lagging ? 'lagging' : 'live';
 
   if (input.notAvailableBecause !== undefined || input.valueMinor === undefined) {
@@ -74,22 +93,74 @@ export function figure(input: {
   };
 }
 
-export interface Dashboard {
-  readonly figures: readonly Figure[];
-  readonly worstStaleness: Staleness;
-  readonly asAt: string;
+/**
+ * How current one source is — a store box, a till lane — judged from the newest record that reached here from it
+ * (audit EA-01, M29-FR-01 "freshness per branch/domain", §31). Never the time somebody read it.
+ */
+export interface SourceFreshness {
+  /** What the source is, e.g. `store:S1` or `lane:lane-1`. */
+  readonly source: string;
+  /** The domain the records are from, e.g. `sales`. */
+  readonly domain: string;
+  /** When the newest record from this source happened at the source; `null` when nothing has ever arrived. */
+  readonly lastEventAt: string | null;
+  readonly staleness: Staleness;
   readonly detail: string;
 }
 
-/** A dashboard is as fresh as its stalest figure, never as fresh as its freshest. */
-export function dashboard(figures: readonly Figure[], now: string): Dashboard {
+/** Judge one source's freshness against `now`, with the same thresholds a figure uses. */
+export function sourceFreshness(input: {
+  readonly source: string;
+  readonly domain: string;
+  readonly lastEventAt: string | null;
+  readonly now: string;
+  readonly laggingAfterMinutes?: number;
+  readonly staleAfterMinutes?: number;
+}): SourceFreshness {
+  if (input.lastEventAt === null) {
+    return {
+      source: input.source, domain: input.domain, lastEventAt: null, staleness: 'stale',
+      detail: `${input.source}: nothing has ever arrived for ${input.domain}`,
+    };
+  }
+  const ageMinutes = Math.max(0, (Date.parse(input.now) - Date.parse(input.lastEventAt)) / 60_000);
+  const staleness: Staleness = ageMinutes > (input.staleAfterMinutes ?? 60) ? 'stale'
+    : ageMinutes > (input.laggingAfterMinutes ?? 5) ? 'lagging' : 'live';
+  return {
+    source: input.source, domain: input.domain, lastEventAt: input.lastEventAt, staleness,
+    detail: `${input.source}: newest ${input.domain} record from ${input.lastEventAt} (${Math.round(ageMinutes)} minutes before this read)`,
+  };
+}
+
+export interface Dashboard {
+  readonly figures: readonly Figure[];
+  readonly worstStaleness: Staleness;
+  /**
+   * The time the dashboard is true as of: its STALEST figure's source time (audit EA-01) — `null` when any figure's
+   * source has never been heard from, or there are no figures. Never the read time; that is `readAt`.
+   */
+  readonly asAt: string | null;
+  /** When this read was made. Reported separately, and never offered as the data's freshness. */
+  readonly readAt: string;
+  /** Each source behind the figures and how current it is, when the producer knows them. */
+  readonly sources?: readonly SourceFreshness[];
+  readonly detail: string;
+}
+
+/** A dashboard is as fresh as its stalest figure (and source), never as fresh as its freshest. */
+export function dashboard(figures: readonly Figure[], now: string, sources?: readonly SourceFreshness[]): Dashboard {
   const rank: Readonly<Record<Staleness, number>> = { live: 0, lagging: 1, stale: 2 };
-  const worst = figures.reduce<Staleness>(
-    (w, f) => (rank[f.staleness] > rank[w] ? f.staleness : w), 'live',
+  const worst = [...figures.map((f) => f.staleness), ...(sources ?? []).map((s) => s.staleness)].reduce<Staleness>(
+    (w, st) => (rank[st] > rank[w] ? st : w), 'live',
   );
   const missing = figures.filter((f) => f.valueMinor === undefined);
+  const times = figures.map((f) => f.asAt);
+  const asAt = times.length === 0 || times.some((t) => t === null)
+    ? null
+    : (times as string[]).reduce((oldest, t) => (Date.parse(t) < Date.parse(oldest) ? t : oldest));
   return {
-    figures, worstStaleness: worst, asAt: now,
+    figures, worstStaleness: worst, asAt, readAt: now,
+    ...(sources === undefined ? {} : { sources }),
     // An empty dashboard is not a clean one. `reduce` with a seed of `live` over no figures
     // returns `live`, so a dashboard with nothing on it reported "0 figures, all current" — which
     // is the sentence a person reads as "everything is fine".
@@ -113,8 +184,31 @@ export interface CatalogueInputs {
   readonly produced: readonly string[];
 }
 
+/** What a named-report producer hands back (audit EA-06): figures, the rows behind them, and their sources. */
+export interface ProducedReportView {
+  readonly figures: readonly Figure[];
+  readonly rows: readonly Readonly<Record<string, string>>[];
+  readonly sources: readonly SourceFreshness[];
+  /** Figure name → the source transactions it is the exact sum of (the governed drill, EA-05). */
+  readonly drill: Readonly<Record<string, readonly SourceTransaction[]>>;
+  readonly tradingDay?: string;
+}
+
 export interface ReportingDeps {
+  /** The owner's dashboard figures. Only ever asked for the dashboard — a named report goes to `produce`. */
   readonly figures: (tenantId: string, name: string) => Promise<readonly Figure[]> | readonly Figure[];
+  /**
+   * Produce one named report from governed source records (audit EA-06). Only reports the catalogue says are produced
+   * are ever asked for; absent, every named report is refused as not produced by this version — never answered with
+   * the dashboard's figures.
+   */
+  readonly produce?: (tenantId: string, reportId: string, options: { readonly tradingDay?: string; readonly scope: BranchScope }) => Promise<ProducedReportView>;
+  /**
+   * The sources behind the figures and how current each is, judged from the newest record that reached here from each
+   * (audit EA-01). Optional so a bare wiring still serves; when present the dashboard carries them and is never
+   * fresher than its stalest source.
+   */
+  readonly sources?: (tenantId: string) => Promise<readonly SourceFreshness[]> | readonly SourceFreshness[];
   readonly now: () => string;
   /**
    * Optional so a bare wiring (no store) still serves the route honestly. When present, its
@@ -143,7 +237,7 @@ export function reportingRoutes(deps: ReportingDeps): readonly Route[] {
       permission: 'reporting.dashboard.read',
       handler: async (ctx) => ({
         status: 200,
-        body: dashboard(await deps.figures(ctx.tenantId, 'dashboard'), deps.now()),
+        body: dashboard(await deps.figures(ctx.tenantId, 'dashboard'), deps.now(), await deps.sources?.(ctx.tenantId)),
       }),
     },
     {
@@ -165,12 +259,59 @@ export function reportingRoutes(deps: ReportingDeps): readonly Route[] {
       },
     },
     {
+      // One named report (audit EA-06): dispatched by name to its own producer, over the governed source records, in
+      // the reader's server-derived branch scope (§28). An unknown name is refused (404) and a report this shop or
+      // this version cannot produce is refused by name with the reason (409) — never answered with unrelated figures.
+      // ?day=YYYY-MM-DD picks the shop's trading day for a day report (default today); ?scope=br-1,br-2 narrows.
       api: 'API-10', method: 'GET', path: '/v1/reports/:name',
       permission: 'reporting.report.read',
-      handler: async (ctx) => ({
-        status: 200,
-        body: dashboard(await deps.figures(ctx.tenantId, ctx.params['name'] ?? ''), deps.now()),
-      }),
+      handler: async (ctx) => {
+        const name = ctx.params['name'] ?? '';
+        const report = REPORTS.find((r) => r.id === name);
+        if (report === undefined) {
+          throw apiError(404, {
+            code: 'no_such_report',
+            whatHappened: `There is no report called "${name}".`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Pick a report from GET /v1/reports/catalogue.',
+          });
+        }
+        const { records, produced } = (await deps.catalogueInputs?.(ctx.tenantId)) ?? { records: [], produced: [] };
+        const can = availability(report, records, deps.produce === undefined ? [] : produced);
+        if (!can.available) {
+          throw apiError(409, {
+            code: can.blockedBy,
+            whatHappened: `${report.name} cannot be produced: ${can.why}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: can.blockedBy === 'the_shop_does_not_record_it'
+              ? `Start recording ${can.missing.join(', ')} and the report begins working.`
+              : 'This version cannot work it out yet; the catalogue lists what it can.',
+          });
+        }
+        const day = ctx.query['day'];
+        if (day !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_day',
+            whatHappened: `"${day}" is not a trading day (YYYY-MM-DD).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send ?day=YYYY-MM-DD, or leave it off for today.',
+          });
+        }
+        const scopeQ = ctx.query['scope'];
+        const requested = typeof scopeQ === 'string' && scopeQ.trim() !== '' ? scopeQ.split(',').map((x) => x.trim()).filter((x) => x !== '') : undefined;
+        const scope = narrowScope(ctx, requested);
+        const out = await deps.produce!(ctx.tenantId, report.id, { ...(day === undefined ? {} : { tradingDay: day }), scope });
+        return {
+          status: 200,
+          body: {
+            report: { id: report.id, family: report.family, name: report.name, answers: report.answers },
+            ...(out.tradingDay === undefined ? {} : { tradingDay: out.tradingDay }),
+            scope,
+            ...dashboard(out.figures, deps.now(), out.sources),
+            rows: out.rows,
+          },
+        };
+      },
     },
   ];
 }

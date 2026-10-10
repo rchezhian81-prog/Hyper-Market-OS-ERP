@@ -165,6 +165,10 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       // Access (2b-vi-c-2).
       emergency_access: { en: 'Give someone emergency access for a short time', ta: 'ஒருவருக்குக் குறுகிய நேர அவசர அணுகல் வழங்குதல்' },
       access_change: { en: 'Change a person\'s access (joining, moving or leaving)', ta: 'ஒருவரின் அணுகலை மாற்றுதல் (சேர்தல், இடமாற்றம் அல்லது விலகல்)' },
+      // FUL-14: a dearer substitute charged above the original price.
+      substitution_above_cap: { en: 'Charge a dearer substitute above the original price', ta: 'விலை கூடிய மாற்றுப் பொருளுக்கு அசல் விலைக்கு மேல் கட்டணம் வசூலித்தல்' },
+      // Branches (PA-04 · M01-FR-04): the owner approves opening or closing a branch.
+      branch_transition: { en: 'Open, close for now, or close a branch for good', ta: 'கிளையைத் திறத்தல், தற்காலிகமாக மூடுதல் அல்லது நிரந்தரமாக மூடுதல்' },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());

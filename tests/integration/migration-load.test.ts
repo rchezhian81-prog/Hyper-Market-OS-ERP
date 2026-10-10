@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { aStoreWithRules } from '../support/store-rules';
 import { apiHarness } from '../support/api-harness';
+import { deliveryPlaces } from '../support/approved-supplier';
 import { planLoad, executeLoad, type ExtractBundle, type LoadRequest, type LoadPlanOk } from '../../packages/migration/src/index';
 
 // MG-05 — the ACTUAL load, end to end through the real API: a checked extract goes into a named, empty,
@@ -62,6 +64,7 @@ describe('MG-05 actual load — a checked extract lands in an empty real tenant 
   it('loads everything as the named operator, and every truth reads back through the API', async () => {
     const h = apiHarness();
     await h.seedOwner(REAL, OPERATOR);
+    await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the owner sets the store's margin floor before prices load
     const report = await executeLoad(h, plan());
     expect(report.steps.filter((s) => !s.ok)).toEqual([]);
     expect(report.ok).toBe(true);
@@ -103,7 +106,14 @@ describe('MG-05 actual load — a checked extract lands in an empty real tenant 
     expect(supplier.status).toBe(200);
     expect(JSON.stringify(supplier.body)).toContain('Kaveri Traders');
     expect(JSON.stringify(supplier.body)).toContain('33AAAAA0000A1Z9');
-    const po = await h.request({ method: 'POST', path: '/v1/purchase/orders/po-first', userId: OPERATOR, tenantId: REAL, idempotencyKey: 'po-first', body: { supplierId: 'SUP-1', lines: [{ productId: 'P-RICE', orderedQty: 10, unitCost: { minor: 36_000, currency: 'INR' } }] } });
+    // OB-32: a migrated supplier arrives PROPOSED — no order until finance approves it (a person other than the loader).
+    const poBody = { supplierId: 'SUP-1', deliverToLocationId: 'STORE-MAIN', lines: [{ productId: 'P-RICE', orderedQty: 10, unitCost: { minor: 36_000, currency: 'INR' } }] };
+    const early = await h.request({ method: 'POST', path: '/v1/purchase/orders/po-early', userId: OPERATOR, tenantId: REAL, idempotencyKey: 'po-early', body: poBody });
+    expect((early.body as { error?: { code?: string } }).error?.code).toBe('supplier_not_approved');
+    await h.provisionRole(REAL, 'u-finance', 'accountant');
+    await deliveryPlaces(h, REAL, 'STORE-MAIN'); // OB-37: an order names the store it is delivered to
+    expect((await h.request({ method: 'POST', path: '/v1/purchase/suppliers/SUP-1/approval', userId: 'u-finance', tenantId: REAL, idempotencyKey: 'sup-ok', body: { reason: 'GST certificate checked' } })).status).toBe(200);
+    const po = await h.request({ method: 'POST', path: '/v1/purchase/orders/po-first', userId: OPERATOR, tenantId: REAL, idempotencyKey: 'po-first', body: poBody });
     expect(po.status).toBe(201);
     expect(po.body).toMatchObject({ order: { supplierId: 'SUP-1' } });
   });
@@ -111,6 +121,7 @@ describe('MG-05 actual load — a checked extract lands in an empty real tenant 
   it('re-running the same load is ONE load: nothing doubles (idempotent keys, never-double-count receipt)', async () => {
     const h = apiHarness();
     await h.seedOwner(REAL, OPERATOR);
+    await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the owner sets the store's margin floor before prices load
     const first = await executeLoad(h, plan());
     expect(first.ok).toBe(true);
     const again = await executeLoad(h, plan());
@@ -129,6 +140,7 @@ describe('MG-05 actual load — a checked extract lands in an empty real tenant 
   it('a route\'s own refusal (a price below cost with no approver) is a visible failed line; the rest still land', async () => {
     const h = apiHarness();
     await h.seedOwner(REAL, OPERATOR);
+    await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the owner sets the store's margin floor before prices load
     const belowCost: ExtractBundle = { ...bundle, products: [bundle.products[0]!, { ...bundle.products[1]!, priceMinor: 1_000 }] };
     const report = await executeLoad(h, plan(belowCost));
     expect(report.ok).toBe(false);
@@ -144,6 +156,7 @@ describe('MG-05 actual load — a checked extract lands in an empty real tenant 
   it('a person without the permissions cannot run a load — master-data steps are refused 403 and no catalogue or stock lands', async () => {
     const h = apiHarness();
     await h.seedOwner(REAL, OPERATOR);
+    await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the owner sets the store's margin floor before prices load
     await h.provisionRole(REAL, 'u-cashier', 'cashier');
     const report = await executeLoad(h, { ...plan(), operator: 'u-cashier' });
     expect(report.ok).toBe(false);
@@ -166,7 +179,9 @@ describe('MG-05 actual load — a checked extract lands in an empty real tenant 
     const h = apiHarness();
     const OTHER = 'cd000000-0000-4000-8000-000000000077';
     await h.seedOwner(REAL, OPERATOR);
+    await aStoreWithRules(h, REAL, OPERATOR, 'STORE-MAIN', 0); // M05: the owner sets the store's margin floor before prices load
     await h.seedOwner(OTHER, 'u-other');
+    await aStoreWithRules(h, OTHER, 'u-other', 'STORE-MAIN', 0);
     expect((await executeLoad(h, plan())).ok).toBe(true);
     const other = (await h.request({ method: 'GET', path: '/v1/catalogue/products', userId: 'u-other', tenantId: OTHER })).body as { products: unknown[] };
     expect(other.products).toHaveLength(0);

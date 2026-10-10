@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { aBranch } from '../support/a-branch';
+import { storeRules } from '../support/store-rules';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { approvedRequestId, askForApproval, decide } from '../support/approval-request';
 
@@ -34,6 +35,7 @@ async function cast(): Promise<ApiHarness> {
   await h.provisionRole(A, 'mgr', 'store_manager'); // propose, NOT approve
   await h.provisionRole(A, 'cash', 'cashier'); // neither
   await aBranch(h, A, 'owner-1'); // SF-01: the store a head-office price applies to
+  await storeRules(h, A, 'owner-1', 'store-1', 2_000); // M05: the store's own 20% margin floor — what a price is judged by
   return h;
 }
 

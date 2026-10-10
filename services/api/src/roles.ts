@@ -28,6 +28,13 @@ export const OWNER_ROLE_ID = 'owner';
  */
 export const STORE_MANAGER_ROLE_ID = 'store_manager';
 
+/**
+ * The store computer's OWN role (OB-36 "A", 10 Oct 2026). The box is a machine, not a person: it relays what happened
+ * at the store and pulls its feeds, and holds exactly those permissions — nothing a person at a till or a desk uses.
+ * The list is held to the routes the box actually calls by tests/unit/the-store-computer-role-covers-what-the-box-sends.
+ */
+export const STORE_COMPUTER_ROLE_ID = 'store_computer';
+
 export const ROLE_CATALOGUE: readonly Role[] = [
   {
     id: OWNER_ROLE_ID,
@@ -131,7 +138,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'refund.exception.read',
       'notification.send.check',
       'backup.verify.read', 'backup.drill.record', 'platform.backup.record',
-      'branch.transition.evaluate',
+      'branch.transition.evaluate', 'branch.transition.execute', 'branch.transition.approve',
       'document.template.manage', 'document.template.read', 'document.issue', 'document.retention.dispose',
       'pos.suspend.write', 'pos.suspend.read',
       'pos.quotation.write', 'pos.quotation.read',
@@ -218,7 +225,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'refund.exception.read',
       'notification.send.check',
       'backup.verify.read', 'backup.drill.record', 'platform.backup.record',
-      'branch.transition.evaluate',
+      'branch.transition.evaluate', 'branch.transition.execute',
       'document.template.manage', 'document.template.read', 'document.issue', 'document.retention.dispose',
       'pos.suspend.write', 'pos.suspend.read',
       'pos.quotation.write', 'pos.quotation.read',
@@ -416,6 +423,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       'identity.self.read',
       'supplier.portal.self',
+      // SF-09 (Batch 2): the supplier SUBMITS its own documents (an invoice, an ASN) — scoped to its login's partner binding,
+      // kept for a buyer's review, never taking effect on its own. Not a business transaction: a buyer decides.
+      'supplier.portal.self.submit',
     ],
   },
   {
@@ -429,6 +439,22 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     permissions: [
       'identity.self.read',
       'b2b.portal.self',
+    ],
+  },
+  {
+    id: STORE_COMPUTER_ROLE_ID,
+    name: 'Store computer',
+    permissions: [
+      // what it PULLS: its own setup, the published catalogue and templates, and the feeds the store's screens serve
+      'store.pack.read', 'catalogue.pack.read', 'org.template.pull', 'inventory.indent.read', 'fulfilment.assignment.read',
+      'loyalty.points.read', 'migration.screen.read',
+      // what it RELAYS from the till and the store's screens and phones (head office re-verifies each person named)
+      'pos.sale.sync', 'pos.return.sync', 'till.dayclose.sync', 'till.shift.sync', 'cash.movement.sync',
+      'workforce.completion.sync', 'concession.tag.sync', 'approvals.decision.sync', 'delivery.stop.sync', 'fulfilment.pick.sync', 'inventory.movement.sync', 'inventory.receipt.sync',
+      'inventory.adjustment.sync', 'inventory.count.sync', 'inventory.indent.sync', 'purchase.invoice.sync', 'shelf.count.sync',
+      'migration.decision.sync', 'lp.activity.sync',
+      // the GST portal's poll/verify, relayed for the operator (no maker-checker decision; re-authorised on this permission)
+      'finance.einvoice.generate',
     ],
   },
 ];

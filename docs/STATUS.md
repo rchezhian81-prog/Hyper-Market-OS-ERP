@@ -5,6 +5,101 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Round 3 — all four batches integrated; independently checked (10 October 2026)
+
+- **What changed:**
+  - **Batch 1:**
+    - **PA-10** — a support or remote session is bound to its sign-in and checked on every request; it is cut on
+      expiry or revocation.
+    - **PA-04** — a branch closes only on measured facts (stock, cash, shifts, unsent work) with the owner's approval.
+    - **PA-09** — purchase orders, receipts, invoices and statements are printed from the stored record; a draft or
+      missing record is refused, and a reprint is audited.
+  - **Batch 2:**
+    - **FUL-04** — the packing desk packs under head office's product master and catalogue, and the caller's own
+      "rules" are refused.
+    - **SF-09** — supplier-portal submissions feed purchasing.
+    - **FUL-13** — production moves ordinary stock through to the label and the till.
+  - **Batch 3:**
+    - **FUL-05** — one fulfilment command: the pack and door outcomes advance the order and post one sale for what
+      was kept. An unconfirmed order is refused at the desk; FUL-04's rule is kept.
+    - **FUL-07** — the customer app shows the server's answer.
+    - **FUL-14** — substitutions come from stored truth.
+    - **M05** — the margin floor.
+    - **OB-33** — the spend limit.
+    - **OB-34** — the points rules.
+    - **OB-35** — earliest expiry at head office.
+    - Weighed goods at the till, and the loss journal.
+  - **Batch 4:**
+    - **EA-02** — split tenders are reported correctly.
+    - **EA-04** — the company report runs on the real API.
+    - **EA-06** — named reports reconcile to their sources.
+    - **GT-03** — cutover needs the owner's own signed-in GO, and a forged all-green body is refused.
+    - **GT-07** — the backup is taken at one moment, with a single snapshot under concurrent writes.
+  - **OB-38 — the demo store computer:**
+    - the demo now ships set to take its setup from head office;
+    - it keeps the old setup file as a fallback until the administrator re-runs the seed and issues the store
+      computer's token;
+    - the steps are in `docs/runbooks/demo-deployment-handover.md`.
+- **Duplicates resolved:**
+  - PA-09: Batch 1's version kept; Batch 4's copy dropped.
+  - GT-06: Batch 2's loader kept.
+  - PA-05: Batch 1's record path plus Batch 4's organisation test. The two work together; Batch 4's unused key is left
+    in place.
+- **Found and fixed by the full gate:** a customer's "stop messaging me" recorded in the same millisecond as their "yes"
+  was dropped as a repeat, so the customer still read as "may send". Each direction is now its own record
+  (`a-consent-withdrawal-in-the-same-millisecond-is-kept.test.ts`; it fails without the fix).
+- **Independent check:**
+  - A separate verifier read every claim strictly.
+  - It accepted 14 items, now marked verified complete in the matrix.
+  - It marked 13 as **partial**; they stay pending with what is missing written beside them: FUL-11, SF-11, FUL-03,
+    FUL-09, EA-01, EA-05, EA-07, EA-08, GT-02, GT-04, PA-08, PF-10, PA-12.
+- **Matrix (Table A):** 51 verified complete, 21 pending software, 1 approved deferral, 1 staff/device acceptance.
+- **Honest limits:**
+  - The 13 partial items above.
+  - The final 12-step store acceptance journey has not been run yet.
+  - Live providers, off-site backup storage and the branch-protection setting need the owner or administrator.
+  - Staff UAT is pending.
+- **Next:**
+  - Round 4 builds the partial items and the remaining pending software.
+  - Then the 12-step integrated store acceptance journey.
+- **Owner action:** none to build. The administrator's OB-38 switch-over (re-run the seed, issue the store computer's
+  token) can be done whenever convenient.
+
+## Coordinated programme · Batch 1 round 2 + Batch 2's decisions integrated — the store computer takes its setup from head office (10 October 2026)
+
+- **What changed:**
+  - **OB-36 — the store computer has its own account.** It is a `store_computer` role holding exactly the permissions
+    of what the box sends, including the day close. A guardrail checks this both ways. Head office re-checks the person
+    a relayed day close names (unknown or unauthorised people are flagged).
+  - **PA-01 closed — every branch-keyed area is now limited to the caller's branches:** stock (earlier), workforce
+    checklists and tasks, attendance cost, facilities, partner counters, the device register, compliance, the
+    price-integrity audit, the branch-transition preview and the stored audit trail. A record that names no branch is
+    shop-wide: everyone may read it, only a company-wide user may write it.
+  - **PA-06 closed — head office builds and delivers the whole store setup:**
+    - the warehouse phone gets the store's bins, stock and **open deliveries** (OB-37); with several deliveries the
+      receiver chooses one, so nothing is received against a guess (browser-verified);
+    - every quantity follows **one rule (OB-31): grams for kg, ml for litres, items for each**; units are normalised;
+    - **the demo store computer now takes its setup from head office**, and the demo-only setup builder is retired;
+    - the seed sets the store's loss limits, and the store's phones come from the device register.
+  - **Batch 2's decisions now included:**
+    - **OB-32** — a purchase order is refused for an unknown or unapproved supplier;
+    - **OB-37** — every new purchase order names its store, and a receipt elsewhere is refused;
+    - **OB-31** — weighed goods in grams, cost per kg, value rounded once; case → base on head-office receipts (SF-11
+      part);
+    - the earliest-expiry batch read for OB-35.
+- **Proof:**
+  - `branch-scope-every-family.test.ts` (memory + real PostgreSQL), the store-computer role guardrail,
+    `store-pack-quantity-rule-and-deliveries`, the connected store-setup and hosted-seed tests, and a browser case for
+    choosing a delivery on the phone;
+  - guardrails: 1,328 pass after integration;
+  - the full gate runs on this PR.
+- **Honest limits:**
+  - On a store PC, an ERP screen opened directly with no signed-in front door names nobody and saves nothing — the setup
+    no longer names one person per screen. The hosted demo works fully.
+  - The buying screen still checks kg invoice lines as quantity × price (out ×1000 for grams); Batch 2 is fixing it.
+  - PA-04, PA-09 and PA-10 are with Batch 1, next.
+  - Staff UAT is pending.
+
 ## Coordinated programme · Batches 1 and 3 integrated — branch limits on stock, renewed store setup, loyalty spend, independent evidence (10 October 2026)
 
 - **Owner decisions recorded:** **OB-31 "A"** weighed goods counted in grams everywhere (cost per kg); **OB-32 "A"** a

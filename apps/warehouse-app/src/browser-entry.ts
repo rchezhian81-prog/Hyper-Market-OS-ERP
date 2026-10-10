@@ -81,6 +81,20 @@ export function openWarehouseRelay(
  * Returns `null` when there is no assignment — a real state (a worker at the start of a shift with
  * nothing assigned), and the shell says so rather than showing empty bins that read as work done.
  */
+/**
+ * OB-37: the delivery the receiver chose (`?delivery=<poId>`), or the only one waiting, becomes the delivery this phone
+ * receives against — its order lines and the goods-receipt id head office gave it. Several waiting and none chosen: no
+ * delivery is preset, and the phone asks the receiver to choose (nothing is received under a made-up one).
+ */
+export function withChosenDelivery(data: WarehouseAssignment | undefined, chosen: string | null): WarehouseAssignment | undefined {
+  const list = data?.openDeliveries;
+  if (data === undefined || list === undefined) return data;
+  const pick = list.find((d) => d.poId === chosen) ?? (list.length === 1 ? list[0] : undefined);
+  const { grnId: _g, poId: _p, ordered: _o, ...rest } = data;
+  void _g; void _p; void _o;
+  return pick === undefined ? rest : { ...rest, grnId: pick.grnId, poId: pick.poId, ordered: pick.ordered };
+}
+
 export function bootWarehouse(
   data: WarehouseAssignment | undefined,
   outbox: DeviceOutbox,
@@ -103,6 +117,8 @@ if (browserWindow !== undefined) {
     browserWindow.warehouseStorageProblem = why;
   });
   const outbox = openDeviceOutbox(store, (why) => { browserWindow.warehouseStorageProblem = why; });
+  const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
+  browserWindow.warehouseData = withChosenDelivery(browserWindow.warehouseData, new URLSearchParams(search).get('delivery'));
   browserWindow.warehouseOutbox = outbox;
   const session = bootWarehouse(browserWindow.warehouseData, outbox);
   if (session !== null) {

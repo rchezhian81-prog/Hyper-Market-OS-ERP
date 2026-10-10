@@ -5,7 +5,11 @@
 // dead-letter queue for a human to see — it is never silently lost. Pure and
 // storage-agnostic (in-memory here; a durable store slots in later).
 
-export type NotificationState = 'pending' | 'delivered' | 'dead_letter';
+/**
+ * `withheld` (audit PA-08): the message was NOT sent because the reason it was allowed no longer holds at the moment
+ * of sending — the customer withdrew consent after it was queued. Kept and visible, never sent, never dropped.
+ */
+export type NotificationState = 'pending' | 'delivered' | 'dead_letter' | 'withheld';
 
 export interface NotificationItem {
   readonly id: string;
@@ -13,6 +17,8 @@ export interface NotificationItem {
   readonly state: NotificationState;
   readonly attempts: number;
   readonly reason: string | null;
+  /** When the last delivery attempt failed — what the sender's backoff is measured from. */
+  readonly lastAttemptAt?: string;
 }
 
 export class NotificationQueue {
@@ -53,7 +59,7 @@ export class NotificationQueue {
    * Record a failed attempt. After `maxAttempts` failures the item dead-letters
    * (visible, never dropped). Returns the updated item.
    */
-  recordFailure(id: string, reason: string, maxAttempts = 5): NotificationItem | undefined {
+  recordFailure(id: string, reason: string, maxAttempts = 5, at?: string): NotificationItem | undefined {
     const item = this.items.get(id);
     if (!item || item.state !== 'pending') {
       return item;
@@ -63,6 +69,7 @@ export class NotificationQueue {
       ...item,
       attempts,
       reason,
+      ...(at === undefined ? {} : { lastAttemptAt: at }),
       state: attempts >= maxAttempts ? 'dead_letter' : 'pending',
     });
     this.items.set(id, next);
@@ -76,6 +83,20 @@ export class NotificationQueue {
       return;
     }
     this.items.set(id, Object.freeze({ ...item, state: 'dead_letter', reason }));
+  }
+
+  /** Withhold a pending item — not sent, kept and visible with the reason (PA-08). A no-op unless pending. */
+  withhold(id: string, reason: string): void {
+    const item = this.items.get(id);
+    if (!item || item.state !== 'pending') {
+      return;
+    }
+    this.items.set(id, Object.freeze({ ...item, state: 'withheld', reason }));
+  }
+
+  /** Items withheld at the moment of sending — never sent, never dropped. */
+  withheld(): NotificationItem[] {
+    return [...this.items.values()].filter((i) => i.state === 'withheld');
   }
 
   /** The visible dead-letter queue — poison sends, never silently dropped. */

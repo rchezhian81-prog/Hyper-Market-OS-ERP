@@ -57,7 +57,7 @@ describeOrSkip('the till exchanges goods — credit at the bill\'s own price, th
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
     await cloud.grant(MANAGER, 'store_manager');
     await cloud.grant(CASHIER, 'cashier');
-    await cloud.grant(BOX, 'cashier');
+    await cloud.grant(BOX, 'store_computer'); // OB-36 "A": the store computer's own role
     await cloud.grant(ACCT, 'accountant');
     expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'setup-tz-utc')).status).toBe(200);
     await ok(call('POST', `/v1/org/nodes/${COMPANY}`, OWNER, { kind: 'company', name: 'SRE Retail' }, `org-${COMPANY}`), 201);

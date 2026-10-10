@@ -104,3 +104,30 @@ describe('org hierarchy: company → GST → branch, validated as a whole (M01-F
     expect(view.filedUnderGstin).toBe(G2);
   });
 });
+
+// Audit PA-05: an organisation rename answered 201 "Changed company name" while a read still said "Old company name" —
+// the write was keyed without the name, so the rename collapsed onto the old state. Each asked-for edit is now its own
+// fact, the answer is what was read back, and a rename, a revert and a restart all hold.
+describe('a rename is saved, read back, reverted and survives a restart (PA-05)', () => {
+  type Named = { node: { name: string } };
+  it('renames, reverts, and a fresh process reads the latest name', async () => {
+    const h = await cast();
+    expect((await putNode(h, 'u-owner', 'C1', { kind: 'company', name: 'Old company name' }, 'n1')).status).toBe(201);
+    const renamed = await putNode(h, 'u-owner', 'C1', { kind: 'company', name: 'Changed company name' }, 'n2');
+    expect(renamed.status).toBe(201);
+    expect((renamed.body as Named).node.name).toBe('Changed company name');
+    expect(((await getNode(h, 'u-owner', 'C1')).body as Named).node.name).toBe('Changed company name');
+
+    // A retry of that same request is the same fact — still one rename.
+    expect(((await putNode(h, 'u-owner', 'C1', { kind: 'company', name: 'Changed company name' }, 'n2')).body as Named).node.name).toBe('Changed company name');
+    // Reverting to the earlier name is a NEW fact, not a collapse onto the first one.
+    expect(((await putNode(h, 'u-owner', 'C1', { kind: 'company', name: 'Old company name' }, 'n3')).body as Named).node.name).toBe('Old company name');
+    expect(((await getNode(h, 'u-owner', 'C1')).body as Named).node.name).toBe('Old company name');
+    // …and the latest name holds after a restart (a fresh process over the same store).
+    await putNode(h, 'u-owner', 'C1', { kind: 'company', name: 'SRE Hyper Market' }, 'n4');
+    const restarted = apiHarness({ store: h.store });
+    expect(((await getNode(restarted, 'u-owner', 'C1')).body as Named).node.name).toBe('SRE Hyper Market');
+    // Every version is kept (hard rule #2) — four names, four facts.
+    expect(await h.store.readStream(A, 'org\u001fnodes', { type: 'OrgNodeSet' })).toHaveLength(4);
+  });
+});
