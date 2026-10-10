@@ -30,6 +30,7 @@ import { applyMovement, type Bin, type BinContents, type MovementCommand } from 
 import { requestIndent, planIssue, applyIssue, planReceipt, applyReceipt, indentTotals, type FloorIndent, type RelayedBy } from '../../../packages/warehouse/src/indents';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { dispatchPostings, receivePostings } from './warehouse-transfers';
+import { assertIndentInScope } from './floor-indents';
 import {
   presentIndent, refusedBy, readIndentLines, readIssueLines, readCounted, receivedOf, shortfallOf, arrivedOf, damagedOf, goodOf, damagePostings,
   type FloorIndentsDeps, type BinMovementRecord,
@@ -98,6 +99,7 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           });
         }
         const existing = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, existing ?? { fromLocationId: b['fromLocationId'], toLocationId: b['toLocationId'] }); // PA-01-r1
         if (existing !== undefined) return { status: 200, body: { indentId, recorded: true, alreadyRecorded: true, indent: presentIndent(existing) } };
         for (const [role, locationId] of [['fromLocationId', b['fromLocationId']], ['toLocationId', b['toLocationId']]] as const) {
           if (!(await deps.knownLocation(ctx.tenantId, locationId))) {
@@ -148,6 +150,7 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           });
         }
         const indent = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         const prior = indent.issues.find((i) => i.issueId === issueId);
         if (prior !== undefined) return { status: 200, body: { indentId, issueId, recorded: true, alreadyIssued: true, issue: prior, indent: presentIndent(indent) } };
@@ -232,6 +235,7 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           });
         }
         const indent = await deps.indent(ctx.tenantId, indentId);
+        await assertIndentInScope(ctx, deps.locationBranches, indent); // PA-01-r1
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         const issue = indent.issues.find((i) => i.issueId === issueId);
         if (issue === undefined) throw notFound(`issue ${issueId} on floor indent ${indentId}`);

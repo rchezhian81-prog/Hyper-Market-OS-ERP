@@ -2652,7 +2652,9 @@ export function nearExpiryAdapter(input: { readonly store: EventStore; readonly 
   return {
     now: input.now,
     nearExpiry: async (tenantId, opts) => {
-      const moves = (await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })).map((e) => payloadOf<Movement>(e));
+      const moves = (await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })).map((e) => payloadOf<Movement>(e))
+        // PA-01-r1: a branch-limited read folds only its own locations' receipts, sales and waste.
+        .filter((m) => opts.covers === undefined || opts.covers(m.locationId));
       const receipts: ReceiptWithExpiry[] = moves
         .filter((m) => m.kind === 'received' && typeof m.batchId === 'string' && m.batchId !== '')
         .map((m) => ({

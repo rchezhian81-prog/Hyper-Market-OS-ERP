@@ -26,6 +26,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { checkMovement, type Movement } from './index';
@@ -71,6 +72,8 @@ export interface AdjustmentRequestRecord {
 }
 
 export interface AdjustmentRequestDeps {
+  /** PA-01-r1: which branch a location belongs to (the org hierarchy); absent → a location is its own branch key. */
+  readonly locationBranches?: LocationBranches;
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
   /** The cloud's own unit value for the product (weighted-average cost); `undefined` when never costed. */
   readonly unitValueMinor: (tenantId: string, productId: string) => Promise<number | undefined> | number | undefined;
@@ -144,9 +147,12 @@ export async function decideAdjustmentRequest(deps: AdjustmentRequestDeps, input
   readonly decision: 'approved' | 'rejected'; readonly reason: string; readonly branchId: string | null;
   /** How the decision arrived — for the audit line. */
   readonly via: 'direct' | 'relayed';
+  /** PA-01-r1: refuse (throws, by name) when the request's location is outside the decider's branches. */
+  readonly assertInScope?: (locationId: string) => Promise<void>;
 }): Promise<AdjustmentDecisionOutcome> {
   const rec = await deps.request(input.tenantId, input.requestId);
   if (rec === undefined) return { ok: false, refusedBecause: 'adjustment_request_unknown', detail: `No adjustment request ${input.requestId} is on file here.` };
+  await input.assertInScope?.(rec.locationId);
   if (rec.requestedBy === input.decidedBy) return { ok: false, refusedBecause: 'self_approval', detail: `${input.decidedBy} raised this request and cannot decide it (§28 separation of duties).` };
   if (rec.status !== 'pending') {
     const same = (input.decision === 'approved') === (rec.status === 'posted');
@@ -199,6 +205,7 @@ export function adjustmentRequestRoutes(deps: AdjustmentRequestDeps): readonly R
             nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
           });
         }
+        await assertLocationInScope(ctx, r.locationId, deps.locationBranches); // PA-01-r1: the relayer's own store only
         const prior = await deps.request(ctx.tenantId, requestId);
         if (prior !== undefined) {
           // A retry after a lost reply (§31.1) — one record, whatever state it has reached since.
@@ -251,7 +258,8 @@ export function adjustmentRequestRoutes(deps: AdjustmentRequestDeps): readonly R
             wasItSaved: 'not_saved', nextSafeAction: 'Send the decision with a reason. Nothing was changed.',
           });
         }
-        const out = await decideAdjustmentRequest(deps, { tenantId: ctx.tenantId, requestId, decidedBy: ctx.userId, decision, reason: b['reason'].trim(), branchId: ctx.branchId ?? null, via: 'direct' });
+        const out = await decideAdjustmentRequest(deps, { tenantId: ctx.tenantId, requestId, decidedBy: ctx.userId, decision, reason: b['reason'].trim(), branchId: ctx.branchId ?? null, via: 'direct',
+          assertInScope: (locationId) => assertLocationInScope(ctx, locationId, deps.locationBranches) });
         if (!out.ok) {
           const status = out.refusedBecause === 'adjustment_request_unknown' ? 404 : out.refusedBecause === 'adjustment_request_already_decided' ? 409 : 422;
           throw apiError(status, {
@@ -274,7 +282,8 @@ export function adjustmentRequestRoutes(deps: AdjustmentRequestDeps): readonly R
           throw apiError(400, { code: 'not_readable_as_an_adjustment_query', whatHappened: `status must be one of ${ADJUSTMENT_REQUEST_STATUSES.join(' / ')}.`, wasItSaved: 'not_saved', nextSafeAction: 'Correct the query. Nothing was changed.' });
         }
         const storeId = ctx.query['storeId'];
-        const all = await deps.requests(ctx.tenantId);
+        const scope = await stockReadScope(ctx, deps.locationBranches); // PA-01-r1: only requests at the caller's branches
+        const all = (await deps.requests(ctx.tenantId)).filter((r) => scope.covers(r.locationId));
         const requests = all
           .filter((r) => (status === undefined || r.status === status) && (storeId === undefined || r.storeId === storeId))
           // Pending first (the work a person has), then newest first.

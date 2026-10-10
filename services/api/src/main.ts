@@ -373,35 +373,35 @@ export function buildSurface(deps: {
   const floorIndentDeps = store === undefined ? {
     indent: empty(undefined), indents: empty([]), transferOf: empty(undefined), knownLocation: empty(true), onHandAt: empty([]), availableAt: empty([]), unitCostAt: empty(undefined),
     recordIndent: () => {}, recordIssued: () => {}, recordReceipt: () => {}, recordReturnAccepted: () => {}, permissionsOfUser: empty(undefined), now,
-  } : { ...floorIndentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  } : { ...floorIndentsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
   // SP-4: one deps object per count / adjustment surface, so the direct routes, the relayed routes and the manager's
   // relayed APPROVAL DECISION all act on the same records through the same decide steps.
   const countsDeps = store === undefined ? {
     onHand: empty(0), reconciliations: empty([]), countExists: empty(false), recordReconciliation: () => {}, reconciliation: empty(undefined), recordDecision: () => {},
     unitValueMinor: empty(undefined), countPolicy: empty(undefined), binExpected: empty(undefined), now,
-  } : { ...countsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  } : { ...countsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
   const syncedCountsDeps = store === undefined ? {
     ...countsDeps, permissionsOfUser: empty(undefined), recordCountPolicy: () => {},
-  } : { ...syncedCountsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  } : { ...syncedCountsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
   const adjustmentDeps = store === undefined ? {
     permissionsOfUser: empty(undefined), unitValueMinor: empty(undefined), request: empty(undefined), requests: empty([]),
     recordRequest: () => {}, recordDecision: () => {}, appendMovement: () => {}, now,
-  } : { ...adjustmentRequestAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  } : { ...adjustmentRequestAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
   // Goods receipt / GRN capture (M07-FR-01/02/03 · D03-FR-02) — the durable cloud receiving record; since SP-4 (ii) the
   // product rules and tolerance policy are head office's own and a held excess is decided here (F03).
   const goodsReceiptDeps = store === undefined ? {
     grn: empty(undefined), all: empty([]), commit: () => {}, now,
     productRule: empty(undefined), receiptPolicy: empty(undefined), recordReceiptPolicy: () => {}, commitExcessDecision: () => {},
     purchaseOrder: empty(undefined), commitDisposition: () => {}, commitExcessReturn: () => {},
-  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  } : { ...goodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
   const syncedGoodsReceiptDeps = store === undefined ? {
     ...goodsReceiptDeps, permissionsOfUser: empty(undefined), unitCostMinor: empty(undefined),
-  } : { ...syncedGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  } : { ...syncedGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
   // SP-6b: the handheld's receiving scans assembled into ONE GRN against the order — the relayed receipt's deps plus the
   // SP-3a scan register; the assembly appends no stock movement of its own (the scans did).
   const assembledGoodsReceiptDeps = store === undefined ? {
     ...syncedGoodsReceiptDeps, scansOf: empty([]),
-  } : { ...assembledGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit };
+  } : { ...assembledGoodsReceiptAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
   // Approve-then-apply (SP-4): a CLEAN decision relayed from the manager's screen reaches its subject — a held blind count,
   // a pending adjustment request or a held receipt excess — through that subject's own decide step (the same code the
   // direct routes run).
@@ -666,21 +666,21 @@ export function buildSurface(deps: {
       : assortmentAdapter({ store, now })),
     ...warehouseRoutes(store === undefined ? {
       bins: empty([]), contents: empty({}), appliedCommandIds: empty([]), recordBin: () => {}, recordMovement: () => {}, now,
-    } : warehouseAdapter({ store, now })),
+    } : { ...warehouseAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) }),
     // The warehouse HANDHELD's work, relayed by the box from its authenticated device socket (SP-3a · ADR-0019 · F11): a
     // put-away or pick re-runs the same bin engine over head office's bins with the MOVER re-verified; a receiving scan
     // becomes a `received` movement at the store with the RECEIVER re-verified, and is kept on the GRN-scans register.
     ...syncedWarehouseRoutes(store === undefined ? {
       bins: empty([]), contents: empty({}), appliedCommandIds: empty([]), recordBin: () => {}, recordMovement: () => {}, now,
       permissionsOfUser: empty(undefined),
-    } : { ...syncedWarehouseAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    } : { ...syncedWarehouseAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) }),
     ...receivingScanRoutes(store === undefined ? {
       permissionsOfUser: empty(undefined), appendMovement: () => {}, isKnown: empty(false), scanExists: empty(false), recordScan: () => {}, scansOf: empty([]), now,
-    } : { ...receivingScanAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    } : { ...receivingScanAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) }),
     ...transfersRoutes(store === undefined ? {
       transfer: empty(undefined), availableAt: empty([]), recordProposed: () => {}, recordDispatched: () => {}, recordReceived: () => {},
       unitCostAt: empty(undefined), knownLocation: empty(true), now,
-    } : transfersAdapter({ store, now })),
+    } : { ...transfersAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) }),
     // The floor indent chain (SP-8 · F08): request → approval → back-store issue (a transfer, dispatched) → in transit →
     // independent floor receipt → shelf availability; cancel and floor→back-store return. Rides the transfer engine.
     ...floorIndentRoutes(floorIndentDeps),
@@ -698,7 +698,7 @@ export function buildSurface(deps: {
       writeOffExists: empty(false), writeOffs: empty([]), recordWriteOff: () => {},
       writeOffThreshold: () => undefined, recordWriteOffThreshold: () => {},
       ownersOfStockAt: () => [], now,
-    } : { ...writeOffAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }) }),
+    } : { ...writeOffAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) }),
     ...productionRoutes(store === undefined ? {
       recipe: empty(undefined), recordRecipe: () => {}, ingredientCost: empty(undefined), recordCost: () => {},
       onHand: empty(0), priorConsumption: empty({}),
@@ -1169,7 +1169,7 @@ export function buildSurface(deps: {
     // trace a recall runs on. The OUTBOUND (who bought it) folds the real banked sales by batch (batch-on-sale
     // inc3a); inbound receipts stay caller-supplied for now.
     ...lotTraceRoutes(store === undefined ? { soldOfBatch: () => [] } : lotTraceAdapter({ store })),
-    ...nearExpiryRoutes(store === undefined ? { nearExpiry: () => [], now } : nearExpiryAdapter({ store, now })),
+    ...nearExpiryRoutes(store === undefined ? { nearExpiry: () => [], now } : { ...nearExpiryAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) }),
     // Recall lifecycle (M10-FR-04) — durable cloud recall record: initiate + close-with-evidence + read.
     ...recallRoutes(store === undefined
       ? { registry: () => new RecallRegistry(), records: empty([]), recordInitiated: () => {}, recordClosed: () => {}, now }

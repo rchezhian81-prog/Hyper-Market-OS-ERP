@@ -99,6 +99,70 @@ describe('stock is read and moved inside the caller\'s branches (PA-01-r1)', () 
   });
 });
 
+// ── the other stock families, family by family ──────────────────────────────────────────────────────────────
+// each manager signs in at their own branch; the owner at none in particular
+const signedInAt = (userId: string): { branchId?: string } => (userId === MGR1 ? { branchId: 'br-1' } : userId === MGR2 ? { branchId: 'br-2' } : {});
+const post = (h: ApiHarness, userId: string, path: string, body: Record<string, unknown>, key: string) =>
+  h.request({ method: 'POST', path, userId, tenantId: A, ...signedInAt(userId), idempotencyKey: key, body });
+const get = (h: ApiHarness, userId: string, path: string, query: Record<string, string> = {}) =>
+  h.request({ method: 'GET', path, userId, tenantId: A, ...signedInAt(userId), query });
+const LINE = { productId: 'P1', batchId: null, quantityMinor: 10, uom: 'each', unitCost: { minor: 2_000, currency: 'INR' } };
+
+describe('every stock family keeps to the caller\'s branches (PA-01-r1 sweep)', () => {
+  it('bins and bin movements: br-2\'s bin cannot be read, re-homed or emptied by the br-1 manager; br-1\'s own bin works', async () => {
+    const h = await twoBranches(apiHarness(), A);
+    expect((await post(h, OWNER, '/v1/warehouse/bins/B2', { storeId: 'br-2', capacityMinor: 1000, pickable: true }, 'b2')).status).toBe(201);
+    expect((await post(h, OWNER, '/v1/warehouse/movements/c-own', { kind: 'put_away', storeId: 'br-2', productId: 'P1', quantityMinor: 10, uom: 'each', toBinId: 'B2' }, 'c-own')).status).toBe(201);
+    expect(codeOf(await get(h, MGR1, '/v1/warehouse/bins/B2'))).toBe('outside_your_branch_scope');
+    expect(codeOf(await post(h, MGR1, '/v1/warehouse/bins/B2', { storeId: 'br-1', capacityMinor: 1, pickable: true }, 'b2-rehome'))).toBe('outside_your_branch_scope');
+    expect(codeOf(await post(h, MGR1, '/v1/warehouse/movements/c-steal', { kind: 'pick', storeId: 'br-1', productId: 'P1', quantityMinor: 10, uom: 'each', fromBinId: 'B2' }, 'c-steal'))).toBe('outside_your_branch_scope');
+    expect(codeOf(await post(h, MGR1, '/v1/warehouse/movements/c-there', { kind: 'put_away', storeId: 'br-2', productId: 'P1', quantityMinor: 1, uom: 'each', toBinId: 'B2' }, 'c-there'))).toBe('outside_your_branch_scope');
+    expect((await post(h, MGR1, '/v1/warehouse/bins/B1', { storeId: 'br-1', capacityMinor: 100, pickable: true }, 'b1')).status).toBe(201);
+    expect((await get(h, MGR2, '/v1/warehouse/bins/B2')).status).toBe(200);
+    const held = (await get(h, OWNER, '/v1/warehouse/bins/B2')).body as { occupancyMinor: number };
+    expect(held.occupancyMinor).toBe(10); // nothing left br-2's bin
+  });
+
+  it('transfers: proposing, dispatching, receiving or reading a br-2 → br-2 transfer is refused to the br-1 manager', async () => {
+    const h = await twoBranches(apiHarness(), A);
+    expect((await post(h, OWNER, '/v1/warehouse/transfers/T2', { fromLocationId: 'br-2', toLocationId: 'bs-2', lines: [LINE] }, 't2')).status).toBe(201);
+    expect(codeOf(await post(h, MGR1, '/v1/warehouse/transfers/T3', { fromLocationId: 'br-2', toLocationId: 'bs-2', lines: [LINE] }, 't3'))).toBe('outside_your_branch_scope');
+    expect(codeOf(await get(h, MGR1, '/v1/warehouse/transfers/T2'))).toBe('outside_your_branch_scope');
+    expect(codeOf(await post(h, MGR1, '/v1/warehouse/transfers/T2/dispatch', {}, 't2-d'))).toBe('outside_your_branch_scope');
+    expect((await get(h, MGR2, '/v1/warehouse/transfers/T2')).status).toBe(200);
+    expect((await post(h, MGR2, '/v1/warehouse/transfers/T2/dispatch', {}, 't2-d2')).status).toBe(200); // br-2's own manager
+    expect(codeOf(await post(h, MGR1, '/v1/warehouse/transfers/T2/receive', { counted: [{ productId: 'P1', quantityMinor: 10 }] }, 't2-r'))).toBe('outside_your_branch_scope');
+    // a request INTO my branch from br-2 may be proposed (it asks), but only br-2 can dispatch it
+    expect((await post(h, MGR1, '/v1/warehouse/transfers/T4', { fromLocationId: 'br-2', toLocationId: 'br-1', lines: [LINE] }, 't4')).status).toBe(201);
+    expect(codeOf(await post(h, MGR1, '/v1/warehouse/transfers/T4/dispatch', {}, 't4-d'))).toBe('outside_your_branch_scope');
+  });
+
+  it('write-offs, counts, receipts, indents and near-expiry: br-2 is refused by name or left out', async () => {
+    const h = await twoBranches(apiHarness(), A);
+    const loss = { productId: 'P1', locationId: 'br-2', qty: 1, uom: 'each', lossType: 'damage', reasonCode: 'broken' };
+    expect(codeOf(await post(h, MGR1, '/v1/inventory/write-off/W1', loss, 'w1'))).toBe('outside_your_branch_scope');
+    expect(codeOf(await get(h, MGR1, '/v1/inventory/write-off-value', { productId: 'P1', locationId: 'br-2', qty: '1' }))).toBe('outside_your_branch_scope');
+    expect(codeOf(await get(h, MGR1, '/v1/inventory/write-offs', { branchId: 'br-2' }))).toBe('scope_not_held');
+    expect(codeOf(await post(h, MGR1, '/v1/inventory/counts/K1', { productId: 'P1', locationId: 'br-2', uom: 'each', countedMinor: 0, reasonCode: 'cycle' }, 'k1'))).toBe('outside_your_branch_scope');
+    expect(codeOf(await get(h, MGR1, '/v1/inventory/counts', { productId: 'P1', locationId: 'bs-2' }))).toBe('outside_your_branch_scope');
+    const grn = { warehouseId: 'br-2', receivedOnDate: '2026-08-18', currency: 'INR', lines: [{ lineId: 'L1', productId: 'P1', orderedMinor: 5, countedMinor: 5, uom: 'each', unitCost: { minor: 2_000, currency: 'INR' }, condition: 'good' }] };
+    expect(codeOf(await post(h, MGR1, '/v1/inventory/goods-receipt/G1', grn, 'g1'))).toBe('outside_your_branch_scope');
+    expect(codeOf(await get(h, MGR1, '/v1/inventory/goods-receipt', { branchId: 'br-2' }))).toBe('scope_not_held');
+    // an indent between br-2's back store and its floor is br-2's
+    expect((await post(h, OWNER, '/v1/floor/indents/I2', { fromLocationId: 'bs-2', toLocationId: 'br-2', lines: [{ productId: 'P1', quantityMinor: 5, uom: 'each' }] }, 'i2')).status).toBeLessThan(300);
+    expect(codeOf(await get(h, MGR1, '/v1/floor/indents/I2'))).toBe('outside_your_branch_scope');
+    expect(codeOf(await post(h, MGR1, '/v1/floor/indents/I2/approval', {}, 'i2-a'))).toBe('outside_your_branch_scope');
+    expect(((await get(h, MGR1, '/v1/floor/indents')).body as { count: number }).count).toBe(0);
+    expect(((await get(h, MGR2, '/v1/floor/indents')).body as { count: number }).count).toBe(1);
+    // a batch close to its date at br-2 is br-2's to mark down — not on the br-1 manager's list
+    expect((await move(h, A, OWNER, undefined, { movementId: 'rb', productId: 'P2', locationId: 'br-2', kind: 'received', quantityMinor: 3, batchId: 'B-1', expiry: '2026-08-09' })).status).toBe(202);
+    const near = (u: string) => get(h, u, '/v1/inventory/near-expiry', { asOf: '2026-08-07', withinDays: '7' });
+    expect(((await near(MGR1)).body as { count: number }).count).toBe(0);
+    expect(((await near(MGR2)).body as { count: number }).count).toBe(1);
+    expect(((await near(OWNER)).body as { count: number }).count).toBe(1);
+  });
+});
+
 // ── on real PostgreSQL ────────────────────────────────────────────────────────────────────────────────────────
 const DATABASE_URL = process.env['DATABASE_URL'];
 const PG_TENANT = `e${Date.now().toString(16).slice(-7)}-eeee-4eee-8eee-${'e'.repeat(12)}`;

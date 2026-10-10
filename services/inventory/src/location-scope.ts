@@ -60,6 +60,15 @@ export async function stockReadScope(ctx: Scoped, branches: LocationBranches = l
   return { scope, everything: false, covers: (locationId) => scope.includes(branchOf(locationId)) };
 }
 
+/** Is this location inside the caller's branches? (Outside the pipeline nothing is held: false.) */
+export async function locationInScope(
+  ctx: Pick<RequestContext, 'scope' | 'tenantId'>, locationId: string, branches: LocationBranches = locationIsItsOwnBranch,
+): Promise<boolean> {
+  if (ctx.scope === 'all') return true;
+  const held = ctx.scope ?? [];
+  return held.includes((await branches(ctx.tenantId))(locationId));
+}
+
 /** Refuse, by name, a stock write at a location outside the caller's branches. */
 export async function assertLocationInScope(
   ctx: Pick<RequestContext, 'scope' | 'tenantId'>, locationId: string, branches: LocationBranches = locationIsItsOwnBranch,

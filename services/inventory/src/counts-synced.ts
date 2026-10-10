@@ -17,6 +17,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import { assertLocationInScope } from './location-scope';
 import { InvalidCountError } from '../../../packages/counts/src/counts';
 import {
   reconcileBlindCount, DEFAULT_COUNT_APPROVAL_THRESHOLD_MINOR, COUNT_FLAGS,
@@ -82,6 +83,8 @@ export function syncedCountsRoutes(deps: SyncedCountsDeps): readonly Route[] {
             nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it. The expected quantity is computed here, never sent.',
           });
         }
+        // PA-01-r1: the box relays its own store's counts only — a location outside the relayer's branches is refused.
+        await assertLocationInScope(ctx, c.locationId, deps.locationBranches);
         // A count id is used once; the same count again is a retry after a lost reply (§31.1) — one record.
         if (await deps.countExists(ctx.tenantId, countId)) {
           const prior = await deps.reconciliation(ctx.tenantId, countId);
