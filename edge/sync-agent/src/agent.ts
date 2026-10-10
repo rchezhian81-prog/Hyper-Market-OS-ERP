@@ -52,6 +52,13 @@ export interface SyncHealth {
   readonly deadLetterCount: number;
   /** When a drain last delivered something, or null if never. */
   readonly lastSuccessAt: string | null;
+  /**
+   * The queue's watermark (EA-01 · P-08): everything this box committed BEFORE this instant has reached head office.
+   * After a pass that left the queue empty it is that pass's time; while items wait it is the oldest waiting item's
+   * own time (nothing older is still here). Null until the first pass. A dead-lettered item does not hold it — it is
+   * counted separately (`deadLetterCount`) and is a person's work, never silently "synced".
+   */
+  readonly completeThrough: string | null;
 }
 
 const DEFAULTS = {
@@ -73,8 +80,28 @@ export function nextDelayMs(attempts: number, baseMs = 1000, capMs = 300_000): n
   return Math.min(raw, capMs);
 }
 
+/**
+ * When a queued record was really made on the box. A record re-queued from the disk at a restart is given a fresh event
+ * time, so the record's OWN time (a sale's `committedAt`, a refund's `processedAt`, …) wins when it is earlier — the
+ * watermark may only ever err towards older, never claim a sale waiting since the morning is "complete" (EA-01).
+ */
+const RECORD_TIME_FIELDS = ['committedAt', 'processedAt', 'recordedAt', 'closedAt', 'capturedAt', 'at'] as const;
+export function recordedAtOf(event: { readonly occurredAt: string; readonly payload: unknown }): string {
+  let best = event.occurredAt;
+  const p = event.payload;
+  if (typeof p === 'object' && p !== null) {
+    for (const f of RECORD_TIME_FIELDS) {
+      const v = (p as Record<string, unknown>)[f];
+      if (typeof v === 'string' && !Number.isNaN(Date.parse(v)) && Date.parse(v) < Date.parse(best)) best = new Date(Date.parse(v)).toISOString();
+    }
+  }
+  return best;
+}
+
 export class SyncAgent {
   private lastSuccessAt: string | null = null;
+  /** When the last pass ended with nothing waiting, or null if no pass has (EA-01 watermark). */
+  private drainedEmptyAt: string | null = null;
 
   constructor(
     private readonly outbox: SyncOutbox,
@@ -87,7 +114,23 @@ export class SyncAgent {
       unsentCount: this.outbox.unsentCount(),
       deadLetterCount: this.outbox.deadLetters().length,
       lastSuccessAt: this.lastSuccessAt,
+      completeThrough: this.completeThrough(),
     };
+  }
+
+  /**
+   * The last complete sync of this queue (EA-01): the oldest still-waiting item's own time, or — with nothing
+   * waiting — when a pass last found the queue empty. Never the read time: a box that has not passed says null.
+   */
+  completeThrough(): string | null {
+    const waiting = this.outbox.pending();
+    if (waiting.length === 0) return this.drainedEmptyAt;
+    let oldest: string | null = null;
+    for (const item of waiting) {
+      const t = recordedAtOf(item.event);
+      if (oldest === null || Date.parse(t) < Date.parse(oldest)) oldest = t;
+    }
+    return oldest;
   }
 
   /**
@@ -158,6 +201,8 @@ export class SyncAgent {
         break;
       }
     }
+
+    if (this.outbox.unsentCount() === 0) this.drainedEmptyAt = options.at;
 
     return {
       attempted,

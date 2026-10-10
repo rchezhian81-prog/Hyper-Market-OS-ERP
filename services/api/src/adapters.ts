@@ -278,8 +278,10 @@ import { buildTenantExport } from '../../../packages/platform/src/lifecycle';
 import type { TenantBranding } from '../../../packages/platform/src/branding';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
-import { figure, sourceFreshness } from '../../reporting/src/index';
-import type { ReportingDeps, Figure } from '../../reporting/src/index';
+import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/index';
+import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
+import { latestDomainReports, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
+import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
 import { salesSummary, ingestContribution } from '../../../packages/reporting/src/index';
@@ -10356,6 +10358,12 @@ export function reportingAdapter(input: {
   readonly thresholds?: { readonly laggingAfterMinutes: number; readonly staleAfterMinutes: number };
   /** The named-report producers (EA-06, `report-producers.ts`); absent, every named report is refused as not produced. */
   readonly produce?: ReportingDeps['produce'];
+  /**
+   * EA-01 (round 4): the branches head office knows and each store computer's own last sync report for sales
+   * (`services/platform/src/sync-watermarks.ts`). When given, a store's sales are as at the LATER of its newest sale and
+   * its box's reported watermark, and a known branch never heard from is listed, stale. Absent on a bare wiring.
+   */
+  readonly storeSync?: (tenantId: string) => Promise<StoreSyncView>;
 }): ReportingDeps {
   const thresholds = input.thresholds ?? {};
   /** Where a sale came from (audit EA-01): the store location the lane sells from, else the lane itself. */
@@ -10377,6 +10385,16 @@ export function reportingAdapter(input: {
     const latestEver = await input.store.latestOfType(tenantId, STREAM.sales, 'SaleCommitted');
     if (latestEver !== undefined) note(latestEver);
     return [...newest.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([source, lastEventAt]) => ({ source, lastEventAt }));
+  };
+  /** Every sales source's freshness — newest sale held, merged with the store computer's own watermark (EA-01). */
+  const salesSources = async (tenantId: string, todays: readonly PersistedEvent[]): Promise<readonly SourceFreshness[]> => {
+    const now = input.now();
+    const marks = await salesWatermarks(tenantId, todays);
+    if (input.storeSync === undefined) {
+      if (marks.length === 0) return [sourceFreshness({ source: 'any till', domain: 'sales', lastEventAt: null, now, ...thresholds })];
+      return marks.map((m) => sourceFreshness({ source: m.source, domain: 'sales', lastEventAt: m.lastEventAt, now, ...thresholds }));
+    }
+    return mergeStoreSync(marks, await input.storeSync(tenantId), now, thresholds, 'all');
   };
   return {
     now: input.now,
@@ -10441,10 +10459,12 @@ export function reportingAdapter(input: {
       // not "as at 16:00, live". The store box drains its queue in order (edge/sync-agent ORDER), so the newest sale
       // head office holds from a store is that store's sync watermark — everything it rang before then has arrived.
       // The figure is as current as its STALEST source; a shop no till has ever reached is "not available", never 0.
-      const watermarks = await salesWatermarks(tenantId, events);
-      const asAt = watermarks.length === 0
+      // Round 4: each store's time is the LATER of its newest sale and its store computer's own reported watermark (a
+      // quiet hour is not a stale store; a store whose line is down stops reporting and ages) — see `mergeStoreSync`.
+      const timed = (await salesSources(tenantId, events)).map(syncedThrough).filter((t): t is string => t !== null);
+      const asAt = timed.length === 0
         ? null
-        : watermarks.map((w) => w.lastEventAt).reduce((oldest, t) => (Date.parse(t) < Date.parse(oldest) ? t : oldest));
+        : timed.reduce((oldest, t) => (Date.parse(t) < Date.parse(oldest) ? t : oldest));
       const now = input.now();
       const never = 'no till has ever sent a sale to head office, so there is nothing to report yet';
       const of = (name: string, valueMinor: number, unit: Figure['unit']): Figure =>
@@ -10466,10 +10486,7 @@ export function reportingAdapter(input: {
       const calendar = await input.calendar(tenantId);
       const window = tradingDayWindow(tradingDayIn(input.now(), calendar), calendar);
       const events = await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: window.from, to: window.to });
-      const now = input.now();
-      const marks = await salesWatermarks(tenantId, events);
-      if (marks.length === 0) return [sourceFreshness({ source: 'any till', domain: 'sales', lastEventAt: null, now, ...thresholds })];
-      return marks.map((m) => sourceFreshness({ source: m.source, domain: 'sales', lastEventAt: m.lastEventAt, now, ...thresholds }));
+      return salesSources(tenantId, events);
     },
   };
 }
@@ -11633,6 +11650,62 @@ export function heldVersionsAdapter(input: { readonly store: EventStore }): {
       await input.store.append(tenantId, HELD_VERSIONS_STREAM, makeEvent({
         id: `held-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}${observed}`, type: 'StoreHeldVersionsReported', occurredAt: r.reportedAt,
         idempotencyKey: `held-${tenantId}-${r.storeId}-${r.catalogueVersion ?? 'none'}-${r.storePackVersion ?? 'none'}${observed}`, source: 'api/platform', payload: r,
+      }));
+    },
+  };
+}
+
+
+/** EA-01 (round 4): the branches head office knows, and each store computer's own last report for sales. */
+export interface StoreSyncView {
+  readonly branches: ReadonlyMap<string, string>;
+  readonly sales: ReadonlyMap<string, StoreSyncReport>;
+}
+
+/** Read the store computers' sync reports into the view the reporting adapters merge (latest report per store). */
+export async function storeSyncView(store: EventStore, tenantId: string, now: () => string): Promise<StoreSyncView> {
+  const branches = new Map((await orgStructureAdapter({ store, now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => [n.nodeId, n.name] as const));
+  return { branches, sales: latestDomainReports(await syncWatermarksAdapter({ store }).records(tenantId), 'sales') };
+}
+
+/**
+ * Merge the sales sources head office derives from the sales it holds with each store computer's own watermark report
+ * (EA-01 round 4): a store's time is the later of the two; a store that reported but has no sales is listed by its
+ * report; a branch head office knows but has never heard from is listed, stale — never left out. `scope` limits the
+ * stores listed to the reader's branches (lane sources pass through as before).
+ */
+export function mergeStoreSync(
+  marks: readonly { readonly source: string; readonly lastEventAt: string | null }[],
+  view: StoreSyncView,
+  now: string,
+  thresholds: { readonly laggingAfterMinutes?: number; readonly staleAfterMinutes?: number },
+  scope: BranchScope,
+): readonly SourceFreshness[] {
+  const inScope = (id: string): boolean => scope === 'all' || scope.includes(id);
+  const newest = new Map<string, string | null>(marks.map((m) => [m.source, m.lastEventAt] as const));
+  for (const id of view.sales.keys()) if (inScope(id) && !newest.has(`store:${id}`)) newest.set(`store:${id}`, null);
+  for (const id of view.branches.keys()) if (inScope(id) && !newest.has(`store:${id}`)) newest.set(`store:${id}`, null);
+  if (newest.size === 0) return [sourceFreshness({ source: 'any till', domain: 'sales', lastEventAt: null, now, ...thresholds })];
+  return [...newest.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([source, lastEventAt]) => {
+    const reported = source.startsWith('store:') ? view.sales.get(source.slice('store:'.length)) : undefined;
+    return sourceFreshness({ source, domain: 'sales', lastEventAt, now, ...thresholds, ...(reported === undefined ? {} : { reported }) });
+  });
+}
+
+
+/** EA-01: every sync-watermark report each store computer made (append-only; the latest per store is read). */
+const SYNC_WATERMARKS_STREAM = streamName(STREAM.org, 'store-sync-watermarks');
+export function syncWatermarksAdapter(input: { readonly store: EventStore }): {
+  records: (tenantId: string) => Promise<readonly SyncWatermarkRecord[]>;
+  record: (tenantId: string, r: SyncWatermarkRecord) => Promise<void>;
+} {
+  return {
+    records: (tenantId) => allOf<SyncWatermarkRecord>(input.store, tenantId, SYNC_WATERMARKS_STREAM, 'StoreSyncWatermarkReported'),
+    record: async (tenantId, r) => {
+      await input.store.append(tenantId, SYNC_WATERMARKS_STREAM, makeEvent({
+        id: `sync-wm-${r.storeId}-${r.observedAt}`, type: 'StoreSyncWatermarkReported', occurredAt: r.receivedAt,
+        // One report per (store, moment the box made it): a retried POST collapses onto the first.
+        idempotencyKey: `sync-wm-${tenantId}-${r.storeId}-${r.observedAt}`, source: 'api/platform', payload: r,
       }));
     },
   };

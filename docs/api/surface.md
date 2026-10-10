@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 880 | 538 | 538 | 73 | 284 |
+| 13 | 882 | 539 | 539 | 73 | 284 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -68,6 +68,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/stores/:storeId/rules` | `platform.setup.write` | core | yes |
 | GET | `/v1/stores/:storeId/settings` | `org.branch.read` | core | — |
 | POST | `/v1/stores/:storeId/settings` | `platform.setup.write` | core | yes |
+| POST | `/v1/stores/:storeId/sync-watermarks` | `store.pack.read` | core | yes |
 
 ## API-02 — Catalogue (M03–M05)
 
@@ -715,6 +716,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/reports/:name` | `reporting.report.read` | core | — |
 | GET | `/v1/reports/catalogue` | `reporting.report.read` | core | — |
 | GET | `/v1/reports/dashboard` | `reporting.dashboard.read` | core | — |
+| GET | `/v1/sync/source-freshness` | `reporting.dashboard.read` | core | — |
 
 ## API-11 — Platform (M32–M35)
 
