@@ -27,6 +27,7 @@ import { dispatchPostings, receivePostings, readFound, sameResolution, foundPost
 
 export { readFound, foundPostings };
 import { checkMovement, type Movement } from './index';
+import { valueAtUnitCost, normaliseUom } from '../../../packages/contracts/src/quantity';
 import { locationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import { outsideBranchScope, type RequestContext } from '../../kernel/src/index';
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
@@ -166,7 +167,7 @@ export function readIndentLines(v: unknown): IndentLine[] | undefined {
   const out: IndentLine[] = [];
   for (const raw of v) {
     if (!isObj(raw) || !isStr(raw['productId']) || !isPosInt(raw['quantityMinor']) || !isStr(raw['uom'])) return undefined;
-    out.push({ productId: raw['productId'], requestedMinor: raw['quantityMinor'], uom: raw['uom'] });
+    out.push({ productId: raw['productId'], requestedMinor: raw['quantityMinor'], uom: normaliseUom(raw['uom']) ?? raw['uom'] }); // OB-31: one spelling
   }
   return out;
 }
@@ -215,7 +216,7 @@ export const damagedOf = (counted: readonly ReceivedLine[], transfer: Transfer):
   counted.filter((c) => (c.damagedMinor ?? 0) > 0).map((c) => {
     const i = transfer.lines.findIndex((l) => l.productId === c.productId && l.batchId === c.batchId);
     const unitCost = i >= 0 ? transfer.lineCostsMinor?.[i] ?? transfer.lines[i]!.unitCost.minor : 0;
-    return { productId: c.productId, batchId: c.batchId, quantityMinor: c.damagedMinor!, valueMinor: unitCost * c.damagedMinor! };
+    return { productId: c.productId, batchId: c.batchId, quantityMinor: c.damagedMinor!, valueMinor: valueAtUnitCost(c.damagedMinor!, i >= 0 ? transfer.lines[i]!.uom : 'ea', unitCost) }; // OB-31
   });
 
 /** The GOOD units received: what arrived (capped at what was sent, as the engine counts it) less what arrived damaged. */

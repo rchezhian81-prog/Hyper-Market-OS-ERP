@@ -70,6 +70,7 @@ export function agedStockLots(
       productId: m.productId, locationId: m.locationId, effect: m.effect,
       quantityMinor: m.quantityMinor, isPurchaseReceipt: m.isPurchaseReceipt,
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+      ...(m.minorPerUnit === undefined ? {} : { minorPerUnit: m.minorPerUnit }), // OB-31: kg counted in grams, costed per kg
     })),
     currency,
   );

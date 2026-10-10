@@ -73,7 +73,9 @@ const CHICKEN = 'p-chicken';
 const GOOD_BATCH = `B-4471-${RUN}`;
 const BAD_BATCH = `B-4472-${RUN}`;
 /** ₹180.00 a unit — the number every valuation below is derived from. */
-const UNIT_COST = money(18_000, CURRENCY);
+const UNIT_COST = money(18_000, CURRENCY); // per KG
+/** OB-31 "A" (owner, 10 Oct 2026): chicken is weighed, so every quantity is in GRAMS; the cost is per kg. */
+const KG = 1000;
 
 /** A stock event as the ledger carries it: signed delta, product, batch. */
 function stockEvent(input: {
@@ -187,7 +189,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
         id: `grn-${RUN}-1`,
         type: 'GoodsReceived',
         at: '2026-08-04T06:00:00Z',
-        deltaMinor: 240,
+        deltaMinor: 240 * KG,
         batchId: GOOD_BATCH,
         source: STORE,
         extra: { grnId: `GRN-${RUN}-1`, locationId: STORE, unitCostMinor: UNIT_COST.minor },
@@ -201,27 +203,27 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
       batchId: GOOD_BATCH,
       from: null,
       to: 'on_hand',
-      quantityMinor: 240,
+      quantityMinor: 240 * KG,
       uom: 'kg',
       at: '2026-08-04T06:00:00Z',
       reason: 'goods received',
     });
 
-    expect(onHandMinor(ledger, CHICKEN)).toBe(240);
+    expect(onHandMinor(ledger, CHICKEN)).toBe(240 * KG);
   });
 
   it('puts it away by scan — once, into a real bin, and never into a pickable bin when held', () => {
     const bins: Bin[] = [
-      { binId: 'CH-01', storeId: STORE, capacityMinor: 300, pickable: true, zone: 'chilled' },
-      { binId: 'CH-02', storeId: STORE, capacityMinor: 300, pickable: true, zone: 'chilled' },
-      { binId: 'QU-01', storeId: STORE, capacityMinor: 200, pickable: false, zone: 'quarantine' },
+      { binId: 'CH-01', storeId: STORE, capacityMinor: 300 * KG, pickable: true, zone: 'chilled' },
+      { binId: 'CH-02', storeId: STORE, capacityMinor: 300 * KG, pickable: true, zone: 'chilled' },
+      { binId: 'QU-01', storeId: STORE, capacityMinor: 200 * KG, pickable: false, zone: 'quarantine' },
     ];
     const contents = {};
 
     const suggestion = suggestPutAway({
       productId: CHICKEN,
       batchId: GOOD_BATCH,
-      quantityMinor: 240,
+      quantityMinor: 240 * KG,
       bins,
       contents,
     });
@@ -233,7 +235,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
       storeId: STORE,
       productId: CHICKEN,
       batchId: GOOD_BATCH,
-      quantityMinor: 240,
+      quantityMinor: 240 * KG,
       uom: 'kg',
       fromBinId: null,
       toBinId: 'CH-01',
@@ -280,7 +282,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
     expect(badPutAway.movements).toEqual([]);
     // The same stock IS accepted into the quarantine bin.
     const heldAway = applyMovement({
-      command: { ...command, commandId: `mv-${RUN}-q2`, quantityMinor: 20, toBinId: 'QU-01', stockState: 'quarantine' },
+      command: { ...command, commandId: `mv-${RUN}-q2`, quantityMinor: 20 * KG, toBinId: 'QU-01', stockState: 'quarantine' },
       appliedCommandIds: [],
       bins,
       contents,
@@ -293,12 +295,12 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
       transferId: `TR-${RUN}-1`,
       fromLocationId: STORE,
       toLocationId: BRANCH,
-      lines: [{ productId: CHICKEN, batchId: GOOD_BATCH, quantityMinor: 60, uom: 'kg', unitCost: UNIT_COST }],
+      lines: [{ productId: CHICKEN, batchId: GOOD_BATCH, quantityMinor: 60 * KG, uom: 'kg', unitCost: UNIT_COST }],
       state: 'proposed',
       requestedBy: 'u-warehouse',
     };
     const available = [
-      { productId: CHICKEN, batchId: GOOD_BATCH, quantityMinor: 240, state: 'on_hand' as const },
+      { productId: CHICKEN, batchId: GOOD_BATCH, quantityMinor: 240 * KG, state: 'on_hand' as const },
     ];
 
     // Nobody moves stock between branches on their own signature (§28).
@@ -333,7 +335,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
         id: `tr-${RUN}-1-out`,
         type: 'StockTransferred',
         at: '2026-08-04T07:00:00Z',
-        deltaMinor: -60,
+        deltaMinor: -60 * KG,
         batchId: GOOD_BATCH,
         source: STORE,
         extra: { transferId: transfer.transferId, locationId: STORE, toLocationId: BRANCH },
@@ -343,7 +345,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
 
     const received = receiveTransfer({
       transfer: dispatched.transfer,
-      counted: [{ productId: CHICKEN, batchId: GOOD_BATCH, quantityMinor: 55 }],
+      counted: [{ productId: CHICKEN, batchId: GOOD_BATCH, quantityMinor: 55 * KG }],
       receivedBy: 'u-branch-manager',
       at: '2026-08-04T11:00:00Z',
       currency: CURRENCY,
@@ -351,7 +353,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
     expect(received.transfer.state).toBe('received');
     expect(received.discrepancies).toHaveLength(1);
     // 5kg × ₹180.00 = ₹900.00, priced and named, not absorbed.
-    expect(received.discrepancies[0]?.differenceMinor).toBe(-5);
+    expect(received.discrepancies[0]?.differenceMinor).toBe(-5 * KG);
     expect(received.discrepancies[0]?.value).toEqual(money(90_000, CURRENCY));
     expect(received.discrepancies[0]?.detail).toContain('needs an owner');
     // Nothing is left sitting in a van for ever: the shortfall is written out of transit.
@@ -369,7 +371,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
           id: `sale-${RUN}-${i}`,
           type: 'StockIssued',
           at: `2026-08-04T1${i}:00:00Z`,
-          deltaMinor: -30,
+          deltaMinor: -30 * KG,
           batchId: GOOD_BATCH,
           source: STORE,
           extra: { saleId: `S-${RUN}-${i}`, locationId: STORE },
@@ -383,7 +385,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
         batchId: GOOD_BATCH,
         from: 'on_hand',
         to: null,
-        quantityMinor: 30,
+        quantityMinor: 30 * KG,
         uom: 'kg',
         at: `2026-08-04T1${i}:00:00Z`,
         reason: 'sold',
@@ -391,7 +393,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
     }
 
     // 240 in, 60 to the branch, 120 sold. The system says 60.
-    expect(onHandMinor(ledger, CHICKEN)).toBe(60);
+    expect(onHandMinor(ledger, CHICKEN)).toBe(60 * KG);
 
     // The counter never sees that number — `reconcileCount` derives it from the
     // ledger, so blind-count integrity is structural rather than a UI promise.
@@ -400,7 +402,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
       productId: CHICKEN,
       locationId: STORE,
       uom: 'kg',
-      countedMinor: 57,
+      countedMinor: 57 * KG,
       counterId: 'u-counter',
       at: '2026-08-04T18:00:00Z',
       reasonCode: 'cycle_count_variance',
@@ -440,9 +442,9 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
     if (!outcome.ok) throw new Error('unreachable');
 
     const reconciliation = reconcileCount({ ...countInput, approval: outcome.request }, ledger, outbox);
-    expect(reconciliation.expectedMinor).toBe(60);
-    expect(reconciliation.countedMinor).toBe(57);
-    expect(reconciliation.varianceMinor).toBe(-3);
+    expect(reconciliation.expectedMinor).toBe(60 * KG);
+    expect(reconciliation.countedMinor).toBe(57 * KG);
+    expect(reconciliation.varianceMinor).toBe(-3 * KG);
     expect(reconciliation.varianceValue).toEqual(money(54_000, CURRENCY));
     expect(reconciliation.reconciled).toBe(false);
     expect(reconciliation.adjusted).toBe(true);
@@ -455,7 +457,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
       batchId: GOOD_BATCH,
       from: 'on_hand',
       to: null,
-      quantityMinor: 3,
+      quantityMinor: 3 * KG,
       uom: 'kg',
       at: countInput.at,
       reason: 'cycle_count_variance',
@@ -463,7 +465,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
 
     // THE GATE, HALF ONE: after the approved correction, the system figure IS the
     // counted figure. Not close — equal.
-    expect(onHandMinor(ledger, CHICKEN)).toBe(57);
+    expect(onHandMinor(ledger, CHICKEN)).toBe(57 * KG);
   });
 
   it('accounts for every one of the 240kg — the physical-to-system proof', () => {
@@ -474,16 +476,16 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
     const atBranch = physicalStock(projection, CHICKEN, BRANCH);
     const stillOnTheVan = quantityInState(projection, 'in_transit', CHICKEN);
 
-    expect(onShelf).toBe(57); // and the count agrees, above
-    expect(atBranch).toBe(55);
+    expect(onShelf).toBe(57 * KG); // and the count agrees, above
+    expect(atBranch).toBe(55 * KG);
     expect(stillOnTheVan).toBe(0); // dispatched 60, received 55, shortfall 5 written out
 
-    const sold = 120;
-    const missing = 5; // never arrived at the branch — a valued, owned exception
-    const shrinkage = 3; // found by the count, approved, and corrected
+    const sold = 120 * KG;
+    const missing = 5 * KG; // never arrived at the branch — a valued, owned exception
+    const shrinkage = 3 * KG; // found by the count, approved, and corrected
 
     // 240 = 57 + 55 + 120 + 5 + 3. Every kilo is somewhere, or someone's problem.
-    expect(onShelf + atBranch + stillOnTheVan + sold + missing + shrinkage).toBe(240);
+    expect(onShelf + atBranch + stillOnTheVan + sold + missing + shrinkage).toBe(240 * KG);
 
     // And the ledger — the independent, append-only side of the same story — agrees
     // with what the shelf projection says is on the shelf.
@@ -500,7 +502,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
     const fromDatabase = mine
       .filter((p) => (p.event.payload as { batchId?: string }).batchId === GOOD_BATCH)
       .reduce((sum, p) => sum + ((p.event.payload as { deltaMinor?: number }).deltaMinor ?? 0), 0);
-    expect(fromDatabase).toBe(60); // before the count adjustment, which has not synced yet
+    expect(fromDatabase).toBe(60 * KG); // before the count adjustment, which has not synced yet
     expect(outbox.unsentCount()).toBeGreaterThan(0); // and its absence is VISIBLE (P-08)
   });
 
@@ -512,7 +514,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
         id: `grn-${RUN}-2`,
         type: 'GoodsReceived',
         at: '2026-08-05T05:00:00Z',
-        deltaMinor: 48,
+        deltaMinor: 48 * KG,
         batchId: BAD_BATCH,
         source: STORE,
         extra: { grnId: `GRN-${RUN}-2`, locationId: STORE, unitCostMinor: UNIT_COST.minor },
@@ -577,7 +579,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
           id: `sale-bad-${RUN}-${i}`,
           type: 'StockIssued',
           at: `2026-08-05T1${i}:00:00Z`,
-          deltaMinor: -4,
+          deltaMinor: -4 * KG,
           batchId: BAD_BATCH,
           source: STORE,
           extra: {
@@ -631,13 +633,13 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
           transferId: `TR-${RUN}-2`,
           fromLocationId: STORE,
           toLocationId: BRANCH,
-          lines: [{ productId: CHICKEN, batchId: BAD_BATCH, quantityMinor: 10, uom: 'kg', unitCost: UNIT_COST }],
+          lines: [{ productId: CHICKEN, batchId: BAD_BATCH, quantityMinor: 10 * KG, uom: 'kg', unitCost: UNIT_COST }],
           state: 'proposed',
           requestedBy: 'u-warehouse',
         },
         approval: { subjectRef: `TR-${RUN}-2`, status: 'approved', decidedBy: 'u-ops-manager' },
         available: [
-          { productId: CHICKEN, batchId: BAD_BATCH, quantityMinor: 36, state: 'on_hand', recalled: true },
+          { productId: CHICKEN, batchId: BAD_BATCH, quantityMinor: 36 * KG, state: 'on_hand', recalled: true },
         ],
         at: '2026-08-05T14:10:00Z',
       }),
@@ -645,8 +647,8 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
 
     // (c) The put-away. Quarantined stock never reaches a bin someone picks from.
     const bins: Bin[] = [
-      { binId: 'CH-01', storeId: STORE, capacityMinor: 300, pickable: true, zone: 'chilled' },
-      { binId: 'QU-01', storeId: STORE, capacityMinor: 200, pickable: false, zone: 'quarantine' },
+      { binId: 'CH-01', storeId: STORE, capacityMinor: 300 * KG, pickable: true, zone: 'chilled' },
+      { binId: 'QU-01', storeId: STORE, capacityMinor: 200 * KG, pickable: false, zone: 'quarantine' },
     ];
     expect(
       applyMovement({
@@ -656,7 +658,7 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
           storeId: STORE,
           productId: CHICKEN,
           batchId: BAD_BATCH,
-          quantityMinor: 36,
+          quantityMinor: 36 * KG,
           uom: 'kg',
           fromBinId: null,
           toBinId: 'CH-01',
@@ -674,8 +676,8 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
   it('traces the recalled batch: how much went out, to whom, and how much to pull off the shelf', () => {
     const trace = traceBatch(ledger, BAD_BATCH);
 
-    expect(trace.receivedQty).toBe(48);
-    expect(trace.issuedQty).toBe(12); // 3 sales × 4kg
+    expect(trace.receivedQty).toBe(48 * KG);
+    expect(trace.issuedQty).toBe(12 * KG); // 3 sales × 4kg
     expect(trace.inbound[0]?.ref).toBe(`GRN-${RUN}-2`);
     expect(trace.outbound.map((o) => o.ref)).toEqual([
       `S-BAD-${RUN}-1`,
@@ -688,13 +690,13 @@ describe.skipIf(!DATABASE_URL)('Stage 8 — physical-to-system and recall (real 
     expect(trace.outbound.map((o) => o.customerRef)).toEqual([null, 'c-loyalty-8891', null]);
 
     // 36kg is still in the building and must come off the shelf.
-    expect(trace.receivedQty - trace.issuedQty).toBe(36);
+    expect(trace.receivedQty - trace.issuedQty).toBe(36 * KG);
 
     // And the shop can say plainly why none of it is sellable.
     const held = projectStock([
-      { movementId: `q-${RUN}`, productId: CHICKEN, locationId: STORE, batchId: BAD_BATCH, from: null, to: 'quarantine', quantityMinor: 36, uom: 'kg', at: '2026-08-05T14:20:00Z' },
+      { movementId: `q-${RUN}`, productId: CHICKEN, locationId: STORE, batchId: BAD_BATCH, from: null, to: 'quarantine', quantityMinor: 36 * KG, uom: 'kg', at: '2026-08-05T14:20:00Z' },
     ]);
-    expect(explainAvailability(held, CHICKEN, STORE)).toBe('0 available — 36 quarantine not sellable');
+    expect(explainAvailability(held, CHICKEN, STORE)).toBe('0 available — 36000 quarantine not sellable'); // 36 kg, in grams (OB-31)
   });
 
   it('closes the recall only with evidence, and keeps the record and the events for ever', async () => {

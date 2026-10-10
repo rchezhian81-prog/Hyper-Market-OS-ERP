@@ -177,6 +177,7 @@ import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } fro
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project, projectBatches, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
+import { minorPerUnitOf } from '../../../packages/contracts/src/quantity';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
@@ -3501,7 +3502,7 @@ export function concessionAdapter(input: {
           ms.map((m): ValuationMovement => ({
             productId: m.productId, locationId: m.locationId,
             effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
+            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
             ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
           })),
           'INR',
@@ -4498,7 +4499,7 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
   const rows = weightedAverageValuation(
     moves.map((m): ValuationMovement => ({
       productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
+      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
     })),
     'INR',
@@ -4510,7 +4511,8 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
     valued += r.onHandMinor;
     value += r.value.minor;
   }
-  if (valued > 0) return Math.round(value / valued);
+  // OB-31: per WHOLE unit (per kg for a product counted in grams), like every other cost.
+  if (valued > 0) return Math.round((value * minorPerUnitOf(moves[0]?.uom ?? 'ea')) / valued);
   const costs = await allOf<{ productId: string; cost: Money }>(store, tenantId, streamName(STREAM.inventory, 'production'), 'ProductionCostSet');
   let latestCost: Money | undefined;
   for (const c of costs) if (c.productId === productId) latestCost = c.cost;
@@ -6136,6 +6138,14 @@ export function goodsReceiptAdapter(input: {
         ...movements.map((m) => movementEvent(tenantId, m)),
       ]);
     },
+    // OB-31 · SF-11: the master's base unit for a product (else the published pack's), and its pack levels.
+    productUom: async (tenantId, productId) => {
+      const master = await productMasterAdapter(input).product(tenantId, productId);
+      if (master?.baseUom !== undefined) return master.baseUom;
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      return pack?.snapshot.products.find((p) => p.productId === productId)?.baseUom;
+    },
+    packOf: (tenantId, productId) => packHierarchyAdapter(input).pack(tenantId, productId),
     // Batch 2: a quarantined line's physical return to the supplier — the receipt's next state, once per line.
     commitLineReturn: async (tenantId, record, key) => {
       await input.store.append(tenantId, grnStream, makeEvent({
@@ -6338,7 +6348,7 @@ export function inventoryAdapter(input: {
         movements.map((m): ValuationMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
         'INR',
@@ -6364,7 +6374,7 @@ export function inventoryAdapter(input: {
         movements.map((m): DatedMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
           occurredAt: m.occurredAt, batchId: m.batchId ?? null,
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
@@ -6397,7 +6407,7 @@ export function inventoryAdapter(input: {
             .map((m): ValuationMovement => ({
               productId: m.productId, locationId: m.locationId,
               effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
+              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
               ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
             })),
           'INR',
@@ -6628,6 +6638,13 @@ export function purchaseOrdersAdapter(input: {
       return latest?.blocked ?? false;
     },
 
+    // OB-31: the master's unit for a product (else the published pack's) — a PO line's quantity is in its smallest steps.
+    productUom: async (tenantId, productId) => {
+      const master = await productMasterAdapter(input).product(tenantId, productId);
+      if (master?.baseUom !== undefined) return master.baseUom;
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      return pack?.snapshot.products.find((p) => p.productId === productId)?.baseUom;
+    },
     // OB-37: the org node an order's "deliver to" names — the hierarchy's word, never the body's.
     orgLocation: async (tenantId, locationId) => {
       const node = (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).find((n) => n.nodeId === locationId);

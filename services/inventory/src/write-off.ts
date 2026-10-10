@@ -20,6 +20,7 @@ import { Ledger, InMemoryLedgerStore } from '../../../packages/ledger/src/ledger
 import { SyncOutbox } from '../../../packages/sync/src/outbox';
 import type { DecidedRequest } from '../../../packages/approvals/src/approvals';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
+import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
@@ -62,9 +63,10 @@ export type LossValue =
   | { readonly known: false };
 
 /** SF-05 — the value of `qty` units of a product at a location: quantity × head office's average cost there. */
-export async function lossValueOf(deps: Pick<WriteOffDeps, 'unitCostAt'>, tenantId: string, productId: string, locationId: string, qty: number): Promise<LossValue> {
+export async function lossValueOf(deps: Pick<WriteOffDeps, 'unitCostAt'>, tenantId: string, productId: string, locationId: string, qty: number, uom = 'ea'): Promise<LossValue> {
   const unitCostMinor = deps.unitCostAt === undefined ? undefined : await deps.unitCostAt(tenantId, locationId, productId);
-  return unitCostMinor === undefined ? { known: false } : { known: true, unitCostMinor, valueMinor: unitCostMinor * qty };
+  // OB-31: qty in smallest steps (grams for kg) at the per-whole-unit cost, rounded once.
+  return unitCostMinor === undefined ? { known: false } : { known: true, unitCostMinor, valueMinor: valueAtUnitCost(qty, uom, unitCostMinor) };
 }
 
 export interface WriteOffDeps {
@@ -174,7 +176,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
         // A figure the caller sends must be that figure (a screen showing the wrong value must not be approved on it). With
         // no cost held, the caller's figure is only a statement: the loss is governed as a big one (threshold 0 → evidence
         // and a second person), and the record says the cost was unknown.
-        const priced = await lossValueOf(deps, ctx.tenantId, b['productId'] as string, b['locationId'] as string, b['qty'] as number);
+        const priced = await lossValueOf(deps, ctx.tenantId, b['productId'] as string, b['locationId'] as string, b['qty'] as number, b['uom'] as string);
         if (priced.known && b['valueMinor'] !== undefined && b['valueMinor'] !== priced.valueMinor) {
           throw apiError(422, {
             code: 'write_off_value_is_the_stock_cost',
@@ -283,7 +285,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           });
         }
         await assertLocationInScope(ctx, locationId, deps.locationBranches); // PA-01-r1: another branch's cost is not read
-        const priced = await lossValueOf(deps, ctx.tenantId, productId, locationId, qty);
+        const priced = await lossValueOf(deps, ctx.tenantId, productId, locationId, qty, typeof ctx.query['uom'] === 'string' && ctx.query['uom'] !== '' ? ctx.query['uom'] : 'ea');
         const thresholdMinor = (await deps.writeOffThreshold(ctx.tenantId)) ?? DEFAULT_WRITE_OFF_THRESHOLD_MINOR;
         return {
           status: 200,
