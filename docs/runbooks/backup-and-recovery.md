@@ -54,6 +54,18 @@ node scripts/backup.mjs --out /path/to/backups
 It prints the file, the manifest, the checksum and the row counts. Keep the `.dump` and
 the `.manifest.json` **together** — one is useless without the other.
 
+**The dump and the manifest are one moment (audit GT-07, 10 Oct 2026).** The backup opens a
+read-only snapshot of the database, counts the rows and adds up the money *inside that
+snapshot*, and dumps *that same snapshot* (`pg_dump --snapshot`). Sales that are rung while the
+backup runs are in **neither** the file nor the manifest — the next backup takes them. The
+manifest's `consistency` block says exactly where the line was drawn:
+
+- `snapshotId` and `takenAt` — the moment the backup is of;
+- `latestEventSeq` / `latestEventAt` — the newest record inside it (the "latest durable
+  boundary": everything up to that record is in the backup, nothing after it).
+
+You can take a backup while the shop is trading. You do not need to stop the tills.
+
 The connection details come from the environment, never typed on the command line, so a
 password can never end up in shell history.
 
@@ -72,6 +84,11 @@ node scripts/restore.mjs \
   --manifest /path/to/backups/bk-XXXX.manifest.json \
   --target   "postgres://USER@HOST:PORT/sre_restore"
 ```
+
+The second line it prints names the snapshot and the newest record in the backup. If instead
+it prints `WARNING: this backup predates one-snapshot backups`, the file was taken by the old
+tool, whose counts could be from a slightly different moment — a small mismatch on such a file
+may be that, not lost data. Take a fresh backup with the current tool.
 
 **3. Read the last line.** Only this is a success:
 

@@ -43,6 +43,12 @@ if (actual.checksum !== manifest.checksum) {
   process.exit(1);
 }
 console.log(`  checksum verified (${actual.sizeBytes} bytes)`);
+// GT-07: the one moment the dump and its control totals were taken from, and the latest durable boundary in it.
+if (manifest.consistency?.method === 'exported_snapshot') {
+  console.log(`  snapshot ${manifest.consistency.snapshotId} taken ${manifest.consistency.takenAt} — contains every event up to seq ${manifest.consistency.latestEventSeq ?? 'none'} (newest ${manifest.consistency.latestEventAt ?? 'none'})`);
+} else {
+  console.log('  WARNING: this backup predates one-snapshot backups (GT-07) — its control totals may have been read at a different moment from the dump; a mismatch below may be that, not data loss.');
+}
 
 // 2. Never silently overwrite a database that has something in it.
 const existing = Number(
