@@ -228,12 +228,35 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     };
   });
   const only = deliveries.length === 1 ? deliveries[0]! : undefined;
+  // Round 4 acceptance (M09-FR-01 put-away): what is ON HAND at the back store and in no bin there yet — the phone's
+  // put-away list, from head office's ledger and bin register, so the person who puts away need not be the one who
+  // received (their sign-in reloads the page, and a list kept only in the receiving page's memory was gone). Per product,
+  // for products not tracked by batch (a batch-tracked product's batch is the receipt's, not derivable here — absent, said).
+  const backStore = settings?.warehouseId ?? undefined;
+  const goodsIn: { productId: string; batchId: null; quantityMinor: number; uom: string; state: 'on_hand'; expiry: null }[] = [];
+  if (backStore !== undefined && backStore !== null) {
+    const masterOf = new Map((await productMasterAdapter({ store, now }).products(tenantId)).map((p) => [p.productId, p] as const));
+    const backBins = new Set(bins.filter((b) => b.storeId === backStore).map((b) => b.binId));
+    const binned = new Map<string, number>();
+    for (const [key, qty] of Object.entries(contents)) {
+      const [binId, productId] = key.split('|');
+      if (binId !== undefined && productId !== undefined && backBins.has(binId)) binned.set(productId, (binned.get(productId) ?? 0) + qty);
+    }
+    for (const row of await inventoryAdapter({ store, now }).availability(tenantId)) {
+      const packed = published?.snapshot.products.find((p) => p.productId === row.productId);
+      if (row.locationId !== backStore || packed?.batchTracked === true) continue;
+      const loose = row.onHandMinor - (binned.get(row.productId) ?? 0);
+      const unit = unitCode(masterOf.get(row.productId)?.baseUom ?? packed?.baseUom) ?? 'ea';
+      if (loose > 0) goodsIn.push({ productId: row.productId, batchId: null, quantityMinor: loose, uom: unit, state: 'on_hand', expiry: null });
+    }
+  }
   sections['warehouse'] = {
     assignmentId: `warehouse-${storeId}`, workerId: '', storeId: settings?.warehouseId ?? storeId,
     bins: bins.map((b) => ({ binId: b.binId, storeId: b.storeId, capacityMinor: b.capacityMinor, pickable: b.pickable, ...(b.zone === undefined ? {} : { zone: b.zone }) })),
     contents,
     ...(published === undefined ? {} : { barcodes: published.snapshot.barcodes.map((b) => ({ barcode: b.code, productId: b.productId, level: 'unit' })) }),
     openDeliveries: deliveries,
+    goodsIn,
     // Exactly one delivery waiting: the phone receives against it directly; with several, the receiver chooses on the phone.
     ...(only === undefined ? {} : { grnId: only.grnId, poId: only.poId, ordered: only.ordered }),
   };

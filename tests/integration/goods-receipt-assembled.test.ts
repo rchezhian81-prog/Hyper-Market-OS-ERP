@@ -110,10 +110,12 @@ describe('the handheld\'s scans become ONE goods receipt against the order — n
     expect(g.captured.lines.map((l) => [l.lineId, l.productId, l.sellableMinor, l.quarantinedMinor, l.disposition, l.unitCost.minor])).toEqual([
       ['grn-1:1', 'p-rice', 4, 0, 'sellable', 100],
       ['grn-1:2', 'p-rice', 0, 1, 'quarantine', 100],
-      ['grn-1:3', 'p-dal', 5, 0, 'sellable', 0], // head office never bought dal — captured unvalued, and SAID
+      // Round 4 acceptance (M07-FR-02): dal was never bought before, but the scans are against the ISSUED order, so they are
+      // posted at the price that order agreed (₹1.00) — no longer unvalued. A scan against no order stays uncosted, and said.
+      ['grn-1:3', 'p-dal', 5, 0, 'sellable', 100],
     ]);
     expect(g.captured.discrepancies.map((d) => [d.lineId, d.kind, d.quantityMinor])).toEqual([['grn-1:2', 'short', 5], ['grn-1:2', 'damaged', 1]]);
-    expect(g.governanceFlags).toEqual(['cost_unknown']);
+    expect(g.governanceFlags).toEqual([]);
     expect(g.assembledFrom).toEqual({
       scanCount: 6, commandIds: ['c1', 'c2', 'c3', 'c4', 'd1', 'c5'], scannedBy: ['u-worker'], completedBy: 'u-worker', completedAt: AT,
       onHandByLine: { 'grn-1:1': 4, 'grn-1:2': 0, 'grn-1:3': 5 },
