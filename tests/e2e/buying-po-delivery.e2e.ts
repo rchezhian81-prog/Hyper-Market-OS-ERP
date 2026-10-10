@@ -128,6 +128,7 @@ describe.skipIf(!HAVE_BROWSER)('buyer PO-propose delivery, end to end in a real 
   /** Add one order line: supplier, item, quantity and agreed unit price (in rupees). */
   const addLine = async (page: import('playwright-core').Page, supplier: string, item: string, qty: string, rupees: string) => {
     await page.fill('#po-supplier', supplier);
+    await page.fill('#po-store', 'store-1'); // OB-37: the store the order is delivered to
     await page.fill('#po-product', item);
     await page.fill('#po-qty', qty);
     await page.fill('#po-cost', rupees);
@@ -160,6 +161,7 @@ describe.skipIf(!HAVE_BROWSER)('buyer PO-propose delivery, end to end in a real 
       expect(orderReq!.idempotencyKey).toBe(poId);
       const body = orderReq!.body as { supplierId?: string; lines?: { productId?: string; orderedQty?: number; unitCost?: { minor?: number; currency?: string } }[] };
       expect(body.supplierId).toBe('sup-1');
+      expect((body as { deliverToLocationId?: string }).deliverToLocationId).toBe('store-1'); // OB-37
       expect(body.lines).toEqual([{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5000, currency: 'INR' } }]);
       // No approver rides with a proposal — issuing is a separate second person's act (§28).
       expect(JSON.stringify(body)).not.toContain('approv');

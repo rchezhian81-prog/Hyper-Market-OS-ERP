@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { aBranch } from '../support/a-branch';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
-import { approvedSuppliers } from '../support/approved-supplier';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { withApprovals } from '../support/refund-approval';
 
 // M34-FR-01 — the domain audit trail is now PRODUCED, durable and verifiable, not just readable over a
@@ -188,9 +188,10 @@ describe('the audit trail records a purchase — a placed order (M34 slice 7, ha
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner'); // holds purchase.order.propose + audit.retention.read
     await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
+    await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
 
     const r = await placePo(h, 'u-owner', 'PO-1', {
-      supplierId: 'sup-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5_000, currency: 'INR' } }],
+      supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5_000, currency: 'INR' } }],
     });
     expect(r.status).toBe(201);
 

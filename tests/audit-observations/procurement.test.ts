@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness } from '../support/api-harness';
-import { approvedSuppliers } from '../support/approved-supplier';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { createBuyingSession, SUPPLIER_INVOICE_CAPTURED } from '../../apps/web-erp/src/buying-session';
 import { bootBuying } from '../../apps/web-erp/src/browser-entry';
 import { SyncOutbox } from '../../packages/sync/src/outbox';
@@ -36,10 +36,11 @@ describe('audit observations: disconnected procurement flow', () => {
     const h = apiHarness();
     await h.seedOwner(TENANT, 'owner');
     await approvedSuppliers(h, TENANT, 'supplier-audit'); // OB-32: an order needs an approved supplier
+    await deliveryPlaces(h, TENANT, 'wh-audit'); // OB-37: an order names the store it is delivered to
     await h.provisionRole(TENANT, 'buyer', 'store_manager');
     const proposed = await h.request({ method: 'POST', path: '/v1/purchase/orders/PO-AUDIT',
       tenantId: TENANT, userId: 'buyer', idempotencyKey: 'po-propose',
-      body: { supplierId: 'supplier-audit', lines: [{ productId: 'p-audit', orderedQty: 10,
+      body: { supplierId: 'supplier-audit', deliverToLocationId: 'wh-audit', lines: [{ productId: 'p-audit', orderedQty: 10,
         unitCost: { minor: 100, currency: 'INR' } }] } });
     expect(proposed.status).toBe(201);
     const issued = await h.request({ method: 'POST', path: '/v1/purchase/orders/PO-AUDIT/approval',
@@ -84,6 +85,7 @@ describe('audit observations: disconnected procurement flow', () => {
     const h = apiHarness();
     await h.seedOwner(TENANT, 'owner');
     await approvedSuppliers(h, TENANT, 'supplier-audit'); // OB-32: an order needs an approved supplier
+    await deliveryPlaces(h, TENANT, 'wh-audit'); // OB-37: an order names the store it is delivered to
     await h.provisionRole(TENANT, 'receiver', 'store_manager');
     await h.provisionRole(TENANT, 'supervisor', 'store_manager');
     // The tenant's own tolerance (5%) — set by the owner, read by the route; the receiver's body cannot change it.

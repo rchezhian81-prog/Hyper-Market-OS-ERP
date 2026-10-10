@@ -169,7 +169,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     await ok(call('POST', `/v1/purchase/suppliers/${SUPPLIER}/approval`, OWNER, { reason: 'GST certificate and FSSAI licence checked' }, 'sup-approve'), 200);
 
     // ── 2. The order: proposed by the buyer, ISSUED by the owner (M06-FR-02). Until issued nothing is committed.
-    const proposed = await ok(call('POST', `/v1/purchase/orders/${PO}`, BUYER, { supplierId: SUPPLIER, lines: [{ productId: PRODUCT, orderedQty: ORDERED, unitCost }] }, `po-${PO}`), 201);
+    const proposed = await ok(call('POST', `/v1/purchase/orders/${PO}`, BUYER, { supplierId: SUPPLIER, deliverToLocationId: STORE, lines: [{ productId: PRODUCT, orderedQty: ORDERED, unitCost }] }, `po-${PO}`), 201);
     expect(proposed['order']).toMatchObject({ status: 'proposed', requisitionedBy: BUYER, totalMinor: ORDERED * COST });
     expect(codeOf(await call('POST', `/v1/purchase/orders/${PO}/approval`, BUYER, { reason: 'mine' }, 'po-approve-self'))).toBeDefined(); // refused: the requisitioner cannot issue
     const issued = await ok(call('POST', `/v1/purchase/orders/${PO}/approval`, OWNER, { reason: 'within the month budget' }, 'po-approve'), 200);

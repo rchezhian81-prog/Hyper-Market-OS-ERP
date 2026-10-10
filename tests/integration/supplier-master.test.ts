@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
-import { approvedSuppliers } from '../support/approved-supplier';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { approvedRequestId, askForApproval, decide, sentWithApproval } from '../support/approval-request';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import type { StoredMatch } from '../../services/purchase/src/index';
@@ -77,8 +77,9 @@ async function seeded(): Promise<ApiHarness> {
   await h.provisionRole(A, 'u-cash', 'cashier');
   await h.seedOwner(B, 'u-owner-b');
   await approvedSuppliers(h, A, 's-1'); // OB-32: an order needs an approved supplier
+  await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
   expect((await post(h, '/v1/inventory/receipt-policy', 'u-owner', { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }, 'pol')).status).toBe(201);
-  expect((await post(h, '/v1/purchase/orders/po-1', 'u-buyer', { supplierId: 's-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'p2', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-1')).status).toBe(201);
+  expect((await post(h, '/v1/purchase/orders/po-1', 'u-buyer', { supplierId: 's-1', deliverToLocationId: 'store-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'p2', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-1')).status).toBe(201);
   expect((await post(h, '/v1/purchase/orders/po-1/approval', 'u-owner', { reason: 'fixture' }, 'po-1-approve')).status).toBe(200);
   expect((await post(h, '/v1/inventory/goods-receipt/grn-1', 'u-recv', { warehouseId: 'store-1', receivedOnDate: '2026-09-30', currency: 'INR', poId: 'po-1', lines: [rl('L1', 'p1', 10, 10, 500), rl('L2', 'p2', 2, 2, 1000), rl('L3', 'p2', 2, 2, 1000, { condition: 'damaged' })] }, 'grn-1')).status).toBe(201);
   expect((await capture(h, 'inv-1', 'cap-inv-1')).status).toBe(201);

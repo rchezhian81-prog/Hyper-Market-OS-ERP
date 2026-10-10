@@ -122,7 +122,7 @@ export function syncedGoodsReceiptRoutes(deps: SyncedGoodsReceiptDeps): readonly
         // What was ORDERED — from the purchase order head office holds, never the body (SP-6 · F01). No order → the delivery
         // is received as-is (ordered = counted) and the record says there is no order behind it (the buyer chases it); an
         // unknown or not-yet-issued order is said too, and the receipt folds into nothing.
-        const order = await orderForReceipt(deps, ctx.tenantId, r.poId, flags);
+        const order = await orderForReceipt(deps, ctx.tenantId, r.poId, flags, r.warehouseId);
 
         // The product master's rules, the tenant's policy and the cloud's own cost — never the body (F03/F07). Unknown
         // is SAID, then the safe fallback: untracked, the default policy, unvalued (the valuation reports the units as

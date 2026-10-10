@@ -4757,7 +4757,7 @@ export function buyingGaps(data: BuyingData | undefined): readonly BuyingGap[] {
  */
 export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
   return {
-    post: async ({ poId, supplierId, lines }): Promise<ProposePurchaseOrderOutcome> => {
+    post: async ({ poId, supplierId, deliverToLocationId, lines }): Promise<ProposePurchaseOrderOutcome> => {
       const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
       if (fetchFn === undefined) return { proposed: false, reason: 'no connection to head office — the order was not raised' };
       try {
@@ -4767,7 +4767,7 @@ export function openProposePurchaseOrderPort(): ProposePurchaseOrderPort {
           credentials: 'same-origin',
           // The Money-shaped lines are exactly what the route reads ({ productId, orderedQty, unitCost: { minor, currency } });
           // the requisitioner is the authenticated caller, so no buyer name is sent, and no approver rides along.
-          body: JSON.stringify({ supplierId, lines }),
+          body: JSON.stringify({ supplierId, deliverToLocationId, lines }),
         });
         const body = (await res.json().catch(() => ({}))) as {
           order?: { requisitionedBy?: string; totalMinor?: number };

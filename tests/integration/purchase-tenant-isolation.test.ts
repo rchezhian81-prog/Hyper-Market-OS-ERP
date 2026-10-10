@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
-import { approvedSuppliers } from '../support/approved-supplier';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 
 // Purchase-order per-tenant isolation, end to end through the real API (M06-FR-01/02/04, API-03, P-04,
 // OB-01 tenant isolation). purchase-orders.test.ts proves the lifecycle, §28 second-person approval,
@@ -12,7 +12,7 @@ import { approvedSuppliers } from '../support/approved-supplier';
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const cost = (minor: number) => ({ minor, currency: 'INR' });
-const poBody = () => ({ supplierId: 'sup-1', lines: [
+const poBody = () => ({ supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: [
   { productId: 'p1', orderedQty: 10, unitCost: cost(5000) },
   { productId: 'p2', orderedQty: 4, unitCost: cost(2500) },
 ] }); // total 60000
@@ -38,9 +38,11 @@ describe('purchase orders are per-tenant isolated: one shop never sees or moves 
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
+    await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
     await h.provisionRole(A, 'u-mgr', 'store_manager'); // proposes; the owner approves (§28)
     await h.seedOwner(B, 'u-owner-b');
     await approvedSuppliers(h, B, 'sup-1'); // OB-32: an order needs an approved supplier
+    await deliveryPlaces(h, B, 'store-1'); // OB-37: an order names the store it is delivered to
 
     // Tenant A issues a ₹600 PO under two people.
     expect((await propose(h, 'u-mgr', A, 'po-1', 'a-k1')).status).toBe(201);

@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
-import { approvedSuppliers } from '../support/approved-supplier';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -43,6 +43,7 @@ function lab(h: ApiHarness, t: string) {
     seed: async (poId: string, ordered: number) => {
       await h.seedOwner(t, 'u-owner');
       await approvedSuppliers(h, t, 'sup-1'); // OB-32: an order needs an approved supplier
+      await deliveryPlaces(h, t, 'wh1'); // OB-37: an order names the store it is delivered to
       await h.provisionRole(t, 'u-mgr', 'store_manager');
       await h.store.append(t, STREAM.catalogue, makeEvent({
         id: `pack-${t}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${t}-v1`, source: 'test/catalogue',
@@ -50,7 +51,7 @@ function lab(h: ApiHarness, t: string) {
           products: [{ productId: 'p1', sku: 'p1', name: 'Toor dal 1kg', unitPriceMinor: 16_000, taxBps: 0, status: 'active', uom: 'each', batchTracked: false, handling: 'ambient' }] } },
       }));
       expect((await req('POST', '/v1/inventory/receipt-policy', 'u-owner', 'k-policy', POLICY)).status).toBe(201);
-      expect((await req('POST', `/v1/purchase/orders/${poId}`, 'u-mgr', `po-${poId}`, { supplierId: 'sup-1', lines: [{ productId: 'p1', orderedQty: ordered, unitCost: cost(5000) }] })).status).toBe(201);
+      expect((await req('POST', `/v1/purchase/orders/${poId}`, 'u-mgr', `po-${poId}`, { supplierId: 'sup-1', deliverToLocationId: 'wh1', lines: [{ productId: 'p1', orderedQty: ordered, unitCost: cost(5000) }] })).status).toBe(201);
       expect((await req('POST', `/v1/purchase/orders/${poId}/approval`, 'u-owner', `po-${poId}-ok`, { reason: 'within budget' })).status).toBe(200);
     },
     receive: (grnId: string, poId: string, counted: number, key = `k-${grnId}`) => req('POST', `/v1/inventory/goods-receipt/${grnId}`, 'u-mgr', key, {

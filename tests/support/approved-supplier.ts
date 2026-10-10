@@ -26,3 +26,20 @@ export async function approvedSuppliers(h: ApiHarness, tenantId: string, ...supp
     await approveSupplierWith((method, path, userId, body, idempotencyKey) => h.request({ method, path, userId, tenantId, body, idempotencyKey }), supplierId);
   }
 }
+
+/**
+ * OB-37 "A" (owner, 10 Oct 2026): every purchase order names the store it is delivered to — a place in head office's org
+ * hierarchy — and a receipt against it is booked at that store or a place under it. A test shop with no hierarchy gets one
+ * here: a company, the store as a branch under it, and each of `under` as a warehouse inside that store. Idempotent.
+ */
+export async function deliveryPlaces(h: ApiHarness, tenantId: string, storeId: string, ...under: string[]): Promise<void> {
+  const setup = 'u-org-setup';
+  await h.provisionOwner(tenantId, setup);
+  const node = async (id: string, body: Record<string, unknown>): Promise<void> => {
+    const res = await h.request({ method: 'POST', path: `/v1/org/nodes/${encodeURIComponent(id)}`, userId: setup, tenantId, idempotencyKey: `seed-org-${id}`, body });
+    if (res.status >= 300) throw new Error(`could not set up ${id}: ${res.status} ${JSON.stringify(res.body)}`);
+  };
+  await node('C-FIXTURE', { kind: 'company', name: 'Synthetic Retail' });
+  await node(storeId, { kind: 'branch', name: `Store ${storeId}`, parentId: 'C-FIXTURE', companyId: 'C-FIXTURE' });
+  for (const id of under) await node(id, { kind: 'warehouse', name: `Back store ${id}`, parentId: storeId, companyId: 'C-FIXTURE' });
+}

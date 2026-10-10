@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
-import { approvedSuppliers } from '../support/approved-supplier';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
@@ -103,6 +103,7 @@ async function cloud(): Promise<{
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
+  await deliveryPlaces(h, A, 'wh-store'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-mgr', 'store_manager');
   await h.provisionRole(A, 'u-box', 'cashier');
   await h.store.append(A, STREAM.catalogue, makeEvent({
@@ -126,7 +127,7 @@ async function cloud(): Promise<{
   // The order the manager's delivery is booked in against — ISSUED by a second person, so the receipt folds into it (SP-6 · F01).
   expect((await h.request({
     method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-po-1',
-    body: { supplierId: 'sup-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5000, currency: 'INR' } }] },
+    body: { supplierId: 'sup-1', deliverToLocationId: 'wh-store', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5000, currency: 'INR' } }] },
   })).status).toBe(201);
   expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-1/approval', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-po-1-ok', body: { reason: 'within budget' } })).status).toBe(200);
   const dir = await tempDir('sre-mgr-receipts-cloud-');

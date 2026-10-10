@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
-import { approvedSuppliers } from '../support/approved-supplier';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 
 // M06-FR-01/02/04: the purchase-order lifecycle on the live API — buying as a controlled, approved
 // commitment. A PO is PROPOSED by a buyer (the requisitioner is the authenticated user), then ISSUED
@@ -48,12 +48,13 @@ const openMinor = (res: { body: unknown }): number | undefined => openOf(res)?.t
 const fullyReceived = (res: { body: unknown }): boolean | undefined =>
   (res.body as { openCommitment?: { fullyReceived?: boolean } | null }).openCommitment?.fullyReceived;
 
-const body = (extra: Record<string, unknown> = {}) => ({ supplierId: 'sup-1', lines: lines(), ...extra });
+const body = (extra: Record<string, unknown> = {}) => ({ supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: lines(), ...extra });
 
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');            // holds propose + approve + supplier.block
   await approvedSuppliers(h, A, 'sup-1', 'sup-9'); // OB-32: an order needs an approved supplier
+  await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // holds propose + supplier.block, NOT approve
   await h.provisionRole(A, 'u-cash', 'cashier');       // holds neither
   return h;
@@ -156,7 +157,7 @@ describe('purchase-order lifecycle (M06-FR-01/02/04)', () => {
     // Approving needs a reason for the audit trail.
     expect(codeOf(await approve(h, 'u-owner', 'po-5', '', 'k4'))).toBe('reason_required');
     // A body with no lines is not readable as a PO.
-    expect(codeOf(await propose(h, 'u-mgr', 'po-6', { supplierId: 'sup-1', lines: [] }, 'k5'))).toBe('not_readable_as_a_purchase_order');
+    expect(codeOf(await propose(h, 'u-mgr', 'po-6', { supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: [] }, 'k5'))).toBe('not_readable_as_a_purchase_order');
     // The review list surfaces the still-awaiting-approval PO first (control by exception).
     const l = await listPos(h, 'u-owner');
     const listed = l.body as { orders: { status: string }[]; awaitingApprovalCount: number };

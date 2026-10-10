@@ -6078,7 +6078,10 @@ export function goodsReceiptAdapter(input: {
       if (po === undefined) return undefined;
       const orderedByProduct: Record<string, number> = {};
       for (const line of po.lines) orderedByProduct[line.productId] = (orderedByProduct[line.productId] ?? 0) + line.orderedQty;
-      return { status: po.status, orderedByProduct, receivedByProduct: po.receivedByProduct, cancelledByProduct: po.cancelledByProduct };
+      return {
+        status: po.status, orderedByProduct, receivedByProduct: po.receivedByProduct, cancelledByProduct: po.cancelledByProduct,
+        ...(po.deliverToLocationId === undefined ? {} : { deliverToLocationId: po.deliverToLocationId }),
+      };
     },
     orderVersion: (tenantId, poId) => input.store.guardVersion(tenantId, purchaseOrderGuardKey(poId)),
     // SF-02: under the order's guard when the receipt posts against it — two receipts never spend the same remainder.
@@ -6625,6 +6628,11 @@ export function purchaseOrdersAdapter(input: {
       return latest?.blocked ?? false;
     },
 
+    // OB-37: the org node an order's "deliver to" names — the hierarchy's word, never the body's.
+    orgLocation: async (tenantId, locationId) => {
+      const node = (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).find((n) => n.nodeId === locationId);
+      return node === undefined ? undefined : { kind: node.kind, status: node.status };
+    },
     // OB-32 "A": the supplier master's word on this supplier — active (approved), proposed (waiting), or unknown.
     supplierStatus: async (tenantId, supplierId) => (await foldSupplierRecords(input.store, tenantId)).get(supplierId)?.status,
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
-import { approvedSuppliers } from '../support/approved-supplier';
+import { approvedSuppliers, deliveryPlaces } from '../support/approved-supplier';
 import { sentWithApproval } from '../support/approval-request';
 import { STREAM } from '../../services/api/src/adapters';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
@@ -71,6 +71,7 @@ async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await approvedSuppliers(h, A, 's-1'); // OB-32: an order needs an approved supplier
+  await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-buyer', 'store_manager');   // captures invoices
   await h.provisionRole(A, 'u-checker', 'store_manager'); // the second person on the invoice
   await h.provisionRole(A, 'u-recv', 'store_manager');    // receives deliveries
@@ -79,7 +80,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.provisionRole(A, 'u-cash', 'cashier');          // no right at all
   await h.seedOwner(B, 'u-owner-b');
   expect((await post(h, '/v1/inventory/receipt-policy', 'u-owner', { excessToleranceBp: 0, shortageToleranceBp: 0, nearExpiryDays: 7 }, 'pol')).status).toBe(201);
-  expect((await post(h, '/v1/purchase/orders/po-1', 'u-buyer', { supplierId: 's-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'p2', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-1')).status).toBe(201);
+  expect((await post(h, '/v1/purchase/orders/po-1', 'u-buyer', { supplierId: 's-1', deliverToLocationId: 'store-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 500, currency: 'INR' } }, { productId: 'p2', orderedQty: 4, unitCost: { minor: 1000, currency: 'INR' } }] }, 'po-1')).status).toBe(201);
   expect((await post(h, '/v1/purchase/orders/po-1/approval', 'u-owner', { reason: 'fixture' }, 'po-1-approve')).status).toBe(200);
   const grn = await post(h, '/v1/inventory/goods-receipt/grn-1', 'u-recv', receipt([
     rl('L1', 'p1', 10, 10, 500),
