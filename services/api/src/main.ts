@@ -192,6 +192,7 @@ import { supplierInvoiceTemplate, productTemplate } from '../../purchase/src/imp
 import { engineCategory } from '../../catalogue/src/categories';
 import { categoryRoutes } from '../../catalogue/src/categories';
 import { storePackRoutes } from '../../platform/src/store-packs';
+import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
 import { buildStorePackSections } from './store-pack-builder';
 import { dataExportRoutes, buildExportDomains, type ExportSale, type ExportJournal } from '../../purchase/src/data-export';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
@@ -227,7 +228,9 @@ import { customerDuplicatesRoutes } from '../../customer/src/duplicates';
 import { campaignRoutes } from '../../customer/src/campaigns';
 import { campaignSendRoutes, campaignSendUnwired } from '../../customer/src/campaign-send';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
-import { notificationQueueRoutes } from '../../customer/src/notification-queue';
+import { notificationQueueRoutes, drainNotificationQueue } from '../../customer/src/notification-queue';
+import { startNotificationWorker, type NotificationWorker } from '../../customer/src/notification-worker';
+import { startOpsAlertWorker, type OpsAlertWorker } from '../../platform/src/ops-alert-worker';
 import { NotificationQueue, type NotificationTransport } from '../../../packages/notifications/src/index';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { drReadinessRoutes } from '../../platform/src/dr-readiness';
@@ -261,7 +264,7 @@ import { aiRoutes } from '../../ai/src/index';
 import { modelGatewayRoutes } from '../../ai/src/model-gateway';
 import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import {
-  STREAM, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, storeStockFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter,
+  STREAM, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, storeStockFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 import type { DependencyProbe } from '../../platform/src/index';
@@ -442,7 +445,7 @@ export function buildSurface(deps: {
   const loyaltyWallets = store === undefined ? undefined : loyaltyWalletsAdapter({ store, now, rule: loyaltyRule });
   // The named-report producers over governed source records (EA-06) — shared by the report route and the governed drill
   // (EA-05), so a drill reaches exactly the records the report's figure was summed from.
-  const producers = store === undefined ? undefined : reportProducers({ store, now, calendar: shopCalendar, loyaltyRule });
+  const producers = store === undefined ? undefined : reportProducers({ store, now, calendar: shopCalendar, loyaltyRule, storeSync: (t) => storeSyncView(store, t, now) });
   const withBriefDeps = (d: ScheduledBriefDeps): ScheduledBriefDeps => { deps.onBriefDeps?.(d); return d; };
   // The durable domain audit trail (M34-FR-01): one sealed chain per tenant. Producers (slice 1: the
   // credential lifecycle) seal into it; the stored read routes search / reconstruct / verify it. No
@@ -859,6 +862,16 @@ export function buildSurface(deps: {
         settings: (tt, sid) => storeSettingsAdapter({ store }).settings(tt, sid),
         storeName: async (tt, sid) => (await orgStructureAdapter({ store, now }).nodes(tt)).find((n) => n.nodeId === sid)?.name,
       }, t, storeId),
+    }),
+    // EA-01 (round 4): each store computer reports how far each of its queues has synced (its own store only); the
+    // owner's figures take their freshness from it, and the sync page lists every branch × queue, stale when silent.
+    ...syncWatermarkRoutes(store === undefined ? {
+      now, stores: async () => new Map(), branchScopeOf: async () => undefined, records: async () => [], record: async () => {},
+    } : {
+      now,
+      stores: async (t) => (await storeSyncView(store, t, now)).branches,
+      branchScopeOf: (t, u, p) => branchScopeHeldBy(store, t, u, p),
+      ...syncWatermarksAdapter({ store }),
     }),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),
@@ -1434,6 +1447,9 @@ export function buildSurface(deps: {
           calendar: shopCalendar,
           // Each named report by its own producer over governed source records (EA-06) — never the dashboard's figures.
           produce: producers!.produce,
+          // EA-01 (round 4): each store's sales are as at its last COMPLETE sync — the later of the newest sale held and
+          // its store computer's own reported watermark; a branch never heard from is listed, stale.
+          storeSync: (t) => storeSyncView(store, t, now),
         })),
     // Company-wide consolidation (M01/M29/D13, owner decision) — branches POST contributions + memberships,
     // the head office GETs the roll-up for a node/family/period. Idempotent by revision, effective-dated,
@@ -1667,6 +1683,10 @@ export interface RunningApi {
   /** The port actually bound — the configured one, or the ephemeral one the kernel chose for `PORT=0`. */
   readonly port: number;
   readonly routeCount: number;
+  /** PA-08: the notification sender running on its own timer — present only when a message provider is configured. */
+  readonly notificationWorker?: NotificationWorker;
+  /** PA-12: the ops-alert worker — raises, escalates and delivers alerts to their named people on its own timer. */
+  readonly opsAlertWorker?: OpsAlertWorker;
   /** Stops accepting, lets in-flight requests finish, then closes the database pool. */
   readonly stop: () => Promise<void>;
 }
@@ -1678,10 +1698,24 @@ export interface RunningApi {
  * can start the SAME service on an ephemeral port against a real database and stop it, instead of a copy that could
  * drift from what the container runs.
  */
+/**
+ * The outbound providers a deployment plugs in (PA-08). None is configured by `main()` today: every message provider is
+ * an external gate (credentials, certification; the SMS provider is release R4, OB-29). A provider adapter, once
+ * certified, is handed in here — and the notification worker starts with it. Tests hand in the recording adapter.
+ */
+export interface ApiProviders {
+  readonly notificationTransport?: NotificationTransport;
+  /** How often the notification worker passes over every shop (default 30 s). */
+  readonly notificationWorkerIntervalMs?: number;
+  /** PA-12: how often the ops-alert worker passes over every shop with alert rules (default 60 s). */
+  readonly opsAlertWorkerIntervalMs?: number;
+}
+
 export async function startApi(
   env: Readonly<Record<string, string | undefined>> = process.env,
   out: (text: string) => void = (text) => { process.stdout.write(text); },
   err: (text: string) => void = (text) => { process.stderr.write(text); },
+  providers: ApiProviders = {},
 ): Promise<RunningApi | undefined> {
   // 1 — Configuration. Every problem at once, then stop.
   const config = loadConfig(CLOUD_API_CONFIG, env);
@@ -1799,6 +1833,7 @@ export async function startApi(
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
     revocations,
+    ...(providers.notificationTransport === undefined ? {} : { notificationTransport: providers.notificationTransport }),
     ...(identityDirectory === undefined ? {} : { identityDirectory }),
     ...(settings['IDP_OIDC_TENANT_ID'] === undefined ? {} : { identityDirectoryTenantId: settings['IDP_OIDC_TENANT_ID'] }),
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
@@ -1933,11 +1968,53 @@ export async function startApi(
   });
   if (stopBriefWorker !== undefined) out(`brief worker: briefing ${briefTenants.length} shop(s) every ${everySeconds}s\n`);
 
+  // PA-08 round 4: the notification sender runs HERE, on its own timer, for every registered shop — the queue no longer
+  // waits for somebody to press "drain". With no provider configured there is nothing to send through: said plainly,
+  // and every message stays queued and visible until one is.
+  // The shops the background workers serve, named by the operator (`WORKER_TENANT_IDS`, comma-separated) — like the brief
+  // worker's list. None named → the workers run but serve no shop, and say so.
+  const workerTenants = (env['WORKER_TENANT_IDS'] ?? '').split(',').map((t) => t.trim()).filter((t) => t !== '');
+  if (workerTenants.length === 0) out('workers: no shop named in WORKER_TENANT_IDS — notifications and alerts are not sent by themselves\n');
+  let notificationWorker: NotificationWorker | undefined;
+  const transport = providers.notificationTransport;
+  if (transport === undefined) {
+    out('notifications: no message provider is configured — messages stay queued (visible) until one is certified and configured\n');
+  } else {
+    const queueDeps = notificationQueueAdapter({ store, now, transport });
+    notificationWorker = startNotificationWorker({
+      // Only the shops an operator names (head office never looks across shops — OB-21; the '*' platform scope is for
+      // operator tools run by a named person, never the API).
+      tenants: async () => workerTenants,
+      drain: (tenantId) => drainNotificationQueue(queueDeps, tenantId, 'system:notification-worker'),
+      intervalMs: providers.notificationWorkerIntervalMs ?? 30_000,
+      now,
+      say: (line) => { out(`${line}\n`); },
+    });
+    out(`notifications: the sender runs every ${Math.round((providers.notificationWorkerIntervalMs ?? 30_000) / 1000)} s through ${transport.name}\n`);
+  }
+
+  // PA-12 round 4: alerts reach their named people by themselves — a failed or missed backup, a store whose sync has
+  // stopped or whose queue holds refused items is raised to the owner the rules name, escalated when nobody answers,
+  // and delivered into that person's inbox (and to their phone once a message provider is configured). Always on:
+  // the inbox needs no provider.
+  const opsAlertWorker = startOpsAlertWorker({
+    tenants: async () => workerTenants,
+    deps: observedHealthAdapter({ store, now }),
+    ...(transport === undefined ? {} : { transport }),
+    intervalMs: providers.opsAlertWorkerIntervalMs ?? 60_000,
+    now,
+    say: (line) => { out(`${line}\n`); },
+  });
+
   return {
     port,
     routeCount,
+    ...(notificationWorker === undefined ? {} : { notificationWorker }),
+    opsAlertWorker,
     stop: async () => {
       stopBriefWorker?.();
+      await opsAlertWorker.stop();
+      if (notificationWorker !== undefined) await notificationWorker.stop();
       await server.stop();
       await db.end();
     },

@@ -37,6 +37,7 @@ import { SyncAgent } from '../../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
 import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
+import { httpSyncWatermarkReporter, type SyncWatermarkReport } from '../../../edge/sync-agent/src/sync-watermark-report';
 import { httpStorePackSource, httpHeldVersionsReporter, pullStorePack, type StorePackPullOutcome, type StorePackPullStatus } from '../../../edge/sync-agent/src/store-pack-feed';
 import { readHeldStorePack, writeHeldStorePack, packPayloadOf } from './store-pack-held';
 import type { StorePackEnvelope } from '../../../services/platform/src/store-packs';
@@ -368,6 +369,11 @@ export interface EdgeProcess {
   readonly storeSetup: () => StoreSetupStatus;
   /** DF-3-b-2: tell head office which catalogue and setup this box holds (when changed). Null unless taking setup from head office. */
   readonly reportHeldVersions: (() => Promise<boolean>) | null;
+  /**
+   * EA-01: tell head office each queue's last complete sync (its watermark), so the owner's figures say how fresh
+   * they really are. Null without a cloud or without EDGE_STORE_ID. Rides the sync loop after the drains.
+   */
+  readonly reportSyncWatermarks?: (() => Promise<boolean>) | null;
   /**
    * Run exactly one drain-and-settle of both queues (sales then refunds), returning what moved.
    * Null when no cloud is configured — there is nothing to drain to. The poll loop calls the same
@@ -1965,6 +1971,24 @@ export async function startEdge(
     return ok;
   };
 
+  // EA-01: after each pass, each queue's watermark goes to head office — the owner's freshness, from the box's own word.
+  const watermarkStoreId = (settings['EDGE_STORE_ID'] ?? '').trim() || undefined;
+  const reportWatermarks = watermarkStoreId === undefined ? null : httpSyncWatermarkReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: watermarkStoreId, fetch: globalThis.fetch });
+  const reportSyncWatermarks = reportWatermarks === null ? null : async (): Promise<boolean> => {
+    const named: readonly (readonly [string, SyncAgent])[] = [
+      ['sales', agent], ['refunds', returnsAgent], ['completions', completionsAgent], ['day_close', dayCloseAgent],
+      ['concession_tags', concessionTagsAgent], ['device_events', deviceEventsAgent], ['till_cash', tillCashAgent],
+    ];
+    const report: SyncWatermarkReport = {
+      observedAt: new Date().toISOString(),
+      domains: named.map(([domain, a]) => {
+        const h = a.health();
+        return { domain, completeThrough: h.completeThrough, unsent: h.unsentCount, deadLettered: h.deadLetterCount };
+      }),
+    };
+    return reportWatermarks(report);
+  };
+
   let stopping = false;
   let quietPasses = 0;
   let timer: NodeJS.Timeout | undefined;
@@ -2065,6 +2089,9 @@ export async function startEdge(
       // and keep the loop alive, because a dead sync loop is a shop that silently stops syncing.
       quietPasses += 1;
       say(`sync pass failed: ${e instanceof Error ? e.message : String(e)}. Everything is still queued.`);
+    }
+    if (reportSyncWatermarks !== null) {
+      try { await reportSyncWatermarks(); } catch { /* retried next pass; head office's last report simply ages, and the owner sees it stale */ }
     }
     // The inbound refresh rides the SAME loop, AFTER the drain and just as far from the sale path
     // (hard rule #1). It never throws — an unreachable cloud is a normal answer that keeps the last
@@ -2171,6 +2198,7 @@ export async function startEdge(
     refreshStorePack,
     storeSetup: storeSetupStatus,
     reportHeldVersions,
+    reportSyncWatermarks,
     syncOnce: () => drainAndSettle(),
     syncStatus,
     stop: async () => {

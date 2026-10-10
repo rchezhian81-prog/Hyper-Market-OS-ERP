@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 917 | 559 | 559 | 84 | 291 |
+| 13 | 924 | 562 | 562 | 84 | 292 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -68,6 +68,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/stores/:storeId/rules` | `platform.setup.write` | core | yes |
 | GET | `/v1/stores/:storeId/settings` | `org.branch.read` | core | — |
 | POST | `/v1/stores/:storeId/settings` | `platform.setup.write` | core | yes |
+| POST | `/v1/stores/:storeId/sync-watermarks` | `store.pack.read` | core | yes |
 
 ## API-02 — Catalogue (M03–M05)
 
@@ -421,6 +422,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/me/privacy` | `customer.privacy.self` | core | — |
 | POST | `/v1/me/privacy/consent` | `customer.privacy.self` | core | yes |
 | POST | `/v1/me/privacy/requests/:requestId` | `customer.privacy.self` | core | yes |
+| GET | `/v1/notifications/budget` | `notification.send.check` | core | — |
+| POST | `/v1/notifications/budget` | `notification.budget.set` | core | yes |
 | POST | `/v1/notifications/can-send` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id/delivered` | `notification.send.check` | core | yes |
@@ -750,6 +753,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/reports/:name` | `reporting.report.read` | core | — |
 | GET | `/v1/reports/catalogue` | `reporting.report.read` | core | — |
 | GET | `/v1/reports/dashboard` | `reporting.dashboard.read` | core | — |
+| GET | `/v1/sync/source-freshness` | `reporting.dashboard.read` | core | — |
 
 ## API-11 — Platform (M32–M35)
 
@@ -861,6 +865,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/platform/alerts` | `platform.health.read` | core | — |
 | POST | `/v1/platform/alerts/:alertId/acknowledge` | `platform.alert.manage` | core | yes |
 | POST | `/v1/platform/alerts/escalate` | `platform.alert.manage` | core | yes |
+| GET | `/v1/platform/alerts/inbox` | `platform.health.read` | core | — |
 | POST | `/v1/platform/alerts/raise` | `platform.alert.manage` | core | yes |
 | GET | `/v1/platform/api-manifest` | `platform.partner.read` | core | — |
 | POST | `/v1/platform/backups/:backupId/taken` | `platform.backup.record` | core | yes |
@@ -946,7 +951,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/migration/control-totals/sign` | `migration.controltotal.sign` | core | yes |
 | POST | `/v1/migration/cutover/decision` | `migration.cutover.decide` | core | yes |
 | POST | `/v1/migration/cutover/rollback` | `migration.cutover.decide` | core | yes |
+| GET | `/v1/migration/cutover/rollback/:cutoverId` | `migration.parallel.read` | core | — |
 | POST | `/v1/migration/cutover/rollback/:cutoverId/confirmation` | `migration.cutover.decide` | core | yes |
+| POST | `/v1/migration/cutover/rollback/:cutoverId/reconciliation` | `migration.cutover.decide` | core | yes |
 | POST | `/v1/migration/deltas` | `migration.delta.apply` | core | yes |
 | POST | `/v1/migration/discovery` | `migration.discovery.read` | core | yes |
 | GET | `/v1/migration/exceptions` | `migration.cleaning.read` | core | — |

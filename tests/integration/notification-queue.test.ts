@@ -32,6 +32,8 @@ async function shop(transport = recordingTransport(), store = new InMemoryEventS
   await h.provisionRole(A, 'u-cash', 'cashier');  // none
   expect((await req(h, 'POST', '/v1/notifications/templates/diwali', 'u-owner', { purpose: 'marketing', channel: 'whatsapp', body: 'Hello {name}, Diwali offers are in store this week.' }, 't1')).status).toBe(201);
   expect((await req(h, 'POST', '/v1/notifications/templates/diwali/approval', 'u-mgr', { version: 1 }, 't1a')).status).toBe(200);
+  // PA-08 round 4: the owner's messaging budget — off until set; room for plenty here.
+  expect((await req(h, 'POST', '/v1/notifications/budget', 'u-owner', { capMinor: 100_000, costMinorByChannel: { whatsapp: 50, sms: 25 } }, 'b1')).status).toBe(201);
   return { h, transport };
 }
 
@@ -106,6 +108,32 @@ describe('a notification is a full, consent-checked intent — and the send re-c
     expect(pass.outcome).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'n5', result: 'dead_lettered' })]));
     const dead = (await req(h, 'GET', '/v1/notifications/queue/dead-letters', 'u-owner')).body as { deadLetters: { id: string; reason: string }[] };
     expect(dead.deadLetters).toEqual([expect.objectContaining({ id: 'n5', reason: 'not a WhatsApp number' })]);
+  });
+
+  it('PA-08 round 4: the messaging budget is checked when queued AND when sent — a month that filled up holds the message, kept and visible', async () => {
+    const { h, transport } = await shop();
+    await consent(h, 'C-6', true, 'c6');
+    await consent(h, 'C-7', true, 'c7');
+    // Room for exactly two WhatsApp messages (cost 50 each).
+    expect((await req(h, 'POST', '/v1/notifications/budget', 'u-owner', { capMinor: 100, costMinorByChannel: { whatsapp: 50 } }, 'b-small')).body).toMatchObject({ budget: { version: 2 } });
+    expect((await enqueue(h, 'n6', offer('C-6'))).status).toBe(201);
+    expect((await enqueue(h, 'n7', offer('C-7'))).status).toBe(201);
+    // Before either is sent, the owner cuts the budget to one message: the send re-checks it.
+    expect((await req(h, 'POST', '/v1/notifications/budget', 'u-owner', { capMinor: 50, costMinorByChannel: { whatsapp: 50 } }, 'b-cut')).status).toBe(201);
+    const pass = (await drain(h, 'dr-b1')).body as { outcome: { id: string; result: string; detail: string }[] };
+    expect(pass.outcome.map((o) => [o.id, o.result])).toEqual([['n6', 'delivered'], ['n7', 'held']]);
+    expect(transport.sent.map((m) => m.messageId)).toEqual(['n6']);
+    const status = (await req(h, 'GET', '/v1/notifications/budget', 'u-owner')).body as { spentMinor: number; remainingMinor: number; held: { id: string }[] };
+    expect(status).toMatchObject({ spentMinor: 50, remainingMinor: 0, held: [expect.objectContaining({ id: 'n7' })] });
+    // Held is pending, not lost; and a new message that does not fit is not even queued.
+    expect(((await req(h, 'GET', '/v1/notifications/queue/pending', 'u-owner')).body as { pending: { id: string }[] }).pending.map((i) => i.id)).toEqual(['n7']);
+    expect(codeOf(await enqueue(h, 'n8', offer('C-6')))).toBe('messaging_budget_exhausted');
+    // A manager may not set the budget (it is the owner's, §28); a malformed one is refused by name.
+    expect((await req(h, 'POST', '/v1/notifications/budget', 'u-mgr', { capMinor: 1_000_000, costMinorByChannel: { whatsapp: 1 } }, 'b-mgr')).status).toBe(403);
+    expect(codeOf(await req(h, 'POST', '/v1/notifications/budget', 'u-owner', { capMinor: -1, costMinorByChannel: {} }, 'b-bad'))).toBe('not_readable_as_a_messaging_budget');
+    // The owner raises it: the held message goes on the next pass.
+    await req(h, 'POST', '/v1/notifications/budget', 'u-owner', { capMinor: 500, costMinorByChannel: { whatsapp: 50 } }, 'b-up');
+    expect(((await drain(h, 'dr-b2')).body as { outcome: { id: string; result: string }[] }).outcome).toEqual([expect.objectContaining({ id: 'n7', result: 'delivered' })]);
   });
 
   it('with no transport configured (production today), the drain sends nothing and says why; and the queue is gated', async () => {

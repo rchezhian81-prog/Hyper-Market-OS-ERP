@@ -49,7 +49,7 @@ import { decisionRoutes, type RefusedDecision } from './decisions';
 import { screenRoutes } from './screen';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { TotalSignature } from '../../../packages/migration/src/reconcile';
-import type { ParallelDifference } from '../../../packages/migration/src/cutover';
+import type { ParallelDifference, RollbackReconciliation, WindowTotals, StoreSyncedThrough } from '../../../packages/migration/src/cutover';
 
 export type { ParallelRunPolicy, RecordedParallelDay, RecordedRollback, ParallelRunView } from './parallel-run';
 import { assertSafeTarget, namedPeople } from './guards';
@@ -358,6 +358,14 @@ export interface MigrationDeps {
   readonly recordParallelDay?: (tenantId: string, day: RecordedParallelDay) => Promise<void> | void;
   readonly recordParallelDifference?: (tenantId: string, difference: ParallelDifference) => Promise<void> | void;
   readonly recordRollback?: (tenantId: string, rollback: RecordedRollback) => Promise<void> | void;
+  /**
+   * GT-02 round 4 — a rollback's data reconciliation: every one recorded (append-only), the bills and takings head office
+   * holds for a window (from its OWN sales ledger), and each store computer's last complete sales sync (EA-01).
+   */
+  readonly rollbackReconciliations?: (tenantId: string) => Promise<readonly RollbackReconciliation[]> | readonly RollbackReconciliation[];
+  readonly recordRollbackReconciliation?: (tenantId: string, reconciliation: RollbackReconciliation) => Promise<void> | void;
+  readonly windowSales?: (tenantId: string, from: string, to: string) => Promise<WindowTotals>;
+  readonly storeSalesSyncedThrough?: (tenantId: string) => Promise<readonly StoreSyncedThrough[]>;
   /**
    * MG-04 / MG-06 — the decisions the migration screen makes, KEPT (C3a): the exceptions a cleaning pass
    * raised (latest state per id — a resolution applied over the first record; never pruned), the control

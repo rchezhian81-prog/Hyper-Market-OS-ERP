@@ -96,6 +96,11 @@ export function figure(input: {
 /**
  * How current one source is — a store box, a till lane — judged from the newest record that reached here from it
  * (audit EA-01, M29-FR-01 "freshness per branch/domain", §31). Never the time somebody read it.
+ *
+ * When the store's own computer has reported its sync watermark (`reported`, EA-01 round 4), that is the better
+ * answer: "everything this store committed before T has reached head office" — true even through a quiet hour with no
+ * sales, and it stops (and ages) the moment the store's line goes down. The source's time is then the LATER of the two
+ * (each is a true lower bound: the box drains in order), and `basis` says which one it is.
  */
 export interface SourceFreshness {
   /** What the source is, e.g. `store:S1` or `lane:lane-1`. */
@@ -106,7 +111,29 @@ export interface SourceFreshness {
   readonly lastEventAt: string | null;
   readonly staleness: Staleness;
   readonly detail: string;
+  /** The store's last COMPLETE sync of this domain — the time its figures are as at. Present when known. */
+  readonly lastCompleteSyncAt?: string | null;
+  /** Where `lastCompleteSyncAt` comes from: the store computer's own watermark report, or the newest record held. */
+  readonly basis?: 'store_computer_watermark' | 'newest_record' | 'never_heard';
+  /** From the store computer's last report: how many items were still waiting, and how many head office refused. */
+  readonly unsent?: number;
+  readonly deadLettered?: number;
+  /** When head office last received the store computer's report. */
+  readonly lastReportAt?: string;
 }
+
+/** What a store computer last reported for one domain (EA-01): its watermark and what still waited. */
+export interface StoreSyncReport {
+  /** Everything committed on the box before this instant has reached head office (null: no pass had run). */
+  readonly completeThrough: string | null;
+  readonly unsent: number;
+  readonly deadLettered: number;
+  /** When head office received the report. */
+  readonly reportedAt: string;
+}
+
+/** The time a source's figures are as at: its last complete sync when known, else its newest record. */
+export const syncedThrough = (s: SourceFreshness): string | null => (s.lastCompleteSyncAt !== undefined ? s.lastCompleteSyncAt : s.lastEventAt);
 
 /** Judge one source's freshness against `now`, with the same thresholds a figure uses. */
 export function sourceFreshness(input: {
@@ -116,19 +143,41 @@ export function sourceFreshness(input: {
   readonly now: string;
   readonly laggingAfterMinutes?: number;
   readonly staleAfterMinutes?: number;
+  /** EA-01: the store computer's own last report for this domain, when it has made one. */
+  readonly reported?: StoreSyncReport;
 }): SourceFreshness {
-  if (input.lastEventAt === null) {
+  const r = input.reported;
+  const later = (a: string | null, b: string | null): string | null =>
+    (a === null ? b : b === null ? a : Date.parse(b) > Date.parse(a) ? b : a);
+  const through = r === undefined ? input.lastEventAt : later(input.lastEventAt, r.completeThrough);
+  if (through === null) {
     return {
-      source: input.source, domain: input.domain, lastEventAt: null, staleness: 'stale',
-      detail: `${input.source}: nothing has ever arrived for ${input.domain}`,
+      source: input.source, domain: input.domain, lastEventAt: input.lastEventAt, staleness: 'stale',
+      detail: r === undefined
+        ? `${input.source}: nothing has ever arrived for ${input.domain}`
+        : `${input.source}: its store computer has reported, but has never completed a sync of ${input.domain}`,
+      ...(r === undefined ? {} : { lastCompleteSyncAt: null, basis: 'never_heard' as const, unsent: r.unsent, deadLettered: r.deadLettered, lastReportAt: r.reportedAt }),
     };
   }
-  const ageMinutes = Math.max(0, (Date.parse(input.now) - Date.parse(input.lastEventAt)) / 60_000);
+  const ageMinutes = Math.max(0, (Date.parse(input.now) - Date.parse(through)) / 60_000);
   const staleness: Staleness = ageMinutes > (input.staleAfterMinutes ?? 60) ? 'stale'
     : ageMinutes > (input.laggingAfterMinutes ?? 5) ? 'lagging' : 'live';
+  if (r === undefined) {
+    return {
+      source: input.source, domain: input.domain, lastEventAt: input.lastEventAt, staleness,
+      detail: `${input.source}: newest ${input.domain} record from ${input.lastEventAt} (${Math.round(ageMinutes)} minutes before this read)`,
+    };
+  }
+  const byBox = r.completeThrough !== null && through === r.completeThrough;
+  const refused = r.deadLettered > 0 ? ` ${r.deadLettered} item(s) head office refused are waiting for a person.` : '';
+  const verdict = staleness === 'live' ? '' : staleness === 'lagging' ? ' — behind, catching up'
+    : ` — STALE, ${Math.round(ageMinutes / 60)} hour(s) old. Do not decide on this store's figures until its store computer syncs`;
   return {
     source: input.source, domain: input.domain, lastEventAt: input.lastEventAt, staleness,
-    detail: `${input.source}: newest ${input.domain} record from ${input.lastEventAt} (${Math.round(ageMinutes)} minutes before this read)`,
+    lastCompleteSyncAt: through, basis: byBox ? 'store_computer_watermark' : 'newest_record',
+    unsent: r.unsent, deadLettered: r.deadLettered, lastReportAt: r.reportedAt,
+    detail: `${input.source}: ${input.domain} complete up to ${through}${byBox ? " (its store computer's own report)" : ' (newest record held)'}`
+      + `; last heard from at ${r.reportedAt}, ${r.unsent} item(s) then still waiting${verdict}.${refused}`,
   };
 }
 

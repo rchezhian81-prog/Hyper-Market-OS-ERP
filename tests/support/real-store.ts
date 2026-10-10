@@ -12,7 +12,9 @@ import { join } from 'node:path';
 import { Pool } from 'pg';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
-import { startApi, type RunningApi } from '../../services/api/src/main';
+import { startApi, type RunningApi, type ApiProviders } from '../../services/api/src/main';
+import type { NotificationWorker } from '../../services/customer/src/notification-worker';
+import type { OpsAlertWorker } from '../../services/platform/src/ops-alert-worker';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { seedInitialAdmins } from '../../services/api/src/access';
 import { OWNER_ROLE_ID, STORE_MANAGER_ROLE_ID } from '../../services/api/src/roles';
@@ -52,6 +54,10 @@ export interface RealCloud {
   grant(userId: string, roleId: string, requestedBy?: string): Promise<void>;
   /** Everything the API printed — the boot lines, the structured request log, every refusal. */
   readonly said: readonly string[];
+  /** PA-08: the notification sender the API started on its own timer (only when a provider was handed in). */
+  readonly notificationWorker?: NotificationWorker;
+  /** PA-12: the ops-alert worker the API started on its own timer. */
+  readonly opsAlertWorker?: OpsAlertWorker;
   stop(): Promise<void>;
 }
 
@@ -61,6 +67,8 @@ export interface RealCloudInput {
   readonly tenantId: string;
   readonly owner: string;
   readonly packSigningKey: string;
+  /** PA-08: outbound providers handed to `startApi` exactly as a deployment would (tests: the recording adapter). */
+  readonly providers?: ApiProviders;
 }
 
 /**
@@ -100,7 +108,9 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
     MIGRATION_TARGET_KIND: 'rehearsal',
     BOOTSTRAP_OWNER_TENANT_ID: input.tenantId,
     BOOTSTRAP_OWNER_USER_ID: input.owner,
-  }, say, say);
+    // The operator names the shops the background workers serve (never discovered across shops).
+    WORKER_TENANT_IDS: input.tenantId,
+  }, say, say, input.providers ?? {});
   if (running === undefined) throw new Error(`the real API refused to start:\n${said.join('\n')}`);
 
   const baseUrl = `http://127.0.0.1:${running.port}`;
@@ -128,6 +138,8 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
     owner: input.owner,
     packSigningKey: input.packSigningKey,
     said,
+    ...(running.notificationWorker === undefined ? {} : { notificationWorker: running.notificationWorker }),
+    ...(running.opsAlertWorker === undefined ? {} : { opsAlertWorker: running.opsAlertWorker }),
     token,
     request,
     grant: async (userId, roleId, requestedBy = REQUESTER) => {

@@ -140,7 +140,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'price.integrity.audit', 'selfcheckout.operate',
       'owner.alert.read', 'owner.kpi.read', 'owner.brief.manage',
       'refund.exception.read',
-      'notification.send.check',
+      'notification.send.check', 'notification.budget.set', // PA-08: the messaging budget is the owner's (M31 open item)
       'backup.verify.read', 'backup.drill.record', 'platform.backup.record',
       'branch.transition.evaluate', 'branch.transition.execute', 'branch.transition.approve',
       'document.template.manage', 'document.template.read', 'document.issue', 'document.retention.dispose',

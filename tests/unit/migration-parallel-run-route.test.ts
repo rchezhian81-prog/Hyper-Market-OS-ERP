@@ -3,7 +3,7 @@ import { migrationRoutes, type MigrationDeps, type ParallelRunPolicy, type Recor
 import { renderParallelSheet, parallelRunView } from '../../services/migration/src/parallel-run';
 import type { RequestContext, Route } from '../../services/kernel/src/index';
 import type { LoadTarget, TargetKind } from '../../packages/migration/src/trial';
-import type { ParallelDifference } from '../../packages/migration/src/cutover';
+import type { ParallelDifference, RollbackReconciliation, WindowTotals, StoreSyncedThrough } from '../../packages/migration/src/cutover';
 
 /**
  * **MG-10 — the parallel run the server keeps (Stage B3), route by route.**
@@ -16,10 +16,10 @@ import type { ParallelDifference } from '../../packages/migration/src/cutover';
 
 const NOW = '2026-10-10T20:00:00.000Z';
 
-interface Rec { policies: ParallelRunPolicy[]; days: RecordedParallelDay[]; diffs: ParallelDifference[]; rollbacks: RecordedRollback[] }
+interface Rec { policies: ParallelRunPolicy[]; days: RecordedParallelDay[]; diffs: ParallelDifference[]; rollbacks: RecordedRollback[]; reconciliations: RollbackReconciliation[]; window: WindowTotals; stores: StoreSyncedThrough[] }
 
 const stub = (over: Partial<MigrationDeps> & { targetKind?: TargetKind } = {}) => {
-  const rec: Rec = { policies: [], days: [], diffs: [], rollbacks: [] };
+  const rec: Rec = { policies: [], days: [], diffs: [], rollbacks: [], reconciliations: [], window: { count: 0, totalMinor: 0 }, stores: [] };
   const deps: MigrationDeps = {
     target: (tenantId): LoadTarget => ({ targetId: `tgt-${tenantId}`, tenantId, kind: over.targetKind ?? 'rehearsal', label: over.targetKind ?? 'rehearsal' }),
     findings: () => [], acceptances: () => [], signatures: () => [], recordAcceptance: () => {},
@@ -32,6 +32,10 @@ const stub = (over: Partial<MigrationDeps> & { targetKind?: TargetKind } = {}) =
     recordParallelDay: (_t, d) => { rec.days.push(d); },
     recordParallelDifference: (_t, d) => { rec.diffs.push(d); },
     recordRollback: (_t, r) => { rec.rollbacks.push(r); },
+    rollbackReconciliations: () => rec.reconciliations,
+    recordRollbackReconciliation: (_t, c) => { rec.reconciliations.push(c); },
+    windowSales: () => Promise.resolve(rec.window),
+    storeSalesSyncedThrough: () => Promise.resolve(rec.stores),
     now: () => NOW,
     ...over,
   };
@@ -185,6 +189,22 @@ describe('POST /v1/migration/cutover/rollback and what the cutover decision now 
     expect(ok.status).toBe(201);
     expect(rec.rollbacks.at(-1)).toMatchObject({ performed: true, state: 'performed', execution: { confirmedBy: 'u-mgr', legacyFirstBillRef: 'OLD-1' } });
     expect(await thrown(() => confirm.handler(ctx({ params: { cutoverId: 'cut-1' }, body: { legacyFirstBillRef: 'OLD-2', legacyTradingFrom: NOW } })))).toMatchObject({ status: 409, body: { code: 'already_performed' } });
+    // GT-02 round 4: performed is not yet DEMONSTRATED — the data must reconcile first.
+    expect(((await decide()).body as { checks: { check: string; state: string }[] }).checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('failed');
+    const reconcile = routeFor(routes, 'POST', '/v1/migration/cutover/rollback/:cutoverId/reconciliation');
+    const carry = (count: number, totalMinor: number) => ({ newSystemTradingFrom: '2026-10-10T18:00:00.000Z', legacyCarriedBack: { count, totalMinor } });
+    rec.window = { count: 3, totalMinor: 45_000 };
+    // A store computer still holding sales from before the switch-back: refused, nothing recorded.
+    rec.stores = [{ storeId: 'S1', completeThrough: '2026-10-10T19:30:00.000Z' }];
+    expect(await thrown(() => reconcile.handler(ctx({ params: { cutoverId: 'cut-1' }, body: carry(3, 45_000) })))).toMatchObject({ status: 409, body: { code: 'store_not_synced_through_switch_back' } });
+    expect(rec.reconciliations).toEqual([]);
+    rec.stores = [{ storeId: 'S1', completeThrough: '2026-10-10T20:05:00.000Z' }];
+    // The old system is a bill short: recorded (evidence) but NOT reconciled, and not demonstrated.
+    const short = await reconcile.handler(ctx({ params: { cutoverId: 'cut-1' }, body: carry(2, 30_000) }));
+    expect(short.body).toMatchObject({ demonstrated: false, reconciliation: { reconciled: false, differences: [expect.stringMatching(/bills/), expect.stringMatching(/takings/)] } });
+    expect(((await decide()).body as { checks: { check: string; state: string }[] }).checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('failed');
+    // Every bill carried back: reconciled — demonstrated.
+    expect((await reconcile.handler(ctx({ params: { cutoverId: 'cut-1' }, body: carry(3, 45_000) }))).body).toMatchObject({ demonstrated: true });
     const after = (await decide()).body as { checks: { check: string; state: string }[] };
     expect(after.checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('passed');
   });

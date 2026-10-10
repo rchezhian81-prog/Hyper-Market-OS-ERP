@@ -49,6 +49,13 @@ const rollback = (performed: boolean, at: string): RecordedRollback => ({
   ...(performed ? { execution: { confirmedBy: 'u-mgr', confirmedAt: at, legacyTradingFrom: at, legacyFirstBillRef: 'OLD-1001' } } : {}),
 });
 
+/** GT-02 round 4: a performed rollback demonstrates only with a reconciled window — the reconciliation the ledger holds for it. */
+const reconciledFor = (r: RecordedRollback) => ({
+  cutoverId: r.cutoverId, decidedAt: r.decidedAt, windowFrom: '2026-09-30T00:00:00.000Z', windowTo: r.execution?.legacyTradingFrom ?? r.decidedAt,
+  newSystem: { count: 2, totalMinor: 900 }, legacy: { count: 2, totalMinor: 900 }, stores: [{ storeId: 'S1', completeThrough: r.execution?.confirmedAt ?? r.decidedAt }],
+  reconciled: true, differences: [], by: 'u-owner', at: r.execution?.confirmedAt ?? r.decidedAt, detail: 'reconciled',
+});
+
 function stub(over: Partial<Ledger> = {}) {
   const l: Ledger = {
     policy: undefined, days: [], diffs: [], rollbacks: [], exceptions: [], totals: [], refused: [],
@@ -59,7 +66,7 @@ function stub(over: Partial<Ledger> = {}) {
     findings: () => l.findings as never, acceptances: () => [], signatures: () => [], recordAcceptance: () => {},
     ownerId: () => 'u-owner', extractionOperator: () => l.loadOperator,
     exclusions: () => [], recordExclusion: () => {},
-    parallelPolicy: () => l.policy, parallelDays: () => l.days, parallelDifferences: () => l.diffs, rollbacks: () => l.rollbacks,
+    parallelPolicy: () => l.policy, parallelDays: () => l.days, parallelDifferences: () => l.diffs, rollbacks: () => l.rollbacks, rollbackReconciliations: () => l.rollbacks.filter((x) => x.performed).map(reconciledFor),
     exceptions: () => l.exceptions, controlTotals: () => l.totals, refusedDecisions: () => l.refused,
     now: () => NOW,
   };

@@ -63,7 +63,7 @@ const ctx = (over: Partial<RequestContext> = {}): RequestContext =>
   ({ tenantId: 't', userId: 'u-sys', branchId: null, params: {}, query: {}, body: {}, traceId: 'tr', ...over });
 const run = async (r: { handler: (c: RequestContext) => Promise<HandlerResult> | HandlerResult }, c: RequestContext) => r.handler(c);
 
-const liveOf = (a: RaisedAlert, over: Partial<LiveAlert> = {}): LiveAlert => ({ alert: a, state: 'open', ...over });
+const liveOf = (a: RaisedAlert, over: Partial<LiveAlert> = {}): LiveAlert => ({ alert: a, state: 'open', deliveries: [], occurrence: 1, ...over });
 
 describe('the escalate sweep routes unacknowledged, past-due alerts to a named person', () => {
   it('escalates an alert past its deadline that nobody acknowledged', async () => {

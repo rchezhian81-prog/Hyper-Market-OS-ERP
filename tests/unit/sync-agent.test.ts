@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SyncAgent, nextDelayMs, type SyncTransport, type SendOutcome } from '../../edge/sync-agent/src/index';
+import { SyncAgent, recordedAtOf, nextDelayMs, type SyncTransport, type SendOutcome } from '../../edge/sync-agent/src/index';
 import { SyncOutbox } from '../../packages/sync/src/index';
 import { makeEvent } from '../../packages/contracts/src/event';
 
@@ -160,9 +160,25 @@ describe('SyncAgent.drain', () => {
     const transport = new FakeTransport().program({ status: 'accepted' }, { status: 'rejected', reason: 'bad' });
     const agent = new SyncAgent(outbox, transport);
 
-    expect(agent.health()).toEqual({ unsentCount: 2, deadLetterCount: 0, lastSuccessAt: null });
+    // EA-01: while items wait, the watermark is the oldest waiting record's own time.
+    expect(agent.health()).toEqual({ unsentCount: 2, deadLetterCount: 0, lastSuccessAt: null, completeThrough: AT });
     await agent.drain({ at: AT });
-    expect(agent.health()).toEqual({ unsentCount: 0, deadLetterCount: 1, lastSuccessAt: AT });
+    expect(agent.health()).toEqual({ unsentCount: 0, deadLetterCount: 1, lastSuccessAt: AT, completeThrough: AT });
+  });
+
+  it('EA-01: the watermark is the oldest waiting record\'s own time while the link is down, and the pass time once empty', async () => {
+    const outbox = new SyncOutbox();
+    const agent = new SyncAgent(outbox, new FakeTransport().program({ status: 'retryable', reason: 'down' }, { status: 'retryable', reason: 'down' }, { status: 'retryable', reason: 'down' }));
+    expect(agent.health().completeThrough).toBeNull();                  // no pass yet: nothing to claim
+    await agent.drain({ at: '2026-08-02T09:00:00Z' });
+    expect(agent.health().completeThrough).toBe('2026-08-02T09:00:00Z'); // empty after the pass
+    // A sale rung at 09:40 and re-queued from the disk at 11:00 (a restart): its OWN time holds the watermark.
+    outbox.enqueue(makeEvent({ id: 's1', type: 'SaleCommitted', occurredAt: '2026-08-02T11:00:00Z', idempotencyKey: 'sale:s1', source: 'lane-1', payload: { committedAt: '2026-08-02T09:40:00Z' } }));
+    outbox.enqueue(makeEvent({ id: 's2', type: 'SaleCommitted', occurredAt: '2026-08-02T11:00:00Z', idempotencyKey: 'sale:s2', source: 'lane-1', payload: { committedAt: '2026-08-02T10:15:00Z' } }));
+    await agent.drain({ at: '2026-08-02T12:00:00Z' });
+    expect(agent.health()).toMatchObject({ unsentCount: 2, completeThrough: '2026-08-02T09:40:00.000Z' });
+    // A record's own time is only used to go EARLIER — a payload claiming a later time cannot advance it.
+    expect(recordedAtOf({ occurredAt: '2026-08-02T11:00:00Z', payload: { committedAt: '2026-08-02T23:00:00Z' } })).toBe('2026-08-02T11:00:00Z');
   });
 });
 

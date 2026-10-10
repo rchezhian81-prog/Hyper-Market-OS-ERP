@@ -19,8 +19,8 @@ import { tenderSplit } from '../../../packages/reporting/src/index';
 import type { SourceTransaction } from '../../../packages/owner-control/src/index';
 import type { BranchScope } from '../../kernel/src/index';
 import type { IncomingSale } from '../../pos/src/sale-intake';
-import { figure, sourceFreshness, type Figure, type SourceFreshness } from '../../reporting/src/index';
-import { STREAM, streamName, inventoryAdapter, productMasterAdapter, foldPurchaseOrders } from './adapters';
+import { figure, sourceFreshness, syncedThrough, type Figure, type SourceFreshness } from '../../reporting/src/index';
+import { STREAM, streamName, inventoryAdapter, productMasterAdapter, foldPurchaseOrders, mergeStoreSync, type StoreSyncView } from './adapters';
 
 /** The report ids head office can work out from its own records — each a `case` in `produce` below. */
 export const PRODUCED_AT_HEAD_OFFICE: readonly string[] = Object.freeze([
@@ -76,6 +76,8 @@ export function reportProducers(input: {
   readonly calendar: (tenantId: string) => Promise<TradingCalendar> | TradingCalendar;
   readonly loyaltyRule: (tenantId: string) => Promise<LoyaltyRuleLike> | LoyaltyRuleLike;
   readonly thresholds?: { readonly laggingAfterMinutes: number; readonly staleAfterMinutes: number };
+  /** EA-01 (round 4): the store computers' own sync reports — a store's sales are as at the later of its newest sale and its box's watermark. */
+  readonly storeSync?: (tenantId: string) => Promise<StoreSyncView>;
 }): ReportProducers {
   const thresholds = input.thresholds ?? {};
   const inventory = inventoryAdapter({ store: input.store, now: input.now });
@@ -100,12 +102,17 @@ export function reportProducers(input: {
     const all = events.map((e) => e.event.payload as IncomingSale).filter((s) => s.tradingDay === day);
     const visible = all.filter((s) => inScope(scope, saleBranch(s)));
     const now = input.now();
-    const sources = newest.size === 0
-      ? [sourceFreshness({ source: 'any till', domain: 'sales', lastEventAt: null, now, ...thresholds })]
-      : [...newest.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([source, at]) => sourceFreshness({ source, domain: 'sales', lastEventAt: at, now, ...thresholds }));
-    // As current as the stalest source; `null` when nothing has ever arrived (the figures then refuse, never ₹0).
-    const asAt = newest.size === 0 ? null : [...newest.values()].reduce((a, b) => (Date.parse(b) < Date.parse(a) ? b : a));
+    const marks = [...newest.entries()].map(([source, lastEventAt]) => ({ source, lastEventAt }));
+    const sources = input.storeSync !== undefined
+      ? mergeStoreSync(marks, await input.storeSync(tenantId), now, thresholds, scope)
+      : newest.size === 0
+        ? [sourceFreshness({ source: 'any till', domain: 'sales', lastEventAt: null, now, ...thresholds })]
+        : [...newest.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([source, at]) => sourceFreshness({ source, domain: 'sales', lastEventAt: at, now, ...thresholds }));
+    // As current as the stalest source that has a time; `null` when nothing has ever arrived (the figures then refuse,
+    // never ₹0). With the store computers' reports (EA-01 round 4) a store's time is its last complete sync.
+    const timed = sources.map(syncedThrough).filter((t): t is string => t !== null);
+    const asAt = timed.length === 0 ? null : timed.reduce((a, b) => (Date.parse(b) < Date.parse(a) ? b : a));
     return { sales: visible, withheld: all.length - visible.length, sources, asAt };
   };
 

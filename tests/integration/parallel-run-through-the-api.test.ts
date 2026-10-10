@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { reconcileRehearsedRollback } from '../support/rollback-rehearsal';
 
 // MG-10 — the parallel run the server keeps, through the real authenticated API (Stage B3): the owner
 // writes the policy, the named reconciler records the days, differences get names and real explanations,
@@ -93,7 +94,9 @@ describe('MG-10 parallel run through the API', () => {
     expect(before.checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('failed');
     expect(before.ignoredFromCaller).toEqual(expect.arrayContaining(['reconciliation', 'exceptions', 'deltaAppliedAt', 'rollbackDemonstratedAt', 'ownerGoBy']));
     // Performed: the old system's first bill after the decision, recorded by the person who saw it.
-    expect((await post(h, '/v1/migration/cutover/rollback/cut-1/confirmation', OWNER, 'rbc', { legacyFirstBillRef: 'OLD-88', legacyTradingFrom: new Date(Date.now() + 1_000).toISOString() })).status).toBe(201);
+    expect((await post(h, '/v1/migration/cutover/rollback/cut-1/confirmation', OWNER, 'rbc', { legacyFirstBillRef: 'OLD-88', legacyTradingFrom: new Date().toISOString() })).status).toBe(201);
+    // GT-02 round 4: performed is demonstrated only once the window's data reconciles, with the store synced past the switch-back.
+    await reconcileRehearsedRollback(h, { tenantId: T, ownerId: OWNER, cutoverId: 'cut-1', newSystemTradingFrom: '2026-10-01T00:00:00.000Z' });
     const after = await decide('cut-b');
     expect(after.checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('passed');
     // Still NO GO: no control totals are recorded, no delta has been applied with real effects, and nobody signed in

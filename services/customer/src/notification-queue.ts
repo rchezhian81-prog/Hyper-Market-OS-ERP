@@ -14,6 +14,13 @@
 //     key; a failure is retried with backoff; a permanent failure or too many attempts dead-letters it (visible, never
 //     dropped, hard rule #6). The delivery receipt and the failure are append-only facts.
 //
+//   • BUDGET (PA-08 round 4 · M31-FR-04 · D3): the owner's monthly cap and per-channel cost are head office's record. A
+//     message is queued only if it fits, and RE-CHECKED immediately before it is sent — a month that filled up since
+//     it was queued HOLDS it (kept, pending, visible with the reason) until the budget allows. No budget: nothing goes.
+//   • THE WORKER (PA-08 round 4): `drainNotificationQueue` is the one send pass. The API process runs it on its own
+//     timer for every shop (`notification-worker.ts`, started by `startApi` whenever a provider is configured); the
+//     drain route is the same pass on demand, for an operator — it is not the only way messages leave.
+//
 // Transports are provider-neutral (`@sre/notifications` transport). The real SMS transport is release R4 (OB-29) and
 // every provider is an external gate (credentials, certification); until one is configured the drain says so (503)
 // and sends nothing. Tests run the RECORDING test adapter. The queue engine (retry, dead-letter, withhold) is the
@@ -22,7 +29,8 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
-  NotificationQueue, retryDelayMs, type NotificationItem, type NotificationTransport,
+  NotificationQueue, retryDelayMs, budgetDecision, budgetPeriodOf,
+  type NotificationItem, type NotificationTransport, type MessagingBudget,
 } from '../../../packages/notifications/src/index';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel as ConsentChannel } from './index';
 
@@ -44,20 +52,22 @@ export interface NotificationIntent {
 /** One append-only fact about a queued notification. `change` says which; extra fields carry its detail. */
 export interface NotificationQueueEvent {
   readonly id: string;
-  readonly change: 'enqueued' | 'delivered' | 'failed' | 'dead_lettered' | 'withheld';
+  readonly change: 'enqueued' | 'delivered' | 'failed' | 'dead_lettered' | 'withheld' | 'held';
   readonly at: string;
   readonly by: string;
   /** `enqueued` only — the channel it goes down. */
   readonly channel?: string;
   /** `enqueued` only — the full intent (PA-08). Absent on items queued before PA-08, which cannot be sent. */
   readonly intent?: NotificationIntent;
-  /** `failed` / `dead_lettered` / `withheld` — why. */
+  /** `failed` / `dead_lettered` / `withheld` / `held` — why. */
   readonly reason?: string;
   /** `failed` only — attempts before dead-lettering (per-tenant policy). */
   readonly maxAttempts?: number;
   /** `delivered` only — the transport's receipt. */
   readonly providerRef?: string;
   readonly transport?: string;
+  /** `delivered` only — what the send cost against the month's messaging budget (paise). */
+  readonly costMinor?: number;
 }
 
 /** One version of a message template — drafted by one person, approved by another (§28). */
@@ -89,7 +99,82 @@ export interface NotificationQueueDeps {
   readonly consentRecords?: (tenantId: string, customerId: string) => Promise<readonly ConsentRecord[]> | readonly ConsentRecord[];
   /** The delivery transport. Absent in production until a real provider is certified (SMS is R4, OB-29). */
   readonly transport?: NotificationTransport;
+  /** The owner's messaging budget in force (PA-08 round 4); undefined when none has been set — nothing is then sent. */
+  readonly budget?: (tenantId: string) => Promise<MessagingBudget | undefined> | MessagingBudget | undefined;
+  readonly recordBudget?: (tenantId: string, budget: MessagingBudget) => Promise<void> | void;
   readonly now: () => string;
+}
+
+/** What one send pass did with each due item. */
+export interface DrainOutcome {
+  readonly transport: string;
+  readonly outcome: readonly { readonly id: string; readonly result: string; readonly detail: string }[];
+  readonly asAt: string;
+}
+
+/** What the month's sends have cost so far — every delivered message carries its cost (PA-08 round 4). */
+export function spentInPeriod(events: readonly NotificationQueueEvent[], period: string): number {
+  return events.filter((e) => e.change === 'delivered' && typeof e.costMinor === 'number' && budgetPeriodOf(e.at) === period)
+    .reduce((n, e) => n + (e.costMinor ?? 0), 0);
+}
+
+/**
+ * ONE SEND PASS over a shop's pending queue (PA-08) — what the worker runs on its timer and the drain route runs on
+ * demand. For each pending item that is due (backoff after a failure): RE-CHECK consent now (a withdrawal WITHHOLDS it,
+ * never sent), RE-CHECK the month's budget (over it, the item is HELD — still pending, with the reason), then hand it
+ * to the transport with its id as the idempotency key; record the receipt and its cost, or the failure (retried with
+ * backoff, dead-lettered when permanent or after `maxAttempts`). Every outcome is an append-only fact.
+ */
+export async function drainNotificationQueue(deps: NotificationQueueDeps, tenantId: string, by: string, maxAttempts = 5): Promise<DrainOutcome> {
+  if (deps.transport === undefined) throw new Error('no transport configured');
+  if (deps.events === undefined || deps.consentRecords === undefined) throw new Error('the notification store is not wired');
+  const queue = await deps.queue(tenantId);
+  const events = await deps.events(tenantId);
+  const intents = new Map<string, { channel: string; intent?: NotificationIntent }>();
+  for (const e of events) if (e.change === 'enqueued') intents.set(e.id, { channel: e.channel ?? '', ...(e.intent === undefined ? {} : { intent: e.intent }) });
+  const now = deps.now();
+  const period = budgetPeriodOf(now);
+  const budget = deps.budget === undefined ? undefined : await deps.budget(tenantId);
+  let spent = spentInPeriod(events, period);
+  const outcome: { id: string; result: string; detail: string }[] = [];
+  for (const item of queue.pending()) {
+    if (item.lastAttemptAt !== undefined && Date.parse(now) - Date.parse(item.lastAttemptAt) < retryDelayMs(item.attempts)) {
+      outcome.push({ id: item.id, result: 'not_yet_due', detail: `waiting ${Math.round(retryDelayMs(item.attempts) / 60_000)} minute(s) after attempt ${item.attempts}` });
+      continue;
+    }
+    const queued = intents.get(item.id);
+    if (queued?.intent === undefined) {
+      await deps.record(tenantId, { id: item.id, change: 'dead_lettered', by, at: now, reason: 'queued before PA-08 with no recipient or content — it cannot be sent; a person must decide' }, `notif-dead-${item.id}-nointent`);
+      outcome.push({ id: item.id, result: 'dead_lettered', detail: 'no recipient or content on record' });
+      continue;
+    }
+    const consent = mayWeSend({ customerId: queued.intent.customerId, purpose: queued.intent.purpose, channel: queued.channel as ConsentChannel, records: await deps.consentRecords(tenantId, queued.intent.customerId), now });
+    if (consent.verdict !== 'may_send') {
+      await deps.record(tenantId, { id: item.id, change: 'withheld', by, at: now, reason: `consent no longer holds at the moment of sending: ${consent.detail}` }, `notif-withheld-${item.id}`);
+      outcome.push({ id: item.id, result: 'withheld', detail: consent.detail });
+      continue;
+    }
+    const money = budgetDecision({ budget, spentMinor: spent, channel: queued.channel });
+    if (!money.ok) {
+      // Held, not failed: the provider did nothing wrong. One fact per item per month and reason — said once, kept.
+      await deps.record(tenantId, { id: item.id, change: 'held', by, at: now, reason: `${money.reason}: ${money.detail}` }, `notif-held-${item.id}-${period}-${money.reason}-v${budget?.version ?? 0}`);
+      outcome.push({ id: item.id, result: 'held', detail: money.detail });
+      continue;
+    }
+    const sent = await deps.transport.send({ messageId: item.id, channel: queued.channel, customerId: queued.intent.customerId, text: queued.intent.text });
+    if (sent.ok) {
+      spent += money.costMinor;
+      await deps.record(tenantId, { id: item.id, change: 'delivered', by, at: now, providerRef: sent.providerRef, transport: deps.transport.name, costMinor: money.costMinor }, `notif-delivered-${item.id}`);
+      outcome.push({ id: item.id, result: 'delivered', detail: sent.providerRef });
+    } else if (sent.permanent === true) {
+      await deps.record(tenantId, { id: item.id, change: 'dead_lettered', by, at: now, reason: sent.reason, transport: deps.transport.name }, `notif-dead-${item.id}-${item.attempts + 1}`);
+      outcome.push({ id: item.id, result: 'dead_lettered', detail: sent.reason });
+    } else {
+      await deps.record(tenantId, { id: item.id, change: 'failed', by, at: now, reason: sent.reason, maxAttempts, transport: deps.transport.name }, `notif-failed-${item.id}-${item.attempts + 1}`);
+      outcome.push({ id: item.id, result: item.attempts + 1 >= maxAttempts ? 'dead_lettered' : 'retry_later', detail: sent.reason });
+    }
+  }
+  return { transport: deps.transport.name, outcome, asAt: now };
 }
 
 /** The latest state of each template version, and the newest APPROVED version of a template. */
@@ -176,6 +261,39 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
       },
     },
     {
+      // SET the messaging budget (PA-08 round 4 · M31-FR-04 "budget caps" · D3) — the owner's monthly cap and what one
+      // message costs on each channel. A new version each time (append-only). Body: { capMinor, costMinorByChannel }.
+      api: 'API-06', method: 'POST', path: '/v1/notifications/budget',
+      permission: 'notification.budget.set', idempotent: true,
+      handler: async (ctx) => {
+        if (deps.budget === undefined || deps.recordBudget === undefined) notWired('keep the messaging budget');
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const costs = b['costMinorByChannel'];
+        const okCosts = isObj(costs) && Object.keys(costs).length > 0
+          && Object.entries(costs).every(([k, v]) => CHANNELS.includes(k as ConsentChannel) && isInt(v) && (v as number) >= 0);
+        if (!isInt(b['capMinor']) || (b['capMinor'] as number) < 0 || !okCosts) {
+          throw apiError(400, { code: 'not_readable_as_a_messaging_budget', whatHappened: `A messaging budget needs { capMinor (paise a month, a whole number), costMinorByChannel: { ${CHANNELS.join(' / ')}: paise per message } }.`, wasItSaved: 'not_saved', nextSafeAction: 'Send the monthly cap and the cost of one message on each channel you use.' });
+        }
+        const current = await deps.budget!(ctx.tenantId);
+        const budget: MessagingBudget = { capMinor: b['capMinor'] as number, costMinorByChannel: costs as Record<string, number>, version: (current?.version ?? 0) + 1, setBy: ctx.userId, setAt: deps.now() };
+        await deps.recordBudget!(ctx.tenantId, budget);
+        return { status: 201, body: { budget } };
+      },
+    },
+    {
+      // The budget in force, what this month has spent, what is left, and what is HELD waiting for room (P-08).
+      api: 'API-06', method: 'GET', path: '/v1/notifications/budget',
+      permission: 'notification.send.check',
+      handler: async (ctx) => {
+        const now = deps.now();
+        const period = budgetPeriodOf(now);
+        const budget = deps.budget === undefined ? undefined : await deps.budget(ctx.tenantId);
+        const spentMinor = spentInPeriod(deps.events === undefined ? [] : await deps.events(ctx.tenantId), period);
+        const held = (await deps.queue(ctx.tenantId)).pending().filter((i) => i.reason !== null && /^(over_budget|no_budget_set|channel_not_costed):/.test(i.reason));
+        return { status: 200, body: { period, budget: budget ?? null, spentMinor, remainingMinor: budget === undefined ? 0 : Math.max(0, budget.capMinor - spentMinor), held, asAt: now } };
+      },
+    },
+    {
       // SEND — one pass of the sender over the pending queue (PA-08). Declared BEFORE `queue/:id` so `drain` is not read as an id. For each pending item that is due (backoff after a
       // failure): RE-CHECK consent now — a withdrawal since it was queued WITHHOLDS it, never sent; otherwise hand it to
       // the transport with its id as the idempotency key; record the receipt, or the failure (retried with backoff,
@@ -191,44 +309,10 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
             nextSafeAction: 'Messages stay queued until a provider is certified and configured (the SMS provider is release R4).',
           });
         }
-        if (deps.events === undefined) notWired('read the queued intents');
+        if (deps.events === undefined || deps.consentRecords === undefined) notWired('read the queued intents');
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const maxAttempts = isInt(b['maxAttempts']) && (b['maxAttempts'] as number) >= 1 ? (b['maxAttempts'] as number) : 5;
-        const queue = await deps.queue(ctx.tenantId);
-        const intents = new Map<string, { channel: string; intent?: NotificationIntent }>();
-        for (const e of await deps.events!(ctx.tenantId)) if (e.change === 'enqueued') intents.set(e.id, { channel: e.channel ?? '', ...(e.intent === undefined ? {} : { intent: e.intent }) });
-        const now = deps.now();
-        const outcome: { id: string; result: string; detail: string }[] = [];
-        for (const item of queue.pending()) {
-          if (item.lastAttemptAt !== undefined && Date.parse(now) - Date.parse(item.lastAttemptAt) < retryDelayMs(item.attempts)) {
-            outcome.push({ id: item.id, result: 'not_yet_due', detail: `waiting ${Math.round(retryDelayMs(item.attempts) / 60_000)} minute(s) after attempt ${item.attempts}` });
-            continue;
-          }
-          const queued = intents.get(item.id);
-          if (queued?.intent === undefined) {
-            await deps.record(ctx.tenantId, { id: item.id, change: 'dead_lettered', by: ctx.userId, at: now, reason: 'queued before PA-08 with no recipient or content — it cannot be sent; a person must decide' }, `notif-dead-${item.id}-nointent`);
-            outcome.push({ id: item.id, result: 'dead_lettered', detail: 'no recipient or content on record' });
-            continue;
-          }
-          const consent = await consentNow(ctx.tenantId, queued.intent.customerId, queued.intent.purpose, queued.channel as ConsentChannel);
-          if (consent.verdict !== 'may_send') {
-            await deps.record(ctx.tenantId, { id: item.id, change: 'withheld', by: ctx.userId, at: now, reason: `consent no longer holds at the moment of sending: ${consent.detail}` }, `notif-withheld-${item.id}`);
-            outcome.push({ id: item.id, result: 'withheld', detail: consent.detail });
-            continue;
-          }
-          const sent = await deps.transport.send({ messageId: item.id, channel: queued.channel, customerId: queued.intent.customerId, text: queued.intent.text });
-          if (sent.ok) {
-            await deps.record(ctx.tenantId, { id: item.id, change: 'delivered', by: ctx.userId, at: now, providerRef: sent.providerRef, transport: deps.transport.name }, `notif-delivered-${item.id}`);
-            outcome.push({ id: item.id, result: 'delivered', detail: sent.providerRef });
-          } else if (sent.permanent === true) {
-            await deps.record(ctx.tenantId, { id: item.id, change: 'dead_lettered', by: ctx.userId, at: now, reason: sent.reason, transport: deps.transport.name }, `notif-dead-${item.id}-${item.attempts + 1}`);
-            outcome.push({ id: item.id, result: 'dead_lettered', detail: sent.reason });
-          } else {
-            await deps.record(ctx.tenantId, { id: item.id, change: 'failed', by: ctx.userId, at: now, reason: sent.reason, maxAttempts, transport: deps.transport.name }, `notif-failed-${item.id}-${item.attempts + 1}`);
-            outcome.push({ id: item.id, result: item.attempts + 1 >= maxAttempts ? 'dead_lettered' : 'retry_later', detail: sent.reason });
-          }
-        }
-        return { status: 200, body: { transport: deps.transport.name, outcome, asAt: now } };
+        return { status: 200, body: await drainNotificationQueue(deps, ctx.tenantId, ctx.userId, maxAttempts) };
       },
     },
     {
@@ -277,6 +361,20 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
             whatHappened: `${customerId} may not be sent ${purpose} messages on ${channel}: ${consent.detail}.`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Nothing was queued. Only a customer who said yes, and has not withdrawn, is messaged.',
+          });
+        }
+        // The month's messaging budget, checked now — and again just before the send (PA-08 round 4).
+        const money = budgetDecision({
+          budget: deps.budget === undefined ? undefined : await deps.budget(ctx.tenantId),
+          spentMinor: spentInPeriod(deps.events === undefined ? [] : await deps.events(ctx.tenantId), budgetPeriodOf(deps.now())),
+          channel,
+        });
+        if (!money.ok) {
+          throw apiError(422, {
+            code: money.reason === 'over_budget' ? 'messaging_budget_exhausted' : money.reason === 'no_budget_set' ? 'no_messaging_budget' : 'channel_not_costed',
+            whatHappened: `Not queued: ${money.detail}.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: money.reason === 'over_budget' ? 'Wait for next month, or ask the owner to raise the budget.' : 'Ask the owner to set the messaging budget and each channel\'s cost (POST /v1/notifications/budget).',
           });
         }
         const intent: NotificationIntent = { customerId, purpose, templateId: template.templateId, templateVersion: template.version, text: rendered.text };
@@ -370,6 +468,7 @@ export function replayNotificationQueue(events: readonly NotificationQueueEvent[
     else if (e.change === 'failed') q.recordFailure(e.id, e.reason ?? '', e.maxAttempts, e.at);
     else if (e.change === 'dead_lettered') q.deadLetter(e.id, e.reason ?? '');
     else if (e.change === 'withheld') q.withhold(e.id, e.reason ?? '');
+    else if (e.change === 'held') q.hold(e.id, e.reason ?? '');
   }
   return q;
 }
