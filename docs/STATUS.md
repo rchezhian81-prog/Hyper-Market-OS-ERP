@@ -5,6 +5,37 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Wave 5 · PF-09 step 1 — a sale earns loyalty points and a return takes them back (head office) (10 October 2026)
+
+- **The audit's finding (HIGH):** head office could keep loyalty points safely, but nothing connected a sale or a return
+  to them — a sale never earned a point and a return never took one back.
+- **Owner decisions** (10 Oct 2026): **OB-28 "C and 1"** — the owner sets the points rule in store setup (loyalty is off
+  until then); the cashier keys the customer's mobile number. **OB-29 "A"** — staff enrol members at the service desk,
+  checking the number on the customer's own phone; the SMS code check is deferred in writing to **R4**.
+- **What changed (head office):**
+  - **Two store-setup settings:** points earned per ₹100, and what one point is worth. Both start at 0, which means
+    loyalty is off — and every screen says "loyalty rule not set" rather than guessing.
+  - **Joining loyalty:** a store manager or the owner enrols a customer with the customer's "yes" recorded and the number
+    checked on their phone. **The phone number is never stored** — head office keeps a private member code made from it
+    and the last four digits (so the desk can read them back). A member can leave; from then on they earn nothing.
+  - **A sale earns** once, by the owner's rule, when it names a member code (whole points, rounded down). A walk-in, a
+    number that is not a member, a sale rung before joining or after leaving, or loyalty switched off earns nothing — and
+    the reply says which.
+  - **A return takes back** the sale's points in proportion to the money refunded, counted across part-returns, once per
+    return. If the member has already spent the points, it takes what is there and says how many were short.
+- **Proved:** connected tests (7) — off until set; joining needs consent and a checked number, a cashier cannot enrol, and
+  the stored member never contains the number; ₹1,250 at 1 point per ₹100 earns 12 once; non-members and timing earn
+  nothing; three part-returns take back 2 + 5 + 5 = 12; a member who spent 10 of 12 loses the 2 left, shortfall 10
+  said. Unit tests (4) for the rules. **Mutation checks:** unplugging the earn fails 5 of 7; rounding each return on its
+  own fails 2. Full `pnpm run check` green, with the real database connected.
+- **Not yet / honest limits:**
+  - **Step 2:** the till's keypad for the mobile number, and the store computer turning it into the member code.
+  - **Step 3:** spending points and store credit at the till; the loyalty liability figure for the books.
+  - SMS verification (R4, OB-29). Staff UAT (SP-10) pending.
+- **Behaviour change the owner should know:** nothing changes for customers until you set "points per ₹100" in store
+  setup and members start joining at the desk.
+- **Next:** PF-09 step 2 — the till takes the customer's mobile number.
+
 ## Wave 4 · PA-06 = DF-3-b-2 — the store's waiting work comes from head office; each store computer says what it holds (9 October 2026)
 
 - **What changed (part 2b):**

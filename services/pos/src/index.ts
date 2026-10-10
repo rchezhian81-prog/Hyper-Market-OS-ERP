@@ -48,6 +48,11 @@ export interface PosDeps {
    * seal is checked and no seal finding is raised (a composition without the key).
    */
   readonly tillSealKey?: Buffer;
+  /**
+   * What the sale does to the named member's loyalty points (PF-09-a · M17-FR-01): earn per the owner's rule, idempotent
+   * on the sale. Never refuses — its outcome rides on the reply. Absent → no loyalty here (a composition without it).
+   */
+  readonly loyaltyOnSale?: (tenantId: string, sale: IncomingSale) => Promise<unknown>;
 }
 
 /** Enough of a sale to be a sale. Anything beyond this is a finding, never a refusal. */
@@ -106,9 +111,20 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           }
         }
 
+        // Loyalty (PF-09-a): earned once per sale, on a retry too (it is idempotent), so a crash between banking and
+        // earning heals on the till's resend. It never touches the sale's answer — a fault here is said, not thrown.
+        let loyalty: unknown;
+        if (deps.loyaltyOnSale !== undefined) {
+          try {
+            loyalty = await deps.loyaltyOnSale(ctx.tenantId, sale);
+          } catch (err) {
+            loyalty = { outcome: 'not_recorded', detail: `The sale is banked, but its loyalty points were not recorded: ${err instanceof Error ? err.message : String(err)}. The till's resend will try again.` };
+          }
+        }
+
         // 202, not 201: the sale is banked and there may be work attached to it. A 4xx here would
         // tell a till that a sale which happened did not.
-        return { status: 202, body: intake };
+        return { status: 202, body: loyalty === undefined ? intake : { ...intake, loyalty } };
       },
     },
     {

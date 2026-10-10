@@ -129,6 +129,8 @@ export interface ReturnsDeps {
   readonly refundApproval?: (tenantId: string, approvalId: string) => Promise<RefundApprovalState | undefined> | RefundApprovalState | undefined;
   /** The key head office checks the store computer's seal with (ADR-0023) — on a synced refund. Absent → not checked. */
   readonly tillSealKey?: Buffer;
+  /** What a recorded return does to the sale's loyalty points (PF-09-a): takes back in proportion, idempotent per return. */
+  readonly loyaltyOnReturn?: (tenantId: string, saleId: string, returnId: string, refundMinor: number) => Promise<unknown>;
   /** The tenant's refund approval threshold (M13-FR-03) — `undefined` means none set, so the default
    *  (0 — every refund needs a §28 approver) applies. Sourced SERVER-SIDE: the caller cannot declare
    *  their own threshold in the body and call a refund "immaterial". */
@@ -301,6 +303,16 @@ function readSyncedReturn(body: unknown): SyncedReturn | undefined {
  *  exchange only a refunded balance (an even exchange or a top-up moved nothing out; the credit paid for the replacement). */
 const moneyOutOf = (s: SyncedReturn): number =>
   s.exchange === undefined ? s.refundMinor : (s.exchange.balance === 'refund' ? s.exchange.balanceMinor : 0);
+
+/** Loyalty after a recorded return (PF-09-a): never fails the refund — a fault is said on the reply (P-08). */
+async function loyaltyAfterReturn(deps: ReturnsDeps, tenantId: string, saleId: string, returnId: string, refundMinor: number): Promise<unknown> {
+  if (deps.loyaltyOnReturn === undefined) return undefined;
+  try {
+    return await deps.loyaltyOnReturn(tenantId, saleId, returnId, refundMinor);
+  } catch (err) {
+    return { outcome: 'not_recorded', detail: `The refund is recorded, but its loyalty points were not taken back: ${err instanceof Error ? err.message : String(err)}.` };
+  }
+}
 
 export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
   return [
@@ -507,9 +519,11 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           correlationId: request.returnId,
         });
 
+        const loyalty = await loyaltyAfterReturn(deps, ctx.tenantId, saleId, request.returnId, request.refundMinor);
         return {
           status: 201,
           body: {
+            ...(loyalty === undefined ? {} : { loyalty }),
             returnId: request.returnId,
             refundStatus: assessment.refundStatus,
             restockedLines: assessment.restockedLines,
@@ -810,8 +824,9 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           },
           correlationId: record.returnId,
         });
+        const loyalty = await loyaltyAfterReturn(deps, ctx.tenantId, saleId, s.returnId, s.refundMinor);
         // 202: the refund happened and is now reconciled; a §28 breach is surfaced as an exception, not a refusal.
-        return { status: 202, body: { returnId: s.returnId, reconciled: true, flags } };
+        return { status: 202, body: { returnId: s.returnId, reconciled: true, flags, ...(loyalty === undefined ? {} : { loyalty }) } };
       },
     },
     {
