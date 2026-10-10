@@ -30,7 +30,9 @@ import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
+  planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter,
 } from './adapters';
+import { inForcePlanogram } from '../../inventory/src/planograms';
 import { ROLE_CATALOGUE } from './roles';
 import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
 import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
@@ -272,6 +274,42 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
 
   // ── the store's own exception thresholds ───────────────────────────────────────────────────────────────────────
   sections['lossPreventionRules'] = await lpRulesAdapter({ store, now }).rules(tenantId);
+
+  // ── FUL-11 (M04 · D02): merchandising's planning and stock facts, from head office's own registers ──────────────────
+  // The merchandising screen used to be fed these only by the demo builder; a store set up from head office got none, so
+  // every refill task was a wish and every range check ran on nothing. Each is read from the register that holds it, and
+  // left OUT when head office holds nothing (the screen then says it was not told — never an empty answer):
+  //   shelfLocations ← the store's published shelf map;  planogram / shelfAssignments ← the plan IN FORCE today;
+  //   shelfCounts ← every shelf count taken;  backstock ← the stock ledger at the store's back store;
+  //   assortment ← the store's effective-dated range decisions;  displayContracts / fundingReceivedMinor ← the supplier
+  //   display contracts for this store and what FINANCE has received against each (display-funding journals).
+  // Not sent (no register yet — the screen names the gap): space areas and sales / margin by area.
+  const shelf = planogramStoreAdapter({ store, now });
+  const map = await shelf.shelfMap(tenantId, storeId);
+  if (map !== undefined) sections['shelfLocations'] = map.locations;
+  const plan = inForcePlanogram(await shelf.planograms(tenantId, storeId), now());
+  if (plan !== undefined) {
+    sections['planogram'] = plan;
+    sections['shelfAssignments'] = plan.assignments;
+  }
+  const shelfCounts = await shelfCountAdapter({ store, now }).counts(tenantId, storeId);
+  if (shelfCounts.length > 0) sections['shelfCounts'] = shelfCounts;
+  const backStoreId = settings?.warehouseId ?? null;
+  if (backStoreId !== null && backStoreId !== storeId) {
+    const backstock: Record<string, number> = {};
+    for (const row of await inventoryAdapter({ store, now }).availability(tenantId)) {
+      if (row.locationId === backStoreId) backstock[row.productId] = (backstock[row.productId] ?? 0) + row.onHandMinor;
+    }
+    sections['backstock'] = backstock;
+  }
+  const range = await assortmentAdapter({ store, now }).entries(tenantId, storeId);
+  if (range.length > 0) sections['assortment'] = range;
+  const contracts = (await spacePerformanceAdapter({ store, now }).contracts(tenantId)).filter((c) => c.storeId === storeId);
+  if (contracts.length > 0) {
+    sections['displayContracts'] = contracts;
+    const received = await displayFundingAdapter({ store, now }).fundingReceived(tenantId);
+    sections['fundingReceivedMinor'] = Object.fromEntries(contracts.map((c) => [c.contractId, received[c.contractId]?.minor ?? 0]));
+  }
 
   return sections;
 }

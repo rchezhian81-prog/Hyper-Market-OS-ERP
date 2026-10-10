@@ -106,6 +106,18 @@ export function fromBaseUnits(
   return { packs, remainderBaseUnits: baseUnits - packs * factor };
 }
 
+/**
+ * SF-11 (M03-FR-02 · OB-31 rule 5): the cost of ONE whole base unit (an item; a kilo for a kilo product) from the cost of one
+ * pack at `level` — a pack counts in whole base units (a 25 kg sack holds 25). `exact` is false when that is not a whole number
+ * of paise — the caller refuses rather than rounding a price nobody agreed.
+ */
+export function unitCostFromPackCost(
+  pack: PackHierarchy, level: string, packCostMinor: number,
+): { readonly unitCostMinor: number; readonly exact: boolean; readonly unitsPerPack: number } {
+  const unitsPerPack = unitsPerLevel(validatePack(pack), level);
+  return { unitCostMinor: Math.floor(packCostMinor / unitsPerPack), exact: packCostMinor % unitsPerPack === 0, unitsPerPack };
+}
+
 /** True when converting up and back down returns exactly what went in. */
 export function conversionIsReversible(pack: PackHierarchy, level: string): boolean {
   const factor = unitsPerLevel(pack, level);
