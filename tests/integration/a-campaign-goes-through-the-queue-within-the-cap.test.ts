@@ -35,6 +35,8 @@ async function cast(h: ApiHarness, T: string): Promise<void> {
     expect(r.status).toBe(201);
   }
   await h.request({ method: 'POST', path: '/v1/notifications/templates/tpl-offer', userId: OWNER, tenantId: T, idempotencyKey: 'tpl-d', body: { purpose: 'marketing', channel: 'sms', body: 'SRE this week: {offer}' } });
+  // PA-08 round 4: the owner's messaging budget — nothing is sent until it is set; room for plenty here.
+  expect((await h.request({ method: 'POST', path: '/v1/notifications/budget', userId: OWNER, tenantId: T, idempotencyKey: 'budget', body: { capMinor: 100_000, costMinorByChannel: { sms: 25 } } })).status).toBe(201);
   expect((await h.request({ method: 'POST', path: '/v1/notifications/templates/tpl-offer/approval', userId: CHECKER, tenantId: T, idempotencyKey: 'tpl-a', body: { version: 1 } })).status).toBe(200);
 }
 

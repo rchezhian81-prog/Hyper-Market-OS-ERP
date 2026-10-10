@@ -61,6 +61,8 @@ function rig(store: EventStore, T: string) {
     at: (iso: string) => { clock = iso; },
     restart: () => { built = build(); },
     setSchedule: () => route(built.routes, '/v1/reporting/brief-schedule').handler(ctx({ dueAt: [8, 0] })),
+    // PA-08 round 4: the owner's messaging budget — nothing is sent until it is set; room for plenty here.
+    setBudget: () => route(built.queueRoutes, '/v1/notifications/budget').handler(ctx({ capMinor: 100_000, costMinorByChannel: { whatsapp: 50 } })),
     tick: async () => (await briefWorkerTick(built.deps, [T]))[0]!,
     drain: async (maxAttempts = 5) => ((await route(built.queueRoutes, '/v1/notifications/queue/drain').handler(ctx({ maxAttempts }))).body as { outcome: { id: string; result: string }[] }).outcome,
     sentDays: async () => ((await built.deps.schedule(T))?.sentDays ?? []).slice().sort(),
@@ -77,6 +79,7 @@ async function journey(store: EventStore, T: string): Promise<void> {
   const r = rig(store, T);
   r.at('2026-10-01T01:00:00.000Z');
   await r.setSchedule();
+  await r.setBudget();
 
   // ── Day 1: queued at 08:05; the queue's sender delivers; the next tick acknowledges.
   await r.sale('S-1', '2026-10-01', '2026-10-01T02:00:00.000Z', 120_000);
