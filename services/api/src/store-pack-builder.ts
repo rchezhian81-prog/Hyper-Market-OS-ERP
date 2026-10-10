@@ -28,11 +28,14 @@ import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
 import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, PRODUCT_SPEC, PRODUCT_LABEL, templateView } from '../../purchase/src/import-templates';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
-  catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter,
+  catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE } from './roles';
 import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
+import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
+import { branchOfLocationIn } from '../../inventory/src/location-scope';
+import { isUom, precisionOf } from '../../../packages/contracts/src/quantity';
 import type { PackSigner } from '../../catalogue/src/pack';
 
 export interface StorePackBuildInput {
@@ -59,6 +62,28 @@ export const VIEWER_ONLY_SCREEN_SECTIONS: readonly string[] = Object.freeze([
   'dayReopenPolicy', 'lossPreventionPolicy', 'productPublishReviewPolicy', 'fleetPolicy', 'riskAcceptancePolicy',
   'integrationHealthPolicy', 'categoryPolicyPolicy',
 ]);
+
+/**
+ * PA-06 3b(e) · OB-31 "A" — **the one quantity rule across store-pack sections.** A field whose name ends in `Minor` is
+ * in the product's SMALLEST unit: grams for a product sold by the kilogram (OB-31), millilitres for one sold by the
+ * litre, pieces for one sold each. A field named `qty` / `quantity` (the buying screen's orders, receipts and supplier
+ * invoices) is in ORDER units — the unit the order and the supplier's invoice price (whole kg, whole pieces) — and is
+ * always priced per that same unit, so the screen's line arithmetic (quantity × unit price = line total) holds. Money
+ * stays per the product's base unit (cost per kg, OB-31). The builder converts at the one place a section crosses from
+ * order units to stock units (the warehouse phone's open deliveries), with `minorPerUnit`.
+ */
+export const PACK_QUANTITY_SCALE = Object.freeze({
+  products: { availableMinor: 'smallest unit (from the stock ledger)' },
+  warehouse: { 'ordered[].quantityMinor': 'smallest unit (converted from order units)', 'contents{}': 'smallest unit', 'bins[].capacityMinor': 'smallest unit' },
+  purchaseOrders: { 'lines[].qty': 'order units, priced per order unit (unitMinor)' },
+  receipts: { 'lines[].qty': 'order units' },
+  supplierInvoices: { 'lines[].quantity': 'order units, priced per order unit (unitPriceMinor)' },
+} as const);
+
+/** How many smallest units make one order unit of a product sold in `uom` (kg → 1000 grams; each → 1). */
+export function minorPerUnit(uom: string | undefined): number {
+  return uom !== undefined && isUom(uom) ? 10 ** precisionOf(uom) : 1;
+}
 
 export async function buildStorePackSections(input: StorePackBuildInput, tenantId: string, storeId: string): Promise<Record<string, unknown>> {
   const { store, now } = input;
@@ -174,6 +199,43 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
   sections['countsQueue'] = counts;
   // Which catalogue head office has published — the store computer compares it with the one it holds (SF-08 hand-over).
   if (published !== undefined) sections['catalogueVersion'] = published.snapshot.version;
+
+  // ── OB-37 · PA-06 3b(d): the warehouse phone's section — the bins and stock of this store and its back store, and the
+  // deliveries this store is waiting for (issued orders naming it as the place they are delivered to). No worker is
+  // named: the phone runs as the person who signed in on it (OB-30). Quantities by the one rule (PACK_QUANTITY_SCALE).
+  // A place is this store's when the hierarchy puts it under the store, or when it is the back store the store's own
+  // settings name (a back store may sit under the company in the hierarchy).
+  const placed = branchOfLocationIn(await orgStructureAdapter({ store, now }).nodes(tenantId));
+  const branchOf = (locationId: string): string => (here.has(locationId) ? storeId : placed(locationId));
+  const wh = warehouseAdapter({ store, now });
+  const bins = (await wh.bins(tenantId)).filter((b) => branchOf(b.storeId) === storeId);
+  const binIds = new Set(bins.map((b) => b.binId));
+  const contents = Object.fromEntries(Object.entries(await wh.contents(tenantId)).filter(([key, qty]) => binIds.has(key.split('|')[0]!) && qty !== 0));
+  const uomOf = new Map((published?.snapshot.products ?? []).map((p) => [p.productId, p.baseUom] as const));
+  const receipts = await goodsReceiptAdapter({ store, now }).all(tenantId);
+  const deliveries = openDeliveriesFor(orders, storeId, branchOf).map((d) => {
+    const po = orders.find((o) => o.poId === d.poId)!;
+    const costOf = new Map(po.lines.map((l) => [l.productId, l.unitCost] as const));
+    // One receipt per physical delivery: the next GRN number for this order (an earlier one already on file is done).
+    const grnId = `grn-${d.poId}-${receipts.filter((g) => g.poId === d.poId).length + 1}`;
+    return {
+      poId: d.poId, number: d.number, supplierId: d.supplierId, deliverToLocationId: d.deliverToLocationId, grnId,
+      ordered: d.lines.filter((l) => l.openQty > 0).map((l) => ({
+        productId: l.productId, quantityMinor: l.openQty * minorPerUnit(uomOf.get(l.productId)),
+        unitCostMinor: costOf.get(l.productId)?.minor ?? 0, currency: costOf.get(l.productId)?.currency ?? 'INR',
+      })),
+    };
+  });
+  const only = deliveries.length === 1 ? deliveries[0]! : undefined;
+  sections['warehouse'] = {
+    assignmentId: `warehouse-${storeId}`, workerId: '', storeId: settings?.warehouseId ?? storeId,
+    bins: bins.map((b) => ({ binId: b.binId, storeId: b.storeId, capacityMinor: b.capacityMinor, pickable: b.pickable, ...(b.zone === undefined ? {} : { zone: b.zone }) })),
+    contents,
+    ...(published === undefined ? {} : { barcodes: published.snapshot.barcodes.map((b) => ({ barcode: b.code, productId: b.productId, level: 'unit' })) }),
+    openDeliveries: deliveries,
+    // Exactly one delivery waiting: the phone receives against it directly; with several, the receiver chooses on the phone.
+    ...(only === undefined ? {} : { grnId: only.grnId, poId: only.poId, ordered: only.ordered }),
+  };
 
   // ── the store's own exception thresholds ───────────────────────────────────────────────────────────────────────
   sections['lossPreventionRules'] = await lpRulesAdapter({ store, now }).rules(tenantId);
