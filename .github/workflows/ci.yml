@@ -396,17 +396,81 @@ jobs:
           pnpm run test:perf --reporter=default --reporter=json --outputFile=/tmp/perf.json
           node scripts/assert-suite-ran.mjs /tmp/perf.json --min-files 3 --min-tests 30
 
+  identity:
+    name: Identity server suites (real Keycloak)
+    # OB-15 · ADR-0019: the four suites that prove sign-in against a REAL Keycloak (code + PKCE, the token head office
+    # believes, the second factor, lockout, people's sign-ins, a second shop's realm, the front door) skip themselves
+    # without one — so until this job they ran only by hand and were recorded in docs/runbooks/identity-server.md. Here the
+    # same Keycloak image the stack runs (infra/compose/docker-compose.yml) is started with the repository's realm; its
+    # administrator password is generated for this run and never printed; every suite gets a freshly migrated database;
+    # scripts/identity-proof.sh refuses a quiet green. This proves identity SUPPORT, not that any deployed environment has
+    # identity switched on (that is the operator's step, docs/runbooks/identity-server.md).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sre
+          POSTGRES_DB: sre_core
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: The front door's web server (the end-to-end suite runs the repository's own nginx configuration)
+        run: command -v nginx || (sudo apt-get update && sudo apt-get install -y nginx)
+
+      - name: Start Keycloak 26.0.7 with the repository realm (administrator password generated for this run)
+        run: |
+          umask 077
+          openssl rand -hex 24 | tr -d '\n' > "$RUNNER_TEMP/kc-admin.pw"
+          tenant="$(cat /proc/sys/kernel/random/uuid)"
+          echo "KEYCLOAK_PROOF_TENANT=$tenant" >> "$GITHUB_ENV"
+          {
+            echo "KC_BOOTSTRAP_ADMIN_USERNAME=kcadmin"
+            echo "KC_BOOTSTRAP_ADMIN_PASSWORD=$(cat "$RUNNER_TEMP/kc-admin.pw")"
+            echo "SRE_WEB_ORIGIN=http://127.0.0.1:8099"
+            echo "SRE_TENANT_ID=$tenant"
+          } > "$RUNNER_TEMP/kc.env"
+          docker run -d --name keycloak -p 8180:8080 --env-file "$RUNNER_TEMP/kc.env" \
+            -v "$GITHUB_WORKSPACE/infra/keycloak/realm-sre-store.json:/opt/keycloak/data/import/realm-sre-store.json:ro" \
+            quay.io/keycloak/keycloak:26.0.7 start-dev --import-realm
+          rm -f "$RUNNER_TEMP/kc.env"
+          for i in $(seq 1 90); do
+            if curl -fsS -o /dev/null http://127.0.0.1:8180/realms/sre-store/.well-known/openid-configuration; then echo "Keycloak is up"; exit 0; fi
+            sleep 2
+          done
+          docker logs keycloak | tail -50
+          echo "::error::Keycloak did not come up with the sre-store realm — the identity suites cannot run" && exit 1
+
+      - name: Identity server suites (real Keycloak) — required, never skip
+        env:
+          KEYCLOAK_PROOF_BASE: http://127.0.0.1:8180
+          PROOF_PG_URL: postgres://sre@localhost:5432
+        run: |
+          export KEYCLOAK_PROOF_ADMIN_PASSWORD_FILE="$RUNNER_TEMP/kc-admin.pw"
+          bash scripts/identity-proof.sh
+
   release:
     name: Deploy the merged release to the demo box (rolls back if it does not come up)
     # Stage F: a commit that reached main did so through a pull request whose checks were green (branch
-    # protection, hard rule #8) — that IS the approval (AID-08). The five jobs above must pass on THIS
+    # protection, hard rule #8) — that IS the approval (AID-08). The six jobs above must pass on THIS
     # commit first; then the box is told to deploy exactly this SHA. The SSH key can run one command on the
     # box — infra/deploy/release.sh — and nothing else (a forced command); the script refuses any commit
     # not on origin/main, and puts the previous release back if the new one does not come up READY.
     # Deploys never cancel each other: they queue (a half-applied release is worse than a late one).
     # When the 'demo' environment carries no deploy secrets, the job says so and deploys nothing — a
     # fork or a fresh clone cannot deploy anywhere by accident. docs/runbooks/automatic-deployment.md.
-    needs: [verify, integration, deploy, browser, performance]
+    needs: [verify, integration, deploy, browser, performance, identity]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: demo

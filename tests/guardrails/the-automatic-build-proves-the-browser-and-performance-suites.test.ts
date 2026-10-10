@@ -76,6 +76,28 @@ describe('the performance job', () => {
   });
 });
 
+describe('the identity job (real Keycloak)', () => {
+  it('runs the four real-identity-server suites against the stack\'s own Keycloak image and refuses a quiet green', () => {
+    const identity = job('identity');
+    expect(identity).toMatch(/name: Identity server suites \(real Keycloak\)/);
+    const compose = readFileSync('infra/compose/docker-compose.yml', 'utf8');
+    const image = /image: (quay\.io\/keycloak\/keycloak:[0-9.]+)/.exec(compose)![1]!;
+    expect(identity).toContain(image); // the same pinned version the stack runs
+    expect(identity).toContain('realm-sre-store.json');
+    expect(identity).toMatch(/image: postgres:16/);
+    expect(identity).toMatch(/openssl rand -hex 24/); // the administrator password is generated per run
+    expect(identity).toContain('bash scripts/identity-proof.sh');
+    const proof = readFileSync('scripts/identity-proof.sh', 'utf8');
+    for (const suite of ['keycloak-real', 'keycloak-shop-realms', 'keycloak-provisioning', 'identity-front-door']) {
+      expect(proof, suite).toContain(`"${suite}:`);
+      expect(readdirSync('tests/integration'), suite).toContain(`${suite}.test.ts`);
+    }
+    expect(proof).toContain('set -euo pipefail');
+    expect(proof).toMatch(/node scripts\/assert-suite-ran\.mjs/);
+    expect(proof).toMatch(/CREATE DATABASE/); // a fresh database for each suite
+  });
+});
+
 describe('the no-skip script', () => {
   it('refuses pending, todo, failed and too-few runs, and demands the success flag', () => {
     const script = readFileSync('scripts/assert-suite-ran.mjs', 'utf8');
@@ -93,12 +115,12 @@ describe('the no-skip script', () => {
 describe('the release waits for them', () => {
   it('needs the browser and performance jobs', () => {
     const release = job('release');
-    expect(release).toMatch(/needs: \[verify, integration, deploy, browser, performance\]/);
+    expect(release).toMatch(/needs: \[verify, integration, deploy, browser, performance, identity\]/);
   });
 
-  it('the branch-protection runbook names all five checks', () => {
+  it('the branch-protection runbook names all six checks', () => {
     const runbook = readFileSync('docs/runbooks/branch-protection.md', 'utf8');
-    for (const check of ['Type check, lint, tests, secret & dependency scan', 'Stage gate suites (real PostgreSQL)', 'The container builds, starts, and refuses a bad configuration', 'Browser suites (real Chromium) — required, never skip', 'Performance suites — required, never skip']) {
+    for (const check of ['Type check, lint, tests, secret & dependency scan', 'Stage gate suites (real PostgreSQL)', 'The container builds, starts, and refuses a bad configuration', 'Browser suites (real Chromium) — required, never skip', 'Performance suites — required, never skip', 'Identity server suites (real Keycloak)']) {
       expect(runbook, check).toContain(check);
     }
   });
