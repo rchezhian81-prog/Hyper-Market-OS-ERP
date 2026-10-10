@@ -176,8 +176,10 @@ export function reportProducers(input: {
       }
 
       case 'units_by_category': {
-        // Units AND money per department, from the lines the till charged and the department the product master gives
-        // each product. A product the master places nowhere is counted under its own name, never folded into one.
+        // Units per department — the same figure the store box gives — and, because head office holds what the till
+        // charged on every LINE, the money per department beside it as "<department> — taken". A product the master
+        // places nowhere is counted under its own name, never folded into one; what the bills took that no line
+        // explains is shown, so the departments' money always adds back to the day's takings.
         const { sales, withheld, sources, asAt } = await salesOf(tenantId, day, options.scope);
         const mk = at(asAt, neverSales);
         const master = new Map((await products.products(tenantId)).map((p) => [p.productId, p.primaryCategoryId] as const));
@@ -197,18 +199,17 @@ export function reportProducers(input: {
           }
         }
         const billMoney = sales.reduce((t, s) => t + s.totalMinor, 0);
-        const ordered = [...by.entries()].sort((a, b) => b[1].money - a[1].money || a[0].localeCompare(b[0]));
+        const ordered = [...by.entries()].sort((a, b) => b[1].units - a[1].units || a[0].localeCompare(b[0]));
         return {
           tradingDay: day, sources,
           figures: [
-            ...ordered.map(([dept, t]) => mk(dept, t.money, 'minor_currency')),
-            // Shown, never hidden: what the bills took that no line explains (a bill-level adjustment), so the
-            // departments plus this always equal the day's takings.
+            ...ordered.map(([dept, t]) => mk(dept, t.units, 'count')),
+            ...ordered.map(([dept, t]) => mk(`${dept} — taken`, t.money, 'minor_currency')),
             ...(billMoney === lineMoney ? [] : [mk('Taken but on no line', billMoney - lineMoney, 'minor_currency')]),
             ...withheldFigure(mk, withheld),
           ],
-          rows: ordered.map(([dept, t]) => ({ department: dept, units: String(t.units), totalMinor: String(t.money) })),
-          drill: Object.fromEntries(ordered.map(([dept, t]) => [dept, t.txns])),
+          rows: ordered.map(([dept, t]) => ({ department: dept, units: String(t.units) })),
+          drill: Object.fromEntries(ordered.map(([dept, t]) => [`${dept} — taken`, t.txns])),
         };
       }
 

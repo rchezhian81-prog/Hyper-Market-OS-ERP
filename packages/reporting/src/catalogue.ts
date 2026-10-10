@@ -172,8 +172,7 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     id: 'units_by_category', family: 'sales', name: 'What is selling, by department',
     answers: 'how many items each department sold today',
     needs: ['sales_rung_at_the_till', 'departments_on_the_catalogue'],
-    // `totalMinor` is what the till charged on the department's lines — head office holds it per line (EA-06).
-    columns: [{ name: 'department', type: 'text' }, { name: 'units', type: 'integer' }, { name: 'totalMinor', type: 'money_minor' }]
+    columns: [{ name: 'department', type: 'text' }, { name: 'units', type: 'integer' }]
   },
   {
     id: 'margin', family: 'sales', name: 'Margin',

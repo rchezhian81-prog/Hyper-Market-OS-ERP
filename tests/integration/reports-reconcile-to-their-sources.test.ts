@@ -137,9 +137,11 @@ describeOrSkip('head-office reports reconcile to their source records — real A
     expect(fig(cashiers, CASHIER)).toBe(takings);
 
     const depts = await report('units_by_category');
-    expect(fig(depts, 'grocery')).toBe(2 * 48_000);
-    expect(fig(depts, 'dairy')).toBe(5 * 3_500);
-    expect(depts.figures.reduce((t, f) => t + (f.valueMinor ?? 0), 0)).toBe(takings);
+    expect(fig(depts, 'grocery')).toBe(2); // units, as the store box reports them
+    expect(fig(depts, 'dairy')).toBe(5);
+    expect(fig(depts, 'grocery — taken')).toBe(2 * 48_000); // and the money the till charged on those lines
+    expect(fig(depts, 'dairy — taken')).toBe(5 * 3_500);
+    expect(depts.figures.filter((f) => f.name.endsWith(' — taken')).reduce((t, f) => t + (f.valueMinor ?? 0), 0)).toBe(takings);
     expect(depts.rows.find((r) => r['department'] === 'dairy')?.['units']).toBe('5');
 
     // The dashboard agrees with the reports, and its tender figures add back to its takings (EA-02).
@@ -212,12 +214,12 @@ describeOrSkip('head-office reports reconcile to their source records — real A
     expect(body.transactions.map((t) => [t.transactionId, t.amountMinor]).sort()).toEqual(
       [[SALES[0]!.saleId, 5_000], [SALES[2]!.saleId, 48_000]].sort(),
     );
-    const dairy = (await ok(call('POST', '/v1/reporting/drill/governed', OWNER, { reportId: 'units_by_category', figure: 'dairy' }, 'drill-dairy'), 200)).body as { reconciles: boolean; shownTotalMinor: number; transactions: unknown[] };
+    const dairy = (await ok(call('POST', '/v1/reporting/drill/governed', OWNER, { reportId: 'units_by_category', figure: 'dairy — taken' }, 'drill-dairy'), 200)).body as { reconciles: boolean; shownTotalMinor: number; transactions: unknown[] };
     expect(dairy).toMatchObject({ reconciles: true, shownTotalMinor: 5 * 3_500 });
     expect(dairy.transactions).toHaveLength(2); // the two milk lines
     // The drill is logged with who reached what.
     const audits = (await ok(call('GET', '/v1/reporting/drill-audits', OWNER), 200)).body as { audits: { userId: string; metric: string; reconciled: boolean }[] };
-    expect(audits.audits.map((a) => a.metric)).toEqual(expect.arrayContaining(['tender_mix:cash', 'units_by_category:dairy']));
+    expect(audits.audits.map((a) => a.metric)).toEqual(expect.arrayContaining(['tender_mix:cash', 'units_by_category:dairy — taken']));
     // A figure with no records behind it is refused, and nothing the caller sends can stand in for head office's rows.
     expect((await call('POST', '/v1/reporting/drill/governed', OWNER, { reportId: 'tender_mix', figure: 'cheque' }, 'drill-x')).status).toBe(404);
     const forged = await call('POST', '/v1/reporting/drill/governed', OWNER, { reportId: 'tender_mix', figure: 'cash', kpiValueMinor: 1, transactions: [] }, 'drill-forged');
