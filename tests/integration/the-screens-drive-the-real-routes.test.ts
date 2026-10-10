@@ -13,6 +13,7 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 import { openDeviceOutbox, guardedStore } from '../../packages/sync/src/device-outbox';
 import {
   fetchIndents, indentsPortsFromData, openIndentResolvePort, fetchGoodsReceipt, goodsReceiptPortsFromData, openGrnLineReturnPort,
+  fetchProductionBoard, bootProductionTasks, openRunCommitPort, openLabelPort,
 } from '../../apps/web-erp/src/browser-entry';
 import { createIndentsSession } from '../../apps/web-erp/src/indents-session';
 import { createGoodsReceiptSession } from '../../apps/web-erp/src/goods-receipt-session';
@@ -114,6 +115,46 @@ describe.each(backings)('Batch 2 · the screens drive the real routes — on $na
     const record = (await h.request({ method: 'GET', path: '/v1/floor/indents/ind-s', userId: 'u-owner', tenantId: t })).body as { state: string; attention: string[]; issues: { shortfallResolution?: { resolvedBy: string; lines: { lostMinor: number; lostValueMinor: number }[] } }[] };
     expect(record).toMatchObject({ state: 'received', attention: [] });
     expect(record.issues[0]!.shortfallResolution).toMatchObject({ resolvedBy: 'u-mgr', lines: [expect.objectContaining({ lostMinor: 2, lostValueMinor: 10_000 })] });
+  }, 60_000);
+
+  it('FUL-13 production tasks: a run recorded and a label printed from the screen land on the real routes; the batch waits in quarantine; a missing legal field is refused in head office\'s words', async () => {
+    const h = harness();
+    const t = randomUUID();
+    const post = (u: string, path: string, body: Body, key: string) => h.request({ method: 'POST', path, userId: u, tenantId: t, idempotencyKey: key, body });
+    await h.seedOwner(t, 'u-owner');
+    await h.provisionRole(t, 'u-chef', 'store_manager');
+    for (const [p, q] of [['FLOUR', 500], ['SUGAR', 300]] as const) {
+      expect((await post('u-owner', '/v1/inventory/movements', { movementId: `rcv-${p}`, productId: p, locationId: 'KITCHEN', kind: 'received', quantityMinor: q, uom: 'g', occurredAt: AT, enteredBy: 'u-owner', unitCostMinor: 5 }, `rcv-${p}`)).status).toBeLessThan(300);
+    }
+    expect((await post('u-owner', '/v1/production/departments/cafe', {}, 'dept')).status).toBeLessThan(300);
+    expect((await post('u-owner', '/v1/production/recipes/cake', {
+      departmentId: 'cafe', outputProductId: 'CAKE', outputQuantityMinor: 1, outputUom: 'ea',
+      inputs: [{ productId: 'FLOUR', quantityMinor: 100, uom: 'g' }, { productId: 'SUGAR', quantityMinor: 50, uom: 'g' }], shelfLifeHours: 48, expectedYieldBp: 10_000, yieldToleranceBp: 500,
+    }, 'recipe')).status).toBe(201);
+    const ports = { commit: openRunCommitPort(), label: openLabelPort() };
+    const screen = async () => {
+      signedInAs(h, t, 'u-chef');
+      const board = await fetchProductionBoard();
+      return bootProductionTasks({ userId: 'u-chef', permissions: ['production.read', 'production.plan.commit', 'production.recipe.manage'], productionLocationId: 'KITCHEN' }, board ?? undefined, ports)!;
+    };
+    const s = await screen();
+    const recorded = await s.recordRun({ runId: 'run-scr', recipeId: 'cake', batches: '2', actualOutput: '2', batchId: 'CAKE-SCR', locationId: 'KITCHEN' });
+    expect(recorded).toEqual({ outcome: 'recorded', runId: 'run-scr' });
+    // The ingredients left the shelf; the cakes wait in quarantine (not on hand).
+    const onHand = async (productId: string) => ((await h.request({ method: 'GET', path: '/v1/inventory/availability', userId: 'u-owner', tenantId: t, query: { productId } })).body as { rows: { onHandMinor: number }[] }).rows.reduce((n, r) => n + r.onHandMinor, 0);
+    expect(await onHand('FLOUR')).toBe(300);
+    expect(await onHand('CAKE')).toBe(0);
+    // Too much: the real route refuses in its own words; the screen passes them on.
+    const tooMuch = await s.recordRun({ runId: 'run-big', recipeId: 'cake', batches: '9', actualOutput: '9', batchId: 'CAKE-BIG', locationId: 'KITCHEN' });
+    expect(tooMuch.outcome).toBe('refused');
+    // The label for the batch on the (re-read) board: the run's batch, printed by head office.
+    const after = await screen();
+    expect(after.view('en').labelRuns.map((r) => r.runId)).toContain('run-scr');
+    const printed = await after.printLabel({ runId: 'run-scr', productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE Hyper Market, TN', price: '120', allergens: 'wheat, milk' });
+    expect(printed.outcome).toBe('printed');
+    expect(printed.outcome === 'printed' && printed.lines.join(' ')).toContain('CAKE-SCR');
+    const incomplete = await after.printLabel({ runId: 'run-scr', productName: 'Coffee cake', netQuantity: '180 g', packerDetails: 'SRE', price: '120', allergens: '' });
+    expect(incomplete.outcome).toBe('refused');
   }, 60_000);
 
   it('goods receipt: a held line disposed of as a return is recorded as gone back from the screen; the re-read list says so, by whom', async () => {

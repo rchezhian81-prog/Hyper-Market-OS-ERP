@@ -160,6 +160,10 @@ import {
   type ReleasePort, type ReleaseResult,
 } from './production-session';
 import {
+  createProductionTasksSession,
+  type ProductionTasksSession, type RunCommitPort, type LabelPort, type TaskPostResult,
+} from './production-tasks-session';
+import {
   createFacilitiesSession,
   type FacilitiesPorts, type FacilitiesSession, type FacilitiesData, type OverdueTask,
   type CompletePort, type CompleteResult,
@@ -1702,6 +1706,80 @@ export interface ProductionScreenData {
   readonly userId?: string;
   readonly permissions?: readonly string[];
   readonly worklist?: ProductionData;
+  /** FUL-13: where this store's production is made (the kitchen location), when the store computer knows it. */
+  readonly productionLocationId?: string;
+}
+
+/** FUL-13 — the production staff's task paths (record a run, print a label) over the existing APIs, each under the
+ *  person's own session; the server re-checks every rule. */
+const PRODUCTION_COMMIT_PERMISSION = 'production.plan.commit';
+const PRODUCTION_LABEL_PERMISSION = 'production.recipe.manage';
+
+/** The kernel's refusal words (under `error`), or a top-level one, or a plain fallback. */
+const refusalWords = async (res: Response, fallback: string): Promise<string> => {
+  const body = (await res.json().catch(() => ({}))) as { whatHappened?: string; error?: { whatHappened?: string } };
+  return body.error?.whatHappened ?? body.whatHappened ?? fallback;
+};
+
+export function openRunCommitPort(): RunCommitPort {
+  return {
+    post: async ({ runId, ...body }): Promise<TaskPostResult<{ runId: string }>> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      try {
+        // Keyed on the run id: the same run sent twice is one run (the server refuses a different one under that id).
+        const res = await fetchFn(`/v1/production/runs/${encodeURIComponent(runId)}`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'content-type': 'application/json', 'idempotency-key': `run-${runId}`, accept: 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.status >= 200 && res.status < 300) return { result: 'done', value: { runId } };
+        return { result: 'refused', reason: await refusalWords(res, 'head office did not record the run') };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
+  };
+}
+
+export function openLabelPort(): LabelPort {
+  return {
+    post: async ({ runId, ...body }): Promise<TaskPostResult<{ lines: readonly string[] }>> => {
+      const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+      if (fetchFn === undefined) return { result: 'lost_link' };
+      try {
+        const res = await fetchFn(`/v1/production/runs/${encodeURIComponent(runId)}/label`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'content-type': 'application/json', 'idempotency-key': globalThis.crypto?.randomUUID?.() ?? `label-${runId}-${body.priceMinor}`, accept: 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.status >= 200 && res.status < 300) {
+          const ok = (await res.json().catch(() => ({}))) as { lines?: unknown };
+          return { result: 'done', value: { lines: Array.isArray(ok.lines) ? ok.lines.filter((l): l is string => typeof l === 'string') : [] } };
+        }
+        return { result: 'refused', reason: await refusalWords(res, 'head office did not make the label') };
+      } catch {
+        return { result: 'lost_link' };
+      }
+    },
+  };
+}
+
+/** Build the production staff's task paths over a board (the runs a label may be printed for). */
+export function bootProductionTasks(data: ProductionScreenData | undefined, worklist?: ProductionData, ports?: { commit?: RunCommitPort; label?: LabelPort }): ProductionTasksSession | null {
+  if (data === undefined) return null;
+  const held = new Set(data.permissions ?? []);
+  const board = (): ProductionData => worklist ?? data.worklist ?? EMPTY_PRODUCTION;
+  return createProductionTasksSession(
+    { userId: data.userId === undefined ? null : data.userId, defaultLocationId: data.productionLocationId ?? null },
+    {
+      mayCommit: () => held.has(PRODUCTION_COMMIT_PERMISSION),
+      mayLabel: () => held.has(PRODUCTION_LABEL_PERMISSION),
+      commitPort: () => ports?.commit ?? null,
+      labelPort: () => ports?.label ?? null,
+      runs: () => board().runs,
+    },
+  );
 }
 
 const PRODUCTION_READ_PERMISSION = 'production.read';
@@ -4462,6 +4540,9 @@ interface ManagerWindow {
   };
   productionData?: ProductionScreenData;
   productionSession?: ProductionSession;
+  /** FUL-13: the production staff's task paths (record a run, print a label). */
+  productionTasks?: ProductionTasksSession;
+  productionTasksFor?: (worklist: ProductionData) => ProductionTasksSession | null;
   /** The shell reads the live production board through this and re-presents it — a GET read, never a write. */
   production?: {
     refresh(): Promise<ProductionData | null>;
@@ -5672,6 +5753,13 @@ if (browserWindow !== undefined) {
   const productionData = browserWindow.productionData;
   const releasePort = openReleasePort();
   const production = bootProduction(productionData, undefined, releasePort);
+  // FUL-13: the staff's task paths ride the same page, over the same board, under the person's own session.
+  const productionTaskPorts = { commit: openRunCommitPort(), label: openLabelPort() };
+  const productionTasks = bootProductionTasks(productionData, undefined, productionTaskPorts);
+  if (productionTasks !== null) {
+    browserWindow.productionTasks = productionTasks;
+    browserWindow.productionTasksFor = (worklist) => bootProductionTasks(productionData, worklist, productionTaskPorts);
+  }
   if (production !== null) {
     browserWindow.productionSession = production;
     browserWindow.production = {

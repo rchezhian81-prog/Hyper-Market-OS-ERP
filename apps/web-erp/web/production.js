@@ -145,7 +145,61 @@ function paint() {
   } else {
     state.hidden = true;
   }
+  paintTasks();
 }
+
+// ── FUL-13: the staff's task paths — record a run, print the label (window.productionTasks) ─────────────
+
+let tasks = window.productionTasks ?? null;
+const tt = (key) => (tasks === null ? key : tasks.text(lang, key));
+
+function paintTasks() {
+  const runner = el('runner'); const labeller = el('labeller');
+  el('no-run').hidden = true; el('no-label').hidden = true;
+  if (tasks === null) { runner.hidden = true; labeller.hidden = true; return; }
+  const v = tasks.view(lang);
+  runner.hidden = !v.canRecordRun;
+  if (!v.canRecordRun && !v.nobodyNamed) { el('no-run').hidden = false; el('no-run').textContent = tt('noRun'); }
+  el('run-heading').textContent = tt('runHeading'); el('run-hint').textContent = tt('runHint');
+  for (const [id, key] of [['run-recipe-label', 'runRecipeLabel'], ['run-batches-label', 'runBatchesLabel'], ['run-output-label', 'runOutputLabel'], ['run-batch-label', 'runBatchIdLabel'], ['run-location-label', 'runLocationLabel']]) el(id).textContent = tt(key);
+  el('run').textContent = tt('runBtn');
+  if (el('run-location').value === '' && v.defaultLocationId) el('run-location').value = v.defaultLocationId;
+
+  labeller.hidden = !v.canLabel;
+  if (!v.canLabel && !v.nobodyNamed) { el('no-label').hidden = false; el('no-label').textContent = tt('noLabel'); }
+  el('label-heading').textContent = tt('labelHeading');
+  for (const [id, key] of [['label-run-label', 'labelRunLabel'], ['label-name-label', 'labelNameLabel'], ['label-net-label', 'labelNetLabel'], ['label-packer-label', 'labelPackerLabel'], ['label-price-label', 'labelPriceLabel'], ['label-allergens-label', 'labelAllergensLabel']]) el(id).textContent = tt(key);
+  el('label-allergens').placeholder = tt('labelAllergensHint');
+  el('label').textContent = tt('labelBtn');
+  const select = el('label-run'); const chosen = select.value;
+  select.replaceChildren(...v.labelRuns.map((r) => { const o = document.createElement('option'); o.value = r.runId; o.textContent = r.label; return o; }));
+  if (chosen && v.labelRuns.some((r) => r.runId === chosen)) select.value = chosen;
+  const none = v.labelRuns.length === 0;
+  el('label-none').hidden = !none; el('label-none').textContent = none ? tt('labelNoRuns') : '';
+  el('label-fields').hidden = none;
+}
+
+// RECORD A RUN — a human write on this click only; head office takes the ingredients off the shelf and holds the batch.
+el('run').addEventListener('click', () => {
+  void (async () => {
+    if (tasks === null) return;
+    const o = await tasks.recordRun({ recipeId: el('run-recipe').value, batches: el('run-batches').value, actualOutput: el('run-output').value, batchId: el('run-batch').value, locationId: el('run-location').value });
+    paintResult(tasks.presentRun(lang, o));
+    if (o.outcome === 'recorded') { for (const id of ['run-recipe', 'run-batches', 'run-output', 'run-batch']) el(id).value = ''; await refresh(); }
+  })();
+});
+
+// PRINT THE LABEL — the use-by and batch are the run's own; head office refuses a label missing a required field.
+el('label').addEventListener('click', () => {
+  void (async () => {
+    if (tasks === null) return;
+    const o = await tasks.printLabel({ runId: el('label-run').value, productName: el('label-name').value, netQuantity: el('label-net').value, packerDetails: el('label-packer').value, price: el('label-price').value, allergens: el('label-allergens').value });
+    paintResult(tasks.presentLabel(lang, o));
+    const out = el('label-out');
+    out.hidden = o.outcome !== 'printed';
+    out.textContent = o.outcome === 'printed' ? o.lines.join('\n') : '';
+  })();
+});
 
 function paintResult(presentation) {
   const result = el('result');
@@ -183,7 +237,12 @@ async function refresh() {
   const api = window.production;
   if (!api || typeof api.refresh !== 'function') return;
   const board = await api.refresh();
-  if (board) { session = api.present(board); paint(); }
+  if (board) {
+    session = api.present(board);
+    // FUL-13: the task paths read the same board (the batches a label may be printed for).
+    if (typeof window.productionTasksFor === 'function') { tasks = window.productionTasksFor(board) ?? tasks; window.productionTasks = tasks; }
+    paint();
+  }
 }
 refresh();
 
