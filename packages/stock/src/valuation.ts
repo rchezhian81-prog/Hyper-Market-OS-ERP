@@ -49,6 +49,12 @@ export interface ValuationMovement {
   /** Unit cost for a cost-carrying entry, in minor units. Absent ⇒ the entry's quantity is unvalued. */
   readonly unitCostMinor?: number;
   /**
+   * OB-31 "A": how many quantity minor units `unitCostMinor` is quoted for — 1000 for a kilo item counted in grams (cost per
+   * kg) or a litre item counted in millilitres; 1 (the default) for a counted item. The receipt's value is then
+   * `qty × cost ÷ scale`, rounded once on the receipt — never per gram.
+   */
+  readonly costScale?: number;
+  /**
    * True for a transfer OUT to another of the shop's own locations (SP-5, F05): the issue leaves at the average like
    * any other, but its value is booked as `transferredOut`, not as cost of goods sold — nothing was sold.
    */
@@ -115,7 +121,8 @@ export function weightedAverageValuation(
 
     if (m.effect === 1) {
       if (m.isPurchaseReceipt && m.unitCostMinor !== undefined) {
-        acc.valueMinor += m.unitCostMinor * m.quantityMinor;
+        const scale = m.costScale ?? 1;
+        acc.valueMinor += scale === 1 ? m.unitCostMinor * m.quantityMinor : share(m.unitCostMinor, m.quantityMinor, scale);
         acc.valuedQty += m.quantityMinor;
       } else if (m.isPurchaseReceipt) {
         // A receipt with no cost: units enter, value does not. Reported as unvalued, not folded at 0.

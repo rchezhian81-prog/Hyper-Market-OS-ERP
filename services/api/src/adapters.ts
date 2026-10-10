@@ -23,6 +23,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import { money } from '../../../packages/contracts/src/money';
+import { costScaleOf, costOfQuantity } from '../../../packages/contracts/src/quantity';
 import type { BatchEntry, EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
@@ -3506,6 +3507,7 @@ export function concessionAdapter(input: {
             effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
             isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
             ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+            costScale: costScaleOf(m.uom), // OB-31: a kilo item counted in grams is costed per kg
           })),
           'INR',
         );
@@ -4503,6 +4505,7 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
       productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
       isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+      costScale: costScaleOf(m.uom), // OB-31: a kilo item counted in grams is costed per kg
     })),
     'INR',
   );
@@ -6340,6 +6343,7 @@ export function inventoryAdapter(input: {
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
           isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+          costScale: costScaleOf(m.uom), // OB-31: a kilo item counted in grams is costed per kg
         })),
         'INR',
       );
@@ -6399,6 +6403,7 @@ export function inventoryAdapter(input: {
               effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
               isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
               ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
+              costScale: costScaleOf(m.uom), // OB-31: a kilo item counted in grams is costed per kg
             })),
           'INR',
         );
@@ -6566,7 +6571,8 @@ function mergeQty(a: Readonly<Record<string, number>>, b: Readonly<Record<string
 
 /** Value the PO's lines (ordered qty × unit cost) — recomputed when an amendment replaces the lines. */
 function poTotalMinor(lines: StoredPurchaseOrder['lines']): number {
-  return lines.reduce((s, l) => s + l.unitCost.minor * l.orderedQty, 0);
+  // OB-31: a kilo / litre line is costed per kilo / litre while its quantity is in grams / millilitres.
+  return lines.reduce((s, l) => s + (l.uom === undefined ? l.unitCost.minor * l.orderedQty : costOfQuantity(l.unitCost.minor, l.orderedQty, l.uom)), 0);
 }
 
 /**

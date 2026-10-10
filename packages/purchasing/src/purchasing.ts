@@ -7,13 +7,26 @@
 // received − cancelled, so it reconciles to receipts (M07). Pure and deterministic;
 // composes the Money primitive and the approval engine (approval produced upstream).
 
-import { add, zero, multiplyByInteger, type Money, type CurrencyCode } from '../../contracts/src/money';
+import { add, zero, multiplyByInteger, money, type Money, type CurrencyCode } from '../../contracts/src/money';
+import { costOfQuantity } from '../../contracts/src/quantity';
 import type { DecidedRequest } from '../../approvals/src/approvals';
 
 export interface PurchaseOrderLineInput {
   readonly productId: string;
-  readonly orderedQty: number; // whole units (> 0)
+  readonly orderedQty: number; // whole BASE units (> 0): items, or grams / millilitres for a kilo / litre product (OB-31)
   readonly unitCost: Money;
+  /**
+   * SF-11 / OB-31: the line's unit. A kilo (`kg`) or litre (`L`) line counts in grams / millilitres and its `unitCost` is per
+   * kilo / litre, so its value is `qty × cost ÷ 1000`, rounded once. Absent (older orders) or a counted unit → per item.
+   */
+  readonly uom?: string;
+  /** SF-11: the order as the buyer placed it — so many packs at one pack level, at the pack's cost — converted exactly. */
+  readonly ordered?: { readonly level: string; readonly quantity: number; readonly unitsPerPack: number; readonly packCost: Money };
+}
+
+/** A line's value at its own unit cost — per item, or per kilo / litre for a weighed / measured line (OB-31). */
+export function lineValueMinor(line: Pick<PurchaseOrderLineInput, 'unitCost' | 'uom'>, quantity: number): number {
+  return line.uom === undefined ? line.unitCost.minor * quantity : costOfQuantity(line.unitCost.minor, quantity, line.uom);
 }
 
 export interface IssuePurchaseOrderInput {
@@ -149,7 +162,7 @@ export function computeOpenCommitment(
     const receivedQty = receivedByProduct[line.productId] ?? 0;
     const cancelledQty = cancelledByProduct[line.productId] ?? 0;
     const openQty = line.orderedQty - receivedQty - cancelledQty;
-    const openValue = multiplyByInteger(line.unitCost, openQty);
+    const openValue = line.uom === undefined ? multiplyByInteger(line.unitCost, openQty) : money(lineValueMinor(line, openQty), currency);
     totalOpenValue = add(totalOpenValue, openValue);
     return { productId: line.productId, orderedQty: line.orderedQty, receivedQty, cancelledQty, openQty, openValue };
   });

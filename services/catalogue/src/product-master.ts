@@ -164,7 +164,22 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
       permission: 'catalogue.pack.read',
       handler: async (ctx) => {
         const products = await deps.products(ctx.tenantId);
-        return { status: 200, body: { products, count: products.length } };
+        // SF-11 (M03-FR-01 acceptance "a report by category returns the correct set"): `?categoryId=` narrows to the products
+        // whose ONE primary category is that category or any category beneath it on head office's list. An id the list does
+        // not hold is a 404 — an unknown category is not an empty one.
+        const categoryId = ctx.query['categoryId'];
+        if (categoryId === undefined || categoryId === '') return { status: 200, body: { products, count: products.length } };
+        const categories = await deps.categoryRegister.categories(ctx.tenantId);
+        if (!categories.some((c) => c.categoryId === categoryId)) throw notFound(`category ${categoryId}`);
+        const within = new Set<string>([categoryId]);
+        for (let grew = true; grew;) {
+          grew = false;
+          for (const c of categories) {
+            if (c.parentId !== null && within.has(c.parentId) && !within.has(c.categoryId)) { within.add(c.categoryId); grew = true; }
+          }
+        }
+        const inCategory = products.filter((p) => p.primaryCategoryId !== null && within.has(p.primaryCategoryId));
+        return { status: 200, body: { products: inCategory, count: inCategory.length, categoryId, categoriesIncluded: [...within].sort() } };
       },
     },
   ];

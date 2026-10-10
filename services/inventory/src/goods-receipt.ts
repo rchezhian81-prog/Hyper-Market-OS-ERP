@@ -49,6 +49,8 @@ import {
 } from '../../../packages/receiving/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { Movement } from './index';
+import { costOfQuantity } from '../../../packages/contracts/src/quantity';
+import { countInBaseUnits, UnknownPackLevelError, InvalidPackError, type PackHierarchy, type PackCount } from '../../../packages/product/src/index';
 import { assertLocationInScope, stockReadScope, type LocationBranches } from './location-scope';
 import type { RequestContext } from '../../kernel/src/index';
 
@@ -256,6 +258,8 @@ export interface OrderGuard {
 }
 
 export interface GoodsReceiptDeps {
+  /** SF-11: the product's pack hierarchy — so a delivery counted in cases and inners is received in base units, exactly. */
+  readonly packOf?: (tenantId: string, productId: string) => Promise<PackHierarchy | undefined> | PackHierarchy | undefined;
   /** PA-01-r1: which branch a warehouse/location belongs to (the org hierarchy); absent → its own branch key. */
   readonly locationBranches?: LocationBranches;
   /** The GRN with this id, or undefined — for the idempotency (never-double-count) check. */
@@ -305,6 +309,78 @@ const isCapturedLine = (v: unknown): v is CapturedLine =>
   && isStr(v['uom']) && isMoney(v['unitCost']) && isStr(v['condition'])
   // Wave 3 · SF-07: a recorded temperature is judged against the product's limits, so only a number can be one.
   && (v['temperatureC'] === undefined || isNum(v['temperatureC']));
+
+const readPackCounts = (v: unknown): readonly PackCount[] | undefined =>
+  Array.isArray(v) && v.length > 0 && v.every((c) => isObj(c) && isStr(c['level']) && isNonNegInt(c['quantity']))
+    ? (v as { level: string; quantity: number }[]).map((c) => ({ level: c.level, quantity: c.quantity }))
+    : undefined;
+
+/**
+ * SF-11 (M03-FR-02 "a case scanned at receiving converts to the correct unit count" · OB-31): read a receipt's lines, turning
+ * `countedPacks` / `orderedPacks` ([{ level, quantity }]) into `countedMinor` / `orderedMinor` base units through the product's
+ * pack hierarchy, and refusing a line whose unit is not its pack's base unit. Lines without packs pass through unchanged;
+ * anything unreadable is left for the shape check below to refuse.
+ */
+async function packedReceiptLines(deps: Pick<GoodsReceiptDeps, 'packOf'>, tenantId: string, raw: unknown): Promise<unknown> {
+  if (!Array.isArray(raw) || deps.packOf === undefined) return raw;
+  const out: unknown[] = [];
+  for (const v of raw) {
+    if (!isObj(v) || !isStr(v['productId'])) { out.push(v); continue; }
+    const productId = v['productId'];
+    const hasPacks = v['countedPacks'] !== undefined || v['orderedPacks'] !== undefined;
+    const pack = await deps.packOf(tenantId, productId);
+    if (pack === undefined) {
+      if (hasPacks) {
+        throw apiError(422, {
+          code: 'no_pack_hierarchy',
+          whatHappened: `Product ${productId} has no pack hierarchy, so a count in packs cannot be turned into units.`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Count it in its base unit, or define its packs first (POST /v1/catalogue/products/:productId/pack). Nothing was received.',
+        });
+      }
+      out.push(v);
+      continue;
+    }
+    const line: Record<string, unknown> = { ...v };
+    if (line['uom'] === undefined) line['uom'] = pack.baseUom;
+    if (line['uom'] !== pack.baseUom) {
+      throw apiError(422, {
+        code: 'receipt_unit_not_base',
+        whatHappened: `Line ${String(v['lineId'])} counts ${productId} in "${String(line['uom'])}", but the product's base unit is "${pack.baseUom}" (counted in its smallest part — grams for a kilo product, millilitres for a litre product, items for the rest). Receiving it in another unit would put a wrong figure on the shelf.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: `Count it in "${pack.baseUom}", or in its packs (${pack.levels.map((l) => l.level).join(', ')}) with countedPacks. Nothing was received.`,
+      });
+    }
+    for (const [packsField, minorField] of [['countedPacks', 'countedMinor'], ['orderedPacks', 'orderedMinor']] as const) {
+      if (v[packsField] === undefined) continue;
+      const counts = readPackCounts(v[packsField]);
+      if (counts === undefined || v[minorField] !== undefined) {
+        throw apiError(400, {
+          code: 'not_readable_as_a_pack_count',
+          whatHappened: `Line ${String(v['lineId'])}: ${packsField} must be a list of { level, quantity (whole, 0 or more) }, and is sent INSTEAD of ${minorField}, never beside it.`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Send the count once — in packs or in base units. Nothing was received.',
+        });
+      }
+      try {
+        line[minorField] = countInBaseUnits(pack, counts);
+      } catch (err) {
+        if (err instanceof UnknownPackLevelError || err instanceof InvalidPackError) {
+          throw apiError(422, {
+            code: 'unknown_pack_level',
+            whatHappened: `Line ${String(v['lineId'])}: ${err.message} (it has ${pack.levels.map((l) => l.level).join(', ')}).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Count in the levels the product\'s pack defines. Nothing was received.',
+          });
+        }
+        throw err;
+      }
+      delete line[packsField];
+    }
+    out.push(line);
+  }
+  return out;
+}
 
 /**
  * The product master's rules for every product on a receipt — head office's, never the body's (F03). A product the
@@ -681,7 +757,7 @@ export async function returnRejectedExcess(deps: GoodsReceiptDeps, input: {
   const excessReturn: ExcessReturn = {
     returnedBy: input.returnedBy, returnedAt, reason: input.reason,
     quantityMinor: held.reduce((s, l) => s + l.heldMinor, 0),
-    valueMinor: held.reduce((s, l) => s + l.heldMinor * l.unitCost.minor, 0),
+    valueMinor: held.reduce((s, l) => s + costOfQuantity(l.unitCost.minor, l.heldMinor, l.uom), 0),
     currency: held[0]?.unitCost.currency ?? 'INR',
     movementIds: movements.map((m) => m.movementId), via: 'direct',
   };
@@ -738,7 +814,7 @@ export async function returnDisposedLine(deps: GoodsReceiptDeps, input: {
   }
   const returnedAt = deps.now();
   const lineReturn: LineReturn = {
-    lineId: line.lineId, productId: line.productId, quantityMinor: line.quarantinedMinor, valueMinor: line.quarantinedMinor * line.unitCost.minor,
+    lineId: line.lineId, productId: line.productId, quantityMinor: line.quarantinedMinor, valueMinor: costOfQuantity(line.unitCost.minor, line.quarantinedMinor, line.uom),
     currency: line.unitCost.currency, returnedBy: input.returnedBy, returnedAt, reason: input.reason, movementIds: [],
   };
   const returned: GrnRecord = { ...rec, lineReturns: [...(rec.lineReturns ?? []), lineReturn] };
@@ -796,7 +872,7 @@ export async function decideLineDisposition(deps: GoodsReceiptDeps, input: {
   const disposition: LineDisposition = {
     lineId: line.lineId, productId: line.productId, quantityMinor: quantity, disposition: input.disposition,
     decidedBy: input.decidedBy, decidedAt, reason: input.reason,
-    valueMinor: line.unitCost.minor * quantity, currency: line.unitCost.currency,
+    valueMinor: costOfQuantity(line.unitCost.minor, quantity, line.uom), currency: line.unitCost.currency,
     movementIds: movements.map((m) => m.movementId), via: input.via,
   };
   const released = movements.reduce((n, m) => n + m.quantityMinor, 0);
@@ -835,7 +911,10 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             nextSafeAction: 'Send the counted lines only. Nothing was changed.',
           });
         }
-        const lines = b['lines'];
+        // SF-11: a line counted in packs (4 cases + 3 inners + 2 singles) is turned into base units through the product's
+        // own pack hierarchy, and every line of a product with a pack must be in that pack's base unit (OB-31: grams for a kilo
+        // product, millilitres for a litre product, items for the rest) — refused by name otherwise, never guessed.
+        const lines = await packedReceiptLines(deps, ctx.tenantId, b['lines']);
         if (grnId === '' || !isStr(b['warehouseId']) || !isStr(b['receivedOnDate']) || !isStr(b['currency'])
           || !Array.isArray(lines) || lines.length === 0 || !lines.every(isCapturedLine)) {
           throw apiError(400, {

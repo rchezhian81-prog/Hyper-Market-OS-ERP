@@ -155,3 +155,30 @@ export function toDecimalString(a: Quantity): string {
   const frac = String(magnitude % scale).padStart(precision, '0');
   return `${sign}${whole}.${frac}`;
 }
+
+// ── OB-31 "A" (owner, 10 Oct 2026): weighed and measured goods are COUNTED in their smallest unit and COSTED per whole unit ──
+//
+// A kilo item is counted in grams and a litre item in millilitres everywhere (the quantity's minor units above), but its cost
+// is quoted per KILO / per LITRE — never per gram, where a ₹62/kg price (6.2 paise a gram) cannot be a whole number of paise.
+// So the value of a quantity is `minor units × cost per whole unit ÷ 10^precision`, rounded half-up ONCE on the total — never
+// per gram. A countable item (each) has precision 0: its cost is per item and the value is a plain product. These two are
+// the ONE place that rule lives; receiving, valuation, the purchase order and the supplier account all call them.
+
+/** How many minor units the cost of `uom` is quoted for: 1000 for kg (per kilo) and L (per litre); 1 for anything counted. */
+export function costScaleOf(uom: string): number {
+  return isUom(uom) ? 10 ** precisionOf(uom) : 1;
+}
+
+/** The value of `quantityMinor` minor units at `unitCostMinor` per whole unit of `uom` — exact, rounded half-up once. */
+export function costOfQuantity(unitCostMinor: number, quantityMinor: number, uom: string): number {
+  const scale = costScaleOf(uom);
+  if (scale === 1) return unitCostMinor * quantityMinor;
+  const n = BigInt(unitCostMinor) * BigInt(quantityMinor);
+  const d = BigInt(scale);
+  const neg = n < 0n;
+  const abs = neg ? -n : n;
+  const q = abs / d;
+  const r = abs % d;
+  const rounded = r * 2n >= d ? q + 1n : q;
+  return Number(neg ? -rounded : rounded);
+}
