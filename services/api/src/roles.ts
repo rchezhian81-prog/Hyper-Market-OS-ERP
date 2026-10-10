@@ -84,7 +84,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.adjustment.sync', 'inventory.adjustment.approve',
       // SP-4 (ii): the owner sets the receiving tolerances the cloud applies to every delivery (never the body, F03).
       'inventory.receipt.policy.set', 'inventory.receipt.policy.read',
-      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.return.threshold.set', 'pos.return.window.set', 'pos.storecredit.cap.set', 'pos.return.noreceipt.cap.set', 'pos.restricted.check',
+      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.override.approve', 'pos.return.threshold.set', 'pos.return.window.set', 'pos.storecredit.cap.set', 'pos.return.noreceipt.cap.set', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.read', 'till.overshort.review',
       // SP-4c: the till's cash movements and shift closes relayed by the store box to the synced routes.
       'cash.movement.sync', 'till.shift.sync',
@@ -192,7 +192,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // SP-8 (F08): the floor indent chain — a manager raises, approves (never their own) and reads the register.
       'inventory.indent.request', 'inventory.indent.approve', 'inventory.indent.read',
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
-      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.restricted.check',
+      'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.override.approve', 'pos.restricted.check',
       'cash.movement.record', 'cash.till.read', 'till.shift.read', 'till.overshort.review',
       'till.dayclose.sync', 'till.dayclose.read',
       'lp.case.manage', 'lp.case.read', 'lp.rule.manage',

@@ -5108,10 +5108,28 @@ export function lpRulesAdapter(input: {
 export function lpActivityAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /**
+   * The shop's calendar (time zone + trading-day cut-off) from store setup, so a day is judged by the SHOP's trading day
+   * — a void at 00:30 belongs to the day still trading (PF-07). Absent = the UTC calendar date.
+   */
+  readonly calendar?: (tenantId: string) => Promise<TradingCalendar>;
 }): LpActivityDeps {
   const activityStream = streamName(STREAM.lossPrevention, 'activity');
   const raisedStream = streamName(STREAM.lossPrevention, 'raised');
-  const dayRange = (day: string) => ({ from: `${day}T00:00:00.000Z`, to: `${day}T23:59:59.999Z` });
+  const tradingDayOf = async (tenantId: string, atIso: string): Promise<string> => {
+    if (input.calendar === undefined) return atIso.slice(0, 10);
+    try { return tradingDayIn(atIso, await input.calendar(tenantId)); } catch { return atIso.slice(0, 10); }
+  };
+  const dayRange = async (tenantId: string, day: string): Promise<{ from: string; to: string }> => {
+    if (input.calendar !== undefined) {
+      try {
+        const w = tradingDayWindow(day, await input.calendar(tenantId));
+        // [from, to) as an inclusive read window.
+        return { from: w.from, to: new Date(Date.parse(w.to) - 1).toISOString() };
+      } catch { /* an unreadable calendar falls back to the UTC date — said by the route's day */ }
+    }
+    return { from: `${day}T00:00:00.000Z`, to: `${day}T23:59:59.999Z` };
+  };
   const rules = lpRulesAdapter(input);
   const cases = lpCasesAdapter(input);
   return {
@@ -5123,14 +5141,23 @@ export function lpActivityAdapter(input: {
         idempotencyKey: `till-activity-${tenantId}-${a.activityId}`, source: 'api/pos', payload: a,
       }));
     },
-    voidsOn: async (tenantId, day) => {
-      const { from, to } = dayRange(day);
-      return (await allOf<TillActivity>(input.store, tenantId, activityStream, 'TillActivityRecorded'))
-        .filter((a) => a.at >= from && a.at <= to)
-        .map((a) => ({ txnId: `${a.billRef}:${a.lineId}`, kind: 'void' as const, cashierId: a.cashierId, at: a.at, valueMinor: a.valueMinor }));
+    // Voids, no-sales and price overrides of one trading day: the day the box dated it by, else the shop's calendar.
+    heldOn: async (tenantId, day) => {
+      const out: TillActivity[] = [];
+      for (const a of await allOf<TillActivity>(input.store, tenantId, activityStream, 'TillActivityRecorded')) {
+        if ((a.tradingDay ?? await tradingDayOf(tenantId, a.at)) === day) out.push(a);
+      }
+      return out;
+    },
+    tradingDayOf,
+    // §28: the override authority from head office's OWN grants (owner + store manager), never the relay's word.
+    mayApproveOverride: async (tenantId, userId) => {
+      const grants = await effectiveGrants(input.store, tenantId);
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return ROLE_CATALOGUE.some((r) => roleIds.has(r.id) && r.permissions.includes('pos.override.approve'));
     },
     refundsOn: async (tenantId, day) => {
-      const { from, to } = dayRange(day);
+      const { from, to } = await dayRange(tenantId, day);
       const returns = await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', from, to });
       return returns.map((e) => payloadOf<{ readonly returnId: string; readonly processedBy: string; readonly processedAt: string; readonly refundMinor: number }>(e))
         .map((r) => ({ txnId: r.returnId, kind: 'refund' as const, cashierId: r.processedBy, at: r.processedAt, valueMinor: r.refundMinor }));

@@ -25,9 +25,21 @@ import type { CheckOutcome, CheckRefusal, SignInRefusal } from './till-operators
 export const APPROVAL_AUTHORITY = 'pos.return.approve';
 export const APPROVAL_MINUTES = 5;
 
-/** What an approval is for. A refund and an exchange's refunded difference are against a bill; a no-receipt return is not. */
-export type ApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund';
-const KINDS: readonly ApprovalKind[] = ['refund', 'no_receipt_return', 'exchange_refund'];
+/**
+ * The permission a manager needs to approve a SUPERVISOR OVERRIDE at the till — opening the drawer with no sale, or
+ * changing a line's price (audit PF-07 · M12-FR-04 "override by Supervisor authority; cashier cannot self-override").
+ */
+export const OVERRIDE_AUTHORITY = 'pos.override.approve';
+
+/**
+ * What an approval is for. A refund and an exchange's refunded difference are against a bill; a no-receipt return is
+ * not. A no-sale (the drawer opened with no sale) is against no bill and moves no value; a price override is against
+ * the bill, for the amount it takes off the line (audit PF-07).
+ */
+export type ApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 'no_sale' | 'price_override';
+const KINDS: readonly ApprovalKind[] = ['refund', 'no_receipt_return', 'exchange_refund', 'no_sale', 'price_override'];
+/** The overrides (PF-07): approved by `OVERRIDE_AUTHORITY`, spent by the till action they were given for. */
+export const OVERRIDE_KINDS: readonly ApprovalKind[] = ['no_sale', 'price_override'];
 
 export type ApprovalRefusal =
   | SignInRefusal
@@ -161,21 +173,25 @@ export class TillApprovals {
     const asker = this.deps.operators.check(input.token, input.laneId);
     if (!asker.ok) return refuse(asker.refusedBecause, asker.laneMessage);
     const kind = KINDS.find((k) => k === input.kind);
-    const valueMinor = typeof input.valueMinor === 'number' && Number.isSafeInteger(input.valueMinor) && input.valueMinor > 0 ? input.valueMinor : undefined;
+    // A no-sale moves no value (0, and nothing else); every other approval is for a positive amount.
+    const valueMinor = kind === 'no_sale'
+      ? (input.valueMinor === undefined || input.valueMinor === 0 ? 0 : undefined)
+      : typeof input.valueMinor === 'number' && Number.isSafeInteger(input.valueMinor) && input.valueMinor > 0 ? input.valueMinor : undefined;
     const billRef = isStr(input.billRef) ? input.billRef.trim() : null;
     const managerId = input.managerId.trim();
-    if (kind === undefined || valueMinor === undefined || !isStr(input.reason) || managerId === '' || (kind !== 'no_receipt_return' && billRef === null)) {
+    if (kind === undefined || valueMinor === undefined || !isStr(input.reason) || managerId === '' || (kind !== 'no_receipt_return' && kind !== 'no_sale' && billRef === null)) {
       return refuse('approval_not_readable', WORDS.approval_not_readable);
     }
     // §28: never the person asking. Said before the PIN is even looked at, so a cashier learns nothing by trying.
     if (managerId === asker.userId) return refuse('self_approval', WORDS.self_approval);
-    const manager = await this.deps.operators.verifyPerson({ staffId: managerId, pin: input.pin, laneId: input.laneId, authority: APPROVAL_AUTHORITY });
+    const authority = OVERRIDE_KINDS.includes(kind) ? OVERRIDE_AUTHORITY : APPROVAL_AUTHORITY;
+    const manager = await this.deps.operators.verifyPerson({ staffId: managerId, pin: input.pin, laneId: input.laneId, authority });
     if (!manager.ok) return refuse(manager.refusedBecause, manager.laneMessage);
     const nowMs = Date.parse(this.deps.now());
     const approvalId = `apr-${randomBytes(12).toString('hex')}`;
     const expiresAt = new Date(nowMs + APPROVAL_MINUTES * 60_000).toISOString();
     await this.record({
-      kind: 'granted', approvalId, subjectKind: kind, billRef: kind === 'no_receipt_return' ? null : billRef, valueMinor,
+      kind: 'granted', approvalId, subjectKind: kind, billRef: kind === 'no_receipt_return' || kind === 'no_sale' ? null : billRef, valueMinor,
       requestedBy: asker.userId, approvedBy: manager.userId, laneId: input.laneId, reason: String(input.reason).trim().slice(0, 200),
       at: new Date(nowMs).toISOString(), expiresAt,
     });
@@ -208,5 +224,36 @@ export class TillApprovals {
     }
     if (already === undefined) await this.record({ kind: 'used', at: this.deps.now(), approvalId, usedBy: input.returnId });
     return { ok: true, stamp: { approvalId, approvedBy: g.approvedBy } };
+  }
+
+  /**
+   * Spend an approval on a SUPERVISOR OVERRIDE (audit PF-07): a no-sale or a price override, by the till action
+   * `activityId`. It must have been issued here, for this kind, bill and amount, to this cashier on this till, not
+   * expired, and not spent by a DIFFERENT action — the same action re-sent after a lost reply is the same use. An
+   * override always needs one: there is no threshold below which a cashier overrides alone (§28).
+   */
+  async spendOverride(input: {
+    readonly approvalId: unknown; readonly kind: 'no_sale' | 'price_override'; readonly billRef: string | null; readonly valueMinor: number;
+    readonly requestedBy: string; readonly laneId: string; readonly activityId: string;
+  }): Promise<ReturnCheck> {
+    const say: Record<'approval_required' | 'approval_unknown' | 'approval_expired' | 'approval_already_used' | 'approval_does_not_match', string> = {
+      approval_required: 'This needs a manager\'s approval on this till. Nothing was done — ask a manager to approve it with their PIN.',
+      approval_unknown: 'This store computer did not give that approval. Nothing was done — ask a manager to approve it with their PIN.',
+      approval_expired: 'The manager\'s approval has expired (five minutes). Nothing was done — ask the manager to approve it again.',
+      approval_already_used: 'That approval was already used. Nothing was done — ask the manager to approve this one.',
+      approval_does_not_match: 'The manager approved something else (another bill, amount, cashier or action). Nothing was done — ask the manager to approve this one.',
+    };
+    const fail = (refusedBecause: keyof typeof say): ReturnCheck => ({ ok: false, refusedBecause, laneMessage: say[refusedBecause] });
+    if (!isStr(input.approvalId)) return fail('approval_required');
+    const g = this.granted.get(input.approvalId);
+    if (g === undefined) return fail('approval_unknown');
+    const already = this.usedBy.get(input.approvalId);
+    if (already !== undefined && already !== input.activityId) return fail('approval_already_used');
+    if (already === undefined && Date.parse(g.expiresAt) <= Date.parse(this.deps.now())) return fail('approval_expired');
+    if (g.kind !== input.kind || g.billRef !== input.billRef || g.valueMinor !== input.valueMinor || g.requestedBy !== input.requestedBy || g.laneId !== input.laneId) {
+      return fail('approval_does_not_match');
+    }
+    if (already === undefined) await this.record({ kind: 'used', at: this.deps.now(), approvalId: input.approvalId, usedBy: input.activityId });
+    return { ok: true, stamp: { approvalId: input.approvalId, approvedBy: g.approvedBy } };
   }
 }

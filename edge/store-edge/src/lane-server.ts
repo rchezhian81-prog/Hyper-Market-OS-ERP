@@ -205,7 +205,7 @@ export interface LaneLoyaltyPort {
 }
 export type LaneTillActivityHandler = (input: {
   readonly laneId: string; readonly cashierId: string; readonly via: string; readonly body: Record<string, unknown>;
-}) => Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage: string }>;
+}) => Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage: string; readonly approvedBy?: string }>;
 
 /** The payment-attempt register this socket asks (`PaymentAttempts`). */
 export interface LanePaymentAttemptsPort {

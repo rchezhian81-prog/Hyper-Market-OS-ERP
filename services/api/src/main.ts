@@ -883,8 +883,15 @@ export function buildSurface(deps: {
       : lpRulesAdapter({ store, now })),
     // PF-07: the till's own record — voids relayed by the box — judged by the store's rules on the authoritative record.
     ...lpActivityRoutes(store === undefined
-      ? { activity: empty(undefined), recordActivity: () => {}, voidsOn: empty([]), refundsOn: empty([]), rules: empty([]), raised: empty([]), recordRaised: () => {}, cases: empty([]), now }
-      : lpActivityAdapter({ store, now })),
+      ? { activity: empty(undefined), recordActivity: () => {}, heldOn: empty([]), refundsOn: empty([]), rules: empty([]), raised: empty([]), recordRaised: () => {}, cases: empty([]), now }
+      : lpActivityAdapter({
+        store, now,
+        // PF-07: days judged by the SHOP's trading day — its time zone and cut-off from store setup.
+        calendar: async (tenantId) => ({
+          timeZone: await settings.value(tenantId, SETTINGS.STORE_TIME_ZONE),
+          tradingDayCutoff: await settings.value(tenantId, SETTINGS.TRADING_DAY_CUTOFF),
+        }),
+      })),
     ...fraudSignalsRoutes(store === undefined
       ? { thresholds: empty({}), recordThresholds: () => {}, bankHolders: empty([]), now }
       : fraudSignalsAdapter({ store, now })),
