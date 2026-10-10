@@ -4245,6 +4245,9 @@ export function auditTrailAdapter(input: { readonly store: EventStore }): AuditT
  * per node id (a company/branch/warehouse/department can be edited and activated; append-only, hard rule
  * #2); GST registrations are one per GSTIN. The hierarchy rules run in the route on the tested engine.
  */
+/** An org node as one canonical string (its fields in name order) — what "the same node" means for PA-05. */
+const nodeJson = (n: OrgNode): string => JSON.stringify(Object.keys(n).sort().map((k) => [k, (n as unknown as Record<string, unknown>)[k]]));
+
 export function orgStructureAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -4271,13 +4274,21 @@ export function orgStructureAdapter(input: {
       return [...byGstin.values()];
     },
     recordNode: async (tenantId, node) => {
+      // Audit PA-05: the key used to be the node's STRUCTURE (kind, parent, company, GSTIN, status) without its name, so a
+      // rename collapsed into the earlier record as a "duplicate" — the route said 201 and the old name stayed. Now:
+      // exactly what is held already → nothing to record; anything else (a rename, a rename BACK, an activation) is a new
+      // version of the node, keyed on its version number and its whole content. The latest-wins fold reads it.
+      const versions = (await input.store.readStream(tenantId, ORG_NODES_STREAM, { type: 'OrgNodeSet' }))
+        .map((e) => payloadOf<OrgNode>(e)).filter((n) => n.nodeId === node.nodeId);
+      const held = versions[versions.length - 1];
+      if (held !== undefined && nodeJson(held) === nodeJson(node)) return;
+      const version = versions.length + 1;
+      const digest = createHash('sha256').update(nodeJson(node)).digest('hex').slice(0, 16);
       await input.store.append(tenantId, ORG_NODES_STREAM, makeEvent({
-        id: `org-node-${node.nodeId}-${node.status}`,
+        id: `org-node-${node.nodeId}-v${version}`,
         type: 'OrgNodeSet',
         occurredAt: input.now(),
-        // Keyed on the node + its shape + status: re-sending the same state collapses, an edit or an
-        // activation is a new fact the latest-wins fold takes.
-        idempotencyKey: `org-node-${tenantId}-${node.nodeId}-${node.kind}-${node.parentId ?? 'root'}-${node.companyId ?? 'none'}-${node.gstin ?? 'none'}-${node.status}`,
+        idempotencyKey: `org-node-${tenantId}-${node.nodeId}-v${version}-${digest}`,
         source: 'api/platform',
         payload: node,
       }));
