@@ -77,6 +77,7 @@ import { startScreenServer, SCREEN_HOST, type ScreenServer } from './screen-serv
 import { startDeviceServer, DEVICE_HOST, type DeviceServer } from './device-server';
 import { DeviceEnrolments, readPackDevices } from './device-enrolments';
 import { TillOperators, loadTillCredentials } from './till-operators';
+import { phoneOperatorsOf } from './handheld-sign-in';
 import { TillApprovals } from './till-approvals';
 import { ReceiptNumbers } from './receipt-numbers';
 import { HeldBills } from './held-bills';
@@ -1143,7 +1144,9 @@ export async function startEdge(
   // authority are read from the CURRENT pack at each decision, so a leaver's session ends at their next write.
   const credentialsFile = settings['EDGE_TILL_CREDENTIALS_FILE'] ?? join(settings['EDGE_DATA_DIR']!, 'till-credentials.json');
   const trustForwardedTillUser = settings['EDGE_LANE_TRUST_FORWARDED_USER'] === '1';
-  const tillOperators = lanePort === undefined ? null : await TillOperators.open({
+  // DF-3-c (OB-28 "A"): the SAME register signs people in on the phones, with the same PIN — so it runs whenever this box
+  // has a till OR a phone socket. Only the till's money paths are gated on the lane.
+  const staffSignIn = lanePort === undefined && settings['EDGE_DEVICE_PORT'] === undefined ? null : await TillOperators.open({
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     key: tillPinKey(settings['PACK_SIGNING_KEY']!),
     credentials: () => loadTillCredentials(credentialsFile),
@@ -1152,6 +1155,7 @@ export async function startEdge(
       permissionsOf: (userId) => permissionsOf(userId, pack),
     },
   });
+  const tillOperators = lanePort === undefined ? null : staffSignIn;
   // A MANAGER'S APPROVAL at the till (ADR-0021): issued here against the manager's own PIN, spent once by the refund it
   // was given for. The threshold is the CURRENT pack's; a box with no service policy treats every refund as needing one.
   const tillApprovals = tillOperators === null ? null : await TillApprovals.open({
@@ -1362,6 +1366,8 @@ export async function startEdge(
     relayDeviceEvents,
     deviceEventStatus,
     syncStatus,
+    // DF-3-c (OB-28 "A"): who is holding each phone — the till's register, addressed by the device.
+    operators: staffSignIn === null ? null : phoneOperatorsOf(staffSignIn),
     now: () => new Date().toISOString(),
   });
   if (devices !== null && enrolments !== null) {
@@ -1370,6 +1376,7 @@ export async function startEdge(
       : `device socket on ${devices.host}:${devices.port} — reachable on the shop network; only handhelds enrolled with a head-office code may use it, and it serves the handheld screens only (ADR-0019)`);
     const live = enrolments.enrolled().filter((e) => e.revokedAt === null).length;
     if (live > 0) say(`  ${live} handheld(s) enrolled on this box`);
+    say('  phone sign-in: each person signs in on the phone with their staff ID and the same PIN as the till; their work is recorded as theirs (OB-28)');
     if (enrolments.unreadableRecords > 0) say(`  ${enrolments.unreadableRecords} enrolment record(s) could not be read whole — kept, not repaired. Raise this.`);
   }
 

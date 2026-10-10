@@ -223,7 +223,16 @@ screen is served to a device that has not enrolled.
 4. **On the handheld**, open `http://<address>:8092/` in the browser. It shows **Enrol this handheld**: type the
    device id and the code, press Enrol. A wrong code says so and counts (five wrong per device per fifteen minutes,
    then a wait); an expired code says so — issue a new one; a code already used says so — it never works twice.
-   On success the warehouse screen opens as the named worker with the served assignment.
+   On success the phone asks **who is holding it** (next step).
+4a. **The person signs in on the phone (OB-28 "A", DF-3-c).** Each person keys their **staff ID** and the **same six-digit
+   PIN as the till** — so everyone who uses a phone needs a till PIN issued on the store computer first
+   (`till/start-till.sh till-pin --user <their id> --by <administrator>`, shown once, kept nowhere), and a role in the
+   store setup that gives them the job: warehouse `inventory.movement.append`, picking `fulfilment.pack.record`, delivery
+   `delivery.attempt.record`. The screen then opens as THAT person and everything they do is recorded as them. The bar
+   at the top says **Signed in: <name>** with a **Sign out** button. Handing the phone over: the next person signs in —
+   that signs the first person out. Their work still waiting on the phone stays theirs and is still taken for twelve
+   hours. A wrong PIN counts toward the same lock as the till; a leaver (role removed, or PIN withdrawn) cannot sign in,
+   and a phone signed in as them stops sending at once.
 5. **Check it took:** the boot log line `handheld <deviceId> (warehouse) handed over N record(s)` appears after the
    first scan; on the handheld the list **"Sent from this handheld"** shows each scan and where it is —
    *saved on this handheld* → *with the store computer* → *posted at head office* (or *refused*, with the reason).

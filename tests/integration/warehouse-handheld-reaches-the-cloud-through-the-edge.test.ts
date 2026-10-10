@@ -9,6 +9,7 @@ import { readLog } from '../../edge/store-edge/src/file-log';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
 import type { BoxItemStatus, DeviceAck } from '../../packages/sync/src/device-relay';
+import { withTillPeople, issueTillPins, signInOnPhone, type TillPerson } from '../support/till-operator';
 
 /**
  * **A warehouse handheld's scans reach head office through the store box's DEVICE socket — enrolled once, durable at
@@ -38,7 +39,9 @@ const KEY = ['warehouse', 'handheld', 'edge', 'signing', 'key'].join('-').padEnd
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const AT = '2026-09-30T10:00:00.000Z';
 const CODE = 'ABCDE-FGHJK-LMNPQ-RSTUV';
-const packJson = (deviceStatus = 'registered'): string => JSON.stringify({
+/** DF-3-c (OB-28 "A"): the people who may hold the phone, with the job's permission head office re-checks. */
+const PHONE_PEOPLE: readonly TillPerson[] = [{ userId: 'u-worker', displayName: 'Worker One', permissions: ['inventory.movement.append'] }];
+const packJson = (deviceStatus = 'registered'): string => JSON.stringify(withTillPeople({
   version: 1,
   policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'wh-1' },
   lossPreventionRules: [],
@@ -48,7 +51,7 @@ const packJson = (deviceStatus = 'registered'): string => JSON.stringify({
     goodsIn: [{ productId: 'p-good', batchId: null, quantityMinor: 6, uom: 'EA', state: 'on_hand', expiry: null }],
   },
   devices: [{ deviceId: 'hh-01', kind: 'handheld', status: deviceStatus, label: 'Racking 1', enrolment: { codeHash: enrolmentCodeHash(CODE), expiresAt: '2099-01-01T00:00:00.000Z' } }],
-});
+}, PHONE_PEOPLE));
 
 const cleanups: Array<() => Promise<void>> = [];
 const savedFetch = globalThis.fetch;
@@ -80,7 +83,11 @@ const scanned = (id: string) => makeEvent({
 const deviceBase = (edge: EdgeProcess): string => `http://127.0.0.1:${edge.devices!.port}`;
 const enrol = async (edge: EdgeProcess, code = CODE, deviceId = 'hh-01'): Promise<{ status: number; cookie: string | undefined; body: Record<string, unknown> }> => {
   const res = await savedFetch(`${deviceBase(edge)}/device/enrol`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId, code }) });
-  return { status: res.status, cookie: res.headers.get('set-cookie')?.split(';')[0], body: (await res.json()) as Record<string, unknown> };
+  const device = res.headers.get('set-cookie')?.split(';')[0];
+  const body = (await res.json()) as Record<string, unknown>;
+  // DF-3-c (OB-28 "A"): an enrolled phone is then signed in by the person holding it, with the till PIN.
+  const cookie = res.status === 200 && device !== undefined ? await signInOnPhone(deviceBase(edge), device, 'u-worker', 'warehouse') : device;
+  return { status: res.status, cookie, body };
 };
 const postBatch = async (edge: EdgeProcess, cookie: string | undefined, items: unknown[], source = 'warehouse'): Promise<{ status: number; acks: DeviceAck[]; body: Record<string, unknown> }> => {
   const res = await savedFetch(`${deviceBase(edge)}/lane/outbox`, {
@@ -109,6 +116,7 @@ async function boxWithoutCloud(dir?: string, deviceStatus = 'registered'): Promi
   const d = dir ?? await tempDir('sre-wh-handheld-nocloud-');
   const packFile = join(d, 'store-pack.json');
   await writeFile(packFile, packJson(deviceStatus), 'utf8');
+  await issueTillPins(d, KEY, PHONE_PEOPLE.map((p) => p.userId));
   const edge = (await startEdge({ ...EDGE_ENV, EDGE_DATA_DIR: d, EDGE_PACK_FILE: packFile }, () => {}))!;
   cleanups.push(async () => { await edge.stop(); });
   return edge;
@@ -147,6 +155,7 @@ async function cloud(): Promise<{ h: ApiHarness; dir: string; start: (deviceStat
   const start = async (deviceStatus = 'registered'): Promise<EdgeProcess> => {
     const packFile = join(dir, 'store-pack.json');
     await writeFile(packFile, packJson(deviceStatus), 'utf8');
+    await issueTillPins(dir, KEY, PHONE_PEOPLE.map((p) => p.userId));
     const edge = (await startEdge({
       ...EDGE_ENV, EDGE_DATA_DIR: dir, EDGE_PACK_FILE: packFile,
       CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),

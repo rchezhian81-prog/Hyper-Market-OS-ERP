@@ -8,6 +8,8 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { enrolmentCodeHash } from '../../packages/platform-admin/src/device-enrolment';
+import { withTillPeople, issueTillPins } from '../support/till-operator';
+import { signInOnPhonePage } from '../support/phone-sign-in-page';
 
 /**
  * **The back store ISSUES against a floor indent on the warehouse handheld, in a real browser on the real box (SP-8c · F08 ·
@@ -43,7 +45,9 @@ const AS_AT = '2026-10-01T09:00:00.000Z';
 
 const line = (productId: string, outstandingMinor: number) => ({ productId, uom: 'EA', requestedMinor: outstandingMinor, allocatedMinor: outstandingMinor, issuedMinor: 0, receivedMinor: 0, inTransitMinor: 0, shortfallMinor: 0, damagedMinor: 0, returnedMinor: 0, outstandingMinor });
 /** The box's pack: the back store's bins and what they hold, the worker, and — as `pullIndentsFeed` would lay it in — head office's open indents. */
-const PACK_JSON = JSON.stringify({
+// DF-3-c (OB-28 "A"): the person who signs in on the phone, with the job's permission head office re-checks.
+const PHONE_PERSON = 'u-back';
+const PACK_JSON = JSON.stringify(withTillPeople({
   version: 1,
   policies: { tradingDayCutoff: '02:00', storeId: 'store-1', branchId: 'store-1', branchName: 'Main', staleAfterSeconds: 300, countApprovalThresholdMinor: 100_000, handoverToleranceMinor: 10_000, privacySlaDays: 30, warehouseId: 'S1-BACK' },
   lossPreventionRules: [],
@@ -64,7 +68,7 @@ const PACK_JSON = JSON.stringify({
     ],
   },
   devices: [{ deviceId: 'hh-01', kind: 'handheld', status: 'registered', label: 'Racking 1', enrolment: { codeHash: enrolmentCodeHash(CODE), expiresAt: '2099-01-01T00:00:00.000Z' } }],
-});
+}, [{ userId: PHONE_PERSON, permissions: ['inventory.movement.append'] }]));
 
 interface HandheldWindow {
   readonly laneWriteBase?: string;
@@ -95,6 +99,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld issues against a floor in
     dirs.push(dir);
     const packFile = join(dir, 'store-pack.json');
     await writeFile(packFile, PACK_JSON, 'utf8');
+    await issueTillPins(dir, KEY, [PHONE_PERSON]);
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: TENANT, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
       EDGE_LANE_PORT: '0', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps', EDGE_PACK_FILE: packFile,
@@ -113,6 +118,7 @@ describe.skipIf(!HAVE_BROWSER)('the warehouse handheld issues against a floor in
     await page.fill('#deviceId', 'hh-01');
     await page.fill('#code', CODE);
     await page.click('button[type="submit"]');
+    await signInOnPhonePage(page, 'warehouse', PHONE_PERSON);
     await page.waitForFunction(() => (globalThis as unknown as HandheldWindow).location.pathname === '/warehouse/', undefined, { timeout: 15_000 });
     await ready(page);
     return page;

@@ -30,6 +30,8 @@ import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { GLOBAL_FOR, SCREENS, payloadFor, catalogueFreshness, posReceiptTemplate, posLanePayload, posRefundPolicyPayload, type ScreenInput, type ScreenName } from './screen-data';
 import { navigationPayload, type NavigationPayload, asSignedInPerson } from './screen-navigation';
+import { asPhoneHolder } from './handheld-sign-in';
+import { isHandheldSource } from '../../../packages/sync/src/device-relay';
 
 /**
  * The address this listens on unless told otherwise — loopback, so on a shop PC nothing on the shop network
@@ -358,12 +360,15 @@ export function startScreenServer(input: {
       // o'clock's exceptions, not the ones this process saw when it started. The pack-age badge
       // (SYNC-01) rides alongside it on every screen, from the same one snapshot.
       const snap = input.snapshot();
-      const built = payloadFor(route.screen, snap);
       // OB-16: behind the authenticated relay the ERP screens run as the person who SIGNED IN — their id, their
-      // permissions from this box's role register — never as whoever the pack named for the screen. The till and
-      // the handhelds are untouched: the person signs in at the device itself.
-      const signedIn = input.trustForwardedUser === true && APP_SHELL[route.screen].dir === 'web-erp' ? forwardedUser(req.headers['x-sre-user']) : null;
-      const payload = signedIn === null ? built : asSignedInPerson(built, signedIn, snap.pack);
+      // permissions from this box's role register — never as whoever the pack named for the screen. The till is
+      // untouched: the person signs in at the till itself.
+      // DF-3-c (OB-28 "A"): so do the phone screens served here (the hosted copy) — the job is done as the person the
+      // front signed in, exactly as a phone on the shop wifi does it as the person who signed in on it with their PIN.
+      const handheld = isHandheldSource(route.screen) ? route.screen : null;
+      const signedIn = input.trustForwardedUser === true && (APP_SHELL[route.screen].dir === 'web-erp' || handheld !== null) ? forwardedUser(req.headers['x-sre-user']) : null;
+      const built = payloadFor(route.screen, snap, handheld !== null && signedIn !== null ? signedIn : undefined);
+      const payload = signedIn === null ? built : handheld !== null ? asPhoneHolder(handheld, built, signedIn) : asSignedInPerson(built, signedIn, snap.pack);
       // The till alone also gets the receipt template head office published, when this box has pulled one
       // (M01-FR-02): its own global beside the catalogue, so a bill printed offline carries the words and the
       // version. Absent when none has reached this box — the till prints with its defaults and stamps nothing.

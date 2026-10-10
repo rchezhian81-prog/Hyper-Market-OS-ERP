@@ -65,6 +65,18 @@
 - **The picker handheld** rides the socket end to end since SP-3c-i (1 Oct 2026): `PickLineResolved` / `WavePacked` → the cloud wave register (`services/fulfilment/src/waves.ts`), and enrolment lands a device on the handheld screen it asked for (`?next=/picker/`). **The driver handheld** rides it end to end since SP-3c-ii (1 Oct 2026): `DeliveryStopUpdated` / `RouteSettled` / `DriverCashHandedOver` → the cloud route register (`services/fulfilment/src/driver-runs.ts`), each stop stepping the order's own lifecycle;
   W2 (blind count) and W3 (adjustment request) on the warehouse handheld are SP-3b.
 
+## Amendment — the person holding the phone (Wave 4 · PA-06 = DF-3-c-3a · OB-28 "A", 10 Oct 2026)
+
+The device credential says WHICH phone; it never said WHO holds it — every record named the one person the store setup
+gave the job. Now each person signs in on the enrolled phone with their staff ID and the same PIN as the till
+(`POST /device/sign-in?screen=warehouse|picker|driver`, `POST /device/sign-out`), checked by the box's till-PIN register
+(ADR-0020) — offline, same verifiers, guess limits and fsync'd log. The session rides a second HttpOnly, SameSite=Strict
+cookie (`sre_operator`, twelve hours); the box keeps only its hash. The phone screen is served only to a person holding
+that job's permission in the current store setup (the one head office re-checks) and is readdressed to them. One person
+per phone at a time. Every record a phone hands over must name a person who held that phone this shift — judged on the
+box's log and clock, never the phone's — or it is refused by name; with nobody signed in the box takes nothing (401) and
+the phone keeps its work. The device socket's surface grows by these two routes, both behind the device credential.
+
 ## §19-substitution impact
 
 Not a §19 substitution: the same Node process, the same containers, the same file-log durability.
