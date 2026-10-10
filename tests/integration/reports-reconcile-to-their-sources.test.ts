@@ -202,6 +202,28 @@ describeOrSkip('head-office reports reconcile to their source records — real A
     expect(loyalty.figures[0]?.notAvailableBecause).toMatch(/company-wide/);
   });
 
+  it('a governed drill (EA-05) reaches the exact source bills behind a figure — loaded by head office, never sent', async () => {
+    const cash = await ok(call('POST', '/v1/reporting/drill/governed', OWNER, { reportId: 'tender_mix', figure: 'cash' }, 'drill-cash'), 200);
+    const body = cash.body as { provenance: string; reconciles: boolean; kpiValueMinor: number; shownTotalMinor: number; transactions: { transactionId: string; amountMinor: number }[] };
+    expect(body.provenance).toBe('governed');
+    expect(body.reconciles).toBe(true);
+    expect(body.kpiValueMinor).toBe(53_000);
+    // The split bill's ₹50 cash part and the ₹480 cash bill — the very sales posted, by their own ids.
+    expect(body.transactions.map((t) => [t.transactionId, t.amountMinor]).sort()).toEqual(
+      [[SALES[0]!.saleId, 5_000], [SALES[2]!.saleId, 48_000]].sort(),
+    );
+    const dairy = (await ok(call('POST', '/v1/reporting/drill/governed', OWNER, { reportId: 'units_by_category', figure: 'dairy' }, 'drill-dairy'), 200)).body as { reconciles: boolean; shownTotalMinor: number; transactions: unknown[] };
+    expect(dairy).toMatchObject({ reconciles: true, shownTotalMinor: 5 * 3_500 });
+    expect(dairy.transactions).toHaveLength(2); // the two milk lines
+    // The drill is logged with who reached what.
+    const audits = (await ok(call('GET', '/v1/reporting/drill-audits', OWNER), 200)).body as { audits: { userId: string; metric: string; reconciled: boolean }[] };
+    expect(audits.audits.map((a) => a.metric)).toEqual(expect.arrayContaining(['tender_mix:cash', 'units_by_category:dairy']));
+    // A figure with no records behind it is refused, and nothing the caller sends can stand in for head office's rows.
+    expect((await call('POST', '/v1/reporting/drill/governed', OWNER, { reportId: 'tender_mix', figure: 'cheque' }, 'drill-x')).status).toBe(404);
+    const forged = await call('POST', '/v1/reporting/drill/governed', OWNER, { reportId: 'tender_mix', figure: 'cash', kpiValueMinor: 1, transactions: [] }, 'drill-forged');
+    expect((forged.body as { kpiValueMinor: number }).kpiValueMinor).toBe(53_000);
+  });
+
   it('an unknown report is refused (404); one this version cannot produce is refused by name (409) — never the dashboard', async () => {
     const unknown = await call('GET', '/v1/reports/nonsense', OWNER);
     expect(unknown.status).toBe(404);

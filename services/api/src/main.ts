@@ -372,6 +372,9 @@ export function buildSurface(deps: {
   });
   // What a sale and a return do to a member's points (PF-09-a) — one composition shared by the sale and return routes.
   const loyaltyEffects = store === undefined ? undefined : loyaltyEffectsAdapter({ store, now, rule: loyaltyRule });
+  // The named-report producers over governed source records (EA-06) — shared by the report route and the governed drill
+  // (EA-05), so a drill reaches exactly the records the report's figure was summed from.
+  const producers = store === undefined ? undefined : reportProducers({ store, now, calendar: shopCalendar, loyaltyRule });
   // The durable domain audit trail (M34-FR-01): one sealed chain per tenant. Producers (slice 1: the
   // credential lifecycle) seal into it; the stored read routes search / reconstruct / verify it. No
   // store → no durable trail, so a producer simply records nothing (its recordAudit is left unset).
@@ -1032,7 +1035,7 @@ export function buildSurface(deps: {
     // scope-enforced, reconciled to the headline (loud when they do not add up), every drill logged.
     ...drillThroughRoutes(store === undefined
       ? { audits: empty([]), recordAudit: () => {}, now }
-      : drillThroughAdapter({ store, now })),
+      : { ...drillThroughAdapter({ store, now }), produce: producers!.produce }),
     // Notification send guard (M31-FR-03) — consent/template/suppression/budget gate; stateless ruling.
     ...notificationGuardRoutes(),
     // Backup verification & restore reconciliation (M35-FR-01/02, P-04) — stateless recovery rulings.
@@ -1213,7 +1216,7 @@ export function buildSurface(deps: {
           // request time — "today" on the dashboard is the shop's trading day, not this server's date (F14).
           calendar: shopCalendar,
           // Each named report by its own producer over governed source records (EA-06) — never the dashboard's figures.
-          produce: reportProducers({ store, now, calendar: shopCalendar, loyaltyRule }).produce,
+          produce: producers!.produce,
         })),
     // Company-wide consolidation (M01/M29/D13, owner decision) — branches POST contributions + memberships,
     // the head office GETs the roll-up for a node/family/period. Idempotent by revision, effective-dated,
