@@ -155,6 +155,17 @@ describe('warehouse transfers: in-transit at destination, separate approver, val
     expect((await availability(h)).rows.find((x) => x.locationId === 'S1')?.onHandMinor).toBe(8);
   });
 
+  it('Batch 2 round 2: the person who DISPATCHED a transfer cannot count it in — refused by name, nothing received; a different person can', async () => {
+    const h = await seeded(20);
+    await propose(h, A, 'u-owner', 't1', proposal());
+    await dispatch(h, A, 'u-boss', 't1', {});
+    const self = await receive(h, A, 'u-boss', 't1', { counted: [{ productId: 'P1', batchId: null, quantityMinor: 10 }] });
+    expect(self.status).toBe(422);
+    expect(codeOf(self)).toBe('dispatcher_cannot_receive');
+    expect((await availability(h)).inTransit).toEqual([expect.objectContaining({ transferId: 't1', quantityMinor: 10 })]);
+    expect((await receive(h, A, 'u-owner', 't1', { counted: [{ productId: 'P1', batchId: null, quantityMinor: 10 }] }, 'trc-t1-other')).status).toBe(200);
+  });
+
   it('Batch 2: a plain transfer\'s shortfall is RESOLVED by a third person, once — 1 found at the store (a two-person adjustment), 1 lost at its value; the exception stays, marked resolved', async () => {
     const h = await seeded(20, 5_000);
     await h.provisionRole(A, 'u-store', 'store_manager');
