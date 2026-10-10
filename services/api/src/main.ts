@@ -916,7 +916,7 @@ export function buildSurface(deps: {
     // Packing & dispatch manifest (M19-FR-02) — weighed-line pricing at pack, cold-chain crate rules,
     // manifest derived from what was packed.
     ...fulfilmentPackingRoutes(store === undefined
-      ? { pack: empty(undefined), recordPack: () => {}, manifest: empty(undefined), recordDispatch: () => {}, now }
+      ? { order: empty(undefined), productPacking: empty(undefined), productFacts: empty(undefined), pack: empty(undefined), recordPack: () => {}, manifest: empty(undefined), recordDispatch: () => {}, now }
       : fulfilmentPackingAdapter({ store, now })),
     // SP-3c-i (F11's picker half): the PICKER handheld's line outcomes and wave packs, RELAYED by the box from its device
     // socket. The routes re-verify the picker / packer from their grants, compare the pack with the line register and

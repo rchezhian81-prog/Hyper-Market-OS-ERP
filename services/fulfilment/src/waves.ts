@@ -25,7 +25,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { packOrder, type HandlingClass, type PackLine, type PackResult } from '../../../packages/fulfilment/src/index';
-import { packDigest } from './packing';
+import { packDigest, masterPacking } from './packing';
 
 /** The outcomes a line can be relayed in. `pending` is not an outcome — a line nobody has resolved sends nothing. */
 export const PICK_LINE_OUTCOMES = Object.freeze(['picked', 'short', 'substituted', 'quality_failed'] as const);
@@ -174,13 +174,15 @@ export function foldWaveIntoOrders(input: {
     const unknown: { lineId: string; reason: 'handling_unknown'; detail: string }[] = [];
     for (const o of outcomes) {
       const name = o.description ?? o.productId;
+      // FUL-04: the SAME resolver the desk's pack route uses — handling and cold-chain limits from the product master.
       const packing = input.packingOf(o.productId);
-      const handling = packing?.handling;
-      if (handling === undefined) {
+      const policy = masterPacking(packing, o.productId, name);
+      if (!policy.ok) {
         flags.add('handling_unknown');
         unknown.push({ lineId: o.lineId, reason: 'handling_unknown', detail: `${name}: the product master names no handling class for ${o.productId} — it cannot be packed from the wave until a person sets one (never guessed from its name)` });
         continue;
       }
+      const handling = policy.handling;
       const required = o.requiredQty ?? null;
       if (required === null) flags.add('required_qty_unknown');
       const picked = o.state === 'quality_failed' ? 0 : o.pickedQty;

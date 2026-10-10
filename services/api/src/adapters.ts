@@ -9121,6 +9121,23 @@ export function fulfilmentPackingAdapter(input: {
   };
   return {
     now: input.now,
+    // FUL-04: the order from head office's order register, the packing policy from the product master (the same fold the
+    // wave adapter reads), the name and price from the published catalogue and the unit from the master — never the body.
+    order: async (tenantId, orderId) => {
+      const view = await ordersAdapter({ store: input.store, now: input.now, holdMinutes: 0 }).orderState(tenantId, orderId);
+      return view === undefined ? undefined : { state: view.state, lines: view.lines };
+    },
+    productPacking: async (tenantId, productId) => {
+      const p = await productMasterAdapter(input).product(tenantId, productId);
+      return p === undefined ? undefined : { ...(p.handling === undefined ? {} : { handling: p.handling }), ...(p.coldChain === undefined ? {} : { coldChain: p.coldChain }) };
+    },
+    productFacts: async (tenantId, productId) => {
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      const p = pack?.snapshot.products.find((x) => x.productId === productId);
+      if (p === undefined) return undefined;
+      const uom = (await productUomFrom(input, tenantId, productId)) ?? p.baseUom ?? 'ea';
+      return { name: p.name, unitPriceMinor: p.unitPriceMinor, uom };
+    },
     pack: (tenantId, orderId) => latestPack(tenantId, orderId),
     manifest: (tenantId, orderId) => latestManifest(tenantId, orderId),
     recordPack: async (tenantId, orderId, result, key) => {
