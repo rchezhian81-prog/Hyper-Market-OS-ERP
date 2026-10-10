@@ -312,6 +312,8 @@ export interface BuyingData {
   /** Who may check this buyer's work. The box has already removed the buyer from it (§28). */
   readonly approvers?: readonly string[];
   readonly productIds?: readonly string[];
+  /** OB-31: each product's unit as the store's catalogue names it (kg ⇒ invoice and order quantities are grams). */
+  readonly productUoms?: Readonly<Record<string, string>>;
   /** Per-tenant tolerances for the three-way match. */
   readonly quantityToleranceBps?: number;
   readonly priceToleranceBps?: number;
@@ -4890,6 +4892,7 @@ export function buyingPortsFromData(data: BuyingData | undefined, proposeOrder?:
     orderedLines: (poId) => data?.ordered?.[poId] ?? [],
     receivedLines: (poId) => data?.received?.[poId] ?? [],
     capturedLines: (invoiceId) => data?.captured?.[invoiceId] ?? [],
+    productUom: (productId) => data?.productUoms?.[productId],
     // Only when a real cloud port was passed at mount: an offline box (or a test with none) keeps its
     // local compute and `canProposeToCloud` reads false, so the screen never offers to raise an order
     // it cannot actually send (P-01/P-08).

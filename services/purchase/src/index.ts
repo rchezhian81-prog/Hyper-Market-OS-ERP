@@ -275,7 +275,7 @@ type LinesRead =
   | { readonly ok: false; readonly code: 'not_readable' | 'line_does_not_multiply' | 'carries_caller_claims'; readonly detail: string };
 
 /** The invoice's own lines off the wire — and a refusal, by name, of a body that carries the F04 shape (ordered / received figures). */
-export function readInvoiceLines(v: unknown): LinesRead {
+export function readInvoiceLines(v: unknown, unitOf?: Readonly<Record<string, string | undefined>>): LinesRead {
   if (!Array.isArray(v) || v.length === 0) return { ok: false, code: 'not_readable', detail: 'at least one invoice line is needed' };
   const lines: SupplierInvoiceLine[] = [];
   for (const [i, raw] of (v as unknown[]).entries()) {
@@ -290,7 +290,16 @@ export function readInvoiceLines(v: unknown): LinesRead {
     if (raw['uom'] !== undefined && (!isStr(raw['uom']) || normaliseUom(raw['uom']) === undefined)) {
       return { ok: false, code: 'not_readable', detail: `line ${i + 1}: "${String(raw['uom'])}" is not a unit this system knows` };
     }
-    const uom = isStr(raw['uom']) ? normaliseUom(raw['uom'])! : undefined;
+    const said = isStr(raw['uom']) ? normaliseUom(raw['uom'])! : undefined;
+    // OB-31 (Batch 1 finding): head office's product master says what a line is counted in — a line that names no unit is
+    // in the PRODUCT's unit (a weighed product's quantity is grams, its price per kg), never silently "items"; a line that
+    // names a different unit from the master's is refused by name (the quantity would mean something else).
+    const master = unitOf?.[raw['productId']];
+    const masterCode = master === undefined ? undefined : normaliseUom(master) ?? master;
+    if (said !== undefined && masterCode !== undefined && normaliseUom(masterCode) !== undefined && said !== masterCode) {
+      return { ok: false, code: 'not_readable', detail: `line ${i + 1}: ${raw['productId']} is counted in "${masterCode}" on the product master, but the line says "${said}"` };
+    }
+    const uom = said ?? (masterCode !== undefined && normaliseUom(masterCode) !== undefined ? masterCode : undefined);
     const product = valueAtUnitCost(raw['quantity'], uom ?? 'ea', raw['unitPriceMinor']);
     if (product !== raw['lineTotalMinor']) {
       return { ok: false, code: 'line_does_not_multiply', detail: `line ${i + 1}: ${raw['quantity']} × ${raw['unitPriceMinor']} is ${product}, but the line says ${raw['lineTotalMinor']}` };
@@ -398,7 +407,20 @@ export function invoicedBeforeOn(poId: string, invoice: SupplierInvoiceRecord, a
 }
 
 
+/** OB-31: the product master's unit for each product named on raw invoice lines (absent ⇒ not known here). */
+export async function unitsOfLines(deps: Pick<PurchaseDeps, 'productUom'>, tenantId: string, v: unknown): Promise<Record<string, string | undefined>> {
+  const out: Record<string, string | undefined> = {};
+  if (deps.productUom === undefined || !Array.isArray(v)) return out;
+  for (const raw of v as unknown[]) {
+    const id = isObj(raw) && isStr(raw['productId']) ? raw['productId'] : undefined;
+    if (id !== undefined && !(id in out)) out[id] = await deps.productUom(tenantId, id);
+  }
+  return out;
+}
+
 export interface PurchaseDeps {
+  /** OB-31: the unit the product master counts a product in — an invoice line naming none is in this unit. Absent ⇒ items. */
+  readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
   /** The invoice with this id, or undefined — the never-double-count check and the match's source. */
   readonly invoice: (tenantId: string, invoiceId: string) => Promise<SupplierInvoiceRecord | undefined> | SupplierInvoiceRecord | undefined;
   /** Every captured invoice — the review surface and, in SP-7b, the supplier's account. */
@@ -456,7 +478,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
         const invoiceId = (ctx.params['invoiceId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (b['ordered'] !== undefined || b['received'] !== undefined) throw refuseLines({ ok: false, code: 'carries_caller_claims', detail: 'the body names what was ordered or received' }, false);
-        const read = readInvoiceLines(b['lines']);
+        const read = readInvoiceLines(b['lines'], await unitsOfLines(deps, ctx.tenantId, b['lines']));
         if (!read.ok) throw refuseLines(read, false);
         const poId = b['poId'];
         const approvedBy = b['approvedBy'];
@@ -516,7 +538,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
       handler: async (ctx) => {
         const invoiceId = (ctx.params['invoiceId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const read = readInvoiceLines(b['lines']);
+        const read = readInvoiceLines(b['lines'], await unitsOfLines(deps, ctx.tenantId, b['lines']));
         if (!read.ok) throw refuseLines(read, true);
         const poId = b['poId'];
         const approvedBy = b['approvedBy'];

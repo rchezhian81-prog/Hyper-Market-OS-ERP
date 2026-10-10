@@ -109,6 +109,34 @@ describe.each(backings)('OB-31 — weighed goods in grams, cost per kg — on $n
     expect(loss.body).toMatchObject({ valueMinor: 450 });
   }, 60_000);
 
+  it('the supplier invoice for weighed goods: a line naming no unit is in the product\'s unit (grams at the per-kg price); the old qty × price is refused; a contradicting unit is refused; the match pays ₹1,136.25', async () => {
+    const h = harness();
+    const t = randomUUID();
+    const { call } = await shop(h, t);
+    await h.provisionRole(t, 'u-checker', 'store_manager');
+    expect((await call('POST', '/v1/purchase/orders/po-inv', 'u-buyer', { supplierId: 'sup-grain', deliverToLocationId: 'S1', lines: [{ productId: 'p-rice-loose', orderedQty: 25_250, unitCost: { minor: PER_KG, currency: 'INR' } }] }, 'po-inv')).status).toBe(201);
+    expect((await call('POST', '/v1/purchase/orders/po-inv/approval', 'u-owner', { reason: 'ok' }, 'po-inv-ok')).status).toBe(200);
+    expect((await call('POST', '/v1/inventory/goods-receipt/g-inv', 'u-recv', {
+      warehouseId: 'S1-BACK', receivedOnDate: '2026-10-10', currency: 'INR', poId: 'po-inv',
+      lines: [{ lineId: 'L1', productId: 'p-rice-loose', orderedMinor: 25_250, countedMinor: 25_250, uom: 'kg', unitCost: { minor: PER_KG, currency: 'INR' }, condition: 'good' }],
+    }, 'g-inv')).status).toBe(201);
+    const capture = (id: string, line: Record<string, unknown>, declared: number) => call('POST', `/v1/purchase/invoices/${id}/capture`, 'u-buyer', {
+      supplierId: 'sup-grain', poId: 'po-inv', declaredTotalMinor: declared, lines: [{ productId: 'p-rice-loose', quantity: 25_250, unitPriceMinor: PER_KG, ...line }],
+    }, id);
+    // The old multiplication (25250 × 4500) is refused by name; a line saying "ea" for a kg product is refused by name.
+    const old = await capture('INV-OLD', { lineTotalMinor: 25_250 * PER_KG }, 25_250 * PER_KG);
+    expect(old.status).toBe(422);
+    expect(codeOf(old)).toBe('invoice_line_does_not_multiply');
+    expect(codeOf(await capture('INV-EA', { lineTotalMinor: 113_625, uom: 'ea' }, 113_625))).toBe('not_readable_as_a_supplier_invoice');
+    // No unit on the line: the master's kg — 25250 g × ₹45.00 a kg = ₹1,136.25, recorded with its unit.
+    const ok = await capture('INV-KG', { lineTotalMinor: 113_625 }, 113_625);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+    expect(ok.body).toMatchObject({ invoice: { lines: [{ uom: 'kg', lineTotalMinor: 113_625 }] } });
+    const match = await call('POST', '/v1/purchase/invoices/INV-KG/match', 'u-checker', {}, 'm-kg');
+    expect(match.status, JSON.stringify(match.body)).toBeLessThan(300);
+    expect(match.body).toMatchObject({ payableMinor: 113_625, invoicedMinor: 113_625, lines: [expect.objectContaining({ status: 'matched' })] });
+  }, 60_000);
+
   it('an item product is unchanged: "each" / "EA" / "ea" are one unit; value is quantity × cost', async () => {
     const h = harness();
     const t = randomUUID();

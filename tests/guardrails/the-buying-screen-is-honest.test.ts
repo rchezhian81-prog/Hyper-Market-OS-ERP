@@ -134,7 +134,10 @@ describe('the two figures that must agree are both on the page', () => {
     // A mistyped quantity is invisible in a column of numbers and obvious the moment quantity,
     // unit price and line total are multiplied together.
     expect(code(MODEL)).toMatch(/export function lineArithmeticErrors/);
-    expect(code(MODEL)).toMatch(/quantity \* unit === total/);
+    // OB-31 (owner, 10 Oct 2026): in the product's own unit — a weighed line is grams at the per-kg price, valued once —
+    // never a bare quantity × unit, which is out by 1000 for a kg line.
+    expect(code(MODEL)).toMatch(/const worth = valueAtUnitCost\(quantity, code, unit\)/);
+    expect(code(MODEL)).toMatch(/if \(worth === total\) return;/);
     expect(code(VIEW)).toMatch(/t\('line'\)\} \$\{problem\.line\}/);
   });
 });

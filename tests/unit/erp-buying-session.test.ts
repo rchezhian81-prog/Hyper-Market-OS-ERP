@@ -125,6 +125,37 @@ describe('each line’s own arithmetic is checked', () => {
   });
 });
 
+describe('OB-31 — a weighed line is grams at a price per kg (Batch 1 finding)', () => {
+  const kg = (over: Partial<BuyingPorts> = {}) => session({
+    knownProductIds: () => ['p-rice', 'p1'], productUom: (id) => (id === 'p-rice' ? 'KG' : 'ea'),
+    orderedLines: () => [{ productId: 'p-rice', qty: 25_250, unitMinor: 4_500 }], receivedLines: () => [{ productId: 'p-rice', qty: 25_250 }], ...over,
+  });
+
+  it('2500 g at ₹45.00 a kg is ₹112.50 — accepted; the old qty × price (₹1,12,500) is refused by name', () => {
+    const good = kg().previewInvoice({ text: 'productId,quantity,unitPriceMinor,lineTotalMinor\np-rice,2500,4500,11250', declaredTotalMinor: 11_250 });
+    expect(good.problems).toEqual([]);
+    expect(good.readyToApprove).toBe(true);
+    expect(good.lines).toEqual([{ productId: 'p-rice', quantity: 2_500, unitPriceMinor: 4_500, lineTotalMinor: 11_250, uom: 'kg' }]);
+    const old = kg().previewInvoice({ text: 'productId,quantity,unitPriceMinor,lineTotalMinor\np-rice,2500,4500,11250000', declaredTotalMinor: 11_250_000 });
+    expect(old.problems).toHaveLength(1);
+    expect(old.problems[0]?.message).toMatch(/2500 g at 4500 a kg is 11250, but the line says 11250000/);
+    expect(old.readyToApprove).toBe(false);
+    // Rounded once, half up: 333 g at ₹45.00 a kg = ₹14.985 → ₹14.99.
+    expect(lineArithmeticErrors([{ productId: 'p-rice', quantity: '333', unitPriceMinor: '4500', lineTotalMinor: '1499' }], [2], () => 'kg')).toEqual([]);
+    // An item is unchanged.
+    expect(lineArithmeticErrors([{ productId: 'p1', quantity: '2', unitPriceMinor: '500', lineTotalMinor: '1000' }], [2], () => 'ea')).toEqual([]);
+  });
+
+  it('the captured line carries its unit to head office, and the match pays grams at the per-kg price', () => {
+    const s = kg();
+    const preview = s.previewInvoice({ text: 'productId,quantity,unitPriceMinor,lineTotalMinor\np-rice,25250,4500,113625', declaredTotalMinor: 113_625 });
+    const captured = s.captureInvoice({ invoiceId: 'INV-W', supplierId: 's1', preview });
+    expect(captured).toMatchObject({ ok: true, totalMinor: 113_625, lines: [{ uom: 'kg' }] });
+    const m = s.match({ poId: 'PO-W', invoiceId: 'INV-W' });
+    expect(m).toMatchObject({ blocked: false, payableMinor: 113_625, invoicedMinor: 113_625 });
+  });
+});
+
 describe('the buyer sees every problem before anything is written', () => {
   it('names an unknown product by line, rather than importing it', () => {
     const unknown = [

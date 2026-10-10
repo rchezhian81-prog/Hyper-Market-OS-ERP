@@ -1116,6 +1116,8 @@ export function buyingPayload(input: ScreenInput): Record<string, unknown> | nul
 
   if (input.pack.products.known) {
     payload['productIds'] = input.pack.products.value.map((p) => p.productId);
+    // OB-31: each product's unit, so the buyer's screen checks a weighed line as grams × price per kg.
+    payload['productUoms'] = Object.fromEntries(input.pack.products.value.map((p) => [p.productId, p.uom]));
   }
   if (input.pack.purchaseOrders.known) {
     payload['ordered'] = foldByReference(

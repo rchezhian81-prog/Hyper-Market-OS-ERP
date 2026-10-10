@@ -7157,12 +7157,22 @@ export async function supplierInvoiceIdUsed(store: EventStore, tenantId: string,
   return (await allOf<SupplierInvoiceRecord>(store, tenantId, SUPPLIER_INVOICES_STREAM, 'SupplierInvoiceCaptured')).some((r) => r.invoiceId === invoiceId);
 }
 
+/** OB-31: the unit head office counts a product in — the product master's base unit, else the published pack's. */
+export async function productUomFrom(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, productId: string): Promise<string | undefined> {
+  const master = await productMasterAdapter(input).product(tenantId, productId);
+  if (master?.baseUom !== undefined) return master.baseUom;
+  const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+  return pack?.snapshot.products.find((p) => p.productId === productId)?.baseUom;
+}
+
 export function purchaseAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): PurchaseDeps {
   return {
     now: input.now,
+    // OB-31: the master's unit for a product (else the published pack's) — an invoice line naming none is in this unit.
+    productUom: (tenantId, productId) => productUomFrom(input, tenantId, productId),
 
     // SP-7a (F02 · F04): the supplier invoice is a RECORD on its own register — the invoice's own lines, who captured it,
     // who checked it — keyed on the invoice id, so a retry (a lost reply, a re-sent screen queue) never doubles what a
