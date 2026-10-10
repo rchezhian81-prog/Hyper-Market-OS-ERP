@@ -953,7 +953,11 @@ export function buildSurface(deps: {
     // Consent-gated segmentation (M16-FR-02) — a pure compute over supplied facts; no store.
     ...segmentRoutes(store === undefined
       ? { now, policy: empty(undefined), recordPolicy: () => {}, orderFacts: empty([]), complaintFacts: empty([]), recordOrderFact: () => {}, recordComplaintFact: () => {}, consentFor: empty([]) }
-      : { now, ...segmentDataAdapter({ store, now }) }),
+      : {
+        now, ...segmentDataAdapter({ store, now }),
+        // FUL-10: segments read the facts DERIVED from the banked sales and returns — brought up to date before each read.
+        orderFacts: async (t: string) => { await customer360Adapter({ store, now }).catchUp(t); return segmentDataAdapter({ store, now }).orderFacts(t); },
+      }),
     // Customer duplicate detection (M16-FR-01) — find the same person twice, propose a merge, never auto-merge.
     ...customerDuplicatesRoutes({ now }),
     // Campaign send-gate (M21-FR-01) — consent checked per recipient against the stored ledger (P-02).

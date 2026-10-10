@@ -83,6 +83,10 @@ describe.each(backings)('FUL-10 — the customer record from banked sales and re
     await bank(sale('S3', undefined)); // a walk-in: no personal data
     await bank(sale('S4', MEENA_OLD, 50_000));
 
+    // ── 0 · Segmentation reads the facts DERIVED from those sales — nobody typed them, nobody opened a profile first.
+    const audience = (await h.request({ method: 'GET', path: '/v1/customer/segments/audience', userId: 'u-owner', tenantId: T, query: { segment: 'new', purpose: 'service' } })).body as { customerRefs: string[] };
+    expect(audience.customerRefs).toEqual([MEENA_OLD]); // one purchase → new; Meena's two → not new; the walk-in → nobody
+
     // ── 1 · The record is DERIVED from the banked sales: two purchases, the points they earned, no walk-in.
     const p1 = await profile(MEENA);
     expect(p1.purchases).toMatchObject({ count: 2, grossMinor: 250_000 });
