@@ -21,6 +21,7 @@ import { STREAM } from '../../services/api/src/adapters';
 import { LocalIdp } from './local-idp';
 import type { PaymentVerifier } from '../../packages/orders/src/payment-verification';
 import type { NotificationTransport } from '../../packages/notifications/src/index';
+import type { ModelTransport, ModelTier, TierPricing } from '../../packages/ai/src/index';
 
 type Kernel = Parameters<typeof handle>[0];
 type IdempotencyStore = Kernel['idempotency'];
@@ -109,6 +110,9 @@ export function apiHarness(opts: {
   now?: () => string;
   /** A notification transport for the send path (PA-08) — the recording test adapter; production has none. */
   notificationTransport?: NotificationTransport;
+  /** EA-08: a model transport (the deterministic simulator) and tier pricing — production has neither. */
+  modelTransport?: ModelTransport;
+  modelPricing?: Readonly<Record<ModelTier, TierPricing>>;
 } = {}): ApiHarness {
   const store = opts.store ?? new InMemoryEventStore();
   const idempotency = opts.idempotency ?? new MemoryIdempotencyStore();
@@ -119,6 +123,8 @@ export function apiHarness(opts: {
     signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations,
     ...(opts.paymentVerifier === undefined ? {} : { paymentVerifier: opts.paymentVerifier }),
     ...(opts.notificationTransport === undefined ? {} : { notificationTransport: opts.notificationTransport }),
+    ...(opts.modelTransport === undefined ? {} : { modelTransport: opts.modelTransport }),
+    ...(opts.modelPricing === undefined ? {} : { modelPricing: opts.modelPricing }),
   }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 

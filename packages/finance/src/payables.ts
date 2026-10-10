@@ -13,8 +13,8 @@
 import { postJournal, type PostingInput, type PostingMap, type PostingRule, type JournalEntry as PostedJournal } from './posting';
 import type { CurrencyCode } from '../../contracts/src/money';
 
-export type PayablesKind = 'supplier_invoice' | 'supplier_invoice_reversal' | 'supplier_debit_note' | 'supplier_payment';
-export type PayablesSourceKind = 'supplier_invoice' | 'supplier_debit_note' | 'supplier_payment';
+export type PayablesKind = 'supplier_invoice' | 'supplier_invoice_reversal' | 'supplier_debit_note' | 'supplier_payment' | 'supplier_opening_balance';
+export type PayablesSourceKind = 'supplier_invoice' | 'supplier_debit_note' | 'supplier_payment' | 'supplier_opening_balance';
 
 /** The supplier account as the payables posting reads it — a structural subset of the purchase service's statement. */
 export interface PayablesAccount {
@@ -36,6 +36,14 @@ export interface PayablesAccount {
     readonly paymentId: string;
     readonly amountMinor: number;
     readonly paidOn: string;
+  }[];
+  /** GT-05 (MG-08) — legacy bills outstanding at cutover. Only a SIGNED opening is owed and posts. Optional: most have none. */
+  readonly openings?: readonly {
+    readonly openingId: string;
+    readonly amountMinor: number;
+    readonly signed: boolean;
+    /** The date the opening books are true at (YYYY-MM-DD) — the period it posts to. */
+    readonly openingDate: string;
   }[];
 }
 
@@ -95,6 +103,15 @@ export const PAYABLES_POSTING_RULES: readonly PostingRule[] = Object.freeze([
       { account: 'bank_clearing', side: 'credit', component: 'amount' },
     ],
   },
+  {
+    // GT-05 (MG-08): a signed opening balance credits the supplier against the opening-balances account the accountant
+    // carries the old system's trial balance in. A SUGGESTION, like the rest: the accountant's mapping decides.
+    kind: 'supplier_opening_balance',
+    legs: [
+      { account: 'opening_balances', side: 'debit', component: 'amount' },
+      { account: 'supplier_payable', side: 'credit', component: 'amount' },
+    ],
+  },
 ]);
 
 /** What the ledger already holds for a source: accruals less reversals for an invoice; the amount for a debit note or a payment. */
@@ -141,6 +158,15 @@ export function planPayablesPostings(accounts: readonly PayablesAccount[], prior
       out.push({
         kind: 'supplier_payment', sourceKind: 'supplier_payment', sourceId: pay.paymentId, supplierId: a.supplierId,
         documentDate: pay.paidOn, components: { amount: delta },
+      });
+    }
+    for (const op of a.openings ?? []) {
+      if (!op.signed) continue; // an unsigned opening is shown, never owed and never posted
+      const delta = op.amountMinor - ledgerHolds(prior, 'supplier_opening_balance', op.openingId);
+      if (delta <= 0) continue; // an opening is a fact recorded once, at its amount — it never grows
+      out.push({
+        kind: 'supplier_opening_balance', sourceKind: 'supplier_opening_balance', sourceId: op.openingId, supplierId: a.supplierId,
+        documentDate: op.openingDate, components: { amount: delta },
       });
     }
   }
@@ -228,7 +254,7 @@ export interface PayablesReconciliation {
   readonly agrees: boolean;
 }
 
-export const PAYABLES_LEFT_DERIVATION = 'purchase register: every matched invoice\'s payable (the lowest of order, receipt and invoice) less every debit note a return or claim raised and every payment a second person approved';
+export const PAYABLES_LEFT_DERIVATION = 'purchase register: every matched invoice\'s payable (the lowest of order, receipt and invoice) less every debit note a return or claim raised and every payment a second person approved, plus every opening balance a second person signed off';
 export const PAYABLES_RIGHT_DERIVATION = 'finance ledger: credits less debits on the payables control account across the posted payables journals';
 
 /**
@@ -243,7 +269,8 @@ export function reconcilePayables(
   const suppliers: SupplierReconciliation[] = accounts.map((a) => {
     const registerOwedMinor = a.invoices.filter((i) => i.matched).reduce((s, i) => s + i.payableMinor, 0)
       - a.debitNotes.reduce((s, d) => s + d.valueMinor, 0)
-      - a.payments.reduce((s, p) => s + p.amountMinor, 0);
+      - a.payments.reduce((s, p) => s + p.amountMinor, 0)
+      + (a.openings ?? []).filter((o) => o.signed).reduce((s, o) => s + o.amountMinor, 0);
     const ledgerOwedMinor = control === undefined ? 0 : journals
       .filter((j) => j.supplierId === a.supplierId)
       .flatMap((j) => j.lines)

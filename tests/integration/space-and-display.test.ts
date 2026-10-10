@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
 import { sentWithApproval } from '../support/approval-request';
+import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 
 // Space productivity + supplier display-contract governance, end to end (M04-FR-04 · D02-FR-06 · M23, API-04).
 // Two questions a big shop usually answers by feel: is this space earning its keep (margin per square foot,
@@ -25,6 +26,14 @@ const contract = (over: Record<string, unknown> = {}) =>
 const approvedContract = (h: ApiHarness, u: string, checker: string, id: string, body: Record<string, unknown>, key = `dc-${id}`) =>
   sentWithApproval(h, A, u, checker, { kind: 'display_contract', subjectRef: id, pathIds: { contractId: id }, valueMinor: (body['fundingAmount'] as { minor: number }).minor },
     body, (b) => recordContract(h, u, id, b, key));
+
+/** FUL-11: what the supplier paid is FINANCE's record — a display-funding receipt posted as a journal — never a typed figure. */
+async function financeReceives(h: ApiHarness, contractId: string, minor: number, receiptId = `rcpt-${contractId}`): Promise<void> {
+  const map = await h.request({ method: 'PUT', path: '/v1/finance/posting-map', userId: 'u-owner', tenantId: A, idempotencyKey: 'map', body: DEFAULT_RETAIL_POSTING_MAP });
+  expect([200, 201]).toContain(map.status);
+  const r = await h.request({ method: 'POST', path: `/v1/finance/display-funding/${contractId}/receipts/${receiptId}`, userId: 'u-owner', tenantId: A, idempotencyKey: receiptId, body: { amountMinor: minor, receivedOn: '2026-08-01', reference: `NEFT-${receiptId}` } });
+  expect(r.status).toBe(201);
+}
 
 async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
@@ -66,14 +75,17 @@ describe('space productivity + display-contract governance (M04-FR-04)', () => {
     await approvedContract(h, 'u-mgr', 'u-owner', 'c-expired', contract({ endsOn: '2026-06-30', fundingAmount: inr(10000), locationIds: ['end2'] }));
     await recordContract(h, 'u-mgr', 'c-unapproved', contract({ locationIds: ['end3'] }));
     await approvedContract(h, 'u-mgr', 'u-owner', 'c-owing', contract({ fundingAmount: inr(20000), locationIds: ['end4'] }));
+    await financeReceives(h, 'c-active', 50000);
+    await financeReceives(h, 'c-owing', 5000); // c-owing underpaid
 
     const res = await review(h, 'u-mgr', {
       onDate: '2026-08-24', currency: 'INR',
-      received: { 'c-active': inr(50000), 'c-owing': inr(5000) }, // c-owing underpaid; others as needed
+      received: { 'c-owing': inr(20000) }, // a typed "it was all paid" — ignored: finance's journals say 5000
       stillOccupying: ['c-expired'],
       warnDays: 30,
     });
     expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ receivedFrom: 'finance_display_funding_journals', typedReceivedIgnored: true });
     const body = res.body as { statuses: { contractId: string; finding: string; detail: string }[]; flagged: number };
     const by = new Map(body.statuses.map((s) => [s.contractId, s]));
     expect(by.get('c-active')?.finding).toBe('active');
@@ -110,14 +122,15 @@ describe('space productivity + display-contract governance (M04-FR-04)', () => {
   it('supersedes a corrected contract and survives a restart', async () => {
     const h = await seeded();
     await recordContract(h, 'u-mgr', 'c1', contract(), 'c1-v1'); // unapproved
-    const before = (await review(h, 'u-mgr', { onDate: '2026-08-24', currency: 'INR', received: { c1: inr(50000) } }, 'rev-v1')).body as { statuses: { contractId: string; finding: string }[] };
+    await financeReceives(h, 'c1', 50000);
+    const before = (await review(h, 'u-mgr', { onDate: '2026-08-24', currency: 'INR' }, 'rev-v1')).body as { statuses: { contractId: string; finding: string }[] };
     expect(before.statuses.find((s) => s.contractId === 'c1')?.finding).toBe('unapproved');
 
     // Finance approves the funding in their own session, and the contract is recorded again with that approval — a
     // DIFFERENT idempotency key, so it supersedes rather than dedups.
     expect((await approvedContract(h, 'u-mgr', 'u-owner', 'c1', contract(), 'c1-v2')).status).toBe(201);
     const restarted = apiHarness({ store: h.store });
-    const after = (await review(restarted, 'u-owner', { onDate: '2026-08-24', currency: 'INR', received: { c1: inr(50000) } }, 'rev-v2')).body as { statuses: { contractId: string; finding: string }[] };
+    const after = (await review(restarted, 'u-owner', { onDate: '2026-08-24', currency: 'INR' }, 'rev-v2')).body as { statuses: { contractId: string; finding: string }[] };
     expect(after.statuses.find((s) => s.contractId === 'c1')?.finding).toBe('active');
   });
 });

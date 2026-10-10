@@ -117,25 +117,18 @@ export function drillThroughRoutes(deps: DrillThroughDeps): readonly Route[] {
       },
     },
     {
-      // A PREVIEW over rows the CALLER supplies — kept as the pure calculator (EA-05 retains it, labelled): it proves
-      // nothing about head office's records and says so on every answer (`provenance: supplied_by_caller`). The
-      // governed drill above is the one that reaches the immutable source.
-      // Body: { metric, kpiValueMinor, transactions[], branchScope? }. Records who drilled what (§28).
+      // RETIRED (audit EA-05): the drill over rows the CALLER supplied. It reconciled whatever it was sent and proved
+      // nothing about head office's records; the acceptance is that caller-supplied rows are not accepted. The path is
+      // kept only to say so — 410, nothing computed, nothing logged — and to point at the governed drill.
       api: 'API-10', method: 'POST', path: '/v1/reporting/drill',
       permission: 'owner.kpi.read', idempotent: true,
-      handler: async (ctx) => {
-        const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const transactions = readTxns(b['transactions']);
-        const scope = scopeFor(ctx, b['branchScope']);
-        if (!isStr(b['metric']) || !isInt(b['kpiValueMinor']) || transactions === undefined || scope === undefined) {
-          throw apiError(400, { code: 'not_readable_as_a_drill', whatHappened: 'A drill needs { metric, kpiValueMinor (whole), transactions[] (each { transactionId, at, branchId, amountMinor, description, categoryId?, vendorId?, staffId? }), branchScope? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the figure and the transactions behind it.' });
-        }
-        const now = deps.now();
-        const result = drillThrough({ metric: b['metric'] as string, kpiValueMinor: b['kpiValueMinor'] as number, transactions, scope });
-        // Every drill is logged — who reached which transactions, and whether they added up.
-        const audit = auditDrill(result, scope, now);
-        await deps.recordAudit(ctx.tenantId, audit, `${ctx.userId}-${result.metric}-${now}`);
-        return { status: 200, body: { ...result, provenance: 'supplied_by_caller' } };
+      handler: () => {
+        throw apiError(410, {
+          code: 'caller_rows_not_accepted',
+          whatHappened: 'A drill-through no longer takes rows or a headline from the caller — it would prove nothing about the shop\'s own records.',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Use POST /v1/reporting/drill/governed with { reportId, figure, day?, branchScope? }; head office loads the figure and its source records itself.',
+        });
       },
     },
     {
@@ -152,11 +145,13 @@ export function drillThroughRoutes(deps: DrillThroughDeps): readonly Route[] {
           || (b['labels'] !== undefined && !isLabelMap(b['labels']))) {
           throw apiError(400, { code: 'not_readable_as_a_comparison', whatHappened: 'A comparison needs { dimension (branch/category/vendor/staff), metric, transactions[], branchScope?, labels? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the dimension to rank by and the transactions.' });
         }
+        // Still over rows the caller supplies — said on every answer (EA-05): a ranking over sent rows is a calculator,
+        // not a reading of head office's records.
         const result = compareBy({
           dimension: b['dimension'] as Dimension, metric: b['metric'] as string, transactions, scope,
           ...(isLabelMap(b['labels']) ? { labels: b['labels'] } : {}),
         });
-        return { status: 200, body: result };
+        return { status: 200, body: { ...result, provenance: 'supplied_by_caller' } };
       },
     },
     {

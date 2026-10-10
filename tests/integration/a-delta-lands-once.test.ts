@@ -31,7 +31,7 @@ describeOrSkip('a migration delta lands as real stock, once — real API, real P
     const changes = [
       { changeKey: 'd-in', entity: 'stock', legacyId: 'P-DAL', operation: 'update', changedAt: '2026-10-09T08:00:00.000Z', deltaQty: 20, locationId: 'S1', uom: 'ea', unitCostMinor: 12_000 },
       { changeKey: 'd-out', entity: 'stock', legacyId: 'P-DAL', operation: 'update', changedAt: '2026-10-09T09:00:00.000Z', deltaQty: -5, locationId: 'S1', uom: 'ea' },
-      { changeKey: 'd-sale', entity: 'sale', legacyId: 'B-901', operation: 'insert', changedAt: '2026-10-09T09:30:00.000Z', deltaMinor: 60_000 },
+      { changeKey: 'd-sale', entity: 'customer', legacyId: 'C-901', operation: 'insert', changedAt: '2026-10-09T09:30:00.000Z' },
     ];
     const send = (cloud: RealCloud, key: string) => cloud.request({ method: 'POST', path: '/v1/migration/deltas', userId: OWNER, idempotencyKey: key, body: { changes, extractCutoff: '2026-10-09T00:00:00.000Z' } });
     const onHand = async (cloud: RealCloud): Promise<number | undefined> =>

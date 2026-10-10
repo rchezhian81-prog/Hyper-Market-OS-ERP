@@ -24,6 +24,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import { tradingDayIn, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { NotificationTransport } from '../../../packages/notifications/src/index';
+import type { NotificationQueueEvent } from '../../customer/src/notification-queue';
 import {
   buildScheduledBrief, briefsDue, type BriefFigures, type AttentionLine, type Narrative, type BriefLanguage,
 } from '../../../packages/owner-control/src/index';
@@ -49,7 +50,9 @@ export interface StoredSchedule {
 export interface BriefRunLine {
   readonly tradingDay: string;
   readonly reason: 'scheduled' | 'missed_catch_up';
-  readonly outcome: 'sent' | 'composed_not_sent' | 'send_failed_will_retry';
+  readonly outcome: 'sent' | 'composed_not_sent' | 'send_failed_will_retry'
+    /** EA-07 outbox: put on the queue now / still on the queue / the queue delivered it and the day is acknowledged. */
+    | 'queued' | 'queued_waiting' | 'acknowledged';
   readonly detail: string;
   readonly lines: readonly string[];
   readonly deterministic: boolean;
@@ -68,6 +71,15 @@ export interface ScheduledBriefDeps {
   readonly recipient?: (tenantId: string) => Promise<string | undefined> | string | undefined;
   /** The phone transport. Absent until a real provider is certified (the SMS provider is R4, OB-29). */
   readonly transport?: NotificationTransport;
+  /**
+   * EA-07 OUTBOX: the PA-08 notification queue. When wired, a due brief is ENQUEUED (durable, retried, dead-lettered
+   * visibly by the queue's own sender) instead of handed to a transport here, and the day is acknowledged as sent only
+   * when the queue says the message was delivered.
+   */
+  readonly outbox?: {
+    readonly enqueue: (tenantId: string, event: NotificationQueueEvent, key: string) => Promise<void> | void;
+    readonly item: (tenantId: string, id: string) => Promise<{ readonly state: string; readonly reason: string | null } | undefined>;
+  };
 }
 
 /** The shop's wall-clock "now" as YYYY-MM-DDTHH:MM, in its own zone — what a local due time is measured against. */
@@ -132,6 +144,79 @@ const noSchedule = () => apiError(404, {
   nextSafeAction: 'Set one with POST /v1/reporting/brief-schedule (a due time).',
 });
 
+/**
+ * ONE PASS of the brief scheduler for one shop (EA-07) — what the run route and the in-process worker both call. Which
+ * briefs are due by the SHOP's clock (missed days carried, labelled late); each composed from head office's governed
+ * figures with NO AI. With the OUTBOX wired, a due day goes onto the PA-08 queue once (`brief-<day>`) and is acknowledged
+ * as sent only when the queue delivered it; a dead-lettered one is queued again under a new attempt id and said so.
+ * Without it, the older direct transport path stands (acknowledged only when the transport took it).
+ */
+export async function runBriefPass(deps: ScheduledBriefDeps, tenantId: string, actor: string): Promise<{ ran: BriefRunLine[]; shopClock: string; today: string; asAt: string }> {
+  const s = await deps.schedule(tenantId);
+  if (s === undefined) throw noSchedule();
+  if (deps.calendar === undefined || deps.dayFigures === undefined) {
+    throw apiError(503, { code: 'brief_producers_not_wired', whatHappened: 'Head office cannot work out the day\'s figures here, so no brief was composed.', wasItSaved: 'not_saved', nextSafeAction: 'Run the brief on the full head-office service.' });
+  }
+  const now = deps.now();
+  const calendar = await deps.calendar(tenantId);
+  const today = tradingDayIn(now, calendar);
+  const wall = shopWallClock(now, calendar.timeZone);
+  const firstDay = s.since === undefined ? today : tradingDayIn(s.since, calendar);
+  // At most a week back: a brief older than that is history, not a brief.
+  const weekAgo = new Date(Date.parse(`${today}T00:00:00Z`) - 6 * 86_400_000).toISOString().slice(0, 10);
+  const tradingDays = daysBetween(firstDay > weekAgo ? firstDay : weekAgo, today);
+  const due = briefsDue({ schedule: { scheduleId: s.scheduleId, dueAt: s.dueAt, sentDays: s.sentDays }, tradingDays, now: `${today}${wall.slice(10)}:00Z` });
+  const recipient = await deps.recipient?.(tenantId);
+  const ran: BriefRunLine[] = [];
+  for (const d of due) {
+    const brief = buildScheduledBrief({
+      figures: await deps.dayFigures(tenantId, d.tradingDay), attention: [],
+      ...(s.language === undefined ? {} : { language: s.language }),
+      ...(s.staleAfterMinutes === undefined ? {} : { staleAfterMinutes: s.staleAfterMinutes }),
+    });
+    const lines = d.reason === 'missed_catch_up' ? [`LATE — the brief for ${d.tradingDay}, which did not go out on time.`, ...brief.lines] : [...brief.lines];
+    const base = { tradingDay: d.tradingDay, reason: d.reason, lines, deterministic: brief.deterministic };
+    if (deps.outbox !== undefined && recipient !== undefined) {
+      // The outbox: find this day's live attempt on the queue; acknowledge on delivery; queue again after a dead letter.
+      let attempt = 1;
+      let item = await deps.outbox.item(tenantId, briefMessageId(d.tradingDay, attempt));
+      while (item?.state === 'dead_letter' && attempt < 20) { attempt += 1; item = await deps.outbox.item(tenantId, briefMessageId(d.tradingDay, attempt)); }
+      if (item?.state === 'delivered') {
+        await deps.recordSent(tenantId, d.tradingDay, actor, `sent-${d.tradingDay}`);
+        ran.push({ ...base, outcome: 'acknowledged', detail: `the queue delivered ${briefMessageId(d.tradingDay, attempt)} — acknowledged as sent` });
+        continue;
+      }
+      if (item !== undefined && item.state !== 'dead_letter') {
+        ran.push({ ...base, outcome: 'queued_waiting', detail: `${briefMessageId(d.tradingDay, attempt)} is ${item.state} on the queue${item.reason === null ? '' : ` (${item.reason})`} — not yet sent` });
+        continue;
+      }
+      const id = briefMessageId(d.tradingDay, attempt);
+      await deps.outbox.enqueue(tenantId, {
+        id, change: 'enqueued', by: actor, at: now, channel: 'whatsapp',
+        // The owner's own business digest rides the transactional purpose: it is never marketing (no promotion in it).
+        intent: { customerId: recipient, purpose: 'transactional', templateId: 'owner-daily-brief', templateVersion: 1, text: lines.join('\n') },
+      }, `notif-enqueue-${id}`);
+      ran.push({ ...base, outcome: 'queued', detail: attempt === 1 ? `put on the queue as ${id}` : `the earlier attempt was dead-lettered — queued again as ${id}` });
+      continue;
+    }
+    if (deps.transport === undefined || recipient === undefined) {
+      ran.push({ ...base, outcome: 'composed_not_sent', detail: deps.transport === undefined ? 'no phone transport is configured yet (the SMS provider is release R4) — composed, NOT sent, still due' : 'the shop has no owner on record to send it to — composed, NOT sent' });
+      continue;
+    }
+    const sent = await deps.transport.send({ messageId: `brief-${tenantId}-${d.tradingDay}`, channel: 'whatsapp', customerId: recipient, text: lines.join('\n') });
+    if (sent.ok) {
+      await deps.recordSent(tenantId, d.tradingDay, actor, `sent-${d.tradingDay}`);
+      ran.push({ ...base, outcome: 'sent', detail: `${deps.transport.name} took it (${sent.providerRef})` });
+    } else {
+      ran.push({ ...base, outcome: 'send_failed_will_retry', detail: `${sent.reason} — still due; the next run retries it` });
+    }
+  }
+  return { ran, shopClock: wall, today, asAt: now };
+}
+
+/** The queue id of one day's brief, per attempt — deterministic, so a pass run twice queues nothing twice. */
+export const briefMessageId = (tradingDay: string, attempt: number): string => (attempt === 1 ? `brief-${tradingDay}` : `brief-${tradingDay}-r${attempt}`);
+
 export function scheduledBriefRoutes(deps: ScheduledBriefDeps): readonly Route[] {
   return [
     {
@@ -194,45 +279,7 @@ export function scheduledBriefRoutes(deps: ScheduledBriefDeps): readonly Route[]
       // and said to be unsent, never marked sent.
       api: 'API-10', method: 'POST', path: '/v1/reporting/brief-schedule/run',
       permission: 'owner.brief.manage', idempotent: true,
-      handler: async (ctx) => {
-        const s = await deps.schedule(ctx.tenantId);
-        if (s === undefined) throw noSchedule();
-        if (deps.calendar === undefined || deps.dayFigures === undefined) {
-          throw apiError(503, { code: 'brief_producers_not_wired', whatHappened: 'Head office cannot work out the day\'s figures here, so no brief was composed.', wasItSaved: 'not_saved', nextSafeAction: 'Run the brief on the full head-office service.' });
-        }
-        const now = deps.now();
-        const calendar = await deps.calendar(ctx.tenantId);
-        const today = tradingDayIn(now, calendar);
-        const wall = shopWallClock(now, calendar.timeZone);
-        const firstDay = s.since === undefined ? today : tradingDayIn(s.since, calendar);
-        // At most a week back: a brief older than that is history, not a brief.
-        const weekAgo = new Date(Date.parse(`${today}T00:00:00Z`) - 6 * 86_400_000).toISOString().slice(0, 10);
-        const tradingDays = daysBetween(firstDay > weekAgo ? firstDay : weekAgo, today);
-        const due = briefsDue({ schedule: { scheduleId: s.scheduleId, dueAt: s.dueAt, sentDays: s.sentDays }, tradingDays, now: `${today}${wall.slice(10)}:00Z` });
-        const recipient = await deps.recipient?.(ctx.tenantId);
-        const ran: BriefRunLine[] = [];
-        for (const d of due) {
-          const brief = buildScheduledBrief({
-            figures: await deps.dayFigures(ctx.tenantId, d.tradingDay), attention: [],
-            ...(s.language === undefined ? {} : { language: s.language }),
-            ...(s.staleAfterMinutes === undefined ? {} : { staleAfterMinutes: s.staleAfterMinutes }),
-          });
-          const lines = d.reason === 'missed_catch_up' ? [`LATE — the brief for ${d.tradingDay}, which did not go out on time.`, ...brief.lines] : [...brief.lines];
-          const base = { tradingDay: d.tradingDay, reason: d.reason, lines, deterministic: brief.deterministic };
-          if (deps.transport === undefined || recipient === undefined) {
-            ran.push({ ...base, outcome: 'composed_not_sent', detail: deps.transport === undefined ? 'no phone transport is configured yet (the SMS provider is release R4) — composed, NOT sent, still due' : 'the shop has no owner on record to send it to — composed, NOT sent' });
-            continue;
-          }
-          const sent = await deps.transport.send({ messageId: `brief-${ctx.tenantId}-${d.tradingDay}`, channel: 'whatsapp', customerId: recipient, text: lines.join('\n') });
-          if (sent.ok) {
-            await deps.recordSent(ctx.tenantId, d.tradingDay, ctx.userId, `sent-${d.tradingDay}`);
-            ran.push({ ...base, outcome: 'sent', detail: `${deps.transport.name} took it (${sent.providerRef})` });
-          } else {
-            ran.push({ ...base, outcome: 'send_failed_will_retry', detail: `${sent.reason} — still due; the next run retries it` });
-          }
-        }
-        return { status: 200, body: { ran, shopClock: wall, today, asAt: now } };
-      },
+      handler: async (ctx) => ({ status: 200, body: await runBriefPass(deps, ctx.tenantId, ctx.userId) }),
     },
     {
       // SENT — record a send, append-only. A day already sent collapses to one (idempotent).

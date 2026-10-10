@@ -194,72 +194,72 @@
     {
       "id": "D01",
       "label": "PARTIALLY_WIRED",
-      "evidence": "recall-block wired; content/images authoring D01-FR-06 NOT STARTED"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/product-master.test.ts, tests/integration/catalogue-pack-publish.test.ts, tests/integration/categories-and-product-files-are-head-offices.test.ts, tests/integration/recalls-reach-the-offline-till.test.ts, tests/e2e/product-publish-delivery.e2e.ts. OPEN — code — content/images authoring (D01-FR-06) not started (slice: D01 content); evidence — none further; owner — none; physical/provider — none. Earlier note: recall-block wired; content/images authoring D01-FR-06 NOT STARTED"
     },
     {
       "id": "D02",
       "label": "PARTIALLY_WIRED",
-      "evidence": "merchandising partial; display-funding D02-FR-06 NOT STARTED"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/assortment.test.ts, tests/integration/space-and-display.test.ts, tests/integration/planogram-compliance.test.ts, tests/e2e/merchandising-count-and-refill.e2e.ts. OPEN — code — display funding (D02-FR-06) not started; FUL-11 planning facts (Batch 2); evidence — none further; owner — none; physical/provider — none. Earlier note: merchandising partial; display-funding D02-FR-06 NOT STARTED"
     },
     {
       "id": "D03",
       "label": "PARTIALLY_WIRED",
-      "evidence": "supplier portal wired; landed-cost FR-05 now wired too (POST /v1/purchase/invoices/:id/reconcile apportions freight/duty across the invoice lines by value to the paisa via matchInvoice, tests/integration/purchase-invoice-reconcile.test.ts); OCR/e-invoice import D03-FR-02 NOT STARTED"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/supplier-master.test.ts, tests/integration/purchase-orders.test.ts, tests/integration/purchase-invoice-reconcile.test.ts, tests/integration/supplier-portal-feeds-purchasing.test.ts, tests/integration/supplier-to-shelf-journey.test.ts, tests/e2e/buying-po-delivery.e2e.ts. OPEN — code — SF-09 remaining legs (Batch 2); evidence — supplier-to-shelf on the served box (Batch 2); owner — none; physical/provider — supplier e-invoice feeds. Earlier note: supplier portal wired; landed-cost FR-05 now wired too (POST /v1/purchase/invoices/:id/reconcile apportions freight/duty across the invoice lines by value to the paisa via matchInvoice, tests/integration/purchase-invoice-reconcile.test.ts); OCR/e-invoice import D03-FR-02 NOT STARTED"
     },
     {
       "id": "D04",
       "label": "PARTIALLY_WIRED",
-      "evidence": "POS sale E2E; self-checkout/scan-and-go/price-kiosk DECISIONS now wired on the cloud (POST /v1/self-checkout/assess + /scan-and-go + /kiosk-quote run the tested packages/self-checkout engine -- basket risk scored across the basket with age always a human, scan-and-go release/audit/trust-withdrawn, read-only kiosk that stops quoting when stale; stateless + offline-safe, gated selfcheckout.operate, tests/integration/self-checkout-decisions.test.ts 5 cases); cash/M13/M14/M16 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/the-store-trades-a-day.test.ts, tests/integration/sale-to-shift-close-journey.test.ts, tests/integration/the-till-spends-points-and-store-credit.test.ts, tests/integration/self-checkout-decisions.test.ts, tests/e2e/the-served-till-takes-a-sale.e2e.ts, tests/e2e/the-store-trades-a-day.e2e.ts. OPEN — code — PF-07 no-sale/override control (Batch 3); self-checkout/scan-and-go screens; evidence — staff UAT; owner — none; physical/provider — scanner/printer/drawer/payment terminal on real hardware. Earlier note: POS sale E2E; self-checkout/scan-and-go/price-kiosk DECISIONS now wired on the cloud (POST /v1/self-checkout/assess + /scan-and-go + /kiosk-quote run the tested packages/self-checkout engine -- basket risk scored across the basket with age always a human, scan-and-go release/audit/trust-withdrawn, read-only kiosk that stops quoting when stale; stateless + offline-safe, gated selfcheckout.operate, tests/integration/self-checkout-decisions.test.ts 5 cases); cash/M13/M14/M16 partial"
     },
     {
       "id": "D05",
       "label": "PARTIALLY_WIRED",
-      "evidence": "stock/warehouse/production wired; FEFO/recall partial (M10)"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/inventory-availability.test.ts, tests/integration/a-sale-line-gets-its-fefo-lot.test.ts, tests/integration/recall.test.ts, tests/integration/quality-hold.test.ts, tests/integration/warehouse-transfers.test.ts, tests/e2e/expiry-recall-delivery.e2e.ts. OPEN — code — batch-precise sale block (deferred to R3, OB-25); evidence — staff UAT; owner — none; physical/provider — cold-room sensors (IoT). Earlier note: stock/warehouse/production wired; FEFO/recall partial (M10)"
     },
     {
       "id": "D06",
       "label": "PARTIALLY_WIRED",
-      "evidence": "M05 pricing wired; markdown/competitor-capture partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/a-saved-price-is-the-price-the-till-charges.test.ts, tests/integration/a-launched-offer-is-the-offer-the-till-gives.test.ts, tests/integration/the-margin-floor-is-the-stores.test.ts, tests/integration/markdown.test.ts, tests/e2e/catalogue-price-change-delivery.e2e.ts. OPEN — code — competitor price capture; evidence — markdown on the served till; owner — none; physical/provider — electronic shelf labels. Earlier note: M05 pricing wired; markdown/competitor-capture partial"
     },
     {
       "id": "D07",
       "label": "PARTIALLY_WIRED",
-      "evidence": "loyalty points/gift wired; coupons/referrals engine-only (M17)"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/loyalty-earns-on-a-sale.test.ts, tests/integration/loyalty-value-is-spent-once.test.ts, tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts, tests/integration/an-erasure-reaches-the-real-domain-stores.test.ts, tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts, tests/integration/coupons.test.ts, tests/e2e/customer-privacy-centre.e2e.ts. OPEN — code — coupons/referrals at the till; FUL-10 customer records (Batch 3); evidence — staff UAT; owner — campaign frequency cap value (PF-10 built with the cap set by the owner; marketing sends refused until set) and legal confirmation of the retention policy before real erasures (FUL-12); physical/provider — SMS/WhatsApp provider (R4, OB-29). Earlier note: loyalty points/gift wired; coupons/referrals engine-only (M17)"
     },
     {
       "id": "D08",
       "label": "PARTIALLY_WIRED",
-      "evidence": "customer app guest/cart/checkout wired; privacy partial (M20)"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/the-app-orders-through-the-cloud.test.ts, tests/integration/storefront-orders.test.ts, tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts, tests/e2e/customer-order-delivery.e2e.ts, tests/e2e/customer-privacy-centre.e2e.ts, tests/e2e/the-customer-app-meets-wcag-aa.e2e.ts. OPEN — code — ratings and account controls (M20-FR-04 remainder); evidence — low-spec phone measurement; owner — none; physical/provider — payment provider (live), app-store distribution. Earlier note: customer app guest/cart/checkout wired; privacy partial (M20)"
     },
     {
       "id": "D09",
       "label": "PARTIALLY_WIRED",
-      "evidence": "orders/fulfilment/delivery partially wired (M18/M19)"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/orders-lifecycle.test.ts, tests/integration/one-fulfilment-command.test.ts, tests/integration/pick-to-doorstep.test.ts, tests/integration/order-substitution.test.ts, tests/e2e/picker-handheld-syncs-through-the-box.e2e.ts, tests/e2e/driver-handheld-syncs-through-the-box.e2e.ts. OPEN — code — FUL-04/05/14 remainders (Batch 3); evidence — staff UAT on the phones; owner — none; physical/provider — courier/route provider. Earlier note: orders/fulfilment/delivery partially wired (M18/M19)"
     },
     {
       "id": "D10",
       "label": "PARTIALLY_WIRED",
-      "evidence": "GST/settlement wired; close control totals refuse (M23)"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/day-book-posts-the-day.test.ts, tests/integration/the-month-closes-on-independent-evidence.test.ts, tests/integration/gstr1-from-sales.test.ts, tests/integration/a-sale-delta-lands-once.test.ts, tests/integration/books-reconcile.test.ts, tests/e2e/finance-month-close-delivery.e2e.ts. OPEN — code — purchase tax / ITC join (PF-12 remainder); evidence — staff UAT with the accountant; owner — chart of accounts (posting map) confirmed by the CA; physical/provider — live bank/acquirer files, GST portal, IRP e-invoice. Earlier note: GST/settlement wired; close control totals refuse (M23)"
     },
     {
       "id": "D11",
       "label": "PARTIALLY_WIRED",
-      "evidence": "facilities wired (M26); workforce partial (M25)"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/workforce-roster.test.ts, tests/integration/attendance-store.test.ts, tests/integration/task-store.test.ts, tests/integration/payroll-pay-run.test.ts, tests/integration/facilities-durability.test.ts, tests/e2e/rostering-delivery.e2e.ts. OPEN — code — PA-01 leaks on workforce checklists/tasks/attendance cost (Batch 1); evidence — staff UAT; owner — none; physical/provider — biometric attendance device. Earlier note: facilities wired (M26); workforce partial (M25)"
     },
     {
       "id": "D12",
       "label": "PARTIALLY_WIRED",
-      "evidence": "tenant self-setup integration-tested; admin/retention partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/setup-surface.test.ts, tests/integration/tenant-entitlements.test.ts, tests/integration/branch-lifecycle.test.ts, tests/integration/access-lifecycle.test.ts, tests/integration/keycloak-real.test.ts, tests/e2e/admin-people-sign-ins.e2e.ts. OPEN — code — PA-04/PA-05/PA-06 part 3b/PA-10 remainders (Batch 1); evidence — real Keycloak job in CI (first run pending); owner — branch protection on main (administrator action); physical/provider — none. Earlier note: tenant self-setup integration-tested; admin/retention partial"
     },
     {
       "id": "D13",
       "label": "PARTIALLY_WIRED",
-      "evidence": "reporting wired; unrunnable reports named (M29)"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/reports-reconcile-to-their-sources.test.ts, tests/integration/a-drill-reaches-its-day-and-only-the-readers-branches.test.ts, tests/integration/the-brief-worker-sends-through-the-outbox.test.ts, tests/integration/exports-reach-the-business-domains.test.ts, tests/integration/owner-alerts.test.ts, tests/e2e/company-report.e2e.ts. OPEN — code — the brief worker runs only for shops an operator names (BRIEF_WORKER_TENANT_IDS); EA-01 remainder (Batch 1); evidence — the brief on a real phone for three days; owner — none; physical/provider — phone transport (SMS R4 / WhatsApp). Earlier note: reporting wired; unrunnable reports named (M29)"
     },
     {
       "id": "D14",
       "label": "PARTIALLY_WIRED",
-      "evidence": "gateway/webhooks partial; live hardware/ESL/IoT pending"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/integration-gateway.test.ts, tests/integration/webhooks.test.ts, tests/integration/connector-delivery.test.ts, tests/integration/partner-sandbox.test.ts. OPEN — code — gateway/webhook remainders; evidence — none further in software; owner — none; physical/provider — live hardware, ESL, IoT, partner connectors. Earlier note: gateway/webhooks partial; live hardware/ESL/IoT pending"
     },
     {
       "id": "A01",
@@ -314,102 +314,102 @@
     {
       "id": "WF-01",
       "label": "PARTIALLY_WIRED",
-      "evidence": "spans M03/M04/M05/M30; weakest partially wired"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/product-master.test.ts, tests/integration/catalogue-pack-publish.test.ts, tests/integration/a-saved-price-is-the-price-the-till-charges.test.ts, tests/e2e/product-publish-delivery.e2e.ts. OPEN — code — SF-11 and D01 content (Batch 2); evidence — onboarding to the served till in one connected run; owner — none; physical/provider — none. Earlier note: spans M03/M04/M05/M30; weakest partially wired"
     },
     {
       "id": "WF-02",
       "label": "PARTIALLY_WIRED",
-      "evidence": "spans M06/M24/M34; partially wired"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/supplier-master.test.ts, tests/integration/supplier-portal-feeds-purchasing.test.ts, tests/e2e/suppliers-delivery.e2e.ts, tests/e2e/supplier-portal-delivery.e2e.ts. OPEN — code — SF-09/GT-06 remainders (Batch 2); evidence — staff UAT; owner — none; physical/provider — supplier bank verification provider. Earlier note: spans M06/M24/M34; partially wired"
     },
     {
       "id": "WF-03",
       "label": "PARTIALLY_WIRED",
-      "evidence": "M06 partial; forecast/order-proposal tested"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/order-proposal.test.ts, tests/integration/demand-forecast.test.ts, tests/integration/ai-owner-and-purchase-agents.test.ts, tests/integration/purchase-orders.test.ts. OPEN — code — A02 model-backed leg (gated; deterministic leg built); evidence — a plan-to-PO connected run; owner — reorder policy values; physical/provider — model provider (external gate). Earlier note: M06 partial; forecast/order-proposal tested"
     },
     {
       "id": "WF-04",
       "label": "PARTIALLY_WIRED",
-      "evidence": "M07/M10 partial; capture-match/physical-to-system tests"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/goods-receipt.test.ts, tests/integration/goods-receipt-synced-route.test.ts, tests/integration/supplier-to-shelf-journey.test.ts, tests/e2e/goods-receipt-delivery.e2e.ts. OPEN — code — none named beyond SP-10; evidence — staff UAT at the back door (SP-10); owner — none; physical/provider — scale/label printer at receiving. Earlier note: M07/M10 partial; capture-match/physical-to-system tests"
     },
     {
       "id": "WF-05",
       "label": "PARTIALLY_WIRED",
-      "evidence": "purchase-to-payment tested; M07/M23/M30 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/purchase-to-payment.test.ts, tests/integration/purchase-invoice-reconcile.test.ts, tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts, tests/integration/supplier-account.test.ts. OPEN — code — PF-12 purchase tax / ITC join; evidence — staff UAT with the accountant; owner — none; physical/provider — supplier e-invoice (IRP) feed. Earlier note: purchase-to-payment tested; M07/M23/M30 partial"
     },
     {
       "id": "WF-06",
       "label": "PARTIALLY_WIRED",
-      "evidence": "replenishment tested; M04/M25 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/replenishment.test.ts, tests/integration/floor-indents.test.ts, tests/integration/shelf-count.test.ts, tests/e2e/indents-delivery.e2e.ts. OPEN — code — M04/M25 remainders; evidence — staff UAT; owner — none; physical/provider — none. Earlier note: replenishment tested; M04/M25 partial"
     },
     {
       "id": "WF-07",
       "label": "PARTIALLY_WIRED",
-      "evidence": "M08 integration-tested, M09 wired; no dedicated e2e"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/warehouse-transfers.test.ts, tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts, tests/e2e/warehouse-handheld-syncs-through-the-box.e2e.ts. OPEN — code — none named; evidence — a dedicated transfer e2e across two stores; owner — none; physical/provider — none. Earlier note: M08 integration-tested, M09 wired; no dedicated e2e"
     },
     {
       "id": "WF-08",
       "label": "PARTIALLY_WIRED",
-      "evidence": "stock count; M23 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/warehouse-counts.test.ts, tests/integration/counts-synced-route.test.ts, tests/integration/confirmed-lost-stock-is-posted-once.test.ts. OPEN — code — M23 posting of count variances (finance) remainder; evidence — staff UAT; owner — none; physical/provider — none. Earlier note: stock count; M23 partial"
     },
     {
       "id": "WF-09",
       "label": "PARTIALLY_WIRED",
-      "evidence": "expiry/recall; M10/M28 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/recall.test.ts, tests/integration/recalls-reach-the-offline-till.test.ts, tests/integration/inventory-near-expiry.test.ts, tests/e2e/expiry-recall-delivery.e2e.ts. OPEN — code — batch-precise block (R3, OB-25); evidence — staff UAT; owner — none; physical/provider — none. Earlier note: expiry/recall; M10/M28 partial"
     },
     {
       "id": "WF-10",
       "label": "E2E_VERIFIED",
-      "evidence": "POS sale path M12 E2E verified, offline+sync proven EVIDENCE KINDS (5 Oct 2026, TEST-SCOPE v1, GT-08/PF-15): the POS sale workflow is M12's path: browser — tests/e2e/the-served-till-takes-a-sale.e2e.ts; connected — tests/e2e/the-store-trades-a-day.e2e.ts; real PostgreSQL — tests/integration/the-shop-reaches-the-cloud.test.ts, tests/integration/the-store-trades-a-day.test.ts; in-process — tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts."
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at E2E_VERIFIED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/e2e/the-served-till-takes-a-sale.e2e.ts, tests/integration/the-store-trades-a-day.test.ts, tests/integration/sale-idempotency.test.ts. OPEN — code — none for the sale path; evidence — staff UAT on the real lane (SP-10); owner — none; physical/provider — real scanner/printer/drawer. Earlier note: POS sale path M12 E2E verified, offline+sync proven EVIDENCE KINDS (5 Oct 2026, TEST-SCOPE v1, GT-08/PF-15): the POS sale workflow is M12's path: browser — tests/e2e/the-served-till-takes-a-sale.e2e.ts; connected — tests/e2e/the-store-trades-a-day.e2e.ts; real PostgreSQL — tests/integration/the-shop-reaches-the-cloud.test.ts, tests/integration/the-store-trades-a-day.test.ts; in-process — tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts."
     },
     {
       "id": "WF-11",
       "label": "PARTIALLY_WIRED",
-      "evidence": "returns guard wired; M13/M14/M23 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/returns-guard-the-refund.test.ts, tests/integration/refund-approval-is-the-approvers-own-act.test.ts, tests/integration/offline-returns-reach-the-cloud.test.ts, tests/e2e/the-served-till-takes-a-refund.e2e.ts. OPEN — code — M13/M14/M23 remainders; evidence — staff UAT; owner — none; physical/provider — card refunds on the live acquirer. Earlier note: returns guard wired; M13/M14/M23 partial"
     },
     {
       "id": "WF-12",
       "label": "PARTIALLY_WIRED",
-      "evidence": "day-close-honestly tested; M14/M23 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/day-close-honestly.test.ts, tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts, tests/integration/sale-to-shift-close-journey.test.ts, tests/e2e/the-served-till-closes.e2e.ts. OPEN — code — M14/M23 remainders; evidence — staff UAT of a real day close; owner — none; physical/provider — bank deposit evidence. Earlier note: day-close-honestly tested; M14/M23 partial"
     },
     {
       "id": "WF-13",
       "label": "PARTIALLY_WIRED",
-      "evidence": "orders-lifecycle tested; M16-M20 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/the-app-orders-through-the-cloud.test.ts, tests/integration/orders-lifecycle.test.ts, tests/integration/order-payments-and-refunds.test.ts, tests/e2e/customer-order-delivery.e2e.ts. OPEN — code — FUL-03/05/07 remainders (Batch 3); evidence — a customer order end to end on the served box; owner — none; physical/provider — live payment provider. Earlier note: orders-lifecycle tested; M16-M20 partial"
     },
     {
       "id": "WF-14",
       "label": "PARTIALLY_WIRED",
-      "evidence": "pick-to-doorstep tested; M18/M19 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/pick-to-doorstep.test.ts, tests/integration/one-fulfilment-command.test.ts, tests/integration/fulfilment-packing.test.ts, tests/e2e/picker-handheld-syncs-through-the-box.e2e.ts. OPEN — code — FUL-04/14 remainders; evidence — staff UAT on the picker phone; owner — none; physical/provider — none. Earlier note: pick-to-doorstep tested; M18/M19 partial"
     },
     {
       "id": "WF-15",
       "label": "PARTIALLY_WIRED",
-      "evidence": "delivery; M19/M23 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/dispatch.test.ts, tests/integration/delivery-state.test.ts, tests/integration/cod-reconciliation.test.ts, tests/e2e/delivery-route-partial-delivery.e2e.ts. OPEN — code — M19/M23 remainders; evidence — staff UAT with a driver; owner — none; physical/provider — courier/maps provider. Earlier note: delivery; M19/M23 partial"
     },
     {
       "id": "WF-16",
       "label": "PARTIALLY_WIRED",
-      "evidence": "cancel-release wired; M18/M20/M21/M23 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/orders-lifecycle.test.ts, tests/integration/order-payments-and-refunds.test.ts, tests/integration/a-granted-compensation-is-carried-out.test.ts. OPEN — code — M18/M20/M21/M23 remainders; evidence — a cancel-and-refund connected run from the app; owner — none; physical/provider — live refund on the provider. Earlier note: cancel-release wired; M18/M20/M21/M23 partial"
     },
     {
       "id": "WF-17",
       "label": "PARTIALLY_WIRED",
-      "evidence": "service desk M21 partial; M29 wired"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/service-cases.test.ts, tests/integration/service-compensation.test.ts, tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts, tests/integration/ai-service-agent.test.ts. OPEN — code — service-desk screens remainder (M21); evidence — staff UAT; owner — campaign frequency cap value; physical/provider — SMS/WhatsApp provider (R4). Earlier note: service desk M21 partial; M29 wired"
     },
     {
       "id": "WF-18",
       "label": "PARTIALLY_WIRED",
-      "evidence": "finance close M23 partial; M29 wired"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/the-month-closes-on-independent-evidence.test.ts, tests/integration/period-reopen.test.ts, tests/integration/day-book-posts-the-day.test.ts, tests/e2e/finance-month-close-delivery.e2e.ts. OPEN — code — M23 remainders (purchase tax join); evidence — staff UAT with the accountant; owner — posting map confirmed by the CA; physical/provider — live bank and acquirer files. Earlier note: finance close M23 partial; M29 wired"
     },
     {
       "id": "WF-19",
       "label": "ENGINE_ONLY",
-      "evidence": "migration engines + cutover runbook only; not run"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at ENGINE_ONLY (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/migration-pipeline.test.ts, tests/integration/a-delta-lands-once.test.ts, tests/integration/a-sale-delta-lands-once.test.ts, tests/integration/parallel-run-through-the-api.test.ts. OPEN — code — GT-05 opening balances landing in their domains (Batch 2); evidence — a full rehearsal on a copy of the real legacy data; owner — cutover date and sign-off; physical/provider — access to the legacy system for the extract. Earlier note: migration engines + cutover runbook only; not run"
     },
     {
       "id": "WF-20",
       "label": "PARTIALLY_WIRED",
-      "evidence": "M33 integration-tested; M35 partial"
+      "evidence": "REFRESHED 10 Oct 2026 (EA-10, round 4) — label kept at PARTIALLY_WIRED (raising it is a traceability change the lead makes on this evidence). Connected proof: tests/integration/backup-is-one-moment.test.ts, tests/integration/recovery-rehearsal.test.ts, tests/integration/dr-readiness.test.ts, tests/integration/pilot-failure-drills.test.ts. OPEN — code — M35 remainders; evidence — a timed restore on the production-like host; owner — RPO/RTO sign-off; physical/provider — offsite backup target. Earlier note: M33 integration-tested; M35 partial"
     },
     {
       "id": "QG-01",
