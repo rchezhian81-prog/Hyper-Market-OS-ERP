@@ -197,6 +197,33 @@ describe('the floor indent chain, end to end on the real API (SP-8 · F08)', () 
     expect(indentOf(await post(h, 'u-mgr', '/v1/floor/indents/ind-5/rejection', { reason: 'delisted' }, 'rej-5'))).toMatchObject({ state: 'rejected' });
   });
 
+  it('Batch 2: an issue on the DIRECT route that names its bin lowers that bin in the same write (once); a bin head office does not know is said (bin_disagrees), the stock still moves once', async () => {
+    const h = await seeded();
+    const binHeld = async (binId: string): Promise<Record<string, number>> =>
+      Object.fromEntries((((await get(h, 'u-owner', `/v1/warehouse/bins/${binId}`)).body as { held: { key: string; quantityMinor: number }[] }).held).map((x) => [x.key, x.quantityMinor]));
+    expect((await post(h, 'u-back', '/v1/warehouse/bins/BIN-A', { storeId: FLOOR, capacityMinor: 500, pickable: true, zone: 'ambient', locationId: BACK }, 'bin-a')).status).toBe(201);
+    expect((await post(h, 'u-back', '/v1/warehouse/movements/pa-rice', { kind: 'put_away', storeId: FLOOR, productId: 'RICE', batchId: null, quantityMinor: 50, uom: 'EA', fromBinId: null, toBinId: 'BIN-A' }, 'pa-rice')).status).toBe(201);
+    expect((await request(h, 'u-floor', 'ind-bin', [{ productId: 'RICE', quantityMinor: 20, uom: 'EA' }])).status).toBe(201);
+    expect((await approve(h, 'u-mgr', 'ind-bin')).status).toBe(200);
+
+    const first = await issue(h, 'u-back', 'ind-bin', 'is-1', [{ productId: 'RICE', quantityMinor: 12, binId: 'BIN-A' }]);
+    expect(first.status).toBe(201);
+    expect(first.body).toMatchObject({ binMovements: ['ind-bin:is-1:1'], flags: [] });
+    expect(await binHeld('BIN-A')).toEqual({ 'BIN-A|RICE|': 38 });
+    // The same issue again is the same issue — the bin does not fall twice.
+    expect((await issue(h, 'u-back', 'ind-bin', 'is-1', [{ productId: 'RICE', quantityMinor: 12, binId: 'BIN-A' }], 'ind-is-again')).body).toMatchObject({ alreadyIssued: true });
+    expect(await binHeld('BIN-A')).toEqual({ 'BIN-A|RICE|': 38 });
+
+    const unknown = await issue(h, 'u-back', 'ind-bin', 'is-2', [{ productId: 'RICE', quantityMinor: 3, binId: 'BIN-NOWHERE' }]);
+    expect(unknown.status).toBe(201);
+    expect(unknown.body).toMatchObject({ binMovements: [], flags: ['bin_disagrees'] });
+    expect(indentOf(unknown).issues.find((i) => i.issueId === 'is-2')).toMatchObject({ governanceFlags: ['bin_disagrees'] });
+    expect(await binHeld('BIN-A')).toEqual({ 'BIN-A|RICE|': 38 });
+    const a = await availability(h, 'RICE');
+    expect(a.rows.find((r) => r.locationId === BACK)?.onHandMinor).toBe(35);
+    expect(a.inTransit.reduce((s, r) => s + r.quantityMinor, 0)).toBe(15);
+  });
+
   it('a floor → back-store return: the floor asks, a DIFFERENT person at the back store accepts — off the floor and on-hand at the back store in one step, valued', async () => {
     const h = await seeded();
     await request(h, 'u-floor', 'ind-6', [{ productId: 'RICE', quantityMinor: 10, uom: 'EA' }]);

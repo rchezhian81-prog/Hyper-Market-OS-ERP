@@ -155,6 +155,32 @@ describe('warehouse transfers: in-transit at destination, separate approver, val
     expect((await availability(h)).rows.find((x) => x.locationId === 'S1')?.onHandMinor).toBe(8);
   });
 
+  it('Batch 2: a plain transfer\'s shortfall is RESOLVED by a third person, once — 1 found at the store (a two-person adjustment), 1 lost at its value; the exception stays, marked resolved', async () => {
+    const h = await seeded(20, 5_000);
+    await h.provisionRole(A, 'u-store', 'store_manager');
+    await h.provisionRole(A, 'u-area', 'store_manager');
+    await propose(h, A, 'u-owner', 't1', proposal());
+    await dispatch(h, A, 'u-boss', 't1', {});
+    expect((await receive(h, A, 'u-store', 't1', { counted: [{ productId: 'P1', batchId: null, quantityMinor: 8 }] })).status).toBe(200);
+    const resolve = (u: string, body: Record<string, unknown>, key: string) =>
+      h.request({ method: 'POST', path: '/v1/warehouse/transfers/t1/shortfall/resolution', userId: u, tenantId: A, idempotencyKey: key, body });
+    const body = { lines: [{ productId: 'P1', batchId: null, foundMinor: 1 }], reasonCode: 'miscount', note: 'one carton was behind the cold-room door' };
+    expect(codeOf(await resolve('u-store', body, 'r-counter'))).toBe('counter_cannot_resolve');
+    expect(codeOf(await resolve('u-boss', body, 'r-sender'))).toBe('issuer_cannot_resolve');
+    expect(codeOf(await resolve('u-area', { ...body, lines: [{ productId: 'P1', batchId: null, foundMinor: 3 }] }, 'r-over'))).toBe('more_found_than_missing');
+    const ok = await resolve('u-area', body, 'r-ok');
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ resolution: { resolvedBy: 'u-area', lines: [{ missingMinor: 2, foundMinor: 1, foundAtLocationId: 'S1', lostMinor: 1, lostValueMinor: 5_000 }] }, posted: [expect.objectContaining({ kind: 'adjusted', quantityMinor: 1, locationId: 'S1', enteredBy: 'u-store', approvedBy: 'u-area' })] });
+    expect((await resolve('u-area', body, 'r-ok-again')).body).toMatchObject({ alreadyResolved: true });
+    expect(codeOf(await resolve('u-area', { ...body, lines: [] }, 'r-different'))).toBe('shortfall_already_resolved');
+    expect((await availability(h)).rows.find((x) => x.locationId === 'S1')?.onHandMinor).toBe(9);
+    const ex = await exceptions(h);
+    expect(ex.transferShortfalls).toEqual([expect.objectContaining({ transferId: 't1', differenceMinor: -2, resolution: expect.objectContaining({ resolvedBy: 'u-area', foundMinor: 1, lostMinor: 1, lostValueMinor: 5_000 }) })]);
+    // A transfer not yet received has nothing to resolve.
+    await propose(h, A, 'u-owner', 't2', proposal());
+    expect(codeOf(await h.request({ method: 'POST', path: '/v1/warehouse/transfers/t2/shortfall/resolution', userId: 'u-area', tenantId: A, idempotencyKey: 'r-t2', body }))).toBe('transfer_not_received');
+  });
+
   it('the value follows the stock: it leaves the source at head office\'s own average as MOVED (not sold) and arrives at the destination at that cost (F05, M08-FR-04)', async () => {
     const h = await seeded(20, 5_000); // 20 @ ₹50.00 at WH — head office's cost; the proposer's ₹50.00 on the line is NOT what is used
     await propose(h, A, 'u-owner', 't1', proposal({ lines: [{ ...LINE, unitCost: { minor: 1, currency: 'INR' } }] }));

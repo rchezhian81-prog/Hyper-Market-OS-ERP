@@ -26,13 +26,12 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { dispatchTransfer, receiveTransfer, type Transfer } from '../../../packages/warehouse/src/transfers';
-import { applyMovement, type Bin, type BinContents, type MovementCommand } from '../../../packages/warehouse/src/movements';
 import { requestIndent, planIssue, applyIssue, planReceipt, applyReceipt, indentTotals, type FloorIndent, type RelayedBy } from '../../../packages/warehouse/src/indents';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { dispatchPostings, receivePostings } from './warehouse-transfers';
 import {
-  presentIndent, refusedBy, readIndentLines, readIssueLines, readCounted, receivedOf, shortfallOf, arrivedOf, damagedOf, goodOf, damagePostings,
-  type FloorIndentsDeps, type BinMovementRecord,
+  presentIndent, refusedBy, readIndentLines, readIssueLines, readCounted, receivedOf, shortfallOf, arrivedOf, damagedOf, goodOf, damagePostings, binPicksFor,
+  type FloorIndentsDeps,
 } from './floor-indents';
 
 export const INDENT_SYNC_FLAGS = Object.freeze([
@@ -51,10 +50,6 @@ const MOVE_PERMISSION = 'inventory.movement.append';
 
 export interface SyncedFloorIndentsDeps extends FloorIndentsDeps {
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
-  /** SP-8c: head office's bin register, so a handheld issue lowers the same bin it took from. Optional: a cloud without bins flags, never fails. */
-  readonly bins?: (tenantId: string) => Promise<readonly Bin[]> | readonly Bin[];
-  readonly contents?: (tenantId: string) => Promise<BinContents> | BinContents;
-  readonly appliedCommandIds?: (tenantId: string) => Promise<readonly string[]> | readonly string[];
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -160,6 +155,9 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           const unitCostsMinor = await costsFor(ctx.tenantId, indent.fromLocationId, [...new Set(lines.map((l) => l.productId))]);
           const plan = planIssue({ indent, issueId, issuedBy, lines, unitCostsMinor, currency, at });
           // The transfer engine's own §28 (dispatcher ≠ requester) and stock checks against head office's lots at the back store.
+          // Batch 2: the back store's stock guard before the stock it protects (SF-04's pattern). A relayed issue that loses the
+          // race is a 409 concurrent_change, nothing saved — the box sends it again and it is judged on the stock as it is then.
+          const stockVersion = deps.stockVersion === undefined ? undefined : await deps.stockVersion(ctx.tenantId, indent.fromLocationId);
           const available = await deps.availableAt(ctx.tenantId, indent.fromLocationId, plan.transfer.lines);
           const dispatched = dispatchTransfer({ transfer: plan.transfer, approval: { subjectRef: plan.transfer.transferId, status: 'approved', decidedBy: issuedBy }, available, at });
           const lineCostsMinor = plan.transfer.lines.map((l) => unitCostsMinor[l.productId] ?? null);
@@ -169,31 +167,14 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           // SP-8c: lower the bin the handheld took from — in the SAME write as the stock movement. Head office's bin register
           // is judged with the same engine the handheld ran; a disagreement is flagged for a person, never forced and never
           // a second location-level posting.
-          const binMovements: BinMovementRecord[] = [];
-          if (deps.bins !== undefined && deps.contents !== undefined && deps.appliedCommandIds !== undefined && lines.some((l) => isStr(l.binId))) {
-            const bins = await deps.bins(ctx.tenantId);
-            const contents = await deps.contents(ctx.tenantId);
-            const applied = [...await deps.appliedCommandIds(ctx.tenantId)];
-            lines.forEach((l, i) => {
-              if (!isStr(l.binId)) return;
-              const commandId = `${indentId}:${issueId}:${i + 1}`;
-              if (applied.includes(commandId)) return;
-              const bin = bins.find((x) => x.binId === l.binId);
-              if (bin === undefined) { if (!flags.includes('bin_disagrees')) flags.push('bin_disagrees'); return; }
-              const command: MovementCommand = {
-                commandId, kind: 'pick', storeId: bin.storeId, productId: l.productId, batchId: l.batchId, quantityMinor: l.quantityMinor,
-                uom: plan.transfer.lines.find((t) => t.productId === l.productId && t.batchId === l.batchId)?.uom ?? 'EA',
-                fromBinId: l.binId, toBinId: null, movedBy: issuedBy, at, reason: `indent ${indentId} issue ${issueId}`,
-              };
-              const result = applyMovement({ command, appliedCommandIds: applied, bins, contents });
-              if (!result.accepted) { if (!flags.includes('bin_disagrees')) flags.push('bin_disagrees'); return; }
-              applied.push(commandId);
-              binMovements.push({ commandId, movements: result.movements });
-            });
-          }
+          const { binMovements, disagrees } = await binPicksFor(deps, {
+            tenantId: ctx.tenantId, indentId, issueId, lines, movedBy: issuedBy, at,
+            uomOf: (productId, batchId) => plan.transfer.lines.find((t) => t.productId === productId && t.batchId === batchId)?.uom ?? 'EA',
+          });
+          if (disagrees && !flags.includes('bin_disagrees')) flags.push('bin_disagrees');
 
           const next = applyIssue(indent, { ...plan.issue, governanceFlags: flags, relayed });
-          await deps.recordIssued(ctx.tenantId, next, transfer, dispatched.movements, posted, binMovements);
+          await deps.recordIssued(ctx.tenantId, next, transfer, dispatched.movements, posted, binMovements, stockVersion);
           await audit(ctx.tenantId, {
             actorId: issuedBy, action: 'floor_indent.issue', objectType: 'floor_indent', objectId: indentId, at, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
             before: { state: indent.state },
@@ -231,6 +212,7 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
             wasItSaved: 'not_saved', nextSafeAction: 'Do not discard it at the store. Keep it in the queue and raise it.',
           });
         }
+        const indentVersion = deps.indentVersion === undefined ? undefined : await deps.indentVersion(ctx.tenantId, indentId);
         const indent = await deps.indent(ctx.tenantId, indentId);
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         const issue = indent.issues.find((i) => i.issueId === issueId);
@@ -248,7 +230,7 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           const next = applyReceipt(indent, issueId, {
             receivedBy: b['receivedBy'], at: b['at'], received: goodOf(receivedOf(result.movements, result.transfer), damaged), shortfall: shortfallOf(result.discrepancies), damaged, governanceFlags: flags, relayed,
           });
-          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted);
+          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted, indentVersion);
           await audit(ctx.tenantId, {
             actorId: b['receivedBy'], action: 'floor_indent.receive', objectType: 'floor_indent', objectId: indentId, at: b['at'], origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
             before: { state: indent.state, issueId, issuedBy: issue.issuedBy },

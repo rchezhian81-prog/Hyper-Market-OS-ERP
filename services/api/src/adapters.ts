@@ -91,10 +91,10 @@ import type { Bin, BinContents } from '../../../packages/warehouse/src/movements
 import { binKey } from '../../../packages/warehouse/src/movements';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
-import type { AvailableLot, Transfer, TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import { shortfallLinesOf, type AvailableLot, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
-import type { ProductionDeps, StoredRun, StoredRelease } from '../../inventory/src/production';
+import { recipeDigest, type ProductionDeps, type StoredRun, type StoredRelease } from '../../inventory/src/production';
 import type { WeighedCostingDeps, StoredWeighedRun } from '../../inventory/src/weighed-costing';
 import type { Recipe } from '../../../packages/production/src/recipe';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine, PartnerAuditEntry } from '../../purchase/src/supplier-portal';
@@ -172,7 +172,7 @@ import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } from '../../../packages/audit/src/index';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
-import { project, projectBatches, EFFECT_ON_HAND } from '../../inventory/src/index';
+import { project, projectBatches, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
@@ -2714,6 +2714,10 @@ export function salesHistoryAdapter(input: { readonly store: EventStore; readonl
 export const refundGuardKey = (saleId: string): string => `refund:${saleId}`;
 /** The write-guard key for everything that leaves one location's stock by transfer (Wave 2a · SF-04). */
 export const stockGuardKey = (locationId: string): string => `stock:${locationId}`;
+/** Batch 2: one plain transfer's own write guard — two resolutions of its shortfall cannot both land. */
+export const transferGuardKey = (transferId: string): string => `transfer:${transferId}`;
+/** Batch 2: one floor indent's own write guard — two counts (or two resolutions) of one issue cannot both land. */
+export const indentGuardKey = (indentId: string): string => `indent:${indentId}`;
 /** SF-02 — a purchase order's write guard: every receipt, cancellation, amendment and posting against it moves it. */
 export const purchaseOrderGuardKey = (poId: string): string => `purchase-order:${poId}`;
 
@@ -3488,7 +3492,7 @@ export function concessionAdapter(input: {
           ms.map((m): ValuationMovement => ({
             productId: m.productId, locationId: m.locationId,
             effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-            isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
             ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
           })),
           'INR',
@@ -4458,7 +4462,8 @@ async function permissionsHeldBy(store: EventStore, tenantId: string, userId: st
  * `transferred_in` that arrived with the sending location's unit cost recorded at dispatch — the value that left the
  * source is the value that enters the destination. Every valuation reader maps through this ONE rule.
  */
-const carriesCost = (m: Movement): boolean => m.kind === 'received' || (m.kind === 'transferred_in' && m.unitCostMinor !== undefined);
+const carriesCost = (m: Movement): boolean => m.kind === 'received'
+  || ((m.kind === 'transferred_in' || m.kind === 'produced') && m.unitCostMinor !== undefined); // FUL-01: a released batch enters at the run's cost
 
 /**
  * The cloud's own unit cost for a product (SP-2b · F07): the weighted average of what it cost to buy, folded from the
@@ -4473,7 +4478,7 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
   const rows = weightedAverageValuation(
     moves.map((m): ValuationMovement => ({
       productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-      isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
     })),
     'INR',
@@ -5280,6 +5285,39 @@ export function transfersAdapter(input: {
     recordReceived: async (tenantId, transfer, movements, discrepancies, posted) => {
       await input.store.appendBatch(tenantId, transferBatch(tenantId, transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted, input.now()), posted));
     },
+
+    // Batch 2: the valued shortfall the transfer's own receipt record raised.
+    shortfallOf: async (tenantId, transferId) => {
+      for (const e of await input.store.readStream(tenantId, transfersStream, { type: 'TransferReceived' })) {
+        const p = payloadOf<{ transfer: Transfer; discrepancies?: readonly TransferDiscrepancy[] }>(e);
+        if (p.transfer.transferId === transferId) return shortfallLinesOf(p.discrepancies ?? []);
+      }
+      return [];
+    },
+    // Batch 2: a transfer some floor indent's issue travels on — resolved on the indent, never twice.
+    belongsToIndent: async (tenantId, transferId) => {
+      for (const e of await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'indents'))) {
+        if ((e.event.payload as { indent?: FloorIndent }).indent?.issues.some((i) => i.transferId === transferId) === true) return true;
+      }
+      return false;
+    },
+    transferVersion: (tenantId, transferId) => input.store.guardVersion(tenantId, transferGuardKey(transferId)),
+    // Batch 2: the resolved transfer and the found units' `adjusted` movements, one atomic batch under the transfer's guard.
+    recordShortfallResolved: async (tenantId, transfer, posted, expectedVersion) => {
+      const at = input.now();
+      const digest = createHash('sha256').update(JSON.stringify(transfer.shortfallResolution ?? null)).digest('hex').slice(0, 16);
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: transfersStream,
+          event: makeEvent({
+            id: `transfer-shortfall-resolved-${transfer.transferId}`, type: 'TransferShortfallResolved', occurredAt: at,
+            idempotencyKey: `transfer-shortfall-resolved-${tenantId}-${transfer.transferId}-${digest}`, source: 'api/inventory',
+            payload: { transfer },
+          }),
+        },
+        ...movementEntries(tenantId, posted),
+      ], expectedVersion === undefined ? undefined : { guard: { key: transferGuardKey(transfer.transferId), expectedVersion } });
+    },
   };
 }
 
@@ -5323,6 +5361,10 @@ export function floorIndentsAdapter(input: {
     }),
   });
 
+  /** Batch 2: a guarded step's key suffix — the version it was decided on and a digest of the aggregate it records. */
+  const guardedSub = (sub: string, indent: FloorIndent, expectedVersion: number | undefined): string =>
+    expectedVersion === undefined ? sub : `${sub}-v${expectedVersion}-${createHash('sha256').update(JSON.stringify(indent)).digest('hex').slice(0, 16)}`;
+
   return {
     now: input.now,
     indent: async (tenantId, indentId) => (await foldIndents(tenantId)).get(indentId),
@@ -5353,11 +5395,18 @@ export function floorIndentsAdapter(input: {
       await input.store.append(tenantId, indentsStream, stepEvent(tenantId, type, indent, step, sub, at).event);
     },
     // An ISSUE: the indent step, the transfer proposed + dispatched, and the `transferred_out` movements — one atomic batch.
-    recordIssued: async (tenantId, indent, transfer, movements, posted, binMovements = []) => {
+    // Batch 2 · the write guards on the chain: the back store's stock guard (the SAME key a transfer dispatch takes, SF-04)
+    // and the indent's own.
+    stockVersion: (tenantId, locationId) => input.store.guardVersion(tenantId, stockGuardKey(locationId)),
+    indentVersion: (tenantId, indentId) => input.store.guardVersion(tenantId, indentGuardKey(indentId)),
+    recordIssued: async (tenantId, indent, transfer, movements, posted, binMovements = [], expectedStockVersion) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
-        stepEvent(tenantId, 'FloorIndentIssued', indent, 'issued', issue?.issueId ?? transfer.transferId, at),
+        // A guarded step's key carries a digest of what it records (Batch 2): two DIFFERENT writes racing under one issue id
+        // cannot both dedupe into a silent "success" — the loser stages its own step, meets the moved guard and is refused by
+        // name. (An exact replay never reaches here: the route answers "already issued" from the record first.)
+        stepEvent(tenantId, 'FloorIndentIssued', indent, 'issued', guardedSub(issue?.issueId ?? transfer.transferId, indent, expectedStockVersion), at),
         { stream: TRANSFERS_STREAM, event: transferProposedEvent(tenantId, { ...transfer, state: 'proposed', approvedBy: undefined, dispatchedAt: undefined, lineCostsMinor: undefined }, at) },
         { stream: TRANSFERS_STREAM, event: transferDispatchedEvent(tenantId, transfer, movements, posted, at) },
         ...movementEntries(tenantId, posted),
@@ -5367,18 +5416,18 @@ export function floorIndentsAdapter(input: {
           stream: warehouseMovementsStream,
           event: makeEvent({ id: `wh-move-${m.commandId}`, type: 'WarehouseMovementRecorded', occurredAt: at, idempotencyKey: `wh-move-${tenantId}-${m.commandId}`, source: 'api/inventory', payload: { commandId: m.commandId, movements: m.movements } }),
         })),
-      ]);
+      ], expectedStockVersion === undefined ? undefined : { guard: { key: stockGuardKey(transfer.fromLocationId), expectedVersion: expectedStockVersion } });
     },
     // A floor RECEIPT: the indent step, the received transfer and the `transferred_in` movements — one atomic batch.
-    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted) => {
+    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
-        stepEvent(tenantId, 'FloorIndentReceived', indent, 'received', issue?.issueId ?? transfer.transferId, at),
+        stepEvent(tenantId, 'FloorIndentReceived', indent, 'received', guardedSub(issue?.issueId ?? transfer.transferId, indent, expectedIndentVersion), at),
         // The transfer's own record carries what it brought IN; a damaged write-off (SP-8c) rides the same batch as a movement only.
         { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted.filter((m) => m.kind === 'transferred_in'), at) },
         ...movementEntries(tenantId, posted),
-      ]);
+      ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
     // A RETURN accepted at the back store: the indent step and the return's transfer proposed, dispatched and received in
     // one step — a trolley walk — with the `transferred_out` (floor) and `transferred_in` (back store) movements.
@@ -5393,6 +5442,15 @@ export function floorIndentsAdapter(input: {
         { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, receiveMovements, discrepancies, posted.filter((m) => m.kind === 'transferred_in'), at) },
         ...movementEntries(tenantId, posted),
       ]);
+    },
+    // Batch 2: a shortfall RESOLVED — the indent step and the found units' compensating `adjusted` movements, one atomic batch
+    // (each idempotent on its own key, so a replay posts nothing twice).
+    recordShortfallResolved: async (tenantId, indent, issueId, posted, expectedIndentVersion) => {
+      const at = input.now();
+      await input.store.appendBatch(tenantId, [
+        stepEvent(tenantId, 'FloorIndentShortfallResolved', indent, 'shortfall-resolved', guardedSub(issueId, indent, expectedIndentVersion), at),
+        ...movementEntries(tenantId, posted),
+      ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
   };
 }
@@ -5638,17 +5696,26 @@ export function productionAdapter(input: {
       return latest;
     },
 
+    // FUL-08: an explicit VERSION per recipe, judged by a digest over the COMPLETE recipe. The same recipe as the current
+    // version collapses; any change — even 100 g → 150 g flour with the same number of inputs — is the next version, kept
+    // beside the earlier ones. Returning to an older recipe is a new version too (never a silent collapse onto history).
     recordRecipe: async (tenantId, recipe) => {
+      const digest = recipeDigest(recipe);
+      const history = (await allOf<Recipe & { readonly digest?: string; readonly version?: number }>(input.store, tenantId, productionStream, 'RecipeRegistered'))
+        .filter((r) => r.recipeId === recipe.recipeId);
+      const current = history.at(-1);
+      const currentDigest = current === undefined ? undefined : current.digest ?? recipeDigest(current);
+      if (currentDigest === digest) return { version: current?.version ?? history.length, digest, changed: false };
+      const version = history.length + 1;
       await input.store.append(tenantId, productionStream, makeEvent({
-        id: `recipe-${recipe.recipeId}`,
+        id: `recipe-${recipe.recipeId}-v${version}`,
         type: 'RecipeRegistered',
         occurredAt: input.now(),
-        // A light signature in the key so re-registering the SAME recipe collapses, but a genuinely
-        // changed recipe (different output, input count or shelf life) is a new fact and supersedes.
-        idempotencyKey: `recipe-${tenantId}-${recipe.recipeId}-${recipe.outputQuantityMinor}-${recipe.inputs.length}-${recipe.shelfLifeHours}`,
+        idempotencyKey: `recipe-${tenantId}-${recipe.recipeId}-v${version}-${digest}`,
         source: 'api/inventory',
-        payload: recipe,
+        payload: { ...recipe, digest, version },
       }));
+      return { version, digest, changed: true };
     },
 
     ingredientCost: async (tenantId, productId) => {
@@ -5676,10 +5743,11 @@ export function productionAdapter(input: {
       return here?.onHandMinor ?? 0;
     },
 
+    // FUL-01: only runs recorded BEFORE production posted its consumption to M08 — a newer run's flour is already off the ledger.
     priorConsumption: async (tenantId, locationId) => {
       const consumed: Record<string, number> = {};
       for (const run of await foldRuns(tenantId)) {
-        if (run.locationId !== locationId) continue;
+        if (run.locationId !== locationId || run.ledgerMovementIds !== undefined) continue;
         for (const c of run.consumed) consumed[c.productId] = (consumed[c.productId] ?? 0) + c.quantityMinor;
       }
       return consumed;
@@ -5692,30 +5760,46 @@ export function productionAdapter(input: {
 
     run: async (tenantId, runId) => (await foldRuns(tenantId)).find((r) => r.runId === runId),
 
-    recordRun: async (tenantId, run) => {
-      await input.store.append(tenantId, productionStream, makeEvent({
-        id: `prod-run-${run.runId}`,
-        type: 'ProductionRunCommitted',
-        occurredAt: run.at,
-        // The run's own id — a re-sent run collapses rather than consuming the ingredients twice
-        // (append-only, #2). A re-make is a NEW run id.
-        idempotencyKey: `prod-run-${tenantId}-${run.runId}`,
-        source: 'api/inventory',
-        payload: run,
-      }));
+    // FUL-01: the run record and its ingredients' M08 movements commit together, under the location's stock guard.
+    recordRun: async (tenantId, run, movements, expectedStockVersion) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: productionStream,
+          event: makeEvent({
+            id: `prod-run-${run.runId}`,
+            type: 'ProductionRunCommitted',
+            occurredAt: run.at,
+            // The run's own id — a re-sent run collapses rather than consuming the ingredients twice
+            // (append-only, #2). A re-make is a NEW run id.
+            idempotencyKey: `prod-run-${tenantId}-${run.runId}`,
+            source: 'api/inventory',
+            payload: run,
+          }),
+        },
+        ...movementEntries(tenantId, movements),
+      ], expectedStockVersion === undefined ? undefined : { guard: { key: stockGuardKey(run.locationId), expectedVersion: expectedStockVersion } });
     },
 
-    recordRelease: async (tenantId, release) => {
-      await input.store.append(tenantId, productionStream, makeEvent({
-        id: `prod-release-${release.runId}`,
-        type: 'ProductionBatchReleased',
-        occurredAt: release.releasedAt,
-        // The run's own id — a re-sent release collapses (append-only, #2); the batch is released once.
-        idempotencyKey: `prod-release-${tenantId}-${release.runId}`,
-        source: 'api/inventory',
-        payload: release,
-      }));
+    // FUL-01: the release record and the finished batch's `produced` movement commit together.
+    recordRelease: async (tenantId, release, movements) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: productionStream,
+          event: makeEvent({
+            id: `prod-release-${release.runId}`,
+            type: 'ProductionBatchReleased',
+            occurredAt: release.releasedAt,
+            // The run's own id — a re-sent release collapses (append-only, #2); the batch is released once.
+            idempotencyKey: `prod-release-${tenantId}-${release.runId}`,
+            source: 'api/inventory',
+            payload: release,
+          }),
+        },
+        ...movementEntries(tenantId, movements),
+      ]);
     },
+
+    stockVersion: (tenantId, locationId) => input.store.guardVersion(tenantId, stockGuardKey(locationId)),
 
     enabledDepartments: async (tenantId) => {
       const enabled = await allOf<{ departmentId: string }>(input.store, tenantId, productionStream, 'ProductionDepartmentEnabled');
@@ -5938,7 +6022,8 @@ export function goodsReceiptAdapter(input: {
   const fold = async (tenantId: string): Promise<readonly GrnRecord[]> => {
     const byId = new Map<string, GrnRecord>();
     for (const e of await input.store.readStream(tenantId, grnStream)) {
-      if (e.event.type === 'GoodsReceived' || e.event.type === 'GoodsReceiptExcessDecided' || e.event.type === 'GoodsReceiptLineDisposed' || e.event.type === 'GoodsReceiptExcessReturned') {
+      if (e.event.type === 'GoodsReceived' || e.event.type === 'GoodsReceiptExcessDecided' || e.event.type === 'GoodsReceiptLineDisposed' || e.event.type === 'GoodsReceiptExcessReturned'
+        || e.event.type === 'GoodsReceiptLineReturned') {
         const g = payloadOf<GrnRecord>(e);
         byId.set(g.grnId, g);
       }
@@ -6026,6 +6111,17 @@ export function goodsReceiptAdapter(input: {
         },
         ...movements.map((m) => movementEvent(tenantId, m)),
       ]);
+    },
+    // Batch 2: a quarantined line's physical return to the supplier — the receipt's next state, once per line.
+    commitLineReturn: async (tenantId, record, key) => {
+      await input.store.append(tenantId, grnStream, makeEvent({
+        id: `grn-line-return-${key}`,
+        type: 'GoodsReceiptLineReturned',
+        occurredAt: record.lineReturns?.at(-1)?.returnedAt ?? input.now(),
+        idempotencyKey: `grn-line-return-${tenantId}-${key}`,
+        source: 'api/inventory',
+        payload: record,
+      }));
     },
     // The product master's word on tracking (F03): the published catalogue is the master the whole estate runs on.
     // Wave 3 · SF-07: batch tracking from the published catalogue (F03, as before); the handling class and cold-chain limits
@@ -6161,6 +6257,31 @@ export function inventoryAdapter(input: {
     // transfers' own discrepancy records. Listed beside negative stock until a person owns it (P-08, #10).
     transferShortfalls: async (tenantId) => {
       const received = await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'transfers'), { type: 'TransferReceived' });
+      // Batch 2: a floor-indent shortfall a second person RESOLVED stays listed, beside its resolution (hard rule #6).
+      const resolvedByTransfer = new Map<string, NonNullable<TransferShortfall['resolution']>>();
+      for (const e of await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'indents'), { type: 'FloorIndentShortfallResolved' })) {
+        for (const issue of payloadOf<{ indent: FloorIndent }>(e).indent.issues) {
+          const r = issue.shortfallResolution;
+          if (r === undefined) continue;
+          for (const l of r.lines) {
+            resolvedByTransfer.set(`${issue.transferId}\u001f${l.productId}\u001f${l.batchId ?? ''}`, {
+              resolvedBy: r.resolvedBy, resolvedAt: r.resolvedAt, reasonCode: r.reasonCode, note: r.note,
+              foundMinor: l.foundMinor, lostMinor: l.lostMinor, lostValueMinor: l.lostValueMinor, movementIds: r.movementIds,
+            });
+          }
+        }
+      }
+      for (const e of await input.store.readStream(tenantId, streamName(STREAM.warehouse, 'transfers'), { type: 'TransferShortfallResolved' })) {
+        const t = payloadOf<{ transfer: Transfer }>(e).transfer;
+        const r = t.shortfallResolution;
+        if (r === undefined) continue;
+        for (const l of r.lines) {
+          resolvedByTransfer.set(`${t.transferId}\u001f${l.productId}\u001f${l.batchId ?? ''}`, {
+            resolvedBy: r.resolvedBy, resolvedAt: r.resolvedAt, reasonCode: r.reasonCode, note: r.note,
+            foundMinor: l.foundMinor, lostMinor: l.lostMinor, lostValueMinor: l.lostValueMinor, movementIds: r.movementIds,
+          });
+        }
+      }
       const out: TransferShortfall[] = [];
       for (const e of received) {
         const p = payloadOf<{ transfer: Transfer; discrepancies?: readonly TransferDiscrepancy[] }>(e);
@@ -6170,6 +6291,7 @@ export function inventoryAdapter(input: {
             transferId: p.transfer.transferId, productId: d.productId, batchId: d.batchId, fromLocationId: p.transfer.fromLocationId, locationId: p.transfer.toLocationId,
             dispatchedMinor: d.dispatchedMinor, receivedMinor: d.receivedMinor, differenceMinor: d.differenceMinor, value: d.value,
             receivedAt: p.transfer.receivedAt ?? e.event.occurredAt, detail: d.detail,
+            resolution: resolvedByTransfer.get(`${p.transfer.transferId}\u001f${d.productId}\u001f${d.batchId ?? ''}`) ?? null,
           });
         }
       }
@@ -6192,7 +6314,7 @@ export function inventoryAdapter(input: {
         movements.map((m): ValuationMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
         'INR',
@@ -6216,7 +6338,7 @@ export function inventoryAdapter(input: {
         movements.map((m): DatedMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
           occurredAt: m.occurredAt, batchId: m.batchId ?? null,
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
@@ -6245,7 +6367,7 @@ export function inventoryAdapter(input: {
             .map((m): ValuationMovement => ({
               productId: m.productId, locationId: m.locationId,
               effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-              isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
               ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
             })),
           'INR',

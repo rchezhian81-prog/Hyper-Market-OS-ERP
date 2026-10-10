@@ -92,6 +92,24 @@ export interface ExcessDecision {
 }
 
 /**
+ * Batch 2 — the physical RETURN of a quarantined line a second person disposed of as `return` (M07-FR-03 · M06 supplier
+ * claim): who handed it over, when and why, recorded once per line. The quarantined units never reached on-hand, so the
+ * hand-over moves no stock; it is what lets the supplier account stop showing the goods as waiting for collection beside
+ * the debit note (`DN-<grn>-<line>`) the disposition raised.
+ */
+export interface LineReturn {
+  readonly lineId: string;
+  readonly productId: string;
+  readonly quantityMinor: number;
+  readonly valueMinor: number;
+  readonly currency: string;
+  readonly returnedBy: string;
+  readonly returnedAt: string;
+  readonly reason: string;
+  readonly movementIds: readonly string[];
+}
+
+/**
  * SP-7b — the physical RETURN of a rejected over-delivery to the supplier, recorded once per receipt. On a receipt assembled
  * from the handheld's scans the excess was on-hand, so the return takes it off (`returned_to_supplier` movements); on any
  * other receipt the held units never reached on-hand and the return moves nothing — it is recorded so the supplier's
@@ -126,6 +144,8 @@ export interface GrnRecord {
   readonly excessDecision?: ExcessDecision;
   /** SP-7b — set once a REJECTED excess has physically gone back to the supplier; absent while the return is pending. */
   readonly excessReturn?: ExcessReturn;
+  /** Batch 2 — quarantined lines a second person disposed of as `return` that have PHYSICALLY gone back to the supplier. */
+  readonly lineReturns?: readonly LineReturn[];
   /**
    * SP-6 (F01) — what this receipt FOLDED into its purchase order, atomically with the GRN: the received quantity per
    * product under `receiptId` (the GRN id). `null` when it folded into nothing (no order, an unknown order, an order not
@@ -258,6 +278,8 @@ export interface GoodsReceiptDeps {
   readonly commitExcessDecision: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string, poReceipt?: PoReceiptPosting) => Promise<void> | void;
   /** SP-7b — record the physical return of a rejected excess and, where the scans had put it on-hand, the movements that take it off — ONE append. */
   readonly commitExcessReturn: (tenantId: string, record: GrnRecord, movements: readonly Movement[], key: string) => Promise<void> | void;
+  /** Batch 2 — record the physical return of a quarantined line disposed of as `return`, once per line. */
+  readonly commitLineReturn: (tenantId: string, record: GrnRecord, key: string) => Promise<void> | void;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
 
@@ -667,6 +689,59 @@ export async function returnRejectedExcess(deps: GoodsReceiptDeps, input: {
   return { ok: true, record: returned, alreadyReturned: false };
 }
 
+export type LineReturnOutcome =
+  | { readonly ok: true; readonly record: GrnRecord; readonly lineReturn: LineReturn; readonly alreadyReturned: boolean }
+  | { readonly ok: false; readonly refusedBecause: 'receipt_unknown' | 'line_unknown' | 'line_not_disposed_for_return' | 'held_units_may_be_on_hand'; readonly detail: string };
+
+/**
+ * Batch 2 — record that a quarantined line a second person disposed of as `return` has physically gone back to the supplier
+ * (the driver collected it, or it went back on the next delivery van). Once per line; the same again is a no-op. Refused
+ * when the line was not disposed of as a return, and — by name — on a receipt assembled from handheld scans that may have
+ * put the held units on-hand (`cold_chain_held_but_on_hand` / `scan_posting_disagrees`): those need a count first, never
+ * a guess at what to take off.
+ */
+export async function returnDisposedLine(deps: GoodsReceiptDeps, input: {
+  readonly tenantId: string; readonly grnId: string; readonly lineId: string; readonly returnedBy: string; readonly reason: string; readonly branchId: string | null;
+}): Promise<LineReturnOutcome> {
+  const rec = await deps.grn(input.tenantId, input.grnId);
+  if (rec === undefined) return { ok: false, refusedBecause: 'receipt_unknown', detail: `No goods receipt ${input.grnId} is on file here.` };
+  const line = rec.captured.lines.find((l) => l.lineId === input.lineId);
+  if (line === undefined) return { ok: false, refusedBecause: 'line_unknown', detail: `Goods receipt ${input.grnId} has no line ${input.lineId}.` };
+  const prior = (rec.lineReturns ?? []).find((r) => r.lineId === input.lineId);
+  if (prior !== undefined) return { ok: true, record: rec, lineReturn: prior, alreadyReturned: true };
+  const disposition = (rec.dispositions ?? []).find((d) => d.lineId === input.lineId);
+  if (disposition?.disposition !== 'return' || line.quarantinedMinor <= 0) {
+    return {
+      ok: false, refusedBecause: 'line_not_disposed_for_return',
+      detail: disposition === undefined
+        ? `Line ${input.lineId} of ${input.grnId} has no disposition yet — a second person must decide to return it before it goes back to the supplier.`
+        : `Line ${input.lineId} of ${input.grnId} was disposed of as "${disposition.disposition}"; only a line disposed of as a return goes back to the supplier.`,
+    };
+  }
+  const flags = rec.governanceFlags ?? [];
+  if (rec.assembledFrom !== undefined && (flags.includes('cold_chain_held_but_on_hand') || flags.includes('scan_posting_disagrees'))) {
+    return {
+      ok: false, refusedBecause: 'held_units_may_be_on_hand',
+      detail: `Goods receipt ${input.grnId} was assembled from handheld scans that may have put held units on the shelf position (${flags.filter((f) => f === 'cold_chain_held_but_on_hand' || f === 'scan_posting_disagrees').join(', ')}). Count the line first, so the return takes off exactly what is there.`,
+    };
+  }
+  const returnedAt = deps.now();
+  const lineReturn: LineReturn = {
+    lineId: line.lineId, productId: line.productId, quantityMinor: line.quarantinedMinor, valueMinor: line.quarantinedMinor * line.unitCost.minor,
+    currency: line.unitCost.currency, returnedBy: input.returnedBy, returnedAt, reason: input.reason, movementIds: [],
+  };
+  const returned: GrnRecord = { ...rec, lineReturns: [...(rec.lineReturns ?? []), lineReturn] };
+  await deps.commitLineReturn(input.tenantId, returned, `${rec.grnId}:${line.lineId}`);
+  await deps.recordAudit?.(input.tenantId, {
+    actorId: input.returnedBy, action: 'receipt.line.return', objectType: 'goods_receipt', objectId: rec.grnId,
+    at: returnedAt, origin: { tenantId: input.tenantId, branchId: input.branchId },
+    before: { lineId: line.lineId, disposition: disposition.disposition, decidedBy: disposition.decidedBy },
+    after: { quantityMinor: String(lineReturn.quantityMinor), valueMinor: String(lineReturn.valueMinor), debitNoteRef: `DN-${rec.grnId}-${line.lineId}` },
+    reason: input.reason, correlationId: rec.grnId,
+  });
+  return { ok: true, record: returned, lineReturn, alreadyReturned: false };
+}
+
 export type LineDispositionOutcome =
   | { readonly ok: true; readonly record: GrnRecord; readonly disposition: LineDisposition; readonly alreadyDecided: boolean }
   | { readonly ok: false; readonly refusedBecause: 'receipt_unknown' | 'line_unknown' | 'nothing_to_dispose' | 'self_approval' | 'line_already_disposed' | 'cannot_accept_refused_stock'; readonly detail: string };
@@ -898,6 +973,39 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
             grnId, quantityMinor: r?.quantityMinor ?? 0, valueMinor: r?.valueMinor ?? 0, movementIds: r?.movementIds ?? [],
             returnedBy: r?.returnedBy, returnedAt: r?.returnedAt, flags: out.record.governanceFlags ?? [], alreadyReturned: out.alreadyReturned,
           },
+        };
+      },
+    },
+    {
+      // Batch 2: a quarantined line disposed of as a RETURN has physically gone back to the supplier. Body: { reason }.
+      // Moves no stock (it was never on hand); idempotent per line. Refused when the line is not a disposed return.
+      api: 'API-04', method: 'POST', path: '/v1/inventory/goods-receipt/:grnId/lines/:lineId/returned',
+      permission: 'inventory.movement.append', idempotent: true,
+      handler: async (ctx) => {
+        const grnId = (ctx.params['grnId'] ?? '').trim();
+        const lineId = (ctx.params['lineId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (grnId === '' || lineId === '' || !isStr(b['reason'])) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_line_return',
+            whatHappened: 'Recording a supplier return of a quarantined line needs the grnId and lineId in the path and a reason (who collected it, how).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { reason }. Nothing was changed.',
+          });
+        }
+        const out = await returnDisposedLine(deps, { tenantId: ctx.tenantId, grnId, lineId, returnedBy: ctx.userId, reason: b['reason'].trim(), branchId: ctx.branchId ?? null });
+        if (!out.ok) {
+          throw apiError(out.refusedBecause === 'receipt_unknown' || out.refusedBecause === 'line_unknown' ? 404 : 409, {
+            code: out.refusedBecause, whatHappened: out.detail, wasItSaved: 'not_saved',
+            nextSafeAction: out.refusedBecause === 'line_not_disposed_for_return'
+              ? 'Have a second person dispose of the line as a return first. Nothing was changed.'
+              : out.refusedBecause === 'held_units_may_be_on_hand' ? 'Count the line, then record the return. Nothing was changed.'
+              : 'Check the store has synchronised — the receipt may still be on the store computer.',
+          });
+        }
+        return {
+          status: out.alreadyReturned ? 200 : 201,
+          body: { grnId, ...out.lineReturn, debitNoteRef: `DN-${grnId}-${lineId}`, alreadyReturned: out.alreadyReturned },
         };
       },
     },

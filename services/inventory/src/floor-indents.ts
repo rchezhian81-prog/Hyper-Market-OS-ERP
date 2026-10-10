@@ -9,19 +9,25 @@
 // never a receipt (hard rule #2).
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, concurrentChange } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { dispatchTransfer, receiveTransfer, TransferRefusedError, type Transfer, type TransferLine, type AvailableLot, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
+import { applyMovement, type Bin, type BinContents, type MovementCommand } from '../../../packages/warehouse/src/movements';
 import {
   requestIndent, approveIndent, rejectIndent, planIssue, applyIssue, planReceipt, applyReceipt, cancelIndent,
   planReturn, applyReturnRequest, returnTransfer, planReturnAcceptance, applyReturnAcceptance, indentTotals, indentAttention,
+  planShortfallResolution, applyShortfallResolution, type ShortfallResolution,
   IndentRefusedError,
   type FloorIndent, type IndentLine, type IssueLine, type ReceivedLine, type ShortfallLine, type DamagedLine, type IndentRefusal,
 } from '../../../packages/warehouse/src/indents';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
-import { dispatchPostings, receivePostings } from './warehouse-transfers';
-import type { Movement } from './index';
+import { dispatchPostings, receivePostings, readFound, sameResolution, foundPostings } from './warehouse-transfers';
+
+export { readFound, foundPostings };
+import { checkMovement, type Movement } from './index';
+import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
 
 export type IndentEventType =
   | 'FloorIndentRequested' | 'FloorIndentApproved' | 'FloorIndentRejected' | 'FloorIndentCancelled' | 'FloorIndentReturnRequested';
@@ -30,6 +36,42 @@ export type IndentEventType =
 export interface BinMovementRecord {
   readonly commandId: string;
   readonly movements: readonly StockMovement[];
+}
+
+/**
+ * SP-8c: the bin-level PICKS for an issue whose lines name the back-store bin they came from — judged by the same
+ * `applyMovement` engine the handheld runs, against head office's own bin register. A bin head office does not know, or
+ * whose contents cannot cover the line, is a DISAGREEMENT to be said (`bin_disagrees`), never forced: the location-level
+ * stock is the truth and it left the back store once. Each pick is keyed `<indent>:<issue>:<line>`, so a re-sent issue
+ * moves a bin once. Shared by the direct and the relayed issue routes.
+ */
+export async function binPicksFor(
+  deps: Pick<FloorIndentsDeps, 'bins' | 'contents' | 'appliedCommandIds'>,
+  input: { readonly tenantId: string; readonly indentId: string; readonly issueId: string; readonly lines: readonly IssueLine[]; readonly uomOf: (productId: string, batchId: string | null) => string; readonly movedBy: string; readonly at: string },
+): Promise<{ readonly binMovements: readonly BinMovementRecord[]; readonly disagrees: boolean }> {
+  const binMovements: BinMovementRecord[] = [];
+  let disagrees = false;
+  if (deps.bins === undefined || deps.contents === undefined || deps.appliedCommandIds === undefined || !input.lines.some((l) => isStr(l.binId))) return { binMovements, disagrees };
+  const bins = await deps.bins(input.tenantId);
+  const contents = await deps.contents(input.tenantId);
+  const applied = [...await deps.appliedCommandIds(input.tenantId)];
+  input.lines.forEach((l, i) => {
+    if (!isStr(l.binId)) return;
+    const commandId = `${input.indentId}:${input.issueId}:${i + 1}`;
+    if (applied.includes(commandId)) return;
+    const bin = bins.find((x) => x.binId === l.binId);
+    if (bin === undefined) { disagrees = true; return; }
+    const command: MovementCommand = {
+      commandId, kind: 'pick', storeId: bin.storeId, productId: l.productId, batchId: l.batchId, quantityMinor: l.quantityMinor,
+      uom: input.uomOf(l.productId, l.batchId), fromBinId: l.binId, toBinId: null, movedBy: input.movedBy, at: input.at,
+      reason: `indent ${input.indentId} issue ${input.issueId}`,
+    };
+    const result = applyMovement({ command, appliedCommandIds: applied, bins, contents });
+    if (!result.accepted) { disagrees = true; return; }
+    applied.push(commandId);
+    binMovements.push({ commandId, movements: result.movements });
+  });
+  return { binMovements, disagrees };
 }
 
 export interface FloorIndentsDeps {
@@ -49,12 +91,29 @@ export interface FloorIndentsDeps {
   readonly recordIndent: (tenantId: string, indent: FloorIndent, type: IndentEventType) => Promise<void> | void;
   /** An ISSUE: the indent, the transfer proposed AND dispatched, and its `transferred_out` movements — ONE atomic write.
    *  SP-8c: a handheld issue also names the back-store BIN it took from; its bin movement(s) ride the same write. */
-  readonly recordIssued: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], posted: readonly Movement[], binMovements?: readonly BinMovementRecord[]) => Promise<void> | void;
+  readonly recordIssued: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], posted: readonly Movement[], binMovements?: readonly BinMovementRecord[], expectedStockVersion?: number) => Promise<void> | void;
   /** A floor RECEIPT: the indent, the received transfer and its `transferred_in` movements — ONE atomic write. */
-  readonly recordReceipt: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[]) => Promise<void> | void;
+  readonly recordReceipt: (tenantId: string, indent: FloorIndent, transfer: Transfer, movements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[], expectedIndentVersion?: number) => Promise<void> | void;
   /** A RETURN accepted at the back store: the indent and the return's transfer proposed, dispatched and received in one step, with both legs' movements — ONE atomic write. */
   readonly recordReturnAccepted: (tenantId: string, indent: FloorIndent, transfer: Transfer, dispatchMovements: readonly StockMovement[], receiveMovements: readonly StockMovement[], discrepancies: readonly TransferDiscrepancy[], posted: readonly Movement[]) => Promise<void> | void;
+  /** Batch 2: a shortfall RESOLVED — the indent step and the found units' compensating `adjusted` movements, ONE atomic write. */
+  readonly recordShortfallResolved: (tenantId: string, indent: FloorIndent, issueId: string, posted: readonly Movement[], expectedIndentVersion?: number) => Promise<void> | void;
+  /**
+   * Batch 2 · the write guards on the indent chain (Wave 2a's pattern, SF-04). The back store's STOCK guard — the same one a
+   * transfer dispatch takes — read before the stock an issue is judged on, so two issues (two indents, or two issues of one
+   * indent) cannot spend the same stock; and the INDENT's own guard, read before the indent a floor receipt or a shortfall
+   * resolution is judged on, so two counts of one issue cannot both land. The loser is a named 409 \`concurrent_change\`,
+   * nothing saved. Optional: a bare stub runs unguarded.
+   */
+  readonly stockVersion?: (tenantId: string, locationId: string) => Promise<number> | number;
+  readonly indentVersion?: (tenantId: string, indentId: string) => Promise<number> | number;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** SP-8c: head office's bin register, so an issue that names a bin lowers the same bin it took from — on the handheld's
+   *  relayed route AND the direct route (Batch 2: the direct route named the bin and left it full). Optional: a cloud without
+   *  bins flags, never fails. */
+  readonly bins?: (tenantId: string) => Promise<readonly Bin[]> | readonly Bin[];
+  readonly contents?: (tenantId: string) => Promise<BinContents> | BinContents;
+  readonly appliedCommandIds?: (tenantId: string) => Promise<readonly string[]> | readonly string[];
   readonly now: () => string;
 }
 
@@ -69,6 +128,8 @@ const REFUSAL_STATUS: Readonly<Record<IndentRefusal, number>> = Object.freeze({
   indent_not_approved: 409, requester_cannot_issue: 422, over_issue: 422, issue_unknown: 404, issue_already_received: 409,
   issuer_cannot_receive: 422, not_on_issue: 422, indent_not_open: 409, nothing_received: 409, over_return: 422,
   return_unknown: 404, return_already_accepted: 409, returner_cannot_accept: 422, not_on_return: 422,
+  issue_not_received: 409, nothing_short: 409, counter_cannot_resolve: 422, issuer_cannot_resolve: 422, more_found_than_missing: 422,
+  not_on_shortfall: 422, shortfall_already_resolved: 409,
 });
 
 /** The engine's refusal, as the API says it — nothing saved, and the next safe step in words. */
@@ -76,6 +137,7 @@ export const refusedBy = (e: unknown): never => {
   if (e instanceof IndentRefusedError) {
     throw apiError(REFUSAL_STATUS[e.code], { code: e.code, whatHappened: e.why, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed. Correct the request and try again, or read the indent.' });
   }
+  if (e instanceof ConcurrencyConflictError) throw concurrentChange('this floor indent or the back store\'s stock');
   if (e instanceof TransferRefusedError) {
     throw apiError(422, { code: 'issue_refused', whatHappened: e.why, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was moved. Check the back store\'s stock and the batch, then issue again.' });
   }
@@ -296,19 +358,26 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           const unitCostsMinor = await costsFor(ctx.tenantId, indent.fromLocationId, [...new Set(lines.map((l) => l.productId))]);
           const plan = planIssue({ indent, issueId, issuedBy: ctx.userId, lines, unitCostsMinor, currency, at: now });
           // The transfer engine's own §28 (dispatcher ≠ requester) and stock checks (SP-4/SP-5): head office's lots at the back store.
+          // The back store's stock guard first, then the stock it protects (Batch 2 · SF-04's pattern).
+          const stockVersion = deps.stockVersion === undefined ? undefined : await deps.stockVersion(ctx.tenantId, indent.fromLocationId);
           const available = await deps.availableAt(ctx.tenantId, indent.fromLocationId, plan.transfer.lines);
           const dispatched = dispatchTransfer({ transfer: plan.transfer, approval: { subjectRef: plan.transfer.transferId, status: 'approved', decidedBy: ctx.userId }, available, at: now });
           const lineCostsMinor = plan.transfer.lines.map((l) => unitCostsMinor[l.productId] ?? null);
           const transfer: Transfer = { ...dispatched.transfer, lineCostsMinor };
           const posted = dispatchPostings(transfer, dispatched.movements, ctx.userId);
-          const next = applyIssue(indent, plan.issue);
-          await deps.recordIssued(ctx.tenantId, next, transfer, dispatched.movements, posted);
+          // SP-8c on the direct route too: the bin a line names is lowered in the SAME write; a disagreement is said.
+          const picks = await binPicksFor(deps, {
+            tenantId: ctx.tenantId, indentId, issueId, lines, movedBy: ctx.userId, at: now,
+            uomOf: (productId, batchId) => plan.transfer.lines.find((t) => t.productId === productId && t.batchId === batchId)?.uom ?? 'EA',
+          });
+          const next = applyIssue(indent, picks.disagrees ? { ...plan.issue, governanceFlags: ['bin_disagrees'] } : plan.issue);
+          await deps.recordIssued(ctx.tenantId, next, transfer, dispatched.movements, posted, picks.binMovements, stockVersion);
           await audit(ctx.tenantId, {
             actorId: ctx.userId, action: 'floor_indent.issue', objectType: 'floor_indent', objectId: indentId, at: now, origin: origin(ctx.tenantId, ctx.branchId ?? null),
             before: { state: indent.state }, after: { state: next.state, issueId, transferId: transfer.transferId, issuedMinor: String(lines.reduce((s, l) => s + l.quantityMinor, 0)), posted: posted.map((m) => m.movementId).join(',') },
             correlationId: indentId,
           });
-          return { status: 201, body: { indent: presentIndent(next), issue: plan.issue, transferId: transfer.transferId, posted: posted.map((m) => m.movementId), lineCostsMinor, alreadyIssued: false } };
+          return { status: 201, body: { indent: presentIndent(next), issue: plan.issue, transferId: transfer.transferId, posted: posted.map((m) => m.movementId), lineCostsMinor, binMovements: picks.binMovements.map((m) => m.commandId), flags: picks.disagrees ? ['bin_disagrees'] : [], alreadyIssued: false } };
         } catch (e) { return refusedBy(e); }
       },
     },
@@ -326,6 +395,8 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
         if (indentId === '' || issueId === '' || counted === undefined || (b['currency'] !== undefined && !isCurrencyCode(b['currency'] as string))) {
           throw apiError(400, { code: 'not_readable_as_a_receipt', whatHappened: 'A floor receipt needs { counted: [{ productId, batchId?, quantityMinor (whole, zero or more) }] } — what the floor actually counted.', wasItSaved: 'not_saved', nextSafeAction: 'Send what was counted. Nothing was recorded.' });
         }
+        // The indent's own guard before the indent (Batch 2): two counts of one issue cannot both land.
+        const indentVersion = deps.indentVersion === undefined ? undefined : await deps.indentVersion(ctx.tenantId, indentId);
         const indent = await deps.indent(ctx.tenantId, indentId);
         if (indent === undefined) throw notFound(`floor indent ${indentId}`);
         const issue = indent.issues.find((i) => i.issueId === issueId);
@@ -336,12 +407,14 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           planReceipt({ indent, issueId, receivedBy: ctx.userId, counted });
           const transfer = await deps.transferOf(ctx.tenantId, issue.transferId);
           if (transfer === undefined) throw notFound(`transfer ${issue.transferId}`);
+          // Batch 2: another count of this issue landed between reading the indent and reading its transfer — said as that.
+          if (transfer.state === 'received') throw new IndentRefusedError(indentId, 'issue_already_received', `issue ${issueId} was counted in a moment ago by someone else — read the indent; nothing was recorded`);
           const result = receiveTransfer({ transfer, counted: arrivedOf(counted), receivedBy: ctx.userId, at: now, currency: (b['currency'] as CurrencyCode | undefined) ?? 'INR' });
           // SP-8c: damaged units arrived (out of transit) and are written off at the floor in the same write — never on the shelf.
           const damaged = damagedOf(counted, result.transfer);
           const posted = [...receivePostings(result.transfer, result.movements, ctx.userId), ...damagePostings(result.transfer, damaged, ctx.userId, now)];
           const next = applyReceipt(indent, issueId, { receivedBy: ctx.userId, at: now, received: goodOf(receivedOf(result.movements, result.transfer), damaged), shortfall: shortfallOf(result.discrepancies), damaged });
-          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted);
+          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted, indentVersion);
           await audit(ctx.tenantId, {
             actorId: ctx.userId, action: 'floor_indent.receive', objectType: 'floor_indent', objectId: indentId, at: now, origin: origin(ctx.tenantId, ctx.branchId ?? null),
             before: { state: indent.state, issueId, issuedBy: issue.issuedBy },
@@ -349,6 +422,64 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
             correlationId: indentId,
           });
           return { status: 201, body: { indent: presentIndent(next), issue: next.issues.find((i) => i.issueId === issueId), posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies, damaged, alreadyReceived: false } };
+        } catch (e) { return refusedBy(e); }
+      },
+    },
+    {
+      // Batch 2 — RESOLVE a valued shortfall, accountably (M09-FR-03 · M08-FR-03 · M08-FR-04 · §28 · P-08 · hard rules #2 #6 #10).
+      // Body: { lines?: [{ productId, batchId?, foundMinor, foundAtLocationId? }], reasonCode, note }. A person who neither
+      // issued nor counted the stock says what turned up and why the rest is gone: found units come back on a compensating
+      // two-person `adjusted` movement in the same write; the rest is confirmed LOST at the cost it left with. Once: the
+      // same resolution again is 200, a different one is 409. The shortfall stays on the record beside its resolution.
+      api: 'API-04', method: 'POST', path: '/v1/floor/indents/:indentId/issues/:issueId/shortfall/resolution',
+      permission: 'inventory.adjustment.approve', idempotent: true,
+      handler: async (ctx) => {
+        const indentId = (ctx.params['indentId'] ?? '').trim();
+        const issueId = (ctx.params['issueId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const found = readFound(b['lines']);
+        if (indentId === '' || issueId === '' || found === undefined || !isAdjustmentReason(b['reasonCode']) || !isStr(b['note']) || (b['note'] as string).trim().length < 4) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_resolution',
+            whatHappened: `Resolving a shortfall needs a reasonCode (${ADJUSTMENT_REASON_CODES.join(' / ')}), a note saying what was done to look for the stock, and optionally lines [{ productId, batchId?, foundMinor, foundAtLocationId? }] for what turned up (one line per product and batch).`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Send { reasonCode, note, lines? }. Nothing was changed.',
+          });
+        }
+        const reasonCode = b['reasonCode'] as string;
+        const note = (b['note'] as string).trim();
+        const indentVersion = deps.indentVersion === undefined ? undefined : await deps.indentVersion(ctx.tenantId, indentId);
+        const indent = await deps.indent(ctx.tenantId, indentId);
+        if (indent === undefined) throw notFound(`floor indent ${indentId}`);
+        const issue = indent.issues.find((i) => i.issueId === issueId);
+        if (issue === undefined) throw notFound(`issue ${issueId} on floor indent ${indentId}`);
+        const prior = issue.shortfallResolution;
+        if (prior !== undefined && sameResolution(prior, reasonCode, found)) {
+          return { status: 200, body: { indent: presentIndent(indent), resolution: prior, alreadyResolved: true } };
+        }
+        const now = deps.now();
+        try {
+          const planned = planShortfallResolution({ indent, issueId, resolvedBy: ctx.userId, found, reasonCode, note, at: now });
+          const transfer = await deps.transferOf(ctx.tenantId, issue.transferId);
+          if (transfer === undefined) throw notFound(`transfer ${issue.transferId}`);
+          const posted = foundPostings(transfer, issue, planned);
+          for (const m of posted) {
+            const check = checkMovement(m);
+            if (!check.ok) throw apiError(422, { code: check.refusedBecause ?? 'movement_refused', whatHappened: check.detail, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
+          }
+          const resolution: ShortfallResolution = { ...planned, movementIds: posted.map((m) => m.movementId) };
+          const next = applyShortfallResolution(indent, issueId, resolution);
+          await deps.recordShortfallResolved(ctx.tenantId, next, issueId, posted, indentVersion);
+          await audit(ctx.tenantId, {
+            actorId: ctx.userId, action: 'floor_indent.shortfall.resolve', objectType: 'floor_indent', objectId: indentId, at: now, origin: origin(ctx.tenantId, ctx.branchId ?? null),
+            before: { issueId, issuedBy: issue.issuedBy, receivedBy: issue.receivedBy ?? '', missingMinor: String(resolution.lines.reduce((s, l) => s + l.missingMinor, 0)) },
+            after: {
+              reasonCode, note, foundMinor: String(resolution.lines.reduce((s, l) => s + l.foundMinor, 0)), lostMinor: String(resolution.lines.reduce((s, l) => s + l.lostMinor, 0)),
+              lostValueMinor: String(resolution.lines.reduce((s, l) => s + l.lostValueMinor, 0)), posted: resolution.movementIds.join(','),
+            },
+            correlationId: indentId,
+          });
+          return { status: 201, body: { indent: presentIndent(next), resolution, posted, alreadyResolved: false } };
         } catch (e) { return refusedBy(e); }
       },
     },

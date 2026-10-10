@@ -58,6 +58,8 @@ export interface ReceiptForAccount {
   readonly dispositions?: readonly ReceiptDispositionForAccount[];
   readonly excessDecision?: { readonly decision: 'approved' | 'rejected'; readonly decidedBy: string; readonly decidedAt: string; readonly reason: string };
   readonly excessReturn?: { readonly returnedBy: string; readonly returnedAt: string; readonly quantityMinor: number; readonly valueMinor: number };
+  /** Batch 2 — quarantined lines disposed of as a return that have physically gone back (goods-receipt `lineReturns`). */
+  readonly lineReturns?: readonly { readonly lineId: string; readonly returnedBy: string; readonly returnedAt: string }[];
 }
 
 /** SP-7c — a payment recorded against the supplier (supplier-master.ts): a fact a second person approved, netting the balance. */
@@ -157,6 +159,26 @@ export interface PendingSupplierReturn {
   readonly returnedAt: string | null;
 }
 
+/**
+ * Batch 2 — a quarantined line a second person disposed of as a RETURN: the goods are the supplier's to collect, beside the
+ * debit note the disposition raised. `returned` once someone records the hand-over; until then it waits, visibly.
+ */
+export interface PendingLineReturn {
+  readonly grnId: string;
+  readonly lineId: string;
+  readonly productId: string;
+  readonly poId: string;
+  readonly quantityMinor: number;
+  readonly valueMinor: number;
+  readonly currency: string;
+  readonly debitNoteRef: string;
+  readonly decidedBy: string;
+  readonly decidedAt: string;
+  readonly returned: boolean;
+  readonly returnedBy: string | null;
+  readonly returnedAt: string | null;
+}
+
 export interface SupplierAccountTotals {
   readonly invoicedMinor: number;
   /** Σ matched payable — what the shop has agreed it owes. */
@@ -180,6 +202,8 @@ export interface SupplierAccountStatement extends PayablesAccount {
   readonly debitNotes: readonly DebitNote[];
   readonly refusedNotOwed: readonly RefusedNotOwed[];
   readonly pendingSupplierReturns: readonly PendingSupplierReturn[];
+  /** Batch 2 — quarantined lines disposed of as returns, and whether they have physically gone back. */
+  readonly pendingLineReturns: readonly PendingLineReturn[];
   readonly payments: readonly SupplierPayment[];
   readonly totals: SupplierAccountTotals;
   readonly asAt: string;
@@ -228,6 +252,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
   const debitNotes: DebitNote[] = [];
   const refusedNotOwed: RefusedNotOwed[] = [];
   const pendingSupplierReturns: PendingSupplierReturn[] = [];
+  const pendingLineReturns: PendingLineReturn[] = [];
   for (const r of input.receipts) {
     if (r.poId === null || !orderIds.has(r.poId)) continue;
     const poId = r.poId;
@@ -244,6 +269,14 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
           decidedBy: d.decidedBy, decidedAt: d.decidedAt, reason: d.reason,
           number: issued?.number ?? null, issuedBy: issued?.issuedBy ?? null, issuedAt: issued?.issuedAt ?? null,
         });
+        if (d.disposition === 'return') {
+          const back = (r.lineReturns ?? []).find((x) => x.lineId === d.lineId);
+          pendingLineReturns.push({
+            grnId: r.grnId, lineId: d.lineId, productId: d.productId, poId, quantityMinor: line.quarantinedMinor,
+            valueMinor: line.quarantinedMinor * line.unitCost.minor, currency: d.currency, debitNoteRef,
+            decidedBy: d.decidedBy, decidedAt: d.decidedAt, returned: back !== undefined, returnedBy: back?.returnedBy ?? null, returnedAt: back?.returnedAt ?? null,
+          });
+        }
       }
       if (line.rejectedMinor > 0) {
         refusedNotOwed.push({
@@ -267,7 +300,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
   const paidMinor = payments.reduce((s, p) => s + p.amountMinor, 0);
   return {
     supplierId: input.supplierId, currency: 'INR',
-    invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, payments,
+    invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, pendingLineReturns, payments,
     totals: {
       invoicedMinor: invoices.reduce((s, i) => s + i.invoicedMinor, 0),
       accruedMinor, withheldMinor: invoices.reduce((s, i) => s + i.withheldMinor, 0),

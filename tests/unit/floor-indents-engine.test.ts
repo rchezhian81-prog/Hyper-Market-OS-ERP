@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   requestIndent, approveIndent, rejectIndent, planIssue, applyIssue, planReceipt, applyReceipt, cancelIndent,
   planReturn, applyReturnRequest, returnTransfer, planReturnAcceptance, applyReturnAcceptance, indentTotals, indentAttention,
+  planShortfallResolution, applyShortfallResolution,
   IndentRefusedError, type FloorIndent,
 } from '../../packages/warehouse/src/indents';
 import { dispatchTransfer, receiveTransfer } from '../../packages/warehouse/src/transfers';
@@ -226,5 +227,49 @@ describe('SP-8c: damage on arrival — arrived, so out of transit; damaged, so n
     expect(after.issues[0]!.damaged).toBeUndefined();
     expect(after.flags).not.toContain('arrived_damaged');
     expect(indentTotals(after).damagedMinor).toBe(0);
+  });
+});
+
+describe('Batch 2 — a shortfall is RESOLVED by a second person, once, with a reason; found units come back, the rest is lost at its value', () => {
+  const shortIndent = (): FloorIndent => {
+    const a = approved();
+    const plan = planIssue({ indent: a, issueId: 'is-1', issuedBy: 'u-back', lines: [{ productId: 'RICE', batchId: null, quantityMinor: 12 }], unitCostsMinor: { RICE: 5_000 }, currency: 'INR', at: AT });
+    return applyReceipt(applyIssue(a, plan.issue), 'is-1', { receivedBy: 'u-floor2', at: LATER, received: [{ productId: 'RICE', batchId: null, quantityMinor: 9 }], shortfall: [{ productId: 'RICE', batchId: null, quantityMinor: 3, valueMinor: 15_000 }] });
+  };
+  const resolve = (indent: FloorIndent, resolvedBy: string, found: { productId: string; batchId: string | null; foundMinor: number; foundAtLocationId?: string }[]) =>
+    planShortfallResolution({ indent, issueId: 'is-1', resolvedBy, found, reasonCode: 'miscount', note: 'searched the trolley and the chiller', at: LATER });
+
+  it('1 found at the floor, 2 lost at 5,000 each; the attention clears but the shortfall figure stays on the record', () => {
+    const indent = shortIndent();
+    expect(indentAttention(indent)).toContain('arrived_short');
+    const r = resolve(indent, 'u-mgr', [{ productId: 'RICE', batchId: null, foundMinor: 1 }]);
+    expect(r).toMatchObject({ resolvedBy: 'u-mgr', reasonCode: 'miscount', lines: [{ productId: 'RICE', batchId: null, missingMinor: 3, foundMinor: 1, foundAtLocationId: 'S1', lostMinor: 2, lostValueMinor: 10_000 }] });
+    const after = applyShortfallResolution(indent, 'is-1', r);
+    expect(indentAttention(after)).not.toContain('arrived_short');
+    expect(indentTotals(after)).toMatchObject({ shortfallMinor: 3, unresolvedShortfallMinor: 0 });
+    expect(after.issues[0]!.shortfall).toEqual(indent.issues[0]!.shortfall); // never removed
+    // once: a second resolution is a second truth
+    expect(refusal(() => resolve(after, 'u-mgr', []))).toBe('shortfall_already_resolved');
+  });
+
+  it('nothing found: all lost; found at the back store is allowed (it never left), anywhere else is not', () => {
+    expect(resolve(shortIndent(), 'u-mgr', []).lines[0]).toMatchObject({ foundMinor: 0, foundAtLocationId: null, lostMinor: 3, lostValueMinor: 15_000 });
+    expect(resolve(shortIndent(), 'u-mgr', [{ productId: 'RICE', batchId: null, foundMinor: 3, foundAtLocationId: 'S1-BACK' }]).lines[0]).toMatchObject({ foundMinor: 3, foundAtLocationId: 'S1-BACK', lostMinor: 0, lostValueMinor: 0 });
+    expect(refusal(() => resolve(shortIndent(), 'u-mgr', [{ productId: 'RICE', batchId: null, foundMinor: 1, foundAtLocationId: 'S9' }]))).toBe('not_on_shortfall');
+  });
+
+  it('refuses the counter, the issuer, finding more than went missing, a product not on the shortfall, and an issue that is not short or not counted', () => {
+    const indent = shortIndent();
+    expect(refusal(() => resolve(indent, 'u-floor2', []))).toBe('counter_cannot_resolve');
+    expect(refusal(() => resolve(indent, 'u-back', []))).toBe('issuer_cannot_resolve');
+    expect(refusal(() => resolve(indent, 'u-mgr', [{ productId: 'RICE', batchId: null, foundMinor: 4 }]))).toBe('more_found_than_missing');
+    expect(refusal(() => resolve(indent, 'u-mgr', [{ productId: 'OIL', batchId: null, foundMinor: 1 }]))).toBe('not_on_shortfall');
+    const a = approved();
+    const plan = planIssue({ indent: a, issueId: 'is-1', issuedBy: 'u-back', lines: [{ productId: 'RICE', batchId: null, quantityMinor: 12 }], unitCostsMinor: { RICE: 5_000 }, currency: 'INR', at: AT });
+    const inTransit = applyIssue(a, plan.issue);
+    expect(refusal(() => resolve(inTransit, 'u-mgr', []))).toBe('issue_not_received');
+    const full = applyReceipt(inTransit, 'is-1', { receivedBy: 'u-floor2', at: LATER, received: [{ productId: 'RICE', batchId: null, quantityMinor: 12 }], shortfall: [] });
+    expect(refusal(() => resolve(full, 'u-mgr', []))).toBe('nothing_short');
+    expect(refusal(() => planShortfallResolution({ indent: full, issueId: 'is-9', resolvedBy: 'u-mgr', found: [], reasonCode: 'miscount', note: 'n/a', at: LATER }))).toBe('issue_unknown');
   });
 });
