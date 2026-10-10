@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers } from '../support/approved-supplier';
 
 // Purchase-order per-tenant isolation, end to end through the real API (M06-FR-01/02/04, API-03, P-04,
 // OB-01 tenant isolation). purchase-orders.test.ts proves the lifecycle, §28 second-person approval,
@@ -36,8 +37,10 @@ describe('purchase orders are per-tenant isolated: one shop never sees or moves 
   it('an issued PO + open commitment in tenant A is invisible and untouchable from tenant B', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
+    await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
     await h.provisionRole(A, 'u-mgr', 'store_manager'); // proposes; the owner approves (§28)
     await h.seedOwner(B, 'u-owner-b');
+    await approvedSuppliers(h, B, 'sup-1'); // OB-32: an order needs an approved supplier
 
     // Tenant A issues a ₹600 PO under two people.
     expect((await propose(h, 'u-mgr', A, 'po-1', 'a-k1')).status).toBe(201);

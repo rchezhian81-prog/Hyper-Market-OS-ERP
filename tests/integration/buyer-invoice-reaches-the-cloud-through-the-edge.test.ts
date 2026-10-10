@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiHarness, TEST_IDP, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers } from '../support/approved-supplier';
 import type { HttpRequest } from '../../services/kernel/src/index';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
@@ -88,6 +89,7 @@ async function boxWithoutCloud(): Promise<EdgeProcess> {
 async function cloud(): Promise<{ h: ApiHarness; start: () => Promise<EdgeProcess>; loseNextReply: () => void; posts: () => number }> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
+  await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
   await h.provisionRole(A, 'u-buyer', 'store_manager');
   await h.provisionRole(A, 'u-mgr', 'store_manager');
   await h.provisionRole(A, 'u-box', 'cashier');

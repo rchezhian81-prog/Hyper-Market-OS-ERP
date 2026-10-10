@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers } from '../support/approved-supplier';
 import { sentWithApproval } from '../support/approval-request';
 import { STREAM } from '../../services/api/src/adapters';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
@@ -69,6 +70,7 @@ interface ReadBody {
 async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
+  await approvedSuppliers(h, A, 's-1'); // OB-32: an order needs an approved supplier
   await h.provisionRole(A, 'u-buyer', 'store_manager');   // captures invoices
   await h.provisionRole(A, 'u-checker', 'store_manager'); // the second person on the invoice
   await h.provisionRole(A, 'u-recv', 'store_manager');    // receives deliveries

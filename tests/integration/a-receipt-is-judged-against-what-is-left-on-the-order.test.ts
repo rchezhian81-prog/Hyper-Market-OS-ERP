@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers } from '../support/approved-supplier';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
@@ -41,6 +42,7 @@ function lab(h: ApiHarness, t: string) {
     /** The cast, the product master (p1 untracked), the tenant's tolerances, and an ISSUED order of 100 × p1. */
     seed: async (poId: string, ordered: number) => {
       await h.seedOwner(t, 'u-owner');
+      await approvedSuppliers(h, t, 'sup-1'); // OB-32: an order needs an approved supplier
       await h.provisionRole(t, 'u-mgr', 'store_manager');
       await h.store.append(t, STREAM.catalogue, makeEvent({
         id: `pack-${t}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${t}-v1`, source: 'test/catalogue',

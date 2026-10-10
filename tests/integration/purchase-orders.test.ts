@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers } from '../support/approved-supplier';
 
 // M06-FR-01/02/04: the purchase-order lifecycle on the live API — buying as a controlled, approved
 // commitment. A PO is PROPOSED by a buyer (the requisitioner is the authenticated user), then ISSUED
@@ -52,6 +53,7 @@ const body = (extra: Record<string, unknown> = {}) => ({ supplierId: 'sup-1', li
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');            // holds propose + approve + supplier.block
+  await approvedSuppliers(h, A, 'sup-1', 'sup-9'); // OB-32: an order needs an approved supplier
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // holds propose + supplier.block, NOT approve
   await h.provisionRole(A, 'u-cash', 'cashier');       // holds neither
   return h;
@@ -97,6 +99,20 @@ describe('purchase-order lifecycle (M06-FR-01/02/04)', () => {
     // It stayed proposed and never became a commitment.
     expect(orderOf(await readPo(h, 'u-owner', 'po-self')).status).toBe('proposed');
     expect(commitmentsBody(await commitments(h, 'u-owner')).known).toBe(false);
+  });
+
+  it('OB-32: an order to a supplier the master does not know, or one finance has not yet approved, is refused by name — nothing recorded; once approved it goes through', async () => {
+    const h = await cast();
+    const unknown = await propose(h, 'u-mgr', 'po-x', body({ supplierId: 'sup-nobody' }), 'kx');
+    expect(unknown.status).toBe(422);
+    expect(codeOf(unknown)).toBe('supplier_unknown');
+    expect((await h.request({ method: 'POST', path: '/v1/purchase/suppliers/sup-new', userId: 'u-mgr', tenantId: A, idempotencyKey: 'sup-new', body: { name: 'New Dairy' } })).status).toBe(201);
+    const pending = await propose(h, 'u-mgr', 'po-y', body({ supplierId: 'sup-new' }), 'ky');
+    expect(pending.status).toBe(422);
+    expect(codeOf(pending)).toBe('supplier_not_approved');
+    expect((await h.request({ method: 'GET', path: '/v1/purchase/orders/po-y', userId: 'u-owner', tenantId: A })).status).toBe(404);
+    expect((await h.request({ method: 'POST', path: '/v1/purchase/suppliers/sup-new/approval', userId: 'u-supplier-checker', tenantId: A, idempotencyKey: 'sup-new-ok', body: { reason: 'documents checked' } })).status).toBe(200);
+    expect((await propose(h, 'u-mgr', 'po-y', body({ supplierId: 'sup-new' }), 'ky2')).status).toBe(201);
   });
 
   it('never issues a PO to a blocked supplier, and lifts the hold to let it through (M06-FR-01)', async () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers } from '../support/approved-supplier';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 
@@ -48,6 +49,7 @@ const body = (lines: unknown[]) => ({ warehouseId: 'wh1', receivedOnDate: '2026-
 async function cast(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
+  await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // has inventory.movement.append
   await h.provisionRole(A, 'u-cash', 'cashier');       // does not
   await h.store.append(A, STREAM.catalogue, makeEvent({

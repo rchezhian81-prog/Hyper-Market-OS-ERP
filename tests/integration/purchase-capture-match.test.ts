@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers } from '../support/approved-supplier';
 import { sealedDecision } from '../support/store-seal';
 import { sentWithApproval } from '../support/approval-request';
 import { STREAM } from '../../services/api/src/adapters';
@@ -60,6 +61,7 @@ const matchesOnRecord = async (h: ApiHarness, invoiceId: string) =>
 async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
+  await approvedSuppliers(h, A, 's-1'); // OB-32: an order needs an approved supplier
   await h.provisionRole(A, 'u-buyer', 'store_manager');   // captures; holds match too — but may never check their own capture
   await h.provisionRole(A, 'u-checker', 'store_manager'); // the second person
   await h.provisionRole(A, 'u-cash', 'cashier');          // no purchase right at all

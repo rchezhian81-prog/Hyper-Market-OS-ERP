@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers } from '../support/approved-supplier';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { STREAM } from '../../services/api/src/adapters';
 
@@ -58,6 +59,7 @@ const issue = async (h: ApiHarness, poId: string, lines: { productId: string; or
 async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
+  await approvedSuppliers(h, A, 's-1'); // OB-32: an order needs an approved supplier
   await h.provisionRole(A, 'u-worker', 'store_manager'); // scans and completes deliveries; holds approve too — never on their own
   await h.provisionRole(A, 'u-boss', 'store_manager');   // the second person
   await h.provisionRole(A, 'u-box', 'cashier');          // the store box's sync identity

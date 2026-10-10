@@ -6625,6 +6625,9 @@ export function purchaseOrdersAdapter(input: {
       return latest?.blocked ?? false;
     },
 
+    // OB-32 "A": the supplier master's word on this supplier — active (approved), proposed (waiting), or unknown.
+    supplierStatus: async (tenantId, supplierId) => (await foldSupplierRecords(input.store, tenantId)).get(supplierId)?.status,
+
     propose: async (tenantId, po) => {
       await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
         id: `po-${po.poId}-proposed`,

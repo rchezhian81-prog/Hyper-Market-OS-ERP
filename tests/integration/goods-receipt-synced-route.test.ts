@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers } from '../support/approved-supplier';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { RECEIPT_FLAGS, DEFAULT_RECEIPT_POLICY } from '../../services/inventory/src/goods-receipt-synced';
@@ -57,6 +58,7 @@ const valuation = async (h: ApiHarness, productId: string) =>
 async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
+  await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // holds inventory.movement.append — may receive goods
   await h.provisionRole(A, 'u-box', 'cashier');       // the store box's sync identity: inventory.receipt.sync
   await h.provisionRole(A, 'u-cust', 'customer');     // no inventory authority at all

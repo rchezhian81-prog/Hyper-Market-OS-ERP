@@ -60,6 +60,12 @@ export interface PurchaseOrderDeps {
   readonly all: (tenantId: string) => Promise<readonly StoredPurchaseOrder[]> | readonly StoredPurchaseOrder[];
   /** Whether this supplier is currently under a hold (latest-wins block record). */
   readonly supplierBlocked: (tenantId: string, supplierId: string) => Promise<boolean> | boolean;
+  /**
+   * OB-32 "A" (owner, 10 Oct 2026): the supplier master's status for this supplier — `active` once finance approved it,
+   * `proposed` while it waits, `undefined` when the master does not know it. A purchase order is refused by name for an
+   * unknown or not-yet-approved supplier. Optional only so a bare stub may omit it; the running system provides it.
+   */
+  readonly supplierStatus?: (tenantId: string, supplierId: string) => Promise<'active' | 'proposed' | undefined> | 'active' | 'proposed' | undefined;
   /** Record a proposed PO. Idempotent on the PO id. */
   readonly propose: (tenantId: string, po: StoredPurchaseOrder, key: string) => Promise<void> | void;
   /**
@@ -116,6 +122,28 @@ const poNotIssued = (poId: string, verb: string) => apiError(409, {
   nextSafeAction: 'Approve and issue the PO first (a second person), then try again. Nothing was changed.',
 });
 
+/** OB-32 "A": refuse a purchase order for a supplier the master does not know, or one finance has not yet approved. */
+async function requireApprovedSupplier(deps: PurchaseOrderDeps, tenantId: string, supplierId: string): Promise<void> {
+  if (deps.supplierStatus === undefined) return;
+  const status = await deps.supplierStatus(tenantId, supplierId);
+  if (status === undefined) {
+    throw apiError(422, {
+      code: 'supplier_unknown',
+      whatHappened: `There is no supplier "${supplierId}" in the supplier master — a purchase order is only raised to a supplier the shop has on record (OB-32).`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Add the supplier to the supplier master and have finance approve it, then raise the order. Nothing was recorded.',
+    });
+  }
+  if (status !== 'active') {
+    throw apiError(422, {
+      code: 'supplier_not_approved',
+      whatHappened: `Supplier "${supplierId}" is still waiting for finance to approve it — a purchase order is only raised to an approved supplier (OB-32).`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Have finance approve the supplier, then raise or issue the order. Nothing was recorded.',
+    });
+  }
+}
+
 export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
   return [
     {
@@ -150,6 +178,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         if (existing !== undefined) {
           return { status: 200, body: { order: existing, openCommitment: openOf(existing), alreadyProposed: true } };
         }
+        await requireApprovedSupplier(deps, ctx.tenantId, b['supplierId']);
         const poLines: PurchaseOrderLineInput[] = (lines as RawLine[]).map((l) => ({
           productId: l.productId, orderedQty: l.orderedQty, unitCost: money(l.unitCost.minor, currency),
         }));
@@ -233,6 +262,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
             nextSafeAction: 'Resolve the reason above and issue again. Nothing was issued.',
           });
         }
+        await requireApprovedSupplier(deps, ctx.tenantId, po.supplierId);
         const blocked = await deps.supplierBlocked(ctx.tenantId, po.supplierId);
         try {
           issuePurchaseOrder({

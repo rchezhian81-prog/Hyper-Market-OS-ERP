@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { aBranch } from '../support/a-branch';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { approvedSuppliers } from '../support/approved-supplier';
 import { withApprovals } from '../support/refund-approval';
 
 // M34-FR-01 — the domain audit trail is now PRODUCED, durable and verifiable, not just readable over a
@@ -186,6 +187,7 @@ describe('the audit trail records a purchase — a placed order (M34 slice 7, ha
   it('seals who ordered what, from whom, for how much, attributed to the buyer; no tender data', async () => {
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner'); // holds purchase.order.propose + audit.retention.read
+    await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
 
     const r = await placePo(h, 'u-owner', 'PO-1', {
       supplierId: 'sup-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5_000, currency: 'INR' } }],
@@ -198,7 +200,8 @@ describe('the audit trail records a purchase — a placed order (M34 slice 7, ha
     expect(rec).toMatchObject({ action: 'purchase.order.place', objectType: 'purchase-order', objectId: 'PO-1', actorId: 'u-owner' });
     expect(rec.after).toMatchObject({ supplierId: 'sup-1', totalMinor: '50000', currency: 'INR', lineCount: '1', status: 'proposed' });
     expect(JSON.stringify(rec)).not.toMatch(/card|cvv|expiry|tender/i);
-    expect((await verify(h, 'u-owner')).body).toMatchObject({ intact: true, recordsChecked: 1 });
+    // The chain holds the order AND the supplier's own two sealed records (proposed, approved — OB-32 seeds it first).
+    expect((await verify(h, 'u-owner')).body).toMatchObject({ intact: true, recordsChecked: 3 });
   });
 });
 
