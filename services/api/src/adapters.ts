@@ -176,7 +176,7 @@ import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } from '../../../packages/audit/src/index';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
-import { project, projectBatches, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
+import { project, projectBatches, fefoBatchesAt, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
@@ -2337,6 +2337,14 @@ export function posAdapter(input: {
 
     currentPackVersion: async (tenantId) =>
       (await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished'))?.snapshot.version ?? 0,
+
+    // OB-35 "A": the batches on hand where this sale's stock leaves from (the same location `bankSale` resolves), earliest
+    // expiry first — Batch 2's FEFO read over the one batch projection, called once per sale.
+    lotsOnHand: async (tenantId, sale) => {
+      const { locationId } = resolveSaleStockLocation(sale, await storeOfPack(input.store, tenantId, sale.packVersion));
+      const batches = await inventoryAdapter({ store: input.store, now: input.now }).batches!(tenantId);
+      return (productId) => fefoBatchesAt(batches, locationId, productId);
+    },
 
     /**
      * Two indexed lookups, not two folds.
