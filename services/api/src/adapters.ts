@@ -311,6 +311,7 @@ import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
 import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID } from './roles';
+import { metaOf as legacyAttachmentMeta, type LegacyHistoryDeps, type LegacyHistoryDocument, type LegacyAttachment, type LegacyAttachmentMeta } from '../../migration/src/legacy-history';
 
 /** Streams, named once. A typo here is a domain that silently reads an empty history. */
 export const STREAM = {
@@ -12454,4 +12455,41 @@ export function customer360Adapter(input: {
 /** The alerts still in play — a cleared one (PA-12) is history, not an incident to advise on. */
 function liveNotCleared<T extends { readonly state: string }>(alerts: readonly T[]): readonly (T & { readonly state: 'open' | 'acknowledged' | 'escalated' })[] {
   return alerts.filter((a): a is T & { readonly state: 'open' | 'acknowledged' | 'escalated' } => a.state !== 'cleared');
+}
+
+// GT-05 (MG-07): the migrated HISTORY register and its document files. One append-only fact per document, keyed on its kind
+// and the OLD system's id (a re-run lands on the same key and the standing fact is returned); one fact per file, its bytes on
+// the file's own stream (ADR 0010) and its metadata on the index, written together. Nothing here touches a trading stream.
+const LEGACY_HISTORY_STREAM = streamName(STREAM.migration, 'legacy-history');
+const LEGACY_ATTACHMENTS_STREAM = streamName(STREAM.migration, 'legacy-attachments');
+const legacyAttachmentStream = (legacyId: string): string => streamName(STREAM.migration, 'legacy-attachment', legacyId);
+
+export function legacyHistoryAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly targetKind: TargetKind }): LegacyHistoryDeps {
+  return {
+    now: input.now,
+    target: (tenantId) => ({ targetId: `tgt-${tenantId}`, tenantId, kind: input.targetKind, label: input.targetKind }),
+    documents: (tenantId) => allOf<LegacyHistoryDocument>(input.store, tenantId, LEGACY_HISTORY_STREAM, 'LegacyHistoryRecorded'),
+    recordDocument: async (tenantId, doc) => {
+      const r = await input.store.append(tenantId, LEGACY_HISTORY_STREAM, makeEvent({
+        id: `legacy-history-${doc.kind}-${doc.legacyId}-${randomUUID()}`, type: 'LegacyHistoryRecorded', occurredAt: doc.recordedAt,
+        idempotencyKey: `legacy-history-${tenantId}-${doc.kind}-${doc.legacyId}`, source: 'api/migration', payload: doc,
+      }));
+      return { standing: r.record.event.payload as LegacyHistoryDocument, existed: r.deduped };
+    },
+    attachments: (tenantId) => allOf<LegacyAttachmentMeta>(input.store, tenantId, LEGACY_ATTACHMENTS_STREAM, 'LegacyAttachmentIndexed'),
+    attachment: async (tenantId, legacyId) => (await allOf<LegacyAttachment>(input.store, tenantId, legacyAttachmentStream(legacyId), 'LegacyAttachmentStored'))[0],
+    recordAttachment: async (tenantId, a) => {
+      const [stored] = await input.store.appendBatch(tenantId, [
+        { stream: legacyAttachmentStream(a.legacyId), event: makeEvent({
+          id: `legacy-attachment-${a.legacyId}-${randomUUID()}`, type: 'LegacyAttachmentStored', occurredAt: a.recordedAt,
+          idempotencyKey: `legacy-attachment-${tenantId}-${a.legacyId}`, source: 'api/migration', payload: a,
+        }) },
+        { stream: LEGACY_ATTACHMENTS_STREAM, event: makeEvent({
+          id: `legacy-attachment-index-${a.legacyId}-${randomUUID()}`, type: 'LegacyAttachmentIndexed', occurredAt: a.recordedAt,
+          idempotencyKey: `legacy-attachment-index-${tenantId}-${a.legacyId}`, source: 'api/migration', payload: legacyAttachmentMeta(a),
+        }) },
+      ]);
+      return { standing: legacyAttachmentMeta(stored!.record.event.payload as LegacyAttachment), existed: stored!.deduped };
+    },
+  };
 }

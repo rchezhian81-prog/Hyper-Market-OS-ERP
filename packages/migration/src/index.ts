@@ -175,3 +175,17 @@ export {
   type InitialAdminRequest, type TenantBootstrapRequest, type BootstrapRefusal, type TenantBootstrapPlan,
   type TenantBootstrapPlanOk, type TenantBootstrapRefused,
 } from './tenant-bootstrap';
+
+// GT-05 (MG-07): history and attachments — kept under their legacy ids, read-only, reconciled per kind, hash-checked.
+export {
+  planHistoryLoad, executeHistoryLoad, readBackHistory, historyDocumentProblems, attachmentProblems, sha256Hex,
+  HISTORY_KINDS, ATTACHMENT_CONTENT_TYPES, MAX_ATTACHMENT_BYTES,
+  type HistoryKind, type ExtractHistory, type ExtractHistoryDocument, type ExtractAttachment, type HistoryControlTotal,
+  type HistoryPlan, type HistoryRequest, type HistoryLoadReport, type HistoryReadBack, type HistoryCheckLine,
+} from './history-load';
+
+// GT-05 (MG-08 "open orders"): purchase orders open on the old system at cutover — issued, with what already came carried.
+export {
+  planOpenOrders, executeOpenOrders, readBackOpenOrders, carriedReceiptId,
+  type ExtractOpenOrder, type ExtractOpenOrderLine, type OpenOrderPlan, type OpenOrderRequest, type OpenOrderReport, type OpenOrderCheckLine,
+} from './open-orders';

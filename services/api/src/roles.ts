@@ -157,6 +157,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'migration.controltotal.sign',
       'migration.exclusion.propose', 'migration.exclusion.approve',
       'migration.retirement.assess',
+      // GT-05 (MG-07): load the old system's history and document files, and read them back.
+      'migration.history.load', 'migration.history.read',
       'migration.verification.read', 'migration.exception.accept',
       'migration.extraction.record', 'migration.evidence.record', 'migration.verification.sign',
       'migration.parallel.record', 'migration.parallel.read',
@@ -379,6 +381,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'purchase.supplier.approve', 'purchase.supplier.pay', 'supplier.view',
       'export.read', 'audit.retention.read',
       'reporting.dashboard.read', 'reporting.report.read',
+      // GT-05 (MG-07): finance reads the migrated history it reconciles against.
+      'migration.history.read',
     ],
   },
   {
