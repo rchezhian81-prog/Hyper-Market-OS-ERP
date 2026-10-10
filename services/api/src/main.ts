@@ -211,7 +211,7 @@ import { customerDuplicatesRoutes } from '../../customer/src/duplicates';
 import { campaignRoutes } from '../../customer/src/campaigns';
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { notificationQueueRoutes } from '../../customer/src/notification-queue';
-import { NotificationQueue } from '../../../packages/notifications/src/index';
+import { NotificationQueue, type NotificationTransport } from '../../../packages/notifications/src/index';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { drReadinessRoutes } from '../../platform/src/dr-readiness';
 import { branchLifecycleRoutes } from '../../platform/src/branch-lifecycle';
@@ -297,6 +297,12 @@ const HOLD_MINUTES = 60;
 export function buildSurface(deps: {
   readonly signingKey: string;
   readonly migrationTargetKind: TargetKind;
+  /**
+   * The notification delivery transport (PA-08). NEVER set by `startApi`: no real provider is certified yet (the SMS
+   * transport is release R4, OB-29), so production's drain refuses and keeps the queue. Tests pass the recording
+   * test adapter here to prove the send path.
+   */
+  readonly notificationTransport?: NotificationTransport;
   /**
    * Reachability of what the shop cannot trade without. A real call every time it is asked, not a
    * flag something set earlier — a cached "reachable: true" is a health check that reports the
@@ -1051,7 +1057,7 @@ export function buildSurface(deps: {
     // hard rule #6), and read the pending + dead-letter lists. The channel transport is a deployment step.
     ...notificationQueueRoutes(store === undefined
       ? { queue: () => new NotificationQueue(), record: () => {}, now }
-      : notificationQueueAdapter({ store, now })),
+      : notificationQueueAdapter({ store, now, ...(deps.notificationTransport === undefined ? {} : { transport: deps.notificationTransport }) })),
     // Versioned document templates (M31-FR-01/M36-FR-02) — append-only publish; a change is a new version.
     ...documentsRoutes(store === undefined ? {
       versions: empty([]), recordPublish: () => {}, drafts: empty([]), recordDraft: () => {}, issued: empty(undefined), recordIssued: () => {},

@@ -246,7 +246,8 @@ import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../..
 import type { AssignmentsDeps, WaveAssignment, RouteAssignment } from '../../fulfilment/src/assignments';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
-import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent } from '../../customer/src/notification-queue';
+import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent, type MessageTemplateVersion } from '../../customer/src/notification-queue';
+import type { NotificationTransport } from '../../../packages/notifications/src/index';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { WaveSyncDeps, WaveLineOutcome, WavePackRecord } from '../../fulfilment/src/waves';
 import type { SyncedDriverRunDeps, RouteStopUpdate, RouteSettlementRecord, CashHandoverRecord } from '../../fulfilment/src/driver-runs';
@@ -8034,6 +8035,8 @@ export function campaignAdapter(input: {
     // The SAME consent ledger the customer service reads (P-02) — folded per recipient at the send.
     consentRecords: (tenantId, customerId) =>
       allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
+    // PF-10: the same message-template register the notification queue enqueues from (PA-08).
+    templates: (tenantId) => allOf<MessageTemplateVersion>(input.store, tenantId, streamName(STREAM.org, 'message-templates'), 'MessageTemplateVersion'),
     plans: (tenantId) => allOf<CampaignPlanRecord>(input.store, tenantId, CAMPAIGN_PLAN_STREAM, 'CampaignPlanned'),
     recordPlan: async (tenantId, rec, key) => {
       const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
@@ -8548,11 +8551,25 @@ export function fulfilmentAdapter(input: {
 export function notificationQueueAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
+  /** The delivery transport — absent in production until a real provider is certified (SMS is R4, OB-29). */
+  readonly transport?: NotificationTransport;
 }): NotificationQueueDeps {
   const stream = streamName(STREAM.org, 'notifications');
   return {
     now: input.now,
     queue: async (tenantId) => replayNotificationQueue(await allOf<NotificationQueueEvent>(input.store, tenantId, stream, 'NotificationQueue')),
+    events: (tenantId) => allOf<NotificationQueueEvent>(input.store, tenantId, stream, 'NotificationQueue'),
+    // PA-08: head office's own message-template register (drafted by one person, approved by another) and the SAME
+    // consent ledger the rest of the system reads (P-02).
+    templates: (tenantId) => allOf<MessageTemplateVersion>(input.store, tenantId, streamName(STREAM.org, 'message-templates'), 'MessageTemplateVersion'),
+    recordTemplate: async (tenantId, v) => {
+      await input.store.append(tenantId, streamName(STREAM.org, 'message-templates'), makeEvent({
+        id: `msg-template-${v.templateId}-v${v.version}-${v.state}`, type: 'MessageTemplateVersion', occurredAt: v.approvedAt ?? v.draftedAt,
+        idempotencyKey: `msg-template-${tenantId}-${v.templateId}-v${v.version}-${v.state}`, source: 'api/customer', payload: v,
+      }));
+    },
+    consentRecords: (tenantId, customerId) => allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
+    ...(input.transport === undefined ? {} : { transport: input.transport }),
     record: async (tenantId, event, key) => {
       const d = createHash('sha256').update(key).digest('hex').slice(0, 16);
       await input.store.append(tenantId, stream, makeEvent({
