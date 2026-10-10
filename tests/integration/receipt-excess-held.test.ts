@@ -62,7 +62,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-receiver', 'store_manager'); // receives; holds approve too — but never on their own receipt
   await h.provisionRole(A, 'u-boss', 'store_manager');     // the second person
-  await h.provisionRole(A, 'u-box', 'cashier');            // the store box: relays the manager's decisions
+  await h.provisionRole(A, 'u-box', 'store_computer');            // the store box: relays the manager's decisions
   await h.provisionRole(A, 'u-cashier', 'cashier');        // holds no approval authority
   await h.store.append(A, STREAM.catalogue, makeEvent({
     id: `pack-${A}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${A}-v1`, source: 'test/catalogue',

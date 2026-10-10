@@ -131,7 +131,7 @@ async function cloud(): Promise<Cloud> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-driver', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'cashier');
+  await h.provisionRole(A, 'u-box', 'store_computer');
   await h.enableFeature(A, 'delivery'); // this shop's plan includes home delivery (M36-FR-01)
   const dir = await tempDir('sre-driver-handheld-cloud-');
 

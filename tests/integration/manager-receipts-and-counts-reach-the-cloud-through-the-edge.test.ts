@@ -102,7 +102,7 @@ async function cloud(): Promise<{
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'cashier');
+  await h.provisionRole(A, 'u-box', 'store_computer');
   await h.store.append(A, STREAM.catalogue, makeEvent({
     id: `pack-${A}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${A}-v1`, source: 'test/catalogue',
     payload: { snapshot: {

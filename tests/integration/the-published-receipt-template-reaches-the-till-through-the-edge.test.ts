@@ -48,7 +48,7 @@ describe('the published receipt template reaches the till through the real edge 
     h = apiHarness();
     await h.seedOwner(A, OWNER);
     await h.provisionRole(A, PADMIN, 'platform_admin');
-    await h.provisionRole(A, SYNC, 'cashier'); // the store box's sync identity: org.template.pull, no setup read
+    await h.provisionRole(A, SYNC, 'store_computer'); // the store box's sync identity: org.template.pull, no setup read
 
     // Head office puts a receipt template in force: draft → a second person approves → publish (the real routes).
     expect((await post(`${BASE}/receipt/versions`, OWNER, 'dt-1', { content: RECEIPT_V1, note: 'first bill layout' })).status).toBe(201);

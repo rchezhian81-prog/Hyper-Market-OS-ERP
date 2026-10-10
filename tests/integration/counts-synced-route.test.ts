@@ -51,7 +51,7 @@ async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager'); // holds inventory.movement.append — may count
-  await h.provisionRole(A, 'u-box', 'cashier');       // the store box's sync identity: inventory.count.sync
+  await h.provisionRole(A, 'u-box', 'store_computer');       // the store box's sync identity: inventory.count.sync
   await h.provisionRole(A, 'u-cust', 'customer');     // no inventory authority
   const seed = await h.request({
     method: 'POST', path: '/v1/inventory/goods-receipt/grn-seed', userId: 'u-mgr', tenantId: A, idempotencyKey: 'k-seed',

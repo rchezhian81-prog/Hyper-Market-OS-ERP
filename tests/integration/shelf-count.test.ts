@@ -114,7 +114,7 @@ const latestOf = async (h: ApiHarness, u = 'u-owner', t = A) => ((await h.reques
 async function castForSync(): Promise<ApiHarness> {
   const h = await cast();
   await h.seedOwner(B, 'u-owner-b');
-  await h.provisionRole(A, 'u-box', 'cashier');     // the store computer's sync identity holds the hop
+  await h.provisionRole(A, 'u-box', 'store_computer');     // the store computer's sync identity holds the hop
   await h.provisionRole(A, 'u-acct', 'accountant'); // holds no shelf.count.record
   return h;
 }

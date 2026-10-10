@@ -85,10 +85,8 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
       }
       return realFetch(url, init);
     }) as typeof globalThis.fetch;
-    await cloud.grant(BOX, 'cashier');
-    // The store computer also relays the day close, which needs `till.dayclose.sync` — a permission the cashier role
-    // does not carry (a finding for the box's identity, in the report). Granted here as the day-close suite does.
-    await cloud.grant(BOX, 'store_manager');
+    // OB-36 "A": the store computer holds its own role — every sync/relay permission it needs, the day close included.
+    await cloud.grant(BOX, 'store_computer');
     await cloud.grant(CASHIER, 'cashier');
     await cloud.grant(MANAGER, 'store_manager');
     await cloud.grant(ACCT, 'accountant');

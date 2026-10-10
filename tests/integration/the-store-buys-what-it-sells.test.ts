@@ -73,7 +73,7 @@ describeOrSkip('the store buys what it sells — purchase → receipt / quaranti
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
     for (const u of [BUYER, RECEIVER, CHECKER, MANAGER, BACKSTORE, SHELF]) await cloud.grant(u, 'store_manager');
     await cloud.grant(CASHIER, 'cashier');
-    await cloud.grant(BOX, 'cashier');
+    await cloud.grant(BOX, 'store_computer'); // OB-36 "A": the store computer's own role
     await cloud.grant(ACCT, 'accountant');
     // The box in this run keeps this machine's clock (UTC); the owner tells head office so (F14 fixed).
     expect((await call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'setup-tz-utc')).status).toBe(200);
