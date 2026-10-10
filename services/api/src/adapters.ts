@@ -10550,6 +10550,27 @@ export function migrationAdapter(input: {
         },
       ]);
     },
+    // GT-04 money: a legacy sale's ledger vouchers and the applied record in ONE atomic write, keyed on the change — the
+    // vouchers on the SAME finance stream (and with the same event keys) the day book's own journals use, so the day
+    // book, the period close and every ledger read see them; a retry under any key or after a restart is the same, once.
+    applyDeltaSale: async (tenantId, applied, journals) => {
+      await input.store.appendBatch(tenantId, [
+        ...journals.map((j) => ({
+          stream: STREAM.finance,
+          event: makeEvent({ id: `je-${j.entryId}`, type: 'JournalPosted', occurredAt: applied.appliedAt, idempotencyKey: `je-${tenantId}-${j.entryId}`, source: 'api/migration', payload: j }),
+        })),
+        {
+          stream: streamName(STREAM.migration, 'delta'),
+          event: makeEvent({
+            id: `delta-${applied.changeKey}`, type: 'MigrationDeltaApplied', occurredAt: applied.appliedAt,
+            idempotencyKey: `delta-${tenantId}-${applied.changeKey}`, source: 'api/migration', payload: applied,
+          }),
+        },
+      ]);
+    },
+    postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    periodStates: (tenantId) => financeAdapter(input).periodStates(tenantId),
+    nextOpenPeriod: (tenantId) => financeAdapter(input).nextOpenPeriod(tenantId),
     rollbacks: async (tenantId) => {
       const decided = await allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackDecided');
       const performed = await allOf<RecordedRollback>(input.store, tenantId, STREAM.migration, 'RollbackPerformed');
