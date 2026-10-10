@@ -1221,7 +1221,17 @@ export async function fetchLpWorklist(): Promise<LpWorklistData | null> {
       method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
     });
     if (res.status >= 400) return null;
-    return (await res.json()) as LpWorklistData;
+    const worklist = (await res.json()) as LpWorklistData;
+    // PF-07: today's exceptions the store's rules raised on head office's own record, beside the open cases. A failed
+    // read leaves them out (the cases still show) rather than showing "nothing raised".
+    try {
+      const raisedRes = await fetchFn('/v1/loss-prevention/exceptions', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+      if (raisedRes.status < 400) {
+        const body = (await raisedRes.json()) as { exceptions?: LpWorklistData['raised'] };
+        if (Array.isArray(body.exceptions)) return { ...worklist, raised: body.exceptions };
+      }
+    } catch { /* the cases are still shown */ }
+    return worklist;
   } catch {
     return null;
   }

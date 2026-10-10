@@ -231,7 +231,7 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
   }, 60_000);
 
   it('head office refuses an override relayed without an approver, or approved by the cashier; and an approver its own grants do not back is RAISED, not believed', async () => {
-    const base = { laneId: 'lane-1', cashierId: CASHIER, reason: 'check_drawer', at: new Date().toISOString(), valueMinor: 0, kind: 'no_sale' };
+    const base = { laneId: 'lane-1', cashierId: CASHIER, reason: 'check_drawer', at: new Date().toISOString(), tradingDay: today(), valueMinor: 0, kind: 'no_sale' };
     const noApprover = await call('POST', '/v1/loss-prevention/activity/N-x1/synced', BOX, { ...base, activityId: 'N-x1' });
     expect(noApprover.status).toBe(400);
     const self = await call('POST', '/v1/loss-prevention/activity/N-x2/synced', BOX, { ...base, activityId: 'N-x2', approvedBy: CASHIER, approvalId: 'apr-1' });
