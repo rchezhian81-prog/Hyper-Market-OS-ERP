@@ -29,12 +29,19 @@ import {
 import { requestApproval, decide, type Approver } from '../../../packages/approvals/src/index';
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import type { AuditEntry } from '../../../packages/audit/src/index';
+import { assertLocationInScope, stockReadScope, locationIsItsOwnBranch, type LocationBranches } from '../../inventory/src/location-scope';
+import { normaliseUom, valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 
 /** A durable purchase order — proposed by a buyer, and (once a second person approves) issued. */
 export interface StoredPurchaseOrder {
   readonly poId: string;
   readonly number: string;
   readonly supplierId: string;
+  /**
+   * OB-37 "A" (owner, 10 Oct 2026): the store the order is delivered to — a location in head office's org hierarchy. Required
+   * on every new order; an order raised before the rule has none and is listed as "store not named", never guessed.
+   */
+  readonly deliverToLocationId?: string;
   /** The buyer who raised it — the authenticated user, not a client field (§28). */
   readonly requisitionedBy: string;
   readonly at: string;
@@ -60,6 +67,18 @@ export interface PurchaseOrderDeps {
   readonly all: (tenantId: string) => Promise<readonly StoredPurchaseOrder[]> | readonly StoredPurchaseOrder[];
   /** Whether this supplier is currently under a hold (latest-wins block record). */
   readonly supplierBlocked: (tenantId: string, supplierId: string) => Promise<boolean> | boolean;
+  /**
+   * OB-32 "A" (owner, 10 Oct 2026): the supplier master's status for this supplier — `active` once finance approved it,
+   * `proposed` while it waits, `undefined` when the master does not know it. A purchase order is refused by name for an
+   * unknown or not-yet-approved supplier. Optional only so a bare stub may omit it; the running system provides it.
+   */
+  /** OB-37: the org node a "deliver to" names (kind and status), or undefined when the hierarchy has no such place. */
+  readonly orgLocation?: (tenantId: string, locationId: string) => Promise<{ readonly kind: string; readonly status: string } | undefined> | { readonly kind: string; readonly status: string } | undefined;
+  /** OB-37 · PA-01-r1: which branch a location belongs to — the deliver-to store must be inside the buyer's branches. */
+  readonly locationBranches?: LocationBranches;
+  /** OB-31: the unit the product master counts a product in (orderedQty is in its smallest steps), or undefined. */
+  readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
+  readonly supplierStatus?: (tenantId: string, supplierId: string) => Promise<'active' | 'proposed' | undefined> | 'active' | 'proposed' | undefined;
   /** Record a proposed PO. Idempotent on the PO id. */
   readonly propose: (tenantId: string, po: StoredPurchaseOrder, key: string) => Promise<void> | void;
   /**
@@ -116,6 +135,95 @@ const poNotIssued = (poId: string, verb: string) => apiError(409, {
   nextSafeAction: 'Approve and issue the PO first (a second person), then try again. Nothing was changed.',
 });
 
+/** OB-32 "A": refuse a purchase order for a supplier the master does not know, or one finance has not yet approved. */
+async function requireApprovedSupplier(deps: PurchaseOrderDeps, tenantId: string, supplierId: string): Promise<void> {
+  if (deps.supplierStatus === undefined) return;
+  const status = await deps.supplierStatus(tenantId, supplierId);
+  if (status === undefined) {
+    throw apiError(422, {
+      code: 'supplier_unknown',
+      whatHappened: `There is no supplier "${supplierId}" in the supplier master — a purchase order is only raised to a supplier the shop has on record (OB-32).`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Add the supplier to the supplier master and have finance approve it, then raise the order. Nothing was recorded.',
+    });
+  }
+  if (status !== 'active') {
+    throw apiError(422, {
+      code: 'supplier_not_approved',
+      whatHappened: `Supplier "${supplierId}" is still waiting for finance to approve it — a purchase order is only raised to an approved supplier (OB-32).`,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Have finance approve the supplier, then raise or issue the order. Nothing was recorded.',
+    });
+  }
+}
+
+/** OB-37: "store not named" — an order raised before every order had to name its store (never guessed). */
+export const STORE_NOT_NAMED = 'store_not_named';
+
+/** An order as every read presents it: its deliver-to store, or said to have none (OB-37). */
+export const presentOrder = (po: StoredPurchaseOrder): StoredPurchaseOrder & { readonly deliverTo: string } =>
+  ({ ...po, deliverTo: po.deliverToLocationId ?? STORE_NOT_NAMED });
+
+/** One open delivery a store expects: an ISSUED order to it with something still to come (OB-37 · for the store pack). */
+export interface OpenDelivery {
+  readonly poId: string;
+  readonly number: string;
+  readonly supplierId: string;
+  readonly deliverToLocationId: string;
+  readonly issuedAt: string | null;
+  readonly lines: readonly { readonly productId: string; readonly orderedQty: number; readonly receivedQty: number; readonly cancelledQty: number; readonly openQty: number }[];
+}
+
+/**
+ * OB-37: the deliveries a STORE is waiting for — issued orders whose deliver-to location belongs to that store (its branch in
+ * the hierarchy, or the place itself), with at least one line not yet fully received or cancelled. Pure; Batch 1's store-pack
+ * builder reads it through `GET /v1/purchase/deliveries/open?storeId=` or calls this directly. Orders with no store named
+ * are NOT any store's — they are returned separately by the route as `storeNotNamed` for a person to fix.
+ */
+export function openDeliveriesFor(orders: readonly StoredPurchaseOrder[], storeId: string, branchOf: (locationId: string) => string = (l) => l): readonly OpenDelivery[] {
+  const out: OpenDelivery[] = [];
+  for (const po of orders) {
+    if (po.status !== 'issued' || po.deliverToLocationId === undefined) continue;
+    if (po.deliverToLocationId !== storeId && branchOf(po.deliverToLocationId) !== storeId) continue;
+    const byProduct = new Map<string, number>();
+    for (const l of po.lines) byProduct.set(l.productId, (byProduct.get(l.productId) ?? 0) + l.orderedQty);
+    const lines = [...byProduct].map(([productId, orderedQty]) => {
+      const receivedQty = po.receivedByProduct[productId] ?? 0;
+      const cancelledQty = po.cancelledByProduct[productId] ?? 0;
+      return { productId, orderedQty, receivedQty, cancelledQty, openQty: Math.max(0, orderedQty - receivedQty - cancelledQty) };
+    });
+    if (!lines.some((l) => l.openQty > 0)) continue;
+    out.push({ poId: po.poId, number: po.number, supplierId: po.supplierId, deliverToLocationId: po.deliverToLocationId, issuedAt: po.issuedAt, lines });
+  }
+  return out;
+}
+
+/** OB-37: a new order must name a store head office has in its hierarchy, inside the buyer's own branches. */
+async function requireDeliverTo(deps: PurchaseOrderDeps, ctx: Parameters<Route['handler']>[0], value: unknown): Promise<string> {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw apiError(422, {
+      code: 'deliver_to_store_required',
+      whatHappened: 'A purchase order must name the store it is delivered to (deliverToLocationId) — the place the receiving staff will expect it (OB-37).',
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Choose the store this order is for, then raise it again. Nothing was recorded.',
+    });
+  }
+  const locationId = value.trim();
+  if (deps.orgLocation !== undefined) {
+    const node = await deps.orgLocation(ctx.tenantId, locationId);
+    if (node === undefined || node.status === 'closed' || node.kind === 'company') {
+      throw apiError(422, {
+        code: 'unknown_location',
+        whatHappened: `"${locationId}" is not an open store, warehouse or department in head office's organisation — an order cannot be delivered to a place nobody receives at (OB-37).`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Pick the store from the organisation list, then raise the order again. Nothing was recorded.',
+      });
+    }
+  }
+  await assertLocationInScope(ctx, locationId, deps.locationBranches); // PA-01-r1: only to a store inside the buyer's branches
+  return locationId;
+}
+
 export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
   return [
     {
@@ -148,16 +256,23 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         // Idempotent: a re-sync of the same PO returns it unchanged rather than raising a second one.
         const existing = await deps.order(ctx.tenantId, poId);
         if (existing !== undefined) {
-          return { status: 200, body: { order: existing, openCommitment: openOf(existing), alreadyProposed: true } };
+          return { status: 200, body: { order: presentOrder(existing), openCommitment: openOf(existing), alreadyProposed: true } };
         }
-        const poLines: PurchaseOrderLineInput[] = (lines as RawLine[]).map((l) => ({
-          productId: l.productId, orderedQty: l.orderedQty, unitCost: money(l.unitCost.minor, currency),
-        }));
-        const totalMinor = poLines.reduce((s, l) => s + l.unitCost.minor * l.orderedQty, 0);
+        await requireApprovedSupplier(deps, ctx.tenantId, b['supplierId']);
+        const deliverToLocationId = await requireDeliverTo(deps, ctx, b['deliverToLocationId']);
+        // OB-31: each line in the product's own unit (orderedQty in its smallest steps — grams for kg), priced per whole unit.
+        const poLines: PurchaseOrderLineInput[] = [];
+        for (const l of lines as RawLine[]) {
+          const master = deps.productUom === undefined ? undefined : await deps.productUom(ctx.tenantId, l.productId);
+          const uom = master === undefined ? undefined : normaliseUom(master) ?? master;
+          poLines.push({ productId: l.productId, orderedQty: l.orderedQty, unitCost: money(l.unitCost.minor, currency), ...(uom === undefined ? {} : { uom }) });
+        }
+        const totalMinor = poLines.reduce((s, l) => s + valueAtUnitCost(l.orderedQty, l.uom ?? 'ea', l.unitCost.minor), 0);
         const po: StoredPurchaseOrder = {
           poId,
           number: isStr(b['number']) ? b['number'] : poId,
           supplierId: b['supplierId'],
+          deliverToLocationId,
           requisitionedBy: ctx.userId, // server-attributed — the buyer the kernel authenticated
           at: deps.now(),
           lines: poLines,
@@ -179,7 +294,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           before: null,
           after: {
             supplierId: po.supplierId, totalMinor: String(po.totalMinor), currency: po.currency,
-            lineCount: String(po.lines.length), status: po.status,
+            lineCount: String(po.lines.length), status: po.status, deliverTo: deliverToLocationId,
           },
           correlationId: poId,
         });
@@ -233,6 +348,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
             nextSafeAction: 'Resolve the reason above and issue again. Nothing was issued.',
           });
         }
+        await requireApprovedSupplier(deps, ctx.tenantId, po.supplierId);
         const blocked = await deps.supplierBlocked(ctx.tenantId, po.supplierId);
         try {
           issuePurchaseOrder({
@@ -381,7 +497,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         const poId = (ctx.params['poId'] ?? '').trim();
         const po = await deps.order(ctx.tenantId, poId);
         if (po === undefined) throw notFound(`purchase order ${poId}`);
-        return { status: 200, body: { order: po, openCommitment: openOf(po) } };
+        return { status: 200, body: { order: presentOrder(po), openCommitment: openOf(po) } };
       },
     },
     {
@@ -391,8 +507,30 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
       handler: async (ctx) => {
         const all = [...(await deps.all(ctx.tenantId))];
         const awaiting = all.filter((p) => p.status === 'proposed');
-        const ordered = [...awaiting, ...all.filter((p) => p.status !== 'proposed')];
-        return { status: 200, body: { orders: ordered, count: ordered.length, awaitingApprovalCount: awaiting.length } };
+        const ordered = [...awaiting, ...all.filter((p) => p.status !== 'proposed')].map(presentOrder);
+        return { status: 200, body: { orders: ordered, count: ordered.length, awaitingApprovalCount: awaiting.length, storeNotNamedCount: ordered.filter((o) => o.deliverTo === STORE_NOT_NAMED).length } };
+      },
+    },
+    {
+      // OB-37: the deliveries a store is waiting for — issued, not fully received — for the warehouse phone and the store pack
+      // (Batch 1). `?storeId=` is required; a store outside the caller's branches is refused by name (PA-01-r1). Orders that
+      // name no store are listed apart as `storeNotNamed`, never guessed into a store.
+      api: 'API-03', method: 'GET', path: '/v1/purchase/deliveries/open',
+      permission: 'purchase.commitment.read',
+      handler: async (ctx) => {
+        const storeId = (ctx.query['storeId'] ?? '').trim();
+        if (storeId === '') {
+          throw apiError(400, { code: 'store_required', whatHappened: 'Say which store\'s open deliveries to read: ?storeId=.', wasItSaved: 'not_saved', nextSafeAction: 'Send the store id. Nothing was changed.' });
+        }
+        await assertLocationInScope(ctx, storeId, deps.locationBranches);
+        const branchOf = await (deps.locationBranches ?? locationIsItsOwnBranch)(ctx.tenantId);
+        const orders = await deps.all(ctx.tenantId);
+        const open = openDeliveriesFor(orders, storeId, branchOf);
+        const scope = await stockReadScope(ctx, deps.locationBranches);
+        const storeNotNamed = orders
+          .filter((p) => p.status === 'issued' && p.deliverToLocationId === undefined && scope.everything)
+          .map((p) => ({ poId: p.poId, number: p.number, supplierId: p.supplierId, deliverTo: STORE_NOT_NAMED }));
+        return { status: 200, body: { storeId, deliveries: open, count: open.length, storeNotNamed, asAt: deps.now() } };
       },
     },
   ];

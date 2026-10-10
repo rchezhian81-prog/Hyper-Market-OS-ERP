@@ -49,7 +49,9 @@ export type SeedRoleId =
   | 'cashier'
   | 'accountant'
   | 'chartered_accountant'
-  | 'platform_admin';
+  | 'platform_admin'
+  // OB-36 "A": the store computer's own role (a machine, never a person's login).
+  | 'store_computer';
 
 export interface SeedUser {
   /** Stable, obviously-demo user id (the pilot uses the local/test IdP; no real identity). */
@@ -112,6 +114,8 @@ export interface SeedStoreSetup {
   readonly rules: Readonly<Record<string, unknown>>;
   /** POST /v1/purchase/match-policy (OC-13). */
   readonly matchPolicy: { readonly quantityToleranceBps: number; readonly priceToleranceBps: number; readonly immaterialMinor: number };
+  /** POST /v1/loss-prevention/rules/:kind — the store's exception thresholds (the manager's day close is judged by them). */
+  readonly lossPreventionRules: readonly { readonly kind: string; readonly maxCount?: number; readonly maxTotalValueMinor?: number; readonly maxSingleValueMinor?: number; readonly escalateAtMultiple?: number }[];
 }
 
 const COMPANY_ID = 'pilot-demo-co';
@@ -134,7 +138,7 @@ export const PILOT_FOUNDATION: PilotFoundation = {
     // hosted offline/reconnect drill (runbook §9.4; owner decision 28 Sep 2026, option A). `cashier` is the
     // smallest existing role that carries the sync permission; a sync-only role does not exist yet. Never a
     // person's login: the demo sign-in refuses it (PILOT_MACHINE_USERS), so no human shares its identity.
-    { userId: 'pilot-store-edge', displayName: 'Pilot Store Edge — machine (demo)', role: 'cashier' },
+    { userId: 'pilot-store-edge', displayName: 'Pilot Store Edge — machine (demo)', role: 'store_computer' },
   ],
   entitlements: ['loyalty', 'delivery', 'dept.concession'],
   gstRegistrations: [
@@ -179,6 +183,13 @@ export const PILOT_FOUNDATION: PilotFoundation = {
     },
     // OC-13 (docs/registers/owner-configuration.md): 1% on price, 0% on quantity, ₹1 immaterial.
     matchPolicy: { quantityToleranceBps: 0, priceToleranceBps: 100, immaterialMinor: 100 },
+    // The practice limits the demo store used (from the retired box-built file), now head office's record.
+    lossPreventionRules: [
+      { kind: 'refund', maxCount: 5, maxTotalValueMinor: 500_000, escalateAtMultiple: 2 },
+      { kind: 'void', maxCount: 10, escalateAtMultiple: 2 },
+      { kind: 'discount', maxTotalValueMinor: 200_000, maxSingleValueMinor: 50_000 },
+      { kind: 'no_sale', maxCount: 6 },
+    ],
   },
 };
 

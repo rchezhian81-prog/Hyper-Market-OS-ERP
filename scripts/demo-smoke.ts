@@ -248,7 +248,7 @@ export async function runSmoke(input: SmokeInput): Promise<SmokeReport> {
       return `${SUPPLIER} approved by ${cast.owner}, not by the buyer`;
     });
     await step('purchase order proposed by the buyer, issued by a second person; the commitment shows', async () => {
-      expectStatus(await call('POST', `/v1/purchase/orders/${PO}`, cast.buyer, { supplierId: SUPPLIER, lines: [{ productId: PRODUCT, orderedQty: ORDERED, unitCost }] }, `po-${PO}`), [201], 'order');
+      expectStatus(await call('POST', `/v1/purchase/orders/${PO}`, cast.buyer, { supplierId: SUPPLIER, deliverToLocationId: STORE, lines: [{ productId: PRODUCT, orderedQty: ORDERED, unitCost }] }, `po-${PO}`), [201], 'order');
       must(codeOf(await call('POST', `/v1/purchase/orders/${PO}/approval`, cast.buyer, { reason: 'mine' }, 'po-approve-self')) !== undefined, 'the requisitioner issued their own order');
       const issued = expectStatus(await call('POST', `/v1/purchase/orders/${PO}/approval`, cast.owner, { reason: 'within budget' }, 'po-approve'), [200], 'order issue');
       must((issued['order'] as { status?: string })?.status === 'issued', 'the order is not issued');

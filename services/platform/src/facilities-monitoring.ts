@@ -17,7 +17,7 @@
 // excursion: the same excursion never holds a batch twice, a later separate one holds it again.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError, notFound } from '../../kernel/src/index';
+import { apiError, notFound, assertBranchInScope } from '../../kernel/src/index';
 import {
   assessEquipment, assessPower, equipmentHoldDecision,
   type EquipmentRange, type EquipmentReading, type ReadingSource, type ExposedBatch,
@@ -141,6 +141,7 @@ export function facilitiesMonitoringRoutes(deps: FacilitiesMonitoringDeps): read
           graceMinutes: b['graceMinutes'] as number,
           ...(isPosInt(b['expectEveryMinutes']) ? { expectEveryMinutes: b['expectEveryMinutes'] } : {}),
         };
+        assertBranchInScope(ctx, b['branchId'] as string); // PA-01-r1: only at a branch the caller holds
         const reg: EquipmentRangeReg = { assetId, branchId: b['branchId'] as string, name: b['name'] as string, onBackup: b['onBackup'] === true, range };
         await deps.recordRange(ctx.tenantId, reg);
         return { status: 201, body: { assetId, branchId: reg.branchId, onBackup: reg.onBackup } };
@@ -229,6 +230,7 @@ export function facilitiesMonitoringRoutes(deps: FacilitiesMonitoringDeps): read
           || (b['note'] !== undefined && !isStr(b['note']))) {
           throw apiError(400, { code: 'not_readable_as_a_power_event', whatHappened: 'A power event needs a branch, a kind (mains_failed/mains_restored/dg_started/dg_failed_to_start/ups_on_battery/ups_depleted) and a timestamp.', wasItSaved: 'not_saved', nextSafeAction: 'Send the event fields. Nothing was recorded.' });
         }
+        assertBranchInScope(ctx, b['branchId'] as string); // PA-01-r1: only at a branch the caller holds
         const event: PowerEvent = {
           eventId, branchId: b['branchId'] as string, kind: b['kind'] as PowerEventKind, at: b['at'] as string,
           ...(isStr(b['note']) ? { note: b['note'] } : {}),

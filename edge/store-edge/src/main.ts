@@ -702,7 +702,7 @@ export async function startEdge(
         occurredAt: new Date().toISOString(),
         idempotencyKey: `edge-completion-${tenantId}-${completionKind}-${id}`,
         source: 'edge/lane',
-        payload: completionKind === 'checklist' ? toCloudChecklist(body) : toCloudTaskCompletion(body),
+        payload: completionKind === 'checklist' ? toCloudChecklist(body, storeIdOfThisBox()) : toCloudTaskCompletion(body),
       });
     },
   });

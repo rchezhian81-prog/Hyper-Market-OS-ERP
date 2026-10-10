@@ -72,7 +72,7 @@ describeOrSkip('the store trades a day, connected: real API Â· real PostgreSQL Â
 
   beforeAll(async () => {
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
-    await cloud.grant(BOX, 'cashier');
+    await cloud.grant(BOX, 'store_computer'); // OB-36 "A": the store computer's own role
     await cloud.grant(CASHIER, 'cashier');
     await cloud.grant(MANAGER, 'store_manager');
     await cloud.grant(ACCT, 'accountant');

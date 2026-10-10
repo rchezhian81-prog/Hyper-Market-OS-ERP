@@ -24,6 +24,7 @@
 // Pure and deterministic: timestamps injected, no clock.
 
 import type { Money } from '../../contracts/src/money';
+import { valueAtUnitCost } from '../../contracts/src/quantity';
 import type { StockMovement } from '../../stock/src/position';
 
 export type TransferState =
@@ -367,7 +368,7 @@ export function receiveTransfer(input: {
         dispatchedMinor: line.quantityMinor,
         receivedMinor: counted,
         differenceMinor: difference,
-        value: { minor: line.unitCost.minor * missing, currency: input.currency },
+        value: { minor: valueAtUnitCost(missing, line.uom, line.unitCost.minor), currency: input.currency }, // OB-31
         detail:
           difference < 0
             ? `${missing} left ${transfer.fromLocationId} and did not arrive — a miscount or a loss, and it needs an owner`

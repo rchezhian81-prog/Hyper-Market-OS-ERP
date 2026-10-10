@@ -16,7 +16,7 @@
 // labour-cost uses). Nothing is enforced here — it records the hours and reports the ratio.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertRecordBranchInScope, assertBranchInScope, scopeOf } from '../../kernel/src/index';
 import {
   labourCost,
   type Employee,
@@ -62,6 +62,8 @@ export function attendanceStoreRoutes(deps: AttendanceStoreDeps): readonly Route
             nextSafeAction: 'Send the hours this person worked on the day.',
           });
         }
+        // PA-01-r1: hours are recorded only for a person who works at a branch the caller holds.
+        assertRecordBranchInScope(ctx, (await deps.employees(ctx.tenantId)).find((e) => e.employeeId === employeeId)?.branchId);
         const record: AttendanceRecord = { employeeId, date, hours: b['hours'] };
         await deps.putAttendance(ctx.tenantId, record, ctx.idempotencyKey ?? `att-${employeeId}-${date}-${deps.now()}`);
         return { status: 200, body: { attendance: record } };
@@ -81,7 +83,13 @@ export function attendanceStoreRoutes(deps: AttendanceStoreDeps): readonly Route
             nextSafeAction: 'Call GET /v1/hr/workforce/attendance?date=2026-09-14.',
           });
         }
-        const records = await deps.attendance(ctx.tenantId, date);
+        // PA-01-r1: only the hours of people at the caller's branches.
+        const held = scopeOf(ctx);
+        const branchOf = new Map((await deps.employees(ctx.tenantId)).map((e) => [e.employeeId, e.branchId] as const));
+        const records = (await deps.attendance(ctx.tenantId, date)).filter((r) => {
+          const b = branchOf.get(r.employeeId);
+          return held === 'all' || (b !== undefined && held.includes(b));
+        });
         return { status: 200, body: { attendance: records, count: records.length, date } };
       },
     },
@@ -105,6 +113,7 @@ export function attendanceStoreRoutes(deps: AttendanceStoreDeps): readonly Route
             nextSafeAction: 'Call GET /v1/hr/workforce/labour-cost?branchId=b1&date=2026-09-14&salesMinor=… — nothing is stored, this only reports the ratio.',
           });
         }
+        assertBranchInScope(ctx, branchId); // PA-01-r1: another branch's labour cost is refused by name
         const employees = await deps.employees(ctx.tenantId, branchId);
         const known = new Set(employees.map((e) => e.employeeId));
         const hours = (await deps.attendance(ctx.tenantId, date))

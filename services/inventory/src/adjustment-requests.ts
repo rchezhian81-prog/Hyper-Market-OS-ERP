@@ -30,6 +30,7 @@ import { assertLocationInScope, stockReadScope, type LocationBranches } from './
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { checkMovement, type Movement } from './index';
+import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 
 export const ADJUSTMENT_REQUEST_FLAGS = Object.freeze([
   'requester_unknown', 'requester_lacks_authority', 'value_unknown',
@@ -223,7 +224,7 @@ export function adjustmentRequestRoutes(deps: AdjustmentRequestDeps): readonly R
         const record: AdjustmentRequestRecord = {
           requestId, productId: r.productId, locationId: r.locationId, binId: r.binId,
           deltaMinor: r.deltaMinor, uom: r.uom, reasonCode: r.reasonCode, note: r.note,
-          valueMinor: Math.abs(r.deltaMinor) * (unitValue ?? 0), currency: 'INR',
+          valueMinor: valueAtUnitCost(Math.abs(r.deltaMinor), r.uom, unitValue ?? 0), currency: 'INR', // OB-31
           requestedBy: r.requestedBy, at: r.at, storeId: r.storeId, source: r.source,
           relayedBy: ctx.userId, recordedAt, governanceFlags: flags,
           status: 'pending', decidedBy: null, decidedAt: null, decisionReason: null, movementId: null,

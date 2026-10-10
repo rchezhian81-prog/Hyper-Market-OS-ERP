@@ -131,7 +131,7 @@ describe('a relayed decision by a manager outside the request\'s branch is recor
     const h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-mgr1', 'store_manager', ['br-1']);
-    await h.provisionRole(A, 'u-box', 'cashier'); // the box's sync credential relays; it decides nothing
+    await h.provisionRole(A, 'u-box', 'store_computer'); // the box's sync credential relays; it decides nothing
     const away = (await relay(h, 'r-away', 'u-mgr1', 'br-2')).body as Relayed;
     expect(away.flags).toContain('decider_outside_branch');
     expect(away.applied).toBe(false);

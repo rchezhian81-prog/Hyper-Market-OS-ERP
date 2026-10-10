@@ -37,7 +37,7 @@ async function scene(screenUser: string) {
   await h.provisionRole(T, MGR, 'store_manager');
   await h.provisionRole(T, CA, 'chartered_accountant');
   await h.provisionRole(T, LOADER, 'store_manager');
-  await h.provisionRole(T, SYNC, 'cashier'); // the box's sync identity: migration.decision.sync and nothing more
+  await h.provisionRole(T, SYNC, 'store_computer'); // the box's sync identity: migration.decision.sync and nothing more
   await h.provisionRole(T, 'u-cash', 'cashier');
   expect((await post(h, '/v1/migration/extraction-runs/run-1', OWNER, 'er1', { operatorId: LOADER })).status).toBe(201);
   expect((await post(h, '/v1/migration/exceptions', MGR, 'x1', { exceptions: [EX] })).status).toBe(201);

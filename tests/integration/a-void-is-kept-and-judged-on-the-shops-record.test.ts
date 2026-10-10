@@ -36,7 +36,7 @@ describe('PF-07 — a void reaches head office and the rules run on it', () => {
   beforeAll(async () => {
     h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    await h.provisionRole(A, 'u-box', 'cashier'); // the store box's sync identity
+    await h.provisionRole(A, 'u-box', 'store_computer'); // the store box's sync identity
     await h.provisionRole(A, 'u-lanecash', 'cashier');
     await h.provisionRole(A, 'u-manager', 'store_manager');
     globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {

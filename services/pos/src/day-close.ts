@@ -32,6 +32,12 @@ export interface DayCloseRecord {
   readonly closedAt: string;
   /** A closed day is locked; corrections are new compensating events only (hard rule #2). */
   readonly locked: true;
+  /**
+   * OB-36 "A": the close is relayed by the store COMPUTER under its own role, so the person it names is re-checked
+   * here against their own grants — `closer_unknown` (no grant at all) or `closer_lacks_authority` (no
+   * `till.dayclose.read`). Record-and-flag: the day closed at the store either way (hard rule #10). Absent on older records.
+   */
+  readonly governanceFlags?: readonly string[];
 }
 
 /**
@@ -61,6 +67,9 @@ export interface DayCloseDeps {
   readonly dayReopens: (tenantId: string) => Promise<readonly DayReopenRecord[]> | readonly DayReopenRecord[];
   /** Does this user genuinely hold the §28 authority to APPROVE a day-close reopen (till.dayclose.approve)? */
   readonly canApproveDayReopen: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /** OB-36 "A": the permissions the named closer holds now, from their grants (undefined = no grant at all). Optional
+   *  on a bare stub — then nothing is checked and nothing is claimed. */
+  readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
   /** The store computer's seal key (ADR-0023, amended 2b-vi-c-3): the reopener is checked against the box's seal.
    *  Absent on a bare stub — then nothing is checked and nothing is claimed. */
   readonly tillSealKey?: Buffer;
@@ -106,6 +115,9 @@ function readReopen(body: unknown): SyncedReopen | undefined {
   return { reopenedBy, reason, ...(approvedBy === undefined ? {} : { approvedBy }) };
 }
 
+/** The authority a person needs to close the store's day — the same the box asks of whoever handles locked days. */
+export const CLOSE_AUTHORITY = 'till.dayclose.read';
+
 export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
   return [
     {
@@ -131,13 +143,21 @@ export function dayCloseRoutes(deps: DayCloseDeps): readonly Route[] {
           });
         }
 
+        // OB-36 "A": who the store says closed the day is re-checked against THEIR grants — flagged, never refused.
+        const flags: string[] = [];
+        if (deps.permissionsOfUser !== undefined) {
+          const held = await deps.permissionsOfUser(ctx.tenantId, c.closedBy);
+          if (held === undefined) flags.push('closer_unknown');
+          else if (!held.includes(CLOSE_AUTHORITY)) flags.push('closer_lacks_authority');
+        }
         const record: DayCloseRecord = {
           dayCloseId, storeId: c.storeId, tradingDay: c.tradingDay, closedBy: c.closedBy, closedAt: c.closedAt, locked: true,
+          ...(flags.length === 0 ? {} : { governanceFlags: flags }),
         };
         await deps.recordDayClose(ctx.tenantId, record);
         // 202, not 201: the day is closed at the store and this records that it happened. A 4xx here
         // would tell the store a day it locked did not close.
-        return { status: 202, body: { dayCloseId, closed: true, tradingDay: record.tradingDay, closedBy: record.closedBy, locked: true } };
+        return { status: 202, body: { dayCloseId, closed: true, tradingDay: record.tradingDay, closedBy: record.closedBy, locked: true, flags } };
       },
     },
     {

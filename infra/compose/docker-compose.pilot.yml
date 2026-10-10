@@ -46,10 +46,11 @@ services:
       # store lane has. Only the demo relay below, which shares this container's network namespace, reaches it, and
       # the proxy forwards to the relay only behind the demo sign-in (ADR-0016).
       EDGE_LANE_PORT: '8095'
-      # The DEMO store pack (products from the published price list), read once at start-up — built on the box by a
-      # person: `pnpm run demo:store-pack`. A directory mount, so a rebuilt pack is seen on restart. A box without one
-      # starts anyway and tells every screen it has not been told (edge/store-edge/src/main.ts says so in its log).
-      EDGE_PACK_FILE: /etc/store-pack/store-pack.json
+      # PA-06 3b (OB-26 "A"): the demo store computer takes its setup from HEAD OFFICE like any store — signed, for its
+      # own store, always current, pulled with its own credential (CLOUD_API_URL / CLOUD_API_TOKEN) and kept on its disk.
+      # The demo-only file built on the box is retired; the seed sets the demo store up at head office.
+      EDGE_STORE_PACK_SOURCE: head-office
+      EDGE_STORE_ID: ${EDGE_STORE_ID:-pilot-demo-branch}
       # OB-16: the screens are reached ONLY through the relay behind the sign-in (nginx.pilot.conf sets X-Sre-User from
       # the gate's answer), so the box runs each ERP screen as the person who signed in. Never set on a store box.
       EDGE_SCREEN_TRUST_FORWARDED_USER: '1'
@@ -59,8 +60,6 @@ services:
       # Which till this box is (SP-4b · F09). Without it the served till refuses to take payment, as it should on a box
       # nobody has told; the hosted copy is one till.
       EDGE_LANE_ID: lane-1
-    volumes:
-      - ${DEMO_STORE_PACK_DIR:-/etc/sre-pilot/store-pack}:/etc/store-pack:ro
 
   # The DEMO FRONT, behind the proxy: every app shell, the demo identity bridge (H-11), the demo sign-in's cookie
   # turned into a bearer token for /v1 (H-01), and the demo store box's relay — all behind the demo sign-in

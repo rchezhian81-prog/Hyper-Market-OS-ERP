@@ -198,6 +198,24 @@ export function projectBatches(movements: readonly Movement[], opening: readonly
     .map((a) => ({ productId: a.productId, locationId: a.locationId, batchId: a.batchId, onHandMinor: a.qty, ...(a.expiry === undefined ? {} : { expiry: a.expiry }) }));
 }
 
+/**
+ * OB-35 "A" (owner, 10 Oct 2026) — head office assigns each sold line to the EARLIEST-EXPIRY batch on hand (FEFO). This is the
+ * ONE batch-aware read for that: per batch on hand at a location for a product, earliest expiry first, from the same
+ * `projectBatches` truth as every other stock read. Only positive on-hand batches; a batch with no expiry captured sorts
+ * LAST (never ahead of a known-dated batch); ties by batch id so the order is deterministic. The unbatched remainder
+ * (`batchId: null`) is included, last, so a sale of an untracked product still has somewhere to draw from.
+ */
+export function fefoBatchesAt(batches: readonly BatchBalance[], locationId: string, productId: string): readonly BatchBalance[] {
+  return batches
+    .filter((b) => b.locationId === locationId && b.productId === productId && b.onHandMinor > 0)
+    .sort((a, b) => {
+      if ((a.batchId === null) !== (b.batchId === null)) return a.batchId === null ? 1 : -1;
+      if ((a.expiry === undefined) !== (b.expiry === undefined)) return a.expiry === undefined ? 1 : -1;
+      if (a.expiry !== undefined && b.expiry !== undefined && a.expiry !== b.expiry) return a.expiry < b.expiry ? -1 : 1;
+      return (a.batchId ?? '') < (b.batchId ?? '') ? -1 : (a.batchId ?? '') > (b.batchId ?? '') ? 1 : 0;
+    });
+}
+
 export type MovementRefusal = 'adjustment_without_a_reason' | 'adjustment_not_approved' | 'quantity_not_positive' | 'ownership_without_an_owner';
 
 export interface MovementCheck {
@@ -480,6 +498,22 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         // SP-5 (F05): what is on the van is visible at its destination — beside on-hand, never inside it (M08-FR-02).
         const inTransit = (deps.inTransit === undefined ? [] : await deps.inTransit(ctx.tenantId, productId)).filter((r) => scope.covers(r.locationId));
         return { status: 200, body: { rows, inTransit, scope: scope.scope, asAt: deps.now() } };
+      },
+    },
+    {
+      // OB-35: per batch on hand at a place for a product, earliest expiry first (FEFO) — `fefoBatchesAt`. Needs both
+      // ?locationId= and ?productId=; a place outside the caller's branches is refused by name (PA-01-r1).
+      api: 'API-04', method: 'GET', path: '/v1/inventory/batches',
+      permission: 'inventory.availability.read',
+      handler: async (ctx) => {
+        const locationId = (ctx.query['locationId'] ?? '').trim();
+        const productId = (ctx.query['productId'] ?? '').trim();
+        if (locationId === '' || productId === '') {
+          throw apiError(400, { code: 'not_readable_as_a_batch_read', whatHappened: 'Reading batches needs ?locationId= and ?productId=.', wasItSaved: 'not_saved', nextSafeAction: 'Send both. Nothing was changed.' });
+        }
+        await assertLocationInScope(ctx, locationId, deps.locationBranches);
+        const all = deps.batches === undefined ? [] : await deps.batches(ctx.tenantId, productId);
+        return { status: 200, body: { locationId, productId, batches: fefoBatchesAt(all, locationId, productId), order: 'earliest_expiry_first', asAt: deps.now() } };
       },
     },
     {

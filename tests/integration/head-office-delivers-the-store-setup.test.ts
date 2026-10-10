@@ -9,6 +9,7 @@ import { hmacSigner } from '../../services/catalogue/src/index';
 import { signStorePack, verifyStorePack, type StorePackEnvelope } from '../../services/platform/src/store-packs';
 import { STREAM, ROLE_REVOKED, countsAdapter, adjustmentRequestAdapter, goodsReceiptAdapter } from '../../services/api/src/adapters';
 import { GLOBAL_FOR } from '../../edge/store-edge/src/screen-data';
+import { approvedSuppliers } from '../support/approved-supplier';
 import { makeEvent } from '../../packages/contracts/src/event';
 
 /**
@@ -51,8 +52,8 @@ describe('PA-06 — head office delivers each store its setup', () => {
   beforeEach(async () => {
     h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    await h.provisionRole(A, 'u-box', 'cashier', ['S1']);   // this store computer's own identity, at S1 only
-    await h.provisionRole(A, 'u-box2', 'cashier', ['S2']);  // another store's computer
+    await h.provisionRole(A, 'u-box', 'store_computer', ['S1']);   // this store computer's own identity, at S1 only
+    await h.provisionRole(A, 'u-box2', 'store_computer', ['S2']);  // another store's computer
     await h.provisionRole(A, 'u-mgr', 'store_manager', ['S1']);
     cut = false;
     globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {
@@ -191,6 +192,60 @@ describe('PA-06 — head office delivers each store its setup', () => {
     expect((await edge.refreshStorePack!()).status).toBe('updated');
     const onDisk = JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope;
     expect(onDisk.sections['buyingPolicy']).toEqual({ approvers: [], quantityToleranceBps: 50, priceToleranceBps: 200, immaterialMinor: 1_000 });
+  });
+
+  it('OB-37 · PA-06 3b(d)(e): the warehouse phone\'s section is head office\'s — this store\'s bins and stock and the deliveries it is waiting for, kg in grams', async () => {
+    await call('POST', '/v1/stores/S1/settings', SETTINGS); // back store WH
+    // a published catalogue: rice sold by the kilogram, soap each
+    await h.store.append(A, STREAM.catalogue, makeEvent({ id: 'cat-3', type: 'CataloguePublished', occurredAt: new Date().toISOString(), idempotencyKey: `cat-${A}-3`, source: 'test', payload: { snapshot: {
+      tenantId: A, version: 3, builtAt: new Date().toISOString(), scope: { tenantId: A, storeId: 'S1' },
+      products: [
+        { productId: 'rice', sku: 'rice', name: 'Rice loose', unitPriceMinor: 6_000, taxBps: 0, status: 'active', baseUom: 'kg' },
+        { productId: 'soap', sku: 'soap', name: 'Soap', unitPriceMinor: 3_000, taxBps: 0, status: 'active', baseUom: 'each' },
+      ],
+      barcodes: [{ code: '8901', productId: 'soap' }],
+    }, signature: 'x', publishedBy: 'u-owner', publishedAt: new Date().toISOString() } }));
+    // bins: one in S1's back store, one at S2 (not this store's)
+    expect((await call('POST', '/v1/warehouse/bins/B-WH', { storeId: 'WH', capacityMinor: 100_000, pickable: true })).status).toBe(201);
+    expect((await call('POST', '/v1/warehouse/bins/B-S2', { storeId: 'S2', capacityMinor: 100_000, pickable: true })).status).toBe(201);
+    expect((await call('POST', '/v1/warehouse/movements/put-1', { kind: 'put_away', storeId: 'WH', productId: 'soap', quantityMinor: 12, uom: 'ea', toBinId: 'B-WH' })).status).toBe(201);
+    // two issued orders: one delivered to this store's back store, one to S2
+    await approvedSuppliers(h, A, 'sup-1');
+    await h.provisionRole(A, 'u-buyer', 'owner');
+    const order = async (poId: string, to: string) => {
+      expect((await call('POST', `/v1/purchase/orders/${poId}`, { supplierId: 'sup-1', deliverToLocationId: to, lines: [{ productId: 'rice', orderedQty: 25_000, unitCost: { minor: 5_000, currency: 'INR' } }, { productId: 'soap', orderedQty: 10, unitCost: { minor: 2_000, currency: 'INR' } }] }, 'u-buyer')).status).toBe(201);
+      expect((await call('POST', `/v1/purchase/orders/${poId}/approval`, { reason: 'stock' })).status).toBe(200);
+    };
+    await order('po-s1', 'WH');
+    await order('po-s2', 'S2');
+    // the store's phones: head office's fleet register (and a code's fingerprint), never a list copied into a file
+    expect((await call('POST', '/v1/platform/devices/hh-1/register', { branchId: 'S1', kind: 'handheld', label: 'Back store phone' })).status).toBe(201);
+    expect((await call('POST', '/v1/platform/devices/hh-9/register', { branchId: 'S2', kind: 'handheld', label: 'Other store' })).status).toBe(201);
+    expect((await call('POST', '/v1/platform/devices/hh-1/enrolment', {})).status).toBeLessThan(300);
+    const edge = await boot();
+    expect((await edge.refreshStorePack!()).status).toBe('updated');
+    const w = (JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope).sections['warehouse'] as Record<string, unknown>;
+    expect(w).toMatchObject({ assignmentId: 'warehouse-S1', workerId: '', storeId: 'WH' });
+    expect((w['bins'] as { binId: string }[]).map((b) => b.binId)).toEqual(['B-WH']);
+    expect(w['contents']).toEqual({ 'B-WH|soap|': 12 });
+    expect(w['barcodes']).toEqual([{ barcode: '8901', productId: 'soap', level: 'unit' }]);
+    const open = w['openDeliveries'] as { poId: string; grnId: string; ordered: { productId: string; quantityMinor: number; unitCostMinor: number }[] }[];
+    expect(open.map((d) => d.poId)).toEqual(['po-s1']); // S2's order is not this store's
+    // OB-31: the order holds 25 kg of rice as 25 000 grams — passed to the phone as it is (never scaled twice), costed per kg
+    expect(open[0]!.ordered).toEqual([
+      { productId: 'rice', quantityMinor: 25_000, unitCostMinor: 5_000, currency: 'INR' },
+      { productId: 'soap', quantityMinor: 10, unitCostMinor: 2_000, currency: 'INR' },
+    ]);
+    // units are the stored codes: 'each' is named 'ea'
+    const packProducts = (JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope).sections['products'] as { productId: string; uom: string }[];
+    expect(packProducts.find((p) => p.productId === 'soap')?.uom).toBe('ea');
+    // exactly one waiting: the phone receives against it directly
+    expect(w).toMatchObject({ poId: 'po-s1', grnId: open[0]!.grnId });
+    const devices = (JSON.parse(await readFile(join(dir, 'store-pack.json'), 'utf8')) as StorePackEnvelope).sections['devices'] as { deviceId: string; enrolment?: { codeHash: string } }[];
+    expect(devices.map((d) => d.deviceId)).toEqual(['hh-1']);
+    expect(devices[0]!.enrolment?.codeHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(devices)).not.toMatch(/"code"/); // the code itself never travels
+    expect(edge.storeSetup()).toMatchObject({ source: 'head-office' });
   });
 
   it('PA-06-r1: an out-of-date setup whose contents head office still holds is RENEWED by the next pull — not kept expired', async () => {

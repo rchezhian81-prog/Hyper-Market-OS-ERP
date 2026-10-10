@@ -20,7 +20,7 @@
 // platform.health.read.
 
 import type { Route } from '../../kernel/src/index';
-import { apiError } from '../../kernel/src/index';
+import { apiError, assertBranchInScope, narrowScope, type RequestContext } from '../../kernel/src/index';
 import {
   evaluateDevice, fleetSummary, validateVersionPolicy, InvalidVersionError, UnsafeVersionPolicyError,
   type Device, type DeviceKind, type DeviceStatus, type VersionPolicy,
@@ -147,6 +147,13 @@ const guardPolicy = (policy: VersionPolicy): void => {
   }
 };
 
+/** PA-01-r1: the devices of the caller's branches (narrowed to ?branchId= when asked; another branch refused by name). */
+async function fleetInScope(ctx: Pick<RequestContext, 'scope' | 'tenantId' | 'query'>, deps: DeviceRegistryDeps) {
+  const asked = ctx.query['branchId'];
+  const scope = narrowScope(ctx, typeof asked === 'string' && asked !== '' ? [asked] : undefined);
+  return (await deps.fleet(ctx.tenantId)).filter((d) => scope === 'all' || scope.includes(d.branchId));
+}
+
 export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[] {
   return [
     {
@@ -154,7 +161,7 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
       api: 'API-10', method: 'GET', path: '/v1/platform/devices',
       permission: 'platform.health.read',
       handler: async (ctx) => {
-        const devices = await deps.fleet(ctx.tenantId);
+        const devices = await fleetInScope(ctx, deps); // PA-01-r1
         return { status: 200, body: { devices, count: devices.length, asAt: deps.now() } };
       },
     },
@@ -180,7 +187,7 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
         }
         guardPolicy(policy);
         const now = deps.now();
-        const fleet = await deps.fleet(ctx.tenantId);
+        const fleet = await fleetInScope(ctx, deps); // PA-01-r1: the caller's branches' devices only
         const silentAfter = isObj(b) && isNonNegInt(b['silentAfterMinutes']) ? (b['silentAfterMinutes'] as number) : undefined;
         const summary = silentAfter !== undefined ? fleetSummary(fleet, policy, now, silentAfter) : fleetSummary(fleet, policy, now);
         return {
@@ -202,6 +209,10 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
           throw apiError(400, { code: 'not_readable_as_a_device', whatHappened: 'Registering a device needs a deviceId in the path and { branchId, kind (pos_lane|handheld|scale|printer|kiosk|mobile), label, appVersion? }.', wasItSaved: 'not_saved', nextSafeAction: 'Send which branch, what kind of device and its label.' });
         }
         const at = deps.now();
+        // PA-01-r1: registered only at a branch the caller holds; a device on file at another branch is not moved.
+        assertBranchInScope(ctx, b['branchId'] as string);
+        const existing = (await deps.fleet(ctx.tenantId)).find((d) => d.deviceId === deviceId);
+        if (existing !== undefined) assertBranchInScope(ctx, existing.branchId);
         const event: DeviceRegistryEvent = {
           kind: 'registered', deviceId, branchId: b['branchId'] as string, deviceKind: b['kind'], label: b['label'] as string,
           by: ctx.userId, at, ...(isStr(b['appVersion']) ? { appVersion: b['appVersion'] } : {}),
@@ -221,7 +232,9 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
         if (deviceId === '' || !isObj(b) || !isSettableStatus(b['status']) || !isStr(b['reason'])) {
           throw apiError(400, { code: 'not_readable_as_a_status_change', whatHappened: 'A status change needs a deviceId in the path and { status (registered|blocked|retired), reason }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the new status and why.' });
         }
-        const known = (await deps.fleet(ctx.tenantId)).some((d) => d.deviceId === deviceId);
+        const knownDevice = (await deps.fleet(ctx.tenantId)).find((d) => d.deviceId === deviceId);
+        const known = knownDevice !== undefined;
+        if (knownDevice !== undefined) assertBranchInScope(ctx, knownDevice.branchId); // PA-01-r1
         if (!known) {
           throw apiError(404, { code: 'device_not_registered', whatHappened: `No device "${deviceId}" is registered, so its status cannot be changed.`, wasItSaved: 'not_saved', nextSafeAction: 'Register the device first, then change its status.' });
         }
@@ -246,6 +259,7 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
           throw apiError(400, { code: 'not_readable_as_an_enrolment_request', whatHappened: 'Issuing an enrolment code needs a deviceId in the path and, optionally, { validForMinutes } between 5 and 10080.', wasItSaved: 'not_saved', nextSafeAction: 'Send which device, and for how long the code should stay usable.' });
         }
         const device = (await deps.fleet(ctx.tenantId)).find((d) => d.deviceId === deviceId);
+        if (device !== undefined) assertBranchInScope(ctx, device.branchId); // PA-01-r1
         if (device === undefined) {
           throw apiError(404, { code: 'device_not_registered', whatHappened: `No device "${deviceId}" is registered, so no enrolment code can be issued for it.`, wasItSaved: 'not_saved', nextSafeAction: 'Register the handheld first, then issue its code.' });
         }
@@ -284,6 +298,8 @@ export function deviceRegistryRoutes(deps: DeviceRegistryDeps): readonly Route[]
         if (deviceId === '' || (b['appVersion'] !== undefined && !isStr(b['appVersion'])) || (b['integrityCompromised'] !== undefined && !isBool(b['integrityCompromised']))) {
           throw apiError(400, { code: 'not_readable_as_a_device_report', whatHappened: 'A device report needs a deviceId in the path and optional { appVersion, integrityCompromised }.', wasItSaved: 'not_saved', nextSafeAction: 'Send which version the device is running.' });
         }
+        const reporting = (await deps.fleet(ctx.tenantId)).find((d) => d.deviceId === deviceId);
+        if (reporting !== undefined) assertBranchInScope(ctx, reporting.branchId); // PA-01-r1
         const at = deps.now();
         await deps.recordDeviceEvent(ctx.tenantId, {
           kind: 'reported', deviceId, at,

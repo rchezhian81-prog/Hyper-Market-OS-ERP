@@ -177,6 +177,7 @@ import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } fro
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project, projectBatches, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
+import { minorPerUnitOf } from '../../../packages/contracts/src/quantity';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
@@ -3370,6 +3371,7 @@ export function dayCloseAdapter(input: {
 
     // The §28 authority to APPROVE a day-close reopen (till.dayclose.approve) — resolved from the
     // tenant's own grants (the authoritative source the kernel authorizes against), never the request.
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
     canApproveDayReopen: async (tenantId, userId) => {
       const grants = await effectiveGrants(input.store, tenantId);
       const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
@@ -3501,7 +3503,7 @@ export function concessionAdapter(input: {
           ms.map((m): ValuationMovement => ({
             productId: m.productId, locationId: m.locationId,
             effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
+            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
             ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
           })),
           'INR',
@@ -4498,7 +4500,7 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
   const rows = weightedAverageValuation(
     moves.map((m): ValuationMovement => ({
       productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
+      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
     })),
     'INR',
@@ -4510,7 +4512,8 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
     valued += r.onHandMinor;
     value += r.value.minor;
   }
-  if (valued > 0) return Math.round(value / valued);
+  // OB-31: per WHOLE unit (per kg for a product counted in grams), like every other cost.
+  if (valued > 0) return Math.round((value * minorPerUnitOf(moves[0]?.uom ?? 'ea')) / valued);
   const costs = await allOf<{ productId: string; cost: Money }>(store, tenantId, streamName(STREAM.inventory, 'production'), 'ProductionCostSet');
   let latestCost: Money | undefined;
   for (const c of costs) if (c.productId === productId) latestCost = c.cost;
@@ -6078,7 +6081,10 @@ export function goodsReceiptAdapter(input: {
       if (po === undefined) return undefined;
       const orderedByProduct: Record<string, number> = {};
       for (const line of po.lines) orderedByProduct[line.productId] = (orderedByProduct[line.productId] ?? 0) + line.orderedQty;
-      return { status: po.status, orderedByProduct, receivedByProduct: po.receivedByProduct, cancelledByProduct: po.cancelledByProduct };
+      return {
+        status: po.status, orderedByProduct, receivedByProduct: po.receivedByProduct, cancelledByProduct: po.cancelledByProduct,
+        ...(po.deliverToLocationId === undefined ? {} : { deliverToLocationId: po.deliverToLocationId }),
+      };
     },
     orderVersion: (tenantId, poId) => input.store.guardVersion(tenantId, purchaseOrderGuardKey(poId)),
     // SF-02: under the order's guard when the receipt posts against it — two receipts never spend the same remainder.
@@ -6133,6 +6139,14 @@ export function goodsReceiptAdapter(input: {
         ...movements.map((m) => movementEvent(tenantId, m)),
       ]);
     },
+    // OB-31 · SF-11: the master's base unit for a product (else the published pack's), and its pack levels.
+    productUom: async (tenantId, productId) => {
+      const master = await productMasterAdapter(input).product(tenantId, productId);
+      if (master?.baseUom !== undefined) return master.baseUom;
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      return pack?.snapshot.products.find((p) => p.productId === productId)?.baseUom;
+    },
+    packOf: (tenantId, productId) => packHierarchyAdapter(input).pack(tenantId, productId),
     // Batch 2: a quarantined line's physical return to the supplier — the receipt's next state, once per line.
     commitLineReturn: async (tenantId, record, key) => {
       await input.store.append(tenantId, grnStream, makeEvent({
@@ -6335,7 +6349,7 @@ export function inventoryAdapter(input: {
         movements.map((m): ValuationMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
         'INR',
@@ -6361,7 +6375,7 @@ export function inventoryAdapter(input: {
         movements.map((m): DatedMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
           occurredAt: m.occurredAt, batchId: m.batchId ?? null,
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
@@ -6394,7 +6408,7 @@ export function inventoryAdapter(input: {
             .map((m): ValuationMovement => ({
               productId: m.productId, locationId: m.locationId,
               effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
+              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
               ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
             })),
           'INR',
@@ -6624,6 +6638,21 @@ export function purchaseOrdersAdapter(input: {
       const latest = await latestBlock(input.store, tenantId, supplierId);
       return latest?.blocked ?? false;
     },
+
+    // OB-31: the master's unit for a product (else the published pack's) — a PO line's quantity is in its smallest steps.
+    productUom: async (tenantId, productId) => {
+      const master = await productMasterAdapter(input).product(tenantId, productId);
+      if (master?.baseUom !== undefined) return master.baseUom;
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      return pack?.snapshot.products.find((p) => p.productId === productId)?.baseUom;
+    },
+    // OB-37: the org node an order's "deliver to" names — the hierarchy's word, never the body's.
+    orgLocation: async (tenantId, locationId) => {
+      const node = (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).find((n) => n.nodeId === locationId);
+      return node === undefined ? undefined : { kind: node.kind, status: node.status };
+    },
+    // OB-32 "A": the supplier master's word on this supplier — active (approved), proposed (waiting), or unknown.
+    supplierStatus: async (tenantId, supplierId) => (await foldSupplierRecords(input.store, tenantId)).get(supplierId)?.status,
 
     propose: async (tenantId, po) => {
       await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({

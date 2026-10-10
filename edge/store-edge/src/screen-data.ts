@@ -792,6 +792,11 @@ export function warehousePayload(input: ScreenInput): Record<string, unknown> | 
     ...(w.grnId === undefined ? {} : { grnId: w.grnId }),
     ...(w.poId === undefined ? {} : { poId: w.poId }),
     ...(w.ordered === undefined ? {} : { ordered: w.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })) }),
+    // OB-37: the store's open deliveries, each with what is still to arrive — the phone lets the receiver choose one.
+    ...(w.openDeliveries === undefined ? {} : { openDeliveries: w.openDeliveries.map((d) => ({
+      poId: d.poId, number: d.number, supplierId: d.supplierId, grnId: d.grnId,
+      ordered: d.ordered.map((o) => ({ productId: o.productId, quantityMinor: o.quantityMinor, unitCost: { minor: o.unitCostMinor, currency: o.currency } })),
+    })) }),
     ...(w.recalledProductIds === undefined ? {} : { recalledProductIds: w.recalledProductIds }),
     ...(w.recalledBatchIds === undefined ? {} : { recalledBatchIds: w.recalledBatchIds }),
     // The pick list, line by line, each naming its bin. Passed through as sent — absent stays absent, so a
