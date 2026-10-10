@@ -18,3 +18,4 @@
 
 export * from './concession';
 export * from './concession-tagging';
+export * from './trading-feed';

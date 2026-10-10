@@ -315,6 +315,21 @@ export function laneHeldBills(port: number = DEFAULT_LANE_PORT): HeldBillsPort {
 }
 
 /** The store computer's answer about one card/UPI attempt (audit PF-06). */
+/** What the store computer says a member may spend now (PF-09 step 3). Amounts in paise. */
+export interface LoyaltyWalletAnswer {
+  readonly ok: boolean;
+  readonly refusedBecause?: string;
+  readonly laneMessage: string;
+  readonly points?: number;
+  readonly pointValuePaise?: number;
+  readonly pointsValueMinor?: number;
+  readonly storeCreditMinor?: number;
+  readonly capRemainingMinor?: number;
+  /** Head office's clock on the box's copy — how old the balances are (P-08). */
+  readonly asOf?: string;
+  readonly last4?: string;
+}
+
 export interface CardAttemptAnswer {
   readonly ok: boolean;
   readonly refusedBecause?: string;
@@ -711,7 +726,15 @@ export function bootPos(config?: {
   paymentsPort?: PaymentAttemptsPort;
   /** The till's void-evidence call to its box (audit PF-07). Overridable for tests; production posts to this till's own edge. */
   tillActivityPost?: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  /** The till's loyalty-balance call to its box (PF-09 step 3). Overridable for tests; production posts to this till's own edge. */
+  loyaltyWalletPost?: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }): PosView & {
+  /**
+   * What the named loyalty member may spend at this till now (PF-09 step 3): their points (and what they are worth), their
+   * store credit, and what the owner's daily till limit still allows — from the store computer's copy of head office's
+   * balances, with how old that copy is. Refused when no member is named or the box has no balances yet.
+   */
+  readonly loyaltyWallet: () => Promise<LoyaltyWalletAnswer>;
   readonly till: ReturnType<typeof createTillSession>;
   /**
    * The next receipt number for this lane, from the store computer (audit PF-04): saved on the box before it is given,
@@ -1174,13 +1197,40 @@ export function bootPos(config?: {
     if (session.operator() === undefined) return { approved: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('ask for an approval').laneMessage };
     return approvals.grant(request);
   };
+  // POINTS AND STORE CREDIT (PF-09 step 3): what the named member may spend here now, from the store computer's copy.
+  const loyaltyWallet = async (): Promise<LoyaltyWalletAnswer> => {
+    const mobile = session.loyaltyMobileForBox();
+    if (mobile === undefined) return { ok: false, refusedBecause: 'no_member_named', laneMessage: 'Key the loyalty member\'s mobile number first.' };
+    const body = { mobile, tradingDay: session.tradingDayFor(new Date().toISOString()) };
+    const post = async (): Promise<Record<string, unknown>> => {
+      const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
+      const response = await fetch(`${base}/lane/loyalty/wallet`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+      const front = FRONT_REFUSED[response.status];
+      if (front !== undefined) return { known: false, ...front };
+      return await response.json() as Record<string, unknown>;
+    };
+    let r: Record<string, unknown>;
+    try { r = await (config?.loyaltyWalletPost ?? post)(body); } catch {
+      return { ok: false, refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer, so points and store credit cannot be spent now. Take another payment.' };
+    }
+    const num = (k: string): number => (typeof r[k] === 'number' ? r[k] as number : 0);
+    if (r['known'] !== true) {
+      return { ok: false, refusedBecause: typeof r['refusedBecause'] === 'string' ? r['refusedBecause'] : 'wallets_not_known', laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : 'This store computer has not yet received the members\' balances from head office.' };
+    }
+    return {
+      ok: true, laneMessage: '', points: num('points'), pointValuePaise: num('pointValuePaise'), pointsValueMinor: num('pointsValueMinor'),
+      storeCreditMinor: num('storeCreditMinor'), capRemainingMinor: num('capRemainingMinor'),
+      ...(typeof r['asOf'] === 'string' ? { asOf: r['asOf'] } : {}), ...(typeof r['last4'] === 'string' ? { last4: r['last4'] } : {}),
+    };
+  };
+
   const lane = () => ({
     laneId: session.laneId() ?? null,
     tradingDayCutoff: config?.tradingDayCutoff ?? '00:00',
     tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
   });
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill });
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

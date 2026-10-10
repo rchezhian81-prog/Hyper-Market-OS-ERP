@@ -73,6 +73,8 @@ const validateLoyaltyRate: SetupValidator = (v) =>
   isIntIn(v, 0, 100) ? null : 'Give a whole number of points per ₹100, from 0 (loyalty off) to 100.';
 const validatePointValue: SetupValidator = (v) =>
   isIntIn(v, 0, 10_000) ? null : 'Give the value of one point in paise, from 0 to 10000 (₹100).';
+const validateTillSpendCap: SetupValidator = (v) =>
+  isIntIn(v, 0, 10_000_000) ? null : 'Give the most one member may spend at the till in a day, in paise, from 0 (off) to 10000000 (₹1,00,000).';
 const validateStringList: SetupValidator = (v) =>
   isStringArray(v) ? null : 'Give a list of names (an empty list means none).';
 const validatePaperFormat: SetupValidator = (v) =>
@@ -196,6 +198,14 @@ export const SETUP_CATALOGUE: readonly SetupItem[] = [
     required: false,
     question: 'What is one loyalty point worth when a customer spends it, in paise?',
     validate: validatePointValue,
+  },
+  {
+    // PF-09 step 3: the double-spend bound on spending at the till (M17-FR-01 / M17-FR-03 offline caps). 0 = off.
+    setting: SETTINGS.LOYALTY_TILL_SPEND_CAP_PAISE,
+    group: 'check_default',
+    required: false,
+    question: 'At most how much may one loyalty member spend at the till in a day — points and store credit together, in paise? (0 keeps spending at the till off.)',
+    validate: validateTillSpendCap,
   },
 ];
 

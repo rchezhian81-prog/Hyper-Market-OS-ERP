@@ -15,7 +15,10 @@ export function isMember<T extends string>(allowed: readonly T[], value: string)
  *  EXCHANGE (M13-FR-03) — money that never changes hands, banked as a tender so the replacement's tenders sum to its
  *  total and the day book clears it against the return (`exchange_credit_clearing`). Minted by the cloud exchange
  *  route and, since SP-9b-ii, by the till. */
-export const TENDER_KINDS = ['cash', 'card', 'upi', 'store_credit', 'split', 'exchange_credit'] as const;
+/** `loyalty_points` is a member's points spent at the till at the owner's point value (PF-09 step 3 · M17-FR-01) — value
+ *  that is the shop's liability, never money, decided against the store computer's copy of the balances and the owner's
+ *  till spend cap (`packages/loyalty/src/wallet.ts`). */
+export const TENDER_KINDS = ['cash', 'card', 'upi', 'store_credit', 'split', 'exchange_credit', 'loyalty_points'] as const;
 export type TenderKind = (typeof TENDER_KINDS)[number];
 export const isTenderKind = (v: string): v is TenderKind => isMember(TENDER_KINDS, v);
 

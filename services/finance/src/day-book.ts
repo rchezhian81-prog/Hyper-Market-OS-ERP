@@ -16,7 +16,7 @@ import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import {
   buildDayBook, postDayBook, validatePostingMap, DEFAULT_RETAIL_POSTING_MAP,
-  type DayBookSale, type DayBookReturn, type DayBookException, type DayBookSourceKind, type PostingMap,
+  type DayBookSale, type DayBookReturn, type DayBookException, type DayBookSourceKind, type PostingMap, type DayBookLoyalty,
 } from '../../../packages/finance/src/index';
 import { postJournal, type FinanceDeps, type JournalEntry } from './index';
 
@@ -60,6 +60,11 @@ export interface DayBookDeps extends Pick<FinanceDeps, 'periodStates' | 'nextOpe
   readonly dayBookJournals: (tenantId: string, tradingDay: string) => Promise<readonly DayBookJournal[]> | readonly DayBookJournal[];
   readonly recordException: (tenantId: string, exception: DayBookExceptionRecord) => Promise<void> | void;
   readonly exceptionsOn: (tenantId: string, tradingDay: string) => Promise<readonly DayBookExceptionRecord[]> | readonly DayBookExceptionRecord[];
+  /**
+   * The day's valued loyalty facts — points the day's sales earned and the day's returns took back (PF-09 step 3). Absent
+   * on a composition without loyalty: nothing loyalty posts.
+   */
+  readonly loyaltyOn?: (tenantId: string, sales: readonly DayBookSale[], returns: readonly DayBookReturn[]) => Promise<readonly DayBookLoyalty[]>;
 }
 
 const TRADING_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -169,8 +174,10 @@ export function dayBookRoutes(deps: DayBookDeps): readonly Route[] {
           t, [...new Set(returns.map((r) => r.originalSaleId).filter((id): id is string => id !== null))],
         );
         const alreadyPosted = coveredByKind(posted);
+        const loyalty = deps.loyaltyOn === undefined ? undefined : await deps.loyaltyOn(t, sales, returns);
         const book = buildDayBook({
           tradingDay, sales, returns, originalSales: originals, taxRateOf: (p) => rates.get(p), alreadyPosted,
+          ...(loyalty === undefined ? {} : { loyalty }),
         });
         const outcome = postDayBook(book, map, 'INR');
 

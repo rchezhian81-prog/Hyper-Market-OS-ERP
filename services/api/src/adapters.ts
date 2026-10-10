@@ -54,6 +54,10 @@ import type { RecallDeps } from '../../inventory/src/recall';
 import { RecallRegistry, type RecallRecord } from '../../../packages/traceability/src/index';
 import type { QualityHoldDeps } from '../../inventory/src/quality-hold';
 import type { LoyaltyMemberDeps, LoyaltyRule, MemberRecord } from '../../customer/src/loyalty-members';
+import type { LoyaltyWalletDeps, SpendApplied } from '../../customer/src/loyalty-wallets';
+import type { LoyaltyLiabilityDeps } from '../../finance/src/loyalty-liability';
+import { fulfilCompensation, type FulfilmentPorts, type CompensationFulfilment } from '../../customer/src/compensation-fulfilment';
+import { monthEvidence, type IndependentEvidenceDeps, type ImportedStatement } from '../../finance/src/independent-evidence';
 import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack } from '../../customer/src/loyalty-effects';
 import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
 import type { QualityHold } from '../../../packages/quality/src/index';
@@ -202,11 +206,11 @@ import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../fi
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
 import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
-import type { ConcessionTagDeps } from '../../finance/src/concession-tags';
+import type { ConcessionTagDeps, ConcessionTradingBreach } from '../../finance/src/concession-tags';
 import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlertRules } from '../../platform/src/observed-health';
 import type { DocumentTemplateDeps, DocumentTemplateVersion } from '../../platform/src/document-templates';
 import { adapterHealth } from '../../../packages/integration/src/index';
-import type { DayBookSale } from '../../../packages/finance/src/index';
+import type { DayBookSale, DayBookLoyalty } from '../../../packages/finance/src/index';
 import type { CreditNoteDeps } from '../../finance/src/credit-notes';
 import type { CreditNote, ProductTaxEntry } from '../../../packages/finance/src/index';
 import type { ConsentRecord, CustomerDeps, RecordedPointsMovement } from '../../customer/src/index';
@@ -225,6 +229,7 @@ import type { StoredPointsMovement } from '../../../packages/loyalty/src/assess-
 import type { StoredValueDeps, Instrument, ValueMovement } from '../../customer/src/stored-value';
 import type { CouponDeps } from '../../customer/src/coupons';
 import type { Coupon, Redemption } from '../../../packages/loyalty/src/coupons';
+import { balanceOf } from '../../../packages/loyalty/src/stored-value';
 import type { PromotionDeps, LaunchRecord } from '../../pricing/src/promotions';
 import type { PromotionCatalogueDeps } from '../../pricing/src/promotion-catalogue';
 import type { Promotion } from '../../../packages/promotions/src/promotions';
@@ -2377,9 +2382,11 @@ export function posAdapter(input: {
     },
 
     recordExceptions: async (tenantId, exceptions) => {
-      for (const [i, ex] of exceptions.entries()) {
+      for (const ex of exceptions) {
         await input.store.append(tenantId, STREAM.saleExceptions, makeEvent({
-          id: `saleex-${ex.saleId}-${i}`,
+          // The kind, not the position, names it: a later finding on the same sale (a loyalty spend that could not be
+          // covered, PF-09 step 3) must not collide with the intake's own first finding.
+          id: `saleex-${ex.saleId}-${ex.kind}`,
           type: 'SaleExceptionRaised',
           occurredAt: input.now(),
           idempotencyKey: `saleex-${tenantId}-${ex.saleId}-${ex.kind}`,
@@ -5942,7 +5949,7 @@ export function settlementAdapter(input: {
 
     importedBatchIds: async (tenantId) => (await batches(tenantId)).map((b) => b.batchId),
 
-    recordBatch: async (tenantId, batch) => {
+    recordBatch: async (tenantId, batch, provenance) => {
       await input.store.append(tenantId, STREAM.settlement, makeEvent({
         id: `settle-batch-${batch.batchId}`,
         type: 'SettlementBatchImported',
@@ -5952,7 +5959,8 @@ export function settlementAdapter(input: {
         // backstop at the ledger, where the guarantee actually has to hold.)
         idempotencyKey: `settle-batch-${tenantId}-${batch.batchId}`,
         source: 'api/finance',
-        payload: batch,
+        // Who brought the file in, and when (PF-12): independent evidence keeps its provenance.
+        payload: provenance === undefined ? batch : { ...batch, provenance },
       }));
     },
 
@@ -7615,19 +7623,13 @@ export function financeAdapter(input: {
     },
 
     /**
-     * No control total can be built from this system alone, and saying so is the honest answer.
-     *
-     * A control total needs two figures reached two different ways — that is the whole point, and
-     * `closePeriod` refuses a pair that shares a derivation by name. Everything this API holds for
-     * a period comes down the same path: the till banks a sale, the sale becomes a journal. Adding
-     * those two up and comparing them is one figure written twice.
-     *
-     * The genuine second sources are outside: the bank statement, the filed return, the counted
-     * shelf. Until one of those is fed in, this returns nothing, the period does not close, and
-     * the refusal says why. A month that closes because nobody checked it is the outcome worth
-     * refusing — `packages/migration/src/banking-verification.ts` is the same control at migration.
+     * No control total can be built from this system ALONE, and it does not try: every check pairs a figure from the books
+     * with the same figure from OUTSIDE — the provider's settlement files and the bank's statements, imported with their
+     * provenance (Wave 5 · PF-12, `services/finance/src/independent-evidence.ts`). A month with nothing imported to compare
+     * still has no check, does not close, and the refusal says why. `closePeriod` still refuses a pair that shares a
+     * derivation by name.
      */
-    controlTotals: () => [],
+    controlTotals: async (tenantId, period) => (await independentEvidenceAdapter(input).evidenceFor(tenantId, period)).checks,
 
     /** Who posted into the month — the separation-of-duties check reads this, so it must be real. */
     postersIn: async (tenantId, period) => [...new Set(
@@ -7952,6 +7954,170 @@ export function loyaltyEffectsAdapter(input: {
       ], { guard: { key: `points:${t.memberRef}`, expectedVersion } });
     },
     now: input.now,
+  };
+}
+
+/**
+ * Loyalty wallets (PF-09 step 3): the feed the store computers pull, and the spends a banked sale applies. A spend's points
+ * leave under the member's points guard and its store credit leaves each instrument under that instrument's guard (Wave 2a),
+ * so a till spend applied here can never race a desk redemption or a take-back into a negative balance. Each spend's own
+ * fact lives on the member's spend stream — the feed lists them, so a box can tell its applied spends from its pending ones.
+ */
+const forMemberSpends = (memberRef: string): string => streamName(STREAM.loyalty, 'spends', memberRef);
+
+export function loyaltyWalletsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly rule: (tenantId: string) => Promise<LoyaltyRule> | LoyaltyRule;
+}): LoyaltyWalletDeps {
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const value = storedValueAdapter({ store: input.store, now: input.now });
+  return {
+    rule: input.rule,
+    allMembers: (tenantId) => allOf<MemberRecord>(input.store, tenantId, LOYALTY_MEMBERS, 'LoyaltyMember'),
+    pointsBalance: customers.pointsBalance,
+    pointsVersion: (tenantId, memberRef) => input.store.guardVersion(tenantId, `points:${memberRef}`),
+    storeCredit: async (tenantId, memberRef) => {
+      const mine = (await value.instrumentsForOwner(tenantId, memberRef))
+        .filter((i) => i.kind === 'store_credit')
+        .sort((a, b) => a.issuedAt.localeCompare(b.issuedAt) || a.instrumentId.localeCompare(b.instrumentId));
+      return Promise.all(mine.map(async (instrument) => {
+        // The guard version first, then the history it protects (Wave 2a).
+        const version = await input.store.guardVersion(tenantId, `stored-value:${instrument.instrumentId}`);
+        return { instrument, version, movements: await value.movements(tenantId, instrument.instrumentId) };
+      }));
+    },
+    spendsApplied: (tenantId, memberRef) => allOf<SpendApplied>(input.store, tenantId, forMemberSpends(memberRef), 'LoyaltySpendApplied'),
+    recordPointsSpend: async (tenantId, memberRef, m, expectedVersion) => {
+      const movement: RecordedPointsMovement = { movementId: m.movementId, customerId: memberRef, delta: -m.points, reason: 'burn', sourceRef: m.sourceRef, at: m.at };
+      await input.store.appendBatch(tenantId, [{ stream: forCustomerPoints(memberRef), event: makeEvent({
+        id: `points-${m.movementId}`, type: 'PointsMovement', occurredAt: m.at,
+        idempotencyKey: `points-${tenantId}-${m.movementId}`, source: 'api/customer', payload: movement,
+      }) }], { guard: { key: `points:${memberRef}`, expectedVersion } });
+    },
+    recordCreditSpend: async (tenantId, instrumentId, m, expectedVersion) => {
+      await value.recordMovement(tenantId, instrumentId, m, expectedVersion);
+    },
+    recordSpendApplied: async (tenantId, fact) => {
+      await input.store.append(tenantId, forMemberSpends(fact.memberRef), makeEvent({
+        id: `loyalty-spend-${fact.ref}`, type: 'LoyaltySpendApplied', occurredAt: fact.at,
+        idempotencyKey: `loyalty-spend-${tenantId}-${fact.ref}`, source: 'api/customer', payload: fact,
+      }));
+    },
+    now: input.now,
+  };
+}
+
+/**
+ * The loyalty liability, both sides (PF-09 step 3): what every member holds (their points, from their movements; every
+ * store-credit instrument's balance) and what the books carry (the credit balance of an account across every posted
+ * journal). Two derivations; the route compares them exactly.
+ */
+export function loyaltyLiabilityAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly rule: (tenantId: string) => Promise<LoyaltyRule> | LoyaltyRule;
+}): LoyaltyLiabilityDeps {
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const value = storedValueAdapter({ store: input.store, now: input.now });
+  return {
+    now: input.now,
+    outstanding: async (tenantId) => {
+      const codes = [...new Set((await allOf<MemberRecord>(input.store, tenantId, LOYALTY_MEMBERS, 'LoyaltyMember')).map((m) => m.memberRef))];
+      let points = 0;
+      for (const code of codes) points += Math.max(0, (await customers.pointsBalance(tenantId, code)) ?? 0);
+      const instruments = (await allOf<Instrument>(input.store, tenantId, STORED_VALUE_INDEX, 'StoredValueIssued')).filter((i) => i.kind === 'store_credit');
+      let storeCreditMinor = 0;
+      for (const i of instruments) storeCreditMinor += Math.max(0, balanceOf(await value.movements(tenantId, i.instrumentId), i.instrumentId));
+      return { points, pointValuePaise: (await input.rule(tenantId)).pointValuePaise, storeCreditMinor };
+    },
+    creditBalance: async (tenantId, accountCode) => {
+      const journals = await allOf<JournalEntry>(input.store, tenantId, STREAM.finance, 'JournalPosted');
+      let balance = 0;
+      for (const j of journals) for (const l of j.lines) if (l.accountCode === accountCode) balance += l.creditMinor - l.debitMinor;
+      return balance;
+    },
+  };
+}
+
+/**
+ * Independent evidence for the close (PF-12): bank statements on their own stream with their provenance, and the month's
+ * comparison built from the sales ledger's card/UPI tenders, every imported provider settlement file and every statement.
+ */
+const BANK_STATEMENTS = streamName(STREAM.settlement, 'bank-statements');
+
+export function independentEvidenceAdapter(input: { readonly store: EventStore; readonly now: () => string }): IndependentEvidenceDeps {
+  const statements = (tenantId: string) => allOf<ImportedStatement>(input.store, tenantId, BANK_STATEMENTS, 'BankStatementImported');
+  return {
+    now: input.now,
+    statements,
+    recordStatement: async (tenantId, statement) => {
+      await input.store.append(tenantId, BANK_STATEMENTS, makeEvent({
+        id: `bank-statement-${statement.statementId}`, type: 'BankStatementImported', occurredAt: statement.provenance.importedAt,
+        // The statement's own id — importing the same statement twice collapses (the route also refuses it by name).
+        idempotencyKey: `bank-statement-${tenantId}-${statement.statementId}`, source: 'api/finance', payload: statement,
+      }));
+    },
+    evidenceFor: async (tenantId, period) => {
+      const start = Date.parse(`${period}-01T00:00:00.000Z`);
+      const from = new Date(start - 2 * 86_400_000).toISOString();
+      const to = new Date(start + 33 * 86_400_000).toISOString();
+      const sales = (await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to }))
+        .map((e) => e.event.payload as IncomingSale)
+        .filter((sale) => (sale.tradingDay !== '' ? sale.tradingDay : sale.committedAt).slice(0, 7) === period);
+      const tenders = sales.flatMap((sale) => sale.tenders
+        .filter((t) => typeof t.ref === 'string' && t.ref.trim() !== '')
+        .map((t) => ({ ref: t.ref as string, kind: t.kind, amountMinor: t.amountMinor, saleId: sale.saleId })));
+      const batches = await allOf<SettlementBatch>(input.store, tenantId, STREAM.settlement, 'SettlementBatchImported');
+      return monthEvidence({ period, tenders, batches, statements: await statements(tenantId) });
+    },
+  };
+}
+
+/**
+ * PF-11: carrying a granted compensation out — store credit through the stored-value records (keyed on the
+ * compensation, so a retry issues nothing twice), points through the customer's points under their write guard — and
+ * every attempt's status on the compensation stream (append-only; the latest per compensation is its state).
+ */
+const SERVICE_FULFILMENT_STREAM = streamName(STREAM.service, 'compensation-fulfilment');
+
+export function compensationFulfilmentAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly pointValuePaise: (tenantId: string) => Promise<number>;
+}): Pick<ServiceCaseDeps, 'fulfilCompensation' | 'recordFulfilment' | 'fulfilments'> {
+  const value = storedValueAdapter({ store: input.store, now: input.now });
+  const customers = customerAdapter({ store: input.store, now: input.now });
+  const ports: FulfilmentPorts = {
+    now: input.now,
+    pointValuePaise: input.pointValuePaise,
+    issueStoreCredit: async (tenantId, instrument, opening) => {
+      if (await value.instrument(tenantId, instrument.instrumentId) !== undefined) return; // issued already — once
+      await value.recordIssue(tenantId, instrument, opening);
+    },
+    addPoints: async (tenantId, customerRef, m) => {
+      for (let attempt = 0; ; attempt += 1) {
+        const version = await input.store.guardVersion(tenantId, `points:${customerRef}`);
+        try {
+          await customers.recordPointsMovement(tenantId, customerRef, { movementId: m.movementId, customerId: customerRef, delta: m.points, reason: 'earn', sourceRef: m.sourceRef, at: m.at }, version);
+          return;
+        } catch (err) {
+          if (err instanceof ConcurrencyConflictError && attempt < 4) continue;
+          throw err;
+        }
+      }
+    },
+  };
+  return {
+    fulfilCompensation: (tenantId, i) => fulfilCompensation(ports, tenantId, i),
+    recordFulfilment: async (tenantId, f) => {
+      await input.store.append(tenantId, SERVICE_FULFILMENT_STREAM, makeEvent({
+        id: `comp-fulfil-${f.compensationId}-${f.at}`, type: 'CompensationFulfilment', occurredAt: f.at,
+        idempotencyKey: `comp-fulfil-${tenantId}-${f.compensationId}-${f.status}-${f.at}`, source: 'api/customer', payload: f,
+      }));
+    },
+    fulfilments: async (tenantId, caseId) =>
+      (await allOf<CompensationFulfilment>(input.store, tenantId, SERVICE_FULFILMENT_STREAM, 'CompensationFulfilment')).filter((f) => f.caseId === caseId),
   };
 }
 
@@ -10722,8 +10888,34 @@ export function dayBookAdapter(input: { readonly store: EventStore; readonly now
     exceptionsOn: async (tenantId, day) =>
       (await allOf<DayBookExceptionRecord>(input.store, tenantId, STREAM.finance, 'DayBookExceptionRaised'))
         .filter((e) => e.tradingDay === day),
+    // PF-09 step 3: the points the day's sales earned and the day's returns took back, valued at the earn's point value.
+    loyaltyOn: async (tenantId, sales, returns) => {
+      const factsOf = async (saleId: string) => {
+        const events = await input.store.readStream(tenantId, streamName(STREAM.loyalty, 'sale', saleId));
+        const earn = events.find((e) => e.event.type === 'LoyaltySaleEarned');
+        return {
+          earn: earn === undefined ? undefined : payloadOf<SaleEarn>(earn),
+          takeBacks: events.filter((e) => e.event.type === 'LoyaltyReturnTakenBack').map((e) => payloadOf<ReturnTakeBack>(e)),
+        };
+      };
+      const out: DayBookLoyalty[] = [];
+      for (const sale of sales) {
+        const { earn } = await factsOf(sale.saleId);
+        if (earn !== undefined && earn.points > 0) out.push({ sourceId: `earn:${sale.saleId}`, kind: 'earn', points: earn.points, valueMinor: earn.points * (earn.pointValuePaise ?? 0) });
+      }
+      for (const ret of returns) {
+        if (ret.originalSaleId === null) continue;
+        const { earn, takeBacks } = await factsOf(ret.originalSaleId);
+        const t = takeBacks.find((x) => x.returnId === ret.returnId);
+        if (earn !== undefined && t !== undefined && t.taken > 0) out.push({ sourceId: `takeback:${ret.returnId}`, kind: 'takeback', points: t.taken, valueMinor: t.taken * (earn.pointValuePaise ?? 0) });
+      }
+      return out;
+    },
   };
 }
+
+/** PF-13: concession lines taken on a day their counter could not trade — one tenant-wide stream, kept for a person. */
+const CONCESSION_TRADING_BREACHES = streamName(STREAM.settlement, 'concession-trading-breaches');
 
 // ── Concession docket tags (M27-FR-03) ────────────────────────────────────────────────────────
 // Every capture and every correction is an appended version of the tag on the contract's tag stream;
@@ -10744,6 +10936,22 @@ export function concessionTagsAdapter(input: { readonly store: EventStore; reado
       }
       return contracts;
     },
+    allContracts: async (tenantId) => {
+      const indexed = await allOf<{ readonly contractId: string }>(input.store, tenantId, CONCESSION_CONTRACT_INDEX, 'ConcessionContractIndexed');
+      const contracts: ConcessionContract[] = [];
+      for (const contractId of [...new Set(indexed.map((c) => c.contractId))]) {
+        const c = await latest<ConcessionContract>(input.store, tenantId, forConcession(contractId), 'ConcessionContractSet');
+        if (c !== undefined) contracts.push(c);
+      }
+      return contracts;
+    },
+    recordTradingBreach: async (tenantId, breach) => {
+      await input.store.append(tenantId, CONCESSION_TRADING_BREACHES, makeEvent({
+        id: `concession-breach-${breach.tagId}`, type: 'ConcessionTradingBreach', occurredAt: breach.recordedAt,
+        idempotencyKey: `concession-breach-${tenantId}-${breach.tagId}`, source: 'api/finance', payload: breach,
+      }));
+    },
+    tradingBreaches: (tenantId) => allOf<ConcessionTradingBreach>(input.store, tenantId, CONCESSION_TRADING_BREACHES, 'ConcessionTradingBreach'),
     appendTag: async (tenantId, tag) => {
       const version = tag.history.length;
       await input.store.append(tenantId, forConcessionTags(tag.contractId), makeEvent({

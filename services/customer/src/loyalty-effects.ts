@@ -24,7 +24,11 @@ export interface LoyaltyOutcome {
   readonly detail: string;
 }
 
-export interface SaleEarn { readonly memberRef: string; readonly points: number; readonly saleTotalMinor: number }
+export interface SaleEarn {
+  readonly memberRef: string; readonly points: number; readonly saleTotalMinor: number;
+  /** The point value in force when the points were earned — what the liability is booked at (PF-09 step 3). */
+  readonly pointValuePaise?: number;
+}
 export interface ReturnTakeBack {
   readonly returnId: string; readonly memberRef: string; readonly refundMinor: number;
   readonly owed: number; readonly taken: number; readonly shortfall: number;
@@ -46,7 +50,10 @@ export interface LoyaltyEffectsDeps {
 
 export async function earnOnSale(
   deps: LoyaltyEffectsDeps, tenantId: string,
-  sale: { readonly saleId: string; readonly totalMinor: number; readonly committedAt: string; readonly customerRef?: unknown },
+  sale: {
+    readonly saleId: string; readonly totalMinor: number; readonly committedAt: string; readonly customerRef?: unknown;
+    readonly tenders?: readonly { readonly kind: string; readonly amountMinor: number }[];
+  },
 ): Promise<LoyaltyOutcome> {
   if (sale.customerRef === undefined || sale.customerRef === null || sale.customerRef === '') {
     return { outcome: 'no_customer', detail: 'No loyalty member was named on this sale.' };
@@ -61,9 +68,12 @@ export async function earnOnSale(
   if (!wasMemberAt(await deps.memberHistory(tenantId, sale.customerRef), sale.committedAt)) {
     return { outcome: 'not_a_member', detail: 'This number was not a loyalty member when the sale was rung — no points. They can join at the service desk.' };
   }
-  const points = pointsEarned(sale.totalMinor, rule.pointsPer100Inr);
+  // Points are earned on what the member PAID, not on what they paid with points (PF-09 step 3): spending points does not
+  // earn new ones. Store credit is the customer's own money held by the shop, so it earns like cash.
+  const paidWithPoints = (sale.tenders ?? []).filter((t) => t.kind === 'loyalty_points').reduce((n, t) => n + (Number.isSafeInteger(t.amountMinor) ? t.amountMinor : 0), 0);
+  const points = pointsEarned(Math.max(0, sale.totalMinor - paidWithPoints), rule.pointsPer100Inr);
   if (points === 0) return { outcome: 'nothing_to_earn', points: 0, detail: 'The sale was too small to earn a whole point.' };
-  await deps.recordEarn(tenantId, sale.saleId, { memberRef: sale.customerRef, points, saleTotalMinor: sale.totalMinor }, deps.now());
+  await deps.recordEarn(tenantId, sale.saleId, { memberRef: sale.customerRef, points, saleTotalMinor: sale.totalMinor, pointValuePaise: rule.pointValuePaise }, deps.now());
   return { outcome: 'earned', points, detail: `${points} point(s) earned.` };
 }
 

@@ -19,6 +19,7 @@
 // paused minutes are supplied at resolution here rather than accrued across transitions).
 
 import type { Route } from '../../kernel/src/index';
+import type { CompensationFulfilment } from './compensation-fulfilment';
 import { apiError, notFound } from '../../kernel/src/index';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from '../../identity/src/approval-requests';
 import {
@@ -46,6 +47,8 @@ export interface DraftDecisionRecord {
 
 /** A compensation actually granted on a case — money leaving the business, recorded append-only. */
 export interface CompensationRecord {
+  /** This grant's own id (PF-11) — what its execution and every retry are keyed on. Absent on a grant from before. */
+  readonly compensationId?: string;
   readonly caseId: string;
   readonly kind: CompensationKind;
   readonly amountMinor: number;
@@ -71,6 +74,22 @@ const COMPENSATION_REFUSAL: Readonly<Record<Exclude<CompensationOutcome, 'grante
 };
 
 
+/** A grant's id from its idempotency key — stable, so a re-sent grant names the same compensation. */
+function compensationIdOf(key: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i += 1) { h ^= key.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return `comp-${h.toString(16).padStart(8, '0')}-${key.length.toString(36)}`;
+}
+
+async function carryOut(
+  deps: ServiceCaseDeps, tenantId: string, customerRef: string, rec: CompensationRecord & { readonly compensationId: string },
+): Promise<CompensationFulfilment | undefined> {
+  if (deps.fulfilCompensation === undefined) return undefined;
+  const fulfilment = await deps.fulfilCompensation(tenantId, { compensationId: rec.compensationId, caseId: rec.caseId, customerRef, kind: rec.kind, amountMinor: rec.amountMinor });
+  await deps.recordFulfilment?.(tenantId, fulfilment);
+  return fulfilment;
+}
+
 export interface ServiceCaseDeps {
   readonly serviceCase: (tenantId: string, caseId: string) => Promise<ServiceCase | undefined> | ServiceCase | undefined;
   /** Every case for the tenant — the breached-queue read folds over these. */
@@ -88,6 +107,13 @@ export interface ServiceCaseDeps {
   /** Whether a user holds `service.compensation.approve` — the CALLER's own authority decides how much they may grant
    *  alone (owner-only by default). An over-limit grant's second person is an approval (`approvals`), never a name. */
   readonly canApproveCompensation: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /**
+   * PF-11: carry a granted compensation out through the value records (store credit, points), and keep each attempt's
+   * status (completed / pending / failed). Absent on a composition that does not execute — the grant then says so.
+   */
+  readonly fulfilCompensation?: (tenantId: string, input: { readonly compensationId: string; readonly caseId: string; readonly customerRef: string; readonly kind: CompensationKind; readonly amountMinor: number }) => Promise<CompensationFulfilment>;
+  readonly recordFulfilment?: (tenantId: string, fulfilment: CompensationFulfilment) => Promise<void>;
+  readonly fulfilments?: (tenantId: string, caseId: string) => Promise<readonly CompensationFulfilment[]>;
   /** Head office's maker-checker engine (ADR-0024): an over-limit grant's approver gave it in their own session.
    *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
   readonly approvals?: ApprovalPort;
@@ -270,8 +296,12 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
           reason: b['reason'] as string, at: now,
         };
         // Keyed on the case + the money + who granted it + when — a re-sync is one payment, not two.
-        await deps.recordCompensation(ctx.tenantId, caseId, rec, `${caseId}-${rec.grantedBy}-${rec.amountMinor}-${now}`);
-        return { status: 201, body: { caseId, granted: true, outcome: result.outcome, amountMinor: result.amountMinor, ...(result.approvedBy !== undefined ? { approvedBy: result.approvedBy } : {}), detail: result.detail } };
+        const key = `${caseId}-${rec.grantedBy}-${rec.amountMinor}-${now}`;
+        const compensationId = compensationIdOf(key);
+        await deps.recordCompensation(ctx.tenantId, caseId, { ...rec, compensationId }, key);
+        // PF-11: the decision is made; now carry it out through the value records, and keep what happened.
+        const fulfilment = await carryOut(deps, ctx.tenantId, existing.customerRef, { ...rec, compensationId });
+        return { status: 201, body: { caseId, compensationId, granted: true, outcome: result.outcome, amountMinor: result.amountMinor, ...(result.approvedBy !== undefined ? { approvedBy: result.approvedBy } : {}), detail: result.detail, ...(fulfilment === undefined ? {} : { fulfilment }) } };
       },
     },
     {
@@ -307,13 +337,34 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
       },
     },
     {
-      // Every compensation granted on a case — the record that explains, three months later, why money left.
+      // Every compensation granted on a case — the record that explains, three months later, why money left — with where
+      // each one stands now (PF-11): completed, pending (and why), or failed (and why).
       api: 'API-06', method: 'GET', path: '/v1/service/cases/:caseId/compensations',
       permission: 'service.case.read',
       handler: async (ctx) => {
         const caseId = ctx.params['caseId'] ?? '';
         const rows = await deps.compensations(ctx.tenantId, caseId);
-        return { status: 200, body: { caseId, compensations: rows, count: rows.length, totalMinor: rows.reduce((s, r) => s + r.amountMinor, 0) } };
+        const statuses = deps.fulfilments === undefined ? [] : await deps.fulfilments(ctx.tenantId, caseId);
+        const latest = new Map<string, CompensationFulfilment>();
+        for (const f of statuses) latest.set(f.compensationId, f);
+        const withStatus = rows.map((r) => (r.compensationId === undefined || !latest.has(r.compensationId) ? r : { ...r, fulfilment: latest.get(r.compensationId) }));
+        return { status: 200, body: { caseId, compensations: withStatus, count: rows.length, totalMinor: rows.reduce((s, r) => s + r.amountMinor, 0) } };
+      },
+    },
+    {
+      // Carry a granted compensation out again (PF-11) — after a failure, or when a pending one can now be done. Nothing
+      // is given twice: the value records are keyed on the compensation.
+      api: 'API-06', method: 'POST', path: '/v1/service/cases/:caseId/compensations/:compensationId/fulfil',
+      permission: 'service.case.manage', idempotent: true,
+      handler: async (ctx) => {
+        const caseId = ctx.params['caseId'] ?? '';
+        const compensationId = ctx.params['compensationId'] ?? '';
+        const existing = await deps.serviceCase(ctx.tenantId, caseId);
+        if (existing === undefined) throw notFound(`service case ${caseId}`);
+        const rec = (await deps.compensations(ctx.tenantId, caseId)).find((r) => r.compensationId === compensationId);
+        if (rec === undefined) throw notFound(`compensation ${compensationId} on case ${caseId}`);
+        const fulfilment = await carryOut(deps, ctx.tenantId, existing.customerRef, { ...rec, compensationId });
+        return { status: 200, body: { caseId, compensationId, ...(fulfilment === undefined ? { fulfilment: null, detail: 'This system does not carry compensations out.' } : { fulfilment }) } };
       },
     },
     {

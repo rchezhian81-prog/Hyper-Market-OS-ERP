@@ -19,7 +19,7 @@ import type { Route, RequestContext } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
 import {
   captureConcessionTagIdempotent, reverseConcessionTag, adjustConcessionTag, markSettlementStatus,
-  concessionTagTotals, mayConcessionTrade,
+  concessionTagTotals, mayConcessionTrade, termsOf,
   type ConcessionTag, type ConcessionActorRole, type CaptureInput, type CommissionSchemeSnapshot, type SettlementStatus,
 } from '../../../packages/concession/src/index';
 import type { ConcessionDeps } from './concession';
@@ -34,7 +34,28 @@ export interface ConcessionTagDeps {
   /** Every contract ever defined for a partner (latest terms of each) — how a SYNCED tag that names only the
    *  partner finds the contract it belongs to. */
   readonly contractsFor: (tenantId: string, concessionaireId: string) => Promise<readonly ConcessionContract[]> | readonly ConcessionContract[];
+  /** Every contract in the tenant (latest terms of each) — the trading feed the store computers pull (PF-13). */
+  readonly allContracts?: (tenantId: string) => Promise<readonly ConcessionContract[]>;
+  /**
+   * A line that arrived for a counter whose agreement did not allow trading that day (PF-13): it happened (the money was
+   * taken before the store computer knew, or on a box that never pulled the decisions), so it is recorded AND kept as a
+   * durable exception for a person. Idempotent on the tag.
+   */
+  readonly recordTradingBreach?: (tenantId: string, breach: ConcessionTradingBreach) => Promise<void>;
+  readonly tradingBreaches?: (tenantId: string) => Promise<readonly ConcessionTradingBreach[]>;
   readonly now: () => string;
+}
+
+/** A concession line taken on a day its counter could not trade — kept, never dropped, for a person to settle (PF-13). */
+export interface ConcessionTradingBreach {
+  readonly tagId: string;
+  readonly contractId: string;
+  readonly concessionaireId: string;
+  readonly saleId: string;
+  readonly grossMinor: number;
+  readonly day: string;
+  readonly blockedBy: readonly string[];
+  readonly recordedAt: string;
 }
 
 /** The engine's actor role from the caller's grants: a manager may correct, a cashier may not (§28). */
@@ -63,6 +84,29 @@ const usedTagId = (tagId: string, contractId: string) => apiError(409, {
   wasItSaved: 'not_saved',
   nextSafeAction: 'Send a new tag id. To correct a posted line, reverse or adjust it — never re-send it.',
 });
+
+/** The routes behind PF-13: the trading feed the store computers pull, and the breaches kept for a person. */
+export function concessionTradingRoutes(deps: ConcessionTagDeps): readonly Route[] {
+  return [
+    {
+      // Every agreement's TERMS (dates, approval, active) — the box decides each counter by its own calendar, offline.
+      api: 'API-09', method: 'GET', path: '/v1/concession/trading-feed',
+      permission: 'concession.tag.sync', entitlement: 'dept.concession',
+      handler: async (ctx) => {
+        const all = deps.allContracts === undefined ? [] : await deps.allContracts(ctx.tenantId);
+        return { status: 200, body: { tenantId: ctx.tenantId, generatedAt: deps.now(), contracts: all.map(termsOf) } };
+      },
+    },
+    {
+      api: 'API-09', method: 'GET', path: '/v1/concession/trading-breaches',
+      permission: 'concession.charge.read', entitlement: 'dept.concession',
+      handler: async (ctx) => {
+        const breaches = deps.tradingBreaches === undefined ? [] : await deps.tradingBreaches(ctx.tenantId);
+        return { status: 200, body: { count: breaches.length, breaches, asAt: deps.now() } };
+      },
+    },
+  ];
+}
 
 export function concessionTagRoutes(deps: ConcessionTagDeps): readonly Route[] {
   const ACTOR_ROLES: readonly ConcessionActorRole[] = ['cashier', 'supervisor', 'store_manager'];
@@ -168,7 +212,17 @@ export function concessionTagRoutes(deps: ConcessionTagDeps): readonly Route[] {
         }
         await deps.appendTag(ctx.tenantId, result.tag);
         const trading = mayConcessionTrade({ contract, today: at.slice(0, 10) });
-        return { status: 201, body: { captured: true, tag: result.tag, trading, contractId: contract.contractId, synced: true } };
+        // PF-13: a SALE on a day the counter could not trade already happened — recorded above, and kept as a durable
+        // exception for a person (never dropped, never a refusal of something that happened).
+        let breach: ConcessionTradingBreach | undefined;
+        if (!trading.mayTrade && kind === 'sale' && deps.recordTradingBreach !== undefined) {
+          breach = {
+            tagId, contractId: contract.contractId, concessionaireId: contract.concessionaireId, saleId: b['saleId'] as string,
+            grossMinor: b['grossMinor'] as number, day: at.slice(0, 10), blockedBy: trading.blockedBy, recordedAt: deps.now(),
+          };
+          await deps.recordTradingBreach(ctx.tenantId, breach);
+        }
+        return { status: 201, body: { captured: true, tag: result.tag, trading, contractId: contract.contractId, synced: true, ...(breach === undefined ? {} : { breach }) } };
       },
     },
     {

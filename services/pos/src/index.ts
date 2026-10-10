@@ -53,6 +53,15 @@ export interface PosDeps {
    * on the sale. Never refuses — its outcome rides on the reply. Absent → no loyalty here (a composition without it).
    */
   readonly loyaltyOnSale?: (tenantId: string, sale: IncomingSale) => Promise<unknown>;
+  /**
+   * What the sale's points and store-credit tenders do to the member's balances (PF-09 step 3 · M17-FR-01/03): applied
+   * once per sale and kind, never refused, never below zero. A part the true balance could not cover comes back as a
+   * shortfall, which this route raises as a visible exception (hard rule #10). Absent → no spending here.
+   */
+  readonly loyaltySpendOnSale?: (tenantId: string, sale: IncomingSale) => Promise<readonly {
+    readonly kind: string; readonly ref: string; readonly requestedMinor: number; readonly appliedMinor: number;
+    readonly shortfallMinor: number; readonly alreadyApplied: boolean; readonly detail: string;
+  }[]>;
 }
 
 /** Enough of a sale to be a sale. Anything beyond this is a finding, never a refusal. */
@@ -111,6 +120,28 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
           }
         }
 
+        // Spending (PF-09 step 3): the points and store credit the till took off this bill leave the member's balances —
+        // once, on a retry too. Before the earn, so the earn reads the balance the spend left. A shortfall (spent twice
+        // across channels) is raised as a valued exception; a fault is said, never thrown (the sale is banked).
+        let spends: unknown;
+        if (deps.loyaltySpendOnSale !== undefined && sale.tenders.some((t) => t.kind === 'loyalty_points' || t.kind === 'store_credit')) {
+          try {
+            const outcomes = await deps.loyaltySpendOnSale(ctx.tenantId, sale);
+            spends = outcomes;
+            const short = outcomes.filter((o) => o.shortfallMinor > 0);
+            if (short.length > 0) {
+              await deps.recordExceptions(ctx.tenantId, [{
+                kind: 'loyalty_value_spent_twice', severity: 'material', saleId: sale.saleId,
+                differenceMinor: short.reduce((n, o) => n + o.shortfallMinor, 0),
+                detail: short.map((o) => o.detail).join(' '),
+                ownerAction: 'The customer has the goods and the value was spent twice across channels. Decide whether to recover it from the member or write it off; nothing was taken below zero.',
+              }]);
+            }
+          } catch (err) {
+            spends = { outcome: 'not_recorded', detail: `The sale is banked, but its points or store credit spend was not applied: ${err instanceof Error ? err.message : String(err)}. The till's resend will try again.` };
+          }
+        }
+
         // Loyalty (PF-09-a): earned once per sale, on a retry too (it is idempotent), so a crash between banking and
         // earning heals on the till's resend. It never touches the sale's answer — a fault here is said, not thrown.
         let loyalty: unknown;
@@ -124,7 +155,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
 
         // 202, not 201: the sale is banked and there may be work attached to it. A 4xx here would
         // tell a till that a sale which happened did not.
-        return { status: 202, body: loyalty === undefined ? intake : { ...intake, loyalty } };
+        return { status: 202, body: { ...intake, ...(loyalty === undefined ? {} : { loyalty }), ...(spends === undefined ? {} : { spends }) } };
       },
     },
     {
