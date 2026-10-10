@@ -249,6 +249,15 @@ const TRANSIENT_4XX = new Set([401, 408, 425, 429]);
 export const IDEMPOTENCY_CONFLICT_CODE = 'idempotency_key_reused';
 
 /**
+ * The kernel's code for "another change landed a moment earlier, so this one was NOT applied" (`concurrentChange`,
+ * Wave 2a write guards — e.g. two receipts against one purchase order, SF-02). Nothing was saved and the kernel banks no
+ * reply for an error, so the same item sent again is judged afresh against the true figures. It is therefore RETRYABLE —
+ * never "already on file": accepting it would mark a relayed receipt delivered that head office never recorded (Batch 2,
+ * P-08 · hard rule #10).
+ */
+export const CONCURRENT_CHANGE_CODE = 'concurrent_change';
+
+/**
  * Read the error code out of a refusal body — the ONE field the transport reads from any response. The body
  * of a 409 decides duplicate-versus-conflict; nothing else of it is kept (a body can echo the request, and the
  * request carries the header this file must never write down, hard rule #4).
@@ -271,6 +280,7 @@ export function classify(status: number, errorCode?: string): SendOutcome['statu
   if (status >= 200 && status < 300) return 'accepted';
   if (status === 409) {
     if (errorCode === IDEMPOTENCY_CONFLICT_CODE) return 'rejected';
+    if (errorCode === CONCURRENT_CHANGE_CODE) return 'retryable';
     if (errorCode !== undefined) return 'accepted';
     return 'retryable';
   }
@@ -344,7 +354,9 @@ export function httpTransport(options: HttpTransportOptions): SyncTransport {
           status: outcome,
           // The status, not the body. A body can echo the request, and the request carries the
           // header we must never write down.
-          reason: response.status === 409
+          reason: response.status === 409 && errorCode === CONCURRENT_CHANGE_CODE
+            ? `another change reached head office first for ${event.type} (${CONCURRENT_CHANGE_CODE}, nothing saved) — not delivered; it will be sent again and judged on the figures as they are now`
+            : response.status === 409
             ? `the cloud answered 409 for ${event.type} with no readable reason — not assumed delivered; it will be sent again`
             : `the cloud answered ${response.status} for ${event.type}${errorCode === undefined ? '' : ` (${errorCode})`}`,
         };
