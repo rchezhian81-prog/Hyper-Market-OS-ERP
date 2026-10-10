@@ -94,7 +94,7 @@ import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
 import type { AvailableLot, Transfer, TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
-import type { ProductionDeps, StoredRun, StoredRelease } from '../../inventory/src/production';
+import { recipeDigest, type ProductionDeps, type StoredRun, type StoredRelease } from '../../inventory/src/production';
 import type { WeighedCostingDeps, StoredWeighedRun } from '../../inventory/src/weighed-costing';
 import type { Recipe } from '../../../packages/production/src/recipe';
 import type { SupplierPortalDeps, PartnerConfig, SubmissionRecord, StatementLine, PartnerAuditEntry } from '../../purchase/src/supplier-portal';
@@ -172,7 +172,7 @@ import type { Hasher } from '../../../packages/audit/src/audit-trail';
 import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } from '../../../packages/audit/src/index';
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
-import { project, projectBatches, EFFECT_ON_HAND } from '../../inventory/src/index';
+import { project, projectBatches, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
@@ -3490,7 +3490,7 @@ export function concessionAdapter(input: {
           ms.map((m): ValuationMovement => ({
             productId: m.productId, locationId: m.locationId,
             effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-            isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
             ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
           })),
           'INR',
@@ -4460,7 +4460,8 @@ async function permissionsHeldBy(store: EventStore, tenantId: string, userId: st
  * `transferred_in` that arrived with the sending location's unit cost recorded at dispatch — the value that left the
  * source is the value that enters the destination. Every valuation reader maps through this ONE rule.
  */
-const carriesCost = (m: Movement): boolean => m.kind === 'received' || (m.kind === 'transferred_in' && m.unitCostMinor !== undefined);
+const carriesCost = (m: Movement): boolean => m.kind === 'received'
+  || ((m.kind === 'transferred_in' || m.kind === 'produced') && m.unitCostMinor !== undefined); // FUL-01: a released batch enters at the run's cost
 
 /**
  * The cloud's own unit cost for a product (SP-2b · F07): the weighted average of what it cost to buy, folded from the
@@ -4475,7 +4476,7 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
   const rows = weightedAverageValuation(
     moves.map((m): ValuationMovement => ({
       productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-      isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
     })),
     'INR',
@@ -5660,17 +5661,26 @@ export function productionAdapter(input: {
       return latest;
     },
 
+    // FUL-08: an explicit VERSION per recipe, judged by a digest over the COMPLETE recipe. The same recipe as the current
+    // version collapses; any change — even 100 g → 150 g flour with the same number of inputs — is the next version, kept
+    // beside the earlier ones. Returning to an older recipe is a new version too (never a silent collapse onto history).
     recordRecipe: async (tenantId, recipe) => {
+      const digest = recipeDigest(recipe);
+      const history = (await allOf<Recipe & { readonly digest?: string; readonly version?: number }>(input.store, tenantId, productionStream, 'RecipeRegistered'))
+        .filter((r) => r.recipeId === recipe.recipeId);
+      const current = history.at(-1);
+      const currentDigest = current === undefined ? undefined : current.digest ?? recipeDigest(current);
+      if (currentDigest === digest) return { version: current?.version ?? history.length, digest, changed: false };
+      const version = history.length + 1;
       await input.store.append(tenantId, productionStream, makeEvent({
-        id: `recipe-${recipe.recipeId}`,
+        id: `recipe-${recipe.recipeId}-v${version}`,
         type: 'RecipeRegistered',
         occurredAt: input.now(),
-        // A light signature in the key so re-registering the SAME recipe collapses, but a genuinely
-        // changed recipe (different output, input count or shelf life) is a new fact and supersedes.
-        idempotencyKey: `recipe-${tenantId}-${recipe.recipeId}-${recipe.outputQuantityMinor}-${recipe.inputs.length}-${recipe.shelfLifeHours}`,
+        idempotencyKey: `recipe-${tenantId}-${recipe.recipeId}-v${version}-${digest}`,
         source: 'api/inventory',
-        payload: recipe,
+        payload: { ...recipe, digest, version },
       }));
+      return { version, digest, changed: true };
     },
 
     ingredientCost: async (tenantId, productId) => {
@@ -5698,10 +5708,11 @@ export function productionAdapter(input: {
       return here?.onHandMinor ?? 0;
     },
 
+    // FUL-01: only runs recorded BEFORE production posted its consumption to M08 — a newer run's flour is already off the ledger.
     priorConsumption: async (tenantId, locationId) => {
       const consumed: Record<string, number> = {};
       for (const run of await foldRuns(tenantId)) {
-        if (run.locationId !== locationId) continue;
+        if (run.locationId !== locationId || run.ledgerMovementIds !== undefined) continue;
         for (const c of run.consumed) consumed[c.productId] = (consumed[c.productId] ?? 0) + c.quantityMinor;
       }
       return consumed;
@@ -5714,30 +5725,46 @@ export function productionAdapter(input: {
 
     run: async (tenantId, runId) => (await foldRuns(tenantId)).find((r) => r.runId === runId),
 
-    recordRun: async (tenantId, run) => {
-      await input.store.append(tenantId, productionStream, makeEvent({
-        id: `prod-run-${run.runId}`,
-        type: 'ProductionRunCommitted',
-        occurredAt: run.at,
-        // The run's own id — a re-sent run collapses rather than consuming the ingredients twice
-        // (append-only, #2). A re-make is a NEW run id.
-        idempotencyKey: `prod-run-${tenantId}-${run.runId}`,
-        source: 'api/inventory',
-        payload: run,
-      }));
+    // FUL-01: the run record and its ingredients' M08 movements commit together, under the location's stock guard.
+    recordRun: async (tenantId, run, movements, expectedStockVersion) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: productionStream,
+          event: makeEvent({
+            id: `prod-run-${run.runId}`,
+            type: 'ProductionRunCommitted',
+            occurredAt: run.at,
+            // The run's own id — a re-sent run collapses rather than consuming the ingredients twice
+            // (append-only, #2). A re-make is a NEW run id.
+            idempotencyKey: `prod-run-${tenantId}-${run.runId}`,
+            source: 'api/inventory',
+            payload: run,
+          }),
+        },
+        ...movementEntries(tenantId, movements),
+      ], expectedStockVersion === undefined ? undefined : { guard: { key: stockGuardKey(run.locationId), expectedVersion: expectedStockVersion } });
     },
 
-    recordRelease: async (tenantId, release) => {
-      await input.store.append(tenantId, productionStream, makeEvent({
-        id: `prod-release-${release.runId}`,
-        type: 'ProductionBatchReleased',
-        occurredAt: release.releasedAt,
-        // The run's own id — a re-sent release collapses (append-only, #2); the batch is released once.
-        idempotencyKey: `prod-release-${tenantId}-${release.runId}`,
-        source: 'api/inventory',
-        payload: release,
-      }));
+    // FUL-01: the release record and the finished batch's `produced` movement commit together.
+    recordRelease: async (tenantId, release, movements) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: productionStream,
+          event: makeEvent({
+            id: `prod-release-${release.runId}`,
+            type: 'ProductionBatchReleased',
+            occurredAt: release.releasedAt,
+            // The run's own id — a re-sent release collapses (append-only, #2); the batch is released once.
+            idempotencyKey: `prod-release-${tenantId}-${release.runId}`,
+            source: 'api/inventory',
+            payload: release,
+          }),
+        },
+        ...movementEntries(tenantId, movements),
+      ]);
     },
+
+    stockVersion: (tenantId, locationId) => input.store.guardVersion(tenantId, stockGuardKey(locationId)),
 
     enabledDepartments: async (tenantId) => {
       const enabled = await allOf<{ departmentId: string }>(input.store, tenantId, productionStream, 'ProductionDepartmentEnabled');
@@ -6241,7 +6268,7 @@ export function inventoryAdapter(input: {
         movements.map((m): ValuationMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
         'INR',
@@ -6265,7 +6292,7 @@ export function inventoryAdapter(input: {
         movements.map((m): DatedMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
           occurredAt: m.occurredAt, batchId: m.batchId ?? null,
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
@@ -6294,7 +6321,7 @@ export function inventoryAdapter(input: {
             .map((m): ValuationMovement => ({
               productId: m.productId, locationId: m.locationId,
               effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-              isPurchaseReceipt: carriesCost(m), isTransferOut: m.kind === 'transferred_out',
+              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind),
               ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
             })),
           'INR',

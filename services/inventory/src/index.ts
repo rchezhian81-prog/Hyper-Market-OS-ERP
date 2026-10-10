@@ -51,7 +51,13 @@ export type MovementKind =
   | 'received' | 'sold' | 'returned' | 'transferred_in' | 'transferred_out'
   | 'adjusted' | 'wasted' | 'counted'
   /** SP-7b: a rejected over-delivery the handheld's scans had put on-hand goes back to the supplier (goods-receipt.ts). */
-  | 'returned_to_supplier';
+  | 'returned_to_supplier'
+  /** Batch 2 · FUL-01: an ingredient a committed production run used up (production.ts) — its value moves into the run's
+   *  output, it is not a cost of goods sold. Only the production routes post it. */
+  | 'consumed_in_production'
+  /** Batch 2 · FUL-01: a finished production batch released by quality (production.ts) — on-hand at the run's own
+   *  output unit cost. Only the production release posts it. */
+  | 'produced';
 
 /**
  * Who owns a lot of stock on the store's shelves (M27-FR-02, M08 ownership field). Absent on a
@@ -63,9 +69,18 @@ export type StockOwnership = 'own' | 'concession' | 'consignment' | 'customer_pr
 
 /** What each kind does to on-hand. Declared, never inferred from a sign on the quantity. */
 export const EFFECT_ON_HAND: Readonly<Record<MovementKind, 1 | -1>> = {
-  received: 1, returned: 1, transferred_in: 1, counted: 1, adjusted: 1,
-  sold: -1, transferred_out: -1, wasted: -1, returned_to_supplier: -1,
+  received: 1, returned: 1, transferred_in: 1, counted: 1, adjusted: 1, produced: 1,
+  sold: -1, transferred_out: -1, wasted: -1, returned_to_supplier: -1, consumed_in_production: -1,
 };
+
+/** Batch 2 · FUL-01: the kinds only the production routes post — never accepted on the plain movements route. */
+export const PRODUCTION_ONLY_KINDS: readonly MovementKind[] = ['consumed_in_production', 'produced'];
+
+/**
+ * An issue whose VALUE moves on rather than being spent (valuation's `isTransferOut`): stock sent to another of our own
+ * places, or an ingredient used up in production (its value is carried by the output). Never cost of goods sold.
+ */
+export const movesValueOnward = (kind: MovementKind): boolean => kind === 'transferred_out' || kind === 'consumed_in_production';
 
 export interface Movement {
   readonly movementId: string;
@@ -386,6 +401,14 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         // who genuinely holds the authority (none of which this sync route can enforce, and where `enteredBy`
         // and `approvedBy` are unverified body strings). Refuse it here rather than let a loss through the
         // ungoverned door. Upward corrections (`adjusted`) still flow here — they add stock, they do not remove it.
+        if ((PRODUCTION_ONLY_KINDS as readonly string[]).includes(m.kind)) {
+          throw apiError(422, {
+            code: 'production_uses_the_production_routes',
+            whatHappened: `A "${m.kind}" movement is posted only by a committed production run or its quality release — never typed here.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Commit the run at POST /v1/production/runs/:runId and release it at …/release. Nothing was appended here.',
+          });
+        }
         if (m.kind === 'wasted') {
           throw apiError(422, {
             code: 'write_off_uses_the_write_off_route',
