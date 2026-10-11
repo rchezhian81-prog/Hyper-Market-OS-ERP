@@ -5,6 +5,54 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Round 6 — the verifier's security findings closed; ten owner decisions built (11 October 2026)
+
+- **Security fixed:**
+  - Only the store's own store computer may report its sync time and what it holds; a cashier, a manager or the owner is
+    refused (EA-01).
+  - Provider delivery reports must carry the provider's signature, be fresh, and not be replayed. A staff session can no
+    longer mark a message delivered (PF-10).
+  - Erasure is crypto-shredding (ADR-0025). Personal text is sealed under a key per customer, and erasing destroys the
+    key, so the text cannot be recovered even from the raw ledger or a restored backup (FUL-12).
+  - AI evidence is read on the server, never taken from the caller (EA-08).
+  - The backup job reports its own result, and a missed backup alerts by itself (PA-12, part).
+  - Database migrations hold a lock, so two servers starting together cannot both apply one.
+- **Owner decisions built:**
+  - OB-39 average buying cost (margin on the box Today and in head office profitability);
+  - OB-41 B2B bank-transfer note;
+  - OB-42 cap of 2 per week set by the seed;
+  - OB-44 opening-load reversal;
+  - OB-46 exact case cost;
+  - OB-50 rehearsal reconciles refunds and stock;
+  - OB-51 attendance export up to 92 days;
+  - OB-53 creditors through the clearing account.
+- **Also built:**
+  - Supplier bills post their input GST to the books, and the GST report shows tax paid and net tax.
+  - Opening books from the old trial balance, signed off by a second finance person.
+  - History, attachments and open orders load from one command.
+  - A full-size test load ran: 15,000 products, 32,000 stock lines, 4 locations — about 56 minutes, matching to the paisa.
+  - Every business domain exports.
+  - The drill-through has a period and filters.
+  - The brief worker is proven inside the served API.
+  - Replenishment runs on head office's ledger.
+  - Customer facts follow credit and debit notes.
+- **Independent verifier (11 Oct):**
+  - **Newly verified complete:** EA-01, PF-10, FUL-12, EA-08, EA-05, EA-07, FUL-11, FUL-10, FUL-09, SF-11, EA-09, SF-10.
+  - **Still pending, round 7 running:**
+    - PA-12: a store manager can hand-post a "good backup" record;
+    - PA-08: a replayed signed failure report counts twice, and receipts are not bound to the provider;
+    - GT-02: the rehearsal's sales emit no stock movements, so the stock check is not exercised;
+    - GT-05: OB-52 (the window opens at the GO and lasts 48 hours), and the reversal items must come from the load
+      itself;
+    - EA-10: the status labels are being refreshed from the evidence.
+- **Matrix (Table A):** 67 verified complete, 5 pending software, 1 approved deferral, 1 staff/device acceptance.
+- **Owner decisions recorded:** OB-51, OB-52, OB-53.
+- **Operator actions (no code):**
+  - Give the backup job its own sign-in (backup runbook).
+  - Set a separate `PII_KEY_ENCRYPTION_KEY` in production, backed up apart from the database (ADR-0025).
+  - On a restore, pass `--shred-list-from` the live database.
+- **Not claimed:** staff UAT; any live provider; real data.
+
 ## Coordinated programme · Rounds 4 and 5 — the whole store day passes end to end; 12 owner decisions recorded (10–11 October 2026)
 
 - **Final integrated store acceptance (the owner's first priority):**
