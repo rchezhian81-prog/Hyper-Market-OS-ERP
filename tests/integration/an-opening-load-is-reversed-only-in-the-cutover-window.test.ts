@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -11,6 +11,8 @@ import { InMemoryEventStore, SqlEventStore, type EventStore } from '../../packag
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { planLoad, executeLoad, type ExtractBundle, type LoadRequest } from '../../packages/migration/src/index';
+import { STREAM, streamName } from '../../services/api/src/adapters';
+import { prepareCutoverEvidence, askTheGate } from '../support/cutover-go';
 
 /**
  * **OB-44 "A" (owner, 11 Oct 2026, "Trial: new shop; cutover: reverse") — an opening load is reversed only inside the real
@@ -21,8 +23,14 @@ import { planLoad, executeLoad, type ExtractBundle, type LoadRequest } from '../
  * points, two supplier bills (signed and posted) and the old trial balance (signed and posted) — is loaded through the real
  * routes, on the in-memory store and, with DATABASE_URL, on REAL PostgreSQL. Then:
  *
- *   1. outside any cutover window (none recorded; one already closed) the reversal is refused by name, nothing recorded; a
- *      store manager cannot ask at all; a request for a card that has been spent since is refused by name;
+ *   0. OB-52 "A" (owner, 11 Oct 2026, "Opens at your GO", 48 hours): the window is never typed — the old window route is
+ *      gone (410). Before any GO the reversal is refused (`no_cutover_go`); a NO GO decision (checks still failing) opens
+ *      nothing, nor does a GO said by anybody but the owner; the gate's GO — every check passed on head office's records
+ *      and the owner, signed in, said GO — is kept and audited, and opens the window, which closes exactly 48 hours later;
+ *      a later GO never moves it; a restart reads the same window;
+ *   1. after the close the reversal is refused by name (`outside_cutover_window`), nothing recorded; a request made inside
+ *      the window whose approval arrives after the close is refused and nothing is reversed; a store manager cannot ask at
+ *      all; a request for a card that has been spent since is refused by name;
  *   2. inside the window the owner asks; the SAME person cannot approve (`self_approval`); a second owner approves;
  *   3. every opening is taken back out by its own domain's record — stock out at its own cost, the cards adjusted to zero, the
  *      invoice credited, the points reversed, the supplier bills reversed and their postings undone, the trial balance's
@@ -130,7 +138,18 @@ async function loadedShop(h: ApiHarness, t: string) {
 }
 
 const hour = 3_600_000;
-const iso = (ms: number) => new Date(ms).toISOString();
+afterEach(() => { vi.useRealTimers(); });
+/** Move the clock (Date only — the database pool's timers stay real) to `ms`. */
+const clockAt = (ms: number): void => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(ms); };
+const SHOP_PEOPLE = { ownerId: OPERATOR, signerId: APPROVER, reconcilerId: MANAGER, deltaLocationId: 'S1-DELTA', storeIds: [STORE] };
+const GO_STREAM = streamName(STREAM.migration, 'cutover-go');
+/** The gate brought to GO through the real routes; returns the recorded GO time. */
+async function goAt(h: ApiHarness, t: string, cutoverId = 'C-1'): Promise<number> {
+  await prepareCutoverEvidence(h, { tenantId: t, ...SHOP_PEOPLE });
+  const g = await askTheGate(h, t, OPERATOR, cutoverId, OPERATOR);
+  expect(g.decision.go, JSON.stringify(g.decision.failed)).toBe(true);
+  return Date.parse(g.recordedGo!.goAt);
+}
 
 describe.each(backings)('OB-44 an opening load is reversed only in the cutover window — on $name', ({ backing }) => {
   it('outside the window and by one person it is refused; inside it, a second approver reverses every opening by its own record, kept, read back to zero', async () => {
@@ -140,15 +159,47 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     const call = await loadedShop(h, t);
     const ask = (userId: string, cutoverId: string, key?: string) => call('POST', `/v1/migration/opening-reversals/${LOAD}`, userId, { cutoverId, reason: 'wrong extract loaded on cutover night', ...REQUEST }, key);
 
-    // 1. No window at all; a window already closed; a store manager — each refused, nothing recorded.
-    expect(codeOf(await ask(OPERATOR, 'C-1'))).toBe('outside_cutover_window');
-    expect((await call('POST', '/v1/migration/cutover/windows/C-old', OPERATOR, { opensAt: iso(Date.now() - 48 * hour), closesAt: iso(Date.now() - 40 * hour) })).status).toBe(201);
-    expect(codeOf(await ask(OPERATOR, 'C-old'))).toBe('outside_cutover_window');
-    expect((await call('POST', '/v1/migration/cutover/windows/C-1', MANAGER, { opensAt: iso(Date.now() - hour), closesAt: iso(Date.now() + hour) })).status).toBe(403);
+    // 0. No GO yet: refused by name, nothing recorded. A typed window is no longer taken (410), and records nothing.
+    expect(codeOf(await ask(OPERATOR, 'C-1'))).toBe('no_cutover_go');
+    const typedWindow = await call('POST', '/v1/migration/cutover/windows/C-1', OPERATOR, { opensAt: new Date(Date.now() - hour).toISOString(), closesAt: new Date(Date.now() + hour).toISOString() });
+    expect(typedWindow.status).toBe(410);
+    expect(codeOf(typedWindow)).toBe('cutover_window_is_set_by_the_go');
+    expect(codeOf(await ask(OPERATOR, 'C-1'))).toBe('no_cutover_go');
+    expect((await call('GET', '/v1/migration/cutover/windows/C-1', OPERATOR)).body).toMatchObject({ go: false, window: null, openNow: false });
+    // The owner says GO while the gate's checks still fail: NO GO — nothing is recorded, nothing opens.
+    const noGo = await askTheGate(h, t, OPERATOR, 'C-1', OPERATOR);
+    expect(noGo.decision.go).toBe(false);
+    expect(noGo.recordedGo).toBeUndefined();
+    expect(codeOf(await ask(OPERATOR, 'C-1'))).toBe('no_cutover_go');
+    // Every check passes, but a person who is not the owner says GO: no GO, nothing opens.
+    await prepareCutoverEvidence(h, { tenantId: t, ...SHOP_PEOPLE });
+    const notOwner = await askTheGate(h, t, APPROVER, 'C-1', OPERATOR);
+    expect(notOwner.decision.failed).toEqual(['owner_go']);
+    expect(notOwner.recordedGo).toBeUndefined();
+    expect(codeOf(await ask(OPERATOR, 'C-1'))).toBe('no_cutover_go');
+    expect(await b.store.readStream(t, GO_STREAM)).toHaveLength(0);
     expect((await call('GET', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR)).status).toBe(404);
 
-    // 2. The owner opens tonight's window and asks; a manager may not ask; the asker may not approve; a second owner does.
-    expect((await call('POST', '/v1/migration/cutover/windows/C-1', OPERATOR, { opensAt: iso(Date.now() - hour), closesAt: iso(Date.now() + hour) })).status).toBe(201);
+    // The owner, signed in, gives GO: recorded, audited, and it opens the window — exactly 48 hours.
+    const before = Date.now();
+    const go = await askTheGate(h, t, OPERATOR, 'C-1', OPERATOR);
+    expect(go.decision.go).toBe(true);
+    expect(go.recordedGo).toMatchObject({ cutoverId: 'C-1', goBy: OPERATOR });
+    const goMs = Date.parse(go.recordedGo!.goAt);
+    expect(goMs).toBeGreaterThanOrEqual(before);
+    expect(go.reversalWindow).toEqual({ cutoverId: 'C-1', goBy: OPERATOR, opensAt: new Date(goMs).toISOString(), closesAt: new Date(goMs + 48 * hour).toISOString() });
+    // A later GO on the same cutover never moves the window: the first stands.
+    await new Promise((r) => { setTimeout(r, 5); });
+    expect((await askTheGate(h, t, OPERATOR, 'C-1', OPERATOR)).recordedGo?.goAt).toBe(go.recordedGo!.goAt);
+    expect(await b.store.readStream(t, GO_STREAM)).toHaveLength(1);
+    expect((await call('GET', '/v1/migration/cutover/windows/C-1', OPERATOR)).body).toMatchObject({ go: true, openNow: true, window: go.reversalWindow });
+    const trail = await call('GET', '/v1/audit/trail', OPERATOR);
+    expect(trail.status).toBe(200);
+    expect(JSON.stringify(trail.body).match(/migration\.cutover\.go/g)).toHaveLength(1);
+    // A different cutover has no GO of its own.
+    expect(codeOf(await ask(OPERATOR, 'C-other'))).toBe('no_cutover_go');
+
+    // 2. Inside the window the owner asks; a manager may not ask; the asker may not approve; a second owner does.
     expect((await ask(MANAGER, 'C-1')).status).toBe(403);
     const asked = await ask(OPERATOR, 'C-1', 'ask-1');
     expect(asked.status).toBe(201);
@@ -173,10 +224,12 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     expect(by('ledger').map((l) => [l.key, l.openedMinor, l.netMinor])).toEqual(TB.map((l) => [l.accountCode, l.debitMinor - l.creditMinor, 0]).sort((x, y) => (String(x[0]) < String(y[0]) ? -1 : 1)));
 
     // The domains' own reads agree.
-    const avail = ((await call('GET', '/v1/inventory/availability', OPERATOR)).body as { rows: { productId: string; onHandMinor: number }[] }).rows;
+    // (The cutover's own delta — one P-DELTA in at S1-DELTA, applied for the gate — is not the load's and is left out.)
+    const avail = ((await call('GET', '/v1/inventory/availability', OPERATOR)).body as { rows: { productId: string; onHandMinor: number }[] }).rows.filter((r) => r.productId !== 'P-DELTA');
+    expect(avail.length).toBeGreaterThan(0);
     expect(avail.every((r) => r.onHandMinor === 0)).toBe(true);
     const valuation = (await call('GET', '/v1/inventory/valuation', OPERATOR)).body as { totalValueMinor: number; rows: { cogs: { minor: number } }[] };
-    expect(valuation.totalValueMinor).toBe(0);
+    expect(valuation.totalValueMinor).toBe(100); // the delta's one unit at 100 paise; every unit the load opened is back out
     expect(valuation.rows.every((r) => r.cogs.minor === 0)).toBe(true); // undone, never "sold"
     for (const id of ['GV-1', 'SC-1']) expect((await call('GET', `/v1/stored-value/instruments/${id}`, OPERATOR)).body).toMatchObject({ balanceMinor: 0 });
     expect((await call('GET', '/v1/b2b/collections/C-1/ageing', OPERATOR, undefined, undefined, { asOf: COUNT_DATE })).body).toMatchObject({ totalOutstandingMinor: 0 });
@@ -194,7 +247,7 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
 
     // Kept, never erased: the opening records are all still there beside their reversals.
     const moved = await b.store.readStream(t, 'inventory', { type: 'InventoryMoved' });
-    const kinds = moved.map((e) => (e.event.payload as { kind: string }).kind);
+    const kinds = moved.map((e) => e.event.payload as { kind: string; productId: string }).filter((m) => m.productId !== 'P-DELTA').map((m) => m.kind); // not the gate's delta
     expect(kinds.filter((k) => k === 'received')).toHaveLength(4);
     expect(kinds.filter((k) => k === 'opening_reversed')).toHaveLength(4);
     expect((((await call('GET', '/v1/purchase/opening-balances', OPERATOR, undefined, undefined, { loadId: LOAD })).body) as { openings: { reversed?: boolean }[] }).openings.every((o) => o.reversed === true)).toBe(true);
@@ -206,6 +259,8 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     const restarted = apiHarness(b);
     const rb2 = (await restarted.request({ method: 'GET', path: `/v1/migration/opening-reversals/${LOAD}`, userId: OPERATOR, tenantId: t })).body as { reversedToZero: boolean };
     expect(rb2.reversedToZero).toBe(true);
+    // …and the window the GO opened, from the record alone.
+    expect((await restarted.request({ method: 'GET', path: '/v1/migration/cutover/windows/C-1', userId: OPERATOR, tenantId: t })).body).toMatchObject({ go: true, window: go.reversalWindow });
     // The plain movements route never takes the reversal kind.
     const typed = await call('POST', '/v1/inventory/movements', OPERATOR, { movementId: 'x-1', productId: 'P-1', locationId: STORE, kind: 'opening_reversed', quantityMinor: 1, uom: 'each', occurredAt: new Date().toISOString(), enteredBy: OPERATOR });
     expect(codeOf(typed)).toBe('opening_reversal_uses_its_own_route');
@@ -215,11 +270,59 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     const t = randomUUID();
     const h = apiHarness(backing());
     const call = await loadedShop(h, t);
-    expect((await call('POST', '/v1/migration/cutover/windows/C-1', OPERATOR, { opensAt: iso(Date.now() - hour), closesAt: iso(Date.now() + hour) })).status).toBe(201);
+    await goAt(h, t);
     expect((await call('POST', '/v1/stored-value/instruments/GV-1/redeem', OPERATOR, { movementId: 'spend-1', amountMinor: 5_000, channel: 'store' })).status).toBeLessThan(300);
     const refused = await call('POST', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR, { cutoverId: 'C-1', reason: 'wrong extract', ...REQUEST });
     expect(codeOf(refused)).toBe('opening_cannot_be_reversed_as_loaded');
     expect((refused.body as { error: { whatHappened: string } }).error.whatHappened).toMatch(/GV-1 has moved since it opened/);
     expect((await call('GET', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR)).status).toBe(404);
   }, 180_000);
+
+  it('OB-52: after the GO\'s 48 hours a request is refused by name, and nothing is recorded — restart included', async () => {
+    const t = randomUUID();
+    const b = backing();
+    const h = apiHarness(b);
+    const call = await loadedShop(h, t);
+    const goMs = await goAt(h, t);
+    // One minute before the close: still open (read only — nothing asked).
+    clockAt(goMs + 48 * hour - 60_000);
+    expect((await call('GET', '/v1/migration/cutover/windows/C-1', OPERATOR)).body).toMatchObject({ openNow: true });
+    // One minute after the close: refused, nothing recorded.
+    clockAt(goMs + 48 * hour + 60_000);
+    const late = await call('POST', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR, { cutoverId: 'C-1', reason: 'found the wrong extract too late', ...REQUEST });
+    expect(late.status).toBe(422);
+    expect(codeOf(late)).toBe('outside_cutover_window');
+    expect((late.body as { error: { whatHappened: string } }).error.whatHappened).toContain(new Date(goMs + 48 * hour).toISOString());
+    expect((await call('GET', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR)).status).toBe(404);
+    // A new GO on the same cutover does not reopen it: the first GO stands.
+    expect((await askTheGate(h, t, OPERATOR, 'C-1', OPERATOR)).recordedGo?.goAt).toBe(new Date(goMs).toISOString());
+    const restarted = apiHarness(b);
+    const again = await restarted.request({ method: 'POST', path: `/v1/migration/opening-reversals/${LOAD}`, userId: OPERATOR, tenantId: t, idempotencyKey: 'late-2', body: { cutoverId: 'C-1', reason: 'found the wrong extract too late', ...REQUEST } });
+    expect(codeOf(again)).toBe('outside_cutover_window');
+    expect((await restarted.request({ method: 'GET', path: '/v1/migration/cutover/windows/C-1', userId: OPERATOR, tenantId: t })).body).toMatchObject({ go: true, openNow: false });
+  }, 240_000);
+
+  it('OB-52: a request made inside the window whose approval arrives after the close is refused, and nothing is reversed', async () => {
+    const t = randomUUID();
+    const b = backing();
+    const h = apiHarness(b);
+    const call = await loadedShop(h, t);
+    const goMs = await goAt(h, t);
+    clockAt(goMs + 47 * hour);
+    const asked = await call('POST', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR, { cutoverId: 'C-1', reason: 'wrong extract loaded on cutover night', ...REQUEST });
+    expect(asked.status).toBe(201);
+    clockAt(goMs + 48 * hour + 1_000);
+    // The asker still cannot approve (self-approval is refused first, whatever the time).
+    expect(codeOf(await call('POST', `/v1/migration/opening-reversals/${LOAD}/approval`, OPERATOR, {}))).toBe('self_approval');
+    const late = await call('POST', `/v1/migration/opening-reversals/${LOAD}/approval`, APPROVER, {});
+    expect(late.status).toBe(422);
+    expect(codeOf(late)).toBe('outside_cutover_window');
+    const rb = (await call('GET', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR)).body as { approval: unknown; reversedToZero: boolean; position: { reversedMinor: number }[] };
+    expect(rb.approval).toBeNull();
+    expect(rb.reversedToZero).toBe(false);
+    expect(rb.position.every((l) => l.reversedMinor === 0)).toBe(true);
+    const moved = await b.store.readStream(t, 'inventory', { type: 'InventoryMoved' });
+    expect(moved.filter((e) => (e.event.payload as { kind: string }).kind === 'opening_reversed')).toHaveLength(0);
+    expect(await b.store.readStream(t, streamName(STREAM.migration, 'opening-reversals'), { type: 'OpeningReversalApproved' })).toHaveLength(0);
+  }, 240_000);
 });

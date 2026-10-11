@@ -43,6 +43,8 @@ import {
   proposeExclusion, approveExclusion, exclusionPosition, assessRetirement,
   type HistoryExclusion, type ExclusionScope, type LegacyArchive,
 } from '../../../packages/migration/src/history';
+import { reversalWindowOf, type CutoverGo } from './opening-reversal';
+import type { AuditEntry } from '../../../packages/audit/src/index';
 import { witnessRoutes, applicableSignatures, findingsDigest, type ExtractionRun, type RecordedFinding, type StoredSignature } from './witness';
 import { parallelRunRoutes, ledgerCutoverEvidence, type ParallelRunPolicy, type RecordedParallelDay, type RecordedRollback } from './parallel-run';
 import { decisionRoutes, type RefusedDecision } from './decisions';
@@ -406,6 +408,13 @@ export interface MigrationDeps {
   /** The store computer's seal key (ADR-0023, amended 2b-vi-c-3): a relayed decision's decider is checked against the
    *  box's seal. Absent on a bare stub — then nothing is checked and nothing is claimed. */
   readonly tillSealKey?: Buffer;
+  /**
+   * OB-52 "A" (owner, 11 Oct 2026): the cutover GO the gate decided with the owner's signed-in GO is KEPT — it opens the
+   * opening-load reversal window, which closes 48 hours later. Append once per cutover; resolve the GO that STANDS (the
+   * first one — a later GO never moves the window). Absent on a bare stub: nothing is recorded and nothing is claimed.
+   */
+  readonly recordCutoverGo?: (tenantId: string, go: CutoverGo) => Promise<CutoverGo> | CutoverGo;
+  readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
 
@@ -1055,12 +1064,23 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         };
         const derived = buildCutoverChecklist({ cutoverId, tenantId: ctx.tenantId, evidence });
         const decision = decideCutover(derived.checklist);
+        // OB-52 "A": a GO — every check passed on head office's records AND the owner, signed in, said GO — is kept on the
+        // record. It is what opens the opening-load reversal window (closing 48 hours later); no date is ever typed.
+        let recordedGo: CutoverGo | undefined;
+        if (decision.go && ownerGo !== undefined && deps.recordCutoverGo !== undefined) {
+          const go: CutoverGo = { cutoverId, goBy: ownerGo, goAt: deps.now() };
+          recordedGo = await deps.recordCutoverGo(ctx.tenantId, go);
+          if (recordedGo.goAt === go.goAt && recordedGo.goBy === go.goBy) {
+            await deps.recordAudit?.(ctx.tenantId, { actorId: ctx.userId, action: 'migration.cutover.go', objectType: 'cutover', objectId: cutoverId, at: go.goAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: {}, after: { goBy: go.goBy, goAt: go.goAt }, correlationId: cutoverId });
+          }
+        }
         return {
           status: 200,
           body: {
             decision, checks: derived.checks, notKnown: derived.notKnown, detail: derived.detail,
             ignoredFromCaller,
             callerSupplied: edge === undefined ? [] : ['edgeUnsyncedItems'],
+            ...(recordedGo === undefined ? {} : { recordedGo, reversalWindow: reversalWindowOf(recordedGo) }),
           },
         };
       },

@@ -219,7 +219,7 @@ import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/i
 import type { AccountOpeningsDeps, AccountOpeningsRecord, AccountOpeningsSignOff } from '../../finance/src/account-openings';
 import { openingEntryId, openingReversalEntryId } from '../../finance/src/account-openings';
 import { postJournal } from '../../finance/src/index';
-import type { OpeningReversalDeps, CutoverWindow, OpeningReversalRequest, OpeningReversalApproval, ReversalDomainLine } from '../../migration/src/opening-reversal';
+import type { OpeningReversalDeps, CutoverGo, OpeningReversalRequest, OpeningReversalApproval, ReversalDomainLine } from '../../migration/src/opening-reversal';
 import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
 import type { ConcessionTagDeps, ConcessionTradingBreach } from '../../finance/src/concession-tags';
 import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlertRules } from '../../platform/src/observed-health';
@@ -7625,6 +7625,13 @@ export function accountOpeningsAdapter(input: { readonly store: EventStore; read
  * own domain's compensating record (never a delete), each keyed on the load so a re-run lands only what is missing.
  */
 const OPENING_REVERSALS_STREAM = streamName(STREAM.migration, 'opening-reversals');
+/** OB-52: the cutover GOs the gate recorded — one per cutover (keyed), the first standing. */
+const CUTOVER_GO_STREAM = streamName(STREAM.migration, 'cutover-go');
+const cutoverGosOf = (store: EventStore, tenantId: string): Promise<readonly CutoverGo[]> => allOf<CutoverGo>(store, tenantId, CUTOVER_GO_STREAM, 'CutoverGoRecorded');
+async function recordCutoverGoIn(store: EventStore, tenantId: string, go: CutoverGo): Promise<CutoverGo> {
+  const res = await store.append(tenantId, CUTOVER_GO_STREAM, makeEvent({ id: `cutover-go-${go.cutoverId}-${randomUUID()}`, type: 'CutoverGoRecorded', occurredAt: go.goAt, idempotencyKey: `cutover-go-${tenantId}-${go.cutoverId}`, source: 'api/migration', payload: go }));
+  return res.record.event.payload as CutoverGo;
+}
 export function openingReversalAdapter(input: { readonly store: EventStore; readonly now: () => string }): OpeningReversalDeps {
   const stockOf = async (tenantId: string, loadId: string): Promise<{ opened: Movement[]; reversed: Movement[] }> => {
     const grnIds = new Set((await goodsReceiptAdapter(input).all(tenantId)).map((g) => g.grnId)
@@ -7662,10 +7669,8 @@ export function openingReversalAdapter(input: { readonly store: EventStore; read
   };
   return {
     now: input.now,
-    windows: (tenantId) => allOf<CutoverWindow>(input.store, tenantId, OPENING_REVERSALS_STREAM, 'CutoverWindowRecorded'),
-    recordWindow: async (tenantId, w) => {
-      await input.store.append(tenantId, OPENING_REVERSALS_STREAM, makeEvent({ id: `cutover-window-${w.cutoverId}-${randomUUID()}`, type: 'CutoverWindowRecorded', occurredAt: w.recordedAt, idempotencyKey: `cutover-window-${tenantId}-${w.cutoverId}-${w.opensAt}-${w.closesAt}`, source: 'api/migration', payload: w }));
-    },
+    // OB-52: the window is the recorded GO's (round-6 `CutoverWindowRecorded` typed windows are kept but no longer read).
+    gos: (tenantId) => cutoverGosOf(input.store, tenantId),
     requests: (tenantId) => allOf<OpeningReversalRequest>(input.store, tenantId, OPENING_REVERSALS_STREAM, 'OpeningReversalRequested'),
     recordRequest: async (tenantId, r) => {
       const res = await input.store.append(tenantId, OPENING_REVERSALS_STREAM, makeEvent({ id: `opening-reversal-${r.loadId}-${randomUUID()}`, type: 'OpeningReversalRequested', occurredAt: r.requestedAt, idempotencyKey: `opening-reversal-${tenantId}-${r.loadId}`, source: 'api/migration', payload: r }));
@@ -10958,6 +10963,7 @@ export function migrationAdapter(input: {
 
   return {
     now: input.now,
+    recordCutoverGo: (tenantId, go) => recordCutoverGoIn(input.store, tenantId, go),
 
     target: (tenantId) => ({
       targetId: `tgt-${tenantId}`, tenantId,

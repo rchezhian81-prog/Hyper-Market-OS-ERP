@@ -5,8 +5,11 @@
 // undone, and then never by deleting anything: each opening is taken back out through its own domain's compensating path,
 // kept beside what it undoes, and read back to zero against the load.
 //
-//   • WINDOW (`POST /v1/migration/cutover/windows/:cutoverId`) — the owner records when the cutover window opens and closes.
-//     Outside it every reversal is refused by name (`outside_cutover_window`).
+//   • WINDOW (OB-52 "A", owner, 11 Oct 2026 — "Opens at your GO", 48 hours) — the window is never typed. It OPENS at the GO
+//     the cutover gate recorded (`POST /v1/migration/cutover/decision`: every check passed on head office's records and the
+//     owner, signed in, said GO — GT-03) and CLOSES exactly 48 hours later. Before any GO a reversal is refused by name
+//     (`no_cutover_go`); after the close, `outside_cutover_window`. `GET /v1/migration/cutover/windows/:cutoverId` reads it;
+//     the round-6 route that took typed dates is retired (410).
 //   • REQUEST (`POST /v1/migration/opening-reversals/:loadId`) — a NAMED person (the signed-in owner) asks, with a reason, inside
 //     the window. The load's own openings are found by head office (its opening receipts, its supplier bills, its trial
 //     balance, its points movements); the gift cards / store credit and credit-customer invoices it opened are named from the
@@ -27,12 +30,29 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 
+/** OB-52: the cutover GO as the gate recorded it — the owner's signed-in GO on a decision whose every check passed. */
+export interface CutoverGo {
+  readonly cutoverId: string;
+  /** The owner, signed in — never a typed name (GT-03). */
+  readonly goBy: string;
+  readonly goAt: string;
+}
+
+/** OB-52 "A": the reversal window is fixed by the GO — it opens at the GO and closes 48 hours later. */
+export const REVERSAL_WINDOW_HOURS = 48;
+
 export interface CutoverWindow {
   readonly cutoverId: string;
   readonly opensAt: string;
   readonly closesAt: string;
-  readonly recordedBy: string;
-  readonly recordedAt: string;
+  /** Who gave the GO that opened it. */
+  readonly goBy: string;
+}
+
+/** The window a recorded GO opens: from the GO, for exactly 48 hours. */
+export function reversalWindowOf(go: CutoverGo): CutoverWindow {
+  const opens = Date.parse(go.goAt);
+  return { cutoverId: go.cutoverId, opensAt: new Date(opens).toISOString(), closesAt: new Date(opens + REVERSAL_WINDOW_HOURS * 3_600_000).toISOString(), goBy: go.goBy };
 }
 
 export interface OpeningReversalRequest {
@@ -65,8 +85,8 @@ export interface ReversalDomainLine {
 }
 
 export interface OpeningReversalDeps {
-  readonly windows: (tenantId: string) => Promise<readonly CutoverWindow[]> | readonly CutoverWindow[];
-  readonly recordWindow: (tenantId: string, w: CutoverWindow) => Promise<void> | void;
+  /** Every cutover GO the gate recorded (OB-52) — the first per cutover stands. */
+  readonly gos: (tenantId: string) => Promise<readonly CutoverGo[]> | readonly CutoverGo[];
   readonly requests: (tenantId: string) => Promise<readonly OpeningReversalRequest[]> | readonly OpeningReversalRequest[];
   /** Append; resolve the request that STANDS for the load (another writer's, when theirs landed first). */
   readonly recordRequest: (tenantId: string, r: OpeningReversalRequest) => Promise<OpeningReversalRequest | void> | OpeningReversalRequest | void;
@@ -84,23 +104,38 @@ export interface OpeningReversalDeps {
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isTime = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
 const isMinor = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
 
-/** The window in force for a cutover now, or undefined (the latest record for the cutover wins). */
-export function windowOpenNow(windows: readonly CutoverWindow[], cutoverId: string, nowIso: string): CutoverWindow | undefined {
-  const w = windows.filter((x) => x.cutoverId === cutoverId).at(-1);
-  if (w === undefined) return undefined;
+/** Where a cutover's reversal window stands now: no GO recorded, open, or not open (closed — or, on a skewed clock, not yet). */
+export function windowStanding(gos: readonly CutoverGo[], cutoverId: string, nowIso: string):
+  { readonly state: 'no_go' } | { readonly state: 'open' | 'closed'; readonly window: CutoverWindow } {
+  const go = gos.find((g) => g.cutoverId === cutoverId); // the FIRST GO stands; a later one never moves the window
+  if (go === undefined) return { state: 'no_go' };
+  const window = reversalWindowOf(go);
   const now = Date.parse(nowIso);
-  return now >= Date.parse(w.opensAt) && now <= Date.parse(w.closesAt) ? w : undefined;
+  return { state: now >= Date.parse(window.opensAt) && now <= Date.parse(window.closesAt) ? 'open' : 'closed', window };
 }
 
-const outsideWindow = (cutoverId: string) => apiError(422, {
-  code: 'outside_cutover_window',
-  whatHappened: `An opening load is reversed only inside the real cutover window, and cutover ${cutoverId} has no window open now (OB-44). Trial loads are not reversed — they go into a fresh shop.`,
+const noGo = (cutoverId: string) => apiError(422, {
+  code: 'no_cutover_go',
+  whatHappened: `Cutover ${cutoverId} has no GO on record, so its reversal window has not opened (OB-52: it opens at the owner's signed-in GO and closes 48 hours later). Trial loads are not reversed — they go into a fresh shop.`,
   wasItSaved: 'not_saved',
-  nextSafeAction: 'Rehearse in a fresh shop instead, or have the owner record the cutover window (POST /v1/migration/cutover/windows/:cutoverId). Nothing was changed.',
+  nextSafeAction: 'Rehearse in a fresh shop instead. On the real night, the window opens when the cutover gate says GO with the owner signed in (POST /v1/migration/cutover/decision). Nothing was changed.',
 });
+
+const outsideWindow = (w: CutoverWindow) => apiError(422, {
+  code: 'outside_cutover_window',
+  whatHappened: `An opening load is reversed only inside the cutover window, and cutover ${w.cutoverId}'s window ran from its GO at ${w.opensAt} to ${w.closesAt} (48 hours, OB-52) — it is not open now.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Correct what the load got wrong by each domain\'s own correcting route (a stock adjustment, a credit note, a journal) with its own approval. Nothing was changed.',
+});
+
+/** Refuse unless the cutover's window is open now. */
+function assertWindowOpen(gos: readonly CutoverGo[], cutoverId: string, nowIso: string): void {
+  const s = windowStanding(gos, cutoverId, nowIso);
+  if (s.state === 'no_go') throw noGo(cutoverId);
+  if (s.state === 'closed') throw outsideWindow(s.window);
+}
 
 function readRequestBody(b: Record<string, unknown>): Omit<OpeningReversalRequest, 'loadId' | 'requestedBy' | 'requestedAt'> | undefined {
   if (!isStr(b['cutoverId']) || !isStr(b['reason'])) return undefined;
@@ -133,18 +168,29 @@ export function openingReversalRoutes(deps: OpeningReversalDeps): readonly Route
   };
   return [
     {
+      // OB-52 "A": RETIRED. The round-6 route took the window's opening and closing as typed dates; the window is now fixed
+      // by the recorded GO (it opens at the GO and closes 48 hours later), so a typed window is refused, nothing recorded.
       api: 'API-12', method: 'POST', path: '/v1/migration/cutover/windows/:cutoverId',
       permission: 'migration.cutover.decide', idempotent: true,
+      handler: () => {
+        throw apiError(410, {
+          code: 'cutover_window_is_set_by_the_go',
+          whatHappened: 'The reversal window is no longer typed in. It opens at the owner\'s signed-in cutover GO and closes 48 hours later (OB-52).',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Give GO on the cutover gate (POST /v1/migration/cutover/decision, signed in as the owner); read the window at GET /v1/migration/cutover/windows/:cutoverId. Nothing was recorded.',
+        });
+      },
+    },
+    {
+      // OB-52: READ the window a cutover's recorded GO opened — when it opens and closes, and whether it is open now.
+      api: 'API-12', method: 'GET', path: '/v1/migration/cutover/windows/:cutoverId',
+      permission: 'migration.parallel.read',
       handler: async (ctx) => {
         const cutoverId = (ctx.params['cutoverId'] ?? '').trim();
-        const b = isObj(ctx.body) ? ctx.body : {};
-        if (cutoverId === '' || !isTime(b['opensAt']) || !isTime(b['closesAt']) || Date.parse(b['opensAt']) >= Date.parse(b['closesAt'])) {
-          throw apiError(400, { code: 'not_readable_as_a_cutover_window', whatHappened: 'A cutover window needs the cutoverId in the path and { opensAt, closesAt } — two times, the opening first.', wasItSaved: 'not_saved', nextSafeAction: 'Send when the cutover night starts and ends. Nothing was recorded.' });
-        }
-        const w: CutoverWindow = { cutoverId, opensAt: new Date(Date.parse(b['opensAt'])).toISOString(), closesAt: new Date(Date.parse(b['closesAt'])).toISOString(), recordedBy: ctx.userId, recordedAt: deps.now() };
-        await deps.recordWindow(ctx.tenantId, w);
-        await audit(ctx.tenantId, { actorId: ctx.userId, action: 'migration.cutover_window.record', objectType: 'cutover', objectId: cutoverId, at: w.recordedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: {}, after: { opensAt: w.opensAt, closesAt: w.closesAt }, correlationId: cutoverId });
-        return { status: 201, body: { window: w } };
+        const now = deps.now();
+        const s = windowStanding(await deps.gos(ctx.tenantId), cutoverId, now);
+        if (s.state === 'no_go') return { status: 200, body: { cutoverId, go: false, window: null, openNow: false, asAt: now } };
+        return { status: 200, body: { cutoverId, go: true, window: s.window, openNow: s.state === 'open', asAt: now } };
       },
     },
     {
@@ -162,7 +208,7 @@ export function openingReversalRoutes(deps: OpeningReversalDeps): readonly Route
           if (sameRequest(prior, body)) return { status: 200, body: { request: prior, alreadyRequested: true, approved: approval !== undefined } };
           throw apiError(409, { code: 'opening_reversal_conflict', whatHappened: `A reversal of load ${loadId} was already requested by ${prior.requestedBy} with different figures. A request is never overwritten.`, wasItSaved: 'not_saved', nextSafeAction: 'Read the request on record and decide on that one. Nothing was changed.' });
         }
-        if (windowOpenNow(await deps.windows(t), body.cutoverId, deps.now()) === undefined) throw outsideWindow(body.cutoverId);
+        assertWindowOpen(await deps.gos(t), body.cutoverId, deps.now());
         const request: OpeningReversalRequest = { ...body, loadId, requestedBy: ctx.userId, requestedAt: deps.now() };
         const problems = await deps.problems(t, request);
         if (problems.length > 0) {
@@ -192,7 +238,7 @@ export function openingReversalRoutes(deps: OpeningReversalDeps): readonly Route
         if (request.requestedBy === ctx.userId) {
           throw apiError(403, { code: 'self_approval', whatHappened: `You requested the reversal of load ${loadId}, so you cannot also approve it (OB-44 · §28: a second approver).`, wasItSaved: 'not_saved', nextSafeAction: 'Ask another person with the authority to decide the cutover. Nothing was changed.' });
         }
-        if (windowOpenNow(await deps.windows(t), request.cutoverId, deps.now()) === undefined) throw outsideWindow(request.cutoverId);
+        assertWindowOpen(await deps.gos(t), request.cutoverId, deps.now());
         const problems = await deps.problems(t, request);
         if (problems.length > 0) {
           throw apiError(422, { code: 'opening_cannot_be_reversed_as_loaded', whatHappened: `Since the request, load ${loadId} can no longer be reversed as it stands: ${problems.join('; ')}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was reversed. Settle what is named, then request again.' });
