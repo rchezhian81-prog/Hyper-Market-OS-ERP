@@ -12554,3 +12554,47 @@ export function legacyHistoryAdapter(input: { readonly store: EventStore; readon
     },
   };
 }
+
+/**
+ * OB-39 "B" — head office's AVERAGE BUYING COST per product and store (owner, 11 Oct 2026): the quantity-weighted average of
+ * what the store's receipts cost — every `received` movement that carried a cost, at any place the store holds (its floor,
+ * its back store: under it in the hierarchy, or the back store its settings name). Per WHOLE unit (OB-31: per kg for a
+ * product counted in grams), rounded once. A product the store never received at a cost has NO average — `undefined`,
+ * never a zero (a zero cost reports a 100% margin). The ONE rule the store setup (the box's Today margin) and head office's
+ * profitability report both read.
+ */
+export interface AverageBuyingCost {
+  readonly productId: string;
+  readonly storeId: string;
+  readonly unitCostMinor: number;
+  readonly receivedMinor: number;
+  readonly receivedValueMinor: number;
+}
+export async function averageBuyingCosts(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<{
+  readonly costOf: (productId: string, storeId: string) => number | undefined;
+  readonly rows: readonly AverageBuyingCost[];
+}> {
+  const nodes = await orgStructureAdapter(input).nodes(tenantId);
+  const placed = branchOfLocationIn(nodes);
+  const backStoreOf = new Map<string, string>();
+  for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) {
+    if (typeof s.warehouseId === 'string' && s.warehouseId !== '') backStoreOf.set(s.warehouseId, s.storeId);
+  }
+  const branchOf = (locationId: string): string => backStoreOf.get(locationId) ?? placed(locationId);
+  const acc = new Map<string, { productId: string; storeId: string; qty: number; value: number; scale: number }>();
+  for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
+    const m = payloadOf<Movement>(e);
+    if (m.kind !== 'received' || m.unitCostMinor === undefined || m.quantityMinor <= 0) continue;
+    const storeId = branchOf(m.locationId);
+    const key = `${m.productId}\u001f${storeId}`;
+    const a = acc.get(key) ?? { productId: m.productId, storeId, qty: 0, value: 0, scale: minorPerUnitOf(m.uom) };
+    a.qty += m.quantityMinor;
+    a.value += valueAtUnitCost(m.quantityMinor, m.uom ?? 'ea', m.unitCostMinor);
+    acc.set(key, a);
+  }
+  const rows = [...acc.values()].map((a): AverageBuyingCost => ({
+    productId: a.productId, storeId: a.storeId, unitCostMinor: Math.round((a.value * a.scale) / a.qty), receivedMinor: a.qty, receivedValueMinor: a.value,
+  }));
+  const byKey = new Map(rows.map((r) => [`${r.productId}\u001f${r.storeId}`, r.unitCostMinor] as const));
+  return { costOf: (productId, storeId) => byKey.get(`${productId}\u001f${storeId}`), rows };
+}

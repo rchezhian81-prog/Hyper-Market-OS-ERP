@@ -20,7 +20,8 @@ import type { SourceTransaction } from '../../../packages/owner-control/src/inde
 import type { BranchScope } from '../../kernel/src/index';
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import { figure, sourceFreshness, syncedThrough, type Figure, type SourceFreshness } from '../../reporting/src/index';
-import { STREAM, streamName, inventoryAdapter, productMasterAdapter, foldPurchaseOrders, mergeStoreSync, dayBookAdapter, independentEvidenceAdapter, payablesAdapter, type StoreSyncView } from './adapters';
+import { STREAM, streamName, inventoryAdapter, productMasterAdapter, foldPurchaseOrders, mergeStoreSync, dayBookAdapter, independentEvidenceAdapter, payablesAdapter, averageBuyingCosts, type StoreSyncView } from './adapters';
+import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import type { HeldVersionsReport } from '../../platform/src/store-packs';
 import { returnedValue, refundLegs } from '../../../packages/finance/src/day-book';
 
@@ -496,9 +497,11 @@ export function reportProducers(input: {
       }
 
       case 'profitability': {
-        // What the books say the day earned. Revenue is posted; the COST of what was sold is not — the day book posts
-        // takings, GST and tenders only, and which cost the shop's margin uses is an owner decision not yet taken. So the
-        // profit is NOT AVAILABLE, with that reason — never a revenue figure presented as a profit.
+        // What the books say the day earned. Revenue is POSTED (the day book: net of GST and returns). The COST of what was
+        // sold is each sold line at head office's AVERAGE BUYING COST for the product at the store it was sold from (OB-39
+        // "B", owner 11 Oct 2026 — the same cost the store computer's Today margin uses), less the goods that came back.
+        // A product the store never bought at a cost has no average: then the cost — and so the profit — is NOT AVAILABLE,
+        // naming the products, never costed at zero (a zero cost is a 100% margin).
         const now = input.now();
         if (options.scope !== 'all') {
           return { sources: [], rows: [], drill: {}, figures: [figure({ name: 'Profit', unit: 'minor_currency', asAt: null, now, notAvailableBecause: 'the books are company-wide; this needs company-wide report access' })] };
@@ -508,18 +511,54 @@ export function reportProducers(input: {
         const asAt = journals.length === 0 ? null : (posted?.event.occurredAt ?? null);
         const mk = at(asAt, `the day book for ${day} has not been posted yet`);
         const revenue = journals.flatMap((j) => j.lines).filter((l) => l.accountCode === 'sales_revenue').reduce((t, l) => t + l.creditMinor - l.debitMinor, 0);
-        const cogsPosted = journals.flatMap((j) => j.lines).some((l) => /cost_of_goods|cogs/.test(l.accountCode));
-        const noCost = 'the books carry no cost of goods sold: the day book posts takings, GST and tenders but not what the goods cost, and which cost the shop uses for margin is an owner decision not yet taken';
+        const costs = await averageBuyingCosts({ store: input.store, now: input.now }, tenantId);
+        const day_ = await salesOf(tenantId, day, 'all');
+        const missing = new Set<string>();
+        const txns: SourceTransaction[] = [];
+        const rows: Record<string, string>[] = [];
+        let cogs = 0;
+        for (const sale of day_.sales) {
+          const storeId = saleBranch(sale);
+          let cost = 0;
+          for (const l of sale.lines) {
+            const unit = costs.costOf(l.productId, storeId);
+            if (unit === undefined) { missing.add(l.productId); continue; }
+            cost += valueAtUnitCost(l.quantityMinor, l.uom, unit);
+          }
+          cogs += cost;
+          txns.push(saleTxn(sale, cost, `${sale.saleId}: ${sale.lines.length} line(s) at the average buying cost`));
+        }
+        for (const r of await dayBookAdapter({ store: input.store, now: input.now }).returnsOn(tenantId, day)) {
+          const held = r.originalSaleId === null ? undefined : await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${r.originalSaleId}`);
+          const sale = held?.event.payload as IncomingSale | undefined;
+          const rec = r as typeof r & { processedAt?: string; processedBy?: string; locationId?: string };
+          const storeId = sale !== undefined ? saleBranch(sale) : (rec.locationId ?? 'no-branch-named');
+          let back = 0;
+          for (const l of r.lines) {
+            const unit = costs.costOf(l.productId, storeId);
+            if (unit === undefined) { missing.add(l.productId); continue; }
+            const uom = sale?.lines.find((x) => x.productId === l.productId)?.uom ?? (await products.product(tenantId, l.productId))?.baseUom ?? 'ea';
+            back += valueAtUnitCost(l.quantityMinor, uom, unit);
+          }
+          cogs -= back;
+          txns.push({ transactionId: r.returnId, at: rec.processedAt ?? day, branchId: storeId, ...(rec.processedBy === undefined ? {} : { staffId: rec.processedBy }), amountMinor: -back, description: `${r.returnId}: goods back, at the average buying cost` });
+        }
+        for (const c of costs.rows) rows.push({ productId: c.productId, storeId: c.storeId, averageBuyingCostMinor: String(c.unitCostMinor), receivedMinor: String(c.receivedMinor), receivedValueMinor: String(c.receivedValueMinor) });
+        const noCost = missing.size === 0 ? undefined
+          : `no average buying cost for ${[...missing].sort().join(', ')} — the store has not received it at a cost, so what it cost to sell is not known (never costed at zero)`;
         return {
           tradingDay: day,
-          sources: [sourceFreshness({ source: 'day book', domain: 'books', lastEventAt: asAt, now, ...thresholds })],
+          sources: [
+            sourceFreshness({ source: 'day book', domain: 'books', lastEventAt: asAt, now, ...thresholds }),
+            ...day_.sources,
+          ],
           figures: [
             mk('Revenue net of GST and returns', revenue, 'minor_currency'),
-            mk('Cost of goods sold', undefined, 'minor_currency', cogsPosted ? 'cost of goods sold is posted but not yet read by this report' : noCost),
-            mk('Profit', undefined, 'minor_currency', cogsPosted ? 'cost of goods sold is posted but not yet read by this report' : noCost),
+            mk('Cost of goods sold', noCost === undefined ? cogs : undefined, 'minor_currency', noCost),
+            mk('Profit', noCost === undefined ? revenue - cogs : undefined, 'minor_currency', noCost),
           ],
-          rows: [],
-          drill: {},
+          rows,
+          drill: noCost === undefined ? { 'Cost of goods sold': txns } : {},
         };
       }
 

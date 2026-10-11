@@ -697,16 +697,21 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     const ownerExceptions = await ok(call('GET', '/v1/inventory/exceptions', OWNER), 'owner exceptions') as { transferShortfalls: { transferId: string; value: { minor: number }; resolution?: { resolvedBy: string } | null }[] };
     expect(ownerExceptions.transferShortfalls).toEqual([expect.objectContaining({ transferId: `${INDENT}:is-rice`, value: { minor: RICE.cost, currency: 'INR' }, resolution: expect.objectContaining({ resolvedBy: MANAGER }) })]);
     // The owner's TODAY on the store computer (captured before the day closed): the day's sales and tenders, with freshness.
-    // The owner's TODAY on the store computer (captured before the day closed). The box serves the day's takings only for
-    // sales it can COST, and head office's store setup carries no product cost — so the owner's Today reads "No sales recorded
-    // yet today" while the box itself counted 3 bills / the whole takings as `uncostable` (which the owner app does not show).
-    const uncostable = (ownerData as unknown as { uncostable?: { sales: number; takenMinor: number } }).uncostable;
-    expect(uncostable).toMatchObject({ sales: 3, takenMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL });
-    expect(today12.takings).toEqual({ bills: 3, takenMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, marginUnknownBills: 3, tenderMix: { cash: S1_CASH + S2_CASH + S3_TOTAL, card: S2_CARD, upi: S1_UPI, loyalty_points: S2_POINTS_SPENT * 100 } });
-    expect(today12.headline).toMatch(/^3 bills today, ₹1,980\.00 taken — margin not known/);
-    expect(today12.headline).not.toMatch(/No sales recorded/);
+    // OB-39 "B": head office's store setup carries each product's AVERAGE BUYING COST at this store (from the receipts at
+    // cost: rice 20 bags at ₹400, tomato 9.5 kg at ₹25/kg) — so the box costs every bill and the owner's Today shows the margin.
+    const boxSales = (ownerData as unknown as { branches: { sales: { saleId: string; netMinor: number; cogsMinor: number }[] }[]; uncostable: { sales: number; products: string[] } });
+    const cogsExpected = { 'S-1': S1_LINES.rice * RICE.cost, 'S-2': S2_LINES.rice * RICE.cost + perKg(S2_LINES.tomatoGrams, TOMATO.cost), 'S-3': S3_LINES.rice * RICE.cost };
+    expect(Object.fromEntries(boxSales.branches[0]!.sales.map((x) => [x.saleId, x.cogsMinor]))).toEqual(cogsExpected);
+    expect(boxSales.uncostable).toMatchObject({ sales: 0, products: [] });
+    const boxCogs = cogsExpected['S-1'] + cogsExpected['S-2'] + cogsExpected['S-3'];
+    const boxNet = boxSales.branches[0]!.sales.reduce((t, x) => t + x.netMinor, 0);
+    expect(today12.takings).toEqual({ bills: 3, takenMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, marginUnknownBills: 0, tenderMix: { cash: S1_CASH + S2_CASH + S3_TOTAL, card: S2_CARD, upi: S1_UPI, loyalty_points: S2_POINTS_SPENT * 100 } });
+    expect(today12.kpis).toMatchObject({ grossSalesMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, cogsMinor: boxCogs, marginMinor: boxNet - boxCogs });
+    const rupees = (minor: number): string => (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    expect(today12.headline).toContain(`3 bills today, ₹1,980.00 taken, margin ₹${rupees(boxNet - boxCogs)}`);
+    expect(today12.headline).not.toMatch(/margin not known|No sales recorded/);
     expect(today12.freshness).toBeDefined();
-    row('12b owner Today (box) shows the takings', `owner app booted on the box's /owner/ page: "${today12.headline}" · takings ${today12.takings.takenMinor} on ${today12.takings.bills} bills, tenders ${JSON.stringify(today12.takings.tenderMix)} · margin not known for ${today12.takings.marginUnknownBills} bills (which cost the box uses is an owner decision) · freshness shown`);
+    row('12b owner Today (box) shows the takings and the margin', `owner app booted on the box's /owner/ page: "${today12.headline}" · takings ${today12.takings.takenMinor} on ${today12.takings.bills} bills, tenders ${JSON.stringify(today12.takings.tenderMix)} · costed at head office's average buying cost (OB-39 B) from the store setup: cost of goods ${boxCogs} (S-1 ${cogsExpected['S-1']}, S-2 ${cogsExpected['S-2']}, S-3 ${cogsExpected['S-3']}) · margin ${boxNet - boxCogs} on net ${boxNet} · margin unknown on ${today12.takings.marginUnknownBills} bills · freshness shown`);
     // RETURNS beside the takings — "Taken" keeps its meaning; what came back and the net are shown with it, valued as the
     // books value them (the ₹472 cash refund + the ₹8 of points given back = the ₹480 rice returned).
     expect(fig(byDay, 'Returned')).toBe(RICE.price);
@@ -734,7 +739,14 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     expect(fig(bank, 'Card and UPI takings for ' + month + ' — ours')).toBe(electronic);
     expect(fig(bank, 'Provider payouts received in ' + month + ' — theirs')).toBe(electronic - fees);
     expect(fig(profit, 'Revenue net of GST and returns')).toBe(-balanceOf('sales_revenue'));
-    expect(profit.figures.find((f) => f.name === 'Profit')).toMatchObject({ notAvailableBecause: expect.stringMatching(/owner decision/) });
+    // Head office's profitability with the SAME average buying cost: what was sold less what came back (1 rice), at cost.
+    const hoCogs = boxCogs - RICE.cost;
+    expect(fig(profit, 'Cost of goods sold')).toBe(hoCogs);
+    expect(fig(profit, 'Profit')).toBe(-balanceOf('sales_revenue') - hoCogs);
+    expect(profit.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ productId: RICE.productId, storeId: STORE, averageBuyingCostMinor: String(RICE.cost) }),
+      expect.objectContaining({ productId: TOMATO.productId, storeId: STORE, averageBuyingCostMinor: String(TOMATO.cost) }),
+    ]));
     expect(fig(sync, 'Records not yet sent')).toBe(0);
     expect(sync.rows).toEqual([expect.objectContaining({ storeId: STORE, unsent: '0' })]);
     expect(fresh.rows.map((r) => r['source'])).toEqual(expect.arrayContaining([`store:${STORE}`, 'stock ledger', `store:${STORE} report`]));
@@ -743,10 +755,11 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     const takenDetail = byDay.figures.find((f) => f.name === 'Taken') as unknown as { detail: string };
     expect(takenDetail.detail).toMatch(/nothing newer happened: the store computer said at .* it had nothing waiting to send/);
     expect(takenDetail.detail).not.toMatch(/until the sync recovers/);
-    row('12 owner reporting equals the journey, freshness shown', `HO reports for ${tradingDay}: taken ${fig(byDay, 'Taken')} on ${fig(byDay, 'Bills')} bills = S-1+S-2+S-3 · returned ${fig(byDay, 'Returned')} on ${fig(byDay, 'Returns')} return · net ${fig(byDay, 'Taken net of returns')} · tenders in: cash ${fig(mix, 'cash')} / card ${fig(mix, 'card')} / UPI ${fig(mix, 'upi')} / points ${fig(mix, 'loyalty_points')}; refunded: cash ${fig(mix, 'refunded — cash')} / points ${fig(mix, 'refunded — loyalty_points')} · stock per place rice ${riceFloor} floor + ${riceBack} back, tomato ${tomFloor} g + ${tomBack} g, value ${fig(stock, 'Value on hand')} · points ${fig(loyalty, 'Points outstanding')} · trolley shortfall valued ${RICE.cost} on exceptions · GST collected ${fig(gst, 'GST collected')} (= the books), paid on purchases ${fig(gst, 'GST paid on purchases')} (bill ${billTax} less debit note ${2 * dnTaxHalf}, posted once; a mapping with no input-tax leg refused), net ${fig(gst, 'Net GST (collected less paid on purchases)')} · bank: card+UPI ${electronic} = settled, payout ${electronic - fees} = bank, differences 0 · profitability: revenue ${fig(profit, 'Revenue net of GST and returns')}, profit not available (cost basis is an owner decision) · not yet sent ${fig(sync, 'Records not yet sent')} (the box's own report) · freshness on every figure, truthful: "${takenDetail.detail.replace(/^Taken: \d+ as at /, '').slice(0, 90)}…"`);
+    row('12 owner reporting equals the journey, freshness shown', `HO reports for ${tradingDay}: taken ${fig(byDay, 'Taken')} on ${fig(byDay, 'Bills')} bills = S-1+S-2+S-3 · returned ${fig(byDay, 'Returned')} on ${fig(byDay, 'Returns')} return · net ${fig(byDay, 'Taken net of returns')} · tenders in: cash ${fig(mix, 'cash')} / card ${fig(mix, 'card')} / UPI ${fig(mix, 'upi')} / points ${fig(mix, 'loyalty_points')}; refunded: cash ${fig(mix, 'refunded — cash')} / points ${fig(mix, 'refunded — loyalty_points')} · stock per place rice ${riceFloor} floor + ${riceBack} back, tomato ${tomFloor} g + ${tomBack} g, value ${fig(stock, 'Value on hand')} · points ${fig(loyalty, 'Points outstanding')} · trolley shortfall valued ${RICE.cost} on exceptions · GST collected ${fig(gst, 'GST collected')} (= the books), paid on purchases ${fig(gst, 'GST paid on purchases')} (bill ${billTax} less debit note ${2 * dnTaxHalf}, posted once; a mapping with no input-tax leg refused), net ${fig(gst, 'Net GST (collected less paid on purchases)')} · bank: card+UPI ${electronic} = settled, payout ${electronic - fees} = bank, differences 0 · profitability at the average buying cost (OB-39 B): revenue ${fig(profit, 'Revenue net of GST and returns')} − cost of goods ${fig(profit, 'Cost of goods sold')} (sold ${boxCogs} less 1 rice back ${RICE.cost}) = profit ${fig(profit, 'Profit')} · not yet sent ${fig(sync, 'Records not yet sent')} (the box's own report) · freshness on every figure, truthful: "${takenDetail.detail.replace(/^Taken: \d+ as at /, '').slice(0, 90)}…"`);
 
   }, 300_000);
 
-  // ── Still an OWNER DECISION (not built): which cost the store computer's Today uses for the margin (A price list, B head
-  //    office's running average, C none) — until then the Today says the margin is not known and shows the takings (12b).
+  // ── OB-39 "B" (owner, 11 Oct 2026): the store computer's Today and head office's profitability both cost at head office's
+  //    average buying cost per product and store (12b, 12). A product with no cost still reads "margin not known" — proved in
+  //    `the-margin-is-costed-at-the-average-buying-cost.test.ts`.
 });
