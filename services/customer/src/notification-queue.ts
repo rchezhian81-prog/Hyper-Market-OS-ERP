@@ -79,6 +79,8 @@ export interface NotificationQueueEvent {
   /** `delivered` only — the transport's receipt. */
   readonly providerRef?: string;
   readonly transport?: string;
+  /** PA-08 / PF-10 r7: an out-of-band report only — the provider's own report id (with `transport`, its idempotency key). */
+  readonly reportId?: string;
   /** `delivered` only — what the send cost against the month's messaging budget (paise). */
   readonly costMinor?: number;
 }
@@ -284,6 +286,29 @@ async function providerReportOrRefuse(deps: NotificationQueueDeps, ctx: { tenant
   const check = verifyDeliveryReport({ path, body: ctx.body, secrets: deps.deliveryReportSecrets, now: deps.now() });
   if (!check.ok) throw apiError(check.status, { code: check.code, whatHappened: `${check.detail}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded.' });
   return { provider: check.provider, reportId: check.reportId };
+}
+
+/**
+ * PA-08 / PF-10 r7: the out-of-band report's two further checks, before anything is recorded —
+ *   • a REPLAY: the same provider's same `reportId` already on this message's record is acknowledged, never recorded
+ *     again (a signed failure replayed within the freshness window must not count as another attempt and dead-letter
+ *     the message);
+ *   • the RIGHT PROVIDER: only the provider the sender handed the message to may report on it. A message never handed to
+ *     any provider has nobody who can report on it.
+ */
+async function replayOrWrongProvider(deps: NotificationQueueDeps, tenantId: string, id: string, from: { provider: string; reportId: string }): Promise<NotificationQueueEvent | undefined> {
+  if (deps.events === undefined) notWired('read the notification record');
+  const mine = (await deps.events!(tenantId)).filter((e) => e.id === id);
+  const prior = mine.find((e) => e.reportId === from.reportId && e.transport === from.provider);
+  if (prior !== undefined) return prior;
+  const handedTo = [...mine].reverse().find((e) => e.reportId === undefined && e.transport !== undefined)?.transport;
+  if (handedTo === undefined) {
+    throw apiError(409, { code: 'not_handed_to_a_provider', whatHappened: `Message ${id} has not been handed to a provider, so no provider can report on it.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded. A report is taken only after the sender has sent the message.' });
+  }
+  if (handedTo !== from.provider) {
+    throw apiError(409, { code: 'not_this_providers_message', whatHappened: `Message ${id} was handed to ${handedTo}, not ${from.provider}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded. A report must come from the provider that took the message.' });
+  }
+  return undefined;
 }
 
 export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly Route[] {
@@ -504,8 +529,10 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
         const from = await providerReportOrRefuse(deps, ctx, `/v1/notifications/queue/${id}/delivered`);
         const item = (await deps.queue(ctx.tenantId)).find(id);
         if (item === undefined) throw notFound(id);
+        const replay = await replayOrWrongProvider(deps, ctx.tenantId, id, from);
+        if (replay !== undefined) return { status: 200, body: { id, state: item.state, replayed: true } };
         const ref = (ctx.body as Record<string, unknown>)['providerRef'];
-        await deps.record(ctx.tenantId, { id, change: 'delivered', by: ctx.userId, at: deps.now(), transport: from.provider, ...(isStr(ref) ? { providerRef: ref } : {}) }, `notif-delivered-${id}`);
+        await deps.record(ctx.tenantId, { id, change: 'delivered', by: ctx.userId, at: deps.now(), transport: from.provider, reportId: from.reportId, ...(isStr(ref) ? { providerRef: ref } : {}) }, `notif-delivered-${id}`);
         return { status: 200, body: { id, state: 'delivered' } };
       },
     },
@@ -527,12 +554,14 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
         }
         const item = (await deps.queue(ctx.tenantId)).find(id);
         if (item === undefined) throw notFound(id);
+        const replay = await replayOrWrongProvider(deps, ctx.tenantId, id, from);
+        if (replay !== undefined) return { status: 200, body: { id, state: item.state, attempts: item.attempts, replayed: true } };
         if (item.state !== 'pending') {
           return { status: 200, body: { id, state: item.state, note: 'already resolved' } };
         }
-        // Key on the attempt number this records, so each distinct failure is its own fact while a retry of
-        // the same POST collapses.
-        await deps.record(ctx.tenantId, { id, change: 'failed', by: ctx.userId, at: deps.now(), transport: from.provider, reason: (b['reason'] as string).trim(), ...(isInt(b['maxAttempts']) ? { maxAttempts: b['maxAttempts'] as number } : {}) }, `notif-failed-${id}-${item.attempts + 1}`);
+        // PA-08 / PF-10 r7: keyed on the PROVIDER's report id — each distinct failure the provider reports is its own fact,
+        // and the same signed report sent again (within its freshness window) collapses onto the first: never a new attempt.
+        await deps.record(ctx.tenantId, { id, change: 'failed', by: ctx.userId, at: deps.now(), transport: from.provider, reportId: from.reportId, reason: (b['reason'] as string).trim(), ...(isInt(b['maxAttempts']) ? { maxAttempts: b['maxAttempts'] as number } : {}) }, `notif-failed-${id}-${from.provider}-${from.reportId}`);
         const after = (await deps.queue(ctx.tenantId)).find(id);
         return { status: 200, body: { id, state: after?.state ?? 'pending', attempts: after?.attempts ?? item.attempts + 1 } };
       },

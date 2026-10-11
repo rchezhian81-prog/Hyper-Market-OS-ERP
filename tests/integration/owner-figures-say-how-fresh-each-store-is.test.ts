@@ -233,6 +233,16 @@ async function onlyItsOwnComputerReportsAndCannotBuyFreshness(h: ApiHarness, ten
       expect(held.status, `${who} may not report what S1 holds`).toBe(403);
     }
     expect(codeOf(await report(OWNER, 'S1', 'S1', lies, 'wm-owner-2'))).toBe('not_this_stores_computer');
+    // Round 7 (EA-01): a store computer reports only for the store(s) its grant NAMES. A TENANT-WIDE store_computer grant
+    // names none — it is never read as "every store" — so it reports for neither S1 nor S2, on either report.
+    await h.provisionRole(tenant, 'u-box-any', 'store_computer');          // branchScope 'all'
+    for (const store of ['S1', 'S2'] as const) {
+      const r = await report('u-box-any', store, store, lies, `wm-any-${store}`);
+      expect(r.status, `a tenant-wide box may not report ${store}'s sync`).toBe(403);
+      expect(codeOf(r)).toBe('not_this_stores_computer');
+      const held = await h.request({ method: 'POST', path: `/v1/store-packs/${store}/held`, userId: 'u-box-any', tenantId: tenant, branchId: store, idempotencyKey: `held-any-${store}`, body: { catalogueVersion: null, storePackVersion: null, unsentItems: 0 } });
+      expect(held.status, `a tenant-wide box may not report what ${store} holds`).toBe(403);
+    }
     expect((await syncWatermarksAdapter({ store: h.store }).records(tenant)).length).toBe(before);
     const heldNow = await h.request({ method: 'GET', path: '/v1/store-packs/S1/held', userId: OWNER, tenantId: tenant });
     expect((heldNow.body as { held?: { reportedBy: string } }).held?.reportedBy ?? 'u-box1').toBe('u-box1');

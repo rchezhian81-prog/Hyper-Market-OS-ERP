@@ -75,8 +75,11 @@ describe('hosted pilot seed — over a real socket', () => {
     // Each provisioned login landed ONCE, despite two runs, and names the person who ran the seed.
     const grants = await store.readStream(PILOT_DEMO_TENANT, STREAM.identity, { type: 'RoleGranted' });
     const provisioned = grants.filter((g) => g.event.source === 'pilot/seed');
-    // The foundation's role logins plus the supplier-portal login the trading-partner step adds.
-    expect(provisioned).toHaveLength(PILOT_FOUNDATION.users.length + 1);
+    // The foundation's role logins plus the supplier-portal login the trading-partner step adds, plus (EA-01 round 7) the
+    // store computer's grant NAMING the demo store — the one it reports its sync for.
+    expect(provisioned).toHaveLength(PILOT_FOUNDATION.users.length + 2);
+    expect(provisioned.filter((g) => (g.event.payload as { userId: string; branchScope: unknown }).userId === 'pilot-store-edge').map((g) => (g.event.payload as { branchScope: unknown }).branchScope))
+      .toEqual(['all', [PILOT_DEMO_BRANCH]]);
     expect(provisioned.map((g) => (g.event.payload as { userId: string }).userId)).toContain(PILOT_DEMO_SUPPLIER_LOGIN);
     for (const g of provisioned) {
       const req = (g.event.payload as { request: { requestedBy: string; approvedBy: string } }).request;
@@ -142,6 +145,10 @@ describe('demo price list for the demo store box (ADR-0016)', () => {
     expect(res.status).toBe(200);
     const env = res.body as StorePackEnvelope;
     expect(env).toMatchObject({ tenantId: PILOT_DEMO_TENANT, storeId: PILOT_DEMO_BRANCH });
+    // EA-01 round 7: the demo box's grant NAMES the demo store, so it reports its sync there (and only there).
+    const now = new Date().toISOString();
+    const wm = await client.request({ method: 'POST', path: `/v1/stores/${PILOT_DEMO_BRANCH}/sync-watermarks`, userId: 'pilot-store-edge', tenantId: PILOT_DEMO_TENANT, idempotencyKey: `wm-${now}`, body: { observedAt: now, domains: [{ domain: 'sales', completeThrough: now, unsent: 0, deadLettered: 0 }] } });
+    expect(wm.status, JSON.stringify(wm.body)).toBe(200);
 
     // Through the EDGE's own reader and till payload — exactly what the demo box does once it has pulled it.
     const edgePack = readPack(packPayloadOf(env), env.issuedAt);

@@ -318,7 +318,7 @@ import type { AgentId, Budget, Proposal, EvidenceItem as AiEvidenceItem, AiDeps,
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
-import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID } from './roles';
+import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID, BACKUP_JOB_ROLE_ID } from './roles';
 import { metaOf as legacyAttachmentMeta, type LegacyHistoryDeps, type LegacyHistoryDocument, type LegacyAttachment, type LegacyAttachmentMeta } from '../../migration/src/legacy-history';
 
 /** Streams, named once. A typo here is a domain that silently reads an empty history. */
@@ -12070,6 +12070,8 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
       }
       return out;
     },
+    // PA-12 round 7: a backup is believed only from a grant of the backup_job role ITSELF — never a person's other roles.
+    isBackupJob: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId && g.roleId === BACKUP_JOB_ROLE_ID),
     backups: (tenantId) => allOf<BackupRecord>(input.store, tenantId, BACKUPS_STREAM, 'BackupTaken'),
     recordBackup: async (tenantId, record) => {
       await input.store.append(tenantId, BACKUPS_STREAM, makeEvent({
@@ -12168,13 +12170,17 @@ export async function branchScopeHeldBy(store: EventStore, tenantId: string, use
 }
 
 /**
- * Round 6 (EA-01): where a caller is a STORE COMPUTER — the branch scope of their `store_computer` role grants alone (a
- * person's other roles never count), on the reporting permission. undefined: they hold no store_computer grant.
+ * Round 6 (EA-01): where a caller is a STORE COMPUTER — the stores NAMED by their `store_computer` role grants alone (a
+ * person's other roles never count). undefined: they hold no store_computer grant.
+ *
+ * Round 7: a store computer reports only for the store(s) its grant names. A TENANT-WIDE store_computer grant names no
+ * store, so it reports for none — it is never read as "every store" (one machine could otherwise speak for any store's
+ * sync and holdings). Never 'all'.
  */
-export async function storeComputerScopeHeldBy(store: EventStore, tenantId: string, userId: string): Promise<readonly string[] | 'all' | undefined> {
+export async function storeComputerScopeHeldBy(store: EventStore, tenantId: string, userId: string): Promise<readonly string[] | undefined> {
   const grants = (await effectiveGrants(store, tenantId)).filter((g) => g.userId === userId && g.roleId === STORE_COMPUTER_ROLE_ID);
   if (grants.length === 0) return undefined;
-  return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, 'store.computer.report');
+  return [...new Set(grants.flatMap((g) => (g.branchScope === 'all' ? [] : g.branchScope)))].sort();
 }
 
 /** A store's working rules (DF-3-b-1): each change a `StoreRulesSet` version; the latest per store applies. */

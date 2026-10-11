@@ -237,6 +237,7 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
 
     // ═══ 0. The shop: people (each granted by two people's acts), places, settings, products, loyalty rule ═══════════════
     await cloud.grant(BOX, 'store_computer');
+    await cloud.grant(BOX, 'store_computer', undefined, [STORE]); // round 7: it reports only for the store its grant names
     for (const u of [BUYER, RECEIVER, BACKSTORE, FLOOR, MANAGER]) await cloud.grant(u, 'store_manager');
     await cloud.grant(FINANCE, 'accountant');
     await cloud.grant(CASHIER, 'cashier');
