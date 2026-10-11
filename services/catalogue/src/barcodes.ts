@@ -20,16 +20,25 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import {
   BarcodeRegistry, DuplicateBarcodeError,
   type BarcodeAssignment, type BarcodeKind,
 } from '../../../packages/product/src/index';
 
 export interface BarcodeRegistryDeps {
-  /** Append a barcode→product assignment (idempotent on the caller's key). */
-  readonly assign: (tenantId: string, assignment: BarcodeAssignment, key: string) => Promise<void> | void;
+  /**
+   * Append a barcode→product assignment (idempotent on the caller's key). With `version` (from `current`), the append lands
+   * only while the code's write guard is still at that version — otherwise `ConcurrencyConflictError`, nothing written.
+   */
+  readonly assign: (tenantId: string, assignment: BarcodeAssignment, key: string, version?: number) => Promise<void> | void;
   /** Every assignment ever made, in occurrence order — the register's raw material (last per code wins). */
   readonly all: (tenantId: string) => Promise<readonly BarcodeAssignment[]> | readonly BarcodeAssignment[];
+  /**
+   * GT-05 store volume: the assignment standing for ONE code, read by key — not the whole register — with the version of the
+   * code's write guard, read first. Absent (a bare fake): the route rebuilds the register from `all`.
+   */
+  readonly current?: (tenantId: string, code: string) => Promise<{ readonly assignment?: BarcodeAssignment; readonly version: number }>;
 }
 
 const KINDS: readonly BarcodeKind[] = ['gtin', 'ean', 'upc', 'internal', 'case', 'embedded'];
@@ -40,6 +49,24 @@ const isKind = (v: unknown): v is BarcodeKind => typeof v === 'string' && (KINDS
  * code and the constructor never throws on replay. */
 const registryOf = async (deps: BarcodeRegistryDeps, tenantId: string): Promise<BarcodeRegistry> =>
   new BarcodeRegistry([...(await deps.all(tenantId))]);
+
+/** The tested rule: the same product is a no-op, a different product is refused with the owner named. */
+function registerOrRefuse(registry: BarcodeRegistry, assignment: BarcodeAssignment): BarcodeAssignment {
+  try {
+    return registry.register(assignment);
+  } catch (err) {
+    if (err instanceof DuplicateBarcodeError) {
+      throw apiError(409, {
+        code: 'barcode_already_assigned',
+        // The person fixing this is not a programmer — name the code and the product that holds it.
+        whatHappened: `Barcode "${err.code}" already belongs to product "${err.ownedBy}", so it cannot also be given to "${err.attemptedBy}". One code names exactly one item.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Use a different code for this product, or first release the code from the product that holds it. Nothing was changed.',
+      });
+    }
+    throw err;
+  }
+}
 
 export function barcodeRoutes(deps: BarcodeRegistryDeps): readonly Route[] {
   return [
@@ -63,25 +90,26 @@ export function barcodeRoutes(deps: BarcodeRegistryDeps): readonly Route[] {
           code, productId, kind: b['kind'],
           ...(typeof b['level'] === 'string' && b['level'].trim() !== '' ? { level: b['level'] } : {}),
         };
-        const registry = await registryOf(deps, ctx.tenantId);
-        let stored: BarcodeAssignment;
-        try {
-          // The tested rule: same product is a no-op, a different product is refused with the owner named.
-          stored = registry.register(assignment);
-        } catch (err) {
-          if (err instanceof DuplicateBarcodeError) {
-            throw apiError(409, {
-              code: 'barcode_already_assigned',
-              // The person fixing this is not a programmer — name the code and the product that holds it.
-              whatHappened: `Barcode "${err.code}" already belongs to product "${err.ownedBy}", so it cannot also be given to "${err.attemptedBy}". One code names exactly one item.`,
-              wasItSaved: 'not_saved',
-              nextSafeAction: 'Use a different code for this product, or first release the code from the product that holds it. Nothing was changed.',
-            });
+        // GT-05: only this code's standing assignment is read (by key), with its guard's version; a writer that loses the
+        // guard to a simultaneous one re-reads and is judged again — so two writers can never both take one code.
+        const key = ctx.idempotencyKey ?? `${productId}:${code}`;
+        for (let attempt = 0; ; attempt += 1) {
+          const standing = deps.current === undefined ? undefined : await deps.current(ctx.tenantId, code);
+          const registry = standing === undefined
+            ? await registryOf(deps, ctx.tenantId)
+            : new BarcodeRegistry(standing.assignment === undefined ? [] : [standing.assignment]);
+          const stored = registerOrRefuse(registry, assignment);
+          try {
+            await deps.assign(ctx.tenantId, stored, key, standing?.version);
+          } catch (err) {
+            if (err instanceof ConcurrencyConflictError && attempt < 4) continue;
+            if (err instanceof ConcurrencyConflictError) {
+              throw apiError(409, { code: 'barcode_changed_meanwhile', whatHappened: `Barcode "${code}" kept changing while this was being saved.`, wasItSaved: 'not_saved', nextSafeAction: 'Look the code up and try again. Nothing was changed.' });
+            }
+            throw err;
           }
-          throw err;
+          return { status: 201, body: { barcode: stored } };
         }
-        await deps.assign(ctx.tenantId, stored, ctx.idempotencyKey ?? `${productId}:${code}`);
-        return { status: 201, body: { barcode: stored } };
       },
     },
     {

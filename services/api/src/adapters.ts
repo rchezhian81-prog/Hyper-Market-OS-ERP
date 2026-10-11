@@ -1921,6 +1921,93 @@ export function categoryRegisterAdapter(input: {
 /** The product master's stream (`ProductPublished`, latest per id). */
 export const PRODUCTS_STREAM = streamName(STREAM.catalogue, 'products');
 
+// ── Keyed catalogue indexes (GT-05 store volume) ────────────────────────────────────────────────────────────────────────
+// The product publish's SKU-clash check and the barcode route's one-code-one-item check used to fold the WHOLE product
+// master / barcode register on every call — ~150 ms a call at 15 000 products on PostgreSQL, quadratic over a load. Each now
+// reads only the key it needs, by `latestOfType` on a per-key index stream (one indexed row):
+//   • `catalogue/barcode-owner/<code>`  → the product the code names (`BarcodeOwnerIndexed`);
+//   • `catalogue/sku-holder/<sku>`      → the last product to claim the SKU (`SkuClaimed`);
+//   • `catalogue/product-sku/<product>` → the SKU a product is published under now (`ProductSkuIndexed`).
+// A claimant holds a SKU only while its own current SKU is still that SKU, so a product that moves to a new SKU frees the
+// old one without a release record. Each index entry is written in the SAME atomic batch as the record it indexes, and the
+// write is GUARDED per code / per SKU (`barcode:<code>`, `sku:<sku>`): two simultaneous writers both read version v, one
+// lands, the other is refused by name and re-checks — never two owners (hard rule #10). The ledger stays the only truth:
+// an index entry is derived from the record beside it, appended, never updated (hard rule #2). A tenant whose catalogue was
+// written before these indexes is indexed ONCE — one guarded batch, marker included — before its first keyed check, so no
+// keyed check ever runs against a half-built index.
+const BARCODES_STREAM = streamName(STREAM.catalogue, 'barcodes');
+const barcodeOwnerStream = (code: string): string => streamName(STREAM.catalogue, 'barcode-owner', code);
+const skuHolderStream = (sku: string): string => streamName(STREAM.catalogue, 'sku-holder', sku);
+const productSkuStream = (productId: string): string => streamName(STREAM.catalogue, 'product-sku', productId);
+const CATALOGUE_INDEX_STREAM = streamName(STREAM.catalogue, 'indexes');
+interface SkuIndexed { readonly productId: string; readonly sku: string }
+
+/** The index entries for one published product: its current SKU, and its claim on that SKU. */
+function skuIndexEntries(tenantId: string, record: { readonly productId: string; readonly sku: string }, suffix: string, at: string): BatchEntry[] {
+  const payload: SkuIndexed = { productId: record.productId, sku: record.sku };
+  return [
+    { stream: productSkuStream(record.productId), event: makeEvent({ id: `product-sku-${record.productId}-${suffix}`, type: 'ProductSkuIndexed', occurredAt: at, idempotencyKey: `product-sku-${tenantId}-${record.productId}-${suffix}`, source: 'api/catalogue', payload }) },
+    { stream: skuHolderStream(record.sku), event: makeEvent({ id: `sku-claim-${record.productId}-${suffix}`, type: 'SkuClaimed', occurredAt: at, idempotencyKey: `sku-claim-${tenantId}-${record.sku}-${record.productId}-${suffix}`, source: 'api/catalogue', payload }) },
+  ];
+}
+
+/** Indexes built once per tenant — remembered per process (a marker, once written, is permanent). */
+const builtIndexes = new WeakMap<EventStore, Set<string>>();
+/**
+ * Make sure a tenant's catalogue index `name` exists: a keyed look for its marker; when absent, ONE guarded batch writes an
+ * entry for every record already in the ledger AND the marker — all or nothing. A competing builder loses the guard and
+ * finds the marker.
+ */
+async function ensureCatalogueIndex(store: EventStore, tenantId: string, name: 'barcode-owner' | 'sku', build: () => Promise<BatchEntry[]>): Promise<void> {
+  const seen = builtIndexes.get(store) ?? new Set<string>();
+  builtIndexes.set(store, seen);
+  const markerKey = `catalogue-index-${tenantId}-${name}`;
+  if (seen.has(markerKey)) return;
+  for (let attempt = 0; ; attempt += 1) {
+    if ((await store.findByIdempotencyKey(tenantId, markerKey)) !== undefined) { seen.add(markerKey); return; }
+    const version = await store.guardVersion(tenantId, `catalogue-index:${name}`);
+    const entries = await build();
+    const marker: BatchEntry = { stream: CATALOGUE_INDEX_STREAM, event: makeEvent({ id: `catalogue-index-${name}`, type: 'CatalogueIndexBuilt', occurredAt: new Date().toISOString(), idempotencyKey: markerKey, source: 'api/catalogue', payload: { index: name, entries: entries.length } }) };
+    try {
+      await store.appendBatch(tenantId, [...entries, marker], { guard: { key: `catalogue-index:${name}`, expectedVersion: version } });
+      seen.add(markerKey);
+      return;
+    } catch (err) {
+      if (!(err instanceof ConcurrencyConflictError) || attempt >= 4) throw err;
+    }
+  }
+}
+
+async function ensureSkuIndex(store: EventStore, tenantId: string): Promise<void> {
+  await ensureCatalogueIndex(store, tenantId, 'sku', async () => {
+    const latest = new Map<string, ProductRecord>();
+    for (const r of await allOf<ProductRecord>(store, tenantId, PRODUCTS_STREAM, 'ProductPublished')) latest.set(r.productId, r);
+    const at = new Date().toISOString();
+    return [...latest.values()].flatMap((r) => skuIndexEntries(tenantId, r, 'indexed', at));
+  });
+}
+
+async function ensureBarcodeIndex(store: EventStore, tenantId: string): Promise<void> {
+  await ensureCatalogueIndex(store, tenantId, 'barcode-owner', async () => {
+    const latest = new Map<string, BarcodeAssignment>();
+    for (const a of await allOf<BarcodeAssignment>(store, tenantId, BARCODES_STREAM, 'BarcodeAssigned')) latest.set(a.code, a);
+    const at = new Date().toISOString();
+    return [...latest.values()].map((a) => ({ stream: barcodeOwnerStream(a.code), event: makeEvent({ id: `barcode-owner-${a.code}-indexed`, type: 'BarcodeOwnerIndexed', occurredAt: at, idempotencyKey: `barcode-owner-${tenantId}-${a.code}-indexed`, source: 'api/catalogue', payload: a }) }));
+  });
+}
+
+/** Who holds a SKU now (other than `productId`), by key — and the version its write guard is at, read FIRST. */
+async function skuHolderOf(store: EventStore, tenantId: string, sku: string, productId: string): Promise<{ holder?: string; version: number }> {
+  await ensureSkuIndex(store, tenantId);
+  const version = await store.guardVersion(tenantId, `sku:${sku}`);
+  const claim = await store.latestOfType(tenantId, skuHolderStream(sku), 'SkuClaimed');
+  const claimant = claim === undefined ? undefined : payloadOf<SkuIndexed>(claim).productId;
+  if (claimant === undefined || claimant === productId) return { version };
+  const now = await store.latestOfType(tenantId, productSkuStream(claimant), 'ProductSkuIndexed');
+  return now !== undefined && payloadOf<SkuIndexed>(now).sku === sku ? { holder: claimant, version } : { version };
+}
+
+
 /** Why a product is in use (SF-06-b rollback guard): a barcode assigned to it, or a price set for it — or undefined. */
 export async function productInUse(store: EventStore, tenantId: string, productId: string): Promise<string | undefined> {
   if ((await allOf<{ productId: string }>(store, tenantId, streamName(STREAM.catalogue, 'barcodes'), 'BarcodeAssigned')).some((b) => b.productId === productId)) return 'has a barcode';
@@ -1943,18 +2030,22 @@ export function productMasterAdapter(input: {
     return byId;
   };
   return {
-    publish: async (tenantId, record, key) => {
-      await input.store.append(tenantId, stream, makeEvent({
+    publish: async (tenantId, record, key, skuVersion) => {
+      const at = input.now();
+      // The product's version and its SKU index entries, in ONE atomic batch — guarded on the SKU when the caller read it.
+      await ensureSkuIndex(input.store, tenantId);
+      await input.store.appendBatch(tenantId, [{ stream, event: makeEvent({
         id: `product-${record.productId}-${key}`,
         type: 'ProductPublished',
-        occurredAt: input.now(),
+        occurredAt: at,
         // Keyed on the caller's idempotency key so a retry dedups to one version; a deliberate re-publish
         // (a new key) is a new version.
         idempotencyKey: `product-${tenantId}-${record.productId}-${key}`,
         source: 'api/catalogue',
         payload: record,
-      }));
+      }) }, ...skuIndexEntries(tenantId, record, key, at)], skuVersion === undefined ? undefined : { guard: { key: `sku:${record.sku}`, expectedVersion: skuVersion } });
     },
+    skuHolder: (tenantId, sku, productId) => skuHolderOf(input.store, tenantId, sku, productId),
     categoryRegister: { ...categoryRegisterAdapter(input), approvals: approvalRequestsAdapter(input) },
     product: async (tenantId, productId) => (await foldLatest(tenantId)).get(productId),
     products: async (tenantId) =>
@@ -1972,19 +2063,31 @@ export function barcodeAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): BarcodeRegistryDeps {
-  const stream = streamName(STREAM.catalogue, 'barcodes');
+  const stream = BARCODES_STREAM;
   return {
-    assign: async (tenantId, assignment, key) => {
-      await input.store.append(tenantId, stream, makeEvent({
+    assign: async (tenantId, assignment, key, version) => {
+      const at = input.now();
+      await ensureBarcodeIndex(input.store, tenantId);
+      // The assignment and its owner index entry in ONE atomic batch — guarded on the code when the caller read it.
+      await input.store.appendBatch(tenantId, [{ stream, event: makeEvent({
         id: `barcode-${assignment.code}-${key}`,
         type: 'BarcodeAssigned',
-        occurredAt: input.now(),
+        occurredAt: at,
         // Keyed on the caller's idempotency key so a retry dedups; a deliberate re-assign (new key) appends
         // a new version the fold's last-wins picks up.
         idempotencyKey: `barcode-${tenantId}-${assignment.code}-${key}`,
         source: 'api/catalogue',
         payload: assignment,
-      }));
+      }) }, { stream: barcodeOwnerStream(assignment.code), event: makeEvent({
+        id: `barcode-owner-${assignment.code}-${key}`, type: 'BarcodeOwnerIndexed', occurredAt: at,
+        idempotencyKey: `barcode-owner-${tenantId}-${assignment.code}-${key}`, source: 'api/catalogue', payload: assignment,
+      }) }], version === undefined ? undefined : { guard: { key: `barcode:${assignment.code}`, expectedVersion: version } });
+    },
+    current: async (tenantId, code) => {
+      await ensureBarcodeIndex(input.store, tenantId);
+      const version = await input.store.guardVersion(tenantId, `barcode:${code}`); // read BEFORE the owner
+      const owner = await input.store.latestOfType(tenantId, barcodeOwnerStream(code), 'BarcodeOwnerIndexed');
+      return { version, ...(owner === undefined ? {} : { assignment: payloadOf<BarcodeAssignment>(owner) }) };
     },
     all: (tenantId) => allOf<BarcodeAssignment>(input.store, tenantId, stream, 'BarcodeAssigned'),
   };
@@ -7309,9 +7412,12 @@ export function dataImportAdapter(input: {
         .map((c) => (rollbacks.has(c.jobId) ? { ...c, rolledBack: rollbacks.get(c.jobId)! } : c));
     },
     recordCommit: async (tenantId, record, key, effects) => {
+      // GT-05: a product the load publishes is indexed by its SKU like any other publish (the index is built first).
+      if (effects.some((e) => e.kind === 'product')) await ensureSkuIndex(input.store, tenantId);
       // ONE atomic save: the job's record and every real record it applies — never one without the other.
       await input.store.appendBatch(tenantId, [
         ...effects.map((e) => effectEntry(tenantId, e, record.jobId, record.at)),
+        ...effects.flatMap((e) => (e.kind === 'product' ? skuIndexEntries(tenantId, e.product, `import-${record.jobId}`, record.at) : [])),
         {
           stream: DATA_IMPORTS_STREAM,
           event: makeEvent({
