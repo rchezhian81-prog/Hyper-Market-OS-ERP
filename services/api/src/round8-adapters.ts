@@ -14,9 +14,10 @@ import type { RaisedException } from '../../pos/src/loss-prevention';
 import type { PlacedOrder, OrderTransition } from '../../orders/src/index';
 import type { FavouriteRecord, ShoppingListVersion, ReturnRequestRecord } from '../../orders/src/storefront-self';
 import type { CompetitorObservation } from '../../pricing/src/competitor-prices';
-import { STREAM, streamName, notificationQueueAdapter, effectiveGrants } from './adapters';
-import { QUEUES_STAFFED_BY, type BreachAlert } from '../../orders/src/exception-ownership';
-import type { ExceptionOwnerRole } from '../../../packages/orders/src/substitution-exception-ownership';
+import { STREAM, streamName, notificationQueueAdapter, effectiveGrants, rosterStoreAdapter, orgStructureAdapter } from './adapters';
+import type { BreachAlert, DutyManagers } from '../../orders/src/exception-ownership';
+import { branchOfLocationIn } from '../../inventory/src/location-scope';
+import { OWNER_ROLE_ID, STORE_MANAGER_ROLE_ID } from './roles';
 
 const SENT_REPLIES = streamName(STREAM.service, 'sent-replies');
 const ROOT_CAUSES = streamName(STREAM.service, 'root-causes');
@@ -71,15 +72,49 @@ export function anomalySummaryAdapter(input: { readonly store: EventStore; reado
 }
 
 /**
- * Round 8 (M19-FR-04 · PA-08): who staffs an exception queue now (head office's own grants, through the one staffing
- * table `QUEUES_STAFFED_BY`), and putting a breach alert on the SAME message queue the sender drains — a transactional
- * message composed by head office (`system:exception-alert`), so the sender still re-checks the recipient and the budget.
+ * The roster roles that make a person the store's DUTY MANAGER while their shift runs (OB-61). The roster's role on an
+ * assignment is the shop's own word; these are the manager words it uses. Written in one place so it can change.
+ */
+export const DUTY_MANAGER_ROSTER_ROLES: readonly string[] = Object.freeze(['duty_manager', 'store_manager', 'manager']);
+
+/**
+ * Round 9 (M19 · owner decision OB-61): who is the store's duty manager NOW for the store an order belongs to.
+ *   1. the stored roster: an active person assigned, in a manager role, to a shift at that store whose time covers now;
+ *   2. no roster says who is on duty -> the people holding the store-manager role with that store in their grant scope;
+ *   3. no store manager holds the store -> the owner (the top of the shop) — so a breach is never silently untold;
+ *   4. nobody at all -> `none` (the sweep reports it as nobody-to-tell, P-08).
+ * The store is the order's own place (its `OrderPlaced` location, mapped to its branch through the org structure); an
+ * order with no stored record is treated as the single store (the whole tenant) and the answer names no branch.
+ */
+export async function dutyManagersFor(store: EventStore, now: () => string, tenantId: string, orderId: string, at: string): Promise<DutyManagers> {
+  const placed = (await all<PlacedOrder>(store, tenantId, streamName(STREAM.orders, orderId), 'OrderPlaced'))[0];
+  const branchId = placed === undefined ? undefined : branchOfLocationIn(await orgStructureAdapter({ store, now }).nodes(tenantId))(placed.locationId);
+  const roster = await rosterStoreAdapter({ store, now }).roster(tenantId, branchId);
+  const t = Date.parse(at);
+  const onNow = new Set(roster.shifts.filter((sh) => Date.parse(sh.startsAt) <= t && t < Date.parse(sh.endsAt)).map((sh) => sh.shiftId));
+  const leavers = new Set(roster.employees.filter((e) => !e.active).map((e) => e.employeeId));
+  const rostered = [...new Set(roster.assignments.filter((x) => onNow.has(x.shiftId) && DUTY_MANAGER_ROSTER_ROLES.includes(x.role) && !leavers.has(x.employeeId)).map((x) => x.employeeId))].sort();
+  const where = branchId === undefined ? {} : { branchId };
+  if (rostered.length > 0) return { people: rostered, source: 'roster', ...where };
+  const grants = await effectiveGrants(store, tenantId);
+  const covers = (g: { readonly branchScope: readonly string[] | 'all' }): boolean => branchId === undefined || g.branchScope === 'all' || g.branchScope.includes(branchId);
+  const holding = (roleId: string): string[] => [...new Set(grants.filter((g) => g.roleId === roleId && covers(g)).map((g) => g.userId))].sort();
+  const managers = holding(STORE_MANAGER_ROLE_ID);
+  if (managers.length > 0) return { people: managers, source: 'store_manager_grants', ...where };
+  const owners = holding(OWNER_ROLE_ID);
+  if (owners.length > 0) return { people: owners, source: 'owner_grants', ...where };
+  return { people: [], source: 'none', ...where };
+}
+
+/**
+ * Round 8 (M19-FR-04 · PA-08) / round 9 (OB-61): who to tell when nobody holds a breached exception (the store's duty
+ * manager, above), and putting a breach alert on the SAME message queue the sender drains — a transactional message
+ * composed by head office (`system:exception-alert`), so the sender still re-checks the recipient and the budget.
  */
 export function breachAlertAdapter(input: { readonly store: EventStore; readonly now: () => string }) {
   const queue = notificationQueueAdapter({ store: input.store, now: input.now });
   return {
-    staffOf: async (tenantId: string, q: ExceptionOwnerRole): Promise<readonly string[]> =>
-      [...new Set((await effectiveGrants(input.store, tenantId)).filter((g) => (QUEUES_STAFFED_BY[g.roleId] ?? []).includes(q)).map((g) => g.userId))].sort(),
+    dutyManagersFor: (tenantId: string, orderId: string, at: string): Promise<DutyManagers> => dutyManagersFor(input.store, input.now, tenantId, orderId, at),
     enqueueBreachAlert: async (tenantId: string, a: BreachAlert): Promise<boolean> => {
       if ((await queue.events!(tenantId)).some((e) => e.id === a.id && e.change === 'enqueued')) return false;
       await queue.record(tenantId, {

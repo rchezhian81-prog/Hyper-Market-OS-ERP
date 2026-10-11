@@ -35,8 +35,12 @@ export interface ExceptionOwnershipDeps {
   readonly rolesOf: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
   /** The SLA policy — the engine's default until a tenant sets its own. */
   readonly exceptionSla?: (tenantId: string) => Promise<ExceptionSlaPolicy> | ExceptionSlaPolicy;
-  /** Round 8 (M19 · PA-08): the people who staff a queue now — from head office's own grants and `QUEUES_STAFFED_BY`. */
-  readonly staffOf?: (tenantId: string, queue: ExceptionOwnerRole) => Promise<readonly string[]> | readonly string[];
+  /**
+   * Round 9 (M19 · owner decision OB-61): who is the store's DUTY MANAGER right now for the store an order belongs to —
+   * from the stored roster (a manager rostered on a shift that covers `now`), falling back to the store's manager(s) by
+   * grant scope when no roster says who is on duty. Asked only for a breached item nobody holds.
+   */
+  readonly dutyManagersFor?: (tenantId: string, orderId: string, now: string) => Promise<DutyManagers> | DutyManagers;
   /**
    * Round 8 (M19 · PA-08): put one breach alert on the message queue (the SAME queue the sender drains, with its retry,
    * dead letter and budget). Idempotent on the alert's id; answers whether it was newly queued.
@@ -44,9 +48,20 @@ export interface ExceptionOwnershipDeps {
   readonly enqueueBreachAlert?: (tenantId: string, alert: BreachAlert) => Promise<boolean> | boolean;
 }
 
-/** Round 8 (M19 · PA-08): one message that an exception is past its time limit, to one person who staffs its queue. */
+/**
+ * Round 9 (OB-61): the store's duty manager(s) now, and WHERE that answer came from — the roster, or (no roster says who
+ * is on duty) the store's manager grants, or (no manager holds the store) the owner. `none` = nobody to tell (P-08).
+ */
+export interface DutyManagers {
+  readonly people: readonly string[];
+  readonly source: 'roster' | 'store_manager_grants' | 'owner_grants' | 'none';
+  /** The store the order belongs to, when the order record names one. */
+  readonly branchId?: string;
+}
+
+/** Round 8 (M19 · PA-08) / round 9 (OB-61): one message that an exception is past its time limit, to its holder or the duty manager. */
 export interface BreachAlert {
-  /** `subx-<exceptionId>-<queue>-<person>` — one alert per exception, per queue it sits in, per person. */
+  /** `subx-<exceptionId>-<queue>-<person>` — one alert per breach (the exception past the limit of the queue it sits in), per person. */
   readonly id: string;
   readonly to: string;
   readonly exceptionId: string;
@@ -57,10 +72,11 @@ export interface BreachAlert {
 }
 
 export interface BreachAlertSweep {
-  readonly queued: readonly { readonly exceptionId: string; readonly to: string; readonly id: string }[];
+  /** `as`: why this person — `holder` (they hold the item) or the duty-manager source (OB-61). */
+  readonly queued: readonly { readonly exceptionId: string; readonly to: string; readonly id: string; readonly as: 'holder' | DutyManagers['source'] }[];
   /** Alerts already on the queue from an earlier sweep — said, never sent twice. */
   readonly alreadyQueued: number;
-  /** Breached exceptions in a queue nobody staffs — nobody to tell; reported, never dropped (P-08). */
+  /** Breached exceptions nobody holds and with no duty manager to tell; reported, never dropped (P-08). */
   readonly nobodyToTell: readonly string[];
   readonly breached: number;
 }
@@ -68,14 +84,17 @@ export interface BreachAlertSweep {
 const rupees = (minor: number): string => `₹${(minor / 100).toFixed(2)}`;
 
 /**
- * Round 8 (M19-FR-04 SLA management · PA-08): every unresolved exception past its time limit raises an alert on the
- * message queue — to the person holding it, and to everyone who staffs the queue it sits in. One alert per exception,
- * per queue, per person: a re-run queues nothing twice; an escalation to a new queue alerts that queue's people.
+ * M19-FR-04 SLA management · PA-08 · owner decision OB-61 (round 9): every unresolved exception past its time limit
+ * raises an alert on the message queue — to the person HOLDING it (who claimed it, from the stored record), and only when
+ * nobody holds it, to the store's DUTY MANAGER (the roster's manager on shift now, else the store's managers by grant
+ * scope). Never to everyone on the queue. One alert per breach (the exception past its queue's limit) per person: a
+ * re-run — or a restart, since the check reads the stored queue — queues nothing twice; a holder who lets go of the item
+ * after being told is not told again (they no longer hold it); an escalation to the next queue is a new breach.
  */
 export async function raiseBreachAlerts(deps: OrdersDeps & ExceptionOwnershipDeps, tenantId: string, now: string, by: string): Promise<BreachAlertSweep> {
-  if (deps.staffOf === undefined || deps.enqueueBreachAlert === undefined) return { queued: [], alreadyQueued: 0, nobodyToTell: [], breached: 0 };
+  if (deps.dutyManagersFor === undefined || deps.enqueueBreachAlert === undefined) return { queued: [], alreadyQueued: 0, nobodyToTell: [], breached: 0 };
   const { items, policy } = await ownedWorklist(deps, tenantId, now);
-  const queued: { exceptionId: string; to: string; id: string }[] = [];
+  const queued: { exceptionId: string; to: string; id: string; as: 'holder' | DutyManagers['source'] }[] = [];
   const nobodyToTell: string[] = [];
   let alreadyQueued = 0;
   let breached = 0;
@@ -83,13 +102,16 @@ export async function raiseBreachAlerts(deps: OrdersDeps & ExceptionOwnershipDep
     const sla = slaStatus(o, policy, now);
     if (!sla.breached) continue;
     breached += 1;
-    const people = [...new Set([...(o.assignedTo === undefined ? [] : [o.assignedTo]), ...await deps.staffOf(tenantId, o.owner)])].sort();
+    let people: readonly string[];
+    let as: 'holder' | DutyManagers['source'];
+    if (o.assignedTo !== undefined) { people = [o.assignedTo]; as = 'holder'; }
+    else { const duty = await deps.dutyManagersFor(tenantId, o.orderId, now); people = [...new Set(duty.people)].sort(); as = duty.source; }
     if (people.length === 0) { nobodyToTell.push(o.exceptionId); continue; }
     for (const to of people) {
       const id = `subx-${o.exceptionId}-${o.owner}-${to}`;
       const text = `Delivery exception past its time limit: order ${o.orderId} line ${o.lineId} — ${o.kind.replace(/_/g, ' ')}, ${rupees(o.amountMinor)} at stake, `
-        + `in the ${o.owner.replace(/_/g, ' ')} queue${o.assignedTo === undefined ? ' (nobody has claimed it)' : `, held by ${o.assignedTo}`}; it was due by ${sla.dueAt}. Open Delivery exceptions to work it.`;
-      if (await deps.enqueueBreachAlert(tenantId, { id, to, exceptionId: o.exceptionId, owner: o.owner, text, at: now, by })) queued.push({ exceptionId: o.exceptionId, to, id });
+        + `in the ${o.owner.replace(/_/g, ' ')} queue${o.assignedTo === undefined ? ' (nobody has claimed it — you are the duty manager)' : `, held by you (${o.assignedTo})`}; it was due by ${sla.dueAt}. Open Delivery exceptions to work it.`;
+      if (await deps.enqueueBreachAlert(tenantId, { id, to, exceptionId: o.exceptionId, owner: o.owner, text, at: now, by })) queued.push({ exceptionId: o.exceptionId, to, id, as });
       else alreadyQueued += 1;
     }
   }
@@ -344,12 +366,12 @@ export function exceptionOwnershipRoutes(deps: OrdersDeps & ExceptionOwnershipDe
       },
     },
     // Round 8 (M19-FR-04 · PA-08): raise the breach alerts now — what the head-office worker does on its own timer.
-    // Each unresolved exception past its time limit is put on the message queue for the people who staff its queue.
+    // Each unresolved exception past its time limit is put on the message queue for its holder, else the duty manager (OB-61).
     {
       api: 'API-07', method: 'POST', path: '/v1/orders/substitution-exceptions/breach-alerts',
       permission: 'order.exception.manage', idempotent: true,
       handler: async (ctx) => {
-        if (deps.staffOf === undefined || deps.enqueueBreachAlert === undefined) {
+        if (deps.dutyManagersFor === undefined || deps.enqueueBreachAlert === undefined) {
           throw apiError(501, { code: 'breach_alerts_not_wired', whatHappened: 'Breach alerts are not wired on this server.', wasItSaved: 'not_saved', nextSafeAction: 'Read the worklist; breached items are marked there.' });
         }
         const now = deps.now();
@@ -368,7 +390,7 @@ export function exceptionOwnershipRoutes(deps: OrdersDeps & ExceptionOwnershipDe
         const moved = swept.owneds.filter((o) => swept.escalatedIds.includes(o.exceptionId));
         for (const o of moved) await deps.recordOwnedException(ctx.tenantId, o);
         const stuck = items.filter((o) => o.state !== 'resolved' && o.owner === 'duty_manager' && slaStatus(o, policy, now).breached).map((o) => o.exceptionId);
-        // Round 8 (PA-08): whatever is past its time limit — where it now sits — is told to the people who work it.
+        // Round 8 (PA-08) / OB-61: whatever is past its time limit — where it now sits — is told to its holder, else the duty manager.
         const alerts = await raiseBreachAlerts(deps, ctx.tenantId, now, ctx.userId);
         return {
           status: 200,
