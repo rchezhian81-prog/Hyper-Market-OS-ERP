@@ -34,6 +34,7 @@ import { InvalidCountError } from '../../../packages/counts/src/counts';
 import { ADJUSTMENT_REASON_CODES, isAdjustmentReason } from '../../../packages/adjustment/src/adjustment';
 import { reconcileBlindCount, decideCount, type CountsDeps, type CountFlag, type StoredReconciliation } from './counts';
 import { assertLocationInScope, stockReadScope } from './location-scope';
+import type { HeldWriteOffView, HeldWriteOffApplied } from './held-write-offs';
 
 /** The movement kinds a plan may freeze. Till sales and till returns are never among them (hard rule #1). */
 export const FREEZABLE_KINDS = Object.freeze([
@@ -102,6 +103,10 @@ export interface CountPlanDeps extends CountsDeps {
   readonly planCounts: (tenantId: string, planId: string) => Promise<readonly StoredReconciliation[]> | readonly StoredReconciliation[];
   /** Every M08 movement at this location for these products — the as-of expected figure and the freeze check read it. */
   readonly movementsAt: (tenantId: string, locationId: string, productIds: readonly string[]) => Promise<readonly PlaceMovement[]> | readonly PlaceMovement[];
+  /** OB-66: the damaged-on-arrival write-offs HELD on this plan, with their state (absent on a bare stub — none). */
+  readonly heldWriteOffs?: (tenantId: string, plan: CountPlan) => Promise<readonly HeldWriteOffView[]> | readonly HeldWriteOffView[];
+  /** OB-66: apply, ONCE each, the held write-offs of a CLOSED plan (approved or cancelled); answers what it applied now. */
+  readonly applyHeldWriteOffs?: (tenantId: string, plan: CountPlan, by: string, at: string) => Promise<readonly HeldWriteOffApplied[]> | readonly HeldWriteOffApplied[];
   /** Who holds which permissions — a relayed count's counter is re-verified (flag, never silent). */
   readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
 }
@@ -271,9 +276,17 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
   };
   const positionOf = async (tenantId: string, plan: CountPlan) => {
     const [counts, causes, moves] = await Promise.all([deps.planCounts(tenantId, plan.planId), deps.causes(tenantId, plan.planId), deps.movementsAt(tenantId, plan.locationId, plan.productIds)]);
+    const held = deps.heldWriteOffs === undefined ? [] : await deps.heldWriteOffs(tenantId, plan);
     const lines = planPosition(plan, counts, causes, moves);
-    const breaches = freezeBreaches(plan, moves, new Set(counts.map((c) => `count:${c.countId}`)));
-    return { counts, lines, breaches };
+    // The plan's own corrections and its held write-offs applied at its close are not breaches of its freeze.
+    const breaches = freezeBreaches(plan, moves, new Set([...counts.map((c) => `count:${c.countId}`), ...held.flatMap((h) => h.applied?.movementIds ?? [])]));
+    return { counts, lines, breaches, held };
+  };
+  // OB-66: a closed plan's held write-offs are applied once — on the close, and again (a no-op once done) on a re-sent close.
+  const applyHeld = async (ctx: RequestContext, plan: CountPlan) => {
+    const applied = deps.applyHeldWriteOffs === undefined ? [] : await deps.applyHeldWriteOffs(ctx.tenantId, plan, ctx.userId, deps.now());
+    if (applied.length > 0) await audit(ctx, 'count.plan.held_write_offs.apply', plan, { applied: applied.map((a) => a.writeOffId).join(','), outcome: plan.state }, `held damaged write-offs applied at the count's close (OB-66)`);
+    return applied;
   };
   const audit = async (ctx: RequestContext, action: string, plan: CountPlan, after: Record<string, string>, reason: string) => {
     await deps.recordAudit?.(ctx.tenantId, {
@@ -395,7 +408,7 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         const plan = await load(ctx);
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['reason'])) throw refuse(400, 'not_readable_as_a_count_approval', 'An approval needs a reason — the audit line a person reads later.');
-        if (plan.state === 'approved') return { status: 200, body: { plan, alreadyApproved: true } };
+        if (plan.state === 'approved') return { status: 200, body: { plan, alreadyApproved: true, heldWriteOffsApplied: await applyHeld(ctx, plan) } };
         if (plan.state !== 'counting') throw refuse(409, 'count_plan_not_open', `Count plan ${plan.planId} is ${plan.state}; only an open count can be approved.`);
         const { counts, lines } = await positionOf(ctx.tenantId, plan);
         const waiting = lines.filter((l) => l.state === 'not_counted' || l.state === 'recount_required' || l.state === 'cause_required');
@@ -431,7 +444,8 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         const lossMinor = posted.filter((p) => p.varianceMinor < 0).reduce((s, p) => s + p.valueMinor, 0);
         const gainMinor = posted.filter((p) => p.varianceMinor > 0).reduce((s, p) => s + p.valueMinor, 0);
         await audit(ctx, 'count.plan.approve', plan, { state: 'approved', posted: String(posted.length), lossMinor: String(lossMinor), gainMinor: String(gainMinor) }, approved.approvalReason ?? '');
-        return { status: 200, body: { plan: approved, posted, lossMinor, gainMinor, alreadyApproved: false } };
+        const heldWriteOffsApplied = await applyHeld(ctx, approved);
+        return { status: 200, body: { plan: approved, posted, lossMinor, gainMinor, heldWriteOffsApplied, alreadyApproved: false } };
       },
     },
     {
@@ -442,12 +456,13 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         const plan = await load(ctx);
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['reason'])) throw refuse(400, 'not_readable_as_a_cancellation', 'Cancelling a count needs a reason.');
-        if (plan.state === 'cancelled') return { status: 200, body: { plan, alreadyCancelled: true } };
+        if (plan.state === 'cancelled') return { status: 200, body: { plan, alreadyCancelled: true, heldWriteOffsApplied: await applyHeld(ctx, plan) } };
         if (plan.state === 'approved') throw refuse(409, 'count_plan_already_approved', `Count plan ${plan.planId} was approved; its corrections stand (a correction to them is a new count).`);
         const cancelled: CountPlan = { ...plan, state: 'cancelled', cancelledBy: ctx.userId, cancelledAt: deps.now(), cancelReason: b['reason'].trim() };
         await deps.recordPlan(ctx.tenantId, cancelled, 'cancelled');
         await audit(ctx, 'count.plan.cancel', plan, { state: 'cancelled' }, cancelled.cancelReason ?? '');
-        return { status: 200, body: { plan: cancelled, alreadyCancelled: false } };
+        const heldWriteOffsApplied = await applyHeld(ctx, cancelled);
+        return { status: 200, body: { plan: cancelled, heldWriteOffsApplied, alreadyCancelled: false } };
       },
     },
     {
@@ -456,12 +471,14 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
       permission: 'inventory.count.plan',
       handler: async (ctx) => {
         const plan = await load(ctx);
-        const { lines, breaches } = await positionOf(ctx.tenantId, plan);
+        const { lines, breaches, held } = await positionOf(ctx.tenantId, plan);
         const finals = lines.filter((l) => l.state === 'ready' || l.state === 'cause_required' || l.state === 'recount_required');
         return {
           status: 200,
           body: {
             plan, lines, freezeBreaches: breaches,
+            // OB-66: damaged-on-arrival write-offs this count's freeze HELD — applied once at its close, never lost.
+            heldWriteOffs: held,
             totals: {
               products: lines.length, counted: lines.filter((l) => l.state !== 'not_counted').length,
               recountRequired: lines.filter((l) => l.state === 'recount_required').length, causeRequired: lines.filter((l) => l.state === 'cause_required').length,

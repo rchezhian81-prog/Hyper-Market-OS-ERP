@@ -58,6 +58,7 @@ import {
 } from '../../../packages/production/src/departments';
 import type { StockMovement } from '../../../packages/stock/src/position';
 import { isCurrencyCode, money, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
+import { valueAtUnitCost, minorPerUnitOf } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, locationInScope, type LocationBranches } from './location-scope';
 
 /** A committed production run, recorded as the evidence a later report reads. */
@@ -90,10 +91,69 @@ export interface StoredRun {
   /** Batch 2 · FUL-01: the M08 movements this run posted for its ingredients — absent on a run recorded before production
    *  moved ordinary stock (its consumption is then only on this stream and is still subtracted privately). */
   readonly ledgerMovementIds?: readonly string[];
+  /**
+   * OB-68 "A" (owner, 11 Oct 2026, "Production run's cost"): what the run's output is worth — the ingredients it consumed,
+   * each at head office's OB-39 average buying cost at the store at the time of the run (the registered production cost
+   * only where head office holds no average), per whole unit of output. `valued: false` names the ingredients with no
+   * cost: the output then enters stock "not valued" by name — never at zero. Absent on runs recorded before OB-68.
+   */
+  readonly runCost?: RunCost;
   /** Quality-release state, set by the adapter's fold of release events (M11-FR-03). */
   readonly released?: boolean;
   readonly releasedBy?: string | null;
   readonly releasedAt?: string | null;
+}
+
+/** OB-68: one consumed ingredient's cost on the run. */
+export interface RunCostLine {
+  readonly productId: string;
+  readonly quantityMinor: number;
+  readonly uom: string;
+  /** Per WHOLE unit for `average_buying_cost`; per smallest unit for `registered_cost`; null when there is none. */
+  readonly unitCostMinor: number | null;
+  readonly source: 'average_buying_cost' | 'registered_cost' | 'none';
+  readonly valueMinor: number | null;
+}
+
+/** OB-68: the run's own unit cost — the ingredients consumed, valued once. */
+export interface RunCost {
+  readonly valued: boolean;
+  readonly inputCostMinor: number | null;
+  /** The output's cost per WHOLE unit of its unit of measure (what the `produced` movement is valued at), or null. */
+  readonly unitCostPerWholeMinor: number | null;
+  readonly lines: readonly RunCostLine[];
+  /** The ingredients with no cost at all — named, never valued at zero. */
+  readonly notValuedBecause: readonly string[];
+}
+
+/**
+ * OB-68 (pure): value a run's consumed ingredients — each at the OB-39 average (per whole unit, rounded once per line, OB-31),
+ * else the registered production cost (per smallest unit), else not valued (named).
+ */
+export function runCostOf(consumed: readonly RecipeInput[], averageOf: (productId: string) => number | undefined, registeredOf: (productId: string) => Money | undefined, outputQuantityMinor: number, outputUom: string): RunCost {
+  const lines: RunCostLine[] = consumed.map((c): RunCostLine => {
+    const avg = averageOf(c.productId);
+    if (avg !== undefined) return { productId: c.productId, quantityMinor: c.quantityMinor, uom: c.uom, unitCostMinor: avg, source: 'average_buying_cost', valueMinor: valueAtUnitCost(c.quantityMinor, c.uom, avg) };
+    const reg = registeredOf(c.productId);
+    if (reg !== undefined) return { productId: c.productId, quantityMinor: c.quantityMinor, uom: c.uom, unitCostMinor: reg.minor, source: 'registered_cost', valueMinor: reg.minor * c.quantityMinor };
+    return { productId: c.productId, quantityMinor: c.quantityMinor, uom: c.uom, unitCostMinor: null, source: 'none', valueMinor: null };
+  });
+  const notValuedBecause = lines.filter((l) => l.valueMinor === null).map((l) => l.productId);
+  const valued = notValuedBecause.length === 0 && outputQuantityMinor > 0;
+  const inputCostMinor = notValuedBecause.length === 0 ? lines.reduce((n, l) => n + (l.valueMinor ?? 0), 0) : null;
+  const unitCostPerWholeMinor = valued && inputCostMinor !== null ? Math.round((inputCostMinor * minorPerUnitOf(outputUom)) / outputQuantityMinor) : null;
+  return { valued, inputCostMinor, unitCostPerWholeMinor, lines, notValuedBecause };
+}
+
+/**
+ * OB-68: the cost the `produced` movement carries. Counted output (each): the run's whole input cost for the whole batch
+ * (`unitCostPer` = the units made, OB-46) — the value that left the ingredients is exactly the value the output brings in,
+ * nothing lost to rounding. Weighed output: per whole unit (kg / l), rounded once.
+ */
+export function producedCostOf(cost: RunCost, outputQuantityMinor: number, outputUom: string): { unitCostMinor: number; unitCostPer?: number } | undefined {
+  if (!cost.valued || cost.inputCostMinor === null || cost.unitCostPerWholeMinor === null) return undefined;
+  if (minorPerUnitOf(outputUom) === 1 && outputQuantityMinor > 1) return { unitCostMinor: cost.inputCostMinor, unitCostPer: outputQuantityMinor };
+  return { unitCostMinor: cost.unitCostPerWholeMinor };
 }
 
 /** A quality release recorded against a run — moves the finished batch out of quarantine. */
@@ -115,6 +175,11 @@ export interface ProductionDeps {
   /** Record a recipe VERSION (FUL-08): a recipe identical to the current one is no new version; any change is the next
    *  version, kept beside the earlier ones (append-only). Returns what it did; a bare stub may return nothing. */
   readonly recordRecipe: (tenantId: string, recipe: Recipe) => Promise<RecipeRegistration | void> | RecipeRegistration | void;
+  /**
+   * OB-68 / OB-39: head office's average buying cost per WHOLE unit of a product at the store a location belongs to, as it
+   * stands now (the time of the run), or undefined. Optional: a bare stub values runs from the registered cost alone.
+   */
+  readonly averageCostAt?: (tenantId: string, locationId: string, productId: string) => Promise<number | undefined> | number | undefined;
   /** The registered ingredient cost per smallest unit (M11-FR-02), or nothing when unknown. */
   readonly ingredientCost: (tenantId: string, productId: string) => Promise<Money | undefined> | Money | undefined;
   readonly recordCost: (tenantId: string, productId: string, cost: Money) => Promise<void> | void;
@@ -274,13 +339,10 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         // and the run's cost is marked not-authoritative, while the physical run still proceeds (a
         // missing cost must not stop the cafe making coffee).
         const unitCosts: Record<string, Money> = {};
-        const uncostedProducts: string[] = [];
         for (const input of recipe.inputs) {
           const cost = await deps.ingredientCost(ctx.tenantId, input.productId);
-          if (cost === undefined) uncostedProducts.push(input.productId);
-          else unitCosts[input.productId] = cost;
+          if (cost !== undefined) unitCosts[input.productId] = cost;
         }
-        const costKnown = uncostedProducts.length === 0;
 
         let result;
         try {
@@ -302,12 +364,18 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
         }
 
         const consumed = consumedInputs(result.movements);
+        // OB-68: the run's own cost — the ingredients it consumed at the OB-39 average at this moment (the registered cost
+        // only where head office holds no average); an ingredient with neither is named and the output is not valued.
+        const averages: Record<string, number | undefined> = {};
+        for (const c of consumed) averages[c.productId] = deps.averageCostAt === undefined ? undefined : await deps.averageCostAt(ctx.tenantId, b.locationId, c.productId);
+        const runCost = runCostOf(consumed, (p) => averages[p], (p) => unitCosts[p], result.outputQuantityMinor, recipe.outputUom);
         const run: StoredRun = {
           runId, recipeId: recipe.recipeId, departmentId: recipe.departmentId, locationId: b.locationId,
           outputProductId: result.outputProductId, outputBatchId: result.outputBatchId,
           outputQuantityMinor: result.outputQuantityMinor, outputUom: recipe.outputUom, expiresAt: result.expiresAt,
-          inputCostMinor: result.inputCost.minor, outputUnitCostMinor: result.outputUnitCost.minor, currency,
-          costKnown, uncostedProducts,
+          inputCostMinor: runCost.inputCostMinor ?? result.inputCost.minor,
+          outputUnitCostMinor: runCost.inputCostMinor !== null && result.outputQuantityMinor > 0 ? Math.round(runCost.inputCostMinor / result.outputQuantityMinor) : result.outputUnitCost.minor,
+          currency, costKnown: runCost.notValuedBecause.length === 0, uncostedProducts: [...runCost.notValuedBecause], runCost,
           yieldBp: result.yieldBp, yieldVerdict: result.yieldVerdict, exceptions: result.exceptions,
           consumed, recipeDigest: recipeDigest(recipe), producedBy: ctx.userId, at,
         };
@@ -329,7 +397,7 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
             runId, outputProductId: run.outputProductId, outputBatchId: run.outputBatchId,
             outputQuantityMinor: run.outputQuantityMinor, expiresAt: run.expiresAt,
             inputCostMinor: run.inputCostMinor, outputUnitCostMinor: run.outputUnitCostMinor,
-            costKnown: run.costKnown, uncostedProducts: run.uncostedProducts,
+            costKnown: run.costKnown, uncostedProducts: run.uncostedProducts, runCost,
             yieldBp: run.yieldBp, yieldVerdict: run.yieldVerdict, exceptions: run.exceptions,
           },
         };
@@ -378,7 +446,10 @@ export function productionRoutes(deps: ProductionDeps): readonly Route[] {
           quantityMinor: run.outputQuantityMinor, uom: run.outputUom, occurredAt: at, enteredBy: ctx.userId,
           batchId: run.outputBatchId, expiry: run.expiresAt.slice(0, 10),
           reason: `production run ${runId} batch ${run.outputBatchId} released by ${ctx.userId}`,
-          ...(run.costKnown ? { unitCostMinor: run.outputUnitCostMinor } : {}),
+          // OB-68: a run with its own cost carries it (the store's average cost and the month-end valuation read it); a run
+          // whose ingredients had no cost carries none — "not valued" by name, never zero. (Pre-OB-68 runs: as recorded.)
+          ...(run.runCost !== undefined ? (producedCostOf(run.runCost, run.outputQuantityMinor, run.outputUom) ?? {})
+            : run.costKnown ? { unitCostMinor: run.outputUnitCostMinor } : {}),
         };
         await deps.recordRelease(ctx.tenantId, { runId, batchId: run.outputBatchId, releasedBy: ctx.userId, quantityMinor: run.outputQuantityMinor, releasedAt: at, ledgerMovementIds: [produced.movementId] }, [produced]);
         return { status: 200, body: { runId, batchId: run.outputBatchId, released: true, releasedBy: ctx.userId, releasedAt: at, movements: result.movements } };

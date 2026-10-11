@@ -24,7 +24,10 @@
 // (the books carry opening stock through the opening trial balance). Consigned and concession stock is not the shop's.
 //
 // Nothing is valued at zero: a product on hand with no average buying cost is LISTED and the adjustment refused until head
-// office holds its cost (P-08). Through the accountant's posting map (kind `stock_period_adjustment`; suggested rule
+// office holds its cost (P-08). OB-68 "A" (owner, 11 Oct 2026): goods MADE in the store carry their production run's own
+// cost (the ingredients consumed, at this average when the run was made) into the same average, so they are valued like
+// bought goods; a run whose ingredients had no cost leaves its output listed here by name. A run is not a purchase: the
+// ingredients' value moves into the output, so it changes neither purchases nor (beyond rounding) the closing value. Through the accountant's posting map (kind `stock_period_adjustment`; suggested rule
 // shipped, refused `not_mapped` if absent). Once per month: the journal's id is the month, a re-run returns it.
 
 import type { Route } from '../../kernel/src/index';

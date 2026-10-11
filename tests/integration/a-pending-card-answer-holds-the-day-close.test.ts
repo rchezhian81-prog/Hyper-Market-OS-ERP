@@ -98,8 +98,8 @@ describe('D04-FR-02 / PF-06 — a card or UPI payment with no final answer holds
     expect(reason).toContain(`UPI payment ${upi.attemptId} on till lane-1`);
     expect(reason).toContain('no answer was recorded from the machine');
     expect(reason).toMatch(/do not run the card again/);
-    // Nothing was locked: the box's day-close log is empty.
-    expect((await readLog(join(dir, 'day-close.log')).catch(() => [])).length).toBe(0);
+    // Nothing was locked: the box's day-close log holds no close (OB-69: only the no-answer relayed to head office).
+    expect((await readLog(join(dir, 'day-close.log')).catch(() => [])).filter((r) => r.ok && r.record.includes('"closedBy"')).length).toBe(0);
     // The manager's close list names both, before anyone taps Close.
     expect((await managerList(edge))!.map((p) => p.id).sort()).toEqual([card.attemptId, upi.attemptId].sort());
     expect((await managerList(edge))!.find((p) => p.id === card.attemptId)!.what).toMatch(/Card payment of Rs 640\.00 on till lane-1/);

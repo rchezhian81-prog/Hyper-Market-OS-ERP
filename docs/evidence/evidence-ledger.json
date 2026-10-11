@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1120,
+  "testFiles": 1123,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -522,8 +522,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 14,
-        "integration": 37,
-        "realDb": 11,
+        "integration": 38,
+        "realDb": 12,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -548,6 +548,7 @@
         ],
         "integration": [
           "tests/integration/a-b2b-order-holds-and-moves-ordinary-stock.test.ts",
+          "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/adjustment-requests.test.ts",
@@ -587,6 +588,7 @@
         ],
         "realDb": [
           "tests/integration/a-b2b-order-holds-and-moves-ordinary-stock.test.ts",
+          "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
           "tests/integration/inventory-branch-scope.test.ts",
@@ -775,8 +777,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 4,
-        "integration": 5,
-        "realDb": 1,
+        "integration": 6,
+        "realDb": 2,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -790,6 +792,7 @@
           "tests/unit/production.test.ts"
         ],
         "integration": [
+          "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/production-durability.test.ts",
           "tests/integration/production-moves-ordinary-stock.test.ts",
           "tests/integration/production.test.ts",
@@ -797,6 +800,7 @@
           "tests/integration/weighed-costing.test.ts"
         ],
         "realDb": [
+          "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/production-moves-ordinary-stock.test.ts"
         ],
         "browser": [
@@ -992,8 +996,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 17,
-        "integration": 16,
-        "realDb": 4,
+        "integration": 17,
+        "realDb": 5,
         "browser": 5,
         "connected": 0,
         "device": 0,
@@ -1020,6 +1024,7 @@
           "tests/unit/till.test.ts"
         ],
         "integration": [
+          "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts",
@@ -1038,6 +1043,7 @@
           "tests/integration/till-cash.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
@@ -1542,8 +1548,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 22,
-        "integration": 26,
-        "realDb": 12,
+        "integration": 28,
+        "realDb": 14,
         "browser": 4,
         "connected": 0,
         "device": 0,
@@ -1576,6 +1582,7 @@
         ],
         "integration": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
+          "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/cod-reconciliation.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
@@ -1583,6 +1590,7 @@
           "tests/integration/day-book-posts-the-day.test.ts",
           "tests/integration/day-close-reconcile-on-sync.test.ts",
           "tests/integration/driver-handheld-reaches-the-cloud-through-the-edge.test.ts",
+          "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
           "tests/integration/period-evidence.test.ts",
@@ -1604,9 +1612,11 @@
         ],
         "realDb": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
+          "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
           "tests/integration/credit-note-reconciliation.test.ts",
+          "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
@@ -1833,8 +1843,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 5,
-        "integration": 9,
-        "realDb": 3,
+        "integration": 10,
+        "realDb": 4,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -1849,6 +1859,7 @@
           "tests/unit/waste.test.ts"
         ],
         "integration": [
+          "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/beyond-the-till.test.ts",
@@ -1860,6 +1871,7 @@
           "tests/integration/waste-write-off.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/physical-to-system.test.ts"
@@ -2491,8 +2503,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 5,
-        "integration": 11,
-        "realDb": 5,
+        "integration": 12,
+        "realDb": 6,
         "browser": 5,
         "connected": 1,
         "device": 0,
@@ -2507,6 +2519,7 @@
           "tests/unit/self-checkout.test.ts"
         ],
         "integration": [
+          "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-card-payment-is-recorded-before-the-machine-is-asked.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/a-pending-card-answer-holds-the-day-close.test.ts",
@@ -2520,6 +2533,7 @@
           "tests/integration/the-till-spends-points-and-store-credit.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/no-sale-and-price-override-are-kept-and-judged.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
@@ -3731,8 +3745,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 0,
-        "integration": 10,
-        "realDb": 5,
+        "integration": 11,
+        "realDb": 6,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -3741,6 +3755,7 @@
       "files": {
         "unit": [],
         "integration": [
+          "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
           "tests/integration/adjustment-requests.test.ts",
@@ -3753,6 +3768,7 @@
           "tests/integration/warehouse-counts.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-damaged-arrival-under-an-open-count-is-received-good-and-written-off-at-the-close.test.ts",
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
           "tests/integration/an-open-count-freezes-every-adjustment-and-write-off-path.test.ts",
@@ -3897,8 +3913,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 0,
-        "integration": 9,
-        "realDb": 4,
+        "integration": 10,
+        "realDb": 5,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -3907,6 +3923,7 @@
       "files": {
         "unit": [],
         "integration": [
+          "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/a-pending-card-answer-holds-the-day-close.test.ts",
           "tests/integration/day-close-honestly.test.ts",
@@ -3918,6 +3935,7 @@
           "tests/integration/till-cash.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-card-no-answer-reaches-finance-the-moment-it-happens.test.ts",
           "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
@@ -4122,8 +4140,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 0,
-        "integration": 9,
-        "realDb": 5,
+        "integration": 10,
+        "realDb": 6,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -4134,6 +4152,7 @@
         "integration": [
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/day-book-posts-the-day.test.ts",
+          "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/period-evidence.test.ts",
           "tests/integration/period-reopen.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
@@ -4144,6 +4163,7 @@
         ],
         "realDb": [
           "tests/integration/books-reconcile.test.ts",
+          "tests/integration/goods-made-in-the-store-are-valued-at-their-production-run-cost.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts",
           "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",

@@ -178,6 +178,23 @@ function dayCloseEventFrom(record: string, index: number): DomainEvent | undefin
     });
   }
 
+  // OB-69 "A": a card/UPI attempt the till recorded as NO ANSWER — relayed to head office the moment it is recorded (queued
+  // here while the line is down, sent on reconnect), once per attempt, keyed on it.
+  const noAnswerAttemptId = p['noAnswerAttemptId'];
+  if (typeof noAnswerAttemptId === 'string' && noAnswerAttemptId !== '') {
+    return makeEvent({
+      id: `edge-payment-no-answer-${noAnswerAttemptId}`,
+      type: 'PaymentNoAnswerRaised',
+      occurredAt: typeof p['recordedAt'] === 'string' ? (p['recordedAt'] as string) : new Date().toISOString(),
+      idempotencyKey: `payment-no-answer:${noAnswerAttemptId}`,
+      source: 'edge/box',
+      payload: {
+        attemptId: noAnswerAttemptId, laneId: p['laneId'], billRef: p['billRef'], kind: p['kind'], amountMinor: p['amountMinor'], askedAt: p['askedAt'],
+        tradingDay: p['tradingDay'], recordedAt: p['recordedAt'], recordedBy: p['recordedBy'], storeId: p['storeId'],
+      },
+    });
+  }
+
   // OB-55: the provider's later answer on a payment a close carried forward — relayed once per payment, keyed on it.
   const resolvedAttemptId = p['resolvedAttemptId'];
   if (typeof resolvedAttemptId === 'string' && resolvedAttemptId !== '') {
@@ -849,7 +866,7 @@ export async function startEdge(
   // OB-55 / PF-06: a payment exception's relay (a late answer, a carried payment's provider answer) rides the day-close
   // queue AHEAD of the next close event, so it reaches head office first; it is not trading the day still owes the cloud,
   // and counting it would stop an offline store closing (P-01). It stays visible on the queue and is relayed once.
-  const EXCEPTION_RELAYS = new Set(['LatePaymentAnswerRecorded', 'CarriedPaymentResolved']);
+  const EXCEPTION_RELAYS = new Set(['LatePaymentAnswerRecorded', 'CarriedPaymentResolved', 'PaymentNoAnswerRaised']);
   const unsentAcrossAllQueues = (): number => outbox.pending().length + returnsOutbox.pending().length
     + completionsOutbox.pending().length + dayCloseOutbox.pending().filter((i) => !EXCEPTION_RELAYS.has(i.event.type)).length + concessionTagsOutbox.pending().length
     + deviceEventsOutbox.pending().length + tillCashOutbox.pending().length;
@@ -1337,30 +1354,62 @@ export async function startEdge(
   // Check payment button) — and that answer is relayed to head office ONCE, on the day-close log (durable first, then
   // queued; re-minted on a restart), so the finance exception it raised is resolved there. A payment not carried forward
   // is recovered exactly as before.
-  const carriedOnBox = async (): Promise<Map<string, { dayCloseId: string; resolved: boolean }>> => {
-    const out = new Map<string, { dayCloseId: string; resolved: boolean }>();
+  // OB-69 "A": a no-answer RAISED to head office the moment it was recorded is an open finance item there too — its provider
+  // answer is relayed the same way (once), whether or not a day close has carried it yet.
+  const carriedOnBox = async (): Promise<Map<string, { dayCloseId: string | null; resolved: boolean; carried: boolean }>> => {
+    const out = new Map<string, { dayCloseId: string | null; resolved: boolean; carried: boolean }>();
     for (const entry of await readLog(dayCloseLog.path)) {
       if (entry.ok !== true) continue;
       let p: Record<string, unknown>;
       try { p = JSON.parse(entry.record) as Record<string, unknown>; } catch { continue; }
+      const raisedId = p['noAnswerAttemptId'];
+      if (typeof raisedId === 'string' && !out.has(raisedId)) out.set(raisedId, { dayCloseId: null, resolved: false, carried: false });
       const cf = p['carriedForward'] as { payments?: { attemptId?: unknown }[] } | undefined;
       const dc = p['dayCloseId'];
       if (cf !== undefined && Array.isArray(cf.payments) && typeof dc === 'string') {
-        for (const x of cf.payments) if (typeof x.attemptId === 'string' && !out.has(x.attemptId)) out.set(x.attemptId, { dayCloseId: dc, resolved: false });
+        for (const x of cf.payments) {
+          if (typeof x.attemptId !== 'string') continue;
+          const c = out.get(x.attemptId);
+          if (c === undefined) out.set(x.attemptId, { dayCloseId: dc, resolved: false, carried: true });
+          else if (!c.carried) { c.dayCloseId = dc; c.carried = true; }
+        }
       }
       const r = p['resolvedAttemptId'];
       if (typeof r === 'string') { const c = out.get(r); if (c !== undefined) c.resolved = true; }
     }
     return out;
   };
+  /**
+   * OB-69 "A" (owner, 11 Oct 2026, "The moment it happens"): the till recorded the machine's NO ANSWER on this attempt —
+   * relay it to head office NOW as an open finance item: durable on the day-close log first, then queued (sent at once when
+   * the line is up, on reconnect when it is not; re-minted on a restart). Once per attempt.
+   */
+  const raiseNoAnswer = async (a: { readonly attemptId: string; readonly laneId: string; readonly billRef: string; readonly kind: string; readonly amountMinor: number; readonly askedAt: string; readonly answeredBy?: string; readonly answeredAt?: string; readonly askedBy: string }): Promise<void> => {
+    if ((await carriedOnBox()).has(a.attemptId)) return;
+    const record = JSON.stringify({
+      noAnswerAttemptId: a.attemptId, attemptId: a.attemptId, laneId: a.laneId, billRef: a.billRef, kind: a.kind, amountMinor: a.amountMinor, askedAt: a.askedAt,
+      tradingDay: tradingDate(wallClockIn(a.askedAt), packCutoff(pack)), recordedAt: a.answeredAt ?? new Date().toISOString(), recordedBy: a.answeredBy ?? a.askedBy, storeId: storeIdOfThisBox(),
+    });
+    await dayCloseLog.append(record);
+    const event = dayCloseEventFrom(record, 0);
+    if (event !== undefined) dayCloseOutbox.enqueue(event);
+  };
+  // A no-answer recorded before this box relayed them (or whose relay write failed) is raised when the box starts.
+  if (payments !== null) {
+    for (const a of payments.pending()) {
+      if (a.state !== 'no_answer') continue;
+      try { await raiseNoAnswer(a); } catch (e) { say(`could not queue the no-answer on ${a.attemptId} for head office: ${e instanceof Error ? e.message : String(e)} — it stays on the till's unresolved list`); }
+    }
+  }
   const recoverCarrying = async (pa: PaymentAttempts, i: { readonly laneId: string; readonly attemptId: unknown }): ReturnType<PaymentAttempts['recover']> => {
     const id = typeof i.attemptId === 'string' ? i.attemptId : '';
-    const carried = (await carriedOnBox()).get(id);
+    const known = (await carriedOnBox()).get(id);
+    const carried = known?.carried === true ? known : undefined;
     const out = await pa.recover({ ...i, ...(carried === undefined ? {} : { allowAsked: true }) });
-    if (carried !== undefined && !carried.resolved && out.ok && (out.attempt.state === 'recovered_paid' || out.attempt.state === 'recovered_not_paid')) {
+    if (known !== undefined && !known.resolved && out.ok && (out.attempt.state === 'recovered_paid' || out.attempt.state === 'recovered_not_paid')) {
       const a = out.attempt;
       const record = JSON.stringify({
-        resolvedAttemptId: a.attemptId, attemptId: a.attemptId, dayCloseId: carried.dayCloseId, storeId: storeIdOfThisBox(),
+        resolvedAttemptId: a.attemptId, attemptId: a.attemptId, ...(known.dayCloseId === null ? {} : { dayCloseId: known.dayCloseId }), storeId: storeIdOfThisBox(),
         paid: a.state === 'recovered_paid', owedToCustomerMinor: a.owedToCustomerMinor ?? 0, amountMinor: a.amountMinor,
         detail: a.recoveryDetail ?? '', resolvedAt: a.recoveredAt ?? new Date().toISOString(),
       });
@@ -1416,7 +1465,15 @@ export async function startEdge(
     ...(payments === null ? {} : {
       payments: {
         ask: (i) => payments.ask(i),
-        answer: (i) => answerGuarded(payments, i),
+        // OB-69: a NO ANSWER is relayed to head office the moment it is recorded (durable, queued, once). The till's answer
+        // stands either way: a relay that cannot be queued now is raised again when the box starts (never lost).
+        answer: async (i) => {
+          const out = await answerGuarded(payments, i);
+          if (out.ok && out.attempt.state === 'no_answer') {
+            try { await raiseNoAnswer(out.attempt); } catch (e) { say(`could not queue the no-answer on ${out.attempt.attemptId} for head office: ${e instanceof Error ? e.message : String(e)} — raised again at the next start`); }
+          }
+          return out;
+        },
         recover: (i) => recoverCarrying(payments, i),
         checkTenders: (i) => payments.checkTenders(i),
         status: (laneId) => payments.status(laneId),
