@@ -1311,7 +1311,8 @@ export function bootPos(config?: {
   const reportDevices = async (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[]): Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }> => {
     if (session.operator() === undefined) return { recorded: false, refusedBecause: 'operator_not_signed_in', laneMessage: 'Sign in before the till reports its devices.' };
     try {
-      const response = await fetch(`${laneBase(config?.lanePort ?? DEFAULT_LANE_PORT)}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ devices }) });
+      const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
+      const response = await fetch(`${base}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ devices }) });
       const front = FRONT_REFUSED[response.status];
       if (front !== undefined) return { recorded: false, ...front };
       const r = await response.json() as Record<string, unknown>;
