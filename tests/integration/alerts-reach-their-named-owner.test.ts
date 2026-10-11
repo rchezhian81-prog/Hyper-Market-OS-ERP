@@ -28,6 +28,7 @@ const DATABASE_URL = process.env['DATABASE_URL'];
 const describeOrSkip = DATABASE_URL ? describe : describe.skip;
 const KEY = ['alerts', 'reach', 'their', 'owner', 'key'].join('-').padEnd(48, '0');
 const OWNER = 'u-owner';
+const BACKUP_JOB = 'u-backup-job'; // PA-12 r7: only the backup job's own identity records a backup
 const PRIYA = 'u-hr'; // the second initial admin — the store manager — named owner of these alerts
 const T0 = Date.parse('2026-10-12T20:30:00.000Z');
 const at = (minutes: number): string => new Date(T0 + minutes * 60_000).toISOString();
@@ -64,6 +65,7 @@ describeOrSkip('PA-12 — alerts reach their named owner and escalate — real A
     };
     let cloud = await boot();
     expect(cloud.opsAlertWorker).toBeDefined();
+    await cloud.grant(BACKUP_JOB, 'backup_job');
 
     const call = (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown) =>
       cloud.request({ method, path, userId, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: `k-${Math.random()}` }) });
@@ -74,7 +76,7 @@ describeOrSkip('PA-12 — alerts reach their named owner and escalate — real A
     };
     const inbox = async (who: string): Promise<Live[]> => ((await call('GET', '/v1/platform/alerts/inbox', who)).body as { alerts: Live[] }).alerts;
     const board = async (): Promise<Live[]> => ((await call('GET', '/v1/platform/alerts', OWNER)).body as { alerts: Live[] }).alerts;
-    const backup = (id: string, ok: boolean) => call('POST', `/v1/platform/backups/${id}/taken`, OWNER, { at: new Date(Date.now()).toISOString(), ok, encrypted: true, offsite: true, ...(ok ? {} : { detail: 'pg_dump exited 1: disk full' }) });
+    const backup = (id: string, ok: boolean) => call('POST', `/v1/platform/backups/${id}/taken`, BACKUP_JOB, { at: new Date(Date.now()).toISOString(), ok, encrypted: true, offsite: true, ...(ok ? {} : { detail: 'pg_dump exited 1: disk full' }) });
     const messagesTo = (who: string): OutboundMessage[] => transport.calls.filter((m) => m.customerId === who);
 
     // The owner names who owns what (§32: a person, not a team).
@@ -119,6 +121,7 @@ describeOrSkip('PA-12 — alerts reach their named owner and escalate — real A
     expect((await call('POST', '/v1/org/nodes/C1', OWNER, { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
     expect((await call('POST', '/v1/org/nodes/S1', OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' })).status).toBe(201);
     await cloud.grant('u-box1', 'store_computer'); // round 6: only the store computer's own identity reports its sync
+    await cloud.grant('u-box1', 'store_computer', undefined, ['S1']); // round 7: …and only for the store its grant NAMES
     travel(90);
     await passes(); // a pass in flight at the old time finishes first — each pass judges at one moment
     const report = await call('POST', '/v1/stores/S1/sync-watermarks', 'u-box1', { observedAt: at(90), domains: [{ domain: 'sales', completeThrough: at(89), unsent: 0, deadLettered: 2 }] });

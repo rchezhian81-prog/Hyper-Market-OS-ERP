@@ -9,7 +9,7 @@ import { SqlEventStore, InMemoryEventStore, type EventStore } from '../../packag
 import { SqlIdempotencyStore, MemoryIdempotencyStore, type IdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
-import { campaignSendAdapter } from '../../services/api/src/adapters';
+import { campaignSendAdapter, notificationQueueAdapter } from '../../services/api/src/adapters';
 import { deliveryReportSecretsFromEnv } from '../../services/customer/src/provider-reports';
 import { signedReport, testProviderSecret, TEST_PROVIDER } from '../support/provider-report';
 
@@ -94,6 +94,65 @@ async function onlyTheProvidersWordCounts(h: ApiHarness, T: string, secret: stri
   expect((await post(Q, RELAY, signedReport(Q, { providerRef: 'rec-cmp-c1-cust-b' }, secret))).status).toBe(200);
 }
 
+/**
+ * PA-08 / PF-10 round 7 — the out-of-band QUEUE receipt routes (`…/queue/:id/failed`, `…/delivered`): the provider's
+ * report id is the idempotency key, and only the provider the sender handed the message to may report on it.
+ */
+async function queueReportsAreTheTakingProvidersOnce(h: ApiHarness, T: string, secret: string, otherSecret: string, transport: ReturnType<typeof recordingTransport>, store: EventStore): Promise<void> {
+  await scene(h, T);
+  // The first send attempt fails at the provider (transient): both messages stay pending, handed to the recording provider.
+  transport.failWith({ reason: 'provider busy' }, 2);
+  expect((await h.request({ method: 'POST', path: '/v1/notifications/queue/drain', userId: OWNER, tenantId: T, idempotencyKey: 'drain-f', body: {} })).status).toBe(200);
+  const post = (path: string, u: string, body: unknown) => h.request({ method: 'POST', path, userId: u, tenantId: T, idempotencyKey: `k-${randomUUID()}`, body });
+  const pending = async () => ((await h.request({ method: 'GET', path: '/v1/notifications/queue/pending', userId: OWNER, tenantId: T })).body as { pending: { id: string; attempts: number }[] }).pending;
+  const deadLetters = async () => ((await h.request({ method: 'GET', path: '/v1/notifications/queue/dead-letters', userId: OWNER, tenantId: T })).body as { deadLetters: { id: string }[] }).deadLetters;
+  const attemptsOf = async (id: string) => (await pending()).find((x) => x.id === id)?.attempts;
+  expect(await attemptsOf('cmp-c1-cust-a')).toBe(1);
+  const queueEvents = async () => notificationQueueAdapter({ store, now: () => new Date().toISOString() }).events!(T);
+  const failuresOn = async (id: string) => (await queueEvents()).filter((e) => e.id === id && e.change === 'failed').length;
+
+  const F = '/v1/notifications/queue/cmp-c1-cust-a/failed';
+  const failure = signedReport(F, { reason: 'handset unreachable', maxAttempts: 3 }, secret, { reportId: 'fail-r-1' });
+  // A staff session — the owner's, the manager's — is refused even with a correctly signed body; nothing recorded.
+  for (const who of [CASHIER, MANAGER, OWNER]) expect((await post(F, who, failure)).status, who).toBe(403);
+  expect(codeOf(await post(F, OWNER, failure))).toBe('not_the_provider_relay'); // the owner holds the permission — not the role
+  // Another configured provider cannot report on a message the recording provider took.
+  expect(codeOf(await post(F, RELAY, signedReport(F, { reason: 'x', maxAttempts: 3 }, otherSecret, { provider: 'other-sms', reportId: 'other-1' })))).toBe('not_this_providers_message');
+  // A message never handed to any provider has nobody who can report on it.
+  expect((await post('/v1/notifications/queue/n-fresh', OWNER, { customerId: 'cust-a', purpose: 'marketing', channel: 'sms', templateId: 'tpl', values: { offer: 'dal 5% off' } })).status).toBe(201);
+  const FF = '/v1/notifications/queue/n-fresh/failed';
+  expect(codeOf(await post(FF, RELAY, signedReport(FF, { reason: 'x' }, secret)))).toBe('not_handed_to_a_provider');
+  expect(await attemptsOf('cmp-c1-cust-a')).toBe(1);
+  expect(await attemptsOf('n-fresh')).toBe(0);
+
+  // The taking provider's signed failure: one more attempt (2 of 3) — and the SAME report replayed within its freshness
+  // window, three times, is acknowledged as a replay: never another attempt, never a dead letter.
+  const first = await post(F, RELAY, failure);
+  expect(first.status, JSON.stringify(first.body)).toBe(200);
+  expect(first.body).toMatchObject({ state: 'pending', attempts: 2 });
+  for (let i = 0; i < 3; i += 1) {
+    const again = await post(F, RELAY, failure);
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ replayed: true, state: 'pending', attempts: 2 });
+  }
+  expect(await attemptsOf('cmp-c1-cust-a')).toBe(2);
+  expect(await deadLetters()).toEqual([]);
+  expect(await failuresOn('cmp-c1-cust-a')).toBe(2);                 // the sender's attempt + ONE provider report
+  // A DISTINCT failure report from the provider is its own fact: the third attempt — dead-lettered, as the engine rules.
+  expect((await post(F, RELAY, signedReport(F, { reason: 'handset unreachable', maxAttempts: 3 }, secret, { reportId: 'fail-r-2' }))).body).toMatchObject({ state: 'dead_letter', attempts: 3 });
+  expect((await deadLetters()).map((d) => d.id)).toEqual(['cmp-c1-cust-a']);
+
+  // DELIVERED obeys the same two rules: the wrong provider is refused; the taking provider's report lands once.
+  const D = '/v1/notifications/queue/cmp-c1-cust-b/delivered';
+  expect(codeOf(await post(D, OWNER, signedReport(D, {}, secret)))).toBe('not_the_provider_relay');
+  expect(codeOf(await post(D, RELAY, signedReport(D, { providerRef: 'x' }, otherSecret, { provider: 'other-sms', reportId: 'other-d' })))).toBe('not_this_providers_message');
+  expect(await attemptsOf('cmp-c1-cust-b')).toBe(1);                 // still pending: nothing believed
+  const delivered = signedReport(D, { providerRef: 'rec-cmp-c1-cust-b' }, secret, { reportId: 'del-r-1' });
+  expect((await post(D, RELAY, delivered)).body).toMatchObject({ state: 'delivered' });
+  expect((await post(D, RELAY, delivered)).body).toMatchObject({ replayed: true, state: 'delivered' });
+  expect((await queueEvents()).filter((e) => e.id === 'cmp-c1-cust-b' && e.change === 'delivered')).toHaveLength(1);
+}
+
 async function noProviderNoReport(h: ApiHarness, T: string, secret: string): Promise<void> {
   await scene(h, T);
   await h.request({ method: 'POST', path: '/v1/notifications/queue/drain', userId: OWNER, tenantId: T, idempotencyKey: 'drain-1', body: {} });
@@ -109,6 +168,13 @@ describe('PF-10 r6 — a delivery report is believed only when it is the provide
     const store = new InMemoryEventStore();
     const h = apiHarness({ store, idempotency: new MemoryIdempotencyStore(), notificationTransport: recordingTransport(), deliveryReportSecrets: new Map([[TEST_PROVIDER, secret], ['other-sms', other]]) });
     await onlyTheProvidersWordCounts(h, 'ab000000-0000-4000-8000-00000000f10a', secret, other, store);
+  });
+
+  it('PA-08 r7: the queue receipt routes — a replayed failure is one fact, never another attempt; only the taking provider reports; staff refused', async () => {
+    const secret = testProviderSecret(); const other = testProviderSecret();
+    const store = new InMemoryEventStore(); const transport = recordingTransport();
+    const h = apiHarness({ store, idempotency: new MemoryIdempotencyStore(), notificationTransport: transport, deliveryReportSecrets: new Map([[TEST_PROVIDER, secret], ['other-sms', other]]) });
+    await queueReportsAreTheTakingProvidersOnce(h, 'ab000000-0000-4000-8000-00000000f10c', secret, other, transport, store);
   });
 
   it('with no provider configured, even a perfectly signed report is refused', async () => {
@@ -142,5 +208,13 @@ describe.skipIf(!DATABASE_URL)('PF-10 r6 — the same on real PostgreSQL', () =>
     const idempotency: IdempotencyStore = new SqlIdempotencyStore(sql);
     await onlyTheProvidersWordCounts(apiHarness({ store, idempotency, notificationTransport: recordingTransport(), deliveryReportSecrets: new Map([[TEST_PROVIDER, secret], ['other-sms', other]]) }), randomUUID(), secret, other, store);
     await noProviderNoReport(apiHarness({ store, idempotency, notificationTransport: recordingTransport() }), randomUUID(), secret);
+  });
+
+  it('PA-08 r7: the queue receipt routes — replay is one fact, the wrong provider and staff refused — on PostgreSQL', async () => {
+    const sql = pgPoolClient(pool);
+    const secret = testProviderSecret(); const other = testProviderSecret();
+    const store = new SqlEventStore(sql); const transport = recordingTransport();
+    const h = apiHarness({ store, idempotency: new SqlIdempotencyStore(sql), notificationTransport: transport, deliveryReportSecrets: new Map([[TEST_PROVIDER, secret], ['other-sms', other]]) });
+    await queueReportsAreTheTakingProvidersOnce(h, randomUUID(), secret, other, transport, store);
   });
 });

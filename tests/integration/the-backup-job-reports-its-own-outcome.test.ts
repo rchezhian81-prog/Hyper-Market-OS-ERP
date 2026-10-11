@@ -22,7 +22,8 @@ import { startRealCloud, type RealCloud } from '../support/real-store';
  *   • a failed night: the job reports ITSELF as failed, naming the step; the ops-alert worker raises it to its named
  *     owner with nobody pressing anything;
  *   • without its sign-in, or with a forged one, the job fails loudly — NOT REPORTED — and nothing is recorded;
- *   • the job's identity can do nothing else; a cashier cannot report a backup;
+ *   • the job's identity can do nothing else; a cashier cannot report a backup — nor (round 7) can ANY person, the owner
+ *     and the store manager included: only a grant of the `backup_job` role itself is believed;
  *   • a backup that never reports by its expected time is raised as MISSED by itself — never-reported and overdue.
  * Synthetic data only (hard rule #7): a fresh random tenant per run. Needs DATABASE_URL; without it the suite SKIPS.
  */
@@ -174,6 +175,15 @@ describe.skipIf(!DATABASE_URL)('PA-12 r6 — the backup job reports its own outc
     const call = callAs(cloud);
     const body = { at: new Date().toISOString(), ok: true, encrypted: true, offsite: true };
     expect((await call('POST', '/v1/platform/backups/bk-cashier/taken', 'u-cash', body)).status).toBe(403);
+    // PA-12 r7: every PERSON — the owner and the store manager hold platform.backup.record — is refused by name, so nobody
+    // can hand-post a good night and silence the missed-backup alarm. Nothing is recorded.
+    await cloud.grant('u-mgr', 'store_manager');
+    for (const who of [OWNER, PRIYA, 'u-mgr']) {
+      const hand = await call('POST', `/v1/platform/backups/bk-hand-${who}/taken`, who, body);
+      expect(hand.status, who).toBe(403);
+      expect((hand.body as { error?: { code?: string } }).error?.code, who).toBe('not_the_backup_job');
+    }
+    expect(await lastBackup(cloud)).toBeNull();
     expect((await call('GET', '/v1/platform/operational-health/observed', JOB)).status).toBe(403);
     expect((await call('POST', '/v1/platform/operational-health/observed/raise', JOB, {})).status).toBe(403);
     expect((await call('PUT', '/v1/platform/alert-rules', JOB, RULES())).status).toBe(403);

@@ -8,7 +8,7 @@ import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa35';
-const OWNER = 'u-owner'; const MGR = 'u-mgr'; const CASH = 'u-cash';
+const OWNER = 'u-owner'; const MGR = 'u-mgr'; const CASH = 'u-cash'; const JOB = 'u-backup-job'; const ADMIN = 'u-admin';
 const post = (h: ApiHarness, path: string, u: string, key: string, body?: unknown) =>
   h.request({ method: 'POST', path, userId: u, tenantId: A, idempotencyKey: key, ...(body === undefined ? {} : { body }) });
 const put = (h: ApiHarness, path: string, u: string, key: string, body: unknown) =>
@@ -39,6 +39,8 @@ async function cast(): Promise<ApiHarness> {
   await h.seedOwner(A, OWNER);
   await h.provisionRole(A, MGR, 'store_manager');
   await h.provisionRole(A, CASH, 'cashier');
+  await h.provisionRole(A, ADMIN, 'platform_admin');
+  await h.provisionRole(A, JOB, 'backup_job'); // PA-12 r7: the backup job's own machine identity — the only one that records a backup
   return h;
 }
 
@@ -68,7 +70,7 @@ describe('observed operational health (M35-FR-03, API-11)', () => {
     expect((await post(h, '/v1/integration/adapters/tally-books', OWNER, 'ad-tally', { category: 'accounting', vendor: 'demo-books', environment: 'sandbox', credentialRef: 'vault://demo/tally', enabled: true, retains: [] })).status).toBeLessThan(300);
     expect((await post(h, '/v1/integration/adapters/tally-books/heartbeats/hb-1', OWNER, 'hb-1', { ok: true, at: minutesAgo(5) })).status).toBeLessThan(300);
     expect((await post(h, '/v1/integration/adapters/sms', OWNER, 'ad-sms', { category: 'messaging', vendor: 'demo-sms', environment: 'sandbox', credentialRef: 'vault://demo/sms', enabled: false, retains: [] })).status).toBeLessThan(300);
-    expect((await post(h, '/v1/platform/backups/nightly-1/taken', MGR, 'bk-1', { at: minutesAgo(180), ok: true, encrypted: true, offsite: true, sizeBytes: 1_024 })).status).toBe(201);
+    expect((await post(h, '/v1/platform/backups/nightly-1/taken', JOB, 'bk-1', { at: minutesAgo(180), ok: true, encrypted: true, offsite: true, sizeBytes: 1_024 })).status).toBe(201);
 
     o = (await get(h, '/v1/platform/operational-health/observed', OWNER)).body as Observed;
     expect(o.observed.freshness.lastSaleAt).toBe(saleAt);
@@ -131,11 +133,19 @@ describe('observed operational health (M35-FR-03, API-11)', () => {
     expect((await put(h, '/v1/platform/alert-rules', CASH, 'r-x', RULES)).status).toBe(403);
     expect((await post(h, '/v1/platform/backups/b-x/taken', CASH, 'bk-x', { at: minutesAgo(1), ok: true, encrypted: true, offsite: true })).status).toBe(403);
     expect((await put(h, '/v1/platform/alert-rules', MGR, 'r-bad', { rules: [] })).status).toBe(400);
-    const bad = await post(h, '/v1/platform/backups/b-1/taken', OWNER, 'bk-bad', { at: 'last night', ok: true, encrypted: true, offsite: true });
+    // PA-12 r7: every PERSON who holds platform.backup.record — owner, store manager, platform admin — is refused: a
+    // hand-posted "good, encrypted, off-site" night is not evidence a backup ran, and nothing is recorded.
+    for (const who of [OWNER, MGR, ADMIN]) {
+      const hand = await post(h, '/v1/platform/backups/b-hand/taken', who, `bk-hand-${who}`, { at: minutesAgo(1), ok: true, encrypted: true, offsite: true });
+      expect(hand.status, who).toBe(403);
+      expect(codeOf(hand), who).toBe('not_the_backup_job');
+    }
+    expect(((await get(h, '/v1/platform/operational-health/observed', OWNER)).body as { observed: { lastBackup: unknown } }).observed.lastBackup).toBeNull();
+    const bad = await post(h, '/v1/platform/backups/b-1/taken', JOB, 'bk-bad', { at: 'last night', ok: true, encrypted: true, offsite: true });
     expect(bad.status).toBe(400);
     expect(codeOf(bad)).toBe('not_readable_as_a_backup_record');
-    expect((await post(h, '/v1/platform/backups/b-1/taken', OWNER, 'bk-1', { at: minutesAgo(10), ok: true, encrypted: false, offsite: true })).body).toMatchObject({ counts: false, why: ['it is not encrypted'] });
-    const dup = await post(h, '/v1/platform/backups/b-1/taken', OWNER, 'bk-1-again', { at: minutesAgo(9), ok: true, encrypted: true, offsite: true });
+    expect((await post(h, '/v1/platform/backups/b-1/taken', JOB, 'bk-1', { at: minutesAgo(10), ok: true, encrypted: false, offsite: true })).body).toMatchObject({ counts: false, why: ['it is not encrypted'] });
+    const dup = await post(h, '/v1/platform/backups/b-1/taken', JOB, 'bk-1-again', { at: minutesAgo(9), ok: true, encrypted: true, offsite: true });
     expect(dup.status).toBe(409);
     expect(codeOf(dup)).toBe('backup_already_recorded');
     const o = (await get(h, '/v1/platform/operational-health/observed', MGR)).body as Observed;

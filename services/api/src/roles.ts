@@ -41,6 +41,8 @@ export const STORE_COMPUTER_ROLE_ID = 'store_computer';
  * report only when the provider's signature verifies.
  */
 export const PROVIDER_RELAY_ROLE_ID = 'message_provider_relay';
+/** PA-12 round 7: the backup job's own machine identity — the only caller whose backup report is believed. */
+export const BACKUP_JOB_ROLE_ID = 'backup_job';
 
 export const ROLE_CATALOGUE: readonly Role[] = [
   {
@@ -475,7 +477,7 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     // PA-12 round 6: the backup job's OWN machine identity. The job reports its outcome — success and failure — and
     // nothing else: no business data, no health raise, no alert rules. The operator provisions its sign-in (never in the
     // repo, hard rule #4: docs/runbooks/backup-and-recovery.md); the owner approves the grant (he holds the permission).
-    id: 'backup_job',
+    id: BACKUP_JOB_ROLE_ID,
     name: 'Backup job (machine)',
     permissions: ['platform.backup.record'],
   },

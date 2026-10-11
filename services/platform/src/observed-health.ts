@@ -100,6 +100,12 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
    * still hold or had refused. Absent, or no store has reported: the newest sale stands in, said so.
    */
   readonly storeLanes?: (tenantId: string) => Promise<StoreLaneSignals | undefined>;
+  /**
+   * PA-12 round 7: is the caller the BACKUP JOB's own machine identity — do they hold a grant of the `backup_job` role
+   * itself? Holding `platform.backup.record` through any other role (owner, store manager, platform admin) does not
+   * count: a backup outcome is the job's own measurement, never a person's say-so. Absent: nobody may record (fail closed).
+   */
+  readonly isBackupJob?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
 }
 
 /** What the store computers last reported about their queues (PA-12, from the EA-01 watermark reports). */
@@ -344,6 +350,18 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
       permission: 'platform.backup.record', idempotent: true,
       handler: async (ctx) => {
         const backupId = ctx.params['backupId'] ?? '';
+        // PA-12 round 7: only the backup job's own machine identity reports a backup — every PERSON is refused, the
+        // owner included, so nobody can hand-post a "good, encrypted, off-site" night and silence the missed-backup
+        // alarm. (M35-FR-01 names no human path for recording a backup; drills are recorded separately, `backup.drill.record`.)
+        if (deps.isBackupJob === undefined || !(await deps.isBackupJob(ctx.tenantId, ctx.userId))) {
+          throw apiError(403, {
+            code: 'not_the_backup_job',
+            whatHappened: 'A backup is recorded only by the backup job itself, signed in as its own machine identity — never from a person\'s sign-in, whoever they are. '
+              + 'A backup somebody typed in is not evidence that a backup ran.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was recorded. Let the backup job report its own outcome; if it has not, the missed-backup alert is the true picture.',
+          });
+        }
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isIso(b['at']) || !isBool(b['ok']) || !isBool(b['encrypted']) || !isBool(b['offsite'])
           || (b['sizeBytes'] !== undefined && (!Number.isInteger(b['sizeBytes']) || (b['sizeBytes'] as number) < 0))
