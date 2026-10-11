@@ -170,6 +170,7 @@ import type { FloorIndent } from '../../../packages/warehouse/src/indents';
 import type { AssembledGoodsReceiptDeps } from '../../inventory/src/goods-receipt-assembled';
 import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
 import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
+import type { CountPlan, CountPlanDeps, VarianceCause, PlaceMovement } from '../../inventory/src/count-plans';
 import type { AdjustmentRequestDeps, AdjustmentRequestRecord } from '../../inventory/src/adjustment-requests';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
 import type { EmergencyAccessDeps, EmergencyGrant } from '../../identity/src/emergency-access';
@@ -8064,6 +8065,24 @@ export function stockLossAdapter(input: { readonly store: EventStore; readonly n
     stockLossJournals: async (tenantId) =>
       (await allOf<JournalEntry | StockLossJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted'))
         .filter((j): j is StockLossJournal => 'stockLoss' in j),
+    // WF-08 (round 8): every count correction that posted to the stock ledger (`count:<countId>`), with its value and cause.
+    countVariances: async (tenantId) => {
+      const countsStream = streamName(STREAM.inventory, 'counts');
+      const byId = new Map<string, StoredReconciliation>();
+      for (const r of await allOf<StoredReconciliation>(input.store, tenantId, countsStream, 'CountReconciled')) byId.set(r.countId, r);
+      for (const d of await allOf<StoredReconciliation>(input.store, tenantId, countsStream, 'CountDecided')) byId.set(d.countId, d);
+      const causes = new Map<string, string>();
+      for (const c of await allOf<{ countId: string; causeCode: string }>(input.store, tenantId, streamName(STREAM.inventory, 'count-plans'), 'CountVarianceCaused')) causes.set(c.countId, c.causeCode);
+      return [...byId.values()]
+        .filter((r) => r.adjusted && r.varianceMinor !== 0 && (r.movementId ?? null) !== null)
+        .map((r) => ({
+          countId: r.countId, productId: r.productId, locationId: r.locationId, uom: r.uom ?? 'EA', varianceMinor: r.varianceMinor, valueMinor: r.valueMinor,
+          valueKnown: !(r.governanceFlags ?? []).includes('value_unknown'), postedAt: r.decidedAt ?? r.at, counterId: r.counterId, approvedBy: r.approvedBy,
+          ...(r.planId === undefined ? {} : { planId: r.planId }), ...(causes.has(r.countId) ? { causeCode: causes.get(r.countId) as string } : {}),
+        }))
+        // Oldest posting first, then by count id — one stable order for the run and the read.
+        .sort((a, b) => (a.postedAt < b.postedAt ? -1 : a.postedAt > b.postedAt ? 1 : a.countId < b.countId ? -1 : a.countId > b.countId ? 1 : 0));
+    },
   };
 }
 
@@ -13295,4 +13314,62 @@ export const PERSONAL_DATA_POLICY: PersonalDataPolicy = {
 /** The event store every domain writes through, with personal fields sealed under their subject's key (ADR-0025). */
 export function personalDataStore(store: EventStore, keys: SubjectKeyStore): EventStore {
   return new PersonalDataSealingStore(store, keys, PERSONAL_DATA_POLICY);
+}
+
+/**
+ * WF-08 (round 8) — stock-count PLANS on their own inventory stream: one `CountPlanRecorded` per step (created / opened /
+ * approved / cancelled), folded latest per plan id; the variance causes a manager sets, latest per count; the plan's
+ * counts are the count register's own records carrying `planId`; and the place's M08 movements for the as-of expected
+ * figure and the freeze check.
+ */
+const COUNT_PLANS_STREAM = streamName(STREAM.inventory, 'count-plans');
+export function countPlansAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<CountPlanDeps, 'recordAudit' | 'locationBranches'> {
+  const counts = countsAdapter(input);
+  const countsStream = streamName(STREAM.inventory, 'counts');
+  const foldPlans = async (tenantId: string): Promise<readonly CountPlan[]> => {
+    const byId = new Map<string, CountPlan>();
+    for (const p of await allOf<{ plan: CountPlan }>(input.store, tenantId, COUNT_PLANS_STREAM, 'CountPlanRecorded')) {
+      byId.delete(p.plan.planId); // re-insert so the fold's order is the order plans last changed
+      byId.set(p.plan.planId, p.plan);
+    }
+    return [...byId.values()];
+  };
+  return {
+    ...counts,
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    plan: async (tenantId, planId) => (await foldPlans(tenantId)).find((p) => p.planId === planId),
+    plans: foldPlans,
+    recordPlan: async (tenantId, plan, step) => {
+      await input.store.append(tenantId, COUNT_PLANS_STREAM, makeEvent({
+        id: `count-plan-${plan.planId}-${step}`, type: 'CountPlanRecorded', occurredAt: input.now(),
+        // One event per plan per step: a re-sent step collapses (append-only, #2).
+        idempotencyKey: `count-plan-${tenantId}-${plan.planId}-${step}`, source: 'api/inventory', payload: { step, plan },
+      }));
+    },
+    causes: async (tenantId, planId) =>
+      (await allOf<VarianceCause>(input.store, tenantId, COUNT_PLANS_STREAM, 'CountVarianceCaused')).filter((c) => c.planId === planId),
+    recordCause: async (tenantId, cause) => {
+      const digest = createHash('sha256').update(`${cause.causeCode}|${cause.note}|${cause.setBy}`).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, COUNT_PLANS_STREAM, makeEvent({
+        id: `count-cause-${cause.countId}-${digest}`, type: 'CountVarianceCaused', occurredAt: cause.setAt,
+        idempotencyKey: `count-cause-${tenantId}-${cause.countId}-${digest}`, source: 'api/inventory', payload: cause,
+      }));
+    },
+    planCounts: async (tenantId, planId) => {
+      const byId = new Map<string, StoredReconciliation>();
+      for (const r of await allOf<StoredReconciliation>(input.store, tenantId, countsStream, 'CountReconciled')) if (r.planId === planId) byId.set(r.countId, r);
+      for (const d of await allOf<StoredReconciliation>(input.store, tenantId, countsStream, 'CountDecided')) if (d.planId === planId) byId.set(d.countId, d);
+      return [...byId.values()];
+    },
+    movementsAt: async (tenantId, locationId, productIds) => {
+      const wanted = new Set(productIds);
+      const out: PlaceMovement[] = [];
+      for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
+        const m = payloadOf<Movement>(e);
+        if (m.locationId !== locationId || !wanted.has(m.productId)) continue;
+        out.push({ movementId: m.movementId, productId: m.productId, kind: m.kind, effectMinor: m.quantityMinor * EFFECT_ON_HAND[m.kind], occurredAt: m.occurredAt });
+      }
+      return out;
+    },
+  };
 }

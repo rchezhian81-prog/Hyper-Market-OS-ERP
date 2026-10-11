@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 939 | 570 | 570 | 89 | 297 |
+| 13 | 948 | 576 | 576 | 89 | 298 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -222,6 +222,15 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/asn/compare` | `inventory.availability.read` | core | yes |
 | GET | `/v1/inventory/availability` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/batches` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/count-plans` | `inventory.count.plan` | core | — |
+| GET | `/v1/inventory/count-plans/:planId` | `inventory.count.plan` | core | — |
+| POST | `/v1/inventory/count-plans/:planId` | `inventory.count.plan` | core | yes |
+| POST | `/v1/inventory/count-plans/:planId/approve` | `inventory.adjustment.approve` | core | yes |
+| POST | `/v1/inventory/count-plans/:planId/cancel` | `inventory.count.plan` | core | yes |
+| POST | `/v1/inventory/count-plans/:planId/counts/:countId` | `inventory.movement.append` | core | yes |
+| POST | `/v1/inventory/count-plans/:planId/counts/:countId/cause` | `inventory.count.plan` | core | yes |
+| POST | `/v1/inventory/count-plans/:planId/open` | `inventory.count.plan` | core | yes |
+| GET | `/v1/inventory/count-plans/:planId/sheet` | `inventory.movement.append` | core | — |
 | GET | `/v1/inventory/count-policy` | `inventory.count.policy.read` | core | — |
 | POST | `/v1/inventory/count-policy` | `inventory.count.policy.set` | core | yes |
 | GET | `/v1/inventory/counts` | `inventory.availability.read` | core | — |

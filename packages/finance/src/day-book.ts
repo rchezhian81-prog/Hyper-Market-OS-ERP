@@ -506,6 +506,22 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
         { account: 'inventory', side: 'credit' as const, component: 'amount' },
       ],
     })),
+    // WF-08 · D05-FR-05 (round 8): a stock count's posted variance — stock missing is the loss expense against inventory,
+    // stock found is inventory against a gain. Suggested; whether the CA nets gains into the loss account is the CA's mapping.
+    {
+      kind: 'stock_loss:count',
+      legs: [
+        { account: 'inventory_loss', side: 'debit', component: 'amount' },
+        { account: 'inventory', side: 'credit', component: 'amount' },
+      ],
+    },
+    {
+      kind: 'stock_gain:count',
+      legs: [
+        { account: 'inventory', side: 'debit', component: 'amount' },
+        { account: 'inventory_gain', side: 'credit', component: 'amount' },
+      ],
+    },
     // SP-7b (M23-FR-01): the supplier account — a matched invoice's payable, its reversal, a debit note — through a
     // goods-received-not-invoiced clearing (`payables.ts`). Suggested like the rest; the accountant commits it.
     ...PAYABLES_POSTING_RULES,

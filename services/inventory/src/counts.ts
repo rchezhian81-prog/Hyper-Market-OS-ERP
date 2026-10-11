@@ -99,6 +99,15 @@ export interface StoredReconciliation {
    * count that matched / was held / was rejected) posted nothing.
    */
   readonly movementId?: string | null;
+  /**
+   * WF-08 (round 8) — the COUNT PLAN this count belongs to, when it was counted under one (`count-plans.ts`): every variance
+   * of a planned count is held for the plan's approval, never applied line by line. Absent on an unplanned count.
+   */
+  readonly planId?: string;
+  /** WF-08 — the earlier count of the same product in the same plan this one RECOUNTS (it supersedes it). */
+  readonly recountOf?: string;
+  /** WF-08 — when the counter counted (the device's time on a relayed count); the expected figure is head office's as of then. */
+  readonly countedAt?: string;
 }
 
 /** The M08 movement id a count's correction posts under — one per count, so a retry is the same movement (§31.1). */
@@ -205,6 +214,12 @@ export interface BlindCountInput {
   readonly counterFlags: readonly CountFlag[];
   /** Who carried it and from where, when relayed; absent on the direct route. */
   readonly relayed?: { readonly relayedBy: string; readonly source: string; readonly storeId: string | null };
+  /**
+   * WF-08 (round 8) — a count under a COUNT PLAN: any variance is held for the plan's approval (never applied on the
+   * line), and the expected figure is head office's ledger AS OF the moment counted (`expectedBase`, computed by the plan
+   * from movements dated up to `countedAt`), so a sale that reaches head office late is not mistaken for a loss.
+   */
+  readonly planned?: { readonly planId: string; readonly recountOf: string | null; readonly countedAt: string; readonly expectedBase: number };
 }
 
 /**
@@ -219,7 +234,9 @@ export async function reconcileBlindCount(deps: CountsDeps, tenantId: string, c:
   const priorRecs = (await deps.reconciliations(tenantId, c.productId, c.locationId)).filter(samePosition(c.binId));
   let base: number;
   let binUnknown = false;
-  if (c.binId === null) {
+  if (c.planned !== undefined && c.binId === null) {
+    base = c.planned.expectedBase;
+  } else if (c.binId === null) {
     base = await deps.onHand(tenantId, c.productId, c.locationId);
   } else {
     const held = deps.binExpected === undefined ? undefined : await deps.binExpected(tenantId, c.binId, c.productId);
@@ -238,13 +255,15 @@ export async function reconcileBlindCount(deps: CountsDeps, tenantId: string, c:
   const varianceMinor = c.countedMinor - expected;
   const valueMinor = valueAtUnitCost(Math.abs(varianceMinor), c.uom, unitValue ?? 0); // OB-31
   // A count of a bin head office does not have cannot be judged at all — it waits for a person like a material one.
-  const material = binUnknown || (varianceMinor !== 0 && (unitValue === undefined || valueMinor >= thresholdMinor));
+  // WF-08: under a count plan every variance waits for the plan's approval — the plan decides it, not the line.
+  const material = binUnknown || (varianceMinor !== 0 && (c.planned !== undefined || unitValue === undefined || valueMinor >= thresholdMinor));
   const at = deps.now();
   const relayed = c.relayed === undefined ? {} : { relayedBy: c.relayed.relayedBy, source: c.relayed.source, storeId: c.relayed.storeId };
+  const planned = c.planned === undefined ? {} : { planId: c.planned.planId, ...(c.planned.recountOf === null ? {} : { recountOf: c.planned.recountOf }), countedAt: c.planned.countedAt };
   const common = {
     countId: c.countId, productId: c.productId, locationId: c.locationId, binId: c.binId, uom: c.uom,
     countedMinor: c.countedMinor, currency: 'INR' as const, reasonCode: c.reasonCode,
-    counterId: c.counterId, approvedBy: null, at, governanceFlags: flags, ...relayed,
+    counterId: c.counterId, approvedBy: null, at, governanceFlags: flags, ...relayed, ...planned,
   };
   if (material) {
     // Recorded, valued, visible — and NOT applied. The correction waits for a separate person (§28); the review
