@@ -44,6 +44,23 @@ export interface CustomerReturn {
   readonly exchange: boolean;
 }
 
+/**
+ * A CORRECTION of a banked sale after it was committed — the s.34 GST note issued against it (M23-FR-02): a credit note (a
+ * price correction, a post-sale discount, an order cancelled — a void) takes value off the purchase; a debit note adds to
+ * it. The purchase itself is never edited: the correction is its own fact. A credit note for goods returned on a sale that
+ * already has a return recorded is the tax document FOR that return — kept, but not counted again (`counted: false`).
+ */
+export interface CustomerCorrection {
+  readonly noteId: string;
+  readonly customerRef: string;
+  readonly saleId: string;
+  readonly kind: 'credit_note' | 'debit_note';
+  readonly reason: string;
+  readonly grossMinor: number;
+  readonly at: string;
+  readonly counted: boolean;
+}
+
 /** A merge of two records for one person: proposed, approved by another, reversible. Each stage is its own fact. */
 export interface CustomerMerge {
   readonly mergeId: string;
@@ -79,6 +96,8 @@ export interface Customer360Deps {
   readonly catchUp: (tenantId: string) => Promise<{ readonly sales: number; readonly returns: number }>;
   readonly purchasesOf: (tenantId: string, customerRef: string) => Promise<readonly CustomerPurchase[]> | readonly CustomerPurchase[];
   readonly returnsOf: (tenantId: string, customerRef: string) => Promise<readonly CustomerReturn[]> | readonly CustomerReturn[];
+  /** FUL-10: the corrections (credit / debit notes) against this customer's banked sales. Optional: a stub has none. */
+  readonly correctionsOf?: (tenantId: string, customerRef: string) => Promise<readonly CustomerCorrection[]> | readonly CustomerCorrection[];
   readonly merges: (tenantId: string) => Promise<readonly CustomerMerge[]> | readonly CustomerMerge[];
   readonly recordMerge: (tenantId: string, m: CustomerMerge) => Promise<void> | void;
   readonly households: (tenantId: string) => Promise<readonly HouseholdLink[]> | readonly HouseholdLink[];
@@ -102,6 +121,12 @@ const inForce = (m: CustomerMerge): boolean => m.approvedBy !== undefined && m.r
 
 export function customer360Routes(deps: Customer360Deps): readonly Route[] {
   const merges = async (tenantId: string) => mergeState(await deps.merges(tenantId));
+  /** A record exists when head office holds a fact for it — a purchase, a return — or it is a loyalty member. */
+  const exists = async (tenantId: string, ref: string): Promise<boolean> => {
+    if ((await deps.purchasesOf(tenantId, ref)).length > 0 || (await deps.returnsOf(tenantId, ref)).length > 0) return true;
+    const loyalty = await deps.loyaltyOf(tenantId, ref);
+    return loyalty.member !== undefined || loyalty.pointsBalance !== undefined;
+  };
 
   return [
     {
@@ -121,7 +146,12 @@ export function customer360Routes(deps: Customer360Deps): readonly Route[] {
         const refs = [customerRef, ...all.filter((m) => inForce(m) && m.survivorRef === customerRef).map((m) => m.mergedRef)];
         const purchases: CustomerPurchase[] = [];
         const returns: CustomerReturn[] = [];
-        for (const r of refs) { purchases.push(...await deps.purchasesOf(ctx.tenantId, r)); returns.push(...await deps.returnsOf(ctx.tenantId, r)); }
+        const corrections: CustomerCorrection[] = [];
+        for (const r of refs) {
+          purchases.push(...await deps.purchasesOf(ctx.tenantId, r));
+          returns.push(...await deps.returnsOf(ctx.tenantId, r));
+          corrections.push(...(await deps.correctionsOf?.(ctx.tenantId, r) ?? []));
+        }
         if (purchases.length === 0 && returns.length === 0 && refs.length === 1) {
           const loyalty = await deps.loyaltyOf(ctx.tenantId, customerRef);
           if (loyalty.member === undefined && loyalty.pointsBalance === undefined) throw notFound(`a customer record for ${customerRef}`);
@@ -131,6 +161,11 @@ export function customer360Routes(deps: Customer360Deps): readonly Route[] {
         const grossMinor = purchases.reduce((s, p) => s + p.grossMinor, 0);
         // What came back, at the value credited for it (an exchange's goods too — their replacement is a purchase of its own).
         const returnedMinor = returns.reduce((s, r) => s + r.refundMinor, 0);
+        // What corrections took off (credit notes, a void among them) or added (debit notes) after the sale was committed.
+        const counted = corrections.filter((c) => c.counted);
+        const creditedMinor = counted.filter((c) => c.kind === 'credit_note').reduce((s, c) => s + c.grossMinor, 0);
+        const debitedMinor = counted.filter((c) => c.kind === 'debit_note').reduce((s, c) => s + c.grossMinor, 0);
+        corrections.sort((a, b) => b.at.localeCompare(a.at));
         const loyalty = await deps.loyaltyOf(ctx.tenantId, customerRef);
         const links = (await deps.households(ctx.tenantId));
         const latestLink = new Map<string, HouseholdLink>();
@@ -146,7 +181,8 @@ export function customer360Routes(deps: Customer360Deps): readonly Route[] {
             identities: refs,
             purchases: { count: purchases.length, grossMinor, recent: purchases.slice(0, 50) },
             returns: { count: returns.length, refundedMinor: returnedMinor, recent: returns.slice(0, 50) },
-            netSpendMinor: grossMinor - returnedMinor,
+            corrections: { count: corrections.length, creditedMinor, debitedMinor, recent: corrections.slice(0, 50) },
+            netSpendMinor: grossMinor - returnedMinor - creditedMinor + debitedMinor,
             lastPurchaseAt: purchases[0]?.at ?? null,
             loyalty,
             household,
@@ -181,6 +217,14 @@ export function customer360Routes(deps: Customer360Deps): readonly Route[] {
         const all = await merges(ctx.tenantId);
         const prior = all.find((m) => m.mergeId === mergeId);
         if (prior !== undefined) return { status: 200, body: { ...prior, alreadyRecorded: true } };
+        // FUL-10: only records that EXIST can be one person — a customer head office holds facts for (a banked purchase or a
+        // return) or a loyalty member. A merge naming an unknown record would graft an id nobody has onto a real person.
+        await deps.catchUp(ctx.tenantId);
+        const unknown: string[] = [];
+        for (const ref of [survivorRef, b.mergedRef]) if (!(await exists(ctx.tenantId, ref))) unknown.push(ref);
+        if (unknown.length > 0) {
+          throw apiError(404, { code: 'customer_record_unknown', whatHappened: `No customer record ${unknown.join(' or ')} is held here — no purchase, return or loyalty membership — so there is nothing to merge.`, wasItSaved: 'not_saved', nextSafeAction: 'Check the customer codes on both records. Nothing was changed.' });
+        }
         const busy = all.find((m) => (m.approvedBy === undefined || inForce(m)) && m.reversedBy === undefined
           && (m.mergedRef === b.mergedRef || m.mergedRef === survivorRef));
         // A record that has absorbed others is a survivor; merging it away would strand them — reverse those first.

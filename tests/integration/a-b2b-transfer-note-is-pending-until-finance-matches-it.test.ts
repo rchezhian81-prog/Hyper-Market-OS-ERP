@@ -53,7 +53,7 @@ describe.each(backings)('OB-41 — a B2B bank-transfer note is pending until fin
     await h.provisionRole(T, ACCT, 'accountant');
     await h.provisionRole(T, MGR, 'store_manager');
     for (const u of [CUST_LOGIN, VIEW_ONLY, OTHER_LOGIN]) await h.provisionRole(T, u, 'b2b_customer');
-    const call = (method: 'GET' | 'POST', path: string, user: string, body?: unknown, key?: string, query?: Record<string, string>) =>
+    const call = (method: 'GET' | 'POST' | 'PUT', path: string, user: string, body?: unknown, key?: string, query?: Record<string, string>) =>
       h.request({ method, path, userId: user, tenantId: T, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: key ?? `${path}-${user}-${randomUUID()}` }), ...(query === undefined ? {} : { query }) });
     const ok = async (p: ReturnType<typeof call>, what: string) => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
     const owed = async (): Promise<number> => ((await call('GET', '/v1/b2b-portal/me/account', CUST_LOGIN)).body as { outstandingMinor: number }).outstandingMinor;

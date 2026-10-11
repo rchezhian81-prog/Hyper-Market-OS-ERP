@@ -264,7 +264,7 @@ import type { ServiceabilityPeriod } from '../../../packages/storefront/src/inde
 import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/index';
 import type { DeliveryServiceDeps, DeliveryServiceConfig, SlotBooking } from '../../orders/src/delivery-service';
 import type { B2BStockPort } from '../../finance/src/b2b-documents';
-import type { Customer360Deps, CustomerPurchase, CustomerReturn, CustomerMerge, HouseholdLink, ProfileView } from '../../customer/src/customer-360';
+import type { Customer360Deps, CustomerPurchase, CustomerReturn, CustomerCorrection, CustomerMerge, HouseholdLink, ProfileView } from '../../customer/src/customer-360';
 import type { CommissionRuleDeps, CommissionRule } from '../../finance/src/b2b-commission';
 import type { B2BOrderingDeps, B2BQuoteRequest, RecurringSchedule, RecurringRun } from '../../finance/src/b2b-ordering';
 import type { B2BTransferNotesDeps, B2BTransferNote, B2BTransferDecision } from '../../finance/src/b2b-transfer-notes';
@@ -12410,11 +12410,15 @@ export function customer360Adapter(input: {
     }));
   };
 
-  const catchUp = async (tenantId: string): Promise<{ readonly sales: number; readonly returns: number }> => {
-    const cursor = (await latest<{ salesSeq: number; returnsSeq: number }>(input.store, tenantId, cursorStream, 'CustomerFactsCursor')) ?? { salesSeq: 0, returnsSeq: 0 };
+  const catchUp = async (tenantId: string): Promise<{ readonly sales: number; readonly returns: number; readonly corrections: number }> => {
+    const cursor = (await latest<{ salesSeq: number; returnsSeq: number; notesSeq?: number }>(input.store, tenantId, cursorStream, 'CustomerFactsCursor')) ?? { salesSeq: 0, returnsSeq: 0 };
+    const notesSeq = cursor.notesSeq ?? 0;
     const sales = (await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', sinceSeq: cursor.salesSeq })).filter((e) => e.seq > cursor.salesSeq);
     const returns = (await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', sinceSeq: cursor.returnsSeq })).filter((e) => e.seq > cursor.returnsSeq);
-    if (sales.length === 0 && returns.length === 0) return { sales: 0, returns: 0 };
+    // FUL-10: a sale CORRECTED after it was committed — the GST credit / debit note issued against it (a void is a credit
+    // note for the whole bill, `order_cancelled`) — corrects the customer's facts like a return does, as its own fact.
+    const notes = (await input.store.readStream(tenantId, STREAM.finance, { type: 'CreditNoteIssued', sinceSeq: notesSeq })).filter((e) => e.seq > notesSeq);
+    if (sales.length === 0 && returns.length === 0 && notes.length === 0) return { sales: 0, returns: 0, corrections: 0 };
     // Weighted-average unit cost per (product, store) — the margin on a purchase, where the cost is known.
     let costs: Map<string, { unitCostMinor: number; minorPerUnit: number }> | undefined;
     const costOf = async (productId: string, locationId: string | undefined) => {
@@ -12434,6 +12438,23 @@ export function customer360Adapter(input: {
         cost += Math.round((l.quantityMinor * c.unitCostMinor) / minorPerUnitOf(l.uom));
       }
       return { marginMinor: sale.totalMinor - cost, complete };
+    };
+    /**
+     * A sale's order fact again, at its CURRENT net: the bill less everything that came back against it and every credit note
+     * counted against it, plus every debit note — a new, latest fact; the purchase is never deleted (hard rule #2).
+     */
+    const recorrect = async (tenantId: string, ref: string, sale: IncomingSale): Promise<void> => {
+      const back = (await allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact')).filter((x) => x.saleId === sale.saleId)
+        .reduce((s, x) => s + x.refundMinor, 0);
+      const notes = (await allOf<CustomerCorrection>(input.store, tenantId, factsOf(ref), 'CustomerCorrectionFact')).filter((x) => x.saleId === sale.saleId && x.counted);
+      const credited = notes.filter((x) => x.kind === 'credit_note').reduce((s, x) => s + x.grossMinor, 0);
+      const debited = notes.filter((x) => x.kind === 'debit_note').reduce((s, x) => s + x.grossMinor, 0);
+      const m = await marginOf(sale);
+      const off = back + credited - debited;
+      await recordOrderFact(tenantId, {
+        orderId: sale.saleId, customerRef: ref, at: sale.committedAt, netMinor: Math.max(0, sale.totalMinor - off), marginMinor: m.marginMinor - off,
+        channel: 'store', derivedFrom: notes.length > 0 ? 'sale_less_returns_and_corrections' : 'sale_less_returns', marginComplete: m.complete,
+      });
     };
     let lastSales = cursor.salesSeq;
     for (const e of sales) {
@@ -12464,18 +12485,38 @@ export function customer360Adapter(input: {
         id: `cf-ret-${r.returnId}`, type: 'CustomerReturnFact', occurredAt: r.processedAt, idempotencyKey: `cf-ret-${tenantId}-${r.returnId}`, source: 'api/customer', payload: ret,
       }));
       // The correction: the sale's order fact again, net of everything that has come back against it.
-      if (sale !== undefined) {
-        const back = (await allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact')).filter((x) => x.saleId === sale.saleId)
-          .reduce((s, x) => s + x.refundMinor, 0);
-        const m = await marginOf(sale);
-        await recordOrderFact(tenantId, { orderId: sale.saleId, customerRef: ref, at: sale.committedAt, netMinor: Math.max(0, sale.totalMinor - back), marginMinor: m.marginMinor - back, channel: 'store', derivedFrom: 'sale_less_returns', marginComplete: m.complete });
+      if (sale !== undefined) await recorrect(tenantId, ref, sale);
+    }
+    let lastNotes = notesSeq;
+    for (const e of notes) {
+      lastNotes = Math.max(lastNotes, e.seq);
+      const n = payloadOf<{ noteId: string; kind: 'credit_note' | 'debit_note'; againstInvoiceId: string; againstInvoiceNumber: string; reason: string; grossMinor: number; issuedOn: string }>(e);
+      // The sale the note is against: by its id, or by the receipt number the bill was printed under.
+      let held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${n.againstInvoiceId}`);
+      if (held === undefined && typeof n.againstInvoiceNumber === 'string' && n.againstInvoiceNumber !== '') {
+        const idx = await input.store.findByIdempotencyKey(tenantId, `receipt-${tenantId}-${n.againstInvoiceNumber}`);
+        const saleId = (idx?.event.payload as { saleId?: string } | undefined)?.saleId;
+        if (saleId !== undefined) held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
       }
+      const sale = held?.event.payload as IncomingSale | undefined;
+      const ref = typeof sale?.customerRef === 'string' && sale.customerRef.trim() !== '' ? sale.customerRef : undefined;
+      if (sale === undefined || ref === undefined) continue; // a note against no banked customer sale names nobody
+      const returned = (await allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact')).some((x) => x.saleId === sale.saleId);
+      const c: CustomerCorrection = {
+        noteId: n.noteId, customerRef: ref, saleId: sale.saleId, kind: n.kind, reason: n.reason, grossMinor: n.grossMinor, at: n.issuedOn,
+        // A goods-returned credit note on a bill whose return is already recorded is that return's tax document — not twice.
+        counted: !(n.kind === 'credit_note' && n.reason === 'goods_returned' && returned),
+      };
+      await input.store.append(tenantId, factsOf(ref), makeEvent({
+        id: `cf-note-${n.noteId}`, type: 'CustomerCorrectionFact', occurredAt: e.event.occurredAt, idempotencyKey: `cf-note-${tenantId}-${n.noteId}`, source: 'api/customer', payload: c,
+      }));
+      await recorrect(tenantId, ref, sale);
     }
     await input.store.append(tenantId, cursorStream, makeEvent({
-      id: `cf-cursor-${lastSales}-${lastReturns}`, type: 'CustomerFactsCursor', occurredAt: input.now(),
-      idempotencyKey: `cf-cursor-${tenantId}-${lastSales}-${lastReturns}`, source: 'api/customer', payload: { salesSeq: lastSales, returnsSeq: lastReturns },
+      id: `cf-cursor-${lastSales}-${lastReturns}-${lastNotes}`, type: 'CustomerFactsCursor', occurredAt: input.now(),
+      idempotencyKey: `cf-cursor-${tenantId}-${lastSales}-${lastReturns}-${lastNotes}`, source: 'api/customer', payload: { salesSeq: lastSales, returnsSeq: lastReturns, notesSeq: lastNotes },
     }));
-    return { sales: sales.length, returns: returns.length };
+    return { sales: sales.length, returns: returns.length, corrections: notes.length };
   };
 
   return {
@@ -12483,6 +12524,7 @@ export function customer360Adapter(input: {
     catchUp,
     purchasesOf: (tenantId, ref) => allOf<CustomerPurchase>(input.store, tenantId, factsOf(ref), 'CustomerPurchaseFact'),
     returnsOf: (tenantId, ref) => allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact'),
+    correctionsOf: (tenantId, ref) => allOf<CustomerCorrection>(input.store, tenantId, factsOf(ref), 'CustomerCorrectionFact'),
     merges: (tenantId) => allOf<CustomerMerge>(input.store, tenantId, mergesStream, 'CustomerMergeRecorded'),
     recordMerge: async (tenantId, m) => {
       const stage = m.reversedBy !== undefined ? 'reversed' : m.approvedBy !== undefined ? 'approved' : 'proposed';
