@@ -8,7 +8,8 @@ import { createHash } from 'node:crypto';
 import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { DayCloseRecord, CarriedPaymentIn } from '../../pos/src/day-close';
-import type { PaymentException, PaymentExceptionResolution, PaymentExceptionConflict, PaymentExceptionDeps, LatePaymentAnswer } from '../../finance/src/payment-exceptions';
+import type { PaymentException, PaymentExceptionResolution, PaymentExceptionConflict, PaymentExceptionDeps, LatePaymentAnswer, RaisedNoAnswer } from '../../finance/src/payment-exceptions';
+import { mergeRaisedAndCarried } from '../../finance/src/payment-exceptions';
 import { STREAM, streamName, permissionsHeldBy, periodBooksAdapter, stockLossAdapter, storeOfLocationResolver, averageBuyingCosts, unappliedHeldWriteOffs } from './adapters';
 import { project, ownershipOf, type Movement } from '../../inventory/src/index';
 import { valueAtCost } from '../../../packages/contracts/src/quantity';
@@ -49,9 +50,21 @@ export async function carryPaymentExceptionsIn(store: EventStore, tenantId: stri
 export function paymentExceptionsAdapter(input: { readonly store: EventStore; readonly now: () => string }): PaymentExceptionDeps {
   return {
     now: input.now,
+    // OB-69: one item per attempt — raised at the no-answer, the same item once a day close carries it (never two).
     exceptions: async (tenantId) => {
-      const seen = new Set<string>();
-      return (await all<PaymentException>(input.store, tenantId, paymentExceptionsStream(), 'PaymentExceptionCarried')).filter((e) => (seen.has(e.attemptId) ? false : (seen.add(e.attemptId), true)));
+      const [raised, carried] = await Promise.all([
+        all<RaisedNoAnswer>(input.store, tenantId, paymentExceptionsStream(), 'PaymentNoAnswerRaised'),
+        all<PaymentException>(input.store, tenantId, paymentExceptionsStream(), 'PaymentExceptionCarried'),
+      ]);
+      return mergeRaisedAndCarried(raised, carried);
+    },
+    raised: (tenantId) => all<RaisedNoAnswer>(input.store, tenantId, paymentExceptionsStream(), 'PaymentNoAnswerRaised'),
+    recordRaised: async (tenantId, r) => {
+      await input.store.append(tenantId, paymentExceptionsStream(), makeEvent({
+        id: `payment-no-answer-${digest(r.attemptId)}`, type: 'PaymentNoAnswerRaised', occurredAt: r.raisedAt,
+        // ONE raised item per attempt: a re-sent relay collapses here even if two raced past the route's check.
+        idempotencyKey: `payment-no-answer-raised-${tenantId}-${r.attemptId}`, source: 'api/finance', payload: r,
+      }));
     },
     resolutions: (tenantId) => all<PaymentExceptionResolution>(input.store, tenantId, paymentExceptionsStream(), 'PaymentExceptionResolved'),
     conflicts: (tenantId) => all<PaymentExceptionConflict>(input.store, tenantId, paymentExceptionsStream(), 'PaymentExceptionResolutionConflict'),

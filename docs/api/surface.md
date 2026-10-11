@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 991 | 604 | 604 | 89 | 300 |
+| 13 | 992 | 605 | 605 | 89 | 300 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -714,6 +714,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/payables/post` | `finance.journal.post` | core | yes |
 | GET | `/v1/finance/payment-exceptions` | `finance.period.read` | core | — |
 | POST | `/v1/finance/payment-exceptions/:attemptId/late-answer/synced` | `till.dayclose.sync` | core | yes |
+| POST | `/v1/finance/payment-exceptions/:attemptId/no-answer/synced` | `till.dayclose.sync` | core | yes |
 | POST | `/v1/finance/payment-exceptions/:attemptId/resolve` | `settlement.investigation.manage` | core | yes |
 | POST | `/v1/finance/payment-exceptions/:attemptId/resolved/synced` | `till.dayclose.sync` | core | yes |
 | GET | `/v1/finance/periods` | `finance.period.read` | core | — |

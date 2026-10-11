@@ -152,13 +152,14 @@ describe.each(backings)('OB-55 — a day closes with a pending card/UPI payment 
     expect(leftOut).toMatchObject({ closed: false, reason: expect.stringContaining(`not named: ${upi.attemptId!}`) });
     // The manager's own PIN is still required: a wrong closer PIN with a good approval locks nothing.
     expect(await edge.closeDay({ dayCloseId: dc, closedBy: 'u-mgr', closerPin: pinOf('u-lanecash'), carryForward: { attemptIds: both, approvedBy: 'u-owner', approverPin: pinOf('u-owner'), reason: 'provider down' } })).toMatchObject({ closed: false });
-    expect((await readLog(edge.dayCloseLog.path)).length).toBe(0);
+    // Nothing locked: no close on the box's day-close log (OB-69: the card's no-answer waits there to be relayed).
+    expect((await readLog(edge.dayCloseLog.path)).filter((r) => r.ok && r.record.includes('"closedBy"')).length).toBe(0);
 
     // ── The manager's PIN and the owner's PIN, naming both: the day locks on the box, offline.
     const closed = await close({ attemptIds: both, approvedBy: 'u-owner', approverPin: pinOf('u-owner'), reason: 'card provider down since 9pm' });
     expect(closed, JSON.stringify(closed)).toMatchObject({ closed: true, tradingDay: DAY_D, locked: true, unresolvedMinor: { card: 64_000, upi: 41_000 } });
     expect([...(closed as unknown as { carriedForward: string[] }).carriedForward].sort()).toEqual([...both].sort());
-    const dayLog = (await readLog(edge.dayCloseLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.record) as { closedBy: string; carriedForward: { approvedBy: string; approvalId: string; payments: { attemptId: string; tradingDay: string }[] }; approverVerified?: unknown });
+    const dayLog = (await readLog(edge.dayCloseLog.path)).flatMap((r) => (r.ok && r.record.includes('"closedBy"') ? [r.record] : [])).map((r) => JSON.parse(r) as { closedBy: string; carriedForward: { approvedBy: string; approvalId: string; payments: { attemptId: string; tradingDay: string }[] }; approverVerified?: unknown });
     expect(dayLog).toHaveLength(1);
     expect(dayLog[0]).toMatchObject({ closedBy: 'u-mgr', carriedForward: { approvedBy: 'u-owner' } });
     expect(dayLog[0]!.approverVerified).toBeDefined();

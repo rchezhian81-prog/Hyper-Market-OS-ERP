@@ -17,6 +17,12 @@
 //     `recoverPendingTender` engine. Never by a person's say-so. The first resolution stands; the same one again is a no-op;
 //     a DIFFERENT one is refused and recorded as a visible conflict, never a silent last-write-wins (hard rule #10).
 //
+//   • RAISED AT ONCE — OB-69 "A" (owner, 11 Oct 2026, "The moment it happens"): finance no longer waits for the day close.
+//     The store computer relays each attempt the till records as NO ANSWER the moment it is recorded (queued on the box
+//     while the line is down, sent on reconnect) — ONE open item per attempt (`stage: 'raised'`). The day close that later
+//     carries the same attempt makes that same item `carried`, never a second one, so it is counted once in the open total
+//     and the day's tender figures; the provider's answer resolves it once either way.
+//
 // Every fact is appended, never edited (hard rule #2). A provider reference that looks like a card number is refused
 // (hard rule #3).
 
@@ -38,17 +44,58 @@ export interface CarriedPayment {
   readonly tradingDay: string;
 }
 
-/** A carried-forward payment as head office holds it — one per attempt. */
+/**
+ * A card/UPI payment with no final answer as head office holds it — ONE per attempt. OB-69 "A" (owner, 11 Oct 2026, "The
+ * moment it happens"): it is first RAISED when the store computer records the machine's no-answer (relayed at once, or on
+ * reconnect) — `stage: 'raised'`, no day close yet (the close fields are null); the store's day close that later carries the
+ * same attempt makes it `stage: 'carried'` — the SAME item, never a second one.
+ */
 export interface PaymentException extends CarriedPayment {
   readonly storeId: string;
-  readonly dayCloseId: string;
-  readonly closedBy: string;
-  readonly approvedBy: string;
-  readonly approvalId: string;
-  readonly reason: string;
-  readonly carriedAt: string;
+  readonly dayCloseId: string | null;
+  readonly closedBy: string | null;
+  readonly approvedBy: string | null;
+  readonly approvalId: string | null;
+  readonly reason: string | null;
+  readonly carriedAt: string | null;
   /** What head office found when it re-checked the approver (record-and-flag, never a refusal). */
   readonly governanceFlags: readonly string[];
+  /** OB-69: where it stands — raised at the no-answer, or carried by a day close. Absent on records from before OB-69 (carried). */
+  readonly stage?: 'raised' | 'carried';
+  /** OB-69: when the store computer recorded the no-answer and relayed it (null: it reached head office only with the close). */
+  readonly raisedAt?: string | null;
+}
+
+/** OB-69: a no-answer the store computer relayed the moment it recorded it — before any day close. */
+export interface RaisedNoAnswer extends CarriedPayment {
+  readonly storeId: string;
+  /** When the till recorded the machine's no-answer. */
+  readonly recordedAt: string;
+  readonly recordedBy: string;
+  /** Who relayed it (the store computer's credential). */
+  readonly relayedBy: string;
+  readonly raisedAt: string;
+}
+
+/** OB-69 (pure): one item per attempt — the carried record where a close carried it, the raised one until then. */
+export function mergeRaisedAndCarried(raised: readonly RaisedNoAnswer[], carried: readonly PaymentException[]): PaymentException[] {
+  const raisedOf = new Map<string, RaisedNoAnswer>();
+  for (const r of raised) if (!raisedOf.has(r.attemptId)) raisedOf.set(r.attemptId, r);
+  const out: PaymentException[] = [];
+  const seen = new Set<string>();
+  for (const c of carried) {
+    if (seen.has(c.attemptId)) continue;
+    seen.add(c.attemptId);
+    out.push({ ...c, stage: 'carried', raisedAt: raisedOf.get(c.attemptId)?.raisedAt ?? null });
+  }
+  for (const r of raisedOf.values()) {
+    if (seen.has(r.attemptId)) continue;
+    out.push({
+      attemptId: r.attemptId, laneId: r.laneId, billRef: r.billRef, kind: r.kind, amountMinor: r.amountMinor, askedAt: r.askedAt, state: r.state, tradingDay: r.tradingDay,
+      storeId: r.storeId, dayCloseId: null, closedBy: null, approvedBy: null, approvalId: null, reason: null, carriedAt: null, governanceFlags: [], stage: 'raised', raisedAt: r.raisedAt,
+    });
+  }
+  return out;
 }
 
 /** The provider's answer that resolved it — once. */
@@ -97,7 +144,11 @@ export interface LatePaymentAnswer {
 }
 
 export interface PaymentExceptionDeps {
+  /** Every payment with no final answer head office holds — one per attempt, raised (OB-69) or carried (OB-55). */
   readonly exceptions: (tenantId: string) => Promise<readonly PaymentException[]>;
+  /** OB-69: the no-answers the store computer relayed the moment it recorded them (one per attempt). */
+  readonly raised?: (tenantId: string) => Promise<readonly RaisedNoAnswer[]>;
+  readonly recordRaised?: (tenantId: string, r: RaisedNoAnswer) => Promise<void>;
   readonly resolutions: (tenantId: string) => Promise<readonly PaymentExceptionResolution[]>;
   readonly conflicts: (tenantId: string) => Promise<readonly PaymentExceptionConflict[]>;
   readonly recordResolution: (tenantId: string, r: PaymentExceptionResolution) => Promise<void>;
@@ -160,7 +211,7 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
     if (exception === undefined) {
       throw apiError(404, {
         code: 'not_a_carried_payment',
-        whatHappened: `No store day close carried a payment ${attemptId} to head office.`,
+        whatHappened: `No store computer raised, and no store day close carried, a payment ${attemptId} to head office.`,
         wasItSaved: 'not_saved',
         nextSafeAction: 'Check the payment reference. A store\'s answer that arrives before its day close is kept at the store and sent again.',
       });
@@ -193,6 +244,46 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
       handler: async (ctx) => {
         const [e, r, c, la] = await Promise.all([deps.exceptions(ctx.tenantId), deps.resolutions(ctx.tenantId), deps.conflicts(ctx.tenantId), deps.lateAnswers(ctx.tenantId)]);
         return { status: 200, body: { ...paymentExceptionList(e, r, c, la), asAt: deps.now() } };
+      },
+    },
+    {
+      // OB-69 "A" (owner, 11 Oct 2026, "The moment it happens"): the store computer relays a card/UPI attempt the moment the
+      // till records the machine's NO ANSWER (queued on the box while the line is down, sent on reconnect). It becomes ONE
+      // open finance item, keyed on the attempt: a re-send is a no-op; the day close that later carries it is the same item;
+      // the provider's answer resolves it once. A reference that looks like card data is refused (hard rule #3).
+      api: 'API-09', method: 'POST', path: '/v1/finance/payment-exceptions/:attemptId/no-answer/synced',
+      permission: 'till.dayclose.sync', idempotent: true,
+      handler: async (ctx) => {
+        const attemptId = ctx.params['attemptId'] ?? '';
+        const b = isObj(ctx.body) ? ctx.body : {};
+        const ok = isStr(attemptId) && (b['attemptId'] === undefined || b['attemptId'] === attemptId) && isStr(b['laneId']) && isStr(b['billRef'])
+          && (b['kind'] === 'card' || b['kind'] === 'upi') && isInt(b['amountMinor']) && (b['amountMinor'] as number) > 0
+          && isStr(b['askedAt']) && isStr(b['tradingDay']) && isStr(b['recordedAt']) && isStr(b['recordedBy']);
+        if (!ok || deps.recordRaised === undefined || deps.raised === undefined) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_no_answer',
+            whatHappened: 'A relayed no-answer needs the attempt (till, bill, card or UPI, amount, when it was asked, its trading day), when the till recorded the no-answer and who.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Keep it at the store and raise it. Nothing was changed.',
+          });
+        }
+        if (looksLikeCardNumber(attemptId) || looksLikeCardNumber(b['billRef'] as string)) {
+          throw apiError(422, {
+            code: 'provider_ref_not_a_token',
+            whatHappened: 'A reference looked like raw card data rather than a payment reference. Card numbers are never taken (hard rule #3).',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was recorded. Raise it with the store.',
+          });
+        }
+        const existing = (await deps.exceptions(ctx.tenantId)).find((e) => e.attemptId === attemptId);
+        if (existing !== undefined) return { status: 200, body: { attemptId, recorded: true, alreadyRecorded: true, stage: existing.stage ?? 'carried' } };
+        const rec: RaisedNoAnswer = {
+          attemptId, laneId: b['laneId'] as string, billRef: b['billRef'] as string, kind: b['kind'] as 'card' | 'upi', amountMinor: b['amountMinor'] as number,
+          askedAt: b['askedAt'] as string, state: 'no_answer', tradingDay: b['tradingDay'] as string, storeId: isStr(b['storeId']) ? b['storeId'] : '',
+          recordedAt: b['recordedAt'] as string, recordedBy: b['recordedBy'] as string, relayedBy: ctx.userId, raisedAt: deps.now(),
+        };
+        await deps.recordRaised(ctx.tenantId, rec);
+        return { status: 202, body: { attemptId, recorded: true, alreadyRecorded: false, stage: 'raised' } };
       },
     },
     {

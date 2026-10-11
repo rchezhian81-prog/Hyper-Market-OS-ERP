@@ -147,6 +147,9 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // OB-55 "A": the provider's later answer on a card/UPI payment a day close carried forward to head office — resolves the
   // named finance exception once. `attemptId` is a plain payload field matching the path param.
   CarriedPaymentResolved: '/v1/finance/payment-exceptions/:attemptId/resolved/synced',
+  // OB-69 "A": a card/UPI attempt the till recorded as NO ANSWER — an open finance item at head office the moment it happens
+  // (queued on the box while the line is down). `attemptId` is a plain payload field matching the path param.
+  PaymentNoAnswerRaised: '/v1/finance/payment-exceptions/:attemptId/no-answer/synced',
   // OB-55 / PF-06: a machine answer typed in late (an earlier trading day's attempt) on a manager's approval at the till.
   LatePaymentAnswerRecorded: '/v1/finance/payment-exceptions/:attemptId/late-answer/synced',
   // The migration screen's decisions (MG-04 / MG-06, §31 — Stage C3a). Made at the store box on the night,
