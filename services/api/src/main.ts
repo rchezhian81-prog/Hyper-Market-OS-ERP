@@ -1770,6 +1770,8 @@ export interface ApiProviders {
   readonly notificationWorkerIntervalMs?: number;
   /** PA-12: how often the ops-alert worker passes over every shop with alert rules (default 60 s). */
   readonly opsAlertWorkerIntervalMs?: number;
+  /** EA-07: how often the brief worker passes over the named shops — overrides BRIEF_WORKER_EVERY_SECONDS (tests). */
+  readonly briefWorkerIntervalMs?: number;
 }
 
 export async function startApi(
@@ -2031,7 +2033,7 @@ export async function startApi(
   const briefTenants = (env['BRIEF_WORKER_TENANT_IDS'] ?? '').split(',').map((t) => t.trim()).filter((t) => t !== '');
   const everySeconds = Number(env['BRIEF_WORKER_EVERY_SECONDS'] ?? '300');
   const stopBriefWorker = briefTenants.length === 0 || briefDeps === undefined ? undefined : startBriefWorker({
-    deps: briefDeps, tenants: briefTenants, everyMs: (Number.isFinite(everySeconds) && everySeconds >= 10 ? everySeconds : 300) * 1000,
+    deps: briefDeps, tenants: briefTenants, everyMs: providers.briefWorkerIntervalMs ?? (Number.isFinite(everySeconds) && everySeconds >= 10 ? everySeconds : 300) * 1000,
     report: (ticks) => {
       for (const t of ticks) if (!t.ok || t.ran.length > 0) out(`${JSON.stringify({ briefWorker: t.tenantId, ok: t.ok, detail: t.detail, ran: t.ran.map((r) => ({ day: r.tradingDay, outcome: r.outcome })) })}\n`);
     },
