@@ -59,7 +59,7 @@ export interface NotificationIntent {
    * owner's daily brief (`system:owner-brief`, deterministic figures, to the owner). The enqueue route never sets it, so
    * nothing a caller sends can skip the template check; such an item is still checked for recipient, consent and budget.
    */
-  readonly composedBy?: 'system:owner-brief';
+  readonly composedBy?: 'system:owner-brief' | 'system:exception-alert';
 }
 
 /** One append-only fact about a queued notification. `change` says which; extra fields carry its detail. */
@@ -102,6 +102,9 @@ export interface MessageTemplateVersion {
   readonly withdrawnBy?: string;
   readonly withdrawnAt?: string;
   readonly withdrawalReason?: string;
+  /** Round 8 (A09): the words were drafted by the assistant through a governed call — kept on every later state, so the
+   *  approver (always a different person) knows whose words they approve. */
+  readonly aiDraft?: { readonly agent: 'A09'; readonly callId: string; readonly auditHash: string; readonly citedEvidenceIds: readonly string[] };
 }
 
 /** Whether a recipient may still be messaged at all (PA-08 r6) — before consent is even asked. */
@@ -180,7 +183,7 @@ export async function drainNotificationQueue(deps: NotificationQueueDeps, tenant
       continue;
     }
     // PA-08 r6: the frozen template VERSION must still be approved now — a withdrawn approval withholds what waits.
-    const standing = queued.intent.composedBy === 'system:owner-brief' ? 'approved'
+    const standing = queued.intent.composedBy === 'system:owner-brief' || queued.intent.composedBy === 'system:exception-alert' ? 'approved'
       : templates === undefined ? 'unknown' : templateVersionStanding(templates, queued.intent.templateId, queued.intent.templateVersion);
     if (standing !== 'approved') {
       const why = templateWithdrawalDetail(templates ?? [], queued.intent.templateId, queued.intent.templateVersion);

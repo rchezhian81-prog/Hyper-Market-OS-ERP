@@ -46,7 +46,8 @@ import {
   RIGHTS_OFFERED,
   type ConsentPurposeSpec,
 } from './privacy-centre';
-import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPaymentResult } from './shop-transport';
+import { httpShopTransport, readShopAnswer, type ShopTransport, type ShopPaymentResult, type ShopMineRequest } from './shop-transport';
+import { voiceQuery, type VoiceSearchPort } from './voice-search';
 
 import { mountDemoBanner, type BannerDocument } from '../../../packages/ui/src/demo-banner';
 
@@ -262,6 +263,32 @@ export interface Shop {
   raise(kind: (typeof RIGHTS_OFFERED)[number]['kind'], at: string): Promise<RaiseOutcome>;
   /** My requests as the shop last reported them. */
   myRequests(): readonly MyPrivacyRequest[];
+  /**
+   * Round 8 (D08-FR-02/05): my own favourites, lists, complaints and return requests, ON THE SHOP and read back — saved
+   * only on the shop's 2xx; signed out, offline or refused, nothing changes and the answer says which (`refusal`).
+   */
+  mine: MyShop;
+}
+
+/** Why a call about my own records did not happen — the view words each one, in English and Tamil. */
+export type MineRefusal = 'not_signed_in' | 'no_road_to_the_shop' | 'not_saved_no_connection' | 'signed_out' | 'the_shop_could_not_answer' | 'the_shop_refused';
+export type MineOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly refusal: MineRefusal; readonly shopSaid?: string };
+export interface MyCase {
+  readonly caseId: string; readonly kind: string; readonly state: string; readonly openedAt: string; readonly orderRef?: string;
+  readonly replies: readonly { readonly text: string; readonly at: string; readonly channel: string }[];
+  readonly returnRequest?: { readonly requestId: string; readonly lines: readonly { readonly productId: string; readonly quantityMinor: number }[] };
+}
+export interface MyShop {
+  favourites(): Promise<MineOutcome<readonly string[]>>;
+  setFavourite(productId: string, favourite: boolean): Promise<MineOutcome<boolean>>;
+  lists(): Promise<MineOutcome<readonly { readonly listId: string; readonly name: string; readonly items: readonly { readonly productId: string; readonly quantityMinor: number }[] }[]>>;
+  /** Save the basket as it stands as a named list. */
+  saveBasketAsList(name: string): Promise<MineOutcome<string>>;
+  /** Put a saved list's items in the basket (the basket must then be checked again). */
+  addListToBasket(items: readonly { readonly productId: string; readonly quantityMinor: number }[]): SessionState;
+  complain(summary: string, orderRef?: string): Promise<MineOutcome<string>>;
+  requestReturn(orderId: string, lines: readonly { readonly productId: string; readonly quantityMinor: number }[], reason: string): Promise<MineOutcome<string>>;
+  cases(): Promise<MineOutcome<readonly MyCase[]>>;
 }
 
 /** Why a privacy change did not reach the shop — each one says nothing was saved. */
@@ -456,7 +483,60 @@ export function bootShop(
     },
 
     myRequests: () => requests,
+
+    mine: {
+      favourites: async () => {
+        const a = await mineCall({ method: 'GET', path: 'favourites' });
+        return a.ok ? { ok: true, value: ((a.body as { favourites?: { productId: string }[] }).favourites ?? []).map((f) => f.productId) } : a;
+      },
+      setFavourite: async (productId, favourite) => {
+        const a = await mineCall({ method: 'POST', path: `favourites/${encodeURIComponent(productId)}`, body: { favourite }, idempotencyKey: `fav-${productId}-${favourite}-${nextId()}` });
+        return a.ok ? { ok: true, value: favourite } : a;
+      },
+      lists: async () => {
+        const a = await mineCall({ method: 'GET', path: 'lists' });
+        return a.ok ? { ok: true, value: (a.body as { lists?: { listId: string; name: string; items: { productId: string; quantityMinor: number }[] }[] }).lists ?? [] } : a;
+      },
+      saveBasketAsList: async (name) => {
+        const listId = `l-${nextId()}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+        const items = state.lines.filter((l) => l.quantityMinor > 0).map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor }));
+        const a = await mineCall({ method: 'POST', path: `lists/${listId}`, body: { name, items }, idempotencyKey: `list-${listId}` });
+        return a.ok ? { ok: true, value: listId } : a;
+      },
+      addListToBasket: (items) => {
+        let next = state;
+        for (const i of items) next = setLine(next, { productId: i.productId, quantityMinor: (next.lines.find((l) => l.productId === i.productId)?.quantityMinor ?? 0) + i.quantityMinor });
+        return keep(next);
+      },
+      complain: async (summary, orderRef) => {
+        const id = `c-${nextId()}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+        const a = await mineCall({ method: 'POST', path: `complaints/${id}`, body: { summary, ...(orderRef === undefined ? {} : { orderRef }) }, idempotencyKey: `complaint-${id}` });
+        return a.ok ? { ok: true, value: String((a.body as { caseId?: unknown }).caseId ?? id) } : a;
+      },
+      requestReturn: async (orderId, lines, reason) => {
+        const id = `r-${nextId()}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+        const a = await mineCall({ method: 'POST', path: `orders/${encodeURIComponent(orderId)}/return-requests/${id}`, body: { lines, reason }, idempotencyKey: `return-${id}` });
+        return a.ok ? { ok: true, value: id } : a;
+      },
+      cases: async () => {
+        const a = await mineCall({ method: 'GET', path: 'cases' });
+        return a.ok ? { ok: true, value: (a.body as { cases?: MyCase[] }).cases ?? [] } : a;
+      },
+    },
   };
+
+  /** Round 8: one call about my own records, read honestly — saved only on the shop's 2xx, and why not otherwise. */
+  async function mineCall(call: Omit<ShopMineRequest, 'token'>): Promise<{ ok: true; body: unknown } | { ok: false; refusal: MineRefusal; shopSaid?: string }> {
+    if (token === undefined) return { ok: false, refusal: 'not_signed_in' };
+    if (transport?.mine === undefined) return { ok: false, refusal: 'no_road_to_the_shop' };
+    const answer = await transport.mine({ token, ...call });
+    if (!answer.reached) return { ok: false, refusal: 'not_saved_no_connection' };
+    if (answer.status === 200 || answer.status === 201) return { ok: true, body: answer.body };
+    if (answer.status === 401) { token = undefined; return { ok: false, refusal: 'signed_out' }; }
+    if (answer.status >= 500) return { ok: false, refusal: 'the_shop_could_not_answer' };
+    const err = (answer.body as { error?: { whatHappened?: unknown } } | undefined)?.error;
+    return { ok: false, refusal: 'the_shop_refused', ...(typeof err?.whatHappened === 'string' ? { shopSaid: err.whatHappened } : {}) };
+  }
 
   /** One privacy call as the signed-in customer, read honestly: saved only on the shop's 2xx. */
   async function privacyCall(call: { method: 'GET' | 'POST'; path: '' | '/consent' | `/requests/${string}`; body?: unknown; idempotencyKey?: string }):
@@ -637,6 +717,10 @@ interface ShopWindow {
   shopData?: ShopData;
   /** Anything that went wrong saving the basket, for the view to show (P-08). */
   shopStorageProblem?: string | null;
+  /** Round 8 (D08-FR-02): a speech engine, when this device was given one (none is chosen yet), and the tested rule
+   *  that turns what it heard into search words. */
+  shopVoice?: VoiceSearchPort;
+  shopVoiceQuery?: typeof voiceQuery;
 }
 
 // In the browser `globalThis.window` IS the window, so this needs no DOM types.
@@ -656,4 +740,5 @@ if (browserWindow !== undefined) {
     : undefined;
   const shop = bootShop(browserWindow.shopData, basket, randomRequestId, transport);
   if (shop !== null) browserWindow.shop = shop;
+  browserWindow.shopVoiceQuery = voiceQuery;
 }

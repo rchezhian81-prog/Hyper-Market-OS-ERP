@@ -63,6 +63,8 @@ export const VIEWER_ONLY_SCREEN_SECTIONS: readonly string[] = Object.freeze([
   'cashOfficePolicy', 'dayBookPolicy', 'returnGovernancePolicy', 'gstReconciliationPolicy', 'gstReturnsPolicy',
   'dayReopenPolicy', 'lossPreventionPolicy', 'productPublishReviewPolicy', 'fleetPolicy', 'riskAcceptancePolicy',
   'integrationHealthPolicy', 'categoryPolicyPolicy',
+  // Round 8: the service desk (WF-17 · A05) and the assistant's drafts (A09 approver · A07 security officer).
+  'serviceDeskPolicy', 'aiDraftsPolicy',
 ]);
 
 /**

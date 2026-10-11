@@ -192,11 +192,13 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     id: 'supplier_service', family: 'purchasing', name: 'Supplier service',
     answers: 'who delivers what they promised, and who does not',
     needs: ['what_was_ordered_from_suppliers', 'what_arrived_from_suppliers'],
+    columns: [{ name: 'supplierId', type: 'text' }, { name: 'orders', type: 'integer' }, { name: 'orderedUnits', type: 'integer' }, { name: 'receivedUnits', type: 'integer' }],
   },
   {
     id: 'invoice_differences', family: 'purchasing', name: 'Invoice differences',
     answers: 'where a supplier billed for something other than what arrived',
     needs: ['what_was_ordered_from_suppliers', 'what_arrived_from_suppliers', 'supplier_invoices_captured'],
+    columns: [{ name: 'invoiceId', type: 'text' }, { name: 'supplierId', type: 'text' }, { name: 'invoicedMinor', type: 'money_minor' }, { name: 'payableMinor', type: 'money_minor' }, { name: 'differenceMinor', type: 'money_minor' }],
   },
 
   // ── stock ────────────────────────────────────────────────────────────────
@@ -213,16 +215,19 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     id: 'shrinkage', family: 'stock', name: 'Shrinkage',
     answers: 'the difference between what the books say and what is on the shelf',
     needs: ['stock_movements_recorded', 'stock_counted_on_the_shelves'],
+    columns: [{ name: 'countId', type: 'text' }, { name: 'productId', type: 'text' }, { name: 'locationId', type: 'text' }, { name: 'varianceMinor', type: 'integer' }, { name: 'valueMinor', type: 'money_minor' }],
   },
   {
     id: 'expiry', family: 'stock', name: 'Approaching expiry',
     answers: 'what will go out of date before it sells',
     needs: ['expiry_dates_recorded', 'stock_movements_recorded'],
+    columns: [{ name: 'batchId', type: 'text' }, { name: 'productId', type: 'text' }, { name: 'expiry', type: 'date' }, { name: 'quantity', type: 'integer' }, { name: 'action', type: 'enum' }, { name: 'daysToExpiry', type: 'integer' }],
   },
   {
     id: 'waste', family: 'stock', name: 'Waste',
     answers: 'what was thrown away, and what it cost',
     needs: ['what_is_thrown_away_recorded', 'cost_prices_on_the_catalogue'],
+    columns: [{ name: 'writeOffId', type: 'text' }, { name: 'productId', type: 'text' }, { name: 'locationId', type: 'text' }, { name: 'lossType', type: 'enum' }, { name: 'quantity', type: 'integer' }, { name: 'valueMinor', type: 'money_minor' }, { name: 'valueSource', type: 'enum' }],
   },
 
   // ── customer ─────────────────────────────────────────────────────────────
@@ -230,6 +235,7 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     id: 'customer_repeat', family: 'customer', name: 'Customers coming back',
     answers: 'how many shoppers return, and how often',
     needs: ['customers_identified_at_the_till'],
+    columns: [{ name: 'visits', type: 'integer' }, { name: 'customers', type: 'integer' }],
   },
   {
     id: 'loyalty', family: 'customer', name: 'Loyalty',
@@ -242,6 +248,7 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     id: 'marketing', family: 'customer', name: 'Campaigns and complaints',
     answers: 'what the shop sent out and what came back',
     needs: ['campaigns_and_complaints_recorded'],
+    columns: [{ name: 'campaignId', type: 'text' }, { name: 'channel', type: 'enum' }, { name: 'sent', type: 'integer' }, { name: 'at', type: 'date' }],
   },
 
   // ── fulfilment ───────────────────────────────────────────────────────────
@@ -249,16 +256,19 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     id: 'orders_and_substitutions', family: 'fulfilment', name: 'Online orders',
     answers: 'what was ordered online, and what had to be swapped',
     needs: ['online_orders_and_deliveries'],
+    columns: [{ name: 'orderId', type: 'text' }, { name: 'locationId', type: 'text' }, { name: 'state', type: 'enum' }, { name: 'lines', type: 'integer' }, { name: 'substituted', type: 'integer' }],
   },
   {
     id: 'delivery_sla', family: 'fulfilment', name: 'Deliveries on time',
     answers: 'how many deliveries arrived inside the slot the customer booked',
     needs: ['online_orders_and_deliveries'],
+    columns: [{ name: 'orderId', type: 'text' }, { name: 'slotEndsAt', type: 'date' }, { name: 'deliveredAt', type: 'date' }, { name: 'verdict', type: 'enum' }],
   },
   {
     id: 'delivery_contribution', family: 'fulfilment', name: 'What a delivery earns',
     answers: 'whether a delivery is worth making once the driving is paid for',
     needs: ['online_orders_and_deliveries', 'cost_prices_on_the_catalogue'],
+    columns: [{ name: 'routeId', type: 'text' }, { name: 'stopId', type: 'text' }, { name: 'orderRef', type: 'text' }, { name: 'orderValueMinor', type: 'money_minor' }, { name: 'goodsCostMinor', type: 'money_minor' }, { name: 'deliveryCostMinor', type: 'money_minor' }, { name: 'contributionMinor', type: 'money_minor' }],
   },
 
   // ── finance ──────────────────────────────────────────────────────────────
@@ -301,6 +311,7 @@ export const REPORTS: readonly ReportDefinition[] = Object.freeze([
     id: 'ai_outcomes', family: 'operations', name: 'What the assistant suggested',
     answers: 'what the AI proposed, and what a person decided',
     needs: ['ai_decisions_recorded'],
+    columns: [{ name: 'agent', type: 'enum' }, { name: 'proposed', type: 'integer' }, { name: 'decided', type: 'integer' }],
   },
 ]);
 

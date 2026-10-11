@@ -201,6 +201,14 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   // Store credit and vouchers — liability, velocity, double spends (M17). Gated on the SAME permission its three
   // read routes check (`lp.case.read`): it is loss-prevention oversight of stored value.
   { id: 'stored-value', label: 'Store credit & vouchers', labelTa: 'கடை கடன் மற்றும் வவுச்சர்கள்', path: '/stored-value/', requires: 'lp.case.read', group: 'Customers' },
+  // Round 8 — customer cases (WF-17 · M21 · A05): the cases and their SLA clocks, the assistant's drafted reply that a
+  // named person approves and a person sends, and the root cause once a case is resolved. Gated on the case read the
+  // list route checks (`service.case.read`); every act is re-checked by the cloud (`service.case.manage`).
+  { id: 'service-desk', label: 'Customer cases', labelTa: 'வாடிக்கையாளர் வழக்குகள்', path: '/service-desk', requires: 'service.case.read', group: 'Customers' },
+  // Round 8 — the assistant's drafts (A09 · A07): campaign words waiting for a second person's approval, and the anomaly
+  // summaries for the security officer. Gated on the assistant's proposal read (`ai.proposal.read`); approving a
+  // template and asking for a summary are re-checked by the cloud on their own permissions.
+  { id: 'ai-drafts', label: 'Assistant drafts', labelTa: 'உதவியாளர் வரைவுகள்', path: '/ai-drafts', requires: 'ai.proposal.read', group: 'Operations' },
   { id: 'substitution-exceptions', label: 'Delivery exceptions', labelTa: 'டெலிவரி விதிவிலக்குகள்', path: '/substitution-exceptions', requires: 'order.read', group: 'Orders' },
   // Refund exceptions — the M13/M17 governance surface: refunds that reconciled with a rule broken (store credit
   // over the owner's cap, a credit with no customer, a §28 approval breach, more sent back than the bill sold or

@@ -249,6 +249,8 @@ export interface ProducedReportView {
   /** Figure name → the source transactions it is the exact sum of (the governed drill, EA-05). */
   readonly drill: Readonly<Record<string, readonly SourceTransaction[]>>;
   readonly tradingDay?: string;
+  /** Round 8: a month report's period (first of the month to the asked day). */
+  readonly period?: { readonly from: string; readonly to: string };
 }
 
 export interface ReportingDeps {
@@ -363,6 +365,7 @@ export function reportingRoutes(deps: ReportingDeps): readonly Route[] {
           body: {
             report: { id: report.id, family: report.family, name: report.name, answers: report.answers },
             ...(out.tradingDay === undefined ? {} : { tradingDay: out.tradingDay }),
+            ...(out.period === undefined ? {} : { period: out.period }),
             scope,
             ...dashboard(out.figures, deps.now(), out.sources),
             rows: out.rows,

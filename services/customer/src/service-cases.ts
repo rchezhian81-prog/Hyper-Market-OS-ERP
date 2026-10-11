@@ -126,8 +126,46 @@ export interface ServiceCaseDeps {
   /** CSAT scores across the tenant (M21-FR-04) — a customer rates a resolved case; the report folds them. */
   readonly scores: (tenantId: string) => Promise<readonly SatisfactionScore[]> | readonly SatisfactionScore[];
   readonly recordScore: (tenantId: string, caseId: string, score: SatisfactionScore, key: string) => Promise<void> | void;
+  /** Round 8 (WF-17 · P-05): replies a PERSON sent from an approved draft — append-only. Absent → sending is not wired. */
+  readonly sentReplies?: (tenantId: string, caseId: string) => Promise<readonly SentReply[]> | readonly SentReply[];
+  readonly recordSentReply?: (tenantId: string, rec: SentReply, key: string) => Promise<void> | void;
+  /** Round 8 (WF-17 "feedback/root cause"): the root cause recorded on a resolved case — append-only, latest per case wins. */
+  readonly rootCauses?: (tenantId: string) => Promise<readonly RootCauseRecord[]> | readonly RootCauseRecord[];
+  readonly recordRootCause?: (tenantId: string, rec: RootCauseRecord, key: string) => Promise<void> | void;
   readonly now: () => string;
 }
+
+/** Round 8 (WF-17 · P-05): a reply a named person sent from an approved draft — the words exactly as approved. */
+export interface SentReply {
+  readonly caseId: string;
+  readonly draftId: string;
+  readonly text: string;
+  /** How the person reached the customer. A provider channel (SMS/WhatsApp) needs a connected provider (R4, external). */
+  readonly channel: SendChannel;
+  readonly sentBy: string;
+  readonly approvedBy: string;
+  readonly at: string;
+}
+export type SendChannel = 'phone' | 'in_person' | 'email';
+const SEND_CHANNELS: readonly SendChannel[] = ['phone', 'in_person', 'email'];
+
+/**
+ * Round 8 (WF-17 "resolve → feedback/root cause" · M21): why the case happened, recorded by a person on a RESOLVED case,
+ * so the same complaint can be prevented — the shop's own default list of causes, each with a note. Append-only: a
+ * correction is a new record (the latest per case is the one that counts; the earlier stays on the trail).
+ */
+export interface RootCauseRecord {
+  readonly caseId: string;
+  readonly kind: CaseKind;
+  readonly cause: RootCause;
+  readonly note: string;
+  /** What will stop it happening again, when the person knows. */
+  readonly preventiveAction?: string;
+  readonly recordedBy: string;
+  readonly at: string;
+}
+export const ROOT_CAUSES = ['product_quality', 'stock_availability', 'pricing_or_billing', 'delivery', 'staff_conduct', 'store_process', 'system_or_app', 'customer_misunderstanding', 'other'] as const;
+export type RootCause = (typeof ROOT_CAUSES)[number];
 
 const digestOf = (c: ServiceCase): string =>
   [c.state, c.firstRespondedAt ?? '', c.resolvedAt ?? '', c.priority, c.assignedTo, String(c.waitingOnCustomerMinutes ?? 0)].join('|');
@@ -429,13 +467,14 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
       permission: 'service.case.read',
       handler: async (ctx) => {
         const caseId = ctx.params['caseId'] ?? '';
-        const [drafts, decisions] = await Promise.all([deps.drafts(ctx.tenantId, caseId), deps.draftDecisions(ctx.tenantId, caseId)]);
+        const [drafts, decisions, sent] = await Promise.all([deps.drafts(ctx.tenantId, caseId), deps.draftDecisions(ctx.tenantId, caseId), deps.sentReplies?.(ctx.tenantId, caseId) ?? []]);
         const byDraft = new Map(decisions.map((d) => [d.draftId, d]));
+        const sentOf = new Map(sent.map((r) => [r.draftId, r]));
         return {
           status: 200,
           body: {
             caseId,
-            drafts: drafts.map((d) => ({ draftId: d.draftId, modelRef: d.modelRef, evidenceCount: d.evidenceRefs.length, generatedAt: d.generatedAt, decision: byDraft.get(d.draftId) ?? null })),
+            drafts: drafts.map((d) => ({ draftId: d.draftId, modelRef: d.modelRef, text: d.text, evidenceRefs: d.evidenceRefs, evidenceCount: d.evidenceRefs.length, generatedAt: d.generatedAt, decision: byDraft.get(d.draftId) ?? null, sent: sentOf.get(d.draftId) ?? null })),
             count: drafts.length,
           },
         };
@@ -466,6 +505,112 @@ export function serviceCaseRoutes(deps: ServiceCaseDeps): readonly Route[] {
         };
         await deps.recordScore(ctx.tenantId, caseId, rec, `${caseId}-${rec.customerRef}-${rec.at}`);
         return { status: 201, body: { caseId, score: rec.score, at: rec.at } };
+      },
+    },
+    {
+      // Round 8 (WF-17 · P-05 · hard rule #5): a PERSON sends an approved reply. Body: { channel (phone/in_person/email) }.
+      // Only a draft whose latest decision made it sendable can be sent, exactly in the approved words, once; the sender
+      // is the signed-in person (never a model). It stamps the case's first reply if none was recorded. SMS/WhatsApp go
+      // through a message provider, which is not connected (R4, external) — refused by name, never pretended.
+      api: 'API-06', method: 'POST', path: '/v1/service/cases/:caseId/drafts/:draftId/send',
+      permission: 'service.case.manage', idempotent: true,
+      handler: async (ctx) => {
+        const caseId = ctx.params['caseId'] ?? '';
+        const draftId = ctx.params['draftId'] ?? '';
+        if (deps.sentReplies === undefined || deps.recordSentReply === undefined) {
+          throw apiError(501, { code: 'sending_not_wired', whatHappened: 'Sending a reply is not wired on this server.', wasItSaved: 'not_saved', nextSafeAction: 'Reply to the customer yourself and record the first response.' });
+        }
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (b['channel'] === 'sms' || b['channel'] === 'whatsapp') {
+          throw apiError(409, { code: 'channel_not_connected', whatHappened: `No ${String(b['channel'])} provider is connected, so head office cannot send by ${String(b['channel'])}.`, wasItSaved: 'not_saved', nextSafeAction: 'Phone the customer, tell them in person or email them, then record it here with that channel.' });
+        }
+        if (!SEND_CHANNELS.includes(b['channel'] as SendChannel)) {
+          throw apiError(400, { code: 'not_readable_as_a_send', whatHappened: `Sending needs { channel (${SEND_CHANNELS.join('/')}) } — how you reached the customer.`, wasItSaved: 'not_saved', nextSafeAction: 'Say how you sent it.' });
+        }
+        const existing = await deps.serviceCase(ctx.tenantId, caseId);
+        if (existing === undefined) throw notFound(`service case ${caseId}`);
+        if (await deps.draft(ctx.tenantId, caseId, draftId) === undefined) throw notFound(`AI draft ${draftId}`);
+        const decision = (await deps.draftDecisions(ctx.tenantId, caseId)).find((d) => d.draftId === draftId);
+        if (decision === undefined || !decision.sendable || decision.text === undefined) {
+          throw apiError(409, { code: 'draft_not_approved', whatHappened: decision === undefined ? 'Nobody has approved this draft, so it cannot be sent.' : 'This draft was rejected, so it cannot be sent.', wasItSaved: 'not_saved', nextSafeAction: 'A named person approves (or edits and approves) the draft first.' });
+        }
+        if ((await deps.sentReplies(ctx.tenantId, caseId)).some((r) => r.draftId === draftId)) {
+          throw apiError(409, { code: 'already_sent', whatHappened: `The reply from draft ${draftId} has already been sent.`, wasItSaved: 'not_saved', nextSafeAction: 'A reply is sent once; draft a new one for a further answer.' });
+        }
+        const at = deps.now();
+        const rec: SentReply = { caseId, draftId, text: decision.text, channel: b['channel'] as SendChannel, sentBy: ctx.userId, approvedBy: decision.approvedBy, at };
+        await deps.recordSentReply(ctx.tenantId, rec, `${caseId}-${draftId}-sent`);
+        let firstRespondedAt = existing.firstRespondedAt;
+        if (firstRespondedAt === undefined) {
+          const updated: ServiceCase = { ...existing, firstRespondedAt: at };
+          await deps.recordCase(ctx.tenantId, caseId, updated, digestOf(updated));
+          firstRespondedAt = at;
+        }
+        return { status: 201, body: { sent: rec, firstRespondedAt, committedByAModel: false } };
+      },
+    },
+    {
+      // Round 8 (WF-17 "feedback/root cause"): why a RESOLVED case happened. Body: { cause, note, preventiveAction? }.
+      // Append-only; a second record on the same case is a correction (the latest counts, the earlier stays).
+      api: 'API-06', method: 'POST', path: '/v1/service/cases/:caseId/root-cause',
+      permission: 'service.case.manage', idempotent: true,
+      handler: async (ctx) => {
+        const caseId = ctx.params['caseId'] ?? '';
+        if (deps.rootCauses === undefined || deps.recordRootCause === undefined) {
+          throw apiError(501, { code: 'root_cause_not_wired', whatHappened: 'Root causes are not kept on this server.', wasItSaved: 'not_saved', nextSafeAction: 'Write the cause in the resolution.' });
+        }
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!ROOT_CAUSES.includes(b['cause'] as RootCause) || !isStr(b['note']) || (b['preventiveAction'] !== undefined && !isStr(b['preventiveAction']))) {
+          throw apiError(400, { code: 'not_readable_as_a_root_cause', whatHappened: `A root cause needs { cause (${ROOT_CAUSES.join('/')}), note, preventiveAction? }.`, wasItSaved: 'not_saved', nextSafeAction: 'Pick the cause and say in a sentence what happened.' });
+        }
+        const existing = await deps.serviceCase(ctx.tenantId, caseId);
+        if (existing === undefined) throw notFound(`service case ${caseId}`);
+        if (existing.state !== 'resolved' && existing.state !== 'closed') {
+          throw apiError(409, { code: 'case_not_resolved', whatHappened: `Case ${caseId} is ${existing.state} — the root cause is recorded once it is resolved.`, wasItSaved: 'not_saved', nextSafeAction: 'Resolve the case first.' });
+        }
+        const prior = (await deps.rootCauses(ctx.tenantId)).filter((r) => r.caseId === caseId).at(-1);
+        const rec: RootCauseRecord = {
+          caseId, kind: existing.kind, cause: b['cause'] as RootCause, note: (b['note'] as string).trim(),
+          ...(isStr(b['preventiveAction']) ? { preventiveAction: (b['preventiveAction'] as string).trim() } : {}),
+          recordedBy: ctx.userId, at: deps.now(),
+        };
+        if (prior !== undefined && prior.cause === rec.cause && prior.note === rec.note && prior.preventiveAction === rec.preventiveAction) {
+          return { status: 200, body: { rootCause: prior, alreadyRecorded: true } };
+        }
+        await deps.recordRootCause(ctx.tenantId, rec, `${caseId}-${rec.cause}-${rec.at}`);
+        return { status: 201, body: { rootCause: rec, ...(prior === undefined ? {} : { corrects: prior }) } };
+      },
+    },
+    {
+      // Round 8 (WF-17 feedback loop · M29): the resolved cases by root cause — and how many were resolved WITHOUT one,
+      // said, never hidden (P-08). The latest root cause per case counts.
+      api: 'API-06', method: 'GET', path: '/v1/service/root-causes',
+      permission: 'service.case.read',
+      handler: async (ctx) => {
+        const [cases, records] = await Promise.all([deps.serviceCases(ctx.tenantId), deps.rootCauses?.(ctx.tenantId) ?? []]);
+        const latest = new Map<string, RootCauseRecord>();
+        for (const r of records) latest.set(r.caseId, r);
+        const resolved = cases.filter((c) => c.state === 'resolved' || c.state === 'closed');
+        const byCause = new Map<string, { cases: number; complaints: number; caseIds: string[] }>();
+        for (const c of resolved) {
+          const r = latest.get(c.caseId);
+          if (r === undefined) continue;
+          const held = byCause.get(r.cause) ?? { cases: 0, complaints: 0, caseIds: [] };
+          held.cases += 1; if (c.kind === 'complaint') held.complaints += 1; held.caseIds.push(c.caseId);
+          byCause.set(r.cause, held);
+        }
+        const missing = resolved.filter((c) => !latest.has(c.caseId)).map((c) => c.caseId).sort();
+        return {
+          status: 200,
+          body: {
+            resolved: resolved.length,
+            byCause: [...byCause.entries()].sort((a, b) => b[1].cases - a[1].cases || a[0].localeCompare(b[0])).map(([cause, v]) => ({ cause, ...v })),
+            resolvedWithoutRootCause: missing,
+            records: [...latest.values()],
+            causes: ROOT_CAUSES,
+            asAt: deps.now(),
+          },
+        };
       },
     },
     {

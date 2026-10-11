@@ -240,7 +240,7 @@ import { campaignSendRoutes, campaignSendUnwired } from '../../customer/src/camp
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { notificationQueueRoutes, drainNotificationQueue } from '../../customer/src/notification-queue';
 import { startNotificationWorker, type NotificationWorker } from '../../customer/src/notification-worker';
-import { startOpsAlertWorker, type OpsAlertWorker } from '../../platform/src/ops-alert-worker';
+import { startOpsAlertWorker, OPS_ALERT_WORKER, type OpsAlertWorker } from '../../platform/src/ops-alert-worker';
 import { NotificationQueue, type NotificationTransport } from '../../../packages/notifications/src/index';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { drReadinessRoutes } from '../../platform/src/dr-readiness';
@@ -256,7 +256,9 @@ import { selfCheckoutRoutes } from '../../pos/src/self-checkout';
 import { ordersRoutes, type OrdersDeps } from '../../orders/src/index';
 import { paymentRefundRoutes, type PaymentRefundDeps } from '../../orders/src/payments';
 import { storefrontRoutes, type StorefrontDeps } from '../../orders/src/storefront';
-import { exceptionOwnershipRoutes, type ExceptionOwnershipDeps } from '../../orders/src/exception-ownership';
+import { storefrontSelfRoutes } from '../../orders/src/storefront-self';
+import { competitorPriceRoutes } from '../../pricing/src/competitor-prices';
+import { exceptionOwnershipRoutes, raiseBreachAlerts, type ExceptionOwnershipDeps } from '../../orders/src/exception-ownership';
 import { testModeRefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import { serviceabilityRoutes } from '../../orders/src/serviceability';
 import { deliveryServiceRoutes } from '../../orders/src/delivery-service';
@@ -273,6 +275,8 @@ import { migrationRoutes } from '../../migration/src/index';
 import { legacyHistoryRoutes } from '../../migration/src/legacy-history';
 import { aiRoutes } from '../../ai/src/index';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
+import { draftingLegRoutes } from '../../ai/src/drafting-legs';
+import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
 import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import {
   STREAM, personalDataStore, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, accountOpeningsAdapter, openingReversalAdapter, storeStockFactsAdapter, replenishmentFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, heldStockDecisionsAdapter, periodBooksAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter, b2bTransferNotesAdapter,
@@ -327,6 +331,12 @@ const REPORTING_RECORDS: readonly Producer[] = [
   // Round 4: the posted day book (M23), the imported settlement and bank files (PF-12), and each store computer's own
   // report of what it holds unsent (PA-04) — each read by its report's producer.
   'journals_posted_to_the_ledger', 'bank_and_gateway_statements', 'the_boxs_own_outbox',
+  // Round 8 (D13): what head office now records through each domain's own governed write path, each read by its report's
+  // producer — captured supplier bills (SP-7a), shelf counts (SP-4), committed write-offs (M28), receipts carrying an
+  // expiry (ADR-0015), member codes on bills (PF-09), campaign sends and service cases (PF-10 · M21), online orders,
+  // slots, routes and delivery steps (M18/M19), and the assistant's proposals with people's decisions on them (EA-08).
+  'supplier_invoices_captured', 'stock_counted_on_the_shelves', 'what_is_thrown_away_recorded', 'expiry_dates_recorded',
+  'customers_identified_at_the_till', 'campaigns_and_complaints_recorded', 'online_orders_and_deliveries', 'ai_decisions_recorded',
 ];
 /** The named reports head office can work out — each with a producer over governed source rows (EA-06). */
 const REPORTING_PRODUCED: readonly string[] = PRODUCED_AT_HEAD_OFFICE;
@@ -452,7 +462,8 @@ export function buildSurface(deps: {
     const orders = ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() });
     const approvals = approvalRequestsAdapter({ store, now });
     // FUL-14: a substitution is decided from stored truth (prices, attributes, rules, tender, consent, approval).
-    return { ...orders, approvals, substitutionTruth: substitutionTruthAdapter({ store, now, orders, approvals }) };
+    // Round 8 (M19-FR-04 · PA-08): an exception past its time limit is told to the people who staff its queue.
+    return { ...orders, approvals, substitutionTruth: substitutionTruthAdapter({ store, now, orders, approvals }), ...breachAlertAdapter({ store, now }) };
   })();
 
   // FUL-05: the one fulfilment command — run after every pack, dispatch, door outcome and counter hand-over, and on demand.
@@ -688,6 +699,13 @@ export function buildSurface(deps: {
     ...priceListRoutes(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
       : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    // Round 8 (D06-FR-05): competitor price sightings, compared with the shop's own effective price — changes no price.
+    ...(store === undefined ? [] : competitorPriceRoutes({
+      now, ...competitorPriceAdapter({ store, now }),
+      entries: (t, productId) => priceListAdapter({ store, now }).entries(t, productId),
+      productKnown: async (t, productId) => (await productMasterAdapter({ store, now }).product(t, productId)) !== undefined
+        || (await catalogueAdapter({ store, signer, now }).currentPack(t))?.snapshot.products.some((p) => p.productId === productId) === true,
+    })),
     ...promotionRoutes(store === undefined
       ? { launchedPromotion: empty(undefined), recordLaunch: () => {}, now }
       : { ...promotionAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
@@ -1136,6 +1154,8 @@ export function buildSurface(deps: {
         ...serviceCaseAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }),
         // PF-11: a granted compensation is carried out through the value records, its status kept.
         ...compensationFulfilmentAdapter({ store, now, pointValuePaise: async (t) => (await loyaltyRule(t)).pointValuePaise }),
+        // Round 8 (WF-17): replies a person sent from an approved draft, and the root cause on a resolved case.
+        ...serviceDeskExtrasAdapter({ store, now }),
       }),
     // Consent-gated segmentation (M16-FR-02) — a pure compute over supplied facts; no store.
     ...segmentRoutes(store === undefined
@@ -1173,6 +1193,20 @@ export function buildSurface(deps: {
     ...paymentRefundRoutes(ordersDeps),
     // The storefront's own surface (M20): a signed-in customer places and pays for an order that reserves stock in the
     // same breath, and reads back its own orders only — gated by the customer_app entitlement.
+    // Round 8 (D08-FR-02/05 · WF-16 · WF-17): the signed-in customer's own favourites and lists, and a complaint or a
+    // return request raised in the app — each a case on the service desk's own register, scoped from the session.
+    ...(store === undefined ? [] : storefrontSelfRoutes({
+      now,
+      ...storefrontSelfAdapter({ store, now }),
+      productKnown: async (t, productId) => (await catalogueAdapter({ store, signer, now }).currentPack(t))?.snapshot.products.some((p) => p.productId === productId) === true
+        || (await productMasterAdapter({ store, now }).product(t, productId)) !== undefined,
+      placedOrder: (t, orderId) => ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES }).placedOrder(t, orderId),
+      orderStateOf: async (t, orderId) => (await ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES }).orderState(t, orderId))?.state,
+      serviceCase: (t, caseId) => serviceCaseAdapter({ store, now }).serviceCase(t, caseId),
+      serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
+      openCase: (t, c) => serviceCaseAdapter({ store, now }).recordCase(t, c.caseId, c, `${c.state}|opened-in-app`),
+      sentReplies: (t, caseId) => serviceDeskExtrasAdapter({ store, now }).sentReplies(t, caseId),
+    })),
     ...storefrontRoutes({
       ...ordersDeps,
       // FUL-03: the shop's own quote — the store price head office last published — and the provider's word on payment.
@@ -1804,6 +1838,33 @@ export function buildSurface(deps: {
       operationsWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {},
       workforceWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordWorkforceDisposition: () => {}, now,
     } : governedAiDeps!), modelProviderConfigured: () => deps.modelTransport !== undefined }),
+    // Round 8 (roadmap §7 · P-05 · hard rule #5): the A05 case-reply, A09 campaign-message and A07 anomaly-summary DRAFTING
+    // legs — each through the governed call above (admission, metering, hash-chained audit), each over evidence read here
+    // from the domain's own records; the drafts land on the registers a PERSON decides on (case drafts, the two-person
+    // template register, the security officer's summaries). Without a store there is nothing to draft over.
+    ...(store === undefined ? [] : draftingLegRoutes({
+      now,
+      gateway: modelGatewayAdapter({
+        store, now,
+        evidenceFor: async (t, agent) => governedEvidence(await governedAiDeps!.run(t, agent)),
+        ...(deps.modelTransport === undefined ? {} : { transport: deps.modelTransport }),
+        ...(deps.modelPricing === undefined ? {} : { pricing: deps.modelPricing }),
+      }),
+      serviceCase: (t, caseId) => serviceCaseAdapter({ store, now }).serviceCase(t, caseId),
+      caseDraft: (t, caseId, draftId) => serviceCaseAdapter({ store, now }).draft(t, caseId, draftId),
+      recordCaseDraft: (t, caseId, draft, key) => serviceCaseAdapter({ store, now }).recordDraft(t, caseId, draft, key),
+      orderFacts: (t, orderId) => orderFactsFor(store, t, orderId),
+      servicePolicyFacts: async (t) => {
+        const p = await serviceCaseAdapter({ store, now }).compensationPolicy(t);
+        const rupees = (m: number): string => `₹${(m / 100).toFixed(2)}`;
+        return p === undefined
+          ? ['No compensation policy is set; the default applies: a desk agent may offer up to ₹500.00 alone, and nothing above ₹5,000.00.']
+          : [`Compensation: a desk agent may offer up to ${rupees(p.agentAuthorityMinor)} alone; above that a second person approves; nothing above ${rupees(p.deskCeilingMinor)}.`];
+      },
+      templateVersions: async (t) => notificationQueueAdapter({ store, now }).templates!(t),
+      recordTemplateDraft: (t, draft) => notificationQueueAdapter({ store, now }).recordTemplate!(t, draft),
+      ...anomalySummaryAdapter({ store, now }),
+    })),
   ];
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
@@ -2176,6 +2237,11 @@ export async function startApi(
     intervalMs: providers.opsAlertWorkerIntervalMs ?? 60_000,
     now,
     say: (line) => { out(`${line}\n`); },
+    // Round 8 (M19-FR-04 · PA-08): a delivery exception past its time limit is put on the message queue for the people
+    // who staff its queue, on this same timer — nobody has to press anything for it to be told.
+    alsoEachPass: async (t, at) => (await raiseBreachAlerts({
+      ...ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() }), ...breachAlertAdapter({ store, now }),
+    }, t, at, OPS_ALERT_WORKER)).queued.length,
   });
 
   // D14 / M32: the outbound webhook sender — the PA-08 worker shape (sequential, never stops quietly, restart-safe) over

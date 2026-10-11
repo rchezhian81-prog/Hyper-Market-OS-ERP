@@ -1215,6 +1215,24 @@ function openLpClosePort(): LpCloseCasePort {
 
 /** Read the live open-investigations worklist (a GET — read-only). Returns null offline/refused so the shell
  *  keeps whatever it was showing and its stale strip says the page is what the box last told it. */
+/** Round 8: an identity-only screen payload — who is looking and the permission words they hold, nothing else. */
+export interface ViewerIdentity {
+  readonly userId?: string;
+  readonly permissions: readonly string[];
+}
+
+/**
+ * Keep only who is looking and the permission words from an injected payload; `undefined` (nobody named) when it is
+ * absent or malformed. The permissions only shape what a screen OFFERS — the cloud re-checks every act.
+ */
+export function viewerIdentity(raw: unknown): ViewerIdentity | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  if (!Array.isArray(r['permissions']) || !r['permissions'].every((p) => typeof p === 'string')) return undefined;
+  const userId = typeof r['userId'] === 'string' && r['userId'].trim() !== '' ? r['userId'] : undefined;
+  return { ...(userId === undefined ? {} : { userId }), permissions: [...(r['permissions'] as string[])] };
+}
+
 export async function fetchLpWorklist(): Promise<LpWorklistData | null> {
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return null;
@@ -4542,6 +4560,9 @@ interface ManagerWindow {
     refresh(): Promise<LpWorklistData | null>;
     present(worklist: LpWorklistData): LpInboxSession;
   };
+  /** Round 8: who is at the service desk / the assistant's drafts screen — identity only (see `viewerIdentity`). */
+  serviceDeskData?: ViewerIdentity;
+  aiDraftsData?: ViewerIdentity;
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -6160,4 +6181,9 @@ if (browserWindow !== undefined) {
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };
+  // Round 8: the service desk (WF-17 · A05) and the assistant's drafts (A09 · A07) are thin clients that read their
+  // identity-only payload themselves. The bundle runs first and keeps ONLY who is looking and the permission words —
+  // anything else injected is dropped, and a malformed payload becomes "nobody named" (the page then offers nothing).
+  browserWindow.serviceDeskData = viewerIdentity(browserWindow.serviceDeskData);
+  browserWindow.aiDraftsData = viewerIdentity(browserWindow.aiDraftsData);
 }
