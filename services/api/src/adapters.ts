@@ -12656,8 +12656,14 @@ export function replenishmentFactsAdapter(input: {
       const at = await placeOf(tenantId);
       const inv = inventoryAdapter(input);
       const onHand: Record<string, number> = {};
+      const places = new Set<string>([storeId]);
       for (const r of await inv.availability(tenantId)) {
-        if (at(storeId, r.locationId)) onHand[r.productId] = (onHand[r.productId] ?? 0) + r.onHandMinor;
+        if (at(storeId, r.locationId)) { onHand[r.productId] = (onHand[r.productId] ?? 0) + r.onHandMinor; places.add(r.locationId); }
+      }
+      // FUL-11 round 7: the holds still standing at the store's places — online orders (FUL-02) and B2B orders (FUL-09).
+      const reserved: Record<string, number> = {};
+      for (const place of places) {
+        for (const r of await outstandingReservationsAt(input.store, tenantId, place, input.now())) reserved[r.productId] = (reserved[r.productId] ?? 0) + r.quantityMinor;
       }
       const inTransit: Record<string, number> = {};
       for (const r of await inv.inTransit!(tenantId)) {
@@ -12668,7 +12674,7 @@ export function replenishmentFactsAdapter(input: {
       for (const d of openDeliveriesFor(await purchaseOrdersAdapter(input).all(tenantId), storeId, of)) {
         for (const l of d.lines) onOrder[l.productId] = (onOrder[l.productId] ?? 0) + l.openQty;
       }
-      return { onHand, onOrder, inTransit };
+      return { onHand, onOrder, inTransit, reserved };
     },
     soldLines: async (tenantId, storeId, fromIso, toIso) => {
       const at = await placeOf(tenantId);

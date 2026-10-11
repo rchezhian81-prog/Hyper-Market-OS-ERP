@@ -21,7 +21,9 @@
 // at the store and every place under it; on-order is what issued purchase orders to the store still owe plus what is on
 // the van to it; sold is the ledger's `sold` movements at those places over the demand window. An item that carries its
 // own `onHand`, `onOrder` or `reserved` is refused by name (`replenishment_carries_caller_stock`, as a range drop's
-// typed stock is), and the store's effective range ALWAYS decides what may be proposed.
+// typed stock is), and the store's effective range ALWAYS decides what may be proposed. Round 7: what the store has PROMISED
+// away — the online-order and B2B holds still standing at its places (FUL-02 / FUL-09) — is read from head office's records
+// and taken off the position, as `reserved`; a caller's `reserved` stays refused.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, scopeOf } from '../../kernel/src/index';
@@ -41,6 +43,11 @@ export interface StoreReplenishmentFacts {
   readonly onOrder: Readonly<Record<string, number>>;
   /** On the van to the store per product (transfers dispatched, not yet received). */
   readonly inTransit: Readonly<Record<string, number>>;
+  /**
+   * FUL-11 round 7: promised away per product — the online-order and B2B holds (FUL-02 / FUL-09) still standing at the store's
+   * places. Stock promised to a customer is not stock on the shelf for the next shopper, so it reduces the position.
+   */
+  readonly reserved?: Readonly<Record<string, number>>;
 }
 
 export interface ReplenishmentRoutesDeps {
@@ -152,6 +159,7 @@ export function replenishmentRoutes(deps: ReplenishmentRoutesDeps): readonly Rou
           ...p,
           onHand: facts.onHand[p.productId] ?? 0,
           onOrder: (facts.onOrder[p.productId] ?? 0) + (facts.inTransit[p.productId] ?? 0),
+          reserved: facts.reserved?.[p.productId] ?? 0,
         }));
 
         // M09 loop: fill a missing avgDailyDemand from what the store's own ledger recorded SELLING, so REAL demand drives
@@ -197,6 +205,7 @@ export function replenishmentRoutes(deps: ReplenishmentRoutesDeps): readonly Rou
         });
         const stockFacts = items.map((it) => ({
           productId: it.productId, onHand: facts.onHand[it.productId] ?? 0, onOrder: facts.onOrder[it.productId] ?? 0, inTransit: facts.inTransit[it.productId] ?? 0,
+          reserved: facts.reserved?.[it.productId] ?? 0,
         }));
         try {
           const proposals = proposeReplenishmentBatch(priced);
