@@ -736,6 +736,10 @@ export function bootPos(config?: {
    * balances, with how old that copy is. Refused when no member is named or the box has no balances yet.
    */
   readonly loyaltyWallet: () => Promise<LoyaltyWalletAnswer>;
+  /** D04-FR-05 · M12-FR-01: what the customer display shows now, from this till's own basket — no network. */
+  readonly customerDisplay: () => CustomerDisplayFrame;
+  /** The BroadcastChannel the display page listens on. */
+  readonly customerDisplayChannelName: () => string;
   readonly till: ReturnType<typeof createTillSession>;
   /**
    * The next receipt number for this lane, from the store computer (audit PF-04): saved on the box before it is given,
