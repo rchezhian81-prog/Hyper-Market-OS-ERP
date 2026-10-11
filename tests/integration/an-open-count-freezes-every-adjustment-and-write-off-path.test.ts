@@ -24,8 +24,10 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
  *   HEAD-OFFICE routes are refused by name (`frozen_by_a_stock_count`, 409) and NOTHING is written — the write-off route;
  *   a held returned unit's write-off decision; an adjustment request's approval (it stays pending); an ad-hoc count with a
  *   variance (not recorded) and an ad-hoc held count's approval (it stays held); a transfer's found-stock resolution; a
- *   floor indent's found-stock resolution; a floor receipt that writes arrived-damaged units off. A product NOT counted at
- *   the same place, and the till's own restock decision, go through; once the plan is cancelled the same write-off lands.
+ *   floor indent's found-stock resolution. A product NOT counted at the same place, and the till's own restock decision, go
+ *   through; once the plan is cancelled the same write-off lands. OB-66 (round 11): a floor receipt with arrived-damaged
+ *   units is no longer refused — the good units land at once and the damaged units' write-off is HELD on the plan (direct
+ *   or relayed), applied once when the plan closes (here: cancelled).
  *
  *   BOX-RELAYED records (a manager's decision made on the store screen, a floor receipt counted on the device) already
  *   happened on the floor: they are KEPT — never refused into the void — and the open plan raises each as a visible
@@ -113,6 +115,10 @@ describe.each(backings)('an open count freezes every adjustment and write-off pa
     await ok(call('POST', '/v1/floor/indents/ind-1/issues/is-1', 'u-back', { lines: [{ productId: 'P2', batchId: null, quantityMinor: 6 }] }), 'issue 1');
     await ok(call('POST', '/v1/floor/indents/ind-1/issues/is-2', 'u-back', { lines: [{ productId: 'P2', batchId: null, quantityMinor: 4 }] }), 'issue 2');
     await ok(call('POST', '/v1/floor/indents/ind-1/issues/is-2/receipt', 'u-floor2', { counted: [{ productId: 'P2', batchId: null, quantityMinor: 3 }] }), 'receipt short');
+    // A second indent of P2, its one issue in transit (to be counted in on the device and relayed while the count is open).
+    await ok(call('POST', '/v1/floor/indents/ind-2', 'u-plan', { fromLocationId: 'S1-BACK', toLocationId: 'S1', lines: [{ productId: 'P2', quantityMinor: 4, uom: 'EA' }], reason: 'shelf 5 empty' }), 'indent 2');
+    await ok(call('POST', '/v1/floor/indents/ind-2/approval', 'u-mgr', {}), 'indent 2 approval');
+    await ok(call('POST', '/v1/floor/indents/ind-2/issues/is-3', 'u-back', { lines: [{ productId: 'P2', batchId: null, quantityMinor: 4 }] }), 'issue 3');
 
     // ── THE COUNT: the owner's default freeze (OB-59) on P1 and P2 at S1; both counted blind at once ────────────────
     const plan = await ok(call('POST', '/v1/inventory/count-plans/cp1', 'u-plan', { locationId: 'S1', productIds: ['P1', 'P2'], recountThresholdMinor: 1_000_000, note: 'aisle 4' }), 'plan');
@@ -146,15 +152,19 @@ describe.each(backings)('an open count freezes every adjustment and write-off pa
     expect(((await call('GET', '/v1/warehouse/transfers/t1', 'u-owner')).body as { shortfallResolution?: unknown }).shortfallResolution).toBeUndefined();
     // 6. A floor indent's found-stock resolution.
     await frozen(call('POST', '/v1/floor/indents/ind-1/issues/is-2/shortfall/resolution', 'u-area', { lines: [{ productId: 'P2', batchId: null, foundMinor: 1 }], reasonCode: 'miscount', note: 'under the trolley' }), 'indent found stock');
-    // 7. A floor receipt that writes arrived-damaged units off — the issue stays in transit.
-    await frozen(call('POST', '/v1/floor/indents/ind-1/issues/is-1/receipt', 'u-floor2', { counted: [{ productId: 'P2', batchId: null, quantityMinor: 5, damagedMinor: 1 }] }), 'damaged receipt');
     const ind = (await call('GET', '/v1/floor/indents/ind-1', 'u-owner')).body as { issues: { issueId: string; state: string; shortfallResolution?: unknown }[] };
-    expect(ind.issues.find((i) => i.issueId === 'is-1')?.state).toBe('in_transit');
     expect(ind.issues.find((i) => i.issueId === 'is-2')?.shortfallResolution).toBeUndefined();
     expect(ind.issues.find((i) => i.issueId === 'is-2')?.state).toBe('received');
     // Nothing moved on any of them.
     expect([await onHand('P1'), await onHand('P2'), (await movementIds()).length]).toEqual([p1Before, p2Before, movesBefore]);
     expect((await call('GET', '/v1/inventory/count-plans/cp1', 'u-plan')).body).toMatchObject({ freezeBreaches: [] });
+    // 7. OB-66 "A" (owner, 11 Oct 2026): a floor receipt with arrived-damaged units is NOT refused any more — the 5 GOOD units
+    //    are received at once (on the shelf); the 1 damaged unit's write-off is HELD on the plan (not on hand, not written off).
+    const dmg = await ok(call('POST', '/v1/floor/indents/ind-1/issues/is-1/receipt', 'u-floor2', { counted: [{ productId: 'P2', batchId: null, quantityMinor: 5, damagedMinor: 1 }] }), 'damaged receipt');
+    expect((dmg.body as { heldWriteOffs: { planId: string; quantityMinor: number }[] }).heldWriteOffs.map((h) => [h.planId, h.quantityMinor])).toEqual([['cp1', 1]]);
+    expect(await onHand('P2')).toBe(p2Before + 5);
+    expect((await movementIds()).some((id) => id.startsWith('ind-1:is-1-damaged'))).toBe(false);
+    expect((await call('GET', '/v1/inventory/count-plans/cp1', 'u-plan')).body).toMatchObject({ freezeBreaches: [], heldWriteOffs: [{ heldId: 'ind-1:is-1-damaged-1', state: 'awaiting_close' }] });
 
     // Controls: a product NOT counted at the same place is written off; the till's restock (not a frozen kind) goes through.
     await ok(call('POST', '/v1/inventory/write-off/wo-p3', 'u-mgr', { productId: 'P3', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'crushed' }), 'write-off of an uncounted product');
@@ -166,22 +176,29 @@ describe.each(backings)('an open count freezes every adjustment and write-off pa
     expect(relayedAdj.body).toMatchObject({ applied: true, flags: [] });
     // b. …and approving the held ad-hoc count c-held2.
     expect((await relayDecision('ap-c2', 'stock_count', 'c-held2', 'u-c1')).body).toMatchObject({ applied: true, flags: [] });
-    // c. The floor counts issue is-1 in on the device — 5 good, 1 damaged — relayed through the box.
-    await ok(call('POST', '/v1/floor/indents/ind-1/issues/is-1/receipt/synced', 'u-box', { indentId: 'ind-1', issueId: 'is-1', counted: [{ productId: 'P2', batchId: null, quantityMinor: 5, damagedMinor: 1 }], receivedBy: 'u-floor2', at: new Date().toISOString(), storeId: 'S1', source: 'manager-screen' }), 'relayed damaged receipt');
+    // c. The floor counts issue is-3 in on the device — 3 good, 1 damaged — relayed through the box. OB-66: the good units land;
+    //    the damaged unit's write-off is HELD on the plan (no frozen movement written, so no breach and no recount for it).
+    await ok(call('POST', '/v1/floor/indents/ind-2/issues/is-3/receipt/synced', 'u-box', { indentId: 'ind-2', issueId: 'is-3', counted: [{ productId: 'P2', batchId: null, quantityMinor: 3, damagedMinor: 1 }], receivedBy: 'u-floor2', at: new Date().toISOString(), storeId: 'S1', source: 'manager-screen' }), 'relayed damaged receipt');
     const moved = await movementIds();
-    const damagedId = moved.find((id) => id.endsWith('-damaged-1'))!;
-    expect(damagedId).toBeDefined();
+    expect(moved.some((id) => id.includes('-damaged-'))).toBe(false);
+    expect(await onHand('P2')).toBe(p2Before + 5 + 3);
     expect(moved).toEqual(expect.arrayContaining(['adj-req:ar-2', 'count:c-held2']));
-    const v = (await call('GET', '/v1/inventory/count-plans/cp1', 'u-plan')).body as { freezeBreaches: { movementId: string; kind: string; productId: string }[]; lines: { productId: string; state: string; recountBecause: string[] }[] };
-    expect(v.freezeBreaches.map((b) => [b.movementId, b.kind, b.productId]).sort()).toEqual([['adj-req:ar-2', 'wasted', 'P1'], ['count:c-held2', 'wasted', 'P1'], [damagedId, 'wasted', 'P2']].sort());
-    expect(v.lines.map((l) => [l.productId, l.state, l.recountBecause.includes('moved_during_freeze')])).toEqual([['P1', 'recount_required', true], ['P2', 'recount_required', true]]);
+    const v = (await call('GET', '/v1/inventory/count-plans/cp1', 'u-plan')).body as { freezeBreaches: { movementId: string; kind: string; productId: string }[]; lines: { productId: string; state: string; recountBecause: string[] }[]; heldWriteOffs: { heldId: string; relayed: boolean; state: string }[] };
+    expect(v.freezeBreaches.map((b) => [b.movementId, b.kind, b.productId]).sort()).toEqual([['adj-req:ar-2', 'wasted', 'P1'], ['count:c-held2', 'wasted', 'P1']].sort());
+    expect(v.heldWriteOffs.map((h) => [h.heldId, h.relayed, h.state])).toEqual([['ind-1:is-1-damaged-1', false, 'awaiting_close'], ['ind-2:is-3-damaged-1', true, 'awaiting_close']]);
+    expect(v.lines.map((l) => [l.productId, l.state, l.recountBecause.includes('moved_during_freeze')])).toEqual([['P1', 'recount_required', true], ['P2', 'matched', false]]);
     // The plan cannot be approved over them.
     const early = await call('POST', '/v1/inventory/count-plans/cp1/approve', 'u-appr', { reason: 'done' });
     expect([403, 409]).toContain(early.status);
     expect(codeOf(await call('POST', '/v1/inventory/count-plans/cp1/approve', 'u-mgr2', { reason: 'done' }))).toBe('count_not_ready_to_approve');
 
     // ── The freeze is what refused them: once the plan is cancelled, the same write-off lands ───────────────────────
-    await ok(call('POST', '/v1/inventory/count-plans/cp1/cancel', 'u-plan', { reason: 'test over' }), 'cancel');
+    const p2BeforeClose = await onHand('P2');
+    const cancelled = await ok(call('POST', '/v1/inventory/count-plans/cp1/cancel', 'u-plan', { reason: 'test over' }), 'cancel');
+    // OB-66: the cancelled count's held write-offs are applied once — the damaged units in and written off (on-hand unchanged).
+    expect((cancelled.body as { heldWriteOffsApplied: { writeOffId: string; outcome: string }[] }).heldWriteOffsApplied.map((a) => [a.writeOffId, a.outcome])).toEqual([['held-ind-1:is-1-damaged-1', 'cancelled'], ['held-ind-2:is-3-damaged-1', 'cancelled']]);
+    expect(await onHand('P2')).toBe(p2BeforeClose);
+    expect(((await call('GET', '/v1/inventory/write-offs', 'u-owner')).body as { writeOffs: { id: string }[] }).writeOffs.map((w) => w.id)).toEqual(expect.arrayContaining(['held-ind-1:is-1-damaged-1', 'held-ind-2:is-3-damaged-1']));
     await ok(call('POST', '/v1/inventory/write-off/wo-1', 'u-mgr', { productId: 'P1', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'crushed' }), 'write-off after the count');
     expect(await movementIds()).toContain('writeoff-wo-1');
   }, 180_000);

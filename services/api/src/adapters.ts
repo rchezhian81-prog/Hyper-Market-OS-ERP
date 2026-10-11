@@ -176,6 +176,7 @@ import type { AssembledGoodsReceiptDeps } from '../../inventory/src/goods-receip
 import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
 import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
 import type { CountPlan, CountPlanDeps, VarianceCause, PlaceMovement } from '../../inventory/src/count-plans';
+import { heldApplication, heldWriteOffViews, type HeldWriteOff, type HeldWriteOffApplied } from '../../inventory/src/held-write-offs';
 import { budgetKey, openToBuyGuardKey, type OpenToBuyDeps, type PurchaseBudget, type BudgetOverride } from '../../purchase/src/open-to-buy';
 import type { InvoiceIngestionDeps, InvoiceDocumentRecord, ItemMapping } from '../../purchase/src/invoice-ingestion';
 import { buffersAt, type OnlineBuffer, type OnlineBufferDeps } from '../../inventory/src/online-buffer';
@@ -5753,7 +5754,7 @@ export function floorIndentsAdapter(input: {
       ], expectedStockVersion === undefined ? undefined : { guard: { key: stockGuardKey(transfer.fromLocationId), expectedVersion: expectedStockVersion } });
     },
     // A floor RECEIPT: the indent step, the received transfer and the `transferred_in` movements — one atomic batch.
-    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion) => {
+    recordReceipt: async (tenantId, indent, transfer, movements, discrepancies, posted, expectedIndentVersion, held) => {
       const at = input.now();
       const issue = indent.issues.find((i) => i.transferId === transfer.transferId);
       await input.store.appendBatch(tenantId, [
@@ -5761,6 +5762,8 @@ export function floorIndentsAdapter(input: {
         // The transfer's own record carries what it brought IN; a damaged write-off (SP-8c) rides the same batch as a movement only.
         { stream: TRANSFERS_STREAM, event: transferReceivedEvent(tenantId, transfer, movements, discrepancies, posted.filter((m) => m.kind === 'transferred_in'), at) },
         ...movementEntries(tenantId, posted),
+        // OB-66: a damaged write-off HELD on an open count plan — in the same write as the receipt, never lost.
+        ...(held ?? []).map((h) => heldWriteOffEntry(tenantId, h)),
       ], expectedIndentVersion === undefined ? undefined : { guard: { key: indentGuardKey(indent.indentId), expectedVersion: expectedIndentVersion } });
     },
     // A RETURN accepted at the back store: the indent step and the return's transfer proposed, dispatched and received in
@@ -13630,6 +13633,11 @@ export function countPlansAdapter(input: { readonly store: EventStore; readonly 
       for (const d of await allOf<StoredReconciliation>(input.store, tenantId, countsStream, 'CountDecided')) if (d.planId === planId) byId.set(d.countId, d);
       return [...byId.values()];
     },
+    heldWriteOffs: async (tenantId, plan) => {
+      const { held, applied } = await heldWriteOffsOf(input.store, tenantId);
+      return heldWriteOffViews(plan.state, held.filter((h) => h.planId === plan.planId), applied);
+    },
+    applyHeldWriteOffs: (tenantId, plan, by, at) => applyHeldWriteOffsFor(input.store, tenantId, plan, by, at),
     movementsAt: async (tenantId, locationId, productIds) => {
       const wanted = new Set(productIds);
       const out: PlaceMovement[] = [];
@@ -13641,6 +13649,56 @@ export function countPlansAdapter(input: { readonly store: EventStore; readonly 
       return out;
     },
   };
+}
+
+/** OB-66: one held damaged write-off on the count-plans stream, keyed on its held id (a re-sent receipt holds it once). */
+function heldWriteOffEntry(tenantId: string, h: HeldWriteOff): { stream: string; event: DomainEvent } {
+  return {
+    stream: COUNT_PLANS_STREAM,
+    event: makeEvent({ id: `count-held-write-off-${h.heldId}`, type: 'CountWriteOffHeld', occurredAt: h.recordedAt, idempotencyKey: `count-held-write-off-${tenantId}-${h.heldId}`, source: 'api/inventory', payload: h }),
+  };
+}
+
+/** OB-66: the held write-offs of a plan and their applications (once each). */
+async function heldWriteOffsOf(store: EventStore, tenantId: string): Promise<{ held: readonly HeldWriteOff[]; applied: readonly HeldWriteOffApplied[] }> {
+  const seen = new Set<string>();
+  const held = (await allOf<HeldWriteOff>(store, tenantId, COUNT_PLANS_STREAM, 'CountWriteOffHeld')).filter((h) => (seen.has(h.heldId) ? false : (seen.add(h.heldId), true)));
+  const done = new Set<string>();
+  const applied = (await allOf<HeldWriteOffApplied>(store, tenantId, COUNT_PLANS_STREAM, 'CountHeldWriteOffApplied')).filter((a) => (done.has(a.heldId) ? false : (done.add(a.heldId), true)));
+  return { held, applied };
+}
+
+/**
+ * OB-66: apply every held write-off of a CLOSED plan not yet applied — per held record ONE atomic batch: the damaged units in
+ * at the floor, the write-off on the register (M28) with its `wasted` movement, and the applied fact. Every entry is keyed on
+ * the held record, so a re-sent approval or a retry after a crash applies nothing twice.
+ */
+export async function applyHeldWriteOffsFor(store: EventStore, tenantId: string, plan: CountPlan, by: string, at: string): Promise<readonly HeldWriteOffApplied[]> {
+  if (plan.state !== 'approved' && plan.state !== 'cancelled') return [];
+  const { held, applied } = await heldWriteOffsOf(store, tenantId);
+  const done = new Set(applied.map((a) => a.heldId));
+  const out: HeldWriteOffApplied[] = [];
+  for (const h of held.filter((x) => x.planId === plan.planId && !done.has(x.heldId))) {
+    const app = heldApplication(h, plan.state, by, at);
+    await store.appendBatch(tenantId, [
+      ...movementEntries(tenantId, [app.inMovement, app.wasted]),
+      {
+        stream: streamName(STREAM.inventory, 'write-offs'),
+        event: makeEvent({ id: `write-off-${app.writeOff.id}`, type: 'WriteOffCommitted', occurredAt: at, idempotencyKey: `write-off-${tenantId}-${app.writeOff.id}`, source: 'api/inventory', payload: app.writeOff }),
+      },
+      { stream: COUNT_PLANS_STREAM, event: makeEvent({ id: `count-held-write-off-applied-${h.heldId}`, type: 'CountHeldWriteOffApplied', occurredAt: at, idempotencyKey: `count-held-write-off-applied-${tenantId}-${h.heldId}`, source: 'api/inventory', payload: app.applied }) },
+    ]);
+    out.push(app.applied);
+  }
+  return out;
+}
+
+/** OB-66: held write-offs not yet applied, recorded in the month or earlier — the month-end stock adjustment waits for them. */
+export async function unappliedHeldWriteOffs(store: EventStore, tenantId: string, period: string): Promise<readonly string[]> {
+  const { held, applied } = await heldWriteOffsOf(store, tenantId);
+  const done = new Set(applied.map((a) => a.heldId));
+  return held.filter((h) => !done.has(h.heldId) && h.recordedAt.slice(0, 7) <= period && h.valueMinor > 0)
+    .map((h) => `held_write_off:${h.heldId} (held for count plan ${h.planId})`);
 }
 
 /**

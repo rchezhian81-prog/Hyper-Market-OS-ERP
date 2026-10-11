@@ -9,7 +9,7 @@ import { makeEvent } from '../../../packages/contracts/src/event';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { DayCloseRecord, CarriedPaymentIn } from '../../pos/src/day-close';
 import type { PaymentException, PaymentExceptionResolution, PaymentExceptionConflict, PaymentExceptionDeps, LatePaymentAnswer } from '../../finance/src/payment-exceptions';
-import { STREAM, streamName, permissionsHeldBy, periodBooksAdapter, stockLossAdapter, storeOfLocationResolver, averageBuyingCosts } from './adapters';
+import { STREAM, streamName, permissionsHeldBy, periodBooksAdapter, stockLossAdapter, storeOfLocationResolver, averageBuyingCosts, unappliedHeldWriteOffs } from './adapters';
 import { project, ownershipOf, type Movement } from '../../inventory/src/index';
 import { valueAtCost } from '../../../packages/contracts/src/quantity';
 import { stockAdjustmentSources } from '../../finance/src/period-books';
@@ -152,6 +152,8 @@ export async function outstandingStockPostingsFor(input: { readonly store: Event
   const [losses, lossJournals] = await Promise.all([sl.losses(tenantId), sl.stockLossJournals(tenantId)]);
   const lossPosted = new Set(lossJournals.map((j) => j.stockLoss.sourceId));
   for (const l of losses) if (l.lostValueMinor > 0 && l.resolvedAt.slice(0, 7) <= period && !lossPosted.has(lossSourceId(l))) out.push(lossSourceId(l));
+  // OB-66: a damaged write-off HELD on an open count is a write-off of the month not in the books yet — the adjustment waits.
+  out.push(...await unappliedHeldWriteOffs(input.store, tenantId, period));
   return out;
 }
 

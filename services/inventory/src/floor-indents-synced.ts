@@ -30,6 +30,7 @@ import { requestIndent, planIssue, applyIssue, planReceipt, applyReceipt, indent
 import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { dispatchPostings, receivePostings } from './warehouse-transfers';
 import { assertIndentInScope } from './floor-indents';
+import { holdDamagedUnderCount, withoutHeldUnits } from './held-write-offs';
 import {
   presentIndent, refusedBy, readIndentLines, readIssueLines, readCounted, receivedOf, shortfallOf, arrivedOf, damagedOf, goodOf, damagePostings, binPicksFor,
   type FloorIndentsDeps,
@@ -229,12 +230,18 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
           const transfer = await deps.transferOf(ctx.tenantId, issue.transferId);
           if (transfer === undefined) throw notFound(`transfer ${issue.transferId}`);
           const result = receiveTransfer({ transfer, counted: arrivedOf(counted), receivedBy: b['receivedBy'], at: b['at'], currency: (b['currency'] as CurrencyCode | undefined) ?? 'INR' });
-          const damaged = damagedOf(counted, result.transfer);
-          const posted = [...receivePostings(result.transfer, result.movements, b['receivedBy']), ...damagePostings(result.transfer, damaged, b['receivedBy'], b['at'])];
+          // OB-66 "A": a damaged line an open count at the floor froze is HELD on that plan (applied once at its close); the
+          // good units land at once. Not a breach any more — nothing frozen is written while the count is open.
+          const hold = await holdDamagedUnderCount({
+            check: deps.countFreeze, tenantId: ctx.tenantId, transfer: result.transfer, damaged: damagedOf(counted, result.transfer),
+            postings: damagePostings(result.transfer, damagedOf(counted, result.transfer), b['receivedBy'], b['at']), indentId, issueId, by: b['receivedBy'], at: b['at'], relayed: true,
+          });
+          const damaged = hold.damaged;
+          const posted = [...withoutHeldUnits(receivePostings(result.transfer, result.movements, b['receivedBy']), hold.held), ...hold.immediate];
           const next = applyReceipt(indent, issueId, {
             receivedBy: b['receivedBy'], at: b['at'], received: goodOf(receivedOf(result.movements, result.transfer), damaged), shortfall: shortfallOf(result.discrepancies), damaged, governanceFlags: flags, relayed,
           });
-          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted, indentVersion);
+          await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted, indentVersion, hold.held);
           await audit(ctx.tenantId, {
             actorId: b['receivedBy'], action: 'floor_indent.receive', objectType: 'floor_indent', objectId: indentId, at: b['at'], origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null },
             before: { state: indent.state, issueId, issuedBy: issue.issuedBy },
@@ -245,7 +252,7 @@ export function syncedFloorIndentRoutes(deps: SyncedFloorIndentsDeps): readonly 
             },
             correlationId: indentId,
           });
-          return { status: 202, body: { indentId, issueId, recorded: true, alreadyReceived: false, flags, posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies, damaged, indent: presentIndent(next) } };
+          return { status: 202, body: { indentId, issueId, recorded: true, alreadyReceived: false, flags, posted: posted.map((m) => m.movementId), discrepancies: result.discrepancies, damaged, heldWriteOffs: hold.held, indent: presentIndent(next) } };
         } catch (e) { return refusedBy(e); }
       },
     },

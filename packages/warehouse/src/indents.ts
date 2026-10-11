@@ -73,6 +73,11 @@ export interface DamagedLine {
   readonly batchId: string | null;
   readonly quantityMinor: number;
   readonly valueMinor: number;
+  /**
+   * OB-66 "A" (owner, 11 Oct 2026): an open count at the floor froze write-offs of this product, so the write-off is HELD on
+   * that count plan (its id) and applied once when the count closes — the good units were received at once.
+   */
+  readonly heldForCount?: string;
 }
 
 /** One ISSUE from the back store — one transfer, dispatched at issue, received independently at the floor. */

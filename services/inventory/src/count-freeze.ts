@@ -4,8 +4,10 @@
 // While a count plan is open (`counting`) at a place, the kinds it froze — by default adjustments (`adjusted`) and
 // write-offs (`wasted`) — must not land there for a counted product. Round 8 refused them only on the plain movements
 // route; every OTHER head-office route that writes one (the write-off route, a held returned unit's write-off decision,
-// an adjustment request's approval, an ad-hoc count's correction and its decision, a transfer's found-stock and
-// arrived-damaged postings) asks here first and is refused by name (`frozen_by_a_stock_count`, 409, nothing written).
+// an adjustment request's approval, an ad-hoc count's correction and its decision, a transfer's found-stock posting)
+// asks here first and is refused by name (`frozen_by_a_stock_count`, 409, nothing written). OB-66 "A" (owner, 11 Oct 2026,
+// round 11): a floor receipt with ARRIVED-DAMAGED units is not refused — the good units are received at once and the
+// damaged units' write-off is HELD on the freezing plan, applied once when it closes (`held-write-offs.ts`).
 //
 // A record RELAYED by the store computer (a decision made on the floor while the line was down, a device's receipt) is
 // a fact that already happened: it is never refused into the void. It is kept, and because it lands at the counted
