@@ -200,6 +200,26 @@ describe.each(backings)('a stock count is planned, frozen, counted blind, recoun
     for (const j of after.journals) expect(j.lines.reduce((s, l) => s + l.debitMinor - l.creditMinor, 0)).toBe(0);
   });
 
+  it('OB-59: a plan that names no frozen kinds freezes adjustments and write-offs only — a delivery lands, an adjustment is refused by name', async () => {
+    const { call, ok, onHand } = await shop(harness);
+    const noKinds = { locationId: PLAN.locationId, recountThresholdMinor: PLAN.recountThresholdMinor, note: PLAN.note };
+    const made = await ok(call('POST', '/v1/inventory/count-plans/cpd', 'u-plan', { ...noKinds, productIds: ['P1'] }, 'plan-d'), 'default plan');
+    expect((made.body as { plan: Record<string, unknown> }).plan).toMatchObject({ frozenKinds: ['adjusted', 'wasted'], frozenByDefault: true });
+    // A planner who names kinds keeps their choice (no default flag).
+    const named = await ok(call('POST', '/v1/inventory/count-plans/cpn', 'u-plan', { ...PLAN, productIds: ['P2'] }, 'plan-n'), 'named plan');
+    expect((named.body as { plan: Record<string, unknown> }).plan).toMatchObject({ frozenKinds: PLAN.frozenKinds });
+    expect((named.body as { plan: Record<string, unknown> }).plan['frozenByDefault']).toBeUndefined();
+    await ok(call('POST', '/v1/inventory/count-plans/cpd/open', 'u-plan', {}, 'open-d'), 'open');
+    // A delivery during the count lands.
+    await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: 'rx-d', productId: 'P1', locationId: 'S1', kind: 'received', quantityMinor: 5, uom: 'EA', occurredAt: '2026-10-02T00:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 100 }, 'rx-d'), 'receipt during a default plan');
+    expect(await onHand('P1')).toBe(105);
+    // An adjustment is refused, by name; nothing moved.
+    const adj = await call('POST', '/v1/inventory/movements', 'u-owner', { movementId: 'adj-d', productId: 'P1', locationId: 'S1', kind: 'adjusted', quantityMinor: -2, uom: 'EA', occurredAt: '2026-10-02T01:00:00.000Z', enteredBy: 'u-owner', reason: 'shelf tidy' }, 'adj-d');
+    expect(adj.status).toBe(409);
+    expect(codeOf(adj)).toBe('frozen_by_a_stock_count');
+    expect(await onHand('P1')).toBe(105);
+  });
+
   it('ONE posting path: the plan approval, the finance posting run (re-run), the shortfall run and the period close book each count exactly once', async () => {
     const { h, T, call, ok, count } = await shop(harness);
     const PERIOD = new Date().toISOString().slice(0, 7);

@@ -6,7 +6,9 @@
 //
 //   • PLAN — a manager names the place, the products to count, the movement kinds FROZEN at that place for those products
 //     while the count is open, and the RECOUNT threshold (a variance worth at least this is counted again before anyone
-//     may approve it). No default is invented for either: the planner chooses, and the plan records who chose. A till
+//     may approve it). The recount threshold has no default: the planner chooses, and the plan records who chose. A plan
+//     that names no frozen kinds takes the owner's default (OB-59, 11 Oct 2026): adjustments and write-offs only —
+//     deliveries and transfers keep flowing; the planner may still name more (or an empty list to freeze nothing). A till
 //     sale or a till return can never be frozen (hard rule #1 — the till never waits on head office).
 //   • OPEN — the freeze starts. A frozen kind typed on the plain movements route is refused by name; one that lands any
 //     other way (a delivery booked on a device while the line was down, which must never be refused into the void) is a
@@ -38,6 +40,8 @@ export const FREEZABLE_KINDS = Object.freeze([
 ] as const);
 export type FreezableKind = (typeof FREEZABLE_KINDS)[number];
 const NEVER_FROZEN = Object.freeze(['sold', 'returned']);
+/** OB-59 (owner, 11 Oct 2026): what a plan freezes when the planner names nothing — adjustments and write-offs only. */
+export const DEFAULT_FROZEN_KINDS: readonly FreezableKind[] = Object.freeze(['adjusted', 'wasted'] as const);
 
 export type CountPlanState = 'planned' | 'counting' | 'approved' | 'cancelled';
 
@@ -47,6 +51,8 @@ export interface CountPlan {
   readonly productIds: readonly string[];
   /** The movement kinds that must not happen at this place, for these products, while the count is open. */
   readonly frozenKinds: readonly FreezableKind[];
+  /** True when the planner named no frozen kinds and the OB-59 default was taken. */
+  readonly frozenByDefault?: boolean;
   /** A variance worth at least this (minor units, head office's cost) is counted again before anyone may approve it. */
   readonly recountThresholdMinor: number;
   readonly note: string | null;
@@ -242,7 +248,7 @@ export async function recordPlannedCount(deps: CountPlanDeps, tenantId: string, 
 
 /** What the counter's sheet shows: the products and whether each still needs counting — never an expected figure. */
 const sheetOf = (plan: CountPlan, lines: readonly PlanLine[]) => ({
-  planId: plan.planId, locationId: plan.locationId, state: plan.state, frozenKinds: plan.frozenKinds,
+  planId: plan.planId, locationId: plan.locationId, state: plan.state, frozenKinds: plan.frozenKinds, frozenByDefault: plan.frozenByDefault === true,
   lines: lines.map((l) => ({
     productId: l.productId,
     toDo: l.state === 'not_counted' ? 'count' : l.state === 'recount_required' ? 'recount' : 'done',
@@ -283,10 +289,12 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         const planId = (ctx.params['planId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const products = b['productIds'];
-        const kinds = b['frozenKinds'];
+        // OB-59: no frozen kinds named → the owner's default (adjustments and write-offs); a named list is the planner's.
+        const frozenByDefault = b['frozenKinds'] === undefined;
+        const kinds = frozenByDefault ? [...DEFAULT_FROZEN_KINDS] : b['frozenKinds'];
         if (planId === '' || !isStr(b['locationId']) || !Array.isArray(products) || products.length === 0 || !products.every(isStr)
           || !Array.isArray(kinds) || !kinds.every(isStr) || !isNonNegInt(b['recountThresholdMinor'])) {
-          throw refuse(400, 'not_readable_as_a_count_plan', 'A count plan needs a locationId, the productIds to count (at least one), frozenKinds (the movement kinds stopped while counting — an empty list freezes nothing, said on the plan) and a whole recountThresholdMinor.', 'Send the plan. Nothing was recorded.');
+          throw refuse(400, 'not_readable_as_a_count_plan', 'A count plan needs a locationId, the productIds to count (at least one), frozenKinds (the movement kinds stopped while counting — left out, the default of adjustments and write-offs (OB-59); an empty list freezes nothing, said on the plan) and a whole recountThresholdMinor.', 'Send the plan. Nothing was recorded.');
         }
         const never = (kinds as string[]).filter((k) => NEVER_FROZEN.includes(k));
         if (never.length > 0) {
@@ -299,7 +307,7 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         if (existing !== undefined) throw refuse(409, 'count_plan_exists', `Count plan ${planId} is already on file (${existing.state}); a new count is a new plan id.`);
         const plan: CountPlan = {
           planId, locationId: b['locationId'].trim(), productIds: [...new Set((products as string[]).map((p) => p.trim()))],
-          frozenKinds: [...new Set(kinds as FreezableKind[])], recountThresholdMinor: b['recountThresholdMinor'],
+          frozenKinds: [...new Set(kinds as FreezableKind[])], ...(frozenByDefault ? { frozenByDefault: true } : {}), recountThresholdMinor: b['recountThresholdMinor'],
           note: isStr(b['note']) ? b['note'].trim() : null, plannedBy: ctx.userId, plannedAt: deps.now(), state: 'planned',
         };
         await deps.recordPlan(ctx.tenantId, plan, 'created');
