@@ -46,6 +46,10 @@ export function buildStoreToken(claims, policy, nowMs) {
   const payload = b64url({
     sub: claims.sub,
     tenant_id: claims.tenantId,
+    // OB-54 "A": a STORE COMPUTER's credential names its own store — the signed `branch_id` the API reads as the
+    // store this box speaks for. Head office refuses a store computer whose credential names none, or names a store
+    // its grant does not, and refuses any record it relays that names another store.
+    ...(claims.storeId === undefined ? {} : { branch_id: claims.storeId }),
     iss: policy.issuer,
     aud: policy.audience,
     // When it was issued and an id for it (GAP-SEC-05): the API bounds `exp − iat` by its lifetime ceiling and
@@ -83,6 +87,10 @@ async function main() {
   const tenantId = args['tenant'] ?? env['EDGE_TENANT_ID'];
   const sub = args['user'] ?? 'store-edge';
   const ttlHours = Number(args['ttl-hours'] ?? 720); // 30 days by default
+  // OB-54 "A": a store computer's credential is locked to its own store. `--store <id>` (or EDGE_STORE_ID in .env) is
+  // required; only a machine that is NOT a store computer (the backup job) says so explicitly with `--no-store`.
+  const noStore = process.argv.includes('--no-store');
+  const storeId = noStore ? undefined : (args['store'] ?? env['EDGE_STORE_ID']);
 
   const missing = [];
   if (secret === undefined || secret === '' || secret.includes('REPLACE_WITH')) missing.push('IDP_SIGNING_KEY');
@@ -90,6 +98,9 @@ async function main() {
   if (audience === undefined || audience === '') missing.push('IDP_AUDIENCE');
   if (tenantId === undefined || tenantId === '' || tenantId.includes('REPLACE_WITH')) missing.push('a tenant (--tenant, or EDGE_TENANT_ID in .env)');
   if (!Number.isFinite(ttlHours) || ttlHours <= 0) missing.push('a positive --ttl-hours');
+  if (!noStore && (storeId === undefined || storeId === '' || storeId.includes('REPLACE_WITH'))) {
+    missing.push('the store this box serves (--store <store id>, or EDGE_STORE_ID in .env) — a store computer\'s credential names its own store (OB-54); for the backup job pass --no-store');
+  }
   if (missing.length > 0) {
     console.error(`Cannot issue a token — missing: ${missing.join(', ')}.`);
     console.error(`Fill them in ${envFile} (see infra/compose/.env.example), or pass them as flags.`);
@@ -97,16 +108,20 @@ async function main() {
     return;
   }
 
-  const token = buildStoreToken({ sub, tenantId, ttlSeconds: Math.round(ttlHours * 3600) }, { secret, issuer, audience }, Date.now());
+  const token = buildStoreToken({ sub, tenantId, ...(storeId === undefined ? {} : { storeId }), ttlSeconds: Math.round(ttlHours * 3600) }, { secret, issuer, audience }, Date.now());
 
   console.log('');
-  console.log(`Store-edge token for user "${sub}" in tenant "${tenantId}", valid ${ttlHours} hour(s):`);
+  console.log(`Token for user "${sub}" in tenant "${tenantId}"${storeId === undefined ? ' (not a store computer)' : `, locked to store "${storeId}"`}, valid ${ttlHours} hour(s):`);
   console.log('');
   console.log(token);
   console.log('');
   console.log('This is a SECRET. Put it in the edge\'s CLOUD_API_TOKEN setting by hand — do not commit it,');
   console.log('paste it into a chat, or write it to a file. It only works while the account holds the sync');
   console.log(`permission (pos.sale.sync): provision the "${sub}" login with a sync-capable role first.`);
+  if (storeId !== undefined) {
+    console.log(`Its store computer role must be granted for store "${storeId}" ONLY (a tenant-wide grant is refused, OB-54).`);
+    console.log('If you are RE-ISSUING a box\'s credential, revoke its old token by its id afterwards (runbook: demo-deployment-handover).');
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

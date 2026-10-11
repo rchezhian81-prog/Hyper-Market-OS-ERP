@@ -36,3 +36,14 @@ SRE_READY_POLL=2
 # The append-only record of every deployment attempt, and the lock that keeps deployments one at a time.
 SRE_RELEASE_LOG=/opt/sre/releases.log
 SRE_DEPLOY_LOCK=/opt/sre/deploy.lock
+# WF-20 (ADR-0026). The backup taken BEFORE a release changes anything: a command that exits 0 only when the backup
+# succeeded (a failed one refuses the release, exit 69, nothing touched). Empty = none on this box (said on every run).
+# The demo box's encrypted backup runs as its own service, e.g.:
+#   SRE_PREDEPLOY_BACKUP_CMD="sudo /bin/systemctl start --wait sre-pilot-backup.service"
+# (with a sudoers line allowing the deploy user exactly that command).
+SRE_PREDEPLOY_BACKUP_CMD=
+# The canary bake: on the CANARY box set e.g. 600 — the release must stay READY and add no more than SRE_BAKE_MAX_5XX
+# server errors for that long, or it is rolled back and the pipeline's full rollout does not run. 0 = no bake.
+SRE_BAKE_SECONDS=0
+SRE_BAKE_POLL=15
+SRE_BAKE_MAX_5XX=0

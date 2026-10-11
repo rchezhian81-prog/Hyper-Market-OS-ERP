@@ -79,7 +79,7 @@ describeOrSkip('OB-39 — the margin is costed at the average buying cost (real 
 
   it('the store setup carries the weighted average per whole unit (none for a product never bought at a cost); the box Today and head office profitability cost at it; an uncosted product reads "margin not known"', async () => {
     const today = new Date().toISOString().slice(0, 10);
-    await cloud.grant(BOX, 'store_computer');
+    await cloud.grant(BOX, 'store_computer', undefined, [STORE]); // OB-54: the box is granted for its ONE store
     await cloud.grant(CASHIER, 'cashier');
     await cloud.grant(ACCT, 'accountant');
     await ok(call('PUT', '/v1/platform/setup/locale.time_zone', OWNER, { value: 'UTC' }, 'tz'), 'time zone');

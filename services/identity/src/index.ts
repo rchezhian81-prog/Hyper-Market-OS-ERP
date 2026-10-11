@@ -17,6 +17,7 @@ import type { Permission, Role, RoleAssignment } from '../../../packages/rbac/sr
 import { formatNumber, type NumberFormat } from '../../../packages/numbering/src/numbering';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { REVOCATION_REASONS, type TokenRevocation, type RevocationReason } from './revocation';
+import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
 
 /**
  * Document number formats per type (M01-FR-02) — configuration, not tenant data: what an invoice
@@ -79,7 +80,8 @@ export type GrantRefusal =
   | 'approved_by_the_requester'
   | 'not_approved'
   | 'unknown_role'
-  | 'escalates_beyond_the_approver';
+  | 'escalates_beyond_the_approver'
+  | 'store_computer_grant_must_name_one_store';
 
 export interface GrantResult {
   readonly ok: boolean;
@@ -122,6 +124,10 @@ export function grantRole(input: {
       detail: `${request.requestedBy} both requested and approved this. Two names on one action performed by one person is a self-approval with an extra step`,
     };
   }
+
+  // OB-54: a store computer's grant names its one store — never the whole tenant, never several stores.
+  const unbound = storeComputerGrantRefusal(request.roleId, request.branchScope);
+  if (unbound !== undefined) return { ok: false, refusedBecause: 'store_computer_grant_must_name_one_store', detail: unbound };
 
   const beyond = role.permissions.filter((p) => !input.approverPermissions.includes(p));
   if (beyond.length > 0) {
@@ -227,6 +233,11 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         const roles = await deps.roles(ctx.tenantId);
         if (!roles.some((r) => r.id === roleId)) {
           throw apiError(422, { code: 'unknown_role', whatHappened: `There is no role "${roleId}" in this product's catalogue.`, wasItSaved: 'not_saved', nextSafeAction: 'Name a role from GET /v1/identity/roles. Nothing was requested.' });
+        }
+        // OB-54: refused at the REQUEST, before anybody is asked to approve it.
+        const unbound = storeComputerGrantRefusal(roleId, scope);
+        if (unbound !== undefined) {
+          throw apiError(422, { code: 'store_computer_grant_must_name_one_store', whatHappened: unbound, wasItSaved: 'not_saved', nextSafeAction: 'Request the store computer role for this box\'s own store only: branchScope ["<its store>"]. Nothing was requested.' });
         }
         if (userId === ctx.userId) {
           throw apiError(422, {

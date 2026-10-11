@@ -90,6 +90,19 @@ describe('SetupEditController', () => {
     expect(c.retry('tax.default_bps').status).toBe('idle');
   });
 
+  it('after a conflict and a reload, the field takes the NEWER version and drops the stale draft — the next save is not a conflict again', () => {
+    const c = seeded();
+    const v0 = c.state('tax.default_bps').version;
+    c.edit('tax.default_bps', '1800');
+    c.beginSave('tax.default_bps');
+    c.onResult('tax.default_bps', { kind: 'conflict', currentVersion: v0 });
+    c.retry('tax.default_bps');
+    c.seed('tax.default_bps', v0 + 1); // the reload brought the newer version
+    expect(c.state('tax.default_bps')).toMatchObject({ status: 'idle', dirty: false, version: v0 + 1 });
+    c.edit('tax.default_bps', '500');
+    expect(c.beginSave('tax.default_bps')).toEqual({ ok: true, value: 500, ifVersion: v0 + 1 });
+  });
+
   it('marks an offline save queued — accepted, and no longer counted as unsaved', () => {
     const c = seeded();
     c.edit('tax.default_bps', '1800');

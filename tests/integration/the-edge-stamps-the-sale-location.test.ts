@@ -53,7 +53,7 @@ describe('the edge stamps the sale\'s stock location from its store pack (Stage 
   beforeAll(async () => {
     h = apiHarness();
     await h.seedOwner(A, OWNER);
-    await h.provisionRole(A, SYNC, 'store_computer'); // the box's sync identity
+    await h.provisionRole(A, SYNC, 'store_computer', [STORE]); // the box's sync identity
     // The shop received 30 MILK at ITS store — the location the till's sales must draw from.
     expect((await h.request({
       method: 'POST', path: '/v1/inventory/movements', userId: OWNER, tenantId: A, idempotencyKey: 'mv-1',
@@ -85,7 +85,7 @@ describe('the edge stamps the sale\'s stock location from its store pack (Stage 
   const env = (withPack: boolean, dataDir = dir) => ({
     EDGE_DATA_DIR: dataDir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
     CLOUD_API_URL: 'https://cloud.example.test',
-    CLOUD_API_TOKEN: TEST_IDP.issue({ sub: SYNC, tenantId: A }),
+    CLOUD_API_TOKEN: TEST_IDP.issue({ sub: SYNC, tenantId: A, branchId: STORE }),
     ...(withPack ? { EDGE_PACK_FILE: packFile } : {}),
   });
 

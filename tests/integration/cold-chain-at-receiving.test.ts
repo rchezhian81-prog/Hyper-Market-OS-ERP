@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { deliveryPlaces } from '../support/approved-supplier';
 import { STREAM } from '../../services/api/src/adapters';
 import { makeEvent } from '../../packages/contracts/src/event';
 import { receiptRuleFor } from '../../services/inventory/src/goods-receipt';
@@ -53,7 +54,9 @@ async function seeded(): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-recv', 'store_manager'); // receives — never releases their own delivery
   await h.provisionRole(A, 'u-boss', 'store_manager'); // the second person
-  await h.provisionRole(A, 'u-box', 'store_computer');        // the store computer's sync identity
+  // OB-54: the store computer is bound to its one store; the back store WH is placed under that store at head office.
+  await deliveryPlaces(h, A, 'store-1', WH);
+  await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);        // the store computer's sync identity
   await h.store.append(A, STREAM.catalogue, makeEvent({
     id: `pack-${A}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${A}-v1`, source: 'test/catalogue',
     payload: { snapshot: { tenantId: A, version: 1, builtAt: AT, scope: { tenantId: A, storeId: 'store-1' }, barcodes: [], products: [

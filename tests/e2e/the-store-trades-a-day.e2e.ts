@@ -76,7 +76,8 @@ describe.skipIf(!HAVE_BROWSER || !DATABASE_URL)('the store trades a day in a rea
     execFileSync('node', ['scripts/build-app.mjs', 'pos'], { stdio: 'ignore' });
     browser = await chromium.launch({ headless: true, executablePath: CHROMIUM });
     cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId: randomUUID(), owner: OWNER, packSigningKey: KEY });
-    for (const [who, role] of [[BOX, 'store_computer'], [CASHIER, 'cashier'], [MANAGER, 'store_manager'], [ACCT, 'accountant']] as const) await cloud.grant(who, role);
+    await cloud.grant(BOX, 'store_computer', undefined, [STORE]); // OB-54: the box is granted for its ONE store
+    for (const [who, role] of [[CASHIER, 'cashier'], [MANAGER, 'store_manager'], [ACCT, 'accountant']] as const) await cloud.grant(who, role);
     const today = new Date().toISOString().slice(0, 10);
     expect((await call('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', OWNER, { rateBps: 500 }, 'tax-1006')).status).toBeLessThan(300);
     expect((await call('POST', `/v1/catalogue/products/${PRODUCT}/publish`, OWNER, {

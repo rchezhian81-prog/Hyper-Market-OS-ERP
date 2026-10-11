@@ -15,6 +15,8 @@ import { revocationAwareAuthenticator, TokenRevocationList } from '../../service
 import { tokenRevocationAdapter, personalDataStore } from '../../services/api/src/adapters';
 import type { SubjectKeyStore } from '../../packages/persistence/src/personal-data';
 import { sessionChannelsOf } from '../../services/api/src/session-channels';
+import { storeComputerBinding } from '../../services/api/src/store-computer-binding';
+import type { OutboundTransport } from '../../services/platform/src/outbound-webhooks';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from '../../services/api/src/access';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
@@ -118,6 +120,9 @@ export function apiHarness(opts: {
   modelPricing?: Readonly<Record<ModelTier, TierPricing>>;
   /** FUL-12 · ADR-0025: a personal-data key store — every write then goes through the sealing layer, as `main.ts` composes it. */
   personalDataKeys?: SubjectKeyStore;
+  /** D14 / M32: an outbound webhook transport (a recording one in tests) and signing secrets by vault name. */
+  outboundTransport?: OutboundTransport;
+  outboundSecrets?: ReadonlyMap<string, string>;
 } = {}): ApiHarness {
   const store = opts.personalDataKeys === undefined ? opts.store ?? new InMemoryEventStore()
     : personalDataStore(opts.store ?? new InMemoryEventStore(), opts.personalDataKeys);
@@ -133,6 +138,8 @@ export function apiHarness(opts: {
     ...(opts.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: opts.deliveryReportSecrets }),
     ...(opts.modelTransport === undefined ? {} : { modelTransport: opts.modelTransport }),
     ...(opts.modelPricing === undefined ? {} : { modelPricing: opts.modelPricing }),
+    ...(opts.outboundTransport === undefined ? {} : { outboundTransport: opts.outboundTransport }),
+    ...(opts.outboundSecrets === undefined ? {} : { outboundSecrets: opts.outboundSecrets }),
   }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 
@@ -142,6 +149,8 @@ export function apiHarness(opts: {
     access: tenantAccessResolver(store, ROLE_CATALOGUE),
     // Support/remote session binding (PA-10), composed exactly as main.ts does it.
     channels: sessionChannelsOf({ store, revocations, now: opts.now ?? (() => new Date().toISOString()) }),
+    // OB-54: each store computer's credential locked to its own store, composed exactly as main.ts does it.
+    boundStore: storeComputerBinding({ store, now: opts.now ?? (() => new Date().toISOString()) }),
     entitlements: tenantEntitlementResolver(store),
     idempotency,
     ...(opts.observe === undefined ? {} : { observe: opts.observe }),
@@ -154,12 +163,17 @@ export function apiHarness(opts: {
     ...(extra ?? {}),
   });
 
+  // OB-54: a store computer provisioned for ONE store carries that store in its credential, as the administrator issues
+  // it (scripts/issue-store-token.mjs --store). A request may still name another branchId explicitly (refusal tests).
+  const boxStores = new Map<string, string>();
+  const boxStoreOf = (tenantId: string, userId: string): string | undefined => boxStores.get(`${tenantId}\u0000${userId}`);
+
   return {
     store,
     idp: TEST_IDP,
     request: ({ method, path, userId, tenantId, branchId, body, idempotencyKey, query, authTimeFromNowSeconds, amr }) =>
       handle(kernel, { method, path, body, ...(query === undefined ? {} : { query }), headers: headers(TEST_IDP.issue({
-        sub: userId, tenantId, branchId,
+        sub: userId, tenantId, branchId: branchId ?? boxStoreOf(tenantId, userId),
         ...(authTimeFromNowSeconds === undefined ? {} : { authTimeFromNowSeconds }),
         ...(amr === undefined ? {} : { amr }),
       }), idempotencyKey) }),
@@ -167,7 +181,10 @@ export function apiHarness(opts: {
       handle(kernel, { method, path, body, ...(query === undefined ? {} : { query }), headers: headers(token, idempotencyKey, extra) }),
     seedOwner: async (tenantId, userId) => { await seedGenesisOwner(store, OWNER_ROLE_ID, tenantId, userId, AT); },
     provisionOwner: (tenantId, userId) => appendGrant(store, tenantId, userId, OWNER_ROLE_ID),
-    provisionRole: (tenantId, userId, roleId, branchScope) => appendGrant(store, tenantId, userId, roleId, branchScope),
+    provisionRole: async (tenantId, userId, roleId, branchScope) => {
+      if (roleId === 'store_computer' && branchScope !== undefined && branchScope !== 'all' && branchScope.length === 1) boxStores.set(`${tenantId}\u0000${userId}`, branchScope[0]!);
+      await appendGrant(store, tenantId, userId, roleId, branchScope);
+    },
     enableFeature: (tenantId, feature) => appendEntitlement(store, tenantId, feature, true),
   };
 }

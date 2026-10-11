@@ -42,7 +42,11 @@ export async function ok(p: Promise<{ status: number; body: unknown }>, label: s
 export async function startInboxShop(input: {
   readonly databaseUrl: string; readonly tenantId: string; readonly signingKey: string;
   /** The page: its html file, and the window global the store computer injects for it. */
-  readonly page: { readonly path: string; readonly html: string; readonly dataGlobal: string };
+  readonly page: {
+    readonly path: string; readonly html: string; readonly dataGlobal: string;
+    /** More of what the store computer injects for this page, read from head office under the viewer's token (e.g. the setup status). */
+    readonly extraData?: (api: (path: string) => Promise<unknown>) => Promise<Record<string, unknown>>;
+  };
   readonly seed: (cloud: RealCloud) => Promise<void>;
 }): Promise<InboxShop> {
   let cloud = await startRealCloud({ databaseUrl: input.databaseUrl, tenantId: input.tenantId, owner: OWNER, packSigningKey: input.signingKey });
@@ -88,7 +92,8 @@ export async function startInboxShop(input: {
           // What the store computer tells the screen: who is looking and what they hold — head office's answer.
           const me = await fetch(`${cloud.baseUrl}/v1/identity/me`, { headers: { authorization: `Bearer ${token}` } });
           const who = (await me.json()) as { userId: string; permissions: string[] };
-          const data = { userId: who.userId, permissions: who.permissions };
+          const extra = input.page.extraData === undefined ? {} : await input.page.extraData(async (p) => (await fetch(`${cloud.baseUrl}${p}`, { headers: { authorization: `Bearer ${token}` } })).json() as unknown);
+          const data = { userId: who.userId, permissions: who.permissions, ...extra };
           body = body.replace('<!--SCREEN-DATA-->', `<script>window.${input.page.dataGlobal} = ${JSON.stringify(data).replace(/</g, '\\u003c')};</script>`);
         }
         res.writeHead(200, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store' });

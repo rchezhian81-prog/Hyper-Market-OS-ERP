@@ -72,6 +72,18 @@ export interface ChannelVerdict {
  */
 export type ChannelGuard = (principal: Principal, permission: string) => Promise<ChannelVerdict> | ChannelVerdict;
 
+/**
+ * OB-54: the store-computer binding. Consulted on EVERY request after the permission check, with the caller's
+ * resolved grants and what the request names (path params, query, body). A machine credential bound to one store
+ * is refused when it names no store, a store its grant does not name, or a record at another store. Callers who are
+ * not a store computer are never refused by it. `nextSafeAction` is optional plain English for the refusal.
+ */
+export interface BoundStoreVerdict extends ChannelVerdict { readonly nextSafeAction?: string }
+export type BoundStoreGuard = (
+  principal: Principal, access: AccessControl,
+  request: { readonly method: Method; readonly routePath: string; readonly permission: string; readonly params: Readonly<Record<string, string>>; readonly query: Readonly<Record<string, string>>; readonly body: unknown },
+) => Promise<BoundStoreVerdict> | BoundStoreVerdict;
+
 export interface HttpRequest {
   readonly method: Method;
   readonly path: string;
@@ -313,6 +325,8 @@ export interface KernelOptions {
    * never reach it.
    */
   readonly channels?: ChannelGuard;
+  /** OB-54: the store-computer binding (see `BoundStoreGuard`). Absent → not checked (a test that has no box). */
+  readonly boundStore?: BoundStoreGuard;
 }
 
 /** In-memory idempotency, tenant-scoped. Real deployments swap the port for PostgreSQL. */
@@ -478,6 +492,22 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
       if (opts.entitlements === undefined) throw featureNotEntitled(route.entitlement);
       const entitled = await opts.entitlements(principal.tenantId);
       if (!entitled.includes(route.entitlement)) throw featureNotEntitled(route.entitlement);
+    }
+
+    // OB-54: a store computer's credential is locked to its own store — it may relay and report only for the store its
+    // credential and its grant both name. Checked before the body reaches a handler and before any replay is served.
+    if (opts.boundStore !== undefined) {
+      const bound = await opts.boundStore(principal, access, {
+        method: route.method, routePath: route.path, permission: route.permission, params, query: request.query ?? {}, body: request.body,
+      });
+      if (!bound.ok) {
+        throw apiError(403, {
+          code: bound.code ?? 'store_computer_not_bound_to_this_store',
+          whatHappened: bound.why ?? 'This store computer\'s sign-in is not bound to the store this request is for.',
+          wasItSaved: 'not_saved',
+          nextSafeAction: bound.nextSafeAction ?? 'Keep the record at the store computer; the administrator re-issues this box\'s credential for its own store. Nothing was recorded.',
+        });
+      }
     }
 
     // Per-route STEP-UP RE-AUTHENTICATION (SEC-03 / §28 / GAP-SEC-06): a sensitive action requires a

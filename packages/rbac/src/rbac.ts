@@ -105,6 +105,14 @@ export class AccessControl {
     return [...branches].sort();
   }
 
+  /**
+   * The grants this user holds, copied (OB-54): the store-computer binding asks which store a box's `store_computer`
+   * grant names without reading the ledger a second time on every request.
+   */
+  assignmentsOf(userId: string): readonly RoleAssignment[] {
+    return (this.assignmentsByUser.get(userId) ?? []).map((a) => ({ ...a, branchScope: a.branchScope === 'all' ? 'all' : [...a.branchScope] }));
+  }
+
   /** Throws AccessDeniedError if the user may not perform the action. */
   assertCan(query: AccessQuery): void {
     if (!this.can(query)) {

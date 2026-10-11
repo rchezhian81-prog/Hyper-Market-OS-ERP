@@ -130,7 +130,7 @@ async function cloud(): Promise<{ h: ApiHarness; dir: string; start: (deviceStat
   await approvedSuppliers(h, A, 's-1'); // OB-32: an order needs an approved supplier
   await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-worker', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'store_computer');
+  await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);
   expect((await h.request({ method: 'POST', path: '/v1/warehouse/bins/BIN-A', userId: 'u-owner', tenantId: A, idempotencyKey: 'bin-a', body: { storeId: 'store-1', capacityMinor: 1000, pickable: true, zone: 'ambient' } })).status).toBe(201);
   // The order the delivery is against (SP-6b): 10 of p-rice, proposed by the worker (a store manager here), issued by the owner.
   expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-worker', tenantId: A, idempotencyKey: 'po-1', body: { supplierId: 's-1', deliverToLocationId: 'store-1', lines: [{ productId: 'p-rice', orderedQty: 10, unitCost: { minor: 4000, currency: 'INR' } }] } })).status).toBe(201);
@@ -161,7 +161,7 @@ async function cloud(): Promise<{ h: ApiHarness; dir: string; start: (deviceStat
     await issueTillPins(dir, KEY, PHONE_PEOPLE.map((p) => p.userId));
     const edge = (await startEdge({
       ...EDGE_ENV, EDGE_DATA_DIR: dir, EDGE_PACK_FILE: packFile,
-      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
+      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }),
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
     return edge;

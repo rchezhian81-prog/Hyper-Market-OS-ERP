@@ -88,7 +88,8 @@ could report — head office raises the backup as **MISSED** by itself once it i
    new machine user, for example `svc-backup`, through the normal two-person role grant.
    This role can only report backups — it cannot read or change anything else.
 2. Issue that user a token the same way the store computer's token is issued:
-   `node scripts/issue-store-token.mjs --user svc-backup --tenant <shop id>` (30 days unless
+   `node scripts/issue-store-token.mjs --user svc-backup --tenant <shop id> --no-store` (the backup
+   job is not a store computer, so its token names no store; 30 days unless
    `--ttl-hours` says otherwise). The token is shown once, on your screen only.
 3. On the box, create `/etc/sre-pilot/backup-reporter.env`, owned by root, mode `600`:
    ```

@@ -55,7 +55,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');
   await h.seedOwner(B, 'u-owner-b');
   for (const u of ['u-floor', 'u-mgr', 'u-back', 'u-floor2']) await h.provisionRole(A, u, 'store_manager');
-  await h.provisionRole(A, 'u-box', 'store_computer');
+  await h.provisionRole(A, 'u-box', 'store_computer', [FLOOR]);
   await h.provisionRole(A, 'u-acct', 'accountant');
   const node = (id: string, body: Body) => post(h, 'u-owner', `/v1/org/nodes/${id}`, body, `org-${id}`);
   expect((await node('C1', { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
@@ -217,7 +217,7 @@ async function cloudAndBox(): Promise<{ h: ApiHarness; start: () => Promise<Edge
   const start = async (): Promise<EdgeProcess> => {
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
-      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }), EDGE_PACK_FILE: packFile,
+      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: FLOOR }), EDGE_PACK_FILE: packFile,
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
     return edge;

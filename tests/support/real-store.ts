@@ -58,6 +58,8 @@ export interface RealCloud {
   readonly notificationWorker?: NotificationWorker;
   /** PA-12: the ops-alert worker the API started on its own timer. */
   readonly opsAlertWorker?: OpsAlertWorker;
+  /** D14 / M32: the outbound webhook sender (only when a partner transport was handed in). */
+  readonly outboundWorker?: NotificationWorker;
   stop(): Promise<void>;
 }
 
@@ -117,7 +119,10 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
   if (running === undefined) throw new Error(`the real API refused to start:\n${said.join('\n')}`);
 
   const baseUrl = `http://127.0.0.1:${running.port}`;
-  const token = (userId: string): string => TEST_IDP.issue({ sub: userId, tenantId: input.tenantId });
+  // OB-54: a store computer granted for ONE store carries that store in its credential, as the administrator issues it
+  // (scripts/issue-store-token.mjs --store) — the box's CLOUD_API_TOKEN names its store.
+  const boxStores = new Map<string, string>();
+  const token = (userId: string): string => TEST_IDP.issue({ sub: userId, tenantId: input.tenantId, branchId: boxStores.get(userId) });
   const request = async (r: RealCloudRequest): Promise<RealCloudReply> => {
     const response = await fetch(`${baseUrl}${r.path}`, {
       method: r.method,
@@ -143,6 +148,7 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
     said,
     ...(running.notificationWorker === undefined ? {} : { notificationWorker: running.notificationWorker }),
     ...(running.opsAlertWorker === undefined ? {} : { opsAlertWorker: running.opsAlertWorker }),
+    ...(running.outboundWorker === undefined ? {} : { outboundWorker: running.outboundWorker }),
     token,
     request,
     grant: async (userId, roleId, requestedBy = REQUESTER, branchScope = 'all') => {
@@ -156,6 +162,7 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
       if (asked.status !== 202) throw new Error(`requesting ${roleId} for ${userId} failed: ${asked.status} ${JSON.stringify(asked.body)}`);
       const reply = await request({ method: 'POST', path: `/v1/identity/grants/${grantId}/approve`, userId: input.owner, idempotencyKey: `${grantId}-approve`, body: {} });
       if (reply.status !== 201) throw new Error(`granting ${roleId} to ${userId} failed: ${reply.status} ${JSON.stringify(reply.body)}`);
+      if (roleId === 'store_computer' && branchScope !== 'all' && branchScope.length === 1) boxStores.set(userId, branchScope[0]!);
     },
     stop: () => running.stop(),
   };

@@ -216,6 +216,8 @@ import type { ImportEffect } from '../../purchase/src/import-templates';
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
 import { projectAlerts, type AlertLifecycleDeps, type AlertLifecycleEvent, type LiveAlert } from '../../platform/src/alert-lifecycle';
+import type { OpsIncidentDeps, IncidentFact } from '../../platform/src/ops-incidents';
+import type { OutboundWebhookDeps, OutboundFact, OutboundTransport } from '../../platform/src/outbound-webhooks';
 import { recommendOperationsRunbooks, type OperationsFinding } from '../../../packages/ops/src/index';
 import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../finance/src/legal-holds';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
@@ -13381,6 +13383,47 @@ export function periodBooksAdapter(input: { readonly store: EventStore; readonly
 }
 
 /**
+ * OB-54: which store a location belongs to — a store's back-store warehouse (its settings) first, then the nearest
+ * branch above it in the org hierarchy, else the location is its own key (fail closed: an unplaced location is no
+ * store's but its own). The SAME rule the average buying cost places a receipt by.
+ */
+export async function storeOfLocationResolver(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<{
+  readonly storeOf: (locationId: string) => string;
+  /** Every store head office knows: a branch in the org hierarchy, a store with settings, a store a store computer is granted for. */
+  readonly knownStores: ReadonlySet<string>;
+}> {
+  const nodes = await orgStructureAdapter(input).nodes(tenantId);
+  const placed = branchOfLocationIn(nodes);
+  const known = new Set<string>(nodes.filter((n) => n.kind === 'branch').map((n) => n.nodeId));
+  const backStoreOf = new Map<string, string>();
+  for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) {
+    known.add(s.storeId);
+    if (typeof s.warehouseId === 'string' && s.warehouseId !== '') backStoreOf.set(s.warehouseId, s.storeId);
+  }
+  for (const g of await effectiveGrants(input.store, tenantId)) {
+    if (g.roleId === STORE_COMPUTER_ROLE_ID && g.branchScope !== 'all') for (const b of g.branchScope) known.add(b);
+  }
+  return { storeOf: (locationId) => backStoreOf.get(locationId) ?? placed(locationId), knownStores: known };
+}
+
+/** WF-20 · M35-FR-04: operational incidents and post-mortems — every fact appended, keyed so a re-send is the same one. */
+export function opsIncidentsAdapter(input: { readonly store: EventStore; readonly now: () => string }): OpsIncidentDeps {
+  const stream = streamName(STREAM.platform, 'incidents');
+  return {
+    now: input.now,
+    facts: (tenantId) => allOf<IncidentFact>(input.store, tenantId, stream, 'OpsIncidentFact'),
+    record: async (tenantId, fact, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `ops-incident-${key}`, type: 'OpsIncidentFact', occurredAt: fact.at,
+        idempotencyKey: `ops-incident-${tenantId}-${key}`, source: 'api/platform', payload: fact,
+      }));
+    },
+    alerts: (tenantId) => alertLifecycleAdapter(input).alerts(tenantId),
+    isKnownPerson: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId),
+  };
+}
+
+/**
  * WF-18: the books-to-register checks the close adds beside the card/UPI and bank checks — count differences and
  * write-offs (the stock registers against the stock-adjustment journals), payables (the purchase register against the
  * payables control account) and receivables (the credit-customer ledger against the receivables control account). A
@@ -13433,5 +13476,66 @@ async function bookChecksFor(input: { readonly store: EventStore; readonly now: 
   return {
     checks, notChecked,
     books: { stockAdjustmentsUnposted: stock.unposted, stockAdjustmentsUnvalued: stock.unvalued, payablesUnposted, receivablesLedgerMinor, receivablesBooksMinor },
+  };
+}
+
+/**
+ * D14 / M32: outbound webhooks. The events published to partners (§30.2) and the ledger stream each is read from; every
+ * subscription change and every attempt is an appended fact. Without a store, nothing is subscribed and nothing is sent.
+ */
+export const PUBLISHED_TO_PARTNERS: Readonly<Record<string, string>> = { SaleCommitted: STREAM.sales, InventoryMoved: STREAM.inventory };
+export function outboundWebhooksAdapter(input: {
+  readonly store?: EventStore; readonly now: () => string;
+  readonly transport?: OutboundTransport; readonly secrets?: ReadonlyMap<string, string>;
+}): OutboundWebhookDeps {
+  const stream = streamName(STREAM.platform, 'outbound-webhooks');
+  const store = input.store;
+  return {
+    now: input.now,
+    publishable: PUBLISHED_TO_PARTNERS,
+    ...(input.transport === undefined ? {} : { transport: input.transport }),
+    facts: async (tenantId) => (store === undefined ? [] : allOf<OutboundFact>(store, tenantId, stream, 'OutboundWebhookFact')),
+    record: async (tenantId, fact, key) => {
+      if (store === undefined) return;
+      await store.append(tenantId, stream, makeEvent({
+        id: `outbound-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`, type: 'OutboundWebhookFact',
+        occurredAt: fact.change === 'subscribed' ? fact.subscription.setAt : fact.at,
+        idempotencyKey: `outbound-${tenantId}-${key}`, source: 'api/platform', payload: fact,
+      }));
+    },
+    eventsOf: async (tenantId, from, type, since) => (store === undefined ? [] : (await store.readStream(tenantId, from, { type, from: since }))
+      .map((e) => ({ eventId: e.event.id, occurredAt: e.event.occurredAt, payload: e.event.payload }))),
+    secretFor: (ref) => input.secrets?.get(ref.replace(/^vault:\/\//, '')),
+  };
+}
+
+/** OB-54: what a store computer tried to send for another store — kept, never deleted (hard rule #6). */
+export interface StoreComputerRefusal {
+  readonly refusalId: string;
+  readonly userId: string;
+  /** The store the box's credential names (null: none). */
+  readonly credentialStore: string | null;
+  /** Why: `credential_names_no_store`, `credential_store_not_granted`, `record_names_another_store`. */
+  readonly reason: string;
+  /** The store the record named, and where in the record (record_names_another_store only). */
+  readonly namedStore?: string;
+  readonly field?: string;
+  readonly method: string;
+  readonly path: string;
+  readonly at: string;
+}
+export function storeComputerRefusalsAdapter(input: { readonly store: EventStore }): {
+  record: (tenantId: string, r: StoreComputerRefusal) => Promise<void>;
+  list: (tenantId: string) => Promise<readonly StoreComputerRefusal[]>;
+} {
+  const stream = streamName(STREAM.org, 'store-computer-refusals');
+  return {
+    record: async (tenantId, r) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `store-computer-refused-${r.refusalId}`, type: 'StoreComputerRecordRefused', occurredAt: r.at,
+        idempotencyKey: `store-computer-refused-${tenantId}-${r.refusalId}`, source: 'api/platform', payload: r,
+      }));
+    },
+    list: (tenantId) => allOf<StoreComputerRefusal>(input.store, tenantId, stream, 'StoreComputerRecordRefused'),
   };
 }

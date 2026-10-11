@@ -26,8 +26,13 @@
 # in /opt/sre/deploy.conf (see deploy.conf.example — no secret belongs there either).
 #
 # Exit codes (BSD sysexits, so a pipeline can tell them apart):
-#   0 deployed · 64 usage · 65 refused (not on main) · 70 rolled back to the previous release ·
+#   0 deployed · 64 usage · 65 refused (not on main) · 69 refused (the pre-release backup failed) ·
+#   70 rolled back to the previous release (it did not come up, or failed its canary bake) ·
 #   71 rollback failed too · 75 another deployment is running · 78 the box is not set up for this.
+#
+# WF-20 (ADR-0026): before anything changes, the box's pre-release backup runs (SRE_PREDEPLOY_BACKUP_CMD); after the
+# release is up and GREEN, a canary box WATCHES it for SRE_BAKE_SECONDS (READY throughout, no growth in server errors)
+# before calling it deployed. The pipeline deploys to the canary box first and to the full rollout only after that.
 
 set -euo pipefail
 
@@ -58,6 +63,16 @@ if [ -f "$CONF" ]; then . "$CONF"; fi
 : "${SRE_READY_POLL:=2}"
 : "${SRE_RELEASE_LOG:=/opt/sre/releases.log}"
 : "${SRE_DEPLOY_LOCK:=/opt/sre/deploy.lock}"
+# WF-20 (ADR-0026): the backup taken BEFORE a release touches anything, and the canary bake after it comes up.
+#   SRE_PREDEPLOY_BACKUP_CMD — a command that takes a backup and exits 0 only when it succeeded; empty = none here
+#                              (said on every run). A failed backup refuses the release (69) with nothing touched.
+#   SRE_BAKE_SECONDS         — how long to WATCH the new release before calling it deployed (the canary box: e.g.
+#                              600). 0 = no bake. During the bake the API must stay READY and its server errors
+#                              (5xx on /metricz) must not grow by more than SRE_BAKE_MAX_5XX — or it is rolled back.
+: "${SRE_PREDEPLOY_BACKUP_CMD:=}"
+: "${SRE_BAKE_SECONDS:=0}"
+: "${SRE_BAKE_POLL:=15}"
+: "${SRE_BAKE_MAX_5XX:=0}"
 
 COMPOSE_FILE_ARGS=()
 for f in $SRE_COMPOSE_FILES; do COMPOSE_FILE_ARGS+=(-f "$f"); done
@@ -104,6 +119,18 @@ if [ "$PHASE" = 1 ]; then
   if ! git merge-base --is-ancestor "$SHA" "origin/$SRE_RELEASE_BRANCH" 2>/dev/null; then
     echo "REFUSED — commit $SHA is not on origin/$SRE_RELEASE_BRANCH. Only a merged, CI-green commit deploys (hard rule #8, AID-08). Nothing was changed; the box is still on $PREVIOUS." >&2
     exit 65
+  fi
+  # WF-20: back up BEFORE anything changes. A backup that fails stops the release here, with the box untouched.
+  if [ -n "$SRE_PREDEPLOY_BACKUP_CMD" ]; then
+    say "taking the pre-release backup…"
+    if ! bash -c "$SRE_PREDEPLOY_BACKUP_CMD"; then
+      record backup_failed
+      echo "REFUSED — the pre-release backup did not succeed, so $SHA was not deployed. Nothing was changed; the box is still on $PREVIOUS. Fix the backup (docs/runbooks/backup-and-recovery.md), then deploy again." >&2
+      exit 69
+    fi
+    say "pre-release backup taken."
+  else
+    say "no pre-release backup is configured on this box (SRE_PREDEPLOY_BACKUP_CMD) — the scheduled backup is the latest copy."
   fi
   if [ "$PREVIOUS" = "$SHA" ]; then say "this box is already at $SHA — re-applying it (harmless, idempotent)."; fi
   say "live now: $PREVIOUS — checking out $SHA"
@@ -202,17 +229,57 @@ verify() {
   front_answers || { say "the public front did not answer at $SRE_FRONT_URL/readyz while the API behind it is fine — the proxy is down or refused its configuration (an empty name in SRE_PUBLIC_HOST?). See 'When it goes red'."; return 1; }
 }
 
-if bring_up && verify; then
+# The API's server-error count so far (5xx on /metricz), or "unknown" when it cannot be read.
+server_errors() {
+  curl -fsS --max-time 5 "$SRE_API_URL/metricz" 2>/dev/null \
+    | node -e 'let s="";process.stdin.on("data",(d)=>{s+=d;}).on("end",()=>{try{const m=JSON.parse(s);const n=Number((m.byStatusClass||{})["5xx"]||0);console.log(Number.isFinite(n)?n:"unknown");}catch{console.log("unknown");}});' \
+    || echo unknown
+}
+
+# WF-20 canary stage (ADR-0026): WATCH the release for SRE_BAKE_SECONDS before calling it deployed. It must stay READY and
+# its server errors must not grow past SRE_BAKE_MAX_5XX; an unreadable error count is a failure, never a pass (P-08).
+BAKE_FAILED=0
+bake() {
+  [ "${SRE_BAKE_SECONDS:-0}" -gt 0 ] 2>/dev/null || return 0
+  local base now deadline
+  base="$(server_errors)"
+  if [ "$base" = "unknown" ]; then say "canary bake: the API's error count cannot be read at $SRE_API_URL/metricz."; BAKE_FAILED=1; return 1; fi
+  say "canary bake: watching $SHA for ${SRE_BAKE_SECONDS}s (server errors now $base, at most +$SRE_BAKE_MAX_5XX allowed)…"
+  deadline=$(( $(date +%s) + SRE_BAKE_SECONDS ))
+  while :; do
+    if ! curl -fsS --max-time 5 "$SRE_API_URL/readyz" >/dev/null 2>&1; then
+      say "canary bake: the API stopped being READY."; BAKE_FAILED=1; return 1
+    fi
+    now="$(server_errors)"
+    if [ "$now" = "unknown" ] || [ $(( now - base )) -gt "$SRE_BAKE_MAX_5XX" ]; then
+      say "canary bake: server errors went from $base to $now (allowed +$SRE_BAKE_MAX_5XX)."; BAKE_FAILED=1; return 1
+    fi
+    [ "$(date +%s)" -ge "$deadline" ] && break
+    sleep "$SRE_BAKE_POLL"
+  done
+  say "canary bake: $SHA stayed READY for ${SRE_BAKE_SECONDS}s with server errors at $now."
+}
+
+if bring_up && verify && bake; then
   record deployed
   say "DEPLOYED $SHA (replaced $PREVIOUS) — merged by $ACTOR, pipeline run $RUN. The stack is up and the stand-up check is GREEN."
   exit 0
 fi
 
-say "NOT HEALTHY — the new release did not come up. Last lines from the api and migrate containers:"
+if [ "$BAKE_FAILED" = 1 ]; then
+  say "NOT HEALTHY UNDER WATCH — $SHA came up but failed its canary bake. Last lines from the api container:"
+else
+  say "NOT HEALTHY — the new release did not come up. Last lines from the api and migrate containers:"
+fi
 compose logs --no-color --tail=60 api migrate 2>/dev/null || true
 say "rolling back to $PREVIOUS…"
 git checkout --quiet --detach "$PREVIOUS"
 if bring_up && verify; then
+  if [ "$BAKE_FAILED" = 1 ]; then
+    record rolled_back_in_canary_bake
+    echo "ROLLED BACK — $SHA came up but failed its canary bake; the box is back on $PREVIOUS and GREEN, and the full rollout will not run. Open an incident (POST /v1/platform/incidents/:id) with this release's commit. Nothing was lost: the ledger is append-only and migrations are additive." >&2
+    exit 70
+  fi
   record rolled_back
   echo "ROLLED BACK — $SHA did not come up healthy; the box is back on $PREVIOUS and GREEN. Nothing was lost: the ledger is append-only and migrations are additive. Fix forward and merge again." >&2
   exit 70

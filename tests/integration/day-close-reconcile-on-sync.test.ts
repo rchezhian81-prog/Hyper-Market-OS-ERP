@@ -54,7 +54,7 @@ describe('store/day close reconciles on sync — record, lock, and re-verify the
 
   it('OB-36 "A": the store computer relays the close under its OWN role, and the person it names is re-checked — flagged, never refused', async () => {
     const h = await cast();
-    await h.provisionRole(A, 'u-box', 'store_computer');
+    await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);
     // a manager who handles locked days: clean
     const ok = await syncClose(h, 'u-box', 'dc-1', close(), 'k1');
     expect(ok.status).toBe(202);

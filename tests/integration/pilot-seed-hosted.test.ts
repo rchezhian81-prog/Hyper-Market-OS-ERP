@@ -77,9 +77,12 @@ describe('hosted pilot seed — over a real socket', () => {
     const provisioned = grants.filter((g) => g.event.source === 'pilot/seed');
     // The foundation's role logins plus the supplier-portal login the trading-partner step adds, plus (EA-01 round 7) the
     // store computer's grant NAMING the demo store — the one it reports its sync for.
-    expect(provisioned).toHaveLength(PILOT_FOUNDATION.users.length + 2);
+    // OB-54: the store computer's ONLY grant names the demo store (no tenant-wide one), and any earlier tenant-wide one is revoked.
+    expect(provisioned).toHaveLength(PILOT_FOUNDATION.users.length + 1);
     expect(provisioned.filter((g) => (g.event.payload as { userId: string; branchScope: unknown }).userId === 'pilot-store-edge').map((g) => (g.event.payload as { branchScope: unknown }).branchScope))
-      .toEqual(['all', [PILOT_DEMO_BRANCH]]);
+      .toEqual([[PILOT_DEMO_BRANCH]]);
+    const revoked = (await store.readStream(PILOT_DEMO_TENANT, STREAM.identity, { type: 'RoleRevoked' })).map((e) => e.event.payload as { userId: string; roleId: string; branchScope: unknown });
+    expect(revoked).toContainEqual(expect.objectContaining({ userId: 'pilot-store-edge', roleId: 'store_computer', branchScope: 'all' }));
     expect(provisioned.map((g) => (g.event.payload as { userId: string }).userId)).toContain(PILOT_DEMO_SUPPLIER_LOGIN);
     for (const g of provisioned) {
       const req = (g.event.payload as { request: { requestedBy: string; approvedBy: string } }).request;
