@@ -17,6 +17,11 @@
 //   • BUDGET (PA-08 round 4 · M31-FR-04 · D3): the owner's monthly cap and per-channel cost are head office's record. A
 //     message is queued only if it fits, and RE-CHECKED immediately before it is sent — a month that filled up since
 //     it was queued HOLDS it (kept, pending, visible with the reason) until the budget allows. No budget: nothing goes.
+//   • TEMPLATE AND RECIPIENT, AGAIN AT SEND (PA-08 round 6): the item froze the template VERSION it was rendered from.
+//     If that version is no longer approved (a person WITHDREW its approval since — wrong words, a recalled offer), the
+//     message is WITHHELD at send, kept and visible with the reason. So is a message whose recipient no longer stands
+//     on their own: a customer who exercised their right to erasure (privacy tombstone), or a record merged into
+//     another (the merge in force) — the same recipient rule is applied at enqueue.
 //   • THE WORKER (PA-08 round 4): `drainNotificationQueue` is the one send pass. The API process runs it on its own
 //     timer for every shop (`notification-worker.ts`, started by `startApi` whenever a provider is configured); the
 //     drain route is the same pass on demand, for an operator — it is not the only way messages leave.
@@ -47,6 +52,12 @@ export interface NotificationIntent {
   readonly templateId: string;
   readonly templateVersion: number;
   readonly text: string;
+  /**
+   * PA-08 r6: set ONLY by head office's own composer for a message that is not written from a register template — the
+   * owner's daily brief (`system:owner-brief`, deterministic figures, to the owner). The enqueue route never sets it, so
+   * nothing a caller sends can skip the template check; such an item is still checked for recipient, consent and budget.
+   */
+  readonly composedBy?: 'system:owner-brief';
 }
 
 /** One append-only fact about a queued notification. `change` says which; extra fields carry its detail. */
@@ -78,12 +89,21 @@ export interface MessageTemplateVersion {
   readonly channel: ConsentChannel;
   /** The words, with {placeholders} filled from the intent's values. */
   readonly body: string;
-  readonly state: 'draft' | 'approved';
+  /** `withdrawn` (PA-08 r6): its approval was taken back — nothing more is sent with it, and what waits is withheld. */
+  readonly state: 'draft' | 'approved' | 'withdrawn';
   readonly draftedBy: string;
   readonly draftedAt: string;
   readonly approvedBy?: string;
   readonly approvedAt?: string;
+  readonly withdrawnBy?: string;
+  readonly withdrawnAt?: string;
+  readonly withdrawalReason?: string;
 }
+
+/** Whether a recipient may still be messaged at all (PA-08 r6) — before consent is even asked. */
+export type RecipientStanding =
+  | { readonly allowed: true }
+  | { readonly allowed: false; readonly reason: 'erased' | 'merged_away'; readonly detail: string };
 
 export interface NotificationQueueDeps {
   /** The current queue — the tested engine replayed over the append-only log. */
@@ -97,6 +117,8 @@ export interface NotificationQueueDeps {
   readonly recordTemplate?: (tenantId: string, version: MessageTemplateVersion) => Promise<void> | void;
   /** The customer's consent ledger — the SAME record the rest of the system reads (P-02). */
   readonly consentRecords?: (tenantId: string, customerId: string) => Promise<readonly ConsentRecord[]> | readonly ConsentRecord[];
+  /** PA-08 r6: does the recipient still stand on their own — not erased, not merged into another record? */
+  readonly recipient?: (tenantId: string, customerId: string) => Promise<RecipientStanding> | RecipientStanding;
   /** The delivery transport. Absent in production until a real provider is certified (SMS is R4, OB-29). */
   readonly transport?: NotificationTransport;
   /** The owner's messaging budget in force (PA-08 round 4); undefined when none has been set — nothing is then sent. */
@@ -130,6 +152,7 @@ export async function drainNotificationQueue(deps: NotificationQueueDeps, tenant
   if (deps.events === undefined || deps.consentRecords === undefined) throw new Error('the notification store is not wired');
   const queue = await deps.queue(tenantId);
   const events = await deps.events(tenantId);
+  const templates = deps.templates === undefined ? undefined : await deps.templates(tenantId);
   const intents = new Map<string, { channel: string; intent?: NotificationIntent }>();
   for (const e of events) if (e.change === 'enqueued') intents.set(e.id, { channel: e.channel ?? '', ...(e.intent === undefined ? {} : { intent: e.intent }) });
   const now = deps.now();
@@ -147,6 +170,24 @@ export async function drainNotificationQueue(deps: NotificationQueueDeps, tenant
       await deps.record(tenantId, { id: item.id, change: 'dead_lettered', by, at: now, reason: 'queued before PA-08 with no recipient or content — it cannot be sent; a person must decide' }, `notif-dead-${item.id}-nointent`);
       outcome.push({ id: item.id, result: 'dead_lettered', detail: 'no recipient or content on record' });
       continue;
+    }
+    // PA-08 r6: the frozen template VERSION must still be approved now — a withdrawn approval withholds what waits.
+    const standing = queued.intent.composedBy === 'system:owner-brief' ? 'approved'
+      : templates === undefined ? 'unknown' : templateVersionStanding(templates, queued.intent.templateId, queued.intent.templateVersion);
+    if (standing !== 'approved') {
+      const why = templateWithdrawalDetail(templates ?? [], queued.intent.templateId, queued.intent.templateVersion);
+      await deps.record(tenantId, { id: item.id, change: 'withheld', by, at: now, reason: `template_no_longer_approved: ${why}` }, `notif-withheld-${item.id}`);
+      outcome.push({ id: item.id, result: 'withheld', detail: why });
+      continue;
+    }
+    // PA-08 r6: the recipient must still stand on their own — not erased, not merged into another record.
+    if (deps.recipient !== undefined) {
+      const who = await deps.recipient(tenantId, queued.intent.customerId);
+      if (!who.allowed) {
+        await deps.record(tenantId, { id: item.id, change: 'withheld', by, at: now, reason: `recipient_not_allowed: ${who.detail}` }, `notif-withheld-${item.id}`);
+        outcome.push({ id: item.id, result: 'withheld', detail: who.detail });
+        continue;
+      }
     }
     const consent = mayWeSend({ customerId: queued.intent.customerId, purpose: queued.intent.purpose, channel: queued.channel as ConsentChannel, records: await deps.consentRecords(tenantId, queued.intent.customerId), now });
     if (consent.verdict !== 'may_send') {
@@ -182,6 +223,21 @@ export function approvedTemplate(versions: readonly MessageTemplateVersion[], te
   const latest = new Map<number, MessageTemplateVersion>();
   for (const v of versions) if (v.templateId === templateId) latest.set(v.version, v);
   return [...latest.values()].filter((v) => v.state === 'approved').sort((a, b) => b.version - a.version)[0];
+}
+
+/** The latest state of ONE template version (PA-08 r6) — 'unknown' when the register has no such version. */
+export function templateVersionStanding(versions: readonly MessageTemplateVersion[], templateId: string, version: number): MessageTemplateVersion['state'] | 'unknown' {
+  let state: MessageTemplateVersion['state'] | 'unknown' = 'unknown';
+  for (const v of versions) if (v.templateId === templateId && v.version === version) state = v.state;
+  return state;
+}
+
+/** Why a frozen version can no longer be sent with — said in words, for the withheld list. */
+function templateWithdrawalDetail(versions: readonly MessageTemplateVersion[], templateId: string, version: number): string {
+  const latest = [...versions].reverse().find((v) => v.templateId === templateId && v.version === version);
+  if (latest === undefined) return `template ${templateId} version ${version} is not in head office's register`;
+  if (latest.state === 'withdrawn') return `template ${templateId} version ${version} was withdrawn by ${latest.withdrawnBy ?? 'someone'} at ${latest.withdrawnAt ?? 'an unknown time'}: ${latest.withdrawalReason ?? 'no reason given'}`;
+  return `template ${templateId} version ${version} is ${latest.state}, not approved`;
 }
 
 /** Fill {placeholders}. Every placeholder must have a value — a message with a hole in it is not sent. */
@@ -249,6 +305,26 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
         const approved: MessageTemplateVersion = { ...current, state: 'approved', approvedBy: ctx.userId, approvedAt: deps.now() };
         await deps.recordTemplate!(ctx.tenantId, approved);
         return { status: 200, body: { template: approved } };
+      },
+    },
+    {
+      // WITHDRAW an approved version (PA-08 r6) — its words must not go out any more (a mistake, an offer recalled).
+      // Body: { version, reason }. Nothing new can be queued with it, and every message still waiting on it is WITHHELD
+      // by the sender (kept, visible, with this reason). Append-only: the approval stays on the record.
+      api: 'API-06', method: 'POST', path: '/v1/notifications/templates/:templateId/withdrawal',
+      permission: 'document.template.manage', idempotent: true,
+      handler: async (ctx) => {
+        const templateId = (ctx.params['templateId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        if (!isInt(b['version']) || !isStr(b['reason'])) throw apiError(400, { code: 'withdrawal_needs_a_version_and_reason', whatHappened: 'Withdrawing a template needs the { version } and a { reason } a person can read later.', wasItSaved: 'not_saved', nextSafeAction: 'Send the version number and why it must stop.' });
+        const all = await templateVersions(ctx.tenantId);
+        const current = [...all].reverse().find((v) => v.templateId === templateId && v.version === b['version']);
+        if (current === undefined) throw apiError(404, { code: 'unknown_template_version', whatHappened: `There is no version ${String(b['version'])} of template ${templateId}.`, wasItSaved: 'not_saved', nextSafeAction: 'Check the template and version.' });
+        if (current.state === 'withdrawn') return { status: 200, body: { template: current, alreadyWithdrawn: true } };
+        if (current.state !== 'approved') throw apiError(409, { code: 'template_not_approved', whatHappened: `Version ${current.version} of ${templateId} was never approved, so there is nothing to withdraw — it cannot be sent with.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
+        const withdrawn: MessageTemplateVersion = { ...current, state: 'withdrawn', withdrawnBy: ctx.userId, withdrawnAt: deps.now(), withdrawalReason: (b['reason'] as string).trim() };
+        await deps.recordTemplate!(ctx.tenantId, withdrawn);
+        return { status: 200, body: { template: withdrawn, detail: 'Nothing more is queued with this version; messages still waiting on it are withheld by the sender, kept and visible.' } };
       },
     },
     {
@@ -353,6 +429,11 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
         const rendered = renderTemplate(template.body, values as Record<string, string>);
         if (!rendered.ok) {
           throw apiError(422, { code: 'template_value_missing', whatHappened: `The template needs ${rendered.missing.join(', ')}.`, wasItSaved: 'not_saved', nextSafeAction: 'Send a value for every {placeholder}.' });
+        }
+        // PA-08 r6: the recipient must stand on their own — erased or merged-away records are not messaged.
+        const who = deps.recipient === undefined ? { allowed: true as const } : await deps.recipient(ctx.tenantId, customerId);
+        if (!who.allowed) {
+          throw apiError(422, { code: 'recipient_not_allowed', whatHappened: `${customerId} cannot be messaged: ${who.detail}.`, wasItSaved: 'not_saved', nextSafeAction: who.reason === 'merged_away' ? 'Nothing was queued. Message the record it was merged into, if that person agreed.' : 'Nothing was queued.' });
         }
         const consent = await consentNow(ctx.tenantId, customerId, purpose, channel);
         if (consent.verdict !== 'may_send') {

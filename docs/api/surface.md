@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 930 | 564 | 564 | 84 | 295 |
+| 13 | 931 | 565 | 565 | 84 | 295 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -435,6 +435,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/notifications/templates` | `notification.send.check` | core | — |
 | POST | `/v1/notifications/templates/:templateId` | `document.template.manage` | core | yes |
 | POST | `/v1/notifications/templates/:templateId/approval` | `document.template.manage` | core | yes |
+| POST | `/v1/notifications/templates/:templateId/withdrawal` | `document.template.manage` | core | yes |
 | POST | `/v1/privacy/breach/assess` | `customer.consent.write` | core | yes |
 | POST | `/v1/privacy/consent-notice/check` | `customer.consent.read` | core | yes |
 | GET | `/v1/privacy/data-requests` | `privacy.request.manage` | core | — |

@@ -272,7 +272,7 @@ import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../..
 import type { AssignmentsDeps, WaveAssignment, RouteAssignment } from '../../fulfilment/src/assignments';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
-import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent, type MessageTemplateVersion } from '../../customer/src/notification-queue';
+import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent, type MessageTemplateVersion, type RecipientStanding } from '../../customer/src/notification-queue';
 import type { NotificationTransport, MessagingBudget } from '../../../packages/notifications/src/index';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { StockLossDeps, StockLossJournal } from '../../finance/src/stock-losses';
@@ -9246,11 +9246,13 @@ export function notificationQueueAdapter(input: {
     templates: (tenantId) => allOf<MessageTemplateVersion>(input.store, tenantId, streamName(STREAM.org, 'message-templates'), 'MessageTemplateVersion'),
     recordTemplate: async (tenantId, v) => {
       await input.store.append(tenantId, streamName(STREAM.org, 'message-templates'), makeEvent({
-        id: `msg-template-${v.templateId}-v${v.version}-${v.state}`, type: 'MessageTemplateVersion', occurredAt: v.approvedAt ?? v.draftedAt,
+        id: `msg-template-${v.templateId}-v${v.version}-${v.state}`, type: 'MessageTemplateVersion', occurredAt: v.withdrawnAt ?? v.approvedAt ?? v.draftedAt,
         idempotencyKey: `msg-template-${tenantId}-${v.templateId}-v${v.version}-${v.state}`, source: 'api/customer', payload: v,
       }));
     },
     consentRecords: (tenantId, customerId) => allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
+    // PA-08 r6: the recipient still stands on their own — not erased (privacy tombstone), not merged into another record.
+    recipient: (tenantId, customerId) => recipientStanding(input.store, tenantId, customerId),
     ...(input.transport === undefined ? {} : { transport: input.transport }),
     // PA-08 round 4: the owner's messaging budget — a new version each change, the newest in force.
     budget: (tenantId) => latest<MessagingBudget>(input.store, tenantId, streamName(STREAM.org, 'messaging-budget'), 'MessagingBudgetSet'),
@@ -9272,6 +9274,21 @@ export function notificationQueueAdapter(input: {
       }));
     },
   };
+}
+
+/**
+ * PA-08 r6: whether a message recipient still stands on their own — read from head office's own records: a customer who
+ * exercised their right to erasure (a sealed privacy tombstone), or a record merged into another (the merge approved and
+ * not reversed; each stage its own fact, the latest per merge in force).
+ */
+export async function recipientStanding(store: EventStore, tenantId: string, customerId: string): Promise<RecipientStanding> {
+  const erased = (await allOf<PrivacyTombstone>(store, tenantId, TOMBSTONE_STREAM, 'PrivacyTombstoneSealed')).find((t) => t.customerRef === customerId);
+  if (erased !== undefined) return { allowed: false, reason: 'erased', detail: `${customerId} exercised their right to erasure — they are not messaged again` };
+  const merges = new Map<string, CustomerMerge>();
+  for (const m of await allOf<CustomerMerge>(store, tenantId, streamName(STREAM.customer, 'merges'), 'CustomerMergeRecorded')) merges.set(m.mergeId, m);
+  const absorbed = [...merges.values()].find((m) => m.mergedRef === customerId && m.approvedBy !== undefined && m.reversedBy === undefined);
+  if (absorbed !== undefined) return { allowed: false, reason: 'merged_away', detail: `${customerId} was merged into ${absorbed.survivorRef} (${absorbed.mergeId}) — the record no longer stands on its own` };
+  return { allowed: true };
 }
 
 export function dispatchAdapter(input: {
