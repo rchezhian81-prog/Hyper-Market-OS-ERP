@@ -148,6 +148,35 @@ in, and it holds no token. If some steps did **not** land, each is a `✗` line 
 reason (a price below cost with no approver; a barcode already held by another item…). Fix the cause,
 re-seal any file you changed, and run the **same** command again: it sends only what is missing.
 
+## Step 6b — the later phases: history, open orders and the books' openings (GT-05)
+
+The same folder may also hold these files (each sealed and listed in the manifest like the others):
+
+| File | Columns | What it is |
+|---|---|---|
+| `opening-stock.csv` | add a `location` column | The store, back store, warehouse or cold room each count was taken at. Blank = the manifest's `stockLocationId`. |
+| `history.csv` | kind, legacy_id, number, date, party, net, tax, gross, attachments | The old system's documents (sales invoices, returns, goods receipts, bills, payments, notes, journals), one row each, under their OLD id. |
+| `history-lines.csv` | kind, legacy_id, item_code, qty, net, tax | Optional: the lines of those documents. |
+| `history-control-totals.csv` | kind, count, gross, tax | Printed from the OLD system's own report — never worked out from the extract. |
+| `attachments.csv` + an `attachments/` folder | legacy_id, file_name, content_type, sha256 | The scanned documents; each file is checked against its SHA-256. |
+| `open-orders.csv` | po_id, number, supplier, deliver_to, item_code, ordered, received, unit_cost | Purchase orders still open on the old system, one row per line. |
+| `trial-balance.csv` | account_code, account_name, debit, credit | The old trial balance at the opening date, one balance per ledger account, mapped to this system's accounts. |
+| `trial-balance-totals.csv` | total_debit, total_credit, account_count | The totals PRINTED on the old trial balance. |
+
+After the master data the same command reads the opening state back (stock per location and batch, value, points),
+loads the history and reconciles it per kind, records the trial balance and raises the open orders. Two things it
+never does itself, because they need a second person in their own session:
+
+1. **The books open only when a second finance person signs the trial balance** (the accountant, the CA or the owner —
+   not the operator): `POST /v1/finance/account-openings/<loadId>/sign-off` with the printed totals. A total that
+   differs by a paisa is refused.
+2. **The open orders are issued by a second person** who approves purchase orders: `POST /v1/purchase/orders/<poId>/approval`.
+   (Their suppliers must first be approved by finance.)
+
+Until then the command ends `NOT FINISHED — waiting on: …` (exit 1), naming each wait. Run the **same** command again
+afterwards: it carries what the old system already received against each order, reads the ledger back account by account
+against the old trial balance, and ends `FINISHED` (exit 0) only when every phase agrees. A re-run doubles nothing.
+
 ## Step 7 — reconcile before anybody signs
 
 Check the new tenant against the sealed extract (MG-06): product count, barcode count, stock quantity
@@ -191,4 +220,4 @@ and valuation; the catalogue for products. Nothing is signed until the figures a
 
 ## Exit codes
 
-`0` done (or dry run done) · `1` refused, or not everything landed · `2` could not read what it was given.
+`0` done (or dry run done) · `1` refused, not everything landed, or still waiting on a second person · `2` could not read what it was given.

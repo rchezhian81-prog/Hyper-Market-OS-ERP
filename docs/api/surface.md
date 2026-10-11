@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 930 | 564 | 564 | 84 | 294 |
+| 13 | 933 | 566 | 566 | 84 | 295 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -622,6 +622,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/concession/trading-breaches` | `concession.charge.read` | `dept.concession` | — |
 | GET | `/v1/concession/trading-feed` | `concession.tag.sync` | `dept.concession` | — |
 | POST | `/v1/concession/valuation` | `concession.charge.read` | `dept.concession` | yes |
+| GET | `/v1/finance/account-openings/:loadId` | `finance.period.read` | core | — |
+| POST | `/v1/finance/account-openings/:loadId` | `finance.journal.post` | core | yes |
+| POST | `/v1/finance/account-openings/:loadId/sign-off` | `finance.period.sign` | core | yes |
 | POST | `/v1/finance/b2b/post` | `finance.journal.post` | `b2b` | yes |
 | GET | `/v1/finance/b2b/postings` | `finance.period.read` | `b2b` | — |
 | GET | `/v1/finance/bank-statements` | `settlement.review.read` | core | — |
