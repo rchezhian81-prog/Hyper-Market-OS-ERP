@@ -241,6 +241,8 @@ interface SyncedReturn {
   /** The customer a store-credit refund taken offline belongs to (M13-FR-03 / §31), carried on the
    *  ReturnAccepted event so the cloud can issue the credit to them when it reconciles. */
   readonly customerRef?: string;
+  /** OB-54: the store the return was taken at — the box's own, or stamped by head office from the box's credential. */
+  readonly locationId?: string;
   /** Present when the lane's return is the returning half of an EXCHANGE taken at the till (SP-9b-ii):
    *  `refundMinor` is then the value credited against the bill and `refundTender` is `exchange`. The replacement
    *  sale arrives through the sales pipeline on its own (paid with `exchange_credit`); this block links the two
@@ -299,6 +301,7 @@ function readSyncedReturn(body: unknown): SyncedReturn | undefined {
     processedAt: isStr(b['processedAt']) ? (b['processedAt'] as string) : '',
     lines: b['lines'] as ReturnRequestLine[],
     ...(isStr(b['customerRef']) ? { customerRef: b['customerRef'] as string } : {}),
+    ...(isStr(b['locationId']) ? { locationId: (b['locationId'] as string).trim() } : {}),
     ...(exchange === undefined ? {} : { exchange }),
   };
 }
@@ -818,6 +821,8 @@ export function returnsRoutes(deps: ReturnsDeps): readonly Route[] {
           ...(flags.length > 0 ? { governanceFlags: flags } : {}),
           ...(s.approvedBy === undefined ? {} : { approvedBy: s.approvedBy }),
           ...(s.customerRef === undefined ? {} : { customerRef: s.customerRef }),
+          // OB-54: where it was taken — the box's store, or the one head office stamped from the box's credential.
+          ...(s.locationId === undefined ? {} : { locationId: s.locationId }),
           // The returning half of a till exchange keeps its settlement (SP-9b-ii) — the day book clears the credit.
           ...(s.exchange === undefined ? {} : { exchange: s.exchange }),
         };

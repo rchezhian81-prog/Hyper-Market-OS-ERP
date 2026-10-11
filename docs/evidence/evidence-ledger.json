@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1115,
+  "testFiles": 1120,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -35,8 +35,8 @@
         "unit": 20,
         "integration": 19,
         "realDb": 9,
-        "browser": 4,
-        "connected": 2,
+        "browser": 5,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
@@ -98,11 +98,13 @@
         "browser": [
           "tests/e2e/company-report.e2e.ts",
           "tests/e2e/document-template-publish-delivery.e2e.ts",
+          "tests/e2e/organisation-on-the-production-api.e2e.ts",
           "tests/e2e/store-setup-on-the-production-api.e2e.ts",
           "tests/e2e/the-served-till-never-repeats-a-receipt-number.e2e.ts"
         ],
         "connected": [
           "tests/e2e/company-report.e2e.ts",
+          "tests/e2e/organisation-on-the-production-api.e2e.ts",
           "tests/e2e/store-setup-on-the-production-api.e2e.ts"
         ],
         "device": [],
@@ -118,8 +120,8 @@
         "unit": 24,
         "integration": 21,
         "realDb": 8,
-        "browser": 6,
-        "connected": 1,
+        "browser": 7,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
@@ -188,11 +190,13 @@
           "tests/e2e/approvals-delivery.e2e.ts",
           "tests/e2e/approvals-on-the-production-api.e2e.ts",
           "tests/e2e/customer-login.e2e.ts",
+          "tests/e2e/delegation-on-the-production-api.e2e.ts",
           "tests/e2e/manager-decisions-survive-reload.e2e.ts",
           "tests/e2e/the-erp-pages-meet-the-spec.e2e.ts"
         ],
         "connected": [
-          "tests/e2e/approvals-on-the-production-api.e2e.ts"
+          "tests/e2e/approvals-on-the-production-api.e2e.ts",
+          "tests/e2e/delegation-on-the-production-api.e2e.ts"
         ],
         "device": [],
         "uat": []
@@ -2052,8 +2056,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
-        "integration": 12,
-        "realDb": 4,
+        "integration": 13,
+        "realDb": 5,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2079,6 +2083,7 @@
           "tests/integration/notifications-send-themselves.test.ts",
           "tests/integration/observed-health.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-seams-hold.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts",
@@ -2087,6 +2092,7 @@
         "realDb": [
           "tests/integration/notifications-send-themselves.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
           "tests/integration/the-seams-hold.test.ts",
           "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
@@ -2233,8 +2239,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 4,
-        "integration": 12,
-        "realDb": 5,
+        "integration": 13,
+        "realDb": 6,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -2259,6 +2265,7 @@
           "tests/integration/observed-health.test.ts",
           "tests/integration/operational-health.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
+          "tests/integration/the-backup-job-is-a-machine-only-identity.test.ts",
           "tests/integration/the-backup-job-reports-its-own-outcome.test.ts"
         ],
         "realDb": [
@@ -2266,6 +2273,7 @@
           "tests/integration/an-incident-is-recorded-and-closed-by-a-named-person.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
           "tests/integration/recovery-rehearsal.test.ts",
+          "tests/integration/the-backup-job-is-a-machine-only-identity.test.ts",
           "tests/integration/the-backup-job-reports-its-own-outcome.test.ts"
         ],
         "browser": [],
@@ -2945,9 +2953,9 @@
       "id": "D14",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 2,
-        "integration": 7,
-        "realDb": 2,
+        "unit": 4,
+        "integration": 8,
+        "realDb": 3,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -2955,6 +2963,8 @@
       },
       "files": {
         "unit": [
+          "tests/unit/approval-requests.test.ts",
+          "tests/unit/erp-approvals-session.test.ts",
           "tests/unit/facilities.test.ts",
           "tests/unit/self-checkout.test.ts"
         ],
@@ -2963,13 +2973,15 @@
           "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/integration-gateway.test.ts",
           "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts",
           "tests/integration/partner-sandbox.test.ts",
           "tests/integration/price-integrity.test.ts",
           "tests/integration/webhooks.test.ts"
         ],
         "realDb": [
           "tests/integration/delivery-reports-are-the-providers.test.ts",
-          "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts"
+          "tests/integration/outbound-webhooks-are-signed-retried-and-reconciled.test.ts",
+          "tests/integration/outbound-webhooks-refuse-private-destinations.test.ts"
         ],
         "browser": [],
         "connected": [],

@@ -32,10 +32,10 @@
 // gives the browser a syntax error, and the screen then boots into its sample stand-in for a reason
 // nobody can see.
 
-const CACHE = 'sre-erp-shell-1ad04e6569c1';
+const CACHE = 'sre-erp-shell-105cbe4fbc97';
 
 /** Committed files. A missing one is a packaging fault and should fail the install loudly. */
-const SHELL = ['./sre-foundation.css', './sre-chrome.js', './app.js', './held-returns.js', './buying.js', './catalogue.js', './merchandising.js', './reporting.js', './service.js', './expiry.js', './finance.js', './gst-reconciliation.js', './category-policy.js', './gst-returns.js', './waste.js', './write-off-capture.js', './counts.js', './fleet.js', './product-publish-review.js', './data-quality.js', './operations.js', './loss-prevention.js', './substitution-exceptions.js', './day-book.js', './document-templates.js', './return-governance.js', './cash-office.js', './risk-acceptance.js', './day-reopen.js', './stock-health.js', './stored-value.js', './integration-health.js', './goods-receipt.js', './suppliers.js', './indents.js', './unsellable.js', './data-io.js', './approvals.js', './workforce.js', './ess.js', './rostering.js', './checklist.js', './production.js', './facilities.js', './admin.js', './ai.js', './migration.js', './manifest.webmanifest'];
+const SHELL = ['./sre-foundation.css', './sre-chrome.js', './app.js', './held-returns.js', './buying.js', './catalogue.js', './merchandising.js', './reporting.js', './service.js', './expiry.js', './finance.js', './gst-reconciliation.js', './category-policy.js', './gst-returns.js', './waste.js', './write-off-capture.js', './counts.js', './fleet.js', './product-publish-review.js', './data-quality.js', './operations.js', './loss-prevention.js', './substitution-exceptions.js', './day-book.js', './document-templates.js', './return-governance.js', './cash-office.js', './risk-acceptance.js', './day-reopen.js', './stock-health.js', './stored-value.js', './integration-health.js', './goods-receipt.js', './suppliers.js', './indents.js', './unsellable.js', './data-io.js', './approvals.js', './workforce.js', './ess.js', './rostering.js', './checklist.js', './production.js', './facilities.js', './admin.js', './ai.js', './migration.js', './organisation.js', './delegation.js', './manifest.webmanifest'];
 
 /** Build artefacts. Added tolerantly: `addAll` is all-or-nothing and a missing build must not
  *  stop the rest of the shell being cached. Without the bundle the screen opens into its SAMPLE

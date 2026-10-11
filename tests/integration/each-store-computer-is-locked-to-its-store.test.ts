@@ -177,12 +177,17 @@ describe('OB-54 — the rule itself', () => {
       { field: 'body.lines[0].locationId', value: 'L2' }, { field: 'body.lines[1].batch.warehouseId', value: 'W3' }, { field: 'body.toLocationId', value: 'L4' },
     ]);
   });
-  it('refuses another KNOWN store, by its place in the hierarchy; an unplaced code is no store; the credential must name a granted store', () => {
+  it('refuses another KNOWN store, by its place in the hierarchy; an unplaced code is refused as unknown (round 10); the credential must name a granted store', () => {
     const storeOf = (v: string): string => ({ 'SA-BACK': 'SA', 'SB-BACK': 'SB' } as Record<string, string>)[v] ?? v;
     const knownStores = new Set(['SA', 'SB']);
-    const judge = (credentialStore: string | null, refs: { field: string; value: string }[], grantedStores = ['SA']) =>
+    const judge = (credentialStore: string | null, refs: { field: string; value: string; names?: 'store' | 'location' }[], grantedStores = ['SA']) =>
       judgeBoxRequest({ credentialStore, grantedStores, references: refs, storeOf, knownStores });
-    expect(judge('SA', [{ field: 'body.locationId', value: 'SA-BACK' }, { field: 'body.lines[0].locationId', value: 'shelf-7' }])).toEqual({ ok: true });
+    expect(judge('SA', [{ field: 'body.locationId', value: 'SA-BACK' }])).toEqual({ ok: true });
+    // Round 10: a code head office cannot place in any known store is refused by name — never guessed into the box's store.
+    expect(judge('SA', [{ field: 'body.locationId', value: 'SA-BACK' }, { field: 'body.lines[0].storeId', value: 'shelf-7' }])).toMatchObject({ ok: false, reason: 'record_names_unknown_store', namedStore: 'shelf-7', field: 'body.lines[0].storeId' });
+    // …while an unplaced code in a LOCATION field (a shelf or a bin) is the route's own business.
+    expect(judge('SA', [{ field: 'body.lines[0].locationId', value: 'shelf-7', names: 'location' }])).toEqual({ ok: true });
+    expect(judge('SA', [{ field: 'body.lines[0].locationId', value: 'SB-BACK', names: 'location' }])).toMatchObject({ ok: false, reason: 'record_names_another_store' });
     expect(judge('SA', [{ field: 'body.lines[0].locationId', value: 'SB-BACK' }])).toMatchObject({ ok: false, reason: 'record_names_another_store', namedStore: 'SB', field: 'body.lines[0].locationId' });
     expect(judge(null, [])).toMatchObject({ ok: false, reason: 'credential_names_no_store' });
     expect(judge('SB', [])).toMatchObject({ ok: false, reason: 'credential_store_not_granted' });

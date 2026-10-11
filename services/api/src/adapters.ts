@@ -446,6 +446,18 @@ export async function effectiveGrants(store: EventStore, tenantId: string): Prom
   return [...live.values()].flat();
 }
 
+/**
+ * PA-12 round 10: every role a user holds at `at` — their effective grants plus any emergency grant still live (not
+ * revoked, not expired). Read so a machine-only role is never mixed with a person's (identity/machine-identities.ts).
+ */
+export async function rolesHeldNow(store: EventStore, tenantId: string, userId: string, at: string): Promise<readonly string[]> {
+  const granted = (await effectiveGrants(store, tenantId)).filter((g) => g.userId === userId).map((g) => g.roleId);
+  const emergency = (await allOf<EmergencyGrant>(store, tenantId, EMERGENCY_ACCESS_STREAM, 'EmergencyAccessRecorded'))
+    .reduce((m, g) => m.set(g.grantId, g), new Map<string, EmergencyGrant>());
+  const live = [...emergency.values()].filter((g) => g.userId === userId && (g.revokedAt ?? null) === null && Date.parse(g.expiresAt) > Date.parse(at)).map((g) => g.roleId);
+  return [...new Set([...granted, ...live])];
+}
+
 const PERSON_SIGN_IN_EVENTS = new Set(['PersonSignInRequested', 'PersonSignInIssued', 'PersonSignInEnded', 'PersonSignInWithdrawn']);
 
 /**
@@ -4950,6 +4962,8 @@ export function emergencyAccessAdapter(input: {
   };
   return {
     now: input.now,
+    // PA-12 round 10: what the user holds now, so an emergency grant never mixes a machine-only role with a person's.
+    rolesHeldBy: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
     grants: (tenantId) => foldGrants(tenantId),
     grant: async (tenantId, grantId) => (await foldGrants(tenantId)).find((g) => g.grantId === grantId),
     recordGrant: async (tenantId, grantId, grant, key) => {
@@ -10136,6 +10150,8 @@ export function identityAdapter(input: {
     roles: () => input.roleCatalogue,
     allocateNumber: (tenantId, docType) => numberSeries.allocate(tenantId, docType),
 
+    // PA-12 round 10: the roles a user holds now (grants minus revocations, plus a live emergency grant) — never the request.
+    rolesHeldBy: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
     /** Every permission from every role this user holds. Union, deduplicated, sorted. */
     permissionsOf: async (tenantId, userId) => {
       const held = (await assignments(tenantId)).filter((a) => a.userId === userId);
@@ -12242,7 +12258,12 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
       return out;
     },
     // PA-12 round 7: a backup is believed only from a grant of the backup_job role ITSELF — never a person's other roles.
-    isBackupJob: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId && g.roleId === BACKUP_JOB_ROLE_ID),
+    // PA-12 round 10: …and only from a machine identity that holds NOTHING else — a ledger from before the grant-time
+    // rule that gave a person backup_job beside their own roles is not believed.
+    isBackupJob: async (tenantId, userId) => {
+      const held = (await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId).map((g) => g.roleId);
+      return held.includes(BACKUP_JOB_ROLE_ID) && held.every((r) => r === BACKUP_JOB_ROLE_ID);
+    },
     backups: (tenantId) => allOf<BackupRecord>(input.store, tenantId, BACKUPS_STREAM, 'BackupTaken'),
     recordBackup: async (tenantId, record) => {
       await input.store.append(tenantId, BACKUPS_STREAM, makeEvent({
@@ -13560,7 +13581,7 @@ export interface StoreComputerRefusal {
   readonly userId: string;
   /** The store the box's credential names (null: none). */
   readonly credentialStore: string | null;
-  /** Why: `credential_names_no_store`, `credential_store_not_granted`, `record_names_another_store`. */
+  /** Why: `credential_names_no_store`, `credential_store_not_granted`, `record_names_another_store`, `record_names_unknown_store`. */
   readonly reason: string;
   /** The store the record named, and where in the record (record_names_another_store only). */
   readonly namedStore?: string;

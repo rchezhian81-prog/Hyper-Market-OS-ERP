@@ -12,6 +12,7 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 import { campaignSendAdapter, notificationQueueAdapter } from '../../services/api/src/adapters';
 import { deliveryReportSecretsFromEnv } from '../../services/customer/src/provider-reports';
 import { signedReport, testProviderSecret, TEST_PROVIDER } from '../support/provider-report';
+import { replayNotificationQueue } from '../../services/customer/src/notification-queue';
 
 /**
  * **PF-10 (round 6) — a delivery report is believed only when it is the PROVIDER's (M21-FR-01 · M31-FR-03 · P-04 ·
@@ -129,7 +130,8 @@ async function queueReportsAreTheTakingProvidersOnce(h: ApiHarness, T: string, s
   // window, three times, is acknowledged as a replay: never another attempt, never a dead letter.
   const first = await post(F, RELAY, failure);
   expect(first.status, JSON.stringify(first.body)).toBe(200);
-  expect(first.body).toMatchObject({ state: 'pending', attempts: 2 });
+  // PA-08 round 10: the provider's `maxAttempts: 3` is IGNORED (said in the reply) — the engine's policy (5) decides.
+  expect(first.body).toMatchObject({ state: 'pending', attempts: 2, maxAttempts: 5, ignored: ['maxAttempts'] });
   for (let i = 0; i < 3; i += 1) {
     const again = await post(F, RELAY, failure);
     expect(again.status).toBe(200);
@@ -138,9 +140,18 @@ async function queueReportsAreTheTakingProvidersOnce(h: ApiHarness, T: string, s
   expect(await attemptsOf('cmp-c1-cust-a')).toBe(2);
   expect(await deadLetters()).toEqual([]);
   expect(await failuresOn('cmp-c1-cust-a')).toBe(2);                 // the sender's attempt + ONE provider report
-  // A DISTINCT failure report from the provider is its own fact: the third attempt — dead-lettered, as the engine rules.
-  expect((await post(F, RELAY, signedReport(F, { reason: 'handset unreachable', maxAttempts: 3 }, secret, { reportId: 'fail-r-2' }))).body).toMatchObject({ state: 'dead_letter', attempts: 3 });
+  // A DISTINCT failure report from the provider is its own fact: the third attempt. The provider said "dead-letter after 3"
+  // — PA-08 round 10: the provider does not decide that; the engine's own policy does (5 attempts).
+  expect((await post(F, RELAY, signedReport(F, { reason: 'handset unreachable', maxAttempts: 3 }, secret, { reportId: 'fail-r-2' }))).body).toMatchObject({ state: 'pending', attempts: 3 });
+  expect(await deadLetters()).toEqual([]);
+  // …nor can it hurry it the other way: a provider's `maxAttempts: 1` does not dead-letter the fourth attempt either.
+  expect((await post(F, RELAY, signedReport(F, { reason: 'handset unreachable', maxAttempts: 1 }, secret, { reportId: 'fail-r-3' }))).body).toMatchObject({ state: 'pending', attempts: 4 });
+  expect(await deadLetters()).toEqual([]);
+  // The fifth attempt — dead-lettered, as the ENGINE rules.
+  expect((await post(F, RELAY, signedReport(F, { reason: 'handset unreachable' }, secret, { reportId: 'fail-r-4' }))).body).toMatchObject({ state: 'dead_letter', attempts: 5 });
   expect((await deadLetters()).map((d) => d.id)).toEqual(['cmp-c1-cust-a']);
+  // Every provider failure fact carries the engine's policy, never the provider's number.
+  expect((await queueEvents()).filter((e) => e.id === 'cmp-c1-cust-a' && e.change === 'failed' && e.reportId !== undefined).map((e) => e.maxAttempts)).toEqual([5, 5, 5, 5]);
 
   // DELIVERED obeys the same two rules: the wrong provider is refused; the taking provider's report lands once.
   const D = '/v1/notifications/queue/cmp-c1-cust-b/delivered';
@@ -177,6 +188,15 @@ describe('PF-10 r6 — a delivery report is believed only when it is the provide
     await queueReportsAreTheTakingProvidersOnce(h, 'ab000000-0000-4000-8000-00000000f10c', secret, other, transport, store);
   });
 
+  it('PA-08 round 10: a provider failure fact recorded BEFORE the rule, carrying the provider\'s maxAttempts, is folded under the engine\'s policy', () => {
+    const at = new Date().toISOString();
+    const q = replayNotificationQueue([
+      { id: 'old-1', change: 'enqueued', channel: 'sms', at, by: 'u-owner' },
+      { id: 'old-1', change: 'failed', at, by: RELAY, transport: TEST_PROVIDER, reportId: 'legacy-1', reason: 'x', maxAttempts: 1 },
+    ]);
+    expect(q.deadLetters()).toEqual([]);                                  // the provider's "1" is not obeyed
+    expect(q.pending().map((i) => [i.id, i.attempts])).toEqual([['old-1', 1]]);
+  });
   it('with no provider configured, even a perfectly signed report is refused', async () => {
     await noProviderNoReport(apiHarness({ notificationTransport: recordingTransport() }), 'ab000000-0000-4000-8000-00000000f10b', testProviderSecret());
   });

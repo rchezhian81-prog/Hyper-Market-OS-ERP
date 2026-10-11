@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 991 | 604 | 604 | 89 | 300 |
+| 13 | 992 | 604 | 604 | 89 | 300 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -62,6 +62,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/org/nodes/:nodeId` | `platform.setup.write` | core | yes |
 | POST | `/v1/org/nodes/:nodeId/activation` | `platform.setup.write` | core | yes |
 | GET | `/v1/store-computers/refusals` | `platform.health.read` | core | — |
+| GET | `/v1/store-computers/stamps` | `platform.health.read` | core | — |
 | GET | `/v1/store-packs/:storeId` | `store.pack.read` | core | — |
 | GET | `/v1/store-packs/:storeId/held` | `org.branch.read` | core | — |
 | POST | `/v1/store-packs/:storeId/held` | `store.computer.report` | core | yes |

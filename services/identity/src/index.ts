@@ -18,6 +18,7 @@ import { formatNumber, type NumberFormat } from '../../../packages/numbering/src
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { REVOCATION_REASONS, type TokenRevocation, type RevocationReason } from './revocation';
 import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
+import { machineIdentityGrantRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
 
 /**
  * Document number formats per type (M01-FR-02) — configuration, not tenant data: what an invoice
@@ -153,6 +154,11 @@ export interface IdentityDeps {
   readonly recordGrantRequest: (tenantId: string, request: PendingGrantRequest) => Promise<void> | void;
   readonly recordGrantRejection: (tenantId: string, rejection: GrantRejection) => Promise<void> | void;
   /**
+   * PA-12 round 10: the roles a user holds NOW, from the ledger — so a machine-only role (`backup_job`) is never mixed
+   * with a person's roles. Optional on a bare stub (then the rule cannot be judged and is not claimed).
+   */
+  readonly rolesHeldBy?: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
+  /**
    * Seal this privilege change into the tamper-evident domain audit trail (M34-FR-01), attributed to the
    * acting user. Optional — the running system provides it; a bare deps stub may omit it. The actor is
    * ALWAYS the caller (`ctx.userId`), never client-supplied; a role grant is exactly the "who was given
@@ -239,6 +245,13 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         if (unbound !== undefined) {
           throw apiError(422, { code: 'store_computer_grant_must_name_one_store', whatHappened: unbound, wasItSaved: 'not_saved', nextSafeAction: 'Request the store computer role for this box\'s own store only: branchScope ["<its store>"]. Nothing was requested.' });
         }
+        // PA-12 round 10: a machine identity (backup_job) is never also a person — refused at the REQUEST.
+        if (deps.rolesHeldBy !== undefined) {
+          const mixed = machineIdentityGrantRefusal(roleId, await deps.rolesHeldBy(ctx.tenantId, userId));
+          if (mixed !== undefined) {
+            throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Give the machine its own sign-in holding only its role, and the person their own. Nothing was requested.' });
+          }
+        }
         if (userId === ctx.userId) {
           throw apiError(422, {
             code: 'granting_to_yourself',
@@ -286,6 +299,13 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
             wasItSaved: 'not_saved',
             nextSafeAction: 'Have the role requested again as a new request. Nothing changed.',
           });
+        }
+        // PA-12 round 10: judged again at APPROVAL — the user may have been granted something else since it was asked.
+        if (deps.rolesHeldBy !== undefined) {
+          const mixed = machineIdentityGrantRefusal(pending.roleId, await deps.rolesHeldBy(ctx.tenantId, pending.userId));
+          if (mixed !== undefined) {
+            throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request; give the machine its own sign-in holding only its role. Nobody\'s access changed.' });
+          }
         }
         const request: GrantRequest = {
           grantId, userId: pending.userId, roleId: pending.roleId, branchScope: pending.branchScope,

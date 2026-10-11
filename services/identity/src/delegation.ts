@@ -166,7 +166,9 @@ export function delegationRoutes(deps: DelegationDeps): readonly Route[] {
           fromDate: b['fromDate'] as string, untilDate: b['untilDate'] as string, subjectTypes,
           reason: b['reason'] as string, authorisedBy: ctx.userId, // §28 — the caller, never the fromUser
           ...(cap !== null ? { valueCap: cap } : {}),
-          ...(branchScope !== undefined ? { branchScope } : {}),
+          // Round 10 (found by the M02 browser proof): a delegation that names no branches is lent only where the LENDER
+          // holds the authority (the server's scope) — never company-wide from a one-branch manager.
+          ...(branchScope !== undefined ? { branchScope } : grantedBy.branchScope !== 'all' ? { branchScope: grantedBy.branchScope } : {}),
         };
         const result = grantDelegation({
           delegation, granter: grantedBy, existing: await deps.delegations(ctx.tenantId), today: deps.now().slice(0, 10),

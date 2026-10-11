@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Organisation</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Organisation (M01-FR-01 · PA-05). A THIN CLIENT over head office's organisation hierarchy: company → branch/store →
+      back store (warehouse) → department, read live from GET /v1/org/nodes and drawn as the tree it is, each place with
+      its kind, its status in words and the GST registration it files under. A person with setup rights adds a place
+      under its parent, renames one (a new version, read back) and activates a draft; head office's own engine judges
+      every change (where a place may sit, what stops it activating) and the page shows its words. No rule lives here.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(980px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; }
+      h2 { margin: 0; font-size: 17px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 14px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button[disabled] { opacity: .5; cursor: not-allowed; }
+      ul.tree { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      li.place { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; background: var(--bg); min-width: 0; }
+      li.place .head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+      li.place .name { font-weight: 700; overflow-wrap: anywhere; }
+      li.place .facts { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+      li.place .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      li.place .acts input { flex: 1 1 180px; }
+      .status { font-size: 14px; min-height: 20px; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 13px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Organisation</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="tree-h">
+        <h2 id="tree-h">The shop's places</h2>
+        <p class="lede" id="tree-lede">The company, its stores, their back stores and departments — every sale, permission and report belongs to one of these.</p>
+        <p class="status" id="tree-status" role="status" aria-live="polite"></p>
+        <ul class="tree" id="tree" aria-label="The shop's places"></ul>
+      </section>
+
+      <section aria-labelledby="add-h" id="add-section">
+        <h2 id="add-h">Add a place</h2>
+        <p class="lede" id="add-lede">Head office checks where it may sit. A new place starts as a draft until it has everything it needs.</p>
+        <div class="row">
+          <label for="add-kind"><span id="l-add-kind">Kind</span>
+            <select id="add-kind">
+              <option value="branch" id="o-branch">Store / branch</option>
+              <option value="warehouse" id="o-warehouse">Back store</option>
+              <option value="department" id="o-department">Department</option>
+              <option value="company" id="o-company">Company</option>
+            </select>
+          </label>
+          <label for="add-name"><span id="l-add-name">Name</span><input id="add-name" autocomplete="off" /></label>
+          <label for="add-code"><span id="l-add-code">Short code</span><input id="add-code" autocomplete="off" /></label>
+          <label for="add-parent"><span id="l-add-parent">Sits under</span><select id="add-parent"></select></label>
+        </div>
+        <button id="add" type="button">Add this place</button>
+        <p class="status" id="add-status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script type="module" src="./organisation.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

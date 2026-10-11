@@ -163,6 +163,12 @@ export const APPROVAL_KINDS: Readonly<Record<string, ApprovalKind>> = Object.fre
   // Branches (PA-04 · M01-FR-04 "every transition except reopening needs the owner's approval; the person executing is
   // never the person approving"): the manager or owner who carries out the opening/closing asks; the OWNER approves
   // (`branch.transition.approve` — the owner's alone, like every other domain's approve authority).
+  // D14 / M32 round 10: sending the shop's business events to a partner — another person with setup rights approves
+  // exactly the subscription (who, where, which events, which signing key), never the person who set it up.
+  partner_webhook_subscription: {
+    kind: 'partner_webhook_subscription', label: 'Send the shop\'s business events to a partner',
+    makerPermission: 'platform.setup.write', checkerPermission: 'platform.setup.write', validForMinutes: 24 * 60,
+  },
   branch_transition: {
     kind: 'branch_transition', label: 'Open, close for now, or close a branch for good',
     makerPermission: 'branch.transition.execute', checkerPermission: 'branch.transition.approve', validForMinutes: 24 * 60,

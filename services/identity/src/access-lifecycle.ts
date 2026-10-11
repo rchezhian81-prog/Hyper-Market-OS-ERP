@@ -26,6 +26,7 @@
 import type { Route } from '../../kernel/src/index';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
 import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
+import { machineIdentitySetRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
   applyLifecycle, SelfServiceAccessError,
@@ -178,6 +179,13 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
           const unbound = storeComputerGrantRefusal(g.roleId, g.branchScope);
           if (unbound !== undefined) {
             throw apiError(422, { code: 'store_computer_grant_must_name_one_store', whatHappened: unbound, wasItSaved: 'not_saved', nextSafeAction: 'Name the box\'s own store only. Nobody\'s access changed.' });
+          }
+        }
+        // PA-12 round 10: the access a person holds AFTER a joiner/mover change never mixes a machine-only role with another.
+        for (const who of new Set(grants.map((g) => g.userId))) {
+          const mixed = machineIdentitySetRefusal(grants.filter((g) => g.userId === who).map((g) => g.roleId));
+          if (mixed !== undefined) {
+            throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Give the machine its own sign-in holding only its role. Nobody\'s access changed.' });
           }
         }
         const requestedBy = ctx.userId;

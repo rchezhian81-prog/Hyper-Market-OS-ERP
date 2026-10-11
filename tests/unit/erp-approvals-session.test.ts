@@ -169,6 +169,8 @@ describe('"Waiting for you" — what others asked for, in plain words, with what
       substitution_above_cap: { en: 'Charge a dearer substitute above the original price', ta: 'விலை கூடிய மாற்றுப் பொருளுக்கு அசல் விலைக்கு மேல் கட்டணம் வசூலித்தல்' },
       // Branches (PA-04 · M01-FR-04): the owner approves opening or closing a branch.
       branch_transition: { en: 'Open, close for now, or close a branch for good', ta: 'கிளையைத் திறத்தல், தற்காலிகமாக மூடுதல் அல்லது நிரந்தரமாக மூடுதல்' },
+      // D14 round 10: a partner subscription to business events takes a second person.
+      partner_webhook_subscription: { en: 'Send the shop\'s business events to a partner', ta: 'கடையின் வணிக நிகழ்வுகளை ஒரு கூட்டாளருக்கு அனுப்புதல்' },
     };
     // Every kind the engine knows is named here — a kind added to the engine without its words fails this test.
     expect(Object.keys(named).sort()).toEqual(Object.keys(APPROVAL_KINDS).sort());

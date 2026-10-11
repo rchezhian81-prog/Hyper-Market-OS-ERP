@@ -158,7 +158,14 @@ export function spentInPeriod(events: readonly NotificationQueueEvent[], period:
  * to the transport with its id as the idempotency key; record the receipt and its cost, or the failure (retried with
  * backoff, dead-lettered when permanent or after `maxAttempts`). Every outcome is an append-only fact.
  */
-export async function drainNotificationQueue(deps: NotificationQueueDeps, tenantId: string, by: string, maxAttempts = 5): Promise<DrainOutcome> {
+/**
+ * PA-08 round 10: the ENGINE's retry policy — how many failed attempts before a message is dead-lettered. Head office
+ * decides this; a provider's report never does (a `maxAttempts` in a provider's signed failure report is ignored, and a
+ * provider's failure fact recorded before this rule is folded under this policy, whatever it carried).
+ */
+export const NOTIFICATION_MAX_ATTEMPTS = 5;
+
+export async function drainNotificationQueue(deps: NotificationQueueDeps, tenantId: string, by: string, maxAttempts = NOTIFICATION_MAX_ATTEMPTS): Promise<DrainOutcome> {
   if (deps.transport === undefined) throw new Error('no transport configured');
   if (deps.events === undefined || deps.consentRecords === undefined) throw new Error('the notification store is not wired');
   const queue = await deps.queue(tenantId);
@@ -552,9 +559,9 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
         if (!isStr(b['reason'])) {
           throw apiError(400, { code: 'failure_needs_a_reason', whatHappened: 'Recording a failed delivery needs a { reason } — a poison send with no reason cannot be fixed.', wasItSaved: 'not_saved', nextSafeAction: 'Send why the delivery failed.' });
         }
-        if (b['maxAttempts'] !== undefined && (!isInt(b['maxAttempts']) || (b['maxAttempts'] as number) < 1)) {
-          throw apiError(400, { code: 'max_attempts_not_a_count', whatHappened: 'maxAttempts must be a whole number of at least 1 when given.', wasItSaved: 'not_saved', nextSafeAction: 'Send how many attempts before dead-lettering, or leave it out.' });
-        }
+        // PA-08 round 10: when a message is dead-lettered is the ENGINE's retry policy, never the provider's say — a
+        // `maxAttempts` in the provider's body is ignored (and said so in the reply), never recorded.
+        const providerMaxIgnored = b['maxAttempts'] !== undefined;
         const item = (await deps.queue(ctx.tenantId)).find(id);
         if (item === undefined) throw notFound(id);
         const replay = await replayOrWrongProvider(deps, ctx.tenantId, id, from);
@@ -564,9 +571,9 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
         }
         // PA-08 / PF-10 r7: keyed on the PROVIDER's report id — each distinct failure the provider reports is its own fact,
         // and the same signed report sent again (within its freshness window) collapses onto the first: never a new attempt.
-        await deps.record(ctx.tenantId, { id, change: 'failed', by: ctx.userId, at: deps.now(), transport: from.provider, reportId: from.reportId, reason: (b['reason'] as string).trim(), ...(isInt(b['maxAttempts']) ? { maxAttempts: b['maxAttempts'] as number } : {}) }, `notif-failed-${id}-${from.provider}-${from.reportId}`);
+        await deps.record(ctx.tenantId, { id, change: 'failed', by: ctx.userId, at: deps.now(), transport: from.provider, reportId: from.reportId, reason: (b['reason'] as string).trim(), maxAttempts: NOTIFICATION_MAX_ATTEMPTS }, `notif-failed-${id}-${from.provider}-${from.reportId}`);
         const after = (await deps.queue(ctx.tenantId)).find(id);
-        return { status: 200, body: { id, state: after?.state ?? 'pending', attempts: after?.attempts ?? item.attempts + 1 } };
+        return { status: 200, body: { id, state: after?.state ?? 'pending', attempts: after?.attempts ?? item.attempts + 1, maxAttempts: NOTIFICATION_MAX_ATTEMPTS, ...(providerMaxIgnored ? { ignored: ['maxAttempts'] } : {}) } };
       },
     },
     {
@@ -614,7 +621,9 @@ export function replayNotificationQueue(events: readonly NotificationQueueEvent[
   for (const e of events) {
     if (e.change === 'enqueued' && e.channel !== undefined) q.enqueue(e.id, e.channel);
     else if (e.change === 'delivered') q.markDelivered(e.id);
-    else if (e.change === 'failed') q.recordFailure(e.id, e.reason ?? '', e.maxAttempts, e.at);
+    // PA-08 round 10: a PROVIDER's failure report (it carries the provider's reportId) is folded under the engine's own
+    // policy — a maxAttempts it carried before this rule is not obeyed.
+    else if (e.change === 'failed') q.recordFailure(e.id, e.reason ?? '', e.reportId !== undefined ? NOTIFICATION_MAX_ATTEMPTS : e.maxAttempts, e.at);
     else if (e.change === 'dead_lettered') q.deadLetter(e.id, e.reason ?? '');
     else if (e.change === 'withheld') q.withhold(e.id, e.reason ?? '');
     else if (e.change === 'held') q.hold(e.id, e.reason ?? '');
