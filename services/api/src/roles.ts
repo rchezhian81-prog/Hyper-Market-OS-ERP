@@ -64,6 +64,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.supplier.bank', 'purchase.commitment.read',
       'purchase.order.propose', 'purchase.order.approve', 'purchase.order.receive', 'purchase.supplier.block',
+      // WF-03 · D02-FR-01 (round 8): the owner sets category purchase budgets and is the one who may issue an order over them.
+      'purchase.budget.set', 'purchase.budget.exceed',
       'purchase.performance.record', 'purchase.contract.manage',
       'purchase.import.record', 'purchase.import.read',
       'export.read', 'export.sensitive',

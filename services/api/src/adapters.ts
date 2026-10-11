@@ -171,6 +171,7 @@ import type { AssembledGoodsReceiptDeps } from '../../inventory/src/goods-receip
 import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
 import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
 import type { CountPlan, CountPlanDeps, VarianceCause, PlaceMovement } from '../../inventory/src/count-plans';
+import { budgetKey, type OpenToBuyDeps, type PurchaseBudget, type BudgetOverride } from '../../purchase/src/open-to-buy';
 import type { AdjustmentRequestDeps, AdjustmentRequestRecord } from '../../inventory/src/adjustment-requests';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
 import type { EmergencyAccessDeps, EmergencyGrant } from '../../identity/src/emergency-access';
@@ -13371,5 +13372,37 @@ export function countPlansAdapter(input: { readonly store: EventStore; readonly 
       }
       return out;
     },
+  };
+}
+
+/**
+ * WF-03 · D02-FR-01 (round 8) — category purchase budgets and their over-budget overrides on their own purchase stream; the
+ * orders are the purchase-order fold; a product's category is the product master's department.
+ */
+const PURCHASE_BUDGETS_STREAM = streamName(STREAM.purchase, 'budgets');
+export function openToBuyAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<OpenToBuyDeps, 'recordAudit' | 'storeOf'> {
+  const master = productMasterAdapter(input);
+  return {
+    now: input.now,
+    budgets: (tenantId) => allOf<PurchaseBudget>(input.store, tenantId, PURCHASE_BUDGETS_STREAM, 'PurchaseBudgetSet'),
+    recordBudget: async (tenantId, budget) => {
+      const digest = createHash('sha256').update(`${budgetKey(budget)}|${budget.amountMinor}|${budget.reason}|${budget.setBy}`).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, PURCHASE_BUDGETS_STREAM, makeEvent({
+        id: `purchase-budget-${digest}`, type: 'PurchaseBudgetSet', occurredAt: budget.setAt,
+        // The same figure for the same key by the same person collapses; a new figure is a new record (latest wins).
+        idempotencyKey: `purchase-budget-${tenantId}-${digest}`, source: 'api/purchase', payload: budget,
+      }));
+    },
+    orders: async (tenantId) => [...(await foldPurchaseOrders(input.store, tenantId)).values()],
+    categoryOf: async (tenantId, productId) => (await master.product(tenantId, productId))?.primaryCategoryId ?? null,
+    overrides: (tenantId) => allOf<BudgetOverride>(input.store, tenantId, PURCHASE_BUDGETS_STREAM, 'PurchaseBudgetExceeded'),
+    recordOverride: async (tenantId, o) => {
+      await input.store.append(tenantId, PURCHASE_BUDGETS_STREAM, makeEvent({
+        id: `purchase-budget-exceeded-${o.poId}`, type: 'PurchaseBudgetExceeded', occurredAt: o.at,
+        // One override per order: the order is issued once.
+        idempotencyKey: `purchase-budget-exceeded-${tenantId}-${o.poId}`, source: 'api/purchase', payload: o,
+      }));
+    },
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
   };
 }

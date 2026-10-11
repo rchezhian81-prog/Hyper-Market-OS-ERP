@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 948 | 576 | 576 | 89 | 298 |
+| 13 | 951 | 577 | 577 | 89 | 299 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -138,6 +138,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/import/commits/:jobId/rollback` | `purchase.import.record` | core | yes |
 | GET | `/v1/import/templates` | `purchase.import.read` | core | — |
 | POST | `/v1/import/validate` | `purchase.import.read` | core | yes |
+| GET | `/v1/purchase/budgets` | `purchase.commitment.read` | core | — |
+| POST | `/v1/purchase/budgets` | `purchase.budget.set` | core | yes |
 | GET | `/v1/purchase/commitments` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/contracts/:contractId` | `purchase.contract.manage` | core | yes |
 | GET | `/v1/purchase/contracts/alerts` | `purchase.commitment.read` | core | — |
@@ -154,6 +156,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/invoices/:invoiceId/synced` | `purchase.invoice.sync` | core | yes |
 | GET | `/v1/purchase/match-policy` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/match-policy` | `purchase.match.policy.set` | core | yes |
+| GET | `/v1/purchase/open-to-buy` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/opening-balances` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/opening-balances/sign-off/:loadId` | `purchase.supplier.approve` | core | yes |
 | GET | `/v1/purchase/orders` | `purchase.commitment.read` | core | — |
