@@ -28,7 +28,8 @@ export async function reconcileRehearsedRollback(h: ApiHarness, input: {
   expect(report.status).toBe(200);
   const done = await owner(`/v1/migration/cutover/rollback/${input.cutoverId}/reconciliation`, {
     newSystemTradingFrom: input.newSystemTradingFrom,
-    legacyCarriedBack: { count: input.count ?? 0, totalMinor: input.totalMinor ?? 0 },
+    // OB-50: these rehearsals' windows hold no refunds or stock movements of their own, and the old system holds none.
+    legacyCarriedBack: { count: input.count ?? 0, totalMinor: input.totalMinor ?? 0, refunds: { count: 0, totalMinor: 0 }, stockMovements: [] },
   });
   expect(done.status).toBe(201);
   expect(done.body).toMatchObject({ demonstrated: true });

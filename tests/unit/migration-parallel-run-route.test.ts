@@ -35,6 +35,8 @@ const stub = (over: Partial<MigrationDeps> & { targetKind?: TargetKind } = {}) =
     rollbackReconciliations: () => rec.reconciliations,
     recordRollbackReconciliation: (_t, c) => { rec.reconciliations.push(c); },
     windowSales: () => Promise.resolve(rec.window),
+    // OB-50: this unit leg's window holds no refunds and no stock movements (the connected test carries both).
+    windowFacts: () => Promise.resolve({ refunds: { count: 0, totalMinor: 0 }, stockMovements: [] }),
     storeSalesSyncedThrough: () => Promise.resolve(rec.stores),
     now: () => NOW,
     ...over,
@@ -192,7 +194,7 @@ describe('POST /v1/migration/cutover/rollback and what the cutover decision now 
     // GT-02 round 4: performed is not yet DEMONSTRATED — the data must reconcile first.
     expect(((await decide()).body as { checks: { check: string; state: string }[] }).checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('failed');
     const reconcile = routeFor(routes, 'POST', '/v1/migration/cutover/rollback/:cutoverId/reconciliation');
-    const carry = (count: number, totalMinor: number) => ({ newSystemTradingFrom: '2026-10-10T18:00:00.000Z', legacyCarriedBack: { count, totalMinor } });
+    const carry = (count: number, totalMinor: number) => ({ newSystemTradingFrom: '2026-10-10T18:00:00.000Z', legacyCarriedBack: { count, totalMinor, refunds: { count: 0, totalMinor: 0 }, stockMovements: [] } });
     rec.window = { count: 3, totalMinor: 45_000 };
     // A store computer still holding sales from before the switch-back: refused, nothing recorded.
     rec.stores = [{ storeId: 'S1', completeThrough: '2026-10-10T19:30:00.000Z' }];

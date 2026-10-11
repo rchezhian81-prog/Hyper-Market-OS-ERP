@@ -49,7 +49,7 @@ import { decisionRoutes, type RefusedDecision } from './decisions';
 import { screenRoutes } from './screen';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { TotalSignature } from '../../../packages/migration/src/reconcile';
-import type { ParallelDifference, RollbackReconciliation, WindowTotals, StoreSyncedThrough } from '../../../packages/migration/src/cutover';
+import type { ParallelDifference, RollbackReconciliation, WindowTotals, StoreSyncedThrough, RollbackWindowFacts } from '../../../packages/migration/src/cutover';
 
 export type { ParallelRunPolicy, RecordedParallelDay, RecordedRollback, ParallelRunView } from './parallel-run';
 import { assertSafeTarget, namedPeople } from './guards';
@@ -365,6 +365,8 @@ export interface MigrationDeps {
   readonly rollbackReconciliations?: (tenantId: string) => Promise<readonly RollbackReconciliation[]> | readonly RollbackReconciliation[];
   readonly recordRollbackReconciliation?: (tenantId: string, reconciliation: RollbackReconciliation) => Promise<void> | void;
   readonly windowSales?: (tenantId: string, from: string, to: string) => Promise<WindowTotals>;
+  /** OB-50: the refunds and per-product stock movements head office holds for the window (its own ledgers). */
+  readonly windowFacts?: (tenantId: string, from: string, to: string) => Promise<RollbackWindowFacts>;
   readonly storeSalesSyncedThrough?: (tenantId: string) => Promise<readonly StoreSyncedThrough[]>;
   /**
    * MG-04 / MG-06 — the decisions the migration screen makes, KEPT (C3a): the exceptions a cleaning pass

@@ -34,7 +34,7 @@ import { apiError } from '../../kernel/src/index';
 import {
   compareParallelDay, ownDifference, parallelRunPosition, performRollback, confirmRollback, reconcileRollback,
   type ComparisonArea, type DayComparison, type ParallelDayResult, type ParallelDifference, type ParallelRunPosition,
-  type RollbackResult, type RollbackTrigger, type RollbackReconciliation,
+  type RollbackResult, type RollbackTrigger, type RollbackReconciliation, type RollbackWindowFacts,
 } from '../../../packages/migration/src/cutover';
 import { assertSafeTarget } from './guards';
 import type { MigrationDeps } from './index';
@@ -122,6 +122,27 @@ export async function parallelRunView(deps: MigrationDeps, tenantId: string): Pr
 }
 
 const money = (minor: number): string => `₹${(minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** OB-50: what the old system holds of the window's refunds and per-product stock movements; undefined if unreadable. */
+function readLegacyFacts(legacy: Record<string, unknown>): RollbackWindowFacts | undefined {
+  const whole = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+  const refunds = legacy['refunds'];
+  const moves = legacy['stockMovements'];
+  if (refunds === null || typeof refunds !== 'object' || Array.isArray(refunds)) return undefined;
+  const r = refunds as Record<string, unknown>;
+  if (!whole(r['count']) || !whole(r['totalMinor']) || !Array.isArray(moves)) return undefined;
+  const seen = new Set<string>();
+  const stockMovements: { productId: string; netQuantityMinor: number }[] = [];
+  for (const m of moves as unknown[]) {
+    if (m === null || typeof m !== 'object') return undefined;
+    const x = m as Record<string, unknown>;
+    if (typeof x['productId'] !== 'string' || x['productId'].trim() === '' || typeof x['netQuantityMinor'] !== 'number' || !Number.isInteger(x['netQuantityMinor'])) return undefined;
+    if (seen.has(x['productId'])) return undefined; // one line per product
+    seen.add(x['productId']);
+    stockMovements.push({ productId: x['productId'], netQuantityMinor: x['netQuantityMinor'] });
+  }
+  return { refunds: { count: r['count'], totalMinor: r['totalMinor'] }, stockMovements: stockMovements.sort((a, b) => a.productId.localeCompare(b.productId)) };
+}
 
 /** The daily reconciliation sheet — one section per compared day, printable, with a line to sign. */
 export function renderParallelSheet(view: ParallelRunView, days: readonly RecordedParallelDay[], differences: readonly ParallelDifference[]): string {
@@ -425,7 +446,9 @@ export function parallelRunRoutes(deps: MigrationDeps): readonly Route[] {
       // system took from `newSystemTradingFrom` to the switch-back, from ITS OWN sales ledger; the operator says what the
       // old system holds from the carry-back. Refused while any store computer has not synced past the switch-back. A
       // reconciliation that does not balance is recorded too (evidence), as not reconciled — and demonstrates nothing.
-      // Body: { newSystemTradingFrom, legacyCarriedBack: { count, totalMinor } }.
+      // Body: { newSystemTradingFrom, legacyCarriedBack: { count, totalMinor, refunds: { count, totalMinor },
+      // stockMovements: [{ productId, netQuantityMinor }] } }. OB-50 "A": refunds and per-product stock movements are
+      // compared too — head office's own figures against the old system's; any difference keeps it not demonstrated.
       api: 'API-12', method: 'POST', path: '/v1/migration/cutover/rollback/:cutoverId/reconciliation',
       permission: 'migration.cutover.decide', idempotent: true,
       handler: async (ctx) => {
@@ -434,15 +457,16 @@ export function parallelRunRoutes(deps: MigrationDeps): readonly Route[] {
         const b = isObj(ctx.body) ? ctx.body : {};
         const legacy = isObj(b['legacyCarriedBack']) ? b['legacyCarriedBack'] : undefined;
         const whole = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
-        if (!isStr(b['newSystemTradingFrom']) || legacy === undefined || !whole(legacy['count']) || !whole(legacy['totalMinor'])) {
+        const legacyFacts = legacy === undefined ? undefined : readLegacyFacts(legacy);
+        if (!isStr(b['newSystemTradingFrom']) || legacy === undefined || !whole(legacy['count']) || !whole(legacy['totalMinor']) || legacyFacts === undefined) {
           throw apiError(400, {
             code: 'not_readable_as_a_rollback_reconciliation',
-            whatHappened: 'Reconciling a rollback needs { newSystemTradingFrom, legacyCarriedBack: { count, totalMinor } } — when the new system started taking sales, and what the old system now holds from the carry-back.',
+            whatHappened: 'Reconciling a rollback needs { newSystemTradingFrom, legacyCarriedBack: { count, totalMinor, refunds: { count, totalMinor }, stockMovements: [{ productId, netQuantityMinor }] } } — when the new system started taking sales, and what the old system now holds from the carry-back: its bills, its refunds and each product\'s stock movement (OB-50).',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Count the carried-back bills and their total in the old system, then send them.',
           });
         }
-        if (deps.rollbacks === undefined || deps.recordRollbackReconciliation === undefined || deps.windowSales === undefined || deps.storeSalesSyncedThrough === undefined) notWired();
+        if (deps.rollbacks === undefined || deps.recordRollbackReconciliation === undefined || deps.windowSales === undefined || deps.windowFacts === undefined || deps.storeSalesSyncedThrough === undefined) notWired();
         const latest = [...(await deps.rollbacks!(ctx.tenantId))].filter((r) => r.cutoverId === cutoverId)
           .sort((x, y) => x.decidedAt.localeCompare(y.decidedAt) || Number(x.performed) - Number(y.performed)).at(-1);
         if (latest === undefined) {
@@ -451,8 +475,9 @@ export function parallelRunRoutes(deps: MigrationDeps): readonly Route[] {
         const from = (b['newSystemTradingFrom'] as string).trim();
         const to = latest.execution?.legacyTradingFrom;
         const newSystem = to === undefined || Number.isNaN(Date.parse(from)) ? { count: 0, totalMinor: 0 } : await deps.windowSales!(ctx.tenantId, from, to);
+        const newSystemFacts: RollbackWindowFacts = to === undefined || Number.isNaN(Date.parse(from)) ? { refunds: { count: 0, totalMinor: 0 }, stockMovements: [] } : await deps.windowFacts!(ctx.tenantId, from, to);
         const result = reconcileRollback({
-          rollback: latest, windowFrom: from, newSystem,
+          rollback: latest, windowFrom: from, newSystem, newSystemFacts, legacyFacts: legacyFacts!,
           legacy: { count: legacy['count'] as number, totalMinor: legacy['totalMinor'] as number },
           stores: await deps.storeSalesSyncedThrough!(ctx.tenantId), by: ctx.userId, at: deps.now(),
         });

@@ -10802,6 +10802,25 @@ export function migrationAdapter(input: {
         .filter((s) => Date.parse(s.committedAt) >= Date.parse(from) && Date.parse(s.committedAt) < Date.parse(to));
       return { count: inWindow.length, totalMinor: inWindow.reduce((n, s) => n + s.totalMinor, 0) };
     },
+    // OB-50: the window's refunds (every return head office holds — against a bill and without one — by when it was
+    // processed) and each product's net stock movement (every movement, by when it happened, signed by its kind).
+    windowFacts: async (tenantId, from, to) => {
+      const inWindow = (at: string): boolean => Date.parse(at) >= Date.parse(from) && Date.parse(at) < Date.parse(to);
+      const returns = new Map<string, ReturnRecord>();
+      for (const stream of [STREAM.returns, NO_RECEIPT_RETURNS]) {
+        for (const r of await allOf<ReturnRecord>(input.store, tenantId, stream, 'ReturnRecorded')) if (inWindow(r.processedAt)) returns.set(r.returnId, r);
+      }
+      const net = new Map<string, number>();
+      for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
+        const m = payloadOf<Movement>(e);
+        if (!inWindow(m.occurredAt)) continue;
+        net.set(m.productId, (net.get(m.productId) ?? 0) + EFFECT_ON_HAND[m.kind] * m.quantityMinor);
+      }
+      return {
+        refunds: { count: returns.size, totalMinor: [...returns.values()].reduce((n, r) => n + r.refundMinor, 0) },
+        stockMovements: [...net].filter(([, q]) => q !== 0).map(([productId, netQuantityMinor]) => ({ productId, netQuantityMinor })).sort((a, b) => a.productId.localeCompare(b.productId)),
+      };
+    },
     // Every store head office knows, and how far its computer says its sales have synced (EA-01); never heard → null.
     storeSalesSyncedThrough: async (tenantId) => {
       const view = await storeSyncView(input.store, tenantId, input.now);
