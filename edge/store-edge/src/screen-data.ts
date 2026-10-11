@@ -58,6 +58,8 @@ import { packFreshness, type SignedPack } from '../../../services/catalogue/src/
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
   'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'indents', 'unsellable', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor', 'approvals',
+  // WF-11 (Batch 3 r8): returned goods held off the shelf, each waiting for a person's decision.
+  'held-returns',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -2418,6 +2420,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'day-book': 'dayBookData',
   'document-templates': 'documentTemplatesData',
   'return-governance': 'returnGovernanceData',
+  'held-returns': 'heldReturnsData',
   'cash-office': 'cashOfficeData',
   'risk-acceptance': 'riskAcceptanceData',
   'day-reopen': 'dayReopenData',
@@ -2472,6 +2475,8 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'day-book': dayBookPayload,
   'document-templates': documentTemplatesPayload,
   'return-governance': returnGovernancePayload,
+  // WF-11: the same reviewer identity as the refund exceptions; the worklist and every decision are head office's.
+  'held-returns': returnGovernancePayload,
   'cash-office': cashOfficePayload,
   'risk-acceptance': riskAcceptancePayload,
   'day-reopen': dayReopenPayload,

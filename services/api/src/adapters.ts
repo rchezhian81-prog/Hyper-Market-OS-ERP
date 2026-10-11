@@ -100,6 +100,7 @@ import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
 import { shortfallLinesOf, shortfallLossOf, type AvailableLot, type ShortfallLoss, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
+import type { HeldStockDecisionDeps, HeldStockDecision } from '../../pos/src/held-stock-decisions';
 import { recipeDigest, type ProductionDeps, type StoredRun, type StoredRelease } from '../../inventory/src/production';
 import type { WeighedCostingDeps, StoredWeighedRun } from '../../inventory/src/weighed-costing';
 import type { Recipe } from '../../../packages/production/src/recipe';
@@ -13155,4 +13156,42 @@ export const PERSONAL_DATA_POLICY: PersonalDataPolicy = {
 /** The event store every domain writes through, with personal fields sealed under their subject's key (ADR-0025). */
 export function personalDataStore(store: EventStore, keys: SubjectKeyStore): EventStore {
   return new PersonalDataSealingStore(store, keys, PERSONAL_DATA_POLICY);
+}
+
+/**
+ * WF-11 / M13-FR-02 (Batch 3 round 8): a person's decision on a returned unit held off the shelf. The decision, its
+ * stock movements (keyed on the held unit — stock moves once) and, for a write-off, the M28 write-off record land in ONE
+ * batch: all or nothing. Decisions live on their own append-only stream beside the held register.
+ */
+export function heldStockDecisionsAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<HeldStockDecisionDeps, 'approvals' | 'locationBranches' | 'recordAudit'> {
+  const decisionsStream = streamName(STREAM.returns, 'held-stock-decisions');
+  const writeOffs = writeOffAdapter(input);
+  const blocks = saleBlocksAdapter(input);
+  return {
+    now: input.now,
+    held: (tenantId) => allOf<HeldReturnedStock>(input.store, tenantId, HELD_RETURNED_STOCK, 'ReturnedStockHeld'),
+    decisions: (tenantId) => allOf<HeldStockDecision>(input.store, tenantId, decisionsStream, 'HeldStockDecided'),
+    guardVersion: (tenantId, heldId) => input.store.guardVersion(tenantId, `held-stock:${heldId}`),
+    commit: async (tenantId, d, movements, writeOff, expectedVersion) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: decisionsStream,
+          event: makeEvent({ id: `held-decision-${d.decisionId}`, type: 'HeldStockDecided', occurredAt: d.decidedAt, idempotencyKey: `held-decision-${tenantId}-${d.decisionId}`, source: 'api/pos', payload: d }),
+        },
+        ...movements.map((m) => movementEvent(tenantId, m)),
+        ...(writeOff === undefined ? [] : [{
+          stream: streamName(STREAM.inventory, 'write-offs'),
+          event: makeEvent({ id: `write-off-${writeOff.id}`, type: 'WriteOffCommitted', occurredAt: writeOff.at, idempotencyKey: `write-off-${tenantId}-${writeOff.id}`, source: 'api/inventory', payload: writeOff }),
+        }]),
+      ], { guard: { key: `held-stock:${d.heldId}`, expectedVersion } });
+    },
+    permissionsOf: async (tenantId, userId) => {
+      const grants = await effectiveGrants(input.store, tenantId);
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return [...new Set(ROLE_CATALOGUE.filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
+    },
+    batchBlocks: async (tenantId) => (await blocks.blocks(tenantId)).map((x) => ({ productId: x.productId, batchId: x.batchId, kind: x.kind, reason: x.reason })),
+    unitCostAt: (tenantId, locationId, productId) => writeOffs.unitCostAt!(tenantId, locationId, productId),
+    writeOffThreshold: (tenantId) => writeOffs.writeOffThreshold(tenantId),
+  };
 }
