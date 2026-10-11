@@ -109,11 +109,11 @@ async function checks(h: ApiHarness, T: string, again: () => ApiHarness): Promis
   };
   const get = async (path: string, userId = OWNER) => (await h.request({ method: 'GET', path, userId, tenantId: T })).body;
 
-  // ── The coverage register: every domain now exported, attendance named as not yet with why.
+  // ── The coverage register: every domain now exported.
   const cov = (await get('/v1/export/coverage')) as { coverage: { domain: string; status: string; offeredHere: boolean; why?: string }[] };
   expect(cov.coverage).toHaveLength(EXPORT_COVERAGE.length);
   expect(cov.coverage.filter((c) => c.status === 'exported').every((c) => c.offeredHere)).toBe(true);
-  expect(cov.coverage.filter((c) => c.status === 'not_yet').map((c) => c.domain)).toEqual(['Attendance hours']);
+  expect(cov.coverage.filter((c) => c.status === 'not_yet').map((c) => c.domain)).toEqual([]); // attendance followed (round 5b)
 
   // ── PURCHASE ORDERS — equal to the purchase domain's own list; S2's manager gets S2's only.
   const po = await csvOf(OWNER, 'purchase-orders');

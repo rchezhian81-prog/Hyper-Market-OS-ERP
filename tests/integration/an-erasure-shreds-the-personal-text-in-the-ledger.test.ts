@@ -249,6 +249,7 @@ describe.skipIf(!DATABASE_URL)('an erasure shreds the personal text in event_led
     admin = new Pool({ connectionString: urlFor('postgres'), max: 1 });
     await admin.query(`CREATE DATABASE ${SOURCE_DB}`);
     source = new Pool({ connectionString: urlFor(SOURCE_DB), max: 4, options: '-c app.tenant_id=*' });
+    source.on('error', () => { /* the scratch database is dropped WITH (FORCE) at the end */ });
     const dir = 'db/migrations';
     await runMigrations(pgPoolClient(source), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
@@ -302,6 +303,7 @@ describe.skipIf(!DATABASE_URL)('an erasure shreds the personal text in event_led
     expect(said).toMatch(/Restore reconciles exactly against the manifest/);
     expect(said).toMatch(/shredded-key list re-applied: 4 entries .* 4 added back, 4 restored key\(s\) destroyed again/);
     const restored = new Pool({ connectionString: urlFor(RESTORED_DB), max: 2, options: '-c app.tenant_id=*' });
+    restored.on('error', () => { /* dropped WITH (FORCE) at the end */ });
     pools.push(restored);
     const { h } = harnessOver(restored);
     const run = { attempts: await fulfilmentAdapter({ store: h.store, now: () => AT }).attempts(T, DRIVER, '2026-10-10') };
@@ -317,6 +319,7 @@ describe.skipIf(!DATABASE_URL)('an erasure shreds the personal text in event_led
     const said = execFileSync('node', ['scripts/restore.mjs', '--manifest', manifestPath, '--target', urlFor(BARE_DB)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     expect(said).toMatch(/WARNING: no newer shredded-key list was given/);
     const bare = new Pool({ connectionString: urlFor(BARE_DB), max: 2, options: '-c app.tenant_id=*' });
+    bare.on('error', () => { /* dropped WITH (FORCE) at the end */ });
     pools.push(bare);
     const { h } = harnessOver(bare);
     const caseNow = async () => (await serviceCaseAdapter({ store: h.store, now: () => AT }).serviceCase(T, 'case-1'))!.summary;
