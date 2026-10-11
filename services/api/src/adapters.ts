@@ -173,6 +173,7 @@ import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
 import type { CountPlan, CountPlanDeps, VarianceCause, PlaceMovement } from '../../inventory/src/count-plans';
 import { budgetKey, type OpenToBuyDeps, type PurchaseBudget, type BudgetOverride } from '../../purchase/src/open-to-buy';
 import type { InvoiceIngestionDeps, InvoiceDocumentRecord, ItemMapping } from '../../purchase/src/invoice-ingestion';
+import { buffersAt, type OnlineBuffer, type OnlineBufferDeps } from '../../inventory/src/online-buffer';
 import type { AdjustmentRequestDeps, AdjustmentRequestRecord } from '../../inventory/src/adjustment-requests';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
 import type { EmergencyAccessDeps, EmergencyGrant } from '../../identity/src/emergency-access';
@@ -9306,6 +9307,8 @@ export function ordersAdapter(input: {
      * subtract here is the commonest phantom out-of-stock, so the release ledger is folded in.
      */
     outstanding: (tenantId, locationId) => outstandingReservationsAt(input.store, tenantId, locationId, input.now()),
+    // D05-FR-03 (round 8): the store's online safety-stock buffer — units the app keeps back from what it promises.
+    onlineBuffer: async (tenantId, locationId) => buffersAt(await allOf<OnlineBuffer>(input.store, tenantId, ONLINE_BUFFER_STREAM, 'OnlineBufferSet'), locationId).forProduct,
 
     // The location's promise guard (Wave 2a · FUL-02): one version per location, read before the stock and the holds.
     reservationVersion: (tenantId, locationId) => input.store.guardVersion(tenantId, reservationGuardKey(locationId)),
@@ -13447,5 +13450,28 @@ export function invoiceIngestionAdapter(input: { readonly store: EventStore; rea
       }
     },
     purchase: purchaseAdapter(input),
+  };
+}
+
+/** D05-FR-03 (round 8) — the online safety-stock buffer figures, append-only on their own inventory stream (latest wins). */
+const ONLINE_BUFFER_STREAM = streamName(STREAM.inventory, 'online-buffer');
+export function onlineBufferAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<OnlineBufferDeps, 'recordAudit' | 'locationBranches'> {
+  const orders = ordersAdapter({ store: input.store, now: input.now, holdMinutes: 0 });
+  return {
+    now: input.now,
+    buffers: (tenantId) => allOf<OnlineBuffer>(input.store, tenantId, ONLINE_BUFFER_STREAM, 'OnlineBufferSet'),
+    recordBuffer: async (tenantId, b) => {
+      const digest = createHash('sha256').update(`${b.locationId}|${b.productId ?? '*'}|${b.bufferMinor}|${b.reason}|${b.setBy}|${b.setAt}`).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, ONLINE_BUFFER_STREAM, makeEvent({
+        id: `online-buffer-${digest}`, type: 'OnlineBufferSet', occurredAt: b.setAt,
+        idempotencyKey: `online-buffer-${tenantId}-${digest}`, source: 'api/inventory', payload: b,
+      }));
+    },
+    onHand: (tenantId, locationId) => orders.onHand(tenantId, locationId),
+    promised: async (tenantId, locationId) => {
+      const out = new Map<string, number>();
+      for (const r of await orders.outstanding(tenantId, locationId)) out.set(r.productId, (out.get(r.productId) ?? 0) + r.quantityMinor);
+      return out;
+    },
   };
 }

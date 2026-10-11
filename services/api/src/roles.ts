@@ -98,6 +98,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.adjustment.sync', 'inventory.adjustment.approve',
       // WF-08 (round 8): plan a stock count — what is counted, what is frozen, the recount threshold — and name variance causes.
       'inventory.count.plan',
+      // D05-FR-03 (round 8): how many units of a product the app keeps back for shoppers in the store.
+      'inventory.online.buffer.set',
       // SP-4 (ii): the owner sets the receiving tolerances the cloud applies to every delivery (never the body, F03).
       'inventory.receipt.policy.set', 'inventory.receipt.policy.read',
       'pos.sale.sync', 'pos.return.sync', 'pos.sale.read', 'pos.exception.read', 'pos.return.record', 'pos.return.approve', 'pos.override.approve', 'pos.return.threshold.set', 'pos.return.window.set', 'pos.storecredit.cap.set', 'pos.return.noreceipt.cap.set', 'pos.restricted.check',
@@ -218,6 +220,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'inventory.adjustment.approve',
       // WF-08 (round 8): the store manager plans a stock count and names variance causes (approval stays a separate person).
       'inventory.count.plan',
+      // D05-FR-03 (round 8): the store manager sets the online safety-stock buffer for the store.
+      'inventory.online.buffer.set',
       // SP-8 (F08): the floor indent chain — a manager raises, approves (never their own) and reads the register.
       'inventory.indent.request', 'inventory.indent.approve', 'inventory.indent.read',
       'production.recipe.manage', 'production.plan.commit', 'production.release', 'production.read',
