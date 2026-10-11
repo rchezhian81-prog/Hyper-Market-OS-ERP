@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 940 | 570 | 570 | 89 | 297 |
+| 13 | 949 | 577 | 577 | 89 | 297 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -902,6 +902,15 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/platform/flags` | `platform.flag.read` | core | — |
 | PUT | `/v1/platform/flags/:key` | `platform.flag.write` | core | yes |
 | GET | `/v1/platform/health` | `platform.health.read` | core | — |
+| GET | `/v1/platform/incidents` | `platform.health.read` | core | — |
+| GET | `/v1/platform/incidents/:incidentId` | `platform.health.read` | core | — |
+| POST | `/v1/platform/incidents/:incidentId` | `platform.alert.manage` | core | yes |
+| POST | `/v1/platform/incidents/:incidentId/actions/:actionId` | `platform.alert.manage` | core | yes |
+| POST | `/v1/platform/incidents/:incidentId/actions/:actionId/done` | `platform.alert.manage` | core | yes |
+| POST | `/v1/platform/incidents/:incidentId/alerts` | `platform.alert.manage` | core | yes |
+| POST | `/v1/platform/incidents/:incidentId/close` | `platform.alert.manage` | core | yes |
+| POST | `/v1/platform/incidents/:incidentId/postmortem` | `platform.alert.manage` | core | yes |
+| POST | `/v1/platform/incidents/:incidentId/timeline` | `platform.alert.manage` | core | yes |
 | GET | `/v1/platform/jobs` | `platform.job.read` | core | — |
 | POST | `/v1/platform/jobs` | `platform.job.manage` | core | yes |
 | POST | `/v1/platform/jobs/:jobId/retry` | `platform.job.manage` | core | yes |

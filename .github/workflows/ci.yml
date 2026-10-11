@@ -470,6 +470,62 @@ jobs:
           export KEYCLOAK_PROOF_ADMIN_PASSWORD_FILE="$RUNNER_TEMP/kc-admin.pw"
           bash scripts/identity-proof.sh
 
+  canary:
+    name: Canary stage — deploy to the canary box and watch it before the full rollout (rolls back on its own)
+    # WF-20 "approve release → backup → deploy/canary → smoke/reconcile → monitor → rollback" (ADR-0026). The same
+    # gate as the full rollout (a merged, verified main commit), the same forced-command key pattern and the same
+    # on-box script — but to the box named by the 'canary' environment, whose /opt/sre/deploy.conf sets a bake
+    # (SRE_BAKE_SECONDS): the release must stay READY with no growth in server errors for that long, or the box rolls
+    # back and this job goes red — and the full rollout below never runs. With no canary box configured the job says
+    # so and the full rollout proceeds as before (synthetic demo only; ADR-0026 requires a canary for real data).
+    needs: [verify, integration, deploy, browser, performance, identity]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: canary
+    concurrency:
+      group: deploy-canary
+      cancel-in-progress: false
+    outputs:
+      deployed: ${{ steps.box.outputs.configured }}
+    steps:
+      - name: Is a canary box configured?
+        id: box
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ] || [ -z "$DEPLOY_HOST_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No canary box is configured (DEPLOY_HOST / DEPLOY_SSH_KEY / DEPLOY_HOST_KEY are not set on the 'canary' environment). The canary stage is skipped — see docs/runbooks/automatic-deployment.md."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy this exact commit to the canary box and watch it (the key can only run the release script)
+        if: steps.box.outputs.configured == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+        run: |
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$DEPLOY_HOST_KEY" > "$HOME/.ssh/deploy_known_hosts"
+          ssh -i "$HOME/.ssh/deploy_key" \
+              -o IdentitiesOnly=yes -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/deploy_known_hosts" \
+              -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER:-deploy}@$DEPLOY_HOST" \
+              release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID"
+          echo "Canary: $GITHUB_SHA deployed to the canary box and stayed healthy through its bake." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up the key material
+        if: always()
+        run: rm -f "$HOME/.ssh/deploy_key" "$HOME/.ssh/deploy_known_hosts"
+
   release:
     name: Deploy the merged release to the demo box (rolls back if it does not come up)
     # Stage F: a commit that reached main did so through a pull request whose checks were green (branch
@@ -480,14 +536,23 @@ jobs:
     # Deploys never cancel each other: they queue (a half-applied release is worse than a late one).
     # When the 'demo' environment carries no deploy secrets, the job says so and deploys nothing — a
     # fork or a fresh clone cannot deploy anywhere by accident. docs/runbooks/automatic-deployment.md.
-    needs: [verify, integration, deploy, browser, performance, identity]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # WF-20 (ADR-0026): the full rollout runs only after the canary stage passed (a red canary stops it here).
+    needs: [verify, integration, deploy, browser, performance, identity, canary]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.canary.result == 'success'
     runs-on: ubuntu-latest
     environment: demo
     concurrency:
       group: deploy-demo
       cancel-in-progress: false
     steps:
+      - name: Say whether this release was watched on a canary box first
+        run: |
+          if [ "${{ needs.canary.outputs.deployed }}" = "true" ]; then
+            echo "Canary stage passed for $GITHUB_SHA — rolling out." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice::No canary box ran this release (none configured). The full rollout proceeds on the synthetic demo only — ADR-0026 requires a canary before a box with real data."
+          fi
+
       - name: Is a demo box configured?
         id: box
         env:

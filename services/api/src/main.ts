@@ -198,6 +198,8 @@ import { categoryRoutes } from '../../catalogue/src/categories';
 import { storePackRoutes } from '../../platform/src/store-packs';
 import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
 import { storeComputerBinding, storeComputerRefusalRoutes } from './store-computer-binding';
+import { opsIncidentRoutes } from '../../platform/src/ops-incidents';
+import { opsIncidentsAdapter } from './adapters';
 import { buildStorePackSections } from './store-pack-builder';
 import { dataExportRoutes, buildExportDomains, type ExportSale, type ExportJournal } from '../../purchase/src/data-export';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
@@ -1671,6 +1673,11 @@ export function buildSurface(deps: {
     ...alertLifecycleRoutes(store === undefined
       ? { alerts: () => [], recordAlertEvent: () => {}, now }
       : alertLifecycleAdapter({ store, now })),
+    // WF-20 · M35-FR-04: an incident linked to the alerts that raised it, its timeline, actions with named owners, a
+    // post-mortem, and a close only a named person makes.
+    ...opsIncidentRoutes(store === undefined
+      ? { facts: async () => [], record: async () => {}, alerts: () => [], isKnownPerson: async () => false, now }
+      : opsIncidentsAdapter({ store, now })),
     // OBSERVED operational health (M35-FR-03/04/01): the cloud reads its own ledgers as the health signals,
     // judges them with the same engine, and raises owned alerts from what it saw into the same lifecycle store.
     ...observedHealthRoutes(store === undefined ? {

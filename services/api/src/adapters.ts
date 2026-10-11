@@ -212,6 +212,7 @@ import type { ImportEffect } from '../../purchase/src/import-templates';
 import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
 import { projectAlerts, type AlertLifecycleDeps, type AlertLifecycleEvent, type LiveAlert } from '../../platform/src/alert-lifecycle';
+import type { OpsIncidentDeps, IncidentFact } from '../../platform/src/ops-incidents';
 import { recommendOperationsRunbooks, type OperationsFinding } from '../../../packages/ops/src/index';
 import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../finance/src/legal-holds';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
@@ -13319,6 +13320,23 @@ export async function storeOfLocationResolver(input: { readonly store: EventStor
     if (g.roleId === STORE_COMPUTER_ROLE_ID && g.branchScope !== 'all') for (const b of g.branchScope) known.add(b);
   }
   return { storeOf: (locationId) => backStoreOf.get(locationId) ?? placed(locationId), knownStores: known };
+}
+
+/** WF-20 · M35-FR-04: operational incidents and post-mortems — every fact appended, keyed so a re-send is the same one. */
+export function opsIncidentsAdapter(input: { readonly store: EventStore; readonly now: () => string }): OpsIncidentDeps {
+  const stream = streamName(STREAM.platform, 'incidents');
+  return {
+    now: input.now,
+    facts: (tenantId) => allOf<IncidentFact>(input.store, tenantId, stream, 'OpsIncidentFact'),
+    record: async (tenantId, fact, key) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `ops-incident-${key}`, type: 'OpsIncidentFact', occurredAt: fact.at,
+        idempotencyKey: `ops-incident-${tenantId}-${key}`, source: 'api/platform', payload: fact,
+      }));
+    },
+    alerts: (tenantId) => alertLifecycleAdapter(input).alerts(tenantId),
+    isKnownPerson: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId),
+  };
 }
 
 /** OB-54: what a store computer tried to send for another store — kept, never deleted (hard rule #6). */

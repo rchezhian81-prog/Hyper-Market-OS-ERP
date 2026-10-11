@@ -64,6 +64,13 @@ exit 0
 `;
 const CURL_STUB = `#!/usr/bin/env bash
 echo "curl $*" >> "$SRE_TEST_CALLS"
+# WF-20 canary bake: /metricz answers the next server-error count from a queue (the last one sticks); "garbage" is unreadable.
+case " $* " in *"/metricz"*)
+  n=$(head -n1 "$SRE_TEST_METRICS" 2>/dev/null || true); [ -z "$n" ] && n=0
+  if [ "$(wc -l < "$SRE_TEST_METRICS" 2>/dev/null || echo 0)" -gt 1 ]; then tail -n +2 "$SRE_TEST_METRICS" > "$SRE_TEST_METRICS.tmp"; mv "$SRE_TEST_METRICS.tmp" "$SRE_TEST_METRICS"; fi
+  if [ "$n" = "garbage" ]; then echo 'not json'; else echo "{\\"byStatusClass\\":{\\"2xx\\":10,\\"5xx\\":$n}}"; fi
+  exit 0;;
+esac
 # With -w the caller wants a status code (the web-front settle), otherwise the readiness body.
 case " $* " in *" -w "*) if [ "$(cat "$SRE_TEST_READY" 2>/dev/null)" = "ok" ]; then echo 200; else echo 500; fi; exit 0;; esac
 if [ "$(cat "$SRE_TEST_READY" 2>/dev/null)" = "ok" ]; then echo '{"ready":true}'; exit 0; fi
@@ -132,11 +139,11 @@ describe('the release script deploys a merged commit and rolls a broken one back
       SRE_BUILD_SHELLS: 'pos owner-app', SRE_BUILD_ENV: 'PILOT_DEMO_BANNER=1',
       SRE_API_URL: 'http://127.0.0.1:9', SRE_READY_TIMEOUT: '3', SRE_READY_POLL: '1',
       SRE_RELEASE_LOG: releaseLog, SRE_DEPLOY_LOCK: lock,
-      SRE_TEST_CALLS: calls, SRE_TEST_UP_RESULTS: upResults, SRE_TEST_READY: ready,
+      SRE_TEST_CALLS: calls, SRE_TEST_UP_RESULTS: upResults, SRE_TEST_READY: ready, SRE_TEST_METRICS: join(sandbox, 'metrics'),
     };
   });
   afterAll(async () => { await rm(sandbox, { recursive: true, force: true }); });
-  beforeEach(async () => { await writeFile(calls, ''); await writeFile(upResults, ''); await writeFile(ready, 'down\n'); });
+  beforeEach(async () => { await writeFile(calls, ''); await writeFile(upResults, ''); await writeFile(ready, 'down\n'); await writeFile(join(sandbox, 'metrics'), '0\n'); });
 
   it('refuses garbage (64) and a commit that is not on origin/main (65) — and touches nothing', async () => {
     expect(run(['not-a-sha']).code).toBe(64);
@@ -215,5 +222,57 @@ describe('the release script deploys a merged commit and rolls a broken one back
     expect(r.out).toContain('ROLLBACK FAILED');
     expect(head()).toBe(V3); // the previous release is what is checked out, even though it did not answer
     expect(await lastLogLine()).toContain(`result=rollback_failed sha=${V2} previous=${V3}`);
+  }, 30_000);
+
+  // ── WF-20 (ADR-0026): the backup before the release, and the canary bake after it ────────────────────────────────
+  const BACKUP_OK = 'echo backup-taken >> "$SRE_TEST_CALLS"';
+  const BAKE = { SRE_BAKE_SECONDS: '2', SRE_BAKE_POLL: '1', SRE_BAKE_MAX_5XX: '0' };
+
+  it('a pre-release backup that fails refuses the release (69): nothing built, nothing checked out, and the log says so', async () => {
+    const before = head();
+    const r = run([V2, 'octocat', '201'], { SRE_PREDEPLOY_BACKUP_CMD: 'echo backup-tried >> "$SRE_TEST_CALLS"; exit 3' });
+    expect(r.code, r.out).toBe(69);
+    expect(r.out).toContain('pre-release backup did not succeed');
+    expect(head()).toBe(before);
+    const log = await callLog();
+    expect(log).toContain('backup-tried');
+    expect(log.some((l) => l.startsWith('docker') || l.startsWith('pnpm'))).toBe(false);
+    expect(await lastLogLine()).toContain(`result=backup_failed sha=${V2} previous=${before}`);
+  }, 30_000);
+
+  it('the canary: backup first, then up, GREEN, and WATCHED for the bake — READY throughout, no new server errors — then deployed', async () => {
+    await writeFile(upResults, 'ok\n');
+    await writeFile(join(sandbox, 'metrics'), '3\n3\n3\n'); // three old 5xx before the release; none added
+    const r = run([V2, 'octocat', '202'], { SRE_PREDEPLOY_BACKUP_CMD: BACKUP_OK, ...BAKE });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toMatch(/canary bake: watching .* for 2s/);
+    expect(r.out).toMatch(/stayed READY for 2s with server errors at 3/);
+    const log = await callLog();
+    expect(log.indexOf('backup-taken')).toBeGreaterThanOrEqual(0);
+    expect(log.indexOf('backup-taken')).toBeLessThan(log.findIndex((l) => l.startsWith('pnpm'))); // the backup comes BEFORE anything changes
+    expect(log.filter((l) => l.includes('/metricz')).length).toBeGreaterThanOrEqual(2);
+    expect(head()).toBe(V2);
+    expect(await lastLogLine()).toContain(`result=deployed sha=${V2}`);
+  }, 30_000);
+
+  it('a release that comes up GREEN but adds server errors during the bake is rolled back (70), recorded as a canary failure', async () => {
+    await writeFile(upResults, 'ok\nok\n');
+    await writeFile(join(sandbox, 'metrics'), '0\n4\n');
+    const r = run([V3, 'octocat', '203'], BAKE);
+    expect(r.code, r.out).toBe(70);
+    expect(r.out).toContain('failed its canary bake');
+    expect(r.out).toMatch(/server errors went from 0 to 4/);
+    expect(head()).toBe(V2);
+    expect(await lastLogLine()).toContain(`result=rolled_back_in_canary_bake sha=${V3} previous=${V2} by=octocat run=203`);
+  }, 30_000);
+
+  it('an error count the bake cannot read is a failure, never a pass (P-08)', async () => {
+    await writeFile(upResults, 'ok\nok\n');
+    await writeFile(join(sandbox, 'metrics'), 'garbage\n');
+    const r = run([V3, 'octocat', '204'], BAKE);
+    expect(r.code, r.out).toBe(70);
+    expect(r.out).toContain('cannot be read');
+    expect(head()).toBe(V2);
+    expect(await lastLogLine()).toContain('result=rolled_back_in_canary_bake');
   }, 30_000);
 });

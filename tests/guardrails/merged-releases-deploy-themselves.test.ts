@@ -23,9 +23,30 @@ const releaseJob = CI.slice(CI.indexOf('\n  release:\n'));
 describe('the release job deploys only a merged, verified main commit', () => {
   it('exists, needs all five verification jobs — including the browser and performance suites (GT-01) — and runs only for a push to main', () => {
     expect(CI.indexOf('\n  release:\n')).toBeGreaterThan(0);
-    expect(releaseJob).toMatch(/needs:\s*\[verify, integration, deploy, browser, performance, identity\]/);
-    expect(releaseJob).toMatch(/if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+    expect(releaseJob).toMatch(/needs:\s*\[verify, integration, deploy, browser, performance, identity, canary\]/);
+    expect(releaseJob).toMatch(/if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' && needs\.canary\.result == 'success'/);
     expect(releaseJob).toMatch(/environment: demo/);
+  });
+
+  it('WF-20 (ADR-0026): a canary stage runs first — same gate, its own environment and queue, the same pinned forced-command deploy — and the full rollout waits for it', () => {
+    const canaryJob = CI.slice(CI.indexOf('\n  canary:\n'), CI.indexOf('\n  release:\n'));
+    expect(CI.indexOf('\n  canary:\n')).toBeGreaterThan(0);
+    expect(CI.indexOf('\n  canary:\n')).toBeLessThan(CI.indexOf('\n  release:\n'));
+    expect(canaryJob).toMatch(/needs:\s*\[verify, integration, deploy, browser, performance, identity\]/);
+    expect(canaryJob).toMatch(/if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+    expect(canaryJob).toMatch(/environment: canary/);
+    expect(canaryJob).toMatch(/group: deploy-canary/);
+    expect(canaryJob).toMatch(/cancel-in-progress: false/);
+    expect(canaryJob).toContain('StrictHostKeyChecking=yes');
+    expect(canaryJob).toContain('release "$GITHUB_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID"');
+    expect(canaryJob).toContain('configured=false');
+    expect(canaryJob).toContain('rm -f "$HOME/.ssh/deploy_key"');
+    expect(canaryJob).not.toMatch(/echo[^\n]*\$DEPLOY_SSH_KEY/);
+    // The canary box's own settings carry the bake; the script watches READY and server errors during it.
+    expect(CONF).toMatch(/^SRE_BAKE_SECONDS=0$/m);
+    expect(SCRIPT_CODE).toContain('/metricz');
+    expect(SCRIPT_CODE).toContain('record rolled_back_in_canary_bake');
+    expect(SCRIPT_CODE).toContain('record backup_failed');
   });
 
   it('queues rather than cancels, keeps read-only repository permissions, and deploys exactly the pushed SHA', () => {
