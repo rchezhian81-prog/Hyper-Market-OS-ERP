@@ -58,14 +58,48 @@ const scopeFor = (ctx: RequestContext, raw: unknown): DataScope | undefined => {
   return { userId: ctx.userId, branchScope: narrowScope(ctx, requested) };
 };
 
+/** The filters a governed drill may name (EA-05) — each report offers only those its records carry. */
+export interface DrillFilters {
+  /** One branch, within the reader's grant (refused by name otherwise). */
+  readonly branchId?: string;
+  /** Bills paid (wholly or in part) by this tender kind. */
+  readonly tender?: string;
+  /** Lines of products in this department. */
+  readonly categoryId?: string;
+}
+type FilterName = 'branch' | 'tender' | 'category';
+/** Which filters each governed report offers — the figure and its rows are then BOTH computed on the filtered records. */
+export const REPORT_FILTERS: Readonly<Record<string, readonly FilterName[]>> = {
+  sales_by_day: ['branch', 'tender'],
+  sales_by_cashier: ['branch', 'tender'],
+  tender_mix: ['branch'],
+  units_by_category: ['branch', 'category'],
+};
+/** The longest period one drill may cover, in trading days (a bound, so a drill stays a reading, not a scan of years). */
+export const MAX_DRILL_DAYS = 31;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const isDay = (v: unknown): v is string => typeof v === 'string' && DAY.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00.000Z`));
+/** Every trading day from `from` to `to`, inclusive. */
+const daysBetween = (from: string, to: string): string[] => {
+  const out: string[] = [];
+  for (let t = Date.parse(`${from}T00:00:00.000Z`); t <= Date.parse(`${to}T00:00:00.000Z`); t += 86_400_000) out.push(new Date(t).toISOString().slice(0, 10));
+  return out;
+};
+
+/** A drill's audit record — who reached which transactions — with the period and filters it was asked over (EA-05). */
+export type GovernedDrillAudit = DrillAudit & {
+  readonly period?: { readonly from: string; readonly to: string };
+  readonly filters?: DrillFilters;
+};
+
 export interface DrillThroughDeps {
   /**
    * The governed report producers (audit EA-05): the drill loads the headline AND the source records from the same
    * producer that made the report, server-side — never from the caller. Absent, the governed drill refuses.
    */
-  readonly produce?: (tenantId: string, reportId: string, options: { readonly tradingDay?: string; readonly scope: BranchScope }) => Promise<ProducedReportView>;
-  readonly audits: (tenantId: string) => Promise<readonly DrillAudit[]> | readonly DrillAudit[];
-  readonly recordAudit: (tenantId: string, audit: DrillAudit, key: string) => Promise<void> | void;
+  readonly produce?: (tenantId: string, reportId: string, options: { readonly tradingDay?: string; readonly scope: BranchScope; readonly filters?: Omit<DrillFilters, 'branchId'> }) => Promise<ProducedReportView>;
+  readonly audits: (tenantId: string) => Promise<readonly GovernedDrillAudit[]> | readonly GovernedDrillAudit[];
+  readonly recordAudit: (tenantId: string, audit: GovernedDrillAudit, key: string) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -75,44 +109,99 @@ export function drillThroughRoutes(deps: DrillThroughDeps): readonly Route[] {
       // THE GOVERNED DRILL (audit EA-05 · M29-FR-02 · NFR-15): name a report and one of its figures; head office loads
       // the headline and the source records it was summed from — the same producer that made the report — in the
       // reader's server-derived scope, and reconciles them. Nothing about the figure or its rows comes from the caller.
-      // Body: { reportId, figure, day? (YYYY-MM-DD), branchScope? }. Every drill is logged (§28).
+      // Body: { reportId, figure, day? (YYYY-MM-DD) | period?: { from, to } (trading days, at most 31), branchScope?,
+      // filters?: { branchId?, tender?, categoryId? } } — each report offers only the filters its records carry, and the
+      // headline AND its rows are computed on the filtered records, server-side. Every drill is logged (§28) with its
+      // period and filters.
       api: 'API-10', method: 'POST', path: '/v1/reporting/drill/governed',
       permission: 'owner.kpi.read', idempotent: true,
       handler: async (ctx) => {
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const scope = scopeFor(ctx, b['branchScope']);
         const day = b['day'];
-        if (!isStr(b['reportId']) || !isStr(b['figure']) || scope === undefined
-          || (day !== undefined && (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)))) {
-          throw apiError(400, { code: 'not_readable_as_a_governed_drill', whatHappened: 'A drill needs { reportId, figure } and may name { day: YYYY-MM-DD, branchScope }. The figure and its rows are head office\'s, never sent.', wasItSaved: 'not_saved', nextSafeAction: 'Name the report and the figure to open.' });
+        const periodRaw = b['period'];
+        const filtersRaw = b['filters'] === undefined ? {} : b['filters'];
+        if (!isStr(b['reportId']) || !isStr(b['figure'])
+          || (day !== undefined && !isDay(day))
+          || (periodRaw !== undefined && !(isObj(periodRaw) && isDay(periodRaw['from']) && isDay(periodRaw['to'])))
+          || (day !== undefined && periodRaw !== undefined)
+          || !isObj(filtersRaw) || Object.keys(filtersRaw).some((k) => !['branchId', 'tender', 'categoryId'].includes(k))
+          || Object.values(filtersRaw).some((v) => !isStr(v))) {
+          throw apiError(400, { code: 'not_readable_as_a_governed_drill', whatHappened: 'A drill needs { reportId, figure } and may name { day: YYYY-MM-DD } or { period: { from, to } } (not both), { branchScope } and { filters: { branchId?, tender?, categoryId? } }. The figure and its rows are head office\'s, never sent.', wasItSaved: 'not_saved', nextSafeAction: 'Name the report and the figure to open.' });
+        }
+        const reportId = b['reportId'] as string;
+        const figureName = b['figure'] as string;
+        const filters = filtersRaw as DrillFilters;
+        // Each report offers only the filters its records carry — anything else is refused by name, never ignored.
+        const offered = REPORT_FILTERS[reportId] ?? ['branch'];
+        const asked: FilterName[] = [...(filters.branchId === undefined ? [] : ['branch' as const]), ...(filters.tender === undefined ? [] : ['tender' as const]), ...(filters.categoryId === undefined ? [] : ['category' as const])];
+        const notOffered = asked.filter((f) => !offered.includes(f));
+        if (notOffered.length > 0) {
+          throw apiError(400, { code: 'filter_not_offered_by_this_report', whatHappened: `${reportId} cannot be filtered by ${notOffered.join(', ')} — its records do not carry it. It offers: ${offered.join(', ') || 'none'}.`, wasItSaved: 'not_saved', nextSafeAction: 'Drop that filter, or open a report that carries it.' });
+        }
+        // The branch filter narrows the reader's OWN grant: a branch they do not hold is refused by name (scope_not_held).
+        const scope = scopeFor(ctx, filters.branchId !== undefined ? [filters.branchId] : b['branchScope']);
+        if (scope === undefined) {
+          throw apiError(400, { code: 'not_readable_as_a_governed_drill', whatHappened: 'branchScope must be "all" or a list of branch ids.', wasItSaved: 'not_saved', nextSafeAction: 'Name the branches to open, or leave it out.' });
+        }
+        let days: readonly (string | undefined)[] = [typeof day === 'string' ? day : undefined];
+        let period: { readonly from: string; readonly to: string } | undefined;
+        if (isObj(periodRaw)) {
+          period = { from: periodRaw['from'] as string, to: periodRaw['to'] as string };
+          const span = period.from <= period.to ? daysBetween(period.from, period.to) : [];
+          if (span.length === 0 || span.length > MAX_DRILL_DAYS) {
+            throw apiError(400, { code: 'period_out_of_bounds', whatHappened: `A drill covers 1 to ${MAX_DRILL_DAYS} trading days, from on or before to; ${period.from} to ${period.to} is ${span.length === 0 ? 'backwards' : `${span.length} days`}.`, wasItSaved: 'not_saved', nextSafeAction: `Ask for a period of at most ${MAX_DRILL_DAYS} days.` });
+          }
+          days = span;
         }
         if (deps.produce === undefined) {
           throw apiError(409, { code: 'this_version_cannot_produce_it', whatHappened: 'Head office has no report producers wired, so there is nothing governed to drill into.', wasItSaved: 'not_saved', nextSafeAction: 'Open the report from the catalogue first.' });
         }
-        const reportId = b['reportId'] as string;
-        const figureName = b['figure'] as string;
-        let produced: ProducedReportView;
-        try {
-          produced = await deps.produce(ctx.tenantId, reportId, { ...(typeof day === 'string' ? { tradingDay: day } : {}), scope: scope.branchScope });
-        } catch (e) {
-          // Only "no such producer" is the caller's mistake; any other failure is head office's and is not dressed up.
-          if (!(e instanceof Error) || !e.message.startsWith('no head-office producer')) throw e;
-          throw apiError(404, { code: 'no_such_report', whatHappened: `Head office does not produce a report called "${reportId}".`, wasItSaved: 'not_saved', nextSafeAction: 'Pick a report the catalogue says can be run.' });
+        const produceFilters = { ...(filters.tender === undefined ? {} : { tender: filters.tender }), ...(filters.categoryId === undefined ? {} : { categoryId: filters.categoryId }) };
+        // Each day of the period produced by head office's own producer, on the filtered records; the period's headline is
+        // the sum of the days' headlines and its rows the union of the days' rows — reconciled below like any drill.
+        let kpi = 0; let found = 0;
+        let unavailable: string | undefined;
+        const transactions: SourceTransaction[] = [];
+        let produced: ProducedReportView | undefined;
+        let drillable: readonly string[] = [];
+        let firstHeadline: ProducedReportView['figures'][number] | undefined;
+        for (const d of days) {
+          try {
+            produced = await deps.produce(ctx.tenantId, reportId, { ...(d === undefined ? {} : { tradingDay: d }), scope: scope.branchScope, ...(Object.keys(produceFilters).length === 0 ? {} : { filters: produceFilters }) });
+          } catch (e) {
+            // Only "no such producer" is the caller's mistake; any other failure is head office's and is not dressed up.
+            if (!(e instanceof Error) || !e.message.startsWith('no head-office producer')) throw e;
+            throw apiError(404, { code: 'no_such_report', whatHappened: `Head office does not produce a report called "${reportId}".`, wasItSaved: 'not_saved', nextSafeAction: 'Pick a report the catalogue says can be run.' });
+          }
+          if (period !== undefined && produced.tradingDay === undefined) {
+            throw apiError(409, { code: 'not_a_period_report', whatHappened: `${reportId} is a position (as it stands now), not a day's figures — it has no period to add up.`, wasItSaved: 'not_saved', nextSafeAction: 'Drill it without a period.' });
+          }
+          drillable = [...new Set([...drillable, ...Object.keys(produced.drill)])];
+          const headline = produced.figures.find((f) => f.name === figureName);
+          const rows = produced.drill[figureName];
+          if (headline === undefined || rows === undefined) continue;
+          if (headline.valueMinor === undefined) { unavailable = headline.notAvailableBecause ?? 'no source data'; continue; }
+          firstHeadline ??= headline;
+          kpi += headline.valueMinor; found += 1;
+          transactions.push(...rows);
         }
-        const headline = produced.figures.find((f) => f.name === figureName);
-        const transactions = produced.drill[figureName];
-        if (headline === undefined || transactions === undefined) {
-          throw apiError(404, { code: 'figure_not_drillable', whatHappened: `"${figureName}" is not a figure of ${reportId} with records behind it.`, wasItSaved: 'not_saved', nextSafeAction: `Pick one of: ${Object.keys(produced.drill).join(', ') || 'none'}.` });
+        if (found === 0 && unavailable !== undefined) {
+          throw apiError(409, { code: 'figure_not_available', whatHappened: `${figureName} is not available: ${unavailable}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing to drill into until the source data arrives.' });
         }
-        if (headline.valueMinor === undefined) {
-          throw apiError(409, { code: 'figure_not_available', whatHappened: `${figureName} is not available: ${headline.notAvailableBecause ?? 'no source data'}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing to drill into until the source data arrives.' });
+        if (found === 0 || firstHeadline === undefined) {
+          throw apiError(404, { code: 'figure_not_drillable', whatHappened: `"${figureName}" is not a figure of ${reportId}${period === undefined ? '' : ` on any day from ${period.from} to ${period.to}`}${asked.length === 0 ? '' : ' with these filters'} with records behind it.`, wasItSaved: 'not_saved', nextSafeAction: `Pick one of: ${drillable.join(', ') || 'none'}.` });
         }
         const now = deps.now();
-        const result = drillThrough({ metric: `${reportId}:${figureName}`, kpiValueMinor: headline.valueMinor, transactions, scope });
-        await deps.recordAudit(ctx.tenantId, auditDrill(result, scope, now), `${ctx.userId}-${result.metric}-${now}`);
+        const result = drillThrough({ metric: `${reportId}:${figureName}`, kpiValueMinor: kpi, transactions, scope });
+        const audit: GovernedDrillAudit = { ...auditDrill(result, scope, now), ...(period === undefined ? {} : { period }), ...(asked.length === 0 ? {} : { filters }) };
+        await deps.recordAudit(ctx.tenantId, audit, `${ctx.userId}-${result.metric}-${now}`);
         return {
           status: 200,
-          body: { ...result, provenance: 'governed', reportId, figure: figureName, asAt: headline.asAt, staleness: headline.staleness, ...(produced.tradingDay === undefined ? {} : { tradingDay: produced.tradingDay }) },
+          body: {
+            ...result, provenance: 'governed', reportId, figure: figureName, asAt: firstHeadline.asAt, staleness: firstHeadline.staleness,
+            ...(period === undefined ? (produced?.tradingDay === undefined ? {} : { tradingDay: produced.tradingDay }) : { period: { ...period, days: days.length, daysWithTheFigure: found } }),
+            filters: { ...filters, branchScope: scope.branchScope },
+          },
         };
       },
     },

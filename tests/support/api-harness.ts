@@ -12,7 +12,8 @@ import { InMemoryEventStore, type EventStore } from '../../packages/persistence/
 import { makeEvent } from '../../packages/contracts/src/event';
 import { buildRouter, handle, MemoryIdempotencyStore, type HttpRequest, type HttpResponse, type RequestObservation } from '../../services/kernel/src/index';
 import { revocationAwareAuthenticator, TokenRevocationList } from '../../services/identity/src/revocation';
-import { tokenRevocationAdapter } from '../../services/api/src/adapters';
+import { tokenRevocationAdapter, personalDataStore } from '../../services/api/src/adapters';
+import type { SubjectKeyStore } from '../../packages/persistence/src/personal-data';
 import { sessionChannelsOf } from '../../services/api/src/session-channels';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from '../../services/api/src/access';
@@ -113,14 +114,18 @@ export function apiHarness(opts: {
   /** EA-08: a model transport (the deterministic simulator) and tier pricing — production has neither. */
   modelTransport?: ModelTransport;
   modelPricing?: Readonly<Record<ModelTier, TierPricing>>;
+  /** FUL-12 · ADR-0025: a personal-data key store — every write then goes through the sealing layer, as `main.ts` composes it. */
+  personalDataKeys?: SubjectKeyStore;
 } = {}): ApiHarness {
-  const store = opts.store ?? new InMemoryEventStore();
+  const store = opts.personalDataKeys === undefined ? opts.store ?? new InMemoryEventStore()
+    : personalDataStore(opts.store ?? new InMemoryEventStore(), opts.personalDataKeys);
   const idempotency = opts.idempotency ?? new MemoryIdempotencyStore();
   // Token revocations (GAP-SEC-05): ONE list, backed by the same store as everything else, shared by the identity
   // routes (which record) and the authenticator (which refuses) — exactly as `main.ts` composes it.
   const revocations = new TokenRevocationList(tokenRevocationAdapter({ store }));
   const built = buildRouter(buildSurface({
     signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations,
+    ...(opts.personalDataKeys === undefined ? {} : { personalDataKeys: opts.personalDataKeys }),
     ...(opts.paymentVerifier === undefined ? {} : { paymentVerifier: opts.paymentVerifier }),
     ...(opts.notificationTransport === undefined ? {} : { notificationTransport: opts.notificationTransport }),
     ...(opts.modelTransport === undefined ? {} : { modelTransport: opts.modelTransport }),

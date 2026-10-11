@@ -11,3 +11,4 @@ export * from './snapshot';
 export * from './pg-client';
 export * from './migrations';
 export * from './tenants';
+export * from './personal-data';

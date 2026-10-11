@@ -41,7 +41,8 @@ function countingTransport(): ModelTransport & { calls: number } {
 
 const call = (h: ApiHarness, T: string, agent: string, caseId: string, key: string) => h.request({
   method: 'POST', path: `/v1/ai/agents/${agent}/model-calls`, userId: OWNER, tenantId: T, idempotencyKey: key,
-  body: { instruction: EVALUATION_SET.find((c) => c.caseId === caseId)!.instruction, evidence: EVALUATION_EVIDENCE[caseId] },
+  // EA-08: the caller names the question and the scope (here: a case of the fixed evaluation set); the evidence is the server's.
+  body: { instruction: EVALUATION_SET.find((c) => c.caseId === caseId)!.instruction, scope: { evaluationCase: caseId } },
 });
 const put = (h: ApiHarness, T: string, path: string, body: unknown, key: string) => h.request({ method: 'PUT', path, userId: OWNER, tenantId: T, idempotencyKey: key, body });
 const code = (r: { body: unknown }) => (r.body as { error?: { code?: string } }).error?.code;
@@ -102,7 +103,8 @@ async function journey(make: (opts: { transport?: ModelTransport; pricing?: type
   ]);
   expect(chain.ok).toBe(true);
   expect(audits[3]!.result.detail).toMatch(/DROPPED/); // the refund proposal was dropped, and the record says so
-  expect(audits[1]!.request.evidenceIds).toEqual(['ev-sales-day']);
+  expect(audits[1]!.request.evidenceIds).toEqual(EVALUATION_EVIDENCE['a01-takings']!.map((e) => e.evidenceId));
+  expect(audits[1]!.request.evidenceFrom).toMatch(/^evaluation_set_v\d+$/);
   const tampered = audits.map((a, i) => (i === 1 ? { ...a, actualCostMinor: 0 } : a));
   expect(auditChainHolds(tampered)).toEqual({ ok: false, brokenAt: audits[1]!.callId });
 

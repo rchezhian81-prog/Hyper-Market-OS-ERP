@@ -28,8 +28,11 @@ import { startRealCloud, type RealCloud } from '../support/real-store';
  * phone) and its screen socket; it takes its setup from head office (the signed store pack, OB-26/OB-37) and its catalogue
  * from head office (the signed catalogue pack). The till is the code the served till page boots (`bootPos`), the phone is
  * the code the served warehouse page boots (`bootWarehouse` on the assignment the box injects, draining through the
- * shared device → box leg). Every act is a different signed-in person holding only their own role; nobody approves their
- * own work:
+ * shared device → box leg). Every act is a different signed-in person, under their own sign-in. The roles are NOT all
+ * narrow: the buyer, the receiver, the back-store keeper, the floor person and the manager each hold the broad
+ * `store_manager` role (the product has no narrower role for those jobs yet), so their roles alone would let any of them
+ * do the others' work. The separation this journey proves is the per-act maker-checker the product enforces: a second
+ * person approves the supplier, the order, the bill match, the indent and the refund, and nobody approves their own work:
  *
  *   OWNER    u-owner   owner           — issues the purchase order; reads the reports
  *   BUYER    u-buyer   store_manager   — proposes the supplier and the order; captures the bill
@@ -336,11 +339,16 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     const billed = { rice: DELIVERED.riceGood + DELIVERED.riceDamaged, tomatoGrams: DELIVERED.tomatoGrams };
     const riceBill = billed.rice * RICE.cost;
     const tomatoBill = perKg(billed.tomatoGrams, TOMATO.cost);
+    // The paper charges GST on top of the agreed (ex-tax) price: an intra-state bill (the supplier is in Tamil Nadu, 33…),
+    // 5% as 2.5% CGST + 2.5% SGST on each line, each half rounded on its own as a bill prints it.
+    const half = (taxable: number): number => Math.round((taxable * 250) / 10_000);
+    const billTax = 2 * (half(riceBill) + half(tomatoBill));
+    const billGross = riceBill + tomatoBill + billTax;
     const paper = {
-      supplierId: SUPPLIER, poId: PO, declaredTotalMinor: riceBill + tomatoBill,
+      supplierId: SUPPLIER, poId: PO, declaredTotalMinor: billGross,
       lines: [
-        { productId: RICE.productId, quantity: billed.rice, unitPriceMinor: RICE.cost, lineTotalMinor: riceBill },
-        { productId: TOMATO.productId, quantity: billed.tomatoGrams, unitPriceMinor: TOMATO.cost, lineTotalMinor: tomatoBill },
+        { productId: RICE.productId, quantity: billed.rice, unitPriceMinor: RICE.cost, lineTotalMinor: riceBill, cgstMinor: half(riceBill), sgstMinor: half(riceBill) },
+        { productId: TOMATO.productId, quantity: billed.tomatoGrams, unitPriceMinor: TOMATO.cost, lineTotalMinor: tomatoBill, cgstMinor: half(tomatoBill), sgstMinor: half(tomatoBill) },
       ],
     };
     const ask = await ok(call('POST', '/v1/approvals/requests', BUYER, { kind: 'supplier_invoice_check', subjectRef: 'inv-acc-1', details: { ...paper, invoiceId: 'inv-acc-1' }, valueMinor: paper.declaredTotalMinor, summary: 'Check bill inv-acc-1', reason: 'paper bill in hand' }, 'ask-inv'), 'ask finance to check the bill');
@@ -348,15 +356,21 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     await ok(call('POST', `/v1/approvals/requests/${String(ask['requestId'])}/decide`, FINANCE, { decision: 'approved', reason: 'checked against the paper bill' }, 'decide-inv'), 'finance checks the bill');
     await ok(call('POST', '/v1/purchase/invoices/inv-acc-1/capture', BUYER, { ...paper, approvalId: ask['requestId'] }, 'cap-inv'), 'buyer captures the bill');
     const matched = await ok(call('POST', '/v1/purchase/invoices/inv-acc-1/match', FINANCE, {}, 'match-inv'), 'finance matches three ways');
-    expect(matched).toMatchObject({ invoiceId: 'inv-acc-1', poId: PO, blocked: false, payableMinor: riceBill + tomatoBill, withheldMinor: 0, matchedBy: FINANCE });
+    // The engine compares the ex-tax prices; the payable carries the paper's GST with it.
+    expect(matched).toMatchObject({ invoiceId: 'inv-acc-1', poId: PO, blocked: false, payableMinor: billGross, withheldMinor: 0, matchedBy: FINANCE,
+      tax: { taxablePayableMinor: riceBill + tomatoBill, cgstMinor: billTax / 2, sgstMinor: billTax / 2, igstMinor: 0, invoicedTaxMinor: billTax } });
     const note = await call('POST', `/v1/purchase/suppliers/${SUPPLIER}/debit-notes/${encodeURIComponent(`DN-${grnId}-${damagedLine.lineId}`)}/issue`, FINANCE, {}, 'dn');
     const account = await ok(call('GET', `/v1/purchase/suppliers/${SUPPLIER}/account`, FINANCE), 'supplier account') as { totals: Record<string, number>; pendingLineReturns?: { debitNoteRef: string; quantityMinor: number }[] };
     expect(note.status, JSON.stringify(note.body)).toBe(201);
     const dnValue = (note.body as { valueMinor: number }).valueMinor;
-    const owedExpected = riceBill + tomatoBill - DELIVERED.riceDamaged * RICE.cost;
-    expect(dnValue).toBe(DELIVERED.riceDamaged * RICE.cost);
-    expect(account.totals).toMatchObject({ invoicedMinor: riceBill + tomatoBill, debitNotesMinor: DELIVERED.riceDamaged * RICE.cost, paidMinor: 0, owedMinor: owedExpected });
-    row('3 supplier invoice + three-way match', `bill captured by buyer, checked by finance in their own session (buyer self-check refused), MATCHED three-way: payable ${String(matched['payableMinor'])} (= ${billed.rice}×₹${RICE.cost / 100} + ${billed.tomatoGrams} g×₹${TOMATO.cost / 100}/kg) · debit note for the 2 returned bags valued ${dnValue} (expected ${DELIVERED.riceDamaged * RICE.cost}) · supplier owed ${account.totals['owedMinor']} (expected ${owedExpected})`);
+    // The debit note is the bill's reversal for the 2 bags: their cost AND the GST the bill charged on them.
+    const dnTaxable = DELIVERED.riceDamaged * RICE.cost;
+    const dnTaxHalf = Math.round((half(riceBill) * dnTaxable) / riceBill);
+    const dnGross = dnTaxable + 2 * dnTaxHalf;
+    const owedExpected = billGross - dnGross;
+    expect(dnValue).toBe(dnGross);
+    expect(account.totals).toMatchObject({ invoicedMinor: billGross, debitNotesMinor: dnGross, paidMinor: 0, owedMinor: owedExpected });
+    row('3 supplier invoice + three-way match', `bill captured by buyer, checked by finance in their own session (buyer self-check refused), MATCHED three-way: payable ${String(matched['payableMinor'])} (= ${billed.rice}×₹${RICE.cost / 100} + ${billed.tomatoGrams} g×₹${TOMATO.cost / 100}/kg + GST ${billTax} as CGST/SGST) · debit note for the 2 returned bags valued ${dnValue} (= ${dnTaxable} + GST ${2 * dnTaxHalf}) · supplier owed ${account.totals['owedMinor']} (expected ${owedExpected})`);
 
     // ═══ 4. Stock lands in the back store, in bins, ON THE PHONE; weighed goods in GRAMS (OB-31) ════════════════════════════
     // The back-store keeper is a different person from the receiver. Their sign-in reloads the phone page as them; the put-away
@@ -577,7 +591,33 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     row('10 payment + shift reconciliation, day close on the box', `blind count ₹${counted / 100} vs the box's expected (float ₹${FLOAT / 100} + cash ₹${(S1_CASH + S2_CASH + S3_TOTAL) / 100} − refund ₹${moneyBack / 100}) → variance ${(shift as { varianceMinor: number }).varianceMinor} · day close refused on the box for a typed name (${String(typed['reason']).slice(0, 60)}…), for the cashier with her own PIN and for the manager's name with the cashier's PIN — nothing locked · locked by ${MANAGER} with their OWN PIN → head office: closedBy ${MANAGER}, store ${STORE}, no closer flag`);
 
     // ═══ 10 (money side). The day book, the provider's settlement file for the card and UPI tenders, the bank statement ═════
+    // The supplier's bill reaches the books through the accountant's mapping (M23-FR-01/02). A mapping whose bill rule has no
+    // input-tax leg is REFUSED for this bill (the GST would be buried in purchases), nothing posted; with the input-tax legs
+    // mapped the matched bill and its debit note post ONCE; a re-run posts nothing.
+    const noTaxLegs = { rules: DEFAULT_RETAIL_POSTING_MAP.rules.map((r) => (r.kind === 'supplier_invoice'
+      ? { kind: r.kind, legs: [{ account: 'purchases_grni', side: 'debit', component: 'payable' }, { account: 'supplier_payable', side: 'credit', component: 'payable' }] }
+      : r.kind === 'supplier_debit_note'
+        ? { kind: r.kind, legs: [{ account: 'supplier_payable', side: 'debit', component: 'amount' }, { account: 'purchases_grni', side: 'credit', component: 'amount' }] }
+        : r)) };
+    await ok(call('PUT', '/v1/finance/posting-map', FINANCE, noTaxLegs, 'map-no-tax'), 'a mapping with no input-tax legs');
+    const refusedBill = await ok(call('POST', '/v1/finance/payables/post', FINANCE, undefined, 'payables-1'), 'payables (no input-tax legs)') as { journals: { kind: string }[]; exceptions: { kind: string; reason: string; sourceIds: string[] }[] };
+    expect(refusedBill.journals).toEqual([]);
+    expect(refusedBill.exceptions.map((e) => [e.kind, e.reason]).sort()).toEqual([['supplier_debit_note', 'tax_not_mapped'], ['supplier_invoice', 'tax_not_mapped']]);
     await ok(call('PUT', '/v1/finance/posting-map', FINANCE, DEFAULT_RETAIL_POSTING_MAP, 'map'), 'posting map');
+    const billPosted = await ok(call('POST', '/v1/finance/payables/post', FINANCE, undefined, 'payables-2'), 'payables') as { journals: { kind: string; sourceId: string; documentDate: string; lines: { accountCode: string; debitMinor: number; creditMinor: number }[] }[]; exceptions: unknown[] };
+    expect(billPosted.exceptions).toEqual([]);
+    const lineOfBill = (kind: string, code: string): number => {
+      const j = billPosted.journals.find((x) => x.kind === kind)!;
+      return j.lines.filter((l) => l.accountCode === code).reduce((t, l) => t + l.debitMinor - l.creditMinor, 0);
+    };
+    expect(billPosted.journals.map((j) => [j.kind, j.sourceId]).sort()).toEqual([['supplier_debit_note', `DN-${grnId}-${damagedLine.lineId}`], ['supplier_invoice', 'inv-acc-1']]);
+    expect([lineOfBill('supplier_invoice', 'purchases_grni'), lineOfBill('supplier_invoice', 'gst_input_cgst'), lineOfBill('supplier_invoice', 'gst_input_sgst'), lineOfBill('supplier_invoice', 'supplier_payable')])
+      .toEqual([riceBill + tomatoBill, billTax / 2, billTax / 2, -billGross]);
+    expect([lineOfBill('supplier_debit_note', 'supplier_payable'), lineOfBill('supplier_debit_note', 'purchases_grni'), lineOfBill('supplier_debit_note', 'gst_input_cgst'), lineOfBill('supplier_debit_note', 'gst_input_sgst')])
+      .toEqual([dnGross, -dnTaxable, -dnTaxHalf, -dnTaxHalf]);
+    expect(((await ok(call('POST', '/v1/finance/payables/post', FINANCE, undefined, 'payables-3'), 'payables re-run')) as { journals: unknown[] }).journals).toEqual([]);
+    const payables = (await call('GET', '/v1/finance/payables', FINANCE)).body as { reconciliation: { agrees: boolean; ledgerOwedMinor: number } };
+    expect(payables.reconciliation).toMatchObject({ agrees: true, ledgerOwedMinor: owedExpected });
     const posted = await ok(call('POST', `/v1/finance/day-book/${tradingDay}/post`, FINANCE, undefined, `post-${tradingDay}`), 'day book') as { journals: { kind: string; lines: { accountCode: string; debitMinor: number; creditMinor: number }[] }[]; exceptions: unknown[] };
     expect(posted.exceptions).toEqual([]);
     for (const j of posted.journals) expect(j.lines.reduce((n, l) => n + l.debitMinor - l.creditMinor, 0), j.kind).toBe(0);
@@ -660,16 +700,21 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     const ownerExceptions = await ok(call('GET', '/v1/inventory/exceptions', OWNER), 'owner exceptions') as { transferShortfalls: { transferId: string; value: { minor: number }; resolution?: { resolvedBy: string } | null }[] };
     expect(ownerExceptions.transferShortfalls).toEqual([expect.objectContaining({ transferId: `${INDENT}:is-rice`, value: { minor: RICE.cost, currency: 'INR' }, resolution: expect.objectContaining({ resolvedBy: MANAGER }) })]);
     // The owner's TODAY on the store computer (captured before the day closed): the day's sales and tenders, with freshness.
-    // The owner's TODAY on the store computer (captured before the day closed). The box serves the day's takings only for
-    // sales it can COST, and head office's store setup carries no product cost — so the owner's Today reads "No sales recorded
-    // yet today" while the box itself counted 3 bills / the whole takings as `uncostable` (which the owner app does not show).
-    const uncostable = (ownerData as unknown as { uncostable?: { sales: number; takenMinor: number } }).uncostable;
-    expect(uncostable).toMatchObject({ sales: 3, takenMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL });
-    expect(today12.takings).toEqual({ bills: 3, takenMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, marginUnknownBills: 3, tenderMix: { cash: S1_CASH + S2_CASH + S3_TOTAL, card: S2_CARD, upi: S1_UPI, loyalty_points: S2_POINTS_SPENT * 100 } });
-    expect(today12.headline).toMatch(/^3 bills today, ₹1,980\.00 taken — margin not known/);
-    expect(today12.headline).not.toMatch(/No sales recorded/);
+    // OB-39 "B": head office's store setup carries each product's AVERAGE BUYING COST at this store (from the receipts at
+    // cost: rice 20 bags at ₹400, tomato 9.5 kg at ₹25/kg) — so the box costs every bill and the owner's Today shows the margin.
+    const boxSales = (ownerData as unknown as { branches: { sales: { saleId: string; netMinor: number; cogsMinor: number }[] }[]; uncostable: { sales: number; products: string[] } });
+    const cogsExpected = { 'S-1': S1_LINES.rice * RICE.cost, 'S-2': S2_LINES.rice * RICE.cost + perKg(S2_LINES.tomatoGrams, TOMATO.cost), 'S-3': S3_LINES.rice * RICE.cost };
+    expect(Object.fromEntries(boxSales.branches[0]!.sales.map((x) => [x.saleId, x.cogsMinor]))).toEqual(cogsExpected);
+    expect(boxSales.uncostable).toMatchObject({ sales: 0, products: [] });
+    const boxCogs = cogsExpected['S-1'] + cogsExpected['S-2'] + cogsExpected['S-3'];
+    const boxNet = boxSales.branches[0]!.sales.reduce((t, x) => t + x.netMinor, 0);
+    expect(today12.takings).toEqual({ bills: 3, takenMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, marginUnknownBills: 0, tenderMix: { cash: S1_CASH + S2_CASH + S3_TOTAL, card: S2_CARD, upi: S1_UPI, loyalty_points: S2_POINTS_SPENT * 100 } });
+    expect(today12.kpis).toMatchObject({ grossSalesMinor: S1_TOTAL + S2_TOTAL + S3_TOTAL, cogsMinor: boxCogs, marginMinor: boxNet - boxCogs });
+    const rupees = (minor: number): string => (minor / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    expect(today12.headline).toContain(`3 bills today, ₹1,980.00 taken, margin ₹${rupees(boxNet - boxCogs)}`);
+    expect(today12.headline).not.toMatch(/margin not known|No sales recorded/);
     expect(today12.freshness).toBeDefined();
-    row('12b owner Today (box) shows the takings', `owner app booted on the box's /owner/ page: "${today12.headline}" · takings ${today12.takings.takenMinor} on ${today12.takings.bills} bills, tenders ${JSON.stringify(today12.takings.tenderMix)} · margin not known for ${today12.takings.marginUnknownBills} bills (which cost the box uses is an owner decision) · freshness shown`);
+    row('12b owner Today (box) shows the takings and the margin', `owner app booted on the box's /owner/ page: "${today12.headline}" · takings ${today12.takings.takenMinor} on ${today12.takings.bills} bills, tenders ${JSON.stringify(today12.takings.tenderMix)} · costed at head office's average buying cost (OB-39 B) from the store setup: cost of goods ${boxCogs} (S-1 ${cogsExpected['S-1']}, S-2 ${cogsExpected['S-2']}, S-3 ${cogsExpected['S-3']}) · margin ${boxNet - boxCogs} on net ${boxNet} · margin unknown on ${today12.takings.marginUnknownBills} bills · freshness shown`);
     // RETURNS beside the takings — "Taken" keeps its meaning; what came back and the net are shown with it, valued as the
     // books value them (the ₹472 cash refund + the ₹8 of points given back = the ₹480 rice returned).
     expect(fig(byDay, 'Returned')).toBe(RICE.price);
@@ -686,12 +731,25 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     const gstPosted = -(balanceOf('gst_output_cgst') + balanceOf('gst_output_sgst'));
     expect(fig(gst, 'GST collected')).toBe(gstPosted);
     expect(fig(gst, 'GST collected — CGST')).toBe(-balanceOf('gst_output_cgst'));
-    expect(gst.figures.find((f) => f.name === 'GST paid on purchases')).toMatchObject({ notAvailableBecause: expect.stringMatching(/supplier bills are not posted/) });
+    // GST PAID ON PURCHASES, from the books: the matched bill's input tax less what its debit note reversed — and the net.
+    const inputGst = billTax - 2 * dnTaxHalf;
+    expect(billPosted.journals.every((j) => j.documentDate === tradingDay)).toBe(true);
+    expect(fig(gst, 'GST paid on purchases')).toBe(inputGst);
+    expect(fig(gst, 'GST paid on purchases — CGST')).toBe(billTax / 2 - dnTaxHalf);
+    expect(fig(gst, 'GST paid on purchases — SGST')).toBe(billTax / 2 - dnTaxHalf);
+    expect(fig(gst, 'Net GST (collected less paid on purchases)')).toBe(gstPosted - inputGst);
     expect(bank.figures.filter((f) => / — difference$/.test(f.name)).map((f) => f.valueMinor)).toEqual([0, 0]);
     expect(fig(bank, 'Card and UPI takings for ' + month + ' — ours')).toBe(electronic);
     expect(fig(bank, 'Provider payouts received in ' + month + ' — theirs')).toBe(electronic - fees);
     expect(fig(profit, 'Revenue net of GST and returns')).toBe(-balanceOf('sales_revenue'));
-    expect(profit.figures.find((f) => f.name === 'Profit')).toMatchObject({ notAvailableBecause: expect.stringMatching(/owner decision/) });
+    // Head office's profitability with the SAME average buying cost: what was sold less what came back (1 rice), at cost.
+    const hoCogs = boxCogs - RICE.cost;
+    expect(fig(profit, 'Cost of goods sold')).toBe(hoCogs);
+    expect(fig(profit, 'Profit')).toBe(-balanceOf('sales_revenue') - hoCogs);
+    expect(profit.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ productId: RICE.productId, storeId: STORE, averageBuyingCostMinor: String(RICE.cost) }),
+      expect.objectContaining({ productId: TOMATO.productId, storeId: STORE, averageBuyingCostMinor: String(TOMATO.cost) }),
+    ]));
     expect(fig(sync, 'Records not yet sent')).toBe(0);
     expect(sync.rows).toEqual([expect.objectContaining({ storeId: STORE, unsent: '0' })]);
     expect(fresh.rows.map((r) => r['source'])).toEqual(expect.arrayContaining([`store:${STORE}`, 'stock ledger', `store:${STORE} report`]));
@@ -700,10 +758,11 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     const takenDetail = byDay.figures.find((f) => f.name === 'Taken') as unknown as { detail: string };
     expect(takenDetail.detail).toMatch(/nothing newer happened: the store computer said at .* it had nothing waiting to send/);
     expect(takenDetail.detail).not.toMatch(/until the sync recovers/);
-    row('12 owner reporting equals the journey, freshness shown', `HO reports for ${tradingDay}: taken ${fig(byDay, 'Taken')} on ${fig(byDay, 'Bills')} bills = S-1+S-2+S-3 · returned ${fig(byDay, 'Returned')} on ${fig(byDay, 'Returns')} return · net ${fig(byDay, 'Taken net of returns')} · tenders in: cash ${fig(mix, 'cash')} / card ${fig(mix, 'card')} / UPI ${fig(mix, 'upi')} / points ${fig(mix, 'loyalty_points')}; refunded: cash ${fig(mix, 'refunded — cash')} / points ${fig(mix, 'refunded — loyalty_points')} · stock per place rice ${riceFloor} floor + ${riceBack} back, tomato ${tomFloor} g + ${tomBack} g, value ${fig(stock, 'Value on hand')} · points ${fig(loyalty, 'Points outstanding')} · trolley shortfall valued ${RICE.cost} on exceptions · GST collected ${fig(gst, 'GST collected')} (= the books) · bank: card+UPI ${electronic} = settled, payout ${electronic - fees} = bank, differences 0 · profitability: revenue ${fig(profit, 'Revenue net of GST and returns')}, profit not available (cost basis is an owner decision) · not yet sent ${fig(sync, 'Records not yet sent')} (the box's own report) · freshness on every figure, truthful: "${takenDetail.detail.replace(/^Taken: \d+ as at /, '').slice(0, 90)}…"`);
+    row('12 owner reporting equals the journey, freshness shown', `HO reports for ${tradingDay}: taken ${fig(byDay, 'Taken')} on ${fig(byDay, 'Bills')} bills = S-1+S-2+S-3 · returned ${fig(byDay, 'Returned')} on ${fig(byDay, 'Returns')} return · net ${fig(byDay, 'Taken net of returns')} · tenders in: cash ${fig(mix, 'cash')} / card ${fig(mix, 'card')} / UPI ${fig(mix, 'upi')} / points ${fig(mix, 'loyalty_points')}; refunded: cash ${fig(mix, 'refunded — cash')} / points ${fig(mix, 'refunded — loyalty_points')} · stock per place rice ${riceFloor} floor + ${riceBack} back, tomato ${tomFloor} g + ${tomBack} g, value ${fig(stock, 'Value on hand')} · points ${fig(loyalty, 'Points outstanding')} · trolley shortfall valued ${RICE.cost} on exceptions · GST collected ${fig(gst, 'GST collected')} (= the books), paid on purchases ${fig(gst, 'GST paid on purchases')} (bill ${billTax} less debit note ${2 * dnTaxHalf}, posted once; a mapping with no input-tax leg refused), net ${fig(gst, 'Net GST (collected less paid on purchases)')} · bank: card+UPI ${electronic} = settled, payout ${electronic - fees} = bank, differences 0 · profitability at the average buying cost (OB-39 B): revenue ${fig(profit, 'Revenue net of GST and returns')} − cost of goods ${fig(profit, 'Cost of goods sold')} (sold ${boxCogs} less 1 rice back ${RICE.cost}) = profit ${fig(profit, 'Profit')} · not yet sent ${fig(sync, 'Records not yet sent')} (the box's own report) · freshness on every figure, truthful: "${takenDetail.detail.replace(/^Taken: \d+ as at /, '').slice(0, 90)}…"`);
 
   }, 300_000);
 
-  // ── Still an OWNER DECISION (not built): which cost the store computer's Today uses for the margin (A price list, B head
-  //    office's running average, C none) — until then the Today says the margin is not known and shows the takings (12b).
+  // ── OB-39 "B" (owner, 11 Oct 2026): the store computer's Today and head office's profitability both cost at head office's
+  //    average buying cost per product and store (12b, 12). A product with no cost still reads "margin not known" — proved in
+  //    `the-margin-is-costed-at-the-average-buying-cost.test.ts`.
 });

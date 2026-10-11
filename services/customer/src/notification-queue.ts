@@ -32,6 +32,7 @@ import {
   NotificationQueue, retryDelayMs, budgetDecision, budgetPeriodOf,
   type NotificationItem, type NotificationTransport, type MessagingBudget,
 } from '../../../packages/notifications/src/index';
+import { ERASED_TEXT, KEY_MISSING_TEXT } from '../../../packages/persistence/src/personal-data';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel as ConsentChannel } from './index';
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -146,6 +147,14 @@ export async function drainNotificationQueue(deps: NotificationQueueDeps, tenant
     if (queued?.intent === undefined) {
       await deps.record(tenantId, { id: item.id, change: 'dead_lettered', by, at: now, reason: 'queued before PA-08 with no recipient or content — it cannot be sent; a person must decide' }, `notif-dead-${item.id}-nointent`);
       outcome.push({ id: item.id, result: 'dead_lettered', detail: 'no recipient or content on record' });
+      continue;
+    }
+    // FUL-12 · ADR-0025: a message whose words can no longer be read — the recipient was erased, or its key is missing —
+    // is WITHHELD, kept and visible; a placeholder is never sent to a person as if it were the message.
+    if (queued.intent.text === ERASED_TEXT || queued.intent.text === KEY_MISSING_TEXT) {
+      const reason = queued.intent.text === ERASED_TEXT ? 'the recipient\'s personal data was erased — the words are no longer readable' : 'the words cannot be read: their key is missing';
+      await deps.record(tenantId, { id: item.id, change: 'withheld', by, at: now, reason }, `notif-withheld-${item.id}`);
+      outcome.push({ id: item.id, result: 'withheld', detail: reason });
       continue;
     }
     const consent = mayWeSend({ customerId: queued.intent.customerId, purpose: queued.intent.purpose, channel: queued.channel as ConsentChannel, records: await deps.consentRecords(tenantId, queued.intent.customerId), now });

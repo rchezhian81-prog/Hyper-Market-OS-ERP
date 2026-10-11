@@ -267,9 +267,10 @@ import type { ServiceabilityPeriod } from '../../../packages/storefront/src/inde
 import { resolveServiceabilityPolicy } from '../../../packages/storefront/src/index';
 import type { DeliveryServiceDeps, DeliveryServiceConfig, SlotBooking } from '../../orders/src/delivery-service';
 import type { B2BStockPort } from '../../finance/src/b2b-documents';
-import type { Customer360Deps, CustomerPurchase, CustomerReturn, CustomerMerge, HouseholdLink, ProfileView } from '../../customer/src/customer-360';
+import type { Customer360Deps, CustomerPurchase, CustomerReturn, CustomerCorrection, CustomerMerge, HouseholdLink, ProfileView } from '../../customer/src/customer-360';
 import type { CommissionRuleDeps, CommissionRule } from '../../finance/src/b2b-commission';
 import type { B2BOrderingDeps, B2BQuoteRequest, RecurringSchedule, RecurringRun } from '../../finance/src/b2b-ordering';
+import type { B2BTransferNotesDeps, B2BTransferNote, B2BTransferDecision } from '../../finance/src/b2b-transfer-notes';
 import { promise as promiseStock } from '../../orders/src/index';
 import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { AssignmentsDeps, WaveAssignment, RouteAssignment } from '../../fulfilment/src/assignments';
@@ -295,6 +296,7 @@ import { buildTenantExport } from '../../../packages/platform/src/lifecycle';
 import type { TenantBranding } from '../../../packages/platform/src/branding';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
+import { PersonalDataSealingStore, type PersonalDataPolicy, type SubjectKeyStore } from '../../../packages/persistence/src/personal-data';
 import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/index';
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
@@ -11998,9 +12000,27 @@ export const MINIMISED_TEXT = (requestId: string): string => `[removed under pri
  *   • storefront_orders — tax invoices: RETAINED in full until the end of the eighth financial year after the last one.
  *   • consent_history — the proof of what the shop was permitted to do: RETAINED as audit evidence.
  */
-export function privacyDomainHoldingsAdapter(input: { readonly store: EventStore; readonly now: () => string }):
+export function privacyDomainHoldingsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  /** ADR-0025: the per-subject data keys the personal fields are sealed under. Absent → nothing can be crypto-shredded. */
+  readonly keys?: SubjectKeyStore;
+}):
   (tenantId: string, customerRef: string) => Promise<readonly DomainHolding[]> {
   const cases = serviceCaseAdapter(input);
+  /** Destroy one (customer, category) data key, and record the destruction as an append-only, audited fact (no key material). */
+  const shredKey = async (tenantId: string, customerRef: string, category: string, requestId: string): Promise<void> => {
+    if (input.keys === undefined) throw new Error(`no personal-data key store is configured, so ${category} cannot be crypto-shredded`);
+    const at = input.now();
+    const { alreadyShredded } = await input.keys.shred(tenantId, { subjectRef: customerRef, category }, { requestId, shreddedBy: 'api/privacy', at });
+    await input.store.append(tenantId, PRIVACY_REDACTION_STREAM, makeEvent({
+      id: `key-shredded-${requestId}-${category}`, type: 'SubjectDataKeyShredded', occurredAt: at,
+      idempotencyKey: `key-shredded-${tenantId}-${requestId}-${category}`, source: 'api/privacy',
+      payload: { customerRef, category, requestId, alreadyShredded, at },
+    }));
+  };
+  const shredded = async (tenantId: string, customerRef: string, category: string): Promise<boolean> =>
+    input.keys === undefined ? false : input.keys.isShredded(tenantId, { subjectRef: customerRef, category });
   const anonymousRefFor = (tenantId: string, customerRef: string, requestId: string): string =>
     `anon-${createHash('sha256').update(`${tenantId}|${customerRef}|${requestId}`).digest('hex').slice(0, 16)}`;
   const recordAnonymised = async (tenantId: string, r: CustomerDataAnonymised): Promise<void> => {
@@ -12048,6 +12068,9 @@ export function privacyDomainHoldingsAdapter(input: { readonly store: EventStore
             const next: ServiceCase = { ...c, summary: MINIMISED_TEXT(requestId), ...(c.resolution === undefined ? {} : { resolution: MINIMISED_TEXT(requestId) }) };
             await cases.recordCase(tenantId, c.caseId, next, `${c.caseId}-minimised-${requestId}`);
           }
+          // ADR-0025: the customer's words in the EARLIER states of each case stay in the ledger as ciphertext — the key
+          // they were sealed under is destroyed, so they can no longer be read. The redacted latest state is the record.
+          if (input.keys !== undefined) await shredKey(tenantId, customerRef, 'service_cases', requestId);
           return { recordsAffected: open.length, note: `${open.length} service case(s) minimised — the customer's words removed, the case and its dates kept` };
         },
       });
@@ -12064,6 +12087,42 @@ export function privacyDomainHoldingsAdapter(input: { readonly store: EventStore
     const consents = await allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerRef), 'ConsentRecorded');
     if (consents.length > 0) {
       holdings.push({ category: 'consent_history', domain: 'customer consent', recordCount: consents.length, retentionBasis: 'audit_evidence', state: 'held' });
+    }
+
+    // ADR-0025 — the holdings whose personal text is SEALED under the customer's own data key. Erasing one destroys that
+    // key: the records (when, which channel, what it cost, the cash taken) stay; the words become unreadable ciphertext.
+    const crypto = async (category: string, domain: string, recordCount: number): Promise<void> => {
+      if (recordCount === 0) return;
+      const gone = await shredded(tenantId, customerRef, category);
+      holdings.push({
+        category, domain, recordCount: gone ? 0 : recordCount, state: gone ? 'erased' : 'held',
+        // No key store → the holding is still LOCATED, and an erasure of it is a visible exception (P-08), never a silent success.
+        ...(input.keys === undefined ? {} : {
+          erase: async (requestId: string) => {
+            await shredKey(tenantId, customerRef, category, requestId);
+            return { recordsAffected: recordCount, note: `${recordCount} record(s) in ${domain}: the personal text's key destroyed; the records themselves kept` };
+          },
+        }),
+      });
+    };
+    // notification_intents — the words of each message queued to this customer (PA-08). No law keeps marketing words.
+    const queued = (await allOf<NotificationQueueEvent>(input.store, tenantId, streamName(STREAM.org, 'notifications'), 'NotificationQueue'))
+      .filter((e) => e.change === 'enqueued' && e.intent?.customerId === customerRef);
+    await crypto('notification_intents', 'notifications', queued.length);
+    // loyalty_member — the member record (the last four digits of the number) where this customer IS the member code.
+    const member = (await allOf<MemberRecord>(input.store, tenantId, LOYALTY_MEMBERS, 'LoyaltyMember')).filter((m) => m.memberRef === customerRef);
+    await crypto('loyalty_member', 'loyalty', member.length);
+    // delivery_records — the driver's notes at this customer's door and the stop's area label on the day's dispatch plan.
+    const myOrders = new Set(orders.map((o) => o.orderId));
+    let deliveryRecords = 0;
+    for (const orderId of myOrders) {
+      deliveryRecords += (await allOf<DeliveryAttempt>(input.store, tenantId, forOrderAttempts(orderId), 'DeliveryAttemptIndexed')).length;
+    }
+    await crypto('delivery_records', 'delivery', deliveryRecords);
+    // lp_records — a loss-prevention case naming this person: kept in full for the investigation (its key is kept too).
+    const lp = (await input.store.readStream(tenantId, STREAM.lossPrevention)).filter((e) => e.event.type === 'LpCaseOpened' && (e.event.payload as InvestigationCase).subjectRef === customerRef);
+    if (lp.length > 0) {
+      holdings.push({ category: 'lp_records', domain: 'loss prevention', recordCount: lp.length, retentionBasis: 'fraud_investigation', state: 'held' });
     }
     return holdings;
   };
@@ -12121,6 +12180,8 @@ export function modelGatewayAdapter(input: {
   readonly now: () => string;
   readonly transport?: ModelTransport;
   readonly pricing?: Readonly<Record<ModelTier, TierPricing>>;
+  /** EA-08: the agent's governed evidence, read server-side from its domain readers. */
+  readonly evidenceFor?: ModelGatewayDeps['evidenceFor'];
 }): ModelGatewayDeps {
   const ai = aiAdapter({ store: input.store, now: input.now });
   return {
@@ -12146,6 +12207,7 @@ export function modelGatewayAdapter(input: {
     },
     ...(input.pricing === undefined ? {} : { pricing: () => input.pricing }),
     ...(input.transport === undefined ? {} : { transport: input.transport }),
+    ...(input.evidenceFor === undefined ? {} : { evidenceFor: input.evidenceFor }),
   };
 }
 
@@ -12518,11 +12580,15 @@ export function customer360Adapter(input: {
     }));
   };
 
-  const catchUp = async (tenantId: string): Promise<{ readonly sales: number; readonly returns: number }> => {
-    const cursor = (await latest<{ salesSeq: number; returnsSeq: number }>(input.store, tenantId, cursorStream, 'CustomerFactsCursor')) ?? { salesSeq: 0, returnsSeq: 0 };
+  const catchUp = async (tenantId: string): Promise<{ readonly sales: number; readonly returns: number; readonly corrections: number }> => {
+    const cursor = (await latest<{ salesSeq: number; returnsSeq: number; notesSeq?: number }>(input.store, tenantId, cursorStream, 'CustomerFactsCursor')) ?? { salesSeq: 0, returnsSeq: 0 };
+    const notesSeq = cursor.notesSeq ?? 0;
     const sales = (await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', sinceSeq: cursor.salesSeq })).filter((e) => e.seq > cursor.salesSeq);
     const returns = (await input.store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded', sinceSeq: cursor.returnsSeq })).filter((e) => e.seq > cursor.returnsSeq);
-    if (sales.length === 0 && returns.length === 0) return { sales: 0, returns: 0 };
+    // FUL-10: a sale CORRECTED after it was committed — the GST credit / debit note issued against it (a void is a credit
+    // note for the whole bill, `order_cancelled`) — corrects the customer's facts like a return does, as its own fact.
+    const notes = (await input.store.readStream(tenantId, STREAM.finance, { type: 'CreditNoteIssued', sinceSeq: notesSeq })).filter((e) => e.seq > notesSeq);
+    if (sales.length === 0 && returns.length === 0 && notes.length === 0) return { sales: 0, returns: 0, corrections: 0 };
     // Weighted-average unit cost per (product, store) — the margin on a purchase, where the cost is known.
     let costs: Map<string, { unitCostMinor: number; minorPerUnit: number }> | undefined;
     const costOf = async (productId: string, locationId: string | undefined) => {
@@ -12542,6 +12608,23 @@ export function customer360Adapter(input: {
         cost += Math.round((l.quantityMinor * c.unitCostMinor) / minorPerUnitOf(l.uom));
       }
       return { marginMinor: sale.totalMinor - cost, complete };
+    };
+    /**
+     * A sale's order fact again, at its CURRENT net: the bill less everything that came back against it and every credit note
+     * counted against it, plus every debit note — a new, latest fact; the purchase is never deleted (hard rule #2).
+     */
+    const recorrect = async (tenantId: string, ref: string, sale: IncomingSale): Promise<void> => {
+      const back = (await allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact')).filter((x) => x.saleId === sale.saleId)
+        .reduce((s, x) => s + x.refundMinor, 0);
+      const notes = (await allOf<CustomerCorrection>(input.store, tenantId, factsOf(ref), 'CustomerCorrectionFact')).filter((x) => x.saleId === sale.saleId && x.counted);
+      const credited = notes.filter((x) => x.kind === 'credit_note').reduce((s, x) => s + x.grossMinor, 0);
+      const debited = notes.filter((x) => x.kind === 'debit_note').reduce((s, x) => s + x.grossMinor, 0);
+      const m = await marginOf(sale);
+      const off = back + credited - debited;
+      await recordOrderFact(tenantId, {
+        orderId: sale.saleId, customerRef: ref, at: sale.committedAt, netMinor: Math.max(0, sale.totalMinor - off), marginMinor: m.marginMinor - off,
+        channel: 'store', derivedFrom: notes.length > 0 ? 'sale_less_returns_and_corrections' : 'sale_less_returns', marginComplete: m.complete,
+      });
     };
     let lastSales = cursor.salesSeq;
     for (const e of sales) {
@@ -12572,18 +12655,38 @@ export function customer360Adapter(input: {
         id: `cf-ret-${r.returnId}`, type: 'CustomerReturnFact', occurredAt: r.processedAt, idempotencyKey: `cf-ret-${tenantId}-${r.returnId}`, source: 'api/customer', payload: ret,
       }));
       // The correction: the sale's order fact again, net of everything that has come back against it.
-      if (sale !== undefined) {
-        const back = (await allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact')).filter((x) => x.saleId === sale.saleId)
-          .reduce((s, x) => s + x.refundMinor, 0);
-        const m = await marginOf(sale);
-        await recordOrderFact(tenantId, { orderId: sale.saleId, customerRef: ref, at: sale.committedAt, netMinor: Math.max(0, sale.totalMinor - back), marginMinor: m.marginMinor - back, channel: 'store', derivedFrom: 'sale_less_returns', marginComplete: m.complete });
+      if (sale !== undefined) await recorrect(tenantId, ref, sale);
+    }
+    let lastNotes = notesSeq;
+    for (const e of notes) {
+      lastNotes = Math.max(lastNotes, e.seq);
+      const n = payloadOf<{ noteId: string; kind: 'credit_note' | 'debit_note'; againstInvoiceId: string; againstInvoiceNumber: string; reason: string; grossMinor: number; issuedOn: string }>(e);
+      // The sale the note is against: by its id, or by the receipt number the bill was printed under.
+      let held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${n.againstInvoiceId}`);
+      if (held === undefined && typeof n.againstInvoiceNumber === 'string' && n.againstInvoiceNumber !== '') {
+        const idx = await input.store.findByIdempotencyKey(tenantId, `receipt-${tenantId}-${n.againstInvoiceNumber}`);
+        const saleId = (idx?.event.payload as { saleId?: string } | undefined)?.saleId;
+        if (saleId !== undefined) held = await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${saleId}`);
       }
+      const sale = held?.event.payload as IncomingSale | undefined;
+      const ref = typeof sale?.customerRef === 'string' && sale.customerRef.trim() !== '' ? sale.customerRef : undefined;
+      if (sale === undefined || ref === undefined) continue; // a note against no banked customer sale names nobody
+      const returned = (await allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact')).some((x) => x.saleId === sale.saleId);
+      const c: CustomerCorrection = {
+        noteId: n.noteId, customerRef: ref, saleId: sale.saleId, kind: n.kind, reason: n.reason, grossMinor: n.grossMinor, at: n.issuedOn,
+        // A goods-returned credit note on a bill whose return is already recorded is that return's tax document — not twice.
+        counted: !(n.kind === 'credit_note' && n.reason === 'goods_returned' && returned),
+      };
+      await input.store.append(tenantId, factsOf(ref), makeEvent({
+        id: `cf-note-${n.noteId}`, type: 'CustomerCorrectionFact', occurredAt: e.event.occurredAt, idempotencyKey: `cf-note-${tenantId}-${n.noteId}`, source: 'api/customer', payload: c,
+      }));
+      await recorrect(tenantId, ref, sale);
     }
     await input.store.append(tenantId, cursorStream, makeEvent({
-      id: `cf-cursor-${lastSales}-${lastReturns}`, type: 'CustomerFactsCursor', occurredAt: input.now(),
-      idempotencyKey: `cf-cursor-${tenantId}-${lastSales}-${lastReturns}`, source: 'api/customer', payload: { salesSeq: lastSales, returnsSeq: lastReturns },
+      id: `cf-cursor-${lastSales}-${lastReturns}-${lastNotes}`, type: 'CustomerFactsCursor', occurredAt: input.now(),
+      idempotencyKey: `cf-cursor-${tenantId}-${lastSales}-${lastReturns}-${lastNotes}`, source: 'api/customer', payload: { salesSeq: lastSales, returnsSeq: lastReturns, notesSeq: lastNotes },
     }));
-    return { sales: sales.length, returns: returns.length };
+    return { sales: sales.length, returns: returns.length, corrections: notes.length };
   };
 
   return {
@@ -12591,6 +12694,7 @@ export function customer360Adapter(input: {
     catchUp,
     purchasesOf: (tenantId, ref) => allOf<CustomerPurchase>(input.store, tenantId, factsOf(ref), 'CustomerPurchaseFact'),
     returnsOf: (tenantId, ref) => allOf<CustomerReturn>(input.store, tenantId, factsOf(ref), 'CustomerReturnFact'),
+    correctionsOf: (tenantId, ref) => allOf<CustomerCorrection>(input.store, tenantId, factsOf(ref), 'CustomerCorrectionFact'),
     merges: (tenantId) => allOf<CustomerMerge>(input.store, tenantId, mergesStream, 'CustomerMergeRecorded'),
     recordMerge: async (tenantId, m) => {
       const stage = m.reversedBy !== undefined ? 'reversed' : m.approvedBy !== undefined ? 'approved' : 'proposed';
@@ -12662,4 +12766,124 @@ export function legacyHistoryAdapter(input: { readonly store: EventStore; readon
       return { standing: legacyAttachmentMeta(stored!.record.event.payload as LegacyAttachment), existed: stored!.deduped };
     },
   };
+}
+
+/**
+ * OB-39 "B" — head office's AVERAGE BUYING COST per product and store (owner, 11 Oct 2026): the quantity-weighted average of
+ * what the store's receipts cost — every `received` movement that carried a cost, at any place the store holds (its floor,
+ * its back store: under it in the hierarchy, or the back store its settings name). Per WHOLE unit (OB-31: per kg for a
+ * product counted in grams), rounded once. A product the store never received at a cost has NO average — `undefined`,
+ * never a zero (a zero cost reports a 100% margin). The ONE rule the store setup (the box's Today margin) and head office's
+ * profitability report both read.
+ */
+export interface AverageBuyingCost {
+  readonly productId: string;
+  readonly storeId: string;
+  readonly unitCostMinor: number;
+  readonly receivedMinor: number;
+  readonly receivedValueMinor: number;
+}
+export async function averageBuyingCosts(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<{
+  readonly costOf: (productId: string, storeId: string) => number | undefined;
+  readonly rows: readonly AverageBuyingCost[];
+}> {
+  const nodes = await orgStructureAdapter(input).nodes(tenantId);
+  const placed = branchOfLocationIn(nodes);
+  const backStoreOf = new Map<string, string>();
+  for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) {
+    if (typeof s.warehouseId === 'string' && s.warehouseId !== '') backStoreOf.set(s.warehouseId, s.storeId);
+  }
+  const branchOf = (locationId: string): string => backStoreOf.get(locationId) ?? placed(locationId);
+  const acc = new Map<string, { productId: string; storeId: string; qty: number; value: number; scale: number }>();
+  for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
+    const m = payloadOf<Movement>(e);
+    if (m.kind !== 'received' || m.unitCostMinor === undefined || m.quantityMinor <= 0) continue;
+    const storeId = branchOf(m.locationId);
+    const key = `${m.productId}\u001f${storeId}`;
+    const a = acc.get(key) ?? { productId: m.productId, storeId, qty: 0, value: 0, scale: minorPerUnitOf(m.uom) };
+    a.qty += m.quantityMinor;
+    a.value += valueAtUnitCost(m.quantityMinor, m.uom ?? 'ea', m.unitCostMinor);
+    acc.set(key, a);
+  }
+  const rows = [...acc.values()].map((a): AverageBuyingCost => ({
+    productId: a.productId, storeId: a.storeId, unitCostMinor: Math.round((a.value * a.scale) / a.qty), receivedMinor: a.qty, receivedValueMinor: a.value,
+  }));
+  const byKey = new Map(rows.map((r) => [`${r.productId}\u001f${r.storeId}`, r.unitCostMinor] as const));
+  return { costOf: (productId, storeId) => byKey.get(`${productId}\u001f${storeId}`), rows };
+}
+
+/**
+ * OB-41 "A": the B2B portal's bank-transfer notes and finance's decisions on them — each its own append-only stream. A note
+ * is keyed on its id (a re-sent note collapses); a decision on the note and its outcome (one match, one rejection).
+ */
+export function b2bTransferNotesAdapter(input: { readonly store: EventStore; readonly now: () => string }): Pick<B2BTransferNotesDeps, 'notes' | 'recordNote' | 'decisions' | 'recordDecision' | 'now'> {
+  const notes = streamName(STREAM.b2b, 'transfer-notes');
+  const decisions = streamName(STREAM.b2b, 'transfer-note-decisions');
+  return {
+    now: input.now,
+    notes: (tenantId) => allOf<B2BTransferNote>(input.store, tenantId, notes, 'B2BTransferNoteRecorded'),
+    recordNote: async (tenantId, n) => {
+      await input.store.append(tenantId, notes, makeEvent({
+        id: `b2b-tn-${n.noteId}`, type: 'B2BTransferNoteRecorded', occurredAt: n.recordedAt, idempotencyKey: `b2b-tn-${tenantId}-${n.noteId}`, source: 'api/finance', payload: n,
+      }));
+    },
+    decisions: (tenantId) => allOf<B2BTransferDecision>(input.store, tenantId, decisions, 'B2BTransferNoteDecided'),
+    recordDecision: async (tenantId, d) => {
+      await input.store.append(tenantId, decisions, makeEvent({
+        id: `b2b-tn-${d.noteId}-${d.outcome}`, type: 'B2BTransferNoteDecided', occurredAt: d.decidedAt,
+        idempotencyKey: `b2b-tn-decided-${tenantId}-${d.noteId}-${d.outcome}`, source: 'api/finance', payload: d,
+      }));
+    },
+  };
+}
+
+// ── FUL-12 · ADR-0025: which fields of which events are a customer's personal data, sealed under their own key ──────
+
+/** The customer an order was placed by — read from the order's own record (a desk order has none: not customer-linked). */
+const orderCustomer = async (ctx: { readonly tenantId: string; readonly store: EventStore }, orderId: unknown): Promise<string | undefined> => {
+  if (typeof orderId !== 'string' || orderId === '') return undefined;
+  const placed = await ctx.store.latestOfType(ctx.tenantId, forOrder(orderId), 'OrderPlaced');
+  const ref = (placed?.event.payload as PlacedOrder | undefined)?.customerRef;
+  return typeof ref === 'string' && ref !== '' ? ref : undefined;
+};
+const nonEmpty = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
+/** The person a loss-prevention case is about — from the case as it was opened. */
+const lpCaseSubject = async (ctx: { readonly tenantId: string; readonly store: EventStore }, caseId: unknown): Promise<string | undefined> => {
+  const opened = (await ctx.store.readStream(ctx.tenantId, STREAM.lossPrevention, { type: 'LpCaseOpened' }))
+    .find((e) => (e.event.payload as InvestigationCase).caseId === caseId);
+  return nonEmpty((opened?.event.payload as InvestigationCase | undefined)?.subjectRef);
+};
+
+/**
+ * The personal-data policy (ADR-0025 "Scope"). Each rule names the event type, the fields that are a person's own words or
+ * contact details, whose they are, and the category their key belongs to — the unit an erasure destroys. The category is
+ * the same one the erasure locates (`privacyDomainHoldingsAdapter`), so destroying a category's key is exactly what the
+ * plan said: an erased category's key goes; a RETAINED category's key (consent proof, loss-prevention cases) is kept
+ * until its own retention ends. Amounts, dates, ids and states are never sealed — the business record stays whole.
+ */
+export const PERSONAL_DATA_POLICY: PersonalDataPolicy = {
+  // A complaint in the customer's own words, and what the desk wrote back.
+  ServiceCaseRecorded: [{ category: 'service_cases', fields: ['summary', 'resolution'], subject: (h) => nonEmpty(h['customerRef']) }],
+  // How a consent was captured ("otp to +91…") — kept as audit evidence, so its key is kept.
+  ConsentRecorded: [{ category: 'consent_history', fields: ['evidence'], subject: (h) => nonEmpty(h['customerId']) }],
+  // The words of a message queued to a customer (PA-08).
+  NotificationQueue: [{ category: 'notification_intents', at: ['intent'], fields: ['text'], subject: (h) => nonEmpty(h['customerId']) }],
+  // The loyalty member record: the last four digits of the number.
+  LoyaltyMember: [{ category: 'loyalty_member', fields: ['mobileLast4'], subject: (h) => nonEmpty(h['memberRef']) }],
+  // The driver's notes at the door (both copies: the run's and the order's index) and the stop's area label.
+  DeliveryAttempted: [{ category: 'delivery_records', fields: ['notes'], subject: (h, _p, ctx) => orderCustomer(ctx, h['orderId']) }],
+  DeliveryAttemptIndexed: [{ category: 'delivery_records', fields: ['notes'], subject: (h, _p, ctx) => orderCustomer(ctx, h['orderId']) }],
+  DispatchPlanned: [{ category: 'delivery_records', at: ['routes', '*', 'stops', '*'], fields: ['area'], subject: (h, _p, ctx) => orderCustomer(ctx, h['orderId']) }],
+  // A loss-prevention case about a person: the summary, each evidence description, the closing note.
+  LpCaseOpened: [
+    { category: 'lp_records', fields: ['summary'], subject: (h) => nonEmpty(h['subjectRef']) },
+    { category: 'lp_records', at: ['evidence', '*'], fields: ['description'], subject: (_h, p) => nonEmpty(p['subjectRef']) },
+  ],
+  LpEvidenceAdded: [{ category: 'lp_records', at: ['item'], fields: ['description'], subject: (_h, p, ctx) => lpCaseSubject(ctx, p['caseId']) }],
+  LpCaseClosed: [{ category: 'lp_records', fields: ['outcomeNote'], subject: (h, _p, ctx) => lpCaseSubject(ctx, h['caseId']) }],
+};
+
+/** The event store every domain writes through, with personal fields sealed under their subject's key (ADR-0025). */
+export function personalDataStore(store: EventStore, keys: SubjectKeyStore): EventStore {
+  return new PersonalDataSealingStore(store, keys, PERSONAL_DATA_POLICY);
 }
