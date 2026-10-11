@@ -12,6 +12,7 @@ import type { SentReply, RootCauseRecord } from '../../customer/src/service-case
 import type { AnomalySummary } from '../../ai/src/drafting-legs';
 import type { RaisedException } from '../../pos/src/loss-prevention';
 import type { PlacedOrder, OrderTransition } from '../../orders/src/index';
+import type { FavouriteRecord, ShoppingListVersion, ReturnRequestRecord } from '../../orders/src/storefront-self';
 import { STREAM, streamName, notificationQueueAdapter, effectiveGrants } from './adapters';
 import { QUEUES_STAFFED_BY, type BreachAlert } from '../../orders/src/exception-ownership';
 import type { ExceptionOwnerRole } from '../../../packages/orders/src/substitution-exception-ownership';
@@ -86,6 +87,28 @@ export function breachAlertAdapter(input: { readonly store: EventStore; readonly
       }, `notif-enqueue-${a.id}`);
       return true;
     },
+  };
+}
+
+/**
+ * Round 8 (D08-FR-02/05 · WF-16): the signed-in customer's own favourites, lists and return requests — each on a stream
+ * of that customer's own (one customer's records fold one stream), append-only; a change is a new record.
+ */
+export function storefrontSelfAdapter(input: { readonly store: EventStore; readonly now: () => string }) {
+  const fav = (c: string): string => streamName(STREAM.customer, 'favourites', c);
+  const lists = (c: string): string => streamName(STREAM.customer, 'lists', c);
+  const returns = (c: string): string => streamName(STREAM.customer, 'return-requests', c);
+  const put = async (tenantId: string, stream: string, type: string, payload: { readonly at: string }, key: string): Promise<void> => {
+    const d = digest(`${stream}|${key}`);
+    await input.store.append(tenantId, stream, makeEvent({ id: `${type}-${d}`, type, occurredAt: payload.at, idempotencyKey: `${type}-${tenantId}-${d}`, source: 'api/storefront', payload }));
+  };
+  return {
+    favourites: (tenantId: string, c: string): Promise<readonly FavouriteRecord[]> => all<FavouriteRecord>(input.store, tenantId, fav(c), 'CustomerFavouriteSet'),
+    recordFavourite: (tenantId: string, rec: FavouriteRecord, key: string): Promise<void> => put(tenantId, fav(rec.customerRef), 'CustomerFavouriteSet', rec, key),
+    lists: (tenantId: string, c: string): Promise<readonly ShoppingListVersion[]> => all<ShoppingListVersion>(input.store, tenantId, lists(c), 'CustomerListSaved'),
+    recordList: (tenantId: string, rec: ShoppingListVersion, key: string): Promise<void> => put(tenantId, lists(rec.customerRef), 'CustomerListSaved', rec, key),
+    returnRequests: (tenantId: string, c: string): Promise<readonly ReturnRequestRecord[]> => all<ReturnRequestRecord>(input.store, tenantId, returns(c), 'CustomerReturnRequested'),
+    recordReturnRequest: (tenantId: string, rec: ReturnRequestRecord, key: string): Promise<void> => put(tenantId, returns(rec.customerRef), 'CustomerReturnRequested', rec, key),
   };
 }
 

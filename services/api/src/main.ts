@@ -250,6 +250,7 @@ import { selfCheckoutRoutes } from '../../pos/src/self-checkout';
 import { ordersRoutes, type OrdersDeps } from '../../orders/src/index';
 import { paymentRefundRoutes, type PaymentRefundDeps } from '../../orders/src/payments';
 import { storefrontRoutes, type StorefrontDeps } from '../../orders/src/storefront';
+import { storefrontSelfRoutes } from '../../orders/src/storefront-self';
 import { exceptionOwnershipRoutes, raiseBreachAlerts, type ExceptionOwnershipDeps } from '../../orders/src/exception-ownership';
 import { testModeRefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import { serviceabilityRoutes } from '../../orders/src/serviceability';
@@ -268,7 +269,7 @@ import { legacyHistoryRoutes } from '../../migration/src/legacy-history';
 import { aiRoutes } from '../../ai/src/index';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
 import { draftingLegRoutes } from '../../ai/src/drafting-legs';
-import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter } from './round8-adapters';
+import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter } from './round8-adapters';
 import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import {
   STREAM, personalDataStore, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, accountOpeningsAdapter, openingReversalAdapter, storeStockFactsAdapter, replenishmentFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter, b2bTransferNotesAdapter,
@@ -1167,6 +1168,20 @@ export function buildSurface(deps: {
     ...paymentRefundRoutes(ordersDeps),
     // The storefront's own surface (M20): a signed-in customer places and pays for an order that reserves stock in the
     // same breath, and reads back its own orders only — gated by the customer_app entitlement.
+    // Round 8 (D08-FR-02/05 · WF-16 · WF-17): the signed-in customer's own favourites and lists, and a complaint or a
+    // return request raised in the app — each a case on the service desk's own register, scoped from the session.
+    ...(store === undefined ? [] : storefrontSelfRoutes({
+      now,
+      ...storefrontSelfAdapter({ store, now }),
+      productKnown: async (t, productId) => (await catalogueAdapter({ store, signer, now }).currentPack(t))?.snapshot.products.some((p) => p.productId === productId) === true
+        || (await productMasterAdapter({ store, now }).product(t, productId)) !== undefined,
+      placedOrder: (t, orderId) => ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES }).placedOrder(t, orderId),
+      orderStateOf: async (t, orderId) => (await ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES }).orderState(t, orderId))?.state,
+      serviceCase: (t, caseId) => serviceCaseAdapter({ store, now }).serviceCase(t, caseId),
+      serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
+      openCase: (t, c) => serviceCaseAdapter({ store, now }).recordCase(t, c.caseId, c, `${c.state}|opened-in-app`),
+      sentReplies: (t, caseId) => serviceDeskExtrasAdapter({ store, now }).sentReplies(t, caseId),
+    })),
     ...storefrontRoutes({
       ...ordersDeps,
       // FUL-03: the shop's own quote — the store price head office last published — and the provider's word on payment.

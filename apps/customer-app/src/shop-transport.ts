@@ -65,6 +65,17 @@ export interface ShopTransport {
   followUp?(request: ShopOrderFollowUp): Promise<ShopAnswer>;
   /** FUL-06: the customer's own privacy centre on the shop (`/v1/me/privacy…`) — consent and data requests. */
   privacy?(request: ShopPrivacyRequest): Promise<ShopAnswer>;
+  /** Round 8 (D08-FR-02/05): the customer's own favourites, lists, complaints, return requests and cases (`/v1/me/…`). */
+  mine?(request: ShopMineRequest): Promise<ShopAnswer>;
+}
+
+/** One call about the signed-in customer's own records. The path is under `/v1/me/`. */
+export interface ShopMineRequest {
+  readonly token: string;
+  readonly method: 'GET' | 'POST';
+  readonly path: `favourites${string}` | `lists${string}` | `complaints/${string}` | `orders/${string}` | 'cases';
+  readonly body?: unknown;
+  readonly idempotencyKey?: string;
 }
 
 /** One privacy call to the shop, as the signed-in customer. The path is under `/v1/me/privacy`. */
@@ -191,6 +202,34 @@ export function httpShopTransport(options: HttpShopTransportOptions): ShopTransp
         clearTimeout(timer);
       }
     },
+    mine: async (request) => {
+      if (options.isOnline !== undefined && !options.isOnline()) {
+        return { reached: false, why: 'no_connection', detail: 'this device reports no connection, so nothing was sent' };
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => { controller.abort(); }, timeoutMs);
+      try {
+        const res = await options.fetch(`${base}/v1/me/${request.path}`, {
+          method: request.method,
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${request.token}`,
+            ...(request.idempotencyKey === undefined ? {} : { 'idempotency-key': request.idempotencyKey }),
+          },
+          ...(request.method === 'POST' ? { body: JSON.stringify(request.body ?? {}) } : {}),
+          signal: controller.signal,
+        });
+        let body: unknown = undefined;
+        try { body = await res.json(); } catch { body = undefined; }
+        return { reached: true, status: res.status, body };
+      } catch (e) {
+        const aborted = e instanceof Error && e.name === 'AbortError';
+        return { reached: false, why: aborted ? 'timed_out' : 'network_error', detail: 'the request could not reach the shop — nothing was saved' };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+
     privacy: async (request) => {
       if (options.isOnline !== undefined && !options.isOnline()) {
         return { reached: false, why: 'no_connection', detail: 'this device reports no connection, so nothing was sent' };

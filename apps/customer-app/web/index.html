@@ -64,6 +64,12 @@
         width: 100%; min-height: var(--tap); background: var(--panel-2); color: var(--ink);
         border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; font-size: 17px;
       }
+      textarea {
+        width: 100%; min-height: calc(var(--tap) * 2); background: var(--panel-2); color: var(--ink);
+        border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; font: inherit; font-size: 17px;
+      }
+      .row .reply { grid-column: 1 / -1; margin: 0; padding: 8px 12px; border-left: 4px solid var(--good); background: var(--panel-2); }
+      .row input[type='number'] { width: 5em; min-height: var(--tap); font-size: 17px; }
 
       .rows { display: grid; gap: 10px; }
       .row {
@@ -153,12 +159,24 @@
         <h1 id="shop-title">Shop</h1>
         <label for="search" id="search-label">Search for something</label>
         <input id="search" type="search" autocomplete="off" enterkeyhint="search" />
+        <!-- D08-FR-02: shown only when this device has a speech engine (none is chosen yet — the owner's decision). -->
+        <button id="voice" class="wide" type="button" hidden>Search by voice</button>
+        <p class="note" id="voice-say" role="status" aria-live="polite"></p>
         <div class="rows" id="results"></div>
         <p class="empty" id="results-empty" hidden>—</p>
 
         <h2 id="repeat-title">Buy again</h2>
         <div class="rows" id="lists"></div>
         <p class="empty" id="lists-empty" hidden>—</p>
+
+        <!-- D08-FR-02: my favourites and my lists, kept on the shop for the signed-in customer. -->
+        <h2 id="fav-title">My favourites</h2>
+        <div class="rows" id="favourites"></div>
+        <p class="empty" id="favourites-empty" hidden>—</p>
+        <h2 id="mylists-title">My lists</h2>
+        <div class="rows" id="mylists"></div>
+        <p class="empty" id="mylists-empty" hidden>—</p>
+        <p class="note" id="mine-say" role="status" aria-live="polite"></p>
       </section>
 
       <!-- Basket: review against the live catalogue before anything is paid for. -->
@@ -172,6 +190,10 @@
           <div class="rows" id="problem-lines"></div>
           <button id="accept" class="wide" type="button">Take what you have</button>
         </div>
+        <label for="list-name" id="list-name-label">Save this basket as a list</label>
+        <input id="list-name" type="text" autocomplete="off" maxlength="60" />
+        <button id="save-list" class="wide" type="button">Save as a list</button>
+        <p class="note" id="list-say" role="status" aria-live="polite"></p>
         <h2 id="slot-title">When would you like it?</h2>
         <div class="rows" id="slots"></div>
         <button id="locate" class="wide" type="button">Use my location</button>
@@ -217,6 +239,21 @@
         <button id="cancel-order" class="wide" type="button" hidden>Cancel the order</button>
         <!-- FUL-03: a payment the bank has not confirmed yet — ask the shop to check with the provider again. -->
         <button id="check-payment" class="wide" type="button" hidden>Check my payment</button>
+
+        <!-- D08-FR-05 · WF-16 · WF-17: a complaint, or a return of something received, goes to the shop's service desk. -->
+        <h2 id="help-title">Something wrong?</h2>
+        <label for="complaint-text" id="complaint-label">Tell us what went wrong</label>
+        <textarea id="complaint-text" maxlength="1000" rows="3"></textarea>
+        <button id="complain" class="wide" type="button">Send to the shop</button>
+        <h2 id="return-title">Return something from this order</h2>
+        <div class="rows" id="return-lines"></div>
+        <label for="return-reason" id="return-reason-label">Why are you returning it?</label>
+        <input id="return-reason" type="text" maxlength="500" autocomplete="off" />
+        <button id="return-send" class="wide" type="button">Ask to return</button>
+        <p class="note" id="help-say" role="status" aria-live="polite"></p>
+        <h2 id="cases-title">My questions and complaints</h2>
+        <div class="rows" id="my-cases"></div>
+        <p class="empty" id="my-cases-empty" hidden>—</p>
       </section>
 
       <!--
