@@ -275,7 +275,9 @@ export function outboundWebhookRoutes(deps: OutboundWebhookDeps): readonly Route
       handler: async (ctx) => {
         const { sub } = await load(ctx.tenantId, (ctx.params['subscriptionId'] ?? '').trim());
         if (!sub.active) return { status: 200, body: { subscription: sub, alreadyOff: true } };
-        const { approvedBy: _approvedBefore, ...was } = sub;
+        // A switch-off is nobody's approval: the earlier version's approver is not carried onto it.
+        const was: Partial<OutboundSubscription> & OutboundSubscription = { ...sub };
+        delete (was as { approvedBy?: string }).approvedBy;
         const subscription: OutboundSubscription = { ...was, active: false, version: sub.version + 1, setBy: ctx.userId, setAt: deps.now() };
         await deps.record(ctx.tenantId, { change: 'subscribed', subscription }, `sub-${sub.subscriptionId}-v${subscription.version}`);
         return { status: 200, body: { subscription } };

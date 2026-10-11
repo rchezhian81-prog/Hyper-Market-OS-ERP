@@ -58,6 +58,15 @@ describe('approval delegation — the honest alternative to the shared login (M0
     expect(rows.rows.find((r) => r.delegationId === 'd1')?.state).toBe('active');
   });
 
+  it('round 10: a delegation that names no branches is lent only where the lender holds the authority — never company-wide', async () => {
+    const h = await seeded();
+    const unnamed: Record<string, unknown> = validGrant({ toUserId: 'u-deputy-2' });
+    delete unnamed['branchScope'];
+    expect((await grant(h, 'u-owner', 'd-unnamed', unnamed)).status).toBe(201);
+    const lent = (await effective(h, 'u-mgr', { userId: 'u-deputy-2', subjectType: 'refund' }, 'ea-unnamed')).body as { source: string; branchScope: readonly string[] | 'all' };
+    expect(lent).toMatchObject({ source: 'delegated', branchScope: ['b1'] });     // u-boss holds refunds at b1 only
+  });
+
   it('refuses the routes that end in an unattributable decision', async () => {
     const h = await seeded();
     // Delegating to yourself changes nothing and hides that it changed nothing.

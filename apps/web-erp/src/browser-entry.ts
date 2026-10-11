@@ -4601,6 +4601,9 @@ interface ManagerWindow {
   /** Round 8: who is at the service desk / the assistant's drafts screen — identity only (see `viewerIdentity`). */
   serviceDeskData?: ViewerIdentity;
   aiDraftsData?: ViewerIdentity;
+  /** Round 10: the Organisation and Delegation pages — thin clients; only who is looking and what they hold. */
+  organisationData?: ViewerIdentity;
+  delegationData?: ViewerIdentity;
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -6224,4 +6227,6 @@ if (browserWindow !== undefined) {
   // anything else injected is dropped, and a malformed payload becomes "nobody named" (the page then offers nothing).
   browserWindow.serviceDeskData = viewerIdentity(browserWindow.serviceDeskData);
   browserWindow.aiDraftsData = viewerIdentity(browserWindow.aiDraftsData);
+  browserWindow.organisationData = viewerIdentity(browserWindow.organisationData);
+  browserWindow.delegationData = viewerIdentity(browserWindow.delegationData);
 }
