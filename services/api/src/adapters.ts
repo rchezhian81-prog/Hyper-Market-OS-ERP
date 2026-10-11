@@ -9289,7 +9289,7 @@ export function notificationQueueAdapter(input: {
  */
 export async function recipientStanding(store: EventStore, tenantId: string, customerId: string): Promise<RecipientStanding> {
   const erased = (await allOf<PrivacyTombstone>(store, tenantId, TOMBSTONE_STREAM, 'PrivacyTombstoneSealed')).find((t) => t.customerRef === customerId);
-  if (erased !== undefined) return { allowed: false, reason: 'erased', detail: `${customerId} exercised their right to erasure — they are not messaged again` };
+  if (erased !== undefined) return { allowed: false, reason: 'erased', detail: `${customerId} was erased at their own request (right to erasure) — they are not messaged again` };
   const merges = new Map<string, CustomerMerge>();
   for (const m of await allOf<CustomerMerge>(store, tenantId, streamName(STREAM.customer, 'merges'), 'CustomerMergeRecorded')) merges.set(m.mergeId, m);
   const absorbed = [...merges.values()].find((m) => m.mergedRef === customerId && m.approvedBy !== undefined && m.reversedBy === undefined);

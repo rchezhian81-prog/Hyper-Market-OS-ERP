@@ -84,7 +84,7 @@ async function theSenderRechecks(h: ApiHarness, transport: ReturnType<typeof rec
   expect(withheld.count).toBe(3);
   expect(why['n-a']).toMatch(/^template_no_longer_approved: template offer version 1 was withdrawn by u-checker at .*: the 20% offer was printed wrong/);
   expect(why['n-b']).toBe(`recipient_not_allowed: ${B} was merged into ${D} (m-1) — the record no longer stands on its own`);
-  expect(why['n-c']).toMatch(/^recipient_not_allowed: C-C exercised their right to erasure/);
+  expect(why['n-c']).toMatch(/^recipient_not_allowed: C-C was erased at their own request \(right to erasure\)/);
 
   // 5 — a second pass sends nothing again; the withheld stay withheld and visible.
   await req('POST', '/v1/notifications/queue/drain', 'u-maker', {});
