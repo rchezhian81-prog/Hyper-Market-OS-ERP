@@ -109,6 +109,21 @@ export interface EffectiveValue<T> {
   readonly effectiveFrom: string;
 }
 
+/**
+ * D01-FR-06 (round 8): what the customer app shows and searches for a product, authored on the product master and carried
+ * to the app through the store pack — a Tamil name, a short description in each language, and the other words customers
+ * use for it (synonyms: "dal" for "toor dal", "atta" for "wheat flour"). Images are NOT here: where product images live is
+ * an open owner decision (no object store, ADR-0010 / OB-45).
+ */
+export interface AppContent {
+  readonly nameTa?: string;
+  readonly descriptionEn?: string;
+  readonly descriptionTa?: string;
+  readonly synonyms?: readonly string[];
+  readonly setBy?: string;
+  readonly setAt?: string;
+}
+
 export interface ProductRecord {
   readonly productId: string;
   readonly tenantId: string;
@@ -134,6 +149,8 @@ export interface ProductRecord {
   readonly handling?: HandlingClass;
   /** The product's own cold-chain limits at pack (HA-3). Absent = the approved class default, said on the pack line. */
   readonly coldChain?: ColdChainLimits;
+  /** D01-FR-06 (round 8): the customer app's content and synonyms — authored apart from the record, carried to the app. */
+  readonly appContent?: AppContent;
 }
 
 export type ValidationSeverity = 'blocks_publish' | 'advisory';

@@ -77,6 +77,11 @@ export function promise(input: {
   readonly locationId: string;
   readonly heldUntil: string;
   readonly reservationIdFor: (orderId: string, productId: string) => string;
+  /**
+   * D05-FR-03 (round 8): the online safety-stock buffer per product at this store — units the app keeps back for shoppers
+   * in the store. Absent → nothing kept back.
+   */
+  readonly keptBack?: (productId: string) => number | undefined;
 }): PromiseResult {
   const held = new Map<string, number>();
   for (const r of input.outstanding) {
@@ -84,7 +89,8 @@ export function promise(input: {
   }
 
   const lines = input.lines.map((l): OrderLinePromise => {
-    const free = (input.onHand.get(l.productId) ?? 0) - (held.get(l.productId) ?? 0);
+    const keep = input.keptBack?.(l.productId) ?? 0;
+    const free = (input.onHand.get(l.productId) ?? 0) - (held.get(l.productId) ?? 0) - keep;
     const promisedMinor = Math.max(0, Math.min(l.quantityMinor, free));
     const outcome: PromiseOutcome = promisedMinor === l.quantityMinor ? 'promised'
       : promisedMinor === 0 ? 'cannot_promise' : 'partially_promised';
@@ -103,8 +109,9 @@ export function promise(input: {
       detail: outcome === 'promised' ? `${l.productId}: ${promisedMinor} held`
         : `${l.productId}: ${promisedMinor} of ${l.quantityMinor} held — ${
           (input.onHand.get(l.productId) ?? 0) <= 0 ? 'none on the shelf'
-            : (held.get(l.productId) ?? 0) > 0 ? 'the rest is already promised to other orders'
-              : 'the rest is not on the shelf'}`,
+            : (held.get(l.productId) ?? 0) > 0 && (input.onHand.get(l.productId) ?? 0) - (held.get(l.productId) ?? 0) <= promisedMinor ? 'the rest is already promised to other orders'
+              : keep > 0 ? `the rest is kept back for shoppers in the store (online buffer ${keep})`
+                : 'the rest is not on the shelf'}`,
     };
   });
 
@@ -320,7 +327,7 @@ export function normaliseOrderLines(raw: unknown): readonly { productId: string;
  * a named 409, never two holds on one unit.
  */
 export async function promiseAndHold(
-  deps: Pick<OrdersDeps, 'onHand' | 'outstanding' | 'holdReservations' | 'reservationVersion' | 'holdMinutes' | 'now'>,
+  deps: Pick<OrdersDeps, 'onHand' | 'outstanding' | 'holdReservations' | 'reservationVersion' | 'holdMinutes' | 'now' | 'onlineBuffer'>,
   input: { readonly tenantId: string; readonly orderId: string; readonly lines: unknown; readonly locationId: string },
 ): Promise<{ readonly result: ReturnType<typeof promise>; readonly lines: readonly { productId: string; quantityMinor: number }[]; readonly reservations: readonly Reservation[] }> {
   const lines = normaliseOrderLines(input.lines);
@@ -341,6 +348,7 @@ export async function promiseAndHold(
       locationId: input.locationId,
       heldUntil: new Date(Date.parse(deps.now()) + deps.holdMinutes * 60_000).toISOString(),
       reservationIdFor: (o, p) => `${o}${p}`,
+      ...(deps.onlineBuffer === undefined ? {} : { keptBack: await deps.onlineBuffer(input.tenantId, input.locationId) }),
     });
     const reservations = result.lines.flatMap((l) => (l.reservation === undefined ? [] : [l.reservation]));
     if (reservations.length === 0) return { result, lines, reservations };
@@ -364,6 +372,8 @@ export interface OrdersDeps {
   readonly holdReservations: (tenantId: string, rs: readonly Reservation[], expectedVersion?: number) => Promise<void> | void;
   readonly holdMinutes: number;
   readonly now: () => string;
+  /** D05-FR-03 (round 8): the store's online safety-stock buffer per product (`online-buffer.ts`). Optional on a stub. */
+  readonly onlineBuffer?: (tenantId: string, locationId: string) => Promise<(productId: string) => number | undefined> | ((productId: string) => number | undefined);
   // Lifecycle (M18-FR-01) and cancellation-releases-reservation (M18-FR-04).
   readonly recordPlaced: (tenantId: string, order: PlacedOrder) => Promise<void> | void;
   readonly orderState: (tenantId: string, orderId: string) => Promise<OrderStateView | undefined> | OrderStateView | undefined;

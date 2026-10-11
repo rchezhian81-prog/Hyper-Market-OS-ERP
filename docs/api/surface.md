@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 959 | 584 | 584 | 89 | 297 |
+| 13 | 978 | 595 | 595 | 89 | 300 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -96,6 +96,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/catalogue/products/:productId/barcodes` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/barcodes/:code` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/canonical` | `catalogue.pack.read` | core | — |
+| POST | `/v1/catalogue/products/:productId/content` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/pack` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/pack` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/pack/convert` | `catalogue.pack.read` | core | — |
@@ -139,6 +140,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/import/commits/:jobId/rollback` | `purchase.import.record` | core | yes |
 | GET | `/v1/import/templates` | `purchase.import.read` | core | — |
 | POST | `/v1/import/validate` | `purchase.import.read` | core | yes |
+| GET | `/v1/purchase/budgets` | `purchase.commitment.read` | core | — |
+| POST | `/v1/purchase/budgets` | `purchase.budget.set` | core | yes |
 | GET | `/v1/purchase/commitments` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/contracts/:contractId` | `purchase.contract.manage` | core | yes |
 | GET | `/v1/purchase/contracts/alerts` | `purchase.commitment.read` | core | — |
@@ -147,6 +150,10 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/import-jobs/:jobId` | `purchase.import.record` | core | yes |
 | GET | `/v1/purchase/import-quality` | `purchase.import.read` | core | — |
 | GET | `/v1/purchase/import-quality/:sourceId` | `purchase.import.read` | core | — |
+| GET | `/v1/purchase/invoice-documents` | `purchase.invoice.capture` | core | — |
+| GET | `/v1/purchase/invoice-documents/:documentId` | `purchase.invoice.capture` | core | — |
+| POST | `/v1/purchase/invoice-documents/:documentId` | `purchase.invoice.capture` | core | yes |
+| POST | `/v1/purchase/invoice-documents/:documentId/confirm` | `purchase.invoice.capture` | core | yes |
 | GET | `/v1/purchase/invoices` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/invoices/:invoiceId` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/invoices/:invoiceId/capture` | `purchase.invoice.capture` | core | yes |
@@ -155,6 +162,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/invoices/:invoiceId/synced` | `purchase.invoice.sync` | core | yes |
 | GET | `/v1/purchase/match-policy` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/match-policy` | `purchase.match.policy.set` | core | yes |
+| GET | `/v1/purchase/open-to-buy` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/opening-balances` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/opening-balances/sign-off/:loadId` | `purchase.supplier.approve` | core | yes |
 | GET | `/v1/purchase/orders` | `purchase.commitment.read` | core | — |
@@ -223,6 +231,15 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/asn/compare` | `inventory.availability.read` | core | yes |
 | GET | `/v1/inventory/availability` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/batches` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/count-plans` | `inventory.count.plan` | core | — |
+| GET | `/v1/inventory/count-plans/:planId` | `inventory.count.plan` | core | — |
+| POST | `/v1/inventory/count-plans/:planId` | `inventory.count.plan` | core | yes |
+| POST | `/v1/inventory/count-plans/:planId/approve` | `inventory.adjustment.approve` | core | yes |
+| POST | `/v1/inventory/count-plans/:planId/cancel` | `inventory.count.plan` | core | yes |
+| POST | `/v1/inventory/count-plans/:planId/counts/:countId` | `inventory.movement.append` | core | yes |
+| POST | `/v1/inventory/count-plans/:planId/counts/:countId/cause` | `inventory.count.plan` | core | yes |
+| POST | `/v1/inventory/count-plans/:planId/open` | `inventory.count.plan` | core | yes |
+| GET | `/v1/inventory/count-plans/:planId/sheet` | `inventory.movement.append` | core | — |
 | GET | `/v1/inventory/count-policy` | `inventory.count.policy.read` | core | — |
 | POST | `/v1/inventory/count-policy` | `inventory.count.policy.set` | core | yes |
 | GET | `/v1/inventory/counts` | `inventory.availability.read` | core | — |
@@ -246,6 +263,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/inventory/goods-receipt/:grnId/synced` | `inventory.receipt.sync` | core | yes |
 | POST | `/v1/inventory/movements` | `inventory.movement.append` | core | yes |
 | GET | `/v1/inventory/near-expiry` | `inventory.availability.read` | core | — |
+| GET | `/v1/inventory/online-availability` | `inventory.availability.read` | core | — |
+| POST | `/v1/inventory/online-buffer` | `inventory.online.buffer.set` | core | yes |
 | GET | `/v1/inventory/performance` | `inventory.availability.read` | core | — |
 | GET | `/v1/inventory/receipt-policy` | `inventory.receipt.policy.read` | core | — |
 | POST | `/v1/inventory/receipt-policy` | `inventory.receipt.policy.set` | core | yes |

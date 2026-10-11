@@ -57,6 +57,11 @@ export interface PackProduct {
   readonly productId: string;
   readonly name: string;
   readonly nameTa?: string;
+  /** D01-FR-06 (round 8): the app's content from head office's product master — brand, descriptions, synonyms. */
+  readonly brand?: string;
+  readonly descriptionEn?: string;
+  readonly descriptionTa?: string;
+  readonly synonyms?: readonly string[];
   readonly categoryId: string;
   readonly unitPriceMinor: number;
   /**

@@ -76,7 +76,21 @@ export interface ImportPreviewView {
 }
 /** A checked file: the preview, and the check code head office computed over the template, every row and the
  *  declared total — what an approval is FOR (ADR-0024). `null` when the server did not return one. */
-export interface ValidatedImport { readonly preview: ImportPreviewView; readonly contentFingerprint: string | null; }
+export interface ValidatedImport {
+  readonly preview: ImportPreviewView; readonly contentFingerprint: string | null;
+  /** M30 round 8: on a file that CHANGES existing records, what each row would change, field by field (from → to). */
+  readonly changes?: readonly RowChangeView[];
+}
+/** One row of an update file: the record it changes and each field's from → to. */
+export interface RowChangeView { readonly line: number; readonly key: string; readonly changes: readonly { readonly field: string; readonly from: string; readonly to: string }[] }
+
+/** M30 round 8: one load already applied (GET /v1/import/commits) — and, when it was undone, by whom and why. */
+export interface LoadedJobView {
+  readonly jobId: string; readonly templateId: string; readonly rowsApplied: number; readonly uploadedBy: string; readonly approvedBy: string; readonly at: string;
+  readonly rolledBack?: { readonly at: string; readonly requestedBy: string; readonly approvedBy: string; readonly reason: string };
+}
+export type LoadedJobsRead = { readonly result: 'read'; readonly jobs: readonly LoadedJobView[] } | { readonly result: 'lost_link' } | { readonly result: 'refused' };
+export interface UndoRequest { readonly jobId: string; readonly reason: string; readonly approvalId: string }
 
 export type ExportResult = 'exported' | 'refused' | 'lost_link';
 /** A validate returns the checked file, or a signal it could not run (no permission / lost link). */
@@ -94,6 +108,8 @@ export interface CommitRequest {
 
 /** The approval kind an import is asked under (head office's engine, ADR-0024). */
 export const IMPORT_APPROVAL_KIND = 'data_import_commit';
+/** M30 round 8: the approval kind an UNDO of a load is asked under — a second person, like the load itself. */
+export const UNDO_APPROVAL_KIND = 'data_import_rollback';
 
 export interface DataIoPorts {
   /** The exportable domains the shell last read (GET /v1/export), or an injected stand-in. */
@@ -122,6 +138,11 @@ export interface DataIoPorts {
   askApproval?(ask: ApprovalAsk): Promise<AskResult>;
   /** The caller's approvals inbox (GET /v1/approvals/requests) — read only. Absent on a bare stand-in (no link). */
   approvalInbox?(): Promise<InboxRead>;
+  /** M30 round 8: the loads already applied (GET /v1/import/commits) — read only. Absent on a bare stand-in (no link). */
+  loadedJobs?(): Promise<LoadedJobsRead>;
+  /** M30 round 8: undo a load (POST /v1/import/commits/:jobId/rollback) naming an approved undo request. Only from an
+   *  explicit action. Absent on a bare stand-in (no link). */
+  undo?(req: UndoRequest): Promise<CommitResult>;
 }
 
 export interface DataIoConfig {
@@ -160,7 +181,10 @@ export type CopyKey =
   | 'loadCommitted' | 'loadNotAllowed' | 'loadNotAsked' | 'loadWaiting' | 'loadRejected' | 'loadExpired' | 'loadUsed'
   | 'loadFileChanged' | 'loadRefused' | 'loadRefusedNoWords' | 'loadLostLink'
   | 'requestsHeading' | 'requestsEmpty' | 'requestsLostLink' | 'requestIdLabel' | 'askedAtLabel'
-  | 'noImport' | 'noCommit';
+  | 'noImport' | 'noCommit'
+  | 'changesHeading' | 'changeLine' | 'loadsHeading' | 'loadsEmpty' | 'loadsLostLink' | 'loadLine' | 'loadUndone' | 'loadInPlace'
+  | 'undoWhyLabel' | 'askUndoBtn' | 'undoBtn' | 'undoSummary' | 'undoAsked' | 'undoDone' | 'undoNeedsWhy' | 'undoNotAsked' | 'undoWaiting'
+  | 'undoRejected' | 'undoExpired' | 'undoUsed' | 'undoRefused' | 'undoRefusedNoWords' | 'undoLostLink' | 'undoAlready';
 
 export const DATA_IO_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -207,6 +231,17 @@ export const DATA_IO_COPY: BilingualCopy<CopyKey> = {
     requestsHeading: 'Your requests to load', requestsEmpty: 'You have not asked for any load to be approved.',
     requestsLostLink: 'Could not read your requests just now — no connection.', requestIdLabel: 'Request', askedAtLabel: 'Asked',
     noImport: 'You do not have permission to import data.', noCommit: 'You may check a file, but a person with load permission must ask for approval and load it, and a second person must approve it (§28).',
+    changesHeading: 'What this file changes', changeLine: 'line {line} · {key}: {field} "{from}" → "{to}"',
+    loadsHeading: 'Loads already applied', loadsEmpty: 'Nothing has been loaded yet.', loadsLostLink: 'Could not read the loads just now — no connection.',
+    loadLine: '{rows} {rowWord} · loaded by {by}, approved by {approver} · {at}', loadUndone: 'Undone — {by} asked, {approver} approved: "{reason}"', loadInPlace: 'In place',
+    undoWhyLabel: 'Why undo this load (the approver reads it)', askUndoBtn: 'Ask to undo', undoBtn: 'Undo it', undoSummary: 'Undo the load "{job}"',
+    undoAsked: 'Asked. Waiting for a second person to approve the undo:', undoDone: 'Undone. Everything this load wrote has been put back by new records; nothing was deleted.',
+    undoNeedsWhy: 'Say why this load should be undone — the person approving reads it.',
+    undoNotAsked: 'Not undone — nobody has been asked. Press "Ask to undo" first.',
+    undoWaiting: 'Not undone yet — waiting for a second person (not you) to approve it on their Approvals page.',
+    undoRejected: 'Not undone — {who} rejected it: "{reason}".', undoExpired: 'Not undone — the approval ran out of time. Ask again.',
+    undoUsed: 'Not undone — that approval was already used. Ask again.', undoRefused: 'Not undone:', undoRefusedNoWords: 'Not undone — head office refused it.',
+    undoLostLink: 'No connection — nothing was undone. Try again.', undoAlready: 'This load has already been undone.',
   },
   ta: {
     title: 'இறக்குமதி & ஏற்றுமதி', langName: 'English',
@@ -252,6 +287,17 @@ export const DATA_IO_COPY: BilingualCopy<CopyKey> = {
     requestsHeading: 'ஏற்றுவதற்கான உங்கள் கோரிக்கைகள்', requestsEmpty: 'எந்த ஏற்றத்திற்கும் நீங்கள் அனுமதி கேட்கவில்லை.',
     requestsLostLink: 'உங்கள் கோரிக்கைகளை இப்போது படிக்க முடியவில்லை — இணைப்பு இல்லை.', requestIdLabel: 'கோரிக்கை', askedAtLabel: 'கேட்டது',
     noImport: 'தரவை இறக்குமதி செய்ய உங்களுக்கு அனுமதி இல்லை.', noCommit: 'நீங்கள் ஒரு கோப்பைச் சரிபார்க்கலாம், ஆனால் ஏற்ற அனுமதி உள்ள ஒருவர் அனுமதி கேட்டு ஏற்ற வேண்டும், இரண்டாம் நபர் அதை அனுமதிக்க வேண்டும் (§28).',
+    changesHeading: 'இந்தக் கோப்பு எதை மாற்றுகிறது', changeLine: 'வரி {line} · {key}: {field} "{from}" → "{to}"',
+    loadsHeading: 'ஏற்கனவே ஏற்றப்பட்டவை', loadsEmpty: 'இதுவரை எதுவும் ஏற்றப்படவில்லை.', loadsLostLink: 'ஏற்றங்களை இப்போது படிக்க முடியவில்லை — இணைப்பு இல்லை.',
+    loadLine: '{rows} {rowWord} · ஏற்றியவர் {by}, அனுமதித்தவர் {approver} · {at}', loadUndone: 'திரும்பப் பெறப்பட்டது — {by} கேட்டார், {approver} அனுமதித்தார்: "{reason}"', loadInPlace: 'நடைமுறையில் உள்ளது',
+    undoWhyLabel: 'இந்த ஏற்றத்தை ஏன் திரும்பப் பெற வேண்டும் (அனுமதிப்பவர் படிப்பார்)', askUndoBtn: 'திரும்பப் பெற அனுமதி கேள்', undoBtn: 'திரும்பப் பெறு', undoSummary: '"{job}" ஏற்றத்தைத் திரும்பப் பெறுதல்',
+    undoAsked: 'கேட்கப்பட்டது. திரும்பப் பெறுவதற்கு இரண்டாம் நபரின் அனுமதிக்காகக் காத்திருக்கிறது:', undoDone: 'திரும்பப் பெறப்பட்டது. இந்த ஏற்றம் எழுதிய அனைத்தும் புதிய பதிவுகளால் சரிசெய்யப்பட்டன; எதுவும் நீக்கப்படவில்லை.',
+    undoNeedsWhy: 'இந்த ஏற்றத்தை ஏன் திரும்பப் பெற வேண்டும் என்று சொல்லுங்கள் — அனுமதிப்பவர் அதைப் படிப்பார்.',
+    undoNotAsked: 'திரும்பப் பெறப்படவில்லை — யாரிடமும் கேட்கப்படவில்லை. முதலில் "திரும்பப் பெற அனுமதி கேள்" அழுத்தவும்.',
+    undoWaiting: 'இன்னும் திரும்பப் பெறப்படவில்லை — இரண்டாம் நபர் (நீங்கள் அல்ல) தனது அனுமதிகள் பக்கத்தில் அனுமதிக்கக் காத்திருக்கிறது.',
+    undoRejected: 'திரும்பப் பெறப்படவில்லை — {who} மறுத்தார்: "{reason}".', undoExpired: 'திரும்பப் பெறப்படவில்லை — அனுமதியின் நேரம் முடிந்துவிட்டது. மீண்டும் கேளுங்கள்.',
+    undoUsed: 'திரும்பப் பெறப்படவில்லை — அந்த அனுமதி ஏற்கனவே பயன்படுத்தப்பட்டது. மீண்டும் கேளுங்கள்.', undoRefused: 'திரும்பப் பெறப்படவில்லை:', undoRefusedNoWords: 'திரும்பப் பெறப்படவில்லை — தலைமை அலுவலகம் மறுத்தது.',
+    undoLostLink: 'இணைப்பு இல்லை — எதுவும் திரும்பப் பெறப்படவில்லை. மீண்டும் முயற்சிக்கவும்.', undoAlready: 'இந்த ஏற்றம் ஏற்கனவே திரும்பப் பெறப்பட்டது.',
   },
 };
 
@@ -299,6 +345,31 @@ export interface ImportRequestsView {
   readonly state: 'read' | 'lost_link' | 'refused' | 'not_allowed';
   readonly rows: readonly PresentedImportRequest[];
 }
+
+/** M30 round 8: one applied load as the panel lists it — in place, or undone (by whom, why) — and whether it may be undone here. */
+export interface PresentedLoad {
+  readonly jobId: string;
+  readonly line: string;
+  readonly status: StatusPresentation;
+  readonly undone: boolean;
+  /** True when this person may ask for and carry out an undo of it (load permission, not already undone). */
+  readonly mayUndo: boolean;
+}
+export interface LoadsView { readonly state: 'read' | 'lost_link' | 'refused' | 'not_allowed'; readonly rows: readonly PresentedLoad[] }
+
+/** The outcome of pressing "Undo it". */
+export type UndoOutcome =
+  | { readonly kind: 'undone' }
+  | { readonly kind: 'not_allowed' }
+  | { readonly kind: 'needs_why' }
+  | { readonly kind: 'not_asked' }
+  | { readonly kind: 'waiting' }
+  | { readonly kind: 'rejected'; readonly decidedBy: string; readonly reason: string }
+  | { readonly kind: 'expired' }
+  | { readonly kind: 'used' }
+  | { readonly kind: 'already_undone' }
+  | { readonly kind: 'refused'; readonly whatHappened: string }
+  | { readonly kind: 'lost_link' };
 
 export interface ImportInput {
   readonly templateId: string;
@@ -356,6 +427,19 @@ export interface DataIoSession {
   presentValidateResult(lang: Lang, r: 'refused' | 'lost_link'): StatusPresentation;
   presentAskOutcome(lang: Lang, o: AskOutcome): StatusPresentation;
   presentLoadOutcome(lang: Lang, o: LoadOutcome): StatusPresentation;
+  /** M30 round 8: the loads already applied (a GET — read only), newest first, each in place or undone. */
+  loads(lang: Lang): Promise<LoadsView>;
+  /** M30 round 8: ask a second person to approve undoing THIS load. Refused locally without load permission or a reason. */
+  askToUndo(lang: Lang, input: { readonly jobId: string; readonly why: string }): Promise<AskOutcome>;
+  /** M30 round 8: undo the load, naming the caller's own APPROVED undo request for it. Says plainly when it is not approved
+   *  yet, rejected, expired or used — and then nothing is POSTed. Head office is the single gate (it refuses an undo that
+   *  would lose a later change, in its own words). */
+  undo(input: { readonly jobId: string; readonly why: string }): Promise<UndoOutcome>;
+  presentUndoOutcome(lang: Lang, o: UndoOutcome): StatusPresentation;
+  /** M30 round 8: what pressing "Ask to undo" came to, in the undo's own words. */
+  presentUndoAskOutcome(lang: Lang, o: AskOutcome): StatusPresentation;
+  /** M30 round 8: an update file's changes as lines the preview shows (from → to). */
+  presentChanges(lang: Lang, changes: readonly RowChangeView[]): readonly string[];
 }
 
 const NO_LINK = { result: 'lost_link' } as const;
@@ -376,7 +460,9 @@ export function createDataIoSession(config: DataIoConfig, ports: DataIoPorts): D
   const requestsFor = (mine: readonly ApprovalRequestView[], jobId: string): ApprovalRequestView[] =>
     mine.filter((r) => r.kind === IMPORT_APPROVAL_KIND && r.subjectRef === jobId);
 
-  return {
+  // The generic "ask" words, reused by the undo's ask for every outcome it does not word itself.
+  const translatorlessAsk = (lang: Lang, o: AskOutcome): StatusPresentation => session.presentAskOutcome(lang, o);
+  const session: DataIoSession = {
     text,
     exportPanel: (lang) => {
       const t = translator(DATA_IO_COPY, lang);
@@ -582,5 +668,99 @@ export function createDataIoSession(config: DataIoConfig, ports: DataIoPorts): D
         case 'lost_link': return warn(t('loadLostLink'));
       }
     },
+
+    // ── M30 round 8: the loads already applied, and their UNDO (the same two-person flow as the load) ─────────────────
+    loads: async (lang) => {
+      if (!ports.mayImport()) return { state: 'not_allowed', rows: [] };
+      if (ports.loadedJobs === undefined) return { state: 'lost_link', rows: [] };
+      const read = await ports.loadedJobs();
+      if (read.result !== 'read') return { state: read.result, rows: [] };
+      const t = translator(DATA_IO_COPY, lang);
+      const labelOf = (id: string): string => findTemplate(id)?.label ?? id;
+      const rows = read.jobs.slice().sort((a, b) => b.at.localeCompare(a.at)).map((j): PresentedLoad => {
+        const line = `${labelOf(j.templateId)} · ${fill(t('loadLine'), { rows: String(j.rowsApplied), rowWord: t(j.rowsApplied === 1 ? 'rowOne' : 'rowMany'), by: j.uploadedBy, approver: j.approvedBy, at: shopTime(j.at) })}`;
+        const undone = j.rolledBack !== undefined;
+        const status = undone
+          ? presentStatus({ tone: 'idle', icon: '↺', label: fill(t('loadUndone'), { by: j.rolledBack!.requestedBy, approver: j.rolledBack!.approvedBy, reason: j.rolledBack!.reason }), needsAttention: false })
+          : presentStatus({ tone: 'ok', icon: '✓', label: t('loadInPlace'), needsAttention: false });
+        return { jobId: j.jobId, line, status, undone, mayUndo: !undone && ports.mayCommitImport() };
+      });
+      return { state: 'read', rows };
+    },
+    askToUndo: async (lang, { jobId, why }) => {
+      if (!ports.mayCommitImport()) return { kind: 'not_allowed' };
+      if (jobId.trim() === '') return { kind: 'incomplete', missing: 'job' };
+      if (why.trim() === '') return { kind: 'incomplete', missing: 'why' };
+      if (ports.askApproval === undefined) return { kind: 'lost_link' };
+      const job = jobId.trim();
+      const asked = await ports.askApproval({
+        kind: UNDO_APPROVAL_KIND, subjectRef: job,
+        // EXACTLY this — the undo route checks the approval is for this job.
+        details: { jobId: job }, valueMinor: null,
+        summary: fill(translator(DATA_IO_COPY, lang)('undoSummary'), { job }), reason: why.trim(),
+      });
+      if (asked.result === 'asked') return { kind: 'asked', request: asked.request };
+      if (asked.result === 'lost_link') return { kind: 'lost_link' };
+      return { kind: 'refused', whatHappened: asked.whatHappened };
+    },
+    undo: async ({ jobId, why }) => {
+      if (!ports.mayCommitImport()) return { kind: 'not_allowed' };
+      if (why.trim() === '') return { kind: 'needs_why' };
+      if (ports.undo === undefined) return { kind: 'lost_link' };
+      const job = jobId.trim();
+      const inbox = await readInbox();
+      if (inbox.result === 'lost_link') return { kind: 'lost_link' };
+      if (inbox.result === 'refused') return { kind: 'refused', whatHappened: inbox.whatHappened };
+      const mine = inbox.inbox.mine.filter((r) => r.kind === UNDO_APPROVAL_KIND && r.subjectRef === job);
+      if (mine.length === 0) return { kind: 'not_asked' };
+      const newest = (rows: readonly ApprovalRequestView[]): ApprovalRequestView | undefined => rows.slice().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0];
+      const match = newest(mine.filter((r) => r.status === 'approved'));
+      if (match === undefined) {
+        if (mine.some((r) => r.status === 'waiting')) return { kind: 'waiting' };
+        const latest = newest(mine)!;
+        if (latest.status === 'rejected') return { kind: 'rejected', decidedBy: latest.decidedBy ?? '—', reason: latest.decisionReason ?? '—' };
+        return latest.status === 'expired' ? { kind: 'expired' } : { kind: 'used' };
+      }
+      const r = await ports.undo({ jobId: job, reason: why.trim(), approvalId: match.requestId });
+      if (r === 'committed') return { kind: 'undone' };
+      if (r === 'lost_link') return { kind: 'lost_link' };
+      switch (r.code) {
+        case 'approval_still_waiting': return { kind: 'waiting' };
+        case 'approval_expired': return { kind: 'expired' };
+        case 'approval_already_used': return { kind: 'used' };
+        case 'import_already_rolled_back': return { kind: 'already_undone' };
+        // Anything else — a later change the undo would lose, a load that cannot be undone: head office's own words.
+        default: return { kind: 'refused', whatHappened: r.whatHappened };
+      }
+    },
+    presentUndoOutcome: (lang, o) => {
+      const t = translator(DATA_IO_COPY, lang);
+      const err = (label: string): StatusPresentation => presentStatus({ tone: 'error', icon: '✕', label, needsAttention: true });
+      const warn = (label: string): StatusPresentation => presentStatus({ tone: 'degraded', icon: '⚠', label, needsAttention: true });
+      switch (o.kind) {
+        case 'undone': return presentStatus({ tone: 'ok', icon: '✓', label: t('undoDone'), needsAttention: false });
+        case 'not_allowed': return err(t('loadNotAllowed'));
+        case 'needs_why': return err(t('undoNeedsWhy'));
+        case 'not_asked': return warn(t('undoNotAsked'));
+        case 'waiting': return presentScreenState({ state: 'pending', label: t('undoWaiting') });
+        case 'rejected': return err(fill(t('undoRejected'), { who: o.decidedBy, reason: o.reason }));
+        case 'expired': return warn(t('undoExpired'));
+        case 'used': return warn(t('undoUsed'));
+        case 'already_undone': return warn(t('undoAlready'));
+        case 'refused': return err(o.whatHappened.trim() === '' ? t('undoRefusedNoWords') : `${t('undoRefused')} ${o.whatHappened.trim()}`);
+        case 'lost_link': return warn(t('undoLostLink'));
+      }
+    },
+    presentUndoAskOutcome: (lang, o) => {
+      const t = translator(DATA_IO_COPY, lang);
+      if (o.kind === 'asked') return presentScreenState({ state: 'pending', label: `${t('undoAsked')} ${o.request.summary}` });
+      if (o.kind === 'incomplete' && o.missing === 'why') return presentStatus({ tone: 'error', icon: '✕', label: t('undoNeedsWhy'), needsAttention: true });
+      return translatorlessAsk(lang, o);
+    },
+    presentChanges: (lang, changes) => {
+      const t = translator(DATA_IO_COPY, lang);
+      return changes.flatMap((row) => row.changes.map((c) => fill(t('changeLine'), { line: String(row.line), key: row.key, field: c.field, from: c.from, to: c.to })));
+    },
   };
+  return session;
 }

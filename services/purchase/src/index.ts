@@ -560,6 +560,8 @@ export interface Commitments {
 export async function capturePortalInvoice(deps: PurchaseDeps, tenantId: string, input: {
   readonly invoiceId: string; readonly supplierId: string; readonly poId: string | null; readonly declaredTotalMinor: number;
   readonly lines: unknown; readonly submittedBy: string; readonly reviewedBy: string; readonly submissionId: string; readonly branchId: string | null;
+  /** D03-FR-02 (round 8): the channel the bill came by when it is not the portal (`e-invoice/<irn>`, `ocr/<documentId>`), and its audit action. */
+  readonly source?: string; readonly auditAction?: string;
 }): Promise<{ readonly ok: true; readonly record: SupplierInvoiceRecord } | { readonly ok: false; readonly code: string; readonly detail: string }> {
   const read = readInvoiceLines(input.lines, await unitsOfLines(deps, tenantId, input.lines));
   if (!read.ok) return { ok: false, code: read.code === 'line_does_not_multiply' ? 'invoice_line_does_not_multiply' : 'not_readable_as_a_supplier_invoice', detail: read.detail };
@@ -573,11 +575,11 @@ export async function capturePortalInvoice(deps: PurchaseDeps, tenantId: string,
   const at = deps.now();
   const record: SupplierInvoiceRecord = {
     invoiceId: input.invoiceId, supplierId: input.supplierId, poId: input.poId, lines: read.lines, declaredTotalMinor: input.declaredTotalMinor, totalMinor, currency: 'INR',
-    capturedBy: input.submittedBy, capturedAt: at, approvedBy: null, approvedAt: null, source: `supplier-portal/${input.submissionId}`, governanceFlags: flags,
+    capturedBy: input.submittedBy, capturedAt: at, approvedBy: null, approvedAt: null, source: input.source ?? `supplier-portal/${input.submissionId}`, governanceFlags: flags,
   };
   await deps.recordInvoice(tenantId, record);
   await deps.recordAudit?.(tenantId, {
-    actorId: input.reviewedBy, action: 'invoice.capture.portal', objectType: 'supplier_invoice', objectId: input.invoiceId,
+    actorId: input.reviewedBy, action: input.auditAction ?? 'invoice.capture.portal', objectType: 'supplier_invoice', objectId: input.invoiceId,
     at, origin: { tenantId, branchId: input.branchId }, before: null,
     after: { supplierId: input.supplierId, poId: input.poId ?? '', lines: String(read.lines.length), totalMinor: String(totalMinor), submittedBy: input.submittedBy, submissionId: input.submissionId, flags: flags.join(',') },
     correlationId: input.invoiceId,

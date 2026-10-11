@@ -14,6 +14,7 @@
       preview — errors by line), name the load, say why and ASK FOR APPROVAL (head office's maker-checker
       engine, ADR-0024 — the uploader's own request for this exact file). A DIFFERENT person approves it on their
       Approvals page, in their own session; then LOAD it, which names that approved request — never a typed name.
+      A load already applied can be UNDONE the same way (ask, a different person approves, undo) — M30 round 8.
       Every write runs ONLY on an explicit click, never on load. The exportable domains, the log and the
       uploader's own requests are read live (GET /v1/export, /v1/exports, /v1/approvals/requests); offline the
       screen shows its sample stand-in.
@@ -53,6 +54,9 @@
       p.locked { margin:0; padding:14px; background:var(--bg); border-radius:12px; color:var(--muted); }
       .period { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:8px; margin-top:6px; }
       .period label { margin:0 0 2px; }
+      .preview .changeline { font-size:13px; }
+      li.row .undo { display:grid; gap:6px; width:100%; }
+      li.row .undo .actions { margin-top:0; }
     </style>
   </head>
   <body>
@@ -108,6 +112,9 @@
           <h3 id="requests-heading" hidden></h3>
           <ul class="rows" id="my-requests" aria-label="Your requests to load" hidden></ul>
         </div>
+        <!-- M30 round 8: the loads already applied — each in place or undone; an undo is asked for and approved like a load. -->
+        <h3 id="loads-heading" hidden></h3>
+        <ul class="rows" id="my-loads" aria-label="Loads already applied" hidden></ul>
       </section>
     </main>
 

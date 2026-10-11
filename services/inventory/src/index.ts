@@ -287,6 +287,11 @@ export const negativeStock = (rows: readonly Availability[]): readonly NegativeS
 
 export interface InventoryDeps {
   readonly appendMovement: (tenantId: string, m: Movement) => Promise<void> | void;
+  /**
+   * WF-08 (round 8): the open count plan that FREEZES this kind of movement at this place for this product, if any — the
+   * plain movements route refuses a frozen movement by name while the count is open. Optional on a bare stub.
+   */
+  readonly frozenBy?: (tenantId: string, locationId: string, productId: string, kind: string) => Promise<string | undefined> | string | undefined;
   /** Head office's maker-checker engine (ADR-0024): an upward correction's approver gave it in their own session.
    *  Optional on a bare stub (then every approval is unknown); the running system provides it. */
   readonly approvals?: ApprovalPort;
@@ -458,6 +463,17 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
         }
         // PA-01-r1: stock moves only at a location inside the caller's branches — refused by name, nothing appended.
         if (typeof m.locationId === 'string') await assertLocationInScope(ctx, m.locationId, deps.locationBranches);
+        // WF-08 (round 8): a movement a count plan has FROZEN at this place for this product is refused while the count is open.
+        const freezingPlan = typeof m.locationId === 'string' && typeof m.productId === 'string' && deps.frozenBy !== undefined && !(await deps.isKnown(ctx.tenantId, m.movementId))
+          ? await deps.frozenBy(ctx.tenantId, m.locationId, m.productId, m.kind) : undefined;
+        if (freezingPlan !== undefined) {
+          throw apiError(409, {
+            code: 'frozen_by_a_stock_count',
+            whatHappened: `${m.productId} is being counted at ${m.locationId} under count plan ${freezingPlan}, which freezes "${m.kind}" movements there until the count is approved or cancelled.`,
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Hold the movement until the count closes, then send it again. Nothing was appended.',
+          });
+        }
         if (m.kind === 'wasted') {
           throw apiError(422, {
             code: 'write_off_uses_the_write_off_route',

@@ -32,6 +32,7 @@ import { unitCostFromPackCost, UnknownPackLevelError, type PackHierarchy } from 
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { assertLocationInScope, stockReadScope, locationIsItsOwnBranch, type LocationBranches } from '../../inventory/src/location-scope';
 import { normaliseUom, valueAtCost, minorPerUnitOf } from '../../../packages/contracts/src/quantity';
+import { checkOrderAgainstBudget, gateApprovalOnBudget, type OpenToBuyDeps, type BudgetCheck } from './open-to-buy';
 
 /** A durable purchase order — proposed by a buyer, and (once a second person approves) issued. */
 export interface StoredPurchaseOrder {
@@ -59,6 +60,8 @@ export interface StoredPurchaseOrder {
   readonly cancelledByProduct: Readonly<Record<string, number>>;
   /** How many times the PO's lines have been amended (the history is retained in the ledger). */
   readonly amendmentCount: number;
+  /** WF-03 · D02-FR-01 (round 8): the open-to-buy check made when the order was proposed — the approver sees it. */
+  readonly budgetCheck?: BudgetCheck;
 }
 
 export interface PurchaseOrderDeps {
@@ -104,6 +107,8 @@ export interface PurchaseOrderDeps {
   readonly cancel: (tenantId: string, poId: string, cancellationId: string, cancelledByProduct: Readonly<Record<string, number>>, reason: string, by: string, at: string) => Promise<void> | void;
   /** Post received quantity per product against a PO (in the PO's ordering units). Accumulates. */
   readonly postReceipt: (tenantId: string, poId: string, receiptId: string, receivedByProduct: Readonly<Record<string, number>>, by: string, at: string) => Promise<void> | void;
+  /** WF-03 · D02-FR-01 (round 8): category purchase budgets — checked at proposal, gated at approval. Optional on a stub. */
+  readonly openToBuy?: OpenToBuyDeps;
   readonly now: () => string;
 }
 
@@ -374,7 +379,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           });
         }
         const totalMinor = poLines.reduce((s, l) => s + valueAtCost(l.orderedQty, l.uom ?? 'ea', l.unitCost), 0);
-        const po: StoredPurchaseOrder = {
+        const proposed: StoredPurchaseOrder = {
           poId,
           number: isStr(b['number']) ? b['number'] : poId,
           supplierId: b['supplierId'],
@@ -391,6 +396,8 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
           cancelledByProduct: {},
           amendmentCount: 0,
         };
+        // WF-03 (round 8): the open-to-buy check rides on the order — never a refusal here; the approval escalates if over.
+        const po: StoredPurchaseOrder = deps.openToBuy === undefined ? proposed : { ...proposed, budgetCheck: await checkOrderAgainstBudget(deps.openToBuy, ctx.tenantId, proposed) };
         await deps.propose(ctx.tenantId, po, ctx.idempotencyKey ?? poId);
         // Seal the purchase commitment — who ordered what, from whom, for how much — attributed to the
         // acting buyer. Aggregates only; no card/tender data exists on a PO (hard rule #3).
@@ -456,6 +463,9 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         }
         await requireApprovedSupplier(deps, ctx.tenantId, po.supplierId);
         const blocked = await deps.supplierBlocked(ctx.tenantId, po.supplierId);
+        // WF-03 (round 8): checked again now — an order over open-to-buy escalates to a person who may exceed the budget.
+        const budgetAtApproval = blocked || deps.openToBuy === undefined ? undefined
+          : await gateApprovalOnBudget(deps.openToBuy, { tenantId: ctx.tenantId, userId: ctx.userId, branchId: ctx.branchId ?? null }, po, b['overBudgetReason']);
         try {
           issuePurchaseOrder({
             id: po.poId, number: po.number, supplierId: po.supplierId,
@@ -476,7 +486,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         const issuedAt = deps.now();
         await deps.issue(ctx.tenantId, poId, ctx.userId, issuedAt, reason, ctx.idempotencyKey ?? poId);
         const issued: StoredPurchaseOrder = { ...po, status: 'issued', approvedBy: ctx.userId, issuedAt };
-        return { status: 200, body: { order: issued, openCommitment: openOf(issued) } };
+        return { status: 200, body: { order: issued, openCommitment: openOf(issued), ...(budgetAtApproval === undefined ? {} : { budgetAtApproval }) } };
       },
     },
     {

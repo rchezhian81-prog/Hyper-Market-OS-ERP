@@ -195,7 +195,9 @@ export function dataImportRoutes(deps: DataImportDeps): readonly Route[] {
         const read = readValidateInput(b, template);
         if ('error' in read) throw read.error;
         // The content fingerprint is what the maker asks approval FOR (ADR-0024) — the commit recomputes it from the file.
-        return { status: 200, body: { preview: await previewOf(template, ctx.tenantId, read.input), contentFingerprint: importContentFingerprint(read.input) } };
+        // M30 round 8: an update template also says what each row WOULD change, field by field — for the person approving.
+        const changes = template.describe === undefined ? undefined : await template.describe(ctx.tenantId, read.input.rows, read.input.lineNumbers);
+        return { status: 200, body: { preview: await previewOf(template, ctx.tenantId, read.input), contentFingerprint: importContentFingerprint(read.input), ...(changes === undefined ? {} : { changes }) } };
       },
     },
     {
@@ -291,7 +293,7 @@ export function dataImportRoutes(deps: DataImportDeps): readonly Route[] {
         if (!isStr(b['approvalId'])) {
           throw apiError(422, { code: 'no_approval', whatHappened: 'A rollback changes nothing until a second person approves it (M30-FR-04, §28).', wasItSaved: 'not_saved', nextSafeAction: 'Ask for approval (kind data_import_rollback, subject the job id); once approved, send the approvalId.' });
         }
-        const blocked = await template.blocksRollback(ctx.tenantId, job.effects);
+        const blocked = await template.blocksRollback(ctx.tenantId, job.effects, jobId);
         if (blocked.length > 0) {
           throw apiError(409, { code: 'import_effect_in_use', whatHappened: `Import job '${jobId}' cannot be undone: ${blocked.join('; ')}.`, wasItSaved: 'not_saved', nextSafeAction: 'Correct it through the record that uses it (for an invoice, a debit or credit note). Nothing was changed.' });
         }

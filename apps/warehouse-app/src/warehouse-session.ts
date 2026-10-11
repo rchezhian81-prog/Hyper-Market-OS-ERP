@@ -303,6 +303,30 @@ export interface CountActionResult {
   readonly signal: FeedbackSignal;
 }
 
+/**
+ * WF-08 (round 8): one blind count of one product under a head-office COUNT PLAN — the plan sheet's id, the item scanned, what
+ * the worker SAW, and (for a recount the sheet asks for) the count it recounts. Counted at the plan's place, not in one bin.
+ */
+export interface CountForPlanInput {
+  readonly countId: string;
+  readonly planId: string;
+  /** The place the plan counts — the store (default) or its back store, as printed on the plan sheet. */
+  readonly locationId?: string;
+  readonly scannedItem: string;
+  readonly countedMinor: number;
+  readonly recountOf?: string | null;
+  readonly at: string;
+}
+export interface CountForPlanResult {
+  readonly accepted: boolean;
+  readonly countId: string;
+  readonly planId: string;
+  readonly productId?: string;
+  readonly signal: FeedbackSignal;
+}
+/** The reason a planned count carries on the device (head office re-derives count vs recount from `recountOf`). */
+export const PLANNED_COUNT_REASON = 'planned_count';
+
 /** An adjustment REQUEST (W3): a signed correction with a reason, raised here, decided by a supervisor at head office. */
 export interface AdjustmentRequestInput {
   readonly requestId: string;
@@ -776,6 +800,45 @@ export class WarehouseSession {
     }));
     const detail = `${input.countedMinor} ${uom} of ${productId} counted in ${binId} — head office will compare it`;
     return { accepted: true, countId: input.countId, productId, binId, signal: signalFor('accept', 'counted', detail) };
+  }
+
+  /**
+   * Count one product under a COUNT PLAN, BLIND (WF-08 · M09-FR-04 · §28 · §31): the worker scans the item and enters what
+   * they see. Nothing here compares it to anything and nothing on this handheld changes; head office records it under the
+   * plan, works out what it expected AS OF this moment, and holds any variance for the plan's approval. Refusals: no plan
+   * named, an item this handheld does not know, a quantity that is not a whole non-negative number, a count id already
+   * used. Accepted → ONE `StockCounted` queued (carrying the plan), keyed on the count id, so a re-sent count is one record;
+   * it reaches the store computer's queue before the phone hears accepted, and head office when the line is up.
+   */
+  countForPlan(input: CountForPlanInput): CountForPlanResult {
+    const planId = input.planId.trim();
+    const refused = (code: string, detail: string, feedback: ScanFeedback = 'reject', resolutionRequired = false): CountForPlanResult =>
+      ({ accepted: false, countId: input.countId, planId, signal: signalFor(feedback, code, detail, resolutionRequired) });
+    if (this.appliedCommandIds.includes(input.countId) || this.outbox.find(`count-${input.countId}`) !== undefined) {
+      return refused('duplicate_ignored', 'this count has already been recorded — a recount is a new count', 'warn');
+    }
+    if (planId === '') return refused('no_plan', 'scan the count sheet first — a planned count belongs to its plan', 'reject', true);
+    const productId = this.productOfScan(input.scannedItem);
+    if (productId === null) return refused('unknown_barcode', `"${input.scannedItem.trim()}" is not a barcode this handheld knows`, 'reject', true);
+    if (!Number.isSafeInteger(input.countedMinor) || input.countedMinor < 0) return refused('not_a_quantity', `${String(input.countedMinor)} is not a whole quantity`);
+    const uom = this.uomOf(productId);
+    const locationId = input.locationId === undefined || input.locationId.trim() === '' ? this.assignment.storeId : input.locationId.trim();
+    const recountOf = input.recountOf === undefined || input.recountOf === null || input.recountOf.trim() === '' ? null : input.recountOf.trim();
+    this.appliedCommandIds.push(input.countId);
+    this.outbox.enqueue(makeEvent({
+      id: `count-${input.countId}`,
+      type: STOCK_COUNTED,
+      occurredAt: input.at,
+      idempotencyKey: `count-${input.countId}`,
+      source: this.assignment.assignmentId,
+      payload: {
+        countId: input.countId, productId, locationId, binId: null, uom,
+        countedMinor: input.countedMinor, reasonCode: PLANNED_COUNT_REASON, counterId: this.assignment.workerId,
+        at: input.at, storeId: this.assignment.storeId, source: 'warehouse-handheld', planId, recountOf,
+      },
+    }));
+    const detail = `${input.countedMinor} ${uom} of ${productId} counted for plan ${planId} — head office will compare it`;
+    return { accepted: true, countId: input.countId, planId, productId, signal: signalFor('accept', 'counted', detail) };
   }
 
   /**

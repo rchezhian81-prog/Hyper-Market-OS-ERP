@@ -332,7 +332,7 @@ describe('PA-06 — head office delivers each store its setup', () => {
       expect(sec[section], section).toMatchObject({ permissions: [] });
       expect((sec[section] as Record<string, unknown>)['userId'], section).toBeUndefined();
     }
-    expect((sec['dataIoPolicy'] as unknown as { importTemplates: { id: string }[] }).importTemplates.map((t) => t.id)).toEqual(['supplier-invoice-v1', 'product-v1']);
+    expect((sec['dataIoPolicy'] as unknown as { importTemplates: { id: string }[] }).importTemplates.map((t) => t.id)).toEqual(['supplier-invoice-v1', 'product-v1', 'product-update-v1']);
   });
 
   it('DF-3-b-1: a store with no rules yet gets no rules sections — the store says it was not told, never a guessed limit', async () => {
