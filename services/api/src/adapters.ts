@@ -267,6 +267,7 @@ import type { B2BStockPort } from '../../finance/src/b2b-documents';
 import type { Customer360Deps, CustomerPurchase, CustomerReturn, CustomerMerge, HouseholdLink, ProfileView } from '../../customer/src/customer-360';
 import type { CommissionRuleDeps, CommissionRule } from '../../finance/src/b2b-commission';
 import type { B2BOrderingDeps, B2BQuoteRequest, RecurringSchedule, RecurringRun } from '../../finance/src/b2b-ordering';
+import type { B2BTransferNotesDeps, B2BTransferNote, B2BTransferDecision } from '../../finance/src/b2b-transfer-notes';
 import { promise as promiseStock } from '../../orders/src/index';
 import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../../fulfilment/src/index';
 import type { AssignmentsDeps, WaveAssignment, RouteAssignment } from '../../fulfilment/src/assignments';
@@ -12597,4 +12598,29 @@ export async function averageBuyingCosts(input: { readonly store: EventStore; re
   }));
   const byKey = new Map(rows.map((r) => [`${r.productId}\u001f${r.storeId}`, r.unitCostMinor] as const));
   return { costOf: (productId, storeId) => byKey.get(`${productId}\u001f${storeId}`), rows };
+}
+
+/**
+ * OB-41 "A": the B2B portal's bank-transfer notes and finance's decisions on them — each its own append-only stream. A note
+ * is keyed on its id (a re-sent note collapses); a decision on the note and its outcome (one match, one rejection).
+ */
+export function b2bTransferNotesAdapter(input: { readonly store: EventStore; readonly now: () => string }): Pick<B2BTransferNotesDeps, 'notes' | 'recordNote' | 'decisions' | 'recordDecision' | 'now'> {
+  const notes = streamName(STREAM.b2b, 'transfer-notes');
+  const decisions = streamName(STREAM.b2b, 'transfer-note-decisions');
+  return {
+    now: input.now,
+    notes: (tenantId) => allOf<B2BTransferNote>(input.store, tenantId, notes, 'B2BTransferNoteRecorded'),
+    recordNote: async (tenantId, n) => {
+      await input.store.append(tenantId, notes, makeEvent({
+        id: `b2b-tn-${n.noteId}`, type: 'B2BTransferNoteRecorded', occurredAt: n.recordedAt, idempotencyKey: `b2b-tn-${tenantId}-${n.noteId}`, source: 'api/finance', payload: n,
+      }));
+    },
+    decisions: (tenantId) => allOf<B2BTransferDecision>(input.store, tenantId, decisions, 'B2BTransferNoteDecided'),
+    recordDecision: async (tenantId, d) => {
+      await input.store.append(tenantId, decisions, makeEvent({
+        id: `b2b-tn-${d.noteId}-${d.outcome}`, type: 'B2BTransferNoteDecided', occurredAt: d.decidedAt,
+        idempotencyKey: `b2b-tn-decided-${tenantId}-${d.noteId}-${d.outcome}`, source: 'api/finance', payload: d,
+      }));
+    },
+  };
 }
