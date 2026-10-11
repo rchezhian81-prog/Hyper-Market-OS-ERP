@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 942 | 572 | 572 | 89 | 297 |
+| 13 | 943 | 573 | 573 | 89 | 297 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -510,6 +510,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/orders/substitution-exceptions/:exceptionId/reassign` | `order.exception.manage` | core | yes |
 | POST | `/v1/orders/substitution-exceptions/:exceptionId/release` | `order.exception.work` | core | yes |
 | POST | `/v1/orders/substitution-exceptions/:exceptionId/resolve` | `order.exception.work` | core | yes |
+| POST | `/v1/orders/substitution-exceptions/breach-alerts` | `order.exception.manage` | core | yes |
 | POST | `/v1/orders/substitution-exceptions/escalate` | `order.exception.manage` | core | yes |
 | GET | `/v1/orders/substitution-exceptions/queue/:owner` | `order.exception.work` | core | — |
 | GET | `/v1/serviceability` | `delivery.serviceability.read` | core | — |

@@ -59,7 +59,7 @@ export interface NotificationIntent {
    * owner's daily brief (`system:owner-brief`, deterministic figures, to the owner). The enqueue route never sets it, so
    * nothing a caller sends can skip the template check; such an item is still checked for recipient, consent and budget.
    */
-  readonly composedBy?: 'system:owner-brief';
+  readonly composedBy?: 'system:owner-brief' | 'system:exception-alert';
 }
 
 /** One append-only fact about a queued notification. `change` says which; extra fields carry its detail. */
@@ -181,7 +181,7 @@ export async function drainNotificationQueue(deps: NotificationQueueDeps, tenant
       continue;
     }
     // PA-08 r6: the frozen template VERSION must still be approved now — a withdrawn approval withholds what waits.
-    const standing = queued.intent.composedBy === 'system:owner-brief' ? 'approved'
+    const standing = queued.intent.composedBy === 'system:owner-brief' || queued.intent.composedBy === 'system:exception-alert' ? 'approved'
       : templates === undefined ? 'unknown' : templateVersionStanding(templates, queued.intent.templateId, queued.intent.templateVersion);
     if (standing !== 'approved') {
       const why = templateWithdrawalDetail(templates ?? [], queued.intent.templateId, queued.intent.templateVersion);

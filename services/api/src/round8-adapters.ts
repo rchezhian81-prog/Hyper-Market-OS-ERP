@@ -12,7 +12,9 @@ import type { SentReply, RootCauseRecord } from '../../customer/src/service-case
 import type { AnomalySummary } from '../../ai/src/drafting-legs';
 import type { RaisedException } from '../../pos/src/loss-prevention';
 import type { PlacedOrder, OrderTransition } from '../../orders/src/index';
-import { STREAM, streamName } from './adapters';
+import { STREAM, streamName, notificationQueueAdapter, effectiveGrants } from './adapters';
+import { QUEUES_STAFFED_BY, type BreachAlert } from '../../orders/src/exception-ownership';
+import type { ExceptionOwnerRole } from '../../../packages/orders/src/substitution-exception-ownership';
 
 const SENT_REPLIES = streamName(STREAM.service, 'sent-replies');
 const ROOT_CAUSES = streamName(STREAM.service, 'root-causes');
@@ -62,6 +64,27 @@ export function anomalySummaryAdapter(input: { readonly store: EventStore; reado
         evidenceId: `lp-raised:${r.exceptionId}`, source: 'loss-prevention rule breaches', untrusted: false,
         content: `${r.exceptionId} on ${r.day}: cashier ${r.cashierId}, ${r.kind} ${r.breach} — ${r.observed} against a limit of ${r.limit} (${r.severity}); linked ${r.linkedTxnIds.join(', ')}`,
       }));
+    },
+  };
+}
+
+/**
+ * Round 8 (M19-FR-04 · PA-08): who staffs an exception queue now (head office's own grants, through the one staffing
+ * table `QUEUES_STAFFED_BY`), and putting a breach alert on the SAME message queue the sender drains — a transactional
+ * message composed by head office (`system:exception-alert`), so the sender still re-checks the recipient and the budget.
+ */
+export function breachAlertAdapter(input: { readonly store: EventStore; readonly now: () => string }) {
+  const queue = notificationQueueAdapter({ store: input.store, now: input.now });
+  return {
+    staffOf: async (tenantId: string, q: ExceptionOwnerRole): Promise<readonly string[]> =>
+      [...new Set((await effectiveGrants(input.store, tenantId)).filter((g) => (QUEUES_STAFFED_BY[g.roleId] ?? []).includes(q)).map((g) => g.userId))].sort(),
+    enqueueBreachAlert: async (tenantId: string, a: BreachAlert): Promise<boolean> => {
+      if ((await queue.events!(tenantId)).some((e) => e.id === a.id && e.change === 'enqueued')) return false;
+      await queue.record(tenantId, {
+        id: a.id, change: 'enqueued', by: a.by, at: a.at, channel: 'sms',
+        intent: { customerId: a.to, purpose: 'transactional', templateId: 'substitution-exception-breach', templateVersion: 1, text: a.text, composedBy: 'system:exception-alert' },
+      }, `notif-enqueue-${a.id}`);
+      return true;
     },
   };
 }
