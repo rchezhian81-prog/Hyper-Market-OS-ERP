@@ -247,6 +247,7 @@ describe.skipIf(!DATABASE_URL)('an erasure shreds the personal text in event_led
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: urlFor('postgres'), max: 1 });
+    admin.on('error', () => { /* a scratch database is dropped WITH (FORCE); its idle connections are cut */ });
     await admin.query(`CREATE DATABASE ${SOURCE_DB}`);
     source = new Pool({ connectionString: urlFor(SOURCE_DB), max: 4, options: '-c app.tenant_id=*' });
     source.on('error', () => { /* the scratch database is dropped WITH (FORCE) at the end */ });
@@ -340,6 +341,7 @@ describe.skipIf(!DATABASE_URL)('production seals personal data: the real API ass
     const tenantId = randomUUID();
     const cloud = await startRealCloud({ databaseUrl: DATABASE_URL!, tenantId, owner: 'u-owner', packSigningKey: randomBytes(32).toString('hex') });
     const platform = new Pool({ connectionString: DATABASE_URL, max: 1, options: '-c app.tenant_id=*' });
+    platform.on('error', () => { /* a scratch database is dropped WITH (FORCE); its idle connections are cut */ });
     try {
       const words = `checked on the customer's phone ${randomUUID()}`;
       const put = await cloud.request({ method: 'POST', path: '/v1/customers/cust-prod-1/consent', userId: 'u-owner', idempotencyKey: 'c1', body: { purpose: 'marketing', channel: 'sms', given: true, evidence: words } });

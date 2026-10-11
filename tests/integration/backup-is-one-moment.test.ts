@@ -49,8 +49,10 @@ describeOrSkip('a backup is one database moment, and restores exactly into an em
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: urlFor('postgres'), max: 1 });
+    admin.on('error', () => { /* a scratch database is dropped WITH (FORCE); its idle connections are cut */ });
     await admin.query(`CREATE DATABASE ${SOURCE_DB}`);
     source = new Pool({ connectionString: urlFor(SOURCE_DB), max: 2, options: '-c app.tenant_id=*' });
+    source.on('error', () => { /* a scratch database is dropped WITH (FORCE); its idle connections are cut */ });
     const dir = 'db/migrations';
     await runMigrations(pgPoolClient(source), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
@@ -100,6 +102,7 @@ describeOrSkip('a backup is one database moment, and restores exactly into an em
     expect(said).toMatch(new RegExp(`snapshot ${duringSnapshot}`));
 
     target = new Pool({ connectionString: urlFor(TARGET_DB), max: 1, options: '-c app.tenant_id=*' });
+    target.on('error', () => { /* a scratch database is dropped WITH (FORCE); its idle connections are cut */ });
     expect(Number((await target.query('SELECT count(*)::int AS n FROM event_ledger')).rows[0].n)).toBe(before);
     expect(Number((await target.query(`SELECT coalesce(sum((payload->>'totalMinor')::bigint),0)::bigint AS t FROM event_ledger WHERE type='SaleCommitted'`)).rows[0].t)).toBe(150_000);
     // The sales that committed during the backup are, correctly, not in it — the next backup takes them.

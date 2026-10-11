@@ -23,6 +23,7 @@ describe.skipIf(!DATABASE_URL)('two processes migrate a fresh database at once (
   const pools: Pool[] = [];
   beforeAll(async () => {
     admin = new Pool({ connectionString: urlFor('postgres'), max: 1 });
+    admin.on('error', () => { /* a scratch database is dropped WITH (FORCE); its idle connections are cut */ });
     await admin.query(`CREATE DATABASE ${DB}`);
   });
   afterAll(async () => {
