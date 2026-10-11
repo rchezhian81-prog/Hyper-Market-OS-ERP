@@ -28,8 +28,11 @@ import { startRealCloud, type RealCloud } from '../support/real-store';
  * phone) and its screen socket; it takes its setup from head office (the signed store pack, OB-26/OB-37) and its catalogue
  * from head office (the signed catalogue pack). The till is the code the served till page boots (`bootPos`), the phone is
  * the code the served warehouse page boots (`bootWarehouse` on the assignment the box injects, draining through the
- * shared device → box leg). Every act is a different signed-in person holding only their own role; nobody approves their
- * own work:
+ * shared device → box leg). Every act is a different signed-in person, under their own sign-in. The roles are NOT all
+ * narrow: the buyer, the receiver, the back-store keeper, the floor person and the manager each hold the broad
+ * `store_manager` role (the product has no narrower role for those jobs yet), so their roles alone would let any of them
+ * do the others' work. The separation this journey proves is the per-act maker-checker the product enforces: a second
+ * person approves the supplier, the order, the bill match, the indent and the refund, and nobody approves their own work:
  *
  *   OWNER    u-owner   owner           — issues the purchase order; reads the reports
  *   BUYER    u-buyer   store_manager   — proposes the supplier and the order; captures the bill
