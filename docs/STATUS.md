@@ -5,6 +5,70 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Rounds 7 and 8 — security follow-ups closed; the pilot-release (R2) gaps built; 27 owner decisions recorded (11 October 2026)
+
+- **Round 7:**
+  - Backup records accepted only from the backup job.
+  - Message-provider receipts are idempotent and bound to the provider that sent the message.
+  - The rollback check covers till sales.
+  - OB-52: the reversal window opens at the cutover GO and lasts 48 hours, and reverses only the load's own items.
+  - Catalogue clash checks keyed: 145 ms → 7 ms per call at 15,000 products.
+  - Reservations count in replenishment.
+  - CI installs `age` and names failing tests.
+- **Round 8, Batch 3:**
+  - An unanswered card/UPI payment holds the day close.
+  - Customer display, offline.
+  - Till device health.
+  - Held returned units decided by a person.
+  - Count differences and write-offs to the books through ONE posting path, proven once per count.
+  - The close reconciles stock, payables and receivables.
+  - Period P&L.
+- **Round 8, Batch 4:**
+  - All 28 owner reports produced from real sources.
+  - Service desk with root cause (OB-64).
+  - AI drafts: A05 replies, A09 campaigns, A07 anomalies. A person always decides and sends.
+  - Late-delivery alerts to the holder, else the duty manager (OB-61).
+  - App lists, favourites, complaints and return requests.
+  - Competitor prices.
+- **Round 8, Batch 1:**
+  - OB-54: store computer credential locked to its store.
+  - Release canary stage with a backup before release.
+  - Incident records.
+  - Signed outbound partner webhooks.
+  - M01/M02 browser proofs.
+- **Round 8, Batch 2:**
+  - Count plans with recount and approval; OB-59 default freeze.
+  - Open-to-buy budgets (OB-63).
+  - E-invoice and scan ingestion (engine external).
+  - A03 transfer suggestions.
+  - Online safety buffer.
+  - Import undo and update-by-file.
+  - Content and synonyms.
+  - Recall proven on PostgreSQL.
+- **Owner decisions recorded:**
+  - OB-54 to OB-65 (11 Oct, in writing).
+  - Approved deferrals to the roadmap's own releases:
+    - R4: WF-16 online returns, D07-FR-04 coupons/referrals, product images (OB-60).
+    - R5: D09-FR-01/06.
+    - R6: D11-FR-04/06, D03-FR-04, D02-FR-04.
+    - R8: D04-FR-06, D02-FR-02.
+- **Independent verifier (11 Oct):**
+  - Table A now 71 of 74 verified: PA-08, PA-12 and GT-02 closed.
+  - Round 8 mostly MEETS. Being fixed in rounds 9–10:
+    - GT-05: a second GO must not reopen reversal.
+    - OB-54: stamp the credential's store on records that name none.
+    - OB-59: freeze on every adjustment/write-off path.
+    - A late card answer typed by one person must need a second.
+    - OB-55, OB-56 (avoid double-counting losses) and OB-57 are being built.
+    - The open-to-buy race.
+    - Webhook SSRF guard and maker-checker.
+    - backup_job as a machine-only role.
+    - Transfer cost from head office.
+- **Matrix:**
+  - Table A: 71 verified complete, 1 pending software (GT-05), 1 approved deferral, 1 staff/device acceptance.
+  - Table B is to be refreshed after round 10.
+- **Not claimed:** staff UAT; any live provider; real data.
+
 ## Coordinated programme · Round 6 — the verifier's security findings closed; ten owner decisions built (11 October 2026)
 
 - **Security fixed:**
