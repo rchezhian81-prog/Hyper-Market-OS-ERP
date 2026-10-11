@@ -7426,11 +7426,11 @@ export function dataImportAdapter(input: {
     },
     recordCommit: async (tenantId, record, key, effects) => {
       // GT-05: a product the load publishes is indexed by its SKU like any other publish (the index is built first).
-      if (effects.some((e) => e.kind === 'product')) await ensureSkuIndex(input.store, tenantId);
+      if (effects.some((e) => e.kind === 'product' || e.kind === 'product_update')) await ensureSkuIndex(input.store, tenantId);
       // ONE atomic save: the job's record and every real record it applies — never one without the other.
       await input.store.appendBatch(tenantId, [
         ...effects.map((e) => effectEntry(tenantId, e, record.jobId, record.at)),
-        ...effects.flatMap((e) => (e.kind === 'product' ? skuIndexEntries(tenantId, e.product, `import-${record.jobId}`, record.at) : [])),
+        ...effects.flatMap((e) => (e.kind === 'product' || e.kind === 'product_update' ? skuIndexEntries(tenantId, e.product, `import-${record.jobId}`, record.at) : [])),
         {
           stream: DATA_IMPORTS_STREAM,
           event: makeEvent({
@@ -7444,7 +7444,25 @@ export function dataImportAdapter(input: {
       // Compensating records (append-only, §29.1): each invoice the load captured is WITHDRAWN, never deleted; each product
       // it published gets a new DISCONTINUED version (the published one stays as evidence).
       const products = new Map((await allOf<ProductRecord>(input.store, tenantId, PRODUCTS_STREAM, 'ProductPublished')).map((p) => [p.productId, p] as const));
+      // M30 round 8: a product the load CHANGED goes back to the version that load replaced — the one published just before it.
+      const replaced = new Map<string, ProductRecord>();
+      if (record.effects.some((e) => e.kind === 'product_update')) {
+        const last = new Map<string, ProductRecord>();
+        for (const ev of await input.store.readStream(tenantId, PRODUCTS_STREAM, { type: 'ProductPublished' })) {
+          const p = payloadOf<ProductRecord>(ev);
+          if (ev.event.id === `product-${p.productId}-import-${record.jobId}` && last.has(p.productId)) replaced.set(p.productId, last.get(p.productId)!);
+          last.set(p.productId, p);
+        }
+      }
       await input.store.appendBatch(tenantId, [
+        ...record.effects.filter((e) => e.kind === 'product_update' && replaced.has(e.ref)).map((e) => ({
+          stream: PRODUCTS_STREAM,
+          event: makeEvent({
+            id: `product-${e.ref}-rollback-${record.jobId}`, type: 'ProductPublished', occurredAt: record.at,
+            idempotencyKey: `product-${tenantId}-${e.ref}-rollback-${record.jobId}`, source: 'api/purchase/import-rollback',
+            payload: replaced.get(e.ref)!,
+          }),
+        })),
         ...record.effects.filter((e) => e.kind === 'product' && products.has(e.ref)).map((e) => ({
           stream: PRODUCTS_STREAM,
           event: makeEvent({
@@ -13474,4 +13492,11 @@ export function onlineBufferAdapter(input: { readonly store: EventStore; readonl
       return out;
     },
   };
+}
+
+/** M30 round 8 — every published version of a product, oldest first, with the id of the event that published it. */
+export async function productVersionsOf(store: EventStore, tenantId: string, productId: string): Promise<readonly { readonly eventId: string; readonly product: ProductRecord }[]> {
+  return (await store.readStream(tenantId, PRODUCTS_STREAM, { type: 'ProductPublished' }))
+    .map((ev) => ({ eventId: ev.event.id, product: payloadOf<ProductRecord>(ev) }))
+    .filter((v) => v.product.productId === productId);
 }
