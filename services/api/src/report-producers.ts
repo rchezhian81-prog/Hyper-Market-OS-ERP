@@ -20,7 +20,8 @@ import type { SourceTransaction } from '../../../packages/owner-control/src/inde
 import type { BranchScope } from '../../kernel/src/index';
 import type { IncomingSale } from '../../pos/src/sale-intake';
 import { figure, sourceFreshness, syncedThrough, type Figure, type SourceFreshness } from '../../reporting/src/index';
-import { STREAM, streamName, inventoryAdapter, productMasterAdapter, foldPurchaseOrders, mergeStoreSync, dayBookAdapter, independentEvidenceAdapter, type StoreSyncView } from './adapters';
+import { STREAM, streamName, inventoryAdapter, productMasterAdapter, foldPurchaseOrders, mergeStoreSync, dayBookAdapter, independentEvidenceAdapter, payablesAdapter, averageBuyingCosts, type StoreSyncView } from './adapters';
+import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import type { HeldVersionsReport } from '../../platform/src/store-packs';
 import { returnedValue, refundLegs } from '../../../packages/finance/src/day-book';
 
@@ -409,41 +410,64 @@ export function reportProducers(input: {
 
       case 'gst': {
         // GST collected, from what the day book POSTED for the day (the books, not a re-count of the tills) — output tax net
-        // of returns, by component. Tax paid on purchases only where the books carry it; said when they do not.
+        // of returns, by component — and GST PAID ON PURCHASES, from the supplier bills the accountant POSTED to the books
+        // for the day (a matched bill's input tax, less what its debit notes reversed); the net is the one less the other.
+        // Each side read from the books only; a side the books do not carry is said, never a zero.
         const now = input.now();
         if (options.scope !== 'all') {
           return { sources: [], rows: [], drill: {}, figures: [figure({ name: 'GST collected', unit: 'minor_currency', asAt: null, now, notAvailableBecause: 'the books are company-wide; this needs company-wide report access' })] };
         }
         const journals = await dayBookAdapter({ store: input.store, now: input.now }).dayBookJournals(tenantId, day);
+        const bills = (await payablesAdapter({ store: input.store, now: input.now }).payablesJournals(tenantId)).filter((j) => j.documentDate === day);
         const posted = await input.store.latestOfType(tenantId, STREAM.finance, 'JournalPosted');
         const asAt = journals.length === 0 ? null : (posted?.event.occurredAt ?? null);
+        const billsAt = bills.length === 0 ? null : (posted?.event.occurredAt ?? null);
         const mk = at(asAt, `the day book for ${day} has not been posted yet — post the day's book and GST is read from it`);
+        const mkIn = at(billsAt, `no supplier bill matched on ${day} has been posted to the books — post the payables (POST /v1/finance/payables/post) and GST paid on purchases is read from them`);
         const by = new Map<string, { net: number; txns: SourceTransaction[] }>();
-        for (const j of journals) {
-          for (const l of j.lines) {
+        const take = (entryId: string, documentDate: string, what: string, lines: readonly { accountCode: string; debitMinor: number; creditMinor: number }[]): void => {
+          for (const l of lines) {
             if (!l.accountCode.startsWith('gst_')) continue;
             const held = by.get(l.accountCode) ?? { net: 0, txns: [] };
             const amount = l.creditMinor - l.debitMinor;
             held.net += amount;
-            held.txns.push({ transactionId: `${j.entryId}:${l.accountCode}`, at: j.documentDate, branchId: 'company', amountMinor: amount, description: `${j.dayBook.kind} — ${j.narrative}` });
+            held.txns.push({ transactionId: `${entryId}:${l.accountCode}`, at: documentDate, branchId: 'company', amountMinor: amount, description: what });
             by.set(l.accountCode, held);
           }
-        }
+        };
+        for (const j of journals) take(j.entryId, j.documentDate, `${j.dayBook.kind} — ${j.narrative}`, j.lines);
+        for (const j of bills) take(j.entryId, j.documentDate, j.narrative, j.lines);
         const output = [...by.entries()].filter(([code]) => code.startsWith('gst_output')).sort((a, b) => a[0].localeCompare(b[0]));
         const inputTax = [...by.entries()].filter(([code]) => code.startsWith('gst_input')).sort((a, b) => a[0].localeCompare(b[0]));
         const collected = output.reduce((t, [, v]) => t + v.net, 0);
+        // Input tax sits on the debit side: what was paid is debits less credits (a debit note's reversal comes off it).
+        const paid = -inputTax.reduce((t, [, v]) => t + v.net, 0);
+        const inputKnown = inputTax.length > 0;
         return {
           tradingDay: day,
-          sources: [sourceFreshness({ source: 'day book', domain: 'books', lastEventAt: asAt, now, ...thresholds })],
+          sources: [
+            sourceFreshness({ source: 'day book', domain: 'books', lastEventAt: asAt, now, ...thresholds }),
+            sourceFreshness({ source: 'supplier bills posted', domain: 'books', lastEventAt: billsAt, now, ...thresholds }),
+          ],
           figures: [
             mk('GST collected', collected, 'minor_currency'),
             ...output.map(([code, v]) => mk(`GST collected — ${code.replace('gst_output_', '').toUpperCase()}`, v.net, 'minor_currency')),
-            inputTax.length === 0
-              ? mk('GST paid on purchases', undefined, 'minor_currency', 'the books for this day carry no GST paid on purchases — supplier bills are not posted to the ledger here')
-              : mk('GST paid on purchases', -inputTax.reduce((t, [, v]) => t + v.net, 0), 'minor_currency'),
+            inputKnown
+              ? mkIn('GST paid on purchases', paid, 'minor_currency')
+              : mkIn('GST paid on purchases', undefined, 'minor_currency', bills.length === 0
+                ? `no supplier bill matched on ${day} has been posted to the books — supplier bills are not posted for this day`
+                : 'the supplier bills posted for this day carry no GST'),
+            ...inputTax.map(([code, v]) => mkIn(`GST paid on purchases — ${code.replace('gst_input_', '').toUpperCase()}`, -v.net, 'minor_currency')),
+            asAt !== null && inputKnown
+              ? mk('Net GST (collected less paid on purchases)', collected - paid, 'minor_currency')
+              : mk('Net GST (collected less paid on purchases)', undefined, 'minor_currency', asAt === null ? `the day book for ${day} has not been posted yet` : 'GST paid on purchases is not in the books for this day, so a net figure would overstate what is owed'),
           ],
           rows: [...output, ...inputTax].map(([code, v]) => ({ account: code, netMinor: String(v.net) })),
-          drill: { 'GST collected': output.flatMap(([, v]) => v.txns), ...Object.fromEntries(output.map(([code, v]) => [`GST collected — ${code.replace('gst_output_', '').toUpperCase()}`, v.txns])) },
+          drill: {
+            'GST collected': output.flatMap(([, v]) => v.txns),
+            ...Object.fromEntries(output.map(([code, v]) => [`GST collected — ${code.replace('gst_output_', '').toUpperCase()}`, v.txns])),
+            ...(inputKnown ? { 'GST paid on purchases': inputTax.flatMap(([, v]) => v.txns) } : {}),
+          },
         };
       }
 
@@ -473,9 +497,11 @@ export function reportProducers(input: {
       }
 
       case 'profitability': {
-        // What the books say the day earned. Revenue is posted; the COST of what was sold is not — the day book posts
-        // takings, GST and tenders only, and which cost the shop's margin uses is an owner decision not yet taken. So the
-        // profit is NOT AVAILABLE, with that reason — never a revenue figure presented as a profit.
+        // What the books say the day earned. Revenue is POSTED (the day book: net of GST and returns). The COST of what was
+        // sold is each sold line at head office's AVERAGE BUYING COST for the product at the store it was sold from (OB-39
+        // "B", owner 11 Oct 2026 — the same cost the store computer's Today margin uses), less the goods that came back.
+        // A product the store never bought at a cost has no average: then the cost — and so the profit — is NOT AVAILABLE,
+        // naming the products, never costed at zero (a zero cost is a 100% margin).
         const now = input.now();
         if (options.scope !== 'all') {
           return { sources: [], rows: [], drill: {}, figures: [figure({ name: 'Profit', unit: 'minor_currency', asAt: null, now, notAvailableBecause: 'the books are company-wide; this needs company-wide report access' })] };
@@ -485,18 +511,54 @@ export function reportProducers(input: {
         const asAt = journals.length === 0 ? null : (posted?.event.occurredAt ?? null);
         const mk = at(asAt, `the day book for ${day} has not been posted yet`);
         const revenue = journals.flatMap((j) => j.lines).filter((l) => l.accountCode === 'sales_revenue').reduce((t, l) => t + l.creditMinor - l.debitMinor, 0);
-        const cogsPosted = journals.flatMap((j) => j.lines).some((l) => /cost_of_goods|cogs/.test(l.accountCode));
-        const noCost = 'the books carry no cost of goods sold: the day book posts takings, GST and tenders but not what the goods cost, and which cost the shop uses for margin is an owner decision not yet taken';
+        const costs = await averageBuyingCosts({ store: input.store, now: input.now }, tenantId);
+        const day_ = await salesOf(tenantId, day, 'all');
+        const missing = new Set<string>();
+        const txns: SourceTransaction[] = [];
+        const rows: Record<string, string>[] = [];
+        let cogs = 0;
+        for (const sale of day_.sales) {
+          const storeId = saleBranch(sale);
+          let cost = 0;
+          for (const l of sale.lines) {
+            const unit = costs.costOf(l.productId, storeId);
+            if (unit === undefined) { missing.add(l.productId); continue; }
+            cost += valueAtUnitCost(l.quantityMinor, l.uom, unit);
+          }
+          cogs += cost;
+          txns.push(saleTxn(sale, cost, `${sale.saleId}: ${sale.lines.length} line(s) at the average buying cost`));
+        }
+        for (const r of await dayBookAdapter({ store: input.store, now: input.now }).returnsOn(tenantId, day)) {
+          const held = r.originalSaleId === null ? undefined : await input.store.findByIdempotencyKey(tenantId, `sale-${tenantId}-${r.originalSaleId}`);
+          const sale = held?.event.payload as IncomingSale | undefined;
+          const rec = r as typeof r & { processedAt?: string; processedBy?: string; locationId?: string };
+          const storeId = sale !== undefined ? saleBranch(sale) : (rec.locationId ?? 'no-branch-named');
+          let back = 0;
+          for (const l of r.lines) {
+            const unit = costs.costOf(l.productId, storeId);
+            if (unit === undefined) { missing.add(l.productId); continue; }
+            const uom = sale?.lines.find((x) => x.productId === l.productId)?.uom ?? (await products.product(tenantId, l.productId))?.baseUom ?? 'ea';
+            back += valueAtUnitCost(l.quantityMinor, uom, unit);
+          }
+          cogs -= back;
+          txns.push({ transactionId: r.returnId, at: rec.processedAt ?? day, branchId: storeId, ...(rec.processedBy === undefined ? {} : { staffId: rec.processedBy }), amountMinor: -back, description: `${r.returnId}: goods back, at the average buying cost` });
+        }
+        for (const c of costs.rows) rows.push({ productId: c.productId, storeId: c.storeId, averageBuyingCostMinor: String(c.unitCostMinor), receivedMinor: String(c.receivedMinor), receivedValueMinor: String(c.receivedValueMinor) });
+        const noCost = missing.size === 0 ? undefined
+          : `no average buying cost for ${[...missing].sort().join(', ')} — the store has not received it at a cost, so what it cost to sell is not known (never costed at zero)`;
         return {
           tradingDay: day,
-          sources: [sourceFreshness({ source: 'day book', domain: 'books', lastEventAt: asAt, now, ...thresholds })],
+          sources: [
+            sourceFreshness({ source: 'day book', domain: 'books', lastEventAt: asAt, now, ...thresholds }),
+            ...day_.sources,
+          ],
           figures: [
             mk('Revenue net of GST and returns', revenue, 'minor_currency'),
-            mk('Cost of goods sold', undefined, 'minor_currency', cogsPosted ? 'cost of goods sold is posted but not yet read by this report' : noCost),
-            mk('Profit', undefined, 'minor_currency', cogsPosted ? 'cost of goods sold is posted but not yet read by this report' : noCost),
+            mk('Cost of goods sold', noCost === undefined ? cogs : undefined, 'minor_currency', noCost),
+            mk('Profit', noCost === undefined ? revenue - cogs : undefined, 'minor_currency', noCost),
           ],
-          rows: [],
-          drill: {},
+          rows,
+          drill: noCost === undefined ? { 'Cost of goods sold': txns } : {},
         };
       }
 
