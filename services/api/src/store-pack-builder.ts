@@ -131,6 +131,12 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
         uom: unitCode(p.baseUom), taxBps: p.taxBps, status: p.status, recallBlock: p.recallBlock === true,
         barcodes: barcodes.get(p.productId) ?? [],
         availableMinor: onHand.get(p.productId) ?? 0,
+        // D01-FR-06 (round 8): the app's content and synonyms, from the product master, for the customer app on this store.
+        ...(m?.brand === undefined ? {} : { brand: m.brand }),
+        ...(m?.appContent?.nameTa === undefined ? {} : { nameTa: m.appContent.nameTa }),
+        ...(m?.appContent?.descriptionEn === undefined ? {} : { descriptionEn: m.appContent.descriptionEn }),
+        ...(m?.appContent?.descriptionTa === undefined ? {} : { descriptionTa: m.appContent.descriptionTa }),
+        ...(m?.appContent?.synonyms === undefined ? {} : { synonyms: m.appContent.synonyms }),
       };
     });
   }

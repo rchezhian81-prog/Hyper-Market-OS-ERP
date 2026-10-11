@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 957 | 580 | 580 | 89 | 300 |
+| 13 | 958 | 581 | 581 | 89 | 300 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -95,6 +95,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/catalogue/products/:productId/barcodes` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/barcodes/:code` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/canonical` | `catalogue.pack.read` | core | — |
+| POST | `/v1/catalogue/products/:productId/content` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/pack` | `catalogue.pack.read` | core | — |
 | POST | `/v1/catalogue/products/:productId/pack` | `catalogue.pack.publish` | core | yes |
 | GET | `/v1/catalogue/products/:productId/pack/convert` | `catalogue.pack.read` | core | — |
