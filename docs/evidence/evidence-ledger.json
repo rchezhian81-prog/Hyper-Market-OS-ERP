@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1110,
+  "testFiles": 1115,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -611,8 +611,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 12,
-        "integration": 27,
-        "realDb": 8,
+        "integration": 28,
+        "realDb": 9,
         "browser": 6,
         "connected": 0,
         "device": 0,
@@ -637,6 +637,7 @@
           "tests/integration/a-phone-receipt-is-counted-costed-and-put-away.test.ts",
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
+          "tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts",
           "tests/integration/a-transfer-sends-only-what-the-batch-holds.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/bin-counts-synced-route.test.ts",
@@ -665,6 +666,7 @@
         "realDb": [
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
+          "tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
@@ -986,8 +988,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 17,
-        "integration": 15,
-        "realDb": 3,
+        "integration": 16,
+        "realDb": 4,
         "browser": 5,
         "connected": 0,
         "device": 0,
@@ -1014,6 +1016,7 @@
           "tests/unit/till.test.ts"
         ],
         "integration": [
+          "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts",
           "tests/integration/day-close-reaches-the-cloud.test.ts",
@@ -1031,6 +1034,7 @@
           "tests/integration/till-cash.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/refund-approval-is-the-approvers-own-act.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts"
@@ -1534,8 +1538,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 22,
-        "integration": 25,
-        "realDb": 11,
+        "integration": 26,
+        "realDb": 12,
         "browser": 4,
         "connected": 0,
         "device": 0,
@@ -1587,6 +1591,7 @@
           "tests/integration/supplier-account.test.ts",
           "tests/integration/supplier-master.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
+          "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
@@ -1602,6 +1607,7 @@
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/stored-value-liability.test.ts",
+          "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
           "tests/integration/the-till-exchanges.test.ts"
@@ -1823,8 +1829,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 5,
-        "integration": 10,
-        "realDb": 4,
+        "integration": 9,
+        "realDb": 3,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -1841,7 +1847,6 @@
         "integration": [
           "tests/integration/a-loss-is-worth-what-the-stock-cost.test.ts",
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
-          "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/packaging.test.ts",
           "tests/integration/physical-to-system.test.ts",
@@ -1852,7 +1857,6 @@
         ],
         "realDb": [
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
-          "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/physical-to-system.test.ts"
         ],
@@ -2479,8 +2483,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 5,
-        "integration": 10,
-        "realDb": 4,
+        "integration": 11,
+        "realDb": 5,
         "browser": 5,
         "connected": 1,
         "device": 0,
@@ -2496,6 +2500,7 @@
         ],
         "integration": [
           "tests/integration/a-card-payment-is-recorded-before-the-machine-is-asked.test.ts",
+          "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/a-pending-card-answer-holds-the-day-close.test.ts",
           "tests/integration/no-sale-and-price-override-are-kept-and-judged.test.ts",
           "tests/integration/pending-tender-recovery.test.ts",
@@ -2507,6 +2512,7 @@
           "tests/integration/the-till-spends-points-and-store-credit.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/no-sale-and-price-override-are-kept-and-judged.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
@@ -2533,8 +2539,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 1,
-        "integration": 12,
-        "realDb": 5,
+        "integration": 13,
+        "realDb": 6,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2548,6 +2554,7 @@
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/a-sale-line-gets-its-fefo-lot.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
+          "tests/integration/an-open-count-freezes-every-adjustment-and-write-off-path.test.ts",
           "tests/integration/cold-chain-at-receiving.test.ts",
           "tests/integration/cold-room-breach-holds-stock.test.ts",
           "tests/integration/inventory-availability.test.ts",
@@ -2562,6 +2569,7 @@
           "tests/integration/a-recall-runs-its-whole-lifecycle-on-postgresql.test.ts",
           "tests/integration/a-sale-line-gets-its-fefo-lot.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
+          "tests/integration/an-open-count-freezes-every-adjustment-and-write-off-path.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/the-app-keeps-an-online-buffer-for-shoppers-in-the-store.test.ts"
         ],
@@ -2758,8 +2766,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 0,
-        "integration": 8,
-        "realDb": 4,
+        "integration": 10,
+        "realDb": 6,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2769,18 +2777,22 @@
         "unit": [],
         "integration": [
           "tests/integration/books-reconcile.test.ts",
+          "tests/integration/budgets-and-the-fixed-asset-register.test.ts",
           "tests/integration/day-book-posts-the-day.test.ts",
           "tests/integration/gstr1-from-sales.test.ts",
           "tests/integration/loyalty-liability-reconciles-to-the-books.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/the-books-open-from-the-old-trial-balance.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
+          "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
         ],
         "realDb": [
           "tests/integration/books-reconcile.test.ts",
+          "tests/integration/budgets-and-the-fixed-asset-register.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/the-books-open-from-the-old-trial-balance.test.ts",
+          "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
         ],
         "browser": [
@@ -3062,8 +3074,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 5,
-        "integration": 6,
-        "realDb": 2,
+        "integration": 7,
+        "realDb": 3,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -3078,6 +3090,7 @@
           "tests/unit/fefo-near-expiry.test.ts"
         ],
         "integration": [
+          "tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/ai-inventory-agent.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
@@ -3086,6 +3099,7 @@
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-transfer-is-valued-at-head-offices-own-cost.test.ts",
           "tests/integration/ai-inventory-agent-suggests-transfers.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts"
         ],
@@ -3705,8 +3719,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 0,
-        "integration": 9,
-        "realDb": 4,
+        "integration": 10,
+        "realDb": 5,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -3718,6 +3732,7 @@
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
           "tests/integration/adjustment-requests.test.ts",
+          "tests/integration/an-open-count-freezes-every-adjustment-and-write-off-path.test.ts",
           "tests/integration/bin-counts-synced-route.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
           "tests/integration/counts-synced-route.test.ts",
@@ -3728,6 +3743,7 @@
         "realDb": [
           "tests/integration/a-planned-count-on-the-phone-reaches-head-office-through-the-box.test.ts",
           "tests/integration/a-stock-count-is-planned-frozen-recounted-approved-and-booked.test.ts",
+          "tests/integration/an-open-count-freezes-every-adjustment-and-write-off-path.test.ts",
           "tests/integration/confirmed-lost-stock-is-posted-once.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
         ],
@@ -3869,8 +3885,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 0,
-        "integration": 8,
-        "realDb": 3,
+        "integration": 9,
+        "realDb": 4,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -3879,6 +3895,7 @@
       "files": {
         "unit": [],
         "integration": [
+          "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/a-pending-card-answer-holds-the-day-close.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/day-close-reaches-the-cloud-through-the-edge.test.ts",
@@ -3889,6 +3906,7 @@
           "tests/integration/till-cash.test.ts"
         ],
         "realDb": [
+          "tests/integration/a-day-closes-with-a-pending-payment-carried-to-head-office.test.ts",
           "tests/integration/day-close-honestly.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/store-acceptance-journey.test.ts"
@@ -4092,8 +4110,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 0,
-        "integration": 8,
-        "realDb": 4,
+        "integration": 9,
+        "realDb": 5,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -4109,12 +4127,14 @@
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
+          "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
         ],
         "realDb": [
           "tests/integration/books-reconcile.test.ts",
           "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/the-margin-is-costed-at-the-average-buying-cost.test.ts",
+          "tests/integration/the-month-end-stock-adjustment-books-cost-of-goods-sold.test.ts",
           "tests/integration/the-period-books-reconcile-and-show-profit.test.ts"
         ],
         "browser": [
