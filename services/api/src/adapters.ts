@@ -175,7 +175,7 @@ import type { AssembledGoodsReceiptDeps } from '../../inventory/src/goods-receip
 import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from '../../inventory/src/warehouse-synced';
 import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
 import type { CountPlan, CountPlanDeps, VarianceCause, PlaceMovement } from '../../inventory/src/count-plans';
-import { budgetKey, type OpenToBuyDeps, type PurchaseBudget, type BudgetOverride } from '../../purchase/src/open-to-buy';
+import { budgetKey, openToBuyGuardKey, type OpenToBuyDeps, type PurchaseBudget, type BudgetOverride } from '../../purchase/src/open-to-buy';
 import type { InvoiceIngestionDeps, InvoiceDocumentRecord, ItemMapping } from '../../purchase/src/invoice-ingestion';
 import { buffersAt, type OnlineBuffer, type OnlineBufferDeps } from '../../inventory/src/online-buffer';
 import type { AdjustmentRequestDeps, AdjustmentRequestRecord } from '../../inventory/src/adjustment-requests';
@@ -7015,8 +7015,8 @@ export function purchaseOrdersAdapter(input: {
       }));
     },
 
-    issue: async (tenantId, poId, approvedBy, issuedAt, reason) => {
-      await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, makeEvent({
+    issue: async (tenantId, poId, approvedBy, issuedAt, reason, _key, budgetGuard) => {
+      const event = makeEvent({
         id: `po-${poId}-issued`,
         type: 'PurchaseOrderIssued',
         occurredAt: issuedAt,
@@ -7024,7 +7024,10 @@ export function purchaseOrdersAdapter(input: {
         idempotencyKey: `po-${tenantId}-${poId}-issued`,
         source: 'api/purchase',
         payload: { poId, approvedBy, issuedAt, reason },
-      }));
+      });
+      // WF-03 (round 10): under the month's open-to-buy guard when a budget governs the order (two approvals: one lands).
+      if (budgetGuard === undefined) await input.store.append(tenantId, PURCHASE_ORDERS_STREAM, event);
+      else await input.store.appendBatch(tenantId, [{ stream: PURCHASE_ORDERS_STREAM, event }], { guard: budgetGuard });
     },
 
     amend: async (tenantId, poId, amendmentId, lines, reason, by, at) => {
@@ -13659,7 +13662,8 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
         idempotencyKey: `purchase-budget-exceeded-${tenantId}-${o.poId}`, source: 'api/purchase', payload: o,
       }));
     },
-    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+    permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),    // WF-03 (round 10): the month's open-to-buy write guard — an approval issues only while it still holds.
+    budgetVersion: (tenantId, period) => input.store.guardVersion(tenantId, openToBuyGuardKey(period)),
   };
 }
 

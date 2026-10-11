@@ -111,6 +111,48 @@ describe.each(backings)('a purchase order is checked against open-to-buy — on 
     expect((p5.body as { order: { budgetCheck: { categories: Cat[]; overBudget: boolean } } }).order.budgetCheck).toMatchObject({ overBudget: false, categories: [{ categoryId: 'uncategorised', state: 'no_budget', budgetMinor: null }] });
     await ok(approve('po-5'), 'approve po-5');
   });
+
+  it('WF-03 (round 10): two approvals at the same moment cannot together spend more than the budget — one issues, the other is refused by name and is judged again on what the first committed', async () => {
+    const h = harness();
+    const T = randomUUID();
+    await h.seedOwner(T, 'u-owner');
+    await h.provisionRole(T, 'u-buyer', 'store_manager');
+    await h.provisionRole(T, 'u-owner2', 'owner');
+    await approvedSuppliers(h, T, 'sup-1');
+    await deliveryPlaces(h, T, 'store-1');
+    const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, key?: string, query?: Record<string, string>): Promise<Res> =>
+      h.request({ method, path, userId, tenantId: T, ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }), ...(method === 'GET' ? {} : { idempotencyKey: key ?? `${path}-${JSON.stringify(body)}` }) });
+    const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
+    await ok(call('POST', '/v1/catalogue/tax-classes/1006/rates/2017-07-01', 'u-owner', { rateBps: 500 }, 'tax'), 'tax');
+    await ok(call('POST', '/v1/catalogue/products/RICE/publish', 'u-owner', {
+      product: { sku: 'SKU-RICE', name: 'RICE', baseUom: 'ea', primaryCategoryId: 'grocery', taxClass: '1006', lifecycle: 'active' },
+      categories: [{ categoryId: 'grocery', name: 'Grocery', parentId: null }],
+    }, 'pub-RICE'), 'publish');
+    const month = new Date().toISOString().slice(0, 7);
+    await ok(call('POST', '/v1/purchase/budgets', 'u-owner', { period: month, categoryId: 'grocery', amountMinor: 100_000, reason: 'October grocery plan' }, 'b-g'), 'budget');
+    // Two orders, each within budget alone (60 000 of 100 000) — together over it.
+    for (const id of ['po-a', 'po-b']) {
+      await ok(call('POST', `/v1/purchase/orders/${id}`, 'u-buyer', { supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: [{ productId: 'RICE', orderedQty: 12, unitCost: cost(5_000) }] }, `po-${id}`), id);
+    }
+    // Two owners approve at the same moment — neither names an over-budget reason.
+    const [ra, rb] = await Promise.all([
+      call('POST', '/v1/purchase/orders/po-a/approval', 'u-owner', { reason: 'weekly replenishment' }, 'ap-a'),
+      call('POST', '/v1/purchase/orders/po-b/approval', 'u-owner2', { reason: 'weekly replenishment' }, 'ap-b'),
+    ]);
+    const results = [ra, rb].map((r) => [r.status, codeOf(r) ?? 'issued']).sort();
+    expect(results, JSON.stringify([ra.body, rb.body])).toEqual([[200, 'issued'], [409, 'concurrent_change']]);
+    const status = async (id: string) => ((await call('GET', `/v1/purchase/orders/${id}`, 'u-owner')).body as { order: { status: string } }).order.status;
+    const [winner, loser] = ra.status === 200 ? ['po-a', 'po-b'] : ['po-b', 'po-a'];
+    expect([await status(winner), await status(loser)]).toEqual(['issued', 'proposed']);
+    // Committed is what one order spent — never both; no override was recorded for the loser.
+    const otb = (await call('GET', '/v1/purchase/open-to-buy', 'u-owner', undefined, undefined, { period: month })).body as { categories: Cat[]; overrides: unknown[] };
+    expect(otb.categories.find((c) => c.categoryId === 'grocery')).toMatchObject({ committedMinor: 60_000, openToBuyMinor: 40_000, state: 'within' });
+    expect(otb.overrides).toEqual([]);
+    // Asked again, the loser is judged on what the winner committed: now over budget — it escalates by name.
+    const again = await call('POST', `/v1/purchase/orders/${loser}/approval`, loser === 'po-a' ? 'u-owner' : 'u-owner2', { reason: 'weekly replenishment' }, `ap-${loser}-again`);
+    expect([again.status, codeOf(again)]).toEqual([422, 'over_budget_reason_required']);
+    expect(await status(loser)).toBe('proposed');
+  });
 });
 
 describe('the over-budget escalation refuses an approver without the authority to exceed (unit, on the same gate the route runs)', () => {
