@@ -40,7 +40,7 @@ import {
 } from '../../../packages/warehouse/src/transfers';
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
 import type { StockMovement } from '../../../packages/stock/src/position';
-import { isCurrencyCode, type CurrencyCode, type Money } from '../../../packages/contracts/src/money';
+import { isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
 import { checkMovement, type Movement } from './index';
 import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, locationInScope, type LocationBranches } from './location-scope';
@@ -63,7 +63,6 @@ const isInt = (v: unknown): v is number => Number.isInteger(v);
 const isPosInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0;
 const rec = (v: unknown): Record<string, unknown> | null => (v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isMoney = (v: unknown): v is Money => { const r = rec(v); return r !== null && Number.isInteger(r['minor']) && isCurrencyCode(r['currency'] as string); };
 
 /** Batch 2: what the resolver says turned up — [{ productId, batchId?, foundMinor (whole, zero or more), foundAtLocationId? }]. */
 export function readFound(v: unknown): FoundLine[] | undefined {
@@ -155,7 +154,7 @@ const SHORTFALL_STATUS: Readonly<Record<ShortfallRefusal, number>> = Object.free
 });
 
 /** SF-03 — each line's unit against the product master's; the first that disagrees is refused by name (422). */
-async function assertUnitsAreTheProducts(deps: TransfersDeps, tenantId: string, lines: readonly TransferLine[]): Promise<void> {
+async function assertUnitsAreTheProducts(deps: TransfersDeps, tenantId: string, lines: readonly Pick<TransferLine, 'productId' | 'uom'>[]): Promise<void> {
   if (deps.productUom === undefined) return;
   for (const line of lines) {
     const uom = await deps.productUom(tenantId, line.productId);
@@ -207,16 +206,21 @@ export function receivePostings(transfer: Transfer, movements: readonly StockMov
     });
 }
 
-function readLines(v: unknown): TransferLine[] | null {
+/** A proposed line as read from the body — WITHOUT a cost: the cost is head office's (round 10), never the proposer's. */
+type ProposedLine = Omit<TransferLine, 'unitCost'>;
+
+function readLines(v: unknown): { lines: ProposedLine[]; callerSentCost: boolean } | null {
   if (!Array.isArray(v) || v.length === 0) return null;
-  const lines: TransferLine[] = [];
+  const lines: ProposedLine[] = [];
+  let callerSentCost = false;
   for (const raw of v) {
     const l = rec(raw);
-    if (l === null || !isStr(l['productId']) || !isPosInt(l['quantityMinor']) || !isStr(l['uom']) || !isMoney(l['unitCost'])
-      || (l['batchId'] !== null && !isStr(l['batchId']))) return null;
-    lines.push({ productId: l['productId'] as string, batchId: isStr(l['batchId']) ? (l['batchId'] as string) : null, quantityMinor: l['quantityMinor'] as number, uom: l['uom'] as string, unitCost: l['unitCost'] as Money });
+    if (l === null || !isStr(l['productId']) || !isPosInt(l['quantityMinor']) || !isStr(l['uom'])
+      || (l['batchId'] !== null && l['batchId'] !== undefined && !isStr(l['batchId']))) return null;
+    if (l['unitCost'] !== undefined) callerSentCost = true;
+    lines.push({ productId: l['productId'] as string, batchId: isStr(l['batchId']) ? (l['batchId'] as string) : null, quantityMinor: l['quantityMinor'] as number, uom: l['uom'] as string });
   }
-  return lines;
+  return { lines, callerSentCost };
 }
 
 const refused = (why: string): never => {
@@ -232,9 +236,9 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
       handler: async (ctx) => {
         const transferId = ctx.params['transferId'] ?? '';
         const b = (ctx.body ?? {}) as { fromLocationId?: unknown; toLocationId?: unknown; lines?: unknown };
-        const lines = readLines(b.lines);
-        if (!isStr(b.fromLocationId) || !isStr(b.toLocationId) || lines === null) {
-          throw apiError(400, { code: 'not_readable_as_a_transfer', whatHappened: 'A transfer needs a fromLocationId, a toLocationId and at least one line (productId, whole quantityMinor, uom, unitCost).', wasItSaved: 'not_saved', nextSafeAction: 'Send the transfer. Nothing was recorded.' });
+        const read = readLines(b.lines);
+        if (!isStr(b.fromLocationId) || !isStr(b.toLocationId) || read === null) {
+          throw apiError(400, { code: 'not_readable_as_a_transfer', whatHappened: 'A transfer needs a fromLocationId, a toLocationId and at least one line (productId, whole quantityMinor, uom). Its value is head office\'s own cost of the stock at the sending place — never sent.', wasItSaved: 'not_saved', nextSafeAction: 'Send the transfer. Nothing was recorded.' });
         }
         await assertEitherEndInScope(ctx, deps.locationBranches, b.fromLocationId, b.toLocationId);
         if ((await deps.transfer(ctx.tenantId, transferId)) !== undefined) {
@@ -252,10 +256,20 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
             });
           }
         }
-        await assertUnitsAreTheProducts(deps, ctx.tenantId, lines);
+        await assertUnitsAreTheProducts(deps, ctx.tenantId, read.lines);
+        // Round 10 (A03 finding): the transfer's cost is head office's OWN valuation of the stock at the sending location —
+        // a unitCost the proposer sends is IGNORED (and the reply says so). Where head office holds no cost, the line carries
+        // 0 and is named in `costUnknown`; dispatch values the stock again at what it then leaves with (`lineCostsMinor`).
+        const from = b.fromLocationId;
+        const costs = await Promise.all(read.lines.map(async (l) => (await deps.unitCostAt(ctx.tenantId, from, l.productId)) ?? null));
+        const lines: TransferLine[] = read.lines.map((l, i) => ({ ...l, unitCost: { minor: costs[i] ?? 0, currency: 'INR' } }));
+        const costUnknown = [...new Set(read.lines.filter((_, i) => costs[i] === null).map((l) => l.productId))];
         const transfer: Transfer = { transferId, fromLocationId: b.fromLocationId, toLocationId: b.toLocationId, lines, state: 'proposed', requestedBy: ctx.userId };
         await deps.recordProposed(ctx.tenantId, transfer);
-        return { status: 201, body: { transferId, state: 'proposed', fromLocationId: transfer.fromLocationId, toLocationId: transfer.toLocationId, lines: lines.length } };
+        return { status: 201, body: {
+          transferId, state: 'proposed', fromLocationId: transfer.fromLocationId, toLocationId: transfer.toLocationId, lines: lines.length,
+          unitCostsMinor: costs, costUnknown, ignoredFromCaller: read.callerSentCost ? ['unitCost'] : [],
+        } };
       },
     },
     {
