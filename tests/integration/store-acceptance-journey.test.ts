@@ -641,7 +641,9 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     const evidence = (await call('GET', `/v1/finance/periods/${month}/independent-evidence`, FINANCE)).body as { agrees: boolean; checks: { name: string; leftMinor: number; rightMinor: number }[] };
     const liability = (await call('GET', '/v1/finance/loyalty-liability', FINANCE)).body as { reconciles: boolean; points: { outstandingPoints: number; heldValueMinor: number; postedMinor: number } };
     expect(evidence.agrees).toBe(true);
-    expect(evidence.checks.map((c) => [c.leftMinor, c.rightMinor])).toEqual([[electronic, electronic], [electronic - fees, electronic - fees]]);
+    expect(evidence.checks.slice(0, 2).map((c) => [c.leftMinor, c.rightMinor])).toEqual([[electronic, electronic], [electronic - fees, electronic - fees]]);
+    // WF-18 (Batch 3 r8): the close also reconciles the books to their registers — every such check agrees here too.
+    for (const c of evidence.checks.slice(2)) expect([c.name, c.leftMinor], c.name).toEqual([c.name, c.rightMinor]);
     expect(liability).toMatchObject({ reconciles: true, points: { outstandingPoints: expectedPoints, heldValueMinor: expectedPoints * 100, postedMinor: expectedPoints * 100 } });
     expect(balanceOf('cash_in_hand')).toBe(S1_CASH + S2_CASH + S3_TOTAL - moneyBack);
     expect(balanceOf('card_receivable')).toBe(S2_CARD);
@@ -739,7 +741,10 @@ describeOrSkip('FINAL INTEGRATED STORE ACCEPTANCE — supplier to owner report, 
     expect(fig(gst, 'GST paid on purchases — CGST')).toBe(billTax / 2 - dnTaxHalf);
     expect(fig(gst, 'GST paid on purchases — SGST')).toBe(billTax / 2 - dnTaxHalf);
     expect(fig(gst, 'Net GST (collected less paid on purchases)')).toBe(gstPosted - inputGst);
-    expect(bank.figures.filter((f) => / — difference$/.test(f.name)).map((f) => f.valueMinor)).toEqual([0, 0]);
+    // Card/UPI and payouts, and (WF-18, Batch 3 r8) the books-to-register checks the close now carries — every difference 0.
+    const differences = bank.figures.filter((f) => / — difference$/.test(f.name)).map((f) => f.valueMinor);
+    expect(differences.length).toBeGreaterThanOrEqual(2);
+    expect(differences.every((d) => d === 0)).toBe(true);
     expect(fig(bank, 'Card and UPI takings for ' + month + ' — ours')).toBe(electronic);
     expect(fig(bank, 'Provider payouts received in ' + month + ' — theirs')).toBe(electronic - fees);
     expect(fig(profit, 'Revenue net of GST and returns')).toBe(-balanceOf('sales_revenue'));

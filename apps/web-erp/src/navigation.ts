@@ -108,6 +108,9 @@ export const ERP_NAVIGATION: readonly NavItem[] = Object.freeze([
   { id: 'stock-health', label: 'Stock health', labelTa: 'சரக்கு நிலை', path: '/stock-health', requires: 'inventory.availability.read', group: 'Inventory' },
   // Products nobody can sell (SP-8c-ii · P-08): what the till refuses or was never given, and why — the list the box builds the
   // till's catalogue from, shown to the person who can fix it. Read-only, so gated on the same availability read as stock health.
+  // WF-11 · M13-FR-02: returned goods held off the shelf, each waiting for a person's decision (restock / write off /
+  // back to the supplier / repair). Gated on the authority the decision route checks (`quality.hold.manage`).
+  { id: 'held-returns', label: 'Returned goods to decide', labelTa: 'முடிவு தேவைப்படும் திரும்பிய பொருட்கள்', path: '/held-returns', requires: 'quality.hold.manage', group: 'Inventory' },
   { id: 'unsellable', label: 'Products nobody can sell', labelTa: 'யாரும் விற்க முடியாத பொருட்கள்', path: '/unsellable', requires: 'inventory.availability.read', group: 'Inventory' },
   // Shelves and space — counts on the shelf, refills, the range, the planogram (M04). Gated on the range read
   // (`merchandising.range.read`) the assortment route checks.

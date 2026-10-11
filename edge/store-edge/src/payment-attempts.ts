@@ -277,6 +277,15 @@ export class PaymentAttempts {
     };
   }
 
+  /**
+   * Every attempt on this box, on any till, that still has NO final answer: asked and never answered, or no answer and
+   * not yet settled by the provider (D04-FR-02 · WF-12). The day close reads this — the day's takings are not known
+   * while one is open, so the day does not lock over it.
+   */
+  pending(): readonly Attempt[] {
+    return [...this.attempts.values()].filter((a) => a.state === 'asked' || a.state === 'no_answer');
+  }
+
   /** The unresolved attempt on this bill, if any — the till asks before it offers the machine again. */
   unresolvedOn(laneId: string, billRef: string): Attempt | undefined {
     return [...this.attempts.values()].find((a) => a.laneId === laneId && a.billRef === billRef && a.state === 'no_answer');

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE — Your bill</title>
+    <!--
+      The customer display (D04-FR-05, M12-FR-01, P-01). Opened on the screen that faces the customer, on the same till
+      computer as the till. It shows only what the till sends it over a BroadcastChannel — each line, the saving and the
+      amount to pay — the moment the basket changes, with no network at all. It takes no input, holds no prices, writes
+      nothing and never shows a cashier's sign-in or any card detail. Between customers it says welcome.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <script src="./sre-update.js" defer></script>
+    <style>
+      body { margin:0; background:var(--bg); color:var(--ink); font:22px/1.4 var(--font); min-height:100dvh; display:flex; flex-direction:column; }
+      header { display:flex; justify-content:space-between; align-items:center; padding:16px 24px; background:var(--rail); color:var(--on-rail); }
+      header h1 { margin:0; font-size:22px; }
+      main { flex:1; padding:24px; display:grid; gap:16px; align-content:start; }
+      p.welcome { margin:0; font-size:32px; font-weight:700; text-align:center; padding:48px 0; }
+      table { width:100%; border-collapse:collapse; }
+      td { padding:8px 4px; border-bottom:1px solid var(--line); }
+      td.amount { text-align:right; font-variant-numeric:tabular-nums; }
+      .saved { font-size:20px; color:var(--muted); text-align:right; }
+      .pay { display:flex; justify-content:space-between; align-items:baseline; font-size:36px; font-weight:800; padding-top:12px; border-top:3px solid var(--ink); }
+      [hidden] { display:none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 id="title">Your bill</h1>
+      <span id="lane"></span>
+    </header>
+    <main>
+      <p class="welcome" id="welcome">Welcome</p>
+      <table id="bill" hidden aria-label="Your items"><tbody id="lines"></tbody></table>
+      <div class="saved" id="saved" hidden></div>
+      <div class="pay" id="pay" hidden><span id="pay-label">To pay</span><span id="pay-amount"></span></div>
+    </main>
+    <script src="./customer-display.js" type="module"></script>
+  </body>
+</html>

@@ -59,7 +59,10 @@ import type { LoyaltyMemberDeps, LoyaltyRule, MemberRecord } from '../../custome
 import type { LoyaltyWalletDeps, SpendApplied } from '../../customer/src/loyalty-wallets';
 import type { LoyaltyLiabilityDeps } from '../../finance/src/loyalty-liability';
 import { fulfilCompensation, type FulfilmentPorts, type CompensationFulfilment } from '../../customer/src/compensation-fulfilment';
-import { monthEvidence, type IndependentEvidenceDeps, type ImportedStatement } from '../../finance/src/independent-evidence';
+import { monthEvidence, type IndependentEvidenceDeps, type ImportedStatement, type MonthEvidence } from '../../finance/src/independent-evidence';
+import type { ControlTotalCheck } from '../../finance/src/index';
+import { stockAdjustmentSources, stockAdjustmentCheck, type PeriodBooksDeps, type CountForBooks, type WriteOffForBooks, type StockAdjustmentJournal, type AccountClass } from '../../finance/src/period-books';
+import { reconcilePayables, PAYABLES_LEFT_DERIVATION, PAYABLES_RIGHT_DERIVATION } from '../../../packages/finance/src/payables';
 import type { LoyaltyEffectsDeps, SaleEarn, ReturnTakeBack, ReturnGiveBack } from '../../customer/src/loyalty-effects';
 import { blockedProductIds, type SaleBlock, type SaleBlockDeps } from '../../inventory/src/sale-blocks';
 import type { QualityHold } from '../../../packages/quality/src/index';
@@ -100,6 +103,7 @@ import type { TransfersDeps } from '../../inventory/src/warehouse-transfers';
 import { shortfallLinesOf, shortfallLossOf, type AvailableLot, type ShortfallLoss, type Transfer, type TransferDiscrepancy } from '../../../packages/warehouse/src/transfers';
 import { countCorrection, type CountsDeps, type StoredReconciliation, type CountPolicy } from '../../inventory/src/counts';
 import type { WriteOffDeps, StoredWriteOff } from '../../inventory/src/write-off';
+import type { HeldStockDecisionDeps, HeldStockDecision } from '../../pos/src/held-stock-decisions';
 import { recipeDigest, type ProductionDeps, type StoredRun, type StoredRelease } from '../../inventory/src/production';
 import type { WeighedCostingDeps, StoredWeighedRun } from '../../inventory/src/weighed-costing';
 import type { Recipe } from '../../../packages/production/src/recipe';
@@ -8826,7 +8830,10 @@ export function independentEvidenceAdapter(input: { readonly store: EventStore; 
         .filter((t) => typeof t.ref === 'string' && t.ref.trim() !== '')
         .map((t) => ({ ref: t.ref as string, kind: t.kind, amountMinor: t.amountMinor, saleId: sale.saleId })));
       const batches = await allOf<SettlementBatch>(input.store, tenantId, STREAM.settlement, 'SettlementBatchImported');
-      return monthEvidence({ period, tenders, batches, statements: await statements(tenantId) });
+      const base = monthEvidence({ period, tenders, batches, statements: await statements(tenantId) });
+      // WF-18: the books reconciled to their registers inside the close (stock adjustments, payables, receivables).
+      const books = await bookChecksFor(input, tenantId, period);
+      return { ...base, checks: [...base.checks, ...books.checks], notChecked: [...base.notChecked, ...books.notChecked], books: books.books };
     },
   };
 }
@@ -13295,4 +13302,136 @@ export const PERSONAL_DATA_POLICY: PersonalDataPolicy = {
 /** The event store every domain writes through, with personal fields sealed under their subject's key (ADR-0025). */
 export function personalDataStore(store: EventStore, keys: SubjectKeyStore): EventStore {
   return new PersonalDataSealingStore(store, keys, PERSONAL_DATA_POLICY);
+}
+
+/**
+ * WF-11 / M13-FR-02 (Batch 3 round 8): a person's decision on a returned unit held off the shelf. The decision, its
+ * stock movements (keyed on the held unit — stock moves once) and, for a write-off, the M28 write-off record land in ONE
+ * batch: all or nothing. Decisions live on their own append-only stream beside the held register.
+ */
+export function heldStockDecisionsAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<HeldStockDecisionDeps, 'approvals' | 'locationBranches' | 'recordAudit'> {
+  const decisionsStream = streamName(STREAM.returns, 'held-stock-decisions');
+  const writeOffs = writeOffAdapter(input);
+  const blocks = saleBlocksAdapter(input);
+  return {
+    now: input.now,
+    held: (tenantId) => allOf<HeldReturnedStock>(input.store, tenantId, HELD_RETURNED_STOCK, 'ReturnedStockHeld'),
+    decisions: (tenantId) => allOf<HeldStockDecision>(input.store, tenantId, decisionsStream, 'HeldStockDecided'),
+    guardVersion: (tenantId, heldId) => input.store.guardVersion(tenantId, `held-stock:${heldId}`),
+    commit: async (tenantId, d, movements, writeOff, expectedVersion) => {
+      await input.store.appendBatch(tenantId, [
+        {
+          stream: decisionsStream,
+          event: makeEvent({ id: `held-decision-${d.decisionId}`, type: 'HeldStockDecided', occurredAt: d.decidedAt, idempotencyKey: `held-decision-${tenantId}-${d.decisionId}`, source: 'api/pos', payload: d }),
+        },
+        ...movements.map((m) => movementEvent(tenantId, m)),
+        ...(writeOff === undefined ? [] : [{
+          stream: streamName(STREAM.inventory, 'write-offs'),
+          event: makeEvent({ id: `write-off-${writeOff.id}`, type: 'WriteOffCommitted', occurredAt: writeOff.at, idempotencyKey: `write-off-${tenantId}-${writeOff.id}`, source: 'api/inventory', payload: writeOff }),
+        }]),
+      ], { guard: { key: `held-stock:${d.heldId}`, expectedVersion } });
+    },
+    permissionsOf: async (tenantId, userId) => {
+      const grants = await effectiveGrants(input.store, tenantId);
+      const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
+      return [...new Set(ROLE_CATALOGUE.filter((r) => roleIds.has(r.id)).flatMap((r) => r.permissions))];
+    },
+    batchBlocks: async (tenantId) => (await blocks.blocks(tenantId)).map((x) => ({ productId: x.productId, batchId: x.batchId, kind: x.kind, reason: x.reason })),
+    unitCostAt: (tenantId, locationId, productId) => writeOffs.unitCostAt!(tenantId, locationId, productId),
+    writeOffThreshold: (tenantId) => writeOffs.writeOffThreshold(tenantId),
+  };
+}
+
+/**
+ * WF-18 / M23 / D10-FR-03 (Batch 3 round 8): the period's books — count differences and write-offs to the ledger, the
+ * accountant's account classes, and the reads the P&L and the close need. The counts and write-offs are the registers'
+ * own records (B2's count reconciliations, the M28 write-off register), never re-typed.
+ */
+const ACCOUNT_CLASSES_STREAM = streamName(STREAM.finance, 'account-classes');
+
+export function periodBooksAdapter(input: { readonly store: EventStore; readonly now: () => string }): PeriodBooksDeps {
+  const fin = financeAdapter(input);
+  const countsStream = streamName(STREAM.inventory, 'counts');
+  const journals = (tenantId: string) => allOf<JournalEntry>(input.store, tenantId, STREAM.finance, 'JournalPosted');
+  return {
+    periodStates: fin.periodStates,
+    nextOpenPeriod: fin.nextOpenPeriod,
+    appendJournal: fin.appendJournal,
+    now: input.now,
+    postingMap: (tenantId) => latest<StoredPostingMap>(input.store, tenantId, STREAM.finance, 'PostingMapDefined'),
+    counts: async (tenantId) => {
+      const byId = new Map<string, CountForBooks>();
+      for (const r of await allOf<CountForBooks>(input.store, tenantId, countsStream, 'CountReconciled')) byId.set(r.countId, r);
+      for (const d of await allOf<CountForBooks>(input.store, tenantId, countsStream, 'CountDecided')) byId.set(d.countId, d);
+      return [...byId.values()];
+    },
+    writeOffs: (tenantId) => allOf<WriteOffForBooks>(input.store, tenantId, streamName(STREAM.inventory, 'write-offs'), 'WriteOffCommitted'),
+    stockAdjustmentJournals: async (tenantId) => (await journals(tenantId)).filter((j): j is StockAdjustmentJournal => 'stockAdjustment' in j),
+    journals,
+    accountClasses: async (tenantId) => (await latest<{ classes: Record<string, AccountClass> }>(input.store, tenantId, ACCOUNT_CLASSES_STREAM, 'AccountClassesDefined'))?.classes,
+    defineAccountClasses: async (tenantId, classes, by) => {
+      const at = input.now();
+      const d = createHash('sha256').update(JSON.stringify(classes)).digest('hex').slice(0, 16);
+      await input.store.append(tenantId, ACCOUNT_CLASSES_STREAM, makeEvent({
+        id: `account-classes-${d}-${at}`, type: 'AccountClassesDefined', occurredAt: at,
+        idempotencyKey: `account-classes-${tenantId}-${d}-${at}`, source: 'api/finance', payload: { classes, definedBy: by, at },
+      }));
+    },
+  };
+}
+
+/**
+ * WF-18: the books-to-register checks the close adds beside the card/UPI and bank checks — count differences and
+ * write-offs (the stock registers against the stock-adjustment journals), payables (the purchase register against the
+ * payables control account) and receivables (the credit-customer ledger against the receivables control account). A
+ * check appears only when its register has something in it; otherwise it is said in `notChecked`, never counted as
+ * agreement.
+ */
+async function bookChecksFor(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, period: string): Promise<{ checks: ControlTotalCheck[]; notChecked: string[]; books: NonNullable<MonthEvidence['books']> }> {
+  const checks: ControlTotalCheck[] = [];
+  const notChecked: string[] = [];
+  // Stock adjustments.
+  const pb = periodBooksAdapter(input);
+  const [counts, writeOffs, adjJournals] = await Promise.all([pb.counts(tenantId), pb.writeOffs(tenantId), pb.stockAdjustmentJournals(tenantId)]);
+  const stock = stockAdjustmentCheck(period, stockAdjustmentSources(counts, writeOffs), adjJournals);
+  if (stock.check !== null) checks.push(stock.check);
+  else notChecked.push(`Count differences and write-offs: none applied in ${period}.`);
+  // Payables.
+  const ap = payablesAdapter(input);
+  const [accounts, apJournals, map] = await Promise.all([ap.supplierAccounts(tenantId), ap.payablesJournals(tenantId), ap.postingMap(tenantId)]);
+  const active = accounts.filter((a) => a.invoices.some((i) => i.matched) || a.debitNotes.length > 0 || a.payments.length > 0 || (a.openings ?? []).some((o) => o.signed));
+  let payablesUnposted = 0;
+  if (active.length > 0) {
+    const rec = reconcilePayables(active, apJournals.map((j) => ({ ...j.payables, lines: j.lines })), map);
+    payablesUnposted = rec.suppliers.reduce((n, s) => n + s.unposted.length, 0);
+    checks.push({
+      name: `Supplier payables as at the close of ${period}`,
+      leftMinor: rec.registerOwedMinor, rightMinor: rec.ledgerOwedMinor,
+      leftDerivation: PAYABLES_LEFT_DERIVATION,
+      rightDerivation: rec.controlAccount === null ? 'finance ledger: no payables control account is named by the mapping in force' : PAYABLES_RIGHT_DERIVATION,
+    });
+  } else notChecked.push('Supplier payables: no matched bill, debit note, payment or signed opening balance is on the purchase register.');
+  // Receivables (credit customers).
+  const postables = await allOf<B2BPostable>(input.store, tenantId, B2B_POSTABLES, 'B2BPostable');
+  const customers = [...new Set(postables.map((p) => p.customerId))].sort();
+  let receivablesLedgerMinor = 0;
+  let receivablesBooksMinor = 0;
+  if (customers.length > 0) {
+    for (const c of customers) {
+      receivablesLedgerMinor += (await allOf<RecordedReceivable>(input.store, tenantId, forB2BCustomer(c), 'B2BReceivableMovement')).reduce((b, m) => b + m.deltaMinor, 0);
+    }
+    const control = map?.rules.find((r) => r.kind === 'b2b:invoice')?.legs.find((l) => l.side === 'debit' && l.component === 'total')?.account;
+    const b2bJournals = (await allOf<JournalEntry | B2BJournal>(input.store, tenantId, STREAM.finance, 'JournalPosted')).filter((j): j is B2BJournal => 'b2b' in j);
+    receivablesBooksMinor = control === undefined ? 0 : b2bJournals.flatMap((j) => j.lines).filter((l) => l.accountCode === control).reduce((n, l) => n + l.debitMinor - l.creditMinor, 0);
+    checks.push({
+      name: `Credit-customer receivables as at the close of ${period}`,
+      leftMinor: receivablesLedgerMinor, rightMinor: receivablesBooksMinor,
+      leftDerivation: 'the credit-customer ledger: every invoice and collection movement on each customer\'s account',
+      rightDerivation: control === undefined ? 'finance ledger: no receivables control account is named by the mapping in force' : `finance ledger: debits less credits on ${control} across the posted B2B journals`,
+    });
+  } else notChecked.push('Credit-customer receivables: no credit customer has an invoice or a collection.');
+  return {
+    checks, notChecked,
+    books: { stockAdjustmentsUnposted: stock.unposted, stockAdjustmentsUnvalued: stock.unvalued, payablesUnposted, receivablesLedgerMinor, receivablesBooksMinor },
+  };
 }

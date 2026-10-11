@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
-import { prepareTillBox, pinOf } from '../support/till-operator';
+import { prepareTillBox, pinOf, signInAtLane, operatorHeader } from '../support/till-operator';
 
 /**
  * **The store manager closes the day, in a real browser, and it reaches the store computer (M14-FR-04 · P-01).**
@@ -179,5 +179,29 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
     expect(edge.dayCloseOutbox.pending()).toHaveLength(0);
     const records = await readLog(edge.dayCloseLog.path);
     expect(records.filter((r) => r.ok === true)).toHaveLength(0);
+  });
+
+  it('D04-FR-02: a card or UPI payment with no final answer is on the close list — named, and the close is not offered', async () => {
+    const { edge, base } = await boxWithScreen();
+    // The cashier's till recorded a UPI request on the box and nothing came back from the machine.
+    const token = await signInAtLane(edge.lane!.port, 'u-lanecash');
+    const asked = await fetch(`http://127.0.0.1:${edge.lane!.port}/lane/payment-attempts`, {
+      method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeader(token) },
+      body: JSON.stringify({ attemptId: 'PAY-e2e-pending', billRef: 'B-e2e-1', kind: 'upi', amountMinor: 41_000 }),
+    });
+    expect(await asked.json()).toMatchObject({ ok: true });
+
+    const page = await openCloseTab(base);
+    await page.waitForFunction(
+      () => ((globalThis as unknown as BrowserGlobals).document.getElementById('blockers')?.textContent ?? '').includes('no final answer'),
+      undefined, { timeout: 10_000 },
+    );
+    const list = (await page.textContent('#blockers')) ?? '';
+    expect(list).toContain('1 card or UPI payment(s) have no final answer yet');
+    expect(list).toContain('UPI payment of Rs 410.00 on till lane-1, bill B-e2e-1');
+    expect(list).toMatch(/Do not run the card again/);
+    // Nothing to tap: the close is not offered while a payment is unresolved.
+    expect(await page.locator('#do-close').getAttribute('hidden')).not.toBeNull();
+    expect(await readLog(edge.dayCloseLog.path)).toEqual([]);
   });
 });

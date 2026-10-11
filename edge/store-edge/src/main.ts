@@ -83,6 +83,7 @@ import { TillApprovals } from './till-approvals';
 import { ReceiptNumbers } from './receipt-numbers';
 import { HeldBills } from './held-bills';
 import { PaymentAttempts, type PaymentProviderPort } from './payment-attempts';
+import { PeripheralReports } from './peripheral-health';
 import { LoyaltyWallets } from './loyalty-wallets';
 import { ConcessionTrading } from './concession-trading';
 import { pullConcessionTradingFeed, type ConcessionTradingPullOutcome } from '../../sync-agent/src/concession-trading-feed';
@@ -1271,6 +1272,10 @@ export async function startEdge(
     dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
     ...(ports.paymentProvider === undefined ? {} : { provider: ports.paymentProvider }),
   });
+  // D04-FR-05: what the till's devices last said, kept on this box's disk for the manager's Today screen.
+  const peripheralReports = tillOperators === null ? null : await PeripheralReports.open({
+    dataDir: settings['EDGE_DATA_DIR']!, capacityBytes: Number(settings['EDGE_CAPACITY_BYTES']),
+  });
   if (tillOperators !== null) {
     say(trustForwardedTillUser
       ? 'till sign-in: the person the hosted sign-in names (EDGE_LANE_TRUST_FORWARDED_USER) — only right behind the hosted front.'
@@ -1292,6 +1297,7 @@ export async function startEdge(
         seal: (subject) => sealTillFact(sealKey, { ...subject, tenantId }),
       },
     }),
+    ...(peripheralReports === null ? {} : { peripherals: { report: (i) => peripheralReports.report(i) } }),
     ...(payments === null ? {} : {
       payments: {
         ask: (i) => payments.ask(i),
@@ -1417,6 +1423,8 @@ export async function startEdge(
       // hours after midnight UTC (SP-4b). The till dates each sale by the same rule at the moment it is taken.
       tradingDay: tradingDate(wallClockIn(now), packCutoff(pack)),
       ...(heldCatalogue === undefined ? {} : { cataloguePack: heldCatalogue }),
+      ...(payments === null ? {} : { pendingPayments: payments.pending() }),
+      ...(peripheralReports === null ? {} : { peripheralReports: peripheralReports.latest() }),
     };
   };
 
@@ -1531,6 +1539,11 @@ export async function startEdge(
       if (tradingDate(wallClockIn(state.openedAt), rule) > dayToClose) return [];
       return [{ tillId, custodian: state.custodian, openedAt: state.openedAt }];
     });
+    // D04-FR-02 · PF-06 · WF-12: every card/UPI payment asked on or before the day being closed that still has no final
+    // answer — read from the box's own payment-attempt log. A payment asked on the NEW day does not hold yesterday.
+    const pendingPayments = (payments?.pending() ?? [])
+      .filter((a) => tradingDate(wallClockIn(a.askedAt), rule) <= dayToClose)
+      .map((a) => ({ attemptId: a.attemptId, laneId: a.laneId, billRef: a.billRef, kind: a.kind, amountMinor: a.amountMinor, askedAt: a.askedAt, state: a.state as 'asked' | 'no_answer' }));
 
     // Gate-check with the tested engine (a throwaway outbox — the durable write + enqueue below is what
     // survives a restart, so we do not use the engine's own enqueue here). A blocker throws; surface it.
@@ -1538,7 +1551,7 @@ export async function startEdge(
       decideDayClose({
         id: req.dayCloseId, storeId: storeIdHere, tradingDay: dayToClose, closedBy: (req.closedBy ?? '').trim() || (req.verifiedPerson?.userId ?? 'unconfirmed'),
         closedAtLocal: wallClockIn(input.now), closedAt: input.now, tradingDayRule: rule,
-        unresolvedExceptions, unsentSyncItems, openShifts,
+        unresolvedExceptions, unsentSyncItems, openShifts, pendingPayments,
       }, new SyncOutbox());
     } catch (e) {
       return { closed: false, reason: e instanceof Error ? e.message : String(e) };
@@ -1710,6 +1723,7 @@ export async function startEdge(
         if (receiptNumbers !== null) await receiptNumbers.close();
         if (heldBills !== null) await heldBills.close();
         if (payments !== null) await payments.close();
+        if (peripheralReports !== null) await peripheralReports.close();
         await log.close();
         await returnsLog.close();
         await completionsLog.close();
@@ -2318,6 +2332,7 @@ export async function startEdge(
       if (receiptNumbers !== null) await receiptNumbers.close();
       if (heldBills !== null) await heldBills.close();
       if (payments !== null) await payments.close();
+      if (peripheralReports !== null) await peripheralReports.close();
       await log.close();
       await returnsLog.close();
       await completionsLog.close();

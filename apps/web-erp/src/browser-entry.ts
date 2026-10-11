@@ -293,6 +293,8 @@ export interface ManagerData {
   readonly approvals?: readonly ApprovalRequest[];
   readonly openExceptions?: readonly RegisterItem[];
   readonly unsentItems?: readonly RegisterItem[];
+  /** Card/UPI payments on the store computer with no final answer (D04-FR-02); absent when the box takes none. */
+  readonly pendingPayments?: readonly RegisterItem[];
   readonly tasks?: readonly RegisterItem[];
   // Who runs this screen, where, and which day — from the store pack (Stage G slice 5c · §28 · hard rule #4).
   // Absent means the box was not told; the screen then names nobody and refuses every decision.
@@ -4523,6 +4525,10 @@ interface ManagerWindow {
     present(worklist: OperationsWorklistData): OperationsInboxSession;
   };
   returnGovernanceData?: ReturnGovernanceData;
+  /** WF-11: who is on the 'Returned goods to decide' screen (the box's word); the list and every decision are head office's. */
+  heldReturnsData?: { readonly userId?: string; readonly permissions?: readonly string[] };
+  /** The person the box named for that screen, or null — shown in the header, never used to decide. */
+  heldReturnsWho?: string | null;
   returnGovernanceSession?: ReturnGovernanceSession;
   /** The shell reads the live refund exceptions through this and re-presents them — a GET read, never a write. */
   returnGovernance?: {
@@ -4746,6 +4752,7 @@ export function portsFromData(data: ManagerData | undefined): ManagerPorts {
     openExceptions: () => register(data.openExceptions),
     unsentItems: () => register(data.unsentItems),
     tasks: () => register(data.tasks),
+    ...(data.pendingPayments === undefined ? {} : { pendingPayments: () => register(data.pendingPayments) }),
   };
 }
 
@@ -5828,6 +5835,8 @@ if (browserWindow !== undefined) {
   // then the shell refreshes the flagged refunds with a live GET (read-only). Offline it shows its sample stand-in
   // and says so. READ-ONLY — a breach is worked out of band (the money already moved at the lane), so there is no
   // write from this screen; the cloud route re-checks `lp.case.read`, so this only shapes the UI (P-03/P-08).
+  // WF-11: the held-returns screen boots on identity alone; head office answers for the list and every decision.
+  browserWindow.heldReturnsWho = browserWindow.heldReturnsData?.userId ?? null;
   const returnGovernanceData = browserWindow.returnGovernanceData;
   const returnGovernance = bootReturnGovernance(returnGovernanceData);
   if (returnGovernance !== null) {

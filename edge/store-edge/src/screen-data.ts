@@ -58,6 +58,8 @@ import { packFreshness, type SignedPack } from '../../../services/catalogue/src/
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
   'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'indents', 'unsellable', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor', 'approvals',
+  // WF-11 (Batch 3 r8): returned goods held off the shelf, each waiting for a person's decision.
+  'held-returns',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -76,6 +78,13 @@ export interface ScreenInput {
    * prices/recalls have fallen — computed from the pack's own `builtAt`, not the box's boot clock.
    */
   readonly cataloguePack?: SignedPack;
+  /**
+   * Card/UPI payments on this box with no final answer (D04-FR-02 · PF-06), read from its payment-attempt log. Absent on
+   * a box that takes no card payments. The manager's close list shows each; the box's close refuses over them.
+   */
+  /** D04-FR-05: the latest device report from each till on this box; absent on a box with no till. */
+  readonly peripheralReports?: readonly { readonly laneId: string; readonly reportedBy: string; readonly reportedAt: string; readonly devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[] }[];
+  readonly pendingPayments?: readonly { readonly attemptId: string; readonly laneId: string; readonly billRef: string; readonly kind: 'card' | 'upi'; readonly amountMinor: number; readonly askedAt: string; readonly state: string }[];
 }
 
 /**
@@ -469,7 +478,18 @@ export function todayFigures(input: ScreenInput): Record<string, TodayFigure> {
     ? { known: true, value: pack.deliveries.value.filter((d) => dateOf(d.slotStartsAt) === input.tradingDay).length, note: 'customer deliveries in today\'s slots' }
     : notGiven('the delivery slots');
 
-  return { salesToday, purchaseOrdersOpen, receiptsRecorded, indentsOpen, countsAwaitingApproval, expiringSoon, recallsOpen, checklistOpen, deliveriesToday };
+  // D04-FR-05: the tills' devices — how many are failed or not working properly, each named. No report is "not known",
+  // never "all fine" (P-08). Only on a box that has a till.
+  const tillDevices: TodayFigure | undefined = input.peripheralReports === undefined ? undefined
+    : input.peripheralReports.length === 0
+      ? { known: false, why: 'no till has reported its scanner, printer, scale, drawer or card machine yet' }
+      : ((): TodayFigure => {
+        const bad = input.peripheralReports!.flatMap((r) => r.devices.filter((d) => d.state !== 'ok').map((d) => `${r.laneId}: ${d.kind.replace('_', ' ')} ${d.state === 'failed' ? 'has failed' : 'is not working properly'}${d.detail === undefined ? '' : ` — ${d.detail}`}`));
+        const oldest = input.peripheralReports!.map((r) => r.reportedAt).sort()[0]!;
+        return { known: true, value: bad.length, note: bad.length === 0 ? `every device reported working (oldest report ${oldest})` : bad.join('; ') };
+      })();
+
+  return { salesToday, purchaseOrdersOpen, receiptsRecorded, indentsOpen, countsAwaitingApproval, expiringSoon, recallsOpen, checklistOpen, deliveriesToday, ...(tillDevices === undefined ? {} : { tillDevices }) };
 }
 
 export function managerPayload(input: ScreenInput): Record<string, unknown> {
@@ -496,6 +516,13 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   // The Today page (UX-2b): every figure from the pack or this box's log, or said to be not known (P-08).
   payload['today'] = todayFigures(input);
 
+  // D04-FR-02 · PF-06: card/UPI payments with no final answer — the close list names each one (P-08).
+  if (input.pendingPayments !== undefined) {
+    payload['pendingPayments'] = input.pendingPayments.map((p) => ({
+      id: p.attemptId,
+      what: `${p.kind === 'upi' ? 'UPI' : 'Card'} payment of Rs ${(p.amountMinor / 100).toFixed(2)} on till ${p.laneId}, bill ${p.billRef}, asked ${p.askedAt} — ${p.state === 'asked' ? 'no answer was recorded from the machine' : 'no answer; not yet settled by the provider'}`,
+    }));
+  }
   // Every pending item, whatever it is. The manager's screen lists them, so a sale and a stock
   // adjustment both belong here — "3 things have not reached the cloud" is the honest count.
   payload['unsentItems'] = input.outbox.pending().map((item) => ({
@@ -2406,6 +2433,7 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   'day-book': 'dayBookData',
   'document-templates': 'documentTemplatesData',
   'return-governance': 'returnGovernanceData',
+  'held-returns': 'heldReturnsData',
   'cash-office': 'cashOfficeData',
   'risk-acceptance': 'riskAcceptanceData',
   'day-reopen': 'dayReopenData',
@@ -2460,6 +2488,8 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   'day-book': dayBookPayload,
   'document-templates': documentTemplatesPayload,
   'return-governance': returnGovernancePayload,
+  // WF-11: the same reviewer identity as the refund exceptions; the worklist and every decision are head office's.
+  'held-returns': returnGovernancePayload,
   'cash-office': cashOfficePayload,
   'risk-acceptance': riskAcceptancePayload,
   'day-reopen': dayReopenPayload,

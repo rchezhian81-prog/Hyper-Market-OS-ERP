@@ -97,6 +97,11 @@ export interface ManagerPorts {
   /** Opening/closing checklists and staff tasks for the day (D11-FR-01 / M25). */
   tasks(tradingDay: string): Register;
   /**
+   * Card or UPI payments on the store computer with no final answer (D04-FR-02 · PF-06). Absent on a screen whose box
+   * does not take card payments; present, an open one blocks the close exactly like an open exception.
+   */
+  pendingPayments?(tradingDay: string): Register;
+  /**
    * Ask the STORE COMPUTER to close and lock the trading day (M14-FR-04).
    *
    * Absent means this screen is not wired to a box — the local preview close is used instead, and it
@@ -181,6 +186,8 @@ export const BLOCKER_KINDS = Object.freeze([
   'rules_refused',
   /** Nobody is named on this screen, so nobody can lock the day (hard rule #4). */
   'nobody_named',
+  /** A card or UPI payment has no final answer yet — the day's takings are not known (D04-FR-02 · PF-06). */
+  'payments_pending',
 ] as const);
 
 export type BlockerKind = (typeof BLOCKER_KINDS)[number];
@@ -224,6 +231,8 @@ export function blockerSentence(blocker: Blocker): string {
       return `The day-close rules refused: ${blocker.why ?? 'no reason given'}.`;
     case 'nobody_named':
       return 'Nobody is named on this screen, so nobody can close the day.';
+    case 'payments_pending':
+      return `${blocker.count} card or UPI payment(s) still have no final answer from the provider.`;
   }
 }
 
@@ -626,6 +635,7 @@ export function createManagerSession(
     const gates: readonly { readonly source: string; readonly kind: BlockerKind; readonly register: Register }[] = [
       { source: 'exceptions', kind: 'exceptions_open', register: ports.openExceptions(config.tradingDay) },
       { source: 'unsent', kind: 'items_unsent', register: unsentIncludingHeldHere() },
+      ...(ports.pendingPayments === undefined ? [] : [{ source: 'payments', kind: 'payments_pending' as BlockerKind, register: ports.pendingPayments(config.tradingDay) }]),
     ];
     for (const gate of gates) {
       if (!gate.register.known) {
