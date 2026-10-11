@@ -131,7 +131,8 @@ jobs:
         run: |
           test -n "$DATABASE_URL" \
             || (echo "::error::DATABASE_URL is not set — the required database tests would silently skip" && exit 1)
-          pnpm run test:db
+          # Every failing test is also raised as a GitHub annotation, so a red job names the test without the raw log.
+          pnpm run test:db -- --reporter=default --reporter=github-actions
 
       - name: Backup, destroy and restore, reconciled (QG-08)
         env:
