@@ -116,7 +116,8 @@ describe.skipIf(!HAVE_BROWSER)('an accountant/owner reopens a locked day, end to
     }, () => {}))!;
     stops.push(() => edge.stop());
     const dayCloseId = 'dc-e2e';
-    const closed = await edge.closeDay({ dayCloseId, closedBy: 'manager' });
+    // Round 4: the close is the closer's own act — the owner, with their own PIN.
+    const closed = await edge.closeDay({ dayCloseId, closedBy: 'u-owner', closerPin: pinOf('u-owner') });
     if (!closed.closed) throw new Error(`could not seed a locked day: ${closed.reason}`);
     return { edge, laneBase: `http://127.0.0.1:${edge.lane!.port}`, dayCloseId, tradingDay: closed.tradingDay };
   }

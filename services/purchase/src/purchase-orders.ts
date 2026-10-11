@@ -28,9 +28,10 @@ import {
 } from '../../../packages/purchasing/src/index';
 import { requestApproval, decide, type Approver } from '../../../packages/approvals/src/index';
 import { money, isCurrencyCode, type CurrencyCode } from '../../../packages/contracts/src/money';
+import { unitCostFromPackCost, UnknownPackLevelError, type PackHierarchy } from '../../../packages/product/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { assertLocationInScope, stockReadScope, locationIsItsOwnBranch, type LocationBranches } from '../../inventory/src/location-scope';
-import { normaliseUom, valueAtUnitCost } from '../../../packages/contracts/src/quantity';
+import { normaliseUom, valueAtUnitCost, minorPerUnitOf } from '../../../packages/contracts/src/quantity';
 
 /** A durable purchase order — proposed by a buyer, and (once a second person approves) issued. */
 export interface StoredPurchaseOrder {
@@ -61,6 +62,8 @@ export interface StoredPurchaseOrder {
 }
 
 export interface PurchaseOrderDeps {
+  /** SF-11: the product's pack hierarchy (case → inner → base), so a line ordered by the case converts exactly. Optional on a stub. */
+  readonly packOf?: (tenantId: string, productId: string) => Promise<PackHierarchy | undefined> | PackHierarchy | undefined;
   /** One PO by id, folded to its current state, or undefined. */
   readonly order: (tenantId: string, poId: string) => Promise<StoredPurchaseOrder | undefined> | StoredPurchaseOrder | undefined;
   /** Every PO — the buying review surface. */
@@ -109,12 +112,82 @@ const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof
 const isPosInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
 const isMinor = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
 
-interface RawLine { readonly productId: string; readonly orderedQty: number; readonly unitCost: { readonly minor: number; readonly currency: string }; }
+interface RawLine {
+  readonly productId: string; readonly orderedQty: number; readonly unitCost: { readonly minor: number; readonly currency: string };
+  readonly uom?: string;
+  readonly ordered?: { readonly level: string; readonly quantity: number; readonly unitsPerPack: number; readonly packCost: { readonly minor: number; readonly currency: string } };
+}
 
 const isRawLine = (v: unknown): v is RawLine =>
   isObj(v) && isStr(v['productId']) && isPosInt(v['orderedQty'])
   && isObj(v['unitCost']) && isMinor((v['unitCost'] as Record<string, unknown>)['minor'])
-  && typeof (v['unitCost'] as Record<string, unknown>)['currency'] === 'string';
+  && typeof (v['unitCost'] as Record<string, unknown>)['currency'] === 'string'
+  && (v['uom'] === undefined || isStr(v['uom']));
+
+/**
+ * SF-11 (M03-FR-02 · OB-31): a line ordered BY THE PACK — `{ productId, pack: { level, quantity }, packCost }` — becomes a line
+ * in the product's smallest steps through its own pack hierarchy (OB-31 rule 5: a level counts in whole base units): 5 cases of
+ * 24 is 120 items; 4 sacks of 25 kg is 100 kg = 100 000 g. The cost per whole unit (an item; a kilo) is the pack cost divided
+ * exactly — a pack cost that does not divide into whole paise is REFUSED by name rather than rounded into a price nobody
+ * agreed. A line without `pack` passes through untouched.
+ */
+async function expandPackedLines(deps: PurchaseOrderDeps, tenantId: string, raw: unknown): Promise<unknown> {
+  if (!Array.isArray(raw)) return raw;
+  const out: unknown[] = [];
+  for (const v of raw) {
+    if (!isObj(v) || v['pack'] === undefined) { out.push(v); continue; }
+    const pack = v['pack'];
+    const packCost = v['packCost'];
+    if (!isStr(v['productId']) || !isObj(pack) || !isStr(pack['level']) || !isPosInt(pack['quantity'])
+      || !isObj(packCost) || !isMinor(packCost['minor']) || (packCost['minor'] as number) < 0 || typeof packCost['currency'] !== 'string') {
+      throw apiError(400, {
+        code: 'not_readable_as_a_pack_line',
+        whatHappened: 'A line ordered by the pack needs { productId, pack: { level, quantity (whole, more than 0) }, packCost: { minor, currency } } — the cost of ONE pack at that level.',
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Send the pack level, how many, and what one pack costs. Nothing was saved.',
+      });
+    }
+    const productId = v['productId'];
+    const hierarchy = await deps.packOf?.(tenantId, productId);
+    if (hierarchy === undefined) {
+      throw apiError(422, {
+        code: 'no_pack_hierarchy',
+        whatHappened: `Product ${productId} has no pack hierarchy defined, so "${pack['level']}" cannot be turned into a number of units.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Define the product\'s packs first (POST /v1/catalogue/products/:productId/pack), or order it in its base unit. Nothing was saved.',
+      });
+    }
+    let converted;
+    const per = normaliseUom(hierarchy.baseUom) ?? hierarchy.baseUom;
+    try {
+      converted = unitCostFromPackCost(hierarchy, pack['level'], packCost['minor'] as number);
+    } catch (err) {
+      if (err instanceof UnknownPackLevelError) {
+        throw apiError(422, {
+          code: 'unknown_pack_level',
+          whatHappened: `Product ${productId}'s pack has no level "${pack['level']}" (it has ${hierarchy.levels.map((l) => l.level).join(', ')}).`,
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Order in one of the levels the product\'s pack defines. Nothing was saved.',
+        });
+      }
+      throw err;
+    }
+    if (!converted.exact) {
+      throw apiError(422, {
+        code: 'pack_cost_not_whole_paise',
+        whatHappened: `One ${pack['level']} of ${productId} holds ${converted.unitsPerPack} ${per}; ${packCost['minor'] as number} paise for it is ${((packCost['minor'] as number) / converted.unitsPerPack).toFixed(4)} paise per ${per} — not a whole number of paise. The cost per ${per} is what stock is valued at, so it is never rounded silently.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: `Ask the supplier for the cost per ${per} in whole paise and order in the base unit, or agree a pack cost that divides exactly. Nothing was saved.`,
+      });
+    }
+    out.push({
+      productId, orderedQty: (pack['quantity'] as number) * converted.unitsPerPack * minorPerUnitOf(hierarchy.baseUom),
+      unitCost: { minor: converted.unitCostMinor, currency: packCost['currency'] }, uom: hierarchy.baseUom,
+      ordered: { level: pack['level'], quantity: pack['quantity'], unitsPerPack: converted.unitsPerPack, packCost: { minor: packCost['minor'], currency: packCost['currency'] } },
+    });
+  }
+  return out;
+}
 
 /**
  * The open-commitment view an issued PO carries (M06-FR-04): ordered − received − cancelled, valued
@@ -237,7 +310,7 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
       handler: async (ctx) => {
         const poId = (ctx.params['poId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
-        const lines = b['lines'];
+        const lines = await expandPackedLines(deps, ctx.tenantId, b['lines']); // SF-11: a line ordered by the case, in base units
         if (poId === '' || !isStr(b['supplierId']) || !Array.isArray(lines) || lines.length === 0 || !lines.every(isRawLine)) {
           throw apiError(400, {
             code: 'not_readable_as_a_purchase_order',
@@ -285,7 +358,11 @@ export function purchaseOrderRoutes(deps: PurchaseOrderDeps): readonly Route[] {
         for (const l of lines as RawLine[]) {
           const master = deps.productUom === undefined ? undefined : await deps.productUom(ctx.tenantId, l.productId);
           const uom = master === undefined ? undefined : normaliseUom(master) ?? master;
-          poLines.push({ productId: l.productId, orderedQty: l.orderedQty, unitCost: money(l.unitCost.minor, currency), ...(uom === undefined ? {} : { uom }) });
+          poLines.push({
+            productId: l.productId, orderedQty: l.orderedQty, unitCost: money(l.unitCost.minor, currency), ...(uom === undefined ? {} : { uom }),
+            // SF-11: the order as the buyer placed it, by the pack — kept beside the base-unit figures it was converted to.
+            ...(l.ordered === undefined ? {} : { ordered: { ...l.ordered, packCost: money(l.ordered.packCost.minor, currency) } }),
+          });
         }
         const totalMinor = poLines.reduce((s, l) => s + valueAtUnitCost(l.orderedQty, l.uom ?? 'ea', l.unitCost.minor), 0);
         const po: StoredPurchaseOrder = {

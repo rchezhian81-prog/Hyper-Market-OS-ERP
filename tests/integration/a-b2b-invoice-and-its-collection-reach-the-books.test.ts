@@ -48,7 +48,9 @@ describe.each(backings)('FUL-09 — a B2B invoice and its collection move AR and
 
     await ok(call('POST', '/v1/b2b/accounts/CUST1', { creditLimitMinor: 1_000_000, paymentTermsDays: 30 }), 'terms');
     await ok(call('POST', '/v1/b2b/documents/CUST1/quotations/q1', { lines: LINES }), 'quote');
-    await ok(call('POST', '/v1/b2b/documents/CUST1/orders/so1', { fromQuotationId: 'q1' }), 'order');
+    // FUL-09: the order holds its rice at the store it is supplied from.
+    await ok(call('POST', '/v1/inventory/movements', { movementId: 'rice-in', productId: 'p1', locationId: 'S1', kind: 'received', quantityMinor: 50, uom: 'ea', occurredAt: new Date().toISOString(), enteredBy: 'u-owner' }), 'stock');
+    await ok(call('POST', '/v1/b2b/documents/CUST1/orders/so1', { fromQuotationId: 'q1', locationId: 'S1' }), 'order');
     await ok(call('POST', '/v1/b2b/documents/CUST1/challans/dc1', { fromOrderId: 'so1', dispatched: { l1: 10 } }), 'challan');
     const inv = await ok(call('POST', '/v1/b2b/documents/CUST1/invoices/inv1', { fromOrderId: 'so1' }), 'invoice');
     const today = new Date().toISOString().slice(0, 10);

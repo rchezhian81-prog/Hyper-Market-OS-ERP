@@ -54,7 +54,7 @@ describe('domain data export: an open, audited, permission-checked route out of 
     const res = await listDomains(h, 'u-owner');
     expect(res.status).toBe(200);
     const domains = (res.body as { domains: { domain: string; requires: string; columns: unknown[] }[] }).domains;
-    expect(domains.map((d) => d.domain).sort()).toEqual(['import-commits', 'products']);
+    expect(domains.map((d) => d.domain).sort()).toEqual(['customers', 'import-commits', 'ledger-journals', 'loyalty-wallets', 'orders', 'payslips', 'products', 'purchase-orders', 'sales', 'stock-on-hand', 'suppliers']); // SF-10 added four, then five more (round 5)
     expect(domains.find((d) => d.domain === 'products')!.requires).toBe('catalogue.pack.read');
   });
 

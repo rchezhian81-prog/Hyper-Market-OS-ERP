@@ -161,6 +161,11 @@ export interface DeltaChange {
   readonly locationId?: string;
   readonly uom?: string;
   readonly unitCostMinor?: number;
+  /** For a `sale` change (GT-04 money): the bill's net and GST split (deltaMinor is the total) and how it was paid. */
+  readonly netMinor?: number;
+  readonly cgstMinor?: number;
+  readonly sgstMinor?: number;
+  readonly tender?: string;
 }
 
 export type DeltaOutcome = 'applied' | 'already_applied' | 'refused_before_cutoff' | 'refused_production';

@@ -154,6 +154,10 @@ export {
   type ExtractCustomer, type ExtractStockRow, type BarcodeKind, type LoadRequest, type LoadRefusal,
   type LoadGroup, type LoadStep, type LoadPlan, type LoadPlanOk, type LoadPlanRefused, type LoadClient,
   type LoadStepOutcome, type LoadReport,
+  // GT-05 (MG-08): opening state — stock by location/batch, stored value, receivables, supplier openings — and its read-back.
+  readBackOpening, stockByLocation, openingGrnId,
+  type ExtractStoredValue, type ExtractReceivable, type ExtractPayable,
+  type ReadBackClient, type OpeningDomain, type OpeningCheckLine, type OpeningReadBack,
 } from './load';
 
 export {
@@ -171,3 +175,12 @@ export {
   type InitialAdminRequest, type TenantBootstrapRequest, type BootstrapRefusal, type TenantBootstrapPlan,
   type TenantBootstrapPlanOk, type TenantBootstrapRefused,
 } from './tenant-bootstrap';
+
+// GT-05 (MG-07): history and attachments live in './history-load' — imported from there directly, not re-exported here,
+// because they hash file bytes with node:crypto and this barrel is bundled into the browser apps.
+
+// GT-05 (MG-08 "open orders"): purchase orders open on the old system at cutover — issued, with what already came carried.
+export {
+  planOpenOrders, executeOpenOrders, readBackOpenOrders, carriedReceiptId,
+  type ExtractOpenOrder, type ExtractOpenOrderLine, type OpenOrderPlan, type OpenOrderRequest, type OpenOrderReport, type OpenOrderCheckLine,
+} from './open-orders';

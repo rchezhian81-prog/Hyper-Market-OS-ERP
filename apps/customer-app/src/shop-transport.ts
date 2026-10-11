@@ -39,6 +39,12 @@ export interface ShopOrderRequest {
   };
   /** Delivered or collected (FUL-03): the shop adds its own delivery fee to its quote for a delivery. */
   readonly fulfilment?: 'delivery' | 'pickup';
+  /**
+   * For a delivery (FUL-03): the slot the customer chose and where to deliver — the shop checks both against its OWN
+   * record (the slot offered and not full, the address inside its radius) and refuses the order otherwise.
+   */
+  readonly deliverySlot?: { readonly startsAt: string; readonly endsAt: string };
+  readonly deliveryLocation?: { readonly lat: number; readonly lon: number };
 }
 
 /** A follow-up on an order the shop already holds (FUL-03 / FUL-07): pay for what it promised, ask again, or cancel. */
@@ -57,6 +63,18 @@ export interface ShopTransport {
   placeOrder(request: ShopOrderRequest): Promise<ShopAnswer>;
   /** Optional on a scripted shop: a follow-up on an order already placed. */
   followUp?(request: ShopOrderFollowUp): Promise<ShopAnswer>;
+  /** FUL-06: the customer's own privacy centre on the shop (`/v1/me/privacy…`) — consent and data requests. */
+  privacy?(request: ShopPrivacyRequest): Promise<ShopAnswer>;
+}
+
+/** One privacy call to the shop, as the signed-in customer. The path is under `/v1/me/privacy`. */
+export interface ShopPrivacyRequest {
+  readonly token: string;
+  readonly method: 'GET' | 'POST';
+  /** '' (read my position), '/consent', or '/requests/<id>'. */
+  readonly path: '' | '/consent' | `/requests/${string}`;
+  readonly body?: unknown;
+  readonly idempotencyKey?: string;
 }
 
 /** What the shop's answer means for the customer's order. */
@@ -156,6 +174,8 @@ export function httpShopTransport(options: HttpShopTransportOptions): ShopTransp
             locationId: request.locationId,
             ...(request.payment === undefined ? {} : { payment: request.payment }),
             ...(request.fulfilment === undefined ? {} : { fulfilment: request.fulfilment }),
+            ...(request.deliverySlot === undefined ? {} : { deliverySlot: request.deliverySlot }),
+            ...(request.deliveryLocation === undefined ? {} : { deliveryLocation: request.deliveryLocation }),
           }),
           signal: controller.signal,
         });
@@ -167,6 +187,33 @@ export function httpShopTransport(options: HttpShopTransportOptions): ShopTransp
         return aborted
           ? { reached: false, why: 'timed_out', detail: `the shop did not answer within ${timeoutMs}ms — nothing is confirmed` }
           : { reached: false, why: 'network_error', detail: 'the request could not reach the shop — nothing is confirmed' };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    privacy: async (request) => {
+      if (options.isOnline !== undefined && !options.isOnline()) {
+        return { reached: false, why: 'no_connection', detail: 'this device reports no connection, so nothing was sent' };
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => { controller.abort(); }, timeoutMs);
+      try {
+        const res = await options.fetch(`${base}/v1/me/privacy${request.path}`, {
+          method: request.method,
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${request.token}`,
+            ...(request.idempotencyKey === undefined ? {} : { 'idempotency-key': request.idempotencyKey }),
+          },
+          ...(request.method === 'POST' ? { body: JSON.stringify(request.body ?? {}) } : {}),
+          signal: controller.signal,
+        });
+        let body: unknown = undefined;
+        try { body = await res.json(); } catch { body = undefined; }
+        return { reached: true, status: res.status, body };
+      } catch (e) {
+        const aborted = e instanceof Error && e.name === 'AbortError';
+        return { reached: false, why: aborted ? 'timed_out' : 'network_error', detail: 'the request could not reach the shop — nothing was saved' };
       } finally {
         clearTimeout(timer);
       }

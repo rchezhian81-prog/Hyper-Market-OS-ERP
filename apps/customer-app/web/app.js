@@ -195,16 +195,18 @@ function sampleShop() {
     consent: () => consent,
     setConsent: (purpose, channel, granted) => {
       const row = consent.find((c) => c.purpose === purpose && c.channel === channel);
-      if (row === undefined) return { ok: false, refusal: 'unknown_purpose' };
-      if (row.required && !granted) return { ok: false, refusal: 'required_for_service' };
+      if (row === undefined) return Promise.resolve({ ok: false, refusal: 'unknown_purpose', tellTheCustomer: 'sample' });
+      if (row.required && !granted) return Promise.resolve({ ok: false, refusal: 'required_for_service', tellTheCustomer: 'sample' });
       consent = consent.map((c) => (c === row ? { ...c, granted } : c));
-      return { ok: true, granted };
+      return Promise.resolve({ ok: true, granted, tellTheCustomer: 'This is a sample shop, so nothing was saved.' });
     },
+    loadPrivacy: () => Promise.resolve({ ok: true, tellTheCustomer: 'sample' }),
+    myRequests: () => [],
     rights: () => [
       { kind: 'access', partialByLaw: false }, { kind: 'correction', partialByLaw: false },
       { kind: 'export', partialByLaw: false }, { kind: 'erasure', partialByLaw: true },
     ],
-    raise: (kind) => ({ request: { requestId: 'SAMPLE-1', kind }, tellTheCustomer: 'This is a sample shop, so nothing was raised.' }),
+    raise: (kind) => Promise.resolve({ ok: true, request: { requestId: 'SAMPLE-1', kind, state: 'raised', dueBy: '' }, tellTheCustomer: 'This is a sample shop, so nothing was raised.' }),
   };
 }
 
@@ -505,6 +507,8 @@ el('si-verify').addEventListener('click', async () => {
     if (out && out.ok) {
       shop.signedIn(out.token); // the token's only destination
       sessionId = out.sessionId;
+      // FUL-06: the privacy screen shows what the SHOP holds for this customer, read once signed in.
+      if (typeof shop.loadPrivacy === 'function') shop.loadPrivacy().then(() => render());
       challengeId = null;
       el('si-code').value = '';
       paintSignIn();
@@ -658,11 +662,15 @@ function renderConsent() {
     toggle.textContent = control.granted ? t('on') : t('off');
     toggle.disabled = control.required;
 
-    toggle.addEventListener('click', () => {
-      const change = shop.setConsent(control.purpose, control.channel, !control.granted);
+    toggle.addEventListener('click', async () => {
+      // FUL-06: saved on the shop and read back; the switch moves only when the shop has it. Offline or refused, it
+      // stays where it was and the customer is told — never a switch that moved on the phone alone.
+      toggle.disabled = true;
+      const change = await shop.setConsent(control.purpose, control.channel, !control.granted);
       if (!change.ok) {
         tell(t('myInformation'),
-          change.refusal === 'required_for_service' ? t('cannotTurnOff') : t('unknownPurpose'), 'bad');
+          change.refusal === 'required_for_service' ? t('cannotTurnOff')
+            : change.refusal === 'unknown_purpose' ? t('unknownPurpose') : change.tellTheCustomer, 'bad');
       }
       render();
     });
@@ -698,11 +706,12 @@ function renderRights() {
       caveat.textContent = t('erasureCaveat');
       button.append(caveat);
     }
-    button.addEventListener('click', () => {
-      const raised = shop.raise(right.kind, new Date().toISOString());
-      // The model's sentence: it says the request was RECEIVED and when it must be answered by.
-      // It never says the data is gone, because the phone cannot verify a requester or delete
-      // anything, and both happen where the evidence is.
+    button.addEventListener('click', async () => {
+      const raised = await shop.raise(right.kind, new Date().toISOString());
+      // The SHOP's sentence: it says the request was RECEIVED and when it must be answered by — only once the shop
+      // has it (FUL-06). It never says the data is gone, because the phone cannot verify a requester or delete
+      // anything, and both happen where the evidence is. Not reached → said plainly, nothing claimed.
+      if (!raised.ok) { tell(t('myInformation'), raised.tellTheCustomer, 'bad'); return; }
       tell(t('requestRaised'), raised.tellTheCustomer, 'good');
     });
     return button;

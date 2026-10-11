@@ -82,6 +82,7 @@ const WORDS = {
     countNote: 'Head office works out the difference and what it is worth. A large difference waits there for somebody else to approve; the shelf figure does not change until then.',
     alreadyCounted: 'That count is already saved on this screen. To count the item again, enter a new count.',
     checkOpen: 'Check what is still open', closeNow: 'Close the day now',
+    closePin: 'Your till PIN — you key it yourself',
     closedNote: 'A closed day is locked. Anything found afterwards is a correction, not a change.',
     dayClosed: 'The day is closed and locked.', stillOpen: 'The day cannot close yet',
     andMore: 'and more', whatToDo: 'What to do',
@@ -131,6 +132,7 @@ const WORDS = {
     alreadyCounted: 'அந்த எண்ணிக்கை இந்தத் திரையில் ஏற்கனவே சேமிக்கப்பட்டுள்ளது. மீண்டும் எண்ண, புதிய எண்ணிக்கையை உள்ளிடவும்.',
     checkOpen: 'இன்னும் என்ன மீதம் உள்ளது என்று பார்', closeNow: 'இப்போது நாளை முடி',
     closedNote: 'முடிக்கப்பட்ட நாள் பூட்டப்படும். பின்னர் கண்டறியப்படுவது திருத்தமே, மாற்றம் அல்ல.',
+    closePin: 'உங்கள் கடை PIN — நீங்களே உள்ளிட வேண்டும்',
     dayClosed: 'நாள் முடிக்கப்பட்டு பூட்டப்பட்டது.', stillOpen: 'நாளை இன்னும் முடிக்க முடியாது',
     andMore: 'மேலும்', whatToDo: 'என்ன செய்ய வேண்டும்',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
@@ -937,6 +939,7 @@ el('enter-count').addEventListener('click', async () => {
 function resetClose() {
   el('blockers').replaceChildren();
   el('do-close').hidden = true;
+  el('close-pin-row').hidden = true;
 }
 
 /** How many items of a blocker's list are shown before it says "and N more". */
@@ -1002,6 +1005,8 @@ el('check-close').addEventListener('click', () => {
   // The close button only appears once there is nothing in the way — and it is the model's list
   // that decides that, not this screen's opinion of it.
   el('do-close').hidden = blockers.length > 0;
+  // Round 4: the close goes to the store computer as the manager's own act — their till PIN, keyed here.
+  el('close-pin-row').hidden = blockers.length > 0 || !session.canCloseViaBox;
   if (blockers.length > 0) tell(t('stillOpen'), t('closedNote'));
 });
 
@@ -1014,7 +1019,10 @@ el('do-close').addEventListener('click', () => {
     // decision — it reads the real outbox this page never sees — writes the locked day durably and
     // queues it for head office. This screen shows what the box decided and locks nothing itself.
     if (session.canCloseViaBox) {
-      const outcome = await session.closeViaBox(closeInput);
+      const closerPin = el('close-pin').value;
+      el('close-pin').value = '';
+      const outcome = await session.closeViaBox({ ...closeInput, closerPin });
+      el('close-pin-row').hidden = true;
       if (outcome.closed) {
         tell(t('dayClosed'), t('closedNote'), true);
         el('do-close').hidden = true;
@@ -1081,6 +1089,8 @@ function paintChrome() {
   el('close-lead').textContent = t('closedNote');
   el('check-close').textContent = t('checkOpen');
   el('do-close').textContent = t('closeNow');
+  el('close-pin-label').textContent = t('closePin');
+  el('close-pin').setAttribute('aria-label', t('closePin'));
   el('sample').textContent = t('sampleData');
 }
 

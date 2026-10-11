@@ -73,13 +73,15 @@ export function readRules(v: unknown): readonly AlertRule[] | undefined {
   for (const raw of v) {
     if (!isObj(raw) || !isStr(raw['alertId']) || !isStr(raw['component']) || !STATUSES.includes(raw['firesAt'] as HealthStatus)
       || !isStr(raw['ownerUserId']) || !isStr(raw['ownerName']) || !isNum(raw['ackWithinMinutes']) || (raw['ackWithinMinutes'] as number) <= 0
-      || (raw['escalatesToUserId'] !== undefined && !isStr(raw['escalatesToUserId']))) {
+      || (raw['escalatesToUserId'] !== undefined && !isStr(raw['escalatesToUserId']))
+      || (raw['branchId'] !== undefined && !isStr(raw['branchId']))) {
       return undefined;
     }
     out.push({
       alertId: raw['alertId'] as string, component: raw['component'] as string, firesAt: raw['firesAt'] as HealthStatus,
       ownerUserId: raw['ownerUserId'] as string, ownerName: raw['ownerName'] as string, ackWithinMinutes: raw['ackWithinMinutes'] as number,
       ...(isStr(raw['escalatesToUserId']) ? { escalatesToUserId: raw['escalatesToUserId'] } : {}),
+      ...(isStr(raw['branchId']) ? { branchId: raw['branchId'] } : {}),
     });
   }
   return out;

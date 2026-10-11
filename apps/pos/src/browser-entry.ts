@@ -211,7 +211,7 @@ export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort
 }
 
 /** What a manager's approval at the till is for (ADR-0021): the kind, the bill (not for a no-receipt return) and the amount. */
-export type TillApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund';
+export type TillApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 'no_sale' | 'price_override';
 export interface TillApprovalRequest {
   readonly managerId: string;
   readonly pin: string;
@@ -803,6 +803,18 @@ export function bootPos(config?: {
    * box has it. Refused (the line stays) when the box cannot keep it.
    */
   readonly voidAtTill: (lineId: string, reason: string) => Promise<{ readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string }>;
+  /** What lowering a line to `toUnitMinor` takes off it — the amount a manager approves (audit PF-07). */
+  readonly priceChangeValue: (lineId: string, toUnitMinor: number) => { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number } | { readonly ok: false; readonly laneMessage: string };
+  /**
+   * Lower a line's price WITH a manager's approval issued on the store computer (audit PF-07 · M12-FR-04): the change, the
+   * reason and the approval go to the box first; the price changes only once the box has them. Refused (price kept)
+   * otherwise.
+   */
+  readonly priceChangeAtTill: (lineId: string, toUnitMinor: number, reason: string, approval: { readonly approvalId: string }) => Promise<{ readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string; readonly activityId?: string }>;
+  /** The bill now on the till — what a manager's approval of a price change is bound to (PF-07). */
+  readonly currentBillRef: () => string;
+  /** Open the drawer with no sale, WITH a manager's approval — recorded on the box before the cashier is told to open it. */
+  readonly noSaleAtTill: (reason: string, approval: { readonly approvalId: string }) => Promise<{ readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string; readonly activityId?: string }>;
   readonly signOut: () => void;
   /** Who is at the till now, or undefined when nobody is signed in. */
   readonly operator: () => string | undefined;
@@ -1134,6 +1146,62 @@ export function bootPos(config?: {
     return { ok: true, laneMessage: 'Line voided.' };
   };
 
+  // SUPERVISOR OVERRIDES AS EVIDENCE (audit PF-07 · M12-FR-04 · M15-FR-01): a no-sale (the drawer opened with no sale)
+  // and a price lowered on a line. Each needs a manager's approval issued on the store computer for exactly this, and is
+  // on the box's disk — with the cashier and the manager it verified — before the till acts on it. Offline: only the box.
+  type TillActivityAnswer = { readonly ok: boolean; readonly refusedBecause?: string; readonly laneMessage: string; readonly activityId?: string };
+  const sendTillActivity = async (body: Record<string, unknown>, unreachable: string): Promise<Record<string, unknown>> => {
+    const post = async (): Promise<Record<string, unknown>> => {
+      const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
+      const response = await fetch(`${base}/lane/till-activity`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify(body) });
+      const front = FRONT_REFUSED[response.status];
+      if (front !== undefined) return { recorded: false, ...front };
+      return await response.json() as Record<string, unknown>;
+    };
+    // A lost reply is asked again under the SAME activity id — the box answers "already recorded" for a repeat.
+    try { return await (config?.tillActivityPost ?? post)(body); } catch {
+      try { return await (config?.tillActivityPost ?? post)(body); } catch {
+        return { recorded: false, refusedBecause: 'lane_unreachable', laneMessage: unreachable };
+      }
+    }
+  };
+  const refusedActivity = (r: Record<string, unknown>, fallback: string): TillActivityAnswer => ({
+    ok: false, ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}),
+    laneMessage: typeof r['laneMessage'] === 'string' ? r['laneMessage'] : fallback,
+  });
+  /** What lowering a line to `toUnitMinor` takes off it — the amount the manager approves. */
+  const priceChangeValue = (lineId: string, toUnitMinor: number): { readonly ok: true; readonly reductionMinor: number; readonly fromUnitMinor: number } | { readonly ok: false; readonly laneMessage: string } => {
+    try { return { ok: true, ...session.overrideValue(lineId, toUnitMinor) }; } catch {
+      return { ok: false, laneMessage: 'A price can only be lowered here, on a line that is on the bill.' };
+    }
+  };
+  const priceChangeAtTill = async (lineId: string, toUnitMinor: number, reason: string, approval: { readonly approvalId: string }): Promise<TillActivityAnswer> => {
+    if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('change a price').laneMessage };
+    const line = session.basket().find((l) => l.lineId === lineId && !l.voided);
+    if (line === undefined) return { ok: false, refusedBecause: 'no_such_line', laneMessage: 'That line is not on the bill.' };
+    if (reason.trim() === '') return { ok: false, refusedBecause: 'reason_required', laneMessage: 'A price change needs a reason.' };
+    const value = priceChangeValue(lineId, toUnitMinor);
+    if (!value.ok) return { ok: false, refusedBecause: 'not_lower', laneMessage: value.laneMessage };
+    const activityId = `O-${newRequestKey().slice(3)}`;
+    const body = {
+      activityId, kind: 'price_override', billRef: session.billRef(), lineId, productId: line.productId, description: line.description,
+      fromUnitMinor: value.fromUnitMinor, toUnitMinor, quantityMinor: line.quantityMinor, valueMinor: value.reductionMinor, reason, approvalId: approval.approvalId,
+    };
+    const r = await sendTillActivity(body, 'This till cannot reach its store computer, so the price change was not recorded. The line keeps its price.');
+    if (r['recorded'] !== true) return refusedActivity(r, 'The price change was not recorded. The line keeps its price.');
+    session.overridePrice(lineId, toUnitMinor, { approvedBy: typeof r['approvedBy'] === 'string' ? r['approvedBy'] : 'manager', activityId });
+    return { ok: true, laneMessage: 'Price changed.', activityId };
+  };
+  const noSaleAtTill = async (reason: string, approval: { readonly approvalId: string }): Promise<TillActivityAnswer> => {
+    if (session.operator() === undefined) return { ok: false, refusedBecause: 'operator_not_signed_in', laneMessage: new NoOperatorError('open the drawer').laneMessage };
+    if (reason.trim() === '') return { ok: false, refusedBecause: 'reason_required', laneMessage: 'Opening the drawer with no sale needs a reason.' };
+    const activityId = `N-${newRequestKey().slice(3)}`;
+    const body = { activityId, kind: 'no_sale', valueMinor: 0, reason, approvalId: approval.approvalId };
+    const r = await sendTillActivity(body, 'This till cannot reach its store computer, so the no-sale was not recorded. Do not open the drawer.');
+    if (r['recorded'] !== true) return refusedActivity(r, 'The no-sale was not recorded. Do not open the drawer.');
+    return { ok: true, laneMessage: 'Recorded — the drawer may be opened.', activityId };
+  };
+
   // CARD AND UPI (audit PF-06): the attempt is on the store computer before the machine is asked.
   const payments = config?.paymentsPort ?? lanePaymentAttempts(config?.lanePort ?? DEFAULT_LANE_PORT);
   const cardAnswer = (r: Record<string, unknown>): CardAttemptAnswer => {
@@ -1230,7 +1298,7 @@ export function bootPos(config?: {
     tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
   });
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
+  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

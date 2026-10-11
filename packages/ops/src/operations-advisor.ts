@@ -40,6 +40,8 @@ export interface OperationsFinding {
   readonly runbook: string;
   /** The numbers/owner behind the alert, so the recommendation can be checked. */
   readonly evidence: Readonly<Record<string, string | number>>;
+  /** EA-09: the branch the alert belongs to (from its rule); absent = shop-wide. */
+  readonly branchId?: string;
 }
 
 // Worst first, so an operator sees the lane-stopping incident before the stale-price one.
@@ -93,6 +95,7 @@ export function recommendOperationsRunbooks(alerts: readonly AlertForAdvice[]): 
         ackDueBy: alert.ackDueBy,
         ...(state === 'escalated' ? { escalated: 'yes — past its deadline, unacknowledged' } : {}),
       },
+      ...(alert.branchId === undefined ? {} : { branchId: alert.branchId }),
     });
   }
   return findings.sort((a, b) =>

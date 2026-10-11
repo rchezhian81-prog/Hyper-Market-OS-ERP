@@ -1221,7 +1221,17 @@ export async function fetchLpWorklist(): Promise<LpWorklistData | null> {
       method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin',
     });
     if (res.status >= 400) return null;
-    return (await res.json()) as LpWorklistData;
+    const worklist = (await res.json()) as LpWorklistData;
+    // PF-07: today's exceptions the store's rules raised on head office's own record, beside the open cases. A failed
+    // read leaves them out (the cases still show) rather than showing "nothing raised".
+    try {
+      const raisedRes = await fetchFn('/v1/loss-prevention/exceptions', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+      if (raisedRes.status < 400) {
+        const body = (await raisedRes.json()) as { exceptions?: LpWorklistData['raised'] };
+        if (Array.isArray(body.exceptions)) return { ...worklist, raised: body.exceptions };
+      }
+    } catch { /* the cases are still shown */ }
+    return worklist;
   } catch {
     return null;
   }
@@ -4732,7 +4742,7 @@ export function openDayClosePort(
   laneWriteBase: string | undefined,
 ): ManagerPorts['requestDayClose'] {
   if (laneWriteBase === undefined) return undefined;
-  return async ({ dayCloseId, closedBy }): Promise<BoxCloseOutcome> => {
+  return async ({ dayCloseId, closedBy, closerPin }): Promise<BoxCloseOutcome> => {
     const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
     if (fetchFn === undefined) {
       return { closed: false, reason: 'this screen cannot reach the store computer from here — the day is not closed' };
@@ -4741,7 +4751,8 @@ export function openDayClosePort(
       const res = await fetchFn(`${laneWriteBase}/lane/day-close`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify({ dayCloseId, closedBy }),
+        // The PIN goes to the store computer's PIN register and nowhere else (round 4 · ADR-0020).
+        body: JSON.stringify({ dayCloseId, closedBy, ...(closerPin === undefined ? {} : { closerPin }) }),
       });
       const body = (await res.json().catch(() => ({}))) as { closed?: boolean; tradingDay?: string; reason?: string };
       if (res.status >= 200 && res.status < 300 && body.closed === true && typeof body.tradingDay === 'string') {

@@ -406,3 +406,94 @@ export function confirmRollback(decided: RollbackResult, execution: RollbackExec
     },
   };
 }
+
+// ── GT-02: the rollback rehearsal reconciles the data it hands back ─────────────────────────────────────────────────
+
+/** A count and a money total — what one side holds for the rollback window. */
+export interface WindowTotals {
+  readonly count: number;
+  readonly totalMinor: number;
+}
+
+/** A store computer's last complete sync of its sales (EA-01) — what says its sales have all reached head office. */
+export interface StoreSyncedThrough {
+  readonly storeId: string;
+  readonly completeThrough: string | null;
+}
+
+/**
+ * The data side of a rollback (audit GT-02 · MG-11 · QG-08): everything the NEW system took between when it started
+ * trading and when the tills went back to the old one must be in the old system afterwards — count for count, paisa
+ * for paisa. Head office counts its own side from its sales ledger; the operator records what the old system now
+ * holds from the carry-back. Reconciled only when they are equal.
+ */
+export interface RollbackReconciliation {
+  readonly cutoverId: string;
+  /** The rollback decision this reconciles (its decision time identifies it). */
+  readonly decidedAt: string;
+  readonly windowFrom: string;
+  /** When the old system took over again — the end of the new system's window. */
+  readonly windowTo: string;
+  readonly newSystem: WindowTotals;
+  readonly legacy: WindowTotals;
+  /** Each store's last complete sync at the time — every one past the switch-back, or this is refused. */
+  readonly stores: readonly StoreSyncedThrough[];
+  readonly reconciled: boolean;
+  readonly differences: readonly string[];
+  readonly by: string;
+  readonly at: string;
+  readonly detail: string;
+}
+
+export type RollbackReconciliationRefusal = 'not_performed' | 'not_a_time' | 'window_after_switch_back' | 'no_store_sync_report' | 'store_not_synced_through_switch_back';
+
+/**
+ * Reconcile a PERFORMED rollback's window (GT-02). Refused while the rollback is only decided; refused while any store
+ * computer has not synced past the switch-back (its unsent sales would be missing from head office's count — store
+ * sync is part of the reconciliation, never assumed); otherwise the two sides are compared exactly and every
+ * difference is named. A reconciliation that does not balance is still recorded (it is evidence), as NOT reconciled.
+ */
+export function reconcileRollback(input: {
+  readonly rollback: RollbackResult;
+  readonly windowFrom: string;
+  readonly newSystem: WindowTotals;
+  readonly legacy: WindowTotals;
+  readonly stores: readonly StoreSyncedThrough[];
+  readonly by: string;
+  readonly at: string;
+}): { readonly ok: true; readonly reconciliation: RollbackReconciliation } | { readonly ok: false; readonly refusal: RollbackReconciliationRefusal; readonly detail: string } {
+  const r = input.rollback;
+  if (!r.performed || r.state !== 'performed' || r.execution === undefined) {
+    return { ok: false, refusal: 'not_performed', detail: `the rollback of ${r.cutoverId} is not performed yet — reconcile it once the old system has been seen taking sales` };
+  }
+  const to = r.execution.legacyTradingFrom;
+  if (Number.isNaN(Date.parse(input.windowFrom))) return { ok: false, refusal: 'not_a_time', detail: 'when the new system started taking sales must be a time' };
+  if (Date.parse(input.windowFrom) >= Date.parse(to)) {
+    return { ok: false, refusal: 'window_after_switch_back', detail: `the new system's start ${input.windowFrom} is not before the switch-back at ${to}` };
+  }
+  if (input.stores.length === 0) {
+    return { ok: false, refusal: 'no_store_sync_report', detail: 'no store computer has reported how far its sales have synced, so head office cannot know it holds every sale the new system took' };
+  }
+  const behind = input.stores.filter((s) => s.completeThrough === null || Date.parse(s.completeThrough) < Date.parse(to));
+  if (behind.length > 0) {
+    return {
+      ok: false, refusal: 'store_not_synced_through_switch_back',
+      detail: `${behind.map((s) => `${s.storeId} (complete only up to ${s.completeThrough ?? 'never'})`).join(', ')} has not synced past the switch-back at ${to} — sales it took on the new system may still be on its disk. Get it online, let it sync, then reconcile`,
+    };
+  }
+  const differences: string[] = [];
+  if (input.newSystem.count !== input.legacy.count) differences.push(`bills: the new system took ${input.newSystem.count}, the old system holds ${input.legacy.count}`);
+  if (input.newSystem.totalMinor !== input.legacy.totalMinor) differences.push(`takings: the new system took ${input.newSystem.totalMinor} paise, the old system holds ${input.legacy.totalMinor}`);
+  const reconciled = differences.length === 0;
+  return {
+    ok: true,
+    reconciliation: {
+      cutoverId: r.cutoverId, decidedAt: r.decidedAt, windowFrom: input.windowFrom, windowTo: to,
+      newSystem: input.newSystem, legacy: input.legacy, stores: input.stores, reconciled, differences,
+      by: input.by, at: input.at,
+      detail: reconciled
+        ? `rollback of ${r.cutoverId} reconciled: ${input.newSystem.count} bill(s), ${input.newSystem.totalMinor} paise taken on the new system between ${input.windowFrom} and ${to} are all in the old system; every store had synced past the switch-back`
+        : `rollback of ${r.cutoverId} does NOT reconcile — ${differences.join('; ')}. It is not demonstrated until it does`,
+    },
+  };
+}

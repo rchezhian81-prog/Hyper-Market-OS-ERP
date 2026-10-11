@@ -37,6 +37,7 @@ import { SyncAgent } from '../../../edge/sync-agent/src/agent';
 import { httpTransport } from '../../../edge/sync-agent/src/http-transport';
 import { httpPackSource } from '../../../edge/sync-agent/src/pack-source';
 import { pullPack, type PackPullOutcome, type PackPullStatus } from '../../../edge/sync-agent/src/pack-puller';
+import { httpSyncWatermarkReporter, type SyncWatermarkReport } from '../../../edge/sync-agent/src/sync-watermark-report';
 import { httpStorePackSource, httpHeldVersionsReporter, pullStorePack, type StorePackPullOutcome, type StorePackPullStatus } from '../../../edge/sync-agent/src/store-pack-feed';
 import { readHeldStorePack, writeHeldStorePack, packPayloadOf } from './store-pack-held';
 import type { StorePackEnvelope } from '../../../services/platform/src/store-packs';
@@ -127,6 +128,8 @@ const TILL_CASH_CURSOR = 'sync-cursor-till-cash';
 
 /** Who may ask to reopen a locked day at the store computer (2b-vi-c-4): anyone who may see the locked days. */
 const REOPEN_AUTHORITY = 'till.dayclose.read';
+/** Round 4: the authority a person needs to CLOSE the day on the box — the one head office re-checks (OB-36). */
+const CLOSE_AUTHORITY = 'till.dayclose.read';
 /** Who may approve a reopen — the permission head office re-checks on every synced reopen (§28). */
 const APPROVE_REOPEN_AUTHORITY = 'till.dayclose.approve';
 
@@ -307,7 +310,15 @@ export interface EdgeProcess {
    * checked. Available with or without a cloud — the day locks locally regardless (P-01).
    */
   readonly closeDay: (
-    req: { readonly dayCloseId: string; readonly closedBy: string },
+    req: {
+      readonly dayCloseId: string;
+      /** Who says they are closing — only ever checked against the person the box verifies (their PIN or their signed-in session). */
+      readonly closedBy?: string;
+      /** The closer's own till PIN, keyed by them on the manager screen; goes to the PIN register only, never written. */
+      readonly closerPin?: string;
+      /** The person this box already verified for the request (their till session or the hosted sign-in). */
+      readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+    },
   ) => Promise<
     | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
     | { readonly closed: false; readonly reason: string }
@@ -368,6 +379,11 @@ export interface EdgeProcess {
   readonly storeSetup: () => StoreSetupStatus;
   /** DF-3-b-2: tell head office which catalogue and setup this box holds (when changed). Null unless taking setup from head office. */
   readonly reportHeldVersions: (() => Promise<boolean>) | null;
+  /**
+   * EA-01: tell head office each queue's last complete sync (its watermark), so the owner's figures say how fresh
+   * they really are. Null without a cloud or without EDGE_STORE_ID. Rides the sync loop after the drains.
+   */
+  readonly reportSyncWatermarks?: (() => Promise<boolean>) | null;
   /**
    * Run exactly one drain-and-settle of both queues (sales then refunds), returning what moved.
    * Null when no cloud is configured — there is nothing to drain to. The poll loop calls the same
@@ -858,29 +874,64 @@ export async function startEdge(
    */
   const recordTillActivity: LaneTillActivityHandler = async ({ laneId, cashierId, via, body }) => {
     const str = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+    const whole = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+    const kind = body['kind'];
     const value = body['valueMinor'];
-    if (body['kind'] !== 'void' || !str(body['activityId']) || !str(body['billRef']) || !str(body['lineId']) || !str(body['productId'])
-      || typeof body['description'] !== 'string' || typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || !str(body['reason'])) {
-      return { recorded: false, refusedBecause: 'not_readable', laneMessage: 'The till did not say which line, how much and why. Nothing was removed — try again.' };
+    // What each kind must say. A void and a price override name the line; a no-sale (the drawer opened with no sale)
+    // names no line and moves no value (audit PF-07 · M15-FR-01 · M12-FR-04).
+    const readable = str(body['activityId']) && str(body['reason']) && (
+      (kind === 'void' && str(body['billRef']) && str(body['lineId']) && str(body['productId']) && typeof body['description'] === 'string' && whole(value))
+      || (kind === 'no_sale' && (value === undefined || value === 0) && (body['billRef'] === undefined || str(body['billRef'])))
+      || (kind === 'price_override' && str(body['billRef']) && str(body['lineId']) && str(body['productId']) && typeof body['description'] === 'string'
+        && whole(body['fromUnitMinor']) && whole(body['toUnitMinor']) && (body['toUnitMinor'] as number) < (body['fromUnitMinor'] as number)
+        && whole(body['quantityMinor']) && (body['quantityMinor'] as number) > 0 && whole(value) && (value as number) > 0));
+    if (!readable) {
+      return { recorded: false, refusedBecause: 'not_readable', laneMessage: kind === 'void'
+        ? 'The till did not say which line, how much and why. Nothing was removed — try again.'
+        : 'The till did not say what was done, to which line, for how much and why. Nothing was done — try again.' };
     }
     const key = `till-activity-${tenantId}-${body['activityId']}`;
     if (deviceEventKeys.has(key)) return { recorded: true, laneMessage: 'Already recorded.' };
+    // A SUPERVISOR OVERRIDE (no-sale, price change) needs a manager's approval issued on THIS box for exactly this — the
+    // one-use approval refunds use (PF-02) — spent by this action before anything is written. Offline: nothing here asks
+    // head office.
+    let approval: { readonly approvalId: string; readonly approvedBy: string } | undefined;
+    if (kind === 'no_sale' || kind === 'price_override') {
+      if (tillApprovals === null) return { recorded: false, refusedBecause: 'not_served', laneMessage: 'This store computer does not approve overrides. Nothing was done.' };
+      const spent = await tillApprovals.spendOverride({
+        approvalId: body['approvalId'], kind, billRef: kind === 'no_sale' ? null : body['billRef'] as string, valueMinor: kind === 'no_sale' ? 0 : value as number,
+        requestedBy: cashierId, laneId, activityId: body['activityId'] as string,
+      });
+      if (!spent.ok) return { recorded: false, refusedBecause: spent.refusedBecause, laneMessage: spent.laneMessage };
+      approval = spent.stamp;
+    }
     const at = new Date().toISOString();
+    // The trading day it belongs to, by the shop's cut-off from the pack — head office judges days by it.
+    const tradingDay = tradingDate(wallClockIn(at), packCutoff(pack));
+    const common = { activityId: body['activityId'], kind, laneId, cashierId, via, reason: (body['reason'] as string).trim(), at, tradingDay };
+    const payload = kind === 'void'
+      ? { ...common, billRef: body['billRef'], lineId: body['lineId'], productId: body['productId'], description: body['description'], valueMinor: value }
+      : kind === 'no_sale'
+        ? { ...common, ...(str(body['billRef']) ? { billRef: body['billRef'] } : {}), valueMinor: 0, approvalId: approval!.approvalId, approvedBy: approval!.approvedBy }
+        : {
+          ...common, billRef: body['billRef'], lineId: body['lineId'], productId: body['productId'], description: body['description'],
+          fromUnitMinor: body['fromUnitMinor'], toUnitMinor: body['toUnitMinor'], quantityMinor: body['quantityMinor'], valueMinor: value,
+          approvalId: approval!.approvalId, approvedBy: approval!.approvedBy,
+        };
     const event: DomainEvent = makeEvent({
       id: `till-activity-${body['activityId']}`, type: 'TillActivityRecorded', occurredAt: at, idempotencyKey: key, source: `store-box/${laneId}`,
-      payload: {
-        activityId: body['activityId'], kind: 'void', laneId, cashierId, via, billRef: body['billRef'], lineId: body['lineId'],
-        productId: body['productId'], description: body['description'], valueMinor: value, reason: (body['reason'] as string).trim(), at,
-      },
+      payload,
     });
     deviceEventKeys.add(key);
     const outcome = await commitLocally({ saleId: key, record: JSON.stringify(event), log: deviceEventsLog });
     if (!outcome.committed) {
       deviceEventKeys.delete(key);
-      return { recorded: false, refusedBecause: outcome.refusedBecause ?? 'could_not_write_durably', laneMessage: 'The store computer could not record the void, so the line stays on the bill. Tell the manager.' };
+      return { recorded: false, refusedBecause: outcome.refusedBecause ?? 'could_not_write_durably', laneMessage: kind === 'void'
+        ? 'The store computer could not record the void, so the line stays on the bill. Tell the manager.'
+        : 'The store computer could not record this, so nothing was done. Tell the manager.' };
     }
     deviceEventsOutbox.enqueue(event);
-    return { recorded: true, laneMessage: 'Recorded.' };
+    return { recorded: true, laneMessage: 'Recorded.', ...(approval === undefined ? {} : { approvedBy: approval.approvedBy }) };
   };
 
   /**
@@ -1434,13 +1485,23 @@ export async function startEdge(
   // then queued; its own sync agent carries it to the cloud (`StoreDayClosed`), restart-safe. Offline
   // makes no difference to the lock — the day is locked locally; the cloud simply hears about it later.
   const closeDay = async (
-    req: { readonly dayCloseId: string; readonly closedBy: string },
+    req: {
+      readonly dayCloseId: string;
+      /** Who says they are closing — only ever checked against the person the box verifies (their PIN or their signed-in session). */
+      readonly closedBy?: string;
+      /** The closer's own till PIN, keyed by them on the manager screen; goes to the PIN register only, never written. */
+      readonly closerPin?: string;
+      /** The person this box already verified for the request (their till session or the hosted sign-in). */
+      readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+    },
   ): Promise<
     | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
     | { readonly closed: false; readonly reason: string }
   > => {
     const input = snapshot();
     const rule = packCutoff(input.pack);
+    // Round 4: the day close names the STORE this box is (its setup's store id), not the tenant.
+    const storeIdHere = (input.pack.policies.known ? (input.pack.policies.value.storeId ?? input.pack.policies.value.branchId) : undefined) ?? tenantId;
     // The day being closed is the most-recently-ENDED trading day: the previous trading date relative
     // to now. The engine refuses to close a day whose cut-off has not passed (currentTradingDate must
     // be later than the day closed), so closing the previous date is the only one that can succeed.
@@ -1475,7 +1536,7 @@ export async function startEdge(
     // survives a restart, so we do not use the engine's own enqueue here). A blocker throws; surface it.
     try {
       decideDayClose({
-        id: req.dayCloseId, storeId: tenantId, tradingDay: dayToClose, closedBy: req.closedBy,
+        id: req.dayCloseId, storeId: storeIdHere, tradingDay: dayToClose, closedBy: (req.closedBy ?? '').trim() || (req.verifiedPerson?.userId ?? 'unconfirmed'),
         closedAtLocal: wallClockIn(input.now), closedAt: input.now, tradingDayRule: rule,
         unresolvedExceptions, unsentSyncItems, openShifts,
       }, new SyncOutbox());
@@ -1483,11 +1544,37 @@ export async function startEdge(
       return { closed: false, reason: e instanceof Error ? e.message : String(e) };
     }
 
+    // Round 4 (P-04 · hard rule #4 · §28): the close is the CLOSER's own act, verified HERE, offline, after the gates and BEFORE anything is written — never a typed name.
+    //   • their own staff ID and till PIN, checked by the same PIN register as the till's sign-in (same guess limits), or
+    //   • the session this box already verified for the request (their till sign-in / the hosted sign-in);
+    // and either way they must hold the day-close authority in the store's setup from head office (`till.dayclose.read`,
+    // the same authority head office re-checks after the fact — OB-36). A cashier is refused before anything is locked.
+    if (tillOperators === null) {
+      return { closed: false, reason: 'this store computer cannot check people here, so it cannot close the day — tell the manager' };
+    }
+    const named = (req.closedBy ?? '').trim();
+    let closer: string | undefined;
+    if (typeof req.closerPin === 'string' && req.closerPin !== '') {
+      if (named === '') return { closed: false, reason: 'the person closing the day must give their staff ID with their till PIN' };
+      const who = await tillOperators.verifyPerson({ staffId: named, pin: req.closerPin, laneId: laneIdOfThisBox() ?? '', authority: CLOSE_AUTHORITY, lacking: 'no_approval_authority' });
+      if (!who.ok) return { closed: false, reason: `the person closing the day was not confirmed: ${who.laneMessage}` };
+      closer = who.userId;
+    } else if (req.verifiedPerson !== undefined && req.verifiedPerson.userId.trim() !== '') {
+      const vp = req.verifiedPerson.userId.trim();
+      if (named !== '' && named !== vp) return { closed: false, reason: 'the day can only be closed in the name of the person signed in here' };
+      if (!(permissionsOf(vp, snapshot().pack) ?? []).includes(CLOSE_AUTHORITY)) {
+        return { closed: false, reason: `${vp} does not hold the authority to close the day — a manager must close it with their own till PIN` };
+      }
+      closer = vp;
+    }
+    if (closer === undefined) {
+      return { closed: false, reason: 'the person closing the day must confirm it is them — their staff ID and till PIN; a typed name closes nothing' };
+    }
     // Durable-write-then-enqueue, the same order as every other seam: the locked day is on the disk
     // before it is called done, then queued. `dayCloseEventFrom` re-mints the identical event on restart.
     const record = JSON.stringify({
-      dayCloseId: req.dayCloseId, storeId: tenantId, tradingDay: dayToClose,
-      closedBy: req.closedBy, closedAt: input.now, locked: true,
+      dayCloseId: req.dayCloseId, storeId: storeIdHere, tradingDay: dayToClose,
+      closedBy: closer, closedAt: input.now, locked: true,
     });
     await dayCloseLog.append(record);
     const event = dayCloseEventFrom(record, 0);
@@ -1583,7 +1670,8 @@ export async function startEdge(
     // `StoreDayReopened` (both on this run and on a restart re-queue), routed to `.../reopen/synced`.
     // The box seals the reopen for the person it verified when that person is the reopener (2b-vi-c-3): the seal covers
     // the body head office receives, word for word. Anybody else — or nobody verified — and the reopen goes unsealed.
-    const relayed = { dayCloseId: req.dayCloseId, storeId: tenantId, tradingDay: close.tradingDay, reopenedBy: req.reopenedBy, approvedBy: req.approvedBy, reason: req.reason };
+    const reopenPack = snapshot().pack;
+    const relayed = { dayCloseId: req.dayCloseId, storeId: (reopenPack.policies.known ? (reopenPack.policies.value.storeId ?? reopenPack.policies.value.branchId) : undefined) ?? tenantId, tradingDay: close.tradingDay, reopenedBy: req.reopenedBy, approvedBy: req.approvedBy, reason: req.reason };
     const deciderVerified = sealDecision(sealKey, { tenantId, kind: 'day_reopen', recordId: req.dayCloseId, record: relayed, laneId: lane, userId: reopener.userId, via: reopener.via });
     const approverVerified = sealDecision(sealKey, { tenantId, kind: 'day_reopen_approval', recordId: req.dayCloseId, record: relayed, laneId: lane, userId: approver.userId, via: 'pin' });
     const record = JSON.stringify({ ...relayed, reopenedAt: now, deciderVerified, approverVerified });
@@ -1930,6 +2018,24 @@ export async function startEdge(
     return ok;
   };
 
+  // EA-01: after each pass, each queue's watermark goes to head office — the owner's freshness, from the box's own word.
+  const watermarkStoreId = (settings['EDGE_STORE_ID'] ?? '').trim() || undefined;
+  const reportWatermarks = watermarkStoreId === undefined ? null : httpSyncWatermarkReporter({ baseUrl: cloudUrl, token: cloudToken, storeId: watermarkStoreId, fetch: globalThis.fetch });
+  const reportSyncWatermarks = reportWatermarks === null ? null : async (): Promise<boolean> => {
+    const named: readonly (readonly [string, SyncAgent])[] = [
+      ['sales', agent], ['refunds', returnsAgent], ['completions', completionsAgent], ['day_close', dayCloseAgent],
+      ['concession_tags', concessionTagsAgent], ['device_events', deviceEventsAgent], ['till_cash', tillCashAgent],
+    ];
+    const report: SyncWatermarkReport = {
+      observedAt: new Date().toISOString(),
+      domains: named.map(([domain, a]) => {
+        const h = a.health();
+        return { domain, completeThrough: h.completeThrough, unsent: h.unsentCount, deadLettered: h.deadLetterCount };
+      }),
+    };
+    return reportWatermarks(report);
+  };
+
   let stopping = false;
   let quietPasses = 0;
   let timer: NodeJS.Timeout | undefined;
@@ -2030,6 +2136,9 @@ export async function startEdge(
       // and keep the loop alive, because a dead sync loop is a shop that silently stops syncing.
       quietPasses += 1;
       say(`sync pass failed: ${e instanceof Error ? e.message : String(e)}. Everything is still queued.`);
+    }
+    if (reportSyncWatermarks !== null) {
+      try { await reportSyncWatermarks(); } catch { /* retried next pass; head office's last report simply ages, and the owner sees it stale */ }
     }
     // The inbound refresh rides the SAME loop, AFTER the drain and just as far from the sale path
     // (hard rule #1). It never throws — an unreachable cloud is a normal answer that keeps the last
@@ -2136,6 +2245,7 @@ export async function startEdge(
     refreshStorePack,
     storeSetup: storeSetupStatus,
     reportHeldVersions,
+    reportSyncWatermarks,
     syncOnce: () => drainAndSettle(),
     syncStatus,
     stop: async () => {

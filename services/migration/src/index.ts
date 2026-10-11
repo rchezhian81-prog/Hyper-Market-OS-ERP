@@ -32,6 +32,8 @@ import { detectExceptions, outstandingExceptions } from '../../../packages/migra
 import type { LegacyDataset } from '../../../packages/migration/src/synthetic';
 import { decideCutover } from '../../../packages/migration/src/cutover';
 import type { Movement } from '../../inventory/src/index';
+import type { DayBookJournal, StoredPostingMap } from '../../finance/src/day-book';
+import { postJournal as postJournalLines } from '../../../packages/finance/src/posting';
 import { buildCutoverChecklist, type CutoverEvidence, type TeamMember } from '../../../packages/migration/src/cutover-checklist';
 import {
   buildVerificationReport, renderVerificationReport,
@@ -47,7 +49,7 @@ import { decisionRoutes, type RefusedDecision } from './decisions';
 import { screenRoutes } from './screen';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { TotalSignature } from '../../../packages/migration/src/reconcile';
-import type { ParallelDifference } from '../../../packages/migration/src/cutover';
+import type { ParallelDifference, RollbackReconciliation, WindowTotals, StoreSyncedThrough } from '../../../packages/migration/src/cutover';
 
 export type { ParallelRunPolicy, RecordedParallelDay, RecordedRollback, ParallelRunView } from './parallel-run';
 import { assertSafeTarget, namedPeople } from './guards';
@@ -146,7 +148,11 @@ function isDeltaChange(v: unknown): v is DeltaChange {
     && (v['deltaQty'] === undefined || typeof v['deltaQty'] === 'number')
     && (v['locationId'] === undefined || typeof v['locationId'] === 'string')
     && (v['uom'] === undefined || typeof v['uom'] === 'string')
-    && (v['unitCostMinor'] === undefined || typeof v['unitCostMinor'] === 'number');
+    && (v['unitCostMinor'] === undefined || typeof v['unitCostMinor'] === 'number')
+    && (v['netMinor'] === undefined || typeof v['netMinor'] === 'number')
+    && (v['cgstMinor'] === undefined || typeof v['cgstMinor'] === 'number')
+    && (v['sgstMinor'] === undefined || typeof v['sgstMinor'] === 'number')
+    && (v['tender'] === undefined || typeof v['tender'] === 'string');
 }
 
 /** One delta change applied with a real domain effect (GT-04) — the durable record that it happened, once. */
@@ -184,7 +190,56 @@ export function deltaStockMovement(c: DeltaChange, by: string): { readonly ok: t
 }
 
 /** The delta entities this build applies with a real domain effect. Anything else is refused by name, never "applied". */
-export const DELTA_ENTITIES_APPLIED: readonly string[] = Object.freeze(['stock']);
+export const DELTA_ENTITIES_APPLIED: readonly string[] = Object.freeze(['stock', 'sale']);
+
+/** The tenders a legacy sale delta may name — the day book's own tender kinds (`tender:<kind>` in the posting map). */
+const DELTA_TENDERS: readonly string[] = ['cash', 'card', 'upi'];
+
+/**
+ * The money a `sale` delta change IS (GT-04 · MG-09): a bill the OLD till rang after the final extract becomes the same
+ * two vouchers the day book posts for a sale — the sale (total → net + CGST + SGST) and its tender (amount) — through
+ * head office's OWN posting map (the accountant's chart, P-02; nothing is invented here), dated the day it was rung.
+ * A negative total is a legacy return (`sale_return` + `refund:<tender>`). The vouchers keep the source identity: the
+ * entry ids carry the change key, and the day-book source id is the legacy bill (`legacy:<legacyId>`), so a read-back
+ * names where every rupee came from and a retry is the same voucher, once.
+ */
+export function deltaSaleJournals(c: DeltaChange, map: StoredPostingMap | undefined, by: string, period: string, belongsTo?: string):
+  { readonly ok: true; readonly journals: readonly DayBookJournal[] } | { readonly ok: false; readonly why: string } {
+  const total = c.deltaMinor;
+  if (total === undefined || !Number.isInteger(total) || total === 0) return { ok: false, why: 'a sale change needs a whole, non-zero deltaMinor (the bill total, − for a legacy return)' };
+  if (c.operation !== 'insert') return { ok: false, why: `a sale ${c.operation} is not applied by this version — a changed or voided legacy bill is resolved by hand, never guessed` };
+  const net = c.netMinor; const cgst = c.cgstMinor ?? 0; const sgst = c.sgstMinor ?? 0;
+  if (net === undefined || ![net, cgst, sgst].every((n) => Number.isInteger(n))) return { ok: false, why: 'a sale change needs netMinor (and cgstMinor / sgstMinor when taxed) in whole paise' };
+  if (Math.abs(net) + Math.abs(cgst) + Math.abs(sgst) !== Math.abs(total) || [net, cgst, sgst].some((n) => n !== 0 && Math.sign(n) !== Math.sign(total))) {
+    return { ok: false, why: `the bill does not add up: net ${net} + CGST ${cgst} + SGST ${sgst} is not the total ${total}` };
+  }
+  if (typeof c.tender !== 'string' || !DELTA_TENDERS.includes(c.tender)) return { ok: false, why: `a sale change needs its tender (${DELTA_TENDERS.join('/')})` };
+  if (map === undefined) return { ok: false, why: 'no ledger mapping is defined for this shop, so the money cannot post — the accountant defines it first (PUT /v1/finance/posting-map)' };
+  const tradingDay = c.changedAt.slice(0, 10);
+  const back = total < 0;
+  const vouchers: { kind: string; components: Record<string, number> }[] = [
+    { kind: back ? 'sale_return' : 'sale', components: { total: Math.abs(total), net: Math.abs(net), cgst: Math.abs(cgst), sgst: Math.abs(sgst) } },
+    { kind: `${back ? 'refund' : 'tender'}:${c.tender}`, components: { amount: Math.abs(total) } },
+  ];
+  const journals: DayBookJournal[] = [];
+  for (const v of vouchers) {
+    let entry;
+    try {
+      entry = postJournalLines({ id: `legacy:${c.legacyId}`, kind: v.kind, at: c.changedAt, currency: 'INR', components: v.components }, map);
+    } catch (e) {
+      return { ok: false, why: `the ledger mapping cannot post a ${v.kind}: ${e instanceof Error ? e.message : String(e)}` };
+    }
+    journals.push({
+      entryId: `migration-delta:${c.changeKey}:${v.kind}`,
+      period, documentDate: tradingDay,
+      narrative: `Migration delta ${c.changeKey} — legacy bill ${c.legacyId} rung after the extract (${v.kind})` + (belongsTo === undefined ? '' : ` (posted to ${period}: ${belongsTo} is closed)`),
+      lines: entry.lines.map((l) => ({ accountCode: l.account, debitMinor: l.side === 'debit' ? l.amount.minor : 0, creditMinor: l.side === 'credit' ? l.amount.minor : 0 })),
+      postedBy: by,
+      dayBook: { tradingDay, kind: v.kind, sourceKind: back ? 'return' : 'sale', sourceIds: [`legacy:${c.legacyId}`], components: v.components, ...(belongsTo === undefined ? {} : { belongsTo }) },
+    });
+  }
+  return { ok: true, journals };
+}
 
 const OPENING_KINDS: readonly string[] = ['stock', 'customer_outstanding', 'supplier_outstanding', 'loyalty_points', 'open_order'];
 
@@ -304,6 +359,14 @@ export interface MigrationDeps {
   readonly recordParallelDifference?: (tenantId: string, difference: ParallelDifference) => Promise<void> | void;
   readonly recordRollback?: (tenantId: string, rollback: RecordedRollback) => Promise<void> | void;
   /**
+   * GT-02 round 4 — a rollback's data reconciliation: every one recorded (append-only), the bills and takings head office
+   * holds for a window (from its OWN sales ledger), and each store computer's last complete sales sync (EA-01).
+   */
+  readonly rollbackReconciliations?: (tenantId: string) => Promise<readonly RollbackReconciliation[]> | readonly RollbackReconciliation[];
+  readonly recordRollbackReconciliation?: (tenantId: string, reconciliation: RollbackReconciliation) => Promise<void> | void;
+  readonly windowSales?: (tenantId: string, from: string, to: string) => Promise<WindowTotals>;
+  readonly storeSalesSyncedThrough?: (tenantId: string) => Promise<readonly StoreSyncedThrough[]>;
+  /**
    * MG-04 / MG-06 — the decisions the migration screen makes, KEPT (C3a): the exceptions a cleaning pass
    * raised (latest state per id — a resolution applied over the first record; never pruned), the control
    * totals recorded (a signature applied over the first record), every relayed decision the cloud refused
@@ -332,6 +395,12 @@ export interface MigrationDeps {
    * write keyed on the change — a retry under any HTTP key, or after a restart, is the same effect, once.
    */
   readonly applyDeltaChange?: (tenantId: string, applied: AppliedDelta, movement: Movement) => Promise<void> | void;
+  /** GT-04 money: a `sale` change's vouchers AND the applied record, in ONE atomic write keyed on the change. */
+  readonly applyDeltaSale?: (tenantId: string, applied: AppliedDelta, journals: readonly DayBookJournal[]) => Promise<void> | void;
+  /** Head office's own ledger mapping and period states — what a sale delta posts through (absent → sales are refused). */
+  readonly postingMap?: (tenantId: string) => Promise<StoredPostingMap | undefined> | StoredPostingMap | undefined;
+  readonly periodStates?: (tenantId: string) => Promise<ReadonlyMap<string, 'open' | 'closed'>> | ReadonlyMap<string, 'open' | 'closed'>;
+  readonly nextOpenPeriod?: (tenantId: string) => Promise<string> | string;
   /** The store computer's seal key (ADR-0023, amended 2b-vi-c-3): a relayed decision's decider is checked against the
    *  box's seal. Absent on a bare stub — then nothing is checked and nothing is claimed. */
   readonly tillSealKey?: Buffer;
@@ -823,6 +892,7 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         let applied = 0;
         let refused = 0;
         let netQty = 0;
+        let netMinor = 0;
         for (const [i, line] of judged.lines.entries()) {
           const c = (rawChanges as DeltaChange[])[i]!;
           if (line.outcome !== 'applied') {
@@ -833,6 +903,31 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
           if (!DELTA_ENTITIES_APPLIED.includes(c.entity)) {
             refused += 1;
             lines.push({ changeKey: c.changeKey, outcome: 'refused_unsupported_entity', detail: `"${c.entity}" changes are not applied by this version (it applies: ${DELTA_ENTITIES_APPLIED.join(', ')}) — refused, never counted as applied; load it by its own route` });
+            continue;
+          }
+          if (c.entity === 'sale') {
+            if (deps.applyDeltaSale === undefined) {
+              refused += 1;
+              lines.push({ changeKey: c.changeKey, outcome: 'refused_unsupported_entity', detail: 'sale changes need head office\'s ledger here, which is not wired — refused, never counted as applied' });
+              continue;
+            }
+            const month = c.changedAt.slice(0, 7);
+            const closed = (await deps.periodStates?.(ctx.tenantId))?.get(month) === 'closed';
+            const period = closed && deps.nextOpenPeriod !== undefined ? await deps.nextOpenPeriod(ctx.tenantId) : month;
+            const sale = deltaSaleJournals(c, await deps.postingMap?.(ctx.tenantId), ctx.userId, period, closed ? month : undefined);
+            if (!sale.ok) {
+              refused += 1;
+              lines.push({ changeKey: c.changeKey, outcome: 'refused_incomplete', detail: sale.why });
+              continue;
+            }
+            const effect = `ledger vouchers ${sale.journals.map((j) => j.entryId).join(', ')}`;
+            await deps.applyDeltaSale(ctx.tenantId, {
+              changeKey: c.changeKey, entity: c.entity, legacyId: c.legacyId, operation: c.operation, changedAt: c.changedAt,
+              extractCutoff, effect, appliedBy: ctx.userId, appliedAt: now,
+            }, sale.journals);
+            applied += 1;
+            netMinor += c.deltaMinor ?? 0;
+            lines.push({ changeKey: c.changeKey, outcome: 'applied', detail: `${line.detail} → ${effect}`, effect });
             continue;
           }
           const mapped = deltaStockMovement(c, ctx.userId);
@@ -854,7 +949,7 @@ export function migrationRoutes(deps: MigrationDeps): readonly Route[] {
         return {
           status: 200,
           body: {
-            ok: judged.ok && refused === 0, applied, duplicatesIgnored, refused, lines, netQty,
+            ok: judged.ok && refused === 0, applied, duplicatesIgnored, refused, lines, netQty, netMinor,
             appliedKeys: await deps.appliedDeltaKeys(ctx.tenantId),
             ...(callerApplied === undefined ? {} : { ignoredFromCaller: ['alreadyApplied (head office keeps its own record of what was applied)'] }),
             detail: `${applied} change(s) applied with a real effect, ${duplicatesIgnored} already applied before, ${refused} refused`,

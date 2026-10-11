@@ -51,6 +51,8 @@ export function rangeStatusOf(entries: readonly AssortmentEntry[], storeId: stri
 }
 
 export interface AssortmentDeps {
+  /** FUL-11: every product the stock ledger has ever recorded SELLING at the store's locations. Optional on a bare stub. */
+  readonly soldAtStore?: (tenantId: string, storeId: string) => Promise<readonly string[]> | readonly string[];
   /** FUL-11: head office's on-hand for a product at a store (the store and every place under it), from the stock position. */
   readonly storeOnHand?: (tenantId: string, storeId: string, productId: string) => Promise<number> | number;
   /** Every range entry recorded for a store — append-only, effective-dated; the reads fold them. */
@@ -138,12 +140,24 @@ export function assortmentRoutes(deps: AssortmentDeps): readonly Route[] {
           throw apiError(400, { code: 'not_readable_as_an_integrity_check', whatHappened: 'An integrity check needs storeId in the path and { onDate (YYYY-MM-DD), soldProductIds[], reorderedProductIds?, onHand?{ productId: whole ≥ 0 } }.', wasItSaved: 'not_saved', nextSafeAction: 'Send the date and what was sold, reordered and on hand.' });
         }
         const assortment = new Assortment(storeId, await deps.entries(ctx.tenantId, storeId));
+        // FUL-11: the facts are head office's where it holds them — what the store's locations hold (the ledger's figure
+        // replaces any typed one) and what they have ever sold (added to any the caller reports from the till).
+        const soldHere = deps.soldAtStore === undefined ? [] : await deps.soldAtStore(ctx.tenantId, storeId);
+        const soldAll = [...new Set([...sold, ...soldHere])];
+        const ranged = (await deps.entries(ctx.tenantId, storeId)).map((e) => e.productId);
+        const onHandAll: Record<string, number> = deps.storeOnHand === undefined ? { ...onHand } : Object.fromEntries(await Promise.all(
+          [...new Set([...ranged, ...Object.keys(onHand)])].map(async (p) => [p, await deps.storeOnHand!(ctx.tenantId, storeId, p)] as const),
+        ));
+        const ledger = deps.storeOnHand;
         const issues = checkAssortmentIntegrity({
-          assortment, onDate: b['onDate'] as string, soldProductIds: sold,
+          assortment, onDate: b['onDate'] as string, soldProductIds: soldAll,
           ...(reordered.length > 0 ? { reorderedProductIds: reordered } : {}),
-          ...(Object.keys(onHand).length > 0 ? { onHand } : {}),
+          ...(Object.keys(onHandAll).length > 0 ? { onHand: onHandAll } : {}),
         });
-        return { status: 200, body: { storeId, onDate: b['onDate'], issues, count: issues.length } };
+        return {
+          status: 200,
+          body: { storeId, onDate: b['onDate'], issues, count: issues.length, factsFrom: ledger === undefined ? 'the_request' : 'head_office_stock_ledger' },
+        };
       },
     },
     {

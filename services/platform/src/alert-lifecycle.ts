@@ -19,8 +19,15 @@
 //   • BOARD — every live alert with its state (open / acknowledged / escalated), the ones needing a look
 //     first (control by exception, P-03).
 //
+//   • DELIVER (PA-12 round 4) — each raised alert reaches its NAMED owner, and an escalated one the person it was
+//     escalated to: a `notified` fact per person and stage, into that person's own inbox (`GET …/alerts/inbox`) and,
+//     when a message provider is configured, as a message to their phone. Recorded once; never deleted.
+//   • CLEAR (PA-12 round 4) — when the condition is no longer observed, the alert is marked cleared (kept, with its
+//     history); if it comes back it is a NEW occurrence — a fresh deadline, unacknowledged, delivered again — so an
+//     alert acknowledged last week cannot swallow this week's failed backup.
+//
 // Writes gated `platform.alert.manage`; the board reads `platform.health.read`. No business transaction is
-// posted here (§28); no AI acknowledges or escalates anything (hard rule #5).
+// posted here (§28); no AI acknowledges or escalates anything (hard rule #5). Nothing here deletes an alert (#6).
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
@@ -32,7 +39,7 @@ import { readSignals, readThresholds, readRules } from './operational-health';
 /** One append-only fact about an alert. `change` says which; the extra fields carry its detail. */
 export interface AlertLifecycleEvent {
   readonly alertId: string;
-  readonly change: 'raised' | 'acknowledged' | 'escalated';
+  readonly change: 'raised' | 'acknowledged' | 'escalated' | 'notified' | 'cleared';
   /** Who caused it — the raiser, the acknowledger, or the sweeper (P-04). */
   readonly by: string;
   readonly at: string;
@@ -43,9 +50,21 @@ export interface AlertLifecycleEvent {
   /** `escalated` only — who it went to, and why. */
   readonly escalatedTo?: string;
   readonly detail?: string;
+  /** `notified` only — who was told, how (`inbox` or the message provider's name), and at which stage. */
+  readonly notifiedTo?: string;
+  readonly via?: string;
+  readonly stage?: 'raised' | 'escalated';
 }
 
-export type AlertState = 'open' | 'acknowledged' | 'escalated';
+export type AlertState = 'open' | 'acknowledged' | 'escalated' | 'cleared';
+
+/** One delivery of an alert to a person (PA-12). */
+export interface AlertDelivery {
+  readonly to: string;
+  readonly via: string;
+  readonly stage: 'raised' | 'escalated';
+  readonly at: string;
+}
 
 /** A live alert — the fold of its history to now. */
 export interface LiveAlert {
@@ -57,12 +76,19 @@ export interface LiveAlert {
   readonly escalatedTo?: string;
   readonly escalatedAt?: string;
   readonly escalationDetail?: string;
+  /** Every delivery of THIS occurrence to a person (PA-12). */
+  readonly deliveries: readonly AlertDelivery[];
+  /** When the condition was last seen to have cleared (this occurrence), if it has. */
+  readonly clearedAt?: string;
+  /** How many times this alert has opened (1 = first). */
+  readonly occurrence: number;
 }
 
 interface MutableAlert {
   alert: RaisedAlert; escalatesToUserId?: string;
   acknowledgedBy?: string; acknowledgedAt?: string;
   escalatedTo?: string; escalatedAt?: string; escalationDetail?: string;
+  deliveries: AlertDelivery[]; clearedAt?: string; occurrence: number;
 }
 
 /**
@@ -77,8 +103,13 @@ export function projectAlerts(events: readonly AlertLifecycleEvent[]): readonly 
     if (e.change === 'raised') {
       if (e.alert === undefined) continue;
       const existing = byId.get(e.alertId);
-      if (existing === undefined) {
-        byId.set(e.alertId, { alert: e.alert, ...(e.escalatesToUserId !== undefined ? { escalatesToUserId: e.escalatesToUserId } : {}) });
+      if (existing === undefined || existing.clearedAt !== undefined) {
+        // First raise, or the condition came BACK after it cleared: a new occurrence — fresh deadline, nobody has
+        // acknowledged it yet, and it is delivered again. The earlier occurrence stays on the ledger.
+        byId.set(e.alertId, {
+          alert: e.alert, deliveries: [], occurrence: (existing?.occurrence ?? 0) + 1,
+          ...(e.escalatesToUserId !== undefined ? { escalatesToUserId: e.escalatesToUserId } : {}),
+        });
       } else {
         // Ongoing condition: keep the first deadline and any acknowledgement; refresh only the escalation target.
         existing.escalatesToUserId = e.escalatesToUserId;
@@ -90,6 +121,10 @@ export function projectAlerts(events: readonly AlertLifecycleEvent[]): readonly 
     if (e.change === 'acknowledged') {
       a.acknowledgedBy = e.by;
       a.acknowledgedAt = e.at;
+    } else if (e.change === 'notified') {
+      if (e.notifiedTo !== undefined) a.deliveries.push({ to: e.notifiedTo, via: e.via ?? 'inbox', stage: e.stage ?? 'raised', at: e.at });
+    } else if (e.change === 'cleared') {
+      a.clearedAt = e.at;
     } else { // escalated
       a.escalatedTo = e.escalatedTo ?? '';
       a.escalatedAt = e.at;
@@ -98,7 +133,10 @@ export function projectAlerts(events: readonly AlertLifecycleEvent[]): readonly 
   }
   return [...byId.values()].map((a) => ({
     alert: a.alert,
-    state: a.escalatedAt !== undefined ? 'escalated' : a.acknowledgedAt !== undefined ? 'acknowledged' : 'open',
+    // Acknowledged wins over escalated: once a named person has taken it, it is theirs and stops asking (PA-12).
+    state: a.clearedAt !== undefined ? 'cleared' as const : a.acknowledgedAt !== undefined ? 'acknowledged' as const : a.escalatedAt !== undefined ? 'escalated' as const : 'open' as const,
+    deliveries: a.deliveries, occurrence: a.occurrence,
+    ...(a.clearedAt !== undefined ? { clearedAt: a.clearedAt } : {}),
     ...(a.escalatesToUserId !== undefined ? { escalatesToUserId: a.escalatesToUserId } : {}),
     ...(a.acknowledgedBy !== undefined ? { acknowledgedBy: a.acknowledgedBy } : {}),
     ...(a.acknowledgedAt !== undefined ? { acknowledgedAt: a.acknowledgedAt } : {}),
@@ -149,8 +187,8 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
             alertId: alert.alertId, change: 'raised', by: ctx.userId, at, alert,
             ...(rule?.escalatesToUserId !== undefined ? { escalatesToUserId: rule.escalatesToUserId } : {}),
           };
-          // Key on the alertId (no time): a re-raise of the same ongoing condition collapses to one open alert.
-          await deps.recordAlertEvent(ctx.tenantId, event, `raise-${alert.alertId}`);
+          // Key on the alertId and its occurrence (no time): a re-raise of the same ongoing condition collapses to one.
+          await deps.recordAlertEvent(ctx.tenantId, event, raiseKey(alert.alertId, (await deps.alerts(ctx.tenantId)).find((a) => a.alert.alertId === alert.alertId)));
           if (!known.has(alert.alertId)) persisted += 1;
         }
         return { status: 200, body: { raised: alerts.length, newlyOpened: persisted, alerts, at } };
@@ -172,8 +210,8 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
           });
         }
         const at = deps.now();
-        // Key on the alertId (no time): a re-acknowledge of the same alert collapses to one.
-        await deps.recordAlertEvent(ctx.tenantId, { alertId, change: 'acknowledged', by: ctx.userId, at }, `ack-${alertId}`);
+        // Key on the alertId and occurrence (no time): a re-acknowledge of the same alert collapses to one.
+        await deps.recordAlertEvent(ctx.tenantId, { alertId, change: 'acknowledged', by: ctx.userId, at }, live.occurrence > 1 ? `ack-${alertId}-o${live.occurrence}` : `ack-${alertId}`);
         return { status: 200, body: { alertId, acknowledgedBy: ctx.userId, at } };
       },
     },
@@ -183,24 +221,8 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
       api: 'API-11', method: 'POST', path: '/v1/platform/alerts/escalate',
       permission: 'platform.alert.manage', idempotent: true,
       handler: async (ctx) => {
-        const live = await deps.alerts(ctx.tenantId);
         const at = deps.now();
-        const openAlerts = live.map((a) => a.alert);
-        const rules = live.map((a): AlertRule => ({
-          alertId: a.alert.alertId, component: a.alert.component, firesAt: a.alert.status,
-          ownerUserId: a.alert.ownerUserId, ownerName: a.alert.ownerName, ackWithinMinutes: 1,
-          ...(a.escalatesToUserId !== undefined ? { escalatesToUserId: a.escalatesToUserId } : {}),
-        }));
-        const acknowledgedIds = live.filter((a) => a.acknowledgedAt !== undefined).map((a) => a.alert.alertId);
-        const alreadyEscalated = new Set(live.filter((a) => a.escalatedAt !== undefined).map((a) => a.alert.alertId));
-
-        const due = escalateUnacknowledged(openAlerts, rules, acknowledgedIds, at).filter((e) => !alreadyEscalated.has(e.alert.alertId));
-        for (const e of due) {
-          await deps.recordAlertEvent(ctx.tenantId, {
-            alertId: e.alert.alertId, change: 'escalated', by: ctx.userId, at,
-            escalatedTo: e.escalatedTo, detail: e.detail,
-          }, `escalate-${e.alert.alertId}-${at}`);
-        }
+        const due = await escalateDueAlerts(deps, ctx.tenantId, ctx.userId, at);
         return {
           status: 200,
           body: {
@@ -219,9 +241,61 @@ export function alertLifecycleRoutes(deps: AlertLifecycleDeps): readonly Route[]
         const live = await deps.alerts(ctx.tenantId);
         const ordered = [...live].sort((a, b) =>
           (SEVERITY[a.alert.status] ?? 9) - (SEVERITY[b.alert.status] ?? 9) || a.alert.ackDueBy.localeCompare(b.alert.ackDueBy));
-        const needAttention = live.filter((a) => a.state !== 'acknowledged').length;
+        const needAttention = live.filter((a) => a.state === 'open' || a.state === 'escalated').length;
         return { status: 200, body: { alerts: ordered, open: live.filter((a) => a.state === 'open').length, needAttention, asAt: deps.now() } };
       },
     },
+    {
+      // INBOX (PA-12) — the alerts that are THIS person's to answer: the ones they own that nobody has acknowledged, and
+      // the ones escalated to them. Everything delivered to them, with when and how. Worst first.
+      api: 'API-11', method: 'GET', path: '/v1/platform/alerts/inbox',
+      permission: 'platform.health.read',
+      handler: async (ctx) => {
+        const me = ctx.userId;
+        const mine = (await deps.alerts(ctx.tenantId)).filter((a) =>
+          (a.state === 'open' && a.alert.ownerUserId === me) || (a.state === 'escalated' && (a.escalatedTo === me || a.alert.ownerUserId === me)));
+        const ordered = [...mine].sort((a, b) =>
+          (SEVERITY[a.alert.status] ?? 9) - (SEVERITY[b.alert.status] ?? 9) || a.alert.ackDueBy.localeCompare(b.alert.ackDueBy));
+        return {
+          status: 200,
+          body: {
+            userId: me,
+            alerts: ordered.map((a) => ({ ...a, deliveredToMe: a.deliveries.filter((d) => d.to === me) })),
+            count: ordered.length, asAt: deps.now(),
+          },
+        };
+      },
+    },
   ];
+}
+
+/** The idempotency key of a raise: the alert and its occurrence (a new occurrence after it cleared gets its own). */
+export function raiseKey(alertId: string, live: LiveAlert | undefined): string {
+  const occurrence = live === undefined ? 1 : live.state === 'cleared' ? live.occurrence + 1 : live.occurrence;
+  return occurrence > 1 ? `raise-${alertId}-o${occurrence}` : `raise-${alertId}`;
+}
+
+/**
+ * The escalation sweep (M35-FR-04): every open, unacknowledged alert past its deadline goes to the configured person
+ * (the tested `escalateUnacknowledged`); an escalated, cleared or acknowledged alert is left alone, so re-running it
+ * never double-escalates. What the route runs on demand and the ops-alert worker runs on its timer.
+ */
+export async function escalateDueAlerts(deps: AlertLifecycleDeps, tenantId: string, by: string, at: string): Promise<readonly { readonly alert: RaisedAlert; readonly escalatedTo: string; readonly detail: string }[]> {
+  const live = (await deps.alerts(tenantId)).filter((a) => a.state !== 'cleared');
+  const openAlerts = live.map((a) => a.alert);
+  const rules = live.map((a): AlertRule => ({
+    alertId: a.alert.alertId, component: a.alert.component, firesAt: a.alert.status,
+    ownerUserId: a.alert.ownerUserId, ownerName: a.alert.ownerName, ackWithinMinutes: 1,
+    ...(a.escalatesToUserId !== undefined ? { escalatesToUserId: a.escalatesToUserId } : {}),
+  }));
+  const acknowledgedIds = live.filter((a) => a.acknowledgedAt !== undefined).map((a) => a.alert.alertId);
+  const alreadyEscalated = new Set(live.filter((a) => a.escalatedAt !== undefined).map((a) => a.alert.alertId));
+  const due = escalateUnacknowledged(openAlerts, rules, acknowledgedIds, at).filter((e) => !alreadyEscalated.has(e.alert.alertId));
+  for (const e of due) {
+    await deps.recordAlertEvent(tenantId, {
+      alertId: e.alert.alertId, change: 'escalated', by, at,
+      escalatedTo: e.escalatedTo, detail: e.detail,
+    }, `escalate-${e.alert.alertId}-${at}`);
+  }
+  return due;
 }

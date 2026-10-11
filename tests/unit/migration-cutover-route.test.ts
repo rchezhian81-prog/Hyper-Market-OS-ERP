@@ -36,6 +36,13 @@ const performed: RecordedRollback = {
   execution: { confirmedBy: 'u-mgr', confirmedAt: '2026-10-03T20:20:00Z', legacyTradingFrom: '2026-10-03T20:10:00Z', legacyFirstBillRef: 'OLD-501' },
 };
 
+/** GT-02 round 4: a performed rollback demonstrates only with a reconciled window — the reconciliation the ledger holds for it. */
+const reconciledFor = (r: RecordedRollback) => ({
+  cutoverId: r.cutoverId, decidedAt: r.decidedAt, windowFrom: '2026-09-30T00:00:00.000Z', windowTo: r.execution?.legacyTradingFrom ?? r.decidedAt,
+  newSystem: { count: 2, totalMinor: 900 }, legacy: { count: 2, totalMinor: 900 }, stores: [{ storeId: 'S1', completeThrough: r.execution?.confirmedAt ?? r.decidedAt }],
+  reconciled: true, differences: [], by: 'u-owner', at: r.execution?.confirmedAt ?? r.decidedAt, detail: 'reconciled',
+});
+
 /** Every server record a GO needs. */
 const complete = (): Records => ({
   totals: [signed('CT-1')], exceptions: [],
@@ -50,7 +57,7 @@ const deps = (r: Records, targetKind: TargetKind = 'rehearsal'): MigrationDeps =
   recordAcceptance: () => {}, ownerId: () => 'u-owner', extractionOperator: () => 'u-op',
   exclusions: () => [], recordExclusion: () => {}, now: () => NOW,
   controlTotals: () => r.totals, exceptions: () => r.exceptions,
-  parallelPolicy: () => r.policy, parallelDays: () => r.days, parallelDifferences: () => [], rollbacks: () => r.rollbacks,
+  parallelPolicy: () => r.policy, parallelDays: () => r.days, parallelDifferences: () => [], rollbacks: () => r.rollbacks, rollbackReconciliations: () => r.rollbacks.filter((x) => x.performed).map(reconciledFor),
   deltaAppliedAt: () => r.deltaAt,
   rolesOf: (_t, userId) => r.people[userId] ?? [],
 });

@@ -26,6 +26,18 @@ const stockAt = (h: ApiHarness, store: string, product: string, qty: number) =>
     movementId: `stock-${store}-${product}`, productId: product, locationId: store, kind: 'received', quantityMinor: qty, uom: 'ea', occurredAt: '2026-01-01T00:00:00.000Z', enteredBy: 'u-owner', unitCostMinor: 100,
   } });
 
+// FUL-11: what sold at the store is the ledger's record too — a sale through the real route.
+const sellAt = (h: ApiHarness, store: string, product: string, qty: number) =>
+  h.request({
+    method: 'POST', path: '/v1/sales', userId: 'u-owner', tenantId: A, idempotencyKey: `sale-${store}-${product}`,
+    body: {
+      saleId: `sale-${store}-${product}`, receiptNumber: 'R-1', laneId: 'lane-1', cashierId: 'u-owner', tradingDay: '2026-03-01',
+      committedAt: '2026-03-01T10:00:00.000Z', totalMinor: qty * 2000, currency: 'INR', packVersion: 1, locationId: store,
+      lines: [{ productId: product, quantityMinor: qty, uom: 'ea', unitPriceMinor: 2000, lineTotalMinor: qty * 2000 }],
+      tenders: [{ kind: 'cash', amountMinor: qty * 2000 }],
+    },
+  });
+
 async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
@@ -58,14 +70,19 @@ describe('assortment / range management (M04-FR-01)', () => {
     await list(h, 'u-mgr', 's2', 'p-neversold', '2026-01-01');
     await list(h, 'u-mgr', 's2', 'p-clr', '2026-01-01');
     await stockAt(h, 's2', 'p-clr', 100);
-    await drop(h, 'u-mgr', 's2', 'p-clr', { reason: 'poor_sales', effectiveFrom: '2026-02-01' }); // → clearance
+    expect((await drop(h, 'u-mgr', 's2', 'p-clr', { reason: 'poor_sales', effectiveFrom: '2026-02-01' })).body).toMatchObject({ status: 'clearance' }); // 100 held
+    // The ledger itself says what sold here: the clearance stock sold out, and an item never ranged here was sold.
+    await sellAt(h, 's2', 'p-clr', 100);
+    await stockAt(h, 's2', 'p-ghost', 5);
+    await sellAt(h, 's2', 'p-ghost', 1);
 
     const res = await integrity(h, 'u-mgr', 's2', {
       onDate: '2026-08-24',
-      soldProductIds: ['p-listed', 'p-ghost'], // p-ghost sold but never ranged here
+      soldProductIds: ['p-listed'],            // the till's own report, added to what the ledger recorded selling
       reorderedProductIds: ['p-clr'],          // clearance is not reordered
-      onHand: { 'p-clr': 0 },                  // clearance finished
+      onHand: { 'p-clr': 999 },                // a typed figure — ignored: the ledger says 0, the clearance is finished
     });
+    expect((res.body as { factsFrom: string }).factsFrom).toBe('head_office_stock_ledger');
     expect(res.status).toBe(200);
     const issues = (res.body as { issues: { productId: string; finding: string }[]; count: number });
     const has = (productId: string, finding: string) => issues.issues.some((i) => i.productId === productId && i.finding === finding);

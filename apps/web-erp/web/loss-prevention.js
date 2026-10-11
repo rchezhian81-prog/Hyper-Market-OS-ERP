@@ -84,6 +84,28 @@ function rowNode(r) {
   return li;
 }
 
+function raisedNode(r) {
+  const li = document.createElement('li');
+  li.className = `row tone-${r.status.tone}`;
+  li.dataset.exceptionId = r.exceptionId;
+  const head = document.createElement('div');
+  head.className = 'head';
+  const headline = document.createElement('span'); headline.className = 'headline'; headline.textContent = `${r.what} — ${r.cashierId}`;
+  const status = document.createElement('span'); status.className = 'status';
+  const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = r.status.icon;
+  const slabel = document.createElement('span'); slabel.textContent = r.status.label;
+  status.append(icon, slabel);
+  status.setAttribute('aria-label', r.status.announcement || r.status.label);
+  head.append(headline, status);
+  const facts = document.createElement('div'); facts.className = 'facts';
+  const breach = document.createElement('span'); breach.className = 'breach'; breach.textContent = r.breach;
+  const linked = document.createElement('span'); linked.textContent = `${t('raisedLinked')}: ${r.linkedTxnIds.length}`;
+  const cs = document.createElement('span'); cs.textContent = r.caseLabel;
+  facts.append(breach, linked, cs);
+  li.append(head, facts);
+  return li;
+}
+
 function paint() {
   const view = session.view(lang);
 
@@ -102,6 +124,13 @@ function paint() {
   el('open-heading').hidden = view.open.length === 0;
   el('open-heading').textContent = t('openHeading');
   el('rows').replaceChildren(...view.open.map((r) => rowNode(r)));
+
+  // PF-07: what the store's rules raised today on head office's own record — voids, drawer opened with no sale, price
+  // overrides, refunds — each with how far over the rule, the cashier (an id), the linked bills and whether a case is open.
+  const raised = view.raised ?? [];
+  el('raised-heading').hidden = raised.length === 0;
+  el('raised-heading').textContent = t('raisedHeading');
+  el('raised-rows').replaceChildren(...raised.map((r) => raisedNode(r)));
 
   // The close form — only for a manager who holds lp.case.manage, and only when there is a case to close.
   const closer = el('closer');

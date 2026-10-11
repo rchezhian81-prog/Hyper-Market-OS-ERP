@@ -47,6 +47,26 @@ export interface PiiEntry {
   readonly state: 'held' | 'erased' | 'minimised';
 }
 
+/**
+ * A holding of the customer's personal data in a REAL domain store (audit FUL-12) — not the simulated register. The
+ * owning domain says how many records it holds for the person, whether the law keeps them, and how it carries out an
+ * erasure (anonymise) or a minimisation (redact) — each as a COMPENSATING, append-only fact in that domain, never a
+ * deletion of evidence (hard rules #2 and #6). A retained holding has neither and is never touched.
+ */
+export interface DomainHolding {
+  readonly category: string;
+  /** The domain that owns it — named on the located list so a DPO knows where the data lives. */
+  readonly domain: string;
+  readonly recordCount: number;
+  readonly retentionBasis?: RetentionBasis;
+  readonly retainUntil?: string;
+  readonly minimisable?: boolean;
+  /** Where the holding stands in its domain now (read from the domain, not remembered here). */
+  readonly state: 'held' | 'erased' | 'minimised';
+  readonly erase?: (requestId: string) => Promise<{ recordsAffected: number; note?: string }>;
+  readonly minimise?: (requestId: string) => Promise<{ recordsAffected: number; note?: string }>;
+}
+
 /** The checker's recorded authorisation to carry out an erasure — the second person of the two-person control. */
 export interface ErasureApproval {
   readonly requestId: string;
@@ -65,6 +85,8 @@ export interface ErasureExecutionDeps {
   readonly recordTombstone: (tenantId: string, tombstone: PrivacyTombstone, key: string) => Promise<void> | void;
   readonly tombstonesFor: (tenantId: string) => Promise<readonly PrivacyTombstone[]> | readonly PrivacyTombstone[];
   readonly tombstoneFor: (tenantId: string, requestId: string) => Promise<PrivacyTombstone | undefined> | PrivacyTombstone | undefined;
+  /** FUL-12: the customer's holdings in the REAL domain stores (marketing profile, service cases, orders, consent…). */
+  readonly domainHoldings?: (tenantId: string, customerRef: string) => Promise<readonly DomainHolding[]>;
   /** Enqueue a processor-erasure notice on the durable connector queue (M32-FR-02). */
   readonly enqueueNotice: (tenantId: string, message: ConnectorMessage, key: string) => Promise<void> | void;
   readonly now: () => string;
@@ -130,7 +152,15 @@ export function erasureExecutionRoutes(deps: ErasureExecutionDeps): readonly Rou
       permission: 'privacy.request.manage',
       handler: async (ctx) => {
         const customerRef = (ctx.params['customerRef'] ?? '').trim();
-        const entries = [...(await deps.piiFor(ctx.tenantId, customerRef))].sort((a, b) => a.category.localeCompare(b.category));
+        const domain = deps.domainHoldings === undefined ? [] : await deps.domainHoldings(ctx.tenantId, customerRef);
+        const fromDomains = new Set(domain.map((d) => d.category));
+        const entries = [
+          // A real domain's own answer wins over a simulated register line for the same category.
+          ...(await deps.piiFor(ctx.tenantId, customerRef)).filter((e) => !fromDomains.has(e.category)).map((e) => ({ ...e, domain: 'pii-register' })),
+          ...domain.map((d) => ({ customerRef, category: d.category, domain: d.domain, recordCount: d.recordCount, state: d.state,
+            ...(d.retentionBasis === undefined ? {} : { retentionBasis: d.retentionBasis }), ...(d.retainUntil === undefined ? {} : { retainUntil: d.retainUntil }),
+            ...(d.minimisable === undefined ? {} : { minimisable: d.minimisable }) })),
+        ].sort((a, b) => a.category.localeCompare(b.category));
         return { status: 200, body: { customerRef, categories: entries, count: entries.length } };
       },
     },
@@ -172,10 +202,18 @@ export function erasureExecutionRoutes(deps: ErasureExecutionDeps): readonly Rou
         if (existing.kind !== 'erasure') throw apiError(409, { code: 'not_an_erasure_request', whatHappened: `This is a ${existing.kind} request, not an erasure.`, wasItSaved: 'not_saved', nextSafeAction: 'Use POST …/fulfilment for access/correction/export.' });
         if (existing.state === 'fulfilled' || existing.state === 'refused') throw apiError(409, { code: 'request_already_closed', whatHappened: `This request is already ${existing.state}.`, wasItSaved: 'not_saved', nextSafeAction: 'A closed request is not executed again.' });
 
+        // Carried out once: a sealed tombstone is the evidence it ran — a second run is refused, never re-planned (FUL-12).
+        if (await deps.tombstoneFor(ctx.tenantId, requestId) !== undefined) {
+          throw apiError(409, { code: 'erasure_already_carried_out', whatHappened: `The erasure for request ${requestId} has already been carried out; its sealed record stands.`, wasItSaved: 'not_saved', nextSafeAction: 'Read the tombstone (GET …/tombstone). Nothing was done again.' });
+        }
         const approval = await deps.approvalFor(ctx.tenantId, requestId);
         // Plan from the currently-held PII (already-erased/minimised entries are not re-planned).
-        const held = (await deps.piiFor(ctx.tenantId, existing.customerRef)).filter((e) => e.state === 'held');
-        const plan = planErasure({ request: existing, categories: held.map(toCategory), at: deps.now() });
+        // FUL-12: the REAL domain holdings first; the simulated register only for a category no domain answers for.
+        const domain = (deps.domainHoldings === undefined ? [] : await deps.domainHoldings(ctx.tenantId, existing.customerRef))
+          .filter((d) => d.state === 'held' && d.recordCount > 0);
+        const fromDomains = new Set(domain.map((d) => d.category));
+        const held = (await deps.piiFor(ctx.tenantId, existing.customerRef)).filter((e) => e.state === 'held' && !fromDomains.has(e.category));
+        const plan = planErasure({ request: existing, categories: [...held.map(toCategory), ...domain.map((d) => toCategory({ ...d, customerRef: existing.customerRef }))], at: deps.now() });
 
         // Two-person authorisation (SoD §28). The caller is the maker; the checker is the recorded approver.
         const auth = authoriseErasureExecution({ request: existing, plan, maker: ctx.userId, checker: approval?.approvedBy ?? '', at: deps.now() });
@@ -203,6 +241,20 @@ export function erasureExecutionRoutes(deps: ErasureExecutionDeps): readonly Rou
             return { recordsAffected: entry.recordCount, note: `${entry.recordCount} record(s) minimised` };
           },
         }));
+        // The real domains carry out their own disposition — an anonymisation or a redaction recorded in that domain.
+        for (const d of domain) {
+          sources.push({
+            category: d.category,
+            erase: async () => {
+              if (d.erase === undefined) throw new Error(`${d.domain} cannot erase ${d.category} — it keeps it in full`);
+              return d.erase(requestId);
+            },
+            minimise: async () => {
+              if (d.minimise === undefined) throw new Error(`${d.domain} cannot minimise ${d.category}`);
+              return d.minimise(requestId);
+            },
+          });
+        }
         const report: ErasureExecutionReport = await executeErasurePlan({ plan, sources, at: deps.now() });
 
         // Seal the PII-free tombstone from the two-person authorisation and the report.

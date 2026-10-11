@@ -19,6 +19,8 @@ export interface PurchaseOrderLineInput {
   readonly unitCost: Money;
   /** OB-31: the product's unit as the master names it; absent ⇒ counted in whole items (as before). */
   readonly uom?: string;
+  /** SF-11: the order as the buyer placed it — so many packs at one pack level, at the pack's cost — converted exactly. */
+  readonly ordered?: { readonly level: string; readonly quantity: number; readonly unitsPerPack: number; readonly packCost: Money };
 }
 
 export interface IssuePurchaseOrderInput {

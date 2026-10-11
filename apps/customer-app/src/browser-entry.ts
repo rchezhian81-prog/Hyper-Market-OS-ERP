@@ -247,13 +247,50 @@ export interface Shop {
   isSignedIn(): boolean;
   /** What the order screen says afterwards. `payment_pending` reads as waiting, never as done. */
   statusLine(): string | null;
-  /** The consent switches — one row, one toggle, same cost in both directions. */
+  /** The consent switches — one row, one toggle, same cost in both directions — as the SHOP last said it holds them. */
   consent(): ReturnType<typeof consentControls>;
-  setConsent(purpose: string, channel: string, granted: boolean): ReturnType<typeof setConsent>;
+  /**
+   * Grant or withdraw (FUL-06). Saved on the shop in the customer's own session and READ BACK: the switch moves only
+   * when the shop has it. Offline, signed out or refused, nothing moves and the customer is told so in plain words.
+   */
+  setConsent(purpose: string, channel: string, granted: boolean): Promise<PrivacyOutcome>;
+  /** Read my consent and my requests from the shop (on sign-in, and after any change). */
+  loadPrivacy(): Promise<PrivacyOutcome>;
   /** The rights on offer, each marked with whether the law lets it be complete. */
   rights(): typeof RIGHTS_OFFERED;
-  raise(kind: (typeof RIGHTS_OFFERED)[number]['kind'], at: string): ReturnType<typeof raiseRequest>;
+  /** Raise a request ON THE SHOP (FUL-06). "Received" only when the shop has it; the shop's own reference and date. */
+  raise(kind: (typeof RIGHTS_OFFERED)[number]['kind'], at: string): Promise<RaiseOutcome>;
+  /** My requests as the shop last reported them. */
+  myRequests(): readonly MyPrivacyRequest[];
 }
+
+/** Why a privacy change did not reach the shop — each one says nothing was saved. */
+export type PrivacyRefusal =
+  | 'unknown_purpose' | 'required_for_service'
+  | 'not_signed_in' | 'no_road_to_the_shop' | 'not_saved_no_connection'
+  | 'signed_out' | 'the_shop_refused' | 'the_shop_could_not_answer';
+
+export type PrivacyOutcome =
+  | { readonly ok: true; readonly granted?: boolean; readonly tellTheCustomer: string }
+  | { readonly ok: false; readonly refusal: PrivacyRefusal; readonly tellTheCustomer: string };
+
+export interface MyPrivacyRequest {
+  readonly requestId: string;
+  readonly kind: string;
+  readonly state: string;
+  readonly dueBy: string;
+}
+
+export type RaiseOutcome =
+  | { readonly ok: true; readonly request: MyPrivacyRequest; readonly tellTheCustomer: string }
+  | { readonly ok: false; readonly refusal: PrivacyRefusal; readonly tellTheCustomer: string };
+
+/** A request reference unique across every phone — a clash would read as another customer's request. */
+const randomRequestId = (): string => {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  const id = c?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `DSR-${id.replace(/-/g, '').slice(0, 20).toUpperCase()}`;
+};
 
 /**
  * Build the customer's session from what the app was given.
@@ -282,6 +319,11 @@ export function bootShop(
   let awaitingDecision = false;
   const purposes = data?.consentPurposes ?? [];
   let consent: ConsentState = data?.consent ?? { grants: [] };
+  // FUL-06: my requests as the shop last reported them, and a request sent but not yet acknowledged (kept for retry).
+  let requests: readonly MyPrivacyRequest[] = [];
+  let pendingRequest: { readonly kind: string; readonly requestId: string } | undefined;
+  const newRequestId = nextId;
+  let consentTaps = 0;
   // The customer's OWN delivery location. Undefined until captured from the device — never guessed,
   // so the distance check refuses honestly rather than measuring from {0,0}.
   let deliveryLocation = data?.deliveryLocation;
@@ -376,23 +418,76 @@ export function bootShop(
 
     consent: () => consentControls(consent, purposes),
 
-    setConsent: (purpose, channel, granted) => {
+    setConsent: async (purpose, channel, granted) => {
+      // The tenant's own rules first, on the phone (an unknown switch, a required purpose): nothing is sent.
       const change = setConsent(consent, purposes, { purpose, channel, granted });
-      if (change.ok) consent = change.state;
-      return change;
+      if (!change.ok) {
+        return { ok: false, refusal: change.refusal, tellTheCustomer: change.refusal === 'required_for_service'
+          ? 'Messages about an order you placed are needed to deliver it, so they cannot be switched off.'
+          : 'This is not a choice this shop offers.' };
+      }
+      // Then the shop. The switch moves only when the shop has saved it and we have read it back.
+      const answer = await privacyCall({ method: 'POST', path: '/consent', body: { purpose, channel, given: granted }, idempotencyKey: `consent-${purpose}-${channel}-${granted ? 'on' : 'off'}-${Date.now().toString(36)}-${(consentTaps += 1)}` });
+      if (!answer.ok) return answer;
+      const reread = await loadPrivacyFromTheShop();
+      if (!reread.ok) return { ok: false, refusal: reread.refusal, tellTheCustomer: `The shop took your choice but we could not read it back to show you. ${reread.tellTheCustomer}` };
+      const body = answer.body as { granted?: unknown; tellTheCustomer?: unknown };
+      return { ok: true, granted: body.granted === true, tellTheCustomer: typeof body.tellTheCustomer === 'string' ? body.tellTheCustomer : 'Saved.' };
     },
+
+    loadPrivacy: () => loadPrivacyFromTheShop(),
 
     rights: () => RIGHTS_OFFERED,
 
-    raise: (kind, at) => raiseRequest({
-      requestId: nextId(),
-      tenantId: data?.tenantId ?? 'tenant',
-      customerRef: data?.customerRef ?? 'guest',
-      kind,
-      at,
-      slaDays: data?.privacySlaDays ?? 30,
-    }),
+    raise: async (kind, at) => {
+      // The phone's own check that this is a right it offers (an unknown one throws, as before) — nothing sent.
+      raiseRequest({ requestId: 'check', tenantId: data?.tenantId ?? 'tenant', customerRef: 'self', kind, at, slaDays: data?.privacySlaDays ?? 30 });
+      // One reference for this request, kept for a retry so a lost answer can never raise it twice.
+      const requestId = pendingRequest?.kind === kind ? pendingRequest.requestId : newRequestId();
+      pendingRequest = { kind, requestId };
+      const answer = await privacyCall({ method: 'POST', path: `/requests/${requestId}`, body: { kind }, idempotencyKey: `privacy-request-${requestId}` });
+      if (!answer.ok) return answer;
+      pendingRequest = undefined;
+      const b = answer.body as { requestId?: unknown; kind?: unknown; state?: unknown; dueBy?: unknown; tellTheCustomer?: unknown };
+      const request: MyPrivacyRequest = { requestId: String(b.requestId ?? requestId), kind: String(b.kind ?? kind), state: String(b.state ?? 'raised'), dueBy: String(b.dueBy ?? '') };
+      requests = [request, ...requests.filter((r) => r.requestId !== request.requestId)];
+      // The shop's own sentence: received, with its reference and its date — never "done".
+      return { ok: true, request, tellTheCustomer: typeof b.tellTheCustomer === 'string' ? b.tellTheCustomer : `We have your request (reference ${request.requestId}).` };
+    },
+
+    myRequests: () => requests,
   };
+
+  /** One privacy call as the signed-in customer, read honestly: saved only on the shop's 2xx. */
+  async function privacyCall(call: { method: 'GET' | 'POST'; path: '' | '/consent' | `/requests/${string}`; body?: unknown; idempotencyKey?: string }):
+    Promise<{ ok: true; body: unknown } | { ok: false; refusal: PrivacyRefusal; tellTheCustomer: string }> {
+    if (token === undefined) return { ok: false, refusal: 'not_signed_in', tellTheCustomer: 'Please sign in first, so the shop knows these are your choices. Nothing was changed.' };
+    if (transport?.privacy === undefined) return { ok: false, refusal: 'no_road_to_the_shop', tellTheCustomer: 'This app has no connection to the shop set up, so nothing was saved. Your earlier choices stand.' };
+    const answer = await transport.privacy({ token, ...call });
+    if (!answer.reached) return { ok: false, refusal: 'not_saved_no_connection', tellTheCustomer: 'Not saved — this did not reach the shop. Your earlier choice stands; please try again when you have a signal.' };
+    if (answer.status === 200 || answer.status === 201) return { ok: true, body: answer.body };
+    if (answer.status === 401) { token = undefined; return { ok: false, refusal: 'signed_out', tellTheCustomer: 'Your sign-in has ended. Please sign in again — nothing was changed.' }; }
+    if (answer.status >= 500) return { ok: false, refusal: 'the_shop_could_not_answer', tellTheCustomer: 'The shop could not save this just now. Nothing was changed — please try again in a moment.' };
+    const err = (answer.body as { error?: { whatHappened?: unknown } } | undefined)?.error;
+    return { ok: false, refusal: 'the_shop_refused', tellTheCustomer: typeof err?.whatHappened === 'string' ? err.whatHappened : 'The shop did not accept this. Nothing was changed.' };
+  }
+
+  /** Replace the phone's copy with what the shop holds — consent per purpose/channel, and my requests. */
+  async function loadPrivacyFromTheShop(): Promise<PrivacyOutcome> {
+    const answer = await privacyCall({ method: 'GET', path: '' });
+    if (!answer.ok) return answer;
+    const b = answer.body as { consent?: unknown; requests?: unknown };
+    const held = Array.isArray(b.consent) ? (b.consent as { purpose?: unknown; channel?: unknown; granted?: unknown }[]) : [];
+    consent = {
+      grants: held.filter((c) => typeof c.purpose === 'string' && typeof c.channel === 'string').map((c) => ({
+        purpose: c.purpose as string, channel: c.channel as string, granted: c.granted === true, ...(c.granted === true ? {} : { withdrawn: true }),
+      })),
+    };
+    requests = (Array.isArray(b.requests) ? (b.requests as Record<string, unknown>[]) : []).map((r) => ({
+      requestId: String(r['requestId']), kind: String(r['kind']), state: String(r['state']), dueBy: String(r['dueBy']),
+    }));
+    return { ok: true, tellTheCustomer: 'These are the choices the shop holds for you.' };
+  }
 
   /** The session's `send` input for one attempt — the same figures whether it is a dry run or the real thing. */
   function sendInput(orderId: string, providerRef: string, result: ShopPaymentResult, reachedTheShop: boolean): Parameters<typeof send>[1] {
@@ -471,13 +566,17 @@ export function bootShop(
     // 2. The real thing. The amount is the session's own payable (items + fee) — the shop records
     //    it as the checkout's answer and invents nothing.
     const payable = dry.state.order?.payableMinor ?? 0;
-    const slotKind = (data?.slots ?? []).find((sl) => sl.slotId === state.slotId)?.kind;
+    const chosen = (data?.slots ?? []).find((sl) => sl.slotId === state.slotId);
+    const slotKind = chosen?.kind;
     const answer = await transport.placeOrder({
       orderId, token, locationId,
       lines: state.lines.map((l) => ({ productId: l.productId, quantityMinor: l.quantityMinor })),
       payment: { providerRef, amountMinor: payable, result },
       // The shop quotes its own delivery fee for a delivery (FUL-03).
       ...(slotKind === undefined ? {} : { fulfilment: slotKind }),
+      // …and checks the slot and the address against its own record (FUL-03) — what the app saw is only a view.
+      ...(chosen === undefined || slotKind !== 'delivery' ? {} : { deliverySlot: { startsAt: chosen.startsAt, endsAt: chosen.endsAt } }),
+      ...(slotKind !== 'delivery' || deliveryLocation === undefined ? {} : { deliveryLocation }),
     });
 
     if (!answer.reached) {
@@ -551,11 +650,10 @@ if (browserWindow !== undefined) {
   const basket = deviceBasket(`sre.shop.basket.${who}`, storage, (why) => {
     browserWindow.shopStorageProblem = why;
   });
-  let counter = 0;
   const nav = (globalThis as { navigator?: { onLine?: boolean } }).navigator;
   const transport = typeof globalThis.fetch === 'function'
     ? httpShopTransport({ fetch: globalThis.fetch.bind(globalThis), isOnline: () => nav?.onLine !== false })
     : undefined;
-  const shop = bootShop(browserWindow.shopData, basket, () => `DSR-${(counter += 1)}`, transport);
+  const shop = bootShop(browserWindow.shopData, basket, randomRequestId, transport);
   if (shop !== null) browserWindow.shop = shop;
 }

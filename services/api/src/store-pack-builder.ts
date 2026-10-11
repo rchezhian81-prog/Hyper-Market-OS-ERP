@@ -30,7 +30,9 @@ import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
+  planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter,
 } from './adapters';
+import { inForcePlanogram } from '../../inventory/src/planograms';
 import { ROLE_CATALOGUE } from './roles';
 import { DEFAULT_MATCH_POLICY } from '../../purchase/src/index';
 import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
@@ -228,12 +230,35 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     };
   });
   const only = deliveries.length === 1 ? deliveries[0]! : undefined;
+  // Round 4 acceptance (M09-FR-01 put-away): what is ON HAND at the back store and in no bin there yet — the phone's
+  // put-away list, from head office's ledger and bin register, so the person who puts away need not be the one who
+  // received (their sign-in reloads the page, and a list kept only in the receiving page's memory was gone). Per product,
+  // for products not tracked by batch (a batch-tracked product's batch is the receipt's, not derivable here — absent, said).
+  const backStore = settings?.warehouseId ?? undefined;
+  const goodsIn: { productId: string; batchId: null; quantityMinor: number; uom: string; state: 'on_hand'; expiry: null }[] = [];
+  if (backStore !== undefined && backStore !== null) {
+    const masterOf = new Map((await productMasterAdapter({ store, now }).products(tenantId)).map((p) => [p.productId, p] as const));
+    const backBins = new Set(bins.filter((b) => b.storeId === backStore).map((b) => b.binId));
+    const binned = new Map<string, number>();
+    for (const [key, qty] of Object.entries(contents)) {
+      const [binId, productId] = key.split('|');
+      if (binId !== undefined && productId !== undefined && backBins.has(binId)) binned.set(productId, (binned.get(productId) ?? 0) + qty);
+    }
+    for (const row of await inventoryAdapter({ store, now }).availability(tenantId)) {
+      const packed = published?.snapshot.products.find((p) => p.productId === row.productId);
+      if (row.locationId !== backStore || packed?.batchTracked === true) continue;
+      const loose = row.onHandMinor - (binned.get(row.productId) ?? 0);
+      const unit = unitCode(masterOf.get(row.productId)?.baseUom ?? packed?.baseUom) ?? 'ea';
+      if (loose > 0) goodsIn.push({ productId: row.productId, batchId: null, quantityMinor: loose, uom: unit, state: 'on_hand', expiry: null });
+    }
+  }
   sections['warehouse'] = {
     assignmentId: `warehouse-${storeId}`, workerId: '', storeId: settings?.warehouseId ?? storeId,
     bins: bins.map((b) => ({ binId: b.binId, storeId: b.storeId, capacityMinor: b.capacityMinor, pickable: b.pickable, ...(b.zone === undefined ? {} : { zone: b.zone }) })),
     contents,
     ...(published === undefined ? {} : { barcodes: published.snapshot.barcodes.map((b) => ({ barcode: b.code, productId: b.productId, level: 'unit' })) }),
     openDeliveries: deliveries,
+    goodsIn,
     // Exactly one delivery waiting: the phone receives against it directly; with several, the receiver chooses on the phone.
     ...(only === undefined ? {} : { grnId: only.grnId, poId: only.poId, ordered: only.ordered }),
   };
@@ -249,6 +274,42 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
 
   // ── the store's own exception thresholds ───────────────────────────────────────────────────────────────────────
   sections['lossPreventionRules'] = await lpRulesAdapter({ store, now }).rules(tenantId);
+
+  // ── FUL-11 (M04 · D02): merchandising's planning and stock facts, from head office's own registers ──────────────────
+  // The merchandising screen used to be fed these only by the demo builder; a store set up from head office got none, so
+  // every refill task was a wish and every range check ran on nothing. Each is read from the register that holds it, and
+  // left OUT when head office holds nothing (the screen then says it was not told — never an empty answer):
+  //   shelfLocations ← the store's published shelf map;  planogram / shelfAssignments ← the plan IN FORCE today;
+  //   shelfCounts ← every shelf count taken;  backstock ← the stock ledger at the store's back store;
+  //   assortment ← the store's effective-dated range decisions;  displayContracts / fundingReceivedMinor ← the supplier
+  //   display contracts for this store and what FINANCE has received against each (display-funding journals).
+  // Not sent (no register yet — the screen names the gap): space areas and sales / margin by area.
+  const shelf = planogramStoreAdapter({ store, now });
+  const map = await shelf.shelfMap(tenantId, storeId);
+  if (map !== undefined) sections['shelfLocations'] = map.locations;
+  const plan = inForcePlanogram(await shelf.planograms(tenantId, storeId), now());
+  if (plan !== undefined) {
+    sections['planogram'] = plan;
+    sections['shelfAssignments'] = plan.assignments;
+  }
+  const shelfCounts = await shelfCountAdapter({ store, now }).counts(tenantId, storeId);
+  if (shelfCounts.length > 0) sections['shelfCounts'] = shelfCounts;
+  const backStoreId = settings?.warehouseId ?? null;
+  if (backStoreId !== null && backStoreId !== storeId) {
+    const backstock: Record<string, number> = {};
+    for (const row of await inventoryAdapter({ store, now }).availability(tenantId)) {
+      if (row.locationId === backStoreId) backstock[row.productId] = (backstock[row.productId] ?? 0) + row.onHandMinor;
+    }
+    sections['backstock'] = backstock;
+  }
+  const range = await assortmentAdapter({ store, now }).entries(tenantId, storeId);
+  if (range.length > 0) sections['assortment'] = range;
+  const contracts = (await spacePerformanceAdapter({ store, now }).contracts(tenantId)).filter((c) => c.storeId === storeId);
+  if (contracts.length > 0) {
+    sections['displayContracts'] = contracts;
+    const received = await displayFundingAdapter({ store, now }).fundingReceived(tenantId);
+    sections['fundingReceivedMinor'] = Object.fromEntries(contracts.map((c) => [c.contractId, received[c.contractId]?.minor ?? 0]));
+  }
 
   return sections;
 }

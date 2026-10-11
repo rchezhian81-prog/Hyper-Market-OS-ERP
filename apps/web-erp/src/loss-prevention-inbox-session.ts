@@ -42,12 +42,33 @@ export interface LpCaseView {
   readonly evidenceCount: number;
 }
 
+/**
+ * One exception the store's rules RAISED on head office's own record today (audit PF-07 · M15-FR-01) — voids, no-sales,
+ * price overrides (as discounts), refunds — as `GET /v1/loss-prevention/exceptions` hands it over. The cashier is an id,
+ * never a name.
+ */
+export interface LpRaisedView {
+  readonly exceptionId: string;
+  readonly day: string;
+  readonly cashierId: string;
+  readonly kind: string;
+  readonly breach: string;
+  readonly observed: number;
+  readonly limit: number;
+  readonly severity: string;
+  readonly linkedTxnIds: readonly string[];
+  readonly raisedAt?: string;
+  readonly caseId?: string;
+}
+
 /** The worklist body (`GET /v1/loss-prevention/cases`). Open cases only; a closed one is off the list. */
 export interface LpWorklistData {
   readonly openCount: number;
   /** The total value at stake across the open cases — the size of the manager's open exposure. */
   readonly totalValueMinor: number;
   readonly cases: readonly LpCaseView[];
+  /** PF-07: today's exceptions the rules raised on the shop's own record (absent when it was not read). */
+  readonly raised?: readonly LpRaisedView[];
 }
 
 /** The outcome of a close — recorded, refused by the server (bad outcome/§28/permission), or a lost link. */
@@ -86,7 +107,10 @@ export type CopyKey =
   | 'outcomeProven' | 'outcomeUnfounded' | 'outcomeInconclusive' | 'outcomeProcessFailure' | 'outcomeReferredToPolice'
   | 'closeRecorded' | 'closeRefused' | 'closeLostLink'
   | 'scrReady' | 'scrEmpty' | 'stateNotPermitted'
-  | 'nobodyNamed' | 'staleShell' | 'sampleData';
+  | 'nobodyNamed' | 'staleShell' | 'sampleData'
+  | 'raisedHeading' | 'raisedNone' | 'raisedLinked' | 'raisedHasCase' | 'raisedNoCase'
+  | 'kindVoid' | 'kindNoSale' | 'kindDiscount' | 'kindRefund' | 'kindCashVariance'
+  | 'breachCount' | 'breachTotal' | 'breachSingle' | 'breachApprover' | 'severityEscalate' | 'severityFlag';
 
 export const LP_INBOX_COPY: BilingualCopy<CopyKey> = {
   en: {
@@ -109,6 +133,12 @@ export const LP_INBOX_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'You do not have permission to see the investigations.',
     nobodyNamed: 'This store computer has not been told who is using this screen.',
     staleShell: 'No connection to the store computer. This page is what it was last told, at', sampleData: 'Sample data — this is not your shop.',
+    raisedHeading: 'Raised by the store\'s rules today', raisedNone: 'Nothing raised by the store\'s rules today.',
+    raisedLinked: 'Linked bills / actions', raisedHasCase: 'Case opened', raisedNoCase: 'No case yet',
+    kindVoid: 'Voids', kindNoSale: 'Drawer opened with no sale', kindDiscount: 'Price overrides', kindRefund: 'Refunds', kindCashVariance: 'Cash differences',
+    breachCount: '{observed} today — the rule allows {limit}', breachTotal: '{observed} in total today — the rule allows {limit}',
+    breachSingle: 'One of {observed} — the rule allows {limit} at a time', breachApprover: 'Approved by someone who may not approve it ({observed})',
+    severityEscalate: 'Escalate', severityFlag: 'Flag',
   },
   ta: {
     title: 'விசாரணைகள்', langName: 'English',
@@ -130,6 +160,12 @@ export const LP_INBOX_COPY: BilingualCopy<CopyKey> = {
     stateNotPermitted: 'விசாரணைகளைப் பார்க்க உங்களுக்கு அனுமதி இல்லை.',
     nobodyNamed: 'இந்தத் திரையை யார் பயன்படுத்துகிறார்கள் என்று கடைக் கணினிக்குத் தெரியவில்லை.',
     staleShell: 'கடை கணினியுடன் இணைப்பு இல்லை. இந்தப் பக்கம் கடைசியாகச் சொல்லப்பட்டது:', sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
+    raisedHeading: 'இன்று கடையின் விதிகள் எழுப்பியவை', raisedNone: 'இன்று கடையின் விதிகள் எதையும் எழுப்பவில்லை.',
+    raisedLinked: 'இணைந்த பில்கள் / செயல்கள்', raisedHasCase: 'வழக்கு திறக்கப்பட்டது', raisedNoCase: 'இன்னும் வழக்கு இல்லை',
+    kindVoid: 'நீக்கங்கள்', kindNoSale: 'விற்பனை இல்லாமல் டிராயர் திறப்பு', kindDiscount: 'விலை மாற்றங்கள்', kindRefund: 'திரும்பப் பணம்', kindCashVariance: 'பண வேறுபாடுகள்',
+    breachCount: 'இன்று {observed} — விதி அனுமதிப்பது {limit}', breachTotal: 'இன்று மொத்தம் {observed} — விதி அனுமதிப்பது {limit}',
+    breachSingle: 'ஒன்று {observed} — விதி ஒரு முறைக்கு அனுமதிப்பது {limit}', breachApprover: 'அனுமதிக்க அதிகாரம் இல்லாதவர் அனுமதித்தது ({observed})',
+    severityEscalate: 'உயர்த்து', severityFlag: 'கவனி',
   },
 };
 
@@ -163,9 +199,26 @@ export interface PresentedCase {
   readonly needsAttention: boolean;
 }
 
+/** One raised exception, in the manager's words (PF-07). */
+export interface PresentedRaised {
+  readonly exceptionId: string;
+  readonly cashierId: string;
+  /** What it is about, in words ("Drawer opened with no sale"). */
+  readonly what: string;
+  /** How far over the rule, in words, with money as ₹ where it is money. */
+  readonly breach: string;
+  readonly linkedTxnIds: readonly string[];
+  readonly caseId?: string;
+  readonly caseLabel: string;
+  /** An escalation is an error tone, a flag degraded — with an icon and a word, never colour alone. */
+  readonly status: StatusPresentation;
+}
+
 export interface LpInboxView {
   readonly screenState: StatusPresentation;
   readonly open: readonly PresentedCase[];
+  /** PF-07: today's exceptions raised by the store's rules on head office's own record (empty when none or not read). */
+  readonly raised: readonly PresentedRaised[];
   readonly openCount: number;
   /** The open exposure across every case, formatted (₹). */
   readonly totalValue: string;
@@ -189,7 +242,7 @@ export interface LpInboxSession {
 }
 
 const EMPTY_VIEW = (screenState: StatusPresentation, nobodyNamed: boolean, mayManage: boolean): LpInboxView => ({
-  screenState, open: [], openCount: 0, totalValue: '₹0.00', totalValueMinor: 0, nobodyNamed, mayManage,
+  screenState, open: [], raised: [], openCount: 0, totalValue: '₹0.00', totalValueMinor: 0, nobodyNamed, mayManage,
 });
 
 const rupees = (minor: number): string =>
@@ -221,6 +274,25 @@ export function createLpInboxSession(config: LpInboxConfig, ports: LpInboxPorts)
     };
   };
 
+  // PF-07: a raised exception in words — the kind, how far over the rule (money as ₹), whether a case is open.
+  const KIND: Readonly<Record<string, CopyKey>> = { void: 'kindVoid', no_sale: 'kindNoSale', discount: 'kindDiscount', refund: 'kindRefund', cash_variance: 'kindCashVariance' };
+  const presentRaised = (lang: Lang, r: LpRaisedView): PresentedRaised => {
+    const t = translator(LP_INBOX_COPY, lang);
+    const money = r.breach !== 'count' && r.breach !== 'approver_without_authority';
+    const fill = (template: string): string => template
+      .replace('{observed}', money ? rupees(r.observed) : String(r.observed))
+      .replace('{limit}', money ? rupees(r.limit) : String(r.limit));
+    const breachKey: CopyKey = r.breach === 'count' ? 'breachCount' : r.breach === 'total_value' ? 'breachTotal' : r.breach === 'single_value' ? 'breachSingle' : 'breachApprover';
+    const what = t(KIND[r.kind] ?? 'kindVoid');
+    const escalate = r.severity === 'escalate';
+    return {
+      exceptionId: r.exceptionId, cashierId: r.cashierId, what, breach: fill(t(breachKey)), linkedTxnIds: r.linkedTxnIds,
+      ...(r.caseId === undefined ? {} : { caseId: r.caseId }),
+      caseLabel: r.caseId === undefined ? t('raisedNoCase') : `${t('raisedHasCase')}: ${r.caseId}`,
+      status: presentStatus({ tone: escalate ? 'error' : 'degraded', icon: escalate ? '✕' : '⚠', label: t(escalate ? 'severityEscalate' : 'severityFlag'), announcement: `${what}: ${fill(t(breachKey))}`, needsAttention: true }),
+    };
+  };
+
   return {
     text,
     outcomeOptions: (lang) => {
@@ -238,10 +310,12 @@ export function createLpInboxSession(config: LpInboxConfig, ports: LpInboxPorts)
 
       const worklist = ports.worklist();
       const open = worklist.cases.map((c) => present(lang, c));
+      const raised = (worklist.raised ?? []).map((r) => presentRaised(lang, r));
       const state = open.length === 0 ? 'empty' : 'ready';
       return {
         screenState: presentScreenState({ state, label: t(state === 'empty' ? 'scrEmpty' : 'scrReady') }),
         open,
+        raised,
         openCount: open.length,
         totalValue: rupees(worklist.totalValueMinor),
         totalValueMinor: worklist.totalValueMinor,

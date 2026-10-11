@@ -172,6 +172,10 @@ describe('the day close reaches the store computer only when the box injected it
     expect(calls[0]?.url).toBe('http://127.0.0.1:8899/lane/day-close');
     // The manager's own id travels with the ask, so the box records who locked the day (§28 on reopen).
     expect(calls[0]?.body).toEqual({ dayCloseId: 'dc-b1', closedBy: 'u-mgr' });
+    // Round 4: the manager's OWN till PIN, keyed at the close, travels to the box (which verifies it) — and only there.
+    const pin = String(300_000 + 4_711);
+    await session.closeViaBox({ dayCloseId: 'dc-b1p', closedAtLocal: AFTER_CUTOFF, closedAt: AT, closerPin: pin });
+    expect(calls[1]?.body).toEqual({ dayCloseId: 'dc-b1p', closedBy: 'u-mgr', closerPin: pin });
   });
 
   it('passes the box\'s refusal reason straight through, and never a false close', async () => {

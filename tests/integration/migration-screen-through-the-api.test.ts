@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiHarness, type ApiHarness } from '../support/api-harness';
+import { reconcileRehearsedRollback } from '../support/rollback-rehearsal';
 
 // Stage C3b — the migration screen's feed through the real authenticated API: the store box's sync identity
 // (and the owner and the manager) read one assembly of the register the cloud keeps — exceptions with the
@@ -74,7 +75,9 @@ describe('GET /v1/migration/screen through the API (C3b)', () => {
     expect((await post(h, '/v1/migration/parallel-run/days/2026-10-01', RECON, 'd1', clean)).status).toBe(201);
     expect((await post(h, '/v1/migration/cutover/rollback', OWNER, 'rb1', { cutoverId: 'cut-1', trigger: 'owner_decision', legacySystemAvailable: true })).status).toBe(201);
     // GT-02: decided is not performed — the old system's first bill after the decision makes it performed.
-    expect((await post(h, '/v1/migration/cutover/rollback/cut-1/confirmation', OWNER, 'rbc1', { legacyFirstBillRef: 'OLD-1001', legacyTradingFrom: new Date(Date.now() + 1_000).toISOString() })).status).toBe(201);
+    expect((await post(h, '/v1/migration/cutover/rollback/cut-1/confirmation', OWNER, 'rbc1', { legacyFirstBillRef: 'OLD-1001', legacyTradingFrom: new Date().toISOString() })).status).toBe(201);
+    // GT-02 round 4: performed is demonstrated only once the window's data reconciles, with the store synced past the switch-back.
+    await reconcileRehearsedRollback(h, { tenantId: T, ownerId: OWNER, cutoverId: 'cut-1', newSystemTradingFrom: '2026-10-01T00:00:00.000Z' });
     // A decision relayed by the box under someone who may not decide — refused, kept, and now visible in the feed.
     await h.provisionRole(T, 'u-cash', 'cashier');
     expect((await post(h, '/v1/migration/exceptions/EX-2/resolution/synced', SYNC, 'sy1', { action: 'correct', decidedBy: 'u-cash', reason: 'fixed it' })).status).toBe(202);

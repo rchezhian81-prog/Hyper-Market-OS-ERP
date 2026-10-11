@@ -29,7 +29,37 @@ import type { NumberFormat } from '../../../packages/numbering/src/numbering';
  * chain can be gathered by its aggregate (a tax invoice is derivedFrom the CHALLANS, so it does not
  * name the order — `orderId` is the honest index that lets the chain be reconciled without that lie).
  */
-export type StoredB2BDocument = B2BDocument & { readonly validUntil?: string; readonly orderId?: string };
+export type StoredB2BDocument = B2BDocument & {
+  readonly validUntil?: string;
+  readonly orderId?: string;
+  /** FUL-09: a sales order's stock is held at, and dispatched from, this store. */
+  readonly locationId?: string;
+  /** FUL-09 · M22-FR-03: the salesperson the order is attributed to — their commission is derived from its invoices. */
+  readonly salespersonId?: string;
+};
+
+/**
+ * FUL-09: the stock a B2B order moves — the ordinary stock every other channel sells from (P-02). A sales order HOLDS what
+ * it needs at its store when it is made (all of it, or the order is refused — no oversell); a challan takes what left the
+ * building OFF the shelf once (an ordinary `sold` movement per line, keyed on the challan) and keeps holding only what is
+ * still to go.
+ */
+export interface B2BStockPort {
+  /** Hold every line at the store, or hold nothing and say what is short. Holding the same order again is a no-op. */
+  reserve(tenantId: string, orderRef: string, locationId: string, lines: readonly { readonly productId: string; readonly quantityMinor: number }[]):
+    Promise<{ readonly ok: true } | { readonly ok: false; readonly shortages: readonly { readonly productId: string; readonly requestedMinor: number; readonly promisedMinor: number }[] }>;
+  /** What left on a challan comes off the shelf once; the order keeps holding only `remaining`. */
+  dispatch(tenantId: string, input: {
+    readonly orderRef: string; readonly challanId: string; readonly locationId: string; readonly by: string;
+    readonly lines: readonly { readonly lineId: string; readonly productId: string; readonly quantityMinor: number }[];
+    readonly remaining: readonly { readonly productId: string; readonly quantityMinor: number }[];
+  }): Promise<void>;
+  /** What the order still holds at its store. */
+  held(tenantId: string, orderRef: string, locationId: string): Promise<readonly { readonly productId: string; readonly quantityMinor: number }[]>;
+}
+
+/** The order reference a B2B sales order's stock holds are filed under (one per customer + order). */
+export const b2bOrderRef = (customerId: string, orderId: string): string => `b2b-${customerId}-${orderId}`;
 
 /** Each B2B document type draws from its OWN gap-free series — a quotation must never consume a tax number. */
 const FORMAT: Record<B2BDocument['kind'], NumberFormat> = {
@@ -57,6 +87,14 @@ export interface B2BDocumentsDeps {
   readonly creditAllowed: (tenantId: string, customerId: string, orderValueMinor: number) => Promise<boolean> | boolean;
   /** FUL-09: a tax invoice's money effects — the receivable collections ages, the AR movement, the postable for the books. */
   readonly afterTaxInvoice?: (tenantId: string, customerId: string, doc: StoredB2BDocument) => Promise<{ readonly dueOn: string }>;
+  /** FUL-09: the ordinary stock a sales order holds and a challan moves. Present → a sales order must name its store. */
+  readonly stock?: B2BStockPort;
+  /**
+   * FUL-09 · M22-FR-03: the salesperson's commission, DERIVED from an invoice of an attributed order by the APPROVED rule
+   * (never a rate typed at the time). Returns what was accrued, or why nothing was (no rule approved).
+   */
+  readonly commissionOnInvoice?: (tenantId: string, input: { readonly salespersonId: string; readonly invoice: StoredB2BDocument }) =>
+    Promise<{ readonly accrued: true; readonly commissionMinor: number; readonly rateBps: number } | { readonly accrued: false; readonly why: string }>;
   readonly now: () => string;
 }
 
@@ -109,86 +147,24 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
       permission: 'b2b.document.issue', idempotent: true,
       entitlement: 'b2b',
       handler: async (ctx) => {
-        const customerId = ctx.params['customerId'] ?? '';
-        const documentId = ctx.params['documentId'] ?? '';
-        const b = (ctx.body ?? {}) as { lines?: unknown; validForDays?: unknown };
-        const lines = asLines(b.lines);
-        if (lines === null) {
-          throw apiError(400, {
-            code: 'not_readable_as_a_quotation',
-            whatHappened: 'A quotation needs lines, each with a line id, product id, description and whole qty / unit price / tax rate.',
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Send well-formed lines. Nothing was recorded and no number was drawn.',
-          });
-        }
-        const validForDays = isInt(b.validForDays) && (b.validForDays as number) > 0 ? (b.validForDays as number) : undefined;
-        const at = deps.now();
-
-        // Validate WITHOUT drawing a number — a rejected quotation must leave no gap in the series.
-        const probe = issueQuotation({ documentId, customerId, tenantId: ctx.tenantId, lines, format: FORMAT.quotation, seq: 0, at, ...(validForDays === undefined ? {} : { validForDays }) });
-        if (!probe.issued) {
-          throw apiError(422, {
-            code: `quotation_${probe.outcome}`,
-            whatHappened: probe.detail,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Fix the lines and re-send. No number was drawn, so the series keeps no gap.',
-          });
-        }
-
-        // It will issue — draw the gap-free number and build the final document with the SAME clock.
-        const seq = await deps.allocateNumber(ctx.tenantId, DOCTYPE.quotation);
-        const result = issueQuotation({ documentId, customerId, tenantId: ctx.tenantId, lines, format: FORMAT.quotation, seq, at, ...(validForDays === undefined ? {} : { validForDays }) });
-        const doc = result.document;
-        if (doc === undefined || result.validUntil === undefined) throw notFound(`quotation ${documentId}`); // unreachable — the probe issued
-        const stored: StoredB2BDocument = { ...doc, validUntil: result.validUntil };
-        await deps.recordDocument(ctx.tenantId, customerId, stored);
-        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, grossMinor: doc.grossMinor, validUntil: result.validUntil } };
+        const b = (ctx.body ?? {}) as { lines?: unknown; validForDays?: unknown; locationId?: unknown };
+        const stored = await issueQuotationDocument(deps, { tenantId: ctx.tenantId, customerId: ctx.params['customerId'] ?? '', documentId: ctx.params['documentId'] ?? '', lines: b.lines, validForDays: b.validForDays, locationId: b.locationId });
+        return { status: 201, body: { documentId: stored.documentId, number: stored.number, kind: stored.kind, grossMinor: stored.grossMinor, validUntil: stored.validUntil, ...(stored.locationId === undefined ? {} : { locationId: stored.locationId }) } };
       },
     },
     {
-      // Convert a quotation into a sales order — at the quoted price, inside the window, with credit cleared.
+      // Convert a quotation into a sales order — at the quoted price, inside the window, with credit cleared, and (FUL-09)
+      // its stock HELD at the named store, all of it or none. Body: { fromQuotationId, locationId, salespersonId? }.
       api: 'API-09', method: 'POST', path: '/v1/b2b/documents/:customerId/orders/:documentId',
       permission: 'b2b.document.issue', idempotent: true,
       entitlement: 'b2b',
       handler: async (ctx) => {
-        const customerId = ctx.params['customerId'] ?? '';
-        const documentId = ctx.params['documentId'] ?? '';
-        const b = (ctx.body ?? {}) as { fromQuotationId?: unknown };
-        if (!isStr(b.fromQuotationId)) {
-          throw apiError(400, {
-            code: 'not_readable_as_a_conversion',
-            whatHappened: 'A conversion needs the quotation id it is derived from.',
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Send { "fromQuotationId": … }. Nothing was recorded.',
-          });
-        }
-        const quotation = await deps.document(ctx.tenantId, customerId, b.fromQuotationId);
-        if (quotation === undefined || quotation.kind !== 'quotation' || quotation.validUntil === undefined) {
-          throw notFound(`quotation ${b.fromQuotationId} for ${customerId}`);
-        }
-
-        const alreadyConvertedFrom = await deps.convertedQuotationIds(ctx.tenantId, customerId);
-        const creditAllowed = await deps.creditAllowed(ctx.tenantId, customerId, quotation.grossMinor);
-        const at = deps.now();
-
-        // Decide WITHOUT drawing a number — a refused conversion (expired, already converted, credit blocked)
-        // leaves the sales-order series with no gap.
-        const probe = convertQuotation({ documentId, quotation, customerId, format: FORMAT.sales_order, seq: 0, validUntil: quotation.validUntil, at, alreadyConvertedFrom, creditAllowed });
-        if (!probe.converted) {
-          throw apiError(422, {
-            code: `conversion_${probe.outcome}`,
-            whatHappened: probe.detail,
-            wasItSaved: 'not_saved',
-            nextSafeAction: probe.outcome === 'expired' ? 'Re-quote rather than re-price. Nothing was recorded.' : 'Nothing was recorded and no number was drawn.',
-          });
-        }
-
-        const seq = await deps.allocateNumber(ctx.tenantId, DOCTYPE.sales_order);
-        const result = convertQuotation({ documentId, quotation, customerId, format: FORMAT.sales_order, seq, validUntil: quotation.validUntil, at, alreadyConvertedFrom, creditAllowed });
-        const doc = result.document;
-        if (doc === undefined) throw notFound(`order ${documentId}`); // unreachable — the probe converted
-        await deps.recordDocument(ctx.tenantId, customerId, doc);
-        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, derivedFrom: doc.derivedFrom, grossMinor: doc.grossMinor } };
+        const b = (ctx.body ?? {}) as { fromQuotationId?: unknown; locationId?: unknown; salespersonId?: unknown };
+        const doc = await convertToSalesOrder(deps, {
+          tenantId: ctx.tenantId, customerId: ctx.params['customerId'] ?? '', documentId: ctx.params['documentId'] ?? '',
+          fromQuotationId: b.fromQuotationId, locationId: b.locationId, salespersonId: b.salespersonId,
+        });
+        return { status: 201, body: { documentId: doc.documentId, number: doc.number, kind: doc.kind, derivedFrom: doc.derivedFrom, grossMinor: doc.grossMinor, ...(doc.locationId === undefined ? {} : { locationId: doc.locationId, stock: 'held' }), ...(doc.salespersonId === undefined ? {} : { salespersonId: doc.salespersonId }) } };
       },
     },
     {
@@ -246,7 +222,18 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
         const doc = result.document;
         if (doc === undefined) throw notFound(`challan ${documentId}`); // unreachable — the probe issued
         await deps.recordDocument(ctx.tenantId, customerId, { ...doc, orderId: order.documentId });
-        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, grossMinor: doc.grossMinor, detail: doc.detail } };
+        // FUL-09: what left the building comes off the ordinary shelf ONCE, and the order keeps holding only what is to go.
+        if (deps.stock !== undefined && order.locationId !== undefined) {
+          const dispatchedNow = sumByLine([doc]);
+          const remaining = order.lines.map((l) => ({ productId: l.productId, quantityMinor: Math.max(0, l.qty - (alreadyDispatched[l.lineId] ?? 0) - (dispatchedNow[l.lineId] ?? 0)) }))
+            .filter((l) => l.quantityMinor > 0);
+          await deps.stock.dispatch(ctx.tenantId, {
+            orderRef: b2bOrderRef(customerId, order.documentId), challanId: documentId, locationId: order.locationId, by: ctx.userId,
+            lines: doc.lines.filter((l) => l.qty > 0).map((l) => ({ lineId: l.lineId, productId: l.productId, quantityMinor: l.qty })),
+            remaining,
+          });
+        }
+        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, grossMinor: doc.grossMinor, detail: doc.detail, ...(order.locationId === undefined ? {} : { dispatchedFrom: order.locationId }) } };
       },
     },
     {
@@ -280,7 +267,10 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
         await deps.recordDocument(ctx.tenantId, customerId, { ...doc, orderId: order.documentId });
         // FUL-09: the invoice is now money owed — a receivable on the customer's terms, on the AR ledger, and for the books.
         const owed = await deps.afterTaxInvoice?.(ctx.tenantId, customerId, { ...doc, orderId: order.documentId });
-        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, taxClaimable: doc.taxClaimable, grossMinor: doc.grossMinor, detail: doc.detail, ...(owed === undefined ? {} : { dueOn: owed.dueOn }) } };
+        // FUL-09 · M22-FR-03: the attributed salesperson's commission, derived from this invoice by the approved rule.
+        const commission = order.salespersonId === undefined || deps.commissionOnInvoice === undefined ? undefined
+          : await deps.commissionOnInvoice(ctx.tenantId, { salespersonId: order.salespersonId, invoice: { ...doc, orderId: order.documentId } });
+        return { status: 201, body: { documentId, number: doc.number, kind: doc.kind, taxClaimable: doc.taxClaimable, grossMinor: doc.grossMinor, detail: doc.detail, ...(owed === undefined ? {} : { dueOn: owed.dueOn }), ...(commission === undefined ? {} : { commission }) } };
       },
     },
     {
@@ -314,6 +304,122 @@ export function b2bDocumentsRoutes(deps: B2BDocumentsDeps): readonly Route[] {
       },
     },
   ];
+}
+
+/**
+ * Issue a quotation (M22-FR-02): non-committing, and it draws a number only once the lines are valid. Shared by the desk
+ * and the recurring-order run (FUL-09).
+ */
+export async function issueQuotationDocument(deps: B2BDocumentsDeps, input: {
+  readonly tenantId: string; readonly customerId: string; readonly documentId: string;
+  readonly lines: unknown; readonly validForDays?: unknown; readonly locationId?: unknown;
+}): Promise<StoredB2BDocument> {
+  const { tenantId, customerId, documentId } = input;
+  const lines = asLines(input.lines);
+  if (lines === null) {
+    throw apiError(400, {
+      code: 'not_readable_as_a_quotation',
+      whatHappened: 'A quotation needs lines, each with a line id, product id, description and whole qty / unit price / tax rate.',
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Send well-formed lines. Nothing was recorded and no number was drawn.',
+    });
+  }
+  const validForDays = isInt(input.validForDays) && (input.validForDays as number) > 0 ? (input.validForDays as number) : undefined;
+  const at = deps.now();
+
+  // Validate WITHOUT drawing a number — a rejected quotation must leave no gap in the series.
+  const probe = issueQuotation({ documentId, customerId, tenantId, lines, format: FORMAT.quotation, seq: 0, at, ...(validForDays === undefined ? {} : { validForDays }) });
+  if (!probe.issued) {
+    throw apiError(422, {
+      code: `quotation_${probe.outcome}`,
+      whatHappened: probe.detail,
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Fix the lines and re-send. No number was drawn, so the series keeps no gap.',
+    });
+  }
+
+  // It will issue — draw the gap-free number and build the final document with the SAME clock.
+  const seq = await deps.allocateNumber(tenantId, DOCTYPE.quotation);
+  const result = issueQuotation({ documentId, customerId, tenantId, lines, format: FORMAT.quotation, seq, at, ...(validForDays === undefined ? {} : { validForDays }) });
+  const doc = result.document;
+  if (doc === undefined || result.validUntil === undefined) throw notFound(`quotation ${documentId}`); // unreachable — the probe issued
+  // FUL-09: the store it is quoted from (optional) — the store an order made from it holds and dispatches stock at.
+  const stored: StoredB2BDocument = { ...doc, validUntil: result.validUntil, ...(isStr(input.locationId) ? { locationId: input.locationId } : {}) };
+  await deps.recordDocument(tenantId, customerId, stored);
+  return stored;
+}
+
+/**
+ * Turn a quotation into a sales order (M22-FR-01/02 · FUL-09): at the quoted price, inside its window, once, with credit
+ * cleared — and, where the stock port is wired, with every line HELD at the named store first (all or nothing: a bulk
+ * order never promises what is not on the shelf). Refusals draw no number. Shared by the desk and the customer's portal.
+ */
+export async function convertToSalesOrder(deps: B2BDocumentsDeps, input: {
+  readonly tenantId: string; readonly customerId: string; readonly documentId: string;
+  readonly fromQuotationId: unknown; readonly locationId: unknown; readonly salespersonId: unknown;
+}): Promise<StoredB2BDocument> {
+  const { tenantId, customerId, documentId } = input;
+  const named = isStr(input.fromQuotationId) ? await deps.document(tenantId, customerId, input.fromQuotationId) : undefined;
+  // The store is the one named now, or the one the quotation was made out from.
+  const locationGiven = isStr(input.locationId) ? input.locationId : named?.locationId;
+  if (isStr(input.fromQuotationId) && (named === undefined || named.kind !== 'quotation' || named.validUntil === undefined)) {
+    throw notFound(`quotation ${input.fromQuotationId} for ${customerId}`);
+  }
+  if (!isStr(input.fromQuotationId) || (deps.stock !== undefined && !isStr(locationGiven)) || (input.salespersonId !== undefined && !isStr(input.salespersonId))) {
+    throw apiError(400, {
+      code: 'not_readable_as_a_conversion',
+      whatHappened: deps.stock !== undefined
+        ? 'A conversion needs the quotation id it is derived from and the store whose stock it is supplied from (locationId); a salespersonId, if given, names who sold it.'
+        : 'A conversion needs the quotation id it is derived from.',
+      wasItSaved: 'not_saved',
+      nextSafeAction: 'Send { "fromQuotationId": …, "locationId": … }. Nothing was recorded.',
+    });
+  }
+  const quotation = named;
+  if (quotation === undefined || quotation.kind !== 'quotation' || quotation.validUntil === undefined) {
+    throw notFound(`quotation ${String(input.fromQuotationId)} for ${customerId}`);
+  }
+  const alreadyConvertedFrom = await deps.convertedQuotationIds(tenantId, customerId);
+  const creditAllowed = await deps.creditAllowed(tenantId, customerId, quotation.grossMinor);
+  const at = deps.now();
+
+  // Decide WITHOUT drawing a number — a refused conversion (expired, already converted, credit blocked)
+  // leaves the sales-order series with no gap.
+  const probe = convertQuotation({ documentId, quotation, customerId, format: FORMAT.sales_order, seq: 0, validUntil: quotation.validUntil, at, alreadyConvertedFrom, creditAllowed });
+  if (!probe.converted) {
+    throw apiError(422, {
+      code: `conversion_${probe.outcome}`,
+      whatHappened: probe.detail,
+      wasItSaved: 'not_saved',
+      nextSafeAction: probe.outcome === 'expired' ? 'Re-quote rather than re-price. Nothing was recorded.' : 'Nothing was recorded and no number was drawn.',
+    });
+  }
+  // FUL-09: the stock, all of it, before a number is drawn — a bulk order the shelf cannot supply is refused, not oversold.
+  const locationId = isStr(locationGiven) ? locationGiven : undefined;
+  if (deps.stock !== undefined && locationId !== undefined) {
+    const need = new Map<string, number>();
+    for (const l of quotation.lines) need.set(l.productId, (need.get(l.productId) ?? 0) + l.qty);
+    const held = await deps.stock.reserve(tenantId, b2bOrderRef(customerId, documentId), locationId, [...need].map(([productId, quantityMinor]) => ({ productId, quantityMinor })));
+    if (!held.ok) {
+      throw apiError(409, {
+        code: 'order_cannot_be_supplied',
+        whatHappened: `The store ${locationId} cannot supply this order in full: ${held.shortages.map((x) => `${x.productId} ${x.promisedMinor} of ${x.requestedMinor}`).join(', ')}. Nothing was held.`,
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Re-quote for what can be supplied, or supply from another store. No number was drawn and no stock was held.',
+      });
+    }
+  }
+  const seq = await deps.allocateNumber(tenantId, DOCTYPE.sales_order);
+  const result = convertQuotation({ documentId, quotation, customerId, format: FORMAT.sales_order, seq, validUntil: quotation.validUntil, at, alreadyConvertedFrom, creditAllowed });
+  const doc = result.document;
+  if (doc === undefined) throw notFound(`order ${documentId}`); // unreachable — the probe converted
+  const stored: StoredB2BDocument = {
+    ...doc,
+    ...(locationId === undefined ? {} : { locationId }),
+    ...(isStr(input.salespersonId) ? { salespersonId: input.salespersonId } : {}),
+  };
+  await deps.recordDocument(tenantId, customerId, stored);
+  return stored;
 }
 
 /** Load the sales order a derived document is built from, or refuse (404) if it is missing or not an order. */

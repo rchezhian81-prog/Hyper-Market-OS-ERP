@@ -42,9 +42,11 @@ const AT = '2026-10-10T10:00:00.000Z';
 const STORE = { lat: 11.0168, lon: 76.9558 };
 const NEARBY = { latitude: 11.02, longitude: 76.96 };
 
+// FUL-03: the slot the app offers is one HEAD OFFICE's own delivery service runs (set in `seededApi`) — the shop judges it.
+let heldSlot = { startsAt: new Date(Date.now() + 3 * 3_600_000).toISOString(), endsAt: new Date(Date.now() + 5 * 3_600_000).toISOString() };
 function shopData(): Record<string, unknown> {
-  const starts = new Date(Date.now() + 3 * 3_600_000);
-  const ends = new Date(Date.now() + 5 * 3_600_000);
+  const starts = new Date(heldSlot.startsAt);
+  const ends = new Date(heldSlot.endsAt);
   return {
     tenantId: T, customerRef: 'guest', packVersion: 3, locationId: 'L1',
     products: [{
@@ -58,6 +60,8 @@ function shopData(): Record<string, unknown> {
 
 interface Recorder {
   readonly apiCalls: { method: string; path: string; auth: boolean }[];
+  /** FUL-06: after sign-in the app reads the customer's own privacy choices — kept apart from the order traffic. */
+  privacyReads?: { auth: boolean }[];
   grantedCustomerRole: number;
 }
 
@@ -111,7 +115,8 @@ async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string;
         const token = auth.startsWith('Bearer ') ? auth.slice(7) : undefined;
         const key = req.headers['idempotency-key'];
         const body = req.method === 'POST' ? await readBody(req) : undefined;
-        rec.apiCalls.push({ method: req.method ?? '?', path, auth: token !== undefined });
+        if (req.method === 'GET' && path === '/v1/me/privacy') (rec.privacyReads ??= []).push({ auth: token !== undefined });
+        else rec.apiCalls.push({ method: req.method ?? '?', path, auth: token !== undefined });
         const out = await h.raw({
           method: (req.method ?? 'GET') as 'GET' | 'POST', path,
           ...(token === undefined ? {} : { token }),
@@ -152,7 +157,7 @@ async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string;
 // the test, standing in for the bank, registers the capture — the app's own "authorised" never makes it paid.
 let provider: TestModePaymentProvider;
 const PAY_REF = 'tok_e2e_1';
-async function seededApi(): Promise<ApiHarness> {
+async function seededApi(capacityPerSlot = 10): Promise<ApiHarness> {
   provider = testModePaymentProvider();
   const h = apiHarness({ paymentVerifier: provider });
   await h.seedOwner(T, OWNER);
@@ -166,6 +171,10 @@ async function seededApi(): Promise<ApiHarness> {
   await ok('/v1/prices/list/MILK/entries/e1', { scope: 'store', scopeRef: 'L1', priceMinor: 60_00, mrpMinor: 70_00, costMinor: 40_00, marginFloorBps: 0, currency: 'INR', effectiveFrom: today }, 'price');
   await ok('/v1/catalogue/pack', { storeId: 'L1', asOf: today }, 'pack');
   await ok('/v1/serviceability/periods/2026-01-01', { radiusMetres: 10_000, deliveryFeeMinor: 40_00 }, 'svc');
+  // FUL-03: how the store delivers, held at head office (OA-11: the main store, 8 slots 9 am–9 pm).
+  expect((await h.request({ method: 'PUT', path: '/v1/serviceability/delivery-service', userId: OWNER, tenantId: T, idempotencyKey: 'dsvc', body: { storeLocation: STORE, slotsPerDay: 8, windowOpen: '09:00', windowClose: '21:00', capacityPerSlot, leadMinutes: 60 } })).status).toBe(200);
+  const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  heldSlot = ((await h.request({ method: 'GET', path: '/v1/serviceability/delivery-service', userId: OWNER, tenantId: T, query: { day: tomorrow } })).body as { slots: { startsAt: string; endsAt: string }[] }).slots[0]!;
   return h;
 }
 
@@ -219,6 +228,9 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       await readyToPay(page, store.base, store.sms);
       expect(rec.grantedCustomerRole).toBe(1);
       expect(rec.apiCalls).toHaveLength(0); // nothing has gone to the shop before Pay
+      // FUL-06: the only read before Pay is the customer's own privacy choices, as the signed-in customer.
+      expect(rec.privacyReads?.length ?? 0).toBeGreaterThanOrEqual(1);
+      expect(rec.privacyReads?.every((r) => r.auth)).toBe(true);
 
       provider.capture(PAY_REF, 60_00 + 40_00); // the bank captured exactly the shop's quote
       await page.click('#pay');
@@ -305,6 +317,28 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       expect(orders).toHaveLength(1);
       expect(orders[0]).toMatchObject({ payment: { state: 'authorised', paidMinor: 60_00 + 40_00 } });
       expect(await page.locator('#send-now').getAttribute('hidden')).not.toBeNull();
+    } finally {
+      await context.close();
+      await store.stop();
+    }
+  }, 60_000);
+
+  it('FUL-03: the slot the customer chose filled up at the shop while they were paying — the shop refuses it, the screen says so, nothing is charged or reserved', async () => {
+    const h = await seededApi(1);
+    const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
+    const store = await startStore(h, rec);
+    const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
+    const page = await context.newPage();
+    try {
+      await readyToPay(page, store.base, store.sms);
+      // Another customer takes the slot's only place first.
+      await h.provisionRole(T, 'cust-first', 'customer');
+      const first = await h.request({ method: 'POST', path: '/v1/storefront/orders/so-first', userId: 'cust-first', tenantId: T, idempotencyKey: 'so-first', body: { lines: [{ productId: 'MILK', quantityMinor: 1 }], locationId: 'L1', fulfilment: 'delivery', deliverySlot: { startsAt: heldSlot.startsAt }, deliveryLocation: { lat: NEARBY.latitude, lon: NEARBY.longitude } } });
+      expect(first.status, JSON.stringify(first.body)).toBe(201);
+      provider.capture(PAY_REF, 60_00 + 40_00);
+      await page.click('#pay');
+      await page.locator('#banner-text', { hasText: 'full' }).waitFor({ timeout: 15_000 });
+      expect(await ordersOf(h)).toHaveLength(0);
     } finally {
       await context.close();
       await store.stop();

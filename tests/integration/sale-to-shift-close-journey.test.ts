@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { bootPos } from '../../apps/pos/src/browser-entry';
-import { addTillPeople, signInTill, managerApprovesOn } from '../support/till-operator';
+import { addTillPeople, signInTill, managerApprovesOn, pinOf } from '../support/till-operator';
 import type { CatalogueSnapshot } from '../../packages/catalogue/src/catalogue';
 import { DEFAULT_RETAIL_POSTING_MAP } from '../../packages/finance/src/index';
 import { makeTradingDayRule, tradingDateOf } from '../../packages/calendar/src/trading-day';
@@ -285,7 +285,7 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
     const shift = await till.till.close({ shiftId: 'sh-1', closedAt: at(60), countedMinor: counted });
     expect(shift).toMatchObject({ closed: true, varianceMinor: 0 });
     // The day does not close over unsent work: the pickup and the shift close reach head office first (M14-FR-04).
-    expect((await edge.closeDay({ dayCloseId: 'dc-too-early', closedBy: MANAGER })).closed).toBe(false);
+    expect((await edge.closeDay({ dayCloseId: 'dc-too-early', closedBy: MANAGER, closerPin: pinOf(MANAGER) })).closed).toBe(false);
     expect(await edge.syncOnce!()).toMatchObject({ dead: 0, remaining: 0 });
 
     // ── A trading day closes once its cut-off has passed (M01-FR-02): the clock moves to 00:05 the next morning, and the
@@ -296,7 +296,7 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
     await edges.splice(edges.indexOf(edge), 1)[0]!.stop();
     edge = await startBox(dataDir);
     // ── The manager closes the day on the box (an open till would block it — PF-08); it reaches head office.
-    const closedDay = await edge.closeDay({ dayCloseId: `dc-${tradingDay}`, closedBy: MANAGER });
+    const closedDay = await edge.closeDay({ dayCloseId: `dc-${tradingDay}`, closedBy: MANAGER, closerPin: pinOf(MANAGER) });
     expect(closedDay, JSON.stringify(closedDay)).toMatchObject({ closed: true, tradingDay, locked: true });
     const dayCloseSync = await edge.syncOnce!();
     expect(dayCloseSync, JSON.stringify(edge.dayCloseOutbox.deadLetters())).toMatchObject({ dead: 0, remaining: 0 });

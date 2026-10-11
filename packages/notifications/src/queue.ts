@@ -94,6 +94,18 @@ export class NotificationQueue {
     this.items.set(id, Object.freeze({ ...item, state: 'withheld', reason }));
   }
 
+  /**
+   * Note why a pending item was NOT sent this time and stays queued — e.g. the month's messaging budget is spent
+   * (PA-08). It stays pending (it goes when the reason clears), with the reason visible. A no-op unless pending.
+   */
+  hold(id: string, reason: string): void {
+    const item = this.items.get(id);
+    if (!item || item.state !== 'pending') {
+      return;
+    }
+    this.items.set(id, Object.freeze({ ...item, reason }));
+  }
+
   /** Items withheld at the moment of sending — never sent, never dropped. */
   withheld(): NotificationItem[] {
     return [...this.items.values()].filter((i) => i.state === 'withheld');

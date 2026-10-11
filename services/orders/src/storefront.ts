@@ -24,6 +24,7 @@ import { promiseAndHold, readSubRules, type OrdersDeps, type PlacedOrder, type S
 import { quoteOrder, type PaymentVerifier } from '../../../packages/orders/src/payment-verification';
 import { transitionOrder } from '../../../packages/orders/src/index';
 import type { PaymentRefundDeps } from './payments';
+import { bindDelivery, readDeliveryRequest, type DeliveryServiceDeps } from './delivery-service';
 
 export interface StorefrontDeps {
   /** Every order this customer placed through the storefront — a fold of the per-customer index. */
@@ -44,6 +45,12 @@ export interface StorefrontDeps {
   readonly paymentVerifier?: PaymentVerifier;
   /** FUL-03: the shop's delivery fee for an order of this value, from its serviceability policy in force (fee, free-above). */
   readonly deliveryFeeFor?: (tenantId: string, itemsMinor: number) => Promise<number> | number;
+  /**
+   * FUL-03: head office's own delivery service — where the store is, its slots and their bookings. Present → a delivery
+   * order is bound to it at placement (the address inside the radius, the slot offered and not full) before anything is
+   * reserved; the app's own view of slots and distance is never taken on its word.
+   */
+  readonly deliveryService?: DeliveryServiceDeps;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -237,6 +244,12 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
         }
         const locationId = b['locationId'] as string;
         const fulfilment = b['fulfilment'] === 'delivery' || b['fulfilment'] === 'pickup' ? b['fulfilment'] : undefined;
+        // FUL-03: a DELIVERY is bound to head office's own record before anything is reserved — the address inside the
+        // radius from the store it has on record, the slot one its policy offers, not too soon and not full (its last
+        // place taken once, under the slot's guard). Refused otherwise, with the slots still open.
+        const delivery = fulfilment === 'delivery' && deps.deliveryService !== undefined
+          ? await bindDelivery(deps.deliveryService, { tenantId: ctx.tenantId, orderId, customerRef: ctx.userId, request: readDeliveryRequest(b) })
+          : undefined;
         // Promised and held under the location's guard (Wave 2a · FUL-02), the lines one per product.
         const held = await promiseAndHold(deps, { tenantId: ctx.tenantId, orderId, lines: b['lines'], locationId });
         const { result, lines } = held;
@@ -261,6 +274,7 @@ export function storefrontRoutes(deps: OrdersDeps & PaymentRefundDeps & Storefro
             promise: { outcome: result.outcome, lines: result.lines.map((l) => ({ productId: l.productId, requestedMinor: l.requestedMinor, promisedMinor: l.promisedMinor, outcome: l.outcome })) },
             quote: quote.ok ? { itemsMinor: quote.itemsMinor, goodsMinor: quote.goodsMinor, deliveryFeeMinor: quote.deliveryFeeMinor, lines: quote.lines } : { unpriced: quote.unpriced },
             ...(shortages.length === 0 ? {} : { needsCustomerDecision: true, shortages }),
+            ...(delivery === undefined ? {} : { delivery: { slot: { startsAt: delivery.slot.startsAt, endsAt: delivery.slot.endsAt, remaining: delivery.slot.remaining }, distanceMetres: delivery.distanceMetres, radiusMetres: delivery.radiusMetres } }),
             ...(taken?.mismatch === true ? { amountMismatch: true } : {}),
           },
         };

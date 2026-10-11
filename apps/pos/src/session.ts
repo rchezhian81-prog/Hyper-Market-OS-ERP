@@ -85,6 +85,11 @@ export interface BasketEntry {
   readonly minimumAge?: number;
   readonly voided: boolean;
   readonly voidReason?: string;
+  /**
+   * The line's price was LOWERED at the till with a manager's approval (audit PF-07 · M12-FR-04): the unit price before,
+   * who approved it and the till action the store computer holds as evidence. Carried on the sale record.
+   */
+  readonly priceOverride?: { readonly fromUnitMinor: number; readonly approvedBy: string; readonly activityId: string };
 }
 
 /**
@@ -402,6 +407,37 @@ export class PosSession {
   }
 
   /**
+   * What lowering a line's unit price to `toUnitMinor` would take off the line, priced exactly as the line is priced
+   * (weighed goods included) — the value a manager approves and loss prevention judges (audit PF-07).
+   */
+  overrideValue(lineId: string, toUnitMinor: number): { readonly fromUnitMinor: number; readonly reductionMinor: number } {
+    const line = this.lines.find((l) => l.lineId === lineId && !l.voided);
+    if (line === undefined) throw new NoSuchLineError(lineId);
+    if (!Number.isSafeInteger(toUnitMinor) || toUnitMinor < 0 || toUnitMinor >= line.unitPrice.minor) {
+      throw new RangeError(`A till price change only lowers a price: ${toUnitMinor} is not below ${line.unitPrice.minor}.`);
+    }
+    const before = this.priceOf(line).total.minor;
+    const after = this.priceOf({ ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency) }).total.minor;
+    return { fromUnitMinor: line.unitPrice.minor, reductionMinor: before - after };
+  }
+
+  /**
+   * Lower a line's price — ONLY once the store computer holds the approved change as evidence (the caller's job, audit
+   * PF-07). The line keeps where the price came from and who approved it; the sale record carries both.
+   */
+  overridePrice(lineId: string, toUnitMinor: number, evidence: { readonly approvedBy: string; readonly activityId: string }): BasketEntry {
+    const { fromUnitMinor } = this.overrideValue(lineId, toUnitMinor);
+    const line = this.lines.find((l) => l.lineId === lineId)!;
+    const first = line.priceOverride?.fromUnitMinor ?? fromUnitMinor;
+    const next: BasketEntry = Object.freeze({
+      ...line, unitPrice: money(toUnitMinor, line.unitPrice.currency),
+      priceOverride: { fromUnitMinor: first, approvedBy: evidence.approvedBy, activityId: evidence.activityId },
+    });
+    this.replace(lineId, next);
+    return next;
+  }
+
+  /**
    * Price ONE line the way a retail till prices: the catalogue's unit price is the shelf price, GST already inside
    * it (Legal Metrology: the MRP or below, tax included — roadmap A9), so the customer pays price × quantity and the
    * taxable value and the GST are pulled OUT of that amount. The till never adds tax on top of a shelf price: that
@@ -610,6 +646,8 @@ export class PosSession {
         // The evidence for a restricted line: what age it needed, and who confirmed it when (PF-03) — so head office can
         // see the check was made, and flag any restricted line that arrives without one.
         ...(l.minimumAge === undefined ? {} : { ageCheck: ageEvidence(l.minimumAge, this.confirmationFor(l.minimumAge)) }),
+        // A price lowered with a manager's approval (PF-07): where it came from, who approved it, the evidence's id.
+        ...(l.priceOverride === undefined ? {} : { priceOverride: { fromUnitPriceMinor: l.priceOverride.fromUnitMinor, approvedBy: l.priceOverride.approvedBy, activityId: l.priceOverride.activityId } }),
       };
     });
     // The record's net and GST are the sum of what is INSIDE each line as actually charged — after the attributed

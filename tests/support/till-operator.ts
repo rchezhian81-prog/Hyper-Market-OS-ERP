@@ -34,7 +34,8 @@ export function tillPeoplePack(people: readonly TillPerson[]): { people: unknown
     people: people.map((p) => ({ userId: p.userId, displayName: p.displayName ?? p.userId, roleId: roleOf(p) })),
     roles: [
       { id: 'role-cashier', name: 'Cashier', permissions: ['pos.sale.sync', 'pos.return.process'] },
-      { id: 'role-manager', name: 'Store manager', permissions: ['pos.sale.sync', 'pos.return.process', 'pos.return.approve'] },
+      // Round 4: a store manager closes the day on the box with their own PIN (`till.dayclose.read`, as head office's role).
+      { id: 'role-manager', name: 'Store manager', permissions: ['pos.sale.sync', 'pos.return.process', 'pos.return.approve', 'till.dayclose.read'] },
       { id: 'role-floor', name: 'Floor staff', permissions: ['pos.exception.read'] },
       ...people.filter((p) => p.permissions !== undefined).map((p) => ({ id: `role-of-${p.userId}`, name: `Role of ${p.userId}`, permissions: [...p.permissions!] })),
     ],

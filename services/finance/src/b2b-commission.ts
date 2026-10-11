@@ -126,3 +126,108 @@ export function b2bCommissionRoutes(deps: B2BCommissionDeps): readonly Route[] {
     },
   ];
 }
+
+// ── Commission RULES, governed, and commission DERIVED from invoices (FUL-09 · M22-FR-03 "commission rules approved;
+// commission computed with exact money") ──────────────────────────────────────────────────────────────────────────────
+// The accrual route above takes the base and the rate from whoever calls it. The FR wants the rate to be an APPROVED
+// rule and the base to be what was actually invoiced: so a salesperson's rate is proposed by one person and approved by
+// another (§28 — never the same person), and when a tax invoice is issued for an order attributed to them, the accrual
+// is derived from the invoice's taxable value at the rule in force, once per invoice.
+
+/** A salesperson's commission rule — proposed, then approved by someone else. Latest approved is in force. */
+export interface CommissionRule {
+  readonly ruleId: string;
+  readonly salespersonId: string;
+  readonly rateBps: number;
+  readonly capMinor: number | null;
+  readonly proposedBy: string;
+  readonly proposedAt: string;
+  readonly approvedBy?: string;
+  readonly approvedAt?: string;
+}
+
+export interface CommissionRuleDeps {
+  readonly rules: (tenantId: string, salespersonId: string) => Promise<readonly CommissionRule[]> | readonly CommissionRule[];
+  readonly recordRule: (tenantId: string, rule: CommissionRule) => Promise<void> | void;
+  readonly accruals: B2BCommissionDeps['accruals'];
+  readonly recordAccrual: B2BCommissionDeps['recordAccrual'];
+  readonly now: () => string;
+}
+
+/** The rule in force: the latest APPROVED one. */
+export const ruleInForce = (rules: readonly CommissionRule[]): CommissionRule | undefined =>
+  [...rules].filter((r) => r.approvedBy !== undefined).sort((a, b) => (a.approvedAt ?? '').localeCompare(b.approvedAt ?? '')).at(-1);
+
+/** Derive a salesperson's commission from an invoice by the approved rule — once per invoice (the accrual id is the invoice). */
+export async function accrueFromInvoice(deps: CommissionRuleDeps, tenantId: string, input: {
+  readonly salespersonId: string; readonly invoiceId: string; readonly invoiceNumber: string; readonly netMinor: number; readonly currency?: CurrencyCode;
+}): Promise<{ readonly accrued: true; readonly commissionMinor: number; readonly rateBps: number } | { readonly accrued: false; readonly why: string }> {
+  const accrualId = `inv-${input.invoiceId}`;
+  const prior = (await deps.accruals(tenantId, input.salespersonId)).find((a) => a.accrualId === accrualId);
+  if (prior !== undefined) return { accrued: true, commissionMinor: prior.commissionMinor, rateBps: prior.rateBps };
+  const rule = ruleInForce(await deps.rules(tenantId, input.salespersonId));
+  if (rule === undefined) return { accrued: false, why: `no approved commission rule for ${input.salespersonId} — nothing accrued` };
+  const currency = input.currency ?? 'INR';
+  const commission = computeCommission({ minor: input.netMinor, currency }, rule.rateBps, rule.capMinor ?? undefined);
+  await deps.recordAccrual(tenantId, input.salespersonId, {
+    accrualId, salespersonId: input.salespersonId, baseMinor: input.netMinor, rateBps: rule.rateBps, capMinor: rule.capMinor,
+    commissionMinor: commission.minor, currency, ref: `invoice ${input.invoiceNumber} (rule ${rule.ruleId})`, at: deps.now(),
+  });
+  return { accrued: true, commissionMinor: commission.minor, rateBps: rule.rateBps };
+}
+
+export function commissionRuleRoutes(deps: CommissionRuleDeps): readonly Route[] {
+  return [
+    {
+      // Propose a salesperson's rate. Not in force until someone ELSE approves it. Body: { rateBps, capMinor? }.
+      api: 'API-09', method: 'POST', path: '/v1/b2b/commissions/:salespersonId/rules/:ruleId',
+      permission: 'b2b.commission.record', idempotent: true,
+      entitlement: 'b2b',
+      handler: async (ctx) => {
+        const salespersonId = ctx.params['salespersonId'] ?? '';
+        const ruleId = ctx.params['ruleId'] ?? '';
+        const b = (ctx.body ?? {}) as { rateBps?: unknown; capMinor?: unknown };
+        if (!Number.isInteger(b.rateBps) || (b.rateBps as number) < 0 || (b.rateBps as number) > 10_000
+          || (b.capMinor !== undefined && (!Number.isInteger(b.capMinor) || (b.capMinor as number) < 0))) {
+          throw apiError(400, { code: 'not_readable_as_a_commission_rule', whatHappened: 'A commission rule is { rateBps: 0–10000, capMinor?: whole, non-negative }.', wasItSaved: 'not_saved', nextSafeAction: 'Send it again. Nothing was recorded.' });
+        }
+        if ((await deps.rules(ctx.tenantId, salespersonId)).some((r) => r.ruleId === ruleId)) {
+          throw apiError(409, { code: 'commission_rule_exists', whatHappened: `Rule ${ruleId} is already on record; a change is a new rule.`, wasItSaved: 'not_saved', nextSafeAction: 'Propose the change under a new rule id. Nothing was changed.' });
+        }
+        const rule: CommissionRule = { ruleId, salespersonId, rateBps: b.rateBps as number, capMinor: b.capMinor === undefined ? null : b.capMinor as number, proposedBy: ctx.userId, proposedAt: deps.now() };
+        await deps.recordRule(ctx.tenantId, rule);
+        return { status: 201, body: { ...rule, inForce: false } };
+      },
+    },
+    {
+      // Approve a proposed rule — by someone other than the person who proposed it (§28). It is then in force.
+      api: 'API-09', method: 'POST', path: '/v1/b2b/commissions/:salespersonId/rules/:ruleId/approve',
+      permission: 'b2b.commission.approve', idempotent: true,
+      entitlement: 'b2b',
+      handler: async (ctx) => {
+        const salespersonId = ctx.params['salespersonId'] ?? '';
+        const ruleId = ctx.params['ruleId'] ?? '';
+        const rule = [...await deps.rules(ctx.tenantId, salespersonId)].reverse().find((r) => r.ruleId === ruleId);
+        if (rule === undefined) throw notFound(`commission rule ${ruleId} for ${salespersonId}`);
+        if (rule.approvedBy !== undefined) return { status: 200, body: { ...rule, inForce: ruleInForce(await deps.rules(ctx.tenantId, salespersonId))?.ruleId === ruleId } };
+        if (rule.proposedBy === ctx.userId) {
+          throw apiError(403, { code: 'self_approval', whatHappened: 'A commission rule must be approved by someone other than the person who proposed it.', wasItSaved: 'not_saved', nextSafeAction: 'Ask another approver. Nothing was changed.' });
+        }
+        const approved: CommissionRule = { ...rule, approvedBy: ctx.userId, approvedAt: deps.now() };
+        await deps.recordRule(ctx.tenantId, approved);
+        return { status: 200, body: { ...approved, inForce: true } };
+      },
+    },
+    {
+      // A salesperson's rules — proposed and approved — and the one in force.
+      api: 'API-09', method: 'GET', path: '/v1/b2b/commissions/:salespersonId/rules',
+      permission: 'b2b.commission.read',
+      entitlement: 'b2b',
+      handler: async (ctx) => {
+        const salespersonId = ctx.params['salespersonId'] ?? '';
+        const rules = await deps.rules(ctx.tenantId, salespersonId);
+        return { status: 200, body: { salespersonId, rules, inForce: ruleInForce(rules) ?? null } };
+      },
+    },
+  ];
+}
