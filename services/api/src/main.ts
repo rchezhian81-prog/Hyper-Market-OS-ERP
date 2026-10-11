@@ -321,6 +321,12 @@ const REPORTING_RECORDS: readonly Producer[] = [
   // Round 4: the posted day book (M23), the imported settlement and bank files (PF-12), and each store computer's own
   // report of what it holds unsent (PA-04) — each read by its report's producer.
   'journals_posted_to_the_ledger', 'bank_and_gateway_statements', 'the_boxs_own_outbox',
+  // Round 8 (D13): what head office now records through each domain's own governed write path, each read by its report's
+  // producer — captured supplier bills (SP-7a), shelf counts (SP-4), committed write-offs (M28), receipts carrying an
+  // expiry (ADR-0015), member codes on bills (PF-09), campaign sends and service cases (PF-10 · M21), online orders,
+  // slots, routes and delivery steps (M18/M19), and the assistant's proposals with people's decisions on them (EA-08).
+  'supplier_invoices_captured', 'stock_counted_on_the_shelves', 'what_is_thrown_away_recorded', 'expiry_dates_recorded',
+  'customers_identified_at_the_till', 'campaigns_and_complaints_recorded', 'online_orders_and_deliveries', 'ai_decisions_recorded',
 ];
 /** The named reports head office can work out — each with a producer over governed source rows (EA-06). */
 const REPORTING_PRODUCED: readonly string[] = PRODUCED_AT_HEAD_OFFICE;

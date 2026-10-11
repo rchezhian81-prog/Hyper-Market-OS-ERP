@@ -24,12 +24,15 @@ import { STREAM, streamName, inventoryAdapter, productMasterAdapter, foldPurchas
 import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import type { HeldVersionsReport } from '../../platform/src/store-packs';
 import { returnedValue, refundLegs } from '../../../packages/finance/src/day-book';
+import { produceMore, PRODUCED_FROM_DOMAIN_REGISTERS } from './report-producers-more';
 
 /** The report ids head office can work out from its own records — each a `case` in `produce` below. */
 export const PRODUCED_AT_HEAD_OFFICE: readonly string[] = Object.freeze([
   'sales_by_day', 'tender_mix', 'sales_by_cashier', 'units_by_category', 'stock_on_hand', 'purchases_by_supplier', 'loyalty',
   // Round 4: from the posted day book, the imported settlement and bank files, and what each store computer reports.
   'gst', 'reconciliation', 'profitability', 'sync_health', 'data_freshness',
+  // Round 8 (D13): the other sixteen, each from the register its own domain writes (report-producers-more.ts).
+  ...PRODUCED_FROM_DOMAIN_REGISTERS,
 ]);
 
 /**
@@ -72,6 +75,8 @@ export interface ProducedReport {
   readonly drill: Readonly<Record<string, readonly SourceTransaction[]>>;
   /** The trading day a day-report covers; absent for a position report (stock on hand, loyalty outstanding). */
   readonly tradingDay?: string;
+  /** Round 8: a month report's period — the first of the month to the asked day, by the shop's trading days. */
+  readonly period?: { readonly from: string; readonly to: string };
 }
 
 export interface ProduceOptions {
@@ -618,11 +623,19 @@ export function reportProducers(input: {
       }
 
       default:
+        if (PRODUCED_FROM_DOMAIN_REGISTERS.includes(reportId)) return more(tenantId, reportId, { scope: options.scope }, day, calendar);
         // Unreachable through the route: it refuses a report not in `PRODUCED_AT_HEAD_OFFICE` before it gets here.
         // Thrown rather than answered with the dashboard — an unrelated figure under a report's name is the audit's fault.
         throw new Error(`no head-office producer for report "${reportId}"`);
     }
   };
+
+  // Round 8 (D13): the sixteen further producers share this file's sales read, scoping and freshness — one way, not two.
+  const more = produceMore({
+    store: input.store, now: input.now, thresholds,
+    salesOf: (tenantId, day, scope) => salesOf(tenantId, day, scope),
+    at, saleTxn, saleBranch, withheldFigure,
+  });
 
   return { produced: PRODUCED_AT_HEAD_OFFICE, produce };
 }
