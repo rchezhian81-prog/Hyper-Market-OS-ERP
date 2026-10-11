@@ -12119,6 +12119,8 @@ export function modelGatewayAdapter(input: {
   readonly now: () => string;
   readonly transport?: ModelTransport;
   readonly pricing?: Readonly<Record<ModelTier, TierPricing>>;
+  /** EA-08: the agent's governed evidence, read server-side from its domain readers. */
+  readonly evidenceFor?: ModelGatewayDeps['evidenceFor'];
 }): ModelGatewayDeps {
   const ai = aiAdapter({ store: input.store, now: input.now });
   return {
@@ -12144,6 +12146,7 @@ export function modelGatewayAdapter(input: {
     },
     ...(input.pricing === undefined ? {} : { pricing: () => input.pricing }),
     ...(input.transport === undefined ? {} : { transport: input.transport }),
+    ...(input.evidenceFor === undefined ? {} : { evidenceFor: input.evidenceFor }),
   };
 }
 
