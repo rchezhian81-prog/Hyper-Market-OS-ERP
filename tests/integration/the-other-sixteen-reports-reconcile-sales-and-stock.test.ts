@@ -83,7 +83,7 @@ describe.each(backings)('D13 — the other sales and stock reports reconcile to 
     await h.provisionRole(T, 'u-cash', 'cashier');
     await h.provisionRole(T, 'u-mgr', 'store_manager');
     await h.provisionRole(T, 'u-mgr-s2', 'store_manager', ['S2']); // a manager of ONE branch
-    await h.provisionRole(T, 'u-box', 'store_computer');
+    await h.provisionRole(T, 'u-box', 'store_computer', ['S1']); // OB-54: the box's credential names its own store
     await ok(call('PUT', '/v1/platform/setup/locale.time_zone', 'u-owner', { value: 'UTC' }), 200);
     // Receipts at cost on the stock ledger (the average buying cost OB-39 reads), and batches with expiries.
     const recv = (mv: string, productId: string, loc: string, qty: number, cost: number | undefined, extra: Record<string, unknown> = {}) =>
