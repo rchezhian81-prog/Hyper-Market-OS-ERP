@@ -48,6 +48,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'catalogue.category.propose', 'catalogue.category.approve',
       // PA-06 = DF-3-a: read a store's setup file (the store computer's own identity holds it at its store).
       'store.pack.read',
+      // Round 6 (EA-01): held ONLY so the owner can approve granting a store computer its role (no-escalation rule). The
+      // reporting routes also require the `store_computer` role itself at the store, so the owner never reports with it.
+      'store.computer.report',
       'price.change.propose', 'price.change.approve',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.supplier.bank', 'purchase.commitment.read',
@@ -460,6 +463,8 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       // what it PULLS: its own setup, the published catalogue and templates, and the feeds the store's screens serve
       'store.pack.read', 'catalogue.pack.read', 'org.template.pull', 'inventory.indent.read', 'fulfilment.assignment.read',
       'loyalty.points.read', 'migration.screen.read',
+      // what it REPORTS about its own store — how far each queue has synced, what it holds and has not sent (round 6 · EA-01)
+      'store.computer.report',
       // what it RELAYS from the till and the store's screens and phones (head office re-verifies each person named)
       'pos.sale.sync', 'pos.return.sync', 'till.dayclose.sync', 'till.shift.sync', 'cash.movement.sync',
       'workforce.completion.sync', 'concession.tag.sync', 'approvals.decision.sync', 'delivery.stop.sync', 'fulfilment.pick.sync', 'inventory.movement.sync', 'inventory.receipt.sync',

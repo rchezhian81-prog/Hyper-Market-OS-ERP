@@ -310,7 +310,7 @@ import type { AgentId, Budget, Proposal, EvidenceItem as AiEvidenceItem, AiDeps,
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
-import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID } from './roles';
+import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID } from './roles';
 import { metaOf as legacyAttachmentMeta, type LegacyHistoryDeps, type LegacyHistoryDocument, type LegacyAttachment, type LegacyAttachmentMeta } from '../../migration/src/legacy-history';
 
 /** Streams, named once. A typo here is a domain that silently reads an empty history. */
@@ -11847,6 +11847,16 @@ export async function branchScopeHeldBy(store: EventStore, tenantId: string, use
   const grants = await effectiveGrants(store, tenantId);
   if (!grants.some((g) => g.userId === userId)) return undefined;
   return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, permission);
+}
+
+/**
+ * Round 6 (EA-01): where a caller is a STORE COMPUTER — the branch scope of their `store_computer` role grants alone (a
+ * person's other roles never count), on the reporting permission. undefined: they hold no store_computer grant.
+ */
+export async function storeComputerScopeHeldBy(store: EventStore, tenantId: string, userId: string): Promise<readonly string[] | 'all' | undefined> {
+  const grants = (await effectiveGrants(store, tenantId)).filter((g) => g.userId === userId && g.roleId === STORE_COMPUTER_ROLE_ID);
+  if (grants.length === 0) return undefined;
+  return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, 'store.computer.report');
 }
 
 /** A store's working rules (DF-3-b-1): each change a `StoreRulesSet` version; the latest per store applies. */
