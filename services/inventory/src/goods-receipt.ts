@@ -50,7 +50,7 @@ import {
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { Movement } from './index';
 import { unitsPerLevel, type PackHierarchy } from '../../../packages/product/src/pack';
-import { valueAtUnitCost, normaliseUom, minorPerUnit } from '../../../packages/contracts/src/quantity';
+import { valueAtCost, normaliseUom, minorPerUnit, type CostBasis } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, stockReadScope, locationIsItsOwnBranch, type LocationBranches } from './location-scope';
 import type { RequestContext } from '../../kernel/src/index';
 
@@ -316,7 +316,9 @@ const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !==
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isMoney = (v: unknown): v is { minor: number; currency: string } => isObj(v) && isNum(v['minor']) && isStr(v['currency']);
+// OB-46: a cost may say it buys `per` whole units (a case cost carried exactly) — a whole number above 1 when given.
+const isMoney = (v: unknown): v is { minor: number; currency: string } => isObj(v) && isNum(v['minor']) && isStr(v['currency'])
+  && (v['per'] === undefined || (Number.isSafeInteger(v['per']) && (v['per'] as number) > 1));
 
 const isCapturedLine = (v: unknown): v is CapturedLine =>
   isObj(v) && isStr(v['lineId']) && isStr(v['productId']) && isNum(v['orderedMinor']) && isNum(v['countedMinor'])
@@ -653,6 +655,8 @@ export function inboundMovements(input: {
         // Carry the captured batch expiry onto the ledger (ADR-0015) — cloud-only, feeds near-expiry reads.
         ...(l.expiry !== null ? { expiry: l.expiry } : {}),
         ...(unitCostMinor === undefined ? {} : { unitCostMinor }),
+        // OB-46: a case cost carried exactly travels with the stock it valued.
+        ...(unitCostMinor === undefined || !((l.unitCost as CostBasis).per! > 1) ? {} : { unitCostPer: (l.unitCost as CostBasis).per! }),
       };
     });
 }
@@ -776,7 +780,7 @@ export async function returnRejectedExcess(deps: GoodsReceiptDeps, input: {
   const excessReturn: ExcessReturn = {
     returnedBy: input.returnedBy, returnedAt, reason: input.reason,
     quantityMinor: held.reduce((s, l) => s + l.heldMinor, 0),
-    valueMinor: held.reduce((s, l) => s + valueAtUnitCost(l.heldMinor, l.uom, l.unitCost.minor), 0), // OB-31
+    valueMinor: held.reduce((s, l) => s + valueAtCost(l.heldMinor, l.uom, l.unitCost), 0), // OB-31
     currency: held[0]?.unitCost.currency ?? 'INR',
     movementIds: movements.map((m) => m.movementId), via: 'direct',
   };
@@ -833,7 +837,7 @@ export async function returnDisposedLine(deps: GoodsReceiptDeps, input: {
   }
   const returnedAt = deps.now();
   const lineReturn: LineReturn = {
-    lineId: line.lineId, productId: line.productId, quantityMinor: line.quarantinedMinor, valueMinor: valueAtUnitCost(line.quarantinedMinor, line.uom, line.unitCost.minor),
+    lineId: line.lineId, productId: line.productId, quantityMinor: line.quarantinedMinor, valueMinor: valueAtCost(line.quarantinedMinor, line.uom, line.unitCost),
     currency: line.unitCost.currency, returnedBy: input.returnedBy, returnedAt, reason: input.reason, movementIds: [],
   };
   const returned: GrnRecord = { ...rec, lineReturns: [...(rec.lineReturns ?? []), lineReturn] };
@@ -891,7 +895,7 @@ export async function decideLineDisposition(deps: GoodsReceiptDeps, input: {
   const disposition: LineDisposition = {
     lineId: line.lineId, productId: line.productId, quantityMinor: quantity, disposition: input.disposition,
     decidedBy: input.decidedBy, decidedAt, reason: input.reason,
-    valueMinor: valueAtUnitCost(quantity, line.uom, line.unitCost.minor), currency: line.unitCost.currency, // OB-31
+    valueMinor: valueAtCost(quantity, line.uom, line.unitCost), currency: line.unitCost.currency, // OB-31
     movementIds: movements.map((m) => m.movementId), via: input.via,
   };
   const released = movements.reduce((n, m) => n + m.quantityMinor, 0);

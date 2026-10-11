@@ -20,7 +20,7 @@
 // reconciles the two — the register and the ledger — as two figures reached two different ways (QG-07).
 
 import type { Route } from '../../kernel/src/index';
-import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
+import { valueAtCost } from '../../../packages/contracts/src/quantity';
 import { notFound } from '../../kernel/src/index';
 import type { PayablesAccount, PayablesTax } from '../../../packages/finance/src/payables';
 import type { SupplierInvoiceRecord, StoredMatch } from './index';
@@ -33,7 +33,7 @@ export interface ReceiptLineForAccount {
   readonly quarantinedMinor: number;
   readonly rejectedMinor: number;
   readonly heldMinor: number;
-  readonly unitCost: { readonly minor: number; readonly currency: string };
+  readonly unitCost: { readonly minor: number; readonly currency: string; readonly per?: number };
   /** OB-31: the line's unit — quantities are smallest steps (grams for kg), the cost is per whole unit. */
   readonly uom?: string;
 }
@@ -249,7 +249,7 @@ export interface SupplierAccountInput {
   readonly asAt: string;
 }
 
-const heldValue = (r: ReceiptForAccount): number => r.captured.lines.reduce((s, l) => s + valueAtUnitCost(l.heldMinor, l.uom ?? 'ea', l.unitCost.minor), 0); // OB-31
+const heldValue = (r: ReceiptForAccount): number => r.captured.lines.reduce((s, l) => s + valueAtCost(l.heldMinor, l.uom ?? 'ea', l.unitCost), 0); // OB-31
 
 /** ONE supplier's account, folded from the registers. Pure. */
 export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccountStatement {
@@ -299,7 +299,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
       if (line.quarantinedMinor > 0) {
         const debitNoteRef = `DN-${r.grnId}-${d.lineId}`;
         const issued = (input.debitNoteIssues ?? []).find((i) => i.debitNoteRef === debitNoteRef && i.supplierId === input.supplierId);
-        const taxableMinor = valueAtUnitCost(line.quarantinedMinor, line.uom ?? 'ea', line.unitCost.minor);
+        const taxableMinor = valueAtCost(line.quarantinedMinor, line.uom ?? 'ea', line.unitCost);
         const tax = taxOnGoods(poId, d.productId, taxableMinor);
         debitNotes.push({
           debitNoteRef, grnId: r.grnId, lineId: d.lineId, productId: d.productId, poId, disposition: d.disposition,
@@ -312,7 +312,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
           const back = (r.lineReturns ?? []).find((x) => x.lineId === d.lineId);
           pendingLineReturns.push({
             grnId: r.grnId, lineId: d.lineId, productId: d.productId, poId, quantityMinor: line.quarantinedMinor,
-            valueMinor: valueAtUnitCost(line.quarantinedMinor, line.uom ?? 'ea', line.unitCost.minor), currency: d.currency, debitNoteRef,
+            valueMinor: valueAtCost(line.quarantinedMinor, line.uom ?? 'ea', line.unitCost), currency: d.currency, debitNoteRef,
             decidedBy: d.decidedBy, decidedAt: d.decidedAt, returned: back !== undefined, returnedBy: back?.returnedBy ?? null, returnedAt: back?.returnedAt ?? null,
           });
         }
@@ -320,7 +320,7 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
       if (line.rejectedMinor > 0) {
         refusedNotOwed.push({
           grnId: r.grnId, lineId: d.lineId, productId: d.productId, poId, disposition: d.disposition,
-          quantityMinor: line.rejectedMinor, valueMinor: valueAtUnitCost(line.rejectedMinor, line.uom ?? 'ea', line.unitCost.minor), currency: d.currency,
+          quantityMinor: line.rejectedMinor, valueMinor: valueAtCost(line.rejectedMinor, line.uom ?? 'ea', line.unitCost), currency: d.currency,
         });
       }
     }

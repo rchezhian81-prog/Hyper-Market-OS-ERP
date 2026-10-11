@@ -58,6 +58,8 @@ export interface ValuationMovement {
    * per kg), 1 for an item. A receipt's value is `quantityMinor × unitCostMinor ÷ minorPerUnit`, rounded once. Absent ⇒ 1.
    */
   readonly minorPerUnit?: number;
+  /** OB-46 "A": the receipt's `unitCostMinor` buys this many whole units (a case cost carried exactly). Absent ⇒ 1. */
+  readonly costPerUnits?: number;
 }
 
 export interface ProductValuation {
@@ -123,7 +125,7 @@ export function weightedAverageValuation(
     if (m.effect === 1) {
       if (m.isPurchaseReceipt && m.unitCostMinor !== undefined) {
         // OB-31: per-whole-unit cost over smallest-step quantity, rounded once (exact for items).
-        acc.valueMinor += share(m.unitCostMinor, m.quantityMinor, m.minorPerUnit ?? 1);
+        acc.valueMinor += share(m.unitCostMinor, m.quantityMinor, (m.minorPerUnit ?? 1) * (m.costPerUnits ?? 1)); // OB-46: rounded once
         acc.valuedQty += m.quantityMinor;
       } else if (m.isPurchaseReceipt) {
         // A receipt with no cost: units enter, value does not. Reported as unvalued, not folded at 0.

@@ -8,15 +8,15 @@
 // composes the Money primitive and the approval engine (approval produced upstream).
 
 import { add, zero, money, type Money, type CurrencyCode } from '../../contracts/src/money';
-import { valueAtUnitCost } from '../../contracts/src/quantity';
+import { valueAtCost } from '../../contracts/src/quantity';
 import type { DecidedRequest } from '../../approvals/src/approvals';
 
 export interface PurchaseOrderLineInput {
   readonly productId: string;
   /** Smallest steps of the product's unit (OB-31: grams for a kg product; items otherwise), whole and > 0. */
   readonly orderedQty: number;
-  /** Per WHOLE unit (per kg, per item — OB-31). */
-  readonly unitCost: Money;
+  /** Per WHOLE unit (per kg, per item — OB-31) — or, OB-46, per `per` whole units (a case cost carried exactly). */
+  readonly unitCost: Money & { readonly per?: number };
   /** OB-31: the product's unit as the master names it; absent ⇒ counted in whole items (as before). */
   readonly uom?: string;
   /** SF-11: the order as the buyer placed it — so many packs at one pack level, at the pack's cost — converted exactly. */
@@ -77,7 +77,7 @@ export class InvalidPurchaseOrderLineError extends Error {
 
 function poTotal(lines: readonly PurchaseOrderLineInput[]): Money {
   const currency: CurrencyCode = lines[0]!.unitCost.currency;
-  return lines.reduce((sum, l) => add(sum, money(valueAtUnitCost(l.orderedQty, l.uom ?? 'ea', l.unitCost.minor), l.unitCost.currency)), zero(currency));
+  return lines.reduce((sum, l) => add(sum, money(valueAtCost(l.orderedQty, l.uom ?? 'ea', l.unitCost), l.unitCost.currency)), zero(currency));
 }
 
 /**
@@ -156,7 +156,7 @@ export function computeOpenCommitment(
     const receivedQty = receivedByProduct[line.productId] ?? 0;
     const cancelledQty = cancelledByProduct[line.productId] ?? 0;
     const openQty = line.orderedQty - receivedQty - cancelledQty;
-    const openValue = money(valueAtUnitCost(openQty, line.uom ?? 'ea', line.unitCost.minor), line.unitCost.currency); // OB-31
+    const openValue = money(valueAtCost(openQty, line.uom ?? 'ea', line.unitCost), line.unitCost.currency); // OB-31 · OB-46
     totalOpenValue = add(totalOpenValue, openValue);
     return { productId: line.productId, orderedQty: line.orderedQty, receivedQty, cancelledQty, openQty, openValue };
   });

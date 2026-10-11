@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
 import { makeEvent } from '../../../packages/contracts/src/event';
-import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
+import { valueAtCost } from '../../../packages/contracts/src/quantity';
 import { splitInclusive } from '../../../packages/finance/src/day-book';
 import { ageReceivables } from '../../../packages/b2b/src/collections';
 import type { FrozenLine } from '../../../packages/documents/src/index';
@@ -65,7 +65,7 @@ export function documentSourcesAdapter(input: {
       if (po.status !== 'issued') return { outcome: 'not_final', detail: `Purchase order ${po.number} is still ${po.status} — not approved, so it is not a purchase order a supplier can be sent.` };
       const lines: FrozenLine[] = po.lines.map((l) => {
         const uom = l.uom ?? 'ea';
-        return { productId: l.productId, quantityMinor: l.orderedQty, uom, unitPriceMinor: l.unitCost.minor, lineTotalMinor: valueAtUnitCost(l.orderedQty, uom, l.unitCost.minor) };
+        return { productId: l.productId, quantityMinor: l.orderedQty, uom, unitPriceMinor: l.unitCost.minor, lineTotalMinor: valueAtCost(l.orderedQty, uom, l.unitCost) };
       });
       const branchId = po.deliverToLocationId === undefined ? null : (await branchOfPlace(tenantId))(po.deliverToLocationId);
       return {
@@ -86,7 +86,7 @@ export function documentSourcesAdapter(input: {
       }
       const lines: FrozenLine[] = grn.captured.lines.map((l) => {
         const received = l.sellableMinor + l.quarantinedMinor + l.heldMinor;
-        return { productId: l.productId, quantityMinor: received, uom: l.uom, unitPriceMinor: l.unitCost.minor, lineTotalMinor: valueAtUnitCost(received, l.uom, l.unitCost.minor) };
+        return { productId: l.productId, quantityMinor: received, uom: l.uom, unitPriceMinor: l.unitCost.minor, lineTotalMinor: valueAtCost(received, l.uom, l.unitCost) };
       });
       const total = lines.reduce((s, l) => s + l.lineTotalMinor, 0);
       const currency = grn.captured.lines[0]?.unitCost.currency ?? 'INR';

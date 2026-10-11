@@ -181,7 +181,7 @@ import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } fro
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project, projectBatches, fefoBatchesAt, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
-import { minorPerUnitOf, normaliseUom, valueAtUnitCost } from '../../../packages/contracts/src/quantity';
+import { minorPerUnitOf, normaliseUom, valueAtUnitCost, valueAtCost } from '../../../packages/contracts/src/quantity';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
 import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting, ProductReceiptFacts } from '../../inventory/src/goods-receipt';
@@ -3584,7 +3584,7 @@ export function concessionAdapter(input: {
           ms.map((m): ValuationMovement => ({
             productId: m.productId, locationId: m.locationId,
             effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
+            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }),
             ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
           })),
           'INR',
@@ -4598,7 +4598,7 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
   const rows = weightedAverageValuation(
     moves.map((m): ValuationMovement => ({
       productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
+      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }),
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
     })),
     'INR',
@@ -6565,7 +6565,7 @@ export function inventoryAdapter(input: {
         movements.map((m): ValuationMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }),
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
         'INR',
@@ -6591,7 +6591,7 @@ export function inventoryAdapter(input: {
         movements.map((m): DatedMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }),
           occurredAt: m.occurredAt, batchId: m.batchId ?? null,
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
@@ -6624,7 +6624,7 @@ export function inventoryAdapter(input: {
             .map((m): ValuationMovement => ({
               productId: m.productId, locationId: m.locationId,
               effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
+              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }),
               ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
             })),
           'INR',
@@ -6796,7 +6796,7 @@ function mergeQty(a: Readonly<Record<string, number>>, b: Readonly<Record<string
 /** Value the PO's lines (ordered qty × unit cost) — recomputed when an amendment replaces the lines. */
 function poTotalMinor(lines: StoredPurchaseOrder['lines']): number {
   // OB-31: a kilo / litre line is costed per kilo / litre while its quantity is in grams / millilitres.
-  return lines.reduce((s, l) => s + valueAtUnitCost(l.orderedQty, l.uom ?? 'ea', l.unitCost.minor), 0);
+  return lines.reduce((s, l) => s + valueAtCost(l.orderedQty, l.uom ?? 'ea', l.unitCost), 0);
 }
 
 /**
@@ -12802,7 +12802,7 @@ export async function averageBuyingCosts(input: { readonly store: EventStore; re
     const key = `${m.productId}\u001f${storeId}`;
     const a = acc.get(key) ?? { productId: m.productId, storeId, qty: 0, value: 0, scale: minorPerUnitOf(m.uom) };
     a.qty += m.quantityMinor;
-    a.value += valueAtUnitCost(m.quantityMinor, m.uom ?? 'ea', m.unitCostMinor);
+    a.value += valueAtCost(m.quantityMinor, m.uom ?? 'ea', { minor: m.unitCostMinor, ...(m.unitCostPer === undefined ? {} : { per: m.unitCostPer }) }); // OB-46
     acc.set(key, a);
   }
   const rows = [...acc.values()].map((a): AverageBuyingCost => ({

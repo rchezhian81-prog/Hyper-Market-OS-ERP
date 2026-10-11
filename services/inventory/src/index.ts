@@ -111,6 +111,11 @@ export interface Movement {
    */
   readonly unitCostMinor?: number;
   /**
+   * OB-46 "A": `unitCostMinor` is the cost of this many whole units (a case cost carried exactly — ₹250 for 24 is
+   * `unitCostMinor: 25000, unitCostPer: 24`). Absent ⇒ 1, a cost per whole unit as before.
+   */
+  readonly unitCostPer?: number;
+  /**
    * Who owns this stock (M27-FR-02). Absent ⇒ the store's own. Set on a `received` movement, with
    * `ownerId`, when the goods belong to a concessionaire / consignor / customer rather than the
    * store — so the ownership rides on the append-only ledger itself (the M08 `ownership` field), and
