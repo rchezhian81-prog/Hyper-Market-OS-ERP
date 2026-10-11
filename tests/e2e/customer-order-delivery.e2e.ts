@@ -61,7 +61,7 @@ function shopData(): Record<string, unknown> {
 interface Recorder {
   readonly apiCalls: { method: string; path: string; auth: boolean }[];
   /** FUL-06: after sign-in the app reads the customer's own privacy choices — kept apart from the order traffic. */
-  readonly privacyReads?: { auth: boolean }[];
+  privacyReads?: { auth: boolean }[];
   grantedCustomerRole: number;
 }
 
