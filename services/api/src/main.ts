@@ -791,6 +791,10 @@ export function buildSurface(deps: {
             },
             // orders: the shop-wide order index, each at its current state as `GET /v1/orders/:id` folds it;
             orders: (t) => ordersForExport(store, t),
+            // attendance: the attendance store's read for each day of the asked period — the SAME read
+            // `GET /v1/hr/workforce/attendance?date=` answers — with the branch and rate from the staff register.
+            attendanceOn: async (t, date) => attendanceStoreAdapter({ store, now }).attendance(t, date),
+            staff: async (t) => attendanceStoreAdapter({ store, now }).employees(t),
             // payroll: the payslip register (latest issue per employee and period), with the branch from the staff register.
             payslips: async (t) => {
               const staff = new Map((await attendanceStoreAdapter({ store, now }).employees(t)).map((e) => [e.employeeId, e.branchId] as const));
