@@ -6070,6 +6070,11 @@ export function productionAdapter(input: {
       return { version, digest, changed: true };
     },
 
+    // OB-68 / OB-39: the ingredient's average buying cost at the store the run's location belongs to, as it stands now.
+    averageCostAt: async (tenantId, locationId, productId) => {
+      const [{ storeOf }, avg] = await Promise.all([storeOfLocationResolver(input, tenantId), averageBuyingCosts(input, tenantId)]);
+      return avg.costOf(productId, storeOf(locationId));
+    },
     ingredientCost: async (tenantId, productId) => {
       const set = await allOf<{ productId: string; cost: Money }>(input.store, tenantId, productionStream, 'ProductionCostSet');
       let latest: Money | undefined;
@@ -13255,7 +13260,10 @@ export async function averageBuyingCosts(input: { readonly store: EventStore; re
   const acc = new Map<string, { productId: string; storeId: string; qty: number; value: number; scale: number }>();
   for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
     const m = payloadOf<Movement>(e);
-    if (m.kind !== 'received' || m.unitCostMinor === undefined || m.quantityMinor <= 0) continue;
+    // OB-68 "A" (owner, 11 Oct 2026): goods MADE in the store come in at their production run's own cost (the ingredients
+    // consumed, at this average when the run was made) — a `produced` movement carrying that cost averages like a receipt.
+    // A run whose ingredients had no cost carries none and stays out: the product is "not valued" by name, never zero.
+    if ((m.kind !== 'received' && m.kind !== 'produced') || m.unitCostMinor === undefined || m.quantityMinor <= 0) continue;
     if (opts?.throughPeriod !== undefined && m.occurredAt.slice(0, 7) > opts.throughPeriod) continue;
     const storeId = branchOf(m.locationId);
     const key = `${m.productId}\u001f${storeId}`;
