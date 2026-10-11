@@ -13,6 +13,7 @@ import type { AnomalySummary } from '../../ai/src/drafting-legs';
 import type { RaisedException } from '../../pos/src/loss-prevention';
 import type { PlacedOrder, OrderTransition } from '../../orders/src/index';
 import type { FavouriteRecord, ShoppingListVersion, ReturnRequestRecord } from '../../orders/src/storefront-self';
+import type { CompetitorObservation } from '../../pricing/src/competitor-prices';
 import { STREAM, streamName, notificationQueueAdapter, effectiveGrants } from './adapters';
 import { QUEUES_STAFFED_BY, type BreachAlert } from '../../orders/src/exception-ownership';
 import type { ExceptionOwnerRole } from '../../../packages/orders/src/substitution-exception-ownership';
@@ -109,6 +110,20 @@ export function storefrontSelfAdapter(input: { readonly store: EventStore; reado
     recordList: (tenantId: string, rec: ShoppingListVersion, key: string): Promise<void> => put(tenantId, lists(rec.customerRef), 'CustomerListSaved', rec, key),
     returnRequests: (tenantId: string, c: string): Promise<readonly ReturnRequestRecord[]> => all<ReturnRequestRecord>(input.store, tenantId, returns(c), 'CustomerReturnRequested'),
     recordReturnRequest: (tenantId: string, rec: ReturnRequestRecord, key: string): Promise<void> => put(tenantId, returns(rec.customerRef), 'CustomerReturnRequested', rec, key),
+  };
+}
+
+/** Round 8 (D06-FR-05): competitor price sightings — one tenant-wide, append-only register; one record per sighting id. */
+export function competitorPriceAdapter(input: { readonly store: EventStore; readonly now: () => string }) {
+  const stream = streamName(STREAM.pricing, 'competitor-prices');
+  return {
+    observations: (tenantId: string): Promise<readonly CompetitorObservation[]> => all<CompetitorObservation>(input.store, tenantId, stream, 'CompetitorPriceObserved'),
+    recordObservation: async (tenantId: string, o: CompetitorObservation): Promise<void> => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `competitor-price-${o.observationId}`, type: 'CompetitorPriceObserved', occurredAt: o.recordedAt,
+        idempotencyKey: `competitor-price-${tenantId}-${o.observationId}`, source: 'api/pricing', payload: o,
+      }));
+    },
   };
 }
 
