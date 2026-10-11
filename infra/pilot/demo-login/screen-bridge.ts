@@ -50,6 +50,10 @@ export const BRIDGED_PAGES: Readonly<Record<string, BridgedPage>> = Object.freez
   // Export + the export log load live; with no import templates the import picker is simply empty.
   '/erp/data-io.html': { global: 'dataIoData', defaults: { importTemplates: [] } },
   '/erp/workforce.html': { global: 'workforceInboxData' },
+  // Round 8: the service desk (WF-17 · A05) and the assistant's drafts (A09 · A07) — identity only; cases, drafts and
+  // summaries are read live from /v1, where every act is re-checked.
+  '/erp/service-desk.html': { global: 'serviceDeskData' },
+  '/erp/ai-drafts.html': { global: 'aiDraftsData' },
   // Supplier portal — built to be injected by the cloud session; reads its own statement/submissions live.
   '/supplier/index.html': { global: 'supplierData' },
 });

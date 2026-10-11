@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Customer cases</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Customer cases — the service desk (WF-17 · M21-FR-03/04 · A05 · P-05 · hard rule 5). A THIN CLIENT: every case,
+      clock, draft and root cause is read live from head office (/v1/service/...) under the signed-in person's own
+      session, and every act is re-checked there. The assistant DRAFTS a reply over the case's own records; a named
+      person approves, edits or rejects it, and a person sends it. Nothing here is decided by the page.
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(980px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; }
+      h2 { margin: 0; font-size: 17px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 14px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      textarea { min-height: 96px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+      button[disabled] { opacity: .5; cursor: not-allowed; }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
+      tr.pick { cursor: pointer; }
+      tr[aria-selected='true'] { background: var(--line); }
+      .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; border: 1px solid var(--line); }
+      .badge::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+      .badge.breached { color: var(--danger-text); } .badge.at_risk { color: var(--warn); } .badge.within, .badge.met { color: var(--good); }
+      .draft { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
+      .draft blockquote { margin: 0; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--bg); }
+      .status { font-size: 14px; min-height: 20px; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 13px; }
+      .stack { display: grid; gap: 10px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="title">Customer cases</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <section aria-labelledby="cases-h">
+        <h2 id="cases-h">Open and recent cases</h2>
+        <p class="lede" id="cases-lede">Breaching cases first. Pick one to work it.</p>
+        <div class="sre-scroll-x">
+          <table>
+            <thead><tr><th id="th-case">Case</th><th id="th-kind">Kind</th><th id="th-priority">Priority</th><th id="th-state">State</th><th id="th-first">First reply</th><th id="th-resolution">Resolution</th></tr></thead>
+            <tbody id="case-rows"></tbody>
+          </table>
+        </div>
+        <p class="status" id="cases-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="open-h" id="open-section">
+        <h2 id="open-h">Open a case</h2>
+        <div class="row">
+          <label for="new-id"><span id="l-new-id">Case number</span><input id="new-id" autocomplete="off" /></label>
+          <label for="new-kind"><span id="l-new-kind">Kind</span>
+            <select id="new-kind"><option value="complaint" id="o-complaint">Complaint</option><option value="enquiry" id="o-enquiry">Enquiry</option><option value="warranty" id="o-warranty">Warranty</option><option value="lost_and_found" id="o-lost_and_found">Lost and found</option></select>
+          </label>
+          <label for="new-priority"><span id="l-new-priority">Priority</span>
+            <select id="new-priority"><option value="normal" id="o-normal">Normal</option><option value="low" id="o-low">Low</option><option value="high" id="o-high">High</option><option value="urgent" id="o-urgent">Urgent</option></select>
+          </label>
+          <label for="new-customer"><span id="l-new-customer">Customer code</span><input id="new-customer" autocomplete="off" /></label>
+          <label for="new-order"><span id="l-new-order">Order (optional)</span><input id="new-order" autocomplete="off" /></label>
+        </div>
+        <label for="new-summary"><span id="l-new-summary">What the customer said</span><textarea id="new-summary"></textarea></label>
+        <button id="open-case" type="button">Open the case</button>
+        <p class="status" id="open-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="case-h" id="case-section" hidden>
+        <h2 id="case-h">Case</h2>
+        <p id="case-facts"></p>
+        <p><span id="l-first-clock">First reply</span>: <span class="badge" id="first-badge"></span> · <span id="l-resolution-clock">Resolution</span>: <span class="badge" id="resolution-badge"></span></p>
+
+        <h2 id="drafts-h">Reply</h2>
+        <p class="lede" id="drafts-lede">The assistant drafts from the case's own records. Nothing reaches the customer until a person approves it and a person sends it.</p>
+        <label for="ask-note"><span id="l-ask-note">A note for the assistant (optional)</span><input id="ask-note" autocomplete="off" /></label>
+        <button id="ask-draft" type="button">Ask the assistant for a reply</button>
+        <p class="status" id="draft-status" role="status" aria-live="polite"></p>
+        <div id="draft-list" class="stack"></div>
+
+        <h2 id="resolve-h">Resolve</h2>
+        <label for="resolution"><span id="l-resolution">How it was resolved</span><input id="resolution" autocomplete="off" /></label>
+        <button id="resolve" type="button">Resolve the case</button>
+        <p class="status" id="resolve-status" role="status" aria-live="polite"></p>
+
+        <h2 id="rc-h">Root cause</h2>
+        <p class="lede" id="rc-lede">Why it happened, once it is resolved — so it does not happen again.</p>
+        <div class="row">
+          <label for="rc-cause"><span id="l-rc-cause">Cause</span><select id="rc-cause"></select></label>
+          <label for="rc-note"><span id="l-rc-note">What happened</span><input id="rc-note" autocomplete="off" /></label>
+          <label for="rc-prevent"><span id="l-rc-prevent">What will stop it (optional)</span><input id="rc-prevent" autocomplete="off" /></label>
+        </div>
+        <button id="rc-save" type="button">Record the root cause</button>
+        <p class="status" id="rc-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="summary-h">
+        <h2 id="summary-h">Why cases happen</h2>
+        <p class="lede" id="summary-lede">Resolved cases by root cause — and the resolved ones nobody has explained yet.</p>
+        <ul id="rc-summary"></ul>
+        <p class="status" id="rc-missing"></p>
+      </section>
+    </main>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script type="module" src="./service-desk.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>

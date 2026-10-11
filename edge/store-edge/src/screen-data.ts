@@ -57,7 +57,7 @@ import { packFreshness, type SignedPack } from '../../../services/catalogue/src/
 /** The screens this box serves. Named so a route, a test and a payload cannot drift apart. */
 export const SCREENS = Object.freeze([
   'pos', 'manager', 'owner', 'picker', 'driver', 'customer', 'buying', 'catalogue', 'merchandising',
-  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'indents', 'unsellable', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor', 'approvals',
+  'reporting', 'service', 'expiry', 'finance', 'gst-reconciliation', 'category-policy', 'gst-returns', 'waste', 'write-off-capture', 'counts', 'product-publish-review', 'data-quality', 'operations', 'loss-prevention', 'substitution-exceptions', 'day-book', 'document-templates', 'return-governance', 'cash-office', 'risk-acceptance', 'day-reopen', 'stock-health', 'stored-value', 'integration-health', 'goods-receipt', 'suppliers', 'indents', 'unsellable', 'data-io', 'workforce', 'ess', 'rostering', 'checklist', 'production', 'facilities', 'fleet', 'admin', 'ai', 'migration', 'warehouse', 'warehouse-supervisor', 'approvals', 'service-desk', 'ai-drafts',
 ] as const);
 export type ScreenName = (typeof SCREENS)[number];
 
@@ -1822,6 +1822,20 @@ export function lossPreventionPayload(input: ScreenInput): Record<string, unknow
 }
 
 /**
+ * Round 8: the service desk (WF-17 · A05) and the assistant's drafts screen (A09 · A07) — only who is looking and what
+ * they hold; the cases, drafts, templates and summaries are read live from the cloud, which re-checks every act.
+ */
+export function viewerOnlyPayload(register: ScreenInput['pack']['serviceDeskPolicy']): Record<string, unknown> | null {
+  if (!register.known) return null;
+  const policy = register.value;
+  const payload: Record<string, unknown> = { permissions: policy.permissions };
+  if (policy.userId !== undefined) payload['userId'] = policy.userId;
+  return payload;
+}
+export const serviceDeskPayload = (input: ScreenInput): Record<string, unknown> | null => viewerOnlyPayload(input.pack.serviceDeskPolicy);
+export const aiDraftsPayload = (input: ScreenInput): Record<string, unknown> | null => viewerOnlyPayload(input.pack.aiDraftsPolicy);
+
+/**
  * The delivery-substitution exception inbox payload (M19-FR-01 · Item 2 · P-03 · §28).
  *
  * `null` when the box has not been told who is on the screen. **The exceptions themselves are NOT in this
@@ -2429,6 +2443,8 @@ export const GLOBAL_FOR: Readonly<Record<ScreenName, string>> = Object.freeze({
   warehouse: 'warehouseData',
   'warehouse-supervisor': 'warehouseSupervisorData',
   approvals: 'approvalsData',
+  'service-desk': 'serviceDeskData',
+  'ai-drafts': 'aiDraftsData',
 });
 
 const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<string, unknown> | null>> = Object.freeze({
@@ -2483,6 +2499,8 @@ const BUILDERS: Readonly<Record<ScreenName, (input: ScreenInput) => Record<strin
   warehouse: warehousePayload,
   'warehouse-supervisor': warehouseSupervisorPayload,
   approvals: approvalsPayload,
+  'service-desk': serviceDeskPayload,
+  'ai-drafts': aiDraftsPayload,
 });
 
 /** Build one screen's payload. `null` means this box has nothing to give it, and says so. */

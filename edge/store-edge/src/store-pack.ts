@@ -620,6 +620,13 @@ export interface PackStockHealthPolicy {
   readonly permissions: readonly string[];
 }
 
+/** Round 8: who is at the service desk (WF-17 · A05) or the assistant's drafts screen (A09 · A07) and what they hold.
+ *  The cases, drafts, templates and summaries are read live from the cloud; the cloud re-checks every permission. */
+export interface PackViewerOnlyPolicy {
+  readonly userId?: string;
+  readonly permissions: readonly string[];
+}
+
 /** Who is on the READ-ONLY stored-value oversight desk and whether they may read it (M17). Only who is looking
  *  and what they hold — `lp.case.read` for the loss/books feeds; the double-spend, liability and velocity
  *  figures are read live from the cloud, never shipped in the pack. Permissions shape the UI; the cloud
@@ -1263,6 +1270,10 @@ export interface StorePack {
   readonly dayReopenPolicy: Register<PackDayReopenPolicy>;
   /** Who is on the READ-ONLY stock-health dashboard and whether they may read it (M08). */
   readonly stockHealthPolicy: Register<PackStockHealthPolicy>;
+  /** Round 8: who is at the service desk (WF-17 · A05). */
+  readonly serviceDeskPolicy: Register<PackViewerOnlyPolicy>;
+  /** Round 8: who is on the assistant's drafts screen (A09 approver · A07 security officer). */
+  readonly aiDraftsPolicy: Register<PackViewerOnlyPolicy>;
   /** Who is on the READ-ONLY stored-value oversight desk and whether they may read it (M17). */
   readonly storedValuePolicy: Register<PackStoredValuePolicy>;
   /** Who is on the READ-ONLY integration-health desk and whether they may read it (M32). */
@@ -1450,6 +1461,8 @@ export function emptyPack(why: string = NEVER): StorePack {
     riskAcceptancePolicy: notKnown(why),
     dayReopenPolicy: notKnown(why),
     stockHealthPolicy: notKnown(why),
+    serviceDeskPolicy: notKnown(why),
+    aiDraftsPolicy: notKnown(why),
     storedValuePolicy: notKnown(why),
     integrationHealthPolicy: notKnown(why),
     goodsReceiptPolicy: notKnown(why),
@@ -1590,6 +1603,8 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     riskAcceptancePolicy: section<PackRiskAcceptancePolicy>('riskAcceptancePolicy'),
     dayReopenPolicy: section<PackDayReopenPolicy>('dayReopenPolicy'),
     stockHealthPolicy: section<PackStockHealthPolicy>('stockHealthPolicy'),
+    serviceDeskPolicy: section<PackViewerOnlyPolicy>('serviceDeskPolicy'),
+    aiDraftsPolicy: section<PackViewerOnlyPolicy>('aiDraftsPolicy'),
     storedValuePolicy: section<PackStoredValuePolicy>('storedValuePolicy'),
     integrationHealthPolicy: section<PackIntegrationHealthPolicy>('integrationHealthPolicy'),
     goodsReceiptPolicy: section<PackGoodsReceiptPolicy>('goodsReceiptPolicy'),
