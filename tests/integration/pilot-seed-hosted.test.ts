@@ -84,6 +84,9 @@ describe('hosted pilot seed — over a real socket', () => {
       expect(req.approvedBy).toBe('pilot-seed:test-operator');
     }
     expect(grants.filter((g) => g.event.source === 'system/genesis')).toHaveLength(1);
+    // OB-42: the owner's marketing cap is in force for the demo shop — set through the owner's route, once, by the seed.
+    const cap = await client.request({ method: 'GET', path: '/v1/service/campaigns/frequency-policy', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect((cap.body as { policy: Record<string, unknown> }).policy).toMatchObject({ capPerWindow: 2, windowDays: 7, setBy: OWNER });
   }, 60_000);
 
   it('the seeded logins really authenticate through the live API with their role permissions', async () => {
