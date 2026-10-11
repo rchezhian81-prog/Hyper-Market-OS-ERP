@@ -58,6 +58,8 @@ export interface RealCloud {
   readonly notificationWorker?: NotificationWorker;
   /** PA-12: the ops-alert worker the API started on its own timer. */
   readonly opsAlertWorker?: OpsAlertWorker;
+  /** D14 / M32: the outbound webhook sender (only when a partner transport was handed in). */
+  readonly outboundWorker?: NotificationWorker;
   stop(): Promise<void>;
 }
 
@@ -146,6 +148,7 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
     said,
     ...(running.notificationWorker === undefined ? {} : { notificationWorker: running.notificationWorker }),
     ...(running.opsAlertWorker === undefined ? {} : { opsAlertWorker: running.opsAlertWorker }),
+    ...(running.outboundWorker === undefined ? {} : { outboundWorker: running.outboundWorker }),
     token,
     request,
     grant: async (userId, roleId, requestedBy = REQUESTER, branchScope = 'all') => {

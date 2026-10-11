@@ -199,7 +199,8 @@ import { storePackRoutes } from '../../platform/src/store-packs';
 import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
 import { storeComputerBinding, storeComputerRefusalRoutes } from './store-computer-binding';
 import { opsIncidentRoutes } from '../../platform/src/ops-incidents';
-import { opsIncidentsAdapter } from './adapters';
+import { opsIncidentsAdapter, outboundWebhooksAdapter } from './adapters';
+import { outboundWebhookRoutes, drainOutboundWebhooks, type OutboundTransport } from '../../platform/src/outbound-webhooks';
 import { buildStorePackSections } from './store-pack-builder';
 import { dataExportRoutes, buildExportDomains, type ExportSale, type ExportJournal } from '../../purchase/src/data-export';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
@@ -356,6 +357,11 @@ export function buildSurface(deps: {
   /** PF-10 r6: each message provider's delivery-report callback secret — `startApi` reads them from its environment
    *  (DELIVERY_REPORT_SECRET__<PROVIDER>); none configured, a delivery report is refused (nothing believed). */
   readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
+  /** D14 / M32: the outbound webhook transport to partners. NEVER set by `startApi` from code — no partner is live (an
+   *  external gate); tests pass a recording transport. Absent, outbound messages wait, visible in the reconciliation read. */
+  readonly outboundTransport?: OutboundTransport;
+  /** D14 / M32: signing secrets by vault reference name (`vault://<name>`). `startApi` reads OUTBOUND_WEBHOOK_SECRET__<NAME>. */
+  readonly outboundSecrets?: ReadonlyMap<string, string>;
   /** EA-08: the model provider adapter and its tier pricing. NEVER set by `startApi` (no provider is chosen — an external
    *  gate); tests pass the deterministic simulator to prove admission, metering, audit and evaluations. */
   readonly modelTransport?: ModelTransport;
@@ -1675,6 +1681,12 @@ export function buildSurface(deps: {
       : alertLifecycleAdapter({ store, now })),
     // WF-20 · M35-FR-04: an incident linked to the alerts that raised it, its timeline, actions with named owners, a
     // post-mortem, and a close only a named person makes.
+    // D14 / M32: outbound webhooks to partners — signed, retried on a schedule, dead-lettered visibly, reconcilable.
+    ...outboundWebhookRoutes(outboundWebhooksAdapter({
+      ...(store === undefined ? {} : { store }), now,
+      ...(deps.outboundTransport === undefined ? {} : { transport: deps.outboundTransport }),
+      ...(deps.outboundSecrets === undefined ? {} : { secrets: deps.outboundSecrets }),
+    })),
     ...opsIncidentRoutes(store === undefined
       ? { facts: async () => [], record: async () => {}, alerts: () => [], isKnownPerson: async () => false, now }
       : opsIncidentsAdapter({ store, now })),
@@ -1802,6 +1814,8 @@ export interface RunningApi {
   readonly notificationWorker?: NotificationWorker;
   /** PA-12: the ops-alert worker — raises, escalates and delivers alerts to their named people on its own timer. */
   readonly opsAlertWorker?: OpsAlertWorker;
+  /** D14 / M32: the outbound webhook sender — present only when a partner transport is handed in. */
+  readonly outboundWorker?: NotificationWorker;
   /** Stops accepting, lets in-flight requests finish, then closes the database pool. */
   readonly stop: () => Promise<void>;
 }
@@ -1826,6 +1840,20 @@ export interface ApiProviders {
   readonly opsAlertWorkerIntervalMs?: number;
   /** EA-07: how often the brief worker passes over the named shops — overrides BRIEF_WORKER_EVERY_SECONDS (tests). */
   readonly briefWorkerIntervalMs?: number;
+  /** D14 / M32: the outbound webhook transport to partners (none is live; tests hand in a recording one). */
+  readonly outboundTransport?: OutboundTransport;
+  /** D14 / M32: how often the outbound webhook sender passes over every shop (default 30 s). */
+  readonly outboundWorkerIntervalMs?: number;
+}
+
+/** D14 / M32: outbound webhook signing secrets from the environment — OUTBOUND_WEBHOOK_SECRET__<NAME> answers vault://<NAME>. */
+export function outboundSecretsFromEnv(env: Readonly<Record<string, string | undefined>>): ReadonlyMap<string, string> {
+  const out = new Map<string, string>();
+  for (const [k, v] of Object.entries(env)) {
+    const m = /^OUTBOUND_WEBHOOK_SECRET__(.+)$/.exec(k);
+    if (m !== null && typeof v === 'string' && v.length >= 32) out.set(m[1]!, v);
+  }
+  return out;
 }
 
 export async function startApi(
@@ -1965,6 +1993,10 @@ export async function startApi(
     ...(providers.notificationTransport === undefined ? {} : { notificationTransport: providers.notificationTransport }),
     // PF-10 r6: the providers' delivery-report secrets, from this process's environment only (never the repo).
     deliveryReportSecrets: reportSecrets.secrets,
+    // D14 / M32: outbound webhook signing secrets (OUTBOUND_WEBHOOK_SECRET__<NAME> → vault://<NAME>) and the partner
+    // transport (a provider handed in at deployment; none is live, so outbound messages wait, visible).
+    outboundSecrets: outboundSecretsFromEnv(env),
+    ...(providers.outboundTransport === undefined ? {} : { outboundTransport: providers.outboundTransport }),
     ...(identityDirectory === undefined ? {} : { identityDirectory }),
     ...(settings['IDP_OIDC_TENANT_ID'] === undefined ? {} : { identityDirectoryTenantId: settings['IDP_OIDC_TENANT_ID'] }),
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
@@ -2140,13 +2172,32 @@ export async function startApi(
     say: (line) => { out(`${line}\n`); },
   });
 
+  // D14 / M32: the outbound webhook sender — the PA-08 worker shape (sequential, never stops quietly, restart-safe) over
+  // the outbound pass. Runs only when a partner transport is handed in; with none, messages wait and are listed.
+  let outboundWorker: NotificationWorker | undefined;
+  if (providers.outboundTransport === undefined) {
+    out('outbound webhooks: no partner transport is configured — outbound messages wait, listed in the reconciliation read\n');
+  } else {
+    const outboundDeps = outboundWebhooksAdapter({ store, now, transport: providers.outboundTransport, secrets: outboundSecretsFromEnv(env) });
+    outboundWorker = startNotificationWorker({
+      tenants: async () => workerTenants,
+      drain: (tenantId) => drainOutboundWebhooks(outboundDeps, tenantId),
+      intervalMs: providers.outboundWorkerIntervalMs ?? 30_000,
+      now,
+      say: (line) => { out(`outbound webhooks: ${line}\n`); },
+    });
+    out(`outbound webhooks: the sender runs every ${Math.round((providers.outboundWorkerIntervalMs ?? 30_000) / 1000)} s through ${providers.outboundTransport.name}\n`);
+  }
+
   return {
     port,
     routeCount,
     ...(notificationWorker === undefined ? {} : { notificationWorker }),
+    ...(outboundWorker === undefined ? {} : { outboundWorker }),
     opsAlertWorker,
     stop: async () => {
       stopBriefWorker?.();
+      if (outboundWorker !== undefined) await outboundWorker.stop();
       await opsAlertWorker.stop();
       if (notificationWorker !== undefined) await notificationWorker.stop();
       await server.stop();

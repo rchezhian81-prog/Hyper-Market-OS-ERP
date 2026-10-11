@@ -213,6 +213,7 @@ import type { DataExportAuditDeps } from '../../purchase/src/data-export';
 import type { ExportAudit } from '../../../packages/export/src/export';
 import { projectAlerts, type AlertLifecycleDeps, type AlertLifecycleEvent, type LiveAlert } from '../../platform/src/alert-lifecycle';
 import type { OpsIncidentDeps, IncidentFact } from '../../platform/src/ops-incidents';
+import type { OutboundWebhookDeps, OutboundFact, OutboundTransport } from '../../platform/src/outbound-webhooks';
 import { recommendOperationsRunbooks, type OperationsFinding } from '../../../packages/ops/src/index';
 import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../finance/src/legal-holds';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
@@ -13336,6 +13337,36 @@ export function opsIncidentsAdapter(input: { readonly store: EventStore; readonl
     },
     alerts: (tenantId) => alertLifecycleAdapter(input).alerts(tenantId),
     isKnownPerson: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId),
+  };
+}
+
+/**
+ * D14 / M32: outbound webhooks. The events published to partners (§30.2) and the ledger stream each is read from; every
+ * subscription change and every attempt is an appended fact. Without a store, nothing is subscribed and nothing is sent.
+ */
+export const PUBLISHED_TO_PARTNERS: Readonly<Record<string, string>> = { SaleCommitted: STREAM.sales, InventoryMoved: STREAM.inventory };
+export function outboundWebhooksAdapter(input: {
+  readonly store?: EventStore; readonly now: () => string;
+  readonly transport?: OutboundTransport; readonly secrets?: ReadonlyMap<string, string>;
+}): OutboundWebhookDeps {
+  const stream = streamName(STREAM.platform, 'outbound-webhooks');
+  const store = input.store;
+  return {
+    now: input.now,
+    publishable: PUBLISHED_TO_PARTNERS,
+    ...(input.transport === undefined ? {} : { transport: input.transport }),
+    facts: async (tenantId) => (store === undefined ? [] : allOf<OutboundFact>(store, tenantId, stream, 'OutboundWebhookFact')),
+    record: async (tenantId, fact, key) => {
+      if (store === undefined) return;
+      await store.append(tenantId, stream, makeEvent({
+        id: `outbound-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`, type: 'OutboundWebhookFact',
+        occurredAt: fact.change === 'subscribed' ? fact.subscription.setAt : fact.at,
+        idempotencyKey: `outbound-${tenantId}-${key}`, source: 'api/platform', payload: fact,
+      }));
+    },
+    eventsOf: async (tenantId, from, type, since) => (store === undefined ? [] : (await store.readStream(tenantId, from, { type, from: since }))
+      .map((e) => ({ eventId: e.event.id, occurredAt: e.event.occurredAt, payload: e.event.payload }))),
+    secretFor: (ref) => input.secrets?.get(ref.replace(/^vault:\/\//, '')),
   };
 }
 

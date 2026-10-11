@@ -16,6 +16,7 @@ import { tokenRevocationAdapter, personalDataStore } from '../../services/api/sr
 import type { SubjectKeyStore } from '../../packages/persistence/src/personal-data';
 import { sessionChannelsOf } from '../../services/api/src/session-channels';
 import { storeComputerBinding } from '../../services/api/src/store-computer-binding';
+import type { OutboundTransport } from '../../services/platform/src/outbound-webhooks';
 import { buildSurface } from '../../services/api/src/main';
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from '../../services/api/src/access';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from '../../services/api/src/roles';
@@ -119,6 +120,9 @@ export function apiHarness(opts: {
   modelPricing?: Readonly<Record<ModelTier, TierPricing>>;
   /** FUL-12 · ADR-0025: a personal-data key store — every write then goes through the sealing layer, as `main.ts` composes it. */
   personalDataKeys?: SubjectKeyStore;
+  /** D14 / M32: an outbound webhook transport (a recording one in tests) and signing secrets by vault name. */
+  outboundTransport?: OutboundTransport;
+  outboundSecrets?: ReadonlyMap<string, string>;
 } = {}): ApiHarness {
   const store = opts.personalDataKeys === undefined ? opts.store ?? new InMemoryEventStore()
     : personalDataStore(opts.store ?? new InMemoryEventStore(), opts.personalDataKeys);
@@ -134,6 +138,8 @@ export function apiHarness(opts: {
     ...(opts.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: opts.deliveryReportSecrets }),
     ...(opts.modelTransport === undefined ? {} : { modelTransport: opts.modelTransport }),
     ...(opts.modelPricing === undefined ? {} : { modelPricing: opts.modelPricing }),
+    ...(opts.outboundTransport === undefined ? {} : { outboundTransport: opts.outboundTransport }),
+    ...(opts.outboundSecrets === undefined ? {} : { outboundSecrets: opts.outboundSecrets }),
   }));
   if (!built.ok) throw new Error(`surface malformed: ${built.refusals.map((r) => r.detail).join('; ')}`);
 
