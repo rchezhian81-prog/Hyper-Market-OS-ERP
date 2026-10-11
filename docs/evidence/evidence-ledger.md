@@ -19,8 +19,8 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 ## Totals
 
 - Evidence test files scanned: 1075. SP-10 sessions: 0 (0 PASS, 0 on real hardware).
-- Requirements with at least one proof of each kind: Unit 82 · Integration (in-process) 101 · Real PostgreSQL 87 · Browser (stub cloud) 68 · Browser (connected) 13 · Device 0 · Staff UAT 0.
-- Labels: E2E_VERIFIED 24 · ENGINE_ONLY 1 · INTEGRATION_TESTED 16 · PARTIALLY_WIRED 52 · WIRED 11.
+- Requirements with at least one proof of each kind: Unit 82 · Integration (in-process) 101 · Real PostgreSQL 93 · Browser (stub cloud) 72 · Browser (connected) 13 · Device 0 · Staff UAT 0.
+- Labels: E2E_VERIFIED 28 · INTEGRATION_TESTED 24 · PARTIALLY_WIRED 41 · WIRED 11.
 - Labels that do NOT hold: none.
 
 ## The ledger
@@ -63,20 +63,20 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | M34 | E2E_VERIFIED | 8 | 11 | 3 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
 | M35 | PARTIALLY_WIRED | 4 | 11 | 4 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | M36 | PARTIALLY_WIRED | 12 | 27 | 4 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D01 | PARTIALLY_WIRED | 2 | 5 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D02 | PARTIALLY_WIRED | 3 | 6 | 1 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D03 | PARTIALLY_WIRED | 2 | 7 | 2 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D04 | PARTIALLY_WIRED | 3 | 6 | 2 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D05 | PARTIALLY_WIRED | 1 | 6 | 1 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D06 | PARTIALLY_WIRED | 3 | 6 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D07 | PARTIALLY_WIRED | 1 | 6 | 3 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D08 | PARTIALLY_WIRED | 5 | 5 | 2 | 3 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D09 | PARTIALLY_WIRED | 8 | 6 | 3 | 2 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D10 | PARTIALLY_WIRED | · | 5 | 2 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D11 | PARTIALLY_WIRED | · | 5 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D12 | PARTIALLY_WIRED | 1 | 6 | 2 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D13 | PARTIALLY_WIRED | 6 | 9 | 6 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| D14 | PARTIALLY_WIRED | 2 | 5 | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D01 | PARTIALLY_WIRED | 2 | 8 | 1 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D02 | PARTIALLY_WIRED | 3 | 7 | 1 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D03 | PARTIALLY_WIRED | 2 | 10 | 3 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D04 | PARTIALLY_WIRED | 3 | 8 | 4 | 2 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D05 | PARTIALLY_WIRED | 1 | 9 | 2 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D06 | PARTIALLY_WIRED | 3 | 7 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D07 | PARTIALLY_WIRED | 1 | 9 | 4 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D08 | PARTIALLY_WIRED | 5 | 5 | 2 | 2 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D09 | PARTIALLY_WIRED | 8 | 8 | 3 | 2 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D10 | PARTIALLY_WIRED | · | 7 | 3 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D11 | PARTIALLY_WIRED | · | 8 | 1 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D12 | PARTIALLY_WIRED | 1 | 9 | 3 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D13 | PARTIALLY_WIRED | 6 | 9 | 7 | 1 | 1 | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| D14 | PARTIALLY_WIRED | 2 | 6 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | A01 | PARTIALLY_WIRED | 8 | 9 | 5 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | A02 | PARTIALLY_WIRED | 6 | 5 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | A03 | WIRED | 5 | 5 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
@@ -87,26 +87,26 @@ _`node scripts/evidence-ledger.mjs` rewrites it and `--check` (run by CI) refuse
 | A08 | E2E_VERIFIED | 6 | 7 | 3 | 4 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
 | A09 | WIRED | 3 | 2 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | A10 | E2E_VERIFIED | 9 | 7 | 3 | 3 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| WF-01 | PARTIALLY_WIRED | · | 3 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-02 | PARTIALLY_WIRED | · | 2 | 1 | 2 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-03 | PARTIALLY_WIRED | · | 5 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-04 | PARTIALLY_WIRED | · | 3 | 1 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-05 | PARTIALLY_WIRED | · | 4 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-06 | PARTIALLY_WIRED | 4 | 6 | 3 | 3 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-07 | PARTIALLY_WIRED | 2 | 5 | 2 | 2 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-08 | PARTIALLY_WIRED | · | 3 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-09 | PARTIALLY_WIRED | · | 3 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-10 | E2E_VERIFIED | 1 | 4 | 2 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
-| WF-11 | PARTIALLY_WIRED | · | 3 | 2 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-12 | PARTIALLY_WIRED | · | 3 | 2 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-13 | PARTIALLY_WIRED | · | 3 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-14 | PARTIALLY_WIRED | · | 3 | 3 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-15 | PARTIALLY_WIRED | · | 3 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-16 | PARTIALLY_WIRED | · | 3 | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-17 | PARTIALLY_WIRED | · | 4 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-18 | PARTIALLY_WIRED | · | 3 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-19 | ENGINE_ONLY | 1 | 4 | 2 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
-| WF-20 | PARTIALLY_WIRED | · | 4 | 2 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-01 | PARTIALLY_WIRED | · | 7 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-02 | INTEGRATION_TESTED | · | 7 | 2 | 2 | · | · | · | ✓ an integration test cites it |
+| WF-03 | PARTIALLY_WIRED | · | 8 | 3 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-04 | E2E_VERIFIED | · | 8 | 2 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| WF-05 | INTEGRATION_TESTED | · | 7 | 2 | 1 | · | · | · | ✓ an integration test cites it |
+| WF-06 | E2E_VERIFIED | 4 | 7 | 4 | 3 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| WF-07 | INTEGRATION_TESTED | 2 | 7 | 4 | 2 | · | · | · | ✓ an integration test cites it |
+| WF-08 | PARTIALLY_WIRED | · | 6 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-09 | INTEGRATION_TESTED | · | 8 | · | 1 | · | · | · | ✓ an integration test cites it |
+| WF-10 | E2E_VERIFIED | 1 | 5 | 3 | 2 | 1 | · | · | ✓ browser boundary and cloud effect proven in ONE connected run |
+| WF-11 | INTEGRATION_TESTED | · | 8 | 4 | 2 | · | · | · | ✓ an integration test cites it |
+| WF-12 | INTEGRATION_TESTED | · | 7 | 3 | 3 | · | · | · | ✓ an integration test cites it |
+| WF-13 | E2E_VERIFIED | · | 6 | 1 | 1 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| WF-14 | E2E_VERIFIED | · | 5 | 3 | 2 | · | · | · | ✓ browser boundary and cloud effect proven in separate runs (no connected browser test yet) |
+| WF-15 | INTEGRATION_TESTED | · | 6 | 2 | 2 | · | · | · | ✓ an integration test cites it |
+| WF-16 | PARTIALLY_WIRED | · | 4 | 1 | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-17 | PARTIALLY_WIRED | · | 6 | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-18 | PARTIALLY_WIRED | · | 7 | 3 | 2 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
+| WF-19 | INTEGRATION_TESTED | 1 | 13 | 8 | 1 | · | · | · | ✓ an integration test cites it |
+| WF-20 | PARTIALLY_WIRED | · | 8 | 4 | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-01 | PARTIALLY_WIRED | · | 1 | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-02 | PARTIALLY_WIRED | 3 | 1 | · | 1 | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
 | QG-03 | PARTIALLY_WIRED | · | 1 | · | · | · | · | · | ✓ no evidence kind is required below INTEGRATION_TESTED (the completion-ladder guardrail holds WIRED+ to a registered file) |
@@ -167,36 +167,40 @@ _The JSON twin (`evidence-ledger.json`) lists every file and session per item. H
 - **M32** — browser: `integration-health-delivery.e2e.ts` · real PostgreSQL: `notifications-send-themselves.test.ts`, `the-seams-hold.test.ts`, `the-sender-rechecks-template-and-recipient.test.ts`
 - **M33** — browser: `admin-support-access-delivery.e2e.ts`, `fleet-change-delivery.e2e.ts`, `screens-open-offline.e2e.ts` · real PostgreSQL: `branch-scope-every-family.test.ts`, `support-and-remote-sessions-bind-the-sign-in.test.ts`, `two-shops-one-system.test.ts`, `tenants-register.test.ts`
 - **M34** — browser: `risk-acceptance-delivery.e2e.ts`, `screens-open-offline.e2e.ts` · real PostgreSQL: `branch-scope-every-family.test.ts`, `concurrent-stock-cannot-be-spent-twice.test.ts`, `physical-to-system.test.ts`
-- **D01** — browser: `product-publish-delivery.e2e.ts`
+- **D01** — browser: `product-publish-delivery.e2e.ts` · real PostgreSQL: `pack-chain-case-to-base.test.ts`
 - **D02** — browser: `merchandising-count-and-refill.e2e.ts` · real PostgreSQL: `merchandising-reads-head-office-facts.test.ts`
-- **D03** — browser: `buying-po-delivery.e2e.ts` · real PostgreSQL: `supplier-portal-feeds-purchasing.test.ts`, `supplier-to-shelf-journey.test.ts`
-- **D04** — browser: `the-served-till-takes-a-sale.e2e.ts`, `the-store-trades-a-day.e2e.ts` · connected: `the-store-trades-a-day.e2e.ts` · real PostgreSQL: `sale-to-shift-close-journey.test.ts`, `the-store-trades-a-day.test.ts`
-- **D05** — browser: `expiry-recall-delivery.e2e.ts` · real PostgreSQL: `a-sale-line-gets-its-fefo-lot.test.ts`
+- **D03** — browser: `buying-po-delivery.e2e.ts` · real PostgreSQL: `store-acceptance-journey.test.ts`, `supplier-portal-feeds-purchasing.test.ts`, `supplier-to-shelf-journey.test.ts`
+- **D04** — browser: `the-served-till-takes-a-sale.e2e.ts`, `the-store-trades-a-day.e2e.ts` · connected: `the-store-trades-a-day.e2e.ts` · real PostgreSQL: `no-sale-and-price-override-are-kept-and-judged.test.ts`, `sale-to-shift-close-journey.test.ts`, `store-acceptance-journey.test.ts`, `the-store-trades-a-day.test.ts`
+- **D05** — browser: `expiry-recall-delivery.e2e.ts` · real PostgreSQL: `a-sale-line-gets-its-fefo-lot.test.ts`, `store-acceptance-journey.test.ts`
 - **D06** — browser: `catalogue-price-change-delivery.e2e.ts`
-- **D07** — browser: `customer-privacy-centre.e2e.ts` · real PostgreSQL: `a-campaign-goes-through-the-queue-within-the-cap.test.ts`, `an-erasure-reaches-the-real-domain-stores.test.ts`, `the-customer-privacy-centre-saves-on-the-shop.test.ts`
-- **D08** — browser: `customer-order-delivery.e2e.ts`, `customer-privacy-centre.e2e.ts`, `the-customer-app-meets-wcag-aa.e2e.ts` · real PostgreSQL: `a-delivery-slot-and-address-are-the-shops-to-judge.test.ts`, `the-customer-privacy-centre-saves-on-the-shop.test.ts`
+- **D07** — browser: `customer-privacy-centre.e2e.ts` · real PostgreSQL: `a-campaign-goes-through-the-queue-within-the-cap.test.ts`, `an-erasure-shreds-the-personal-text-in-the-ledger.test.ts`, `the-customer-privacy-centre-saves-on-the-shop.test.ts`, `the-customer-record-is-built-from-what-they-bought.test.ts`
+- **D08** — browser: `customer-order-delivery.e2e.ts`, `the-customer-app-meets-wcag-aa.e2e.ts` · real PostgreSQL: `a-delivery-slot-and-address-are-the-shops-to-judge.test.ts`, `the-customer-privacy-centre-saves-on-the-shop.test.ts`
 - **D09** — browser: `driver-handheld-syncs-through-the-box.e2e.ts`, `picker-handheld-syncs-through-the-box.e2e.ts` · real PostgreSQL: `fulfilment-packing.test.ts`, `one-fulfilment-command.test.ts`, `pick-to-doorstep.test.ts`
-- **D10** — browser: `finance-month-close-delivery.e2e.ts` · real PostgreSQL: `a-sale-delta-lands-once.test.ts`, `books-reconcile.test.ts`
-- **D11** — browser: `rostering-delivery.e2e.ts`
-- **D12** — browser: `admin-people-sign-ins.e2e.ts` · real PostgreSQL: `access-lifecycle.test.ts`, `keycloak-real.test.ts`
-- **D13** — browser: `company-report.e2e.ts` · connected: `company-report.e2e.ts` · real PostgreSQL: `a-drill-reaches-its-day-and-only-the-readers-branches.test.ts`, `exports-reach-the-business-domains.test.ts`, `owner-figures-say-how-fresh-each-store-is.test.ts`, `reports-reconcile-to-their-sources.test.ts`, `the-brief-worker-runs-inside-the-served-api.test.ts`, `the-brief-worker-sends-through-the-outbox.test.ts`
+- **D10** — browser: `finance-month-close-delivery.e2e.ts` · real PostgreSQL: `books-reconcile.test.ts`, `store-acceptance-journey.test.ts`, `the-books-open-from-the-old-trial-balance.test.ts`
+- **D11** — browser: `rostering-delivery.e2e.ts` · real PostgreSQL: `attendance-exports-for-a-bounded-period.test.ts`
+- **D12** — browser: `admin-people-sign-ins.e2e.ts` · real PostgreSQL: `a-branch-closes-only-on-measured-facts.test.ts`, `an-org-rename-is-kept.test.ts`, `support-and-remote-sessions-bind-the-sign-in.test.ts`
+- **D13** — browser: `company-report.e2e.ts` · connected: `company-report.e2e.ts` · real PostgreSQL: `a-drill-reaches-its-day-and-only-the-readers-branches.test.ts`, `every-business-domain-exports.test.ts`, `owner-figures-say-how-fresh-each-store-is.test.ts`, `reports-reconcile-to-their-sources.test.ts`, `store-acceptance-journey.test.ts`, `the-brief-worker-runs-inside-the-served-api.test.ts`, `the-brief-worker-sends-through-the-outbox.test.ts`
 - **A04** — browser: `picker-substitution-delivery.e2e.ts` · real PostgreSQL: `ai-model-calls-are-governed.test.ts`, `ai-proposes-people-decide.test.ts`, `ai-shopping-agent-offers-in-stock-alternatives.test.ts`
 - **A06** — browser: `lib/ai-inbox-shop.ts`, `operations-dismiss-delivery.e2e.ts`, `operations-inbox-on-the-production-api.e2e.ts` · connected: `operations-inbox-on-the-production-api.e2e.ts` · real PostgreSQL: `ai-inboxes-keep-to-the-readers-branches.test.ts`, `ai-model-calls-are-governed.test.ts`, `ai-proposes-people-decide.test.ts`
 - **A08** — browser: `data-quality-dismiss-delivery.e2e.ts`, `data-quality-inbox-on-the-production-api.e2e.ts`, `lib/ai-inbox-shop.ts`, `screens-open-offline.e2e.ts` · connected: `data-quality-inbox-on-the-production-api.e2e.ts` · real PostgreSQL: `ai-inboxes-keep-to-the-readers-branches.test.ts`, `ai-model-calls-are-governed.test.ts`, `ai-proposes-people-decide.test.ts`
 - **A10** — browser: `lib/ai-inbox-shop.ts`, `workforce-dismiss-delivery.e2e.ts`, `workforce-inbox-on-the-production-api.e2e.ts` · connected: `workforce-inbox-on-the-production-api.e2e.ts` · real PostgreSQL: `ai-inboxes-keep-to-the-readers-branches.test.ts`, `ai-model-calls-are-governed.test.ts`, `ai-proposes-people-decide.test.ts`
 - **WF-01** — browser: `product-publish-delivery.e2e.ts`
-- **WF-02** — browser: `supplier-portal-delivery.e2e.ts`, `suppliers-delivery.e2e.ts` · real PostgreSQL: `supplier-portal-feeds-purchasing.test.ts`
-- **WF-04** — browser: `goods-receipt-delivery.e2e.ts` · real PostgreSQL: `supplier-to-shelf-journey.test.ts`
-- **WF-06** — browser: `indents-delivery.e2e.ts`, `merchandising-count-and-refill.e2e.ts`, `warehouse-handheld-issues-to-floor.e2e.ts` · real PostgreSQL: `floor-indents-handheld-issue.test.ts`, `replenishment.test.ts`, `supplier-to-shelf-journey.test.ts`
-- **WF-07** — browser: `indents-delivery.e2e.ts`, `warehouse-handheld-syncs-through-the-box.e2e.ts` · real PostgreSQL: `floor-indents-handheld-issue.test.ts`, `supplier-to-shelf-journey.test.ts`
+- **WF-02** — browser: `supplier-portal-delivery.e2e.ts`, `suppliers-delivery.e2e.ts` · real PostgreSQL: `store-acceptance-journey.test.ts`, `supplier-portal-feeds-purchasing.test.ts`
+- **WF-03** — browser: `buying-po-delivery.e2e.ts` · real PostgreSQL: `replenishment.test.ts`, `store-acceptance-journey.test.ts`, `supplier-to-shelf-journey.test.ts`
+- **WF-04** — browser: `goods-receipt-delivery.e2e.ts`, `warehouse-handheld-delivery.e2e.ts` · real PostgreSQL: `store-acceptance-journey.test.ts`, `supplier-to-shelf-journey.test.ts`
+- **WF-05** — browser: `buying-po-delivery.e2e.ts` · real PostgreSQL: `purchase-to-payment.test.ts`, `store-acceptance-journey.test.ts`
+- **WF-06** — browser: `indents-delivery.e2e.ts`, `merchandising-count-and-refill.e2e.ts`, `warehouse-handheld-issues-to-floor.e2e.ts` · real PostgreSQL: `floor-indents-handheld-issue.test.ts`, `replenishment.test.ts`, `store-acceptance-journey.test.ts`, `supplier-to-shelf-journey.test.ts`
+- **WF-07** — browser: `indents-delivery.e2e.ts`, `warehouse-supervisor-delivery.e2e.ts` · real PostgreSQL: `confirmed-lost-stock-is-posted-once.test.ts`, `floor-indents-handheld-issue.test.ts`, `store-acceptance-journey.test.ts`, `supplier-to-shelf-journey.test.ts`
 - **WF-09** — browser: `expiry-recall-delivery.e2e.ts`
-- **WF-10** — browser: `the-served-till-takes-a-sale.e2e.ts`, `the-store-trades-a-day.e2e.ts` · connected: `the-store-trades-a-day.e2e.ts` · real PostgreSQL: `the-shop-reaches-the-cloud.test.ts`, `the-store-trades-a-day.test.ts`
-- **WF-11** — browser: `the-served-till-takes-a-refund.e2e.ts` · real PostgreSQL: `refund-approval-is-the-approvers-own-act.test.ts`, `returns-guard-the-refund.test.ts`
-- **WF-12** — browser: `the-served-till-closes.e2e.ts` · real PostgreSQL: `day-close-honestly.test.ts`, `sale-to-shift-close-journey.test.ts`
-- **WF-13** — browser: `customer-order-delivery.e2e.ts`
-- **WF-14** — browser: `picker-handheld-syncs-through-the-box.e2e.ts` · real PostgreSQL: `fulfilment-packing.test.ts`, `one-fulfilment-command.test.ts`, `pick-to-doorstep.test.ts`
-- **WF-15** — browser: `delivery-route-partial-delivery.e2e.ts`
-- **WF-18** — browser: `finance-month-close-delivery.e2e.ts`
+- **WF-10** — browser: `the-served-till-takes-a-sale.e2e.ts`, `the-store-trades-a-day.e2e.ts` · connected: `the-store-trades-a-day.e2e.ts` · real PostgreSQL: `store-acceptance-journey.test.ts`, `the-shop-reaches-the-cloud.test.ts`, `the-store-trades-a-day.test.ts`
+- **WF-11** — browser: `return-governance-delivery.e2e.ts`, `the-served-till-takes-a-refund.e2e.ts` · real PostgreSQL: `refund-approval-is-the-approvers-own-act.test.ts`, `returns-guard-the-refund.test.ts`, `store-acceptance-journey.test.ts`, `the-till-exchanges.test.ts`
+- **WF-12** — browser: `cash-office-signoff-delivery.e2e.ts`, `manager-day-close-delivery.e2e.ts`, `the-served-till-closes.e2e.ts` · real PostgreSQL: `day-close-honestly.test.ts`, `sale-to-shift-close-journey.test.ts`, `store-acceptance-journey.test.ts`
+- **WF-13** — browser: `customer-order-delivery.e2e.ts` · real PostgreSQL: `a-delivery-slot-and-address-are-the-shops-to-judge.test.ts`
+- **WF-14** — browser: `picker-handheld-syncs-through-the-box.e2e.ts`, `picker-substitution-delivery.e2e.ts` · real PostgreSQL: `fulfilment-packing.test.ts`, `one-fulfilment-command.test.ts`, `pick-to-doorstep.test.ts`
+- **WF-15** — browser: `delivery-route-partial-delivery.e2e.ts`, `driver-handheld-syncs-through-the-box.e2e.ts` · real PostgreSQL: `one-fulfilment-command.test.ts`, `pick-to-doorstep.test.ts`
+- **WF-18** — browser: `day-book-post-delivery.e2e.ts`, `finance-month-close-delivery.e2e.ts` · real PostgreSQL: `books-reconcile.test.ts`, `store-acceptance-journey.test.ts`, `the-margin-is-costed-at-the-average-buying-cost.test.ts`
+- **WF-19** — browser: `migration-decision-delivery.e2e.ts` · real PostgreSQL: `a-delta-lands-once.test.ts`, `a-rehearsed-rollback-reconciles.test.ts`, `a-sale-delta-lands-once.test.ts`, `an-opening-load-is-reversed-only-in-the-cutover-window.test.ts`, `history-and-open-orders-load.test.ts`, `opening-load-at-store-volume.test.ts`, `opening-state-loads.test.ts`, `the-whole-load-runs-from-one-command.test.ts`
+- **WF-20** — browser: `fleet-change-delivery.e2e.ts` · real PostgreSQL: `alerts-reach-their-named-owner.test.ts`, `backup-is-one-moment.test.ts`, `recovery-rehearsal.test.ts`, `the-backup-job-reports-its-own-outcome.test.ts`
 - **QG-02** — browser: `the-till-and-manager-meet-the-interaction-budget.e2e.ts`
 - **QG-04** — browser: `risk-acceptance-delivery.e2e.ts` · real PostgreSQL: `offline-sync-slice.test.ts`
 - **QG-07** — browser: `finance-month-close-delivery.e2e.ts` · real PostgreSQL: `a-delta-lands-once.test.ts`, `a-sale-delta-lands-once.test.ts`, `history-and-open-orders-load.test.ts`, `offline-sync-slice.test.ts`, `opening-state-loads.test.ts`, `the-books-open-from-the-old-trial-balance.test.ts`, `the-old-shop-arrives-whole.test.ts`, `we-get-it-out-ourselves.test.ts`

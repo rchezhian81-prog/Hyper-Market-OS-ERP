@@ -389,24 +389,24 @@ per-item evidence and any external blocker live in the ledger. Names are from `d
 | A09 | Marketing | WIRED |
 | A10 | Workforce/SOP | E2E VERIFIED |
 | WF-01 | Product onboarding | PARTIALLY WIRED |
-| WF-02 | Supplier onboarding | PARTIALLY WIRED |
+| WF-02 | Supplier onboarding | INTEGRATION TESTED |
 | WF-03 | Purchase planning | PARTIALLY WIRED |
-| WF-04 | Receiving | PARTIALLY WIRED |
-| WF-05 | Supplier invoice | PARTIALLY WIRED |
-| WF-06 | Replenishment | PARTIALLY WIRED |
-| WF-07 | Stock transfer | PARTIALLY WIRED |
+| WF-04 | Receiving | E2E VERIFIED |
+| WF-05 | Supplier invoice | INTEGRATION TESTED |
+| WF-06 | Replenishment | E2E VERIFIED |
+| WF-07 | Stock transfer | INTEGRATION TESTED |
 | WF-08 | Stock count | PARTIALLY WIRED |
-| WF-09 | Expiry/recall | PARTIALLY WIRED |
+| WF-09 | Expiry/recall | INTEGRATION TESTED |
 | WF-10 | POS sale | E2E VERIFIED |
-| WF-11 | POS return | PARTIALLY WIRED |
-| WF-12 | Day close | PARTIALLY WIRED |
-| WF-13 | Customer order | PARTIALLY WIRED |
-| WF-14 | Fulfilment | PARTIALLY WIRED |
-| WF-15 | Delivery | PARTIALLY WIRED |
+| WF-11 | POS return | INTEGRATION TESTED |
+| WF-12 | Day close | INTEGRATION TESTED |
+| WF-13 | Customer order | E2E VERIFIED |
+| WF-14 | Fulfilment | E2E VERIFIED |
+| WF-15 | Delivery | INTEGRATION TESTED |
 | WF-16 | Online cancellation/return | PARTIALLY WIRED |
 | WF-17 | Customer service | PARTIALLY WIRED |
 | WF-18 | Finance close | PARTIALLY WIRED |
-| WF-19 | Migration/cutover | ENGINE ONLY |
+| WF-19 | Migration/cutover | INTEGRATION TESTED |
 | WF-20 | Release/incident | PARTIALLY WIRED |
 | QG-01 | Requirements gate | PARTIALLY WIRED |
 | QG-02 | UX gate | PARTIALLY WIRED |

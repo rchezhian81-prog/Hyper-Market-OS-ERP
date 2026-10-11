@@ -34,7 +34,7 @@ because its own record says only the consolidation, drill-through and roster rou
 | EA-07 | MEDIUM | M29-FR-04, A01, D13 | `the-brief-worker-runs-inside-the-served-api.test.ts` (startApi, PG), `the-brief-worker-sends-through-the-outbox.test.ts`: brief worker + outbox, acknowledged only on delivery, no AI leg (Batch 4 r4–r6; verified 11 Oct). OB-47: stays off until a provider exists | Repair, Wave 6 | B4 | Delivery transport via PA-08 (B4); trading calendar B1 (M01) | A scheduled worker sends the brief on three scheduled days from governed figures, with outbox, retries and acknowledgements; no-AI fallback proven. Residual: live phone transport (provider). | `verified complete` |
 | EA-08 | MEDIUM | A01, A02, A04, AI-NFR-01, AI-NFR-08, AI-NFR-10 | `ai-model-calls-are-governed.test.ts`, `ai-shopping-agent-offers-in-stock-alternatives.test.ts` (PG): cost admission, metering, kill switch, hash-chained audit, evaluation set; evidence read server-side, caller text untrusted (Batch 4 r4–r6; verified 11 Oct). External: live model | Repair, Wave 6 | B4 | Domain readers from B2/B3 | A01/A02/A04 remaining legs read real domain readers; server-owned cost admission, metering, immutable request/result audit and evaluations exist before any model provider is enabled. Residual: live model provider. | `verified complete` |
 | EA-09 | MEDIUM | A06, A08, A10, QG-11 | `ai-inboxes-keep-to-the-readers-branches.test.ts` (PG), 3 connected e2e on the production API: A06/A08/A10 branch-scoped, evidence required, eval set v2, governed-call guardrail (Batch 4 r5; verified 11 Oct) | Repair, Wave 6 | B4 | Branch scope B1 | One connected production-API + browser path per shared AI inbox (A06/A08/A10) covering branch scope, kill switch, restart and refreshed data; ledger records simulator/browser/API/UAT separately. | `verified complete` |
-| EA-10 | MEDIUM | D01, D02, D03, D04, D05, D06, D07, D08, D09, D10, D11, D12, D13, D14, WF-01, WF-02, WF-03, WF-04, WF-05, WF-06, WF-07, WF-08, WF-09, WF-10, WF-11, WF-12, WF-13, WF-14, WF-15, WF-16, WF-17, WF-18, WF-19, WF-20 | `docs/completion-status.json` D/WF entries (stale); this matrix Table B is a first pass | Repair, Wave 6 | B4 | Each batch supplies its own D/WF facts | Every D01-D14 and WF-01-WF-20 ledger entry refreshed against current connected tests; each open gap mapped to a slice and classed code / evidence / owner / physical-provider. | `pending software` |
+| EA-10 | MEDIUM | D01, D02, D03, D04, D05, D06, D07, D08, D09, D10, D11, D12, D13, D14, WF-01, WF-02, WF-03, WF-04, WF-05, WF-06, WF-07, WF-08, WF-09, WF-10, WF-11, WF-12, WF-13, WF-14, WF-15, WF-16, WF-17, WF-18, WF-19, WF-20 | `docs/completion-status.json` D01–D14 and WF-01–WF-20 re-derived from cited, existing tests (12 raised, none lowered; ledger 'labels not holding: none'; guardrails hold); Table B states refreshed with each gap classed code / evidence / owner / physical-provider (records agent r7, 11 Oct) | Repair, Wave 6 | B4 | Each batch supplies its own D/WF facts | Every D01-D14 and WF-01-WF-20 ledger entry refreshed against current connected tests; each open gap mapped to a slice and classed code / evidence / owner / physical-provider. | `verified complete` |
 | FUL-01 | HIGH | M11-FR-01, M11-FR-02, M11-FR-03 | `tests/integration/production-moves-ordinary-stock.test.ts` (memory + real PostgreSQL): consumed_in_production / produced kinds, valuation conserved, concurrent runs (Batch 2, 10 Oct 2026) | Repair, Wave 6 | B2 | Sale side B3 | Ingredient consumption, held output and QC release move ordinary stock atomically; receive -> make -> hold/release -> till sale -> trace/valuation on real PostgreSQL. | `verified complete` |
 | FUL-02 | HIGH | M18-FR-02, M20-FR-02 | #702; docs/traceability.md L108 | Repaired, Wave 2a | B2 | Write guard B1; order linkage B3 | The last unit is promised once under a race on real PostgreSQL; duplicate lines are one line. | `verified complete` |
 | FUL-03 | HIGH | M20-FR-03, M18-FR-01, M18-FR-03, M18-FR-04 | `a-delivery-slot-and-address-are-the-shops-to-judge.test.ts` (PG), e2e `customer-order-delivery`: slot, radius, lead time, capacity judged by head office before anything is reserved; last place once (Batch 3 r4; verified 11 Oct). External: live payment provider; customer location self-reported | Repair, Wave 6 | B3 | Reservations B2; checkout screen apps/customer-app | Checkout price, slot and serviceability recomputed on the server; provider intent and verified outcome bound to the quote/order; a forged client payment is refused. Residual: live payment provider. | `verified complete` |
@@ -106,110 +106,110 @@ because its own record says only the consolidation, drill-through and roster rou
 
 | ID | Name | Current label | Linked findings | Primary batch | State | What remains |
 |---|---|---|---|---|---|---|
-| M01 | Organization, branch and configuration | WIRED | EA-03, EA-04, PA-01, PA-04, PA-05, PA-06, PF-04, PA-01-r1, PA-06-r1 | B1 | `pending software` | PA-01-r1; PA-04 branch lifecycle; PA-05 rename; PA-06 part 3b and PA-06-r1. |
-| M02 | Identity, RBAC and approvals | INTEGRATION_TESTED | PA-01, PA-02, PA-03, PA-06, PA-01-r1 | B1 | `pending software` | PA-01-r1; buying screen as the signed-in person (PA-06 part 3b); OB-15 sign-in switched on for store-box back-office screens. |
-| M03 | Product information and master data | INTEGRATION_TESTED | SF-06, SF-11 | B2 | `pending software` | SF-11 FR acceptance (case/inner/base, bulk, images, category). |
-| M04 | Merchandising, space and planograms | WIRED | FUL-11 | B2 | `pending software` | FUL-11; replenishment tasks persisted and audited (M04-FR-03). |
-| M05 | Pricing and promotions | E2E_VERIFIED | SF-01 | B3 | `pending software` | Margin floor from the shop's own policy, not the request (`services/pricing/src/index.ts`); SP-10. |
-| M06 | Supplier and procurement | E2E_VERIFIED | GT-06, SF-02 | B2 | `pending software` | GT-06 supplier import keeps name/GSTIN (B4 builds, B2 reviews). |
-| M07 | Receiving, QC and three-way match | E2E_VERIFIED | SF-02, SF-07, SF-12 | B2 | `staff/device acceptance` | Nothing in software; SF-12 / SP-10 receiving run on real devices. |
-| M08 | Inventory ledger and availability | E2E_VERIFIED | SF-03, SF-04, SF-05, SF-08, PA-01-r1 | B2 | `pending software` | PA-01-r1 branch scope on inventory read and movement routes. |
-| M09 | Warehouse and replenishment | E2E_VERIFIED | SF-03, SF-04, SF-12 | B2 | `pending software` | Warehouse bins and practice delivery from head office (PA-06 part 3b). |
-| M10 | Batch, expiry, quality and recall | E2E_VERIFIED | PA-07, SF-03, SF-07, SF-08, SF-12 | B2 | `staff/device acceptance` | Nothing in software now; batch-precise till block deferred to R3 (OB-25); SP-10. |
-| M11 | Fresh food and internal production | INTEGRATION_TESTED | FUL-01, FUL-08, FUL-13 | B2 | `pending software` | FUL-01, FUL-08, FUL-13; PostgreSQL proof of the production path. |
-| M12 | POS sales and checkout | E2E_VERIFIED | PF-02, PF-03, PF-04, PF-05, PF-06, PF-07, PF-09, PF-14, PF-15 | B3 | `pending software` | PF-07 no-sale/override; PF-09 steps 2-3 (step 2 in flight). |
-| M13 | Returns, exchanges and refunds | INTEGRATION_TESTED | PF-01, PF-02, PF-14 | B3 | `external dependency` | Nothing in software; live card/UPI refund reversal needs provider credentials (EX-03). |
-| M14 | Till, cash office and day close | E2E_VERIFIED | PF-02, PF-06, PF-08, PF-15 | B3 | `pending software` | A pending card/UPI answer holding the day close and reaching head office (PF-06/PF-08 residual). |
-| M15 | Loss prevention and fraud | E2E_VERIFIED | PF-07 | B3 | `pending software` | PF-07 no-sale/override evidence and exceptions in the inbox. |
-| M16 | Customer 360 and consent | WIRED | FUL-06, FUL-10, FUL-12 | B4 | `pending software` | FUL-06, FUL-10, FUL-12; SMS check deferred to R4 (OB-29). |
-| M17 | Loyalty, membership and gift value | E2E_VERIFIED | PF-01, PF-09 | B3 | `pending software` | PF-09 steps 2-3: member at the till, points and store credit spent, liability. |
-| M18 | Order management and omnichannel | PARTIALLY_WIRED | FUL-02, FUL-03, FUL-05, FUL-07, FUL-14 | B3 | `pending software` | FUL-03, FUL-05, FUL-07, FUL-14. |
-| M19 | Picking, packing and delivery | PARTIALLY_WIRED | FUL-04, FUL-05, FUL-14 | B3 | `pending software` | FUL-04 (B2), FUL-05, FUL-14. |
-| M20 | Customer mobile app and web commerce | PARTIALLY_WIRED | FUL-02, FUL-03, FUL-05, FUL-06, FUL-07, FUL-12 | B3 | `pending software` | FUL-03, FUL-07; FUL-06/FUL-12 (B4). |
-| M21 | CRM, marketing and service desk | INTEGRATION_TESTED | PF-10, PF-11 | B4 | `pending software` | PF-10 campaigns; PF-11 compensation (B3); service-desk screens browser-verified. |
-| M22 | B2B and institutional sales | WIRED | FUL-09 | B4 | `pending software` | FUL-09 B2B vertical slice. |
-| M23 | Finance, tax and accounting bridge | PARTIALLY_WIRED | PF-06, PF-12 | B3 | `pending software` | PF-12 close evidence, ITC, Tally outbox; live GST/e-invoice credentials external. |
-| M24 | Supplier and external partner portals | E2E_VERIFIED | SF-09 | B2 | `pending software` | SF-09 supplier document submission. |
-| M25 | Workforce, tasks and SOP | E2E_VERIFIED | PA-01, PA-02, PA-06 | B4 | `staff/device acceptance` | Nothing in software from the audit (roster scope fixed #704); SP-10. |
-| M26 | Facilities, assets and utilities | E2E_VERIFIED | PA-03, PA-07 | B4 | `staff/device acceptance` | Nothing in software from the audit; IoT sensor feed is hardware; SP-10. |
-| M27 | Concession and shop-in-shop | WIRED | PF-13 | B3 | `pending software` | PF-13 pre-sale block from the concession decision. |
-| M28 | Waste, disposal and sustainability | E2E_VERIFIED | SF-05 | B2 | `staff/device acceptance` | Nothing in software; SP-10. |
-| M29 | Owner command centre and BI | WIRED | EA-01, EA-02, EA-03, EA-04, EA-05, EA-06, EA-07 | B4 | `pending software` | EA-01, EA-02, EA-04, EA-05, EA-06, EA-07. |
-| M30 | Import, export and data quality | INTEGRATION_TESTED | EA-04, SF-06, SF-10, SF-12 | B4 | `pending software` | SF-10 all-domain export and rollback; EA-04 export. |
-| M31 | Document, notification and communications | WIRED | PA-03, PA-08, PA-09 | B4 | `pending software` | PA-08 deliverable consent-checked messages; PA-09 governed document issue. |
-| M32 | Integration and developer platform | E2E_VERIFIED | PA-08 | B1 | `pending software` | PA-08 outbound worker (built by B4 on B1 messaging). |
-| M33 | Platform administration and support | E2E_VERIFIED | PA-06, PA-10, PA-06-r1 | B1 | `pending software` | PA-06 part 3b, PA-06-r1, PA-10. |
-| M34 | Audit, risk and compliance evidence | E2E_VERIFIED | PA-11 | B1 | `verified complete` | Nothing in software (PA-11 closed, E2E_VERIFIED). |
-| M35 | Backup, disaster recovery and observability | PARTIALLY_WIRED | GT-07, PA-12 | B4 | `pending software` | GT-07, PA-12 alert wiring; off-site storage external. |
-| M36 | Commercialization and multi-tenant readiness | PARTIALLY_WIRED | PA-13 | B1 | `approved deferral` | R8 scope (release-plan R8, OA-12): billing, metering, closure, SDK. |
-| D01 | Product and catalogue | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | Content/images authoring (D01-FR-06) not started; EA-10 refresh. |
-| D02 | Merchandise planning | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | FUL-11 planning facts; EA-10 refresh. |
-| D03 | Supplier and buying | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | SF-09; EA-10 refresh. |
-| D04 | POS and cash | PARTIALLY_WIRED | EA-02, EA-10, PF-06 | B3 | `pending software` | PF-07, PF-09; EA-02 tender reporting (B4); EA-10 refresh. |
-| D05 | Inventory and quality | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | EA-10 refresh; batch-precise block R3 (OB-25). |
-| D06 | Pricing and promotions | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | Markdown/competitor capture partial; EA-10 refresh. |
-| D07 | Customer and loyalty | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | PF-09; coupons/referrals engine-only; EA-10 refresh. |
-| D08 | Customer app/web | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | FUL-03, FUL-07; EA-10 refresh. |
-| D09 | OMS and delivery | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | FUL-04, FUL-05, FUL-14; EA-10 refresh. |
-| D10 | Finance and tax | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | PF-12; EA-10 refresh. |
-| D11 | Store and workforce | PARTIALLY_WIRED | EA-10 | B4 | `pending software` | EA-10 refresh of the stale workforce entry. |
-| D12 | Platform/admin | PARTIALLY_WIRED | EA-10 | B1 | `pending software` | PA-04, PA-05, PA-06 part 3b, PA-10; EA-10 refresh. |
-| D13 | Reporting/owner | PARTIALLY_WIRED | EA-01, EA-02, EA-03, EA-04, EA-05, EA-06, EA-07, EA-10 | B4 | `pending software` | EA-01, EA-02, EA-04, EA-05, EA-06, EA-07. |
-| D14 | Hardware/integration | PARTIALLY_WIRED | EA-10 | B1 | `pending software` | Gateway/webhooks partial; EA-10 refresh; live hardware/ESL/IoT external. |
-| A01 | Owner Intelligence | PARTIALLY_WIRED | EA-07, EA-08 | B4 | `pending software` | EA-07 scheduled delivery; EA-08 model governance. |
-| A02 | Purchase | PARTIALLY_WIRED | EA-08 | B4 | `pending software` | EA-08 remaining legs. |
-| A03 | Inventory | WIRED | — | B4 | `pending software` | Transfer-suggestion leg (multi-location stock reader). |
-| A04 | Customer Shopping | PARTIALLY_WIRED | EA-08 | B4 | `pending software` | EA-08 remaining legs. |
-| A05 | Service | WIRED | — | B4 | `pending software` | Draft case-response content leg and agent screen. |
-| A06 | Operations | E2E_VERIFIED | EA-09 | B4 | `pending software` | EA-09 connected production path. |
-| A07 | Security/Fraud | WIRED | — | B4 | `pending software` | Summarise-anomalies leg and security-officer screen. |
-| A08 | Data Quality | E2E_VERIFIED | EA-09 | B4 | `pending software` | EA-09 connected production path. |
-| A09 | Marketing | WIRED | — | B4 | `pending software` | Draft campaign/offer content legs and approver screen. |
-| A10 | Workforce/SOP | E2E_VERIFIED | EA-09 | B4 | `pending software` | EA-09 connected production path. |
-| WF-01 | Product onboarding | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | SF-11, D01 content; EA-10 refresh. |
-| WF-02 | Supplier onboarding | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | SF-09, GT-06; EA-10 refresh. |
-| WF-03 | Purchase planning | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | A02 legs (EA-08); EA-10 refresh. |
-| WF-04 | Receiving | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | EA-10 refresh (SF-02/SF-07 closed); SP-10. |
-| WF-05 | Supplier invoice | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | PF-12 purchase tax/ITC join; EA-10 refresh. |
-| WF-06 | Replenishment | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | M04-FR-03 tasks; FUL-11; EA-10 refresh. |
-| WF-07 | Stock transfer | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | Dedicated connected transfer proof; EA-10 refresh. |
-| WF-08 | Stock count | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | EA-10 refresh; count-to-finance join (M23). |
-| WF-09 | Expiry/recall | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | EA-10 refresh; batch-precise block R3 (OB-25). |
-| WF-10 | POS sale | E2E_VERIFIED | EA-10 | B3 | `pending software` | PF-09 member at the till; PF-07; SP-10. |
-| WF-11 | POS return | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | PF-09 step 3 store credit; EA-10 refresh; card refund live provider external. |
-| WF-12 | Day close | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | Pending card answer in the close; EA-10 refresh. |
-| WF-13 | Customer order | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | FUL-03, FUL-05, FUL-07; EA-10 refresh. |
-| WF-14 | Fulfilment | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | FUL-04, FUL-05; EA-10 refresh. |
-| WF-15 | Delivery | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | FUL-05 COD/RTO money; EA-10 refresh. |
-| WF-16 | Online cancellation/return | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | FUL-05 cancellation money join; EA-10 refresh. |
-| WF-17 | Customer service | PARTIALLY_WIRED | EA-10 | B4 | `pending software` | PF-11 (B3); service screens; EA-10 refresh. |
-| WF-18 | Finance close | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | PF-12; EA-10 refresh. |
-| WF-19 | Migration/cutover | ENGINE_ONLY | EA-10 | B4 | `pending software` | GT-02 to GT-07; never run on real data. |
-| WF-20 | Release/incident | PARTIALLY_WIRED | EA-10 | B1 | `pending software` | PA-12, GT-07 (B4); EA-10 refresh. |
-| QG-01 | Requirements | PARTIALLY_WIRED | GT-09 | B4 | `external dependency` | Nothing in software; owner signs the gate at pilot (QG-12 process). |
-| QG-02 | UX | PARTIALLY_WIRED | GT-01, GT-08 | B4 | `staff/device acceptance` | Nothing in software; cashier training/performance targets proven in SP-10. |
-| QG-03 | Code | PARTIALLY_WIRED | GT-01, GT-08, GT-09, GT-10 | B1 | `external dependency` | Nothing in software (`scripts/sbom.mjs` in CI); admin action: branch-protection ticks (GT-01). |
-| QG-04 | Offline | INTEGRATION_TESTED | GT-01, GT-10 | B1 | `staff/device acceptance` | Nothing in software; offline sale on the real store PC and devices. |
-| QG-05 | Performance | PARTIALLY_WIRED | GT-01 | B1 | `external dependency` | Scan-to-line p95 on certified pilot hardware. |
-| QG-06 | Security | PARTIALLY_WIRED | — | B1 | `external dependency` | Independent penetration test (external security vendor). |
-| QG-07 | Data | PARTIALLY_WIRED | GT-03, GT-04, GT-05 | B4 | `pending software` | GT-03, GT-04, GT-05; signed totals need real data. |
-| QG-08 | Recovery | PARTIALLY_WIRED | GT-02, GT-07 | B4 | `pending software` | GT-02, GT-07, PA-12; DR rehearsal. |
-| QG-09 | Adoption | PARTIALLY_WIRED | — | B4 | `staff/device acceptance` | Nothing in software; role competency and SOP acknowledgements. |
-| QG-10 | Production | PARTIALLY_WIRED | — | B1 | `external dependency` | Production environment and domain (owner) for post-release verification. |
-| QG-11 | AI | PARTIALLY_WIRED | EA-09 | B4 | `pending software` | EA-09; model accuracy evaluations (EA-08). |
-| QG-12 | Owner | PARTIALLY_WIRED | GT-02, GT-03 | B4 | `pending software` | GT-02, GT-03 (no caller boolean overrides evidence). |
-| MG-01 | Discovery | INTEGRATION_TESTED | — | B4 | `external dependency` | Nothing in software; lawful access to legacy data. |
-| MG-02 | Preservation | INTEGRATION_TESTED | GT-07 | B4 | `pending software` | GT-07 one-snapshot backup and manifest. |
-| MG-03 | Mapping | INTEGRATION_TESTED | GT-06 | B4 | `pending software` | GT-06 supplier mapping keeps identity. |
-| MG-04 | Cleaning | E2E_VERIFIED | GT-08 | B4 | `external dependency` | Nothing in software; cleaning on legacy data, witnesses (Wave 7). |
-| MG-05 | Trial loads | INTEGRATION_TESTED | GT-05, GT-06 | B4 | `pending software` | GT-05, GT-06. |
-| MG-06 | Reconciliation | E2E_VERIFIED | GT-03, GT-08 | B4 | `pending software` | GT-03. |
-| MG-07 | History | INTEGRATION_TESTED | GT-05 | B4 | `pending software` | GT-05. |
-| MG-08 | Opening state | INTEGRATION_TESTED | GT-05 | B4 | `pending software` | GT-05. |
-| MG-09 | Delta | INTEGRATION_TESTED | GT-04 | B4 | `pending software` | GT-04. |
-| MG-10 | Parallel run | INTEGRATION_TESTED | GT-03 | B4 | `pending software` | GT-03. |
-| MG-11 | Cutover | E2E_VERIFIED | GT-02, GT-03 | B4 | `pending software` | GT-02, GT-03. |
-| MG-12 | Archive/retire | INTEGRATION_TESTED | — | B4 | `external dependency` | Nothing in software; retirement after accepted cutover and retention. |
+| M01 | Organization, branch and configuration | WIRED | EA-03, EA-04, PA-01, PA-04, PA-05, PA-06, PF-04, PA-01-r1, PA-06-r1 | B1 | `pending software` | evidence: the org/config/branch FRs proven on PostgreSQL and in a browser to lift WIRED (all linked findings PA-01/04/05/06, EA-03/04, PF-04 verified) |
+| M02 | Identity, RBAC and approvals | INTEGRATION_TESTED | PA-01, PA-02, PA-03, PA-06, PA-01-r1 | B1 | `pending software` | evidence: the real-Keycloak suites run by hand, not in CI (OB-15-a); browser proof of approvals/delegation on the real API; all linked findings verified |
+| M03 | Product information and master data | INTEGRATION_TESTED | SF-06, SF-11 | B2 | `pending software` | code: product content/images/synonyms authoring (D01-FR-06); evidence: browser proof on the real API; SF-06/SF-11 verified |
+| M04 | Merchandising, space and planograms | WIRED | FUL-11 | B2 | `pending software` | evidence: hardening review to INTEGRATION_TESTED (FUL-11 verified); the R6 piece is owner-deferred (CH-02) |
+| M05 | Pricing and promotions | E2E_VERIFIED | SF-01 | B3 | `staff/device acceptance` | nothing in software (margin floor is the store's own: tests/integration/the-margin-floor-is-the-stores.test.ts; SF-01 verified); SP-10 |
+| M06 | Supplier and procurement | E2E_VERIFIED | GT-06, SF-02 | B2 | `staff/device acceptance` | nothing in software (GT-06, SF-02 verified); SP-10 buyer run |
+| M07 | Receiving, QC and three-way match | E2E_VERIFIED | SF-02, SF-07, SF-12 | B2 | `staff/device acceptance` | nothing in software; SF-12 / SP-10 receiving run on real devices |
+| M08 | Inventory ledger and availability | E2E_VERIFIED | SF-03, SF-04, SF-05, SF-08, PA-01-r1 | B2 | `staff/device acceptance` | nothing in software (PA-01-r1 and SF-03/04/05/08 verified); SP-10 |
+| M09 | Warehouse and replenishment | E2E_VERIFIED | SF-03, SF-04, SF-12 | B2 | `staff/device acceptance` | nothing in software (PA-06 part 3b verified); SF-12 / SP-10 warehouse phone run |
+| M10 | Batch, expiry, quality and recall | E2E_VERIFIED | PA-07, SF-03, SF-07, SF-08, SF-12 | B2 | `staff/device acceptance` | nothing in software; batch-precise till block is an approved deferral to R3 (OB-25); SP-10 |
+| M11 | Fresh food and internal production | INTEGRATION_TESTED | FUL-01, FUL-08, FUL-13 | B2 | `staff/device acceptance` | RAISE: the missing PostgreSQL proof now exists (FUL-01 production-moves-ordinary-stock, FUL-13 production→label→till, both verified) and the browser leg already did; remaining: scale/label-printer and low-spec device UAT (SP-10) (EA-10 r7 proposes E2E_VERIFIED once the ledger cites it) |
+| M12 | POS sales and checkout | E2E_VERIFIED | PF-02, PF-03, PF-04, PF-05, PF-06, PF-07, PF-09, PF-14, PF-15 | B3 | `staff/device acceptance` | nothing in software (PF-07, PF-09 verified); SP-10 cashier run; live acquirer/UPI for card tenders |
+| M13 | Returns, exchanges and refunds | INTEGRATION_TESTED | PF-01, PF-02, PF-14 | B3 | `pending software` | code: a person's decision on a held returned unit (PF-14 residual — only GET /v1/returns/held-stock exists); external: live card/UPI refund reversal (EX-03) |
+| M14 | Till, cash office and day close | E2E_VERIFIED | PF-02, PF-06, PF-08, PF-15 | B3 | `pending software` | code: an unresolved card/UPI attempt does not hold the day close (edge closeDay reads shifts, exceptions, unsent items only — PF-06/PF-08 residual) |
+| M15 | Loss prevention and fraud | E2E_VERIFIED | PF-07 | B3 | `staff/device acceptance` | nothing in software (PF-07 verified); SP-10 |
+| M16 | Customer 360 and consent | WIRED | FUL-06, FUL-10, FUL-12 | B4 | `pending software` | evidence: browser proof of merge/segments on the real API to lift WIRED (FUL-06/10/12 verified on PostgreSQL); SMS check is the R4 deferral (OB-29); OB-49 legal confirmation before real erasures |
+| M17 | Loyalty, membership and gift value | E2E_VERIFIED | PF-01, PF-09 | B3 | `staff/device acceptance` | nothing in software (PF-01, PF-09 verified); SP-10; SMS check R4 (OB-29) |
+| M18 | Order management and omnichannel | PARTIALLY_WIRED | FUL-02, FUL-03, FUL-05, FUL-07, FUL-14 | B3 | `pending software` | code: M18-FR-03 routing a live order across locations (foundation only); FUL-02/03/05/07/14 verified |
+| M19 | Picking, packing and delivery | PARTIALLY_WIRED | FUL-04, FUL-05, FUL-14 | B3 | `pending software` | code: SLA-breach alert enqueue to M31 for substitution exceptions; owner: queue staffing table; FUL-04/05/14 verified |
+| M20 | Customer mobile app and web commerce | PARTIALLY_WIRED | FUL-02, FUL-03, FUL-05, FUL-06, FUL-07, FUL-12 | B3 | `pending software` | code: lists/favourites/voice search, return and complaint from the app, Tamil across the app, ratings/account controls (M20-FR-04 rest); external: live payment provider |
+| M21 | CRM, marketing and service desk | INTEGRATION_TESTED | PF-10, PF-11 | B4 | `pending software` | code: service-desk screen (no app calls /v1/service) and root-cause step; PF-10, PF-11 verified; external: SMS/WhatsApp (R4) |
+| M22 | B2B and institutional sales | WIRED | FUL-09 | B4 | `pending software` | RAISE: FUL-09 B2B vertical slice verified on PostgreSQL (reserve→dispatch→invoice→AR→collection); remaining evidence: the B2B portal browser test runs against a stub, not the real API (EA-10 r7 proposes INTEGRATION_TESTED once the ledger cites it) |
+| M23 | Finance, tax and accounting bridge | PARTIALLY_WIRED | PF-06, PF-12 | B3 | `pending software` | code: period P&L from the books, count-variance posting, stock/AP/AR control reconciliation in the close, budgets and fixed assets (D10-FR-05); external: GST/IRP credentials, CA posting map, Tally licence |
+| M24 | Supplier and external partner portals | E2E_VERIFIED | SF-09 | B2 | `external dependency` | nothing in software (SF-09 verified); partner API/EDI proof needs a real partner |
+| M25 | Workforce, tasks and SOP | E2E_VERIFIED | PA-01, PA-02, PA-06 | B4 | `staff/device acceptance` | nothing in software from the audit; SP-10 |
+| M26 | Facilities, assets and utilities | E2E_VERIFIED | PA-03, PA-07 | B4 | `staff/device acceptance` | nothing in software from the audit; IoT sensor feed is hardware; SP-10 |
+| M27 | Concession and shop-in-shop | WIRED | PF-13 | B3 | `pending software` | evidence: hardening review to INTEGRATION_TESTED (PF-13 verified with a served-till browser test) |
+| M28 | Waste, disposal and sustainability | E2E_VERIFIED | SF-05 | B2 | `staff/device acceptance` | nothing in software; SP-10 |
+| M29 | Owner command centre and BI | WIRED | EA-01, EA-02, EA-03, EA-04, EA-05, EA-06, EA-07 | B4 | `pending software` | code: producers for 16 of 28 catalogue reports (only 12 PRODUCED_AT_HEAD_OFFICE in services/api/src/report-producers.ts); EA-01..07 verified; external: phone transport for the brief (OB-47) |
+| M30 | Import, export and data quality | INTEGRATION_TESTED | EA-04, SF-06, SF-10, SF-12 | B4 | `pending software` | code: Undo button on the import screen and existing-product edits by file (SF-06 residual); SF-10, EA-04 verified |
+| M31 | Document, notification and communications | WIRED | PA-03, PA-08, PA-09 | B4 | `pending software` | code: PA-08 round 7 — a replayed signed failure report counts twice; receipts not bound to the provider |
+| M32 | Integration and developer platform | E2E_VERIFIED | PA-08 | B1 | `pending software` | code: PA-08 round 7 (as M31) |
+| M33 | Platform administration and support | E2E_VERIFIED | PA-06, PA-10, PA-06-r1 | B1 | `staff/device acceptance` | nothing in software (PA-06, PA-06-r1, PA-10 verified); real-Keycloak suite by hand (OB-15-a); SP-10 |
+| M34 | Audit, risk and compliance evidence | E2E_VERIFIED | PA-11 | B1 | `verified complete` | nothing (PA-11 verified) |
+| M35 | Backup, disaster recovery and observability | PARTIALLY_WIRED | GT-07, PA-12 | B4 | `pending software` | code: PA-12 round 7 (only the backup job may post a backup outcome); edge signal collection and a persisted drill register; external: off-site storage, custodians, spare machine |
+| M36 | Commercialization and multi-tenant readiness | PARTIALLY_WIRED | PA-13 | B1 | `approved deferral` | R8 scope (OA-12, PA-13): billing, metering, closure, SDK |
+| D01 | Product and catalogue | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | code: D01-FR-06 product content/images/synonyms authoring pipeline from the product master to the app (not started); evidence: none beyond the code gap; owner: none; physical/provider: none |
+| D02 | Merchandise planning | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | code: D02-FR-01 open-to-buy and category budgets; D02-FR-02 seasonal assortment by store cluster; D02-FR-04 private-label/range-gap read; evidence: none beyond the code gap; owner: none; physical/provider: none |
+| D03 | Supplier and buying | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | code: D03-FR-02 OCR / supplier e-invoice ingestion into the three-way match; D03-FR-01 purchase budget check at PO; D03-FR-04 VMI/consignment ownership at purchasing (concession ownership exists on the ledger, not a supplier VMI flow); evidence: none beyond the code gaps; owner: none; physical/provider: supplier e-invoice (IRP) feed |
+| D04 | POS and cash | PARTIALLY_WIRED | EA-02, EA-10, PF-06 | B3 | `pending software` | code: D04-FR-05 mobile POS / customer display / peripheral health; D04-FR-06 self-checkout, scan-and-go and kiosk screens over the existing decision routes; a pending card/UPI answer holding the day close (edge closeDay checks shifts, exceptions and unsent items, not unresolved payment attempts); evidence: SP-10 cashier and manager runs; owner: none; physical/provider: scanner, printer, drawer, payment terminal on real hardware; live acquirer/UPI |
+| D05 | Inventory and quality | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | code: D05-FR-05 count-variance posting to the books; D05-FR-03 online safety-stock / reservation buffer at order promise; evidence: SP-10 counts on the phone; owner: none (batch-precise till block is an approved deferral to R3, OB-25); physical/provider: cold-room sensors (IoT) |
+| D06 | Pricing and promotions | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | code: D06-FR-05 competitor price capture; evidence: markdown ladder applied on the served till; owner: none; physical/provider: electronic shelf labels (FR-06) |
+| D07 | Customer and loyalty | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | code: coupon/referral redemption at the till (D07-FR-04); service-desk screen (D07-FR-06); evidence: SP-10; owner: legal/CA confirmation before erasure of real data (OB-49); physical/provider: SMS/WhatsApp provider (R4, OB-29) |
+| D08 | Customer app/web | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | code: D08-FR-02 voice search, lists, favourites; D08-FR-05 return and complaint from the app; D08-FR-06 Tamil across the app; evidence: low-spec Android phone measurement; owner: none; physical/provider: live payment provider; app-store distribution |
+| D09 | OMS and delivery | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | code: D09-FR-01 branch/capacity-aware routing of an order across locations; D09-FR-06 partner/fleet settlement and contribution stop rule at head office; evidence: SP-10 picker and driver runs; owner: none; physical/provider: courier/maps provider |
+| D10 | Finance and tax | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | code: D10-FR-05 budgets and fixed-asset register; D10-FR-03 count-variance posting; evidence: SP-10 with the accountant; owner: chart of accounts / posting map confirmed by the CA; physical/provider: live bank/acquirer files, GST portal, IRP e-invoice, Tally licence |
+| D11 | Store and workforce | PARTIALLY_WIRED | EA-10 | B4 | `pending software` | code: D11-FR-04 training and competency records; D11-FR-06 staff injury and lost-and-found records; evidence: SP-10; owner: none; physical/provider: biometric attendance device |
+| D12 | Platform/admin | PARTIALLY_WIRED | EA-10 | B1 | `pending software` | code: none outside the deferral; evidence: the real-Keycloak suite still runs by hand (OB-15-a); owner: branch protection ticks on main (administrator action); physical/provider: none |
+| D13 | Reporting/owner | PARTIALLY_WIRED | EA-01, EA-02, EA-03, EA-04, EA-05, EA-06, EA-07, EA-10 | B4 | `pending software` | code: producers for the 16 unproduced catalogue reports (D13-FR-01..06 coverage); evidence: the brief on a real phone for three days; owner: none; physical/provider: phone transport (OB-47: brief waits for a provider) |
+| D14 | Hardware/integration | PARTIALLY_WIRED | EA-10 | B1 | `pending software` | code: gateway/webhook remainders; the connector SDK is part of the R8 deferral (PA-13); evidence: none further in software; owner: none; physical/provider: scanner/printer/scale/drawer/display, handheld, payment terminal, ESL/RFID/CCTV/IoT, Tally/GST/WhatsApp/maps partners |
+| A01 | Owner Intelligence | PARTIALLY_WIRED | EA-07, EA-08 | B4 | `external dependency` | RAISE: EA-07 (brief worker in the served API) and EA-08 (server-read evidence, cost admission, kill switch) verified on PostgreSQL; remaining: live model provider and phone transport (OB-47); no browser proof of an owner-intelligence screen in this pass (EA-10 r7 proposes INTEGRATION_TESTED once the ledger cites it) |
+| A02 | Purchase | PARTIALLY_WIRED | EA-08 | B4 | `external dependency` | RAISE: EA-08 verified the remaining legs on real domain readers; remaining: live model provider; no browser proof in this pass (EA-10 r7 proposes INTEGRATION_TESTED once the ledger cites it) |
+| A03 | Inventory | WIRED | — | B4 | `pending software` | code: transfer-suggestion leg (multi-location stock reader) |
+| A04 | Customer Shopping | PARTIALLY_WIRED | EA-08 | B4 | `external dependency` | RAISE: EA-08 verified (in-stock alternatives from real readers); remaining: live model provider (EA-10 r7 proposes INTEGRATION_TESTED once the ledger cites it) |
+| A05 | Service | WIRED | — | B4 | `pending software` | code: draft case-response content leg and the agent screen |
+| A06 | Operations | E2E_VERIFIED | EA-09 | B4 | `staff/device acceptance` | nothing in software (EA-09 verified, connected production-API browser test); SP-10 |
+| A07 | Security/Fraud | WIRED | — | B4 | `pending software` | code: summarise-anomalies leg and the security-officer screen |
+| A08 | Data Quality | E2E_VERIFIED | EA-09 | B4 | `staff/device acceptance` | nothing in software (EA-09 verified); SP-10 |
+| A09 | Marketing | WIRED | — | B4 | `pending software` | code: draft campaign/offer content legs and the approver screen |
+| A10 | Workforce/SOP | E2E_VERIFIED | EA-09 | B4 | `staff/device acceptance` | nothing in software (EA-09 verified); SP-10 |
+| WF-01 | Product onboarding | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | code: D01-FR-06 content/images step; evidence: onboarding → till in one PostgreSQL run; owner: none; physical/provider: none |
+| WF-02 | Supplier onboarding | INTEGRATION_TESTED | EA-10 | B2 | `pending software` | code: none named; evidence: one onboarding run application → documents → bank → approval on PostgreSQL; browser proof of the documents and bank steps; owner: none; physical/provider: supplier bank-verification provider (if adopted) |
+| WF-03 | Purchase planning | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | code: purchase budget / open-to-buy check (D02-FR-01, D03-FR-01); evidence: plan → PO in one run; owner: reorder policy values; physical/provider: model provider for the A02 drafting leg (EA-08 governance verified) |
+| WF-04 | Receiving | E2E_VERIFIED | EA-10 | B2 | `staff/device acceptance` | code: none (M07 nothing in software); evidence: SP-10 receiving run at the back door (SF-12); owner: none; physical/provider: scale/label printer at receiving |
+| WF-05 | Supplier invoice | INTEGRATION_TESTED | EA-10 | B2 | `pending software` | code: OCR / supplier e-invoice capture (D03-FR-02); evidence: SP-10 with the accountant; owner: posting map confirmed by the CA; physical/provider: supplier e-invoice (IRP) feed; Tally licence |
+| WF-06 | Replenishment | E2E_VERIFIED | EA-10 | B2 | `staff/device acceptance` | code: none named; evidence: SP-10 back-store and floor run; owner: none; physical/provider: none |
+| WF-07 | Stock transfer | INTEGRATION_TESTED | EA-10 | B2 | `pending software` | code: none named; evidence: browser proof of transfer dispatch and receipt; the store-to-store path in one PostgreSQL run; owner: none; physical/provider: none |
+| WF-08 | Stock count | PARTIALLY_WIRED | EA-10 | B2 | `pending software` | code: count plan and freeze rules; count-variance posting to the books (M23); evidence: SP-10 count on the phone; owner: none; physical/provider: none |
+| WF-09 | Expiry/recall | INTEGRATION_TESTED | EA-10 | B2 | `pending software` | code: none (batch-precise till block is the approved R3 deferral, OB-25); evidence: recall lifecycle on PostgreSQL; owner: none; physical/provider: none |
+| WF-10 | POS sale | E2E_VERIFIED | EA-10 | B3 | `staff/device acceptance` | code: none for the sale path; evidence: SP-10 cashier run on the real lane; owner: none; physical/provider: real scanner/printer/drawer; live acquirer/UPI for card tenders |
+| WF-11 | POS return | INTEGRATION_TESTED | EA-10 | B3 | `pending software` | code: a person's decision on a held returned unit (PF-14 residual); evidence: SP-10; owner: none; physical/provider: card/UPI refund reversal on the live acquirer (EX-03) |
+| WF-12 | Day close | INTEGRATION_TESTED | EA-10 | B3 | `pending software` | code: unresolved card/UPI attempts hold the day close and reach head office; evidence: SP-10 real day close; owner: none; physical/provider: bank deposit evidence; live acquirer settlement file |
+| WF-13 | Customer order | E2E_VERIFIED | EA-10 | B3 | `staff/device acceptance` | code: none named; evidence: low-spec phone run (SP-10); owner: none; physical/provider: live payment provider |
+| WF-14 | Fulfilment | E2E_VERIFIED | EA-10 | B3 | `staff/device acceptance` | code: none named; evidence: SP-10 picker run; owner: none; physical/provider: none |
+| WF-15 | Delivery | INTEGRATION_TESTED | EA-10 | B3 | `pending software` | code: none named; evidence: customer tracking read of a delivery in progress; owner: none; physical/provider: courier/maps provider |
+| WF-16 | Online cancellation/return | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | code: online return after delivery: collect, receive back, disposition, linked refund and customer notice; evidence: cancel-and-refund from the app in a browser; owner: none; physical/provider: live refund on the provider |
+| WF-17 | Customer service | PARTIALLY_WIRED | EA-10 | B4 | `pending software` | code: service-desk screen; root-cause capture and feedback loop; evidence: browser proof once the screen exists; owner: none; physical/provider: SMS/WhatsApp provider (R4) |
+| WF-18 | Finance close | PARTIALLY_WIRED | EA-10 | B3 | `pending software` | code: period P&L from the books; stock, AP and AR control reconciliation joined to the period close; evidence: SP-10 with the accountant; owner: posting map confirmed by the CA; physical/provider: live bank/acquirer files, Tally licence, GST portal |
+| WF-19 | Migration/cutover | INTEGRATION_TESTED | EA-10 | B4 | `pending software` | code: GT-02 rollback rehearsal exercises stock against sales; GT-05 OB-52 reversal window and reversal items derived from the load; evidence: a full rehearsal on a copy of the real legacy data; owner: cutover date and sign-off; physical/provider: lawful access to the legacy system for the extract |
+| WF-20 | Release/incident | PARTIALLY_WIRED | EA-10 | B1 | `pending software` | code: PA-12 backup_job-only outcome; canary stage; incident and post-mortem record; evidence: a timed restore on a production-like host; owner: RPO/RTO sign-off; off-site destination and custodians; physical/provider: off-site backup target; spare store machine |
+| QG-01 | Requirements | PARTIALLY_WIRED | GT-09 | B4 | `external dependency` | nothing in software; owner signs the gate at pilot |
+| QG-02 | UX | PARTIALLY_WIRED | GT-01, GT-08 | B4 | `staff/device acceptance` | nothing in software; cashier training/performance targets in SP-10 |
+| QG-03 | Code | PARTIALLY_WIRED | GT-01, GT-08, GT-09, GT-10 | B1 | `external dependency` | nothing in software; admin action: branch-protection ticks (GT-01) |
+| QG-04 | Offline | INTEGRATION_TESTED | GT-01, GT-10 | B1 | `staff/device acceptance` | nothing in software; offline sale on the real store PC and devices |
+| QG-05 | Performance | PARTIALLY_WIRED | GT-01 | B1 | `external dependency` | scan-to-line p95 on certified pilot hardware |
+| QG-06 | Security | PARTIALLY_WIRED | — | B1 | `external dependency` | independent penetration test |
+| QG-07 | Data | PARTIALLY_WIRED | GT-03, GT-04, GT-05 | B4 | `pending software` | code: GT-05 round 7 (OB-52 window; reversal items from the load); then signed totals on real data |
+| QG-08 | Recovery | PARTIALLY_WIRED | GT-02, GT-07 | B4 | `pending software` | code: GT-02 and PA-12 round 7; then DR rehearsal on a spare machine |
+| QG-09 | Adoption | PARTIALLY_WIRED | — | B4 | `staff/device acceptance` | nothing in software; role competency and SOP acknowledgements |
+| QG-10 | Production | PARTIALLY_WIRED | — | B1 | `external dependency` | production environment and domain (owner) |
+| QG-11 | AI | PARTIALLY_WIRED | EA-09 | B4 | `external dependency` | nothing in software (EA-08, EA-09 verified); model accuracy evaluations need the live model |
+| QG-12 | Owner | PARTIALLY_WIRED | GT-02, GT-03 | B4 | `pending software` | code: GT-02 round 7 (rollback rehearsal must exercise stock against sales) |
+| MG-01 | Discovery | INTEGRATION_TESTED | — | B4 | `external dependency` | nothing in software; lawful access to legacy data |
+| MG-02 | Preservation | INTEGRATION_TESTED | GT-07 | B4 | `external dependency` | nothing in software (GT-07 verified); a verified backup of the real legacy source |
+| MG-03 | Mapping | INTEGRATION_TESTED | GT-06 | B4 | `external dependency` | nothing in software (GT-06 verified); owner approves mappings on real legacy data |
+| MG-04 | Cleaning | E2E_VERIFIED | GT-08 | B4 | `external dependency` | nothing in software; cleaning on legacy data, witnesses |
+| MG-05 | Trial loads | INTEGRATION_TESTED | GT-05, GT-06 | B4 | `pending software` | code: GT-05 round 7 |
+| MG-06 | Reconciliation | E2E_VERIFIED | GT-03, GT-08 | B4 | `external dependency` | nothing in software (GT-03 verified); reconciliation on real data |
+| MG-07 | History | INTEGRATION_TESTED | GT-05 | B4 | `pending software` | code: GT-05 round 7; OB-45 large scans stay in the old archive (no build) |
+| MG-08 | Opening state | INTEGRATION_TESTED | GT-05 | B4 | `pending software` | code: GT-05 round 7 (OB-52) |
+| MG-09 | Delta | INTEGRATION_TESTED | GT-04 | B4 | `external dependency` | nothing in software (GT-04 verified); delta on real data |
+| MG-10 | Parallel run | INTEGRATION_TESTED | GT-03 | B4 | `external dependency` | nothing in software (GT-03 verified); parallel run against the live legacy system |
+| MG-11 | Cutover | E2E_VERIFIED | GT-02, GT-03 | B4 | `pending software` | code: GT-02 round 7 |
+| MG-12 | Archive/retire | INTEGRATION_TESTED | — | B4 | `external dependency` | nothing in software; retirement after accepted cutover and retention |
 
 ## C. Batches and shared contracts
 
@@ -248,8 +248,8 @@ batch reviews); it never edits the contract in its own slice.
 | B1 | 13 | 3 | 1 | 0 | 0 | 17 |
 | B2 | 16 | 1 | 0 | 0 | 1 | 18 |
 | B3 | 19 | 0 | 0 | 0 | 0 | 19 |
-| B4 | 19 | 1 | 0 | 0 | 0 | 20 |
-| Total | 67 | 5 | 1 | 0 | 1 | 74 |
+| B4 | 20 | 0 | 0 | 0 | 0 | 20 |
+| Total | 68 | 4 | 1 | 0 | 1 | 74 |
 
 **Table A — residual sub-items (counted separately)**
 
@@ -265,11 +265,11 @@ batch reviews); it never edits the contract in its own slice.
 
 | Batch | verified complete | pending software | approved deferral | external dependency | staff/device acceptance | Total |
 |---|---|---|---|---|---|---|
-| B1 | 1 | 7 | 1 | 4 | 1 | 14 |
-| B2 | 0 | 20 | 0 | 0 | 3 | 23 |
-| B3 | 0 | 24 | 0 | 1 | 0 | 25 |
-| B4 | 0 | 34 | 0 | 4 | 4 | 42 |
-| Total | 1 | 85 | 1 | 9 | 8 | 104 |
+| B1 | 1 | 6 | 1 | 4 | 2 | 14 |
+| B2 | 0 | 13 | 0 | 1 | 9 | 23 |
+| B3 | 0 | 18 | 0 | 0 | 7 | 25 |
+| B4 | 0 | 22 | 0 | 13 | 7 | 42 |
+| Total | 1 | 59 | 1 | 18 | 25 | 104 |
 
 Check: Table A has 74 finding rows (74 distinct IDs, matching the TSV) plus 2 sub-items; Table B has 104 rows (104
 distinct IDs, matching `docs/completion-status.json`); 74 + 104 = 178 rows, each with exactly one primary batch and one
