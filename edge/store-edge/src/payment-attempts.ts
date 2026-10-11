@@ -196,11 +196,13 @@ export class PaymentAttempts {
   }
 
   /** Settle a no-answer against the PROVIDER'S record — never by hand. Unknown stays unknown, and says so. */
-  recover(input: { readonly laneId: string; readonly attemptId: unknown }): Promise<AttemptAnswer> {
+  recover(input: { readonly laneId: string; readonly attemptId: unknown; readonly allowAsked?: boolean }): Promise<AttemptAnswer> {
     return this.serial(async () => {
       const a = isStr(input.attemptId) ? this.attempts.get(input.attemptId) : undefined;
       if (a === undefined || a.laneId !== input.laneId) return { ok: false, refusedBecause: 'attempt_unknown', laneMessage: 'This store computer has no record of that payment.' };
-      if (a.state !== 'no_answer') return { ok: true, attempt: a, laneMessage: `This payment is already ${a.state.replace(/_/g, ' ')}.` };
+      // OB-55: a payment carried forward at the day close while still `asked` (no answer was ever recorded) is settled by
+      // the provider's record too — the box allows it only for a carried payment (`allowAsked`), never by hand.
+      if (a.state !== 'no_answer' && !(input.allowAsked === true && a.state === 'asked')) return { ok: true, attempt: a, laneMessage: `This payment is already ${a.state.replace(/_/g, ' ')}.` };
       if (this.deps.provider === undefined) return { ok: false, refusedBecause: 'no_provider_connected', laneMessage: NO_PROVIDER, attempt: a };
       let evidence: Awaited<ReturnType<PaymentProviderPort['lookup']>>;
       try {
@@ -284,6 +286,11 @@ export class PaymentAttempts {
    */
   pending(): readonly Attempt[] {
     return [...this.attempts.values()].filter((a) => a.state === 'asked' || a.state === 'no_answer');
+  }
+
+  /** One attempt as this box holds it (OB-55: the late-answer guard reads when it was asked). */
+  get(attemptId: unknown): Attempt | undefined {
+    return isStr(attemptId) ? this.attempts.get(attemptId) : undefined;
   }
 
   /** The unresolved attempt on this bill, if any — the till asks before it offers the machine again. */

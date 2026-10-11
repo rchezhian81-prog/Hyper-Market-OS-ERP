@@ -83,6 +83,11 @@ const WORDS = {
     alreadyCounted: 'That count is already saved on this screen. To count the item again, enter a new count.',
     checkOpen: 'Check what is still open', closeNow: 'Close the day now',
     closePin: 'Your till PIN — you key it yourself',
+    carryLead: 'Only card or UPI payments are open. The day can close with them sent to head office by name — a second person must approve with their own PIN. Finance settles each one when the provider answers.',
+    carryApprover: 'Second person\'s staff ID', carryPin: 'Their till PIN — they key it themselves', carryReason: 'Why',
+    carryProvider: 'The card or UPI provider is not answering', carryMachine: 'The card machine is faulty',
+    carryNow: 'Close with these sent to head office', carryNeeds: 'Key your own PIN above, and the second person\'s staff ID and their own PIN.',
+    carried: 'The day is closed and locked. These payments are on head office\'s list until the provider answers',
     closedNote: 'A closed day is locked. Anything found afterwards is a correction, not a change.',
     dayClosed: 'The day is closed and locked.', stillOpen: 'The day cannot close yet',
     andMore: 'and more', whatToDo: 'What to do',
@@ -133,6 +138,11 @@ const WORDS = {
     checkOpen: 'இன்னும் என்ன மீதம் உள்ளது என்று பார்', closeNow: 'இப்போது நாளை முடி',
     closedNote: 'முடிக்கப்பட்ட நாள் பூட்டப்படும். பின்னர் கண்டறியப்படுவது திருத்தமே, மாற்றம் அல்ல.',
     closePin: 'உங்கள் கடை PIN — நீங்களே உள்ளிட வேண்டும்',
+    carryLead: 'கார்டு அல்லது UPI கட்டணங்கள் மட்டுமே திறந்துள்ளன. அவற்றைப் பெயருடன் தலைமை அலுவலகத்துக்கு அனுப்பி நாளை முடிக்கலாம் — இரண்டாவது நபர் தன் சொந்த PIN மூலம் ஒப்புதல் தர வேண்டும். வழங்குநர் பதில் தரும்போது நிதித் துறை ஒவ்வொன்றையும் முடிக்கும்.',
+    carryApprover: 'இரண்டாவது நபரின் பணியாளர் எண்', carryPin: 'அவர்களின் கடை PIN — அவர்களே உள்ளிட வேண்டும்', carryReason: 'காரணம்',
+    carryProvider: 'கார்டு அல்லது UPI வழங்குநர் பதில் தரவில்லை', carryMachine: 'கார்டு இயந்திரம் பழுதாக உள்ளது',
+    carryNow: 'இவற்றைத் தலைமை அலுவலகத்துக்கு அனுப்பி நாளை முடி', carryNeeds: 'மேலே உங்கள் சொந்த PIN, இரண்டாவது நபரின் பணியாளர் எண் மற்றும் அவரின் சொந்த PIN ஆகியவற்றை உள்ளிடவும்.',
+    carried: 'நாள் முடிக்கப்பட்டு பூட்டப்பட்டது. வழங்குநர் பதில் தரும் வரை இந்தக் கட்டணங்கள் தலைமை அலுவலகப் பட்டியலில் இருக்கும்',
     dayClosed: 'நாள் முடிக்கப்பட்டு பூட்டப்பட்டது.', stillOpen: 'நாளை இன்னும் முடிக்க முடியாது',
     andMore: 'மேலும்', whatToDo: 'என்ன செய்ய வேண்டும்',
     sampleData: 'மாதிரித் தகவல் — இது உங்கள் கடை அல்ல.',
@@ -951,6 +961,15 @@ function resetClose() {
   el('blockers').replaceChildren();
   el('do-close').hidden = true;
   el('close-pin-row').hidden = true;
+  el('carry-row').hidden = true;
+}
+
+/**
+ * OB-55: the day may close with pending card/UPI payments carried to head office ONLY when those payments are the sole
+ * thing open, and only through the store computer (which checks both people's PINs). Anything else open: the old list.
+ */
+function onlyPaymentsOpen(blockers) {
+  return blockers.length > 0 && blockers.every((b) => b.kind === 'payments_pending') && session.canCloseViaBox;
 }
 
 /** How many items of a blocker's list are shown before it says "and N more". */
@@ -1017,8 +1036,38 @@ el('check-close').addEventListener('click', () => {
   // that decides that, not this screen's opinion of it.
   el('do-close').hidden = blockers.length > 0;
   // Round 4: the close goes to the store computer as the manager's own act — their till PIN, keyed here.
-  el('close-pin-row').hidden = blockers.length > 0 || !session.canCloseViaBox;
-  if (blockers.length > 0) tell(t('stillOpen'), t('closedNote'));
+  el('close-pin-row').hidden = (blockers.length > 0 && !onlyPaymentsOpen(blockers)) || !session.canCloseViaBox;
+  // OB-55: only card/UPI payments open — offer the close with them carried to head office, on a second person's PIN.
+  el('carry-row').hidden = !onlyPaymentsOpen(blockers);
+  if (blockers.length > 0) tell(t('stillOpen'), onlyPaymentsOpen(blockers) ? t('carryLead') : t('closedNote'));
+});
+
+el('do-carry').addEventListener('click', () => {
+  void (async () => {
+    const closerPin = el('close-pin').value;
+    const approvedBy = el('carry-approver').value.trim();
+    const approverPin = el('carry-pin').value;
+    // The PINs never stay on the screen, whatever happens next.
+    el('close-pin').value = '';
+    el('carry-pin').value = '';
+    if (closerPin === '' || approvedBy === '' || approverPin === '') { tell(t('stillOpen'), t('carryNeeds')); return; }
+    const stamp = Date.now().toString(36);
+    const outcome = await session.closeViaBox({
+      dayCloseId: `dc-${stamp}`, closedAtLocal: localStamp(), closedAt: new Date().toISOString(), closerPin,
+      carryForward: { approvedBy, approverPin, reason: el('carry-reason').value },
+    });
+    if (outcome.closed) {
+      const named = session.blockersForClose(localStamp()).flatMap((b) => b.items.map((i) => i.what));
+      tell(t('dayClosed'), `${t('carried')}${named.length > 0 ? `: ${named.join('; ')}` : '.'}`, true);
+      el('blockers').replaceChildren();
+      el('carry-row').hidden = true;
+      el('close-pin-row').hidden = true;
+      el('do-close').hidden = true;
+      return;
+    }
+    // The store computer refused — its own reason, never a bare "no". Nothing was locked.
+    tell(t('stillOpen'), outcome.reason || t('closedNote'));
+  })();
 });
 
 el('do-close').addEventListener('click', () => {
@@ -1102,6 +1151,13 @@ function paintChrome() {
   el('do-close').textContent = t('closeNow');
   el('close-pin-label').textContent = t('closePin');
   el('close-pin').setAttribute('aria-label', t('closePin'));
+  el('carry-lead').textContent = t('carryLead');
+  el('carry-approver-label').textContent = t('carryApprover');
+  el('carry-pin-label').textContent = t('carryPin');
+  el('carry-reason-label').textContent = t('carryReason');
+  el('carry-reason-provider').textContent = t('carryProvider');
+  el('carry-reason-machine').textContent = t('carryMachine');
+  el('do-carry').textContent = t('carryNow');
   el('sample').textContent = t('sampleData');
 }
 

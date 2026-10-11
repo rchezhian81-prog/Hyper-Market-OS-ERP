@@ -81,7 +81,7 @@ import {
 import type { Batch } from '../../../packages/fefo/src/index';
 import {
   createFinanceSession, periodCloseRequestBody, periodReopenRequestBody,
-  type FinancePorts, type FinanceSession, type MonthActionResult,
+  type FinancePorts, type FinanceSession, type MonthActionResult, type FinancePlan,
 } from './finance-session';
 import {
   createGstReconciliationSession, type GstReconciliationPorts, type GstReconciliationSession, type QueueRow as GstQueueRow,
@@ -590,6 +590,7 @@ export interface FinanceData {
 export interface FinanceHeadOfficePorts extends HeadOfficeApprovalPorts {
   readonly closeAtHeadOffice: NonNullable<FinancePorts['closeAtHeadOffice']>;
   readonly reopenAtHeadOffice: NonNullable<FinancePorts['reopenAtHeadOffice']>;
+  readonly readPlan?: NonNullable<FinancePorts['readPlan']>;
 }
 
 export function financePortsFromData(data: FinanceData | undefined, headOffice?: FinanceHeadOfficePorts): FinancePorts {
@@ -608,6 +609,7 @@ export function financePortsFromData(data: FinanceData | undefined, headOffice?:
       approvalInbox: headOffice.approvalInbox,
       closeAtHeadOffice: headOffice.closeAtHeadOffice,
       reopenAtHeadOffice: headOffice.reopenAtHeadOffice,
+      ...(headOffice.readPlan === undefined ? {} : { readPlan: headOffice.readPlan }),
     }),
   };
 }
@@ -3431,6 +3433,21 @@ export const FINANCE_HEAD_OFFICE: FinanceHeadOfficePorts = Object.freeze({
     `/v1/finance/periods/${encodeURIComponent(period)}/reopen`, periodReopenRequestBody(reason, approvalId),
     globalThis.crypto?.randomUUID?.() ?? `period-reopen-${period}-${approvalId}`,
   ),
+  // OB-57: two reads in the person's own session; anything but a 2xx is "not known", never an empty budget.
+  readPlan: async (period: string): Promise<FinancePlan | undefined> => {
+    const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+    if (fetchFn === undefined) return undefined;
+    const read = async (path: string): Promise<unknown> => {
+      const res = await fetchFn(path, { headers: { accept: 'application/json' }, credentials: 'same-origin' });
+      return res.status >= 200 && res.status < 300 ? res.json() : undefined;
+    };
+    try {
+      const [budget, register] = await Promise.all([read(`/v1/finance/budgets/${encodeURIComponent(period)}`), read('/v1/finance/fixed-assets')]);
+      return budget === undefined || register === undefined ? undefined : { budget, register } as FinancePlan;
+    } catch {
+      return undefined;
+    }
+  },
 });
 
 /** Record a checker's decision (POST /v1/approvals/requests/:requestId/decide) in the caller's own session. */
@@ -4832,7 +4849,7 @@ export function openDayClosePort(
   laneWriteBase: string | undefined,
 ): ManagerPorts['requestDayClose'] {
   if (laneWriteBase === undefined) return undefined;
-  return async ({ dayCloseId, closedBy, closerPin }): Promise<BoxCloseOutcome> => {
+  return async ({ dayCloseId, closedBy, closerPin, carryForward }): Promise<BoxCloseOutcome> => {
     const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
     if (fetchFn === undefined) {
       return { closed: false, reason: 'this screen cannot reach the store computer from here — the day is not closed' };
@@ -4842,7 +4859,7 @@ export function openDayClosePort(
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json' },
         // The PIN goes to the store computer's PIN register and nowhere else (round 4 · ADR-0020).
-        body: JSON.stringify({ dayCloseId, closedBy, ...(closerPin === undefined ? {} : { closerPin }) }),
+        body: JSON.stringify({ dayCloseId, closedBy, ...(closerPin === undefined ? {} : { closerPin }), ...(carryForward === undefined ? {} : { carryForward }) }),
       });
       const body = (await res.json().catch(() => ({}))) as { closed?: boolean; tradingDay?: string; reason?: string };
       if (res.status >= 200 && res.status < 300 && body.closed === true && typeof body.tradingDay === 'string') {

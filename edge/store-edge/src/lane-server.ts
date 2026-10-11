@@ -218,7 +218,7 @@ export type LaneTillActivityHandler = (input: {
 /** The payment-attempt register this socket asks (`PaymentAttempts`). */
 export interface LanePaymentAttemptsPort {
   ask(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly billRef: unknown; readonly kind: unknown; readonly amountMinor: unknown }): Promise<AttemptAnswer>;
-  answer(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown }): Promise<AttemptAnswer>;
+  answer(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown; readonly approvalId?: string }): Promise<AttemptAnswer>;
   recover(input: { readonly laneId: string; readonly attemptId: unknown }): Promise<AttemptAnswer>;
   checkTenders(input: { readonly laneId: string; readonly saleId: string; readonly tenders: unknown }): TenderCheck;
   status(laneId: string): { readonly unresolved: readonly Attempt[]; readonly paidWithoutSale: readonly Attempt[]; readonly owedToCustomers: readonly Attempt[] };
@@ -276,9 +276,11 @@ export type LaneDayCloseHandler = (
     readonly closerPin?: string;
     /** The person this box already verified for the request (their till session or the hosted sign-in). */
     readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+    /** OB-55: close with the named pending card/UPI payments carried forward — a second person's staff ID and own till PIN. */
+    readonly carryForward?: { readonly attemptIds: readonly string[]; readonly approvedBy: string; readonly approverPin: string; readonly reason: string };
   },
 ) => Promise<
-  | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
+  | { readonly closed: true; readonly tradingDay: string; readonly locked: true; readonly carriedForward?: readonly string[]; readonly unresolvedMinor?: { readonly card: number; readonly upi: number } }
   | { readonly closed: false; readonly reason: string }
 >;
 
@@ -777,7 +779,7 @@ export function startLaneServer(input: {
           const out = pathname === LANE_PAYMENTS_ROUTE
             ? await payments.ask({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], billRef: b['billRef'], kind: b['kind'], amountMinor: b['amountMinor'] })
             : pathname === LANE_PAYMENTS_ANSWER_ROUTE
-              ? await payments.answer({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], outcome: b['outcome'] })
+              ? await payments.answer({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], outcome: b['outcome'], ...(typeof b['approvalId'] === 'string' ? { approvalId: b['approvalId'] } : {}) })
               : await payments.recover({ laneId: ops.laneId, attemptId: b['attemptId'] });
           send(res, 200, out, { ...cors, 'cache-control': 'no-store' });
         } catch (e) {
@@ -1041,10 +1043,19 @@ export function startLaneServer(input: {
             // never logged or echoed) or the session this box verified for the request. A typed name alone closes nothing.
             const verifiedPerson = verifiedPersonOf(req);
             const closerPin = typeof b['closerPin'] === 'string' && b['closerPin'] !== '' ? (b['closerPin'] as string) : undefined;
+            // OB-55: a carry-forward names each pending payment and the second person (their PIN goes to the register only).
+            const cfb = b['carryForward'] !== null && typeof b['carryForward'] === 'object' ? (b['carryForward'] as Record<string, unknown>) : undefined;
+            const carryForward = cfb === undefined ? undefined : {
+              attemptIds: Array.isArray(cfb['attemptIds']) ? (cfb['attemptIds'] as unknown[]).filter((a): a is string => typeof a === 'string') : [],
+              approvedBy: typeof cfb['approvedBy'] === 'string' ? cfb['approvedBy'] : '',
+              approverPin: typeof cfb['approverPin'] === 'string' ? cfb['approverPin'] : '',
+              reason: typeof cfb['reason'] === 'string' ? cfb['reason'] : '',
+            };
             send(res, 200, await doClose({
               dayCloseId, closedBy,
               ...(verifiedPerson === undefined ? {} : { verifiedPerson }),
               ...(closerPin === undefined ? {} : { closerPin }),
+              ...(carryForward === undefined ? {} : { carryForward }),
             }), cors);
           } catch (e) {
             send(res, 200, { closed: false, reason: e instanceof Error ? e.message : String(e) }, cors);

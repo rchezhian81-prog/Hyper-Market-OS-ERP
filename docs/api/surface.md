@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 978 | 595 | 595 | 89 | 300 |
+| 13 | 991 | 604 | 604 | 89 | 300 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -659,6 +659,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/b2b/postings` | `finance.period.read` | `b2b` | — |
 | GET | `/v1/finance/bank-statements` | `settlement.review.read` | core | — |
 | POST | `/v1/finance/bank-statements` | `settlement.batch.import` | core | yes |
+| GET | `/v1/finance/budgets/:period` | `finance.period.read` | core | — |
+| PUT | `/v1/finance/budgets/:period` | `finance.posting.configure` | core | yes |
 | POST | `/v1/finance/credit-notes` | `finance.creditnote.issue` | core | yes |
 | GET | `/v1/finance/credit-notes/reconciliation` | `finance.creditnote.issue` | core | — |
 | GET | `/v1/finance/day-book/:tradingDay` | `finance.period.read` | core | — |
@@ -686,6 +688,11 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/finance/e-way-bill/register` | `finance.einvoice.read` | core | — |
 | POST | `/v1/finance/e-way-bill/sandbox/generate` | `finance.einvoice.generate` | core | yes |
 | POST | `/v1/finance/e-way-bill/validity` | `finance.einvoice.read` | core | yes |
+| GET | `/v1/finance/fixed-assets` | `finance.period.read` | core | — |
+| POST | `/v1/finance/fixed-assets/:assetId` | `finance.journal.post` | core | yes |
+| POST | `/v1/finance/fixed-assets/:assetId/dispose` | `finance.journal.post` | core | yes |
+| POST | `/v1/finance/fixed-assets/:assetId/transfer` | `finance.journal.post` | core | yes |
+| POST | `/v1/finance/fixed-assets/depreciation/:period` | `finance.journal.post` | core | yes |
 | POST | `/v1/finance/gst-portal/gate` | `finance.einvoice.read` | core | yes |
 | GET | `/v1/finance/gstr1/export` | `finance.gstr.read` | core | — |
 | POST | `/v1/finance/gstr1/from-sales/table-12` | `finance.gstr.read` | core | yes |
@@ -705,12 +712,18 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/finance/outward-supplies/:documentId` | `finance.gstr.generate` | core | yes |
 | GET | `/v1/finance/payables` | `finance.period.read` | core | — |
 | POST | `/v1/finance/payables/post` | `finance.journal.post` | core | yes |
+| GET | `/v1/finance/payment-exceptions` | `finance.period.read` | core | — |
+| POST | `/v1/finance/payment-exceptions/:attemptId/late-answer/synced` | `till.dayclose.sync` | core | yes |
+| POST | `/v1/finance/payment-exceptions/:attemptId/resolve` | `settlement.investigation.manage` | core | yes |
+| POST | `/v1/finance/payment-exceptions/:attemptId/resolved/synced` | `till.dayclose.sync` | core | yes |
 | GET | `/v1/finance/periods` | `finance.period.read` | core | — |
 | POST | `/v1/finance/periods/:period/close` | `finance.period.close` | core | yes |
 | POST | `/v1/finance/periods/:period/control-totals` | `finance.period.read` | core | yes |
 | POST | `/v1/finance/periods/:period/evidence-pack` | `finance.period.read` | core | yes |
 | GET | `/v1/finance/periods/:period/independent-evidence` | `finance.period.read` | core | — |
 | POST | `/v1/finance/periods/:period/reopen` | `finance.period.close` | core | yes |
+| POST | `/v1/finance/periods/:period/stock-adjustment` | `finance.journal.post` | core | yes |
+| GET | `/v1/finance/periods/:period/stock-valuation` | `finance.period.read` | core | — |
 | GET | `/v1/finance/posting-map` | `finance.period.read` | core | — |
 | PUT | `/v1/finance/posting-map` | `finance.posting.configure` | core | yes |
 | POST | `/v1/finance/refunds/day-totals` | `refund.exception.read` | core | yes |

@@ -138,6 +138,7 @@
     <nav id="tabs" aria-label="Sections">
       <button id="tab-totals" type="button" aria-current="page">The month</button>
       <button id="tab-queue" type="button">What the accounts have not taken</button>
+      <button id="tab-plan" type="button">Budget and assets</button>
     </nav>
 
     <main>
@@ -177,6 +178,17 @@
           <button id="reopen" class="danger wide" type="button">Reopen the month</button>
           <p class="request-status" id="reopen-request" hidden role="status"></p>
         </div>
+      </section>
+
+      <!-- OB-57 (D10-FR-05): the month's budget against the books, and the fixed-asset register — read here; set by
+           the owner or finance through head office (each budget change is a new version; the register is append-only). -->
+      <section id="view-plan" hidden>
+        <h2 id="plan-title">Budget and assets</h2>
+        <p class="lead" id="plan-lead">The month's budget beside what the books hold, and the shop's equipment with what it is still worth in the books.</p>
+        <h3 id="budget-title">Budget against the books</h3>
+        <div id="budget-list"></div>
+        <h3 id="assets-title">Fixed assets</h3>
+        <div id="assets-list"></div>
       </section>
 
       <section id="view-queue" hidden>

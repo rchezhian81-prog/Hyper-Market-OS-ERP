@@ -328,6 +328,9 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
     }, 'bank'), 'bank statement');
 
     // ════ THE INDEPENDENT RECONCILIATION — each figure two ways, equal exactly ════
+    // OB-56: the month-end stock adjustment — the books' inventory brought to the stock on hand at average buying cost.
+    const stockPeriod = await call('POST', `/v1/finance/periods/${month}/stock-adjustment`, ACCT, {}, 'stock-period');
+    expect(stockPeriod.status, JSON.stringify(stockPeriod.body)).toBeLessThan(300);
     const evidence = (await call('GET', `/v1/finance/periods/${month}/independent-evidence`, ACCT)).body as { agrees: boolean; checks: { name: string; leftMinor: number; rightMinor: number }[] };
     const liability = (await call('GET', '/v1/finance/loyalty-liability', ACCT)).body as { reconciles: boolean; points: { outstandingPoints: number; heldValueMinor: number; postedMinor: number }; storeCredit: { heldMinor: number; postedMinor: number } };
     const tillCash = (await call('GET', `/v1/tills/${LANE}/cash`, OWNER)).body as { balanceMinor: number; flagged: unknown[] };
