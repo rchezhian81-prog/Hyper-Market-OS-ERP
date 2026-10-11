@@ -8,6 +8,10 @@ Wants=docker.service
 
 [Service]
 Type=oneshot
+# PA-12 r6: the job reports its own outcome under its own machine sign-in, provisioned by the operator into this
+# root-only file (docs/runbooks/backup-and-recovery.md Part 3a). Missing, the job fails loudly and head office raises
+# the backup as MISSED. Never in the repository.
+EnvironmentFile=-/etc/sre-pilot/backup-reporter.env
 ExecStart=/opt/sre/app/infra/pilot/backup/encrypted-backup.sh
 TimeoutStartSec=600
 NoNewPrivileges=true

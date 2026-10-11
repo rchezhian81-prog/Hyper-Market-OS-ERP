@@ -21,6 +21,7 @@
 import { once } from 'node:events';
 import { Pool } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
+import { SqlSubjectKeyStore, personalDataKek, type SubjectKeyStore } from '../../../packages/persistence/src/personal-data';
 import { SqlSnapshotStore, type SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
@@ -85,6 +86,7 @@ import { b2bOrderingRoutes } from '../../finance/src/b2b-ordering';
 import { customer360Routes } from '../../customer/src/customer-360';
 import { b2bDocumentsRoutes, type B2BDocumentsDeps } from '../../finance/src/b2b-documents';
 import { b2bPortalRoutes } from '../../finance/src/b2b-portal';
+import { b2bTransferNoteRoutes } from '../../finance/src/b2b-transfer-notes';
 import { concessionRoutes } from '../../finance/src/concession';
 import { scrapRoutes } from '../../finance/src/scrap';
 import { refundExceptionsRoutes } from '../../finance/src/refund-exceptions';
@@ -182,6 +184,8 @@ import { purchaseRoutes } from '../../purchase/src/index';
 import { supplierAccountRoutes } from '../../purchase/src/supplier-account';
 import { supplierMasterRoutes } from '../../purchase/src/supplier-master';
 import { supplierOpeningRoutes } from '../../purchase/src/supplier-openings';
+import { accountOpeningsRoutes } from '../../finance/src/account-openings';
+import { openingReversalRoutes } from '../../migration/src/opening-reversal';
 import { purchaseOrderRoutes } from '../../purchase/src/purchase-orders';
 import { supplierScorecardRoutes } from '../../purchase/src/supplier-scorecard';
 import { rebateRoutes } from '../../purchase/src/rebates';
@@ -262,12 +266,16 @@ import { syncedDriverRunRoutes } from '../../fulfilment/src/driver-runs';
 import { migrationRoutes } from '../../migration/src/index';
 import { legacyHistoryRoutes } from '../../migration/src/legacy-history';
 import { aiRoutes } from '../../ai/src/index';
-import { modelGatewayRoutes } from '../../ai/src/model-gateway';
+import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
 import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import {
-  STREAM, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, storeStockFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter,
+  STREAM, personalDataStore, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, accountOpeningsAdapter, openingReversalAdapter, storeStockFactsAdapter, replenishmentFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter, b2bTransferNotesAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
+// Round 6 (EA-01): only a store computer's own grant lets it report its store's sync and unsent facts.
+import { storeComputerScopeHeldBy } from './adapters';
+// Round 6 (PF-10): delivery reports are believed only when signed with the provider's operator-configured secret.
+import { deliveryReportSecretsFromEnv } from '../../customer/src/provider-reports';
 // SF-10 round 5: the read models the remaining export domains fold.
 import { allIssuedPayslips, ordersForExport } from './adapters';
 import { buildWalletFeed } from '../../customer/src/loyalty-wallets';
@@ -342,6 +350,9 @@ export function buildSurface(deps: {
    * test adapter here to prove the send path.
    */
   readonly notificationTransport?: NotificationTransport;
+  /** PF-10 r6: each message provider's delivery-report callback secret — `startApi` reads them from its environment
+   *  (DELIVERY_REPORT_SECRET__<PROVIDER>); none configured, a delivery report is refused (nothing believed). */
+  readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
   /** EA-08: the model provider adapter and its tier pricing. NEVER set by `startApi` (no provider is chosen — an external
    *  gate); tests pass the deterministic simulator to prove admission, metering, audit and evaluations. */
   readonly modelTransport?: ModelTransport;
@@ -384,6 +395,12 @@ export function buildSurface(deps: {
    * just rebuilt on a cold start, because a snapshot is disposable).
    */
   readonly snapshots?: SnapshotStore;
+  /**
+   * FUL-12 · ADR-0025: the per-subject data keys personal fields are sealed under (the SAME key store `store` seals with —
+   * `personalDataStore`). Erasure destroys a customer's key here. Omitted → holdings are located, but an erasure of a
+   * sealed category is a visible exception, never a silent success.
+   */
+  readonly personalDataKeys?: SubjectKeyStore;
 }): readonly Route[] {
   const signer = hmacSigner(deps.signingKey);
   // The key the store computer's seal on who it verified is checked with (ADR-0023) — the same derivation the box uses.
@@ -519,6 +536,44 @@ export function buildSurface(deps: {
     return { ...base, applied: false, refusedBecause: 'no_handler', detail: `recorded; a ${record.subjectType} decision is not applied by head office yet` };
   };
 
+  // The agents' governed deps — built once, so the model gateway's evidence (EA-08) comes from the SAME domain readers the
+  // agent runs read (A01 the owner's reports, A02 the stock and sales ledgers, A04 the catalogue and stock), never the caller.
+  const governedAiDeps = store === undefined ? undefined : aiAdapter({
+      store, now,
+      // EA-08: A01 reads the same governed report producers the owner's reports do; A02 the stock and sales ledgers.
+      ownerInsights: async (t) => ownerInsights(producers!, t, now(), tradingDayIn(now(), await shopCalendar(t))),
+      purchaseSuggestions: (t) => purchaseSuggestions(store, t, now()),
+      shoppingAlternatives: (t) => shoppingAlternatives(store, t, now()),
+      // The Data Quality agent (A08) reads the live product master + barcode register — the tested
+      // folds reused verbatim (same pattern as the export domains above), never a second copy.
+      products: (t) => productMasterAdapter({ store, now }).products(t),
+      barcodes: (t) => barcodeAdapter({ store, now }).all(t),
+      // ...and import history, for A08's suspicious-mapping leg — the same tested fold the
+      // import-quality routes read, so there is one truth about which source keeps failing.
+      importHistory: (t) => importQualityAdapter({ store, now }).jobs(t),
+      // ...and the live operational alerts, for the Operations agent (A06) — the same tested
+      // alert-lifecycle fold the alerts board reads, so A06 explains the same incidents a human sees.
+      operationsAlerts: (t) => alertLifecycleAdapter({ store, now }).alerts(t),
+      // ...and the loss-prevention investigation cases, for the Security/Fraud agent (A07) — the same
+      // tested LP case fold the manager's worklist reads, so A07 prioritises the same open cases.
+      investigations: (t) => lpCasesAdapter({ store, now }).cases(t),
+      // ...and the near-expiry stock, for the Inventory agent (A03) — the SAME tested reader the
+      // /v1/inventory/near-expiry route uses, so A03 suggests markdowns/disposals over the same batches.
+      nearExpiry: (t, opts) => nearExpiryAdapter({ store, now }).nearExpiry(t, opts),
+      // ...and the stored daily tasks, for the Workforce/SOP guidance agent (A10) — the SAME tested
+      // task-store fold the /v1/hr/workforce/tasks board reads, so A10 flags the same escalated/overdue
+      // tasks a manager sees. A10 recommends only; a manager assigns/completes (hard rule #5).
+      dailyTasks: (t) => taskStoreAdapter({ store, now }).tasks(t),
+      // ...and the marketing-draft inputs, for the Marketing agent (A09) — profiles + folded consent from
+      // the SAME stored facts + consent ledger the /v1/customer/segments/audience board reads (M16-FR-02),
+      // so A09 drafts the same audiences within the same consent. A09 drafts only; a marketing approver
+      // launches any campaign (hard rule #5), and the per-channel consent check still binds at send time.
+      marketingDraft: (t) => marketingDraftInputs({ store, now }, t),
+      // ...and the service-desk cases, for the Service agent (A05) — the SAME tested serviceCases fold the
+      // desk board reads, so A05 flags the same open, unanswered cases breaching their first-response SLA
+      // that a human sees. A05 flags only; a service agent replies (hard rule #5).
+      serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
+  });
   const surface: Route[] = [
     ...identityRoutes({
       ...(store === undefined ? {
@@ -650,6 +705,15 @@ export function buildSurface(deps: {
     ...supplierOpeningRoutes(store === undefined ? {
       record: empty(undefined), openings: empty([]), recordOpening: () => {}, signOffs: empty([]), recordSignOff: () => {}, now,
     } : { ...supplierOpeningsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    // GT-05 (MG-08 "accounting openings"): the old trial balance, recorded, signed off by a second finance person against the old
+    // system's own totals, posted once through the finance posting path, and read back account by account.
+    ...accountOpeningsRoutes(store === undefined ? {
+      records: empty([]), recordOpenings: () => {}, signOffs: empty([]), recordSignOff: () => {}, journals: empty([]),
+      periodStates: empty(new Map()), nextOpenPeriod: () => now().slice(0, 7), appendJournal: () => {}, now,
+    } : { ...accountOpeningsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit }),
+    // OB-44 "A": inside the real cutover window only, a named person and a second approver reverse an opening load through
+    // each domain's own compensating record — kept, read back to zero against the load. Trial loads go into a fresh shop.
+    ...(store === undefined ? [] : openingReversalRoutes({ ...openingReversalAdapter({ store, now }), recordAudit: auditTrail?.recordAudit })),
     // Purchase-order lifecycle (M06-FR-01/02/04) — propose, approve+issue under §28, supplier holds.
     ...purchaseOrderRoutes(store === undefined ? {
       order: empty(undefined), all: empty([]), supplierBlocked: empty(false),
@@ -745,6 +809,10 @@ export function buildSurface(deps: {
             },
             // orders: the shop-wide order index, each at its current state as `GET /v1/orders/:id` folds it;
             orders: (t) => ordersForExport(store, t),
+            // attendance: the attendance store's read for each day of the asked period — the SAME read
+            // `GET /v1/hr/workforce/attendance?date=` answers — with the branch and rate from the staff register.
+            attendanceOn: async (t, date) => attendanceStoreAdapter({ store, now }).attendance(t, date),
+            staff: async (t) => attendanceStoreAdapter({ store, now }).employees(t),
             // payroll: the payslip register (latest issue per employee and period), with the branch from the staff register.
             payslips: async (t) => {
               const staff = new Map((await attendanceStoreAdapter({ store, now }).employees(t)).map((e) => [e.employeeId, e.branchId] as const));
@@ -835,7 +903,11 @@ export function buildSurface(deps: {
     ...floorIndentRoutes(floorIndentDeps),
     // SP-8b: the floor's indent and its independent receipt RELAYED from the served Indents screen through the box.
     ...syncedFloorIndentRoutes(floorIndentDeps),
-    ...replenishmentRoutes(store === undefined ? { now } : { now, soldLines: salesHistoryAdapter({ store, now }).soldLines, rangeOf: assortmentAdapter({ store, now }).entries }),
+    // FUL-11: a proposal for ONE store, on head office's on-hand / on-order / in-transit / sold for it — never typed figures.
+    ...replenishmentRoutes(store === undefined ? { now } : {
+      now, ...replenishmentFactsAdapter({ store, now, branchOf: locationBranchesOf(store, now) }),
+      rangeOf: assortmentAdapter({ store, now }).entries, locationBranches: locationBranchesOf(store, now),
+    }),
     ...salesHistoryRoutes(store === undefined ? { soldLines: empty([]), now } : salesHistoryAdapter({ store, now })),
     // Blind counts (M09-FR-04): the direct route and the RELAYED route (SP-2b · F11) share one reconcile — expected, value
     // and threshold are head office's on both (SP-4 · F07); a held variance is decided by a separate person.
@@ -895,6 +967,7 @@ export function buildSurface(deps: {
       signer, now,
       stores: async (t) => new Map((await orgStructureAdapter({ store, now }).nodes(t)).filter((n) => n.kind === 'branch').map((n) => [n.nodeId, n.name] as const)),
       branchScopeOf: (t, u, p) => branchScopeHeldBy(store, t, u, p),
+      storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u),
       ...storeSettingsAdapter({ store }),
       ...storeRulesAdapter({ store }),
       roleIds: ROLE_CATALOGUE.map((r) => r.id),
@@ -914,6 +987,7 @@ export function buildSurface(deps: {
       now,
       stores: async (t) => (await storeSyncView(store, t, now)).branches,
       branchScopeOf: (t, u, p) => branchScopeHeldBy(store, t, u, p),
+      storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u),
       ...syncWatermarksAdapter({ store }),
     }),
     ...posRoutes(store === undefined ? {
@@ -1034,7 +1108,7 @@ export function buildSurface(deps: {
     // processor notices. DEVELOPMENT-APPROVED; legal confirmation required.
     ...erasureExecutionRoutes(store === undefined
       ? { request: empty(undefined), recordRequest: () => {}, recordPii: () => {}, piiFor: empty([]), recordApproval: () => {}, approvalFor: empty(undefined), recordTombstone: () => {}, tombstonesFor: empty([]), tombstoneFor: empty(undefined), enqueueNotice: () => {}, now }
-      : { ...erasureExecutionAdapter({ store, now }), domainHoldings: privacyDomainHoldingsAdapter({ store, now }) }),
+      : { ...erasureExecutionAdapter({ store, now }), domainHoldings: privacyDomainHoldingsAdapter({ store, now, ...(deps.personalDataKeys === undefined ? {} : { keys: deps.personalDataKeys }) }) }),
     // Service-desk cases + SLA clocks (M21-FR-04) — open/first-response/resolve + SLA + breached queue.
     ...serviceCaseRoutes(store === undefined
       ? { serviceCase: empty(undefined), serviceCases: empty([]), recordCase: () => {}, compensations: empty([]), recordCompensation: () => {},
@@ -1062,7 +1136,7 @@ export function buildSurface(deps: {
       : campaignAdapter({ store, now })),
     // PF-10: the campaign SEND — frequency history from the PA-08 queue, approved recipients enqueued on it, provider
     // delivery reports recorded against each message.
-    ...campaignSendRoutes(store === undefined ? campaignSendUnwired(now) : campaignSendAdapter({ store, now })),
+    ...campaignSendRoutes(store === undefined ? campaignSendUnwired(now) : campaignSendAdapter({ store, now, ...(deps.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: deps.deliveryReportSecrets }) })),
     ...storedValueRoutes(store === undefined ? {
       instrument: empty(undefined), movements: empty([]), recordIssue: () => {}, recordMovement: () => {},
       instrumentsForOwner: empty([]), movementsForOwner: empty([]), allMovements: empty([]), now,
@@ -1254,6 +1328,20 @@ export function buildSurface(deps: {
       documents: b2bDocumentsAdapter({ store, now, numberSeries: deps.numberSeries }).documents,
       now,
     }),
+    // OB-41 "A" (FUL-09 · M22-FR-04): the business customer records a bank-transfer note on its own sign-in; it is PENDING —
+    // never reducing what is owed — until finance (a second person) matches it to money its own bank statement shows.
+    ...b2bTransferNoteRoutes(store === undefined ? {
+      customerForUser: empty(undefined), recordAccessRefusal: () => {}, notes: empty([]), recordNote: () => {}, decisions: empty([]), recordDecision: () => {},
+      invoices: empty([]), outstandingMinor: empty(0), recordPaymentWithMoney: () => Promise.resolve(), now,
+    } : {
+      ...b2bTransferNotesAdapter({ store, now }),
+      customerForUser: b2bPortalAdapter({ store, now }).customerForUser,
+      recordAccessRefusal: b2bPortalAdapter({ store, now }).recordAccessRefusal,
+      invoices: b2bCollectionsAdapter({ store, now }).invoices,
+      outstandingMinor: b2bCreditAdapter({ store, now }).outstandingMinor,
+      recordPaymentWithMoney: b2bMoneyEffectsAdapter({ store, now }).recordPaymentWithMoney,
+      recordAudit: auditTrail?.recordAudit,
+    }),
     ...concessionRoutes(store === undefined ? {
       contract: empty(undefined), sales: empty([]), recordContract: () => {}, recordSale: () => {},
       depositMovements: empty([]), recordDepositMovement: () => {},
@@ -1317,7 +1405,7 @@ export function buildSurface(deps: {
     // hard rule #6), and read the pending + dead-letter lists. The channel transport is a deployment step.
     ...notificationQueueRoutes(store === undefined
       ? { queue: () => new NotificationQueue(), record: () => {}, now }
-      : notificationQueueAdapter({ store, now, ...(deps.notificationTransport === undefined ? {} : { transport: deps.notificationTransport }) })),
+      : notificationQueueAdapter({ store, now, ...(deps.notificationTransport === undefined ? {} : { transport: deps.notificationTransport }), ...(deps.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: deps.deliveryReportSecrets }) })),
     // Versioned document templates (M31-FR-01/M36-FR-02) — append-only publish; a change is a new version. A business
     // document is issued FROM its record (PA-09): the purchase order, goods receipt, sale or account it is about is read
     // here, its number referenced (or allocated from the shop's gap-free series), its money and tax frozen with it; a
@@ -1656,6 +1744,7 @@ export function buildSurface(deps: {
       recordExtractionRun: () => {}, recordFinding: () => {}, recordSignature: () => {}, now,
     } : {
       ...migrationAdapter({ store, now, targetKind: deps.migrationTargetKind, ownerRoleId: OWNER_ROLE_ID }),
+      recordAudit: auditTrail?.recordAudit,
       // 2b-vi-c-3: a decision relayed from the store's migration screen is checked against the store computer's seal.
       tillSealKey: sealKey,
     }),
@@ -1672,6 +1761,8 @@ export function buildSurface(deps: {
       reserve: () => {}, settle: () => {}, audits: () => [], appendAudit: () => {}, now,
     } : modelGatewayAdapter({
       store, now,
+      // EA-08: the evidence a model call is asked over is read HERE, from the agent's own governed records.
+      evidenceFor: async (t, agent) => governedEvidence(await governedAiDeps!.run(t, agent)),
       ...(deps.modelTransport === undefined ? {} : { transport: deps.modelTransport }),
       ...(deps.modelPricing === undefined ? {} : { pricing: deps.modelPricing }),
     })),
@@ -1684,42 +1775,7 @@ export function buildSurface(deps: {
       dataQualityWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordDataQualityDisposition: () => {},
       operationsWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {},
       workforceWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordWorkforceDisposition: () => {}, now,
-    } : aiAdapter({
-      store, now,
-      // EA-08: A01 reads the same governed report producers the owner's reports do; A02 the stock and sales ledgers.
-      ownerInsights: async (t) => ownerInsights(producers!, t, now(), tradingDayIn(now(), await shopCalendar(t))),
-      purchaseSuggestions: (t) => purchaseSuggestions(store, t, now()),
-      shoppingAlternatives: (t) => shoppingAlternatives(store, t, now()),
-      // The Data Quality agent (A08) reads the live product master + barcode register — the tested
-      // folds reused verbatim (same pattern as the export domains above), never a second copy.
-      products: (t) => productMasterAdapter({ store, now }).products(t),
-      barcodes: (t) => barcodeAdapter({ store, now }).all(t),
-      // ...and import history, for A08's suspicious-mapping leg — the same tested fold the
-      // import-quality routes read, so there is one truth about which source keeps failing.
-      importHistory: (t) => importQualityAdapter({ store, now }).jobs(t),
-      // ...and the live operational alerts, for the Operations agent (A06) — the same tested
-      // alert-lifecycle fold the alerts board reads, so A06 explains the same incidents a human sees.
-      operationsAlerts: (t) => alertLifecycleAdapter({ store, now }).alerts(t),
-      // ...and the loss-prevention investigation cases, for the Security/Fraud agent (A07) — the same
-      // tested LP case fold the manager's worklist reads, so A07 prioritises the same open cases.
-      investigations: (t) => lpCasesAdapter({ store, now }).cases(t),
-      // ...and the near-expiry stock, for the Inventory agent (A03) — the SAME tested reader the
-      // /v1/inventory/near-expiry route uses, so A03 suggests markdowns/disposals over the same batches.
-      nearExpiry: (t, opts) => nearExpiryAdapter({ store, now }).nearExpiry(t, opts),
-      // ...and the stored daily tasks, for the Workforce/SOP guidance agent (A10) — the SAME tested
-      // task-store fold the /v1/hr/workforce/tasks board reads, so A10 flags the same escalated/overdue
-      // tasks a manager sees. A10 recommends only; a manager assigns/completes (hard rule #5).
-      dailyTasks: (t) => taskStoreAdapter({ store, now }).tasks(t),
-      // ...and the marketing-draft inputs, for the Marketing agent (A09) — profiles + folded consent from
-      // the SAME stored facts + consent ledger the /v1/customer/segments/audience board reads (M16-FR-02),
-      // so A09 drafts the same audiences within the same consent. A09 drafts only; a marketing approver
-      // launches any campaign (hard rule #5), and the per-channel consent check still binds at send time.
-      marketingDraft: (t) => marketingDraftInputs({ store, now }, t),
-      // ...and the service-desk cases, for the Service agent (A05) — the SAME tested serviceCases fold the
-      // desk board reads, so A05 flags the same open, unanswered cases breaching their first-response SLA
-      // that a human sees. A05 flags only; a service agent replies (hard rule #5).
-      serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
-    })), modelProviderConfigured: () => deps.modelTransport !== undefined }),
+    } : governedAiDeps!), modelProviderConfigured: () => deps.modelTransport !== undefined }),
   ];
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
@@ -1758,6 +1814,8 @@ export interface ApiProviders {
   readonly notificationWorkerIntervalMs?: number;
   /** PA-12: how often the ops-alert worker passes over every shop with alert rules (default 60 s). */
   readonly opsAlertWorkerIntervalMs?: number;
+  /** EA-07: how often the brief worker passes over the named shops — overrides BRIEF_WORKER_EVERY_SECONDS (tests). */
+  readonly briefWorkerIntervalMs?: number;
 }
 
 export async function startApi(
@@ -1848,7 +1906,15 @@ export async function startApi(
   // Since migration 0012 (row-level security, GAP-DATA-02) EVERY store takes the pool adapter: it is the one
   // that can pin a connection and bind `app.tenant_id` to the transaction, so the database itself confines each
   // statement to the signed token's tenant. The plain query adapter would run unscoped and see nothing.
-  const store = new SqlEventStore(pgPoolClient(db));
+  // FUL-12 · ADR-0025: every domain writes through the personal-data sealing layer — a customer's own words and contact
+  // details land in the ledger encrypted under that customer's data key (held in `subject_data_keys`, wrapped under the
+  // key-encryption key from configuration), so an erasure can destroy the key while the append-only record stays whole.
+  const personalDataKeys = new SqlSubjectKeyStore(pgPoolClient(db), personalDataKek({
+    ...(settings['PII_KEY_ENCRYPTION_KEY'] === undefined ? {} : { configured: settings['PII_KEY_ENCRYPTION_KEY'] }),
+    packSigningKey: settings['PACK_SIGNING_KEY']!,
+  }));
+  if (settings['PII_KEY_ENCRYPTION_KEY'] === undefined) out('personal data: sealed under a key derived from the pack signing key — set PII_KEY_ENCRYPTION_KEY to give it its own (ADR-0025)\n');
+  const store = personalDataStore(new SqlEventStore(pgPoolClient(db)), personalDataKeys);
 
   // 2b — Genesis owner (optional bootstrap). Because granting a role itself needs a role
   // (maker-checker), a brand-new tenant has nobody who can grant the first one. Where the initial
@@ -1876,13 +1942,19 @@ export async function startApi(
   const revocations = new TokenRevocationList(tokenRevocationAdapter({ store }));
 
   let briefDeps: ScheduledBriefDeps | undefined;
+  // PF-10 r6: a misconfigured provider secret is said at start (the name, never the value) and that provider is refused.
+  const reportSecrets = deliveryReportSecretsFromEnv(env);
+  for (const p of reportSecrets.problems) err(`delivery reports: ${p}\n`);
   const built = buildRouter(buildSurface({
     onBriefDeps: (d) => { briefDeps = d; },
     signingKey: settings['PACK_SIGNING_KEY']!,
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
+    personalDataKeys,
     revocations,
     ...(providers.notificationTransport === undefined ? {} : { notificationTransport: providers.notificationTransport }),
+    // PF-10 r6: the providers' delivery-report secrets, from this process's environment only (never the repo).
+    deliveryReportSecrets: reportSecrets.secrets,
     ...(identityDirectory === undefined ? {} : { identityDirectory }),
     ...(settings['IDP_OIDC_TENANT_ID'] === undefined ? {} : { identityDirectoryTenantId: settings['IDP_OIDC_TENANT_ID'] }),
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
@@ -2010,7 +2082,7 @@ export async function startApi(
   const briefTenants = (env['BRIEF_WORKER_TENANT_IDS'] ?? '').split(',').map((t) => t.trim()).filter((t) => t !== '');
   const everySeconds = Number(env['BRIEF_WORKER_EVERY_SECONDS'] ?? '300');
   const stopBriefWorker = briefTenants.length === 0 || briefDeps === undefined ? undefined : startBriefWorker({
-    deps: briefDeps, tenants: briefTenants, everyMs: (Number.isFinite(everySeconds) && everySeconds >= 10 ? everySeconds : 300) * 1000,
+    deps: briefDeps, tenants: briefTenants, everyMs: providers.briefWorkerIntervalMs ?? (Number.isFinite(everySeconds) && everySeconds >= 10 ? everySeconds : 300) * 1000,
     report: (ticks) => {
       for (const t of ticks) if (!t.ok || t.ran.length > 0) out(`${JSON.stringify({ briefWorker: t.tenantId, ok: t.ok, detail: t.detail, ran: t.ran.map((r) => ({ day: r.tradingDay, outcome: r.outcome })) })}\n`);
     },

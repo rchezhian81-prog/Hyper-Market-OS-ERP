@@ -415,6 +415,17 @@ export interface WindowTotals {
   readonly totalMinor: number;
 }
 
+/**
+ * OB-50 "A" (owner, 11 Oct 2026): a rollback reconciles more than bills and takings — the REFUNDS the new system gave in
+ * the window (count, value) and the STOCK it moved, per product (net effect on hand, in the product's own unit), must
+ * be in the old system too.
+ */
+export interface RollbackWindowFacts {
+  readonly refunds: WindowTotals;
+  /** Per product: the net quantity the window's movements put on (+) or took off (−) hand. Sorted by product id. */
+  readonly stockMovements: readonly { readonly productId: string; readonly netQuantityMinor: number }[];
+}
+
 /** A store computer's last complete sync of its sales (EA-01) — what says its sales have all reached head office. */
 export interface StoreSyncedThrough {
   readonly storeId: string;
@@ -436,6 +447,9 @@ export interface RollbackReconciliation {
   readonly windowTo: string;
   readonly newSystem: WindowTotals;
   readonly legacy: WindowTotals;
+  /** OB-50: the refunds and per-product stock movements on each side (absent on reconciliations recorded before OB-50). */
+  readonly newSystemFacts?: RollbackWindowFacts;
+  readonly legacyFacts?: RollbackWindowFacts;
   /** Each store's last complete sync at the time — every one past the switch-back, or this is refused. */
   readonly stores: readonly StoreSyncedThrough[];
   readonly reconciled: boolean;
@@ -458,6 +472,9 @@ export function reconcileRollback(input: {
   readonly windowFrom: string;
   readonly newSystem: WindowTotals;
   readonly legacy: WindowTotals;
+  /** OB-50: head office's own refunds and stock movements for the window, and what the old system holds of them. */
+  readonly newSystemFacts: RollbackWindowFacts;
+  readonly legacyFacts: RollbackWindowFacts;
   readonly stores: readonly StoreSyncedThrough[];
   readonly by: string;
   readonly at: string;
@@ -484,15 +501,25 @@ export function reconcileRollback(input: {
   const differences: string[] = [];
   if (input.newSystem.count !== input.legacy.count) differences.push(`bills: the new system took ${input.newSystem.count}, the old system holds ${input.legacy.count}`);
   if (input.newSystem.totalMinor !== input.legacy.totalMinor) differences.push(`takings: the new system took ${input.newSystem.totalMinor} paise, the old system holds ${input.legacy.totalMinor}`);
+  // OB-50: refunds (count and value) and every product's stock movement, each difference named.
+  const nf = input.newSystemFacts; const lf = input.legacyFacts;
+  if (nf.refunds.count !== lf.refunds.count) differences.push(`refunds: the new system gave ${nf.refunds.count}, the old system holds ${lf.refunds.count}`);
+  if (nf.refunds.totalMinor !== lf.refunds.totalMinor) differences.push(`refund value: the new system refunded ${nf.refunds.totalMinor} paise, the old system holds ${lf.refunds.totalMinor}`);
+  const ours = new Map(nf.stockMovements.map((m) => [m.productId, m.netQuantityMinor]));
+  const theirs = new Map(lf.stockMovements.map((m) => [m.productId, m.netQuantityMinor]));
+  for (const productId of [...new Set([...ours.keys(), ...theirs.keys()])].sort()) {
+    const a = ours.get(productId) ?? 0; const b = theirs.get(productId) ?? 0;
+    if (a !== b) differences.push(`stock of ${productId}: the new system moved ${a} on hand, the old system holds ${b}`);
+  }
   const reconciled = differences.length === 0;
   return {
     ok: true,
     reconciliation: {
       cutoverId: r.cutoverId, decidedAt: r.decidedAt, windowFrom: input.windowFrom, windowTo: to,
-      newSystem: input.newSystem, legacy: input.legacy, stores: input.stores, reconciled, differences,
+      newSystem: input.newSystem, legacy: input.legacy, newSystemFacts: input.newSystemFacts, legacyFacts: input.legacyFacts, stores: input.stores, reconciled, differences,
       by: input.by, at: input.at,
       detail: reconciled
-        ? `rollback of ${r.cutoverId} reconciled: ${input.newSystem.count} bill(s), ${input.newSystem.totalMinor} paise taken on the new system between ${input.windowFrom} and ${to} are all in the old system; every store had synced past the switch-back`
+        ? `rollback of ${r.cutoverId} reconciled: ${input.newSystem.count} bill(s), ${input.newSystem.totalMinor} paise, ${nf.refunds.count} refund(s) of ${nf.refunds.totalMinor} paise and the stock movements of ${nf.stockMovements.length} product(s) on the new system between ${input.windowFrom} and ${to} are all in the old system; every store had synced past the switch-back`
         : `rollback of ${r.cutoverId} does NOT reconcile — ${differences.join('; ')}. It is not demonstrated until it does`,
     },
   };

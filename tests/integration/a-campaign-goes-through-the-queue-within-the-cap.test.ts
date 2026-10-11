@@ -8,6 +8,7 @@ import { SqlEventStore, type EventStore } from '../../packages/persistence/src/e
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { SqlIdempotencyStore, MemoryIdempotencyStore } from '../../services/kernel/src/index';
+import { signedReport, testProviderSecret, TEST_PROVIDER } from '../support/provider-report';
 
 /**
  * **A campaign goes out through the queue, within the owner's frequency cap, with its delivery status recorded
@@ -23,12 +24,17 @@ import { SqlIdempotencyStore, MemoryIdempotencyStore } from '../../services/kern
  */
 
 const OWNER = 'u-owner'; const CHECKER = 'u-checker'; const MANAGER = 'u-manager';
+// PF-10 r6: delivery reports are the provider's, signed with its callback secret and relayed by the relay's identity.
+const RELAY = 'u-provider-relay';
+const SECRET = testProviderSecret();
+const SECRETS = new Map([[TEST_PROVIDER, SECRET]]);
 const A = 'cust-a'; const B = 'cust-b'; const C = 'cust-c'; const D = 'cust-d';
 
 async function cast(h: ApiHarness, T: string): Promise<void> {
   await h.seedOwner(T, OWNER);
   await h.provisionOwner(T, CHECKER);
   await h.provisionRole(T, MANAGER, 'store_manager');
+  await h.provisionRole(T, RELAY, 'message_provider_relay');
   for (const c of [A, B, C, D]) await h.provisionRole(T, c, 'customer');
   for (const c of [A, B, C]) {
     const r = await h.request({ method: 'POST', path: '/v1/me/privacy/consent', userId: c, tenantId: T, idempotencyKey: `yes-${c}`, body: { purpose: 'marketing', channel: 'sms', given: true } });
@@ -45,8 +51,10 @@ const send = (h: ApiHarness, T: string, campaignId: string, key: string) => h.re
   body: { purpose: 'marketing', channel: 'sms', templateId: 'tpl-offer', containsPromotion: true, audience: [A, B, C, D], values: { offer: 'rice 10% off' } },
 });
 const status = (h: ApiHarness, T: string, campaignId: string) => h.request({ method: 'GET', path: `/v1/service/campaigns/${campaignId}/status`, userId: OWNER, tenantId: T });
-const report = (h: ApiHarness, T: string, campaignId: string, messageId: string, body: unknown, key: string) =>
-  h.request({ method: 'POST', path: `/v1/service/campaigns/${campaignId}/messages/${messageId}/status`, userId: OWNER, tenantId: T, idempotencyKey: key, body });
+const report = (h: ApiHarness, T: string, campaignId: string, messageId: string, body: Record<string, unknown>, key: string) => {
+  const path = `/v1/service/campaigns/${campaignId}/messages/${messageId}/status`;
+  return h.request({ method: 'POST', path, userId: RELAY, tenantId: T, idempotencyKey: key, body: signedReport(path, body, SECRET, { reportId: `${T}-${key}` }) });
+};
 const code = (r: { body: unknown }) => (r.body as { error?: { code?: string } }).error?.code;
 
 async function journey(h: ApiHarness, T: string, restart: () => ApiHarness): Promise<void> {
@@ -118,8 +126,8 @@ async function journey(h: ApiHarness, T: string, restart: () => ApiHarness): Pro
 describe('a campaign goes through the queue within the cap, with delivery reports (PF-10)', () => {
   it('in memory, across a restart', async () => {
     const transport = recordingTransport();
-    const h = apiHarness({ notificationTransport: transport });
-    await journey(h, 'ab000000-0000-4000-8000-0000000f1010', () => apiHarness({ store: h.store, idempotency: new MemoryIdempotencyStore(), notificationTransport: transport }));
+    const h = apiHarness({ notificationTransport: transport, deliveryReportSecrets: SECRETS });
+    await journey(h, 'ab000000-0000-4000-8000-0000000f1010', () => apiHarness({ store: h.store, idempotency: new MemoryIdempotencyStore(), notificationTransport: transport, deliveryReportSecrets: SECRETS }));
     // The provider was handed exactly the five messages that were not withheld, each once, with the approved words.
     expect(transport.sent.map((m) => m.messageId).sort()).toEqual(['cmp-c1-cust-a', 'cmp-c1-cust-b', 'cmp-c1-cust-c', 'cmp-c2-cust-a', 'cmp-c2-cust-b']);
     expect(new Set(transport.sent.map((m) => m.text))).toEqual(new Set(['SRE this week: rice 10% off']));
@@ -140,7 +148,7 @@ describe.skipIf(!DATABASE_URL)('a campaign goes through the queue within the cap
   it('the same journey on PostgreSQL', async () => {
     const sql = pgPoolClient(pool);
     const transport = recordingTransport();
-    const fresh = (): { store: EventStore; idempotency: SqlIdempotencyStore; notificationTransport: typeof transport } => ({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql), notificationTransport: transport });
+    const fresh = (): { store: EventStore; idempotency: SqlIdempotencyStore; notificationTransport: typeof transport; deliveryReportSecrets: typeof SECRETS } => ({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql), notificationTransport: transport, deliveryReportSecrets: SECRETS });
     await journey(apiHarness(fresh()), randomUUID(), () => apiHarness(fresh()));
   });
 });

@@ -188,6 +188,12 @@ export function matchInvoice(input: {
     });
   };
 
+  // OB-46: a cost may buy `per` units at once (a case cost carried exactly); a value is quantity × cost ÷ per, rounded once.
+  const perOf = (c: Money): number => (c as Money & { per?: number }).per ?? 1;
+  const worth = (c: Money, qty: number): number => {
+    const per = perOf(c);
+    return per === 1 ? c.minor * qty : Math.round((c.minor * qty) / per);
+  };
   for (const line of input.invoiced) {
     const order = orderedBy.get(line.lineId);
     const receipt = receivedBy.get(line.lineId);
@@ -196,7 +202,7 @@ export function matchInvoice(input: {
       raise(
         line,
         'not_on_order',
-        line.unitCost.minor * line.quantityMinor,
+        worth(line.unitCost, line.quantityMinor),
         'invoiced but never ordered — nothing authorises this charge',
         false,
       );
@@ -206,7 +212,7 @@ export function matchInvoice(input: {
       raise(
         line,
         'not_received',
-        line.unitCost.minor * line.quantityMinor,
+        worth(line.unitCost, line.quantityMinor),
         'invoiced but never received — do not pay for goods that did not arrive',
         false,
       );
@@ -214,14 +220,17 @@ export function matchInvoice(input: {
     }
 
     // Price: compare what we are charged against what we agreed.
-    const priceDelta = line.unitCost.minor - order.unitCost.minor;
+    // Compared per unit as exact fractions (charged/per vs agreed/per), never after rounding either to a paisa.
+    const charged = line.unitCost.minor * perOf(order.unitCost);
+    const agreed = order.unitCost.minor * perOf(line.unitCost);
+    const priceDelta = Math.sign(charged - agreed);
     if (priceDelta !== 0) {
-      const bp = order.unitCost.minor === 0 ? BP : Math.round((Math.abs(priceDelta) * BP) / order.unitCost.minor);
+      const bp = agreed === 0 ? BP : Math.round((Math.abs(charged - agreed) * BP) / agreed);
       const tolerated = priceDelta < 0 || bp <= input.policy.priceToleranceBp;
       raise(
         line,
         priceDelta > 0 ? 'price_over' : 'price_under',
-        priceDelta * line.quantityMinor,
+        worth(line.unitCost, line.quantityMinor) - worth(order.unitCost, line.quantityMinor),
         priceDelta > 0
           ? `charged above the agreed cost (${bp} bp over the purchase order)`
           : `charged below the agreed cost (${bp} bp under) — check the credit is real`,
@@ -238,7 +247,7 @@ export function matchInvoice(input: {
       raise(
         line,
         qtyDelta > 0 ? 'quantity_over_invoiced' : 'quantity_under_invoiced',
-        qtyDelta * line.unitCost.minor,
+        worth(line.unitCost, qtyDelta),
         qtyDelta > 0
           ? `invoiced ${qtyDelta} more than was received into stock`
           : `invoiced ${-qtyDelta} fewer than received — a further invoice may follow`,
@@ -256,14 +265,14 @@ export function matchInvoice(input: {
     raise(
       receipt,
       'quantity_under_invoiced',
-      -(order?.unitCost.minor ?? 0) * receipt.quantityMinor,
+      -(order === undefined ? 0 : worth(order.unitCost, receipt.quantityMinor)),
       'received but not on this invoice — an invoice is still outstanding',
       true,
     );
   }
 
   // --- landed cost ------------------------------------------------------------
-  const goodsValues = input.invoiced.map((l) => l.unitCost.minor * l.quantityMinor);
+  const goodsValues = input.invoiced.map((l) => worth(l.unitCost, l.quantityMinor));
   const chargeTotal =
     (input.charges?.freight?.minor ?? 0) +
     (input.charges?.duty?.minor ?? 0) +

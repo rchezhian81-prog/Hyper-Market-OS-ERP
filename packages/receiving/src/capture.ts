@@ -23,7 +23,7 @@
 // Pure and deterministic: no clock, no I/O. Money is exact minor units (§29.1).
 
 import type { Money } from '../../contracts/src/money';
-import { valueAtUnitCost } from '../../contracts/src/quantity';
+import { valueAtCost } from '../../contracts/src/quantity';
 
 /** Where received stock lands. Quarantine is deliberately NOT sellable. */
 export type ReceiptDisposition = 'sellable' | 'quarantine' | 'rejected';
@@ -166,7 +166,7 @@ const BP = 10_000;
 
 /** OB-31: a line's quantity (smallest steps — grams for kg) at its per-whole-unit cost, rounded once. */
 function valueOf(unitCost: Money, quantityMinor: number, uom: string): Money {
-  return { minor: valueAtUnitCost(quantityMinor, uom, unitCost.minor), currency: unitCost.currency };
+  return { minor: valueAtCost(quantityMinor, uom, unitCost), currency: unitCost.currency };
 }
 
 /**

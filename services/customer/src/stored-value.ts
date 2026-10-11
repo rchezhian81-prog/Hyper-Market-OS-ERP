@@ -26,8 +26,11 @@ export interface StoredValueDeps {
   readonly instrument: (tenantId: string, instrumentId: string) => Promise<Instrument | undefined> | Instrument | undefined;
   /** Every movement against one instrument (the balance is their sum). */
   readonly movements: (tenantId: string, instrumentId: string) => Promise<readonly ValueMovement[]> | readonly ValueMovement[];
-  /** Issue an instrument and its opening value in one step. Idempotent on the instrument id. */
-  readonly recordIssue: (tenantId: string, instrument: Instrument, opening: ValueMovement) => Promise<void> | void;
+  /**
+   * Issue an instrument and its opening value in one step. Idempotent on the instrument id. With `openingLoadId` (a migration
+   * load opening a carried-over card), the load's opening-item register entry is written in the SAME atomic write.
+   */
+  readonly recordIssue: (tenantId: string, instrument: Instrument, opening: ValueMovement, openingLoadId?: string) => Promise<void> | void;
   /** Append a movement (a redemption). Idempotent on the movement id. */
   /**
    * The instrument's write-guard version (Wave 2a · audit PF-01): read BEFORE `movements`, passed back to
@@ -54,7 +57,10 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
       api: 'API-06', method: 'POST', path: '/v1/stored-value/instruments',
       permission: 'loyalty.value.issue', idempotent: true,
       handler: async (ctx) => {
-        const b = (ctx.body ?? {}) as { instrumentId?: unknown; kind?: unknown; ownerRef?: unknown; faceValueMinor?: unknown; expiresOn?: unknown; providerRef?: unknown; channel?: unknown };
+        const b = (ctx.body ?? {}) as { instrumentId?: unknown; kind?: unknown; ownerRef?: unknown; faceValueMinor?: unknown; expiresOn?: unknown; providerRef?: unknown; channel?: unknown; openingLoadId?: unknown };
+        if (b.openingLoadId !== undefined && (typeof b.openingLoadId !== 'string' || b.openingLoadId.trim() === '')) {
+          throw apiError(400, { code: 'not_readable_as_an_instrument', whatHappened: 'openingLoadId, when sent, names the migration load opening this card.', wasItSaved: 'not_saved', nextSafeAction: 'Send the load id, or leave it out. Nothing was issued.' });
+        }
         if (typeof b.instrumentId !== 'string' || b.instrumentId.trim() === ''
           || typeof b.kind !== 'string' || !KINDS.includes(b.kind as ValueKind)
           || typeof b.ownerRef !== 'string' || b.ownerRef.trim() === ''
@@ -83,7 +89,7 @@ export function storedValueRoutes(deps: StoredValueDeps): readonly Route[] {
           ...(typeof b.providerRef === 'string' ? { providerRef: b.providerRef } : {}),
         };
         const opening: ValueMovement = { movementId: `${b.instrumentId}:issue`, instrumentId: b.instrumentId, kind: 'issue', deltaMinor: b.faceValueMinor as number, at: now, channel };
-        await deps.recordIssue(ctx.tenantId, instrument, opening);
+        await deps.recordIssue(ctx.tenantId, instrument, opening, typeof b.openingLoadId === 'string' ? b.openingLoadId.trim() : undefined);
         return { status: 201, body: { instrumentId: instrument.instrumentId, kind: instrument.kind, balanceMinor: opening.deltaMinor } };
       },
     },

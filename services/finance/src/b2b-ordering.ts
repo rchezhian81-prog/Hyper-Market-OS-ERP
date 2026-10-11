@@ -223,7 +223,8 @@ export function b2bOrderingRoutes(deps: B2BOrderingDeps): readonly Route[] {
         if (s === undefined) throw notFound(`recurring order ${scheduleId}`);
         if (s.approvedBy !== undefined) return { status: 200, body: { ...s, inForce: true } };
         if (s.proposedBy === ctx.userId) {
-          throw apiError(403, { code: 'self_approval', whatHappened: 'A recurring order must be approved by someone other than the person who set it up.', wasItSaved: 'not_saved', nextSafeAction: 'Ask another approver. Nothing was changed.' });
+          // Maker-checker (§28), said as such: the refusal is about WHO, not about a missing permission.
+          throw apiError(403, { code: 'maker_cannot_approve', whatHappened: `${ctx.userId} set up recurring order ${scheduleId} and cannot also approve it — a second person must (§28).`, wasItSaved: 'not_saved', nextSafeAction: 'Ask another approver. Nothing was changed; the order does not run until then.' });
         }
         const approved: RecurringSchedule = { ...s, approvedBy: ctx.userId, approvedAt: deps.now() };
         await deps.recordSchedule(ctx.tenantId, approved);

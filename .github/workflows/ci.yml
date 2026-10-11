@@ -97,6 +97,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # The real backup job (infra/pilot/backup/encrypted-backup.sh) encrypts with age; its connected test runs it here.
+      - name: Install the backup job's encryption tool (age)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq age
+
       - name: Migrate, then prove the migrations are idempotent
         env:
           DATABASE_URL: postgres://sre@localhost:5432/sre_core
@@ -131,7 +135,13 @@ jobs:
         run: |
           test -n "$DATABASE_URL" \
             || (echo "::error::DATABASE_URL is not set — the required database tests would silently skip" && exit 1)
-          pnpm run test:db
+          # Every failing test is also raised as a GitHub annotation, so a red job names the test without the raw log.
+          set -o pipefail
+          pnpm run test:db -- --reporter=default --reporter=github-actions 2>&1 | tee /tmp/test-db.log || {
+            # A run can fail outside any one test (an unhandled error, a worker crash): raise the tail as annotations too.
+            grep -E 'FAIL|Error|×|Unhandled|errors?$' /tmp/test-db.log | grep -v '✓' | tail -40 | while IFS= read -r line; do echo "::error::${line:0:300}"; done
+            exit 1
+          }
 
       - name: Backup, destroy and restore, reconciled (QG-08)
         env:

@@ -44,7 +44,9 @@ export interface B2BCollectionsDeps {
    *  credit surface writes (M22-FR-01) — the independent second figure `reconcileAr` compares the
    *  collections ageing against. Same customer stream, so it is the very balance the credit check uses. */
   readonly outstandingMinor: (tenantId: string, customerId: string) => Promise<number> | number;
-  readonly recordInvoice: (tenantId: string, customerId: string, invoice: Receivable) => Promise<void> | void;
+  /** With `openingLoadId` (a migration load opening a carried-over invoice), the load's opening-item register entry is written
+   *  in the SAME atomic write. */
+  readonly recordInvoice: (tenantId: string, customerId: string, invoice: Receivable, openingLoadId?: string) => Promise<void> | void;
   readonly recordPayment: (tenantId: string, customerId: string, payment: RecordedPayment) => Promise<void> | void;
   /** FUL-09: the money received moves the customer's AR ledger and reaches the books — in ONE write with the allocation.
    *  When present it records the payment itself (instead of `recordPayment`). */
@@ -65,7 +67,8 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['number']) || !isDate(b['issuedOn']) || !isDate(b['dueOn']) || !isPosInt(b['grossMinor'])
           || (b['disputed'] !== undefined && typeof b['disputed'] !== 'boolean')
-          || (b['disputeReason'] !== undefined && !isStr(b['disputeReason']))) {
+          || (b['disputeReason'] !== undefined && !isStr(b['disputeReason']))
+          || (b['openingLoadId'] !== undefined && !isStr(b['openingLoadId']))) {
           throw apiError(400, {
             code: 'not_readable_as_an_invoice',
             whatHappened: 'A receivable invoice needs a number, an issue date, a due date and a gross amount in minor units.',
@@ -79,7 +82,15 @@ export function b2bCollectionsRoutes(deps: B2BCollectionsDeps): readonly Route[]
           ...(b['disputed'] === true ? { disputed: true } : {}),
           ...(isStr(b['disputeReason']) ? { disputeReason: b['disputeReason'] } : {}),
         };
-        await deps.recordInvoice(ctx.tenantId, customerId, invoice);
+        const openingLoadId = isStr(b['openingLoadId']) ? b['openingLoadId'].trim() : undefined;
+        if (openingLoadId !== undefined) {
+          // A load opens an invoice; it never adopts one already on the ledger (an identical re-send is the same opening).
+          const held = (await deps.invoices(ctx.tenantId, customerId)).find((i) => i.invoiceId === invoiceId);
+          if (held !== undefined && (held.grossMinor !== invoice.grossMinor || held.dueOn !== invoice.dueOn || held.number !== invoice.number || held.settledMinor !== 0)) {
+            throw apiError(409, { code: 'invoice_already_on_the_ledger', whatHappened: `Invoice ${invoiceId} of ${customerId} is already on the receivables ledger, so load ${openingLoadId} cannot open it.`, wasItSaved: 'not_saved', nextSafeAction: 'Leave it out of the load, or correct the extract. Nothing was recorded.' });
+          }
+        }
+        await deps.recordInvoice(ctx.tenantId, customerId, invoice, openingLoadId);
         return { status: 201, body: { invoiceId, number: invoice.number, dueOn: invoice.dueOn, grossMinor: invoice.grossMinor } };
       },
     },

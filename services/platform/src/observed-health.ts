@@ -21,6 +21,16 @@
 //     component degraded at once — not only when the last good one finally ages past the limit;
 //   • `raiseObservedAlerts` is the raise this route runs, exported so the ops-alert worker runs the same on its timer.
 //
+// PA-12 round 6 — the backup job reports ITSELF, and silence is an alert:
+//   • the real backup job (the pilot box's encrypted-backup.sh → scripts/report-backup.mjs) posts its own outcome —
+//     success AND failure — under its own operator-provisioned machine identity (role `backup_job`, the one permission
+//     `platform.backup.record`), with what it measured: when it started and ended, the encrypted file's size and
+//     sha256, whether it is encrypted, and whether the operator's off-site copy step confirmed the copy;
+//   • a backup that never reports by its expected time is MISSED by itself: once the alert rules are in force, a good
+//     backup is due within `backupMaxAgeSeconds` of the last good one (or, if there has never been one, of when the
+//     rules first came into force — `backupsExpectedSince`, carried across rule versions) — the backup component is
+//     then `down`, named "MISSED", and the ops-alert worker raises it to its owner with nobody posting anything.
+//
 // What the cloud cannot see it says it cannot see (P-08): the lane's local disk is a lane-side signal
 // and stays `unknown` here — it is never guessed `ok`. A backup counts only when it was recorded as
 // completed, encrypted AND off-site (FR-01); a failed or unprotected backup is on the record but does
@@ -49,6 +59,9 @@ export interface BackupRecord {
   readonly encrypted: boolean;
   readonly offsite: boolean;
   readonly sizeBytes?: number;
+  /** PA-12 r6: when the job finished (it measured it), and the sha256 of the file it kept (`sha256:<hex>`). */
+  readonly endedAt?: string;
+  readonly checksum?: string;
   readonly detail?: string;
   readonly recordedBy: string;
   readonly recordedAt: string;
@@ -61,6 +74,9 @@ export interface StoredAlertRules {
   readonly thresholds: HealthThresholds;
   /** How old the newest good backup may be before the `backup` component is `down`. */
   readonly backupMaxAgeSeconds: number;
+  /** PA-12 r6: when backups first became expected (the first rules version) — kept across versions, so redefining the
+   *  rules never resets the clock a never-reporting backup is judged MISSED by. Absent on rules stored before r6. */
+  readonly backupsExpectedSince?: string;
   readonly definedBy: string;
   readonly definedAt: string;
 }
@@ -84,6 +100,12 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
    * still hold or had refused. Absent, or no store has reported: the newest sale stands in, said so.
    */
   readonly storeLanes?: (tenantId: string) => Promise<StoreLaneSignals | undefined>;
+  /**
+   * PA-12 round 7: is the caller the BACKUP JOB's own machine identity — do they hold a grant of the `backup_job` role
+   * itself? Holding `platform.backup.record` through any other role (owner, store manager, platform admin) does not
+   * count: a backup outcome is the job's own measurement, never a person's say-so. Absent: nobody may record (fail closed).
+   */
+  readonly isBackupJob?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
 }
 
 /** What the store computers last reported about their queues (PA-12, from the EA-01 watermark reports). */
@@ -180,11 +202,36 @@ export function withFailedBackup(health: SystemHealth, latest: BackupRecord | nu
   return { ...health, components, status };
 }
 
+/**
+ * PA-12 r6 — a backup that has not reported by its expected time is MISSED, by itself. With rules in force, a good
+ * backup is due `backupMaxAgeSeconds` after the last good one — or after `backupsExpectedSince` when there has never
+ * been one (the engine alone would only say `unknown` then, which no rule fires on). Past that, the backup component
+ * is `down` and says MISSED and when it was due. Without rules nothing is expected of anyone, and nothing changes.
+ */
+export function withMissedBackup(health: SystemHealth, backups: readonly BackupRecord[], stored: StoredAlertRules | undefined, at: string): SystemHealth {
+  if (stored === undefined) return health;
+  const maxMs = stored.backupMaxAgeSeconds * 1000;
+  const good = [...backups].filter(goodBackup).sort(byAt).pop();
+  const since = good?.at ?? stored.backupsExpectedSince ?? stored.definedAt;
+  const dueMs = Date.parse(since) + maxMs;
+  if (!(Date.parse(at) > dueMs)) return health;
+  const due = new Date(dueMs).toISOString();
+  const detail = good === undefined
+    ? `MISSED — no good backup has reported since backups became expected (${since}); one was due by ${due}. A backup that does not report is treated as not taken`
+    : `MISSED — the next good backup was due by ${due} (the last good one was ${good.backupId} at ${good.at})`;
+  const components = health.components.map((c) => (c.name !== 'backup' ? c
+    : { ...c, status: 'down' as const, detail: c.status === 'down' ? `${detail}; ${c.detail}` : detail }));
+  const status = components.reduce<SystemHealth['status']>((w, c) => ((RANK[c.status] ?? 0) > (RANK[w] ?? 0) ? c.status : w), health.status);
+  return { ...health, components, status };
+}
+
 /** Judge a shop's observed health with its stored rules (the read and the raise share it). */
 export async function judgeObserved(deps: ObservedHealthDeps, tenantId: string, at: string) {
   const stored = await deps.alertRules(tenantId);
   const observed = await observeSignals(deps, tenantId, at, stored?.backupMaxAgeSeconds ?? DEFAULT_BACKUP_MAX_AGE_SECONDS);
-  const health: SystemHealth = withFailedBackup(checkHealth(observed.signals, at, stored?.thresholds ?? DEFAULT_THRESHOLDS), observed.lastBackup);
+  const health: SystemHealth = withMissedBackup(
+    withFailedBackup(checkHealth(observed.signals, at, stored?.thresholds ?? DEFAULT_THRESHOLDS), observed.lastBackup),
+    await deps.backups(tenantId), stored, at);
   const alerts: readonly RaisedAlert[] = raiseAlerts(health, stored?.rules ?? []);
   return { stored, observed, health, alerts };
 }
@@ -257,9 +304,12 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
           });
         }
         const current = await deps.alertRules(ctx.tenantId);
+        const definedAt = deps.now();
         const stored: StoredAlertRules = {
           version: (current?.version ?? 0) + 1, rules, thresholds, backupMaxAgeSeconds: maxAge as number,
-          definedBy: ctx.userId, definedAt: deps.now(),
+          // PA-12 r6: the clock a never-reporting backup is judged MISSED by starts with the FIRST rules, and stays.
+          backupsExpectedSince: current === undefined ? definedAt : (current.backupsExpectedSince ?? current.definedAt),
+          definedBy: ctx.userId, definedAt,
         };
         await deps.defineAlertRules(ctx.tenantId, stored);
         return { status: 200, body: { version: stored.version, rules: rules.length, components: [...new Set(rules.map((r) => r.component))] } };
@@ -300,13 +350,27 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
       permission: 'platform.backup.record', idempotent: true,
       handler: async (ctx) => {
         const backupId = ctx.params['backupId'] ?? '';
+        // PA-12 round 7: only the backup job's own machine identity reports a backup — every PERSON is refused, the
+        // owner included, so nobody can hand-post a "good, encrypted, off-site" night and silence the missed-backup
+        // alarm. (M35-FR-01 names no human path for recording a backup; drills are recorded separately, `backup.drill.record`.)
+        if (deps.isBackupJob === undefined || !(await deps.isBackupJob(ctx.tenantId, ctx.userId))) {
+          throw apiError(403, {
+            code: 'not_the_backup_job',
+            whatHappened: 'A backup is recorded only by the backup job itself, signed in as its own machine identity — never from a person\'s sign-in, whoever they are. '
+              + 'A backup somebody typed in is not evidence that a backup ran.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Nothing was recorded. Let the backup job report its own outcome; if it has not, the missed-backup alert is the true picture.',
+          });
+        }
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isIso(b['at']) || !isBool(b['ok']) || !isBool(b['encrypted']) || !isBool(b['offsite'])
           || (b['sizeBytes'] !== undefined && (!Number.isInteger(b['sizeBytes']) || (b['sizeBytes'] as number) < 0))
-          || (b['detail'] !== undefined && !isStr(b['detail']))) {
+          || (b['detail'] !== undefined && !isStr(b['detail']))
+          || (b['endedAt'] !== undefined && (!isIso(b['endedAt']) || Date.parse(b['endedAt']) < Date.parse(b['at'] as string)))
+          || (b['checksum'] !== undefined && !(typeof b['checksum'] === 'string' && /^sha256:[0-9a-f]{64}$/.test(b['checksum'])))) {
           throw apiError(400, {
             code: 'not_readable_as_a_backup_record',
-            whatHappened: 'A backup record needs when it ran (ISO time) and whether it completed (ok), was encrypted and was copied off-site; optionally its size in bytes and a detail.',
+            whatHappened: 'A backup record needs when it ran (ISO time) and whether it completed (ok), was encrypted and was copied off-site; optionally its size in bytes, when it ended (not before it ran), its checksum (sha256:<64 hex>) and a detail.',
             wasItSaved: 'not_saved',
             nextSafeAction: 'Send the four facts about the backup. Nothing was recorded.',
           });
@@ -322,6 +386,8 @@ export function observedHealthRoutes(deps: ObservedHealthDeps): readonly Route[]
         const record: BackupRecord = {
           backupId, at: b['at'], ok: b['ok'], encrypted: b['encrypted'], offsite: b['offsite'],
           ...(Number.isInteger(b['sizeBytes']) ? { sizeBytes: b['sizeBytes'] as number } : {}),
+          ...(isIso(b['endedAt']) ? { endedAt: b['endedAt'] } : {}),
+          ...(typeof b['checksum'] === 'string' ? { checksum: b['checksum'] } : {}),
           ...(isStr(b['detail']) ? { detail: b['detail'] } : {}),
           recordedBy: ctx.userId, recordedAt: deps.now(),
         };

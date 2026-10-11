@@ -39,8 +39,10 @@ describeOrSkip('off-site recovery rehearsal onto a spare database (PA-12)', () =
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: urlFor('postgres'), max: 1 });
+    admin.on('error', () => { /* a scratch database is dropped WITH (FORCE); its idle connections are cut */ });
     for (const db of [SOURCE, SPARE, SPARE2]) await admin.query(`CREATE DATABASE ${db}`);
     const source = new Pool({ connectionString: urlFor(SOURCE), max: 2, options: '-c app.tenant_id=*' });
+    source.on('error', () => { /* a scratch database is dropped WITH (FORCE); its idle connections are cut */ });
     const dir = 'db/migrations';
     await runMigrations(pgPoolClient(source), readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
       .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf8') })));
@@ -71,6 +73,7 @@ describeOrSkip('off-site recovery rehearsal onto a spare database (PA-12)', () =
     for (const f of readdirSync(offsite)) expect(statSync(join(offsite, f)).mode & 0o222).toBe(0);
     // The spare database holds what was taken.
     const spare = new Pool({ connectionString: urlFor(SPARE), max: 1, options: '-c app.tenant_id=*' });
+    spare.on('error', () => { /* a scratch database is dropped WITH (FORCE); its idle connections are cut */ });
     expect(Number((await spare.query(`SELECT coalesce(sum((payload->>'totalMinor')::bigint),0)::bigint AS t FROM event_ledger WHERE type='SaleCommitted'`)).rows[0].t)).toBe(100_000);
     await spare.end();
     // The rehearsal record is on disk beside the backup.
@@ -86,6 +89,7 @@ describeOrSkip('off-site recovery rehearsal onto a spare database (PA-12)', () =
       });
       expect(record.outcome).toBe('refused_offsite_copy_damaged');
       const spare2 = new Pool({ connectionString: urlFor(SPARE2), max: 1 });
+      spare2.on('error', () => { /* a scratch database is dropped WITH (FORCE); its idle connections are cut */ });
       expect(Number((await spare2.query("SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public'")).rows[0].n)).toBe(0);
       await spare2.end();
     } finally {

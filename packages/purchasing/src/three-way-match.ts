@@ -26,13 +26,18 @@ export interface MatchLine {
   readonly invoicedUnitMinor: number;
   /** OB-31: quantity steps per whole priced unit — 1000 for a kg product counted in grams; absent ⇒ 1. */
   readonly minorPerUnit?: number;
+  /** OB-46 "A": the ordered price buys this many whole units (a case cost carried exactly — ₹250 per 24). Absent ⇒ 1. */
+  readonly orderedPer?: number;
+  /** OB-46 "A": the invoiced price buys this many whole units. Absent ⇒ 1. */
+  readonly invoicedPer?: number;
 }
 
-/** OB-31: qty steps × per-unit price ÷ steps per unit, rounded once half up (exact for items). */
-const valueOf = (qty: number, unitMinor: number, scale = 1): number => {
-  if (scale === 1) return qty * unitMinor;
+/** OB-31 · OB-46: qty steps × price ÷ (steps per unit × units the price buys), rounded once half up (exact for items). */
+const valueOf = (qty: number, unitMinor: number, scale = 1, per = 1): number => {
+  const d = scale * per;
+  if (d === 1) return qty * unitMinor;
   const n = qty * unitMinor;
-  return Math.sign(n) * Math.floor((Math.abs(n) * 2 + scale) / (2 * scale));
+  return Math.sign(n) * Math.floor((Math.abs(n) * 2 + d) / (2 * d));
 };
 
 export type MatchStatus = 'matched' | 'within_tolerance' | 'blocked';
@@ -95,17 +100,22 @@ export function threeWayMatch(input: {
 
   const lines = input.lines.map((l): LineMatch => {
     const payQty = Math.min(l.orderedQty, l.receivedQty, l.invoicedQty);
-    const payUnit = Math.min(l.orderedUnitMinor, l.invoicedUnitMinor);
-    const payableMinor = valueOf(payQty, payUnit, l.minorPerUnit);
+    // OB-46: prices compared per unit as exact fractions (price ÷ units it buys) — the lower of the two is paid.
+    const op = l.orderedPer ?? 1;
+    const ip = l.invoicedPer ?? 1;
+    const invoicedHigher = l.invoicedUnitMinor * op > l.orderedUnitMinor * ip;
+    const [payUnit, payPer] = invoicedHigher ? [l.orderedUnitMinor, op] : [l.invoicedUnitMinor, ip];
+    const payableMinor = valueOf(payQty, payUnit, l.minorPerUnit, payPer);
 
     const quantityDifference = l.invoicedQty - l.receivedQty;
-    const priceDifferenceMinor = l.invoicedUnitMinor - l.orderedUnitMinor;
+    const priceDifferenceMinor = op === 1 && ip === 1 ? l.invoicedUnitMinor - l.orderedUnitMinor
+      : Math.round((l.invoicedUnitMinor * op - l.orderedUnitMinor * ip) / (op * ip));
 
     const qOut = l.orderedQty === 0 ? quantityDifference !== 0
       : Math.abs(quantityDifference * 10_000 / l.orderedQty) > qTol;
-    const pOut = l.orderedUnitMinor === 0 ? priceDifferenceMinor !== 0
-      : Math.abs(priceDifferenceMinor * 10_000 / l.orderedUnitMinor) > pTol;
-    const value = Math.abs(valueOf(l.invoicedQty, l.invoicedUnitMinor, l.minorPerUnit) - payableMinor);
+    const pOut = l.orderedUnitMinor === 0 ? l.invoicedUnitMinor !== 0
+      : Math.abs((l.invoicedUnitMinor * op - l.orderedUnitMinor * ip) * 10_000 / (l.orderedUnitMinor * ip)) > pTol;
+    const value = Math.abs(valueOf(l.invoicedQty, l.invoicedUnitMinor, l.minorPerUnit, ip) - payableMinor);
 
     const status: MatchStatus = !qOut && !pOut ? 'matched'
       : value <= immaterial ? 'within_tolerance' : 'blocked';
@@ -119,7 +129,7 @@ export function threeWayMatch(input: {
   });
 
   const payableMinor = lines.reduce((t, l) => t + l.payableMinor, 0);
-  const invoicedMinor = input.lines.reduce((t, l) => t + valueOf(l.invoicedQty, l.invoicedUnitMinor, l.minorPerUnit), 0);
+  const invoicedMinor = input.lines.reduce((t, l) => t + valueOf(l.invoicedQty, l.invoicedUnitMinor, l.minorPerUnit, l.invoicedPer ?? 1), 0);
   const blocked = lines.some((l) => l.status === 'blocked');
 
   return {

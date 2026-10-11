@@ -75,8 +75,11 @@ describe('hosted pilot seed — over a real socket', () => {
     // Each provisioned login landed ONCE, despite two runs, and names the person who ran the seed.
     const grants = await store.readStream(PILOT_DEMO_TENANT, STREAM.identity, { type: 'RoleGranted' });
     const provisioned = grants.filter((g) => g.event.source === 'pilot/seed');
-    // The foundation's role logins plus the supplier-portal login the trading-partner step adds.
-    expect(provisioned).toHaveLength(PILOT_FOUNDATION.users.length + 1);
+    // The foundation's role logins plus the supplier-portal login the trading-partner step adds, plus (EA-01 round 7) the
+    // store computer's grant NAMING the demo store — the one it reports its sync for.
+    expect(provisioned).toHaveLength(PILOT_FOUNDATION.users.length + 2);
+    expect(provisioned.filter((g) => (g.event.payload as { userId: string; branchScope: unknown }).userId === 'pilot-store-edge').map((g) => (g.event.payload as { branchScope: unknown }).branchScope))
+      .toEqual(['all', [PILOT_DEMO_BRANCH]]);
     expect(provisioned.map((g) => (g.event.payload as { userId: string }).userId)).toContain(PILOT_DEMO_SUPPLIER_LOGIN);
     for (const g of provisioned) {
       const req = (g.event.payload as { request: { requestedBy: string; approvedBy: string } }).request;
@@ -84,6 +87,9 @@ describe('hosted pilot seed — over a real socket', () => {
       expect(req.approvedBy).toBe('pilot-seed:test-operator');
     }
     expect(grants.filter((g) => g.event.source === 'system/genesis')).toHaveLength(1);
+    // OB-42: the owner's marketing cap is in force for the demo shop — set through the owner's route, once, by the seed.
+    const cap = await client.request({ method: 'GET', path: '/v1/service/campaigns/frequency-policy', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect((cap.body as { policy: Record<string, unknown> }).policy).toMatchObject({ capPerWindow: 2, windowDays: 7, setBy: OWNER });
   }, 60_000);
 
   it('the seeded logins really authenticate through the live API with their role permissions', async () => {
@@ -139,6 +145,10 @@ describe('demo price list for the demo store box (ADR-0016)', () => {
     expect(res.status).toBe(200);
     const env = res.body as StorePackEnvelope;
     expect(env).toMatchObject({ tenantId: PILOT_DEMO_TENANT, storeId: PILOT_DEMO_BRANCH });
+    // EA-01 round 7: the demo box's grant NAMES the demo store, so it reports its sync there (and only there).
+    const now = new Date().toISOString();
+    const wm = await client.request({ method: 'POST', path: `/v1/stores/${PILOT_DEMO_BRANCH}/sync-watermarks`, userId: 'pilot-store-edge', tenantId: PILOT_DEMO_TENANT, idempotencyKey: `wm-${now}`, body: { observedAt: now, domains: [{ domain: 'sales', completeThrough: now, unsent: 0, deadLettered: 0 }] } });
+    expect(wm.status, JSON.stringify(wm.body)).toBe(200);
 
     // Through the EDGE's own reader and till payload — exactly what the demo box does once it has pulled it.
     const edgePack = readPack(packPayloadOf(env), env.issuedAt);
@@ -149,12 +159,14 @@ describe('demo price list for the demo store box (ADR-0016)', () => {
     const byId = new Map(products.map((p) => [p.productId, p.unitPriceMinor] as const));
     for (const p of PILOT_CATALOGUE.products) expect(byId.get(p.productId)).toBe(p.price.priceMinor);
 
-    // Honest gaps: no cost (the published pack carries none). Every other section the box reads back is head office's:
+    // OB-39 "B" (owner, 11 Oct 2026): a product the demo store received at a cost carries head office's average buying cost
+    // (a positive whole amount per unit); one never received at a cost carries none (never a zero). Every other section the box reads back is head office's:
     // the approvals waiting (known, even when none wait), the orders, the people from the role catalogue, the store's
     // rules and checklist, the loss-prevention limits, and the warehouse phone's bins and open deliveries. Nobody is
     // named on a screen: each runs as the person who signs in (OB-16, OB-30).
     const sections = env.sections as { products: Record<string, unknown>[] };
-    for (const p of sections.products) expect(p).not.toHaveProperty('unitCostMinor');
+    for (const p of sections.products) if ('unitCostMinor' in p) expect(Number.isInteger(p['unitCostMinor']) && (p['unitCostMinor'] as number) > 0, String(p['productId'])).toBe(true);
+    expect(sections.products.some((p) => 'unitCostMinor' in p)).toBe(true);
     expect(edgePack.approvals.known && edgePack.purchaseOrders.known && edgePack.roles.known && edgePack.roleAssignments.known).toBe(true);
     expect(edgePack.managerPolicy.known && edgePack.managerPolicy.value.userId).toBeFalsy();
     expect(edgePack.warehouse.known && edgePack.checklist.known && edgePack.lossPreventionRules.known).toBe(true);

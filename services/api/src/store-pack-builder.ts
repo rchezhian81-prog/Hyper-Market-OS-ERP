@@ -30,7 +30,7 @@ import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
   foldPurchaseOrders, purchaseAdapter, lpRulesAdapter, allCountReconciliations, adjustmentRequestAdapter, goodsReceiptAdapter,
-  planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter,
+  planogramStoreAdapter, shelfCountAdapter, assortmentAdapter, spacePerformanceAdapter, displayFundingAdapter, averageBuyingCosts,
 } from './adapters';
 import { inForcePlanogram } from '../../inventory/src/planograms';
 import { ROLE_CATALOGUE } from './roles';
@@ -118,12 +118,17 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     }
     const barcodes = new Map<string, string[]>();
     for (const b of published.snapshot.barcodes) barcodes.set(b.productId, [...(barcodes.get(b.productId) ?? []), b.code]);
+    // OB-39 "B": the store's AVERAGE BUYING COST per product (per whole unit) — what the box's Today margin is costed at. A
+    // product this store never received at a cost carries none, and the box says its margin is not known (never a zero).
+    const costs = await averageBuyingCosts({ store, now }, tenantId);
     sections['products'] = published.snapshot.products.map((p) => {
       const m = master.get(p.productId);
+      const unitCostMinor = costs.costOf(p.productId, storeId);
       return {
         productId: p.productId, name: p.name,
         categoryId: typeof m?.primaryCategoryId === 'string' && m.primaryCategoryId !== '' ? m.primaryCategoryId : 'uncategorised',
-        unitPriceMinor: p.unitPriceMinor, uom: unitCode(p.baseUom), taxBps: p.taxBps, status: p.status, recallBlock: p.recallBlock === true,
+        unitPriceMinor: p.unitPriceMinor, ...(unitCostMinor === undefined ? {} : { unitCostMinor }),
+        uom: unitCode(p.baseUom), taxBps: p.taxBps, status: p.status, recallBlock: p.recallBlock === true,
         barcodes: barcodes.get(p.productId) ?? [],
         availableMinor: onHand.get(p.productId) ?? 0,
       };

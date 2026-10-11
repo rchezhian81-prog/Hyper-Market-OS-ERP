@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 930 | 564 | 564 | 84 | 294 |
+| 13 | 939 | 570 | 570 | 89 | 297 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -63,12 +63,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/org/nodes/:nodeId/activation` | `platform.setup.write` | core | yes |
 | GET | `/v1/store-packs/:storeId` | `store.pack.read` | core | — |
 | GET | `/v1/store-packs/:storeId/held` | `org.branch.read` | core | — |
-| POST | `/v1/store-packs/:storeId/held` | `store.pack.read` | core | yes |
+| POST | `/v1/store-packs/:storeId/held` | `store.computer.report` | core | yes |
 | GET | `/v1/stores/:storeId/rules` | `org.branch.read` | core | — |
 | POST | `/v1/stores/:storeId/rules` | `platform.setup.write` | core | yes |
 | GET | `/v1/stores/:storeId/settings` | `org.branch.read` | core | — |
 | POST | `/v1/stores/:storeId/settings` | `platform.setup.write` | core | yes |
-| POST | `/v1/stores/:storeId/sync-watermarks` | `store.pack.read` | core | yes |
+| POST | `/v1/stores/:storeId/sync-watermarks` | `store.computer.report` | core | yes |
 
 ## API-02 — Catalogue (M03–M05)
 
@@ -426,8 +426,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/notifications/budget` | `notification.budget.set` | core | yes |
 | POST | `/v1/notifications/can-send` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id` | `notification.send.check` | core | yes |
-| POST | `/v1/notifications/queue/:id/delivered` | `notification.send.check` | core | yes |
-| POST | `/v1/notifications/queue/:id/failed` | `notification.send.check` | core | yes |
+| POST | `/v1/notifications/queue/:id/delivered` | `notification.delivery.report` | core | yes |
+| POST | `/v1/notifications/queue/:id/failed` | `notification.delivery.report` | core | yes |
 | GET | `/v1/notifications/queue/dead-letters` | `notification.send.check` | core | — |
 | POST | `/v1/notifications/queue/drain` | `notification.send.check` | core | yes |
 | GET | `/v1/notifications/queue/pending` | `notification.send.check` | core | — |
@@ -435,6 +435,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/notifications/templates` | `notification.send.check` | core | — |
 | POST | `/v1/notifications/templates/:templateId` | `document.template.manage` | core | yes |
 | POST | `/v1/notifications/templates/:templateId/approval` | `document.template.manage` | core | yes |
+| POST | `/v1/notifications/templates/:templateId/withdrawal` | `document.template.manage` | core | yes |
 | POST | `/v1/privacy/breach/assess` | `customer.consent.write` | core | yes |
 | POST | `/v1/privacy/consent-notice/check` | `customer.consent.read` | core | yes |
 | GET | `/v1/privacy/data-requests` | `privacy.request.manage` | core | — |
@@ -451,7 +452,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/privacy/pii/:customerRef/:category` | `privacy.request.manage` | core | yes |
 | POST | `/v1/privacy/retention/sweep` | `customer.consent.write` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/attribution` | `customer.campaign.read` | core | yes |
-| POST | `/v1/service/campaigns/:campaignId/messages/:messageId/status` | `notification.send.check` | core | yes |
+| POST | `/v1/service/campaigns/:campaignId/messages/:messageId/status` | `notification.delivery.report` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/plan` | `customer.campaign.send` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/send` | `customer.campaign.send` | core | yes |
 | GET | `/v1/service/campaigns/:campaignId/status` | `customer.campaign.read` | core | — |
@@ -577,6 +578,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/b2b-portal/me/orders/:documentId` | `b2b.portal.self` | `b2b` | yes |
 | POST | `/v1/b2b-portal/me/quote-requests/:requestId` | `b2b.portal.self` | `b2b` | yes |
 | GET | `/v1/b2b-portal/me/statement` | `b2b.portal.self` | `b2b` | — |
+| GET | `/v1/b2b-portal/me/transfer-notes` | `b2b.portal.self` | `b2b` | — |
+| POST | `/v1/b2b-portal/me/transfer-notes/:noteId` | `b2b.portal.self` | `b2b` | yes |
 | GET | `/v1/b2b-portal/probing` | `b2b.account.read` | `b2b` | — |
 | GET | `/v1/b2b/accounts/:customerId` | `b2b.account.read` | `b2b` | — |
 | POST | `/v1/b2b/accounts/:customerId` | `b2b.account.manage` | `b2b` | yes |
@@ -604,6 +607,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/b2b/recurring-runs` | `b2b.document.issue` | `b2b` | yes |
 | POST | `/v1/b2b/recurring/:scheduleId` | `b2b.document.issue` | `b2b` | yes |
 | POST | `/v1/b2b/recurring/:scheduleId/approve` | `b2b.recurring.approve` | `b2b` | yes |
+| GET | `/v1/b2b/transfer-notes` | `b2b.receivable.record` | `b2b` | — |
+| POST | `/v1/b2b/transfer-notes/:noteId/match` | `b2b.receivable.record` | `b2b` | yes |
+| POST | `/v1/b2b/transfer-notes/:noteId/reject` | `b2b.receivable.record` | `b2b` | yes |
 | GET | `/v1/concession/branches/:branchId/store-valuation` | `concession.charge.read` | `dept.concession` | — |
 | GET | `/v1/concession/concessionaires/:concessionaireId/deposit` | `concession.charge.read` | `dept.concession` | — |
 | POST | `/v1/concession/concessionaires/:concessionaireId/deposit-movements/:movementId` | `concession.contract.manage` | `dept.concession` | yes |
@@ -622,6 +628,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/concession/trading-breaches` | `concession.charge.read` | `dept.concession` | — |
 | GET | `/v1/concession/trading-feed` | `concession.tag.sync` | `dept.concession` | — |
 | POST | `/v1/concession/valuation` | `concession.charge.read` | `dept.concession` | yes |
+| GET | `/v1/finance/account-openings/:loadId` | `finance.period.read` | core | — |
+| POST | `/v1/finance/account-openings/:loadId` | `finance.journal.post` | core | yes |
+| POST | `/v1/finance/account-openings/:loadId/sign-off` | `finance.period.sign` | core | yes |
 | POST | `/v1/finance/b2b/post` | `finance.journal.post` | `b2b` | yes |
 | GET | `/v1/finance/b2b/postings` | `finance.period.read` | `b2b` | — |
 | GET | `/v1/finance/bank-statements` | `settlement.review.read` | core | — |

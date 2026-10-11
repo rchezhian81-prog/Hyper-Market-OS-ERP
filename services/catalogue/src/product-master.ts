@@ -17,6 +17,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { settlePublishCategories, type CategoryRegisterDeps } from './categories';
 import {
   publishProduct, NotPublishableError, CategoryNotFoundError,
@@ -24,8 +25,16 @@ import {
 } from '../../../packages/product/src/index';
 
 export interface ProductMasterDeps {
-  /** Append a published product master (latest-per-id). Idempotent on the caller's key. */
-  readonly publish: (tenantId: string, record: ProductRecord, key: string) => Promise<void> | void;
+  /**
+   * Append a published product master (latest-per-id). Idempotent on the caller's key. With `skuVersion` (from `skuHolder`),
+   * the append lands only while the SKU's write guard is still at that version — otherwise `ConcurrencyConflictError`.
+   */
+  readonly publish: (tenantId: string, record: ProductRecord, key: string, skuVersion?: number) => Promise<void> | void;
+  /**
+   * GT-05 store volume: which OTHER product holds `sku` now, read by key — not the whole master — with the version of the
+   * SKU's write guard, read first. Absent (a bare fake): the route scans `products`.
+   */
+  readonly skuHolder?: (tenantId: string, sku: string, productId: string) => Promise<{ readonly holder?: string; readonly version: number }>;
   readonly product: (tenantId: string, productId: string) => Promise<ProductRecord | undefined> | ProductRecord | undefined;
   readonly products: (tenantId: string) => Promise<readonly ProductRecord[]> | readonly ProductRecord[];
   /** Head office's own category list (SF-06-b · OB-24 "A") — what every product is judged against. */
@@ -132,19 +141,32 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
         // their SKU is free — only here, where every product master lives, can a collision be seen. A SKU
         // already held by a DIFFERENT product is refused; re-publishing the SAME product (same id) under its
         // own SKU is not a clash. (Barcodes are enforced one-code-one-item on the barcode route.)
-        const clash = (await deps.products(ctx.tenantId)).find(
-          (p) => p.sku === published.sku && p.productId !== published.productId,
-        );
-        if (clash !== undefined) {
-          throw apiError(409, {
-            code: 'sku_already_in_use',
-            whatHappened: `The SKU "${published.sku}" already belongs to product "${clash.productId}" — one SKU names exactly one product, so this publish would make a barcode or shelf label ambiguous.`,
-            wasItSaved: 'not_saved',
-            nextSafeAction: 'Give this product its own SKU, or correct the id if this is the same product under a different code — nothing was saved and the catalogue is unchanged.',
-          });
+        // GT-05: the SKU's holder is read by key (not the whole master), with its guard's version; a publish that loses the
+        // guard to a simultaneous one re-reads and is judged again — two products can never both take one SKU.
+        for (let attempt = 0; ; attempt += 1) {
+          const held = deps.skuHolder === undefined ? undefined : await deps.skuHolder(ctx.tenantId, published.sku, published.productId);
+          const clash = held === undefined
+            ? (await deps.products(ctx.tenantId)).find((p) => p.sku === published.sku && p.productId !== published.productId)?.productId
+            : held.holder;
+          if (clash !== undefined) {
+            throw apiError(409, {
+              code: 'sku_already_in_use',
+              whatHappened: `The SKU "${published.sku}" already belongs to product "${clash}" — one SKU names exactly one product, so this publish would make a barcode or shelf label ambiguous.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Give this product its own SKU, or correct the id if this is the same product under a different code — nothing was saved and the catalogue is unchanged.',
+            });
+          }
+          try {
+            await deps.publish(ctx.tenantId, published, ctx.idempotencyKey ?? productId, held?.version);
+          } catch (err) {
+            if (err instanceof ConcurrencyConflictError && attempt < 4) continue;
+            if (err instanceof ConcurrencyConflictError) {
+              throw apiError(409, { code: 'sku_changed_meanwhile', whatHappened: `The SKU "${published.sku}" kept changing while this product was being saved.`, wasItSaved: 'not_saved', nextSafeAction: 'Read the product master and publish again. Nothing was saved.' });
+            }
+            throw err;
+          }
+          return { status: 201, body: { product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}) } };
         }
-        await deps.publish(ctx.tenantId, published, ctx.idempotencyKey ?? productId);
-        return { status: 201, body: { product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}) } };
       },
     },
     {

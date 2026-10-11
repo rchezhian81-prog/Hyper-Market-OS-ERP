@@ -194,7 +194,9 @@ export async function runBriefPass(deps: ScheduledBriefDeps, tenantId: string, a
       await deps.outbox.enqueue(tenantId, {
         id, change: 'enqueued', by: actor, at: now, channel: 'whatsapp',
         // The owner's own business digest rides the transactional purpose: it is never marketing (no promotion in it).
-        intent: { customerId: recipient, purpose: 'transactional', templateId: 'owner-daily-brief', templateVersion: 1, text: lines.join('\n') },
+        // PA-08 r6: composed by head office from the figures, not from a register template — marked so the sender's
+        // template re-check knows it (recipient, consent and budget are still re-checked).
+        intent: { customerId: recipient, purpose: 'transactional', templateId: 'owner-daily-brief', templateVersion: 1, text: lines.join('\n'), composedBy: 'system:owner-brief' },
       }, `notif-enqueue-${id}`);
       ran.push({ ...base, outcome: 'queued', detail: attempt === 1 ? `put on the queue as ${id}` : `the earlier attempt was dead-lettered — queued again as ${id}` });
       continue;

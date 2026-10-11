@@ -31,6 +31,8 @@ function stub(over: Partial<World> = {}) {
     defineAlertRules: (_t, r) => { w.rules.push(r); },
     alerts: () => projectAlerts(w.alertEvents),
     recordAlertEvent: (_t, e, key) => { w.alertEvents.push(e); w.keys.push(key); },
+    // PA-12 r7: 'u-ops' (the default caller here) stands for the backup job's own machine identity.
+    isBackupJob: (_t, u) => u === 'u-ops',
   };
   return { w, deps, routes: observedHealthRoutes(deps) };
 }
@@ -214,6 +216,17 @@ describe('backups — recorded facts, counted only when protected (FR-01)', () =
     await putRules(s.routes, { rules: [RULE], backupMaxAgeSeconds: 24 * 3_600 });
     body = (await routeFor(s.routes, 'GET', OBSERVED).handler(ctx())).body as ObservedBody;
     expect(body.health.components.find((c) => c.name === 'backup')).toMatchObject({ status: 'down' });
+  });
+
+  it('PA-12 r7: only the backup job records a backup — any other caller, and a deployment that cannot tell, is refused and nothing is kept', async () => {
+    const s = stub();
+    const asPerson = await thrown(() => routeFor(s.routes, 'POST', BACKUP).handler(ctx({ userId: 'u-owner', params: { backupId: 'b-9' }, body: { at: minutesAgo(1), ok: true, encrypted: true, offsite: true } })));
+    expect(asPerson.status).toBe(403);
+    expect(asPerson.body.code).toBe('not_the_backup_job');
+    const withoutCheck: ObservedHealthDeps = { ...s.deps, isBackupJob: undefined };
+    const blind = await thrown(() => routeFor(observedHealthRoutes(withoutCheck), 'POST', BACKUP).handler(ctx({ params: { backupId: 'b-9' }, body: { at: minutesAgo(1), ok: true, encrypted: true, offsite: true } })));
+    expect(blind.body.code).toBe('not_the_backup_job');
+    expect(s.w.backups).toEqual([]);
   });
 
   it('refuses an unreadable record and a reused backup id, recording nothing', async () => {

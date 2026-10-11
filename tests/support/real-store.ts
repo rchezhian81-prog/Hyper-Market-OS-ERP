@@ -51,7 +51,7 @@ export interface RealCloud {
    * Grant `roleId` to `userId` the way the product does: REQUESTED by one signed-in person (`u-hr`, the second initial
    * admin) and APPROVED by another who already holds every permission the role carries (the owner) — two acts.
    */
-  grant(userId: string, roleId: string, requestedBy?: string): Promise<void>;
+  grant(userId: string, roleId: string, requestedBy?: string, branchScope?: readonly string[] | 'all'): Promise<void>;
   /** Everything the API printed — the boot lines, the structured request log, every refusal. */
   readonly said: readonly string[];
   /** PA-08: the notification sender the API started on its own timer (only when a provider was handed in). */
@@ -69,6 +69,8 @@ export interface RealCloudInput {
   readonly packSigningKey: string;
   /** PA-08: outbound providers handed to `startApi` exactly as a deployment would (tests: the recording adapter). */
   readonly providers?: ApiProviders;
+  /** Further configuration handed to `startApi` as a deployment's environment would (e.g. BRIEF_WORKER_TENANT_IDS). */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -110,6 +112,7 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
     BOOTSTRAP_OWNER_USER_ID: input.owner,
     // The operator names the shops the background workers serve (never discovered across shops).
     WORKER_TENANT_IDS: input.tenantId,
+    ...(input.env ?? {}),
   }, say, say, input.providers ?? {});
   if (running === undefined) throw new Error(`the real API refused to start:\n${said.join('\n')}`);
 
@@ -142,12 +145,13 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
     ...(running.opsAlertWorker === undefined ? {} : { opsAlertWorker: running.opsAlertWorker }),
     token,
     request,
-    grant: async (userId, roleId, requestedBy = REQUESTER) => {
+    grant: async (userId, roleId, requestedBy = REQUESTER, branchScope = 'all') => {
       // Two acts (Wave 2b · PA-03): the requester asks under their own sign-in, the owner approves under theirs.
-      const grantId = `grant-${userId}-${roleId}`;
+      // Round 7: a grant may NAME its stores — a store computer reports only for the stores its grant names (EA-01).
+      const grantId = `grant-${userId}-${roleId}${branchScope === 'all' ? '' : `-at-${[...branchScope].join('-')}`}`;
       const asked = await request({
         method: 'POST', path: '/v1/identity/grants', userId: requestedBy, idempotencyKey: `${grantId}-ask`,
-        body: { grantId, userId, roleId, branchScope: 'all', reason: 'the practice cast' },
+        body: { grantId, userId, roleId, branchScope, reason: 'the practice cast' },
       });
       if (asked.status !== 202) throw new Error(`requesting ${roleId} for ${userId} failed: ${asked.status} ${JSON.stringify(asked.body)}`);
       const reply = await request({ method: 'POST', path: `/v1/identity/grants/${grantId}/approve`, userId: input.owner, idempotencyKey: `${grantId}-approve`, body: {} });

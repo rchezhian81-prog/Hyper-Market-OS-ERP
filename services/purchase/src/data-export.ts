@@ -35,10 +35,28 @@ import type { StoredPurchaseOrder } from './purchase-orders';
 
 type Row = Readonly<Record<string, string>>;
 
+/** A bounded period of whole days (inclusive), for a domain whose records are dated. */
+export interface ExportPeriod { readonly from: string; readonly to: string }
+
 /** One exportable domain: its open schema, and where its rows come from (a store fold). */
 export interface ExportDomainSource {
   readonly spec: ExportSpec;
-  readonly rows: (tenantId: string) => Promise<readonly Row[]> | readonly Row[];
+  /**
+   * SF-10: a dated domain (attendance) is exported for a BOUNDED period only — `{ from, to }` (YYYY-MM-DD, inclusive) in
+   * the request body, at most `maxDays` long. Absent: the domain is exported whole and takes no period.
+   */
+  readonly period?: { readonly maxDays: number };
+  readonly rows: (tenantId: string, period?: ExportPeriod) => Promise<readonly Row[]> | readonly Row[];
+}
+
+const DAY_MS = 86_400_000;
+const isIsoDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`))
+  && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+/** Every date from `from` to `to`, inclusive. */
+export function daysOf(period: ExportPeriod): readonly string[] {
+  const out: string[] = [];
+  for (let t = Date.parse(`${period.from}T00:00:00Z`); t <= Date.parse(`${period.to}T00:00:00Z`); t += DAY_MS) out.push(new Date(t).toISOString().slice(0, 10));
+  return out;
 }
 
 /** The append-only export audit ledger (who took what) — an `ExportAudit` per export. */
@@ -97,6 +115,11 @@ export interface ExportOrder {
   readonly orderId: string; readonly locationId: string; readonly placedAt: string; readonly currentState: string;
   readonly lines: readonly unknown[]; readonly fulfilment?: string; readonly customerRef?: string;
 }
+/** An attendance day as the export reads it — the attendance store's latest hours for (employee, date). */
+export interface ExportAttendance { readonly date: string; readonly employeeId: string; readonly hours: number }
+/** A member of staff as the export reads it — the staff register (branch, hourly rate). */
+export interface ExportStaff { readonly employeeId: string; readonly branchId: string; readonly hourlyRateMinor?: number }
+
 /** An issued payslip as the export reads it — the payslip register, with the employee's branch from the staff register. */
 export interface ExportPayslip {
   readonly employeeId: string; readonly branchId: string | null; readonly period: string; readonly onDate: string;
@@ -122,7 +145,7 @@ export const EXPORT_COVERAGE: readonly { readonly domain: string; readonly modul
   { domain: 'Loyalty points and store credit', module: 'M17', status: 'exported', exportDomain: 'loyalty-wallets' },
   { domain: 'Orders (desk and online)', module: 'M18', status: 'exported', exportDomain: 'orders' },
   { domain: 'Payroll (issued payslips)', module: 'M26', status: 'exported', exportDomain: 'payslips' },
-  { domain: 'Attendance hours', module: 'M25/M26', status: 'not_yet', why: 'the attendance store answers one day at a time; a shop-wide attendance read model is needed before it can be exported whole' },
+  { domain: 'Attendance hours (a bounded period)', module: 'M25/M26', status: 'exported', exportDomain: 'attendance' },
 ];
 
 export function buildExportDomains(sources: {
@@ -139,8 +162,49 @@ export function buildExportDomains(sources: {
   readonly loyaltyWallets?: (tenantId: string) => Promise<{ readonly pointValuePaise: number; readonly members: readonly ExportLoyaltyWallet[] }>;
   readonly orders?: (tenantId: string) => Promise<readonly ExportOrder[]>;
   readonly payslips?: (tenantId: string) => Promise<readonly ExportPayslip[]>;
+  /** The attendance store's read for ONE day (the same read `GET /v1/hr/workforce/attendance?date=` answers) and the staff register. */
+  readonly attendanceOn?: (tenantId: string, date: string) => Promise<readonly ExportAttendance[]>;
+  readonly staff?: (tenantId: string) => Promise<readonly ExportStaff[]>;
 }): readonly ExportDomainSource[] {
   const more: ExportDomainSource[] = [];
+  if (sources.attendanceOn !== undefined && sources.staff !== undefined) {
+    const attendanceOn = sources.attendanceOn;
+    const staff = sources.staff;
+    more.push({
+      spec: {
+        // The same authority as the attendance read itself (workforce.roster.read), scoped to the employee's branch.
+        // Hours and what they cost are pay-relevant: under the payroll rule they are REDACTED for anyone without
+        // export.sensitive (today the owner), so a manager's file says who was recorded on which day, not their pay.
+        domain: 'attendance', requires: 'workforce.roster.read', branchColumn: 'branch',
+        columns: [
+          { name: 'date', type: 'date' }, { name: 'employeeId', type: 'text' },
+          { name: 'branch', type: 'text', description: 'The employee\'s branch on the staff register (blank if not on it).' },
+          { name: 'hours', type: 'text', sensitive: true, description: 'Hours worked that day, as recorded (the latest record wins).' },
+          { name: 'hourlyRateMinor', type: 'integer', sensitive: true, description: 'The hourly rate on the staff register, in paise; blank if none.' },
+          { name: 'costMinor', type: 'integer', sensitive: true, description: 'hours × hourly rate, rounded to the paisa; blank if no rate.' },
+        ],
+      },
+      // At most 92 days per export (OB-51: a quarter) — so an export is never an unbounded scan of every day.
+      period: { maxDays: 92 }, // OB-51 (owner, 11 Oct 2026): a quarter per export
+      rows: async (t, period) => {
+        if (period === undefined) return [];
+        const register = new Map((await staff(t)).map((e) => [e.employeeId, e] as const));
+        const out: Row[] = [];
+        for (const date of daysOf(period)) {
+          const day = [...(await attendanceOn(t, date))].sort((a, b) => a.employeeId.localeCompare(b.employeeId));
+          for (const r of day) {
+            const who = register.get(r.employeeId);
+            const rate = who?.hourlyRateMinor;
+            out.push({
+              date: r.date, employeeId: r.employeeId, branch: who?.branchId ?? '', hours: String(r.hours),
+              hourlyRateMinor: rate === undefined ? '' : String(rate), costMinor: rate === undefined ? '' : String(Math.round(r.hours * rate)),
+            });
+          }
+        }
+        return out;
+      },
+    });
+  }
   if (sources.purchaseOrders !== undefined) {
     const pos = sources.purchaseOrders;
     more.push({
@@ -397,6 +461,7 @@ export function dataExportRoutes(deps: DataExportDeps): readonly Route[] {
           domains: deps.domains.map((d) => ({
             domain: d.spec.domain,
             requires: d.spec.requires,
+            ...(d.period === undefined ? {} : { period: { required: true, maxDays: d.period.maxDays } }),
             columns: d.spec.columns.map((c) => ({
               name: c.name,
               type: c.type,
@@ -425,9 +490,25 @@ export function dataExportRoutes(deps: DataExportDeps): readonly Route[] {
             nextSafeAction: 'Check the name against GET /v1/export.',
           });
         }
+        // SF-10: a dated domain takes a bounded period, checked before anything is read.
+        let period: ExportPeriod | undefined;
+        if (source.period !== undefined) {
+          const b = (ctx.body ?? {}) as Record<string, unknown>;
+          const from = b['from']; const to = b['to'];
+          const span = isIsoDate(from) && isIsoDate(to) ? (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS + 1 : NaN;
+          if (!isIsoDate(from) || !isIsoDate(to) || !(span >= 1) || span > source.period.maxDays) {
+            throw apiError(400, {
+              code: 'export_period_not_bounded',
+              whatHappened: `'${source.spec.domain}' is exported for a bounded period: { "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" }, from on or before to, at most ${source.period.maxDays} days.`,
+              wasItSaved: 'not_saved',
+              nextSafeAction: 'Send the period in the body. Nothing was exported or logged.',
+            });
+          }
+          period = { from, to };
+        }
         const access = await deps.access(ctx.tenantId);
         const context: ExportContext = { userId: ctx.userId, branchId: ctx.branchId, at: deps.now() };
-        const rows = await source.rows(ctx.tenantId);
+        const rows = await source.rows(ctx.tenantId, period);
 
         let result: ExportResult;
         try {
@@ -447,10 +528,11 @@ export function dataExportRoutes(deps: DataExportDeps): readonly Route[] {
         }
 
         // Exports are logged — the audit record is the only evidence afterwards of who took the data.
-        await deps.recordExport(ctx.tenantId, result.audit, ctx.idempotencyKey ?? `${source.spec.domain}-${context.at}`);
+        const audit = period === undefined ? result.audit : { ...result.audit, period };
+        await deps.recordExport(ctx.tenantId, audit, ctx.idempotencyKey ?? `${source.spec.domain}-${context.at}`);
         return {
           status: 200,
-          body: { domain: source.spec.domain, csv: result.csv, schema: result.schema, audit: result.audit },
+          body: { domain: source.spec.domain, csv: result.csv, schema: result.schema, audit },
         };
       },
     },

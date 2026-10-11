@@ -11,7 +11,7 @@
 // is paid, and where they do not, what is paid is the *lowest* of the three until a person settles
 // it. Paying the invoice and investigating later is how an overcharge becomes permanent.
 
-import { minorPerUnitOf, normaliseUom, valueAtUnitCost } from '../../../packages/contracts/src/quantity';
+import { minorPerUnitOf, normaliseUom, valueAtCost } from '../../../packages/contracts/src/quantity';
 import type { Route } from '../../kernel/src/index';
 import { deciderSealFlags } from '../../pos/src/store-seal';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
@@ -191,10 +191,29 @@ export interface SupplierInvoiceLine {
   readonly productId: string;
   readonly quantity: number;
   readonly unitPriceMinor: number;
+  /** OB-46 "A": the price on the paper buys this many whole units (₹250 per case of 24); absent ⇒ 1. */
+  readonly unitPricePer?: number;
   readonly lineTotalMinor: number;
   /** OB-31: the line's unit when the paper names one (kg ⇒ quantity in grams, price per kg); absent ⇒ whole items. */
   readonly uom?: string;
+  /**
+   * The GST the paper charges on this line (M23-FR-02 · M07-FR-04), in minor units, as printed: CGST + SGST on an
+   * intra-state bill, IGST on an inter-state one — never both on one line. Absent ⇒ the paper charges no tax on the line.
+   * `unitPriceMinor` / `lineTotalMinor` stay the TAXABLE value (the price the order agreed is ex-tax); the bill's total is
+   * the lines plus their tax.
+   */
+  readonly cgstMinor?: number;
+  readonly sgstMinor?: number;
+  readonly igstMinor?: number;
 }
+
+/** The GST a set of invoice lines charges, by component — zero where the paper charged none. */
+export interface InvoiceTax { readonly cgstMinor: number; readonly sgstMinor: number; readonly igstMinor: number }
+export const NO_TAX: InvoiceTax = Object.freeze({ cgstMinor: 0, sgstMinor: 0, igstMinor: 0 });
+export const taxOfLines = (lines: readonly SupplierInvoiceLine[]): InvoiceTax => lines.reduce<InvoiceTax>((t, l) => ({
+  cgstMinor: t.cgstMinor + (l.cgstMinor ?? 0), sgstMinor: t.sgstMinor + (l.sgstMinor ?? 0), igstMinor: t.igstMinor + (l.igstMinor ?? 0),
+}), NO_TAX);
+export const taxTotal = (t: InvoiceTax): number => t.cgstMinor + t.sgstMinor + t.igstMinor;
 
 /** What head office could not verify about a captured invoice — said on the record, never silent (P-08). */
 export const INVOICE_FLAGS = Object.freeze([
@@ -247,6 +266,52 @@ export interface StoredMatch extends MatchResult {
     readonly invoicedBefore?: Readonly<Record<string, number>>;
   };
   readonly flags: readonly string[];
+  /**
+   * The GST in the payable (M23-FR-02): present when the paper charged tax. The engine compares TAXABLE values (the order's
+   * price is ex-tax); the tax the paper printed follows the payable line by line in the proportion it went on, so a
+   * withheld quantity withholds its tax too. `payableMinor` / `invoicedMinor` / `withheldMinor` above then INCLUDE the tax.
+   */
+  readonly tax?: MatchTax;
+}
+
+export interface MatchTax {
+  /** The taxable value that may be paid — the lowest of three, before tax. */
+  readonly taxablePayableMinor: number;
+  readonly cgstMinor: number;
+  readonly sgstMinor: number;
+  readonly igstMinor: number;
+  /** The tax the paper charged in all — the payable's tax plus what is withheld with the withheld goods. */
+  readonly invoicedTaxMinor: number;
+}
+
+/**
+ * The paper's GST carried into a match verdict: per product, the tax follows the payable taxable value in the proportion it
+ * was charged (rounded once per component and product). An invoice with no tax on it is returned unchanged. Pure.
+ */
+export function withInvoiceTax(result: MatchResult, invoice: SupplierInvoiceRecord): MatchResult & { readonly tax?: MatchTax } {
+  const charged = taxOfLines(invoice.lines);
+  if (taxTotal(charged) === 0) return result;
+  const byProduct = new Map<string, { taxable: number; tax: InvoiceTax }>();
+  for (const l of invoice.lines) {
+    const cur = byProduct.get(l.productId) ?? { taxable: 0, tax: NO_TAX };
+    byProduct.set(l.productId, { taxable: cur.taxable + l.lineTotalMinor, tax: { cgstMinor: cur.tax.cgstMinor + (l.cgstMinor ?? 0), sgstMinor: cur.tax.sgstMinor + (l.sgstMinor ?? 0), igstMinor: cur.tax.igstMinor + (l.igstMinor ?? 0) } });
+  }
+  let cgst = 0; let sgst = 0; let igst = 0;
+  for (const line of result.lines) {
+    const p = byProduct.get(line.productId);
+    if (p === undefined || p.taxable === 0) continue;
+    const part = (t: number): number => Math.round((t * line.payableMinor) / p.taxable);
+    cgst += part(p.tax.cgstMinor); sgst += part(p.tax.sgstMinor); igst += part(p.tax.igstMinor);
+  }
+  const payableTax = cgst + sgst + igst;
+  const invoicedTax = taxTotal(charged);
+  return {
+    ...result,
+    payableMinor: result.payableMinor + payableTax,
+    invoicedMinor: result.invoicedMinor + invoicedTax,
+    withheldMinor: result.withheldMinor + (invoicedTax - payableTax),
+    tax: { taxablePayableMinor: result.payableMinor, cgstMinor: cgst, sgstMinor: sgst, igstMinor: igst, invoicedTaxMinor: invoicedTax },
+  };
 }
 
 /**
@@ -300,15 +365,31 @@ export function readInvoiceLines(v: unknown, unitOf?: Readonly<Record<string, st
       return { ok: false, code: 'not_readable', detail: `line ${i + 1}: ${raw['productId']} is counted in "${masterCode}" on the product master, but the line says "${said}"` };
     }
     const uom = said ?? (masterCode !== undefined && normaliseUom(masterCode) !== undefined ? masterCode : undefined);
-    const product = valueAtUnitCost(raw['quantity'], uom ?? 'ea', raw['unitPriceMinor']);
+    if (raw['unitPricePer'] !== undefined && !(isPosInt(raw['unitPricePer']) && (raw['unitPricePer'] as number) > 1)) {
+      return { ok: false, code: 'not_readable', detail: `line ${i + 1}: unitPricePer, when given, is how many whole units the price buys — a whole number above 1` };
+    }
+    const per = raw['unitPricePer'] as number | undefined;
+    const product = valueAtCost(raw['quantity'], uom ?? 'ea', { minor: raw['unitPriceMinor'], ...(per === undefined ? {} : { per }) });
     if (product !== raw['lineTotalMinor']) {
       return { ok: false, code: 'line_does_not_multiply', detail: `line ${i + 1}: ${raw['quantity']} × ${raw['unitPriceMinor']} is ${product}, but the line says ${raw['lineTotalMinor']}` };
     }
-    lines.push({ productId: raw['productId'], quantity: raw['quantity'], unitPriceMinor: raw['unitPriceMinor'], lineTotalMinor: raw['lineTotalMinor'], ...(uom === undefined ? {} : { uom }) });
+    // The GST the paper prints on the line — whole, non-negative; intra-state (CGST + SGST) or inter-state (IGST), never both.
+    for (const k of ['cgstMinor', 'sgstMinor', 'igstMinor'] as const) {
+      if (raw[k] !== undefined && !isNonNegInt(raw[k])) return { ok: false, code: 'not_readable', detail: `line ${i + 1}: ${k} must be a whole, non-negative amount in minor units` };
+    }
+    const tax = { cgstMinor: (raw['cgstMinor'] as number | undefined) ?? 0, sgstMinor: (raw['sgstMinor'] as number | undefined) ?? 0, igstMinor: (raw['igstMinor'] as number | undefined) ?? 0 };
+    if (tax.igstMinor > 0 && (tax.cgstMinor > 0 || tax.sgstMinor > 0)) {
+      return { ok: false, code: 'not_readable', detail: `line ${i + 1}: a line is charged IGST (inter-state) or CGST + SGST (intra-state), never both` };
+    }
+    lines.push({
+      productId: raw['productId'], quantity: raw['quantity'], unitPriceMinor: raw['unitPriceMinor'], ...(per === undefined ? {} : { unitPricePer: per }), lineTotalMinor: raw['lineTotalMinor'], ...(uom === undefined ? {} : { uom }),
+      ...(tax.cgstMinor > 0 ? { cgstMinor: tax.cgstMinor } : {}), ...(tax.sgstMinor > 0 ? { sgstMinor: tax.sgstMinor } : {}), ...(tax.igstMinor > 0 ? { igstMinor: tax.igstMinor } : {}),
+    });
   }
   return { ok: true, lines };
 }
-const sumOf = (lines: readonly SupplierInvoiceLine[]): number => lines.reduce((s, l) => s + l.lineTotalMinor, 0);
+/** The bill's total as the paper adds it up: every line's taxable value plus the GST printed on it. */
+const sumOf = (lines: readonly SupplierInvoiceLine[]): number => lines.reduce((s, l) => s + l.lineTotalMinor + (l.cgstMinor ?? 0) + (l.sgstMinor ?? 0) + (l.igstMinor ?? 0), 0);
 
 const refuseLines = (read: Extract<LinesRead, { ok: false }>, relayed: boolean) => apiError(read.code === 'line_does_not_multiply' ? 422 : 400, {
   code: read.code === 'not_readable' ? 'not_readable_as_a_supplier_invoice' : read.code === 'carries_caller_claims' ? 'invoice_carries_caller_claims' : 'invoice_line_does_not_multiply',
@@ -360,11 +441,12 @@ export function matchLinesFrom(
   invoicedBefore: Readonly<Record<string, number>> = {},
 ): MatchLine[] {
   const usable = order !== undefined && order.status === 'issued' ? order : undefined;
-  const ordered = new Map<string, { qty: number; unitMinor: number }>();
+  const ordered = new Map<string, { qty: number; unitMinor: number; per?: number }>();
   const scaleOf = new Map<string, number>(); // OB-31: steps per whole unit, from the order's own line unit
   for (const l of usable?.lines ?? []) {
     const cur = ordered.get(l.productId);
-    ordered.set(l.productId, { qty: (cur?.qty ?? 0) + l.orderedQty, unitMinor: cur?.unitMinor ?? l.unitCost.minor });
+    const per = cur === undefined ? l.unitCost.per : cur.per;
+    ordered.set(l.productId, { qty: (cur?.qty ?? 0) + l.orderedQty, unitMinor: cur?.unitMinor ?? l.unitCost.minor, ...(per === undefined ? {} : { per }) });
     if (l.uom !== undefined) scaleOf.set(l.productId, minorPerUnitOf(l.uom));
   }
   for (const [productId, prior] of Object.entries(invoicedBefore)) {
@@ -374,10 +456,11 @@ export function matchLinesFrom(
   const receivedRaw = usable?.receivedByProduct ?? {};
   const received: Record<string, number> = {};
   for (const [productId, qty] of Object.entries(receivedRaw)) received[productId] = Math.max(0, qty - (invoicedBefore[productId] ?? 0));
-  const invoiced = new Map<string, { qty: number; unitMinor: number }>();
+  const invoiced = new Map<string, { qty: number; unitMinor: number; per?: number }>();
   for (const l of invoice.lines) {
     const cur = invoiced.get(l.productId);
-    invoiced.set(l.productId, { qty: (cur?.qty ?? 0) + l.quantity, unitMinor: cur?.unitMinor ?? l.unitPriceMinor });
+    const per = cur === undefined ? l.unitPricePer : cur.per;
+    invoiced.set(l.productId, { qty: (cur?.qty ?? 0) + l.quantity, unitMinor: cur?.unitMinor ?? l.unitPriceMinor, ...(per === undefined ? {} : { per }) });
   }
   return [...new Set([...ordered.keys(), ...Object.keys(received), ...invoiced.keys()])].sort().map((productId) => ({
     productId,
@@ -386,6 +469,8 @@ export function matchLinesFrom(
     invoicedQty: invoiced.get(productId)?.qty ?? 0,
     orderedUnitMinor: ordered.get(productId)?.unitMinor ?? 0,
     invoicedUnitMinor: invoiced.get(productId)?.unitMinor ?? 0,
+    ...(ordered.get(productId)?.per === undefined ? {} : { orderedPer: ordered.get(productId)!.per! }),
+    ...(invoiced.get(productId)?.per === undefined ? {} : { invoicedPer: invoiced.get(productId)!.per! }),
     ...(scaleOf.get(productId) === undefined || scaleOf.get(productId) === 1 ? {} : { minorPerUnit: scaleOf.get(productId)! }),
   }));
 }
@@ -650,7 +735,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
           : { quantityToleranceBps: set.quantityToleranceBps, priceToleranceBps: set.priceToleranceBps, immaterialMinor: set.immaterialMinor, defaulted: false };
         let poId: string | null = null;
         let order: StoredPurchaseOrder | undefined;
-        let result: MatchResult;
+        let result: MatchResult & { readonly tax?: MatchTax };
         let invoicedBefore: Readonly<Record<string, number>> = {};
         if (invoice === undefined) {
           flags.push('invoice_unknown');
@@ -670,7 +755,7 @@ export function purchaseRoutes(deps: PurchaseDeps): readonly Route[] {
             for (const l of invoice.lines) claimed[l.productId] = (claimed[l.productId] ?? 0) + l.quantity;
             if (Object.entries(claimed).some(([productId, qty]) => qty > (orderedByProduct[productId] ?? 0))) flags.push('order_over_invoiced');
           }
-          result = threeWayMatch({ lines: matchLinesFrom(order, invoice, invoicedBefore), ...policy });
+          result = withInvoiceTax(threeWayMatch({ lines: matchLinesFrom(order, invoice, invoicedBefore), ...policy }), invoice);
         }
         const stored: StoredMatch = {
           ...result, invoiceId, poId, matchedBy: ctx.userId, matchedAt,

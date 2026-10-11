@@ -35,7 +35,19 @@ import {
 
 export interface ExportColumnView { readonly name: string; readonly type: string; readonly sensitive: boolean; }
 /** One exportable domain (GET /v1/export). `requires` is the permission the engine enforces server-side. */
-export interface ExportDomainView { readonly domain: string; readonly requires: string; readonly columns: readonly ExportColumnView[]; }
+export interface ExportDomainView {
+  readonly domain: string; readonly requires: string; readonly columns: readonly ExportColumnView[];
+  /** SF-10: a dated domain (attendance) is exported for a bounded period — head office says how long at most. */
+  readonly period?: { readonly required: boolean; readonly maxDays: number };
+}
+/** A period of whole days, inclusive, in the shop's calendar (YYYY-MM-DD). */
+export interface ExportPeriodInput { readonly from: string; readonly to: string }
+/** What an export of a dated domain answered: the rows taken and the columns hidden for this person, the server's
+ *  refusal in its own words (`code` names which rule), or no connection. */
+export type ExportReply =
+  | { readonly kind: 'exported'; readonly rowCount: number; readonly redactedColumns: readonly string[] }
+  | { readonly kind: 'refused'; readonly code: string; readonly whatHappened: string }
+  | { readonly kind: 'lost_link' };
 /** One export audit row (GET /v1/exports) — who took what, when, how many rows, what was redacted for them. */
 export interface ExportAuditView {
   readonly userId: string; readonly domain: string; readonly at: string;
@@ -98,6 +110,9 @@ export interface DataIoPorts {
   mayCommitImport(): boolean;
   /** Run an export (POST /v1/export/:domain). Only from an explicit action. */
   runExport(domain: string): Promise<ExportResult>;
+  /** SF-10: run an export of a dated domain for a period ({ from, to } in the body). Only from an explicit action.
+   *  Absent on a bare stand-in: then nothing can be sent, and the screen says there is no link. */
+  runPeriodExport?(domain: string, period: ExportPeriodInput): Promise<ExportReply>;
   /** Check an import (POST /v1/import/validate). Reads only — writes nothing. */
   validate(req: ValidateRequest): Promise<ValidateResult>;
   /** Commit an import (POST /v1/import/commit) naming an approved request. Only from an explicit action. */
@@ -112,6 +127,19 @@ export interface DataIoPorts {
 export interface DataIoConfig {
   /** Who is looking. `null` means the store computer was not told; head office still knows the signed-in caller. */
   readonly userId: string | null;
+  /** The clock (ISO). The default period is read from it in the shop's calendar (IST). Absent: the browser's clock. */
+  readonly now?: () => string;
+}
+
+/** The shop's calendar day (IST, UTC+05:30 with no daylight saving) of an instant, as YYYY-MM-DD. */
+export function shopDay(iso: string): string {
+  return new Date(Date.parse(iso) + 330 * 60_000).toISOString().slice(0, 10);
+}
+const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+/** The default period for a dated export: the last 7 days ending YESTERDAY in the shop's calendar (a finished day). */
+export function defaultExportPeriod(nowIso: string): ExportPeriodInput {
+  const to = addDays(shopDay(nowIso), -1);
+  return { from: addDays(to, -6), to };
 }
 
 // ── the copy: ONE bilingual object for the whole screen ───────────────────────────────────────────────────
@@ -124,6 +152,7 @@ export type CopyKey =
   | 'totalLabel' | 'validateBtn' | 'jobLabel' | 'whyLabel' | 'whyPlaceholder' | 'askBtn' | 'commitBtn'
   | 'previewValid' | 'previewErrors' | 'previewDupes' | 'previewReconciles' | 'previewNotReconcile' | 'previewReady' | 'previewNotReady'
   | 'exported' | 'exportRefused' | 'exportLostLink'
+  | 'periodFrom' | 'periodTo' | 'periodHint' | 'exportedRows' | 'exportedHidden' | 'periodRefused' | 'exportRefusedWords'
   | 'validateRefused' | 'validateLostLink'
   | 'summaryLine' | 'summaryTotal' | 'rowOne' | 'rowMany'
   | 'askedWaiting' | 'askNotAllowed' | 'askNeedsTemplate' | 'askNeedsFile' | 'askNeedsJob' | 'askNeedsWhy'
@@ -151,6 +180,10 @@ export const DATA_IO_COPY: BilingualCopy<CopyKey> = {
     previewReconciles: 'The total matches.', previewNotReconcile: 'The rows do NOT add up to the declared total.',
     previewReady: 'This file is ready — give it a name and ask a second person to approve it.', previewNotReady: 'This file is not ready — fix the problems above and check again.',
     exported: 'Exported.', exportRefused: 'Could not export — you may not have permission for this data.', exportLostLink: 'No connection — not exported. Try again.',
+    periodFrom: 'From', periodTo: 'To', periodHint: 'Choose the days to export — at most {max} days.',
+    exportedRows: 'Exported {n} {rowWord}.', exportedHidden: 'Hidden for you: {cols}.',
+    periodRefused: 'Not exported — choose a period of at most {max} days, with "From" on or before "To". Nothing was taken.',
+    exportRefusedWords: 'Not exported — {words}',
     validateRefused: 'Could not check — you do not have permission, or the file could not be read.', validateLostLink: 'No connection — could not check. Try again.',
     summaryLine: 'Load {rows} {rowWord} ({template}) as "{job}"', summaryTotal: ', declared total {total}', rowOne: 'row', rowMany: 'rows',
     askedWaiting: 'Asked. Waiting for a second person to approve:',
@@ -192,6 +225,10 @@ export const DATA_IO_COPY: BilingualCopy<CopyKey> = {
     previewReconciles: 'மொத்தம் பொருந்துகிறது.', previewNotReconcile: 'வரிசைகள் அறிவிக்கப்பட்ட மொத்தத்துடன் கூடவில்லை.',
     previewReady: 'இந்தக் கோப்பு தயார் — ஒரு பெயர் கொடுத்து இரண்டாம் நபரிடம் அனுமதி கேளுங்கள்.', previewNotReady: 'இந்தக் கோப்பு தயாராக இல்லை — மேலே உள்ள சிக்கல்களைச் சரிசெய்து மீண்டும் சரிபார்க்கவும்.',
     exported: 'ஏற்றுமதி செய்யப்பட்டது.', exportRefused: 'ஏற்றுமதி செய்ய முடியவில்லை — இந்தத் தரவுக்கு உங்களுக்கு அனுமதி இல்லாமல் இருக்கலாம்.', exportLostLink: 'இணைப்பு இல்லை — ஏற்றுமதி செய்யப்படவில்லை. மீண்டும் முயற்சிக்கவும்.',
+    periodFrom: 'முதல்', periodTo: 'வரை', periodHint: 'ஏற்றுமதி செய்ய வேண்டிய நாட்களைத் தேர்ந்தெடுக்கவும் — அதிகபட்சம் {max} நாட்கள்.',
+    exportedRows: '{n} {rowWord} ஏற்றுமதி செய்யப்பட்டது.', exportedHidden: 'உங்களுக்கு மறைக்கப்பட்டவை: {cols}.',
+    periodRefused: 'ஏற்றுமதி செய்யப்படவில்லை — அதிகபட்சம் {max} நாட்கள் கொண்ட காலத்தைத் தேர்ந்தெடுக்கவும்; "முதல்" தேதி "வரை" தேதிக்கு முன் அல்லது அதே நாளாக இருக்க வேண்டும். எதுவும் எடுக்கப்படவில்லை.',
+    exportRefusedWords: 'ஏற்றுமதி செய்யப்படவில்லை — {words}',
     validateRefused: 'சரிபார்க்க முடியவில்லை — உங்களுக்கு அனுமதி இல்லை, அல்லது கோப்பைப் படிக்க முடியவில்லை.', validateLostLink: 'இணைப்பு இல்லை — சரிபார்க்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
     summaryLine: '{rows} {rowWord} ({template}) "{job}" என்ற பெயரில் ஏற்றுதல்', summaryTotal: ', அறிவிக்கப்பட்ட மொத்தம் {total}', rowOne: 'வரிசை', rowMany: 'வரிசைகள்',
     askedWaiting: 'கேட்கப்பட்டது. இரண்டாம் நபரின் அனுமதிக்காகக் காத்திருக்கிறது:',
@@ -226,6 +263,8 @@ export interface PresentedDomain {
   readonly domain: string;
   readonly columns: readonly { readonly name: string; readonly sensitive: boolean }[];
   readonly sensitiveCount: number;
+  /** SF-10: present when the domain is exported for a period — its limit, the default days and the hint to show. */
+  readonly period?: { readonly maxDays: number; readonly defaultFrom: string; readonly defaultTo: string; readonly hint: string };
 }
 export interface PresentedExport {
   readonly domain: string; readonly userId: string; readonly at: string;
@@ -297,6 +336,10 @@ export interface DataIoSession {
   importPanel(): ImportPanelView;
   /** Run an export — refused locally without `export.read` before any POST. */
   runExport(domain: string): Promise<ExportResult>;
+  /** SF-10: export a dated domain for a period. Refused locally (no POST) only without `export.read`; the period's
+   *  rules are head office's, and its refusal is shown in plain words. */
+  runPeriodExport(domain: string, period: ExportPeriodInput): Promise<ExportReply>;
+  presentExportReply(lang: Lang, domain: string, r: ExportReply): StatusPresentation;
   /** Check an import — refused locally without `purchase.import.read` or an unknown template. Writes nothing. */
   validate(templateId: string, text: string, declaredTotalMinor?: number): Promise<ValidateResult>;
   /** Ask a second person to approve THIS load of THIS file: checks the file (for its check code), then asks head
@@ -341,10 +384,14 @@ export function createDataIoSession(config: DataIoConfig, ports: DataIoPorts): D
       if (!mayExport) {
         return { screenState: presentScreenState({ state: 'locked', label: t('noExport') }), mayExport: false, domains: [], recent: [] };
       }
+      const defaults = defaultExportPeriod((config.now ?? (() => new Date().toISOString()))());
       const domains: PresentedDomain[] = ports.exportDomains().map((d) => ({
         domain: d.domain,
         columns: d.columns.map((c) => ({ name: c.name, sensitive: c.sensitive })),
         sensitiveCount: d.columns.filter((c) => c.sensitive).length,
+        ...(d.period === undefined ? {} : {
+          period: { maxDays: d.period.maxDays, defaultFrom: defaults.from, defaultTo: defaults.to, hint: fill(t('periodHint'), { max: String(d.period.maxDays) }) },
+        }),
       }));
       const recent: PresentedExport[] = ports.recentExports().map((e) => ({
         domain: e.domain, userId: e.userId, at: e.at, rowCount: e.rowCount, redactedColumns: e.redactedColumns,
@@ -362,6 +409,26 @@ export function createDataIoSession(config: DataIoConfig, ports: DataIoPorts): D
     runExport: async (domain) => {
       if (!ports.mayExport() || domain.trim() === '') return 'refused';
       return ports.runExport(domain);
+    },
+    runPeriodExport: async (domain, period) => {
+      if (!ports.mayExport() || domain.trim() === '') return { kind: 'refused', code: 'export_not_permitted', whatHappened: '' };
+      if (ports.runPeriodExport === undefined) return { kind: 'lost_link' };
+      return ports.runPeriodExport(domain, { from: period.from.trim(), to: period.to.trim() });
+    },
+    presentExportReply: (lang, domain, r) => {
+      const t = translator(DATA_IO_COPY, lang);
+      if (r.kind === 'exported') {
+        const rows = fill(t('exportedRows'), { n: String(r.rowCount), rowWord: r.rowCount === 1 ? t('rowOne') : t('rowMany') });
+        const hidden = r.redactedColumns.length === 0 ? '' : ` ${fill(t('exportedHidden'), { cols: r.redactedColumns.join(', ') })}`;
+        return presentStatus({ tone: 'ok', icon: '✓', label: `${rows}${hidden}`, needsAttention: false });
+      }
+      if (r.kind === 'lost_link') return presentStatus({ tone: 'degraded', icon: '⚠', label: t('exportLostLink'), needsAttention: true });
+      // The server's refusal, in plain words: a period it will not take is said in the page's own words (with the limit
+      // head office gave); any other refusal carries head office's own sentence, or the general one when it gave none.
+      const max = ports.exportDomains().find((d) => d.domain === domain)?.period?.maxDays;
+      if (r.code === 'export_period_not_bounded') return presentStatus({ tone: 'error', icon: '✕', label: fill(t('periodRefused'), { max: String(max ?? '') }), needsAttention: true });
+      if (r.whatHappened.trim() === '') return presentStatus({ tone: 'error', icon: '✕', label: t('exportRefused'), needsAttention: true });
+      return presentStatus({ tone: 'error', icon: '✕', label: fill(t('exportRefusedWords'), { words: r.whatHappened }), needsAttention: true });
     },
 
     validate: async (templateId, text2, declaredTotalMinor) => {

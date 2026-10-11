@@ -21,7 +21,7 @@ import { OWNER_ROLE_ID } from '../../../services/api/src/roles';
 import { STREAM, ROLE_REVOKED } from '../../../services/api/src/adapters';
 import { LocalIdp } from '../../../tests/support/local-idp';
 import type { SeedClient, SeedResponse } from './apply';
-import { PILOT_DEMO_TENANT, PILOT_MACHINE_USERS } from './dataset';
+import { PILOT_DEMO_TENANT, PILOT_MACHINE_USERS, PILOT_DEMO_BRANCH } from './dataset';
 
 type FetchLike = (url: string, init: {
   method: string;
@@ -151,6 +151,22 @@ export function hostedSeedClient(config: HostedSeedConfig): SeedClient {
           request: { grantId: `${roleId}-${userId}`, userId, roleId, branchScope: 'all', ...provenance(at) },
         },
       }));
+      // EA-01 round 7: a store computer reports its sync and holdings only for the store its grant NAMES — the tenant-wide
+      // grant above relays the store's records but reports for no store. The demo box is given the demo store by name too.
+      if (PILOT_MACHINE_USERS.includes(userId) && roleId === 'store_computer') {
+        const scope = [PILOT_DEMO_BRANCH];
+        await config.store.append(tenantId, STREAM.identity, makeEvent({
+          id: `grant-${roleId}-${userId}@${PILOT_DEMO_BRANCH}`,
+          type: 'RoleGranted',
+          occurredAt: at,
+          idempotencyKey: `grant-${tenantId}-${roleId}-${userId}@${PILOT_DEMO_BRANCH}`,
+          source: 'pilot/seed',
+          payload: {
+            userId, roleId, branchScope: scope,
+            request: { grantId: `${roleId}-${userId}@${PILOT_DEMO_BRANCH}`, userId, roleId, branchScope: scope, ...provenance(at) },
+          },
+        }));
+      }
       // OB-36 "A": the demo store computer now holds its own `store_computer` role. A ledger seeded before that still
       // grants it the CASHIER role (a person's role) — taken away here, once, as a revocation on the ledger (hard rule
       // #2: the old grant stays in the history). A ledger that never had it gains a revocation that removes nothing.

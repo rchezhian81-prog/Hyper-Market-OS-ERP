@@ -71,6 +71,9 @@ const t = (key) => session.text(lang, key);
 /** The uploader's own requests, as last read (a GET). Kept so a language switch repaints them without a new read. */
 let lastRequests = null;
 
+/** The days chosen for each dated domain (SF-10), kept across a repaint so a refresh never resets them. */
+const periodChosen = new Map();
+
 function line(text, cls) { const s = document.createElement('small'); if (cls) s.className = cls; s.textContent = text; return s; }
 
 function paintExport() {
@@ -91,7 +94,26 @@ function paintExport() {
     if (d.sensitiveCount > 0) { const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = `${d.sensitiveCount} ${t('sensitiveTag')}`; name.append(tag); }
     what.append(name, line(d.columns.map((c) => c.name).join(', ')));
     const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'act small export-btn'; btn.textContent = t('exportBtn'); btn.dataset.domain = d.domain;
-    btn.addEventListener('click', () => { void runExport(d.domain); });
+    if (d.period) {
+      // A dated domain (attendance): From / To, defaulting to the last 7 days ending yesterday in the shop's calendar.
+      const chosen = periodChosen.get(d.domain) ?? { from: d.period.defaultFrom, to: d.period.defaultTo };
+      periodChosen.set(d.domain, chosen);
+      const span = document.createElement('div'); span.className = 'period';
+      const field = (key, cls) => {
+        const wrap = document.createElement('div');
+        const id = `period-${cls}-${d.domain}`;
+        const lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = t(key === 'from' ? 'periodFrom' : 'periodTo');
+        const input = document.createElement('input'); input.type = 'date'; input.id = id; input.className = `period-${cls}`; input.value = chosen[key];
+        input.addEventListener('change', () => { chosen[key] = input.value; });
+        wrap.append(lab, input);
+        return wrap;
+      };
+      span.append(field('from', 'from'), field('to', 'to'));
+      what.append(line(d.period.hint, 'hint'), span);
+      btn.addEventListener('click', () => { void runPeriodExport(d.domain); });
+    } else {
+      btn.addEventListener('click', () => { void runExport(d.domain); });
+    }
     li.append(what, btn);
     return li;
   }));
@@ -228,6 +250,16 @@ async function runExport(domain) {
   const r = await session.runExport(domain);
   paintResult('export-result', session.presentExportResult(lang, r));
   if (r === 'exported') await refresh();
+}
+
+// SF-10: a dated export sends the chosen days; head office decides whether the period is allowed and the page says
+// its answer in plain words — the rows taken and what was hidden, or why nothing was taken.
+async function runPeriodExport(domain) {
+  if (typeof session.runPeriodExport !== 'function') return;
+  const chosen = periodChosen.get(domain) ?? { from: '', to: '' };
+  const r = await session.runPeriodExport(domain, { from: chosen.from, to: chosen.to });
+  if (r.kind === 'exported') await refresh();
+  paintResult('export-result', session.presentExportReply(lang, domain, r));
 }
 
 el('validate').addEventListener('click', () => {

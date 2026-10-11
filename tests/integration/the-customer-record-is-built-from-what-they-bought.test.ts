@@ -33,6 +33,8 @@ import { segmentDataAdapter } from '../../services/api/src/adapters';
 const KEY = loyaltyMemberKey(TEST_PACK_KEY);
 const MEENA = memberRefFor(KEY, '98400 12345')!;
 const MEENA_OLD = memberRefFor(KEY, '98400 67890')!; // the same person's old number, a second record
+const RAVI = memberRefFor(KEY, '98400 11111')!;
+const RAVI_WORK = memberRefFor(KEY, '98400 22222')!;
 const codeOf = (r: { body: unknown }): string | undefined => (r.body as { error?: { code?: string } }).error?.code;
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -51,6 +53,7 @@ interface Profile {
   customerRef: string; identities: string[]; mergedInto?: string;
   purchases: { count: number; grossMinor: number; recent: { saleId: string }[] };
   returns: { count: number; refundedMinor: number };
+  corrections: { count: number; creditedMinor: number; debitedMinor: number; recent: { noteId: string; saleId: string; kind: string; counted: boolean }[] };
   netSpendMinor: number; loyalty: { pointsBalance?: number; member?: { status: string; mobileLast4: string } };
   household: { householdId: string; members: string[] } | null;
 }
@@ -67,7 +70,7 @@ describe.each(backings)('FUL-10 — the customer record from banked sales and re
     const profile = async (ref: string, hh = h, user = 'u-mgr') => (await call(hh, 'GET', `/v1/customers/${ref}/profile`, user)).body as Profile;
 
     expect((await call(h, 'PUT', '/v1/platform/setup/loyalty.points_per_100_inr', 'u-owner', { value: 1 })).status).toBeLessThan(300);
-    for (const mobile of ['98400 12345', '98400 67890']) {
+    for (const mobile of ['98400 12345', '98400 67890', '98400 11111', '98400 22222']) {
       expect((await call(h, 'POST', '/v1/loyalty/members', 'u-mgr', { mobile, consent: true, verifiedHow: 'seen_on_phone' })).status).toBe(201);
     }
     const sale = (saleId: string, customerRef: string | undefined, totalMinor = 125_000) => ({
@@ -104,6 +107,27 @@ describe.each(backings)('FUL-10 — the customer record from banked sales and re
     const facts = await segmentDataAdapter({ store: h.store, now: () => new Date().toISOString() }).orderFacts(T);
     expect(facts.filter((f) => f.customerRef === MEENA).map((f) => [f.orderId, f.netMinor]).sort()).toEqual([['S1', 75_000], ['S2', 125_000]]);
 
+    // ── 2b · A sale CORRECTED after it was committed (FUL-10): a GST credit note against S2 (a price correction of ₹210)
+    //    corrects Meena's facts like a return — a new fact; the purchase is never edited. A goods-returned credit note on S1,
+    //    whose return is already recorded, is that return's tax document: kept, not counted twice.
+    const creditNote = (noteId: string, saleId: string, reason: string, taxable: number, half: number) => ({
+      noteId, number: `CN-${noteId}`, kind: 'credit_note', reason, customerId: MEENA, taxableMinor: taxable,
+      taxes: [{ component: 'CGST', rateBps: 250, amountMinor: half }, { component: 'SGST', rateBps: 250, amountMinor: half }],
+      invoice: { invoiceId: saleId, number: `R-${saleId}`, customerId: MEENA, issuedOn: '2026-10-10', taxableMinor: 119_048, taxes: [{ component: 'CGST', rateBps: 250, amountMinor: 2_976 }, { component: 'SGST', rateBps: 250, amountMinor: 2_976 }], grossMinor: 125_000, financialYear: '2026-27' },
+      issuedOn: '2026-10-11',
+    });
+    expect((await call(h, 'POST', '/v1/finance/credit-notes', 'u-owner', creditNote('cn-1', 'S2', 'price_correction', 20_000, 500), 'cn-1')).status).toBe(201);
+    expect((await call(h, 'POST', '/v1/finance/credit-notes', 'u-owner', creditNote('cn-2', 'S1', 'goods_returned', 47_619, 1_190), 'cn-2')).status).toBe(201);
+    const p2b = await profile(MEENA);
+    expect(p2b.corrections).toMatchObject({ count: 2, creditedMinor: 21_000, debitedMinor: 0 });
+    expect(p2b.corrections.recent.map((c) => [c.noteId, c.saleId, c.counted]).sort()).toEqual([['cn-1', 'S2', true], ['cn-2', 'S1', false]]);
+    expect(p2b.netSpendMinor).toBe(200_000 - 21_000);
+    expect(p2b.purchases).toMatchObject({ count: 2, grossMinor: 250_000 });
+    const facts2 = await segmentDataAdapter({ store: h.store, now: () => new Date().toISOString() }).orderFacts(T);
+    expect(facts2.filter((f) => f.customerRef === MEENA).map((f) => [f.orderId, f.netMinor]).sort()).toEqual([['S1', 75_000], ['S2', 104_000]]);
+    // Read again: nothing counted twice.
+    expect((await profile(MEENA)).corrections).toMatchObject({ count: 2, creditedMinor: 21_000 });
+
     // ── 3 · Least privilege: a cashier cannot read it; every look is recorded, and the owner sees who looked.
     expect((await call(h, 'GET', `/v1/customers/${MEENA}/profile`, 'u-cash')).status).toBe(403);
     const views = (await call(h, 'GET', `/v1/customers/${MEENA}/profile/views`, 'u-owner')).body as { views: { viewedBy: string }[] };
@@ -113,7 +137,13 @@ describe.each(backings)('FUL-10 — the customer record from banked sales and re
     // ── 4 · One person, two records: proposed by the manager, approved by the OWNER (never by the proposer).
     await call(h, 'POST', `/v1/customers/${MEENA}/merges/m-1`, 'u-mgr', { mergedRef: MEENA_OLD, reason: 'same person, changed number' });
     expect((await call(h, 'POST', '/v1/customers/merges/m-1/approve', 'u-mgr', {})).status).toBe(403); // no approval authority
-    expect((await call(h, 'POST', '/v1/customers/C-A/merges/m-self', 'u-owner', { mergedRef: 'C-B', reason: 'x' })).status).toBe(201);
+    // FUL-10: records that do not exist cannot be merged — not as the survivor, not as the merged record.
+    const ghost = await call(h, 'POST', '/v1/customers/C-NOBODY/merges/m-ghost', 'u-mgr', { mergedRef: MEENA_OLD, reason: 'x' });
+    expect(ghost.status).toBe(404);
+    expect(codeOf(ghost)).toBe('customer_record_unknown');
+    expect(codeOf(await call(h, 'POST', `/v1/customers/${RAVI}/merges/m-ghost2`, 'u-mgr', { mergedRef: 'C-NOBODY', reason: 'x' }))).toBe('customer_record_unknown');
+    expect(((await call(h, 'GET', '/v1/customers/C-NOBODY/identity-history', 'u-mgr')).body as { merges: unknown[] }).merges).toEqual([]);
+    expect((await call(h, 'POST', `/v1/customers/${RAVI}/merges/m-self`, 'u-owner', { mergedRef: RAVI_WORK, reason: 'x' })).status).toBe(201);
     expect(codeOf(await call(h, 'POST', '/v1/customers/merges/m-self/approve', 'u-owner', {}))).toBe('self_approval');
     await call(h, 'POST', '/v1/customers/merges/m-self/reverse', 'u-owner', { reason: 'proposed in error' });
     // Before approval the records are still apart.
@@ -124,8 +154,8 @@ describe.each(backings)('FUL-10 — the customer record from banked sales and re
     expect(merged.purchases).toMatchObject({ count: 3, grossMinor: 300_000 });
     expect((await profile(MEENA_OLD)).mergedInto).toBe(MEENA);
     // A record that holds another cannot itself be merged away; a merged record cannot be merged twice.
-    expect(codeOf(await call(h, 'POST', '/v1/customers/X/merges/m-2', 'u-mgr', { mergedRef: MEENA, reason: 'no' }))).toBe('record_holds_merged_records');
-    expect(codeOf(await call(h, 'POST', '/v1/customers/Y/merges/m-3', 'u-mgr', { mergedRef: MEENA_OLD, reason: 'no' }))).toBe('record_already_merged');
+    expect(codeOf(await call(h, 'POST', `/v1/customers/${RAVI}/merges/m-2`, 'u-mgr', { mergedRef: MEENA, reason: 'no' }))).toBe('record_holds_merged_records');
+    expect(codeOf(await call(h, 'POST', `/v1/customers/${RAVI_WORK}/merges/m-3`, 'u-mgr', { mergedRef: MEENA_OLD, reason: 'no' }))).toBe('record_already_merged');
 
     // ── 5 · A household link shows on the record.
     expect((await call(h, 'POST', `/v1/customers/${MEENA}/household`, 'u-mgr', { householdId: 'HH-7' })).status).toBe(201);
@@ -144,5 +174,22 @@ describe.each(backings)('FUL-10 — the customer record from banked sales and re
     expect((await profile(MEENA_OLD, restarted)).purchases).toMatchObject({ count: 1, grossMinor: 50_000 });
     const history = (await call(restarted, 'GET', `/v1/customers/${MEENA}/identity-history`, 'u-mgr')).body as { merges: { mergeId: string; proposedBy: string; approvedBy?: string; reversedBy?: string; inForce: boolean }[] };
     expect(history.merges.find((m) => m.mergeId === 'm-1')).toMatchObject({ proposedBy: 'u-mgr', approvedBy: 'u-owner', reversedBy: 'u-owner', inForce: false });
+
+    // ── 8 · A VOID after the sale was committed: the whole of S4 cancelled by a credit note — Meena's old record's facts are
+    //    corrected to nothing spent, the purchase kept; processed by the restarted process, once.
+    const s4Taxes = [{ component: 'CGST', rateBps: 250, amountMinor: 1_190 }, { component: 'SGST', rateBps: 250, amountMinor: 1_191 }];
+    const voidNote = {
+      noteId: 'cn-void', number: 'CN-cn-void', kind: 'credit_note', reason: 'order_cancelled', customerId: MEENA_OLD, taxableMinor: 47_619, taxes: s4Taxes,
+      invoice: { invoiceId: 'S4', number: 'R-S4', customerId: MEENA_OLD, issuedOn: '2026-10-10', taxableMinor: 47_619, taxes: s4Taxes, grossMinor: 50_000, financialYear: '2026-27' },
+      issuedOn: '2026-10-11',
+    };
+    expect((await call(restarted, 'POST', '/v1/finance/credit-notes', 'u-owner', voidNote, 'cn-void')).status).toBe(201);
+    const old = await profile(MEENA_OLD, restarted);
+    expect(old.purchases).toMatchObject({ count: 1, grossMinor: 50_000 });
+    expect(old.corrections).toMatchObject({ count: 1, creditedMinor: 50_000 });
+    expect(old.netSpendMinor).toBe(0);
+    const facts3 = await segmentDataAdapter({ store: h.store, now: () => new Date().toISOString() }).orderFacts(T);
+    expect(facts3.filter((f) => f.customerRef === MEENA_OLD).map((f) => [f.orderId, f.netMinor]).sort()).toEqual([['S4', 0]]);
+    expect((await profile(MEENA_OLD, h)).corrections.count).toBe(1);
   }, 60_000);
 });

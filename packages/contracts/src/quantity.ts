@@ -217,3 +217,30 @@ export function valueAtUnitCost(quantityMinor: number, uomCode: string, unitCost
   const rounded = r * 2n >= d ? q + 1n : q;
   return Number(neg ? -rounded : rounded);
 }
+
+/**
+ * OB-46 "A" (owner, 11 Oct 2026, "Keep the case cost exact"): a cost that buys `per` whole units at once — ₹250 for a case of
+ * 24 is `{ minor: 25_000, per: 24 }` — so a pack cost that does not divide into whole paise per unit is CARRIED, never
+ * refused and never rounded per unit. Absent `per` ⇒ 1 (a cost per whole unit, as before).
+ */
+export interface CostBasis {
+  readonly minor: number;
+  readonly per?: number;
+}
+
+/**
+ * OB-46 / OB-31 rule 3 — the value of `quantityMinor` smallest steps at a cost of `cost.minor` per `cost.per` whole units:
+ * quantity × cost ÷ (per × steps per unit), rounded ONCE, half up. With `per` absent this is exactly `valueAtUnitCost`.
+ */
+export function valueAtCost(quantityMinor: number, uomCode: string, cost: CostBasis): number {
+  const per = cost.per ?? 1;
+  if (per === 1) return valueAtUnitCost(quantityMinor, uomCode, cost.minor);
+  const n = BigInt(quantityMinor) * BigInt(cost.minor);
+  const d = BigInt(minorPerUnitOf(uomCode)) * BigInt(per);
+  const neg = n < 0n;
+  const abs = neg ? -n : n;
+  const q = abs / d;
+  const r = abs % d;
+  const rounded = r * 2n >= d ? q + 1n : q;
+  return Number(neg ? -rounded : rounded);
+}

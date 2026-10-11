@@ -127,6 +127,12 @@ describe.each(backings)('FUL-09 — B2B ordering on ordinary stock, self-service
     await ok(call('POST', '/v1/b2b/recurring/rec-1', MGR, { customerId: 'CATERER', fromQuotationId: 'q-tpl', cadence: 'weekly', dayOf: 1, startsOn: D, salespersonId: 'sp-1' }), 'propose recurring');
     expect(((await ok(call('POST', '/v1/b2b/recurring-runs', MGR, { on: D }), 'run before approval')).body as { generated: number }).generated).toBe(0);
     expect((await call('POST', '/v1/b2b/recurring/rec-1/approve', MGR, {})).status).toBe(403);
+    // Maker-checker, not merely a missing permission: someone who HOLDS the approval authority cannot approve their own.
+    await ok(call('POST', '/v1/b2b/recurring/rec-own', OWNER, { customerId: 'CATERER', fromQuotationId: 'q-tpl', cadence: 'weekly', dayOf: 1, startsOn: D }), 'owner proposes recurring');
+    const ownApproval = await call('POST', '/v1/b2b/recurring/rec-own/approve', OWNER, {});
+    expect(ownApproval.status).toBe(403);
+    expect(codeOf(ownApproval)).toBe('maker_cannot_approve');
+    expect(((await call('GET', '/v1/b2b/recurring', OWNER)).body as { schedules: { scheduleId: string; inForce: boolean }[] }).schedules.find((x) => x.scheduleId === 'rec-own')).toMatchObject({ inForce: false });
     await ok(call('POST', '/v1/b2b/recurring/rec-1/approve', OWNER, {}), 'approve recurring');
     const run1 = (await ok(call('POST', '/v1/b2b/recurring-runs', MGR, { on: D }), 'run')).body as { generated: number; runs: { orderId?: string }[] };
     expect(run1.generated).toBe(1);
