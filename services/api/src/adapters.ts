@@ -198,6 +198,8 @@ import { openingsWithSignOff, type SupplierOpeningDeps, type SupplierOpeningBala
 import type { DisplayFundingDeps, DisplayFundingJournal } from '../../finance/src/display-funding';
 import type { PayablesDeps, PayablesJournal, PayablesExceptionRecord } from '../../finance/src/payables';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
+import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
+import type { StoreReplenishmentFacts } from '../../inventory/src/replenishment';
 import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
 import type { RebateDeps } from '../../purchase/src/rebates';
 import type { RfqDeps } from '../../purchase/src/rfq';
@@ -12110,6 +12112,55 @@ export function storeStockFactsAdapter(input: {
         if (m.kind === 'sold' && (m.locationId === storeId || of(m.locationId) === storeId)) sold.add(m.productId);
       }
       return [...sold].sort();
+    },
+  };
+}
+
+/**
+ * FUL-11 (round 6 · M09-FR-02 · M04-FR-01): the facts a store's replenishment proposal runs on — head office's, never the
+ * request's. On-hand from the stock position at the store and every place under it; on-order from the ISSUED purchase
+ * orders delivered there (ordered − received − cancelled); in transit from the transfers on the van to it; sold from the
+ * ledger's `sold` movements at those places in the window.
+ */
+export function replenishmentFactsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly branchOf?: (tenantId: string) => Promise<(locationId: string) => string> | ((locationId: string) => string);
+}): {
+  readonly storeFacts: (tenantId: string, storeId: string) => Promise<StoreReplenishmentFacts>;
+  readonly soldLines: (tenantId: string, storeId: string, fromIso: string, toIso: string) => Promise<readonly SoldLine[]>;
+} {
+  const placeOf = async (tenantId: string) => {
+    const of = input.branchOf === undefined ? (l: string) => l : await input.branchOf(tenantId);
+    return (storeId: string, locationId: string) => locationId === storeId || of(locationId) === storeId;
+  };
+  return {
+    storeFacts: async (tenantId, storeId) => {
+      const at = await placeOf(tenantId);
+      const inv = inventoryAdapter(input);
+      const onHand: Record<string, number> = {};
+      for (const r of await inv.availability(tenantId)) {
+        if (at(storeId, r.locationId)) onHand[r.productId] = (onHand[r.productId] ?? 0) + r.onHandMinor;
+      }
+      const inTransit: Record<string, number> = {};
+      for (const r of await inv.inTransit!(tenantId)) {
+        if (at(storeId, r.locationId)) inTransit[r.productId] = (inTransit[r.productId] ?? 0) + r.quantityMinor;
+      }
+      const onOrder: Record<string, number> = {};
+      const of = input.branchOf === undefined ? (l: string) => l : await input.branchOf(tenantId);
+      for (const d of openDeliveriesFor(await purchaseOrdersAdapter(input).all(tenantId), storeId, of)) {
+        for (const l of d.lines) onOrder[l.productId] = (onOrder[l.productId] ?? 0) + l.openQty;
+      }
+      return { onHand, onOrder, inTransit };
+    },
+    soldLines: async (tenantId, storeId, fromIso, toIso) => {
+      const at = await placeOf(tenantId);
+      const out: SoldLine[] = [];
+      for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved', from: fromIso, to: toIso })) {
+        const m = payloadOf<Movement>(e);
+        if (m.kind === 'sold' && at(storeId, m.locationId)) out.push({ productId: m.productId, quantityMinor: m.quantityMinor, tradingDay: m.occurredAt.slice(0, 10) });
+      }
+      return out;
     },
   };
 }
