@@ -50,7 +50,7 @@ import {
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import type { Movement } from './index';
 import { unitsPerLevel, type PackHierarchy } from '../../../packages/product/src/pack';
-import { valueAtUnitCost, normaliseUom, minorPerUnit } from '../../../packages/contracts/src/quantity';
+import { valueAtCost, normaliseUom, minorPerUnit, type CostBasis } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, stockReadScope, locationIsItsOwnBranch, type LocationBranches } from './location-scope';
 import type { RequestContext } from '../../kernel/src/index';
 
@@ -291,6 +291,12 @@ export interface GoodsReceiptDeps {
   readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
   /** OB-31 · SF-11: the product's pack levels (base → inner → case …) from the master, for a line counted in packs. */
   readonly packOf?: (tenantId: string, productId: string) => Promise<PackHierarchy | undefined> | PackHierarchy | undefined;
+  /**
+   * GT-05 (store volume): the same three facts — the master's unit, the pack levels and the receiving rule — for every product
+   * on a receipt in ONE read, so an opening receipt of a thousand lines reads the master once, not once per line. The SAME
+   * sources as `productUom` / `packOf` / `productRule`; optional — without it each line asks them one by one.
+   */
+  readonly productFacts?: (tenantId: string, productIds: readonly string[]) => Promise<ReadonlyMap<string, ProductReceiptFacts>>;
   /** F03 — the tenant's receiving tolerance policy, or `undefined` when none has been set (the default applies, flagged). */
   readonly receiptPolicy: (tenantId: string) => Promise<StoredReceiptPolicy | undefined> | StoredReceiptPolicy | undefined;
   readonly recordReceiptPolicy: (tenantId: string, policy: StoredReceiptPolicy) => Promise<void> | void;
@@ -310,7 +316,9 @@ const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !==
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isMoney = (v: unknown): v is { minor: number; currency: string } => isObj(v) && isNum(v['minor']) && isStr(v['currency']);
+// OB-46: a cost may say it buys `per` whole units (a case cost carried exactly) — a whole number above 1 when given.
+const isMoney = (v: unknown): v is { minor: number; currency: string } => isObj(v) && isNum(v['minor']) && isStr(v['currency'])
+  && (v['per'] === undefined || (Number.isSafeInteger(v['per']) && (v['per'] as number) > 1));
 
 const isCapturedLine = (v: unknown): v is CapturedLine =>
   isObj(v) && isStr(v['lineId']) && isStr(v['productId']) && isNum(v['orderedMinor']) && isNum(v['countedMinor'])
@@ -322,6 +330,25 @@ const isCapturedLine = (v: unknown): v is CapturedLine =>
  * The product master's rules for every product on a receipt — head office's, never the body's (F03). A product the
  * master does not know is SAID (`unverified`) and falls back to untracked rather than refusing goods in the building.
  */
+/** GT-05: one product's receiving facts, read in bulk (see `GoodsReceiptDeps.productFacts`). */
+export interface ProductReceiptFacts {
+  readonly uom?: string;
+  readonly pack?: PackHierarchy;
+  readonly rule?: ProductReceiptRules;
+}
+
+/** GT-05: the deps a receipt runs on, with the per-product lookups answered from ONE bulk read when the adapter offers it. */
+async function withProductFacts<D extends Pick<GoodsReceiptDeps, 'productFacts' | 'productUom' | 'packOf' | 'productRule'>>(deps: D, tenantId: string, productIds: readonly string[]): Promise<D> {
+  if (deps.productFacts === undefined) return deps;
+  const facts = await deps.productFacts(tenantId, [...new Set(productIds)]);
+  return {
+    ...deps,
+    productRule: (_t: string, productId: string) => facts.get(productId)?.rule,
+    ...(deps.productUom === undefined ? {} : { productUom: (_t: string, productId: string) => facts.get(productId)?.uom }),
+    ...(deps.packOf === undefined ? {} : { packOf: (_t: string, productId: string) => facts.get(productId)?.pack }),
+  };
+}
+
 export async function rulesFromMaster(
   deps: Pick<GoodsReceiptDeps, 'productRule'>, tenantId: string, productIds: Iterable<string>,
 ): Promise<{ readonly rules: readonly ProductReceiptRules[]; readonly unverified: boolean; readonly handlingUnknown: boolean }> {
@@ -628,6 +655,8 @@ export function inboundMovements(input: {
         // Carry the captured batch expiry onto the ledger (ADR-0015) — cloud-only, feeds near-expiry reads.
         ...(l.expiry !== null ? { expiry: l.expiry } : {}),
         ...(unitCostMinor === undefined ? {} : { unitCostMinor }),
+        // OB-46: a case cost carried exactly travels with the stock it valued.
+        ...(unitCostMinor === undefined || !((l.unitCost as CostBasis).per! > 1) ? {} : { unitCostPer: (l.unitCost as CostBasis).per! }),
       };
     });
 }
@@ -751,7 +780,7 @@ export async function returnRejectedExcess(deps: GoodsReceiptDeps, input: {
   const excessReturn: ExcessReturn = {
     returnedBy: input.returnedBy, returnedAt, reason: input.reason,
     quantityMinor: held.reduce((s, l) => s + l.heldMinor, 0),
-    valueMinor: held.reduce((s, l) => s + valueAtUnitCost(l.heldMinor, l.uom, l.unitCost.minor), 0), // OB-31
+    valueMinor: held.reduce((s, l) => s + valueAtCost(l.heldMinor, l.uom, l.unitCost), 0), // OB-31
     currency: held[0]?.unitCost.currency ?? 'INR',
     movementIds: movements.map((m) => m.movementId), via: 'direct',
   };
@@ -808,7 +837,7 @@ export async function returnDisposedLine(deps: GoodsReceiptDeps, input: {
   }
   const returnedAt = deps.now();
   const lineReturn: LineReturn = {
-    lineId: line.lineId, productId: line.productId, quantityMinor: line.quarantinedMinor, valueMinor: valueAtUnitCost(line.quarantinedMinor, line.uom, line.unitCost.minor),
+    lineId: line.lineId, productId: line.productId, quantityMinor: line.quarantinedMinor, valueMinor: valueAtCost(line.quarantinedMinor, line.uom, line.unitCost),
     currency: line.unitCost.currency, returnedBy: input.returnedBy, returnedAt, reason: input.reason, movementIds: [],
   };
   const returned: GrnRecord = { ...rec, lineReturns: [...(rec.lineReturns ?? []), lineReturn] };
@@ -866,7 +895,7 @@ export async function decideLineDisposition(deps: GoodsReceiptDeps, input: {
   const disposition: LineDisposition = {
     lineId: line.lineId, productId: line.productId, quantityMinor: quantity, disposition: input.disposition,
     decidedBy: input.decidedBy, decidedAt, reason: input.reason,
-    valueMinor: valueAtUnitCost(quantity, line.uom, line.unitCost.minor), currency: line.unitCost.currency, // OB-31
+    valueMinor: valueAtCost(quantity, line.uom, line.unitCost), currency: line.unitCost.currency, // OB-31
     movementIds: movements.map((m) => m.movementId), via: input.via,
   };
   const released = movements.reduce((n, m) => n + m.quantityMinor, 0);
@@ -928,11 +957,12 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         // and only an ISSUED order is folded into. No / unknown / unissued order is said and the delivery still comes in.
         // OB-31 · SF-11: every line in the product's own unit (spelling normalised, packs converted) — or refused by name.
         const inUnits: CapturedLine[] = [];
-        for (const l of lines as CapturedLine[]) inUnits.push(await lineInProductUnit(deps, ctx.tenantId, l, flags));
+        const known = await withProductFacts(deps, ctx.tenantId, (lines as CapturedLine[]).map((l) => l.productId));
+        for (const l of lines as CapturedLine[]) inUnits.push(await lineInProductUnit(known, ctx.tenantId, l, flags));
         const order = await orderForReceipt(deps, ctx.tenantId, isStr(b['poId']) ? b['poId'] : null, flags, b['warehouseId'] as string);
         const aligned = alignToOrder(inUnits, order.ordered, flags);
         // The product master's rules and the tenant's policy — never the body (F03). Unknown is SAID, then the safe fallback.
-        const master = await rulesFromMaster(deps, ctx.tenantId, aligned.map((l) => l.productId));
+        const master = await rulesFromMaster(known, ctx.tenantId, aligned.map((l) => l.productId));
         if (master.unverified) flags.push('product_rules_unverified'); sayHandling(flags, master);
         const inForce = await policyInForce(deps, ctx.tenantId);
         if (inForce.defaulted) flags.push('default_policy');

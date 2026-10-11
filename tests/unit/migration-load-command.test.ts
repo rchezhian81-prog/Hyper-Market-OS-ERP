@@ -80,7 +80,7 @@ describe('runLoadCommand — the stages', () => {
     const out = await runLoadCommand({ ...input, manifest: { loadId: 'x', files: { 'prices.csv': {} } } });
     expect(out).toMatchObject({ exitCode: 2, stage: 'manifest' });
     expect(out.lines.join('\n')).toMatch(/"tenantId" is required/);
-    expect(out.lines.join('\n')).toMatch(/"prices.csv" is not one of the six/);
+    expect(out.lines.join('\n')).toMatch(/"prices.csv" is not one of the extract files/);
     expect(out.lines.join('\n')).toMatch(/"products.csv" must be listed/);
   });
   it('a file whose bytes are not the sealed bytes is refused (MG-02)', async () => {

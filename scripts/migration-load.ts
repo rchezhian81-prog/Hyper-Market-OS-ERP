@@ -4,7 +4,9 @@
 //   pnpm run migration:load -- --dir <folder> [--api http://127.0.0.1:8081] [--dry-run] [--out report.json]
 //                              [--env-file infra/compose/.env] [--demo-tenant <uuid>[,<uuid>]]
 //
-// The folder holds up to six CSV files (products.csv is required), `manifest.json` (who / where / the seal
+// The folder holds the master CSV files (products.csv is required) and, for the phases that follow (GT-05), history.csv
+// (+ history-lines.csv, history-control-totals.csv, attachments.csv and an attachments/ folder of the files), open-orders.csv
+// and trial-balance.csv (+ trial-balance-totals.csv); `manifest.json` (who / where / the seal
 // of every file, from the seal route) and, when there is no API to ask, `exceptions.json` (the cleaning
 // report). With an API the cleaning DECISIONS are read from the cloud's register (Stage C3c) — a decision
 // that exists only in a file is not one. Everything that can refuse lives in `packages/migration/src/load-command.ts`
@@ -14,9 +16,10 @@
 // Run by a NAMED HUMAN (hard rule #5 — the AI prepares and checks; a person loads). Never against a
 // production box (hard rule #7 — MIGRATION_TARGET_KIND is read and obeyed), never into the demo tenant (G4).
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { runLoadCommand, EXTRACT_FILES, type ExtractFileName, type CommandClient } from '../packages/migration/src/load-command';
+import { EXTRACT_FILES, type ExtractFileName, type CommandClient } from '../packages/migration/src/load-command';
+import { runFullLoadCommand } from '../packages/migration/src/load-command-phases';
 import { parseEnvText, parseFlags, tokenPolicyFromEnv, buildOperatorToken, demoTenantIds } from './lib/operator-env';
 
 const out = (s = ''): void => { process.stdout.write(`${s}\n`); };
@@ -24,7 +27,8 @@ const out = (s = ''): void => { process.stdout.write(`${s}\n`); };
 function usage(): never {
   out('Usage: pnpm run migration:load -- --dir <folder> [--api URL] [--dry-run] [--out report.json] [--env-file PATH] [--demo-tenant ID[,ID]]');
   out();
-  out('  --dir         Folder with products.csv (+ categories/tax-rates/suppliers/customers/opening-stock .csv),');
+  out('  --dir         Folder with products.csv (+ categories/tax-rates/suppliers/customers/opening-stock .csv; and for the');
+  out('                later phases history*.csv + attachments.csv + attachments/, open-orders.csv, trial-balance*.csv),');
   out('                manifest.json and, for a dry run without --api, exceptions.json. With an API the');
   out('                cleaning decisions are read from the cloud register (GET /v1/migration/exceptions).');
   out('  --api         The cloud API, e.g. http://127.0.0.1:8081. Default: http://127.0.0.1:<API_PORT or 8081>.');
@@ -63,6 +67,11 @@ async function main(): Promise<void> {
     if (existsSync(path)) files[name] = readFileSync(path, 'utf8');
   }
 
+  // GT-05: the history phase's document files, by name, from the attachments/ folder (checked against attachments.csv's hashes).
+  const attachmentBytes: Record<string, string> = {};
+  const attachmentsDir = join(dir, 'attachments');
+  if (existsSync(attachmentsDir)) for (const f of readdirSync(attachmentsDir)) attachmentBytes[f] = readFileSync(join(attachmentsDir, f)).toString('base64');
+
   let client: CommandClient | undefined;
   const apiFlag = typeof flags['api'] === 'string' ? flags['api'] : undefined;
   const api = apiFlag ?? (dryRun ? undefined : `http://127.0.0.1:${env['API_PORT'] ?? '8081'}`);
@@ -75,12 +84,13 @@ async function main(): Promise<void> {
     const policy = idp.policy;
     const base = api.replace(/\/$/, '');
     client = {
-      request: async ({ method, path, userId, tenantId, body, idempotencyKey }) => {
+      request: async ({ method, path, userId, tenantId, body, idempotencyKey, query }) => {
         // Minted per call, short-lived, for THIS operator in THIS tenant; it never leaves this process.
         const token = buildOperatorToken({ sub: userId, tenantId, ttlSeconds: 600 }, policy, Date.now());
         let res: Response;
         try {
-          res = await fetch(`${base}${path}`, {
+          const qs = query === undefined || Object.keys(query).length === 0 ? '' : `?${new URLSearchParams(query).toString()}`;
+          res = await fetch(`${base}${path}${qs}`, {
             method,
             headers: {
               authorization: `Bearer ${token}`,
@@ -101,8 +111,8 @@ async function main(): Promise<void> {
     };
   }
 
-  const outcome = await runLoadCommand({
-    manifest: manifest.value, files, exceptions: exceptions.missing ? undefined : exceptions.value,
+  const outcome = await runFullLoadCommand({
+    manifest: manifest.value, files, exceptions: exceptions.missing ? undefined : exceptions.value, attachmentBytes,
     targetKind: env['MIGRATION_TARGET_KIND'], demoTenantIds: demoTenantIds(env, flags['demo-tenant']), dryRun,
     ...(client === undefined ? {} : { client }),
   });

@@ -11,7 +11,7 @@
 // is paid, and where they do not, what is paid is the *lowest* of the three until a person settles
 // it. Paying the invoice and investigating later is how an overcharge becomes permanent.
 
-import { minorPerUnitOf, normaliseUom, valueAtUnitCost } from '../../../packages/contracts/src/quantity';
+import { minorPerUnitOf, normaliseUom, valueAtCost } from '../../../packages/contracts/src/quantity';
 import type { Route } from '../../kernel/src/index';
 import { deciderSealFlags } from '../../pos/src/store-seal';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
@@ -191,6 +191,8 @@ export interface SupplierInvoiceLine {
   readonly productId: string;
   readonly quantity: number;
   readonly unitPriceMinor: number;
+  /** OB-46 "A": the price on the paper buys this many whole units (₹250 per case of 24); absent ⇒ 1. */
+  readonly unitPricePer?: number;
   readonly lineTotalMinor: number;
   /** OB-31: the line's unit when the paper names one (kg ⇒ quantity in grams, price per kg); absent ⇒ whole items. */
   readonly uom?: string;
@@ -363,7 +365,11 @@ export function readInvoiceLines(v: unknown, unitOf?: Readonly<Record<string, st
       return { ok: false, code: 'not_readable', detail: `line ${i + 1}: ${raw['productId']} is counted in "${masterCode}" on the product master, but the line says "${said}"` };
     }
     const uom = said ?? (masterCode !== undefined && normaliseUom(masterCode) !== undefined ? masterCode : undefined);
-    const product = valueAtUnitCost(raw['quantity'], uom ?? 'ea', raw['unitPriceMinor']);
+    if (raw['unitPricePer'] !== undefined && !(isPosInt(raw['unitPricePer']) && (raw['unitPricePer'] as number) > 1)) {
+      return { ok: false, code: 'not_readable', detail: `line ${i + 1}: unitPricePer, when given, is how many whole units the price buys — a whole number above 1` };
+    }
+    const per = raw['unitPricePer'] as number | undefined;
+    const product = valueAtCost(raw['quantity'], uom ?? 'ea', { minor: raw['unitPriceMinor'], ...(per === undefined ? {} : { per }) });
     if (product !== raw['lineTotalMinor']) {
       return { ok: false, code: 'line_does_not_multiply', detail: `line ${i + 1}: ${raw['quantity']} × ${raw['unitPriceMinor']} is ${product}, but the line says ${raw['lineTotalMinor']}` };
     }
@@ -376,7 +382,7 @@ export function readInvoiceLines(v: unknown, unitOf?: Readonly<Record<string, st
       return { ok: false, code: 'not_readable', detail: `line ${i + 1}: a line is charged IGST (inter-state) or CGST + SGST (intra-state), never both` };
     }
     lines.push({
-      productId: raw['productId'], quantity: raw['quantity'], unitPriceMinor: raw['unitPriceMinor'], lineTotalMinor: raw['lineTotalMinor'], ...(uom === undefined ? {} : { uom }),
+      productId: raw['productId'], quantity: raw['quantity'], unitPriceMinor: raw['unitPriceMinor'], ...(per === undefined ? {} : { unitPricePer: per }), lineTotalMinor: raw['lineTotalMinor'], ...(uom === undefined ? {} : { uom }),
       ...(tax.cgstMinor > 0 ? { cgstMinor: tax.cgstMinor } : {}), ...(tax.sgstMinor > 0 ? { sgstMinor: tax.sgstMinor } : {}), ...(tax.igstMinor > 0 ? { igstMinor: tax.igstMinor } : {}),
     });
   }
@@ -435,11 +441,12 @@ export function matchLinesFrom(
   invoicedBefore: Readonly<Record<string, number>> = {},
 ): MatchLine[] {
   const usable = order !== undefined && order.status === 'issued' ? order : undefined;
-  const ordered = new Map<string, { qty: number; unitMinor: number }>();
+  const ordered = new Map<string, { qty: number; unitMinor: number; per?: number }>();
   const scaleOf = new Map<string, number>(); // OB-31: steps per whole unit, from the order's own line unit
   for (const l of usable?.lines ?? []) {
     const cur = ordered.get(l.productId);
-    ordered.set(l.productId, { qty: (cur?.qty ?? 0) + l.orderedQty, unitMinor: cur?.unitMinor ?? l.unitCost.minor });
+    const per = cur === undefined ? l.unitCost.per : cur.per;
+    ordered.set(l.productId, { qty: (cur?.qty ?? 0) + l.orderedQty, unitMinor: cur?.unitMinor ?? l.unitCost.minor, ...(per === undefined ? {} : { per }) });
     if (l.uom !== undefined) scaleOf.set(l.productId, minorPerUnitOf(l.uom));
   }
   for (const [productId, prior] of Object.entries(invoicedBefore)) {
@@ -449,10 +456,11 @@ export function matchLinesFrom(
   const receivedRaw = usable?.receivedByProduct ?? {};
   const received: Record<string, number> = {};
   for (const [productId, qty] of Object.entries(receivedRaw)) received[productId] = Math.max(0, qty - (invoicedBefore[productId] ?? 0));
-  const invoiced = new Map<string, { qty: number; unitMinor: number }>();
+  const invoiced = new Map<string, { qty: number; unitMinor: number; per?: number }>();
   for (const l of invoice.lines) {
     const cur = invoiced.get(l.productId);
-    invoiced.set(l.productId, { qty: (cur?.qty ?? 0) + l.quantity, unitMinor: cur?.unitMinor ?? l.unitPriceMinor });
+    const per = cur === undefined ? l.unitPricePer : cur.per;
+    invoiced.set(l.productId, { qty: (cur?.qty ?? 0) + l.quantity, unitMinor: cur?.unitMinor ?? l.unitPriceMinor, ...(per === undefined ? {} : { per }) });
   }
   return [...new Set([...ordered.keys(), ...Object.keys(received), ...invoiced.keys()])].sort().map((productId) => ({
     productId,
@@ -461,6 +469,8 @@ export function matchLinesFrom(
     invoicedQty: invoiced.get(productId)?.qty ?? 0,
     orderedUnitMinor: ordered.get(productId)?.unitMinor ?? 0,
     invoicedUnitMinor: invoiced.get(productId)?.unitMinor ?? 0,
+    ...(ordered.get(productId)?.per === undefined ? {} : { orderedPer: ordered.get(productId)!.per! }),
+    ...(invoiced.get(productId)?.per === undefined ? {} : { invoicedPer: invoiced.get(productId)!.per! }),
     ...(scaleOf.get(productId) === undefined || scaleOf.get(productId) === 1 ? {} : { minorPerUnit: scaleOf.get(productId)! }),
   }));
 }

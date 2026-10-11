@@ -1,4 +1,4 @@
-// The operator's load, end to end and testable without a terminal: the six extract files, their
+// The operator's load, end to end and testable without a terminal: the extract files, their
 // manifest and the cleaning report go in; a plain-English outcome, an exit code and (when it ran) the
 // load report come out. `scripts/migration-load.ts` is the thin shell that reads the folder, mints the
 // operator's token and speaks HTTP; everything that can be wrong lives here, where a test can reach it.
@@ -19,7 +19,15 @@ import { bundleFromFiles, type CsvRows, type ExtractFiles } from './load-csv';
 import { planLoad, executeLoad, type LoadPlan, type LoadReport, type LoadRequest } from './load';
 import type { TargetKind } from './trial';
 
-export const EXTRACT_FILES = ['products.csv', 'categories.csv', 'tax-rates.csv', 'suppliers.csv', 'customers.csv', 'opening-stock.csv'] as const;
+export const MASTER_FILES = ['products.csv', 'categories.csv', 'tax-rates.csv', 'suppliers.csv', 'customers.csv', 'opening-stock.csv'] as const;
+/**
+ * GT-05: the files of the phases that follow the master-data and opening load — history (MG-07), open orders and the
+ * accounting openings (MG-08). Optional; sealed and checked like the master files; run by `load-command-phases.ts`.
+ */
+export const PHASE_FILES = [
+  'history.csv', 'history-lines.csv', 'history-control-totals.csv', 'attachments.csv', 'open-orders.csv', 'trial-balance.csv', 'trial-balance-totals.csv',
+] as const;
+export const EXTRACT_FILES = [...MASTER_FILES, ...PHASE_FILES] as const;
 export type ExtractFileName = (typeof EXTRACT_FILES)[number];
 
 /** `manifest.json` in the extract folder — written by the person who sealed the files. */
@@ -44,6 +52,8 @@ export interface CommandClient {
     readonly tenantId: string;
     readonly body?: unknown;
     readonly idempotencyKey?: string;
+    /** GT-05: a read's query (the phases' read-backs filter by load, store or party). */
+    readonly query?: Readonly<Record<string, string>>;
   }): Promise<{ readonly status: number; readonly body: unknown }>;
 }
 
@@ -95,7 +105,7 @@ export function readManifest(raw: unknown): { readonly manifest?: LoadManifest; 
   if (!isObj(files)) problems.push('manifest.json: "files" must map each file name to { seal, declaredRows? }');
   else {
     for (const [name, entry] of Object.entries(files)) {
-      if (!(EXTRACT_FILES as readonly string[]).includes(name)) { problems.push(`manifest.json: "${name}" is not one of the six extract files (${EXTRACT_FILES.join(', ')})`); continue; }
+      if (!(EXTRACT_FILES as readonly string[]).includes(name)) { problems.push(`manifest.json: "${name}" is not one of the extract files (${EXTRACT_FILES.join(', ')})`); continue; }
       if (!isObj(entry) || !isObj(entry['seal'])) { problems.push(`manifest.json: "${name}" needs the seal the seal route returned`); continue; }
       const seal = entry['seal'];
       if (!isStr(seal['digest']) || typeof seal['rowCount'] !== 'number' || !isStr(seal['extractedBy']) || !isStr(seal['extractId'])) {
@@ -158,7 +168,7 @@ export function mergeCleaningEvidence(input: {
   return { exceptions: [...byId.values()], fileOnlyDecisions, source: input.file === undefined ? 'register_only' : 'file_and_register' };
 }
 
-function csvRows(text: string): CsvRows {
+export function csvRows(text: string): CsvRows {
   const parsed = parseDelimited(text, { header: true });
   return { headers: parsed.headers, rows: parsed.rows, lineNumbers: parsed.lineNumbers };
 }

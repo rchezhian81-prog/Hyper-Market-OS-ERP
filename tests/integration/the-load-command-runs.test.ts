@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -91,8 +92,10 @@ beforeAll(async () => {
       const auth = req.headers.authorization ?? '';
       const token = auth.startsWith('Bearer ') ? auth.slice(7) : undefined;
       const key = req.headers['idempotency-key'];
+      const url = new URL(req.url ?? '/', 'http://shim');
+      const query = Object.fromEntries(url.searchParams.entries());
       const r = await h.raw({
-        method: req.method as 'GET' | 'POST', path: req.url ?? '/',
+        method: req.method as 'GET' | 'POST', path: url.pathname, ...(Object.keys(query).length === 0 ? {} : { query }),
         ...(token === undefined ? {} : { token }),
         ...(data === '' ? {} : { body: JSON.parse(data) as unknown }),
         ...(typeof key === 'string' ? { idempotencyKey: key } : {}),
@@ -161,6 +164,48 @@ describe('scripts/migration-load — the operator\'s load, as a subprocess', () 
     expect(r.code).toBe(2);
     expect((await run('migration-load.js', [])).code).toBe(2);
   });
+});
+
+describe('scripts/migration-load — the later phases (GT-05), as a subprocess', () => {
+  it('reads the attachments folder and the phase files, waits for the accountant\'s sign-off by name (exit 1), and finishes once it is given (exit 0)', async () => {
+    const T2 = 'ab000000-0000-4000-8000-000000000043';
+    const scan = Buffer.from('%PDF-1.4\n% synthetic legacy scan\n%%EOF\n', 'utf8');
+    const phaseFiles: Record<string, string> = {
+      ...FILES,
+      'history.csv': ['kind,legacy_id,number,date,party,net,tax,gross,attachments', 'sales_invoice,SI-1,SRE/1,2025-01-15,C-1,100.00,5.00,105.00,DOC-1'].join('\n'),
+      'history-control-totals.csv': ['kind,count,gross,tax', 'sales_invoice,1,105.00,5.00'].join('\n'),
+      'attachments.csv': ['legacy_id,file_name,content_type,sha256', `DOC-1,scan-1.pdf,application/pdf,${createHash('sha256').update(scan).digest('hex')}`].join('\n'),
+      'trial-balance.csv': ['account_code,account_name,debit,credit', 'inventory,Stock in trade,18000.00,', 'capital,Capital,,18000.00'].join('\n'),
+      'trial-balance-totals.csv': ['total_debit,total_credit,account_count', '18000.00,18000.00,2'].join('\n'),
+    };
+    const d2 = mkdtempSync(join(tmpdir(), 'sre-load-phases-'));
+    mkdirSync(join(d2, 'attachments'));
+    writeFileSync(join(d2, 'attachments', 'scan-1.pdf'), scan);
+    const sealed: Record<string, unknown> = {};
+    for (const [name, text] of Object.entries(phaseFiles)) {
+      writeFileSync(join(d2, name), text, 'utf8');
+      const rows = text.split('\n').length - 1;
+      sealed[name] = { seal: sealExtract({ extractId: `x-${name}`, tenantId: T2, sourceId: 'legacy-erp', material: text, rowCount: rows, extractedBy: OPERATOR, backupVerifiedAt: '2026-09-30T20:00:00.000Z', hasher: simpleHasher, now: '2026-09-30T21:00:00.000Z' }).extract, declaredRows: rows };
+    }
+    writeFileSync(join(d2, 'manifest.json'), JSON.stringify({ loadId: 'load-phases', tenantId: T2, operator: OPERATOR, stockLocationId: 'STORE-MAIN', receivedOnDate: '2026-10-01', files: sealed }), 'utf8');
+    writeFileSync(join(d2, 'exceptions.json'), JSON.stringify({ exceptions: [] }), 'utf8');
+    await h.seedOwner(T2, OPERATOR);
+    await aStoreWithRules(h, T2, OPERATOR, 'STORE-MAIN', 0);
+    await h.provisionRole(T2, 'u-acct', 'accountant');
+
+    const first = await run('migration-load.js', ['--dir', d2, '--env-file', envFile, '--api', api]);
+    expect(first.out).toMatch(/History: 2 record\(s\) landed; every document, attachment and per-kind total agrees/);
+    expect(first.out).toMatch(/is RECORDED, not yet the books\. WAITING/);
+    expect(first.out).toContain('NOT FINISHED');
+    expect(first.code).toBe(1);
+    const signed = await h.request({ method: 'POST', path: '/v1/finance/account-openings/load-phases/sign-off', userId: 'u-acct', tenantId: T2, idempotencyKey: 'tb-sign', body: { oldSystemDebitMinor: 1_800_000, oldSystemCreditMinor: 1_800_000, accountCount: 2 } });
+    expect(signed.status).toBe(201);
+    const second = await run('migration-load.js', ['--dir', d2, '--env-file', envFile, '--api', api]);
+    rmSync(d2, { recursive: true, force: true });
+    expect(second.out).toMatch(/the ledger agrees with the old trial balance account by account/);
+    expect(second.out).toContain('FINISHED');
+    expect(second.code).toBe(0);
+  }, 120_000);
 });
 
 describe('scripts/bootstrap-tenant — a second real tenant, as a subprocess', () => {

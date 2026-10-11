@@ -181,10 +181,10 @@ import { AuditTrail, InMemoryAuditStore, type AuditEntry, type AuditRecord } fro
 import type { SettlementRoutesDeps, SettlementBatch, SettlementLine, CapturedTender } from '../../finance/src/settlement';
 import { attachEvidence, type Investigation } from '../../../packages/settlement/src/settlement';
 import { project, projectBatches, fefoBatchesAt, EFFECT_ON_HAND, movesValueOnward } from '../../inventory/src/index';
-import { minorPerUnitOf, normaliseUom, valueAtUnitCost } from '../../../packages/contracts/src/quantity';
+import { minorPerUnitOf, normaliseUom, valueAtCost } from '../../../packages/contracts/src/quantity';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
-import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
+import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting, ProductReceiptFacts } from '../../inventory/src/goods-receipt';
 import { receiptRuleFor } from '../../inventory/src/goods-receipt';
 import { COLD_CHAIN_CLASS_DEFAULTS } from '../../../packages/fulfilment/src/packing';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
@@ -194,10 +194,12 @@ import { capturePortalInvoice } from '../../purchase/src/index';
 import type { Asn } from '../../../packages/receiving/src/asn';
 import { foldAllSupplierAccounts, foldSupplierAccount, type SupplierAccountDeps, type SupplierPayment, type DebitNoteIssue } from '../../purchase/src/supplier-account';
 import type { SupplierMasterDeps, SupplierRecord, SupplierBankState } from '../../purchase/src/supplier-master';
-import { openingsWithSignOff, type SupplierOpeningDeps, type SupplierOpeningBalance, type SupplierOpeningSignOff } from '../../purchase/src/supplier-openings';
+import { openingsWithSignOff, type SupplierOpeningDeps, type SupplierOpeningBalance, type SupplierOpeningSignOff, type SupplierOpeningReversal } from '../../purchase/src/supplier-openings';
 import type { DisplayFundingDeps, DisplayFundingJournal } from '../../finance/src/display-funding';
 import type { PayablesDeps, PayablesJournal, PayablesExceptionRecord } from '../../finance/src/payables';
 import type { PurchaseOrderDeps, StoredPurchaseOrder } from '../../purchase/src/purchase-orders';
+import { openDeliveriesFor } from '../../purchase/src/purchase-orders';
+import type { StoreReplenishmentFacts } from '../../inventory/src/replenishment';
 import type { SupplierScorecardDeps } from '../../purchase/src/supplier-scorecard';
 import type { RebateDeps } from '../../purchase/src/rebates';
 import type { RfqDeps } from '../../purchase/src/rfq';
@@ -214,6 +216,10 @@ import { recommendOperationsRunbooks, type OperationsFinding } from '../../../pa
 import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../finance/src/legal-holds';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
+import type { AccountOpeningsDeps, AccountOpeningsRecord, AccountOpeningsSignOff } from '../../finance/src/account-openings';
+import { openingEntryId, openingReversalEntryId } from '../../finance/src/account-openings';
+import { postJournal } from '../../finance/src/index';
+import type { OpeningReversalDeps, CutoverWindow, OpeningReversalRequest, OpeningReversalApproval, ReversalDomainLine } from '../../migration/src/opening-reversal';
 import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
 import type { ConcessionTagDeps, ConcessionTradingBreach } from '../../finance/src/concession-tags';
 import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlertRules } from '../../platform/src/observed-health';
@@ -2077,7 +2083,7 @@ export function productMergeAdapter(input: {
 export function packHierarchyAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
-}): PackHierarchyDeps {
+}): PackHierarchyDeps & { readonly packs: (tenantId: string) => Promise<ReadonlyMap<string, PackHierarchy>> } {
   const stream = streamName(STREAM.catalogue, 'pack-hierarchy');
   const foldLatest = async (tenantId: string): Promise<Map<string, PackHierarchy>> => {
     const events = await input.store.readStream(tenantId, stream, { type: 'PackHierarchyDefined' });
@@ -2100,6 +2106,8 @@ export function packHierarchyAdapter(input: {
       }));
     },
     pack: async (tenantId, productId) => (await foldLatest(tenantId)).get(productId),
+    // GT-05 (store volume): every product's current pack levels in one read.
+    packs: foldLatest,
   };
 }
 
@@ -3579,7 +3587,7 @@ export function concessionAdapter(input: {
           ms.map((m): ValuationMovement => ({
             productId: m.productId, locationId: m.locationId,
             effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
+            isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
             ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
           })),
           'INR',
@@ -4301,8 +4309,12 @@ export function auditTrailAdapter(input: { readonly store: EventStore }): AuditT
       // the chain is folded again over the new tail — never two records with one sequence, never a fork.
       for (let attempt = 0; ; attempt += 1) {
         const expectedVersion = await input.store.guardVersion(tenantId, AUDIT_CHAIN_GUARD);
+        // The seal needs only the TAIL (the engine reads `last()` for the sequence and the previous hash), so only the tail
+        // is read — one indexed row, not the whole chain (GT-05: a store-volume load seals thousands of records, and
+        // re-reading the chain for each made every audited write slower than the last).
         const seed = new InMemoryAuditStore();
-        for (const r of await records(tenantId)) seed.append(r);
+        const tail = await input.store.latestOfType(tenantId, AUDIT_TRAIL_STREAM, 'AuditRecordSealed');
+        if (tail !== undefined) seed.append(payloadOf<AuditRecord>(tail));
         // The engine validates the entry (an unattributable record is refused) and seals it over the tail.
         const sealed = new AuditTrail(seed).record(entry);
         try {
@@ -4589,7 +4601,7 @@ async function unitCostHeldFor(store: EventStore, tenantId: string, productId: s
   const rows = weightedAverageValuation(
     moves.map((m): ValuationMovement => ({
       productId: m.productId, locationId: m.locationId, effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
+      isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
       ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
     })),
     'INR',
@@ -6336,6 +6348,24 @@ export function goodsReceiptAdapter(input: {
       return pack?.snapshot.products.find((p) => p.productId === productId)?.baseUom;
     },
     packOf: (tenantId, productId) => packHierarchyAdapter(input).pack(tenantId, productId),
+    // GT-05 (store volume): the unit, pack levels and receiving rule of every product on a receipt from ONE fold of each
+    // source — the same sources and the same rule as productUom / packOf / productRule above.
+    productFacts: async (tenantId, productIds) => {
+      const masters = new Map((await productMasterAdapter(input).products(tenantId)).map((m) => [m.productId, m] as const));
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      const published = new Map((pack?.snapshot.products ?? []).map((p) => [p.productId, p] as const));
+      const levels = await packHierarchyAdapter(input).packs(tenantId);
+      const out = new Map<string, ProductReceiptFacts>();
+      for (const productId of productIds) {
+        const master = masters.get(productId);
+        const product = published.get(productId);
+        const uom = master?.baseUom ?? product?.baseUom;
+        const level = levels.get(productId);
+        const rule = receiptRuleFor(productId, product, master, COLD_CHAIN_CLASS_DEFAULTS);
+        out.set(productId, { ...(uom === undefined ? {} : { uom }), ...(level === undefined ? {} : { pack: level }), ...(rule === undefined ? {} : { rule }) });
+      }
+      return out;
+    },
     // Batch 2: a quarantined line's physical return to the supplier — the receipt's next state, once per line.
     commitLineReturn: async (tenantId, record, key) => {
       await input.store.append(tenantId, grnStream, makeEvent({
@@ -6538,7 +6568,7 @@ export function inventoryAdapter(input: {
         movements.map((m): ValuationMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
         'INR',
@@ -6564,7 +6594,7 @@ export function inventoryAdapter(input: {
         movements.map((m): DatedMovement => ({
           productId: m.productId, locationId: m.locationId,
           effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
+          isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
           occurredAt: m.occurredAt, batchId: m.batchId ?? null,
           ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
         })),
@@ -6597,7 +6627,7 @@ export function inventoryAdapter(input: {
             .map((m): ValuationMovement => ({
               productId: m.productId, locationId: m.locationId,
               effect: EFFECT_ON_HAND[m.kind], quantityMinor: m.quantityMinor,
-              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom),
+              isPurchaseReceipt: carriesCost(m), isTransferOut: movesValueOnward(m.kind), minorPerUnit: minorPerUnitOf(m.uom), ...(m.unitCostPer === undefined ? {} : { costPerUnits: m.unitCostPer }), ...(m.kind === 'opening_reversed' ? { isReceiptReversal: true, ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }) } : {}),
               ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }),
             })),
           'INR',
@@ -6769,7 +6799,7 @@ function mergeQty(a: Readonly<Record<string, number>>, b: Readonly<Record<string
 /** Value the PO's lines (ordered qty × unit cost) — recomputed when an amendment replaces the lines. */
 function poTotalMinor(lines: StoredPurchaseOrder['lines']): number {
   // OB-31: a kilo / litre line is costed per kilo / litre while its quantity is in grams / millilitres.
-  return lines.reduce((s, l) => s + valueAtUnitCost(l.orderedQty, l.uom ?? 'ea', l.unitCost.minor), 0);
+  return lines.reduce((s, l) => s + valueAtCost(l.orderedQty, l.uom ?? 'ea', l.unitCost), 0);
 }
 
 /**
@@ -7524,6 +7554,7 @@ export function supplierAccountAdapter(input: {
     openingBalances: async (tenantId) => openingsWithSignOff(
       await allOf<SupplierOpeningBalance>(input.store, tenantId, SUPPLIER_OPENINGS_STREAM, 'SupplierOpeningBalanceRecorded'),
       await allOf<SupplierOpeningSignOff>(input.store, tenantId, SUPPLIER_OPENINGS_STREAM, 'SupplierOpeningBalancesSignedOff'),
+      await allOf<SupplierOpeningReversal>(input.store, tenantId, SUPPLIER_OPENINGS_STREAM, 'SupplierOpeningBalanceReversed'), // OB-44
     ),
   };
 }
@@ -7545,12 +7576,257 @@ export function supplierOpeningsAdapter(input: { readonly store: EventStore; rea
       return r.record.event.payload as SupplierOpeningBalance;
     },
     signOffs: (tenantId) => allOf<SupplierOpeningSignOff>(input.store, tenantId, SUPPLIER_OPENINGS_STREAM, 'SupplierOpeningBalancesSignedOff'),
+    reversals: (tenantId) => allOf<SupplierOpeningReversal>(input.store, tenantId, SUPPLIER_OPENINGS_STREAM, 'SupplierOpeningBalanceReversed'), // OB-44
     recordSignOff: async (tenantId, signOff) => {
       const r = await input.store.append(tenantId, SUPPLIER_OPENINGS_STREAM, makeEvent({
         id: `supplier-opening-signoff-${signOff.loadId}-${randomUUID()}`, type: 'SupplierOpeningBalancesSignedOff', occurredAt: signOff.signedAt,
         idempotencyKey: `supplier-opening-signoff-${tenantId}-${signOff.loadId}`, source: 'api/purchase', payload: signOff,
       }));
       return r.record.event.payload as SupplierOpeningSignOff;
+    },
+  };
+}
+
+/**
+ * GT-05 (MG-08 "accounting openings"): the old system's trial balance per load and its second-person sign-off, append-only on
+ * their own stream; the opening journal goes through the finance posting path's own append (one `JournalPosted`, keyed on
+ * the load). The ledger read is every journal the finance stream holds.
+ */
+const ACCOUNT_OPENINGS_STREAM = streamName(STREAM.finance, 'account-openings');
+export function accountOpeningsAdapter(input: { readonly store: EventStore; readonly now: () => string }): AccountOpeningsDeps {
+  const fin = financeAdapter(input);
+  return {
+    now: input.now,
+    records: (tenantId) => allOf<AccountOpeningsRecord>(input.store, tenantId, ACCOUNT_OPENINGS_STREAM, 'AccountOpeningsRecorded'),
+    recordOpenings: async (tenantId, record) => {
+      const r = await input.store.append(tenantId, ACCOUNT_OPENINGS_STREAM, makeEvent({
+        id: `account-openings-${record.loadId}-${randomUUID()}`, type: 'AccountOpeningsRecorded', occurredAt: record.recordedAt,
+        idempotencyKey: `account-openings-${tenantId}-${record.loadId}`, source: 'api/finance', payload: record,
+      }));
+      return r.record.event.payload as AccountOpeningsRecord;
+    },
+    signOffs: (tenantId) => allOf<AccountOpeningsSignOff>(input.store, tenantId, ACCOUNT_OPENINGS_STREAM, 'AccountOpeningsSignedOff'),
+    recordSignOff: async (tenantId, signOff) => {
+      const r = await input.store.append(tenantId, ACCOUNT_OPENINGS_STREAM, makeEvent({
+        id: `account-openings-signoff-${signOff.loadId}-${randomUUID()}`, type: 'AccountOpeningsSignedOff', occurredAt: signOff.signedAt,
+        idempotencyKey: `account-openings-signoff-${tenantId}-${signOff.loadId}`, source: 'api/finance', payload: signOff,
+      }));
+      return r.record.event.payload as AccountOpeningsSignOff;
+    },
+    journals: (tenantId) => allOf<JournalEntry>(input.store, tenantId, STREAM.finance, 'JournalPosted'),
+    periodStates: fin.periodStates,
+    nextOpenPeriod: fin.nextOpenPeriod,
+    appendJournal: fin.appendJournal,
+  };
+}
+
+/**
+ * OB-44 "A" (owner, 11 Oct 2026): an opening load reversed inside the cutover window — every opening taken back out through its
+ * own domain's compensating record (never a delete), each keyed on the load so a re-run lands only what is missing.
+ */
+const OPENING_REVERSALS_STREAM = streamName(STREAM.migration, 'opening-reversals');
+export function openingReversalAdapter(input: { readonly store: EventStore; readonly now: () => string }): OpeningReversalDeps {
+  const stockOf = async (tenantId: string, loadId: string): Promise<{ opened: Movement[]; reversed: Movement[] }> => {
+    const grnIds = new Set((await goodsReceiptAdapter(input).all(tenantId)).map((g) => g.grnId)
+      .filter((id) => id === `opening-${loadId}` || id.startsWith(`opening-${loadId}-`)));
+    const opened: Movement[] = [];
+    const reversed: Movement[] = [];
+    for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
+      const m = payloadOf<Movement>(e);
+      const grnId = m.movementId.split(':')[0]!;
+      if (!grnIds.has(grnId)) continue;
+      if (m.kind === 'received') opened.push(m); else if (m.kind === 'opening_reversed') reversed.push(m);
+    }
+    return { opened, reversed };
+  };
+  const supplierOpeningsOf = async (tenantId: string, loadId: string) => {
+    const openings = (await allOf<SupplierOpeningBalance>(input.store, tenantId, SUPPLIER_OPENINGS_STREAM, 'SupplierOpeningBalanceRecorded')).filter((o) => o.loadId === loadId);
+    const reversals = (await allOf<SupplierOpeningReversal>(input.store, tenantId, SUPPLIER_OPENINGS_STREAM, 'SupplierOpeningBalanceReversed')).filter((r) => r.loadId === loadId);
+    return { openings, reversals };
+  };
+  const journalsOf = async (tenantId: string, loadId: string) => {
+    const all = await allOf<JournalEntry>(input.store, tenantId, STREAM.finance, 'JournalPosted');
+    return { opening: all.find((j) => j.entryId === openingEntryId(loadId)), reversal: all.find((j) => j.entryId === openingReversalEntryId(loadId)) };
+  };
+  const svId = (loadId: string, instrumentId: string): string => `${loadId}-reversal-${instrumentId}`;
+  const ptsId = (loadId: string, customerId: string): string => `${loadId}-opening-${customerId}-reversal`;
+  const rcptId = (loadId: string, invoiceId: string): string => `opening-reversal-${loadId}-${invoiceId}`;
+  const sv = storedValueAdapter(input);
+  const customers = customerAdapter(input);
+  const collections = b2bCollectionsAdapter(input);
+  const fin = financeAdapter(input);
+  const net = (j: JournalEntry | undefined): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (const l of j?.lines ?? []) m.set(l.accountCode, (m.get(l.accountCode) ?? 0) + l.debitMinor - l.creditMinor);
+    return m;
+  };
+  return {
+    now: input.now,
+    windows: (tenantId) => allOf<CutoverWindow>(input.store, tenantId, OPENING_REVERSALS_STREAM, 'CutoverWindowRecorded'),
+    recordWindow: async (tenantId, w) => {
+      await input.store.append(tenantId, OPENING_REVERSALS_STREAM, makeEvent({ id: `cutover-window-${w.cutoverId}-${randomUUID()}`, type: 'CutoverWindowRecorded', occurredAt: w.recordedAt, idempotencyKey: `cutover-window-${tenantId}-${w.cutoverId}-${w.opensAt}-${w.closesAt}`, source: 'api/migration', payload: w }));
+    },
+    requests: (tenantId) => allOf<OpeningReversalRequest>(input.store, tenantId, OPENING_REVERSALS_STREAM, 'OpeningReversalRequested'),
+    recordRequest: async (tenantId, r) => {
+      const res = await input.store.append(tenantId, OPENING_REVERSALS_STREAM, makeEvent({ id: `opening-reversal-${r.loadId}-${randomUUID()}`, type: 'OpeningReversalRequested', occurredAt: r.requestedAt, idempotencyKey: `opening-reversal-${tenantId}-${r.loadId}`, source: 'api/migration', payload: r }));
+      return res.record.event.payload as OpeningReversalRequest;
+    },
+    approvals: (tenantId) => allOf<OpeningReversalApproval>(input.store, tenantId, OPENING_REVERSALS_STREAM, 'OpeningReversalApproved'),
+    recordApproval: async (tenantId, a) => {
+      const res = await input.store.append(tenantId, OPENING_REVERSALS_STREAM, makeEvent({ id: `opening-reversal-approval-${a.loadId}-${randomUUID()}`, type: 'OpeningReversalApproved', occurredAt: a.approvedAt, idempotencyKey: `opening-reversal-approval-${tenantId}-${a.loadId}`, source: 'api/migration', payload: a }));
+      return res.record.event.payload as OpeningReversalApproval;
+    },
+
+    problems: async (tenantId, r) => {
+      const p: string[] = [];
+      for (const v of r.storedValue) {
+        const inst = await sv.instrument(tenantId, v.instrumentId);
+        if (inst === undefined) { p.push(`gift card / credit ${v.instrumentId} does not exist`); continue; }
+        const ms = await sv.movements(tenantId, v.instrumentId);
+        const done = ms.some((m) => m.movementId === svId(r.loadId, v.instrumentId));
+        const issued = ms.filter((m) => m.kind === 'issue').reduce((s, m) => s + m.deltaMinor, 0);
+        const balance = ms.reduce((s, m) => s + m.deltaMinor, 0);
+        if (issued !== v.balanceMinor) p.push(`${v.instrumentId} was opened at ${issued} paise, not ${v.balanceMinor}`);
+        else if (!done && balance !== v.balanceMinor) p.push(`${v.instrumentId} has moved since it opened (balance ${balance} of ${v.balanceMinor}) — a spent card is not undone by a reversal`);
+      }
+      for (const rc of r.receivables) {
+        const inv = (await collections.invoices(tenantId, rc.customerId)).find((i) => i.invoiceId === rc.invoiceId);
+        if (inv === undefined) { p.push(`invoice ${rc.customerId}/${rc.invoiceId} does not exist`); continue; }
+        const payments = await allOf<RecordedPayment>(input.store, tenantId, forB2BCustomer(rc.customerId), 'B2BPaymentAllocated');
+        const done = payments.some((x) => x.receiptId === rcptId(r.loadId, rc.invoiceId));
+        if (inv.grossMinor !== rc.outstandingMinor) p.push(`invoice ${rc.invoiceId} was opened at ${inv.grossMinor} paise, not ${rc.outstandingMinor}`);
+        else if (!done && inv.settledMinor !== 0) p.push(`invoice ${rc.invoiceId} is already part-paid (${inv.settledMinor} paise) — a collected invoice is not undone by a reversal`);
+      }
+      for (const c of r.pointsCustomers) {
+        const ms = await customers.pointsMovements(tenantId, c);
+        const opening = ms.find((m) => m.movementId === `${r.loadId}-opening-${c}`);
+        if (opening === undefined) { p.push(`no opening points of customer ${c} under load ${r.loadId}`); continue; }
+        const done = ms.some((m) => m.movementId === ptsId(r.loadId, c));
+        const balance = ms.reduce((s, m) => s + m.delta, 0);
+        if (!done && balance < opening.delta) p.push(`customer ${c} has spent opening points (balance ${balance} of ${opening.delta})`);
+      }
+      const stock = await stockOf(tenantId, r.loadId);
+      const sup = await supplierOpeningsOf(tenantId, r.loadId);
+      const j = await journalsOf(tenantId, r.loadId);
+      if (stock.opened.length === 0 && sup.openings.length === 0 && j.opening === undefined && r.storedValue.length === 0 && r.receivables.length === 0 && r.pointsCustomers.length === 0) {
+        p.push(`nothing was opened under load ${r.loadId}`);
+      }
+      return p;
+    },
+
+    execute: async (tenantId, r, a) => {
+      const at = a.approvedAt;
+      const why = `opening load ${r.loadId} reversed in cutover ${r.cutoverId}: ${r.reason} (requested by ${r.requestedBy}, approved by ${a.approvedBy})`;
+      // Stock: every opening receipt movement out again, at its own cost.
+      const stock = await stockOf(tenantId, r.loadId);
+      const done = new Set(stock.reversed.map((m) => m.movementId));
+      const batch: Parameters<EventStore['appendBatch']>[1][number][] = [];
+      for (const m of stock.opened) {
+        const movementId = `${m.movementId}:reversed`;
+        if (done.has(movementId)) continue;
+        const back: Movement = {
+          movementId, productId: m.productId, locationId: m.locationId, kind: 'opening_reversed', quantityMinor: m.quantityMinor, uom: m.uom,
+          occurredAt: at, reason: why, approvedBy: a.approvedBy, enteredBy: r.requestedBy,
+          ...(m.batchId === undefined ? {} : { batchId: m.batchId }), ...(m.expiry === undefined ? {} : { expiry: m.expiry }),
+          ...(m.unitCostMinor === undefined ? {} : { unitCostMinor: m.unitCostMinor }), ...(m.unitCostPer === undefined ? {} : { unitCostPer: m.unitCostPer }),
+        };
+        batch.push({ stream: STREAM.inventory, event: makeEvent({ id: `mv-${movementId}`, type: 'InventoryMoved', occurredAt: at, idempotencyKey: `mv-${tenantId}-${movementId}`, source: 'api/migration', payload: back }) });
+      }
+      // Supplier bills: each opening of the load reversed, once.
+      const sup = await supplierOpeningsOf(tenantId, r.loadId);
+      const supDone = new Set(sup.reversals.map((x) => x.openingId));
+      for (const o of sup.openings) {
+        if (supDone.has(o.openingId)) continue;
+        const rev: SupplierOpeningReversal = { openingId: o.openingId, loadId: r.loadId, reversalId: `${r.loadId}-${o.openingId}`, requestedBy: r.requestedBy, approvedBy: a.approvedBy, at };
+        batch.push({ stream: SUPPLIER_OPENINGS_STREAM, event: makeEvent({ id: `supplier-opening-reversal-${o.openingId}`, type: 'SupplierOpeningBalanceReversed', occurredAt: at, idempotencyKey: `supplier-opening-reversal-${tenantId}-${o.openingId}`, source: 'api/migration', payload: rev }) });
+      }
+      if (batch.length > 0) await input.store.appendBatch(tenantId, batch);
+      // Stored value: the opening balance adjusted back off each instrument.
+      for (const v of r.storedValue) {
+        const ms = await sv.movements(tenantId, v.instrumentId);
+        if (ms.some((m) => m.movementId === svId(r.loadId, v.instrumentId))) continue;
+        await sv.recordMovement(tenantId, v.instrumentId, { movementId: svId(r.loadId, v.instrumentId), instrumentId: v.instrumentId, kind: 'adjust', deltaMinor: -v.balanceMinor, at, channel: 'store', reason: why },
+          await sv.instrumentVersion!(tenantId, v.instrumentId));
+      }
+      // Receivables: a credit allocation settles each opening invoice — no money received, nothing posts as a receipt.
+      for (const rc of r.receivables) {
+        const inv = (await collections.invoices(tenantId, rc.customerId)).find((i) => i.invoiceId === rc.invoiceId);
+        await collections.recordPayment(tenantId, rc.customerId, {
+          receiptId: rcptId(r.loadId, rc.invoiceId), receivedMinor: 0,
+          allocations: [{ invoiceId: rc.invoiceId, number: inv?.number ?? rc.invoiceId, appliedMinor: rc.outstandingMinor, stillOpenMinor: 0 }],
+          creditFor: 'opening_reversal', reason: why,
+        } as RecordedPayment);
+      }
+      // Loyalty: the opening points taken back by a reversal movement.
+      for (const c of r.pointsCustomers) {
+        const ms = await customers.pointsMovements(tenantId, c);
+        const opening = ms.find((m) => m.movementId === `${r.loadId}-opening-${c}`);
+        if (opening === undefined || ms.some((m) => m.movementId === ptsId(r.loadId, c))) continue;
+        await customers.recordPointsMovement(tenantId, c, { movementId: ptsId(r.loadId, c), customerId: c, delta: -opening.delta, reason: 'reversal', sourceRef: why, at },
+          await input.store.guardVersion(tenantId, `points:${c}`));
+      }
+      // The ledger: the opening journal's mirror image, its own entry, through the posting rules (a closed month → the next open one).
+      const j = await journalsOf(tenantId, r.loadId);
+      if (j.opening !== undefined && j.reversal === undefined) {
+        const entry: JournalEntry = {
+          entryId: openingReversalEntryId(r.loadId), period: j.opening.period, documentDate: at.slice(0, 10), narrative: why,
+          lines: j.opening.lines.map((l) => ({ accountCode: l.accountCode, debitMinor: l.creditMinor, creditMinor: l.debitMinor })), postedBy: a.approvedBy,
+        };
+        const states = await fin.periodStates(tenantId);
+        const next = await fin.nextOpenPeriod(tenantId);
+        const verdict = postJournal({ entry, periodStates: states, nextOpenPeriod: next });
+        await fin.appendJournal(tenantId, verdict.ok ? entry : { ...entry, period: next });
+      }
+    },
+
+    position: async (tenantId, r) => {
+      const out: ReversalDomainLine[] = [];
+      const stock = await stockOf(tenantId, r.loadId);
+      const qty = new Map<string, { opened: number; reversed: number }>();
+      let openedValue = 0;
+      let reversedValue = 0;
+      for (const m of stock.opened) {
+        const k = `${m.productId}@${m.locationId}`;
+        qty.set(k, { opened: (qty.get(k)?.opened ?? 0) + m.quantityMinor, reversed: qty.get(k)?.reversed ?? 0 });
+        if (m.unitCostMinor !== undefined) openedValue += valueAtCost(m.quantityMinor, m.uom ?? 'ea', { minor: m.unitCostMinor, ...(m.unitCostPer === undefined ? {} : { per: m.unitCostPer }) });
+      }
+      for (const m of stock.reversed) {
+        const k = `${m.productId}@${m.locationId}`;
+        qty.set(k, { opened: qty.get(k)?.opened ?? 0, reversed: (qty.get(k)?.reversed ?? 0) + m.quantityMinor });
+        if (m.unitCostMinor !== undefined) reversedValue += valueAtCost(m.quantityMinor, m.uom ?? 'ea', { minor: m.unitCostMinor, ...(m.unitCostPer === undefined ? {} : { per: m.unitCostPer }) });
+      }
+      for (const [k, v] of [...qty].sort(([a], [b]) => (a < b ? -1 : 1))) out.push({ domain: 'stock_quantity', key: k, openedMinor: v.opened, reversedMinor: v.reversed, netMinor: v.opened - v.reversed });
+      if (stock.opened.length > 0) out.push({ domain: 'stock_value', key: 'opening receipts', openedMinor: openedValue, reversedMinor: reversedValue, netMinor: openedValue - reversedValue });
+      for (const v of r.storedValue) {
+        const ms = await sv.movements(tenantId, v.instrumentId);
+        const opened = ms.filter((m) => m.kind === 'issue').reduce((s, m) => s + m.deltaMinor, 0);
+        const reversed = -ms.filter((m) => m.movementId === svId(r.loadId, v.instrumentId)).reduce((s, m) => s + m.deltaMinor, 0);
+        out.push({ domain: 'stored_value', key: v.instrumentId, openedMinor: opened, reversedMinor: reversed, netMinor: opened - reversed });
+      }
+      for (const rc of r.receivables) {
+        const inv = (await collections.invoices(tenantId, rc.customerId)).find((i) => i.invoiceId === rc.invoiceId);
+        const payments = await allOf<RecordedPayment>(input.store, tenantId, forB2BCustomer(rc.customerId), 'B2BPaymentAllocated');
+        const reversed = payments.filter((x) => x.receiptId === rcptId(r.loadId, rc.invoiceId)).flatMap((x) => x.allocations).reduce((s, x) => s + x.appliedMinor, 0);
+        out.push({ domain: 'receivables', key: `${rc.customerId}/${rc.invoiceId}`, openedMinor: inv?.grossMinor ?? 0, reversedMinor: reversed, netMinor: (inv?.grossMinor ?? 0) - reversed });
+      }
+      for (const c of r.pointsCustomers) {
+        const ms = await customers.pointsMovements(tenantId, c);
+        const opened = ms.find((m) => m.movementId === `${r.loadId}-opening-${c}`)?.delta ?? 0;
+        const reversed = -(ms.find((m) => m.movementId === ptsId(r.loadId, c))?.delta ?? 0);
+        out.push({ domain: 'points', key: c, openedMinor: opened, reversedMinor: reversed, netMinor: opened - reversed });
+      }
+      const sup = await supplierOpeningsOf(tenantId, r.loadId);
+      const revd = new Set(sup.reversals.map((x) => x.openingId));
+      for (const o of sup.openings) out.push({ domain: 'supplier_openings', key: `${o.supplierId}/${o.openingId}`, openedMinor: o.amountMinor, reversedMinor: revd.has(o.openingId) ? o.amountMinor : 0, netMinor: revd.has(o.openingId) ? 0 : o.amountMinor });
+      const j = await journalsOf(tenantId, r.loadId);
+      const opened = net(j.opening);
+      const reversed = net(j.reversal);
+      for (const code of [...new Set([...opened.keys(), ...reversed.keys()])].sort()) {
+        const o = opened.get(code) ?? 0;
+        const back = -(reversed.get(code) ?? 0);
+        out.push({ domain: 'ledger', key: code, openedMinor: o, reversedMinor: back, netMinor: o - back });
+      }
+      return out;
     },
   };
 }
@@ -12230,6 +12506,55 @@ export function storeStockFactsAdapter(input: {
 }
 
 /**
+ * FUL-11 (round 6 · M09-FR-02 · M04-FR-01): the facts a store's replenishment proposal runs on — head office's, never the
+ * request's. On-hand from the stock position at the store and every place under it; on-order from the ISSUED purchase
+ * orders delivered there (ordered − received − cancelled); in transit from the transfers on the van to it; sold from the
+ * ledger's `sold` movements at those places in the window.
+ */
+export function replenishmentFactsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  readonly branchOf?: (tenantId: string) => Promise<(locationId: string) => string> | ((locationId: string) => string);
+}): {
+  readonly storeFacts: (tenantId: string, storeId: string) => Promise<StoreReplenishmentFacts>;
+  readonly soldLines: (tenantId: string, storeId: string, fromIso: string, toIso: string) => Promise<readonly SoldLine[]>;
+} {
+  const placeOf = async (tenantId: string) => {
+    const of = input.branchOf === undefined ? (l: string) => l : await input.branchOf(tenantId);
+    return (storeId: string, locationId: string) => locationId === storeId || of(locationId) === storeId;
+  };
+  return {
+    storeFacts: async (tenantId, storeId) => {
+      const at = await placeOf(tenantId);
+      const inv = inventoryAdapter(input);
+      const onHand: Record<string, number> = {};
+      for (const r of await inv.availability(tenantId)) {
+        if (at(storeId, r.locationId)) onHand[r.productId] = (onHand[r.productId] ?? 0) + r.onHandMinor;
+      }
+      const inTransit: Record<string, number> = {};
+      for (const r of await inv.inTransit!(tenantId)) {
+        if (at(storeId, r.locationId)) inTransit[r.productId] = (inTransit[r.productId] ?? 0) + r.quantityMinor;
+      }
+      const onOrder: Record<string, number> = {};
+      const of = input.branchOf === undefined ? (l: string) => l : await input.branchOf(tenantId);
+      for (const d of openDeliveriesFor(await purchaseOrdersAdapter(input).all(tenantId), storeId, of)) {
+        for (const l of d.lines) onOrder[l.productId] = (onOrder[l.productId] ?? 0) + l.openQty;
+      }
+      return { onHand, onOrder, inTransit };
+    },
+    soldLines: async (tenantId, storeId, fromIso, toIso) => {
+      const at = await placeOf(tenantId);
+      const out: SoldLine[] = [];
+      for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved', from: fromIso, to: toIso })) {
+        const m = payloadOf<Movement>(e);
+        if (m.kind === 'sold' && at(storeId, m.locationId)) out.push({ productId: m.productId, quantityMinor: m.quantityMinor, tradingDay: m.occurredAt.slice(0, 10) });
+      }
+      return out;
+    },
+  };
+}
+
+/**
  * FUL-11 (M04-FR-04 · D02-FR-06 · M23): supplier display funding — the contracts merchandising recorded, and the receipts finance
  * posted as journals through the accountant's mapping (a receipt IS its journal, on the one finance stream).
  */
@@ -12746,7 +13071,7 @@ export async function averageBuyingCosts(input: { readonly store: EventStore; re
     const key = `${m.productId}\u001f${storeId}`;
     const a = acc.get(key) ?? { productId: m.productId, storeId, qty: 0, value: 0, scale: minorPerUnitOf(m.uom) };
     a.qty += m.quantityMinor;
-    a.value += valueAtUnitCost(m.quantityMinor, m.uom ?? 'ea', m.unitCostMinor);
+    a.value += valueAtCost(m.quantityMinor, m.uom ?? 'ea', { minor: m.unitCostMinor, ...(m.unitCostPer === undefined ? {} : { per: m.unitCostPer }) }); // OB-46
     acc.set(key, a);
   }
   const rows = [...acc.values()].map((a): AverageBuyingCost => ({

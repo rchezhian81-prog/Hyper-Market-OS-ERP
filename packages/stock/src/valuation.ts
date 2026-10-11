@@ -58,6 +58,13 @@ export interface ValuationMovement {
    * per kg), 1 for an item. A receipt's value is `quantityMinor × unitCostMinor ÷ minorPerUnit`, rounded once. Absent ⇒ 1.
    */
   readonly minorPerUnit?: number;
+  /** OB-46 "A": the receipt's `unitCostMinor` buys this many whole units (a case cost carried exactly). Absent ⇒ 1. */
+  readonly costPerUnits?: number;
+  /**
+   * OB-44 "A": an opening receipt REVERSED (an issue, `effect` -1) — it leaves at the receipt's OWN cost (`unitCostMinor`),
+   * not at the average, and is never cost of goods sold: the opening is undone, nothing was sold.
+   */
+  readonly isReceiptReversal?: boolean;
 }
 
 export interface ProductValuation {
@@ -123,7 +130,7 @@ export function weightedAverageValuation(
     if (m.effect === 1) {
       if (m.isPurchaseReceipt && m.unitCostMinor !== undefined) {
         // OB-31: per-whole-unit cost over smallest-step quantity, rounded once (exact for items).
-        acc.valueMinor += share(m.unitCostMinor, m.quantityMinor, m.minorPerUnit ?? 1);
+        acc.valueMinor += share(m.unitCostMinor, m.quantityMinor, (m.minorPerUnit ?? 1) * (m.costPerUnits ?? 1)); // OB-46: rounded once
         acc.valuedQty += m.quantityMinor;
       } else if (m.isPurchaseReceipt) {
         // A receipt with no cost: units enter, value does not. Reported as unvalued, not folded at 0.
@@ -140,6 +147,14 @@ export function weightedAverageValuation(
         }
       }
       acc.qty += m.quantityMinor;
+    } else if (m.isReceiptReversal === true && m.unitCostMinor !== undefined) {
+      // OB-44: the opening receipt undone — exactly the value it brought in leaves with it (rounded the same way, once).
+      const back = share(m.unitCostMinor, m.quantityMinor, (m.minorPerUnit ?? 1) * (m.costPerUnits ?? 1));
+      acc.valueMinor -= back;
+      acc.valuedQty -= m.quantityMinor;
+      acc.qty -= m.quantityMinor;
+      if (acc.qty <= 0) acc.qty = Math.max(0, acc.qty);
+      if (acc.valuedQty <= 0) { acc.valuedQty = 0; acc.valueMinor = Math.max(0, acc.valueMinor); }
     } else {
       // An issue draws from valued and unvalued stock in proportion; the valued part leaves at WAC.
       const drawValued = acc.qty > 0 ? Math.min(acc.valuedQty, share(acc.valuedQty, m.quantityMinor, acc.qty)) : 0;

@@ -12,7 +12,7 @@
 //                12 → upc, 14 → gtin, 8 → ean, otherwise internal
 //
 // Files (all optional except products): categories.csv, tax-rates.csv, products.csv, suppliers.csv,
-// customers.csv, opening-stock.csv. Column names are matched case-insensitively with spaces, dashes and
+// customers.csv, opening-stock.csv (with an optional location column — GT-05). Column names are matched case-insensitively with spaces, dashes and
 // underscores ignored, so "Item Code", "item_code" and "ITEMCODE" are the same column.
 
 import type { BarcodeKind, ExtractBundle, ExtractCategory, ExtractCustomer, ExtractProduct, ExtractStockRow, ExtractSupplier, ExtractTaxRate } from './load';
@@ -41,7 +41,7 @@ export interface MappedBundle {
 const norm = (h: string): string => h.toLowerCase().replace(/[\s_\-%()]/g, '');
 
 /** Case/space-insensitive column lookup over one row. */
-function cell(row: Readonly<Record<string, string>>, ...names: readonly string[]): string | undefined {
+export function cell(row: Readonly<Record<string, string>>, ...names: readonly string[]): string | undefined {
   const wanted = names.map(norm);
   for (const [k, v] of Object.entries(row)) {
     if (wanted.includes(norm(k))) {
@@ -93,7 +93,7 @@ export function inferBarcodeKind(code: string): BarcodeKind {
 }
 
 const yes = (text: string | undefined): boolean => text !== undefined && ['yes', 'y', 'true', '1'].includes(text.trim().toLowerCase());
-const list = (text: string | undefined): readonly string[] => (text === undefined ? [] : text.split('|').map((s) => s.trim()).filter((s) => s !== ''));
+export const list = (text: string | undefined): readonly string[] => (text === undefined ? [] : text.split('|').map((s) => s.trim()).filter((s) => s !== ''));
 
 function lifecycleOf(status: string | undefined): ExtractProduct['lifecycle'] {
   const s = (status ?? 'active').trim().toLowerCase();
@@ -210,7 +210,9 @@ export function bundleFromFiles(files: ExtractFiles): MappedBundle {
     }
     const batchId = cell(row, 'batch', 'batch_id', 'lot');
     const expiry = cell(row, 'expiry', 'expiry_date', 'use_by');
-    openingStock.push({ productId, quantityMinor, uom, unitCostMinor, ...(batchId === undefined ? {} : { batchId }), ...(expiry === undefined ? {} : { expiry }) });
+    // GT-05 (MG-08 "stock by location"): the store / warehouse / back store the count was taken at; blank → the load's own.
+    const locationId = cell(row, 'location', 'location_id', 'location_code', 'warehouse', 'godown');
+    openingStock.push({ productId, quantityMinor, uom, unitCostMinor, ...(locationId === undefined ? {} : { locationId }), ...(batchId === undefined ? {} : { batchId }), ...(expiry === undefined ? {} : { expiry }) });
   });
 
   return { bundle: { categories, taxRates, products, suppliers, customers, openingStock }, problems };

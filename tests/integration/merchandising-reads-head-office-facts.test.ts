@@ -109,7 +109,7 @@ describe.each(backings)('FUL-11 merchandising reads head office\'s own facts —
     expect((await call('POST', '/v1/floor/indents/ind-4', MGR, { fromLocationId: BACK, toLocationId: STORE, lines: [{ productId: 'p-old', quantityMinor: 1, uom: 'each' }] })).status).toBe(201);
 
     // 2b. The replenishment proposal FOR THE STORE proposes only what it may reorder; the rest is listed, not dropped.
-    const items = ['p-tea', 'p-old', 'p-gone', 'p-new'].map((productId) => ({ productId, onHand: 0, maxLevel: 50, reorderPoint: 10 }));
+    const items = ['p-tea', 'p-old', 'p-gone', 'p-new'].map((productId) => ({ productId, maxLevel: 50, reorderPoint: 10 })); // the stock is head office's
     const proposal = await call('POST', '/v1/replenishment/propose', MGR, { items }, { storeId: STORE });
     expect(proposal.status).toBe(200);
     const pb = proposal.body as { proposals: { productId: string }[]; outOfRange: { productId: string; status: string }[] };

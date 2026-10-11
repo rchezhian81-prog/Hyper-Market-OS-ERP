@@ -410,6 +410,34 @@ export const openingGrnId = (loadId: string, locationId: string, defaultLocation
   locationId === defaultLocationId ? `opening-${loadId}` : `opening-${loadId}-${locationId}`;
 
 /**
+ * GT-05 (store volume): the most lines one opening receipt carries. A real store opens with thousands of lines per
+ * location, and the API refuses a body over 1 MiB (services/kernel/src/http-server.ts); at roughly 250 bytes a line, 1 000
+ * lines stay well inside it. A location with more is received as several receipts — each its own stable id, so a re-run
+ * lands on the same ones.
+ */
+export const OPENING_RECEIPT_MAX_LINES = 1_000;
+
+/** One opening receipt: a location's rows, or a part of them. The first part keeps the location's own id. */
+export interface OpeningReceiptChunk {
+  readonly locationId: string;
+  readonly grnId: string;
+  readonly part: number;
+  readonly rows: readonly ExtractStockRow[];
+}
+
+/** The opening receipts a load sends, in order — the same pure split the plan and the read-back both use. */
+export function openingReceiptChunks(bundle: ExtractBundle, req: Pick<LoadRequest, 'loadId' | 'stockLocationId'>, maxLines = OPENING_RECEIPT_MAX_LINES): readonly OpeningReceiptChunk[] {
+  const out: OpeningReceiptChunk[] = [];
+  for (const [locationId, rows] of stockByLocation(bundle, req.stockLocationId)) {
+    const base = openingGrnId(req.loadId, locationId, req.stockLocationId);
+    for (let i = 0, part = 1; i < rows.length; i += maxLines, part += 1) {
+      out.push({ locationId, grnId: part === 1 ? base : `${base}-part-${part}`, part, rows: rows.slice(i, i + maxLines) });
+    }
+  }
+  return out;
+}
+
+/**
  * The guards, then the ordered route calls. Refusals come first and each is its own reason, because
  * the operator has to fix exactly one thing.
  */
@@ -577,11 +605,12 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
     // GT-05: ONE opening receipt per LOCATION (MG-08 "stock by location"), each its own ledger receipt at its own place.
     const lineNo = new Map<ExtractStockRow, number>();
     bundle.openingStock.forEach((r, i) => lineNo.set(r, i + 1));
-    for (const [locationId, rows] of stockByLocation(bundle, req.stockLocationId)) {
+    for (const { locationId, grnId, part, rows } of openingReceiptChunks(bundle, req)) {
       const own = locationId === req.stockLocationId;
+      const partKey = part === 1 ? '' : `-part-${part}`;
       steps.push({
-        group: 'stock', what: `opening stock (${rows.length} line(s)) at ${locationId}`,
-        path: `/v1/inventory/goods-receipt/${encodeURIComponent(openingGrnId(req.loadId, locationId, req.stockLocationId))}`,
+        group: 'stock', what: `opening stock (${rows.length} line(s)) at ${locationId}${part === 1 ? '' : ` (part ${part})`}`,
+        path: `/v1/inventory/goods-receipt/${encodeURIComponent(grnId)}`,
         body: {
           warehouseId: locationId,
           receivedOnDate: req.receivedOnDate,
@@ -592,7 +621,7 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
             ...(batchTracked.get(r.productId) === true ? { batchId: r.batchId, expiry: r.expiry } : {}),
           })),
         },
-        idempotencyKey: key(own ? 'opening-stock' : `opening-stock-${locationId}`),
+        idempotencyKey: key(own ? `opening-stock${partKey}` : `opening-stock-${locationId}${partKey}`),
       });
     }
   }
@@ -735,22 +764,24 @@ export async function readBackOpening(
   if (bundle.openingStock.length > 0) {
     const avail = await get('/v1/inventory/availability');
     const rows = (Array.isArray(avail.body['rows']) ? avail.body['rows'] : []) as { productId?: unknown; locationId?: unknown; onHandMinor?: unknown }[];
+    const onHandAt = new Map<string, (typeof rows)[number]>(rows.map((x) => [`${String(x.productId)}@${String(x.locationId)}`, x]));
     const expectedAt = new Map<string, number>();
     for (const [loc, rs] of byLocation) for (const r of rs) expectedAt.set(`${r.productId}@${loc}`, (expectedAt.get(`${r.productId}@${loc}`) ?? 0) + r.quantityMinor);
     for (const [key, expected] of expectedAt) {
-      const row = rows.find((x) => `${String(x.productId)}@${String(x.locationId)}` === key);
+      const row = onHandAt.get(key);
       line('stock_location', key, expected, row === undefined ? null : num(row.onHandMinor));
     }
-    for (const [loc, rs] of byLocation) {
-      const grnId = openingGrnId(req.loadId, loc, req.stockLocationId);
+    for (const { locationId: loc, grnId, rows: rs } of openingReceiptChunks(bundle, req)) {
       const grn = await get(`/v1/inventory/goods-receipt/${encodeURIComponent(grnId)}`);
       const captured = ((grn.body['grn'] as { captured?: { lines?: unknown } } | undefined)?.captured?.lines ?? []) as {
         productId?: unknown; batchId?: unknown; sellableMinor?: unknown; quarantinedMinor?: unknown; heldMinor?: unknown;
       }[];
+      const capturedBy = new Map<string, typeof captured>();
+      if (Array.isArray(captured)) for (const l of captured) { const k = `${String(l.productId)}#${String(l.batchId)}`; capturedBy.set(k, [...(capturedBy.get(k) ?? []), l]); }
       for (const r of rs) {
         if (r.batchId === undefined) continue;
         const key = `${r.productId}@${loc}#${r.batchId}`;
-        const got = Array.isArray(captured) ? captured.filter((l) => l.productId === r.productId && l.batchId === r.batchId) : [];
+        const got = capturedBy.get(`${r.productId}#${r.batchId}`) ?? [];
         if (grn.status !== 200 || got.length === 0) {
           line('stock_batch', key, r.quantityMinor, null, grn.status === 200 ? 'received WITHOUT its batch' : `opening receipt ${grnId} not readable (${grn.status})`);
           continue;
@@ -764,8 +795,10 @@ export async function readBackOpening(
     const vrows = (Array.isArray(valuation.body['rows']) ? valuation.body['rows'] : []) as { productId?: unknown; value?: { minor?: unknown } }[];
     const expectedValue = new Map<string, number>();
     for (const r of bundle.openingStock) expectedValue.set(r.productId, (expectedValue.get(r.productId) ?? 0) + r.quantityMinor * r.unitCostMinor);
+    const valueRowsOf = new Map<string, typeof vrows>();
+    for (const x of vrows) valueRowsOf.set(String(x.productId), [...(valueRowsOf.get(String(x.productId)) ?? []), x]);
     for (const [productId, expected] of expectedValue) {
-      const mine = vrows.filter((x) => x.productId === productId);
+      const mine = valueRowsOf.get(productId) ?? [];
       line('stock_value', productId, expected, mine.length === 0 ? null : mine.reduce((s, x) => s + (num(x.value?.minor) ?? 0), 0));
     }
   }
