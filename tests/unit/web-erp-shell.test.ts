@@ -50,7 +50,7 @@ describe('role-scoped navigation', () => {
   it('gives a manager their wider menu, grouped for the sidebar', () => {
     const nav = navigationFor(access, { userId: 'mgr-1', branchId: 'b1' });
     // OB-16: the owner's workspaces, in the rail's fixed order — the same screens, regrouped.
-    expect(nav.map((g) => g.group)).toEqual(['Today', 'Receiving', 'Inventory', 'Sales', 'Finance', 'Reports']);
+    expect(nav.map((g) => g.group)).toEqual(['Today', 'Receiving', 'Inventory', 'Sales', 'Finance', 'Customers', 'Reports']); // round 8: + Customers (Customer cases, service.case.read)
     expect(nav[0]?.items.map((i) => i.id)).toEqual(['dashboard']);
     expect(nav[2]?.items.map((i) => i.id)).toEqual(['counts', 'stock-health', 'unsellable', 'warehouse-supervisor']);
   });
