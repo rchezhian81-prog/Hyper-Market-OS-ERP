@@ -6,6 +6,7 @@ import {
   UnresolvedExceptionsError,
   UnsyncedSalesError,
   OpenShiftsError,
+  PendingPaymentsError,
   ReopenApprovalRequiredError,
 } from '../../packages/day-close/src/index';
 import { makeTradingDayRule } from '../../packages/calendar/src/index';
@@ -97,6 +98,19 @@ describe('closeDay', () => {
     expect(outbox.unsentCount()).toBe(0);
     expect(closeDay(baseClose({ openShifts: [] }), outbox).locked).toBe(true);
     expect(outbox.unsentCount()).toBe(1);
+  });
+
+  it('D04-FR-02 / PF-06: blocks while a card or UPI payment has no final answer, naming each one', () => {
+    const outbox = new SyncOutbox();
+    const pending = [
+      { attemptId: 'PAY-1', laneId: 'lane-1', billRef: 'B-1', kind: 'card' as const, amountMinor: 64_000, askedAt: '2026-08-02T05:00:00Z', state: 'no_answer' as const },
+      { attemptId: 'PAY-2', laneId: 'lane-2', billRef: 'B-2', kind: 'upi' as const, amountMinor: 41_000, askedAt: '2026-08-02T06:00:00Z', state: 'asked' as const },
+    ];
+    expect(() => closeDay(baseClose({ pendingPayments: pending }), outbox)).toThrow(PendingPaymentsError);
+    expect(() => closeDay(baseClose({ pendingPayments: pending }), outbox)).toThrow(/2 card\/UPI payment\(s\) still have no final answer — card payment PAY-1 on till lane-1, bill B-1, Rs 640\.00/);
+    expect(() => closeDay(baseClose({ pendingPayments: pending }), outbox)).toThrow(/UPI payment PAY-2 on till lane-2, bill B-2, Rs 410\.00, since 2026-08-02T06:00:00Z \(no answer was recorded from the machine\)/);
+    expect(outbox.unsentCount()).toBe(0);
+    expect(closeDay(baseClose({ pendingPayments: [] }), outbox).locked).toBe(true);
   });
 
   it('is idempotent on the day-close id', () => {

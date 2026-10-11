@@ -293,6 +293,8 @@ export interface ManagerData {
   readonly approvals?: readonly ApprovalRequest[];
   readonly openExceptions?: readonly RegisterItem[];
   readonly unsentItems?: readonly RegisterItem[];
+  /** Card/UPI payments on the store computer with no final answer (D04-FR-02); absent when the box takes none. */
+  readonly pendingPayments?: readonly RegisterItem[];
   readonly tasks?: readonly RegisterItem[];
   // Who runs this screen, where, and which day — from the store pack (Stage G slice 5c · §28 · hard rule #4).
   // Absent means the box was not told; the screen then names nobody and refuses every decision.
@@ -4746,6 +4748,7 @@ export function portsFromData(data: ManagerData | undefined): ManagerPorts {
     openExceptions: () => register(data.openExceptions),
     unsentItems: () => register(data.unsentItems),
     tasks: () => register(data.tasks),
+    ...(data.pendingPayments === undefined ? {} : { pendingPayments: () => register(data.pendingPayments) }),
   };
 }
 

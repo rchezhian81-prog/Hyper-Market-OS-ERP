@@ -76,6 +76,11 @@ export interface ScreenInput {
    * prices/recalls have fallen — computed from the pack's own `builtAt`, not the box's boot clock.
    */
   readonly cataloguePack?: SignedPack;
+  /**
+   * Card/UPI payments on this box with no final answer (D04-FR-02 · PF-06), read from its payment-attempt log. Absent on
+   * a box that takes no card payments. The manager's close list shows each; the box's close refuses over them.
+   */
+  readonly pendingPayments?: readonly { readonly attemptId: string; readonly laneId: string; readonly billRef: string; readonly kind: 'card' | 'upi'; readonly amountMinor: number; readonly askedAt: string; readonly state: string }[];
 }
 
 /**
@@ -496,6 +501,13 @@ export function managerPayload(input: ScreenInput): Record<string, unknown> {
   // The Today page (UX-2b): every figure from the pack or this box's log, or said to be not known (P-08).
   payload['today'] = todayFigures(input);
 
+  // D04-FR-02 · PF-06: card/UPI payments with no final answer — the close list names each one (P-08).
+  if (input.pendingPayments !== undefined) {
+    payload['pendingPayments'] = input.pendingPayments.map((p) => ({
+      id: p.attemptId,
+      what: `${p.kind === 'upi' ? 'UPI' : 'Card'} payment of Rs ${(p.amountMinor / 100).toFixed(2)} on till ${p.laneId}, bill ${p.billRef}, asked ${p.askedAt} — ${p.state === 'asked' ? 'no answer was recorded from the machine' : 'no answer; not yet settled by the provider'}`,
+    }));
+  }
   // Every pending item, whatever it is. The manager's screen lists them, so a sale and a stock
   // adjustment both belong here — "3 things have not reached the cloud" is the honest count.
   payload['unsentItems'] = input.outbox.pending().map((item) => ({

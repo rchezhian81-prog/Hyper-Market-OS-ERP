@@ -171,6 +171,10 @@ const BLOCKER_WORDS = {
     en: { title: 'This screen could not read one of the lists it must check', todo: 'The day must NOT be closed until it can. Tell whoever looks after the store computer.' },
     ta: { title: 'சரிபார்க்க வேண்டிய பட்டியல் ஒன்றை இந்தத் திரையால் படிக்க முடியவில்லை', todo: 'படிக்க முடியும் வரை நாளை முடிக்கக் கூடாது. கடை கணினியைப் பார்ப்பவரிடம் சொல்லவும்.' },
   },
+  payments_pending: {
+    en: { title: 'card or UPI payment(s) have no final answer yet', todo: 'The customer may or may not have paid. Do not run the card again. Check each payment with the provider (the till\'s Check payment button), then check again.' },
+    ta: { title: 'கார்டு அல்லது UPI கட்டணம்(கள்) இன்னும் இறுதி பதில் பெறவில்லை', todo: 'வாடிக்கையாளர் பணம் செலுத்தியிருக்கலாம் அல்லது இல்லாமல் இருக்கலாம். கார்டை மீண்டும் தேய்க்க வேண்டாம். ஒவ்வொரு கட்டணத்தையும் வழங்குநரிடம் சரிபார்த்து, மீண்டும் பார்க்கவும்.' },
+  },
   rules_refused: {
     en: { title: 'The day-close rules refused', todo: 'The screen and the rules disagree. Do not force it — report this.' },
     ta: { title: 'நாள் முடிப்பு விதிகள் மறுத்தன', todo: 'திரைக்கும் விதிகளுக்கும் ஒற்றுமை இல்லை. கட்டாயப்படுத்த வேண்டாம் — இதைத் தெரிவிக்கவும்.' },
