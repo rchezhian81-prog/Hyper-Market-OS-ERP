@@ -216,6 +216,7 @@ import { recommendOperationsRunbooks, type OperationsFinding } from '../../../pa
 import { projectHolds, type LegalHoldsDeps, type LegalHoldEvent } from '../../finance/src/legal-holds';
 import { computeOpenCommitment, type ReceiptFact, type SupplierContract, type RebateScheme, type RebateAccrual, type Requisition, type Quote } from '../../../packages/purchasing/src/index';
 import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/index';
+import type { AccountOpeningsDeps, AccountOpeningsRecord, AccountOpeningsSignOff } from '../../finance/src/account-openings';
 import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
 import type { ConcessionTagDeps, ConcessionTradingBreach } from '../../finance/src/concession-tags';
 import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlertRules } from '../../platform/src/observed-health';
@@ -7552,6 +7553,39 @@ export function supplierOpeningsAdapter(input: { readonly store: EventStore; rea
       }));
       return r.record.event.payload as SupplierOpeningSignOff;
     },
+  };
+}
+
+/**
+ * GT-05 (MG-08 "accounting openings"): the old system's trial balance per load and its second-person sign-off, append-only on
+ * their own stream; the opening journal goes through the finance posting path's own append (one `JournalPosted`, keyed on
+ * the load). The ledger read is every journal the finance stream holds.
+ */
+const ACCOUNT_OPENINGS_STREAM = streamName(STREAM.finance, 'account-openings');
+export function accountOpeningsAdapter(input: { readonly store: EventStore; readonly now: () => string }): AccountOpeningsDeps {
+  const fin = financeAdapter(input);
+  return {
+    now: input.now,
+    records: (tenantId) => allOf<AccountOpeningsRecord>(input.store, tenantId, ACCOUNT_OPENINGS_STREAM, 'AccountOpeningsRecorded'),
+    recordOpenings: async (tenantId, record) => {
+      const r = await input.store.append(tenantId, ACCOUNT_OPENINGS_STREAM, makeEvent({
+        id: `account-openings-${record.loadId}-${randomUUID()}`, type: 'AccountOpeningsRecorded', occurredAt: record.recordedAt,
+        idempotencyKey: `account-openings-${tenantId}-${record.loadId}`, source: 'api/finance', payload: record,
+      }));
+      return r.record.event.payload as AccountOpeningsRecord;
+    },
+    signOffs: (tenantId) => allOf<AccountOpeningsSignOff>(input.store, tenantId, ACCOUNT_OPENINGS_STREAM, 'AccountOpeningsSignedOff'),
+    recordSignOff: async (tenantId, signOff) => {
+      const r = await input.store.append(tenantId, ACCOUNT_OPENINGS_STREAM, makeEvent({
+        id: `account-openings-signoff-${signOff.loadId}-${randomUUID()}`, type: 'AccountOpeningsSignedOff', occurredAt: signOff.signedAt,
+        idempotencyKey: `account-openings-signoff-${tenantId}-${signOff.loadId}`, source: 'api/finance', payload: signOff,
+      }));
+      return r.record.event.payload as AccountOpeningsSignOff;
+    },
+    journals: (tenantId) => allOf<JournalEntry>(input.store, tenantId, STREAM.finance, 'JournalPosted'),
+    periodStates: fin.periodStates,
+    nextOpenPeriod: fin.nextOpenPeriod,
+    appendJournal: fin.appendJournal,
   };
 }
 

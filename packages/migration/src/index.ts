@@ -155,7 +155,7 @@ export {
   type LoadGroup, type LoadStep, type LoadPlan, type LoadPlanOk, type LoadPlanRefused, type LoadClient,
   type LoadStepOutcome, type LoadReport,
   // GT-05 (MG-08): opening state — stock by location/batch, stored value, receivables, supplier openings — and its read-back.
-  readBackOpening, stockByLocation, openingGrnId,
+  readBackOpening, stockByLocation, openingGrnId, openingReceiptChunks, OPENING_RECEIPT_MAX_LINES, type OpeningReceiptChunk,
   type ExtractStoredValue, type ExtractReceivable, type ExtractPayable,
   type ReadBackClient, type OpeningDomain, type OpeningCheckLine, type OpeningReadBack,
 } from './load';
@@ -184,3 +184,10 @@ export {
   planOpenOrders, executeOpenOrders, readBackOpenOrders, carriedReceiptId,
   type ExtractOpenOrder, type ExtractOpenOrderLine, type OpenOrderPlan, type OpenOrderRequest, type OpenOrderReport, type OpenOrderCheckLine,
 } from './open-orders';
+
+// GT-05 (MG-08 "accounting openings"): the old trial balance — recorded by the operator, signed off by a second finance person,
+// read back from the ledger account by account.
+export {
+  planAccountOpenings, executeAccountOpenings, readBackAccountOpenings,
+  type ExtractTrialBalance, type ExtractTrialBalanceLine, type AccountOpeningsRequest, type AccountOpeningsPlan, type AccountOpeningsReport, type AccountOpeningCheckLine,
+} from './account-openings';
