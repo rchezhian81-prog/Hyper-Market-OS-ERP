@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1051,
+  "testFiles": 1059,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -19,11 +19,11 @@
     "ENGINE_ONLY": 1
   },
   "totals": {
-    "unit": 81,
-    "integration": 100,
-    "realDb": 86,
-    "browser": 67,
-    "connected": 7,
+    "unit": 82,
+    "integration": 101,
+    "realDb": 87,
+    "browser": 68,
+    "connected": 11,
     "device": 0,
     "uat": 0
   },
@@ -1873,8 +1873,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 9,
-        "integration": 8,
-        "realDb": 2,
+        "integration": 9,
+        "realDb": 3,
         "browser": 3,
         "connected": 1,
         "device": 0,
@@ -1898,11 +1898,13 @@
           "tests/integration/categories-and-product-files-are-head-offices.test.ts",
           "tests/integration/data-export.test.ts",
           "tests/integration/data-import.test.ts",
+          "tests/integration/every-business-domain-exports.test.ts",
           "tests/integration/exports-reach-the-business-domains.test.ts",
           "tests/integration/import-quality.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts"
         ],
         "realDb": [
+          "tests/integration/every-business-domain-exports.test.ts",
           "tests/integration/exports-reach-the-business-domains.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts"
         ],
@@ -3007,11 +3009,11 @@
       "id": "A06",
       "label": "E2E_VERIFIED",
       "counts": {
-        "unit": 5,
-        "integration": 3,
-        "realDb": 1,
-        "browser": 1,
-        "connected": 0,
+        "unit": 6,
+        "integration": 5,
+        "realDb": 3,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -3019,27 +3021,36 @@
         "unit": [
           "tests/unit/ai-authority.test.ts",
           "tests/unit/ai-budget.test.ts",
+          "tests/unit/ai-inbox-withholds-findings-without-evidence.test.ts",
           "tests/unit/erp-operations-inbox-session.test.ts",
           "tests/unit/evidence-ledger.test.ts",
           "tests/unit/ops-operations-advisor.test.ts"
         ],
         "integration": [
+          "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
+          "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-operations-agent.test.ts",
           "tests/integration/ai-operations-worklist.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts"
         ],
         "realDb": [
+          "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
+          "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts"
         ],
         "browser": [
-          "tests/e2e/operations-dismiss-delivery.e2e.ts"
+          "tests/e2e/lib/ai-inbox-shop.ts",
+          "tests/e2e/operations-dismiss-delivery.e2e.ts",
+          "tests/e2e/operations-inbox-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/operations-inbox-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "A07",
@@ -3081,10 +3092,10 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 6,
-        "integration": 5,
-        "realDb": 1,
-        "browser": 2,
-        "connected": 0,
+        "integration": 7,
+        "realDb": 3,
+        "browser": 4,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -3101,22 +3112,30 @@
           "tests/integration/ai-data-quality-worklist.test.ts",
           "tests/integration/ai-data-quality.test.ts",
           "tests/integration/ai-governance.test.ts",
+          "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
           "tests/integration/ai-mapping-quality.test.ts",
+          "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts"
         ],
         "realDb": [
+          "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
+          "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts"
         ],
         "browser": [
           "tests/e2e/data-quality-dismiss-delivery.e2e.ts",
+          "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/lib/ai-inbox-shop.ts",
           "tests/e2e/screens-open-offline.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "A09",
@@ -3156,10 +3175,10 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 9,
-        "integration": 5,
-        "realDb": 1,
-        "browser": 1,
-        "connected": 0,
+        "integration": 7,
+        "realDb": 3,
+        "browser": 3,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -3176,6 +3195,8 @@
           "tests/unit/workforce.test.ts"
         ],
         "integration": [
+          "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
+          "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/ai-workforce-guidance.test.ts",
           "tests/integration/ai-workforce-worklist.test.ts",
@@ -3183,17 +3204,23 @@
           "tests/integration/the-screens-are-fed.test.ts"
         ],
         "realDb": [
+          "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
+          "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts"
         ],
         "browser": [
-          "tests/e2e/workforce-dismiss-delivery.e2e.ts"
+          "tests/e2e/lib/ai-inbox-shop.ts",
+          "tests/e2e/workforce-dismiss-delivery.e2e.ts",
+          "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "WF-01",
@@ -4023,8 +4050,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 12,
-        "integration": 14,
-        "realDb": 6,
+        "integration": 15,
+        "realDb": 7,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -4049,6 +4076,7 @@
           "tests/integration/a-delta-lands-once.test.ts",
           "tests/integration/a-sale-delta-lands-once.test.ts",
           "tests/integration/every-figure-has-a-witness-through-the-api.test.ts",
+          "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/migration-decisions-through-the-api.test.ts",
           "tests/integration/offline-sync-slice.test.ts",
           "tests/integration/opening-state-loads.test.ts",
@@ -4064,6 +4092,7 @@
         "realDb": [
           "tests/integration/a-delta-lands-once.test.ts",
           "tests/integration/a-sale-delta-lands-once.test.ts",
+          "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/offline-sync-slice.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
@@ -4169,20 +4198,36 @@
       "id": "QG-11",
       "label": "PARTIALLY_WIRED",
       "counts": {
-        "unit": 0,
-        "integration": 0,
-        "realDb": 0,
-        "browser": 0,
-        "connected": 0,
+        "unit": 1,
+        "integration": 2,
+        "realDb": 2,
+        "browser": 3,
+        "connected": 3,
         "device": 0,
         "uat": 0
       },
       "files": {
-        "unit": [],
-        "integration": [],
-        "realDb": [],
-        "browser": [],
-        "connected": [],
+        "unit": [
+          "tests/unit/ai-inbox-withholds-findings-without-evidence.test.ts"
+        ],
+        "integration": [
+          "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
+          "tests/integration/ai-model-calls-are-governed.test.ts"
+        ],
+        "realDb": [
+          "tests/integration/ai-inboxes-keep-to-the-readers-branches.test.ts",
+          "tests/integration/ai-model-calls-are-governed.test.ts"
+        ],
+        "browser": [
+          "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
+        ],
+        "connected": [
+          "tests/e2e/data-quality-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/operations-inbox-on-the-production-api.e2e.ts",
+          "tests/e2e/workforce-inbox-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
@@ -4379,8 +4424,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 6,
-        "integration": 5,
-        "realDb": 3,
+        "integration": 6,
+        "realDb": 4,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -4396,6 +4441,7 @@
           "tests/unit/migration-trial.test.ts"
         ],
         "integration": [
+          "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/migration-load.test.ts",
           "tests/integration/migration-pipeline.test.ts",
           "tests/integration/opening-state-loads.test.ts",
@@ -4403,6 +4449,7 @@
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
         "realDb": [
+          "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/the-load-command-runs.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts"
@@ -4477,8 +4524,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 2,
-        "integration": 4,
-        "realDb": 2,
+        "integration": 5,
+        "realDb": 3,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -4490,12 +4537,14 @@
           "tests/unit/migration-history.test.ts"
         ],
         "integration": [
+          "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/migration-history-exclusions.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
+          "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
@@ -4512,8 +4561,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 2,
-        "integration": 3,
-        "realDb": 2,
+        "integration": 4,
+        "realDb": 3,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -4525,11 +4574,13 @@
           "tests/unit/migration-reconcile.test.ts"
         ],
         "integration": [
+          "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/migration-pipeline.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
         "realDb": [
+          "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
