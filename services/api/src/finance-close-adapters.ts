@@ -170,5 +170,9 @@ export async function stockValueCheckFor(input: { readonly store: EventStore; re
   const inventory = stockPeriodAccounts(map)?.inventory ?? 'inventory';
   const check = stockValueCheck(period, valuation, journals, inventory);
   if (valuation.closing.length === 0 && check.rightMinor === 0) return { check: null, notChecked: `Stock value: no stock on hand at the end of ${period} and none in the books.` };
+  // Nothing on hand has a cost and the books hold none: there is no value to compare — said, never counted as agreement.
+  if (valuation.closing.every((l) => l.valueMinor === null) && check.rightMinor === 0) {
+    return { check: null, notChecked: `Stock value: ${valuation.closing.length} product line(s) on hand at the end of ${period} have no buying cost, so no stock value can be compared with the books (never valued at zero).` };
+  }
   return { check };
 }

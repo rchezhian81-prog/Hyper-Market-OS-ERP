@@ -26,7 +26,7 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
  *   • the stock-adjustment posting run posts one balanced journal per valued difference, lists the one it cannot value
  *     (never posted at zero), and a re-run posts nothing twice; the payables post; the close then agrees and is signed;
  *   • the P&L needs the accountant's account classes, then shows sales, the count gain, the count loss and the write-off,
- *     with the net, and says in words that cost of goods sold is not in the books yet.
+ * with the net — and, once the month-end stock adjustment posts (OB-56), cost of goods sold and gross margin.
  */
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -77,6 +77,8 @@ async function shop(h: ApiHarness, t: string) {
   await count('C1', 'OIL', 8); // 9 expected → one missing (₹50)
   await count('C2', 'OIL', 9); // 8 expected → one found (₹50)
   await count('C3', 'RICE', 4); // one missing; head office holds no cost for rice
+  // OB-56: rice gets a cost AFTER the count (so C3 stays unvalued, as counted), and the month-end stock can be valued.
+  await move('rcv-rice-2', 'RICE', 1, 1_000);
   // A small write-off at head office's own cost (₹50), on the manager's own.
   await ok(call('POST', '/v1/inventory/write-off/W1', 'u-mgr', { productId: 'OIL', locationId: 'store-1', qty: 1, uom: 'each', lossType: 'damage', reasonCode: 'leaking' }), 'write-off');
   // A supplier's opening bill, signed by finance — on the purchase register, not yet in the books.
@@ -132,9 +134,16 @@ describe.each(backings)('WF-18 — the period\'s books reconcile to their regist
     // ── The payables post; the books now agree with both registers and the month closes on the accountant's signature.
     await s.ok(s.call('POST', '/v1/finance/payables/post', 'u-owner', {}), 'payables');
     await s.ok(s.call('POST', `/v1/finance/day-book/${TODAY}/post`, 'u-owner', undefined), 'day book');
+    // OB-56: the month-end stock adjustment — oil 8 @ ₹50 + rice 5 @ ₹10 on hand; stock in the books −₹50 (shortage −₹50,
+    // surplus +₹50, write-off −₹50); purchases ₹500 oil + ₹60 rice (the cost-less receipt at the average) → COGS ₹60:
+    // the oil sold (₹50) and the rice unit nobody could value at its count (₹10). The count and the write-off once each.
+    const adj = await s.call('POST', `/v1/finance/periods/${PERIOD}/stock-adjustment`, 'u-owner', {});
+    expect(adj.status, JSON.stringify(adj.body)).toBe(201);
+    expect((adj.body as { posted: { stockPeriod: Record<string, number> } }).posted.stockPeriod).toMatchObject({ booksInventoryBeforeMinor: -5_000, purchasesMinor: 56_000, closingValueMinor: 45_000, costOfSalesMinor: 6_000 });
     const after = await s.evidence();
     expect(after.checks.find((c) => c.name.startsWith('Count differences'))).toMatchObject({ leftMinor: 15_000, rightMinor: 15_000 });
     expect(after.checks.find((c) => c.name.startsWith('Supplier payables'))).toMatchObject({ leftMinor: 30_000, rightMinor: 30_000 });
+    expect(after.checks.find((c) => c.name.startsWith('Stock value at the close'))).toMatchObject({ leftMinor: 45_000, rightMinor: 45_000 });
     expect(after.agrees).toBe(true);
 
     // ── The P&L: the accountant's classes first; then the month from its journals.
@@ -145,12 +154,11 @@ describe.each(backings)('WF-18 — the period\'s books reconcile to their regist
     const pl = (await s.call('GET', `/v1/finance/periods/${PERIOD}/profit-and-loss`, 'u-acct')).body as {
       income: { account: string; amountMinor: number }[]; expenses: { account: string; amountMinor: number }[]; netMinor: number; complete: boolean; unclassified: unknown[]; notInTheBooks: string[]; periodState: string;
     };
-    // Sales ₹100 net of GST (₹105 inclusive), the count gain ₹50; the count loss ₹50 and the write-off ₹50.
+    // Sales ₹100 net of GST (₹105 inclusive), the count gain ₹50; the count loss ₹50, the write-off ₹50, cost of goods sold ₹60.
     expect(pl.income).toEqual(expect.arrayContaining([{ account: 'sales_revenue', amountMinor: 10_000 }, { account: 'inventory_gain', amountMinor: 5_000 }]));
-    expect(pl.expenses).toEqual(expect.arrayContaining([{ account: 'inventory_loss', amountMinor: 5_000 }, { account: 'inventory_write_off', amountMinor: 5_000 }]));
-    expect(pl.netMinor).toBe(10_000 + 5_000 - 5_000 - 5_000);
-    expect(pl).toMatchObject({ complete: true, unclassified: [], periodState: 'open' });
-    expect(pl.notInTheBooks.join(' ')).toMatch(/Cost of goods sold/);
+    expect(pl.expenses).toEqual(expect.arrayContaining([{ account: 'inventory_loss', amountMinor: 5_000 }, { account: 'inventory_write_off', amountMinor: 5_000 }, { account: 'cost_of_goods_sold', amountMinor: 6_000 }]));
+    expect(pl.netMinor).toBe(10_000 + 5_000 - 5_000 - 5_000 - 6_000);
+    expect(pl).toMatchObject({ complete: true, unclassified: [], periodState: 'open', notInTheBooks: [], grossMargin: { revenueMinor: 10_000, costOfSalesMinor: 6_000, grossMarginMinor: 4_000 } });
 
     const closed = await s.close();
     expect(closed.status, JSON.stringify(closed.body)).toBe(200);
