@@ -67,7 +67,8 @@ import { returnsRoutes } from '../../pos/src/returns';
 import { heldStockDecisionRoutes } from '../../pos/src/held-stock-decisions';
 import { periodBooksRoutes } from '../../finance/src/period-books';
 import { paymentExceptionRoutes } from '../../finance/src/payment-exceptions';
-import { carryPaymentExceptionsIn, paymentExceptionsAdapter, stockPeriodAdapter } from './finance-close-adapters';
+import { carryPaymentExceptionsIn, paymentExceptionsAdapter, stockPeriodAdapter, budgetAssetAdapter } from './finance-close-adapters';
+import { budgetAssetRoutes } from '../../finance/src/budgets-assets';
 import { stockPeriodRoutes } from '../../finance/src/stock-period';
 import { noReceiptReturnRoutes } from '../../pos/src/no-receipt-returns';
 import { refundApprovalRoutes } from '../../pos/src/refund-approvals';
@@ -775,6 +776,8 @@ export function buildSurface(deps: {
     ...(store === undefined ? [] : paymentExceptionRoutes(paymentExceptionsAdapter({ store, now }))),
     // OB-56 "A" (Batch 3 r9): the month-end stock adjustment — closing stock at average buying cost, cost of goods sold.
     ...(store === undefined ? [] : stockPeriodRoutes(stockPeriodAdapter({ store, now }))),
+    // OB-57 "A" (Batch 3 r9, D10-FR-05): monthly budgets with actual-vs-budget; the fixed-asset register and its depreciation.
+    ...(store === undefined ? [] : budgetAssetRoutes(budgetAssetAdapter({ store, now }))),
     // WF-11 / M13-FR-02 (Batch 3 r8): a person's decision on a returned unit held off the shelf.
     ...(store === undefined ? [] : heldStockDecisionRoutes({ ...heldStockDecisionsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), recordAudit: auditTrail?.recordAudit })),
     // Purchase-order lifecycle (M06-FR-01/02/04) — propose, approve+issue under §28, supplier holds.

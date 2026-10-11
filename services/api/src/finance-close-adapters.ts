@@ -1,6 +1,7 @@
 // Round 9 (Batch 3) finance registers — each append-only on its own stream (hard rules #2, #6):
 //   • OB-55: the card/UPI payments a store's day close carried forward to head office, their one resolution, conflicts;
 //   • OB-56: the month-end stock valuation the stock adjustment and the close read (head office's own stock ledger);
+//   • OB-57: monthly budget versions, and the fixed-asset register's facts (added, transferred, disposed);
 // Reads fold the streams; nothing here edits a record.
 
 import { createHash } from 'node:crypto';
@@ -15,6 +16,7 @@ import { stockAdjustmentSources } from '../../finance/src/period-books';
 import { lossSourceId } from '../../finance/src/stock-losses';
 import { stockPeriodAccounts, stockValueCheck, type ClosingStockLine, type StockValuation, type StockPeriodDeps } from '../../finance/src/stock-period';
 import type { ControlTotalCheck } from '../../finance/src/index';
+import type { BudgetAssetDeps, BudgetVersion, FixedAssetFact } from '../../finance/src/budgets-assets';
 
 const digest = (key: string): string => createHash('sha256').update(key).digest('hex').slice(0, 16);
 const all = async <T>(store: EventStore, tenantId: string, stream: string, type: string): Promise<T[]> =>
@@ -175,4 +177,32 @@ export async function stockValueCheckFor(input: { readonly store: EventStore; re
     return { check: null, notChecked: `Stock value: ${valuation.closing.length} product line(s) on hand at the end of ${period} have no buying cost, so no stock value can be compared with the books (never valued at zero).` };
   }
   return { check };
+}
+
+// ── OB-57: budgets (versioned) and the fixed-asset register ───────────────────────────────────────────────────────
+
+export function budgetAssetAdapter(input: { readonly store: EventStore; readonly now: () => string }): BudgetAssetDeps {
+  const pb = periodBooksAdapter(input);
+  const budgetsStream = (): string => streamName(STREAM.finance, 'budgets');
+  const assetsStream = (): string => streamName(STREAM.finance, 'fixed-assets');
+  return {
+    periodStates: pb.periodStates, appendJournal: pb.appendJournal, now: input.now,
+    journals: pb.journals, accountClasses: pb.accountClasses, postingMap: pb.postingMap,
+    budgets: (tenantId) => all<BudgetVersion>(input.store, tenantId, budgetsStream(), 'BudgetVersionSet'),
+    recordBudget: async (tenantId, v) => {
+      // Keyed on the month and the version NUMBER: two people setting the same version at once — the second is told.
+      const res = await input.store.append(tenantId, budgetsStream(), makeEvent({
+        id: `budget-${v.period}-v${v.version}-${digest(JSON.stringify(v.lines))}`, type: 'BudgetVersionSet', occurredAt: v.at,
+        idempotencyKey: `budget-${tenantId}-${v.period}-v${v.version}`, source: 'api/finance', payload: v,
+      }));
+      return !res.deduped;
+    },
+    assetFacts: (tenantId) => all<FixedAssetFact>(input.store, tenantId, assetsStream(), 'FixedAssetFact'),
+    recordAssetFact: async (tenantId, f, key) => {
+      await input.store.append(tenantId, assetsStream(), makeEvent({
+        id: `fixed-asset-${digest(key)}`, type: 'FixedAssetFact', occurredAt: f.at,
+        idempotencyKey: `fixed-asset-${tenantId}-${key}`, source: 'api/finance', payload: f,
+      }));
+    },
+  };
 }

@@ -281,7 +281,7 @@ describe.each(backings)('OB-55 — a day closes with a pending card/UPI payment 
     await signInTill(t, 'u-lanecash');
     expect(await t.answerCardPayment(upi.attemptId!, 'declined')).toMatchObject({ ok: false, refusedBecause: 'approval_required' });
     const approval = await t.approveAtTill({ managerId: 'u-mgr', pin: pinOf('u-mgr'), kind: 'late_payment_answer', billRef: upi.attemptId!, valueMinor: 41_000, reason: 'machine slip shows declined' });
-    expect(await t.answerCardPayment(upi.attemptId!, 'declined', approval.approvalId)).toMatchObject({ ok: true, state: 'declined' });
+    expect(await t.answerCardPayment(upi.attemptId!, 'declined', (approval as { approvalId: string }).approvalId)).toMatchObject({ ok: true, state: 'declined' });
     expect((await edge.syncOnce!()).dead).toBe(0);
     const l = (await h.request({ method: 'GET', path: '/v1/finance/payment-exceptions', userId: 'u-acct', tenantId: T })).body as { lateAnswers: { attemptId: string; outcome: string; answeredBy: string; approvedBy: string; tradingDay: string; storeId: string; flags: string[] }[] };
     expect(l.lateAnswers).toEqual([expect.objectContaining({ attemptId: upi.attemptId, outcome: 'declined', answeredBy: 'u-lanecash', approvedBy: 'u-mgr', tradingDay: DAY_D, storeId: 'store-1', flags: [] })]);

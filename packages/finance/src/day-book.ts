@@ -430,6 +430,26 @@ export const STOCK_PERIOD_POSTING_RULES: PostingMap['rules'] = [
 ];
 
 /**
+ * OB-57 "A" (D10-FR-05): the fixed-asset register's journals — suggested accounts (the CA commits their own). An asset into
+ * service at cost (against a clearing the supplier bill or bank payment settles); each month's straight-line depreciation;
+ * a disposal taking the cost and its depreciation out, with what it fetched and the gain or loss.
+ */
+export const FIXED_ASSET_POSTING_RULES: PostingMap['rules'] = [
+  { kind: 'fixed_asset:acquisition', legs: [{ account: 'fixed_assets', side: 'debit', component: 'cost' }, { account: 'fixed_asset_clearing', side: 'credit', component: 'cost' }] },
+  { kind: 'fixed_asset:depreciation', legs: [{ account: 'depreciation_expense', side: 'debit', component: 'amount' }, { account: 'accumulated_depreciation', side: 'credit', component: 'amount' }] },
+  {
+    kind: 'fixed_asset:disposal',
+    legs: [
+      { account: 'accumulated_depreciation', side: 'debit', component: 'accumulated' },
+      { account: 'fixed_asset_disposal_proceeds', side: 'debit', component: 'proceeds' },
+      { account: 'loss_on_asset_disposal', side: 'debit', component: 'loss' },
+      { account: 'gain_on_asset_disposal', side: 'credit', component: 'gain' },
+      { account: 'fixed_assets', side: 'credit', component: 'cost' },
+    ],
+  },
+];
+
+/**
  * A SUGGESTED starting mapping for an Indian retail day book — a clearing-account pattern. The sale
  * voucher debits `sales_clearing` for the day's takings and credits revenue and output GST; each tender
  * kind's voucher debits its own account and credits the clearing, so a day whose tenders cover its sales
@@ -535,6 +555,8 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
     ...STOCK_ADJUSTMENT_POSTING_RULES,
     // OB-56: the month-end stock adjustment (cost of goods sold) — suggested like the rest.
     ...STOCK_PERIOD_POSTING_RULES,
+    // OB-57: the fixed-asset register's acquisition, depreciation and disposal — suggested like the rest.
+    ...FIXED_ASSET_POSTING_RULES,
     // SP-7b (M23-FR-01): the supplier account — a matched invoice's payable, its reversal, a debit note — through a
     // goods-received-not-invoiced clearing (`payables.ts`). Suggested like the rest; the accountant commits it.
     ...PAYABLES_POSTING_RULES,

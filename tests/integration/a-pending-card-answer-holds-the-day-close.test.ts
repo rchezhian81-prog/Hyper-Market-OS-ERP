@@ -134,9 +134,9 @@ describe('D04-FR-02 / PF-06 — a card or UPI payment with no final answer holds
     expect(approval).toMatchObject({ approved: true });
     // An approval for another amount does not fit; the right one is spent once by this answer.
     expect(await t2.answerCardPayment(upi.attemptId!, 'declined', 'apr-not-issued-here')).toMatchObject({ ok: false, refusedBecause: 'approval_unknown' });
-    expect(await t2.answerCardPayment(upi.attemptId!, 'declined', approval.approvalId)).toMatchObject({ ok: true, state: 'declined' });
+    expect(await t2.answerCardPayment(upi.attemptId!, 'declined', (approval as { approvalId: string }).approvalId)).toMatchObject({ ok: true, state: 'declined' });
     // It is relayed to head office as a PERSON's answer on a manager's approval — on the box's day-close relay log.
-    const late = (await readLog(join(dir, 'day-close.log'))).filter((r) => r.ok && r.record.includes('lateAnswerAttemptId')).map((r) => JSON.parse(r.record) as Record<string, unknown>);
+    const late = (await readLog(join(dir, 'day-close.log'))).flatMap((r) => (r.ok && r.record.includes('lateAnswerAttemptId') ? [JSON.parse(r.record) as Record<string, unknown>] : []));
     expect(late).toEqual([expect.objectContaining({ attemptId: upi.attemptId, outcome: 'declined', answeredBy: 'u-lanecash', approvedBy: 'u-mgr', tradingDay: DAY_D })]);
     expect(edge.dayCloseOutbox.pending().map((i) => i.event.type)).toContain('LatePaymentAnswerRecorded');
     // Today's own attempts keep today's flow: no approval needed for a same-day answer.

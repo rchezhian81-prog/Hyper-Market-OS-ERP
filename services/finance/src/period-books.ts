@@ -136,6 +136,9 @@ export const SUGGESTED_ACCOUNT_CLASSES: Readonly<Record<string, AccountClass>> =
   card_receivable: 'asset', upi_receivable: 'asset', online_payment_clearing: 'asset', cod_receivable: 'asset',
   trade_receivables: 'asset', bank_clearing: 'asset', bank_receipts_clearing: 'asset', sales_clearing: 'asset',
   opening_balances: 'equity',
+  // OB-57: the fixed-asset register's accounts (accumulated depreciation is the asset's contra, read as an asset).
+  fixed_assets: 'asset', accumulated_depreciation: 'asset', fixed_asset_disposal_proceeds: 'asset', fixed_asset_clearing: 'liability',
+  depreciation_expense: 'expense', loss_on_asset_disposal: 'expense', gain_on_asset_disposal: 'income',
 });
 
 export interface ProfitAndLoss {
