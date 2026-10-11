@@ -76,7 +76,7 @@ async function seed(h: ApiHarness, T: string): Promise<void> {
   await ok(MGR, 'POST', `/v1/customers/${MEMBER_A}/consent`, { purpose: 'marketing', channel: 'sms', given: true, evidence: 'ticked the box on the desk form' });
   await ok(MGR, 'POST', `/v1/customers/${MEMBER_A}/consent`, { purpose: 'marketing', channel: 'sms', given: false, evidence: 'replied STOP to the shop number' });
   // A ₹2,000 bill for member A earns 20 points; ₹150 store credit for member B.
-  await h.provisionRole(T, 'u-box', 'store_computer');
+  await h.provisionRole(T, 'u-box', 'store_computer', ['S1']); // OB-54: bound to the store its sale names
   const bill = await h.request({ method: 'POST', path: '/v1/sales', userId: 'u-box', tenantId: T, idempotencyKey: 'sale-1', body: {
     saleId: 'B-1', receiptNumber: 'R-1', laneId: 'lane-1', locationId: 'S1', cashierId: CASHIER, tradingDay: '2026-10-09', committedAt: new Date().toISOString(),
     totalMinor: 200_000, currency: 'INR', packVersion: 1, customerRef: MEMBER_A,

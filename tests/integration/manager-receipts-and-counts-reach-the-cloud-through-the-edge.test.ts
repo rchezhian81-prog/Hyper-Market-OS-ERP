@@ -105,7 +105,7 @@ async function cloud(): Promise<{
   await approvedSuppliers(h, A, 'sup-1'); // OB-32: an order needs an approved supplier
   await deliveryPlaces(h, A, 'wh-store'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-mgr', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'store_computer');
+  await h.provisionRole(A, 'u-box', 'store_computer', [WH]);
   await h.store.append(A, STREAM.catalogue, makeEvent({
     id: `pack-${A}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${A}-v1`, source: 'test/catalogue',
     payload: { snapshot: {
@@ -158,7 +158,7 @@ async function cloud(): Promise<{
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
       CLOUD_API_URL: 'https://cloud.example.test',
-      CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
+      CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: WH }),
       EDGE_PACK_FILE: packFile,
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });

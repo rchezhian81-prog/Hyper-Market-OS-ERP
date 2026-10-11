@@ -39,7 +39,7 @@ beforeAll(async () => {
   await h.provisionRole(A, 'u-meena', 'cashier');        // rings sales, holds the till
   await h.provisionRole(A, 'u-ravi', 'cashier');
   await h.provisionRole(A, 'u-mgr', 'store_manager');    // approves refunds
-  await h.provisionRole(A, 'u-box', 'store_computer');          // the store computer's sync identity
+  await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);          // the store computer's sync identity
   globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {
     if (String(url).startsWith('http://127.0.0.1:')) return savedFetch(url, init); // the till's own loopback calls
     const hdr = (init.headers ?? {}) as Record<string, string>;
@@ -66,7 +66,7 @@ beforeAll(async () => {
   edge = (await startEdge({
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1',
     EDGE_PACK_FILE: join(dir, 'store-pack.json'),
-    CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
+    CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }),
   }, () => {}))!;
 });
 afterAll(async () => {

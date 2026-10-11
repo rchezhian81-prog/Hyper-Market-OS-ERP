@@ -197,6 +197,7 @@ import { engineCategory } from '../../catalogue/src/categories';
 import { categoryRoutes } from '../../catalogue/src/categories';
 import { storePackRoutes } from '../../platform/src/store-packs';
 import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
+import { storeComputerBinding, storeComputerRefusalRoutes } from './store-computer-binding';
 import { buildStorePackSections } from './store-pack-builder';
 import { dataExportRoutes, buildExportDomains, type ExportSale, type ExportJournal } from '../../purchase/src/data-export';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
@@ -990,6 +991,8 @@ export function buildSurface(deps: {
       storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u),
       ...syncWatermarksAdapter({ store }),
     }),
+    // OB-54: what a store computer tried to send for another store — head office's visible record of each refusal.
+    ...storeComputerRefusalRoutes({ store }),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),
       saleHoldingReceipt: empty(undefined), isBanked: empty(false),
@@ -2035,6 +2038,9 @@ export async function startApi(
     // every request — live, this person's, and (support) inside the owner's granted scopes — and its token is
     // revoked through the SAME list as above once the session expires, is ended or is terminated.
     channels: sessionChannelsOf({ store, revocations, now }),
+    // OB-54: each store computer's credential is locked to its own store — refused (and kept) when it names no store,
+    // a store its grant does not name, or a record at another store.
+    boundStore: storeComputerBinding({ store, now }),
     // Per-tenant FEATURE ENTITLEMENT (M36-FR-01 · §35). A route that names an optional/paid feature is
     // refused for a tenant whose plan has not enabled it — default-deny, on top of the permission check.
     // Reads the SAME `TenantEntitlementSet` fold the `/v1/platform/entitlements` API writes, so enabling a

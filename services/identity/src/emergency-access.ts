@@ -22,6 +22,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound, requireActorIsCaller } from '../../kernel/src/index';
+import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
   grantEmergencyAccess, revokeEmergencyAccess, emergencyAccessReview, EmergencyAccessError,
@@ -79,6 +80,11 @@ export function emergencyAccessRoutes(deps: EmergencyAccessDeps): readonly Route
         }
         // Who asks is the signed-in caller — a body naming anyone else is refused by name (audit PA-03).
         requireActorIsCaller(ctx, b, 'requestedBy');
+        // OB-54: not even in an emergency does a store computer speak for more than its one store.
+        const unbound = storeComputerGrantRefusal(b['roleId'] as string, branchScope);
+        if (unbound !== undefined) {
+          throw apiError(422, { code: 'store_computer_grant_must_name_one_store', whatHappened: unbound, wasItSaved: 'not_saved', nextSafeAction: 'Name the box\'s own store only. Nobody\'s access changed.' });
+        }
         const now = deps.now();
         // The owner's approval, given in their own session for exactly this grant (kind `emergency_access`). A typed
         // approver is refused by name; no approval at all grants nothing.

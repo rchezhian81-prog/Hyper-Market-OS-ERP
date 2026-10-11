@@ -25,6 +25,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, requireActorIsCaller } from '../../kernel/src/index';
+import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
   applyLifecycle, SelfServiceAccessError,
@@ -172,6 +173,13 @@ export function accessLifecycleRoutes(deps: AccessLifecycleDeps): readonly Route
         const userId = b['userId'] as string;
         // Who asks is the signed-in caller — a body naming anyone else is refused by name (audit PA-03).
         requireActorIsCaller(ctx, b, 'requestedBy');
+        // OB-54: a store computer's grant names its one store, through a lifecycle change as through the grant route.
+        for (const g of grants) {
+          const unbound = storeComputerGrantRefusal(g.roleId, g.branchScope);
+          if (unbound !== undefined) {
+            throw apiError(422, { code: 'store_computer_grant_must_name_one_store', whatHappened: unbound, wasItSaved: 'not_saved', nextSafeAction: 'Name the box\'s own store only. Nobody\'s access changed.' });
+          }
+        }
         const requestedBy = ctx.userId;
         const at = deps.now();
         // The approver's own act: an approval given in their own session for exactly this change. A typed approver is

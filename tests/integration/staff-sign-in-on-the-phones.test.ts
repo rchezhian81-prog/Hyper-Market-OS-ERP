@@ -81,7 +81,7 @@ async function shop(): Promise<{ h: ApiHarness; dir: string; start: (people?: re
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-kavya', 'store_manager');
   await h.provisionRole(A, 'u-ravi', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'store_computer');
+  await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);
   const dir = await mkdtemp(join(tmpdir(), 'sre-phone-sign-in-'));
   cleanups.push(async () => { await rm(dir, { recursive: true, force: true }); });
   await issueTillPins(dir, KEY, ['u-kavya', 'u-ravi']);
@@ -103,7 +103,7 @@ async function shop(): Promise<{ h: ApiHarness; dir: string; start: (people?: re
     const edge = (await startEdge({
       EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_DEVICE_PORT: '0', EDGE_APPS_DIR: 'apps',
       EDGE_DATA_DIR: dir, EDGE_PACK_FILE: packFile,
-      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }), ...extra,
+      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }), ...extra,
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
     return edge;

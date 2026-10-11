@@ -36,7 +36,8 @@ export interface SeedClient {
     query?: Readonly<Record<string, string>>;
   }): Promise<SeedResponse>;
   seedOwner(tenantId: string, userId: string): Promise<void>;
-  provisionRole(tenantId: string, userId: string, roleId: string): Promise<void>;
+  /** `branchScope` names the stores the grant covers (OB-54: a store computer names its one store); omitted → tenant-wide. */
+  provisionRole(tenantId: string, userId: string, roleId: string, branchScope?: readonly string[]): Promise<void>;
   enableFeature(tenantId: string, feature: string): Promise<void>;
 }
 
@@ -135,7 +136,9 @@ export async function applyPilotFoundation(
   // 2. Additional role logins for the pilot/UAT cast.
   for (const user of foundation.users) {
     try {
-      await client.provisionRole(tenantId, user.userId, user.role);
+      // OB-54 "A": the store computer is granted for its ONE store (the demo store), never tenant-wide.
+      if (user.role === 'store_computer') await client.provisionRole(tenantId, user.userId, user.role, [PILOT_DEMO_BRANCH]);
+      else await client.provisionRole(tenantId, user.userId, user.role);
       record({ what: `role ${user.role} → ${user.userId}`, ok: true });
     } catch (err) {
       record({ what: `role ${user.role} → ${user.userId}`, ok: false, detail: err instanceof Error ? err.message : String(err) });

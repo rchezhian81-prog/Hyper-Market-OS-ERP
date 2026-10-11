@@ -153,7 +153,8 @@ describe('PA-06 — head office delivers each store its setup', () => {
     await call('POST', '/v1/stores/S1/settings', SETTINGS);
     const other = await h.request({ method: 'GET', path: '/v1/store-packs/S1', userId: 'u-box2', tenantId: A, branchId: 'S2' });
     expect(other.status).toBe(403);
-    expect((other.body as { error: { code: string } }).error.code).toBe('not_this_stores_computer');
+    // OB-54: refused at the door — S2's box names S1 in the path, another store, before the route's own check is reached.
+    expect((other.body as { error: { code: string } }).error.code).toBe('store_computer_record_names_another_store');
 
     const now = new Date().toISOString();
     const real = signStorePack(signer, { tenantId: A, storeId: 'S1', issuedAt: now, sections: { policies: {} } });

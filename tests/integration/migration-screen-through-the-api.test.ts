@@ -17,7 +17,7 @@ async function seeded(): Promise<ApiHarness> {
   await h.seedOwner(T, OWNER);
   await h.provisionRole(T, MGR, 'store_manager');
   await h.provisionRole(T, CA, 'chartered_accountant');
-  await h.provisionRole(T, SYNC, 'store_computer');          // the store box's sync identity
+  await h.provisionRole(T, SYNC, 'store_computer', ['S1']);          // the store box's sync identity
   await h.provisionRole(T, LOADER, 'store_manager');
   await h.provisionRole(T, RECON, 'store_manager');
   return h;

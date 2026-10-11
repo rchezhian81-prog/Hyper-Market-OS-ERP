@@ -86,7 +86,7 @@ describeOrSkip('Batch 3 acceptance: sale → split tender → loyalty → return
       return realFetch(url, init);
     }) as typeof globalThis.fetch;
     // OB-36 "A": the store computer holds its own role — every sync/relay permission it needs, the day close included.
-    await cloud.grant(BOX, 'store_computer');
+    await cloud.grant(BOX, 'store_computer', undefined, [STORE]); // OB-54: the box is granted for its ONE store
     await cloud.grant(CASHIER, 'cashier');
     await cloud.grant(MANAGER, 'store_manager');
     await cloud.grant(ACCT, 'accountant');

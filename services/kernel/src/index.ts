@@ -35,6 +35,7 @@ export {
   type OutboundFinding, type RequestObservation,
   type AccessResolver, type EntitlementResolver,
   type SessionChannel, type ChannelVerdict, type ChannelGuard,
+  type BoundStoreGuard, type BoundStoreVerdict,
 } from './pipeline';
 
 export {

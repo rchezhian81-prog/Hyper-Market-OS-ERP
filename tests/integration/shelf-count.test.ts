@@ -114,7 +114,7 @@ const latestOf = async (h: ApiHarness, u = 'u-owner', t = A) => ((await h.reques
 async function castForSync(): Promise<ApiHarness> {
   const h = await cast();
   await h.seedOwner(B, 'u-owner-b');
-  await h.provisionRole(A, 'u-box', 'store_computer');     // the store computer's sync identity holds the hop
+  await h.provisionRole(A, 'u-box', 'store_computer', [STORE]);     // the store computer's sync identity holds the hop
   await h.provisionRole(A, 'u-acct', 'accountant'); // holds no shelf.count.record
   return h;
 }
@@ -233,7 +233,7 @@ async function cloudAndBox(): Promise<{ h: ApiHarness; start: () => Promise<Edge
   const start = async (): Promise<EdgeProcess> => {
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
-      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }), EDGE_PACK_FILE: packFile,
+      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: STORE }), EDGE_PACK_FILE: packFile,
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
     return edge;

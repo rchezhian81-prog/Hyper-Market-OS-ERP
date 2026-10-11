@@ -41,7 +41,7 @@ const DAY = AT.slice(0, 10);
 async function seeded(): Promise<ApiHarness> {
   const h = makeHarness();
   await h.seedOwner(A, 'u-owner');
-  await h.provisionRole(A, 'u-box', 'store_computer');
+  await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);
   await h.provisionRole(A, 'u-mgr', 'store_manager');
   await h.store.append(A, STREAM.catalogue, makeEvent({
     id: `pack-${A}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${A}-v1`, source: 'test/catalogue',
@@ -115,7 +115,7 @@ describe.each(backings)('OB-35 — head office assigns each sold line the earlie
   it('with no batch on hand at all, nothing is assigned and the finding fires', async () => {
     const h = makeHarness();
     await h.seedOwner(A, 'u-owner');
-    await h.provisionRole(A, 'u-box', 'store_computer');
+    await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);
     await h.store.append(A, STREAM.catalogue, makeEvent({
       id: `pack-${A}-1`, type: 'CataloguePublished', occurredAt: AT, idempotencyKey: `catalogue-${A}-v1`, source: 'test/catalogue',
       payload: { snapshot: { tenantId: A, version: 1, builtAt: AT, scope: { tenantId: A, storeId: 'store-1' }, barcodes: [], products: [

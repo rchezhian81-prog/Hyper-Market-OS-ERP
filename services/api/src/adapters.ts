@@ -13296,3 +13296,58 @@ export const PERSONAL_DATA_POLICY: PersonalDataPolicy = {
 export function personalDataStore(store: EventStore, keys: SubjectKeyStore): EventStore {
   return new PersonalDataSealingStore(store, keys, PERSONAL_DATA_POLICY);
 }
+
+/**
+ * OB-54: which store a location belongs to — a store's back-store warehouse (its settings) first, then the nearest
+ * branch above it in the org hierarchy, else the location is its own key (fail closed: an unplaced location is no
+ * store's but its own). The SAME rule the average buying cost places a receipt by.
+ */
+export async function storeOfLocationResolver(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<{
+  readonly storeOf: (locationId: string) => string;
+  /** Every store head office knows: a branch in the org hierarchy, a store with settings, a store a store computer is granted for. */
+  readonly knownStores: ReadonlySet<string>;
+}> {
+  const nodes = await orgStructureAdapter(input).nodes(tenantId);
+  const placed = branchOfLocationIn(nodes);
+  const known = new Set<string>(nodes.filter((n) => n.kind === 'branch').map((n) => n.nodeId));
+  const backStoreOf = new Map<string, string>();
+  for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) {
+    known.add(s.storeId);
+    if (typeof s.warehouseId === 'string' && s.warehouseId !== '') backStoreOf.set(s.warehouseId, s.storeId);
+  }
+  for (const g of await effectiveGrants(input.store, tenantId)) {
+    if (g.roleId === STORE_COMPUTER_ROLE_ID && g.branchScope !== 'all') for (const b of g.branchScope) known.add(b);
+  }
+  return { storeOf: (locationId) => backStoreOf.get(locationId) ?? placed(locationId), knownStores: known };
+}
+
+/** OB-54: what a store computer tried to send for another store — kept, never deleted (hard rule #6). */
+export interface StoreComputerRefusal {
+  readonly refusalId: string;
+  readonly userId: string;
+  /** The store the box's credential names (null: none). */
+  readonly credentialStore: string | null;
+  /** Why: `credential_names_no_store`, `credential_store_not_granted`, `record_names_another_store`. */
+  readonly reason: string;
+  /** The store the record named, and where in the record (record_names_another_store only). */
+  readonly namedStore?: string;
+  readonly field?: string;
+  readonly method: string;
+  readonly path: string;
+  readonly at: string;
+}
+export function storeComputerRefusalsAdapter(input: { readonly store: EventStore }): {
+  record: (tenantId: string, r: StoreComputerRefusal) => Promise<void>;
+  list: (tenantId: string) => Promise<readonly StoreComputerRefusal[]>;
+} {
+  const stream = streamName(STREAM.org, 'store-computer-refusals');
+  return {
+    record: async (tenantId, r) => {
+      await input.store.append(tenantId, stream, makeEvent({
+        id: `store-computer-refused-${r.refusalId}`, type: 'StoreComputerRecordRefused', occurredAt: r.at,
+        idempotencyKey: `store-computer-refused-${tenantId}-${r.refusalId}`, source: 'api/platform', payload: r,
+      }));
+    },
+    list: (tenantId) => allOf<StoreComputerRefusal>(input.store, tenantId, stream, 'StoreComputerRecordRefused'),
+  };
+}

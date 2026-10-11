@@ -93,7 +93,7 @@ async function cloud(): Promise<{ h: ApiHarness; start: () => Promise<EdgeProces
   await deliveryPlaces(h, A, 'store-1'); // OB-37: an order names the store it is delivered to
   await h.provisionRole(A, 'u-buyer', 'store_manager');
   await h.provisionRole(A, 'u-mgr', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'store_computer');
+  await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);
   expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-1', userId: 'u-buyer', tenantId: A, idempotencyKey: 'k-po-1', body: { supplierId: 'sup-1', deliverToLocationId: 'store-1', lines: [{ productId: 'p1', orderedQty: 10, unitCost: { minor: 5000, currency: 'INR' } }] } })).status).toBe(201);
   expect((await h.request({ method: 'POST', path: '/v1/purchase/orders/po-1/approval', userId: 'u-owner', tenantId: A, idempotencyKey: 'k-po-1-ok', body: { reason: 'within budget' } })).status).toBe(200);
   expect((await h.request({
@@ -124,7 +124,7 @@ async function cloud(): Promise<{ h: ApiHarness; start: () => Promise<EdgeProces
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_PACK_FILE: packFile,
       EDGE_LANE_ID: 'lane-1', EDGE_LANE_TRUST_FORWARDED_USER: '1', // the hosted copy: the front's sign-in names the buyer
-      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
+      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }),
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
     return edge;

@@ -36,7 +36,7 @@ describe('PF-07 — a void reaches head office and the rules run on it', () => {
   beforeAll(async () => {
     h = apiHarness();
     await h.seedOwner(A, 'u-owner');
-    await h.provisionRole(A, 'u-box', 'store_computer'); // the store box's sync identity
+    await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']); // the store box's sync identity
     await h.provisionRole(A, 'u-lanecash', 'cashier');
     await h.provisionRole(A, 'u-manager', 'store_manager');
     globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {
@@ -52,7 +52,7 @@ describe('PF-07 — a void reaches head office and the rules run on it', () => {
     dir = await mkdtemp(join(tmpdir(), 'sre-void-evidence-'));
     edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
-      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
+      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }),
       ...await prepareTillBox({ dir, key: KEY }),
     }, () => {}))!;
     // The store's rule: more than 2 voids in a day, or any single void over ₹500, is an exception.

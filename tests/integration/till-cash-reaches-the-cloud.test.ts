@@ -53,7 +53,7 @@ async function seeded(): Promise<ApiHarness> {
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-meena', 'cashier');   // holds the till: pos.sale.sync
-  await h.provisionRole(A, 'u-box', 'store_computer');     // the store box's sync identity: cash.movement.sync, till.shift.sync
+  await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);     // the store box's sync identity: cash.movement.sync, till.shift.sync
   await h.provisionRole(A, 'u-visitor', 'customer'); // a known person with NO till authority
   await h.provisionRole(A, 'u-manager', 'store_manager'); // who a material short is investigated by
   await h.seedOwner(B, 'u-owner-b');
@@ -189,7 +189,7 @@ describe('the till\'s cash reaches the cloud through the REAL edge, and is not r
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1',
     EDGE_PACK_FILE: join(dir, 'store-pack.json'),
     CLOUD_API_URL: 'https://cloud.example.test',
-    CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
+    CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }),
   });
 
   it('with the cable out, the float, the sale, the pickup and the close are on the box only; when the line returns they reach the cloud once', async () => {

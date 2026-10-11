@@ -37,7 +37,7 @@ async function scene(screenUser: string) {
   await h.provisionRole(T, MGR, 'store_manager');
   await h.provisionRole(T, CA, 'chartered_accountant');
   await h.provisionRole(T, LOADER, 'store_manager');
-  await h.provisionRole(T, SYNC, 'store_computer'); // the box's sync identity: migration.decision.sync and nothing more
+  await h.provisionRole(T, SYNC, 'store_computer', ['S1']); // the box's sync identity: migration.decision.sync and nothing more
   await h.provisionRole(T, 'u-cash', 'cashier');
   expect((await post(h, '/v1/migration/extraction-runs/run-1', OWNER, 'er1', { operatorId: LOADER })).status).toBe(201);
   expect((await post(h, '/v1/migration/exceptions', MGR, 'x1', { exceptions: [EX] })).status).toBe(201);
@@ -53,7 +53,7 @@ async function scene(screenUser: string) {
   const config: MigrationConfig = { tenantId: T, userId: screenUser, now: AT, cutoverId: 'cut-1', requiredCleanDays: 3, loadOperator: LOADER, cutoverAccepted: false };
   const session = createMigrationSession(config, ports);
 
-  const token = TEST_IDP.issue({ sub: SYNC, tenantId: T });
+  const token = TEST_IDP.issue({ sub: SYNC, tenantId: T, branchId: 'S1' });
   const apiFetch = (async (url: string, init: RequestInit): Promise<Response> => {
     const hdr = init.headers as Record<string, string>;
     const res = await h.raw({ method: 'POST', path: new URL(url).pathname, token: hdr['authorization']?.replace(/^Bearer /, ''), idempotencyKey: hdr['idempotency-key'], body: JSON.parse(String(init.body)) as unknown });
