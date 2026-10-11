@@ -13,7 +13,8 @@
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { Proposal } from '../../ai/src/index';
 import type { IncomingSale } from '../../pos/src/sale-intake';
-import { STREAM, inventoryAdapter } from './adapters';
+import { STREAM, inventoryAdapter, orgStructureAdapter } from './adapters';
+import { branchOfLocationIn } from '../../inventory/src/location-scope';
 import type { ReportProducers } from './report-producers';
 
 type Draft = Omit<Proposal, 'committed'>;
@@ -93,6 +94,65 @@ export async function purchaseSuggestions(store: EventStore, tenantId: string, n
       evidence: [
         { source: 'inventory availability', reference: `/v1/inventory/availability?productId=${r.productId}`, summary: `${r.productId} at ${r.locationId}: on hand ${r.onHandMinor}` },
         { source: 'sales ledger', reference: `SaleCommitted ${from}..${now}`, summary: `${sold} sold at ${r.locationId} in the last 7 days` },
+      ],
+    });
+  }
+  return out;
+}
+
+/**
+ * A03 — the TRANSFER-SUGGESTION leg (round 8 · M09-FR-03 "recommend inter-store transfers" · A03 "transfer suggestion" ·
+ * manager approval). A product that is OUT at a selling location (on hand ≤ 0) while it sold there in the last seven days,
+ * and that another place of the company HOLDS, is a draft transfer for a manager: from the store's own back store first,
+ * then a warehouse outside any store (head office's), then another store — each source named with what head office's
+ * ledger says it holds. No reorder or transfer level is stored, so NO quantity is invented: the evidence says what the
+ * source holds and what the destination sold, and the manager decides how many and raises the transfer through the
+ * ordinary route, where held, recalled or expired stock is refused (M09-FR-03). Read-only: nothing is appended here.
+ */
+export async function transferSuggestions(store: EventStore, tenantId: string, now: string): Promise<Draft[]> {
+  const from = new Date(Date.parse(now) - 7 * 86_400_000).toISOString();
+  const recent = await store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from, to: now });
+  const sold = new Map<string, number>();
+  for (const e of recent) {
+    const s = e.event.payload as IncomingSale;
+    if (s.locationId === undefined) continue;
+    for (const line of s.lines) {
+      const key = `${line.productId}@${s.locationId}`;
+      sold.set(key, (sold.get(key) ?? 0) + line.quantityMinor);
+    }
+  }
+  const nodes = await orgStructureAdapter({ store, now: () => now }).nodes(tenantId);
+  const kindOf = new Map(nodes.map((n) => [n.nodeId, n.kind] as const));
+  const branchOf = branchOfLocationIn(nodes.map((n) => ({ nodeId: n.nodeId, kind: n.kind, parentId: n.parentId ?? null })));
+  const rows = await inventoryAdapter({ store, now: () => now }).availability(tenantId);
+  const onHand = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    const byLoc = onHand.get(r.productId) ?? new Map<string, number>();
+    byLoc.set(r.locationId, (byLoc.get(r.locationId) ?? 0) + r.onHandMinor);
+    onHand.set(r.productId, byLoc);
+  }
+  const out: Draft[] = [];
+  for (const [key, units] of [...sold].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    if (units <= 0) continue;
+    const [productId, destination] = key.split('@') as [string, string];
+    const byLoc = onHand.get(productId) ?? new Map<string, number>();
+    const here = byLoc.get(destination) ?? 0;
+    if (here > 0) continue;
+    const destBranch = branchOf(destination);
+    // Sources: every OTHER place holding it, the destination's own back store first, then head office's, then other stores.
+    const rank = (loc: string): number => (branchOf(loc) === destBranch ? 0 : kindOf.get(loc) === 'warehouse' && branchOf(loc) === loc ? 1 : 2);
+    const sources = [...byLoc].filter(([loc, q]) => loc !== destination && q > 0).sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+    const best = sources[0];
+    if (best === undefined) continue; // nowhere holds it — that is A02's reorder, not a transfer
+    const [source, held] = best;
+    const where = rank(source) === 0 ? 'its own back store' : rank(source) === 1 ? 'head office\'s warehouse' : 'another store';
+    out.push({
+      proposalId: `a03-transfer-${productId}-${source}-${destination}-${now.slice(0, 10)}`, agent: 'A03', createdAt: now,
+      summary: `${productId} is out at ${destination} (on hand ${here}) and sold ${units} there in the last 7 days; ${source} (${where}) holds ${held}. Consider a transfer — how many is the manager's decision (no transfer level is stored)`,
+      wouldRequire: 'POST /v1/warehouse/transfers/:transferId by a person, dispatched and received by others (M09-FR-03 · §28)',
+      evidence: [
+        { source: 'inventory availability', reference: `/v1/inventory/availability?productId=${productId}`, summary: sources.map(([l, q]) => `${l}: ${q}`).concat(`${destination}: ${here}`).join('; ') },
+        { source: 'sales ledger', reference: `SaleCommitted ${from}..${now}`, summary: `${units} sold at ${destination} in the last 7 days` },
       ],
     });
   }

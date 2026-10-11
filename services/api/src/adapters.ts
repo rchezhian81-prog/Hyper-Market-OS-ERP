@@ -11703,6 +11703,8 @@ export function aiAdapter(input: {
   /** EA-08 — A01's read-only insights and A02's stock-out reorder drafts, from the governed readers (ai-insights.ts). */
   readonly ownerInsights?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
   readonly purchaseSuggestions?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
+  /** Round 8 — A03's transfer-suggestion leg: out at a selling place, held elsewhere (ai-insights.ts `transferSuggestions`). */
+  readonly transferSuggestions?: (tenantId: string) => Promise<Omit<Proposal, 'committed'>[]>;
 }): AiDeps {
   return {
     now: input.now,
@@ -11838,10 +11840,11 @@ export function aiAdapter(input: {
         return investigationProposals(worklist, now);
       }
       // A03 Inventory — the near-expiry stock now on hand: mark down before it expires, dispose what already has.
+      // Round 8: and the transfer leg — out at a selling place while another place of the company holds it (a manager decides).
       if (agent === 'A03') {
-        if (input.nearExpiry === undefined) return [];
-        const items = await input.nearExpiry(tenantId, { asOf: now.slice(0, 10), nearExpiryDays: 7 });
-        return inventoryProposals(items, now);
+        const items = input.nearExpiry === undefined ? [] : await input.nearExpiry(tenantId, { asOf: now.slice(0, 10), nearExpiryDays: 7 });
+        const transfers = input.transferSuggestions === undefined ? [] : await input.transferSuggestions(tenantId);
+        return [...inventoryProposals(items, now), ...transfers];
       }
       // A10 Workforce/SOP guidance — the day's tasks that need attention (escalated + overdue), role-aware.
       // NO HR decision (its authority forbids it): it flags, a manager assigns/completes. The SAME tested

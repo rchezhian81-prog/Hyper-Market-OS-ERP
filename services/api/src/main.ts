@@ -35,7 +35,7 @@ import {
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from './access';
 import { reportProducers, PRODUCED_AT_HEAD_OFFICE } from './report-producers';
 import { shoppingAlternatives } from './ai-shopping';
-import { ownerInsights, purchaseSuggestions } from './ai-insights';
+import { ownerInsights, purchaseSuggestions, transferSuggestions } from './ai-insights';
 import { tradingDayIn } from '../../../packages/calendar/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
@@ -555,6 +555,8 @@ export function buildSurface(deps: {
       // EA-08: A01 reads the same governed report producers the owner's reports do; A02 the stock and sales ledgers.
       ownerInsights: async (t) => ownerInsights(producers!, t, now(), tradingDayIn(now(), await shopCalendar(t))),
       purchaseSuggestions: (t) => purchaseSuggestions(store, t, now()),
+      // Round 8: A03's transfer leg reads the same stock ledger, sales ledger and org hierarchy (M09-FR-03).
+      transferSuggestions: (t) => transferSuggestions(store, t, now()),
       shoppingAlternatives: (t) => shoppingAlternatives(store, t, now()),
       // The Data Quality agent (A08) reads the live product master + barcode register — the tested
       // folds reused verbatim (same pattern as the export domains above), never a second copy.
