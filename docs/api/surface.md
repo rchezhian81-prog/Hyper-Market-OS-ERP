@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 931 | 565 | 565 | 84 | 295 |
+| 13 | 931 | 565 | 565 | 84 | 296 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -426,8 +426,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/notifications/budget` | `notification.budget.set` | core | yes |
 | POST | `/v1/notifications/can-send` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id` | `notification.send.check` | core | yes |
-| POST | `/v1/notifications/queue/:id/delivered` | `notification.send.check` | core | yes |
-| POST | `/v1/notifications/queue/:id/failed` | `notification.send.check` | core | yes |
+| POST | `/v1/notifications/queue/:id/delivered` | `notification.delivery.report` | core | yes |
+| POST | `/v1/notifications/queue/:id/failed` | `notification.delivery.report` | core | yes |
 | GET | `/v1/notifications/queue/dead-letters` | `notification.send.check` | core | — |
 | POST | `/v1/notifications/queue/drain` | `notification.send.check` | core | yes |
 | GET | `/v1/notifications/queue/pending` | `notification.send.check` | core | — |
@@ -452,7 +452,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/privacy/pii/:customerRef/:category` | `privacy.request.manage` | core | yes |
 | POST | `/v1/privacy/retention/sweep` | `customer.consent.write` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/attribution` | `customer.campaign.read` | core | yes |
-| POST | `/v1/service/campaigns/:campaignId/messages/:messageId/status` | `notification.send.check` | core | yes |
+| POST | `/v1/service/campaigns/:campaignId/messages/:messageId/status` | `notification.delivery.report` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/plan` | `customer.campaign.send` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/send` | `customer.campaign.send` | core | yes |
 | GET | `/v1/service/campaigns/:campaignId/status` | `customer.campaign.read` | core | — |

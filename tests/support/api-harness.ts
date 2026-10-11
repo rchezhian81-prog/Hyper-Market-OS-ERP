@@ -110,6 +110,8 @@ export function apiHarness(opts: {
   now?: () => string;
   /** A notification transport for the send path (PA-08) — the recording test adapter; production has none. */
   notificationTransport?: NotificationTransport;
+  /** PF-10 r6: provider → delivery-report callback secret (tests build these at run time; production reads its env). */
+  deliveryReportSecrets?: ReadonlyMap<string, string>;
   /** EA-08: a model transport (the deterministic simulator) and tier pricing — production has neither. */
   modelTransport?: ModelTransport;
   modelPricing?: Readonly<Record<ModelTier, TierPricing>>;
@@ -123,6 +125,7 @@ export function apiHarness(opts: {
     signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations,
     ...(opts.paymentVerifier === undefined ? {} : { paymentVerifier: opts.paymentVerifier }),
     ...(opts.notificationTransport === undefined ? {} : { notificationTransport: opts.notificationTransport }),
+    ...(opts.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: opts.deliveryReportSecrets }),
     ...(opts.modelTransport === undefined ? {} : { modelTransport: opts.modelTransport }),
     ...(opts.modelPricing === undefined ? {} : { modelPricing: opts.modelPricing }),
   }));

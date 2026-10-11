@@ -15,8 +15,11 @@
 //     twice queues nothing twice. The queue's sender (Batch 1's worker) RE-CHECKS consent immediately before each message
 //     and withholds one whose consent was withdrawn after queuing; this route only enqueues.
 //   • DELIVERY CALLBACKS. A provider's delivery report (delivered / failed / read) is recorded against the message it is
-//     about — only for a message of this campaign that the queue actually handed to a provider, and only with that
+//     about — only for a message of this campaign that the queue actually handed to THAT provider, and only with that
 //     provider's own reference. `GET …/status` shows every message's queue state and its latest report.
+//     Round 6 (PF-10 security): a report is believed only when it is the PROVIDER's — signed with the provider's
+//     operator-configured secret, fresh, not a replay, and arriving through the provider relay's machine identity; a
+//     staff session is refused (provider-reports.ts).
 //
 // Provider access (credentials, certification, the real webhook) is an external gate; tests use the recording adapter.
 
@@ -26,6 +29,7 @@ import { planCampaign, type Campaign, type Channel, type Purpose } from '../../.
 import type { NotificationQueue } from '../../../packages/notifications/src/index';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel as ConsentChannel } from './index';
 import { approvedTemplate, renderTemplate, type MessageTemplateVersion, type NotificationQueueEvent } from './notification-queue';
+import { verifyDeliveryReport } from './provider-reports';
 
 /** The owner's cap: at most `capPerWindow` marketing messages to one customer on one channel in `windowDays` days. */
 export interface CampaignFrequencyPolicy {
@@ -56,6 +60,9 @@ export interface DeliveryCallback {
   readonly providerRef: string;
   readonly reportedAt: string;
   readonly reason?: string;
+  /** Round 6: the provider whose signature verified, and its own id for this report (a replay is recognised by it). */
+  readonly provider?: string;
+  readonly reportId?: string;
   readonly recordedBy: string;
   readonly recordedAt: string;
 }
@@ -73,6 +80,10 @@ export interface CampaignSendDeps {
   readonly recordSend: (tenantId: string, r: CampaignSendRecord, key: string) => Promise<void> | void;
   readonly callbacks: (tenantId: string, campaignId: string) => Promise<readonly DeliveryCallback[]> | readonly DeliveryCallback[];
   readonly recordCallback: (tenantId: string, c: DeliveryCallback, key: string) => Promise<void> | void;
+  /** Round 6 (PF-10): each configured provider's callback secret (from the API's environment; never in the repo). */
+  readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
+  /** Round 6 (PF-10): is the caller the provider relay's machine identity (never a person's session)? */
+  readonly isProviderRelay?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   readonly now: () => string;
 }
 
@@ -224,14 +235,27 @@ export function campaignSendRoutes(deps: CampaignSendDeps): readonly Route[] {
       },
     },
     {
-      // A provider's DELIVERY REPORT for one message of this campaign. Body: { status (delivered/failed/read), providerRef,
-      // reportedAt?, reason? }. Only for a message the queue handed to a provider, and only with that provider's reference.
+      // A provider's DELIVERY REPORT for one message of this campaign. Body: { provider, reportId, sentAt, status
+      // (delivered/failed/read), providerRef, reportedAt?, reason?, signature }. Round 6: only the provider relay's machine
+      // identity, only with a valid provider signature, fresh and not a replay; only for a message the queue handed to
+      // THAT provider, and only with that provider's reference.
       api: 'API-06', method: 'POST', path: '/v1/service/campaigns/:campaignId/messages/:messageId/status',
-      permission: 'notification.send.check', idempotent: true,
+      permission: 'notification.delivery.report', idempotent: true,
       handler: async (ctx) => {
         const campaignId = (ctx.params['campaignId'] ?? '').trim();
         const messageId = (ctx.params['messageId'] ?? '').trim();
         const b = (ctx.body ?? {}) as Record<string, unknown>;
+        // 1 — the provider is configured at all (else nothing can be believed);
+        if (deps.deliveryReportSecrets === undefined || deps.deliveryReportSecrets.size === 0) {
+          throw apiError(503, { code: 'no_delivery_provider_configured', whatHappened: 'No message provider\'s callback secret is configured here, so no delivery report can be believed.', wasItSaved: 'not_saved', nextSafeAction: 'The operator configures the provider\'s callback secret (DELIVERY_REPORT_SECRET__<PROVIDER>). Nothing was recorded.' });
+        }
+        // 2 — it came through the provider relay, not a person's session;
+        if (deps.isProviderRelay === undefined || !(await deps.isProviderRelay(ctx.tenantId, ctx.userId))) {
+          throw apiError(403, { code: 'not_the_provider_relay', whatHappened: 'A delivery report is the message provider\'s word. It is taken only from the provider relay, never from a person\'s sign-in — whoever they are.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded. Delivery reports arrive from the provider on their own.' });
+        }
+        // 3 — signed by that provider, fresh.
+        const check = verifyDeliveryReport({ path: `/v1/service/campaigns/${campaignId}/messages/${messageId}/status`, body: ctx.body, secrets: deps.deliveryReportSecrets, now: deps.now() });
+        if (!check.ok) throw apiError(check.status, { code: check.code, whatHappened: `${check.detail}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded.' });
         if (!STATUSES.includes(b['status'] as DeliveryCallback['status']) || !isStr(b['providerRef'])
           || (b['reportedAt'] !== undefined && (!isStr(b['reportedAt']) || Number.isNaN(Date.parse(b['reportedAt'] as string))))
           || (b['status'] === 'failed' && !isStr(b['reason']))) {
@@ -239,19 +263,26 @@ export function campaignSendRoutes(deps: CampaignSendDeps): readonly Route[] {
         }
         const sent = (await deps.sends(ctx.tenantId, campaignId)).some((s) => s.messageIds.includes(messageId));
         if (!sent) throw apiError(404, { code: 'unknown_campaign_message', whatHappened: `Campaign ${campaignId} queued no message ${messageId}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded. Check the campaign and message ids.' });
+        // 4 — a replay of a report already recorded is acknowledged, never recorded twice.
+        const prior = (await deps.callbacks(ctx.tenantId, campaignId)).find((c) => c.provider === check.provider && c.reportId === check.reportId);
+        if (prior !== undefined) return { status: 200, body: { campaignId, messageId, replayed: true, status: prior.status, providerRef: prior.providerRef } };
         const receipt = [...(await deps.queueEvents(ctx.tenantId))].reverse().find((e) => e.id === messageId && e.change === 'delivered');
         if (receipt === undefined) {
           throw apiError(409, { code: 'not_handed_to_a_provider', whatHappened: `Message ${messageId} has not been handed to a provider, so no provider can report on it.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded. A report is taken only after the sender has sent the message.' });
         }
-        if (receipt.providerRef !== undefined && receipt.providerRef !== b['providerRef']) {
+        if (receipt.transport !== check.provider) {
+          throw apiError(409, { code: 'not_this_providers_message', whatHappened: `Message ${messageId} was handed to ${receipt.transport ?? 'an unrecorded provider'}, not ${check.provider}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded. A report must come from the provider that took the message.' });
+        }
+        if (receipt.providerRef === undefined || receipt.providerRef !== b['providerRef']) {
           throw apiError(409, { code: 'provider_reference_mismatch', whatHappened: `The report names provider reference ${String(b['providerRef'])}, but message ${messageId} was sent as ${receipt.providerRef}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded. A report must come from the provider that took the message.' });
         }
         const callback: DeliveryCallback = {
           campaignId, messageId, status: b['status'] as DeliveryCallback['status'], providerRef: b['providerRef'] as string,
           reportedAt: isStr(b['reportedAt']) ? b['reportedAt'] as string : deps.now(),
-          ...(isStr(b['reason']) ? { reason: b['reason'] as string } : {}), recordedBy: ctx.userId, recordedAt: deps.now(),
+          ...(isStr(b['reason']) ? { reason: b['reason'] as string } : {}),
+          provider: check.provider, reportId: check.reportId, recordedBy: ctx.userId, recordedAt: deps.now(),
         };
-        await deps.recordCallback(ctx.tenantId, callback, `${messageId}-${callback.status}-${callback.providerRef}`);
+        await deps.recordCallback(ctx.tenantId, callback, `${check.provider}-${check.reportId}`);
         return { status: 201, body: { campaignId, messageId, status: callback.status, providerRef: callback.providerRef } };
       },
     },

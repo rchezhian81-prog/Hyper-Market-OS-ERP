@@ -35,6 +35,13 @@ export const STORE_MANAGER_ROLE_ID = 'store_manager';
  */
 export const STORE_COMPUTER_ROLE_ID = 'store_computer';
 
+/**
+ * PF-10 round 6: the message-provider relay's OWN machine identity — the internet-facing hop that forwards a provider's
+ * signed delivery reports. Not a person: the delivery-report route refuses every person's session, and still believes a
+ * report only when the provider's signature verifies.
+ */
+export const PROVIDER_RELAY_ROLE_ID = 'message_provider_relay';
+
 export const ROLE_CATALOGUE: readonly Role[] = [
   {
     id: OWNER_ROLE_ID,
@@ -98,6 +105,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'loyalty.coupon.issue', 'loyalty.coupon.redeem', 'loyalty.coupon.read',
       'service.case.manage', 'service.case.read', 'service.compensation.approve', 'customer.segment.read', 'customer.segment.manage',
       'customer.campaign.send', 'customer.campaign.read',
+      // PF-10 r6: held ONLY so the owner can approve granting the provider relay its role (no-escalation rule); the
+      // delivery-report route also requires the relay's own role, so the owner never reports a delivery himself.
+      'notification.delivery.report',
       // PF-10: the owner sets the campaign frequency cap (M21-FR-01: sends only within frequency rules).
       'customer.campaign.policy',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage', 'order.backorder.manage',
@@ -455,6 +465,11 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'identity.self.read',
       'b2b.portal.self',
     ],
+  },
+  {
+    id: PROVIDER_RELAY_ROLE_ID,
+    name: 'Message provider relay (machine)',
+    permissions: ['notification.delivery.report'],
   },
   {
     // PA-12 round 6: the backup job's OWN machine identity. The job reports its outcome — success and failure — and

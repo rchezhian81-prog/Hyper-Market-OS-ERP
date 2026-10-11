@@ -310,7 +310,7 @@ import type { AgentId, Budget, Proposal, EvidenceItem as AiEvidenceItem, AiDeps,
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
-import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID } from './roles';
+import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID } from './roles';
 import { metaOf as legacyAttachmentMeta, type LegacyHistoryDeps, type LegacyHistoryDocument, type LegacyAttachment, type LegacyAttachmentMeta } from '../../migration/src/legacy-history';
 
 /** Streams, named once. A typo here is a domain that silently reads an empty history. */
@@ -9235,10 +9235,14 @@ export function notificationQueueAdapter(input: {
   readonly now: () => string;
   /** The delivery transport — absent in production until a real provider is certified (SMS is R4, OB-29). */
   readonly transport?: NotificationTransport;
+  /** PF-10 r6: the providers' delivery-report secrets (from the API's environment). */
+  readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
 }): NotificationQueueDeps {
   const stream = streamName(STREAM.org, 'notifications');
   return {
     now: input.now,
+    ...(input.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: input.deliveryReportSecrets }),
+    isProviderRelay: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId && g.roleId === PROVIDER_RELAY_ROLE_ID),
     queue: async (tenantId) => replayNotificationQueue(await allOf<NotificationQueueEvent>(input.store, tenantId, stream, 'NotificationQueue')),
     events: (tenantId) => allOf<NotificationQueueEvent>(input.store, tenantId, stream, 'NotificationQueue'),
     // PA-08: head office's own message-template register (drafted by one person, approved by another) and the SAME
@@ -12042,11 +12046,14 @@ const CAMPAIGN_SEND_STREAM = streamName(STREAM.service, 'campaign-sends');
 const CAMPAIGN_FREQUENCY_STREAM = streamName(STREAM.service, 'campaign-frequency');
 const CAMPAIGN_DELIVERY_STREAM = streamName(STREAM.service, 'campaign-delivery');
 
-export function campaignSendAdapter(input: { readonly store: EventStore; readonly now: () => string }): CampaignSendDeps {
+export function campaignSendAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly deliveryReportSecrets?: ReadonlyMap<string, string> }): CampaignSendDeps {
   // The SAME queue, template register and consent ledger the PA-08 routes use — one record each (P-02).
-  const q = notificationQueueAdapter(input);
+  const q = notificationQueueAdapter({ store: input.store, now: input.now });
   return {
     now: input.now,
+    // PF-10 r6: delivery reports — the providers' secrets (from the environment) and the relay's own machine identity.
+    ...(input.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: input.deliveryReportSecrets }),
+    isProviderRelay: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId && g.roleId === PROVIDER_RELAY_ROLE_ID),
     consentRecords: (tenantId, customerId) => allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
     templates: q.templates!,
     queueEvents: q.events!,

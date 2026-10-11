@@ -37,6 +37,7 @@ import {
   NotificationQueue, retryDelayMs, budgetDecision, budgetPeriodOf,
   type NotificationItem, type NotificationTransport, type MessagingBudget,
 } from '../../../packages/notifications/src/index';
+import { verifyDeliveryReport } from './provider-reports';
 import { mayWeSend, type ConsentRecord, type ConsentPurpose, type Channel as ConsentChannel } from './index';
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -124,6 +125,10 @@ export interface NotificationQueueDeps {
   /** The owner's messaging budget in force (PA-08 round 4); undefined when none has been set — nothing is then sent. */
   readonly budget?: (tenantId: string) => Promise<MessagingBudget | undefined> | MessagingBudget | undefined;
   readonly recordBudget?: (tenantId: string, budget: MessagingBudget) => Promise<void> | void;
+  /** PF-10 r6: each provider's delivery-report secret (from the API's environment) — an out-of-band receipt or
+   *  failure is believed only when signed by the provider and relayed by the provider relay's machine identity. */
+  readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
+  readonly isProviderRelay?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   readonly now: () => string;
 }
 
@@ -255,6 +260,22 @@ const notWired = (what: string): never => {
     nextSafeAction: 'Use the full head-office service.',
   });
 };
+
+/**
+ * PF-10 r6: an out-of-band receipt or failure for a queued message is the PROVIDER's report — refused unless a provider
+ * is configured, it came through the provider relay (never a person's session), and its signature verifies, fresh.
+ */
+async function providerReportOrRefuse(deps: NotificationQueueDeps, ctx: { tenantId: string; userId: string; body: unknown }, path: string): Promise<{ provider: string; reportId: string }> {
+  if (deps.deliveryReportSecrets === undefined || deps.deliveryReportSecrets.size === 0) {
+    throw apiError(503, { code: 'no_delivery_provider_configured', whatHappened: 'No message provider\'s callback secret is configured here, so no delivery report can be believed.', wasItSaved: 'not_saved', nextSafeAction: 'The operator configures the provider\'s callback secret (DELIVERY_REPORT_SECRET__<PROVIDER>). Nothing was recorded.' });
+  }
+  if (deps.isProviderRelay === undefined || !(await deps.isProviderRelay(ctx.tenantId, ctx.userId))) {
+    throw apiError(403, { code: 'not_the_provider_relay', whatHappened: 'A delivery report is the message provider\'s word. It is taken only from the provider relay, never from a person\'s sign-in — whoever they are.', wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded. Delivery reports arrive from the provider on their own.' });
+  }
+  const check = verifyDeliveryReport({ path, body: ctx.body, secrets: deps.deliveryReportSecrets, now: deps.now() });
+  if (!check.ok) throw apiError(check.status, { code: check.code, whatHappened: `${check.detail}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was recorded.' });
+  return { provider: check.provider, reportId: check.reportId };
+}
 
 export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly Route[] {
   const consentNow = async (tenantId: string, customerId: string, purpose: ConsentPurpose, channel: ConsentChannel) => {
@@ -465,23 +486,29 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
     },
     {
       // DELIVERED — a transport's receipt arriving out of band. Idempotent; a receipt for a non-pending item is a no-op.
+      // PF-10 r6: the provider's signed report through the provider relay only — { provider, reportId, sentAt,
+      // providerRef?, signature } — never a person marking a message delivered (which would stop it being sent).
       api: 'API-06', method: 'POST', path: '/v1/notifications/queue/:id/delivered',
-      permission: 'notification.send.check', idempotent: true,
+      permission: 'notification.delivery.report', idempotent: true,
       handler: async (ctx) => {
         const id = ctx.params['id'] ?? '';
+        const from = await providerReportOrRefuse(deps, ctx, `/v1/notifications/queue/${id}/delivered`);
         const item = (await deps.queue(ctx.tenantId)).find(id);
         if (item === undefined) throw notFound(id);
-        await deps.record(ctx.tenantId, { id, change: 'delivered', by: ctx.userId, at: deps.now() }, `notif-delivered-${id}`);
+        const ref = (ctx.body as Record<string, unknown>)['providerRef'];
+        await deps.record(ctx.tenantId, { id, change: 'delivered', by: ctx.userId, at: deps.now(), transport: from.provider, ...(isStr(ref) ? { providerRef: ref } : {}) }, `notif-delivered-${id}`);
         return { status: 200, body: { id, state: 'delivered' } };
       },
     },
     {
       // FAILED — a delivery attempt failed, with a reason. After maxAttempts the engine dead-letters it. The
       // route records the fact; the fold (the tested engine) decides the resulting state.
+      // PF-10 r6: the provider's signed report through the provider relay only, as for DELIVERED.
       api: 'API-06', method: 'POST', path: '/v1/notifications/queue/:id/failed',
-      permission: 'notification.send.check', idempotent: true,
+      permission: 'notification.delivery.report', idempotent: true,
       handler: async (ctx) => {
         const id = ctx.params['id'] ?? '';
+        const from = await providerReportOrRefuse(deps, ctx, `/v1/notifications/queue/${id}/failed`);
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['reason'])) {
           throw apiError(400, { code: 'failure_needs_a_reason', whatHappened: 'Recording a failed delivery needs a { reason } — a poison send with no reason cannot be fixed.', wasItSaved: 'not_saved', nextSafeAction: 'Send why the delivery failed.' });
@@ -496,7 +523,7 @@ export function notificationQueueRoutes(deps: NotificationQueueDeps): readonly R
         }
         // Key on the attempt number this records, so each distinct failure is its own fact while a retry of
         // the same POST collapses.
-        await deps.record(ctx.tenantId, { id, change: 'failed', by: ctx.userId, at: deps.now(), reason: (b['reason'] as string).trim(), ...(isInt(b['maxAttempts']) ? { maxAttempts: b['maxAttempts'] as number } : {}) }, `notif-failed-${id}-${item.attempts + 1}`);
+        await deps.record(ctx.tenantId, { id, change: 'failed', by: ctx.userId, at: deps.now(), transport: from.provider, reason: (b['reason'] as string).trim(), ...(isInt(b['maxAttempts']) ? { maxAttempts: b['maxAttempts'] as number } : {}) }, `notif-failed-${id}-${item.attempts + 1}`);
         const after = (await deps.queue(ctx.tenantId)).find(id);
         return { status: 200, body: { id, state: after?.state ?? 'pending', attempts: after?.attempts ?? item.attempts + 1 } };
       },
