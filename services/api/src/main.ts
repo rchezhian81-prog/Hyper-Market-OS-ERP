@@ -444,6 +444,10 @@ export function buildSurface(deps: {
   const loyaltyKey = loyaltyMemberKey(deps.signingKey);
   const whHasher = webhookHasher(deps.signingKey);
   const empty = <T>(v: T) => () => v;
+  // Round 9 (Batch 3): the finance-close routes run on the ledger; with none (the documented surface only) reads are
+  // empty and every write refuses — never a silent no-op that looks recorded.
+  const none = <T>(v: T) => (): Promise<T> => Promise.resolve(v);
+  const noLedger = (): Promise<never> => Promise.reject(new Error('this API runs without a ledger: nothing was recorded'));
   const store = deps.store;
 
   // The orders surface and its money surface (M18-FR-04 / M20-FR-03) share ONE deps object, so the lifecycle
@@ -773,11 +777,17 @@ export function buildSurface(deps: {
     // WF-18 / M23 / D10-FR-03 (Batch 3 r8): count differences and write-offs to the books, account classes, the period P&L.
     ...(store === undefined ? [] : periodBooksRoutes(periodBooksAdapter({ store, now }))),
     // OB-55 "A" (Batch 3 r9): card/UPI payments a store's day close carried forward — the finance exception list, resolved once.
-    ...(store === undefined ? [] : paymentExceptionRoutes(paymentExceptionsAdapter({ store, now }))),
+    ...paymentExceptionRoutes(store === undefined
+      ? { exceptions: none([]), resolutions: none([]), conflicts: none([]), lateAnswers: none([]), recordResolution: noLedger, recordConflict: noLedger, recordLateAnswer: noLedger, now }
+      : paymentExceptionsAdapter({ store, now })),
     // OB-56 "A" (Batch 3 r9): the month-end stock adjustment — closing stock at average buying cost, cost of goods sold.
-    ...(store === undefined ? [] : stockPeriodRoutes(stockPeriodAdapter({ store, now }))),
+    ...stockPeriodRoutes(store === undefined
+      ? { periodStates: () => new Map(), appendJournal: noLedger, now, postingMap: empty(undefined), journals: none([]), valuation: noLedger, outstandingStockPostings: none([]) }
+      : stockPeriodAdapter({ store, now })),
     // OB-57 "A" (Batch 3 r9, D10-FR-05): monthly budgets with actual-vs-budget; the fixed-asset register and its depreciation.
-    ...(store === undefined ? [] : budgetAssetRoutes(budgetAssetAdapter({ store, now }))),
+    ...budgetAssetRoutes(store === undefined
+      ? { periodStates: () => new Map(), appendJournal: noLedger, now, budgets: none([]), recordBudget: noLedger, assetFacts: none([]), recordAssetFact: noLedger, journals: none([]), accountClasses: none(undefined), postingMap: empty(undefined) }
+      : budgetAssetAdapter({ store, now })),
     // WF-11 / M13-FR-02 (Batch 3 r8): a person's decision on a returned unit held off the shelf.
     ...(store === undefined ? [] : heldStockDecisionRoutes({ ...heldStockDecisionsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), recordAudit: auditTrail?.recordAudit })),
     // Purchase-order lifecycle (M06-FR-01/02/04) — propose, approve+issue under §28, supplier holds.
