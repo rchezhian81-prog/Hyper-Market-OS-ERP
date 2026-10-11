@@ -38,11 +38,15 @@ async function theSenderRechecks(h: ApiHarness, transport: ReturnType<typeof rec
     expect((await req('POST', `/v1/notifications/templates/${id}/approval`, 'u-checker', { version: 1 })).status).toBe(200);
   }
   expect((await req('POST', '/v1/notifications/budget', 'u-maker', { capMinor: 100_000, costMinorByChannel: { whatsapp: 50 } })).status).toBe(201);
-  for (const c of ['C-A', 'C-B', 'C-C', 'C-D']) {
+  // B and D are real customer records here (loyalty members) — a merge joins two records head office holds.
+  const enrol = async (mobile: string): Promise<string> => ((await req('POST', '/v1/loyalty/members', 'u-maker', { mobile, consent: true, verifiedHow: 'seen_on_phone' })).body as { memberRef: string }).memberRef;
+  const B = await enrol('98400 11111');
+  const D = await enrol('98400 22222');
+  for (const c of ['C-A', B, 'C-C', D]) {
     expect((await req('POST', `/v1/customers/${c}/consent`, 'u-maker', { purpose: 'marketing', channel: 'whatsapp', given: true, evidence: 'ticked the box at the desk' })).status).toBeLessThan(300);
   }
   const msg = (customerId: string, templateId: string) => ({ customerId, purpose: 'marketing', channel: 'whatsapp', templateId, values: { name: 'Meena' } });
-  for (const [id, c, tpl] of [['n-a', 'C-A', 'offer'], ['n-b', 'C-B', 'notice'], ['n-c', 'C-C', 'notice'], ['n-d', 'C-D', 'notice']] as const) {
+  for (const [id, c, tpl] of [['n-a', 'C-A', 'offer'], ['n-b', B, 'notice'], ['n-c', 'C-C', 'notice'], ['n-d', D, 'notice']] as const) {
     expect((await req('POST', `/v1/notifications/queue/${id}`, 'u-maker', msg(c, tpl))).status).toBe(201);
   }
 
@@ -55,7 +59,7 @@ async function theSenderRechecks(h: ApiHarness, transport: ReturnType<typeof rec
   expect(codeOf(await req('POST', '/v1/notifications/queue/n-a2', 'u-maker', msg('C-A', 'offer')))).toBe('template_not_approved');
 
   // 2 — B's record is MERGED into D's (proposed by one person, approved by another).
-  expect((await req('POST', '/v1/customers/C-D/merges/m-1', 'u-maker', { mergedRef: 'C-B', reason: 'same phone number, same person' })).status).toBe(201);
+  expect((await req('POST', `/v1/customers/${D}/merges/m-1`, 'u-maker', { mergedRef: B, reason: 'same person, changed number' })).status).toBe(201);
   expect((await req('POST', '/v1/customers/merges/m-1/approve', 'u-checker', {})).status).toBe(200);
 
   // 3 — C exercises the right to ERASURE, through the governed flow.
@@ -66,7 +70,7 @@ async function theSenderRechecks(h: ApiHarness, transport: ReturnType<typeof rec
   expect((await req('POST', '/v1/privacy/data-requests/dsr-c/erasure-execution', 'u-maker', {})).status).toBe(200);
 
   // Nothing new can be queued to B (merged away) or C (erased).
-  expect(codeOf(await req('POST', '/v1/notifications/queue/n-b2', 'u-maker', msg('C-B', 'notice')))).toBe('recipient_not_allowed');
+  expect(codeOf(await req('POST', '/v1/notifications/queue/n-b2', 'u-maker', msg(B, 'notice')))).toBe('recipient_not_allowed');
   expect(codeOf(await req('POST', '/v1/notifications/queue/n-c2', 'u-maker', msg('C-C', 'notice')))).toBe('recipient_not_allowed');
 
   // 4 — THE SEND: three withheld with their reasons, only D's message goes.
@@ -79,7 +83,7 @@ async function theSenderRechecks(h: ApiHarness, transport: ReturnType<typeof rec
   const why = Object.fromEntries(withheld.withheld.map((i) => [i.id, i.reason]));
   expect(withheld.count).toBe(3);
   expect(why['n-a']).toMatch(/^template_no_longer_approved: template offer version 1 was withdrawn by u-checker at .*: the 20% offer was printed wrong/);
-  expect(why['n-b']).toMatch(/^recipient_not_allowed: C-B was merged into C-D \(m-1\)/);
+  expect(why['n-b']).toBe(`recipient_not_allowed: ${B} was merged into ${D} (m-1) — the record no longer stands on its own`);
   expect(why['n-c']).toMatch(/^recipient_not_allowed: C-C exercised their right to erasure/);
 
   // 5 — a second pass sends nothing again; the withheld stay withheld and visible.

@@ -5,7 +5,11 @@
 // same money, to the paisa. A restore that exits zero and loses 300 sales also
 // exits zero.
 //
-// Usage: node scripts/restore.mjs --manifest PATH --target POSTGRES_URL [--force]
+// Usage: node scripts/restore.mjs --manifest PATH --target POSTGRES_URL [--force] [--shred-list-from SOURCE …]
+//
+// FUL-12 · ADR-0025: after the restore reconciles, the shredded-key list is RE-APPLIED — from this backup's own manifest
+// and from every `--shred-list-from` SOURCE (the live database's URL, or a NEWER backup's manifest path) — so a key an
+// erasure destroyed after this backup was taken is destroyed again in the restored database. The newest list wins.
 // The target must be EMPTY unless --force is given: restoring over live data is a
 // destructive act and is never the default.
 
@@ -17,6 +21,7 @@ import { execFileSync } from 'node:child_process';
 const PLATFORM_SCOPE = { ...process.env, PGOPTIONS: '-c app.tenant_id=*' };
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
+import { readShredList, reapplyShredList, unionOf } from './lib/shred-list.mjs';
 
 const manifestPath = argValue('--manifest');
 const target = argValue('--target') ?? process.env['RESTORE_TARGET_URL'];
@@ -88,6 +93,18 @@ if (differences.length > 0) {
   console.error('\nRESTORE NOT ACCEPTED — the data does not reconcile:');
   for (const d of differences) console.error(`  ${d}`);
   process.exit(1);
+}
+
+// 5. The shredded-key list wins (FUL-12 · ADR-0025) — re-applied AFTER the reconciliation, which proves the backup as taken.
+const shredSources = process.argv.flatMap((a, i) => (a === '--shred-list-from' ? [process.argv[i + 1]] : [])).filter(Boolean);
+const lists = [Array.isArray(manifest.shredList) ? manifest.shredList : []];
+for (const source of shredSources) lists.push(await readShredList(source));
+const shredEntries = unionOf(...lists);
+const reapplied = await reapplyShredList({ targetUrl: target, entries: shredEntries });
+console.log(`  shredded-key list re-applied: ${shredEntries.length} entr${shredEntries.length === 1 ? 'y' : 'ies'} from ${1 + shredSources.length} source(s); ${reapplied.added} added back, ${reapplied.destroyed} restored key(s) destroyed again`);
+if (shredSources.length === 0) {
+  console.log('  WARNING: no newer shredded-key list was given (--shred-list-from). An erasure carried out AFTER this backup');
+  console.log('  is not re-applied yet — run this again with the live database URL or the newest backup manifest (ADR-0025).');
 }
 
 console.log('\n✅  Restore reconciles exactly against the manifest.');

@@ -69,6 +69,8 @@ export interface RealCloudInput {
   readonly packSigningKey: string;
   /** PA-08: outbound providers handed to `startApi` exactly as a deployment would (tests: the recording adapter). */
   readonly providers?: ApiProviders;
+  /** Further configuration handed to `startApi` as a deployment's environment would (e.g. BRIEF_WORKER_TENANT_IDS). */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -110,6 +112,7 @@ export async function startRealCloud(input: RealCloudInput): Promise<RealCloud> 
     BOOTSTRAP_OWNER_USER_ID: input.owner,
     // The operator names the shops the background workers serve (never discovered across shops).
     WORKER_TENANT_IDS: input.tenantId,
+    ...(input.env ?? {}),
   }, say, say, input.providers ?? {});
   if (running === undefined) throw new Error(`the real API refused to start:\n${said.join('\n')}`);
 

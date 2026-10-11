@@ -25,11 +25,16 @@ export interface PayablesAccount {
     readonly payableMinor: number;
     readonly matched: boolean;
     readonly matchedAt: string | null;
+    /** The GST inside `payableMinor`, by component (the paper's tax on what may be paid). Absent ⇒ none. */
+    readonly tax?: PayablesTax;
   }[];
   readonly debitNotes: readonly {
     readonly debitNoteRef: string;
+    /** What the note takes off the supplier — its goods' value plus the GST charged on them. */
     readonly valueMinor: number;
     readonly decidedAt: string;
+    /** The GST inside `valueMinor`, by component — the input tax the note reverses. Absent ⇒ none. */
+    readonly tax?: PayablesTax;
   }[];
   /** SP-7c — payments a second person approved; each posts once and reduces what is owed. */
   readonly payments: readonly {
@@ -46,6 +51,15 @@ export interface PayablesAccount {
     readonly openingDate: string;
   }[];
 }
+
+/** GST inside a payable or a debit note, by component (M23-FR-02): the input tax the books claim, or a note reverses. */
+export interface PayablesTax {
+  readonly cgstMinor: number;
+  readonly sgstMinor: number;
+  readonly igstMinor: number;
+}
+const TAX_KEYS = ['cgst', 'sgst', 'igst'] as const;
+const taxIn = (t: PayablesTax | undefined): Record<(typeof TAX_KEYS)[number], number> => ({ cgst: t?.cgstMinor ?? 0, sgst: t?.sgstMinor ?? 0, igst: t?.igstMinor ?? 0 });
 
 /** What a posted payables journal says about itself — enough to know what the ledger already holds per source. */
 export interface PostedPayable {
@@ -74,9 +88,14 @@ export interface PayablesPosting {
  */
 export const PAYABLES_POSTING_RULES: readonly PostingRule[] = Object.freeze([
   {
+    // A matched bill: the goods' taxable value to purchases (through the GRNI clearing), the GST the paper charged to the
+    // input-tax accounts — CGST and SGST on an intra-state bill, IGST on an inter-state one — and the whole to the supplier.
     kind: 'supplier_invoice',
     legs: [
-      { account: 'purchases_grni', side: 'debit', component: 'payable' },
+      { account: 'purchases_grni', side: 'debit', component: 'taxable' },
+      { account: 'gst_input_cgst', side: 'debit', component: 'cgst' },
+      { account: 'gst_input_sgst', side: 'debit', component: 'sgst' },
+      { account: 'gst_input_igst', side: 'debit', component: 'igst' },
       { account: 'supplier_payable', side: 'credit', component: 'payable' },
     ],
   },
@@ -84,14 +103,21 @@ export const PAYABLES_POSTING_RULES: readonly PostingRule[] = Object.freeze([
     kind: 'supplier_invoice_reversal',
     legs: [
       { account: 'supplier_payable', side: 'debit', component: 'amount' },
-      { account: 'purchases_grni', side: 'credit', component: 'amount' },
+      { account: 'purchases_grni', side: 'credit', component: 'taxable' },
+      { account: 'gst_input_cgst', side: 'credit', component: 'cgst' },
+      { account: 'gst_input_sgst', side: 'credit', component: 'sgst' },
+      { account: 'gst_input_igst', side: 'credit', component: 'igst' },
     ],
   },
   {
+    // A debit note is the bill's reversal for what went back: the goods and the input tax claimed on them.
     kind: 'supplier_debit_note',
     legs: [
       { account: 'supplier_payable', side: 'debit', component: 'amount' },
-      { account: 'purchases_grni', side: 'credit', component: 'amount' },
+      { account: 'purchases_grni', side: 'credit', component: 'taxable' },
+      { account: 'gst_input_cgst', side: 'credit', component: 'cgst' },
+      { account: 'gst_input_sgst', side: 'credit', component: 'sgst' },
+      { account: 'gst_input_igst', side: 'credit', component: 'igst' },
     ],
   },
   {
@@ -126,6 +152,25 @@ export function ledgerHolds(prior: readonly PostedPayable[], sourceKind: Payable
   return held;
 }
 
+/** What the ledger already holds of a source's GST, by component (an accrual adds, a reversal takes away). */
+export function ledgerHoldsTax(prior: readonly PostedPayable[], sourceKind: PayablesSourceKind, sourceId: string): Record<(typeof TAX_KEYS)[number], number> {
+  const held = { cgst: 0, sgst: 0, igst: 0 };
+  for (const p of prior) {
+    if (p.sourceKind !== sourceKind || p.sourceId !== sourceId) continue;
+    const sign = p.kind === 'supplier_invoice_reversal' ? -1 : 1;
+    for (const k of TAX_KEYS) held[k] += sign * (p.components[k] ?? 0);
+  }
+  return held;
+}
+
+/**
+ * A gross change split into its taxable value and its GST by component — the components a payables rule posts. `gross` and
+ * every tax figure are deltas of the same sign; the taxable part is what is left. A source with no tax posts taxable = gross.
+ */
+function split(grossKey: 'payable' | 'amount', gross: number, tax: Record<(typeof TAX_KEYS)[number], number>): Readonly<Record<string, number>> {
+  return { [grossKey]: gross, taxable: gross - tax.cgst - tax.sgst - tax.igst, cgst: tax.cgst, sgst: tax.sgst, igst: tax.igst };
+}
+
 /**
  * The postings that bring the ledger level with the register — one per source that differs, none for a source that
  * agrees. An invoice whose matched payable ROSE since the last posting accrues the difference; one whose payable FELL
@@ -138,18 +183,24 @@ export function planPayablesPostings(accounts: readonly PayablesAccount[], prior
     for (const inv of a.invoices) {
       if (!inv.matched || inv.matchedAt === null) continue;
       const delta = inv.payableMinor - ledgerHolds(prior, 'supplier_invoice', inv.invoiceId);
-      if (delta === 0) continue;
+      const heldTax = ledgerHoldsTax(prior, 'supplier_invoice', inv.invoiceId);
+      const nowTax = taxIn(inv.tax);
+      const dTax = { cgst: nowTax.cgst - heldTax.cgst, sgst: nowTax.sgst - heldTax.sgst, igst: nowTax.igst - heldTax.igst };
+      if (delta === 0 && dTax.cgst === 0 && dTax.sgst === 0 && dTax.igst === 0) continue;
       const base = { sourceKind: 'supplier_invoice' as const, sourceId: inv.invoiceId, supplierId: a.supplierId, documentDate: inv.matchedAt.slice(0, 10) };
-      out.push(delta > 0
-        ? { ...base, kind: 'supplier_invoice', components: { payable: delta } }
-        : { ...base, kind: 'supplier_invoice_reversal', components: { amount: -delta } });
+      out.push(delta >= 0
+        ? { ...base, kind: 'supplier_invoice', components: split('payable', delta, dTax) }
+        : { ...base, kind: 'supplier_invoice_reversal', components: split('amount', -delta, { cgst: 0 - dTax.cgst, sgst: 0 - dTax.sgst, igst: 0 - dTax.igst }) });
     }
     for (const dn of a.debitNotes) {
       const delta = dn.valueMinor - ledgerHolds(prior, 'supplier_debit_note', dn.debitNoteRef);
       if (delta <= 0) continue; // a debit note is raised once, at its value — it never grows
+      const heldTax = ledgerHoldsTax(prior, 'supplier_debit_note', dn.debitNoteRef);
+      const nowTax = taxIn(dn.tax);
       out.push({
         kind: 'supplier_debit_note', sourceKind: 'supplier_debit_note', sourceId: dn.debitNoteRef, supplierId: a.supplierId,
-        documentDate: dn.decidedAt.slice(0, 10), components: { amount: delta },
+        documentDate: dn.decidedAt.slice(0, 10),
+        components: split('amount', delta, { cgst: nowTax.cgst - heldTax.cgst, sgst: nowTax.sgst - heldTax.sgst, igst: nowTax.igst - heldTax.igst }),
       });
     }
     for (const pay of a.payments) {
@@ -173,7 +224,7 @@ export function planPayablesPostings(accounts: readonly PayablesAccount[], prior
   return out;
 }
 
-export type PayablesExceptionReason = 'unmapped_kind' | 'missing_component' | 'unbalanced_journal';
+export type PayablesExceptionReason = 'unmapped_kind' | 'missing_component' | 'unbalanced_journal' | 'tax_not_mapped';
 
 export interface PayablesException {
   readonly sourceKind: PayablesSourceKind;
@@ -201,6 +252,17 @@ export function postPayables(postings: readonly PayablesPosting[], map: PostingM
       id: `${posting.kind}@${posting.sourceId}`, kind: posting.kind,
       at: `${posting.documentDate}T00:00:00.000Z`, currency, components: posting.components,
     };
+    // GST the bill charged must land on an input-tax leg the accountant mapped. A rule with no leg for a tax component would
+    // still balance (its gross leg carries the tax) and quietly bury the input tax in purchases — so it is REFUSED, by name.
+    const rule = map.rules.find((r) => r.kind === posting.kind);
+    const unmappedTax = rule === undefined ? [] : TAX_KEYS.filter((k) => (posting.components[k] ?? 0) !== 0 && !rule.legs.some((l) => l.component === k));
+    if (unmappedTax.length > 0) {
+      exceptions.push({
+        sourceKind: posting.sourceKind, sourceIds: [posting.sourceId], kind: posting.kind, supplierId: posting.supplierId, reason: 'tax_not_mapped',
+        detail: `${posting.kind} for ${posting.sourceId} (supplier ${posting.supplierId}) carries ${unmappedTax.map((k) => k.toUpperCase()).join(' and ')} but the ledger mapping's '${posting.kind}' rule has no input-tax leg for it — nothing was posted; the accountant maps it (PUT /v1/finance/posting-map) and posts again`,
+      });
+      continue;
+    }
     try {
       journals.push({ posting, entry: postJournal(input, map) });
     } catch (err) {

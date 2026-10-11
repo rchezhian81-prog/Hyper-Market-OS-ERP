@@ -33,8 +33,8 @@ describe('planPayablesPostings — the ledger is brought level with the register
   it('a first run accrues the matched payable and raises the debit note, dated by the match and the disposition; an unmatched invoice posts nothing', () => {
     const plan = planPayablesPostings([account({ invoices: [...account().invoices, { invoiceId: 'inv-9', payableMinor: 0, matched: false, matchedAt: null }] })], []);
     expect(plan).toEqual([
-      { kind: 'supplier_invoice', sourceKind: 'supplier_invoice', sourceId: 'inv-1', supplierId: 's-1', documentDate: '2026-09-30', components: { payable: 7000 } },
-      { kind: 'supplier_debit_note', sourceKind: 'supplier_debit_note', sourceId: 'DN-grn-1-L1', supplierId: 's-1', documentDate: '2026-09-30', components: { amount: 1500 } },
+      { kind: 'supplier_invoice', sourceKind: 'supplier_invoice', sourceId: 'inv-1', supplierId: 's-1', documentDate: '2026-09-30', components: { payable: 7000, taxable: 7000, cgst: 0, sgst: 0, igst: 0 } },
+      { kind: 'supplier_debit_note', sourceKind: 'supplier_debit_note', sourceId: 'DN-grn-1-L1', supplierId: 's-1', documentDate: '2026-09-30', components: { amount: 1500, taxable: 1500, cgst: 0, sgst: 0, igst: 0 } },
     ]);
   });
 
@@ -42,9 +42,9 @@ describe('planPayablesPostings — the ledger is brought level with the register
     const level = [posted('supplier_invoice', 'inv-1', 7000), posted('supplier_debit_note', 'DN-grn-1-L1', 1500)];
     expect(planPayablesPostings([account()], level)).toEqual([]);
     const rose = planPayablesPostings([account({ invoices: [{ invoiceId: 'inv-1', payableMinor: 9000, matched: true, matchedAt: '2026-10-01T10:00:00.000Z' }] })], level);
-    expect(rose).toEqual([{ kind: 'supplier_invoice', sourceKind: 'supplier_invoice', sourceId: 'inv-1', supplierId: 's-1', documentDate: '2026-10-01', components: { payable: 2000 } }]);
+    expect(rose).toEqual([{ kind: 'supplier_invoice', sourceKind: 'supplier_invoice', sourceId: 'inv-1', supplierId: 's-1', documentDate: '2026-10-01', components: { payable: 2000, taxable: 2000, cgst: 0, sgst: 0, igst: 0 } }]);
     const fell = planPayablesPostings([account({ invoices: [{ invoiceId: 'inv-1', payableMinor: 5000, matched: true, matchedAt: '2026-10-01T10:00:00.000Z' }] })], level);
-    expect(fell).toEqual([{ kind: 'supplier_invoice_reversal', sourceKind: 'supplier_invoice', sourceId: 'inv-1', supplierId: 's-1', documentDate: '2026-10-01', components: { amount: 2000 } }]);
+    expect(fell).toEqual([{ kind: 'supplier_invoice_reversal', sourceKind: 'supplier_invoice', sourceId: 'inv-1', supplierId: 's-1', documentDate: '2026-10-01', components: { amount: 2000, taxable: 2000, cgst: 0, sgst: 0, igst: 0 } }]);
     // The ledger's view of the invoice after accrual + reversal is the net.
     expect(ledgerHolds([...level, posted('supplier_invoice_reversal', 'inv-1', 2000)], 'supplier_invoice', 'inv-1')).toBe(5000);
     expect(ledgerHolds(level, 'supplier_debit_note', 'DN-grn-1-L1')).toBe(1500);

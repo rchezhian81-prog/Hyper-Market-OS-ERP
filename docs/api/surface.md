@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 931 | 565 | 565 | 84 | 296 |
+| 13 | 936 | 568 | 568 | 89 | 296 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -578,6 +578,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/b2b-portal/me/orders/:documentId` | `b2b.portal.self` | `b2b` | yes |
 | POST | `/v1/b2b-portal/me/quote-requests/:requestId` | `b2b.portal.self` | `b2b` | yes |
 | GET | `/v1/b2b-portal/me/statement` | `b2b.portal.self` | `b2b` | — |
+| GET | `/v1/b2b-portal/me/transfer-notes` | `b2b.portal.self` | `b2b` | — |
+| POST | `/v1/b2b-portal/me/transfer-notes/:noteId` | `b2b.portal.self` | `b2b` | yes |
 | GET | `/v1/b2b-portal/probing` | `b2b.account.read` | `b2b` | — |
 | GET | `/v1/b2b/accounts/:customerId` | `b2b.account.read` | `b2b` | — |
 | POST | `/v1/b2b/accounts/:customerId` | `b2b.account.manage` | `b2b` | yes |
@@ -605,6 +607,9 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/b2b/recurring-runs` | `b2b.document.issue` | `b2b` | yes |
 | POST | `/v1/b2b/recurring/:scheduleId` | `b2b.document.issue` | `b2b` | yes |
 | POST | `/v1/b2b/recurring/:scheduleId/approve` | `b2b.recurring.approve` | `b2b` | yes |
+| GET | `/v1/b2b/transfer-notes` | `b2b.receivable.record` | `b2b` | — |
+| POST | `/v1/b2b/transfer-notes/:noteId/match` | `b2b.receivable.record` | `b2b` | yes |
+| POST | `/v1/b2b/transfer-notes/:noteId/reject` | `b2b.receivable.record` | `b2b` | yes |
 | GET | `/v1/concession/branches/:branchId/store-valuation` | `concession.charge.read` | `dept.concession` | — |
 | GET | `/v1/concession/concessionaires/:concessionaireId/deposit` | `concession.charge.read` | `dept.concession` | — |
 | POST | `/v1/concession/concessionaires/:concessionaireId/deposit-movements/:movementId` | `concession.contract.manage` | `dept.concession` | yes |

@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1059,
+  "testFiles": 1064,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -1092,8 +1092,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 8,
-        "integration": 13,
-        "realDb": 4,
+        "integration": 14,
+        "realDb": 5,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -1113,6 +1113,7 @@
         "integration": [
           "tests/integration/ai-marketing-agent.test.ts",
           "tests/integration/an-erasure-reaches-the-real-domain-stores.test.ts",
+          "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
           "tests/integration/coupons.test.ts",
           "tests/integration/customer-duplicates.test.ts",
           "tests/integration/customer-segment-policy.test.ts",
@@ -1127,6 +1128,7 @@
         ],
         "realDb": [
           "tests/integration/an-erasure-reaches-the-real-domain-stores.test.ts",
+          "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
           "tests/integration/one-customer.test.ts",
           "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts",
           "tests/integration/the-customer-record-is-built-from-what-they-bought.test.ts"
@@ -1323,8 +1325,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 18,
-        "integration": 13,
-        "realDb": 5,
+        "integration": 14,
+        "realDb": 7,
         "browser": 4,
         "connected": 0,
         "device": 0,
@@ -1355,6 +1357,7 @@
           "tests/integration/a-delivery-slot-and-address-are-the-shops-to-judge.test.ts",
           "tests/integration/ai-shopping-agent-offers-in-stock-alternatives.test.ts",
           "tests/integration/an-erasure-reaches-the-real-domain-stores.test.ts",
+          "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/data-rights.test.ts",
           "tests/integration/erasure-execution.test.ts",
@@ -1368,7 +1371,9 @@
         ],
         "realDb": [
           "tests/integration/a-delivery-slot-and-address-are-the-shops-to-judge.test.ts",
+          "tests/integration/ai-shopping-agent-offers-in-stock-alternatives.test.ts",
           "tests/integration/an-erasure-reaches-the-real-domain-stores.test.ts",
+          "tests/integration/an-erasure-shreds-the-personal-text-in-the-ledger.test.ts",
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/one-fulfilment-command.test.ts",
           "tests/integration/the-customer-privacy-centre-saves-on-the-shop.test.ts"
@@ -1439,8 +1444,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 9,
-        "integration": 10,
-        "realDb": 3,
+        "integration": 11,
+        "realDb": 4,
         "browser": 2,
         "connected": 0,
         "device": 0,
@@ -1461,6 +1466,7 @@
         "integration": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-b2b-order-holds-and-moves-ordinary-stock.test.ts",
+          "tests/integration/a-b2b-transfer-note-is-pending-until-finance-matches-it.test.ts",
           "tests/integration/b2b-collections.test.ts",
           "tests/integration/b2b-commission.test.ts",
           "tests/integration/b2b-credit.test.ts",
@@ -1473,6 +1479,7 @@
         "realDb": [
           "tests/integration/a-b2b-invoice-and-its-collection-reach-the-books.test.ts",
           "tests/integration/a-b2b-order-holds-and-moves-ordinary-stock.test.ts",
+          "tests/integration/a-b2b-transfer-note-is-pending-until-finance-matches-it.test.ts",
           "tests/integration/b2b-reconcile-ar.test.ts"
         ],
         "browser": [
@@ -1491,8 +1498,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 22,
-        "integration": 23,
-        "realDb": 9,
+        "integration": 24,
+        "realDb": 10,
         "browser": 4,
         "connected": 0,
         "device": 0,
@@ -1539,6 +1546,7 @@
           "tests/integration/rebates.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
           "tests/integration/space-and-display.test.ts",
+          "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/stored-value-liability.test.ts",
           "tests/integration/supplier-account.test.ts",
           "tests/integration/supplier-master.test.ts",
@@ -1555,6 +1563,7 @@
           "tests/integration/credit-note-reconciliation.test.ts",
           "tests/integration/merchandising-reads-head-office-facts.test.ts",
           "tests/integration/sale-to-shift-close-journey.test.ts",
+          "tests/integration/store-acceptance-journey.test.ts",
           "tests/integration/stored-value-liability.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts",
           "tests/integration/the-till-exchanges.test.ts"
@@ -1811,8 +1820,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 13,
-        "integration": 12,
-        "realDb": 5,
+        "integration": 13,
+        "realDb": 6,
         "browser": 2,
         "connected": 1,
         "device": 0,
@@ -1845,6 +1854,7 @@
           "tests/integration/reports-reconcile-to-their-sources.test.ts",
           "tests/integration/scheduled-brief.test.ts",
           "tests/integration/the-brief-sends-itself.test.ts",
+          "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
           "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts",
           "tests/integration/the-screens-are-fed.test.ts"
         ],
@@ -1853,6 +1863,7 @@
           "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/owner-figures-say-how-fresh-each-store-is.test.ts",
           "tests/integration/reports-reconcile-to-their-sources.test.ts",
+          "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
           "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts"
         ],
         "browser": [
@@ -2727,8 +2738,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 6,
-        "integration": 8,
-        "realDb": 5,
+        "integration": 9,
+        "realDb": 6,
         "browser": 1,
         "connected": 1,
         "device": 0,
@@ -2750,6 +2761,7 @@
           "tests/integration/owner-figures-say-how-fresh-each-store-is.test.ts",
           "tests/integration/reporting-consolidation.test.ts",
           "tests/integration/reports-reconcile-to-their-sources.test.ts",
+          "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
           "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts",
           "tests/integration/the-screens-are-fed.test.ts"
         ],
@@ -2758,6 +2770,7 @@
           "tests/integration/exports-reach-the-business-domains.test.ts",
           "tests/integration/owner-figures-say-how-fresh-each-store-is.test.ts",
           "tests/integration/reports-reconcile-to-their-sources.test.ts",
+          "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
           "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts"
         ],
         "browser": [
@@ -2810,8 +2823,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 8,
-        "integration": 8,
-        "realDb": 4,
+        "integration": 9,
+        "realDb": 5,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -2834,6 +2847,7 @@
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/it-remembers.test.ts",
           "tests/integration/scheduled-brief.test.ts",
+          "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
           "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/security/separation-of-duties.test.ts"
@@ -2842,6 +2856,7 @@
           "tests/integration/ai-model-calls-are-governed.test.ts",
           "tests/integration/ai-proposes-people-decide.test.ts",
           "tests/integration/it-remembers.test.ts",
+          "tests/integration/the-brief-worker-runs-inside-the-served-api.test.ts",
           "tests/integration/the-brief-worker-sends-through-the-outbox.test.ts"
         ],
         "browser": [],
@@ -2935,7 +2950,7 @@
       "counts": {
         "unit": 7,
         "integration": 5,
-        "realDb": 2,
+        "realDb": 3,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2960,7 +2975,8 @@
         ],
         "realDb": [
           "tests/integration/ai-model-calls-are-governed.test.ts",
-          "tests/integration/ai-proposes-people-decide.test.ts"
+          "tests/integration/ai-proposes-people-decide.test.ts",
+          "tests/integration/ai-shopping-agent-offers-in-stock-alternatives.test.ts"
         ],
         "browser": [
           "tests/e2e/picker-substitution-delivery.e2e.ts"

@@ -5,6 +5,90 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Rounds 4 and 5 — the whole store day passes end to end; 12 owner decisions recorded (10–11 October 2026)
+
+- **Final integrated store acceptance (the owner's first priority):**
+  - `tests/integration/store-acceptance-journey.test.ts` runs one synthetic store day on the real head-office API over
+    PostgreSQL and a real store computer, through independently signed-in people:
+    1. purchase order to an approved supplier;
+    2. receiving on the phone, with quality check;
+    3. three-way match;
+    4. back-store bins in grams;
+    5. floor indent;
+    6. issue on the phone;
+    7. independent floor receipt, where a shortfall becomes an exception;
+    8. sale with no network;
+    9. partial return;
+    10. blind shift count and day close by the manager's own PIN;
+    11. sync to head office exactly once;
+    12. owner reports equal to the journey — sales, returns and net, tenders, stock, points, GST collected, bank,
+        freshness.
+  - The same run also cuts the network, restarts the box, reconnects with a lost reply and replays a duplicate.
+  - **All 12 steps pass.** Independently verified on 11 Oct.
+  - Honest notes:
+    - The buyer, receiver, keeper and floor supervisor all hold the store-manager role; separation is enforced by
+      per-act maker-checker, not by separate roles.
+    - The till, phone and owner pages are driven through the code the served pages boot, not a real browser. Each page
+      has its own browser test.
+- **Found and fixed by the journey:**
+  - Weighed goods received on the phone were booked as items; they are now grams (OB-31).
+  - Phone-received stock had no value (₹800 debit note at ₹0); it is now valued at the order's price (OB-40).
+  - The back-store keeper's phone had nothing to put away.
+  - **The box let anyone close the day by typing a name.** The day close is now the manager's own PIN-verified act;
+    a cashier is refused before anything is locked.
+  - No owner report showed returns; returns and net now appear.
+  - The box's Today screen said "no sales"; it now shows takings.
+  - Five reports were unavailable; they now run from real sources.
+- **Found and fixed at integration:**
+  - Two background workers looked across every shop using the database's all-shops scope. That scope is for operator
+    tools only (OB-21). The workers now serve only shops the operator names (`WORKER_TENANT_IDS`), and a guardrail keeps
+    the all-shops scope out of every service, app and store-box source.
+- **Built in rounds 4–5:**
+  - **Batch 1:** sync watermark (EA-01); notification worker and budget (PA-08); alerts delivered to a named owner
+    (PA-12); rollback reconciliation (GT-02).
+  - **Batch 2:** pack chain case → inner → base (SF-11); merchandising on head-office facts (FUL-11); opening loads,
+    history, attachments and open purchase orders (GT-05).
+  - **Batch 3:** no-sale and price override (PF-07); delivery slot and serviceability (FUL-03); B2B stock, portal,
+    recurring orders and commission (FUL-09); customer record from sales (FUL-10).
+  - **Batch 4:**
+    - customer privacy centre (FUL-06);
+    - erasure at the read level (FUL-12);
+    - money deltas (GT-04);
+    - campaigns through the queue (PF-10);
+    - governed drill (EA-05);
+    - brief worker (EA-07);
+    - AI governed calls (EA-08);
+    - AI inboxes by branch (EA-09);
+    - every domain exported (SF-10).
+- **Independent verifier (11 Oct):**
+  - **Verified complete:** PF-07, FUL-03, FUL-06, GT-04, plus the store acceptance journey.
+  - **The rest stay pending**, with the gap written in the matrix. Security findings now being fixed in round 6:
+    - a cashier could post the store's sync time;
+    - provider delivery reports are unsigned;
+    - erased personal text still sits in the stored history (crypto-shredding plus an ADR);
+    - AI evidence came from the caller;
+    - the backup job never reports its own result.
+- **Owner decisions recorded (OB-39 to OB-50, 11 Oct, in writing):**
+  - OB-39 average buying cost for margin;
+  - OB-40 phone stock valued at the order price;
+  - OB-41 B2B bank-transfer note;
+  - OB-42 marketing cap of 2 per week;
+  - OB-43 households share nothing;
+  - OB-44 trial loads use a new shop, while the cutover window is reversed;
+  - OB-45 big scans stay in the old archive;
+  - OB-46 case cost kept exact;
+  - OB-47 morning brief waits for a provider;
+  - OB-48 only the owner exports personal data in clear;
+  - OB-49 erasure on synthetic data only until a lawyer or CA confirms;
+  - OB-50 the rehearsal also checks refunds and stock.
+- **Matrix (Table A):** 55 verified complete, 17 pending software, 1 approved deferral, 1 staff/device acceptance.
+- **Next:**
+  - Round 6 (running): the verifier's fixes, plus OB-39, OB-41, OB-42 and the matched supplier invoice posting to the
+    books (purchase GST).
+  - Then OB-44, OB-46, OB-50 and the attendance export.
+  - Then a re-verification.
+- **Not claimed:** staff UAT; any live provider; real data.
+
 ## Coordinated programme · Round 3 — all four batches integrated; independently checked (10 October 2026)
 
 - **What changed:**

@@ -20,6 +20,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
+import { shredListOf } from './shred-list.mjs';
 
 /** The operator's view of every tenant (row-level security, migration 0012): set explicitly, never by the API. */
 export const PLATFORM_OPTIONS = '-c app.tenant_id=*';
@@ -47,6 +48,9 @@ export async function takeBackup({ databaseUrl, outDir, env = process.env, onSna
 
     // The control totals, read inside the SAME transaction the dump imports — one moment, two views of it.
     const controlTotals = await readControlTotals(client);
+    // FUL-12 · ADR-0025: the shredded-key list at this same moment — every newer backup carries every older shred, so a
+    // restore can re-apply the newest list over an older backup's keys.
+    const shredList = await shredListOf(client);
 
     log(`  taking  ${artefact} (snapshot ${snap.snapshot_id})`);
     // Custom format: compressed, restorable table-by-table. `--snapshot` makes pg_dump see exactly the exported
@@ -82,6 +86,7 @@ export async function takeBackup({ databaseUrl, outDir, env = process.env, onSna
       ...(env['BACKUP_OFFSITE'] ? { offsiteLocation: env['BACKUP_OFFSITE'] } : {}),
       controlTotals: totals,
       schemaVersion,
+      shredList,
     };
     await client.query('COMMIT');
   } catch (e) {

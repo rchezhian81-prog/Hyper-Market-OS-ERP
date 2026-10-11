@@ -6,6 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { apiHarness } from '../support/api-harness';
+import { streamName, STREAM } from '../../services/api/src/adapters';
 import { applyPilotFoundation, applyPilotCatalogue, applyPilotTradingPartners, applyPilotTransactions } from '../../db/seed/pilot/apply';
 import {
   PILOT_FOUNDATION, PILOT_CATALOGUE, PILOT_TRADING_PARTNERS, PILOT_TRANSACTIONS, PILOT_DEMO_SUPPLIER_LOGIN,
@@ -105,6 +106,23 @@ describe('pilot seed — foundation (Phase 4a)', () => {
     expect(again.steps.filter((x) => !x.ok)).toEqual([]);
     const rules = await h.request({ method: 'GET', path: `/v1/stores/${PILOT_DEMO_BRANCH}/rules`, userId: OWNER, tenantId: PILOT_DEMO_TENANT });
     expect((rules.body as { rules: { version: number } }).rules.version).toBe(1);
+  });
+
+  it('OB-42: the seed sets the owner\'s marketing cap for the demo shop — 2 per customer per channel per 7 days — through the owner\'s route', async () => {
+    const h = apiHarness();
+    // Before the seed: no cap — campaigns would be refused.
+    await h.seedOwner(PILOT_DEMO_TENANT, OWNER);
+    expect(((await h.request({ method: 'GET', path: '/v1/service/campaigns/frequency-policy', userId: OWNER, tenantId: PILOT_DEMO_TENANT })).body as { policy: unknown }).policy).toBeNull();
+    await applyPilotFoundation(h, PILOT_FOUNDATION, { throwOnError: true });
+    const read = await h.request({ method: 'GET', path: '/v1/service/campaigns/frequency-policy', userId: OWNER, tenantId: PILOT_DEMO_TENANT });
+    expect(read.status).toBe(200);
+    expect((read.body as { policy: Record<string, unknown> }).policy).toMatchObject({ capPerWindow: 2, windowDays: 7, setBy: OWNER });
+    expect(PILOT_FOUNDATION.storeSetup.marketingFrequency).toEqual({ capPerWindow: 2, windowDays: 7 });
+    // Re-running lands nothing new; the policy in force is the one version.
+    const again = await applyPilotFoundation(h, PILOT_FOUNDATION);
+    expect(again.steps.find((s) => s.what.startsWith('marketing cap'))).toMatchObject({ ok: true });
+    const policies = await h.store.readStream(PILOT_DEMO_TENANT, streamName(STREAM.service, 'campaign-frequency'));
+    expect(policies.filter((e) => e.event.type === 'CampaignFrequencyPolicySet')).toHaveLength(1);
   });
 
   it('demo data cannot leak across tenants — a different tenant sees none of it', async () => {

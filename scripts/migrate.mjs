@@ -27,24 +27,37 @@ function loadMigrations() {
 
 /** Apply pending migrations. Mirrors packages/persistence/src/migrations.ts. */
 async function runMigrations(pool, migrations) {
-  await pool.query(
-    'CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())',
-  );
-  const { rows } = await pool.query('SELECT name FROM schema_migrations');
-  const alreadyApplied = new Set(rows.map((r) => r.name));
+  // One connection, one transaction, one advisory lock (the same key as the library): a second run started at the
+  // same moment waits, then finds everything applied — never two processes creating the same table.
+  const conn = await pool.connect();
+  try {
+    await conn.query('BEGIN');
+    await conn.query('SELECT pg_advisory_xact_lock($1)', [4_207_011]);
+    await conn.query(
+      'CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())',
+    );
+    const { rows } = await conn.query('SELECT name FROM schema_migrations');
+    const alreadyApplied = new Set(rows.map((r) => r.name));
 
-  let appliedCount = 0;
-  for (const migration of migrations) {
-    if (alreadyApplied.has(migration.name)) {
-      console.log(`  skip   ${migration.name}`);
-      continue;
+    let appliedCount = 0;
+    for (const migration of migrations) {
+      if (alreadyApplied.has(migration.name)) {
+        console.log(`  skip   ${migration.name}`);
+        continue;
+      }
+      console.log(`  apply  ${migration.name}`);
+      await conn.query(migration.sql);
+      await conn.query('INSERT INTO schema_migrations (name) VALUES ($1)', [migration.name]);
+      appliedCount += 1;
     }
-    console.log(`  apply  ${migration.name}`);
-    await pool.query(migration.sql);
-    await pool.query('INSERT INTO schema_migrations (name) VALUES ($1)', [migration.name]);
-    appliedCount += 1;
+    await conn.query('COMMIT');
+    return appliedCount;
+  } catch (err) {
+    try { await conn.query('ROLLBACK'); } catch { /* connection unusable */ }
+    throw err;
+  } finally {
+    conn.release();
   }
-  return appliedCount;
 }
 
 async function main() {

@@ -177,6 +177,9 @@ export const CLOUD_API_CONFIG: readonly Spec[] = [
   // `sre-provisioner` client, copied here by the administrator. Optional — absent, people are given sign-ins at the
   // identity server by hand and the product's people route says it is not connected. It may manage users, nothing else.
   { key: 'IDP_PROVISIONER_SECRET', secret: true, optional: true, minLength: 16 },
+  // FUL-12 · ADR-0025: the key-encryption key the per-customer data keys are wrapped under. Optional — absent, it is derived
+  // from PACK_SIGNING_KEY under its own label (and the API says so at boot). Set it to give personal data its own secret.
+  { key: 'PII_KEY_ENCRYPTION_KEY', secret: true, optional: true, minLength: 32 },
   { key: 'PORT', numeric: true, fallback: '8081' },
   { key: 'NODE_ENV', oneOf: ['development', 'test', 'production'], fallback: 'production' },
   { key: 'MIGRATION_TARGET_KIND', oneOf: ['rehearsal', 'staging', 'local', 'production'], fallback: 'rehearsal' },

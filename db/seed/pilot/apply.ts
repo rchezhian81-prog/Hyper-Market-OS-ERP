@@ -200,6 +200,14 @@ export async function applyPilotFoundation(
     const { kind, ...limits } = rule;
     await post(`loss-prevention rule ${kind}`, `/v1/loss-prevention/rules/${encodeURIComponent(kind)}`, limits, `seed-lp-rule-${kind}-${digestOf(limits)}`);
   }
+  // 8. OB-42: the owner's marketing cap for the demo shop — through the owner's own route, as the owner (the seed's actor,
+  //    run by the named operator who runs the seed; never by a deployment). Keyed on the values: a re-run lands nothing new.
+  {
+    const cap = setup.marketingFrequency;
+    const res = await client.request({ method: 'PUT', path: '/v1/service/campaigns/frequency-policy', userId: owner, tenantId, body: { ...cap }, idempotencyKey: `seed-campaign-frequency-${digestOf(cap)}` });
+    const detail = detailOf(res);
+    record({ what: `marketing cap ${cap.capPerWindow} per ${cap.windowDays} days (OB-42)`, ok: OK_STATUS.has(res.status), status: res.status, ...(detail === undefined ? {} : { detail }) });
+  }
 
   return { tenantId, steps, ok: steps.every((s) => s.ok) };
 }
