@@ -13548,7 +13548,7 @@ export interface StoreComputerRefusal {
   readonly userId: string;
   /** The store the box's credential names (null: none). */
   readonly credentialStore: string | null;
-  /** Why: `credential_names_no_store`, `credential_store_not_granted`, `record_names_another_store`. */
+  /** Why: `credential_names_no_store`, `credential_store_not_granted`, `record_names_another_store`, `record_names_unknown_store`. */
   readonly reason: string;
   /** The store the record named, and where in the record (record_names_another_store only). */
   readonly namedStore?: string;

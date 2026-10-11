@@ -87,14 +87,15 @@ export function storeReferencesIn(input: {
 /** The binding's verdict on one request from a store computer. */
 export type BoxRequestVerdict =
   | { readonly ok: true }
-  | { readonly ok: false; readonly reason: 'credential_names_no_store' | 'credential_store_not_granted' | 'record_names_another_store'; readonly why: string; readonly field?: string; readonly namedStore?: string };
+  | { readonly ok: false; readonly reason: 'credential_names_no_store' | 'credential_store_not_granted' | 'record_names_another_store' | 'record_names_unknown_store'; readonly why: string; readonly field?: string; readonly namedStore?: string };
 
 /**
  * Judge one request from a caller holding `store_computer` grants (`grantedStores`: the stores those grants name — a
  * tenant-wide grant names none). `credentialStore` is the signed `branch_id` claim. `storeOf` places a location in its
  * store; `knownStores` is every store head office knows (org branches, stores with settings, stores a box is granted for).
- * A reference that places in ANOTHER known store is refused. A code that places in no known store (an unplaced shelf or
- * bin code) names no store at all — it is left to the route's own location rules, never read as "another store".
+ * A reference that places in ANOTHER known store is refused. Round 10 (OB-54 · hard rule #10): a code that places in NO
+ * known store is refused too — a store code head office cannot place is never guessed into the box's own store, nor left
+ * for a route to read as "no store"; it is refused by name and listed with the other refusals.
  */
 export function judgeBoxRequest(input: {
   readonly credentialStore: string | null; readonly grantedStores: readonly string[];
@@ -110,7 +111,13 @@ export function judgeBoxRequest(input: {
   }
   for (const r of input.references) {
     const store = input.storeOf(r.value);
-    if (store !== credentialStore && input.knownStores.has(store)) {
+    if (store !== credentialStore && !input.knownStores.has(store)) {
+      return {
+        ok: false, reason: 'record_names_unknown_store', field: r.field, namedStore: r.value,
+        why: `Store ${credentialStore}'s computer sent a record that names ${r.value} at ${r.field}, which head office cannot place in any store it knows. A record is never guessed into a store (OB-54), so it was refused and kept as an exception.`,
+      };
+    }
+    if (store !== credentialStore) {
       return {
         ok: false, reason: 'record_names_another_store', field: r.field, namedStore: store,
         why: `Store ${credentialStore}'s computer sent a record that names ${store === r.value ? `store ${store}` : `${r.value} (store ${store})`} at ${r.field}. A store computer relays and reports only for its own store (OB-54), so it was refused and kept as an exception.`,
@@ -134,4 +141,67 @@ export async function assertStoreComputerOf(
       nextSafeAction: 'Let the store computer report for its own store; nothing was recorded.',
     });
   }
+}
+
+// ── OB-54 round 10: head office STAMPS the credential's store onto a relayed record that names none ─────────────────
+//
+// A box-relayed record that names no store used to be placed later by a guess (the sale's pack, the lane, or "no branch
+// named"). Now head office writes the store the box's SIGNED credential names onto the record before any handler reads
+// it — server-side, never trusted from the box — and keeps a stamp record of what it did (`GET /v1/store-computers/stamps`).
+// Each family is stamped at the field its own handler places the record by. A write from a box on a route outside this
+// table that names no store is still recorded as ATTRIBUTED to the credential's store (`field: null`); its body is left
+// exactly as the box sealed it (a decider's seal covers every word, ADR-0023).
+
+/** Route path → the body field (dot path) the record's store is read from. POST relays only. */
+export const STORE_STAMP_FIELD: Readonly<Record<string, string>> = Object.freeze({
+  '/v1/sales': 'locationId',
+  '/v1/sales/:saleId/returns/synced': 'locationId',
+  '/v1/returns/no-receipt/synced': 'locationId',
+  '/v1/pos/day-close/:dayCloseId/synced': 'storeId',
+  '/v1/inventory/receiving-scans/:commandId/synced': 'storeId',
+  '/v1/inventory/goods-receipt/:grnId/synced': 'storeId',
+  '/v1/inventory/counts/:countId/synced': 'storeId',
+  '/v1/inventory/adjustment-requests/:requestId/synced': 'storeId',
+  '/v1/merchandising/shelf-counts/:countId/synced': 'storeId',
+  '/v1/warehouse/movements/:commandId/synced': 'command.storeId',
+  '/v1/hr/workforce/tasks/:taskId/complete/synced': 'branchId',
+});
+
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH']);
+
+/** What head office does with a store computer's accepted write. */
+export type StoreStamp =
+  | { readonly kind: 'none' }
+  /** The record's store field was empty: the credential's store is written at `field`; `body` is what the handler reads. */
+  | { readonly kind: 'stamped'; readonly field: string; readonly body: Readonly<Record<string, unknown>> }
+  /** A write that names no store on a route that carries no store field: attributed to the credential's store, body untouched. */
+  | { readonly kind: 'attributed' };
+
+/**
+ * Decide the stamp for one ACCEPTED request from a store computer whose credential names `credentialStore`. Pure: the
+ * caller's body is never mutated (a copy is returned), so the idempotency hash stays the box's own request.
+ */
+export function storeStampFor(input: {
+  readonly method: string; readonly routePath: string; readonly body: unknown;
+  readonly credentialStore: string; readonly references: readonly StoreReference[];
+}): StoreStamp {
+  if (!WRITE_METHODS.has(input.method)) return { kind: 'none' };
+  const field = STORE_STAMP_FIELD[input.routePath];
+  const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+  if (field !== undefined && isObj(input.body)) {
+    const parts = field.split('.');
+    let at: unknown = input.body;
+    for (const p of parts.slice(0, -1)) at = isObj(at) ? at[p] : undefined;
+    const leaf = parts[parts.length - 1]!;
+    // A nested field whose parent is absent is the route's malformed record — not head office's to invent.
+    if (!isObj(at)) return { kind: 'none' };
+    const held = at[leaf];
+    if (typeof held === 'string' && held.trim() !== '') return { kind: 'none' }; // the record names its own store
+    const copy = structuredClone(input.body);
+    let into: Record<string, unknown> = copy;
+    for (const p of parts.slice(0, -1)) into = into[p] as Record<string, unknown>;
+    into[leaf] = input.credentialStore;
+    return { kind: 'stamped', field, body: copy };
+  }
+  return input.references.length === 0 ? { kind: 'attributed' } : { kind: 'none' };
 }
