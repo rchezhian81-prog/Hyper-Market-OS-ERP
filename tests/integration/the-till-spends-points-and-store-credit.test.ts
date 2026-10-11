@@ -35,7 +35,7 @@ describe('the till spends points and store credit, decided on the box, applied o
     h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-meena', 'cashier');
-    await h.provisionRole(A, 'u-box', 'store_computer');
+    await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);
     await h.provisionRole(A, 'u-mgr', 'store_manager');
     const set = async (key: string, value: number) =>
       expect((await h.request({ method: 'PUT', path: `/v1/platform/setup/${key}`, userId: 'u-owner', tenantId: A, idempotencyKey: `set-${key}`, body: { value } })).status).toBeLessThan(300);
@@ -78,7 +78,7 @@ describe('the till spends points and store credit, decided on the box, applied o
 
   const start = async (): Promise<EdgeProcess> => (await startEdge({
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: TEST_PACK_KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1',
-    EDGE_PACK_FILE: join(dir, 'store-pack.json'), CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
+    EDGE_PACK_FILE: join(dir, 'store-pack.json'), CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }),
   }, () => {}))!;
   const tillOn = async (edge: EdgeProcess) => {
     const till = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });

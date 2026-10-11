@@ -55,7 +55,7 @@ const WORDS = {
     needsAttention: 'Needs attention', nothingNeedsYou: 'Nothing needs you right now.', purchaseToShelf: 'Purchase to shelf', storeToday: 'Store today', workspaces: 'Workspaces', screensWord: 'screens', open: 'Open',
     poOpen: 'Purchase orders open', receiptsRecorded: 'Receipts recorded', countsAwaiting: 'Counts awaiting approval', indentsOpen: 'Floor indents open',
     deliveriesToday: 'Deliveries today', checklistOpen: 'Checklist items open', expiringSoon: 'Expiring soon', recallsOpen: 'Recall notices',
-    attnApprovals: 'approvals you can clear', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval',
+    attnApprovals: 'approvals you can clear', attnExceptions: 'exceptions open', attnUnsent: 'items not yet sent to the cloud', attnRecalls: 'recall notices', attnExpiring: 'batches expiring soon', attnChecklist: 'checklist items still open', attnCounts: 'counts awaiting approval', tillDevicesLabel: 'Till devices', attnTillDevices: 'till device(s) failed or not working properly',
     biggestFirst: 'Biggest first.', approve: 'Approve', reject: 'Reject', cancel: 'Cancel', ok: 'OK',
     whyApprove: 'Why are you approving this?', whyReject: 'Why are you rejecting this?',
     decided: 'Decided', requestedBy: 'asked for by', noValue: 'no value',
@@ -103,7 +103,7 @@ const WORDS = {
     needsAttention: 'கவனம் தேவை', nothingNeedsYou: 'இப்போது உங்களுக்கு எதுவும் தேவையில்லை.', purchaseToShelf: 'கொள்முதலிலிருந்து அலமாரிக்கு', storeToday: 'இன்று கடை', workspaces: 'பணியிடங்கள்', screensWord: 'திரைகள்', open: 'திற',
     poOpen: 'திறந்த கொள்முதல் ஆணைகள்', receiptsRecorded: 'பதிவான பெறுதல்கள்', countsAwaiting: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', indentsOpen: 'திறந்த தளக் கோரிக்கைகள்',
     deliveriesToday: 'இன்றைய டெலிவரிகள்', checklistOpen: 'முடிக்காத சரிபார்ப்புகள்', expiringSoon: 'விரைவில் காலாவதி', recallsOpen: 'திரும்பப்பெறல் அறிவிப்புகள்',
-    attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்',
+    attnApprovals: 'நீங்கள் தீர்க்கக்கூடிய ஒப்புதல்கள்', attnExceptions: 'திறந்த விதிவிலக்குகள்', attnUnsent: 'கிளௌடுக்கு அனுப்பப்படாத பதிவுகள்', attnRecalls: 'திரும்பப்பெறல் அறிவிப்புகள்', attnExpiring: 'விரைவில் காலாவதியாகும் தொகுதிகள்', attnChecklist: 'முடிக்காத சரிபார்ப்புகள்', attnCounts: 'ஒப்புதலுக்குக் காத்திருக்கும் எண்ணிக்கைகள்', tillDevicesLabel: 'கல்லா சாதனங்கள்', attnTillDevices: 'செயலிழந்த அல்லது சரியாக வேலை செய்யாத கல்லா சாதனம்(கள்)',
     nothingWaiting: 'எதுவும் காத்திருக்கவில்லை.', biggestFirst: 'பெரியது முதலில்.',
     approve: 'ஒப்புதல்', reject: 'மறு', cancel: 'ரத்து', ok: 'சரி',
     whyApprove: 'ஏன் ஒப்புதல் அளிக்கிறீர்கள்?', whyReject: 'ஏன் மறுக்கிறீர்கள்?',
@@ -170,6 +170,10 @@ const BLOCKER_WORDS = {
   cannot_see: {
     en: { title: 'This screen could not read one of the lists it must check', todo: 'The day must NOT be closed until it can. Tell whoever looks after the store computer.' },
     ta: { title: 'சரிபார்க்க வேண்டிய பட்டியல் ஒன்றை இந்தத் திரையால் படிக்க முடியவில்லை', todo: 'படிக்க முடியும் வரை நாளை முடிக்கக் கூடாது. கடை கணினியைப் பார்ப்பவரிடம் சொல்லவும்.' },
+  },
+  payments_pending: {
+    en: { title: 'card or UPI payment(s) have no final answer yet', todo: 'The customer may or may not have paid. Do not run the card again. Check each payment with the provider (the till\'s Check payment button), then check again.' },
+    ta: { title: 'கார்டு அல்லது UPI கட்டணம்(கள்) இன்னும் இறுதி பதில் பெறவில்லை', todo: 'வாடிக்கையாளர் பணம் செலுத்தியிருக்கலாம் அல்லது இல்லாமல் இருக்கலாம். கார்டை மீண்டும் தேய்க்க வேண்டாம். ஒவ்வொரு கட்டணத்தையும் வழங்குநரிடம் சரிபார்த்து, மீண்டும் பார்க்கவும்.' },
   },
   rules_refused: {
     en: { title: 'The day-close rules refused', todo: 'The screen and the rules disagree. Do not force it — report this.' },
@@ -515,6 +519,12 @@ function renderAttention(floor, today) {
   add(today.expiring, 'expiringSoon', 'attnExpiring', { rail: 'expiry' });
   add(today.checklist, 'checklistOpen', 'attnChecklist', { rail: 'checklist' });
   add(today.counts, 'countsAwaiting', 'attnCounts', { rail: 'counts' });
+  // D04-FR-05: the tills' devices — only on a box that has a till; which device and why, in the box's words.
+  if (today.tillDevices) {
+    const f = today.tillDevices;
+    if (!f.known) rows.push({ tone: 'unknown', n: null, text: `${t('tillDevicesLabel')}: ${t('notKnown')} — ${f.why}`, target: null });
+    else if (amountOf(f) > 0) rows.push({ tone: 'attention', n: amountOf(f), text: `${t('attnTillDevices')} — ${f.note ?? ''}`, target: null });
+  }
   const list = el('attention');
   list.replaceChildren(...(rows.length === 0 ? [quiet(t('nothingNeedsYou'))] : rows.map((row) => {
     const li = document.createElement('li');
@@ -599,6 +609,7 @@ function renderHome() {
   const today = {
     sales: figureOf('salesToday'), po: figureOf('purchaseOrdersOpen'), receipts: figureOf('receiptsRecorded'), indents: figureOf('indentsOpen'),
     counts: figureOf('countsAwaitingApproval'), expiring: figureOf('expiringSoon'), recalls: figureOf('recallsOpen'), checklist: figureOf('checklistOpen'), deliveries: figureOf('deliveriesToday'),
+    tillDevices: todayFigures() && todayFigures().tillDevices ? figureOf('tillDevices') : null,
   };
   el('tiles').replaceChildren(
     // The takings first (OB-15: "sales today") — the box's own log, never a guess; its note says how many sales.

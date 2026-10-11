@@ -29,7 +29,9 @@ import { validateProduct, publishProduct, type ProductRecord, type Category, typ
 /** What an approved load writes — the real records, not a note about them. */
 export type ImportEffect =
   | { readonly kind: 'supplier_invoice'; readonly invoice: SupplierInvoiceRecord }
-  | { readonly kind: 'product'; readonly product: ProductRecord };
+  | { readonly kind: 'product'; readonly product: ProductRecord }
+  /** M30 round 8: an EXISTING product changed by file — the new version, and the version it replaced (for the undo). */
+  | { readonly kind: 'product_update'; readonly product: ProductRecord; readonly before: ProductRecord };
 
 /** A short, storable account of one effect (kept on the job record — what was written, and how to undo it). */
 export interface ImportEffectRef { readonly kind: ImportEffect['kind']; readonly ref: string; readonly valueMinor?: number }
@@ -57,13 +59,25 @@ export interface RegisteredTemplate {
   /** The real records an approved, clean load writes. */
   effects(tenantId: string, rows: readonly Readonly<Record<string, string>>[], ctx: ApplyContext): Promise<readonly ImportEffect[]>;
   /** Why the load can NOT be undone now (an effect already used downstream), by name — empty when it can. */
-  blocksRollback(tenantId: string, effects: readonly ImportEffectRef[]): Promise<readonly string[]>;
+  blocksRollback(tenantId: string, effects: readonly ImportEffectRef[], jobId?: string): Promise<readonly string[]>;
+  /**
+   * M30 round 8 — what each readable row WOULD change (an update template only): field by field, from → to. Shown on the
+   * preview so the person approving sees the changes, not just the row count. Absent for a template that only adds.
+   */
+  describe?(tenantId: string, rows: readonly Readonly<Record<string, string>>[], lineNumbers: readonly number[]): Promise<readonly RowChange[]>;
+}
+
+/** One row's changes on an update preview. */
+export interface RowChange {
+  readonly line: number;
+  readonly key: string;
+  readonly changes: readonly { readonly field: string; readonly from: string; readonly to: string }[];
 }
 
 export function effectRef(e: ImportEffect): ImportEffectRef {
   return e.kind === 'supplier_invoice'
     ? { kind: 'supplier_invoice', ref: e.invoice.invoiceId, valueMinor: e.invoice.totalMinor }
-    : { kind: 'product', ref: e.product.productId };
+    : { kind: e.kind, ref: e.product.productId };
 }
 
 /** What a template looks like to the screen (the store pack ships this; the server ignores anything but the id). */
@@ -313,6 +327,139 @@ export function productTemplate(deps: ProductImportDeps): RegisteredTemplate {
         if (e.kind !== 'product') continue;
         const why = await deps.productInUse(tenantId, e.ref);
         if (why !== undefined) reasons.push(`product ${e.ref} ${why}`);
+      }
+      return reasons;
+    },
+  };
+}
+
+// ── product-update-v1 (M30 · SF-06 residual · round 8) ─────────────────────────────────────────────────────────────────
+//
+// Changing EXISTING products by file: one row per product, keyed by its id. A blank cell keeps what the product master has;
+// a filled cell replaces it. What identifies a product and what stock is counted in — its SKU and its base unit — are never
+// changed by file (a row that tries is refused by name), nor is its lifecycle (discontinuing has its own screen). The
+// changed product must still pass the product engine's own rules for its category. The preview lists every change, field
+// by field, from → to. An approved load publishes a new version of each product (the old versions stay, append-only).
+// Undone by publishing the version each one replaced — refused, by name, for a product that has been changed again since
+// (that newer change would be silently lost — hard rule #10).
+
+export const PRODUCT_UPDATE_SPEC: TemplateSpec = Object.freeze({
+  id: 'product-update-v1', domain: 'product',
+  columns: [
+    { name: 'productId', type: 'text', required: true, referenceSet: 'product' },
+    { name: 'name', type: 'text' },
+    { name: 'brand', type: 'text' },
+    { name: 'primaryCategoryId', type: 'text', referenceSet: 'category' },
+    { name: 'taxClass', type: 'text' },
+    { name: 'allergens', type: 'text' },
+    { name: 'countryOfOrigin', type: 'text' },
+    { name: 'netQuantity', type: 'text' },
+    { name: 'packerDetails', type: 'text' },
+    { name: 'minimumAge', type: 'integer' },
+  ],
+  keyColumns: ['productId'],
+}) as TemplateSpec;
+
+export const PRODUCT_UPDATE_LABEL = 'Change existing products (one row per product; a blank cell keeps what is there)';
+
+/** Columns a file may never change on an existing product. */
+const FIXED_COLUMNS = ['sku', 'baseUom', 'lifecycle'] as const;
+
+export interface ProductUpdateImportDeps {
+  readonly categories: (tenantId: string) => Promise<readonly Category[]>;
+  readonly products: (tenantId: string) => Promise<readonly ProductRecord[]>;
+  /** Every version of a product, oldest first, each with the id of the event that published it. */
+  readonly versionsOf: (tenantId: string, productId: string) => Promise<readonly { readonly eventId: string; readonly product: ProductRecord }[]>;
+}
+
+const shown = (v: unknown): string => (v === undefined || v === null ? '' : Array.isArray(v) ? (v.length === 0 ? 'none' : v.join('|')) : String(v));
+
+/** The product as it would be after the row: blank keeps, filled replaces. */
+export function updatedProduct(current: ProductRecord, row: Readonly<Record<string, string>>): ProductRecord {
+  const safety: Record<string, unknown> = { ...(current.safety ?? {}) };
+  const allergens = opt(row['allergens']);
+  if (allergens !== undefined) safety['allergens'] = allergens.toLowerCase() === 'none' ? [] : allergens.split('|').map((a) => a.trim()).filter((a) => a !== '');
+  for (const k of ['countryOfOrigin', 'netQuantity', 'packerDetails'] as const) { const v = opt(row[k]); if (v !== undefined) safety[k] = v; }
+  const age = opt(row['minimumAge']);
+  if (age !== undefined) safety['minimumAge'] = Number(age);
+  return {
+    ...current,
+    ...(opt(row['name']) === undefined ? {} : { name: opt(row['name'])! }),
+    ...(opt(row['brand']) === undefined ? {} : { brand: opt(row['brand'])! }),
+    ...(opt(row['primaryCategoryId']) === undefined ? {} : { primaryCategoryId: opt(row['primaryCategoryId'])! }),
+    ...(opt(row['taxClass']) === undefined ? {} : { taxClass: opt(row['taxClass'])! }),
+    ...(Object.keys(safety).length === 0 ? {} : { safety: safety as SafetyContent }),
+  };
+}
+
+/** Field-by-field differences between two versions of a product, in the file's words. */
+function changesBetween(a: ProductRecord, b: ProductRecord): { field: string; from: string; to: string }[] {
+  const out: { field: string; from: string; to: string }[] = [];
+  for (const f of ['name', 'brand', 'primaryCategoryId', 'taxClass'] as const) if (shown(a[f]) !== shown(b[f])) out.push({ field: f, from: shown(a[f]), to: shown(b[f]) });
+  for (const f of ['allergens', 'countryOfOrigin', 'netQuantity', 'packerDetails', 'minimumAge'] as const) {
+    const from = shown((a.safety as Record<string, unknown> | undefined)?.[f]);
+    const to = shown((b.safety as Record<string, unknown> | undefined)?.[f]);
+    if (from !== to) out.push({ field: f, from, to });
+  }
+  return out;
+}
+
+export function productUpdateTemplate(deps: ProductUpdateImportDeps): RegisteredTemplate {
+  const current = async (tenantId: string) => new Map((await deps.products(tenantId)).map((p) => [p.productId, p] as const));
+  return {
+    spec: PRODUCT_UPDATE_SPEC, label: PRODUCT_UPDATE_LABEL, financial: false,
+    makerPermission: 'catalogue.pack.publish',
+    references: async (tenantId) => ({
+      category: (await deps.categories(tenantId)).map((c) => c.categoryId),
+      product: [...(await current(tenantId)).keys()],
+    }),
+    check: async (tenantId, rows, lineNumbers) => {
+      const errors: RowError[] = [];
+      const categories = await deps.categories(tenantId);
+      const known = new Set(categories.map((c) => c.categoryId));
+      const master = await current(tenantId);
+      rows.forEach((row, i) => {
+        const line = lineNumbers[i] ?? i + 2;
+        for (const col of FIXED_COLUMNS) {
+          if (opt(row[col]) !== undefined) errors.push(err(line, col, `A file never changes a product's ${col === 'baseUom' ? 'base unit (stock is counted in it)' : col === 'sku' ? 'SKU (it identifies the product)' : 'lifecycle (discontinuing has its own screen)'} — take the column out.`));
+        }
+        const age = opt(row['minimumAge']);
+        if (age !== undefined && !(Number.isInteger(Number(age)) && Number(age) > 0)) errors.push(err(line, 'minimumAge', `The minimum age must be a whole number of years; it is "${age}".`));
+        const before = master.get((row['productId'] ?? '').trim());
+        if (before === undefined) return; // an unknown product is already said by the reference check
+        const after = updatedProduct(before, row);
+        if (changesBetween(before, after).length === 0) errors.push(err(line, 'productId', `Nothing on this row changes product ${before.productId} — every filled cell already says what the product master has.`));
+        if (after.primaryCategoryId !== null && known.has(after.primaryCategoryId)) {
+          for (const issue of validateProduct(after, categories).issues) {
+            if (issue.severity === 'blocks_publish') errors.push(err(line, issue.field.replace(/^safety\./, ''), `${issue.message}.`));
+          }
+        }
+      });
+      return errors;
+    },
+    describe: async (tenantId, rows, lineNumbers) => {
+      const master = await current(tenantId);
+      return rows.flatMap((row, i) => {
+        const before = master.get((row['productId'] ?? '').trim());
+        if (before === undefined) return [];
+        return [{ line: lineNumbers[i] ?? i + 2, key: before.productId, changes: changesBetween(before, updatedProduct(before, row)) }];
+      });
+    },
+    effects: async (tenantId, rows) => {
+      const master = await current(tenantId);
+      return rows.flatMap((row) => {
+        const before = master.get((row['productId'] ?? '').trim());
+        return before === undefined ? [] : [{ kind: 'product_update' as const, product: updatedProduct(before, row), before }];
+      });
+    },
+    blocksRollback: async (tenantId, effects, jobId) => {
+      const reasons: string[] = [];
+      for (const e of effects) {
+        if (e.kind !== 'product_update') continue;
+        const versions = await deps.versionsOf(tenantId, e.ref);
+        const last = versions[versions.length - 1];
+        // The version this load published must still be the latest — anything newer would be silently lost.
+        if (last !== undefined && last.eventId !== `product-${e.ref}-import-${jobId ?? ''}`) reasons.push(`product ${e.ref} was changed again after this load (${last.eventId}) — undoing the load would silently lose that change`);
       }
       return reasons;
     },

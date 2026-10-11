@@ -57,6 +57,11 @@ export interface PackProduct {
   readonly productId: string;
   readonly name: string;
   readonly nameTa?: string;
+  /** D01-FR-06 (round 8): the app's content from head office's product master — brand, descriptions, synonyms. */
+  readonly brand?: string;
+  readonly descriptionEn?: string;
+  readonly descriptionTa?: string;
+  readonly synonyms?: readonly string[];
   readonly categoryId: string;
   readonly unitPriceMinor: number;
   /**
@@ -617,6 +622,13 @@ export interface PackStockHealthPolicy {
   readonly userId?: string;
   /** The permission codes this user holds — `inventory.availability.read` to see stock health. Never defaulted;
    *  the cloud routes re-check it, so this only shapes the UI. */
+  readonly permissions: readonly string[];
+}
+
+/** Round 8: who is at the service desk (WF-17 · A05) or the assistant's drafts screen (A09 · A07) and what they hold.
+ *  The cases, drafts, templates and summaries are read live from the cloud; the cloud re-checks every permission. */
+export interface PackViewerOnlyPolicy {
+  readonly userId?: string;
   readonly permissions: readonly string[];
 }
 
@@ -1263,6 +1275,10 @@ export interface StorePack {
   readonly dayReopenPolicy: Register<PackDayReopenPolicy>;
   /** Who is on the READ-ONLY stock-health dashboard and whether they may read it (M08). */
   readonly stockHealthPolicy: Register<PackStockHealthPolicy>;
+  /** Round 8: who is at the service desk (WF-17 · A05). */
+  readonly serviceDeskPolicy: Register<PackViewerOnlyPolicy>;
+  /** Round 8: who is on the assistant's drafts screen (A09 approver · A07 security officer). */
+  readonly aiDraftsPolicy: Register<PackViewerOnlyPolicy>;
   /** Who is on the READ-ONLY stored-value oversight desk and whether they may read it (M17). */
   readonly storedValuePolicy: Register<PackStoredValuePolicy>;
   /** Who is on the READ-ONLY integration-health desk and whether they may read it (M32). */
@@ -1450,6 +1466,8 @@ export function emptyPack(why: string = NEVER): StorePack {
     riskAcceptancePolicy: notKnown(why),
     dayReopenPolicy: notKnown(why),
     stockHealthPolicy: notKnown(why),
+    serviceDeskPolicy: notKnown(why),
+    aiDraftsPolicy: notKnown(why),
     storedValuePolicy: notKnown(why),
     integrationHealthPolicy: notKnown(why),
     goodsReceiptPolicy: notKnown(why),
@@ -1590,6 +1608,8 @@ export function readPack(payload: unknown, receivedAt: string): StorePack {
     riskAcceptancePolicy: section<PackRiskAcceptancePolicy>('riskAcceptancePolicy'),
     dayReopenPolicy: section<PackDayReopenPolicy>('dayReopenPolicy'),
     stockHealthPolicy: section<PackStockHealthPolicy>('stockHealthPolicy'),
+    serviceDeskPolicy: section<PackViewerOnlyPolicy>('serviceDeskPolicy'),
+    aiDraftsPolicy: section<PackViewerOnlyPolicy>('aiDraftsPolicy'),
     storedValuePolicy: section<PackStoredValuePolicy>('storedValuePolicy'),
     integrationHealthPolicy: section<PackIntegrationHealthPolicy>('integrationHealthPolicy'),
     goodsReceiptPolicy: section<PackGoodsReceiptPolicy>('goodsReceiptPolicy'),

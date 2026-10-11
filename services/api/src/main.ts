@@ -35,7 +35,7 @@ import {
 import { tenantAccessResolver, tenantEntitlementResolver, seedGenesisOwner } from './access';
 import { reportProducers, PRODUCED_AT_HEAD_OFFICE } from './report-producers';
 import { shoppingAlternatives } from './ai-shopping';
-import { ownerInsights, purchaseSuggestions } from './ai-insights';
+import { ownerInsights, purchaseSuggestions, transferSuggestions } from './ai-insights';
 import { tradingDayIn } from '../../../packages/calendar/src/index';
 import type { TargetKind } from '../../../packages/migration/src/trial';
 import { catalogueRoutes, hmacSigner } from '../../catalogue/src/index';
@@ -64,6 +64,8 @@ import { promotionCatalogueRoutes } from '../../pricing/src/promotion-catalogue'
 import { priceIntegrityRoutes } from '../../pricing/src/price-integrity';
 import { posRoutes } from '../../pos/src/index';
 import { returnsRoutes } from '../../pos/src/returns';
+import { heldStockDecisionRoutes } from '../../pos/src/held-stock-decisions';
+import { periodBooksRoutes } from '../../finance/src/period-books';
 import { noReceiptReturnRoutes } from '../../pos/src/no-receipt-returns';
 import { refundApprovalRoutes } from '../../pos/src/refund-approvals';
 import { approvalRequestRoutes } from '../../identity/src/approval-requests';
@@ -132,6 +134,11 @@ import { replenishmentRoutes } from '../../inventory/src/replenishment';
 import { salesHistoryRoutes } from '../../inventory/src/sales-history';
 import { countsRoutes, decideCount } from '../../inventory/src/counts';
 import { syncedCountsRoutes } from '../../inventory/src/counts-synced';
+import { countPlanRoutes, frozenBy as countPlanFreezing } from '../../inventory/src/count-plans';
+import { openToBuyRoutes } from '../../purchase/src/open-to-buy';
+import { invoiceIngestionRoutes } from '../../purchase/src/invoice-ingestion';
+import { onlineBufferRoutes } from '../../inventory/src/online-buffer';
+import type { InvoiceExtractor } from '../../../packages/purchasing/src/invoice-extraction';
 import { adjustmentRequestRoutes, decideAdjustmentRequest } from '../../inventory/src/adjustment-requests';
 import { syncedGoodsReceiptRoutes } from '../../inventory/src/goods-receipt-synced';
 import { assembledGoodsReceiptRoutes } from '../../inventory/src/goods-receipt-assembled';
@@ -192,11 +199,15 @@ import { rebateRoutes } from '../../purchase/src/rebates';
 import { rfqRoutes } from '../../purchase/src/rfq';
 import { importQualityRoutes } from '../../purchase/src/import-quality';
 import { dataImportRoutes } from '../../purchase/src/data-import';
-import { supplierInvoiceTemplate, productTemplate } from '../../purchase/src/import-templates';
+import { supplierInvoiceTemplate, productTemplate, productUpdateTemplate } from '../../purchase/src/import-templates';
 import { engineCategory } from '../../catalogue/src/categories';
 import { categoryRoutes } from '../../catalogue/src/categories';
 import { storePackRoutes } from '../../platform/src/store-packs';
 import { syncWatermarkRoutes } from '../../platform/src/sync-watermarks';
+import { storeComputerBinding, storeComputerRefusalRoutes } from './store-computer-binding';
+import { opsIncidentRoutes } from '../../platform/src/ops-incidents';
+import { opsIncidentsAdapter, outboundWebhooksAdapter } from './adapters';
+import { outboundWebhookRoutes, drainOutboundWebhooks, type OutboundTransport } from '../../platform/src/outbound-webhooks';
 import { buildStorePackSections } from './store-pack-builder';
 import { dataExportRoutes, buildExportDomains, type ExportSale, type ExportJournal } from '../../purchase/src/data-export';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
@@ -234,7 +245,7 @@ import { campaignSendRoutes, campaignSendUnwired } from '../../customer/src/camp
 import { notificationGuardRoutes } from '../../customer/src/notification-guard';
 import { notificationQueueRoutes, drainNotificationQueue } from '../../customer/src/notification-queue';
 import { startNotificationWorker, type NotificationWorker } from '../../customer/src/notification-worker';
-import { startOpsAlertWorker, type OpsAlertWorker } from '../../platform/src/ops-alert-worker';
+import { startOpsAlertWorker, OPS_ALERT_WORKER, type OpsAlertWorker } from '../../platform/src/ops-alert-worker';
 import { NotificationQueue, type NotificationTransport } from '../../../packages/notifications/src/index';
 import { backupVerificationRoutes } from '../../platform/src/backup-verification';
 import { drReadinessRoutes } from '../../platform/src/dr-readiness';
@@ -250,7 +261,9 @@ import { selfCheckoutRoutes } from '../../pos/src/self-checkout';
 import { ordersRoutes, type OrdersDeps } from '../../orders/src/index';
 import { paymentRefundRoutes, type PaymentRefundDeps } from '../../orders/src/payments';
 import { storefrontRoutes, type StorefrontDeps } from '../../orders/src/storefront';
-import { exceptionOwnershipRoutes, type ExceptionOwnershipDeps } from '../../orders/src/exception-ownership';
+import { storefrontSelfRoutes } from '../../orders/src/storefront-self';
+import { competitorPriceRoutes } from '../../pricing/src/competitor-prices';
+import { exceptionOwnershipRoutes, raiseBreachAlerts, type ExceptionOwnershipDeps } from '../../orders/src/exception-ownership';
 import { testModeRefundProcessor } from '../../../packages/orders/src/payment-refunds';
 import { serviceabilityRoutes } from '../../orders/src/serviceability';
 import { deliveryServiceRoutes } from '../../orders/src/delivery-service';
@@ -267,9 +280,11 @@ import { migrationRoutes } from '../../migration/src/index';
 import { legacyHistoryRoutes } from '../../migration/src/legacy-history';
 import { aiRoutes } from '../../ai/src/index';
 import { modelGatewayRoutes, governedEvidence } from '../../ai/src/model-gateway';
+import { draftingLegRoutes } from '../../ai/src/drafting-legs';
+import { serviceDeskExtrasAdapter, anomalySummaryAdapter, orderFactsFor, breachAlertAdapter, storefrontSelfAdapter, competitorPriceAdapter } from './round8-adapters';
 import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import {
-  STREAM, personalDataStore, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, accountOpeningsAdapter, openingReversalAdapter, storeStockFactsAdapter, replenishmentFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter, b2bTransferNotesAdapter,
+  STREAM, personalDataStore, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, accountOpeningsAdapter, openingReversalAdapter, storeStockFactsAdapter, replenishmentFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, countPlansAdapter, openToBuyAdapter, invoiceIngestionAdapter, onlineBufferAdapter, productVersionsOf, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, periodBooksAdapter, heldStockDecisionsAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter, b2bTransferNotesAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 // Round 6 (EA-01): only a store computer's own grant lets it report its store's sync and unsent facts.
@@ -321,6 +336,12 @@ const REPORTING_RECORDS: readonly Producer[] = [
   // Round 4: the posted day book (M23), the imported settlement and bank files (PF-12), and each store computer's own
   // report of what it holds unsent (PA-04) — each read by its report's producer.
   'journals_posted_to_the_ledger', 'bank_and_gateway_statements', 'the_boxs_own_outbox',
+  // Round 8 (D13): what head office now records through each domain's own governed write path, each read by its report's
+  // producer — captured supplier bills (SP-7a), shelf counts (SP-4), committed write-offs (M28), receipts carrying an
+  // expiry (ADR-0015), member codes on bills (PF-09), campaign sends and service cases (PF-10 · M21), online orders,
+  // slots, routes and delivery steps (M18/M19), and the assistant's proposals with people's decisions on them (EA-08).
+  'supplier_invoices_captured', 'stock_counted_on_the_shelves', 'what_is_thrown_away_recorded', 'expiry_dates_recorded',
+  'customers_identified_at_the_till', 'campaigns_and_complaints_recorded', 'online_orders_and_deliveries', 'ai_decisions_recorded',
 ];
 /** The named reports head office can work out — each with a producer over governed source rows (EA-06). */
 const REPORTING_PRODUCED: readonly string[] = PRODUCED_AT_HEAD_OFFICE;
@@ -353,6 +374,11 @@ export function buildSurface(deps: {
   /** PF-10 r6: each message provider's delivery-report callback secret — `startApi` reads them from its environment
    *  (DELIVERY_REPORT_SECRET__<PROVIDER>); none configured, a delivery report is refused (nothing believed). */
   readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
+  /** D14 / M32: the outbound webhook transport to partners. NEVER set by `startApi` from code — no partner is live (an
+   *  external gate); tests pass a recording transport. Absent, outbound messages wait, visible in the reconciliation read. */
+  readonly outboundTransport?: OutboundTransport;
+  /** D14 / M32: signing secrets by vault reference name (`vault://<name>`). `startApi` reads OUTBOUND_WEBHOOK_SECRET__<NAME>. */
+  readonly outboundSecrets?: ReadonlyMap<string, string>;
   /** EA-08: the model provider adapter and its tier pricing. NEVER set by `startApi` (no provider is chosen — an external
    *  gate); tests pass the deterministic simulator to prove admission, metering, audit and evaluations. */
   readonly modelTransport?: ModelTransport;
@@ -389,6 +415,11 @@ export function buildSurface(deps: {
    * a demo pass the TEST-MODE provider. Omitted → every online payment stays pending until the bank's answer is recorded.
    */
   readonly paymentVerifier?: PaymentVerifier;
+  /**
+   * D03-FR-02 (round 8): the OCR engine that reads a scanned supplier bill into a draft. No engine is connected (an outside
+   * party); tests and a demo pass the deterministic fake. Omitted → a scan waits for a person to type it (said on the bill).
+   */
+  readonly invoiceExtractor?: InvoiceExtractor;
   /**
    * Where projection snapshots live (CORE-03). A `SqlSnapshotStore` in production, so bounded reads
    * survive a restart; omitted, adapters fall back to a process-local in-memory cache (still correct,
@@ -441,7 +472,8 @@ export function buildSurface(deps: {
     const orders = ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() });
     const approvals = approvalRequestsAdapter({ store, now });
     // FUL-14: a substitution is decided from stored truth (prices, attributes, rules, tender, consent, approval).
-    return { ...orders, approvals, substitutionTruth: substitutionTruthAdapter({ store, now, orders, approvals }) };
+    // Round 8 (M19-FR-04 · PA-08): an exception past its time limit is told to the people who staff its queue.
+    return { ...orders, approvals, substitutionTruth: substitutionTruthAdapter({ store, now, orders, approvals }), ...breachAlertAdapter({ store, now }) };
   })();
 
   // FUL-05: the one fulfilment command — run after every pack, dispatch, door outcome and counter hand-over, and on demand.
@@ -488,9 +520,12 @@ export function buildSurface(deps: {
     onHand: empty(0), reconciliations: empty([]), countExists: empty(false), recordReconciliation: () => {}, reconciliation: empty(undefined), recordDecision: () => {},
     unitValueMinor: empty(undefined), countPolicy: empty(undefined), binExpected: empty(undefined), now,
   } : { ...countsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
+  // WF-08 (round 8): stock-count plans — plan/freeze, blind count, recount, cause, one approval — on the same count register.
+  const countPlanDeps = store === undefined ? undefined
+    : { ...countPlansAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
   const syncedCountsDeps = store === undefined ? {
     ...countsDeps, permissionsOfUser: empty(undefined), recordCountPolicy: () => {},
-  } : { ...syncedCountsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
+  } : { ...syncedCountsAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), ...(countPlanDeps === undefined ? {} : { countPlans: countPlanDeps }) };
   const adjustmentDeps = store === undefined ? {
     permissionsOfUser: empty(undefined), unitValueMinor: empty(undefined), request: empty(undefined), requests: empty([]),
     recordRequest: () => {}, recordDecision: () => {}, appendMovement: () => {}, now,
@@ -543,6 +578,8 @@ export function buildSurface(deps: {
       // EA-08: A01 reads the same governed report producers the owner's reports do; A02 the stock and sales ledgers.
       ownerInsights: async (t) => ownerInsights(producers!, t, now(), tradingDayIn(now(), await shopCalendar(t))),
       purchaseSuggestions: (t) => purchaseSuggestions(store, t, now()),
+      // Round 8: A03's transfer leg reads the same stock ledger, sales ledger and org hierarchy (M09-FR-03).
+      transferSuggestions: (t) => transferSuggestions(store, t, now()),
       shoppingAlternatives: (t) => shoppingAlternatives(store, t, now()),
       // The Data Quality agent (A08) reads the live product master + barcode register — the tested
       // folds reused verbatim (same pattern as the export domains above), never a second copy.
@@ -677,6 +714,13 @@ export function buildSurface(deps: {
     ...priceListRoutes(store === undefined
       ? { entries: empty([]), recordEntry: () => {}, now }
       : { ...priceListAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
+    // Round 8 (D06-FR-05): competitor price sightings, compared with the shop's own effective price — changes no price.
+    ...(store === undefined ? [] : competitorPriceRoutes({
+      now, ...competitorPriceAdapter({ store, now }),
+      entries: (t, productId) => priceListAdapter({ store, now }).entries(t, productId),
+      productKnown: async (t, productId) => (await productMasterAdapter({ store, now }).product(t, productId)) !== undefined
+        || (await catalogueAdapter({ store, signer, now }).currentPack(t))?.snapshot.products.some((p) => p.productId === productId) === true,
+    })),
     ...promotionRoutes(store === undefined
       ? { launchedPromotion: empty(undefined), recordLaunch: () => {}, now }
       : { ...promotionAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }) }),
@@ -689,6 +733,14 @@ export function buildSurface(deps: {
       latestMatch: empty(undefined), recordMatch: () => {}, matchPolicy: empty(undefined), recordMatchPolicy: () => {},
       applyBankChange: () => {}, openCommitments: empty(undefined), now,
     } : { ...purchaseAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, approvals: approvalRequestsAdapter({ store, now }), tillSealKey: sealKey }),
+    // D03-FR-02 (round 8): bills handed in as a GST e-invoice or a scan → a draft a person confirms → the same register.
+    ...invoiceIngestionRoutes(store === undefined ? {
+      document: empty(undefined), documents: empty([]), recordDocument: () => {}, supplierByGstin: empty(undefined), mappings: empty([]), recordMappings: () => {}, now,
+      purchase: {
+        invoice: empty(undefined), invoices: empty([]), recordInvoice: () => {}, purchaseOrder: empty(undefined), permissionsOfUser: empty(undefined),
+        latestMatch: empty(undefined), recordMatch: () => {}, matchPolicy: empty(undefined), recordMatchPolicy: () => {}, applyBankChange: () => {}, openCommitments: empty(undefined), now,
+      },
+    } : { ...invoiceIngestionAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, ...(deps.invoiceExtractor === undefined ? {} : { extractor: deps.invoiceExtractor }) }),
     // The supplier ACCOUNT (SP-7b · F04's payable half): a projection over the invoice, match, order and receipt registers.
     ...supplierAccountRoutes(store === undefined ? {
       invoices: empty([]), latestMatches: empty(new Map()), purchaseOrders: empty([]), receipts: empty([]), payments: empty([]), debitNoteIssues: empty([]), now,
@@ -714,12 +766,21 @@ export function buildSurface(deps: {
     // OB-44 "A": inside the real cutover window only, a named person and a second approver reverse an opening load through
     // each domain's own compensating record — kept, read back to zero against the load. Trial loads go into a fresh shop.
     ...(store === undefined ? [] : openingReversalRoutes({ ...openingReversalAdapter({ store, now }), recordAudit: auditTrail?.recordAudit })),
+    // WF-18 / M23 / D10-FR-03 (Batch 3 r8): count differences and write-offs to the books, account classes, the period P&L.
+    ...(store === undefined ? [] : periodBooksRoutes(periodBooksAdapter({ store, now }))),
+    // WF-11 / M13-FR-02 (Batch 3 r8): a person's decision on a returned unit held off the shelf.
+    ...(store === undefined ? [] : heldStockDecisionRoutes({ ...heldStockDecisionsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), recordAudit: auditTrail?.recordAudit })),
     // Purchase-order lifecycle (M06-FR-01/02/04) — propose, approve+issue under §28, supplier holds.
     ...purchaseOrderRoutes(store === undefined ? {
       order: empty(undefined), all: empty([]), supplierBlocked: empty(false),
       propose: () => {}, issue: () => {}, setSupplierBlocked: () => {},
       amend: () => {}, cancel: () => {}, postReceipt: () => {}, now,
-    } : { ...purchaseOrdersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack }),
+    } : { ...purchaseOrdersAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now), packOf: packHierarchyAdapter({ store, now }).pack,
+      openToBuy: { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) } }),
+    // WF-03 · D02-FR-01 (round 8): category purchase budgets and open-to-buy — checked on every order, over budget escalates.
+    ...openToBuyRoutes(store === undefined ? {
+      budgets: empty([]), recordBudget: () => {}, orders: empty([]), categoryOf: empty(null), overrides: empty([]), recordOverride: () => {}, permissionsOfUser: empty(undefined), now,
+    } : { ...openToBuyAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, storeOf: locationBranchesOf(store, now) }),
     // Supplier scorecards + contract alerts (M06-FR-03) — objective scoring from recorded delivery facts.
     ...supplierScorecardRoutes(store === undefined ? {
       receipts: empty([]), contractsFor: empty([]), allContracts: empty([]),
@@ -766,6 +827,11 @@ export function buildSurface(deps: {
             categories: async (t) => (await categoryRegisterAdapter({ store, now }).categories(t)).map(engineCategory),
             products: async (t) => productMasterAdapter({ store, now }).products(t),
             productInUse: (t, id) => productInUse(store, t, id),
+          }), productUpdateTemplate({
+            // M30 round 8: EXISTING products changed by file — previewed field by field, undone to the version replaced.
+            categories: async (t) => (await categoryRegisterAdapter({ store, now }).categories(t)).map(engineCategory),
+            products: async (t) => productMasterAdapter({ store, now }).products(t),
+            versionsOf: (t, id) => productVersionsOf(store, t, id),
           })],
         }),
     // Domain data export (M30-FR-02) — your data is yours: every authorised domain exports to an open
@@ -836,7 +902,8 @@ export function buildSurface(deps: {
       availability: empty([]), appendMovement: () => {}, isKnown: empty(false), valuation: empty([]),
       ageing: empty({ lots: [], unvaluedMinor: 0 }),
       performance: empty({ from: '', to: '', periodDays: 0, total: { cogs: { minor: 0, currency: 'INR' }, averageInventory: { minor: 0, currency: 'INR' } }, byProduct: [] }), now,
-    } : { ...inventoryAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now) }),
+    } : { ...inventoryAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now),
+      frozenBy: async (t: string, l: string, p: string, k: string) => (countPlanDeps === undefined ? undefined : (await countPlanFreezing(countPlanDeps, t, l, p, k))?.planId) }),
     // Goods receipt / GRN capture (M07-FR-01/02/03 · D03-FR-02) — the durable cloud receiving record, the tenant's
     // receipt policy and the held-excess decision (F03).
     ...goodsReceiptRoutes(goodsReceiptDeps),
@@ -913,6 +980,12 @@ export function buildSurface(deps: {
     // and threshold are head office's on both (SP-4 · F07); a held variance is decided by a separate person.
     ...countsRoutes(countsDeps),
     ...syncedCountsRoutes(syncedCountsDeps),
+    // D05-FR-03 (round 8): the online safety-stock buffer — what the app may promise vs what is on the shelf.
+    ...onlineBufferRoutes(store === undefined ? { buffers: empty([]), recordBuffer: () => {}, onHand: empty(new Map()), promised: empty(new Map()), now }
+      : { ...onlineBufferAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) }),
+    ...countPlanRoutes(countPlanDeps ?? {
+      ...countsDeps, plan: empty(undefined), plans: empty([]), recordPlan: () => {}, causes: empty([]), recordCause: () => {}, planCounts: empty([]), movementsAt: empty([]),
+    }),
     // Adjustment REQUESTS relayed from the warehouse handheld, approved by a separate person before posting (SP-3b · W3 · M08-FR-03).
     ...adjustmentRequestRoutes(adjustmentDeps),
     ...writeOffRoutes(store === undefined ? {
@@ -990,6 +1063,8 @@ export function buildSurface(deps: {
       storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u),
       ...syncWatermarksAdapter({ store }),
     }),
+    // OB-54: what a store computer tried to send for another store — head office's visible record of each refusal.
+    ...storeComputerRefusalRoutes({ store }),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),
       saleHoldingReceipt: empty(undefined), isBanked: empty(false),
@@ -1119,6 +1194,8 @@ export function buildSurface(deps: {
         ...serviceCaseAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }),
         // PF-11: a granted compensation is carried out through the value records, its status kept.
         ...compensationFulfilmentAdapter({ store, now, pointValuePaise: async (t) => (await loyaltyRule(t)).pointValuePaise }),
+        // Round 8 (WF-17): replies a person sent from an approved draft, and the root cause on a resolved case.
+        ...serviceDeskExtrasAdapter({ store, now }),
       }),
     // Consent-gated segmentation (M16-FR-02) — a pure compute over supplied facts; no store.
     ...segmentRoutes(store === undefined
@@ -1156,6 +1233,20 @@ export function buildSurface(deps: {
     ...paymentRefundRoutes(ordersDeps),
     // The storefront's own surface (M20): a signed-in customer places and pays for an order that reserves stock in the
     // same breath, and reads back its own orders only — gated by the customer_app entitlement.
+    // Round 8 (D08-FR-02/05 · WF-16 · WF-17): the signed-in customer's own favourites and lists, and a complaint or a
+    // return request raised in the app — each a case on the service desk's own register, scoped from the session.
+    ...(store === undefined ? [] : storefrontSelfRoutes({
+      now,
+      ...storefrontSelfAdapter({ store, now }),
+      productKnown: async (t, productId) => (await catalogueAdapter({ store, signer, now }).currentPack(t))?.snapshot.products.some((p) => p.productId === productId) === true
+        || (await productMasterAdapter({ store, now }).product(t, productId)) !== undefined,
+      placedOrder: (t, orderId) => ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES }).placedOrder(t, orderId),
+      orderStateOf: async (t, orderId) => (await ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES }).orderState(t, orderId))?.state,
+      serviceCase: (t, caseId) => serviceCaseAdapter({ store, now }).serviceCase(t, caseId),
+      serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
+      openCase: (t, c) => serviceCaseAdapter({ store, now }).recordCase(t, c.caseId, c, `${c.state}|opened-in-app`),
+      sentReplies: (t, caseId) => serviceDeskExtrasAdapter({ store, now }).sentReplies(t, caseId),
+    })),
     ...storefrontRoutes({
       ...ordersDeps,
       // FUL-03: the shop's own quote — the store price head office last published — and the provider's word on payment.
@@ -1668,6 +1759,17 @@ export function buildSurface(deps: {
     ...alertLifecycleRoutes(store === undefined
       ? { alerts: () => [], recordAlertEvent: () => {}, now }
       : alertLifecycleAdapter({ store, now })),
+    // WF-20 · M35-FR-04: an incident linked to the alerts that raised it, its timeline, actions with named owners, a
+    // post-mortem, and a close only a named person makes.
+    // D14 / M32: outbound webhooks to partners — signed, retried on a schedule, dead-lettered visibly, reconcilable.
+    ...outboundWebhookRoutes(outboundWebhooksAdapter({
+      ...(store === undefined ? {} : { store }), now,
+      ...(deps.outboundTransport === undefined ? {} : { transport: deps.outboundTransport }),
+      ...(deps.outboundSecrets === undefined ? {} : { secrets: deps.outboundSecrets }),
+    })),
+    ...opsIncidentRoutes(store === undefined
+      ? { facts: async () => [], record: async () => {}, alerts: () => [], isKnownPerson: async () => false, now }
+      : opsIncidentsAdapter({ store, now })),
     // OBSERVED operational health (M35-FR-03/04/01): the cloud reads its own ledgers as the health signals,
     // judges them with the same engine, and raises owned alerts from what it saw into the same lifecycle store.
     ...observedHealthRoutes(store === undefined ? {
@@ -1776,6 +1878,33 @@ export function buildSurface(deps: {
       operationsWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordOperationsDisposition: () => {},
       workforceWorklist: empty({ open: [], dismissed: [], openCount: 0, dismissedCount: 0 }), recordWorkforceDisposition: () => {}, now,
     } : governedAiDeps!), modelProviderConfigured: () => deps.modelTransport !== undefined }),
+    // Round 8 (roadmap §7 · P-05 · hard rule #5): the A05 case-reply, A09 campaign-message and A07 anomaly-summary DRAFTING
+    // legs — each through the governed call above (admission, metering, hash-chained audit), each over evidence read here
+    // from the domain's own records; the drafts land on the registers a PERSON decides on (case drafts, the two-person
+    // template register, the security officer's summaries). Without a store there is nothing to draft over.
+    ...(store === undefined ? [] : draftingLegRoutes({
+      now,
+      gateway: modelGatewayAdapter({
+        store, now,
+        evidenceFor: async (t, agent) => governedEvidence(await governedAiDeps!.run(t, agent)),
+        ...(deps.modelTransport === undefined ? {} : { transport: deps.modelTransport }),
+        ...(deps.modelPricing === undefined ? {} : { pricing: deps.modelPricing }),
+      }),
+      serviceCase: (t, caseId) => serviceCaseAdapter({ store, now }).serviceCase(t, caseId),
+      caseDraft: (t, caseId, draftId) => serviceCaseAdapter({ store, now }).draft(t, caseId, draftId),
+      recordCaseDraft: (t, caseId, draft, key) => serviceCaseAdapter({ store, now }).recordDraft(t, caseId, draft, key),
+      orderFacts: (t, orderId) => orderFactsFor(store, t, orderId),
+      servicePolicyFacts: async (t) => {
+        const p = await serviceCaseAdapter({ store, now }).compensationPolicy(t);
+        const rupees = (m: number): string => `₹${(m / 100).toFixed(2)}`;
+        return p === undefined
+          ? ['No compensation policy is set; the default applies: a desk agent may offer up to ₹500.00 alone, and nothing above ₹5,000.00.']
+          : [`Compensation: a desk agent may offer up to ${rupees(p.agentAuthorityMinor)} alone; above that a second person approves; nothing above ${rupees(p.deskCeilingMinor)}.`];
+      },
+      templateVersions: async (t) => notificationQueueAdapter({ store, now }).templates!(t),
+      recordTemplateDraft: (t, draft) => notificationQueueAdapter({ store, now }).recordTemplate!(t, draft),
+      ...anomalySummaryAdapter({ store, now }),
+    })),
   ];
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
@@ -1792,6 +1921,8 @@ export interface RunningApi {
   readonly notificationWorker?: NotificationWorker;
   /** PA-12: the ops-alert worker — raises, escalates and delivers alerts to their named people on its own timer. */
   readonly opsAlertWorker?: OpsAlertWorker;
+  /** D14 / M32: the outbound webhook sender — present only when a partner transport is handed in. */
+  readonly outboundWorker?: NotificationWorker;
   /** Stops accepting, lets in-flight requests finish, then closes the database pool. */
   readonly stop: () => Promise<void>;
 }
@@ -1816,6 +1947,20 @@ export interface ApiProviders {
   readonly opsAlertWorkerIntervalMs?: number;
   /** EA-07: how often the brief worker passes over the named shops — overrides BRIEF_WORKER_EVERY_SECONDS (tests). */
   readonly briefWorkerIntervalMs?: number;
+  /** D14 / M32: the outbound webhook transport to partners (none is live; tests hand in a recording one). */
+  readonly outboundTransport?: OutboundTransport;
+  /** D14 / M32: how often the outbound webhook sender passes over every shop (default 30 s). */
+  readonly outboundWorkerIntervalMs?: number;
+}
+
+/** D14 / M32: outbound webhook signing secrets from the environment — OUTBOUND_WEBHOOK_SECRET__<NAME> answers vault://<NAME>. */
+export function outboundSecretsFromEnv(env: Readonly<Record<string, string | undefined>>): ReadonlyMap<string, string> {
+  const out = new Map<string, string>();
+  for (const [k, v] of Object.entries(env)) {
+    const m = /^OUTBOUND_WEBHOOK_SECRET__(.+)$/.exec(k);
+    if (m !== null && typeof v === 'string' && v.length >= 32) out.set(m[1]!, v);
+  }
+  return out;
 }
 
 export async function startApi(
@@ -1955,6 +2100,10 @@ export async function startApi(
     ...(providers.notificationTransport === undefined ? {} : { notificationTransport: providers.notificationTransport }),
     // PF-10 r6: the providers' delivery-report secrets, from this process's environment only (never the repo).
     deliveryReportSecrets: reportSecrets.secrets,
+    // D14 / M32: outbound webhook signing secrets (OUTBOUND_WEBHOOK_SECRET__<NAME> → vault://<NAME>) and the partner
+    // transport (a provider handed in at deployment; none is live, so outbound messages wait, visible).
+    outboundSecrets: outboundSecretsFromEnv(env),
+    ...(providers.outboundTransport === undefined ? {} : { outboundTransport: providers.outboundTransport }),
     ...(identityDirectory === undefined ? {} : { identityDirectory }),
     ...(settings['IDP_OIDC_TENANT_ID'] === undefined ? {} : { identityDirectoryTenantId: settings['IDP_OIDC_TENANT_ID'] }),
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a
@@ -2035,6 +2184,9 @@ export async function startApi(
     // every request — live, this person's, and (support) inside the owner's granted scopes — and its token is
     // revoked through the SAME list as above once the session expires, is ended or is terminated.
     channels: sessionChannelsOf({ store, revocations, now }),
+    // OB-54: each store computer's credential is locked to its own store — refused (and kept) when it names no store,
+    // a store its grant does not name, or a record at another store.
+    boundStore: storeComputerBinding({ store, now }),
     // Per-tenant FEATURE ENTITLEMENT (M36-FR-01 · §35). A route that names an optional/paid feature is
     // refused for a tenant whose plan has not enabled it — default-deny, on top of the permission check.
     // Reads the SAME `TenantEntitlementSet` fold the `/v1/platform/entitlements` API writes, so enabling a
@@ -2125,15 +2277,39 @@ export async function startApi(
     intervalMs: providers.opsAlertWorkerIntervalMs ?? 60_000,
     now,
     say: (line) => { out(`${line}\n`); },
+    // Round 8 (M19-FR-04 · PA-08): a delivery exception past its time limit is put on the message queue for the people
+    // who staff its queue, on this same timer — nobody has to press anything for it to be told.
+    alsoEachPass: async (t, at) => (await raiseBreachAlerts({
+      ...ordersAdapter({ store, now, holdMinutes: HOLD_MINUTES, refundProcessor: testModeRefundProcessor() }), ...breachAlertAdapter({ store, now }),
+    }, t, at, OPS_ALERT_WORKER)).queued.length,
   });
+
+  // D14 / M32: the outbound webhook sender — the PA-08 worker shape (sequential, never stops quietly, restart-safe) over
+  // the outbound pass. Runs only when a partner transport is handed in; with none, messages wait and are listed.
+  let outboundWorker: NotificationWorker | undefined;
+  if (providers.outboundTransport === undefined) {
+    out('outbound webhooks: no partner transport is configured — outbound messages wait, listed in the reconciliation read\n');
+  } else {
+    const outboundDeps = outboundWebhooksAdapter({ store, now, transport: providers.outboundTransport, secrets: outboundSecretsFromEnv(env) });
+    outboundWorker = startNotificationWorker({
+      tenants: async () => workerTenants,
+      drain: (tenantId) => drainOutboundWebhooks(outboundDeps, tenantId),
+      intervalMs: providers.outboundWorkerIntervalMs ?? 30_000,
+      now,
+      say: (line) => { out(`outbound webhooks: ${line}\n`); },
+    });
+    out(`outbound webhooks: the sender runs every ${Math.round((providers.outboundWorkerIntervalMs ?? 30_000) / 1000)} s through ${providers.outboundTransport.name}\n`);
+  }
 
   return {
     port,
     routeCount,
     ...(notificationWorker === undefined ? {} : { notificationWorker }),
+    ...(outboundWorker === undefined ? {} : { outboundWorker }),
     opsAlertWorker,
     stop: async () => {
       stopBriefWorker?.();
+      if (outboundWorker !== undefined) await outboundWorker.stop();
       await opsAlertWorker.stop();
       if (notificationWorker !== undefined) await notificationWorker.stop();
       await server.stop();

@@ -31,7 +31,7 @@ describe('a weighed item is sold and returned in grams, end to end (OB-31)', () 
     h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-meena', 'cashier');
-    await h.provisionRole(A, 'u-box', 'store_computer');
+    await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);
     await h.provisionRole(A, 'u-mgr', 'store_manager');
     // 5 kg of tomatoes on hand, at ₹25.00 a kg.
     expect((await h.request({ method: 'POST', path: '/v1/inventory/movements', userId: 'u-owner', tenantId: A, idempotencyKey: 'tom-in', body: {
@@ -68,7 +68,7 @@ describe('a weighed item is sold and returned in grams, end to end (OB-31)', () 
   it('sells 1.234 kg and takes 500 g back — the bill, the stock movements and the stock all in grams', async () => {
     const edge: EdgeProcess = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: TEST_PACK_KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1',
-      EDGE_PACK_FILE: join(dir, 'store-pack.json'), CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
+      EDGE_PACK_FILE: join(dir, 'store-pack.json'), CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }),
     }, () => {}))!;
     try {
       const till = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port, tradingDayCutoff: '00:00' });

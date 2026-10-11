@@ -100,7 +100,7 @@ async function cloud(): Promise<{
   const h = apiHarness();
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'store_computer');
+  await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);
   const dir = await tempDir('sre-mgr-decisions-cloud-');
   const packFile = join(dir, 'store-pack.json');
   await writeFile(packFile, PACK_JSON, 'utf8');
@@ -131,7 +131,7 @@ async function cloud(): Promise<{
       // The hosted copy (ADR-0020 §6): the front's sign-in names the person, and the box seals what they decide.
       EDGE_LANE_ID: 'lane-1', EDGE_LANE_TRUST_FORWARDED_USER: '1',
       CLOUD_API_URL: 'https://cloud.example.test',
-      CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
+      CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }),
       EDGE_PACK_FILE: packFile,
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });

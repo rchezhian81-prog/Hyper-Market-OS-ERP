@@ -405,6 +405,13 @@ export function validatePostingMap(candidate: unknown): { readonly ok: true; rea
   return problems.length > 0 ? { ok: false, problems } : { ok: true, map: { rules: rules as PostingMap['rules'] } };
 }
 
+/** WF-18 / WF-08 / D10-FR-03: suggested rules for count differences and write-offs (`services/finance/src/period-books.ts`). */
+export const STOCK_ADJUSTMENT_POSTING_RULES: PostingMap['rules'] = [
+  { kind: 'stock_count:shortage', legs: [{ account: 'inventory_loss', side: 'debit', component: 'amount' }, { account: 'inventory', side: 'credit', component: 'amount' }] },
+  { kind: 'stock_count:surplus', legs: [{ account: 'inventory', side: 'debit', component: 'amount' }, { account: 'inventory_gain', side: 'credit', component: 'amount' }] },
+  { kind: 'stock_write_off', legs: [{ account: 'inventory_write_off', side: 'debit', component: 'amount' }, { account: 'inventory', side: 'credit', component: 'amount' }] },
+];
+
 /**
  * A SUGGESTED starting mapping for an Indian retail day book — a clearing-account pattern. The sale
  * voucher debits `sales_clearing` for the day's takings and credits revenue and output GST; each tender
@@ -506,6 +513,9 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
         { account: 'inventory', side: 'credit' as const, component: 'amount' },
       ],
     })),
+    // WF-18 / WF-08 / D10-FR-03 (Batch 3 r8): an applied count difference and a write-off reach the books — a shortage or a
+    // write-off is a loss against inventory, a surplus the mirror. Suggested like the rest; the CA commits the mapping.
+    ...STOCK_ADJUSTMENT_POSTING_RULES,
     // SP-7b (M23-FR-01): the supplier account — a matched invoice's payable, its reversal, a debit note — through a
     // goods-received-not-invoiced clearing (`payables.ts`). Suggested like the rest; the accountant commits it.
     ...PAYABLES_POSTING_RULES,

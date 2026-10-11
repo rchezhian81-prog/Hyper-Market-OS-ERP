@@ -63,6 +63,11 @@ function sampleSession() {
     presentValidateResult: (l, r) => tone(r, '__never__'),
     presentAskOutcome: (l) => noLink(l),
     presentLoadOutcome: (l) => noLink(l),
+    loads: async () => ({ state: 'read', rows: [] }),
+    askToUndo: async () => ({ kind: 'lost_link' }),
+    undo: async () => ({ kind: 'lost_link' }),
+    presentUndoOutcome: (l) => noLink(l),
+    presentChanges: () => [],
   };
 }
 
@@ -70,6 +75,11 @@ let session = window.dataIoSession ?? sampleSession();
 const t = (key) => session.text(lang, key);
 /** The uploader's own requests, as last read (a GET). Kept so a language switch repaints them without a new read. */
 let lastRequests = null;
+
+/** The loads already applied, as last read (a GET) — M30 round 8. */
+let lastLoads = null;
+/** The reason typed for each load's undo, kept across a repaint. */
+const undoWhy = new Map();
 
 /** The days chosen for each dated domain (SF-10), kept across a repaint so a refresh never resets them. */
 const periodChosen = new Map();
@@ -219,14 +229,105 @@ function declaredTotal() {
   return Number.isInteger(n) ? n : undefined;
 }
 
-function renderPreview(preview) {
+function renderPreview(preview, changes) {
   const box = el('preview');
   box.hidden = false;
   box.className = `preview ${preview.commitReady ? 'ready' : 'notready'}`;
   box.replaceChildren();
   box.append(line(`${preview.validCount} ${t('previewValid')} · ${preview.errorRowCount} ${t('previewErrors')}`));
   for (const e of preview.errors.slice(0, 20)) box.append(line(`line ${e.line}: ${e.column} — ${e.message}`, 'errline'));
+  // M30 round 8: a file that changes existing records says what each row changes, from → to, before anyone is asked.
+  const lines = Array.isArray(changes) && typeof session.presentChanges === 'function' ? session.presentChanges(lang, changes) : [];
+  if (lines.length > 0) {
+    box.append(line(t('changesHeading')));
+    for (const c of lines.slice(0, 50)) box.append(line(c, 'changeline'));
+  }
   box.append(line(preview.commitReady ? t('previewReady') : t('previewNotReady')));
+}
+
+/** M30 round 8 — the loads already applied, each in place or undone; one this person may undo carries a reason box, "Ask to
+ *  undo" and "Undo it". Both are explicit clicks; the list itself is a GET. */
+function paintLoads() {
+  const heading = el('loads-heading');
+  const list = el('my-loads');
+  if (lastLoads === null) { heading.hidden = true; list.hidden = true; return; }
+  heading.hidden = false; list.hidden = false;
+  heading.textContent = t('loadsHeading');
+  list.setAttribute('aria-label', t('loadsHeading'));
+  if (lastLoads.state !== 'read' || lastLoads.rows.length === 0) {
+    const li = document.createElement('li'); li.className = 'row';
+    li.append(line(lastLoads.state === 'read' ? t('loadsEmpty') : t('loadsLostLink')));
+    list.replaceChildren(li);
+    return;
+  }
+  list.replaceChildren(...lastLoads.rows.map((r) => {
+    const li = document.createElement('li'); li.className = `row tone-${r.status.tone}`; li.dataset.jobId = r.jobId;
+    const what = document.createElement('span'); what.className = 'what';
+    const name = document.createElement('strong'); name.textContent = r.jobId;
+    const chip = document.createElement('span'); chip.className = 'chip load-status';
+    const icon = document.createElement('span'); icon.className = 'icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = r.status.icon;
+    const words = document.createElement('span'); words.textContent = r.status.label;
+    chip.append(icon, words);
+    chip.setAttribute('aria-label', r.status.announcement || r.status.label);
+    what.append(name, chip, line(r.line));
+    li.append(what);
+    if (r.mayUndo) {
+      const box = document.createElement('div'); box.className = 'undo';
+      const id = `undo-why-${r.jobId}`;
+      const lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = t('undoWhyLabel');
+      const input = document.createElement('input'); input.type = 'text'; input.id = id; input.className = 'undo-why'; input.maxLength = 300; input.autocomplete = 'off';
+      input.value = undoWhy.get(r.jobId) ?? '';
+      input.addEventListener('input', () => { undoWhy.set(r.jobId, input.value); });
+      const actions = document.createElement('div'); actions.className = 'actions';
+      const ask = document.createElement('button'); ask.type = 'button'; ask.className = 'act small ask-undo'; ask.textContent = t('askUndoBtn'); ask.dataset.job = r.jobId;
+      const go = document.createElement('button'); go.type = 'button'; go.className = 'act primary undo-btn'; go.textContent = t('undoBtn'); go.dataset.job = r.jobId;
+      const result = document.createElement('p'); result.className = 'result undo-result'; result.hidden = true; result.setAttribute('role', 'status'); result.setAttribute('aria-live', 'polite');
+      const show = (presentation) => {
+        result.hidden = false; result.className = `result undo-result tone-${presentation.tone}`;
+        result.textContent = `${presentation.icon} ${presentation.label}`;
+        result.setAttribute('aria-label', presentation.announcement || presentation.label);
+      };
+      ask.addEventListener('click', () => {
+        void (async () => {
+          ask.disabled = true;
+          try {
+            const o = await session.askToUndo(lang, { jobId: r.jobId, why: input.value });
+            show(typeof session.presentUndoAskOutcome === 'function' ? session.presentUndoAskOutcome(lang, o) : session.presentAskOutcome(lang, o));
+            if (o.kind === 'asked') await readRequests();
+          } finally { ask.disabled = false; }
+        })();
+      });
+      go.addEventListener('click', () => {
+        void (async () => {
+          go.disabled = true;
+          try {
+            const o = await session.undo({ jobId: r.jobId, why: input.value });
+            const presentation = session.presentUndoOutcome(lang, o);
+            if (o.kind !== 'undone') { show(presentation); return; }
+            // Undone: the list is read again (the row now says who undid it and why) and the answer is said on that row.
+            undoWhy.delete(r.jobId);
+            await readLoads();
+            const row = el('my-loads').querySelector(`li[data-job-id="${CSS.escape(r.jobId)}"]`);
+            const note = document.createElement('p'); note.className = `result undo-result tone-${presentation.tone}`; note.setAttribute('role', 'status');
+            note.textContent = `${presentation.icon} ${presentation.label}`;
+            row?.append(note);
+          } finally { go.disabled = false; }
+        })();
+      });
+      actions.append(ask, go);
+      box.append(lab, input, actions, result);
+      li.append(box);
+    }
+    return li;
+  }));
+}
+
+/** Read the loads already applied (a GET — read only) and draw them. */
+async function readLoads() {
+  if (typeof session.loads !== 'function') return;
+  const view = await session.loads(lang);
+  lastLoads = view.state === 'not_allowed' ? null : view;
+  paintLoads();
 }
 
 /** What the import form currently says — the same four facts the approval and the load are bound to. */
@@ -267,7 +368,7 @@ el('validate').addEventListener('click', () => {
     const r = await session.validate(el('import-template').value, el('import-file').value, declaredTotal());
     if (r === 'refused' || r === 'lost_link') { paintResult('validate-result', session.presentValidateResult(lang, r)); el('preview').hidden = true; return; }
     el('validate-result').hidden = true;
-    renderPreview(r.preview);
+    renderPreview(r.preview, r.changes);
   })();
 });
 
@@ -290,12 +391,13 @@ el('commit').addEventListener('click', () => {
       el('import-file').value = ''; el('import-job').value = ''; el('import-why').value = ''; el('preview').hidden = true; el('ask-result').hidden = true;
     }
     if (outcome.kind !== 'lost_link') await readRequests();
+    if (outcome.kind === 'committed') await readLoads();
   });
 });
 
 el('lang').addEventListener('click', () => {
   lang = lang === 'en' ? 'ta' : 'en'; document.documentElement.lang = lang;
-  void (async () => { paint(); await readRequests(); })();
+  void (async () => { paint(); await readRequests(); await readLoads(); })();
 });
 
 el('sample').hidden = window.dataIoSession !== undefined;
@@ -318,6 +420,7 @@ async function refresh() {
   if (live) { session = api.present(live); paint(); }
 }
 void readRequests();
+void readLoads();
 refresh();
 
 if ('serviceWorker' in navigator) {

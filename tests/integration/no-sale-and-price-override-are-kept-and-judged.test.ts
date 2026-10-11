@@ -67,7 +67,7 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
   const bootBox = async (): Promise<EdgeProcess> => (await startEdge({
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: tenant, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
     CLOUD_API_URL: cloud?.baseUrl ?? 'https://cloud.example.test',
-    CLOUD_API_TOKEN: cloud !== undefined ? cloud.token(BOX) : TEST_IDP.issue({ sub: BOX, tenantId: tenant }),
+    CLOUD_API_TOKEN: cloud !== undefined ? cloud.token(BOX) : TEST_IDP.issue({ sub: BOX, tenantId: tenant, branchId: 'S1' }),
     ...await prepareTillBox({ dir, key: KEY, people: TILL_PEOPLE }),
   }, () => {}))!;
 
@@ -75,7 +75,7 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
     tenant = DATABASE_URL ? randomUUID() : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa707';
     if (DATABASE_URL) {
       cloud = await startRealCloud({ databaseUrl: DATABASE_URL, tenantId: tenant, owner: OWNER, packSigningKey: KEY });
-      await cloud.grant(BOX, 'store_computer');
+      await cloud.grant(BOX, 'store_computer', undefined, ['S1']); // OB-54: the box is granted for its ONE store
       await cloud.grant(CASHIER, 'cashier');
       await cloud.grant(MANAGER, 'store_manager');
       await cloud.grant(NOT_A_MANAGER, 'cashier');
@@ -83,7 +83,7 @@ describe(`PF-07 — no-sale and price override: on the box first, approved, rela
     } else {
       h = apiHarness();
       await h.seedOwner(tenant, OWNER);
-      await h.provisionRole(tenant, BOX, 'store_computer');
+      await h.provisionRole(tenant, BOX, 'store_computer', ['S1']); // OB-54: the box is granted for its ONE store
       await h.provisionRole(tenant, CASHIER, 'cashier');
       await h.provisionRole(tenant, MANAGER, 'store_manager');
       await h.provisionRole(tenant, NOT_A_MANAGER, 'cashier');

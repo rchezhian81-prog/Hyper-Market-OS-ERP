@@ -128,6 +128,41 @@ const WORDS = {
     shortageTotal: 'கடை அனுப்பக்கூடியதற்கான விலை: {amount}. எதுவும் வசூலிக்கப்படவில்லை.',
   },
 };
+// Round 8 (D08-FR-02/05/06): favourites, lists, voice search, complaints and returns — every word in both languages.
+Object.assign(WORDS.en, {
+  favourite: 'Favourite', myFavourites: 'My favourites', noFavourites: 'Tap the heart on anything you buy often.',
+  myLists: 'My lists', noSavedLists: 'Save a basket as a list to buy it again in one tap.', addListToBasket: 'Put in my basket',
+  saveListLabel: 'Save this basket as a list', saveList: 'Save as a list', listSaved: 'Saved as a list on the shop.', listNeedsName: 'Please give the list a name.',
+  listAdded: 'Added to your basket — check it before you pay.', itemsWord: 'item(s)',
+  voiceSearch: 'Search by voice', voiceHeard: 'We heard:', voiceNothing: 'We did not hear anything. Please try again or type it.',
+  voiceDenied: 'The microphone is not allowed. Allow it, or type what you want.', voiceUnsupported: 'This phone cannot listen. Please type what you want.', voiceFailed: 'Listening did not work. Please type what you want.',
+  helpTitle: 'Something wrong?', complaintLabel: 'Tell us what went wrong', complain: 'Send to the shop', complaintNeedsWords: 'Please tell us what went wrong.',
+  complaintRaised: 'The shop has your complaint. Reference:', returnTitle: 'Return something from this order', returnReason: 'Why are you returning it?', returnSend: 'Ask to return',
+  returnNothing: 'Choose how many of something you want to return, and say why.', returnRaised: 'The shop has your return request. Nothing is refunded until the goods are back. Reference:',
+  noOrderToReturn: 'Place an order first — returns are for goods you have received.', howMany: 'How many to return',
+  myCases: 'My questions and complaints', noCases: 'Nothing raised yet.', shopReplied: 'The shop replied',
+  caseOpen: 'open — the shop will reply', caseWaiting: 'waiting for you', caseResolved: 'dealt with', caseClosed: 'closed', returnFor: 'Return asked for',
+  needSignIn: 'Please sign in first, so the shop knows this is yours. Nothing was saved.', notSavedOffline: 'Not saved — this did not reach the shop. Please try again when you have a signal.',
+  signedOutAgain: 'Your sign-in has ended. Please sign in again — nothing was saved.', shopBusy: 'The shop could not save this just now. Please try again in a moment.',
+  noRoad: 'This app has no connection to the shop set up, so nothing was saved.', shopRefused: 'The shop did not accept this:',
+});
+Object.assign(WORDS.ta, {
+  favourite: 'பிடித்தது', myFavourites: 'எனக்குப் பிடித்தவை', noFavourites: 'அடிக்கடி வாங்குவதில் இதயத்தைத் தட்டுங்கள்.',
+  myLists: 'என் பட்டியல்கள்', noSavedLists: 'ஒரே தட்டில் மீண்டும் வாங்க, கூடையை ஒரு பட்டியலாகச் சேமியுங்கள்.', addListToBasket: 'என் கூடையில் போடு',
+  saveListLabel: 'இந்தக் கூடையைப் பட்டியலாகச் சேமி', saveList: 'பட்டியலாகச் சேமி', listSaved: 'கடையில் பட்டியலாகச் சேமிக்கப்பட்டது.', listNeedsName: 'பட்டியலுக்கு ஒரு பெயர் கொடுங்கள்.',
+  listAdded: 'உங்கள் கூடையில் சேர்க்கப்பட்டது — பணம் செலுத்தும் முன் சரிபாருங்கள்.', itemsWord: 'பொருள்(கள்)',
+  voiceSearch: 'குரல் மூலம் தேடு', voiceHeard: 'நாங்கள் கேட்டது:', voiceNothing: 'எதுவும் கேட்கவில்லை. மீண்டும் முயற்சிக்கவும் அல்லது தட்டச்சு செய்யவும்.',
+  voiceDenied: 'ஒலிவாங்கிக்கு அனுமதி இல்லை. அனுமதியுங்கள், அல்லது தட்டச்சு செய்யுங்கள்.', voiceUnsupported: 'இந்தத் தொலைபேசியால் கேட்க முடியாது. தட்டச்சு செய்யுங்கள்.', voiceFailed: 'கேட்பது வேலை செய்யவில்லை. தட்டச்சு செய்யுங்கள்.',
+  helpTitle: 'ஏதாவது தவறா?', complaintLabel: 'என்ன தவறு நடந்தது என்று சொல்லுங்கள்', complain: 'கடைக்கு அனுப்பு', complaintNeedsWords: 'என்ன தவறு நடந்தது என்று சொல்லுங்கள்.',
+  complaintRaised: 'உங்கள் புகார் கடைக்குக் கிடைத்தது. குறிப்பு எண்:', returnTitle: 'இந்த ஆர்டரில் இருந்து ஏதாவது திருப்பி அனுப்பு', returnReason: 'ஏன் திருப்பி அனுப்புகிறீர்கள்?', returnSend: 'திருப்பி அனுப்பக் கேள்',
+  returnNothing: 'எதை எத்தனை திருப்பி அனுப்ப வேண்டும் என்று தேர்ந்தெடுத்து, காரணம் சொல்லுங்கள்.', returnRaised: 'உங்கள் திருப்பும் கோரிக்கை கடைக்குக் கிடைத்தது. பொருட்கள் திரும்பும் வரை பணம் திருப்பித் தரப்படாது. குறிப்பு எண்:',
+  noOrderToReturn: 'முதலில் ஆர்டர் செய்யுங்கள் — பெற்ற பொருட்களுக்கே திருப்புதல்.', howMany: 'எத்தனை திருப்பி அனுப்ப வேண்டும்',
+  myCases: 'என் கேள்விகளும் புகார்களும்', noCases: 'இன்னும் எதுவும் எழுப்பப்படவில்லை.', shopReplied: 'கடை பதிலளித்தது',
+  caseOpen: 'திறந்துள்ளது — கடை பதிலளிக்கும்', caseWaiting: 'உங்களுக்காகக் காத்திருக்கிறது', caseResolved: 'கவனிக்கப்பட்டது', caseClosed: 'மூடப்பட்டது', returnFor: 'திருப்பக் கேட்டது',
+  needSignIn: 'முதலில் உள்நுழையுங்கள், இது உங்களுடையது என்று கடைக்குத் தெரியும். எதுவும் சேமிக்கப்படவில்லை.', notSavedOffline: 'சேமிக்கப்படவில்லை — இது கடையை அடையவில்லை. சிக்னல் வந்ததும் மீண்டும் முயற்சிக்கவும்.',
+  signedOutAgain: 'உங்கள் உள்நுழைவு முடிந்தது. மீண்டும் உள்நுழையுங்கள் — எதுவும் சேமிக்கப்படவில்லை.', shopBusy: 'கடையால் இப்போது இதைச் சேமிக்க முடியவில்லை. சிறிது நேரத்தில் மீண்டும் முயற்சிக்கவும்.',
+  noRoad: 'இந்தச் செயலிக்குக் கடையுடன் இணைப்பு அமைக்கப்படவில்லை, எனவே எதுவும் சேமிக்கப்படவில்லை.', shopRefused: 'கடை இதை ஏற்கவில்லை:',
+});
 let lang = 'en';
 const t = (key) => WORDS[lang][key] ?? WORDS.en[key];
 
@@ -301,6 +336,23 @@ function productRow(product) {
   qty.append(minus, shown, plus);
 
   row.append(name, price, qty);
+  // Round 8 (D08-FR-02): a favourite, kept on the shop for the signed-in customer. The heart is said in words too.
+  if (shop.isSignedIn() && shop.mine !== undefined) {
+    const fav = document.createElement('button');
+    fav.type = 'button';
+    fav.className = 'fav';
+    const on = myFavourites.has(product.productId);
+    fav.setAttribute('aria-pressed', String(on));
+    fav.textContent = `${on ? '♥' : '♡'} ${t('favourite')}`;
+    fav.setAttribute('aria-label', `${t('favourite')}: ${product.name}`);
+    fav.addEventListener('click', async () => {
+      const out = await shop.mine.setFavourite(product.productId, !myFavourites.has(product.productId));
+      if (out.ok) { if (out.value) myFavourites.add(product.productId); else myFavourites.delete(product.productId); }
+      else el('mine-say').textContent = mineWords(out);
+      render();
+    });
+    row.append(fav);
+  }
   return row;
 }
 
@@ -509,6 +561,8 @@ el('si-verify').addEventListener('click', async () => {
       sessionId = out.sessionId;
       // FUL-06: the privacy screen shows what the SHOP holds for this customer, read once signed in.
       if (typeof shop.loadPrivacy === 'function') shop.loadPrivacy().then(() => render());
+      // Round 8: my favourites are the shop's, read once signed in.
+      void loadFavourites().then(() => render());
       challengeId = null;
       el('si-code').value = '';
       paintSignIn();
@@ -742,13 +796,14 @@ function paintChrome() {
   el('rights-title').textContent = t('askUs');
   el('rights-lead').textContent = t('askUsLead');
   el('sample').textContent = t('sampleShop');
+  paintMineChrome();
 }
 
 function render() {
   renderConnection();
-  if (view === 'shop') { renderSearch(); renderLists(); }
+  if (view === 'shop') { renderSearch(); renderLists(); void renderMine(); }
   if (view === 'basket') renderBasket();
-  if (view === 'order') renderOrder();
+  if (view === 'order') { renderOrder(); void renderHelp(); }
   if (view === 'privacy') { renderConsent(); renderRights(); }
 }
 
@@ -757,6 +812,179 @@ el('lang').addEventListener('click', () => {
   document.documentElement.lang = lang;
   paintChrome();
   render();
+});
+
+// ── Round 8 (D08-FR-02/05/06): favourites, lists, voice search, complaints and returns ─────────────────────────────
+
+const myFavourites = new Set();
+const productById = (id) => (window.shopData?.products ?? []).find((p) => p.productId === id);
+const nameOf = (id) => productById(id)?.name ?? id;
+
+/** A refusal from the shop model, in the reader's language. */
+function mineWords(out) {
+  switch (out.refusal) {
+    case 'not_signed_in': return t('needSignIn');
+    case 'not_saved_no_connection': return t('notSavedOffline');
+    case 'signed_out': return t('signedOutAgain');
+    case 'the_shop_could_not_answer': return t('shopBusy');
+    case 'no_road_to_the_shop': return t('noRoad');
+    default: return `${t('shopRefused')} ${out.shopSaid ?? ''}`;
+  }
+}
+
+async function loadFavourites() {
+  if (shop.mine === undefined || !shop.isSignedIn()) return;
+  const out = await shop.mine.favourites();
+  if (out.ok) { myFavourites.clear(); for (const id of out.value) myFavourites.add(id); }
+}
+
+function paintMineChrome() {
+  el('voice').textContent = t('voiceSearch');
+  el('fav-title').textContent = t('myFavourites');
+  el('mylists-title').textContent = t('myLists');
+  el('list-name-label').textContent = t('saveListLabel');
+  el('save-list').textContent = t('saveList');
+  el('help-title').textContent = t('helpTitle');
+  el('complaint-label').textContent = t('complaintLabel');
+  el('complain').textContent = t('complain');
+  el('return-title').textContent = t('returnTitle');
+  el('return-reason-label').textContent = t('returnReason');
+  el('return-send').textContent = t('returnSend');
+  el('cases-title').textContent = t('myCases');
+}
+
+let renderingMine = false;
+async function renderMine() {
+  if (renderingMine) return;
+  renderingMine = true;
+  try {
+    const signedIn = shop.isSignedIn() && shop.mine !== undefined;
+    const favs = [...myFavourites].map((id) => productById(id) ?? { productId: id, name: id, unitPriceMinor: 0 });
+    el('favourites').replaceChildren(...favs.map((p) => productRow(p)));
+    el('favourites-empty').hidden = favs.length > 0;
+    el('favourites-empty').textContent = signedIn ? t('noFavourites') : t('needSignIn');
+    if (!signedIn) { el('mylists').replaceChildren(); el('mylists-empty').hidden = true; return; }
+    const lists = await shop.mine.lists();
+    if (!lists.ok) { el('mine-say').textContent = mineWords(lists); return; }
+    el('mylists-empty').hidden = lists.value.length > 0;
+    el('mylists-empty').textContent = t('noSavedLists');
+    el('mylists').replaceChildren(...lists.value.map((l) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.dataset.listId = l.listId;
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = `${l.name} — ${l.items.length} ${t('itemsWord')}`;
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.textContent = t('addListToBasket');
+      add.addEventListener('click', () => { shop.mine.addListToBasket(l.items); el('mine-say').textContent = t('listAdded'); render(); });
+      row.append(name, add);
+      return row;
+    }));
+  } finally {
+    renderingMine = false;
+  }
+}
+
+el('save-list').addEventListener('click', async () => {
+  const name = el('list-name').value.trim();
+  if (name === '') { el('list-say').textContent = t('listNeedsName'); return; }
+  const out = await shop.mine.saveBasketAsList(name);
+  el('list-say').textContent = out.ok ? t('listSaved') : mineWords(out);
+  if (out.ok) el('list-name').value = '';
+});
+
+// Voice search — only when this device was given a speech engine (none is chosen yet). What was heard becomes an
+// ordinary search the customer sees and can change; nothing is ever added to the basket by voice.
+el('voice').hidden = !(window.shopVoice && typeof window.shopVoice.available === 'function' && window.shopVoice.available());
+el('voice').addEventListener('click', async () => {
+  const toQuery = window.shopVoiceQuery;
+  if (!window.shopVoice || typeof toQuery !== 'function') return;
+  const q = toQuery(await window.shopVoice.listen(lang));
+  if ('query' in q) {
+    el('search').value = q.query;
+    el('voice-say').textContent = `${t('voiceHeard')} ${q.query}`;
+    renderSearch();
+  } else {
+    el('voice-say').textContent = q.nothing === 'permission_denied' ? t('voiceDenied') : q.nothing === 'not_supported' ? t('voiceUnsupported') : q.nothing === 'engine_failed' ? t('voiceFailed') : t('voiceNothing');
+  }
+});
+
+const CASE_STATE = { open: 'caseOpen', waiting_on_customer: 'caseWaiting', resolved: 'caseResolved', closed: 'caseClosed' };
+
+let renderingHelp = false;
+async function renderHelp() {
+  if (renderingHelp) return;
+  renderingHelp = true;
+  try {
+    const s = shop.state();
+    const order = s.order;
+    const lines = (s.review?.lines ?? s.lines).filter((l) => (l.availableMinor ?? l.quantityMinor) > 0);
+    el('return-lines').replaceChildren(...(order === undefined ? [] : lines.map((l) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = l.name ?? nameOf(l.productId);
+      const n = document.createElement('input');
+      n.type = 'number'; n.min = '0'; n.max = String(l.availableMinor ?? l.quantityMinor); n.value = '0'; n.step = '1';
+      n.dataset.productId = l.productId;
+      n.setAttribute('aria-label', `${t('howMany')}: ${name.textContent}`);
+      row.append(name, n);
+      return row;
+    })));
+    if (!shop.isSignedIn() || shop.mine === undefined) { el('my-cases').replaceChildren(); el('my-cases-empty').hidden = true; return; }
+    const out = await shop.mine.cases();
+    if (!out.ok) { el('help-say').textContent = mineWords(out); return; }
+    el('my-cases-empty').hidden = out.value.length > 0;
+    el('my-cases-empty').textContent = t('noCases');
+    el('my-cases').replaceChildren(...out.value.map((c) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.dataset.caseId = c.caseId;
+      const head = document.createElement('span');
+      head.className = 'name';
+      head.textContent = `${c.caseId} — ${t(CASE_STATE[c.state] ?? 'caseOpen')}`;
+      row.append(head);
+      if (c.returnRequest) {
+        const p = document.createElement('p'); p.className = 'note';
+        p.textContent = `${t('returnFor')}: ${c.returnRequest.lines.map((l) => `${l.quantityMinor} × ${nameOf(l.productId)}`).join(', ')}`;
+        row.append(p);
+      }
+      for (const r of c.replies) {
+        const q = document.createElement('blockquote'); q.className = 'reply';
+        q.textContent = `${t('shopReplied')}: ${r.text}`;
+        row.append(q);
+      }
+      return row;
+    }));
+  } finally {
+    renderingHelp = false;
+  }
+}
+
+el('complain').addEventListener('click', async () => {
+  const summary = el('complaint-text').value.trim();
+  if (summary === '') { el('help-say').textContent = t('complaintNeedsWords'); return; }
+  const orderRef = shop.state().order?.orderId;
+  const out = await shop.mine.complain(summary, orderRef);
+  el('help-say').textContent = out.ok ? `${t('complaintRaised')} ${out.value}` : mineWords(out);
+  if (out.ok) el('complaint-text').value = '';
+  void renderHelp();
+});
+
+el('return-send').addEventListener('click', async () => {
+  const order = shop.state().order;
+  if (order === undefined) { el('help-say').textContent = t('noOrderToReturn'); return; }
+  const lines = [...el('return-lines').querySelectorAll('input[type=number]')]
+    .map((n) => ({ productId: n.dataset.productId, quantityMinor: Number(n.value) }))
+    .filter((l) => Number.isInteger(l.quantityMinor) && l.quantityMinor > 0);
+  const reason = el('return-reason').value.trim();
+  if (lines.length === 0 || reason === '') { el('help-say').textContent = t('returnNothing'); return; }
+  const out = await shop.mine.requestReturn(order.orderId, lines, reason);
+  el('help-say').textContent = out.ok ? `${t('returnRaised')} ${out.value}` : mineWords(out);
+  void renderHelp();
 });
 
 // ── Boot ────────────────────────────────────────────────────────────────────

@@ -89,6 +89,11 @@ export function startOpsAlertWorker(input: {
   readonly intervalMs: number;
   readonly now: () => string;
   readonly say: (line: string) => void;
+  /**
+   * Round 8 (M19-FR-04 · PA-08): further exception sweeps run on the same timer for each shop — e.g. delivery exceptions
+   * past their time limit put on the message queue. Answers how many alerts it newly queued.
+   */
+  readonly alsoEachPass?: (tenantId: string, at: string) => Promise<number>;
 }): OpsAlertWorker {
   const passes: OpsAlertPass[] = [];
   let total = 0;
@@ -108,6 +113,10 @@ export function startOpsAlertWorker(input: {
         if (r !== undefined) { raised += r.newlyOpened; cleared += r.cleared; }
         escalated += (await escalateDueAlerts(input.deps, tenantId, OPS_ALERT_WORKER, at)).length;
         delivered += await deliverAlerts(input.deps, tenantId, OPS_ALERT_WORKER, at, input.transport, input.say);
+        if (input.alsoEachPass !== undefined) {
+          const queued = await input.alsoEachPass(tenantId, at);
+          if (queued > 0) input.say(`alerts: ${queued} delivery-exception alert(s) put on the message queue for shop ${tenantId}`);
+        }
       } catch (e) {
         failed.push({ tenantId, error: e instanceof Error ? e.message : String(e) });
       }

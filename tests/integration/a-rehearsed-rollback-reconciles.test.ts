@@ -62,7 +62,6 @@ describeOrSkip('GT-02 â€” a rehearsed rollback reconciles, store sync included â
     // One store and its computer's own sign-in.
     expect((await call('POST', '/v1/org/nodes/C1', { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
     expect((await call('POST', '/v1/org/nodes/S1', { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' })).status).toBe(201);
-    await cloud.grant(BOX, 'store_computer'); // round 6: the box's own role relays the store's records (EA-01)
     await cloud.grant(BOX, 'store_computer', undefined, ['S1']); // round 7: it reports its sync only for the store its grant names
     const boxToken = cloud.token(BOX);
     // The store's line can be cut on its own: only the box's requests fail while it is down.

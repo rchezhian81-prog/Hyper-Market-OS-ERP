@@ -106,7 +106,10 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
             nextSafeAction: 'Send safety.minimumAge as a whole number of years, or leave it out for a product that is not age-restricted. Nothing was saved.',
           });
         }
-        const record = readProduct(productId, ctx.tenantId, b['product']);
+        const read = readProduct(productId, ctx.tenantId, b['product']);
+        // D01-FR-06 (round 8): the app content is authored on its own route; a publish of the record keeps what is there.
+        const current = await deps.product(ctx.tenantId, productId);
+        const record: ProductRecord = current?.appContent === undefined ? read : { ...read, appContent: current.appContent };
         // The categories are head office's OWN list (SF-06-b · OB-24 "A") — never the sender's. An expected category that
         // differs from the list is refused; a missing one is defined only by someone who may define categories, and said.
         const { categories, defined } = await settlePublishCategories(deps.categoryRegister, ctx, b['categories']);
@@ -167,6 +170,54 @@ export function productMasterRoutes(deps: ProductMasterDeps): readonly Route[] {
           }
           return { status: 201, body: { product: published, ...(defined.length > 0 ? { categoriesDefined: defined } : {}) } };
         }
+      },
+    },
+    {
+      // D01-FR-06 (round 8): the customer app's content for a product — a Tamil name, a description in each language and the
+      // other words customers search with. A new version of the product (append-only); the record itself is unchanged. Only a
+      // product head office has published. A field sent as null is cleared; a field left out is kept.
+      api: 'API-02', method: 'POST', path: '/v1/catalogue/products/:productId/content',
+      permission: 'catalogue.pack.publish', idempotent: true,
+      handler: async (ctx) => {
+        const productId = (ctx.params['productId'] ?? '').trim();
+        const b = (ctx.body ?? {}) as Record<string, unknown>;
+        const current = await deps.product(ctx.tenantId, productId);
+        if (current === undefined) throw notFound(`product ${productId}`);
+        const problems: string[] = [];
+        const text = (k: 'nameTa' | 'descriptionEn' | 'descriptionTa', max: number): string | null | undefined => {
+          const v = b[k];
+          if (v === undefined || v === null) return v as undefined | null;
+          if (typeof v !== 'string' || v.trim() === '' || v.trim().length > max) { problems.push(`${k} must be words, at most ${max} characters`); return undefined; }
+          return v.trim();
+        };
+        const nameTa = text('nameTa', 120);
+        const descriptionEn = text('descriptionEn', 1000);
+        const descriptionTa = text('descriptionTa', 1000);
+        let synonyms: readonly string[] | null | undefined;
+        if (b['synonyms'] === null) synonyms = null;
+        else if (b['synonyms'] !== undefined) {
+          const list = Array.isArray(b['synonyms']) ? b['synonyms'] : [];
+          const clean = [...new Set(list.filter((w): w is string => typeof w === 'string').map((w) => w.trim().toLowerCase()).filter((w) => w !== ''))];
+          if (!Array.isArray(b['synonyms']) || clean.length !== list.length || clean.length > 20 || clean.some((w) => w.length > 40)) {
+            problems.push('synonyms must be a list of up to 20 different words or short phrases, each at most 40 characters');
+          } else synonyms = clean;
+        }
+        if (typeof b['reason'] !== 'string' || b['reason'].trim() === '') problems.push('a reason is needed — the next person reads why the app content changed');
+        if (problems.length > 0) {
+          throw apiError(400, { code: 'not_readable_as_app_content', whatHappened: `The app content was not saved: ${problems.join('; ')}.`, wasItSaved: 'not_saved', nextSafeAction: 'Correct it and send again. Nothing was changed.' });
+        }
+        const before = current.appContent ?? {};
+        const pick = <T,>(given: T | null | undefined, had: T | undefined): T | undefined => (given === null ? undefined : given === undefined ? had : given);
+        const merged = {
+          ...(pick(nameTa, before.nameTa) === undefined ? {} : { nameTa: pick(nameTa, before.nameTa)! }),
+          ...(pick(descriptionEn, before.descriptionEn) === undefined ? {} : { descriptionEn: pick(descriptionEn, before.descriptionEn)! }),
+          ...(pick(descriptionTa, before.descriptionTa) === undefined ? {} : { descriptionTa: pick(descriptionTa, before.descriptionTa)! }),
+          ...(pick(synonyms, before.synonyms) === undefined || pick(synonyms, before.synonyms)!.length === 0 ? {} : { synonyms: pick(synonyms, before.synonyms)! }),
+          setBy: ctx.userId,
+        };
+        const record: ProductRecord = { ...current, appContent: merged };
+        await deps.publish(ctx.tenantId, record, `content-${ctx.idempotencyKey ?? productId}`);
+        return { status: 201, body: { product: record } };
       },
     },
     {

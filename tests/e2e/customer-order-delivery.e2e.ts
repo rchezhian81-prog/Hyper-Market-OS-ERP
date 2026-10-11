@@ -115,7 +115,8 @@ async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string;
         const token = auth.startsWith('Bearer ') ? auth.slice(7) : undefined;
         const key = req.headers['idempotency-key'];
         const body = req.method === 'POST' ? await readBody(req) : undefined;
-        if (req.method === 'GET' && path === '/v1/me/privacy') (rec.privacyReads ??= []).push({ auth: token !== undefined });
+        // Round 8: the customer's own reads after sign-in (privacy, favourites, lists, cases) are kept apart from the order traffic.
+        if (req.method === 'GET' && path.startsWith('/v1/me/')) (rec.privacyReads ??= []).push({ auth: token !== undefined });
         else rec.apiCalls.push({ method: req.method ?? '?', path, auth: token !== undefined });
         const out = await h.raw({
           method: (req.method ?? 'GET') as 'GET' | 'POST', path,
@@ -339,6 +340,66 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       await page.click('#pay');
       await page.locator('#banner-text', { hasText: 'full' }).waitFor({ timeout: 15_000 });
       expect(await ordersOf(h)).toHaveLength(0);
+    } finally {
+      await context.close();
+      await store.stop();
+    }
+  }, 60_000);
+
+  it('D08-FR-02/05/06 (round 8): a favourite, a saved list, a voice search through the fake engine, and a complaint that reaches the desk — in English and Tamil', async () => {
+    const h = await seededApi();
+    const rec: Recorder = { apiCalls: [], grantedCustomerRole: 0 };
+    const store = await startStore(h, rec);
+    const context: BrowserContext = await browser.newContext({ geolocation: NEARBY, permissions: ['geolocation'] });
+    const page = await context.newPage();
+    // The fake speech engine (no engine is chosen — the owner's decision): it "hears" one phrase.
+    await page.addInitScript(() => {
+      (globalThis as unknown as { shopVoice: unknown }).shopVoice = { name: 'fake voice engine (e2e)', available: () => true, listen: async () => ({ heard: true, transcript: 'Please, Aavin MILK!' }) };
+    });
+    try {
+      await readyToPay(page, store.base, store.sms);
+      // A favourite, kept on the shop.
+      await page.click('#tab-shop');
+      await page.fill('#search', 'milk');
+      await page.click('#results .row button.fav');
+      await page.waitForSelector('#results .row button.fav[aria-pressed="true"]', { timeout: 10_000 });
+      const favs = (await h.request({ method: 'GET', path: '/v1/me/favourites', userId: SUBJECT, tenantId: T })).body as { favourites: { productId: string }[] };
+      expect(favs.favourites.map((f) => f.productId)).toEqual(['MILK']);
+      await page.waitForSelector('#favourites .row', { timeout: 10_000 });
+      expect(await page.textContent('#favourites .row .name')).toBe('Aavin Milk 1L');
+
+      // The basket saved as a list, then offered back in one tap.
+      await page.click('#tab-basket');
+      await page.fill('#list-name', 'Weekly');
+      await page.click('#save-list');
+      await page.locator('#list-say', { hasText: 'Saved as a list on the shop.' }).waitFor({ timeout: 10_000 });
+      await page.click('#tab-shop');
+      await page.waitForSelector('#mylists .row', { timeout: 10_000 });
+      expect(await page.textContent('#mylists .row .name')).toBe('Weekly — 1 item(s)');
+
+      // Voice search: what was heard becomes the search, shown — nothing goes in the basket by voice.
+      await page.fill('#search', '');
+      await page.click('#voice');
+      await page.locator('#voice-say', { hasText: 'We heard: aavin milk' }).waitFor({ timeout: 10_000 });
+      expect(await page.inputValue('#search')).toBe('aavin milk');
+
+      // A complaint from the app reaches the shop's service desk.
+      await page.click('#tab-order');
+      await page.fill('#complaint-text', 'The milk was sour');
+      await page.click('#complain');
+      await page.locator('#help-say', { hasText: 'Reference: app-' }).waitFor({ timeout: 10_000 });
+      await page.waitForSelector('#my-cases .row', { timeout: 10_000 });
+      const desk = (await h.request({ method: 'GET', path: '/v1/service/cases', userId: OWNER, tenantId: T })).body as { cases: { caseId: string; kind: string; state: string }[] };
+      expect(desk.cases).toEqual([expect.objectContaining({ kind: 'complaint', state: 'open' })]);
+      expect(desk.cases[0]!.caseId).toMatch(/^app-/);
+
+      // Tamil follows the one toggle — the new sections too.
+      await page.click('#lang');
+      expect(await page.textContent('#cases-title')).toBe('என் கேள்விகளும் புகார்களும்');
+      expect(await page.textContent('#help-title')).toBe('ஏதாவது தவறா?');
+      await page.click('#tab-shop');
+      expect(await page.textContent('#fav-title')).toBe('எனக்குப் பிடித்தவை');
+      expect(await page.textContent('#voice')).toBe('குரல் மூலம் தேடு');
     } finally {
       await context.close();
       await store.stop();

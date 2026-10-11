@@ -34,6 +34,25 @@ export interface CloseDayInput {
    * which holds the till-cash log, always supplies it; a screen that only predicts the close may leave it out.
    */
   readonly openShifts?: readonly OpenShift[];
+  /**
+   * Card or UPI payments of this trading day (or earlier) that have NO final answer — the machine was asked and nothing
+   * was recorded, or it gave no answer and the provider has not settled it (PF-06 · D04-FR-02 · WF-12 "tender
+   * settlement"). MUST be empty to close: the day's takings are not known while a customer may or may not have paid.
+   * The store box, which holds the payment-attempt log, always supplies it.
+   */
+  readonly pendingPayments?: readonly PendingPayment[];
+}
+
+/** A card or UPI payment still waiting for its final answer. */
+export interface PendingPayment {
+  readonly attemptId: string;
+  readonly laneId: string;
+  readonly billRef: string;
+  readonly kind: 'card' | 'upi';
+  readonly amountMinor: number;
+  readonly askedAt: string;
+  /** `asked` — the machine was asked and no answer was ever recorded; `no_answer` — it gave none and the provider has not settled it. */
+  readonly state: 'asked' | 'no_answer';
 }
 
 /** A till whose shift is still open — who holds it and since when. */
@@ -103,6 +122,17 @@ export class OpenShiftsError extends Error {
   }
 }
 
+export class PendingPaymentsError extends Error {
+  readonly pending: readonly PendingPayment[];
+  constructor(id: string, pending: readonly PendingPayment[]) {
+    const rupees = (m: number): string => `Rs ${(m / 100).toFixed(2)}`;
+    const named = pending.map((p) => `${p.kind === 'upi' ? 'UPI' : 'card'} payment ${p.attemptId} on till ${p.laneId}, bill ${p.billRef}, ${rupees(p.amountMinor)}, since ${p.askedAt} (${p.state === 'asked' ? 'no answer was recorded from the machine' : 'the machine gave no answer and the provider has not settled it'})`).join('; ');
+    super(`Day close "${id}" is blocked: ${pending.length} card/UPI payment(s) still have no final answer — ${named}. Check each one against the provider before the day can close; do not run the card again (D04-FR-02).`);
+    this.name = 'PendingPaymentsError';
+    this.pending = pending;
+  }
+}
+
 export class ReopenApprovalRequiredError extends Error {
   constructor(id: string) {
     super(`Reopening day close "${id}" needs an approval by a different person (M14-FR-04 / §28).`);
@@ -137,6 +167,9 @@ export function closeDay(input: CloseDayInput, outbox: SyncOutbox): DayCloseResu
   }
   if (input.openShifts !== undefined && input.openShifts.length > 0) {
     throw new OpenShiftsError(input.id, input.openShifts);
+  }
+  if (input.pendingPayments !== undefined && input.pendingPayments.length > 0) {
+    throw new PendingPaymentsError(input.id, input.pendingPayments);
   }
 
   outbox.enqueue(

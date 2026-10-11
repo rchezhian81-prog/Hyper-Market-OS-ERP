@@ -23,7 +23,7 @@ describe('PF-07 — raised exceptions are in the manager\'s inbox', () => {
   it('two no-sales over a limit of one and a ₹140 price cut over ₹50 → both raised, shown in words, with the case opened from one', async () => {
     const h = apiHarness();
     await h.seedOwner(T, 'u-owner');
-    await h.provisionRole(T, 'u-box', 'store_computer');
+    await h.provisionRole(T, 'u-box', 'store_computer', ['S1']); // OB-54: one store
     await h.provisionRole(T, 'u-mgr', 'store_manager');
     const call = (method: 'POST' | 'GET', path: string, userId: string, body?: unknown) =>
       h.request({ method, path, userId, tenantId: T, ...(method === 'POST' ? { idempotencyKey: `k-${Math.random()}` } : {}), ...(body === undefined ? {} : { body }) });
@@ -47,7 +47,7 @@ describe('PF-07 — raised exceptions are in the manager\'s inbox', () => {
     // The served page's own read, with the manager's session, straight into the real API.
     const asUser = (userId: string) => {
       globalThis.fetch = (async (url: string, init?: RequestInit): Promise<Response> => {
-        const res = await h.raw({ method: (init?.method ?? 'GET') as HttpRequest['method'], path: new URL(url, 'http://shop.test').pathname, token: TEST_IDP.issue({ sub: userId, tenantId: T }) });
+        const res = await h.raw({ method: (init?.method ?? 'GET') as HttpRequest['method'], path: new URL(url, 'http://shop.test').pathname, token: TEST_IDP.issue({ sub: userId, tenantId: T, ...(userId === 'u-box' ? { branchId: 'S1' } : {}) }) });
         return new Response(JSON.stringify(res.body), { status: res.status });
       }) as unknown as typeof globalThis.fetch;
     };

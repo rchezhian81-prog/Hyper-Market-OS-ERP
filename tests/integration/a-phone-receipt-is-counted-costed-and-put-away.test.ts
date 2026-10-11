@@ -36,7 +36,7 @@ async function shop(): Promise<{ h: ApiHarness; t: string; call: (m: 'GET' | 'PO
   await h.provisionRole(t, 'u-buyer', 'store_manager');
   await h.provisionRole(t, 'u-recv', 'store_manager');
   await h.provisionRole(t, 'u-cash', 'cashier');
-  await h.provisionRole(t, 'u-box', 'store_computer');
+  await h.provisionRole(t, 'u-box', 'store_computer', [STORE]);
   for (const [id, body] of [
     ['C1', { kind: 'company', name: 'SRE Retail' }],
     [STORE, { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' }],

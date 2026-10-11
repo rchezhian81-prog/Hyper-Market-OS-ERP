@@ -23,11 +23,14 @@ import {
   reconcileBlindCount, DEFAULT_COUNT_APPROVAL_THRESHOLD_MINOR, COUNT_FLAGS,
   type CountFlag, type CountPolicy, type CountsDeps, type StoredReconciliation,
 } from './counts';
+import { recordPlannedCount, readPlannedFields, type CountPlanDeps } from './count-plans';
 
 // The vocabulary lives with the shared reconcile now (SP-4); re-exported so nothing that imported it here breaks.
 export { DEFAULT_COUNT_APPROVAL_THRESHOLD_MINOR, COUNT_FLAGS, type CountFlag, type CountPolicy };
 
 export interface SyncedCountsDeps extends CountsDeps {
+  /** WF-08 (round 8): the count plans — a relayed count carrying `planId` is recorded under its plan (held for the plan). */
+  readonly countPlans?: CountPlanDeps;
   readonly permissionsOfUser: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
   readonly recordCountPolicy: (tenantId: string, policy: CountPolicy) => Promise<void> | void;
 }
@@ -96,6 +99,34 @@ export function syncedCountsRoutes(deps: SyncedCountsDeps): readonly Route[] {
         const permissions = await deps.permissionsOfUser(ctx.tenantId, c.counterId);
         if (permissions === undefined) counterFlags.push('counter_unknown');
         else if (!permissions.includes('inventory.movement.append')) counterFlags.push('counter_lacks_authority');
+
+        // WF-08 (round 8): a count taken under a COUNT PLAN on the device carries the plan id (and the count it recounts) —
+        // recorded under the plan, the expected figure head office's as of the moment counted, every variance held for the
+        // plan's approval. A refusal (plan not open, product not on it) is said by name → a visible dead-letter at the box.
+        const planned = readPlannedFields(ctx.body);
+        if (planned === 'unreadable' || (planned !== undefined && (deps.countPlans === undefined || c.binId !== null))) {
+          throw apiError(planned === 'unreadable' ? 400 : 422, {
+            code: planned === 'unreadable' ? 'not_readable_as_a_planned_count' : 'planned_count_not_taken_here',
+            whatHappened: planned === 'unreadable' ? 'The count names a plan head office cannot read (planId / recountOf).' : 'A count under a plan is a count of the product at the plan\'s place, not of one bin; or plans are not kept on this surface.',
+            wasItSaved: 'not_saved', nextSafeAction: 'Do not discard it at the store. Keep it for a person to sort out.',
+          });
+        }
+        if (planned !== undefined && deps.countPlans !== undefined) {
+          const out = await recordPlannedCount(deps.countPlans, ctx.tenantId, {
+            planId: planned.planId, countId, productId: c.productId, locationId: c.locationId, uom: c.uom, countedMinor: c.countedMinor,
+            counterId: c.counterId, countedAt: c.at, recountOf: planned.recountOf, counterFlags,
+            relayed: { relayedBy: ctx.userId, source: c.source, storeId: c.storeId },
+          });
+          if (!out.ok) throw apiError(out.status, { code: out.code, whatHappened: out.detail, wasItSaved: 'not_saved', nextSafeAction: 'Do not discard it at the store. Keep it for a person to sort out.' });
+          await deps.recordAudit?.(ctx.tenantId, {
+            actorId: c.counterId, action: 'count.record', objectType: 'stock_count', objectId: countId, at: out.record.at,
+            origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: null,
+            after: { planId: planned.planId, productId: c.productId, locationId: c.locationId, countedMinor: String(c.countedMinor), varianceMinor: String(out.record.varianceMinor), valueMinor: String(out.record.valueMinor), recountOf: planned.recountOf ?? '', relayedBy: ctx.userId, source: c.source, flags: (out.record.governanceFlags ?? []).join(',') },
+            reason: out.record.reasonCode, correlationId: planned.planId,
+          });
+          // Recorded under the plan; what head office expected stays off the device (blind until the plan closes).
+          return { status: 202, body: { countId, recorded: true, planId: planned.planId, alreadyRecorded: out.alreadyRecorded, pendingApproval: out.record.pendingApproval ?? false, flags: out.record.governanceFlags ?? [] } };
+        }
 
         let rec: StoredReconciliation;
         try {

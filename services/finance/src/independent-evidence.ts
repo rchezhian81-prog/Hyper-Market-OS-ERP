@@ -49,6 +49,14 @@ export interface MonthEvidence {
   readonly unsettledTenders: readonly EvidenceTender[];
   readonly payoutsNotInBank: readonly { readonly batchId: string; readonly netMinor: number }[];
   readonly notChecked: readonly string[];
+  /** WF-18: what the books still lack against their registers — the sources each check above is short of. */
+  readonly books?: {
+    readonly stockAdjustmentsUnposted: readonly string[];
+    readonly stockAdjustmentsUnvalued: readonly string[];
+    readonly payablesUnposted: number;
+    readonly receivablesLedgerMinor: number;
+    readonly receivablesBooksMinor: number;
+  };
 }
 
 /** The close's control totals for one month (YYYY-MM), from the books and the imported files. Pure. */

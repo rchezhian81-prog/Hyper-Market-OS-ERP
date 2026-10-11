@@ -233,17 +233,19 @@ describeOrSkip('head-office reports reconcile to their source records — real A
     expect((forged.body as { kpiValueMinor: number }).kpiValueMinor).toBe(53_000);
   });
 
-  it('an unknown report is refused (404); one this version cannot produce is refused by name (409) — never the dashboard', async () => {
+  it('an unknown report is refused (404); every report D13 names now has a producer at head office (round 8) — never the dashboard', async () => {
     const unknown = await call('GET', '/v1/reports/nonsense', OWNER);
     expect(unknown.status).toBe(404);
     expect((unknown.body as { error: { code: string } }).error.code).toBe('no_such_report');
-    // Waste: the shop records no thrown-away goods at head office yet.
-    const waste = await call('GET', '/v1/reports/waste', OWNER);
-    expect(waste.status).toBe(409);
-    expect((waste.body as { error: { code: string } }).error.code).toBe('the_shop_does_not_record_it');
-    // Margin: head office records costs and sales, but this version cannot work out a cloud margin yet.
-    const margin = await call('GET', '/v1/reports/margin', OWNER);
-    expect(margin.status).toBe(409);
-    expect((margin.body as { error: { code: string } }).error.code).toBe('this_version_cannot_produce_it');
+    // Round 8 (D13): waste and margin were refused here; each is now produced from its own register — waste from the
+    // committed write-offs (none here: a count of 0 write-offs, at cost ₹0 because nothing was thrown away), margin
+    // from the bills at the OB-39 average buying cost.
+    const waste = (await ok(call('GET', '/v1/reports/waste', OWNER), 200)).body as Report;
+    expect(fig(waste, 'Write-offs')).toBeUndefined();
+    expect(waste.figures.find((f) => f.name === 'Write-offs')?.notAvailableBecause).toMatch(/no write-off has ever been committed/);
+    const margin = (await ok(call('GET', '/v1/reports/margin', OWNER), 200)).body as Report;
+    expect(margin.figures.map((f) => f.name)).toContain('Margin');
+    const catalogue = (await ok(call('GET', '/v1/reports/catalogue', OWNER), 200)).body as { reports: { report: { id: string }; availability: { available: boolean } }[] };
+    expect(catalogue.reports.filter((r) => !r.availability.available).map((r) => r.report.id)).toEqual([]);
   });
 });

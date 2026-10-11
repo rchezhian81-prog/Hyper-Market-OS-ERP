@@ -111,6 +111,27 @@ repository settings. Nothing below is typed into this repository.
 | every `/store/…` screen answers `502 Bad Gateway` after a release, while the edge's own log says `screens on …:8091` | the demo relay shares the edge's network namespace and was not recreated when a release recreated the edge; it is attached to the old, dead network | `docker compose … up -d --force-recreate --no-deps edge-relay`; since 4 Oct 2026 the release does this on every run (`SRE_RECREATE_SERVICES`) |
 | After a deploy the screens look exactly as before (old colours, no rail), while `releases.log` says deployed and the box is healthy | The browser kept the old shell. Every screen's service worker serves its committed files from a named cache and only drops that cache when a worker with a NEW name activates; until RL-1 (4 Oct 2026) the name was a number nobody bumped, so the new stylesheet and chrome reached the box and no browser | From RL-1 the name is a digest of the shell (`node scripts/sync-ui-foundation.mjs --check` refuses a stale one; every build stamps it) and an open page shows a strip with a Reload button when a new version arrives. For a browser that still holds a pre-RL-1 worker, once: open the page in a private window, or clear the site's data (browser settings → site data for the demo address), then reload |
 | `Permission denied (publickey)` or `Host key verification failed` | the key or host key in the `demo` environment does not match the box | redo steps 5–7; never lower `StrictHostKeyChecking` |
+| `REFUSED — the pre-release backup did not succeed` (exit 69) | the box's `SRE_PREDEPLOY_BACKUP_CMD` failed, so nothing was deployed | the box is untouched; fix the backup (backup runbook), then re-run the job |
+| `failed its canary bake` (exit 70, `rolled_back_in_canary_bake`) in the **Canary stage** job | the release came up but lost READY or added server errors while it was being watched; the canary box is back on the previous release and the full rollout did not run | open an incident (below) naming the release commit; fix forward and merge again |
+
+## The canary stage and the backup before a release (WF-20, ADR-0026)
+
+- **The canary box** is a box chosen by the owner to take every release first. Set it up exactly like steps 1–9, but
+  put its secrets (the same five names) on a GitHub environment called **`canary`**, and in its `/opt/sre/deploy.conf`
+  set `SRE_BAKE_SECONDS=600` (ten minutes of watching). The pipeline's *Canary stage* job deploys there first; the full
+  rollout job waits for it and does not run if it goes red. With no `canary` secrets the stage says "skipped" and the
+  demo rollout proceeds — allowed for synthetic data only; a box with real data needs a canary first.
+- **The backup before a release:** set `SRE_PREDEPLOY_BACKUP_CMD` in `/opt/sre/deploy.conf` to a command that takes a
+  backup and exits 0 only when it worked (the demo: `sudo /bin/systemctl start --wait sre-pilot-backup.service`, with a
+  sudoers line allowing the `deploy` user exactly that). A failed backup stops the release before anything changes.
+
+## When something went wrong — the incident record (WF-20, M35-FR-04)
+
+A person with the alerts permission (the owner, a store manager, the platform administrator) records it at head office:
+open it (`POST /v1/platform/incidents/<id>` with a title, severity sev1–3, what is known, the alert ids that fired and
+the release commit), add what happened when (`…/timeline`), what will change and who owns it (`…/actions/<id>`), write
+the post-mortem (`…/postmortem`: cause, impact, what to change), then close it (`…/close`). It closes only once the
+post-mortem exists, and the person who closes it is recorded by their own sign-in. Nothing on it is ever edited or deleted.
 
 ## Before this ever deploys real data
 

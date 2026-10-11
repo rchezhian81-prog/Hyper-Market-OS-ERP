@@ -468,6 +468,8 @@ describe.skipIf(!HAVE_BROWSER)('the ERP\'s forty-six pages, audited on the rende
       roleAssignments: known([{ userId: 'u-mgr', roleId: 'floor', branchScope: ['b1'] }]),
       countsPolicy: known({ userId: 'u-mgr', permissions: ['count.view'] }),
       stockHealthPolicy: known({ userId: 'u-mgr', permissions: ['inventory.availability.read'] }),
+      serviceDeskPolicy: known({ userId: 'u-mgr', permissions: ['service.case.read'] }),
+      aiDraftsPolicy: known({ userId: 'u-mgr', permissions: ['ai.proposal.read'] }),
     };
     const snapshot = (): ScreenInput => ({ pack, sales: [], unreadableRecords: 0, outbox: new SyncOutbox(), now: '2026-09-30T09:00:00.000Z', tradingDay: '2026-09-30' });
     const box = await startScreenServer({ port: 0, appsDir: 'apps', snapshot });

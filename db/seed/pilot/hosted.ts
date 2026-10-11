@@ -108,7 +108,9 @@ export function hostedSeedClient(config: HostedSeedConfig): SeedClient {
       for (let attempt = 0; ; attempt += 1) {
         // A fresh, short-lived token per call: a slow seed never trips on expiry, and the default
         // fresh MFA-backed auth_time satisfies a step-up route exactly as a real re-auth would.
-        const token = idp.issue({ sub: userId, tenantId, ...(branchId === undefined ? {} : { branchId }), ttlSeconds: 300 });
+        // OB-54: the demo store computer's credential names its one store, as the administrator issues it.
+        const store = branchId ?? (PILOT_MACHINE_USERS.includes(userId) ? PILOT_DEMO_BRANCH : undefined);
+        const token = idp.issue({ sub: userId, tenantId, ...(store === undefined ? {} : { branchId: store }), ttlSeconds: 300 });
         const res = await doFetch(`${origin}${path}${qs}`, {
           method,
           headers: {
@@ -139,7 +141,21 @@ export function hostedSeedClient(config: HostedSeedConfig): SeedClient {
     async provisionRole(tenantId, userId, roleId) {
       guardTenant(tenantId);
       const at = nowIso();
-      await config.store.append(tenantId, STREAM.identity, makeEvent({
+      // OB-54 "A": a store computer is granted for its ONE store only — never tenant-wide. A ledger seeded before OB-54
+      // holds a tenant-wide store_computer grant: it is taken away here, once, as a revocation (hard rule #2 — the old
+      // grant stays in the history), and the store-named grant below is the only one left.
+      const storeBound = PILOT_MACHINE_USERS.includes(userId) && roleId === 'store_computer';
+      if (storeBound) {
+        await config.store.append(tenantId, STREAM.identity, makeEvent({
+          id: `revoke-${roleId}-${userId}-tenant-wide`,
+          type: ROLE_REVOKED,
+          occurredAt: at,
+          idempotencyKey: `revoke-${tenantId}-${roleId}-${userId}-all-ob54`,
+          source: 'pilot/seed',
+          payload: { userId, roleId, branchScope: 'all', provenance: provenance(at) },
+        }));
+      }
+      if (!storeBound) await config.store.append(tenantId, STREAM.identity, makeEvent({
         id: `grant-${roleId}-${userId}`,
         type: 'RoleGranted',
         occurredAt: at,
@@ -151,9 +167,9 @@ export function hostedSeedClient(config: HostedSeedConfig): SeedClient {
           request: { grantId: `${roleId}-${userId}`, userId, roleId, branchScope: 'all', ...provenance(at) },
         },
       }));
-      // EA-01 round 7: a store computer reports its sync and holdings only for the store its grant NAMES — the tenant-wide
-      // grant above relays the store's records but reports for no store. The demo box is given the demo store by name too.
-      if (PILOT_MACHINE_USERS.includes(userId) && roleId === 'store_computer') {
+      // EA-01 round 7 + OB-54: the demo box's grant NAMES the demo store and nothing else; its credential must name the
+      // same store (scripts/issue-store-token.mjs --store pilot-demo-branch), or head office refuses it.
+      if (storeBound) {
         const scope = [PILOT_DEMO_BRANCH];
         await config.store.append(tenantId, STREAM.identity, makeEvent({
           id: `grant-${roleId}-${userId}@${PILOT_DEMO_BRANCH}`,

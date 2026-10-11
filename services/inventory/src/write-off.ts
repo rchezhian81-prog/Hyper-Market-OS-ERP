@@ -55,6 +55,11 @@ export interface StoredWriteOff {
   readonly valueSource?: 'stock_cost' | 'cost_unknown';
   /** SF-05 — the unit cost the value was taken from (paise), when known. */
   readonly unitCostMinor?: number;
+  /**
+   * WF-09 (round 8): the BATCH written off, when the loss is of one batch — a recalled batch destroyed, an expired lot.
+   * The stock movement carries it, so the batch's own on-hand falls too (the recall's "what is left of it" reads true).
+   */
+  readonly batchId?: string;
 }
 
 /** SF-05 — what a loss of this stock is worth, from head office's own cost. */
@@ -125,7 +130,8 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           || (b['valueMinor'] !== undefined && !isNonNegInt(b['valueMinor']))
           || (b['currency'] !== undefined && !isCurrencyCode(b['currency'] as string))
           || (b['evidenceRef'] !== undefined && !isStr(b['evidenceRef']))
-          || (b['approvedBy'] !== undefined && !isStr(b['approvedBy']))) {
+          || (b['approvedBy'] !== undefined && !isStr(b['approvedBy']))
+          || (b['batchId'] !== undefined && b['batchId'] !== null && !isStr(b['batchId']))) {
           throw apiError(400, {
             code: 'not_readable_as_a_write_off',
             whatHappened: 'A write-off needs a productId, locationId, whole qty > 0, uom, a lossType (wastage/damage/expiry/donation/destruction) and a reasonCode. Its value is head office\'s (quantity × the stock\'s own cost); a valueMinor, when sent, must be that figure. The material-loss threshold is the tenant\'s policy, not sent by the caller.',
@@ -249,6 +255,7 @@ export function writeOffRoutes(deps: WriteOffDeps): readonly Route[] {
           raisedBy: ctx.userId, approvedBy: opened === undefined ? null : opened.decision.decidedBy, at,
           valueSource: priced.known ? 'stock_cost' : 'cost_unknown',
           ...(priced.known ? { unitCostMinor: priced.unitCostMinor } : {}),
+          ...(isStr(b['batchId']) ? { batchId: (b['batchId'] as string).trim() } : {}),
         };
         await deps.recordWriteOff(ctx.tenantId, rec);
         // Seal the stock loss — what left, how much, why, its value and (for a material loss) the §28

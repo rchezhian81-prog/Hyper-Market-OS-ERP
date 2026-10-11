@@ -31,6 +31,11 @@ export interface SetupScreenItem {
   /** The value in force — the tenant's answer, or the safe default. */
   readonly value: unknown;
   readonly isDefault: boolean;
+  /** The setting's current version — sent back with a save so a stale screen is refused, never silently applied. */
+  readonly version: number;
+  /** Who last chose this value, and when (the audit fact the screen shows). */
+  readonly changedBy?: string;
+  readonly changedAt?: string;
 }
 
 export interface SetupGroupView {
@@ -75,6 +80,12 @@ export function createSetupSession(config: SetupConfig, ports: SetupPorts): Setu
   const toScreenItem = (i: SetupStatus['items'][number]): SetupScreenItem => ({
     key: i.key, label: i.label, question: i.question, required: i.required,
     state: i.state, value: i.value, isDefault: i.isDefault,
+    // The version is the token a save sends back (ifVersion). Without it the page's save carried NO version, the
+    // server could not check it, and two people saving the same setting overwrote each other silently (hard rule
+    // #10) — found by the connected browser proof (round 8). Who changed it, and when, the page shows as the audit fact.
+    version: i.version,
+    ...(i.changedBy === undefined ? {} : { changedBy: i.changedBy }),
+    ...(i.changedAt === undefined ? {} : { changedAt: i.changedAt }),
   });
 
   return {

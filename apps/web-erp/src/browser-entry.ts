@@ -216,6 +216,7 @@ import {
 import {
   createDataIoSession,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView, type ExportPeriodInput, type ExportReply,
+  type LoadedJobsRead, type LoadedJobView, type UndoRequest, type RowChangeView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
 } from './data-io-session';
 import {
@@ -293,6 +294,8 @@ export interface ManagerData {
   readonly approvals?: readonly ApprovalRequest[];
   readonly openExceptions?: readonly RegisterItem[];
   readonly unsentItems?: readonly RegisterItem[];
+  /** Card/UPI payments on the store computer with no final answer (D04-FR-02); absent when the box takes none. */
+  readonly pendingPayments?: readonly RegisterItem[];
   readonly tasks?: readonly RegisterItem[];
   // Who runs this screen, where, and which day — from the store pack (Stage G slice 5c · §28 · hard rule #4).
   // Absent means the box was not told; the screen then names nobody and refuses every decision.
@@ -1213,6 +1216,24 @@ function openLpClosePort(): LpCloseCasePort {
 
 /** Read the live open-investigations worklist (a GET — read-only). Returns null offline/refused so the shell
  *  keeps whatever it was showing and its stale strip says the page is what the box last told it. */
+/** Round 8: an identity-only screen payload — who is looking and the permission words they hold, nothing else. */
+export interface ViewerIdentity {
+  readonly userId?: string;
+  readonly permissions: readonly string[];
+}
+
+/**
+ * Keep only who is looking and the permission words from an injected payload; `undefined` (nobody named) when it is
+ * absent or malformed. The permissions only shape what a screen OFFERS — the cloud re-checks every act.
+ */
+export function viewerIdentity(raw: unknown): ViewerIdentity | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  if (!Array.isArray(r['permissions']) || !r['permissions'].every((p) => typeof p === 'string')) return undefined;
+  const userId = typeof r['userId'] === 'string' && r['userId'].trim() !== '' ? r['userId'] : undefined;
+  return { ...(userId === undefined ? {} : { userId }), permissions: [...(r['permissions'] as string[])] };
+}
+
 export async function fetchLpWorklist(): Promise<LpWorklistData | null> {
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined) return null;
@@ -3125,8 +3146,11 @@ async function postValidate(template: FullImportTemplate | undefined, req: { tex
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined || template === undefined) return 'refused';
   try {
+    // Round 8: the route declares idempotency, so head office refuses a check without a key (found on the production API —
+    // the stub cloud never asked for one). A check writes nothing; each press is its own key.
+    const key = globalThis.crypto?.randomUUID?.() ?? `validate-${Date.now()}`;
     const res = await fetchFn('/v1/import/validate', {
-      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, credentials: 'same-origin',
+      method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' }, credentials: 'same-origin',
       body: JSON.stringify({
         template: { id: template.id, domain: template.domain, columns: template.columns, keyColumns: template.keyColumns },
         text: req.text,
@@ -3150,7 +3174,12 @@ async function postValidate(template: FullImportTemplate | undefined, req: { tex
       commitReady: p.commitReady,
     };
     const fp = body.contentFingerprint;
-    return { preview, contentFingerprint: typeof fp === 'string' && fp.trim() !== '' ? fp : null };
+    // M30 round 8: an update file says what each row would change (from → to) — shown to the person before they ask.
+    const changes = (body as { changes?: unknown }).changes;
+    return {
+      preview, contentFingerprint: typeof fp === 'string' && fp.trim() !== '' ? fp : null,
+      ...(Array.isArray(changes) ? { changes: changes as readonly RowChangeView[] } : {}),
+    };
   } catch { return 'lost_link'; }
 }
 
@@ -3211,7 +3240,36 @@ export function dataIoPortsFromData(data: DataIoData | undefined, live?: DataIoL
     commit: (req) => postCommit(findTemplate(req.templateId), req),
     askApproval: (ask) => postApprovalRequest(ask),
     approvalInbox: () => fetchApprovalInbox(),
+    loadedJobs: () => fetchLoadedJobs(),
+    undo: (req) => postUndo(req),
   };
+}
+
+/** M30 round 8: the loads already applied (GET /v1/import/commits) — read only, under the caller's own session. */
+async function fetchLoadedJobs(): Promise<LoadedJobsRead> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  try {
+    const res = await fetchFn('/v1/import/commits', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return { result: 'refused' };
+    const body = (await res.json()) as { jobs?: readonly LoadedJobView[] };
+    return { result: 'read', jobs: body.jobs ?? [] };
+  } catch { return { result: 'lost_link' }; }
+}
+
+/** M30 round 8: POST an undo (POST /v1/import/commits/:jobId/rollback) naming the caller's own APPROVED undo request. */
+async function postUndo(req: UndoRequest): Promise<CommitResult> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return 'lost_link';
+  const key = globalThis.crypto?.randomUUID?.() ?? `undo-${req.jobId}`;
+  try {
+    const res = await fetchFn(`/v1/import/commits/${encodeURIComponent(req.jobId)}/rollback`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' }, credentials: 'same-origin',
+      body: JSON.stringify({ reason: req.reason, approvalId: req.approvalId }),
+    });
+    if (res.status >= 200 && res.status < 300) return 'committed';
+    return await refusalOf(res);
+  } catch { return 'lost_link'; }
 }
 
 /** Build the data import/export session, or `null` when the box carried no payload (shell shows the sample). */
@@ -4523,6 +4581,10 @@ interface ManagerWindow {
     present(worklist: OperationsWorklistData): OperationsInboxSession;
   };
   returnGovernanceData?: ReturnGovernanceData;
+  /** WF-11: who is on the 'Returned goods to decide' screen (the box's word); the list and every decision are head office's. */
+  heldReturnsData?: { readonly userId?: string; readonly permissions?: readonly string[] };
+  /** The person the box named for that screen, or null — shown in the header, never used to decide. */
+  heldReturnsWho?: string | null;
   returnGovernanceSession?: ReturnGovernanceSession;
   /** The shell reads the live refund exceptions through this and re-presents them — a GET read, never a write. */
   returnGovernance?: {
@@ -4536,6 +4598,9 @@ interface ManagerWindow {
     refresh(): Promise<LpWorklistData | null>;
     present(worklist: LpWorklistData): LpInboxSession;
   };
+  /** Round 8: who is at the service desk / the assistant's drafts screen — identity only (see `viewerIdentity`). */
+  serviceDeskData?: ViewerIdentity;
+  aiDraftsData?: ViewerIdentity;
   substitutionExceptionInboxData?: SubstitutionExceptionInboxData;
   substitutionExceptionInboxSession?: SubExceptionInboxSession;
   /** The shell reads the live exceptions worklist through this and re-presents it — a GET read, never a write. */
@@ -4746,6 +4811,7 @@ export function portsFromData(data: ManagerData | undefined): ManagerPorts {
     openExceptions: () => register(data.openExceptions),
     unsentItems: () => register(data.unsentItems),
     tasks: () => register(data.tasks),
+    ...(data.pendingPayments === undefined ? {} : { pendingPayments: () => register(data.pendingPayments) }),
   };
 }
 
@@ -5828,6 +5894,8 @@ if (browserWindow !== undefined) {
   // then the shell refreshes the flagged refunds with a live GET (read-only). Offline it shows its sample stand-in
   // and says so. READ-ONLY — a breach is worked out of band (the money already moved at the lane), so there is no
   // write from this screen; the cloud route re-checks `lp.case.read`, so this only shapes the UI (P-03/P-08).
+  // WF-11: the held-returns screen boots on identity alone; head office answers for the list and every decision.
+  browserWindow.heldReturnsWho = browserWindow.heldReturnsData?.userId ?? null;
   const returnGovernanceData = browserWindow.returnGovernanceData;
   const returnGovernance = bootReturnGovernance(returnGovernanceData);
   if (returnGovernance !== null) {
@@ -6151,4 +6219,9 @@ if (browserWindow !== undefined) {
   // The view offers these and records the code the manager picks. It never composes a reason of
   // its own, so the audit trail keeps one vocabulary that can still be reported on in a year.
   browserWindow.managerReasons = { approved: APPROVE_REASONS, rejected: REJECT_REASONS };
+  // Round 8: the service desk (WF-17 · A05) and the assistant's drafts (A09 · A07) are thin clients that read their
+  // identity-only payload themselves. The bundle runs first and keeps ONLY who is looking and the permission words —
+  // anything else injected is dropped, and a malformed payload becomes "nobody named" (the page then offers nothing).
+  browserWindow.serviceDeskData = viewerIdentity(browserWindow.serviceDeskData);
+  browserWindow.aiDraftsData = viewerIdentity(browserWindow.aiDraftsData);
 }

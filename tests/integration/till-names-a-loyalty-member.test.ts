@@ -45,7 +45,7 @@ describe('the till names a loyalty member by mobile number, and the number never
     h = apiHarness();
     await h.seedOwner(A, 'u-owner');
     await h.provisionRole(A, 'u-meena', 'cashier');
-    await h.provisionRole(A, 'u-box', 'store_computer');
+    await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);
     await h.provisionRole(A, 'u-mgr', 'store_manager');
     // The owner switches loyalty on (1 point per ₹100); the customer joins at the desk.
     expect((await h.request({ method: 'PUT', path: '/v1/platform/setup/loyalty.points_per_100_inr', userId: 'u-owner', tenantId: A, idempotencyKey: 'rule', body: { value: 1 } })).status).toBeLessThan(300);
@@ -82,7 +82,7 @@ describe('the till names a loyalty member by mobile number, and the number never
     EDGE_DATA_DIR: dir, EDGE_TENANT_ID: A, PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0', EDGE_LANE_ID: 'lane-1',
     EDGE_PACK_FILE: join(dir, 'store-pack.json'),
     CLOUD_API_URL: 'https://cloud.example.test',
-    CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
+    CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }),
   });
 
   it('a member named on a sale offline earns when the line returns; the box never wrote the number', async () => {

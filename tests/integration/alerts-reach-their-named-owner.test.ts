@@ -120,7 +120,6 @@ describeOrSkip('PA-12 — alerts reach their named owner and escalate — real A
     // 4 — A LANE ALERT: the store computer reports two sync items head office refused. Raised to Priya the same way.
     expect((await call('POST', '/v1/org/nodes/C1', OWNER, { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
     expect((await call('POST', '/v1/org/nodes/S1', OWNER, { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' })).status).toBe(201);
-    await cloud.grant('u-box1', 'store_computer'); // round 6: only the store computer's own identity reports its sync
     await cloud.grant('u-box1', 'store_computer', undefined, ['S1']); // round 7: …and only for the store its grant NAMES
     travel(90);
     await passes(); // a pass in flight at the old time finishes first — each pass judges at one moment

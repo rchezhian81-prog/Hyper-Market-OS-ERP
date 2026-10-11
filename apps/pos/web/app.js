@@ -463,6 +463,23 @@ async function toggleSignIn() {
   rememberOperator(session.operatorToken());
   paintOperator();
   void refreshHeld();
+  void reportDevices();
+}
+
+// ── The till's devices (D04-FR-05 · M12-FR-04) ──────────────────────────────
+// What the scanner, printer, scale, drawer and card machine say comes from a device adapter on this till computer
+// (`window.sreDevices.status()` — hardware-side, external; absent on a till with none). When the cashier signs in, its
+// answer goes to the store computer for the manager's Today screen. Nothing here waits on it, and a device that has
+// failed never stops a sale.
+async function reportDevices() {
+  const adapter = window.sreDevices;
+  if (!adapter || typeof adapter.status !== 'function' || typeof session.reportDevices !== 'function') return;
+  try {
+    const devices = await adapter.status();
+    if (Array.isArray(devices) && devices.length > 0) await session.reportDevices(devices);
+  } catch {
+    /* a device adapter that cannot answer is the manager's to see as "not reported", not the cashier's problem now */
+  }
 }
 
 // ── The banner ──────────────────────────────────────────────────────────────
@@ -709,6 +726,23 @@ function render() {
 
   paintOperator();
   paintBadge();
+  publishToDisplay();
+}
+
+// ── The customer display (D04-FR-05 · M12-FR-01) ───────────────────────────
+// The screen facing the customer is a second window on this till computer (customer-display.html). Each time the basket
+// is drawn here, the till's own frame — lines, saving, amount to pay; nothing a customer must not see — goes to it over a
+// BroadcastChannel: no network, so it works with the cable out. A display that is not open, or a browser without the
+// channel, never stops a sale.
+let displayChannel = null;
+function publishToDisplay() {
+  if (typeof session.customerDisplay !== 'function' || typeof BroadcastChannel !== 'function') return;
+  try {
+    if (displayChannel === null) displayChannel = new BroadcastChannel(session.customerDisplayChannelName());
+    displayChannel.postMessage(session.customerDisplay());
+  } catch {
+    /* the display is a convenience for the customer; the sale never waits on it */
+  }
 }
 
 // ── The sync badge: what the BOX knows, never what the shell assumes ────────

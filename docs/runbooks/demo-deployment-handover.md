@@ -300,6 +300,28 @@ file already on the server (mounted read-only as a fallback) and its log says so
 (3) within one sync pass the box log says `A new store setup from head office is in use` and the status badge shows the
 head-office version. Return that log line as evidence. Afterwards the fallback mount can be removed in a later release.
 
+**OB-54 (owner, 11 Oct 2026) — re-issue each store computer's credential, locked to its own store. One administrator
+step, required once after the OB-54 release; until it is done head office refuses the box's sales and reports
+(`store_computer_credential_names_no_store`), and the box keeps every one of them safely in its outbox:**
+
+1. **[BOX]** Re-run the demo seed. It takes away the box's old tenant-wide `store_computer` grant (a revocation — the old
+   grant stays in the history) and leaves only the grant for `pilot-demo-branch`.
+2. **[BOX]** Issue the new credential, naming the store:
+   `node scripts/issue-store-token.mjs --user pilot-store-edge --store pilot-demo-branch` (or let it read
+   `EDGE_STORE_ID` from the settings file). The script refuses to issue a store computer's credential without a store.
+   It is shown once, on your screen only — never paste it into a chat, a file or the repository.
+3. **[BOX]** Put it in the edge's `CLOUD_API_TOKEN` setting by hand and restart the edge service.
+4. **[BOX]** Revoke the OLD credential so it cannot be used again: as the owner, `POST /v1/identity/token-revocations` with
+   `{ "userId": "pilot-store-edge", "reason": "credential_change", "issuedBefore": "<a minute BEFORE you issued the new one>" }` (do this step before step 2 if
+   you prefer — "now", then issue the new one a minute later).
+5. **Check:** within one sync pass the box's queue drains (the status badge shows nothing waiting) and head office's
+   `GET /v1/store-computers/refusals` lists no new refusal for `pilot-store-edge`. Return the count of refusals (a
+   number, no record contents) as evidence.
+
+For a SECOND store later: give its box its own user (never share one), grant `store_computer` for that store only, and
+issue its credential with `--store <that store's id>`. A box that tries to send another store's records is refused, the
+record stays in its own dead-letter list for a person, and head office lists the refusal.
+
 **Known after the sign-in-gate release (H-14, `docs/STATUS.md` 3 Oct 2026):** the demo till at `$H/store/pos/` will list the five
 seeded products under "Products nobody can sell" with `unknown unit of measure "each"` / `"litre"` until a person corrects their units
 to the engine's codes (`ea`, `L`) — the seed is corrected in the repository; the box's data was seeded before. Not a deployment fault.

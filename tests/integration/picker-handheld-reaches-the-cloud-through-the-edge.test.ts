@@ -136,7 +136,7 @@ async function cloud(): Promise<Cloud> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-picker', 'store_manager');
   await h.provisionRole(A, 'u-driver', 'store_manager');
-  await h.provisionRole(A, 'u-box', 'store_computer');
+  await h.provisionRole(A, 'u-box', 'store_computer', ['store-1']);
   await h.enableFeature(A, 'delivery'); // this shop's plan includes home delivery (M36-FR-01) — a route can be assigned (HA-1)
   // The product master (M19-FR-02 fold): rice travels ambient, milk chilled — and ghee has NO handling class, deliberately.
   const GROCERY = { categoryId: 'grocery', name: 'Grocery', parentId: null };
@@ -177,7 +177,7 @@ async function cloud(): Promise<Cloud> {
     await issueTillPins(dir, KEY, PHONE_PEOPLE.map((p) => p.userId));
     const edge = (await startEdge({
       ...EDGE_ENV, EDGE_DATA_DIR: dir, EDGE_PACK_FILE: packFile,
-      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A }),
+      CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: A, branchId: 'store-1' }),
     }, () => {}))!;
     cleanups.push(async () => { await edge.stop(); });
     return edge;

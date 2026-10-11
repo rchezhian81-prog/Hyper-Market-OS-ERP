@@ -109,6 +109,9 @@ export const APP_SHELL: Readonly<Record<ScreenName, AppShell>> = Object.freeze({
   warehouse: { dir: 'warehouse-app', file: 'index.html' },
   'warehouse-supervisor': { dir: 'web-erp', file: 'warehouse.html' },
   approvals: { dir: 'web-erp', file: 'approvals.html' },
+  'held-returns': { dir: 'web-erp', file: 'held-returns.html' },
+  'service-desk': { dir: 'web-erp', file: 'service-desk.html' },
+  'ai-drafts': { dir: 'web-erp', file: 'ai-drafts.html' },
 });
 
 export interface ScreenServer {

@@ -214,7 +214,7 @@ async function onlyItsOwnComputerReportsAndCannotBuyFreshness(h: ApiHarness, ten
     // Another store's computer may not speak for this one; an unknown store is not found; a garbled report is refused.
     const forged = await report('u-box2', 'S2', 'S1', ok, 'wm-forged');
     expect(forged.status).toBe(403);
-    expect(codeOf(forged)).toBe('not_this_stores_computer');
+    expect(codeOf(forged)).toBe('store_computer_record_names_another_store'); // OB-54: refused at the door, and kept
     expect((await report('u-box1', 'S1', 'NOPE', ok, 'wm-nope')).status).toBe(404);
     const bad = await report('u-box1', 'S1', 'S1', { observedAt: 'yesterday', domains: [{ domain: 'sales', completeThrough: 'soon', unsent: -1 }] }, 'wm-bad');
     expect(bad.status).toBe(400);
@@ -235,11 +235,12 @@ async function onlyItsOwnComputerReportsAndCannotBuyFreshness(h: ApiHarness, ten
     expect(codeOf(await report(OWNER, 'S1', 'S1', lies, 'wm-owner-2'))).toBe('not_this_stores_computer');
     // Round 7 (EA-01): a store computer reports only for the store(s) its grant NAMES. A TENANT-WIDE store_computer grant
     // names none — it is never read as "every store" — so it reports for neither S1 nor S2, on either report.
+    // OB-54: such a grant is now refused when it is asked for; one already on a ledger is refused at the door.
     await h.provisionRole(tenant, 'u-box-any', 'store_computer');          // branchScope 'all'
     for (const store of ['S1', 'S2'] as const) {
       const r = await report('u-box-any', store, store, lies, `wm-any-${store}`);
       expect(r.status, `a tenant-wide box may not report ${store}'s sync`).toBe(403);
-      expect(codeOf(r)).toBe('not_this_stores_computer');
+      expect(codeOf(r)).toBe('store_computer_credential_store_not_granted');
       const held = await h.request({ method: 'POST', path: `/v1/store-packs/${store}/held`, userId: 'u-box-any', tenantId: tenant, branchId: store, idempotencyKey: `held-any-${store}`, body: { catalogueVersion: null, storePackVersion: null, unsentItems: 0 } });
       expect(held.status, `a tenant-wide box may not report what ${store} holds`).toBe(403);
     }

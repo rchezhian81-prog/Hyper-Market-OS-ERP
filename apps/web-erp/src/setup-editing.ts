@@ -135,6 +135,10 @@ export class SetupEditController {
   seed(key: string, version: number): void {
     const existing = this.fields.get(key);
     if (existing === undefined) this.fields.set(key, idle(version));
+    // After a conflict the person asked to reload: the screen now shows the NEWER value, so the field takes the fresh
+    // version and drops the stale draft (they re-enter it if they still want it). Keeping the old version made every
+    // re-save conflict again; keeping the draft would save a value the screen no longer shows (round 8, connected proof).
+    else if (existing.conflictVersion !== undefined && existing.status !== 'saving') this.fields.set(key, idle(version));
     else if (!existing.dirty && existing.status !== 'saving') this.fields.set(key, { ...existing, version });
   }
 
