@@ -21,6 +21,7 @@
 import { once } from 'node:events';
 import { Pool } from 'pg';
 import { SqlEventStore } from '../../../packages/persistence/src/event-store';
+import { SqlSubjectKeyStore, personalDataKek, type SubjectKeyStore } from '../../../packages/persistence/src/personal-data';
 import { SqlSnapshotStore, type SnapshotStore } from '../../../packages/persistence/src/snapshot';
 import { SqlConfigVersionStore } from '../../../packages/persistence/src/config-store';
 import { SqlNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
@@ -265,7 +266,7 @@ import { aiRoutes } from '../../ai/src/index';
 import { modelGatewayRoutes } from '../../ai/src/model-gateway';
 import type { ModelTransport, ModelTier, TierPricing } from '../../../packages/ai/src/index';
 import {
-  STREAM, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, storeStockFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter,
+  STREAM, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, storeStockFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, personalDataStore, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
 // SF-10 round 5: the read models the remaining export domains fold.
@@ -384,6 +385,12 @@ export function buildSurface(deps: {
    * just rebuilt on a cold start, because a snapshot is disposable).
    */
   readonly snapshots?: SnapshotStore;
+  /**
+   * FUL-12 · ADR-0025: the per-subject data keys personal fields are sealed under (the SAME key store `store` seals with —
+   * `personalDataStore`). Erasure destroys a customer's key here. Omitted → holdings are located, but an erasure of a
+   * sealed category is a visible exception, never a silent success.
+   */
+  readonly personalDataKeys?: SubjectKeyStore;
 }): readonly Route[] {
   const signer = hmacSigner(deps.signingKey);
   // The key the store computer's seal on who it verified is checked with (ADR-0023) — the same derivation the box uses.
@@ -1034,7 +1041,7 @@ export function buildSurface(deps: {
     // processor notices. DEVELOPMENT-APPROVED; legal confirmation required.
     ...erasureExecutionRoutes(store === undefined
       ? { request: empty(undefined), recordRequest: () => {}, recordPii: () => {}, piiFor: empty([]), recordApproval: () => {}, approvalFor: empty(undefined), recordTombstone: () => {}, tombstonesFor: empty([]), tombstoneFor: empty(undefined), enqueueNotice: () => {}, now }
-      : { ...erasureExecutionAdapter({ store, now }), domainHoldings: privacyDomainHoldingsAdapter({ store, now }) }),
+      : { ...erasureExecutionAdapter({ store, now }), domainHoldings: privacyDomainHoldingsAdapter({ store, now, ...(deps.personalDataKeys === undefined ? {} : { keys: deps.personalDataKeys }) }) }),
     // Service-desk cases + SLA clocks (M21-FR-04) — open/first-response/resolve + SLA + breached queue.
     ...serviceCaseRoutes(store === undefined
       ? { serviceCase: empty(undefined), serviceCases: empty([]), recordCase: () => {}, compensations: empty([]), recordCompensation: () => {},
@@ -1848,7 +1855,15 @@ export async function startApi(
   // Since migration 0012 (row-level security, GAP-DATA-02) EVERY store takes the pool adapter: it is the one
   // that can pin a connection and bind `app.tenant_id` to the transaction, so the database itself confines each
   // statement to the signed token's tenant. The plain query adapter would run unscoped and see nothing.
-  const store = new SqlEventStore(pgPoolClient(db));
+  // FUL-12 · ADR-0025: every domain writes through the personal-data sealing layer — a customer's own words and contact
+  // details land in the ledger encrypted under that customer's data key (held in `subject_data_keys`, wrapped under the
+  // key-encryption key from configuration), so an erasure can destroy the key while the append-only record stays whole.
+  const personalDataKeys = new SqlSubjectKeyStore(pgPoolClient(db), personalDataKek({
+    ...(settings['PII_KEY_ENCRYPTION_KEY'] === undefined ? {} : { configured: settings['PII_KEY_ENCRYPTION_KEY'] }),
+    packSigningKey: settings['PACK_SIGNING_KEY']!,
+  }));
+  if (settings['PII_KEY_ENCRYPTION_KEY'] === undefined) out('personal data: sealed under a key derived from the pack signing key — set PII_KEY_ENCRYPTION_KEY to give it its own (ADR-0025)\n');
+  const store = personalDataStore(new SqlEventStore(pgPoolClient(db)), personalDataKeys);
 
   // 2b — Genesis owner (optional bootstrap). Because granting a role itself needs a role
   // (maker-checker), a brand-new tenant has nobody who can grant the first one. Where the initial
@@ -1881,6 +1896,7 @@ export async function startApi(
     signingKey: settings['PACK_SIGNING_KEY']!,
     migrationTargetKind: settings['MIGRATION_TARGET_KIND'] as TargetKind,
     store,
+    personalDataKeys,
     revocations,
     ...(providers.notificationTransport === undefined ? {} : { notificationTransport: providers.notificationTransport }),
     ...(identityDirectory === undefined ? {} : { identityDirectory }),

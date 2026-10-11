@@ -292,6 +292,7 @@ import { buildTenantExport } from '../../../packages/platform/src/lifecycle';
 import type { TenantBranding } from '../../../packages/platform/src/branding';
 import type { DurableTenantSettings } from '../../../packages/tenant/src/index';
 import { InMemoryNumberSeriesStore, type NumberSeriesStore } from '../../../packages/persistence/src/number-series-store';
+import { PersonalDataSealingStore, type PersonalDataPolicy, type SubjectKeyStore } from '../../../packages/persistence/src/personal-data';
 import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/index';
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
@@ -11938,9 +11939,27 @@ export const MINIMISED_TEXT = (requestId: string): string => `[removed under pri
  *   • storefront_orders — tax invoices: RETAINED in full until the end of the eighth financial year after the last one.
  *   • consent_history — the proof of what the shop was permitted to do: RETAINED as audit evidence.
  */
-export function privacyDomainHoldingsAdapter(input: { readonly store: EventStore; readonly now: () => string }):
+export function privacyDomainHoldingsAdapter(input: {
+  readonly store: EventStore;
+  readonly now: () => string;
+  /** ADR-0025: the per-subject data keys the personal fields are sealed under. Absent → nothing can be crypto-shredded. */
+  readonly keys?: SubjectKeyStore;
+}):
   (tenantId: string, customerRef: string) => Promise<readonly DomainHolding[]> {
   const cases = serviceCaseAdapter(input);
+  /** Destroy one (customer, category) data key, and record the destruction as an append-only, audited fact (no key material). */
+  const shredKey = async (tenantId: string, customerRef: string, category: string, requestId: string): Promise<void> => {
+    if (input.keys === undefined) throw new Error(`no personal-data key store is configured, so ${category} cannot be crypto-shredded`);
+    const at = input.now();
+    const { alreadyShredded } = await input.keys.shred(tenantId, { subjectRef: customerRef, category }, { requestId, shreddedBy: 'api/privacy', at });
+    await input.store.append(tenantId, PRIVACY_REDACTION_STREAM, makeEvent({
+      id: `key-shredded-${requestId}-${category}`, type: 'SubjectDataKeyShredded', occurredAt: at,
+      idempotencyKey: `key-shredded-${tenantId}-${requestId}-${category}`, source: 'api/privacy',
+      payload: { customerRef, category, requestId, alreadyShredded, at },
+    }));
+  };
+  const shredded = async (tenantId: string, customerRef: string, category: string): Promise<boolean> =>
+    input.keys === undefined ? false : input.keys.isShredded(tenantId, { subjectRef: customerRef, category });
   const anonymousRefFor = (tenantId: string, customerRef: string, requestId: string): string =>
     `anon-${createHash('sha256').update(`${tenantId}|${customerRef}|${requestId}`).digest('hex').slice(0, 16)}`;
   const recordAnonymised = async (tenantId: string, r: CustomerDataAnonymised): Promise<void> => {
@@ -11988,6 +12007,9 @@ export function privacyDomainHoldingsAdapter(input: { readonly store: EventStore
             const next: ServiceCase = { ...c, summary: MINIMISED_TEXT(requestId), ...(c.resolution === undefined ? {} : { resolution: MINIMISED_TEXT(requestId) }) };
             await cases.recordCase(tenantId, c.caseId, next, `${c.caseId}-minimised-${requestId}`);
           }
+          // ADR-0025: the customer's words in the EARLIER states of each case stay in the ledger as ciphertext — the key
+          // they were sealed under is destroyed, so they can no longer be read. The redacted latest state is the record.
+          if (input.keys !== undefined) await shredKey(tenantId, customerRef, 'service_cases', requestId);
           return { recordsAffected: open.length, note: `${open.length} service case(s) minimised — the customer's words removed, the case and its dates kept` };
         },
       });
@@ -12004,6 +12026,42 @@ export function privacyDomainHoldingsAdapter(input: { readonly store: EventStore
     const consents = await allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerRef), 'ConsentRecorded');
     if (consents.length > 0) {
       holdings.push({ category: 'consent_history', domain: 'customer consent', recordCount: consents.length, retentionBasis: 'audit_evidence', state: 'held' });
+    }
+
+    // ADR-0025 — the holdings whose personal text is SEALED under the customer's own data key. Erasing one destroys that
+    // key: the records (when, which channel, what it cost, the cash taken) stay; the words become unreadable ciphertext.
+    const crypto = async (category: string, domain: string, recordCount: number): Promise<void> => {
+      if (recordCount === 0) return;
+      const gone = await shredded(tenantId, customerRef, category);
+      holdings.push({
+        category, domain, recordCount: gone ? 0 : recordCount, state: gone ? 'erased' : 'held',
+        // No key store → the holding is still LOCATED, and an erasure of it is a visible exception (P-08), never a silent success.
+        ...(input.keys === undefined ? {} : {
+          erase: async (requestId: string) => {
+            await shredKey(tenantId, customerRef, category, requestId);
+            return { recordsAffected: recordCount, note: `${recordCount} record(s) in ${domain}: the personal text's key destroyed; the records themselves kept` };
+          },
+        }),
+      });
+    };
+    // notification_intents — the words of each message queued to this customer (PA-08). No law keeps marketing words.
+    const queued = (await allOf<NotificationQueueEvent>(input.store, tenantId, streamName(STREAM.org, 'notifications'), 'NotificationQueue'))
+      .filter((e) => e.change === 'enqueued' && e.intent?.customerId === customerRef);
+    await crypto('notification_intents', 'notifications', queued.length);
+    // loyalty_member — the member record (the last four digits of the number) where this customer IS the member code.
+    const member = (await allOf<MemberRecord>(input.store, tenantId, LOYALTY_MEMBERS, 'LoyaltyMember')).filter((m) => m.memberRef === customerRef);
+    await crypto('loyalty_member', 'loyalty', member.length);
+    // delivery_records — the driver's notes at this customer's door and the stop's area label on the day's dispatch plan.
+    const myOrders = new Set(orders.map((o) => o.orderId));
+    let deliveryRecords = 0;
+    for (const orderId of myOrders) {
+      deliveryRecords += (await allOf<DeliveryAttempt>(input.store, tenantId, forOrderAttempts(orderId), 'DeliveryAttemptIndexed')).length;
+    }
+    await crypto('delivery_records', 'delivery', deliveryRecords);
+    // lp_records — a loss-prevention case naming this person: kept in full for the investigation (its key is kept too).
+    const lp = (await input.store.readStream(tenantId, STREAM.lossPrevention)).filter((e) => e.event.type === 'LpCaseOpened' && (e.event.payload as InvestigationCase).subjectRef === customerRef);
+    if (lp.length > 0) {
+      holdings.push({ category: 'lp_records', domain: 'loss prevention', recordCount: lp.length, retentionBasis: 'fraud_investigation', state: 'held' });
     }
     return holdings;
   };
@@ -12553,4 +12611,55 @@ export function legacyHistoryAdapter(input: { readonly store: EventStore; readon
       return { standing: legacyAttachmentMeta(stored!.record.event.payload as LegacyAttachment), existed: stored!.deduped };
     },
   };
+}
+
+// ── FUL-12 · ADR-0025: which fields of which events are a customer's personal data, sealed under their own key ──────
+
+/** The customer an order was placed by — read from the order's own record (a desk order has none: not customer-linked). */
+const orderCustomer = async (ctx: { readonly tenantId: string; readonly store: EventStore }, orderId: unknown): Promise<string | undefined> => {
+  if (typeof orderId !== 'string' || orderId === '') return undefined;
+  const placed = await ctx.store.latestOfType(ctx.tenantId, forOrder(orderId), 'OrderPlaced');
+  const ref = (placed?.event.payload as PlacedOrder | undefined)?.customerRef;
+  return typeof ref === 'string' && ref !== '' ? ref : undefined;
+};
+const nonEmpty = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
+/** The person a loss-prevention case is about — from the case as it was opened. */
+const lpCaseSubject = async (ctx: { readonly tenantId: string; readonly store: EventStore }, caseId: unknown): Promise<string | undefined> => {
+  const opened = (await ctx.store.readStream(ctx.tenantId, STREAM.lossPrevention, { type: 'LpCaseOpened' }))
+    .find((e) => (e.event.payload as InvestigationCase).caseId === caseId);
+  return nonEmpty((opened?.event.payload as InvestigationCase | undefined)?.subjectRef);
+};
+
+/**
+ * The personal-data policy (ADR-0025 "Scope"). Each rule names the event type, the fields that are a person's own words or
+ * contact details, whose they are, and the category their key belongs to — the unit an erasure destroys. The category is
+ * the same one the erasure locates (`privacyDomainHoldingsAdapter`), so destroying a category's key is exactly what the
+ * plan said: an erased category's key goes; a RETAINED category's key (consent proof, loss-prevention cases) is kept
+ * until its own retention ends. Amounts, dates, ids and states are never sealed — the business record stays whole.
+ */
+export const PERSONAL_DATA_POLICY: PersonalDataPolicy = {
+  // A complaint in the customer's own words, and what the desk wrote back.
+  ServiceCaseRecorded: [{ category: 'service_cases', fields: ['summary', 'resolution'], subject: (h) => nonEmpty(h['customerRef']) }],
+  // How a consent was captured ("otp to +91…") — kept as audit evidence, so its key is kept.
+  ConsentRecorded: [{ category: 'consent_history', fields: ['evidence'], subject: (h) => nonEmpty(h['customerId']) }],
+  // The words of a message queued to a customer (PA-08).
+  NotificationQueue: [{ category: 'notification_intents', at: ['intent'], fields: ['text'], subject: (h) => nonEmpty(h['customerId']) }],
+  // The loyalty member record: the last four digits of the number.
+  LoyaltyMember: [{ category: 'loyalty_member', fields: ['mobileLast4'], subject: (h) => nonEmpty(h['memberRef']) }],
+  // The driver's notes at the door (both copies: the run's and the order's index) and the stop's area label.
+  DeliveryAttempted: [{ category: 'delivery_records', fields: ['notes'], subject: (h, _p, ctx) => orderCustomer(ctx, h['orderId']) }],
+  DeliveryAttemptIndexed: [{ category: 'delivery_records', fields: ['notes'], subject: (h, _p, ctx) => orderCustomer(ctx, h['orderId']) }],
+  DispatchPlanned: [{ category: 'delivery_records', at: ['routes', '*', 'stops', '*'], fields: ['area'], subject: (h, _p, ctx) => orderCustomer(ctx, h['orderId']) }],
+  // A loss-prevention case about a person: the summary, each evidence description, the closing note.
+  LpCaseOpened: [
+    { category: 'lp_records', fields: ['summary'], subject: (h) => nonEmpty(h['subjectRef']) },
+    { category: 'lp_records', at: ['evidence', '*'], fields: ['description'], subject: (_h, p) => nonEmpty(p['subjectRef']) },
+  ],
+  LpEvidenceAdded: [{ category: 'lp_records', at: ['item'], fields: ['description'], subject: (_h, p, ctx) => lpCaseSubject(ctx, p['caseId']) }],
+  LpCaseClosed: [{ category: 'lp_records', fields: ['outcomeNote'], subject: (h, _p, ctx) => lpCaseSubject(ctx, h['caseId']) }],
+};
+
+/** The event store every domain writes through, with personal fields sealed under their subject's key (ADR-0025). */
+export function personalDataStore(store: EventStore, keys: SubjectKeyStore): EventStore {
+  return new PersonalDataSealingStore(store, keys, PERSONAL_DATA_POLICY);
 }
