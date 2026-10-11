@@ -60,6 +60,8 @@ function shopData(): Record<string, unknown> {
 
 interface Recorder {
   readonly apiCalls: { method: string; path: string; auth: boolean }[];
+  /** FUL-06: after sign-in the app reads the customer's own privacy choices — kept apart from the order traffic. */
+  readonly privacyReads?: { auth: boolean }[];
   grantedCustomerRole: number;
 }
 
@@ -113,7 +115,8 @@ async function startStore(h: ApiHarness, rec: Recorder): Promise<{ base: string;
         const token = auth.startsWith('Bearer ') ? auth.slice(7) : undefined;
         const key = req.headers['idempotency-key'];
         const body = req.method === 'POST' ? await readBody(req) : undefined;
-        rec.apiCalls.push({ method: req.method ?? '?', path, auth: token !== undefined });
+        if (req.method === 'GET' && path === '/v1/me/privacy') (rec.privacyReads ??= []).push({ auth: token !== undefined });
+        else rec.apiCalls.push({ method: req.method ?? '?', path, auth: token !== undefined });
         const out = await h.raw({
           method: (req.method ?? 'GET') as 'GET' | 'POST', path,
           ...(token === undefined ? {} : { token }),
@@ -225,6 +228,9 @@ describe.skipIf(!HAVE_BROWSER)('a customer orders in a real browser and the clou
       await readyToPay(page, store.base, store.sms);
       expect(rec.grantedCustomerRole).toBe(1);
       expect(rec.apiCalls).toHaveLength(0); // nothing has gone to the shop before Pay
+      // FUL-06: the only read before Pay is the customer's own privacy choices, as the signed-in customer.
+      expect(rec.privacyReads?.length ?? 0).toBeGreaterThanOrEqual(1);
+      expect(rec.privacyReads?.every((r) => r.auth)).toBe(true);
 
       provider.capture(PAY_REF, 60_00 + 40_00); // the bank captured exactly the shop's quote
       await page.click('#pay');
