@@ -25,7 +25,7 @@
 
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { StoreSettings, StoreRules } from '../../platform/src/store-packs';
-import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, PRODUCT_SPEC, PRODUCT_LABEL, templateView } from '../../purchase/src/import-templates';
+import { SUPPLIER_INVOICE_SPEC, SUPPLIER_INVOICE_LABEL, PRODUCT_SPEC, PRODUCT_LABEL, templateView, PRODUCT_UPDATE_SPEC, PRODUCT_UPDATE_LABEL } from '../../purchase/src/import-templates';
 import { AccessControl } from '../../../packages/rbac/src/rbac';
 import {
   catalogueAdapter, productMasterAdapter, inventoryAdapter, effectiveGrants, peopleAdapter, warehouseAdapter, orgStructureAdapter, deviceRegistryAdapter,
@@ -133,6 +133,12 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
         uom: unitCode(p.baseUom), taxBps: p.taxBps, status: p.status, recallBlock: p.recallBlock === true,
         barcodes: barcodes.get(p.productId) ?? [],
         availableMinor: onHand.get(p.productId) ?? 0,
+        // D01-FR-06 (round 8): the app's content and synonyms, from the product master, for the customer app on this store.
+        ...(m?.brand === undefined ? {} : { brand: m.brand }),
+        ...(m?.appContent?.nameTa === undefined ? {} : { nameTa: m.appContent.nameTa }),
+        ...(m?.appContent?.descriptionEn === undefined ? {} : { descriptionEn: m.appContent.descriptionEn }),
+        ...(m?.appContent?.descriptionTa === undefined ? {} : { descriptionTa: m.appContent.descriptionTa }),
+        ...(m?.appContent?.synonyms === undefined ? {} : { synonyms: m.appContent.synonyms }),
       };
     });
   }
@@ -170,6 +176,8 @@ export async function buildStorePackSections(input: StorePackBuildInput, tenantI
     importTemplates: [
       templateView({ spec: SUPPLIER_INVOICE_SPEC, label: SUPPLIER_INVOICE_LABEL, financial: true }),
       templateView({ spec: PRODUCT_SPEC, label: PRODUCT_LABEL, financial: false }),
+      // M30 round 8: changing EXISTING products by file (previewed field by field, undone to the version replaced).
+      templateView({ spec: PRODUCT_UPDATE_SPEC, label: PRODUCT_UPDATE_LABEL, financial: false }),
     ],
   };
   const rules = input.rules === undefined ? undefined : await input.rules(tenantId, storeId);

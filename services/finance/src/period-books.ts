@@ -7,6 +7,9 @@
 //      count reconciliation, valued at head office's own cost) and a write-off on the register (M28, including a held
 //      returned unit written off) each become ONE balanced journal through the accountant's mapping —
 //      `stock_count:shortage` / `stock_count:surplus` / `stock_write_off` — once per source: a re-run posts nothing twice.
+//      This is the ONE path a count difference reaches the books by: a planned count's approved variance (WF-08,
+//      `services/inventory/src/count-plans.ts`) is an applied count reconciliation like any other and posts here, with
+//      its plan and root cause in the narrative; `stock-losses.ts` posts only transfer/indent shortfalls, never a count.
 //      A count whose cost head office does not hold is listed, not posted at zero (P-08). A closed month takes nothing:
 //      the journal goes to the next open period carrying its real date.
 //   2. THE CLOSE RECONCILES THE BOOKS TO THEIR REGISTERS. Beside the card/UPI and bank checks, the close now compares
@@ -62,6 +65,11 @@ export interface CountForBooks {
   readonly decision?: 'approved' | 'rejected';
   readonly uom?: string;
   readonly movementId?: string | null;
+  /** `value_unknown`: head office held no cost when it was counted — listed, never posted at a guessed value. */
+  readonly governanceFlags?: readonly string[];
+  /** WF-08 (round 8): the count plan it was counted under, and the root cause a manager set on its variance. */
+  readonly planId?: string;
+  readonly causeCode?: string;
 }
 
 /** A write-off as the books read it (structural subset of the write-off register's record). */
@@ -89,8 +97,9 @@ export function stockAdjustmentSources(counts: readonly CountForBooks[], writeOf
     out.push({
       sourceId: `count:${c.countId}`, kind: c.varianceMinor < 0 ? 'stock_count:shortage' : 'stock_count:surplus',
       productId: c.productId, locationId: c.locationId, quantityMinor: Math.abs(c.varianceMinor), uom: c.uom ?? 'each',
-      valueMinor: Math.abs(c.valueMinor) > 0 ? Math.abs(c.valueMinor) : null,
-      at: c.decidedAt ?? c.at, by: c.counterId, approvedBy: c.approvedBy, reason: c.reasonCode,
+      valueMinor: Math.abs(c.valueMinor) > 0 && !(c.governanceFlags ?? []).includes('value_unknown') ? Math.abs(c.valueMinor) : null,
+      at: c.decidedAt ?? c.at, by: c.counterId, approvedBy: c.approvedBy,
+      reason: `${c.reasonCode}${c.planId === undefined ? '' : `; plan ${c.planId}`}${c.causeCode === undefined ? '' : `; cause ${c.causeCode}`}`,
     });
   }
   for (const w of writeOffs) {

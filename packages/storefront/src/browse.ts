@@ -47,6 +47,11 @@ export interface StorefrontProduct {
   /** How old the availability figure is. Absent means unknown, which is not "fresh". */
   readonly availabilityAgeMinutes?: number;
   readonly ageRestricted?: boolean;
+  /** D01-FR-06 (round 8): the other words customers use for it (head office's product master) — searched like the name. */
+  readonly synonyms?: readonly string[];
+  /** D01-FR-06 (round 8): the product's description in each language, from head office's product master. */
+  readonly descriptionEn?: string;
+  readonly descriptionTa?: string;
 }
 
 const WORDS: Record<Language, Record<string, string>> = {
@@ -78,6 +83,8 @@ export interface ProductView {
   /** In the requested language, including the reason it cannot be bought. */
   readonly detail: string;
   readonly availabilityStale?: boolean;
+  /** D01-FR-06 (round 8): the description in the requested language (the English one when there is no Tamil one). */
+  readonly description?: string;
 }
 
 /** Decide what the customer may actually buy, from the same rules the till applies. */
@@ -88,11 +95,13 @@ export function viewProduct(
 ): ProductView {
   const w = WORDS[language];
   const name = language === 'ta' ? (product.nameTa ?? product.name) : product.name;
+  const description = language === 'ta' ? (product.descriptionTa ?? product.descriptionEn) : product.descriptionEn;
   const base = {
     productId: product.productId,
     name,
     unitPriceMinor: product.unitPriceMinor,
     uom: product.uom,
+    ...(description === undefined ? {} : { description }),
   };
 
   // Recall is checked first and beats every other state — same order as the lane.
@@ -192,7 +201,8 @@ export function searchCatalogue(input: {
   const hits: SearchHit[] = [];
 
   for (const p of sellable) {
-    const haystack = normalise([p.name, p.nameTa ?? '', p.brand ?? ''].join(' '));
+    // D01-FR-06 (round 8): a customer's word for it (a synonym from the product master) finds it like its name does.
+    const haystack = normalise([p.name, p.nameTa ?? '', p.brand ?? '', ...(p.synonyms ?? [])].join(' '));
     const words = haystack.split(' ');
 
     if (haystack === q) {

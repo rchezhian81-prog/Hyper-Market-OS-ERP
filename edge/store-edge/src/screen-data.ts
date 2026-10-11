@@ -1054,6 +1054,11 @@ export function customerPayload(input: ScreenInput): Record<string, unknown> | n
       status: 'active',
       availableMinor: p.availableMinor,
       ...(p.ageRestricted === undefined ? {} : { ageRestricted: p.ageRestricted }),
+      // D01-FR-06 (round 8): the app's content from head office's product master — what the customer reads and searches by.
+      ...(p.brand === undefined ? {} : { brand: p.brand }),
+      ...(p.descriptionEn === undefined ? {} : { descriptionEn: p.descriptionEn }),
+      ...(p.descriptionTa === undefined ? {} : { descriptionTa: p.descriptionTa }),
+      ...(p.synonyms === undefined ? {} : { synonyms: p.synonyms }),
     })),
     ...(routing === undefined ? {} : { storeLocation: routing.storeLocation, policy: { radiusMetres: routing.radiusMetres } }),
     ...(slots === undefined ? {} : { slots }),
