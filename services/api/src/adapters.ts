@@ -219,6 +219,7 @@ import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/i
 import type { AccountOpeningsDeps, AccountOpeningsRecord, AccountOpeningsSignOff } from '../../finance/src/account-openings';
 import { openingEntryId, openingReversalEntryId } from '../../finance/src/account-openings';
 import { postJournal } from '../../finance/src/index';
+import { openedItemsOf, type OpeningItem, type OpenedItems } from '../../migration/src/opening-reversal';
 import type { OpeningReversalDeps, CutoverGo, OpeningReversalRequest, OpeningReversalApproval, ReversalDomainLine } from '../../migration/src/opening-reversal';
 import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
 import type { ConcessionTagDeps, ConcessionTradingBreach } from '../../finance/src/concession-tags';
@@ -1322,6 +1323,13 @@ export function streamName(...parts: readonly string[]): string {
     }
   }
   return parts.join(PART);
+}
+
+/** Round 7 (GT-05/OB-44): the register of what a migration load opened — written in the same atomic write as each item. */
+const openingItemsStream = (loadId: string): string => streamName(STREAM.migration, 'opening-items', loadId);
+function openingItemEntry(tenantId: string, item: OpeningItem, at: string): BatchEntry {
+  const ref = item.domain === 'stored_value' ? item.instrumentId : item.domain === 'receivable' ? `${item.customerId}/${item.invoiceId}` : item.customerId;
+  return { stream: openingItemsStream(item.loadId), event: makeEvent({ id: `opening-item-${item.loadId}-${item.domain}-${ref}`, type: 'OpeningItemRecorded', occurredAt: at, idempotencyKey: `opening-item-${tenantId}-${item.loadId}-${item.domain}-${ref}`, source: 'api/migration', payload: item }) };
 }
 
 /** Where a shop's subscription (plan) is recorded — read by the operator's shop list (OB-15-d-3) as head office writes it. */
@@ -5004,15 +5012,16 @@ export function b2bCollectionsAdapter(input: {
       return [...byId.values()];
     },
 
-    recordInvoice: async (tenantId, customerId, invoice) => {
-      await input.store.append(tenantId, forB2BCustomer(customerId), makeEvent({
+    recordInvoice: async (tenantId, customerId, invoice, openingLoadId) => {
+      const at = input.now();
+      await input.store.appendBatch(tenantId, [{ stream: forB2BCustomer(customerId), event: makeEvent({
         id: `b2b-inv-${customerId}-${invoice.invoiceId}`,
         type: 'B2BInvoiceRecorded',
-        occurredAt: input.now(),
+        occurredAt: at,
         idempotencyKey: `b2b-inv-${tenantId}-${customerId}-${invoice.invoiceId}-${invoice.grossMinor}-${invoice.dueOn}-${invoice.disputed ?? false}`,
         source: 'api/finance',
         payload: invoice,
-      }));
+      }) }, ...(openingLoadId === undefined ? [] : [openingItemEntry(tenantId, { loadId: openingLoadId, domain: 'receivable', customerId, invoiceId: invoice.invoiceId, openedMinor: invoice.grossMinor }, at)])]);
     },
 
     recordPayment: async (tenantId, customerId, payment) => {
@@ -7731,6 +7740,8 @@ export function accountOpeningsAdapter(input: { readonly store: EventStore; read
  * own domain's compensating record (never a delete), each keyed on the load so a re-run lands only what is missing.
  */
 const OPENING_REVERSALS_STREAM = streamName(STREAM.migration, 'opening-reversals');
+const openedItemsIn = async (store: EventStore, tenantId: string, loadId: string): Promise<OpenedItems> =>
+  openedItemsOf(await allOf<OpeningItem>(store, tenantId, openingItemsStream(loadId), 'OpeningItemRecorded'));
 /** OB-52: the cutover GOs the gate recorded — one per cutover (keyed), the first standing. */
 const CUTOVER_GO_STREAM = streamName(STREAM.migration, 'cutover-go');
 const cutoverGosOf = (store: EventStore, tenantId: string): Promise<readonly CutoverGo[]> => allOf<CutoverGo>(store, tenantId, CUTOVER_GO_STREAM, 'CutoverGoRecorded');
@@ -7777,6 +7788,7 @@ export function openingReversalAdapter(input: { readonly store: EventStore; read
     now: input.now,
     // OB-52: the window is the recorded GO's (round-6 `CutoverWindowRecorded` typed windows are kept but no longer read).
     gos: (tenantId) => cutoverGosOf(input.store, tenantId),
+    openedItems: (tenantId, loadId) => openedItemsIn(input.store, tenantId, loadId),
     requests: (tenantId) => allOf<OpeningReversalRequest>(input.store, tenantId, OPENING_REVERSALS_STREAM, 'OpeningReversalRequested'),
     recordRequest: async (tenantId, r) => {
       const res = await input.store.append(tenantId, OPENING_REVERSALS_STREAM, makeEvent({ id: `opening-reversal-${r.loadId}-${randomUUID()}`, type: 'OpeningReversalRequested', occurredAt: r.requestedAt, idempotencyKey: `opening-reversal-${tenantId}-${r.loadId}`, source: 'api/migration', payload: r }));
@@ -7788,7 +7800,9 @@ export function openingReversalAdapter(input: { readonly store: EventStore; read
       return res.record.event.payload as OpeningReversalApproval;
     },
 
-    problems: async (tenantId, r) => {
+    problems: async (tenantId, asked) => {
+      // Round 7: the items are ALWAYS the load's own register's — whatever the request record holds.
+      const r = { ...asked, ...(await openedItemsIn(input.store, tenantId, asked.loadId)) };
       const p: string[] = [];
       for (const v of r.storedValue) {
         const inst = await sv.instrument(tenantId, v.instrumentId);
@@ -7825,7 +7839,8 @@ export function openingReversalAdapter(input: { readonly store: EventStore; read
       return p;
     },
 
-    execute: async (tenantId, r, a) => {
+    execute: async (tenantId, asked, a) => {
+      const r = { ...asked, ...(await openedItemsIn(input.store, tenantId, asked.loadId)) };
       const at = a.approvedAt;
       const why = `opening load ${r.loadId} reversed in cutover ${r.cutoverId}: ${r.reason} (requested by ${r.requestedBy}, approved by ${a.approvedBy})`;
       // Stock: every opening receipt movement out again, at its own cost.
@@ -7890,7 +7905,8 @@ export function openingReversalAdapter(input: { readonly store: EventStore; read
       }
     },
 
-    position: async (tenantId, r) => {
+    position: async (tenantId, asked) => {
+      const r = { ...asked, ...(await openedItemsIn(input.store, tenantId, asked.loadId)) };
       const out: ReversalDomainLine[] = [];
       const stock = await stockOf(tenantId, r.loadId);
       const qty = new Map<string, { opened: number; reversed: number }>();
@@ -8571,8 +8587,8 @@ export function customerAdapter(input: {
     // bumped by every movement that lands.
     pointsVersion: (tenantId, customerId) => input.store.guardVersion(tenantId, `points:${customerId}`),
 
-    recordPointsMovement: async (tenantId, customerId, m, expectedVersion) => {
-      await input.store.appendBatch(tenantId, [{ stream: forCustomerPoints(customerId), event: makeEvent({
+    recordPointsMovement: async (tenantId, customerId, m, expectedVersion, openingLoadId) => {
+      await input.store.appendBatch(tenantId, [...(openingLoadId === undefined ? [] : [openingItemEntry(tenantId, { loadId: openingLoadId, domain: 'points', customerId, openedMinor: m.delta }, m.at)]), { stream: forCustomerPoints(customerId), event: makeEvent({
         id: `points-${m.movementId}`,
         type: 'PointsMovement',
         occurredAt: m.at,
@@ -9143,25 +9159,25 @@ export function storedValueAdapter(input: {
       return perInstrument.flat();
     },
 
-    recordIssue: async (tenantId, instrument, opening) => {
+    recordIssue: async (tenantId, instrument, opening, openingLoadId) => {
       // The instrument goes on the shared index (so it can be found and, later, pooled by owner); its
-      // opening value is the first movement on the instrument's own stream, where the balance folds.
-      await input.store.append(tenantId, STORED_VALUE_INDEX, makeEvent({
+      // opening value is the first movement on the instrument's own stream, where the balance folds. One atomic write — with
+      // a load's opening-item register entry when a migration load opened it (round 7).
+      await input.store.appendBatch(tenantId, [{ stream: STORED_VALUE_INDEX, event: makeEvent({
         id: `sv-issue-${instrument.instrumentId}`,
         type: 'StoredValueIssued',
         occurredAt: instrument.issuedAt,
         idempotencyKey: `sv-issue-${tenantId}-${instrument.instrumentId}`,
         source: 'api/customer',
         payload: instrument,
-      }));
-      await input.store.append(tenantId, forInstrument(instrument.instrumentId), makeEvent({
+      }) }, { stream: forInstrument(instrument.instrumentId), event: makeEvent({
         id: `sv-mv-${opening.movementId}`,
         type: 'StoredValueMovement',
         occurredAt: opening.at,
         idempotencyKey: `sv-mv-${tenantId}-${opening.movementId}`,
         source: 'api/customer',
         payload: opening,
-      }));
+      }) }, ...(openingLoadId === undefined ? [] : [openingItemEntry(tenantId, { loadId: openingLoadId, domain: 'stored_value', instrumentId: instrument.instrumentId, openedMinor: opening.deltaMinor }, opening.at)])]);
     },
 
     // The instrument's write guard (Wave 2a · PF-01): one version per card, read before the balance and bumped by

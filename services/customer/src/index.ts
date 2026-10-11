@@ -136,7 +136,9 @@ export interface CustomerDeps {
   /** The customer's points write-guard version (Wave 2a · audit PF-01): read before `pointsMovements`, passed back
    *  to `recordPointsMovement`; two distinct burns that both read the same balance cannot both land. Optional on a stub. */
   readonly pointsVersion?: (tenantId: string, customerId: string) => Promise<number> | number;
-  readonly recordPointsMovement: (tenantId: string, customerId: string, m: RecordedPointsMovement, expectedVersion?: number) => Promise<void> | void;
+  /** With `openingLoadId` (a migration load opening carried-over points), the load's opening-item register entry is written in
+   *  the SAME atomic write. */
+  readonly recordPointsMovement: (tenantId: string, customerId: string, m: RecordedPointsMovement, expectedVersion?: number, openingLoadId?: string) => Promise<void> | void;
   readonly now: () => string;
 }
 
@@ -387,7 +389,12 @@ export function customerRoutes(deps: CustomerDeps): readonly Route[] {
       permission: 'loyalty.points.write', idempotent: true,
       handler: async (ctx) => {
         const customerId = ctx.params['customerId'] ?? '';
-        const b = (ctx.body ?? {}) as { movementId?: unknown; kind?: unknown; points?: unknown; sourceRef?: unknown };
+        const b = (ctx.body ?? {}) as { movementId?: unknown; kind?: unknown; points?: unknown; sourceRef?: unknown; openingLoadId?: unknown };
+        // Round 7: a load's opening points carry the load id, and are exactly the load's own earn movement for this customer.
+        const openingLoadId = typeof b.openingLoadId === 'string' && b.openingLoadId.trim() !== '' ? b.openingLoadId.trim() : undefined;
+        if (b.openingLoadId !== undefined && (openingLoadId === undefined || b.kind !== 'earn' || b.movementId !== `${openingLoadId}-opening-${customerId}`)) {
+          throw apiError(400, { code: 'not_readable_as_a_points_movement', whatHappened: 'Opening points from a migration load are an earn movement with the id "<loadId>-opening-<customerId>".', wasItSaved: 'not_saved', nextSafeAction: 'Nothing changed. Send the load\'s own opening movement.' });
+        }
         const kinds: readonly PointsKind[] = ['earn', 'burn', 'reversal'];
         if (typeof b.movementId !== 'string' || b.movementId.trim() === ''
           || typeof b.kind !== 'string' || !kinds.includes(b.kind as PointsKind)
@@ -417,7 +424,7 @@ export function customerRoutes(deps: CustomerDeps): readonly Route[] {
           await deps.recordPointsMovement(ctx.tenantId, customerId, {
             movementId: request.movementId, customerId, delta: assessment.delta, reason: request.kind,
             sourceRef: typeof b.sourceRef === 'string' ? b.sourceRef : null, at: deps.now(),
-          }, expectedVersion);
+          }, expectedVersion, openingLoadId);
         } catch (err) {
           // Another movement on this customer's points landed first (Wave 2a · PF-01): nothing moved, re-read.
           if (err instanceof ConcurrencyConflictError) throw concurrentChange(`the points of customer ${customerId}`);

@@ -31,6 +31,9 @@ import { prepareCutoverEvidence, askTheGate } from '../support/cutover-go';
  *   1. after the close the reversal is refused by name (`outside_cutover_window`), nothing recorded; a request made inside
  *      the window whose approval arrives after the close is refused and nothing is reversed; a store manager cannot ask at
  *      all; a request for a card that has been spent since is refused by name;
+ *   1b. round 7 (hard rule #10): the items a reversal takes back are head office's — every gift card, credit, invoice and points
+ *      opening the load registered when it created them; a request that NAMES items is refused; a card issued after the load
+ *      is never touched and never on the read-back;
  *   2. inside the window the owner asks; the SAME person cannot approve (`self_approval`); a second owner approves;
  *   3. every opening is taken back out by its own domain's record — stock out at its own cost, the cards adjusted to zero, the
  *      invoice credited, the points reversed, the supplier bills reversed and their postings undone, the trial balance's
@@ -83,9 +86,9 @@ const TB = [
   { accountCode: 'opening_balances', accountName: 'Sundry creditors (control — bills loaded per supplier)', debitMinor: 0, creditMinor: 90_000 },
   { accountCode: 'capital', accountName: 'Capital', debitMinor: 0, creditMinor: STOCK_VALUE + 200_000 - 90_000 },
 ];
-/** What the load opened that head office cannot find by the load id alone — named from the extract. */
-const REQUEST = {
-  storedValue: [{ instrumentId: 'GV-1', balanceMinor: 50_000 }, { instrumentId: 'SC-1', balanceMinor: 12_500 }],
+/** Round 7: what a caller might try to NAME — refused; head office reads the load's own opening-item register instead. */
+const NAMED_ITEMS = {
+  storedValue: [{ instrumentId: 'GV-1', balanceMinor: 50_000 }],
   receivables: [{ customerId: 'C-1', invoiceId: 'INV-1', outstandingMinor: 180_000 }],
   pointsCustomers: ['C-1'],
 };
@@ -157,7 +160,7 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     const b = backing();
     const h = apiHarness(b);
     const call = await loadedShop(h, t);
-    const ask = (userId: string, cutoverId: string, key?: string) => call('POST', `/v1/migration/opening-reversals/${LOAD}`, userId, { cutoverId, reason: 'wrong extract loaded on cutover night', ...REQUEST }, key);
+    const ask = (userId: string, cutoverId: string, key?: string) => call('POST', `/v1/migration/opening-reversals/${LOAD}`, userId, { cutoverId, reason: 'wrong extract loaded on cutover night' }, key);
 
     // 0. No GO yet: refused by name, nothing recorded. A typed window is no longer taken (410), and records nothing.
     expect(codeOf(await ask(OPERATOR, 'C-1'))).toBe('no_cutover_go');
@@ -199,10 +202,24 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     // A different cutover has no GO of its own.
     expect(codeOf(await ask(OPERATOR, 'C-other'))).toBe('no_cutover_go');
 
+    // Round 7 (hard rule #10): a card issued AFTER the load — not the load's — and a request that names items itself.
+    expect((await call('POST', '/v1/stored-value/instruments', OPERATOR, { instrumentId: 'GV-AFTER', kind: 'gift_card', ownerRef: 'C-2', faceValueMinor: 7_000, channel: 'store' })).status).toBe(201);
+    const named = await call('POST', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR, { cutoverId: 'C-1', reason: 'wrong extract loaded on cutover night', ...NAMED_ITEMS });
+    expect(named.status).toBe(400);
+    expect(codeOf(named)).toBe('opening_items_come_from_the_load');
+    const sneaky = await call('POST', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR, { cutoverId: 'C-1', reason: 'wrong extract loaded on cutover night', storedValue: [{ instrumentId: 'GV-AFTER', balanceMinor: 7_000 }] });
+    expect(codeOf(sneaky)).toBe('opening_items_come_from_the_load');
+
     // 2. Inside the window the owner asks; a manager may not ask; the asker may not approve; a second owner does.
     expect((await ask(MANAGER, 'C-1')).status).toBe(403);
     const asked = await ask(OPERATOR, 'C-1', 'ask-1');
     expect(asked.status).toBe(201);
+    // The set is head office's: every card, invoice and points opening the load registered — and nothing else.
+    expect((asked.body as { request: Record<string, unknown> }).request).toMatchObject({
+      storedValue: [{ instrumentId: 'GV-1', balanceMinor: 50_000 }, { instrumentId: 'SC-1', balanceMinor: 12_500 }],
+      receivables: [{ customerId: 'C-1', invoiceId: 'INV-1', outstandingMinor: 180_000 }],
+      pointsCustomers: ['C-1'],
+    });
     expect((asked.body as { position: Line[] }).position.every((l) => l.reversedMinor === 0 && l.netMinor === l.openedMinor)).toBe(true);
     const self = await call('POST', `/v1/migration/opening-reversals/${LOAD}/approval`, OPERATOR, {});
     expect(self.status).toBe(403);
@@ -232,6 +249,9 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     expect(valuation.totalValueMinor).toBe(100); // the delta's one unit at 100 paise; every unit the load opened is back out
     expect(valuation.rows.every((r) => r.cogs.minor === 0)).toBe(true); // undone, never "sold"
     for (const id of ['GV-1', 'SC-1']) expect((await call('GET', `/v1/stored-value/instruments/${id}`, OPERATOR)).body).toMatchObject({ balanceMinor: 0 });
+    // The card that was not the load's is untouched, and is not on the read-back.
+    expect((await call('GET', '/v1/stored-value/instruments/GV-AFTER', OPERATOR)).body).toMatchObject({ balanceMinor: 7_000 });
+    expect(rb.position.some((l) => l.key === 'GV-AFTER')).toBe(false);
     expect((await call('GET', '/v1/b2b/collections/C-1/ageing', OPERATOR, undefined, undefined, { asOf: COUNT_DATE })).body).toMatchObject({ totalOutstandingMinor: 0 });
     expect((await call('GET', '/v1/customers/C-1/points', OPERATOR)).body).toMatchObject({ pointsBalance: 0 });
     const sup = (await call('GET', '/v1/purchase/suppliers/SUP-1/account', OPERATOR)).body as { totals: { openingMinor: number; owedMinor: number } };
@@ -272,7 +292,7 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     const call = await loadedShop(h, t);
     await goAt(h, t);
     expect((await call('POST', '/v1/stored-value/instruments/GV-1/redeem', OPERATOR, { movementId: 'spend-1', amountMinor: 5_000, channel: 'store' })).status).toBeLessThan(300);
-    const refused = await call('POST', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR, { cutoverId: 'C-1', reason: 'wrong extract', ...REQUEST });
+    const refused = await call('POST', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR, { cutoverId: 'C-1', reason: 'wrong extract' });
     expect(codeOf(refused)).toBe('opening_cannot_be_reversed_as_loaded');
     expect((refused.body as { error: { whatHappened: string } }).error.whatHappened).toMatch(/GV-1 has moved since it opened/);
     expect((await call('GET', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR)).status).toBe(404);
@@ -289,7 +309,7 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     expect((await call('GET', '/v1/migration/cutover/windows/C-1', OPERATOR)).body).toMatchObject({ openNow: true });
     // One minute after the close: refused, nothing recorded.
     clockAt(goMs + 48 * hour + 60_000);
-    const late = await call('POST', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR, { cutoverId: 'C-1', reason: 'found the wrong extract too late', ...REQUEST });
+    const late = await call('POST', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR, { cutoverId: 'C-1', reason: 'found the wrong extract too late' });
     expect(late.status).toBe(422);
     expect(codeOf(late)).toBe('outside_cutover_window');
     expect((late.body as { error: { whatHappened: string } }).error.whatHappened).toContain(new Date(goMs + 48 * hour).toISOString());
@@ -297,7 +317,7 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     // A new GO on the same cutover does not reopen it: the first GO stands.
     expect((await askTheGate(h, t, OPERATOR, 'C-1', OPERATOR)).recordedGo?.goAt).toBe(new Date(goMs).toISOString());
     const restarted = apiHarness(b);
-    const again = await restarted.request({ method: 'POST', path: `/v1/migration/opening-reversals/${LOAD}`, userId: OPERATOR, tenantId: t, idempotencyKey: 'late-2', body: { cutoverId: 'C-1', reason: 'found the wrong extract too late', ...REQUEST } });
+    const again = await restarted.request({ method: 'POST', path: `/v1/migration/opening-reversals/${LOAD}`, userId: OPERATOR, tenantId: t, idempotencyKey: 'late-2', body: { cutoverId: 'C-1', reason: 'found the wrong extract too late' } });
     expect(codeOf(again)).toBe('outside_cutover_window');
     expect((await restarted.request({ method: 'GET', path: '/v1/migration/cutover/windows/C-1', userId: OPERATOR, tenantId: t })).body).toMatchObject({ go: true, openNow: false });
   }, 240_000);
@@ -309,7 +329,7 @@ describe.each(backings)('OB-44 an opening load is reversed only in the cutover w
     const call = await loadedShop(h, t);
     const goMs = await goAt(h, t);
     clockAt(goMs + 47 * hour);
-    const asked = await call('POST', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR, { cutoverId: 'C-1', reason: 'wrong extract loaded on cutover night', ...REQUEST });
+    const asked = await call('POST', `/v1/migration/opening-reversals/${LOAD}`, OPERATOR, { cutoverId: 'C-1', reason: 'wrong extract loaded on cutover night' });
     expect(asked.status).toBe(201);
     clockAt(goMs + 48 * hour + 1_000);
     // The asker still cannot approve (self-approval is refused first, whatever the time).

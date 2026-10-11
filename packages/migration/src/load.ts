@@ -551,7 +551,7 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
       steps.push({
         group: 'customer', what: `customer points ${c.customerId}`,
         path: `/v1/customers/${encodeURIComponent(c.customerId)}/points`,
-        body: { movementId: `${req.loadId}-opening-${c.customerId}`, kind: 'earn', points: c.loyaltyPoints, sourceRef: `opening balance from the legacy ERP (load ${req.loadId})` },
+        body: { movementId: `${req.loadId}-opening-${c.customerId}`, kind: 'earn', points: c.loyaltyPoints, sourceRef: `opening balance from the legacy ERP (load ${req.loadId})`, openingLoadId: req.loadId },
         idempotencyKey: key(`points-${c.customerId}`),
       });
     }
@@ -562,7 +562,7 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
     steps.push({
       group: 'customer', what: `${v.kind.replace('_', ' ')} ${v.instrumentId} (${v.customerId})`,
       path: '/v1/stored-value/instruments',
-      body: { instrumentId: v.instrumentId, kind: v.kind, ownerRef: v.customerId, faceValueMinor: v.balanceMinor, channel: 'store', ...(v.expiresOn === undefined ? {} : { expiresOn: v.expiresOn }) },
+      body: { instrumentId: v.instrumentId, kind: v.kind, ownerRef: v.customerId, faceValueMinor: v.balanceMinor, channel: 'store', openingLoadId: req.loadId, ...(v.expiresOn === undefined ? {} : { expiresOn: v.expiresOn }) },
       idempotencyKey: key(`stored-value-${v.instrumentId}`),
     });
   }
@@ -572,7 +572,7 @@ export function planLoad(bundle: ExtractBundle, req: LoadRequest): LoadPlan {
     steps.push({
       group: 'customer', what: `receivable ${r.customerId}/${r.invoiceId}`,
       path: `/v1/b2b/collections/${encodeURIComponent(r.customerId)}/invoices/${encodeURIComponent(r.invoiceId)}`,
-      body: { number: r.number, issuedOn: r.issuedOn, dueOn: r.dueOn, grossMinor: r.outstandingMinor },
+      body: { number: r.number, issuedOn: r.issuedOn, dueOn: r.dueOn, grossMinor: r.outstandingMinor, openingLoadId: req.loadId },
       idempotencyKey: key(`receivable-${r.customerId}-${r.invoiceId}`),
     });
   }
