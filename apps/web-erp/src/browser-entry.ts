@@ -215,7 +215,7 @@ import {
 } from './indents-session';
 import {
   createDataIoSession,
-  type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView,
+  type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView, type ExportPeriodInput, type ExportReply,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
 } from './data-io-session';
 import {
@@ -3096,6 +3096,29 @@ async function postExport(domain: string): Promise<ExportResult> {
   } catch { return 'lost_link'; }
 }
 
+/** SF-10: POST an export of a dated domain for a period ({ from, to }) — the rows taken and the columns hidden for this
+ *  person, or head office's refusal in its own words. Under the caller's own session; an audited artifact. */
+async function postPeriodExport(domain: string, period: ExportPeriodInput): Promise<ExportReply> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { kind: 'lost_link' };
+  const key = globalThis.crypto?.randomUUID?.() ?? `export-${domain}-${period.from}-${period.to}`;
+  try {
+    const res = await fetchFn(`/v1/export/${encodeURIComponent(domain)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' },
+      credentials: 'same-origin', body: JSON.stringify({ from: period.from, to: period.to }),
+    });
+    if (res.status >= 200 && res.status < 300) {
+      const body = (await res.json()) as { audit?: { rowCount?: unknown; redactedColumns?: unknown } };
+      const rowCount = typeof body.audit?.rowCount === 'number' ? body.audit.rowCount : 0;
+      const redacted = Array.isArray(body.audit?.redactedColumns) ? body.audit.redactedColumns.filter((c): c is string => typeof c === 'string') : [];
+      return { kind: 'exported', rowCount, redactedColumns: redacted };
+    }
+    const why = await refusalOf(res);
+    return { kind: 'refused', code: why.code, whatHappened: why.whatHappened };
+  } catch { return { kind: 'lost_link' }; }
+}
+
 /** POST a validate (POST /v1/import/validate) — a preview, writes nothing. Resolves the full template body. The
  *  route also returns the file's check code (`contentFingerprint`) — what an import's approval is for (ADR-0024). */
 async function postValidate(template: FullImportTemplate | undefined, req: { text: string; declaredTotalMinor?: number }): Promise<ValidateResult> {
@@ -3183,6 +3206,7 @@ export function dataIoPortsFromData(data: DataIoData | undefined, live?: DataIoL
     mayImport: () => held.has(IMPORT_READ_PERMISSION),
     mayCommitImport: () => held.has(IMPORT_COMMIT_PERMISSION),
     runExport: (domain) => postExport(domain),
+    runPeriodExport: (domain, period) => postPeriodExport(domain, period),
     validate: (req) => postValidate(findTemplate(req.templateId), req),
     commit: (req) => postCommit(findTemplate(req.templateId), req),
     askApproval: (ask) => postApprovalRequest(ask),
