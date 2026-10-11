@@ -525,7 +525,6 @@ export function buildSurface(deps: {
     : { ...countPlansAdapter({ store, now }), recordAudit: auditTrail?.recordAudit, locationBranches: locationBranchesOf(store, now) };
   // WF-08 / OB-59 (round 10): the count freeze EVERY head-office adjustment / write-off path asks — the open plan that
   // freezes this kind here for this product, if any. A function declaration, so the deps built above can name it.
-  // eslint-disable-next-line no-inner-declarations
   async function countPlanFreeze(t: string, l: string, p: string, k: string): Promise<string | undefined> {
     return countPlanDeps === undefined ? undefined : (await countPlanFreezing(countPlanDeps, t, l, p, k))?.planId;
   }
