@@ -216,6 +216,7 @@ import {
 import {
   createDataIoSession,
   type DataIoPorts, type DataIoSession, type ExportDomainView, type ExportAuditView, type ExportPeriodInput, type ExportReply,
+  type LoadedJobsRead, type LoadedJobView, type UndoRequest, type RowChangeView,
   type ExportResult, type ValidateResult, type CommitResult, type ImportPreviewView,
 } from './data-io-session';
 import {
@@ -3125,8 +3126,11 @@ async function postValidate(template: FullImportTemplate | undefined, req: { tex
   const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
   if (fetchFn === undefined || template === undefined) return 'refused';
   try {
+    // Round 8: the route declares idempotency, so head office refuses a check without a key (found on the production API —
+    // the stub cloud never asked for one). A check writes nothing; each press is its own key.
+    const key = globalThis.crypto?.randomUUID?.() ?? `validate-${Date.now()}`;
     const res = await fetchFn('/v1/import/validate', {
-      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, credentials: 'same-origin',
+      method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' }, credentials: 'same-origin',
       body: JSON.stringify({
         template: { id: template.id, domain: template.domain, columns: template.columns, keyColumns: template.keyColumns },
         text: req.text,
@@ -3150,7 +3154,12 @@ async function postValidate(template: FullImportTemplate | undefined, req: { tex
       commitReady: p.commitReady,
     };
     const fp = body.contentFingerprint;
-    return { preview, contentFingerprint: typeof fp === 'string' && fp.trim() !== '' ? fp : null };
+    // M30 round 8: an update file says what each row would change (from → to) — shown to the person before they ask.
+    const changes = (body as { changes?: unknown }).changes;
+    return {
+      preview, contentFingerprint: typeof fp === 'string' && fp.trim() !== '' ? fp : null,
+      ...(Array.isArray(changes) ? { changes: changes as readonly RowChangeView[] } : {}),
+    };
   } catch { return 'lost_link'; }
 }
 
@@ -3211,7 +3220,36 @@ export function dataIoPortsFromData(data: DataIoData | undefined, live?: DataIoL
     commit: (req) => postCommit(findTemplate(req.templateId), req),
     askApproval: (ask) => postApprovalRequest(ask),
     approvalInbox: () => fetchApprovalInbox(),
+    loadedJobs: () => fetchLoadedJobs(),
+    undo: (req) => postUndo(req),
   };
+}
+
+/** M30 round 8: the loads already applied (GET /v1/import/commits) — read only, under the caller's own session. */
+async function fetchLoadedJobs(): Promise<LoadedJobsRead> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return { result: 'lost_link' };
+  try {
+    const res = await fetchFn('/v1/import/commits', { method: 'GET', headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (res.status >= 400) return { result: 'refused' };
+    const body = (await res.json()) as { jobs?: readonly LoadedJobView[] };
+    return { result: 'read', jobs: body.jobs ?? [] };
+  } catch { return { result: 'lost_link' }; }
+}
+
+/** M30 round 8: POST an undo (POST /v1/import/commits/:jobId/rollback) naming the caller's own APPROVED undo request. */
+async function postUndo(req: UndoRequest): Promise<CommitResult> {
+  const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (fetchFn === undefined) return 'lost_link';
+  const key = globalThis.crypto?.randomUUID?.() ?? `undo-${req.jobId}`;
+  try {
+    const res = await fetchFn(`/v1/import/commits/${encodeURIComponent(req.jobId)}/rollback`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': key, accept: 'application/json' }, credentials: 'same-origin',
+      body: JSON.stringify({ reason: req.reason, approvalId: req.approvalId }),
+    });
+    if (res.status >= 200 && res.status < 300) return 'committed';
+    return await refusalOf(res);
+  } catch { return 'lost_link'; }
 }
 
 /** Build the data import/export session, or `null` when the box carried no payload (shell shows the sample). */
