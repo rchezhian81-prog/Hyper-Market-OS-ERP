@@ -39,6 +39,7 @@ import type { StockMovement } from '../../../packages/stock/src/position';
 import type { Movement } from './index';
 import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, type LocationBranches } from './location-scope';
+import { assertNotFrozenByCount, freezingPlanOf, type CountFreezeCheck } from './count-freeze';
 
 /** The count-approval threshold applied when the tenant has set none — and the record says so (`default_threshold`). */
 export const DEFAULT_COUNT_APPROVAL_THRESHOLD_MINOR = 100_000;
@@ -179,6 +180,8 @@ export interface CountsDeps {
    */
   readonly binExpected?: (tenantId: string, binId: string, productId: string) => Promise<number | undefined> | number | undefined;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
+  /** WF-08 / OB-59: which open count plan freezes a correction here (absent on a bare stub — nothing is frozen). */
+  readonly countFreeze?: CountFreezeCheck;
   readonly now: () => string;
 }
 
@@ -292,7 +295,7 @@ export async function reconcileBlindCount(deps: CountsDeps, tenantId: string, c:
 /** What deciding a held count came to — for the direct route and for the manager's relayed decision alike. */
 export type CountDecisionOutcome =
   | { readonly ok: true; readonly record: StoredReconciliation; readonly alreadyDecided: boolean }
-  | { readonly ok: false; readonly refusedBecause: 'count_unknown' | 'count_not_pending' | 'self_approval' | 'count_already_decided'; readonly detail: string; readonly record?: StoredReconciliation };
+  | { readonly ok: false; readonly refusedBecause: 'count_unknown' | 'count_not_pending' | 'self_approval' | 'count_already_decided' | 'frozen_by_a_stock_count'; readonly detail: string; readonly record?: StoredReconciliation };
 
 /**
  * Decide a HELD count (SP-4 · §28): a person who is NOT the counter approves — the correction then layers on the
@@ -317,6 +320,13 @@ export async function decideCount(deps: CountsDeps, input: {
   if (rec.pendingApproval !== true) return { ok: false, refusedBecause: 'count_not_pending', detail: `Count ${input.countId} is not waiting for a decision (it ${rec.adjusted ? 'was corrected at once' : 'matched'}).`, record: rec };
   if (rec.counterId === input.decidedBy) return { ok: false, refusedBecause: 'self_approval', detail: `${input.decidedBy} counted this and cannot decide it (§28 separation of duties).`, record: rec };
 
+  // WF-08 / OB-59: an ad-hoc count's correction approved on a head-office screen where an open plan is counting this
+  // product is refused — the plan's own counts (approved by the plan) pass. A RELAYED decision already happened on the
+  // floor: it posts, and the open plan raises it as a freeze exception that needs a recount.
+  if (input.via === 'direct' && input.decision === 'approved' && rec.varianceMinor !== 0) {
+    const frozen = await freezingPlanOf(deps.countFreeze, input.tenantId, [{ productId: rec.productId, locationId: rec.locationId, kind: rec.varianceMinor > 0 ? 'adjusted' : 'wasted' }], rec.planId);
+    if (frozen !== undefined) return { ok: false, refusedBecause: 'frozen_by_a_stock_count', detail: `${rec.productId} is being counted at ${rec.locationId} under count plan ${frozen.planId}, which freezes "${frozen.move.kind}" movements there until the count is approved or cancelled — so this count's correction cannot post now (OB-59). The count stays held.`, record: rec };
+  }
   const decidedAt = deps.now();
   // SP-5b (F06): an APPROVED correction posts to the M08 ledger (and the bin, for a bin count) with the decided record —
   // one movement, keyed on the count, appended by `recordDecision` in the same write. A pre-SP-5b record with no unit
@@ -341,7 +351,7 @@ export async function decideCount(deps: CountsDeps, input: {
 }
 
 const refusalStatus: Record<Exclude<CountDecisionOutcome, { ok: true }>['refusedBecause'], number> = {
-  count_unknown: 404, count_not_pending: 409, self_approval: 422, count_already_decided: 409,
+  count_unknown: 404, count_not_pending: 409, self_approval: 422, count_already_decided: 409, frozen_by_a_stock_count: 409,
 };
 
 export function countsRoutes(deps: CountsDeps): readonly Route[] {
@@ -390,6 +400,11 @@ export function countsRoutes(deps: CountsDeps): readonly Route[] {
             throw apiError(400, { code: 'invalid_count', whatHappened: e.message, wasItSaved: 'not_saved', nextSafeAction: 'Correct the count and re-send. Nothing was recorded.' });
           }
           throw e;
+        }
+        // WF-08 / OB-59: an ad-hoc count with a variance at a place an open plan is counting would write (or hold for) an
+        // adjustment the plan froze — refused by name, nothing recorded. Count it under the plan instead.
+        if (rec.varianceMinor !== 0) {
+          await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, [{ productId: rec.productId, locationId: rec.locationId, kind: rec.varianceMinor > 0 ? 'adjusted' : 'wasted' }], 'count correction (count it under the open plan instead)');
         }
         await deps.recordReconciliation(ctx.tenantId, rec);
         await deps.recordAudit?.(ctx.tenantId, {

@@ -9,6 +9,7 @@ import { SqlIdempotencyStore } from '../../services/kernel/src/index';
 import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
+import { sealedDecision } from '../support/store-seal';
 
 /**
  * **WF-08 · D05-FR-05 · M09-FR-04 — a stock count from plan to the books (round 8).** On the real API, in memory and — with
@@ -47,6 +48,7 @@ async function shop(harness: () => ApiHarness) {
   for (const u of ['u-plan', 'u-c1', 'u-c2', 'u-appr']) await h.provisionRole(T, u, 'store_manager');
   await h.provisionRole(T, 'u-till', 'cashier');
   await h.provisionRole(T, 'u-acct', 'accountant');
+  await h.provisionRole(T, 'u-box', 'store_computer', ['S1']);
   const call = (method: 'GET' | 'POST' | 'PUT', path: string, userId: string, body?: unknown, key?: string, query?: Record<string, string>): Promise<Res> =>
     h.request({ method, path, userId, tenantId: T, ...(body === undefined ? {} : { body }), ...(query === undefined ? {} : { query }), ...(method === 'GET' ? {} : { idempotencyKey: key ?? `${path}-${userId}-${JSON.stringify(body)}` }) });
   const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
@@ -62,14 +64,19 @@ async function shop(harness: () => ApiHarness) {
   const line = async (p: string): Promise<Line> => (await view()).lines.find((l) => l.productId === p) as Line;
   const count = (countId: string, productId: string, countedMinor: number, by: string, recountOf?: string) =>
     call('POST', `/v1/inventory/count-plans/cp1/counts/${countId}`, by, { productId, locationId: 'S1', uom: 'EA', countedMinor, ...(recountOf === undefined ? {} : { recountOf }) }, `cnt-${countId}`);
-  return { h, T, call, ok, onHand, view, line, count };
+  // The manager's decision made on the store screen, relayed by the box (SP-4) — a fact that already happened on the floor.
+  const relayDecision = (id: string, subjectType: string, subjectRef: string, requestedBy: string, decidedBy: string) =>
+    h.request({ method: 'POST', path: `/v1/approvals/decisions/${id}/synced`, userId: 'u-box', tenantId: T, idempotencyKey: `relay-${id}`, body: sealedDecision(T, 'ApprovalDecided', {
+      id, subjectType, subjectRef, requestedBy, branchId: 'S1', value: null, status: 'approved', decidedBy, reason: 'checked on the floor', decidedAt: new Date().toISOString(), storeId: 'S1', source: 'manager-screen',
+    }) });
+  return { h, T, call, ok, onHand, view, line, count, relayDecision };
 }
 
 const PLAN = { locationId: 'S1', productIds: ['P1', 'P2', 'P3'], frozenKinds: ['received', 'transferred_in', 'transferred_out', 'adjusted', 'wasted'], recountThresholdMinor: 2_000, note: 'aisle 4 quarterly count' };
 
 describe.each(backings)('a stock count is planned, frozen, counted blind, recounted, caused, approved once and booked — on $name (WF-08 · D05-FR-05)', ({ harness }) => {
   it('runs the whole WF-08 path, refusing every short-cut by name, and the books follow the ledger once', async () => {
-    const { call, ok, onHand, view, line, count } = await shop(harness);
+    const { call, ok, onHand, view, line, count, relayDecision } = await shop(harness);
 
     // ── PLAN: the planner's choices; a till kind is never frozen; a cashier cannot plan ─────────────────────────────
     expect(codeOf(await call('POST', '/v1/inventory/count-plans/cpX', 'u-plan', { ...PLAN, frozenKinds: ['received', 'sold'] }))).toBe('till_sales_are_never_frozen');
@@ -123,10 +130,15 @@ describe.each(backings)('a stock count is planned, frozen, counted blind, recoun
     // ── A SALE dated before P1's count reaches head office after it: P1's expected moved — it must be counted again ──
     await ok(call('POST', '/v1/inventory/movements', 'u-owner', { movementId: 'late-sale', productId: 'P1', locationId: 'S1', kind: 'sold', quantityMinor: 2, uom: 'EA', occurredAt: '2026-08-02T10:00:00.000Z', enteredBy: 'u-till' }, 'late-sale'), 'late sale');
     expect(await line('P1')).toMatchObject({ state: 'recount_required', recountBecause: ['expected_changed'] });
-    // ── A frozen kind landing by ANOTHER path (a small write-off) is a visible exception, and P3 must be counted again ──
-    await ok(call('POST', '/v1/inventory/write-off/wo-p3', 'u-owner', { productId: 'P3', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'crushed' }, 'wo-p3'), 'write-off during the freeze');
+    // ── Round 10 (OB-59): a write-off typed at head office is refused by name — nothing moves ─────────────────────────
+    expect(codeOf(await call('POST', '/v1/inventory/write-off/wo-p3', 'u-owner', { productId: 'P3', locationId: 'S1', qty: 1, uom: 'EA', lossType: 'damage', reasonCode: 'crushed' }, 'wo-p3'))).toBe('frozen_by_a_stock_count');
+    expect(await onHand('P3')).toBe(20);
+    // ── A frozen kind landing by a RELAYED path (the manager's store-screen approval of a handheld's request) is KEPT, is a
+    //    visible exception, and P3 must be counted again ─────────────────────────────────────────────────────────────
+    await ok(call('POST', '/v1/inventory/adjustment-requests/ar-p3/synced', 'u-box', { requestId: 'ar-p3', productId: 'P3', locationId: 'S1', binId: null, deltaMinor: -1, uom: 'EA', reasonCode: 'damaged', requestedBy: 'u-c1', at: new Date().toISOString(), storeId: 'S1', source: 'warehouse-handheld' }, 'ar-p3'), 'request relayed');
+    expect((await relayDecision('ap-p3', 'stock_adjustment', 'ar-p3', 'u-c1', 'u-plan')).body).toMatchObject({ applied: true, flags: [] });
     v = await view();
-    expect(v.freezeBreaches.map((b) => [b.movementId, b.kind])).toEqual([['writeoff-wo-p3', 'wasted']]);
+    expect(v.freezeBreaches.map((b) => [b.movementId, b.kind])).toEqual([['adj-req:ar-p3', 'wasted']]);
     expect(v.lines.find((l) => l.productId === 'P3')).toMatchObject({ state: 'recount_required', recountBecause: ['moved_during_freeze'] });
 
     // ── APPROVAL is refused while anything waits ──────────────────────────────────────────────────────────────────
@@ -191,8 +203,6 @@ describe.each(backings)('a stock count is planned, frozen, counted blind, recoun
       ['stock-adjustment:count:k-p2-r', [{ accountCode: 'inventory_loss', debitMinor: 4_000, creditMinor: 0 }, { accountCode: 'inventory', debitMinor: 0, creditMinor: 4_000 }]],
       ['stock-adjustment:count:k-p3-r', [{ accountCode: 'inventory', debitMinor: 1_000, creditMinor: 0 }, { accountCode: 'inventory_gain', debitMinor: 0, creditMinor: 1_000 }]],
     ]);
-    // The write-off taken during the freeze is on the same path (M28), once.
-    expect(posted.posted.map((j) => j.entryId)).toContain('stock-adjustment:write_off:wo-p3');
     expect(countJournals[1]?.narrative).toMatch(/approved by u-appr.*plan cp1; cause damaged/);
     expect((await call('POST', '/v1/finance/stock-adjustments/post', 'u-acct', {}, 'post-2'))).toMatchObject({ status: 200, body: { posted: [] } });
     const after = (await call('GET', '/v1/finance/stock-adjustments', 'u-acct')).body as { unposted: string[]; journals: { entryId: string; lines: { debitMinor: number; creditMinor: number }[] }[] };

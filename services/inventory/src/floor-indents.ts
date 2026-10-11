@@ -29,6 +29,7 @@ export { readFound, foundPostings };
 import { checkMovement, type Movement } from './index';
 import { valueAtUnitCost, normaliseUom } from '../../../packages/contracts/src/quantity';
 import { locationInScope, stockReadScope, type LocationBranches } from './location-scope';
+import { assertNotFrozenByCount, type CountFreezeCheck } from './count-freeze';
 import { outsideBranchScope, type RequestContext } from '../../kernel/src/index';
 import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/adjustment/src/adjustment';
 import type { AssortmentEntry } from '../../../packages/merchandising/src/index';
@@ -140,6 +141,8 @@ export interface FloorIndentsDeps {
   readonly bins?: (tenantId: string) => Promise<readonly Bin[]> | readonly Bin[];
   readonly contents?: (tenantId: string) => Promise<BinContents> | BinContents;
   readonly appliedCommandIds?: (tenantId: string) => Promise<readonly string[]> | readonly string[];
+  /** WF-08 / OB-59: which open count plan freezes a write-off / adjustment here (absent on a bare stub — nothing is frozen). */
+  readonly countFreeze?: CountFreezeCheck;
   readonly now: () => string;
 }
 
@@ -462,6 +465,9 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           const result = receiveTransfer({ transfer, counted: arrivedOf(counted), receivedBy: ctx.userId, at: now, currency: (b['currency'] as CurrencyCode | undefined) ?? 'INR' });
           // SP-8c: damaged units arrived (out of transit) and are written off at the floor in the same write — never on the shelf.
           const damaged = damagedOf(counted, result.transfer);
+          // WF-08 / OB-59: units that arrived DAMAGED are written off at the floor — refused while an open count there froze
+          // write-offs of that product (the good units wait with them: one receipt, one write). Nothing is recorded.
+          await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, damagePostings(result.transfer, damaged, ctx.userId, now), 'arrived-damaged write-off');
           const posted = [...receivePostings(result.transfer, result.movements, ctx.userId), ...damagePostings(result.transfer, damaged, ctx.userId, now)];
           const next = applyReceipt(indent, issueId, { receivedBy: ctx.userId, at: now, received: goodOf(receivedOf(result.movements, result.transfer), damaged), shortfall: shortfallOf(result.discrepancies), damaged });
           await deps.recordReceipt(ctx.tenantId, next, result.transfer, result.movements, result.discrepancies, posted, indentVersion);
@@ -514,6 +520,8 @@ export function floorIndentRoutes(deps: FloorIndentsDeps): readonly Route[] {
           const transfer = await deps.transferOf(ctx.tenantId, issue.transferId);
           if (transfer === undefined) throw notFound(`transfer ${issue.transferId}`);
           const posted = foundPostings(transfer, issue, planned);
+          // WF-08 / OB-59: found units come back on an adjustment — refused while an open count there froze adjustments.
+          await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, posted, 'found-stock adjustment');
           for (const m of posted) {
             const check = checkMovement(m);
             if (!check.ok) throw apiError(422, { code: check.refusedBecause ?? 'movement_refused', whatHappened: check.detail, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed.' });
