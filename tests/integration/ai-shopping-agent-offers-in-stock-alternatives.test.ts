@@ -129,7 +129,7 @@ function seeingTransport(): ModelTransport & { seen: ModelRequest[] } {
   const t = ((r: ModelRequest) => {
     t.seen.push(r);
     return { kind: 'reply' as const, text: 'Arokya Milk 1L is in stock at S1.', citedEvidenceIds: [...r.evidence.map((e) => e.evidenceId)], inputTokens: 100, outputTokens: 20 };
-  }) as ModelTransport & { seen: ModelRequest[] };
+  }) as unknown as ModelTransport & { seen: ModelRequest[] };
   t.seen = [];
   return t;
 }

@@ -78,6 +78,12 @@ export interface ProduceOptions {
   readonly tradingDay?: string;
   /** The branches the reader holds the report permission for — the SERVER's answer (§28 · EA-03). */
   readonly scope: BranchScope;
+  /**
+   * EA-05: a governed drill's filters — the figures AND their rows are computed on the filtered records. `tender`: only
+   * bills paid (wholly or in part) by that kind (sales_by_day, sales_by_cashier); `categoryId`: only lines of products in
+   * that department (units_by_category). A report that does not carry a filter is never asked with it (the drill refuses).
+   */
+  readonly filters?: { readonly tender?: string; readonly categoryId?: string };
 }
 
 export interface ReportProducers {
@@ -119,7 +125,7 @@ export function reportProducers(input: {
   const products = productMasterAdapter({ store: input.store, now: input.now });
 
   /** The day's sales head office holds, within the reader's scope, and every source's watermark (EA-01). */
-  const salesOf = async (tenantId: string, day: string, scope: BranchScope) => {
+  const salesOf = async (tenantId: string, day: string, scope: BranchScope, tender?: string) => {
     const calendar = await input.calendar(tenantId);
     const window = tradingDayWindow(day, calendar);
     const events = await input.store.readStream(tenantId, STREAM.sales, { type: 'SaleCommitted', from: window.from, to: window.to });
@@ -134,7 +140,9 @@ export function reportProducers(input: {
     };
     for (const e of events) note(e);
     if (latestEver !== undefined) note(latestEver);
-    const all = events.map((e) => e.event.payload as IncomingSale).filter((s) => s.tradingDay === day);
+    const all = events.map((e) => e.event.payload as IncomingSale).filter((s) => s.tradingDay === day)
+      // EA-05: a tender filter keeps the bills paid (wholly or in part) by that kind — the figure and its rows alike.
+      .filter((s) => tender === undefined || s.tenders.some((t) => t.kind === tender));
     const visible = all.filter((s) => inScope(scope, saleBranch(s)));
     const now = input.now();
     const marks = [...newest.entries()].map(([source, lastEventAt]) => ({ source, lastEventAt }));
@@ -196,7 +204,7 @@ export function reportProducers(input: {
 
     switch (reportId) {
       case 'sales_by_day': {
-        const { sales, withheld, sources, asAt, nothingUnsentAt } = await salesOf(tenantId, day, options.scope);
+        const { sales, withheld, sources, asAt, nothingUnsentAt } = await salesOf(tenantId, day, options.scope, options.filters?.tender);
         const mk = at(asAt, neverSales, nothingUnsentAt);
         const taken = sales.reduce((t, s) => t + s.totalMinor, 0);
         // Round 4: what came back the same day, valued as the day book values it, and the takings net of it — "Taken"
@@ -259,7 +267,7 @@ export function reportProducers(input: {
       }
 
       case 'sales_by_cashier': {
-        const { sales, withheld, sources, asAt, nothingUnsentAt } = await salesOf(tenantId, day, options.scope);
+        const { sales, withheld, sources, asAt, nothingUnsentAt } = await salesOf(tenantId, day, options.scope, options.filters?.tender);
         const mk = at(asAt, neverSales, nothingUnsentAt);
         const by = new Map<string, IncomingSale[]>();
         for (const s of sales) by.set(s.cashierId, [...(by.get(s.cashierId) ?? []), s]);
@@ -287,6 +295,8 @@ export function reportProducers(input: {
           for (const [i, line] of s.lines.entries()) {
             const dept = master.get(line.productId) ?? null;
             const key = dept === null ? NONE : dept;
+            // EA-05: a department filter keeps that department's lines only — its figures and its rows alike.
+            if (options.filters?.categoryId !== undefined && key !== options.filters.categoryId) continue;
             const held = by.get(key) ?? { units: 0, money: 0, txns: [] };
             held.units += line.uom === 'ea' ? line.quantityMinor : 1;
             held.money += line.lineTotalMinor;
@@ -302,7 +312,7 @@ export function reportProducers(input: {
           figures: [
             ...ordered.map(([dept, t]) => mk(dept, t.units, 'count')),
             ...ordered.map(([dept, t]) => mk(`${dept} — taken`, t.money, 'minor_currency')),
-            ...(billMoney === lineMoney ? [] : [mk('Taken but on no line', billMoney - lineMoney, 'minor_currency')]),
+            ...(billMoney === lineMoney || options.filters?.categoryId !== undefined ? [] : [mk('Taken but on no line', billMoney - lineMoney, 'minor_currency')]),
             ...withheldFigure(mk, withheld),
           ],
           rows: ordered.map(([dept, t]) => ({ department: dept, units: String(t.units) })),
