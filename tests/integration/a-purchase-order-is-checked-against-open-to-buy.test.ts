@@ -139,8 +139,12 @@ describe.each(backings)('a purchase order is checked against open-to-buy — on 
       call('POST', '/v1/purchase/orders/po-a/approval', 'u-owner', { reason: 'weekly replenishment' }, 'ap-a'),
       call('POST', '/v1/purchase/orders/po-b/approval', 'u-owner2', { reason: 'weekly replenishment' }, 'ap-b'),
     ]);
+    // Exactly one issues. The other is refused by name: when the two truly overlap, the budget guard refuses the second
+    // write (409 concurrent_change); when a busy machine lets one finish first, the second is judged on what it committed
+    // (422 over_budget_reason_required). Never both issued — that is the race this closes.
     const results = [ra, rb].map((r) => [r.status, codeOf(r) ?? 'issued']).sort();
-    expect(results, JSON.stringify([ra.body, rb.body])).toEqual([[200, 'issued'], [409, 'concurrent_change']]);
+    expect(results[0], JSON.stringify([ra.body, rb.body])).toEqual([200, 'issued']);
+    expect([[409, 'concurrent_change'], [422, 'over_budget_reason_required']], JSON.stringify([ra.body, rb.body])).toContainEqual(results[1]);
     const status = async (id: string) => ((await call('GET', `/v1/purchase/orders/${id}`, 'u-owner')).body as { order: { status: string } }).order.status;
     const [winner, loser] = ra.status === 200 ? ['po-a', 'po-b'] : ['po-b', 'po-a'];
     expect([await status(winner), await status(loser)]).toEqual(['issued', 'proposed']);
