@@ -18,7 +18,10 @@ import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
  *   • the line comes back, the waiting sale goes up and the box reports; head office counts the new system's window from
  *     its OWN sales ledger (4 bills) — the old system holding only 3 is recorded as NOT reconciled, naming both
  *     differences, and the cutover gate still says "rollback not demonstrated";
- *   • the missing bill carried back: 4 bills, same takings — reconciled; the gate's rollback check passes, from the
+ *   • OB-50 "A" (owner, 11 Oct 2026): the window also holds a REFUND and STOCK MOVEMENTS (a delivery; the refunded item
+ *     back on the shelf) — with every bill back but the refund and the stock not, it is recorded as NOT reconciled with
+ *     each difference named, and a carry-back that does not state its refunds and stock is refused as unreadable;
+ *   • the missing bill, the refund and the stock carried back — reconciled; the gate's rollback check passes, from the
  *     ledger, not from anything typed;
  *   • the API process is stopped and started again: the rollback, its execution evidence and both reconciliations are
  *     all still there, and the gate still reads it as demonstrated.
@@ -56,7 +59,7 @@ describeOrSkip('GT-02 — a rehearsed rollback reconciles, store sync included �
     // One store and its computer's own sign-in.
     expect((await call('POST', '/v1/org/nodes/C1', { kind: 'company', name: 'SRE Retail' })).status).toBe(201);
     expect((await call('POST', '/v1/org/nodes/S1', { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' })).status).toBe(201);
-    await cloud.grant(BOX, 'cashier');
+    await cloud.grant(BOX, 'store_computer'); // round 6: the box's own role reports its sync (EA-01)
     const boxToken = cloud.token(BOX);
     // The store's line can be cut on its own: only the box's requests fail while it is down.
     let lineDown = false;
@@ -91,6 +94,14 @@ describeOrSkip('GT-02 — a rehearsed rollback reconciles, store sync included �
     expect(box.agent!.health().unsentCount).toBe(0);
     expect(await box.reportSyncWatermarks!()).toBe(true);
 
+    // OB-50: in the same window the new system also gives a REFUND (half of R-1, cash, at the desk) and takes a delivery
+    // of 24 of P2 — head office's own ledgers hold both, and the old system must hold them too.
+    expect((await call('POST', '/v1/pos/refund-threshold', { thresholdMinor: 1_000_000 })).status).toBeLessThan(300);
+    const refund = await call('POST', '/v1/sales/R-1/returns', { returnId: 'RT-1', number: 'RN-1', reasonCode: 'customer_changed_mind', lines: [{ productId: 'P1', uom: 'each', quantityMinor: 1, disposition: 'resell' }], refundMinor: 6_000, refundTender: 'cash' });
+    expect(refund.status, JSON.stringify(refund.body)).toBe(201);
+    const delivery = await call('POST', '/v1/inventory/movements', { movementId: 'MV-P2-1', productId: 'P2', locationId: 'S1', kind: 'received', quantityMinor: 24, uom: 'each', occurredAt: new Date().toISOString(), enteredBy: OWNER, unitCostMinor: 500 });
+    expect(delivery.status, JSON.stringify(delivery.body)).toBeLessThan(300);
+
     // The line goes down; a fourth sale is rung and waits on the box's disk (through a restart of the box).
     lineDown = true;
     await box.stop(); edges.splice(edges.indexOf(box), 1);
@@ -104,7 +115,13 @@ describeOrSkip('GT-02 — a rehearsed rollback reconciles, store sync included �
     await tick();
     const switchBack = new Date().toISOString();
     expect((await call('POST', '/v1/migration/cutover/rollback/cut-r/confirmation', { legacyFirstBillRef: 'OLD-5001', legacyTradingFrom: switchBack })).status).toBe(201);
-    const reconcile = (count: number, totalMinor: number) => call('POST', '/v1/migration/cutover/rollback/cut-r/reconciliation', { newSystemTradingFrom: newSystemFrom, legacyCarriedBack: { count, totalMinor } });
+    // What the old system holds once the carry-back is done: its bills, and (OB-50) its refunds and each product's stock.
+    interface Facts { refunds: { count: number; totalMinor: number }; stockMovements: { productId: string; netQuantityMinor: number }[] }
+    const reconcile = (count: number, totalMinor: number, facts: Facts = { refunds: { count: 0, totalMinor: 0 }, stockMovements: [] }) =>
+      call('POST', '/v1/migration/cutover/rollback/cut-r/reconciliation', { newSystemTradingFrom: newSystemFrom, legacyCarriedBack: { count, totalMinor, ...facts } });
+    // Head office's own figures for the window (its ledgers): 1 refund of 6,000 paise; P1 +1 (the refunded item back on
+    // the shelf), P2 +24 (the delivery).
+    const carriedBack: Facts = { refunds: { count: 1, totalMinor: 6_000 }, stockMovements: [{ productId: 'P1', netQuantityMinor: 1 }, { productId: 'P2', netQuantityMinor: 24 }] };
 
     // 1 — REFUSED while the store computer has not synced past the switch-back: R-4 is still on its disk.
     const early = await reconcile(3, 50_500);
@@ -120,19 +137,35 @@ describeOrSkip('GT-02 — a rehearsed rollback reconciles, store sync included �
     expect(await box.reportSyncWatermarks!()).toBe(true);
 
     // 2 — The old system holds only 3 of the 4 bills: recorded as evidence, NOT reconciled, both differences named.
-    const short = await reconcile(3, 50_500);
+    const short = await reconcile(3, 50_500, carriedBack);
     expect(short.status).toBe(201);
     expect(short.body).toMatchObject({
       demonstrated: false,
-      reconciliation: { reconciled: false, newSystem: { count: 4, totalMinor: 54_750 }, legacy: { count: 3, totalMinor: 50_500 }, stores: [{ storeId: 'S1' }] },
+      reconciliation: { reconciled: false, newSystem: { count: 4, totalMinor: 54_750 }, legacy: { count: 3, totalMinor: 50_500 }, stores: [{ storeId: 'S1' }], newSystemFacts: carriedBack },
     });
+    expect((short.body as { reconciliation: { differences: string[] } }).reconciliation.differences).toEqual([
+      'bills: the new system took 4, the old system holds 3', 'takings: the new system took 54750 paise, the old system holds 50500',
+    ]);
     const gate = async (c: RealCloud) => ((await c.request({ method: 'POST', path: '/v1/migration/cutover/decision', userId: OWNER, idempotencyKey: `g-${Math.random()}`, body: { cutoverId: 'cut-r', evidence: { rollbackDemonstratedAt: '2026-01-01T00:00:00Z' } } })).body as { checks: { check: string; state: string }[]; ignoredFromCaller: string[] });
     const notYet = await gate(cloud);
     expect(notYet.checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('failed');
     expect(notYet.ignoredFromCaller).toContain('rollbackDemonstratedAt');          // a typed time stands in for nothing
 
-    // 3 — R-4 carried back: 4 bills, 54,750 paise on both sides. Reconciled; demonstrated.
-    const balanced = await reconcile(4, 54_750);
+    // 2b — OB-50: every bill is back, but the old system has NOT taken the refund, and holds 20 of P2 not 24 and nothing
+    // of P1. Recorded, NOT reconciled, each difference named — the bills alone do not demonstrate a rollback.
+    const stockShort = await reconcile(4, 54_750, { refunds: { count: 0, totalMinor: 0 }, stockMovements: [{ productId: 'P2', netQuantityMinor: 20 }] });
+    expect(stockShort.status).toBe(201);
+    expect(stockShort.body).toMatchObject({ demonstrated: false, reconciliation: { reconciled: false } });
+    expect((stockShort.body as { reconciliation: { differences: string[] } }).reconciliation.differences).toEqual([
+      'refunds: the new system gave 1, the old system holds 0', 'refund value: the new system refunded 6000 paise, the old system holds 0',
+      'stock of P1: the new system moved 1 on hand, the old system holds 0', 'stock of P2: the new system moved 24 on hand, the old system holds 20',
+    ]);
+    expect((await gate(cloud)).checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('failed');
+    // A carry-back that does not say its refunds and stock is not a reconciliation at all.
+    expect(codeOf(await call('POST', '/v1/migration/cutover/rollback/cut-r/reconciliation', { newSystemTradingFrom: newSystemFrom, legacyCarriedBack: { count: 4, totalMinor: 54_750 } }))).toBe('not_readable_as_a_rollback_reconciliation');
+
+    // 3 — R-4, the refund and the stock carried back: everything equal on both sides. Reconciled; demonstrated.
+    const balanced = await reconcile(4, 54_750, carriedBack);
     expect(balanced.status).toBe(201);
     expect(balanced.body).toMatchObject({ demonstrated: true, reconciliation: { reconciled: true, differences: [] } });
     expect((await gate(cloud)).checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('passed');
@@ -143,7 +176,7 @@ describeOrSkip('GT-02 — a rehearsed rollback reconciles, store sync included �
     clouds.push(cloud);
     const after = (await call('GET', '/v1/migration/cutover/rollback/cut-r')).body as { rollback: { state: string; performed: boolean; execution: { legacyFirstBillRef: string } }; reconciliations: { reconciled: boolean }[]; demonstrated: boolean };
     expect(after.rollback).toMatchObject({ state: 'performed', performed: true, execution: { legacyFirstBillRef: 'OLD-5001' } });
-    expect(after.reconciliations.map((r) => r.reconciled)).toEqual([false, true]);   // the short one is kept too (#6)
+    expect(after.reconciliations.map((r) => r.reconciled)).toEqual([false, false, true]);   // the short ones are kept too (#6)
     expect(after.demonstrated).toBe(true);
     expect((await gate(cloud)).checks.find((c) => c.check === 'rollback_demonstrated')?.state).toBe('passed');
   }, 60_000);

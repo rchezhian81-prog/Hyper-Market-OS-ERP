@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 935 | 567 | 567 | 89 | 294 |
+| 13 | 936 | 568 | 568 | 89 | 296 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -63,12 +63,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/org/nodes/:nodeId/activation` | `platform.setup.write` | core | yes |
 | GET | `/v1/store-packs/:storeId` | `store.pack.read` | core | — |
 | GET | `/v1/store-packs/:storeId/held` | `org.branch.read` | core | — |
-| POST | `/v1/store-packs/:storeId/held` | `store.pack.read` | core | yes |
+| POST | `/v1/store-packs/:storeId/held` | `store.computer.report` | core | yes |
 | GET | `/v1/stores/:storeId/rules` | `org.branch.read` | core | — |
 | POST | `/v1/stores/:storeId/rules` | `platform.setup.write` | core | yes |
 | GET | `/v1/stores/:storeId/settings` | `org.branch.read` | core | — |
 | POST | `/v1/stores/:storeId/settings` | `platform.setup.write` | core | yes |
-| POST | `/v1/stores/:storeId/sync-watermarks` | `store.pack.read` | core | yes |
+| POST | `/v1/stores/:storeId/sync-watermarks` | `store.computer.report` | core | yes |
 
 ## API-02 — Catalogue (M03–M05)
 
@@ -426,8 +426,8 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/notifications/budget` | `notification.budget.set` | core | yes |
 | POST | `/v1/notifications/can-send` | `notification.send.check` | core | yes |
 | POST | `/v1/notifications/queue/:id` | `notification.send.check` | core | yes |
-| POST | `/v1/notifications/queue/:id/delivered` | `notification.send.check` | core | yes |
-| POST | `/v1/notifications/queue/:id/failed` | `notification.send.check` | core | yes |
+| POST | `/v1/notifications/queue/:id/delivered` | `notification.delivery.report` | core | yes |
+| POST | `/v1/notifications/queue/:id/failed` | `notification.delivery.report` | core | yes |
 | GET | `/v1/notifications/queue/dead-letters` | `notification.send.check` | core | — |
 | POST | `/v1/notifications/queue/drain` | `notification.send.check` | core | yes |
 | GET | `/v1/notifications/queue/pending` | `notification.send.check` | core | — |
@@ -435,6 +435,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/notifications/templates` | `notification.send.check` | core | — |
 | POST | `/v1/notifications/templates/:templateId` | `document.template.manage` | core | yes |
 | POST | `/v1/notifications/templates/:templateId/approval` | `document.template.manage` | core | yes |
+| POST | `/v1/notifications/templates/:templateId/withdrawal` | `document.template.manage` | core | yes |
 | POST | `/v1/privacy/breach/assess` | `customer.consent.write` | core | yes |
 | POST | `/v1/privacy/consent-notice/check` | `customer.consent.read` | core | yes |
 | GET | `/v1/privacy/data-requests` | `privacy.request.manage` | core | — |
@@ -451,7 +452,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/privacy/pii/:customerRef/:category` | `privacy.request.manage` | core | yes |
 | POST | `/v1/privacy/retention/sweep` | `customer.consent.write` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/attribution` | `customer.campaign.read` | core | yes |
-| POST | `/v1/service/campaigns/:campaignId/messages/:messageId/status` | `notification.send.check` | core | yes |
+| POST | `/v1/service/campaigns/:campaignId/messages/:messageId/status` | `notification.delivery.report` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/plan` | `customer.campaign.send` | core | yes |
 | POST | `/v1/service/campaigns/:campaignId/send` | `customer.campaign.send` | core | yes |
 | GET | `/v1/service/campaigns/:campaignId/status` | `customer.campaign.read` | core | — |

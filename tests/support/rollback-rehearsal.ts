@@ -19,7 +19,7 @@ export async function reconcileRehearsedRollback(h: ApiHarness, input: {
   // One store, and its computer's own sign-in at that store.
   await owner('/v1/org/nodes/RB-CO', { kind: 'company', name: 'Rehearsal company' });
   await owner('/v1/org/nodes/RB-S1', { kind: 'branch', name: 'Rehearsal store', parentId: 'RB-CO', companyId: 'RB-CO' });
-  await h.provisionRole(t, 'u-rb-box', 'cashier', ['RB-S1']);
+  await h.provisionRole(t, 'u-rb-box', 'store_computer', ['RB-S1']);
   const now = new Date().toISOString();
   const report = await h.request({
     method: 'POST', path: '/v1/stores/RB-S1/sync-watermarks', userId: 'u-rb-box', tenantId: t, branchId: 'RB-S1', idempotencyKey: `rr-wm-${now}`,
@@ -28,7 +28,8 @@ export async function reconcileRehearsedRollback(h: ApiHarness, input: {
   expect(report.status).toBe(200);
   const done = await owner(`/v1/migration/cutover/rollback/${input.cutoverId}/reconciliation`, {
     newSystemTradingFrom: input.newSystemTradingFrom,
-    legacyCarriedBack: { count: input.count ?? 0, totalMinor: input.totalMinor ?? 0 },
+    // OB-50: these rehearsals' windows hold no refunds or stock movements of their own, and the old system holds none.
+    legacyCarriedBack: { count: input.count ?? 0, totalMinor: input.totalMinor ?? 0, refunds: { count: 0, totalMinor: 0 }, stockMovements: [] },
   });
   expect(done.status).toBe(201);
   expect(done.body).toMatchObject({ demonstrated: true });

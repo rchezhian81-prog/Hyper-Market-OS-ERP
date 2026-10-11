@@ -9,14 +9,15 @@
 // head office refused. Head office keeps every report (append-only) and reads the latest per store. While a box is cut
 // off it cannot report, so the report head office holds ages, and every figure built on it says lagging, then stale.
 //
-//   • Only the store's own computer reports for it (its grants' branch scope on `store.pack.read`, the same identity
-//     that already fetches the store's setup and reports what it holds).
+//   • Only the store's own computer reports for it: `store.computer.report` AND a `store_computer` role grant at that
+//     store (round 6 · store-computer-identity.ts). A cashier or manager — who also read the store's setup — cannot.
 //   • A box clock running ahead cannot buy freshness: a watermark later than head office's receipt is cut back to the
 //     receipt time and the report says so.
 //   • A branch head office knows that has never reported is shown — never reported, and stale — not left out.
 
 import type { Route } from '../../kernel/src/index';
 import { apiError, notFound } from '../../kernel/src/index';
+import { STORE_COMPUTER_REPORT, assertStoreComputerOf, type StoreComputerScopeOf } from './store-computer-identity';
 
 /** The queues a store computer drains to head office. */
 export const SYNC_DOMAINS = ['sales', 'refunds', 'completions', 'day_close', 'concession_tags', 'device_events', 'till_cash'] as const;
@@ -184,6 +185,8 @@ export interface SyncWatermarkDeps {
   /** The stores head office knows: id → name (its org register's branches). */
   readonly stores: (tenantId: string) => Promise<ReadonlyMap<string, string>>;
   readonly branchScopeOf: (tenantId: string, userId: string, permission: string) => Promise<readonly string[] | 'all' | undefined>;
+  /** Round 6: where the caller is a store computer (its `store_computer` grants only) — the only identity that reports. */
+  readonly storeComputerScopeOf?: StoreComputerScopeOf;
   readonly records: (tenantId: string) => Promise<readonly SyncWatermarkRecord[]>;
   readonly record: (tenantId: string, r: SyncWatermarkRecord) => Promise<void>;
   readonly thresholds?: (tenantId: string, branchId: string) => Promise<FreshnessThresholds>;
@@ -194,14 +197,11 @@ export function syncWatermarkRoutes(deps: SyncWatermarkDeps): readonly Route[] {
     {
       // The store computer says how far each queue has reached. Its own store only.
       api: 'API-01', method: 'POST', path: '/v1/stores/:storeId/sync-watermarks',
-      permission: 'store.pack.read', idempotent: true,
+      permission: STORE_COMPUTER_REPORT, idempotent: true,
       handler: async (ctx) => {
         const storeId = ctx.params['storeId'] ?? '';
         if (!(await deps.stores(ctx.tenantId)).has(storeId)) throw notFound(`store ${storeId}`);
-        const scope = await deps.branchScopeOf(ctx.tenantId, ctx.userId, 'store.pack.read');
-        if (scope === undefined || (scope !== 'all' && !scope.includes(storeId))) {
-          throw apiError(403, { code: 'not_this_stores_computer', whatHappened: `Only store ${storeId}'s own computer reports how far it has synced.`, wasItSaved: 'not_saved', nextSafeAction: 'Report for your own store.' });
-        }
+        await assertStoreComputerOf(deps.storeComputerScopeOf, ctx, storeId, 'how far it has synced');
         const receivedAt = deps.now();
         const read = readWatermarkReport(ctx.body, receivedAt);
         if ('problems' in read) {

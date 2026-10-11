@@ -273,7 +273,7 @@ import type { DeliveryAttempt, DeliveryStateRecord, FulfilmentDeps } from '../..
 import type { AssignmentsDeps, WaveAssignment, RouteAssignment } from '../../fulfilment/src/assignments';
 import type { DispatchDeps } from '../../fulfilment/src/dispatch';
 import { assignedOrderIds, type DispatchPlan } from '../../../packages/fulfilment/src/index';
-import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent, type MessageTemplateVersion } from '../../customer/src/notification-queue';
+import { replayNotificationQueue, type NotificationQueueDeps, type NotificationQueueEvent, type MessageTemplateVersion, type RecipientStanding } from '../../customer/src/notification-queue';
 import type { NotificationTransport, MessagingBudget } from '../../../packages/notifications/src/index';
 import type { FulfilmentPackingDeps, PackResult, Manifest } from '../../fulfilment/src/packing';
 import type { StockLossDeps, StockLossJournal } from '../../finance/src/stock-losses';
@@ -312,7 +312,7 @@ import type { AgentId, Budget, Proposal, EvidenceItem as AiEvidenceItem, AiDeps,
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
-import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID } from './roles';
+import { ROLE_CATALOGUE, STORE_MANAGER_ROLE_ID, STORE_COMPUTER_ROLE_ID, PROVIDER_RELAY_ROLE_ID } from './roles';
 import { metaOf as legacyAttachmentMeta, type LegacyHistoryDeps, type LegacyHistoryDocument, type LegacyAttachment, type LegacyAttachmentMeta } from '../../migration/src/legacy-history';
 
 /** Streams, named once. A typo here is a domain that silently reads an empty history. */
@@ -9237,10 +9237,14 @@ export function notificationQueueAdapter(input: {
   readonly now: () => string;
   /** The delivery transport — absent in production until a real provider is certified (SMS is R4, OB-29). */
   readonly transport?: NotificationTransport;
+  /** PF-10 r6: the providers' delivery-report secrets (from the API's environment). */
+  readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
 }): NotificationQueueDeps {
   const stream = streamName(STREAM.org, 'notifications');
   return {
     now: input.now,
+    ...(input.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: input.deliveryReportSecrets }),
+    isProviderRelay: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId && g.roleId === PROVIDER_RELAY_ROLE_ID),
     queue: async (tenantId) => replayNotificationQueue(await allOf<NotificationQueueEvent>(input.store, tenantId, stream, 'NotificationQueue')),
     events: (tenantId) => allOf<NotificationQueueEvent>(input.store, tenantId, stream, 'NotificationQueue'),
     // PA-08: head office's own message-template register (drafted by one person, approved by another) and the SAME
@@ -9248,11 +9252,13 @@ export function notificationQueueAdapter(input: {
     templates: (tenantId) => allOf<MessageTemplateVersion>(input.store, tenantId, streamName(STREAM.org, 'message-templates'), 'MessageTemplateVersion'),
     recordTemplate: async (tenantId, v) => {
       await input.store.append(tenantId, streamName(STREAM.org, 'message-templates'), makeEvent({
-        id: `msg-template-${v.templateId}-v${v.version}-${v.state}`, type: 'MessageTemplateVersion', occurredAt: v.approvedAt ?? v.draftedAt,
+        id: `msg-template-${v.templateId}-v${v.version}-${v.state}`, type: 'MessageTemplateVersion', occurredAt: v.withdrawnAt ?? v.approvedAt ?? v.draftedAt,
         idempotencyKey: `msg-template-${tenantId}-${v.templateId}-v${v.version}-${v.state}`, source: 'api/customer', payload: v,
       }));
     },
     consentRecords: (tenantId, customerId) => allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
+    // PA-08 r6: the recipient still stands on their own — not erased (privacy tombstone), not merged into another record.
+    recipient: (tenantId, customerId) => recipientStanding(input.store, tenantId, customerId),
     ...(input.transport === undefined ? {} : { transport: input.transport }),
     // PA-08 round 4: the owner's messaging budget — a new version each change, the newest in force.
     budget: (tenantId) => latest<MessagingBudget>(input.store, tenantId, streamName(STREAM.org, 'messaging-budget'), 'MessagingBudgetSet'),
@@ -9274,6 +9280,21 @@ export function notificationQueueAdapter(input: {
       }));
     },
   };
+}
+
+/**
+ * PA-08 r6: whether a message recipient still stands on their own — read from head office's own records: a customer who
+ * exercised their right to erasure (a sealed privacy tombstone), or a record merged into another (the merge approved and
+ * not reversed; each stage its own fact, the latest per merge in force).
+ */
+export async function recipientStanding(store: EventStore, tenantId: string, customerId: string): Promise<RecipientStanding> {
+  const erased = (await allOf<PrivacyTombstone>(store, tenantId, TOMBSTONE_STREAM, 'PrivacyTombstoneSealed')).find((t) => t.customerRef === customerId);
+  if (erased !== undefined) return { allowed: false, reason: 'erased', detail: `${customerId} was erased at their own request (right to erasure) — they are not messaged again` };
+  const merges = new Map<string, CustomerMerge>();
+  for (const m of await allOf<CustomerMerge>(store, tenantId, streamName(STREAM.customer, 'merges'), 'CustomerMergeRecorded')) merges.set(m.mergeId, m);
+  const absorbed = [...merges.values()].find((m) => m.mergedRef === customerId && m.approvedBy !== undefined && m.reversedBy === undefined);
+  if (absorbed !== undefined) return { allowed: false, reason: 'merged_away', detail: `${customerId} was merged into ${absorbed.survivorRef} (${absorbed.mergeId}) — the record no longer stands on its own` };
+  return { allowed: true };
 }
 
 export function dispatchAdapter(input: {
@@ -10781,6 +10802,25 @@ export function migrationAdapter(input: {
         .filter((s) => Date.parse(s.committedAt) >= Date.parse(from) && Date.parse(s.committedAt) < Date.parse(to));
       return { count: inWindow.length, totalMinor: inWindow.reduce((n, s) => n + s.totalMinor, 0) };
     },
+    // OB-50: the window's refunds (every return head office holds — against a bill and without one — by when it was
+    // processed) and each product's net stock movement (every movement, by when it happened, signed by its kind).
+    windowFacts: async (tenantId, from, to) => {
+      const inWindow = (at: string): boolean => Date.parse(at) >= Date.parse(from) && Date.parse(at) < Date.parse(to);
+      const returns = new Map<string, ReturnRecord>();
+      for (const stream of [STREAM.returns, NO_RECEIPT_RETURNS]) {
+        for (const r of await allOf<ReturnRecord>(input.store, tenantId, stream, 'ReturnRecorded')) if (inWindow(r.processedAt)) returns.set(r.returnId, r);
+      }
+      const net = new Map<string, number>();
+      for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
+        const m = payloadOf<Movement>(e);
+        if (!inWindow(m.occurredAt)) continue;
+        net.set(m.productId, (net.get(m.productId) ?? 0) + EFFECT_ON_HAND[m.kind] * m.quantityMinor);
+      }
+      return {
+        refunds: { count: returns.size, totalMinor: [...returns.values()].reduce((n, r) => n + r.refundMinor, 0) },
+        stockMovements: [...net].filter(([, q]) => q !== 0).map(([productId, netQuantityMinor]) => ({ productId, netQuantityMinor })).sort((a, b) => a.productId.localeCompare(b.productId)),
+      };
+    },
     // Every store head office knows, and how far its computer says its sales have synced (EA-01); never heard → null.
     storeSalesSyncedThrough: async (tenantId) => {
       const view = await storeSyncView(input.store, tenantId, input.now);
@@ -11851,6 +11891,16 @@ export async function branchScopeHeldBy(store: EventStore, tenantId: string, use
   return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, permission);
 }
 
+/**
+ * Round 6 (EA-01): where a caller is a STORE COMPUTER — the branch scope of their `store_computer` role grants alone (a
+ * person's other roles never count), on the reporting permission. undefined: they hold no store_computer grant.
+ */
+export async function storeComputerScopeHeldBy(store: EventStore, tenantId: string, userId: string): Promise<readonly string[] | 'all' | undefined> {
+  const grants = (await effectiveGrants(store, tenantId)).filter((g) => g.userId === userId && g.roleId === STORE_COMPUTER_ROLE_ID);
+  if (grants.length === 0) return undefined;
+  return new AccessControl(ROLE_CATALOGUE, grants).branchScopeOf(userId, 'store.computer.report');
+}
+
 /** A store's working rules (DF-3-b-1): each change a `StoreRulesSet` version; the latest per store applies. */
 const STORE_RULES_STREAM = streamName(STREAM.org, 'store-rules');
 export function storeRulesAdapter(input: { readonly store: EventStore }): {
@@ -12074,11 +12124,14 @@ const CAMPAIGN_SEND_STREAM = streamName(STREAM.service, 'campaign-sends');
 const CAMPAIGN_FREQUENCY_STREAM = streamName(STREAM.service, 'campaign-frequency');
 const CAMPAIGN_DELIVERY_STREAM = streamName(STREAM.service, 'campaign-delivery');
 
-export function campaignSendAdapter(input: { readonly store: EventStore; readonly now: () => string }): CampaignSendDeps {
+export function campaignSendAdapter(input: { readonly store: EventStore; readonly now: () => string; readonly deliveryReportSecrets?: ReadonlyMap<string, string> }): CampaignSendDeps {
   // The SAME queue, template register and consent ledger the PA-08 routes use — one record each (P-02).
-  const q = notificationQueueAdapter(input);
+  const q = notificationQueueAdapter({ store: input.store, now: input.now });
   return {
     now: input.now,
+    // PF-10 r6: delivery reports — the providers' secrets (from the environment) and the relay's own machine identity.
+    ...(input.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: input.deliveryReportSecrets }),
+    isProviderRelay: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).some((g) => g.userId === userId && g.roleId === PROVIDER_RELAY_ROLE_ID),
     consentRecords: (tenantId, customerId) => allOf<ConsentRecord>(input.store, tenantId, forCustomer(customerId), 'ConsentRecorded'),
     templates: q.templates!,
     queueEvents: q.events!,

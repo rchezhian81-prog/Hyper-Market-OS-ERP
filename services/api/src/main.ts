@@ -270,6 +270,10 @@ import {
   STREAM, personalDataStore, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, storeStockFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter, b2bTransferNotesAdapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
+// Round 6 (EA-01): only a store computer's own grant lets it report its store's sync and unsent facts.
+import { storeComputerScopeHeldBy } from './adapters';
+// Round 6 (PF-10): delivery reports are believed only when signed with the provider's operator-configured secret.
+import { deliveryReportSecretsFromEnv } from '../../customer/src/provider-reports';
 // SF-10 round 5: the read models the remaining export domains fold.
 import { allIssuedPayslips, ordersForExport } from './adapters';
 import { buildWalletFeed } from '../../customer/src/loyalty-wallets';
@@ -344,6 +348,9 @@ export function buildSurface(deps: {
    * test adapter here to prove the send path.
    */
   readonly notificationTransport?: NotificationTransport;
+  /** PF-10 r6: each message provider's delivery-report callback secret — `startApi` reads them from its environment
+   *  (DELIVERY_REPORT_SECRET__<PROVIDER>); none configured, a delivery report is refused (nothing believed). */
+  readonly deliveryReportSecrets?: ReadonlyMap<string, string>;
   /** EA-08: the model provider adapter and its tier pricing. NEVER set by `startApi` (no provider is chosen — an external
    *  gate); tests pass the deterministic simulator to prove admission, metering, audit and evaluations. */
   readonly modelTransport?: ModelTransport;
@@ -945,6 +952,7 @@ export function buildSurface(deps: {
       signer, now,
       stores: async (t) => new Map((await orgStructureAdapter({ store, now }).nodes(t)).filter((n) => n.kind === 'branch').map((n) => [n.nodeId, n.name] as const)),
       branchScopeOf: (t, u, p) => branchScopeHeldBy(store, t, u, p),
+      storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u),
       ...storeSettingsAdapter({ store }),
       ...storeRulesAdapter({ store }),
       roleIds: ROLE_CATALOGUE.map((r) => r.id),
@@ -964,6 +972,7 @@ export function buildSurface(deps: {
       now,
       stores: async (t) => (await storeSyncView(store, t, now)).branches,
       branchScopeOf: (t, u, p) => branchScopeHeldBy(store, t, u, p),
+      storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u),
       ...syncWatermarksAdapter({ store }),
     }),
     ...posRoutes(store === undefined ? {
@@ -1112,7 +1121,7 @@ export function buildSurface(deps: {
       : campaignAdapter({ store, now })),
     // PF-10: the campaign SEND — frequency history from the PA-08 queue, approved recipients enqueued on it, provider
     // delivery reports recorded against each message.
-    ...campaignSendRoutes(store === undefined ? campaignSendUnwired(now) : campaignSendAdapter({ store, now })),
+    ...campaignSendRoutes(store === undefined ? campaignSendUnwired(now) : campaignSendAdapter({ store, now, ...(deps.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: deps.deliveryReportSecrets }) })),
     ...storedValueRoutes(store === undefined ? {
       instrument: empty(undefined), movements: empty([]), recordIssue: () => {}, recordMovement: () => {},
       instrumentsForOwner: empty([]), movementsForOwner: empty([]), allMovements: empty([]), now,
@@ -1381,7 +1390,7 @@ export function buildSurface(deps: {
     // hard rule #6), and read the pending + dead-letter lists. The channel transport is a deployment step.
     ...notificationQueueRoutes(store === undefined
       ? { queue: () => new NotificationQueue(), record: () => {}, now }
-      : notificationQueueAdapter({ store, now, ...(deps.notificationTransport === undefined ? {} : { transport: deps.notificationTransport }) })),
+      : notificationQueueAdapter({ store, now, ...(deps.notificationTransport === undefined ? {} : { transport: deps.notificationTransport }), ...(deps.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: deps.deliveryReportSecrets }) })),
     // Versioned document templates (M31-FR-01/M36-FR-02) — append-only publish; a change is a new version. A business
     // document is issued FROM its record (PA-09): the purchase order, goods receipt, sale or account it is about is read
     // here, its number referenced (or allocated from the shop's gap-free series), its money and tax frozen with it; a
@@ -1917,6 +1926,9 @@ export async function startApi(
   const revocations = new TokenRevocationList(tokenRevocationAdapter({ store }));
 
   let briefDeps: ScheduledBriefDeps | undefined;
+  // PF-10 r6: a misconfigured provider secret is said at start (the name, never the value) and that provider is refused.
+  const reportSecrets = deliveryReportSecretsFromEnv(env);
+  for (const p of reportSecrets.problems) err(`delivery reports: ${p}\n`);
   const built = buildRouter(buildSurface({
     onBriefDeps: (d) => { briefDeps = d; },
     signingKey: settings['PACK_SIGNING_KEY']!,
@@ -1925,6 +1937,8 @@ export async function startApi(
     personalDataKeys,
     revocations,
     ...(providers.notificationTransport === undefined ? {} : { notificationTransport: providers.notificationTransport }),
+    // PF-10 r6: the providers' delivery-report secrets, from this process's environment only (never the repo).
+    deliveryReportSecrets: reportSecrets.secrets,
     ...(identityDirectory === undefined ? {} : { identityDirectory }),
     ...(settings['IDP_OIDC_TENANT_ID'] === undefined ? {} : { identityDirectoryTenantId: settings['IDP_OIDC_TENANT_ID'] }),
     // Durable, append-only per-tenant settings: setup answers land in config_versions and survive a

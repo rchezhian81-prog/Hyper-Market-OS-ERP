@@ -69,8 +69,8 @@ async function scene(h: ApiHarness, tenant: string) {
   const owner = (method: 'GET' | 'POST', path: string, body?: unknown) =>
     h.request({ method, path, userId: OWNER, tenantId: tenant, ...(method === 'POST' ? { idempotencyKey: `k-${Math.random()}` } : {}), ...(body === undefined ? {} : { body }) });
   await h.seedOwner(tenant, OWNER);
-  await h.provisionRole(tenant, 'u-box1', 'cashier', ['S1']);
-  await h.provisionRole(tenant, 'u-box2', 'cashier', ['S2']);
+  await h.provisionRole(tenant, 'u-box1', 'store_computer', ['S1']);
+  await h.provisionRole(tenant, 'u-box2', 'store_computer', ['S2']);
   for (const [id, body] of [
     ['C1', { kind: 'company', name: 'SRE Retail' }],
     ['S1', { kind: 'branch', name: 'SRE Hyper Market', parentId: 'C1', companyId: 'C1' }],
@@ -219,6 +219,28 @@ async function onlyItsOwnComputerReportsAndCannotBuyFreshness(h: ApiHarness, ten
     const bad = await report('u-box1', 'S1', 'S1', { observedAt: 'yesterday', domains: [{ domain: 'sales', completeThrough: 'soon', unsent: -1 }] }, 'wm-bad');
     expect(bad.status).toBe(400);
     expect(codeOf(bad)).toBe('not_readable_as_sync_watermarks');
+    // Round 6 (EA-01 security): only the store computer's OWN identity reports. A cashier and a manager at S1 — who both
+    // read S1's setup under `store.pack.read` — and the owner (who holds every permission, to approve grants) are all
+    // refused, for the sync report AND the "what I hold / have not sent" report; nothing they sent is recorded.
+    await h.provisionRole(tenant, 'u-cash-s1', 'cashier', ['S1']);
+    await h.provisionRole(tenant, 'u-mgr-s1', 'store_manager', ['S1']);
+    const before = (await syncWatermarksAdapter({ store: h.store }).records(tenant)).length;
+    const lies = { observedAt: at(0), domains: [{ domain: 'sales', completeThrough: at(0), unsent: 0, deadLettered: 0 }] };
+    for (const [who, branch] of [['u-cash-s1', 'S1'], ['u-mgr-s1', 'S1'], [OWNER, 'S1']] as const) {
+      const r = await report(who, branch, 'S1', lies, `wm-person-${who}`);
+      expect(r.status, `${who} may not report S1's sync`).toBe(403);
+      const held = await h.request({ method: 'POST', path: '/v1/store-packs/S1/held', userId: who, tenantId: tenant, branchId: branch, idempotencyKey: `held-person-${who}`, body: { catalogueVersion: null, storePackVersion: null, unsentItems: 0 } });
+      expect(held.status, `${who} may not report what S1 holds`).toBe(403);
+    }
+    expect(codeOf(await report(OWNER, 'S1', 'S1', lies, 'wm-owner-2'))).toBe('not_this_stores_computer');
+    expect((await syncWatermarksAdapter({ store: h.store }).records(tenant)).length).toBe(before);
+    const heldNow = await h.request({ method: 'GET', path: '/v1/store-packs/S1/held', userId: OWNER, tenantId: tenant });
+    expect((heldNow.body as { held?: { reportedBy: string } }).held?.reportedBy ?? 'u-box1').toBe('u-box1');
+    // The box itself is accepted on both.
+    const boxHeld = await h.request({ method: 'POST', path: '/v1/store-packs/S1/held', userId: 'u-box1', tenantId: tenant, branchId: 'S1', idempotencyKey: 'held-box1', body: { catalogueVersion: null, storePackVersion: null, unsentItems: 2 } });
+    expect(boxHeld.status).toBe(200);
+    expect((boxHeld.body as { held: { reportedBy: string; unsentItems: number } }).held).toMatchObject({ reportedBy: 'u-box1', unsentItems: 2 });
+
     // A person without the owner's dashboard right cannot read the freshness page.
     expect((await h.request({ method: 'GET', path: '/v1/sync/source-freshness', userId: 'u-box1', tenantId: tenant, branchId: 'S1' })).status).toBe(403);
 

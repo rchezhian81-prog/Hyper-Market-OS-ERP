@@ -69,6 +69,50 @@ You can take a backup while the shop is trading. You do not need to stop the til
 The connection details come from the environment, never typed on the command line, so a
 password can never end up in shell history.
 
+### Part 3a — The backup job reports its own outcome (audit PA-12, round 6)
+
+The nightly job (`infra/pilot/backup/encrypted-backup.sh`, run by `sre-pilot-backup.timer`)
+tells head office how it went **every night, success and failure** — nobody types the
+result in. It reports only what it measured: when it started and ended, the encrypted
+file's size and checksum, whether the file really is encrypted, and whether the off-site
+copy step confirmed the copy. Head office shows it on the health page and the alert
+worker raises a failure to the person named in the alert rules.
+
+If the job says nothing — the box is off, the timer is broken, the job crashed before it
+could report — head office raises the backup as **MISSED** by itself once it is overdue
+(the alert rules' "backup max age", 24 hours unless the owner set another).
+
+**One-time operator step — give the job its own sign-in (never in the repo, hard rule 4):**
+
+1. Ask the owner to approve granting the role **Backup job (machine)** (`backup_job`) to a
+   new machine user, for example `svc-backup`, through the normal two-person role grant.
+   This role can only report backups — it cannot read or change anything else.
+2. Issue that user a token the same way the store computer's token is issued:
+   `node scripts/issue-store-token.mjs --user svc-backup --tenant <shop id>` (30 days unless
+   `--ttl-hours` says otherwise). The token is shown once, on your screen only.
+3. On the box, create `/etc/sre-pilot/backup-reporter.env`, owned by root, mode `600`:
+   ```
+   SRE_BACKUP_REPORT_API_URL=https://<head office API address>
+   SRE_BACKUP_REPORT_TOKEN=<the token from step 2>
+   # optional: a command that copies the file off-site and exits 0 only when the copy is confirmed
+   # SRE_BACKUP_OFFSITE_CMD=/usr/local/bin/sre-offsite-copy
+   ```
+   The service unit reads this file (`EnvironmentFile=`). Never put it in the repository,
+   a container image or a log.
+4. Run the job once by hand (`systemctl start sre-pilot-backup.service`) and check the
+   journal says `reported   bk-… completed`. On the health page the backup line shows the
+   new backup.
+
+**What the messages mean:**
+
+- `NOT REPORTED — … not set` — step 3 is missing. The job fails on purpose so you see it.
+- `NOT REPORTED — head office answered 401` — the token is wrong or expired; issue a new one.
+- `does not count: it has no off-site copy` — no off-site copy step is configured, or it
+  failed. Until the owner names the off-site destination this is expected, and the backup
+  alert stays raised (that is the truth: there is no off-site copy yet).
+- Renew the token before it expires (the API limits how long a token may live); an expired
+  token shows up the next night as "NOT REPORTED" and, the night after, as MISSED.
+
 ## Part 4 — Restoring (the one that matters)
 
 **1. Do not restore over live data.** Make an empty database first:

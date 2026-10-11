@@ -43,6 +43,8 @@ const PULLS: readonly [Method, string][] = [
   ['GET', '/v1/org/document-templates/published'],
   ['GET', '/v1/store-packs/S1'],
   ['POST', '/v1/store-packs/S1/held'],
+  // Round 6: the box reports how far each queue has synced (edge/sync-agent/src/sync-watermark-report.ts).
+  ['POST', '/v1/stores/S1/sync-watermarks'],
 ];
 
 describe('the store computer role (OB-36 "A")', () => {

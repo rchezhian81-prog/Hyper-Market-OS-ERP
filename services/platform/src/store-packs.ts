@@ -21,6 +21,7 @@
 
 import { createHash } from 'node:crypto';
 import type { Route } from '../../kernel/src/index';
+import { STORE_COMPUTER_REPORT, assertStoreComputerOf, type StoreComputerScopeOf } from './store-computer-identity';
 import { apiError, notFound, stableStringify } from '../../kernel/src/index';
 import type { PackSigner } from '../../catalogue/src/pack';
 
@@ -221,6 +222,9 @@ export interface StorePackDeps {
   readonly heldVersions?: (tenantId: string, storeId: string) => Promise<HeldVersionsReport | undefined>;
   readonly recordHeldVersions?: (tenantId: string, r: HeldVersionsReport) => Promise<void>;
   readonly currentCatalogueVersion?: (tenantId: string) => Promise<number | null>;
+  /** Round 6 (EA-01): where the caller is a store computer (its `store_computer` grants only) — the only identity whose
+   *  report of what it holds and what it has not sent head office believes. */
+  readonly storeComputerScopeOf?: StoreComputerScopeOf;
 }
 
 const isNonNegInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
@@ -258,14 +262,13 @@ export function storePackRoutes(deps: StorePackDeps): readonly Route[] {
       // sees which stores have (and have not yet) taken a new recall or hold — and (PA-04) how many records it still holds
       // unsent, which a branch's permanent close reads. Its own store only.
       api: 'API-01', method: 'POST', path: '/v1/store-packs/:storeId/held',
-      permission: 'store.pack.read', idempotent: true,
+      // Round 6 (EA-01): `store.computer.report` and the store_computer role at this store — a cashier or manager, who
+      // read the setup under `store.pack.read`, can no longer report "nothing unsent" for the owner's reports.
+      permission: STORE_COMPUTER_REPORT, idempotent: true,
       handler: async (ctx) => {
         const storeId = ctx.params['storeId'] ?? '';
         await knownStore(ctx.tenantId, storeId);
-        const scope = await deps.branchScopeOf(ctx.tenantId, ctx.userId, 'store.pack.read');
-        if (scope === undefined || (scope !== 'all' && !scope.includes(storeId))) {
-          throw apiError(403, { code: 'not_this_stores_computer', whatHappened: `Only store ${storeId}'s own computer reports what it holds.`, wasItSaved: 'not_saved', nextSafeAction: 'Report for your own store.' });
-        }
+        await assertStoreComputerOf(deps.storeComputerScopeOf, ctx, storeId, 'what it holds and what it has not sent');
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         const v = (x: unknown): number | null | undefined => (x === null ? null : typeof x === 'number' && Number.isInteger(x) && x >= 0 ? x : undefined);
         const catalogueVersion = v(b['catalogueVersion']); const storePackVersion = v(b['storePackVersion']);

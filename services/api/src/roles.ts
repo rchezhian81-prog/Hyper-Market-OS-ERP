@@ -35,6 +35,13 @@ export const STORE_MANAGER_ROLE_ID = 'store_manager';
  */
 export const STORE_COMPUTER_ROLE_ID = 'store_computer';
 
+/**
+ * PF-10 round 6: the message-provider relay's OWN machine identity — the internet-facing hop that forwards a provider's
+ * signed delivery reports. Not a person: the delivery-report route refuses every person's session, and still believes a
+ * report only when the provider's signature verifies.
+ */
+export const PROVIDER_RELAY_ROLE_ID = 'message_provider_relay';
+
 export const ROLE_CATALOGUE: readonly Role[] = [
   {
     id: OWNER_ROLE_ID,
@@ -48,6 +55,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'catalogue.category.propose', 'catalogue.category.approve',
       // PA-06 = DF-3-a: read a store's setup file (the store computer's own identity holds it at its store).
       'store.pack.read',
+      // Round 6 (EA-01): held ONLY so the owner can approve granting a store computer its role (no-escalation rule). The
+      // reporting routes also require the `store_computer` role itself at the store, so the owner never reports with it.
+      'store.computer.report',
       'price.change.propose', 'price.change.approve',
       'promotion.simulate', 'promotion.launch', 'promotion.read',
       'purchase.invoice.capture', 'purchase.invoice.match', 'purchase.supplier.bank', 'purchase.commitment.read',
@@ -95,6 +105,9 @@ export const ROLE_CATALOGUE: readonly Role[] = [
       'loyalty.coupon.issue', 'loyalty.coupon.redeem', 'loyalty.coupon.read',
       'service.case.manage', 'service.case.read', 'service.compensation.approve', 'customer.segment.read', 'customer.segment.manage',
       'customer.campaign.send', 'customer.campaign.read',
+      // PF-10 r6: held ONLY so the owner can approve granting the provider relay its role (no-escalation rule); the
+      // delivery-report route also requires the relay's own role, so the owner never reports a delivery himself.
+      'notification.delivery.report',
       // PF-10: the owner sets the campaign frequency cap (M21-FR-01: sends only within frequency rules).
       'customer.campaign.policy',
       'order.promise', 'order.reservation.read', 'order.read', 'order.lifecycle.manage', 'order.backorder.manage',
@@ -454,12 +467,27 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     ],
   },
   {
+    id: PROVIDER_RELAY_ROLE_ID,
+    name: 'Message provider relay (machine)',
+    permissions: ['notification.delivery.report'],
+  },
+  {
+    // PA-12 round 6: the backup job's OWN machine identity. The job reports its outcome — success and failure — and
+    // nothing else: no business data, no health raise, no alert rules. The operator provisions its sign-in (never in the
+    // repo, hard rule #4: docs/runbooks/backup-and-recovery.md); the owner approves the grant (he holds the permission).
+    id: 'backup_job',
+    name: 'Backup job (machine)',
+    permissions: ['platform.backup.record'],
+  },
+  {
     id: STORE_COMPUTER_ROLE_ID,
     name: 'Store computer',
     permissions: [
       // what it PULLS: its own setup, the published catalogue and templates, and the feeds the store's screens serve
       'store.pack.read', 'catalogue.pack.read', 'org.template.pull', 'inventory.indent.read', 'fulfilment.assignment.read',
       'loyalty.points.read', 'migration.screen.read',
+      // what it REPORTS about its own store — how far each queue has synced, what it holds and has not sent (round 6 · EA-01)
+      'store.computer.report',
       // what it RELAYS from the till and the store's screens and phones (head office re-verifies each person named)
       'pos.sale.sync', 'pos.return.sync', 'till.dayclose.sync', 'till.shift.sync', 'cash.movement.sync',
       'workforce.completion.sync', 'concession.tag.sync', 'approvals.decision.sync', 'delivery.stop.sync', 'fulfilment.pick.sync', 'inventory.movement.sync', 'inventory.receipt.sync',
