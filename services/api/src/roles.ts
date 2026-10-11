@@ -457,6 +457,14 @@ export const ROLE_CATALOGUE: readonly Role[] = [
     ],
   },
   {
+    // PA-12 round 6: the backup job's OWN machine identity. The job reports its outcome — success and failure — and
+    // nothing else: no business data, no health raise, no alert rules. The operator provisions its sign-in (never in the
+    // repo, hard rule #4: docs/runbooks/backup-and-recovery.md); the owner approves the grant (he holds the permission).
+    id: 'backup_job',
+    name: 'Backup job (machine)',
+    permissions: ['platform.backup.record'],
+  },
+  {
     id: STORE_COMPUTER_ROLE_ID,
     name: 'Store computer',
     permissions: [

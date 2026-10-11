@@ -21,7 +21,9 @@ describe('the demo backup is encrypted at rest', () => {
   it('writes the plain dump only to RAM, and shreds it on every exit', () => {
     expect(code(BACKUP)).toMatch(/mktemp -d \/dev\/shm\//);
     expect(code(BACKUP)).toMatch(/--out "\$WORK"/);
-    expect(code(BACKUP)).toMatch(/trap cleanup EXIT/);
+    // PA-12 r6: the exit trap also reports a failure to head office; it still shreds the RAM copy first.
+    expect(code(BACKUP)).toMatch(/trap on_exit EXIT/);
+    expect(code(BACKUP)).toMatch(/on_exit\(\) \{\n\s+status=\$\?\n\s+cleanup\n/);
     expect(code(BACKUP)).toMatch(/shred -u/);
   });
 

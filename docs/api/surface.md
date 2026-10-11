@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 930 | 564 | 564 | 84 | 294 |
+| 13 | 930 | 564 | 564 | 84 | 295 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -63,12 +63,12 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/org/nodes/:nodeId/activation` | `platform.setup.write` | core | yes |
 | GET | `/v1/store-packs/:storeId` | `store.pack.read` | core | — |
 | GET | `/v1/store-packs/:storeId/held` | `org.branch.read` | core | — |
-| POST | `/v1/store-packs/:storeId/held` | `store.pack.read` | core | yes |
+| POST | `/v1/store-packs/:storeId/held` | `store.computer.report` | core | yes |
 | GET | `/v1/stores/:storeId/rules` | `org.branch.read` | core | — |
 | POST | `/v1/stores/:storeId/rules` | `platform.setup.write` | core | yes |
 | GET | `/v1/stores/:storeId/settings` | `org.branch.read` | core | — |
 | POST | `/v1/stores/:storeId/settings` | `platform.setup.write` | core | yes |
-| POST | `/v1/stores/:storeId/sync-watermarks` | `store.pack.read` | core | yes |
+| POST | `/v1/stores/:storeId/sync-watermarks` | `store.computer.report` | core | yes |
 
 ## API-02 — Catalogue (M03–M05)
 
