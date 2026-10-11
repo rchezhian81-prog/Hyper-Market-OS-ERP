@@ -55,6 +55,8 @@ export interface ExportAudit {
   readonly rowCount: number;
   /** Columns that were redacted for this user, so the log is honest. */
   readonly redactedColumns: readonly string[];
+  /** SF-10: the bounded period a dated export covered (inclusive dates), when the domain takes one. */
+  readonly period?: { readonly from: string; readonly to: string };
 }
 
 export interface ExportResult {
