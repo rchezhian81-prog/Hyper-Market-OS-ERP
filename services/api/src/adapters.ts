@@ -5945,6 +5945,8 @@ export function writeOffAdapter(input: {
         quantityMinor: rec.qtyRemoved, uom: rec.uom, occurredAt: rec.at,
         reason: rec.reasonCode, enteredBy: rec.raisedBy,
         ...(rec.approvedBy !== null ? { approvedBy: rec.approvedBy } : {}),
+        // WF-09 (round 8): a batch's write-off takes the stock off THAT batch.
+        ...(rec.batchId === undefined ? {} : { batchId: rec.batchId }),
       });
       await input.store.append(tenantId, writeOffStream, makeEvent({
         id: `write-off-${rec.id}`,
