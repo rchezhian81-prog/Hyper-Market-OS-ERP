@@ -740,6 +740,8 @@ export function bootPos(config?: {
   readonly customerDisplay: () => CustomerDisplayFrame;
   /** The BroadcastChannel the display page listens on. */
   readonly customerDisplayChannelName: () => string;
+  /** D04-FR-05: send what this till's devices say to the store computer (needs a signed-in cashier). */
+  readonly reportDevices: (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[]) => Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }>;
   readonly till: ReturnType<typeof createTillSession>;
   /**
    * The next receipt number for this lane, from the store computer (audit PF-04): saved on the box before it is given,
@@ -1303,6 +1305,22 @@ export function bootPos(config?: {
     tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
   });
 
+  // D04-FR-05 · M12-FR-04: what this till's devices say — the scanner, printer, scale, drawer and card machine — sent to
+  // the store computer through the signed-in session, for the manager's Today screen. The device adapter that knows is
+  // hardware-side (external); this only carries its words. A device failing never stops a sale.
+  const reportDevices = async (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[]): Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }> => {
+    if (session.operator() === undefined) return { recorded: false, refusedBecause: 'operator_not_signed_in', laneMessage: 'Sign in before the till reports its devices.' };
+    try {
+      const response = await fetch(`${laneBase(config?.lanePort ?? DEFAULT_LANE_PORT)}/lane/peripherals`, { method: 'POST', headers: { 'content-type': 'application/json', ...operatorHeaders() }, body: JSON.stringify({ devices }) });
+      const front = FRONT_REFUSED[response.status];
+      if (front !== undefined) return { recorded: false, ...front };
+      const r = await response.json() as Record<string, unknown>;
+      return r['recorded'] === true ? { recorded: true } : { recorded: false, ...(typeof r['refusedBecause'] === 'string' ? { refusedBecause: r['refusedBecause'] } : {}), ...(typeof r['laneMessage'] === 'string' ? { laneMessage: r['laneMessage'] } : {}) };
+    } catch {
+      return { recorded: false, refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer; the device report was not sent.' };
+    }
+  };
+
   // D04-FR-05 · M12-FR-01: the customer display's frame, from the till's own basket — no network (see customer-display.ts).
   let displaySeq = 0;
   const customerDisplay = (): CustomerDisplayFrame => {
@@ -1317,7 +1335,7 @@ export function bootPos(config?: {
   };
   const customerDisplayChannelName = (): string => CUSTOMER_DISPLAY_CHANNEL;
 
-  return Object.assign(view, { customerDisplay, customerDisplayChannelName, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
+  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

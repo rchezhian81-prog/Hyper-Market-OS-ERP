@@ -463,6 +463,23 @@ async function toggleSignIn() {
   rememberOperator(session.operatorToken());
   paintOperator();
   void refreshHeld();
+  void reportDevices();
+}
+
+// ── The till's devices (D04-FR-05 · M12-FR-04) ──────────────────────────────
+// What the scanner, printer, scale, drawer and card machine say comes from a device adapter on this till computer
+// (`window.sreDevices.status()` — hardware-side, external; absent on a till with none). When the cashier signs in, its
+// answer goes to the store computer for the manager's Today screen. Nothing here waits on it, and a device that has
+// failed never stops a sale.
+async function reportDevices() {
+  const adapter = window.sreDevices;
+  if (!adapter || typeof adapter.status !== 'function' || typeof session.reportDevices !== 'function') return;
+  try {
+    const devices = await adapter.status();
+    if (Array.isArray(devices) && devices.length > 0) await session.reportDevices(devices);
+  } catch {
+    /* a device adapter that cannot answer is the manager's to see as "not reported", not the cashier's problem now */
+  }
 }
 
 // ── The banner ──────────────────────────────────────────────────────────────
