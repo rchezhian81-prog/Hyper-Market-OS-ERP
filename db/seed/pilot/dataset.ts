@@ -116,6 +116,12 @@ export interface SeedStoreSetup {
   readonly matchPolicy: { readonly quantityToleranceBps: number; readonly priceToleranceBps: number; readonly immaterialMinor: number };
   /** POST /v1/loss-prevention/rules/:kind — the store's exception thresholds (the manager's day close is judged by them). */
   readonly lossPreventionRules: readonly { readonly kind: string; readonly maxCount?: number; readonly maxTotalValueMinor?: number; readonly maxSingleValueMinor?: number; readonly escalateAtMultiple?: number }[];
+  /**
+   * PUT /v1/service/campaigns/frequency-policy — the owner's cap on marketing messages (OB-42, accepted "A" by the owner on
+   * 11 Oct 2026, in writing): at most this many per customer per channel in any window. Campaigns are refused until a cap
+   * is set; the seed sets the owner's decision for the DEMO shop only — a real shop's owner sets it themselves.
+   */
+  readonly marketingFrequency: { readonly capPerWindow: number; readonly windowDays: number };
 }
 
 const COMPANY_ID = 'pilot-demo-co';
@@ -190,6 +196,8 @@ export const PILOT_FOUNDATION: PilotFoundation = {
       { kind: 'discount', maxTotalValueMinor: 200_000, maxSingleValueMinor: 50_000 },
       { kind: 'no_sale', maxCount: 6 },
     ],
+    // OB-42 (owner, 11 Oct 2026, option A): 2 marketing messages per customer per channel per 7 days.
+    marketingFrequency: { capPerWindow: 2, windowDays: 7 },
   },
 };
 
