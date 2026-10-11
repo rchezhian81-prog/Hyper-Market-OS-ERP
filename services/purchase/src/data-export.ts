@@ -185,7 +185,7 @@ export function buildExportDomains(sources: {
         ],
       },
       // One calendar month of days at most — a pay period — so an export is never an unbounded scan of every day.
-      period: { maxDays: 31 },
+      period: { maxDays: 92 }, // OB-51 (owner, 11 Oct 2026): a quarter per export
       rows: async (t, period) => {
         if (period === undefined) return [];
         const register = new Map((await staff(t)).map((e) => [e.employeeId, e] as const));

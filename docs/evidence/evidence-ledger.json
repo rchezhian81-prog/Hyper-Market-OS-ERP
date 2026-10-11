@@ -5,7 +5,7 @@
     "register": "docs/registers/sp10-staff-uat.md",
     "scope": "docs/evidence/TEST-SCOPE.md"
   },
-  "testFiles": 1064,
+  "testFiles": 1075,
   "sessions": {
     "total": 0,
     "pass": 0,
@@ -23,7 +23,7 @@
     "integration": 101,
     "realDb": 87,
     "browser": 68,
-    "connected": 11,
+    "connected": 13,
     "device": 0,
     "uat": 0
   },
@@ -604,7 +604,7 @@
       "counts": {
         "unit": 12,
         "integration": 24,
-        "realDb": 4,
+        "realDb": 5,
         "browser": 6,
         "connected": 0,
         "device": 0,
@@ -654,6 +654,7 @@
         "realDb": [
           "tests/integration/concurrent-stock-cannot-be-spent-twice.test.ts",
           "tests/integration/floor-indents-handheld-issue.test.ts",
+          "tests/integration/replenishment.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts",
           "tests/integration/the-store-buys-what-it-sells.test.ts"
         ],
@@ -1396,8 +1397,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 5,
-        "integration": 14,
-        "realDb": 2,
+        "integration": 16,
+        "realDb": 4,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -1417,6 +1418,7 @@
           "tests/integration/ai-service-agent.test.ts",
           "tests/integration/campaign-consent.test.ts",
           "tests/integration/campaign-journeys.test.ts",
+          "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/exchanges.test.ts",
           "tests/integration/no-receipt-returns.test.ts",
           "tests/integration/notification-queue.test.ts",
@@ -1425,11 +1427,14 @@
           "tests/integration/service-cases.test.ts",
           "tests/integration/service-compensation.test.ts",
           "tests/integration/service-csat.test.ts",
-          "tests/integration/the-screens-are-fed.test.ts"
+          "tests/integration/the-screens-are-fed.test.ts",
+          "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
         "realDb": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
-          "tests/integration/returns-guard-the-refund.test.ts"
+          "tests/integration/delivery-reports-are-the-providers.test.ts",
+          "tests/integration/returns-guard-the-refund.test.ts",
+          "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
         "browser": [],
         "connected": [],
@@ -1627,10 +1632,10 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
-        "integration": 19,
-        "realDb": 4,
-        "browser": 3,
-        "connected": 0,
+        "integration": 20,
+        "realDb": 5,
+        "browser": 4,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -1648,6 +1653,7 @@
         "integration": [
           "tests/integration/ai-workforce-guidance.test.ts",
           "tests/integration/ai-workforce-worklist.test.ts",
+          "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
           "tests/integration/attendance-store.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
@@ -1667,32 +1673,36 @@
           "tests/integration/workforce-tenant-isolation.test.ts"
         ],
         "realDb": [
+          "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/branch-scope-is-the-servers.test.ts",
           "tests/integration/inventory-branch-scope.test.ts"
         ],
         "browser": [
+          "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
           "tests/e2e/checklist-delivery.e2e.ts",
           "tests/e2e/rostering-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/attendance-export-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M26",
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 2,
-        "integration": 9,
-        "realDb": 2,
-        "browser": 1,
-        "connected": 0,
+        "integration": 10,
+        "realDb": 3,
+        "browser": 2,
+        "connected": 1,
         "device": 0,
         "uat": 0
       },
@@ -1702,6 +1712,7 @@
           "tests/unit/facilities.test.ts"
         ],
         "integration": [
+          "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/branch-scope-every-family.test.ts",
           "tests/integration/cold-room-breach-holds-stock.test.ts",
@@ -1713,18 +1724,22 @@
           "tests/integration/second-person-is-a-separate-act.test.ts"
         ],
         "realDb": [
+          "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
           "tests/integration/beyond-the-till.test.ts",
           "tests/integration/branch-scope-every-family.test.ts"
         ],
         "browser": [
+          "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
           "tests/e2e/facilities-delivery.e2e.ts"
         ],
-        "connected": [],
+        "connected": [
+          "tests/e2e/attendance-export-on-the-production-api.e2e.ts"
+        ],
         "device": [],
         "uat": []
       },
       "holds": true,
-      "why": "browser boundary and cloud effect proven in separate runs (no connected browser test yet)"
+      "why": "browser boundary and cloud effect proven in ONE connected run"
     },
     {
       "id": "M27",
@@ -1883,17 +1898,18 @@
       "id": "M30",
       "label": "INTEGRATION_TESTED",
       "counts": {
-        "unit": 9,
-        "integration": 9,
-        "realDb": 3,
-        "browser": 3,
-        "connected": 1,
+        "unit": 10,
+        "integration": 10,
+        "realDb": 4,
+        "browser": 4,
+        "connected": 2,
         "device": 0,
         "uat": 0
       },
       "files": {
         "unit": [
           "tests/unit/data-export-routes.test.ts",
+          "tests/unit/data-io-period-export.test.ts",
           "tests/unit/erp-buying-session.test.ts",
           "tests/unit/erp-data-io-session.test.ts",
           "tests/unit/export.test.ts",
@@ -1906,6 +1922,7 @@
         "integration": [
           "tests/integration/ai-mapping-quality.test.ts",
           "tests/integration/an-imported-invoice-file-is-a-real-invoice.test.ts",
+          "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
           "tests/integration/categories-and-product-files-are-head-offices.test.ts",
           "tests/integration/data-export.test.ts",
           "tests/integration/data-import.test.ts",
@@ -1915,16 +1932,19 @@
           "tests/integration/maker-checker-is-two-people.test.ts"
         ],
         "realDb": [
+          "tests/integration/attendance-exports-for-a-bounded-period.test.ts",
           "tests/integration/every-business-domain-exports.test.ts",
           "tests/integration/exports-reach-the-business-domains.test.ts",
           "tests/integration/maker-checker-is-two-people.test.ts"
         ],
         "browser": [
+          "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
           "tests/e2e/company-report.e2e.ts",
           "tests/e2e/data-io-delivery.e2e.ts",
           "tests/e2e/screens-open-offline.e2e.ts"
         ],
         "connected": [
+          "tests/e2e/attendance-export-on-the-production-api.e2e.ts",
           "tests/e2e/company-report.e2e.ts"
         ],
         "device": [],
@@ -1938,8 +1958,8 @@
       "label": "WIRED",
       "counts": {
         "unit": 5,
-        "integration": 9,
-        "realDb": 3,
+        "integration": 11,
+        "realDb": 5,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -1955,6 +1975,7 @@
         ],
         "integration": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
+          "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/document-issue.test.ts",
           "tests/integration/documents-issue-from-their-records.test.ts",
           "tests/integration/documents-retention.test.ts",
@@ -1962,12 +1983,15 @@
           "tests/integration/notification-guard.test.ts",
           "tests/integration/notification-queue.test.ts",
           "tests/integration/notifications-send-themselves.test.ts",
-          "tests/integration/second-person-is-a-separate-act.test.ts"
+          "tests/integration/second-person-is-a-separate-act.test.ts",
+          "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
         "realDb": [
           "tests/integration/a-campaign-goes-through-the-queue-within-the-cap.test.ts",
+          "tests/integration/delivery-reports-are-the-providers.test.ts",
           "tests/integration/documents-issue-from-their-records.test.ts",
-          "tests/integration/notifications-send-themselves.test.ts"
+          "tests/integration/notifications-send-themselves.test.ts",
+          "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
         "browser": [],
         "connected": [],
@@ -1982,8 +2006,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 8,
-        "integration": 10,
-        "realDb": 2,
+        "integration": 11,
+        "realDb": 3,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -2010,11 +2034,13 @@
           "tests/integration/observed-health.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
           "tests/integration/the-seams-hold.test.ts",
+          "tests/integration/the-sender-rechecks-template-and-recipient.test.ts",
           "tests/integration/webhooks.test.ts"
         ],
         "realDb": [
           "tests/integration/notifications-send-themselves.test.ts",
-          "tests/integration/the-seams-hold.test.ts"
+          "tests/integration/the-seams-hold.test.ts",
+          "tests/integration/the-sender-rechecks-template-and-recipient.test.ts"
         ],
         "browser": [
           "tests/e2e/integration-health-delivery.e2e.ts"
@@ -2159,8 +2185,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 4,
-        "integration": 10,
-        "realDb": 3,
+        "integration": 11,
+        "realDb": 4,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -2183,12 +2209,14 @@
           "tests/integration/dr-readiness.test.ts",
           "tests/integration/observed-health.test.ts",
           "tests/integration/operational-health.test.ts",
-          "tests/integration/recovery-rehearsal.test.ts"
+          "tests/integration/recovery-rehearsal.test.ts",
+          "tests/integration/the-backup-job-reports-its-own-outcome.test.ts"
         ],
         "realDb": [
           "tests/integration/alerts-reach-their-named-owner.test.ts",
           "tests/integration/backup-is-one-moment.test.ts",
-          "tests/integration/recovery-rehearsal.test.ts"
+          "tests/integration/recovery-rehearsal.test.ts",
+          "tests/integration/the-backup-job-reports-its-own-outcome.test.ts"
         ],
         "browser": [],
         "connected": [],
@@ -3401,7 +3429,7 @@
       "counts": {
         "unit": 4,
         "integration": 6,
-        "realDb": 2,
+        "realDb": 3,
         "browser": 3,
         "connected": 0,
         "device": 0,
@@ -3424,6 +3452,7 @@
         ],
         "realDb": [
           "tests/integration/floor-indents-handheld-issue.test.ts",
+          "tests/integration/replenishment.test.ts",
           "tests/integration/supplier-to-shelf-journey.test.ts"
         ],
         "browser": [
@@ -4066,8 +4095,8 @@
       "label": "PARTIALLY_WIRED",
       "counts": {
         "unit": 12,
-        "integration": 15,
-        "realDb": 7,
+        "integration": 16,
+        "realDb": 8,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -4099,6 +4128,7 @@
           "tests/integration/period-evidence.test.ts",
           "tests/integration/risk-register.test.ts",
           "tests/integration/supplier-account.test.ts",
+          "tests/integration/the-books-open-from-the-old-trial-balance.test.ts",
           "tests/integration/the-month-closes-on-independent-evidence.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
           "tests/integration/the-screens-are-fed.test.ts",
@@ -4111,6 +4141,7 @@
           "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/offline-sync-slice.test.ts",
           "tests/integration/opening-state-loads.test.ts",
+          "tests/integration/the-books-open-from-the-old-trial-balance.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
           "tests/integration/we-get-it-out-ourselves.test.ts"
         ],
@@ -4440,8 +4471,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 6,
-        "integration": 6,
-        "realDb": 4,
+        "integration": 8,
+        "realDb": 6,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -4460,15 +4491,19 @@
           "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/migration-load.test.ts",
           "tests/integration/migration-pipeline.test.ts",
+          "tests/integration/opening-load-at-store-volume.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/the-load-command-runs.test.ts",
-          "tests/integration/the-old-shop-arrives-whole.test.ts"
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-whole-load-runs-from-one-command.test.ts"
         ],
         "realDb": [
           "tests/integration/history-and-open-orders-load.test.ts",
+          "tests/integration/opening-load-at-store-volume.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/the-load-command-runs.test.ts",
-          "tests/integration/the-old-shop-arrives-whole.test.ts"
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-whole-load-runs-from-one-command.test.ts"
         ],
         "browser": [],
         "connected": [],
@@ -4483,8 +4518,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 17,
-        "integration": 9,
-        "realDb": 2,
+        "integration": 11,
+        "realDb": 4,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -4517,13 +4552,17 @@
           "tests/integration/migration-load.test.ts",
           "tests/integration/migration-pipeline.test.ts",
           "tests/integration/opening-state-loads.test.ts",
+          "tests/integration/the-books-open-from-the-old-trial-balance.test.ts",
           "tests/integration/the-box-pulls-its-migration-register.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-whole-load-runs-from-one-command.test.ts",
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
           "tests/integration/opening-state-loads.test.ts",
-          "tests/integration/the-old-shop-arrives-whole.test.ts"
+          "tests/integration/the-books-open-from-the-old-trial-balance.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-whole-load-runs-from-one-command.test.ts"
         ],
         "browser": [
           "tests/e2e/migration-decision-delivery.e2e.ts"
@@ -4540,8 +4579,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 2,
-        "integration": 5,
-        "realDb": 3,
+        "integration": 6,
+        "realDb": 4,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -4557,12 +4596,14 @@
           "tests/integration/migration-history-exclusions.test.ts",
           "tests/integration/opening-state-loads.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-whole-load-runs-from-one-command.test.ts",
           "tests/security/separation-of-duties.test.ts"
         ],
         "realDb": [
           "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/opening-state-loads.test.ts",
-          "tests/integration/the-old-shop-arrives-whole.test.ts"
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-whole-load-runs-from-one-command.test.ts"
         ],
         "browser": [],
         "connected": [],
@@ -4577,8 +4618,8 @@
       "label": "INTEGRATION_TESTED",
       "counts": {
         "unit": 2,
-        "integration": 4,
-        "realDb": 3,
+        "integration": 7,
+        "realDb": 6,
         "browser": 0,
         "connected": 0,
         "device": 0,
@@ -4590,15 +4631,21 @@
           "tests/unit/migration-reconcile.test.ts"
         ],
         "integration": [
+          "tests/integration/an-opening-load-is-reversed-only-in-the-cutover-window.test.ts",
           "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/migration-pipeline.test.ts",
           "tests/integration/opening-state-loads.test.ts",
-          "tests/integration/the-old-shop-arrives-whole.test.ts"
+          "tests/integration/the-books-open-from-the-old-trial-balance.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-whole-load-runs-from-one-command.test.ts"
         ],
         "realDb": [
+          "tests/integration/an-opening-load-is-reversed-only-in-the-cutover-window.test.ts",
           "tests/integration/history-and-open-orders-load.test.ts",
           "tests/integration/opening-state-loads.test.ts",
-          "tests/integration/the-old-shop-arrives-whole.test.ts"
+          "tests/integration/the-books-open-from-the-old-trial-balance.test.ts",
+          "tests/integration/the-old-shop-arrives-whole.test.ts",
+          "tests/integration/the-whole-load-runs-from-one-command.test.ts"
         ],
         "browser": [],
         "connected": [],
@@ -4687,8 +4734,8 @@
       "label": "E2E_VERIFIED",
       "counts": {
         "unit": 2,
-        "integration": 3,
-        "realDb": 2,
+        "integration": 4,
+        "realDb": 3,
         "browser": 1,
         "connected": 0,
         "device": 0,
@@ -4701,11 +4748,13 @@
         ],
         "integration": [
           "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
+          "tests/integration/an-opening-load-is-reversed-only-in-the-cutover-window.test.ts",
           "tests/integration/migration-pipeline.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
         "realDb": [
           "tests/integration/a-rehearsed-rollback-reconciles.test.ts",
+          "tests/integration/an-opening-load-is-reversed-only-in-the-cutover-window.test.ts",
           "tests/integration/the-old-shop-arrives-whole.test.ts"
         ],
         "browser": [

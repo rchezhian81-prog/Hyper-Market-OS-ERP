@@ -13,7 +13,7 @@ import { REDACTED } from '../../packages/export/src/export';
  * **Attendance leaves through the governed export for a bounded period (audit SF-10 round 5b · M30-FR-02 · M25/M26 · P-04 ·
  * hard rule #6).** The last domain the coverage register named as "not yet". Through the real API, in memory and on
  * PostgreSQL:
- *   • a period is REQUIRED and bounded (from ≤ to, at most 31 days) — anything else is refused before anything is read,
+ *   • a period is REQUIRED and bounded (from ≤ to, at most 92 days (OB-51)) — anything else is refused before anything is read,
  *     and nothing is logged;
  *   • each day's rows EQUAL the attendance store's own read for that day (`GET /v1/hr/workforce/attendance?date=`) — the
  *     latest record wins, a day outside the period is not included — with the branch and rate from the staff register;
@@ -59,8 +59,12 @@ async function checks(h: ApiHarness, T: string, again: () => ApiHarness): Promis
     ((await h.request({ method: 'GET', path: '/v1/hr/workforce/attendance', userId, tenantId: T, query: { date }, ...(branchId === undefined ? {} : { branchId }) })).body as { attendance: { employeeId: string; date: string; hours: number }[] }).attendance;
   const logBefore = ((await h.request({ method: 'GET', path: '/v1/exports', userId: OWNER, tenantId: T })).body as { total: number }).total;
 
-  // ── A bounded period is required: none, reversed, or longer than 31 days is refused before anything is read.
-  for (const body of [{}, { from: '2026-09-03', to: '2026-09-01' }, { from: '2026-08-01', to: '2026-09-01' }, { from: '2026-09-31', to: '2026-10-01' }]) {
+  // OB-51 (owner, 11 Oct 2026): at most 92 days — a quarter per export — as head office states it to the console.
+  const domains = (await h.request({ method: 'GET', path: '/v1/export', userId: OWNER, tenantId: T })).body as { domains: { domain: string; period?: { maxDays: number } }[] };
+  expect(domains.domains.find((d) => d.domain === 'attendance')?.period?.maxDays).toBe(92);
+
+  // ── A bounded period is required: none, reversed, or longer than 92 days (OB-51) is refused before anything is read.
+  for (const body of [{}, { from: '2026-09-03', to: '2026-09-01' }, { from: '2026-06-01', to: '2026-09-01' }, { from: '2026-09-31', to: '2026-10-01' }]) {
     const r = await exp(OWNER, body);
     expect(r.status, JSON.stringify(body)).toBe(400);
     expect((r.body as { error: { code: string } }).error.code).toBe('export_period_not_bounded');

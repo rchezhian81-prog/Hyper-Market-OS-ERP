@@ -16,7 +16,7 @@ import { defaultExportPeriod } from '../../apps/web-erp/src/data-io-session';
  *   • the owner exports 1–3 September and is told how many rows were taken; the export is on head office's log with
  *     its period;
  *   • a manager of one store, signed in there, exports the same days and is told which pay columns were hidden;
- *   • a 40-day period is refused by head office and the page says so in plain words — nothing taken, nothing logged;
+ *   • a 132-day period is refused by head office and the page says so in plain words — nothing taken, nothing logged;
  *   • the labels switch to Tamil like the rest of the page.
  *
  * Needs DATABASE_URL and the pre-installed Chromium; without either it SKIPS.
@@ -85,7 +85,7 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('attendance
       const expected = defaultExportPeriod(new Date().toISOString());
       expect(await page.inputValue('.period-from')).toBe(expected.from);
       expect(await page.inputValue('.period-to')).toBe(expected.to);
-      expect(await page.textContent('#export-domains')).toContain('at most 31 days');
+      expect(await page.textContent('#export-domains')).toContain('at most 92 days');
       // Only the dated domain asks for days.
       expect(await page.locator('.period-from').count()).toBe(1);
 
@@ -112,13 +112,13 @@ describe.skipIf(!existsSync(CHROMIUM) || DATABASE_URL === undefined)('attendance
     }
   }, 60_000);
 
-  it('a 40-day period is refused by head office and the page says so in plain words — nothing taken; Tamil too', async () => {
+  it('a 132-day period is refused by head office and the page says so in plain words — nothing taken; Tamil too', async () => {
     const before = (await attendanceLog()).length;
     const { page, close } = await open(OWNER);
     try {
-      const said = await exportDays(page, '2026-08-01', '2026-09-09');
+      const said = await exportDays(page, '2026-05-01', '2026-09-09');
       expect(said).toContain('Not exported');
-      expect(said).toContain('at most 31 days');
+      expect(said).toContain('at most 92 days');
       expect(said).not.toContain('{');
       expect(await page.getAttribute('#export-result', 'class')).toContain('tone-error');
       expect((await attendanceLog()).length).toBe(before);
