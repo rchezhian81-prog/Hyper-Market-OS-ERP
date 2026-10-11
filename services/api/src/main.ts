@@ -1744,6 +1744,7 @@ export function buildSurface(deps: {
       recordExtractionRun: () => {}, recordFinding: () => {}, recordSignature: () => {}, now,
     } : {
       ...migrationAdapter({ store, now, targetKind: deps.migrationTargetKind, ownerRoleId: OWNER_ROLE_ID }),
+      recordAudit: auditTrail?.recordAudit,
       // 2b-vi-c-3: a decision relayed from the store's migration screen is checked against the store computer's seal.
       tillSealKey: sealKey,
     }),

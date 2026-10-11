@@ -5,13 +5,17 @@
 // undone, and then never by deleting anything: each opening is taken back out through its own domain's compensating path,
 // kept beside what it undoes, and read back to zero against the load.
 //
-//   • WINDOW (`POST /v1/migration/cutover/windows/:cutoverId`) — the owner records when the cutover window opens and closes.
-//     Outside it every reversal is refused by name (`outside_cutover_window`).
+//   • WINDOW (OB-52 "A", owner, 11 Oct 2026 — "Opens at your GO", 48 hours) — the window is never typed. It OPENS at the GO
+//     the cutover gate recorded (`POST /v1/migration/cutover/decision`: every check passed on head office's records and the
+//     owner, signed in, said GO — GT-03) and CLOSES exactly 48 hours later. Before any GO a reversal is refused by name
+//     (`no_cutover_go`); after the close, `outside_cutover_window`. `GET /v1/migration/cutover/windows/:cutoverId` reads it;
+//     the round-6 route that took typed dates is retired (410).
 //   • REQUEST (`POST /v1/migration/opening-reversals/:loadId`) — a NAMED person (the signed-in owner) asks, with a reason, inside
-//     the window. The load's own openings are found by head office (its opening receipts, its supplier bills, its trial
-//     balance, its points movements); the gift cards / store credit and credit-customer invoices it opened are named from the
-//     load's extract and each is checked against what the load recorded (an instrument whose balance moved since, an
-//     invoice already part-paid, is refused by name — never half-undone).
+//     the window. EVERY opening is found by head office from the load's own records — never named by the caller (round 7,
+//     hard rule #10): its opening receipts, supplier bills and trial balance by the load id, and the gift cards / store credit,
+//     credit-customer invoices and points it opened from the opening-item register each of those was written into, atomically,
+//     when the load created it (`openingLoadId`). A body that names items is refused; an item the load did not create is never
+//     touched; an item that moved since (a spent card, a part-paid invoice, spent points) is refused by name — never half-undone.
 //   • APPROVE (`…/approval`) — a SECOND person with the same authority, never the requester (`self_approval`), inside the window,
 //     approves; only then are the compensations appended, each keyed on the load so a re-send or an interrupted run lands
 //     every one exactly once:
@@ -27,19 +31,62 @@ import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 
+/** OB-52: the cutover GO as the gate recorded it — the owner's signed-in GO on a decision whose every check passed. */
+export interface CutoverGo {
+  readonly cutoverId: string;
+  /** The owner, signed in — never a typed name (GT-03). */
+  readonly goBy: string;
+  readonly goAt: string;
+}
+
+/** OB-52 "A": the reversal window is fixed by the GO — it opens at the GO and closes 48 hours later. */
+export const REVERSAL_WINDOW_HOURS = 48;
+
 export interface CutoverWindow {
   readonly cutoverId: string;
   readonly opensAt: string;
   readonly closesAt: string;
-  readonly recordedBy: string;
-  readonly recordedAt: string;
+  /** Who gave the GO that opened it. */
+  readonly goBy: string;
+}
+
+/** The window a recorded GO opens: from the GO, for exactly 48 hours. */
+export function reversalWindowOf(go: CutoverGo): CutoverWindow {
+  const opens = Date.parse(go.goAt);
+  return { cutoverId: go.cutoverId, opensAt: new Date(opens).toISOString(), closesAt: new Date(opens + REVERSAL_WINDOW_HOURS * 3_600_000).toISOString(), goBy: go.goBy };
+}
+
+/** Round 7: one item a load opened, registered when the load created it (stream `migration/opening-items/<loadId>`). */
+export type OpeningItem =
+  | { readonly loadId: string; readonly domain: 'stored_value'; readonly instrumentId: string; readonly openedMinor: number }
+  | { readonly loadId: string; readonly domain: 'receivable'; readonly customerId: string; readonly invoiceId: string; readonly openedMinor: number }
+  | { readonly loadId: string; readonly domain: 'points'; readonly customerId: string; readonly openedMinor: number };
+
+/** The items a load opened, as the reversal holds them — derived from the register, never from a caller. */
+export type OpenedItems = Pick<OpeningReversalRequest, 'storedValue' | 'receivables' | 'pointsCustomers'>;
+
+export function openedItemsOf(items: readonly OpeningItem[]): OpenedItems {
+  const storedValue: { instrumentId: string; balanceMinor: number }[] = [];
+  const receivables: { customerId: string; invoiceId: string; outstandingMinor: number }[] = [];
+  const pointsCustomers: string[] = [];
+  for (const i of items) {
+    if (i.domain === 'stored_value' && !storedValue.some((x) => x.instrumentId === i.instrumentId)) storedValue.push({ instrumentId: i.instrumentId, balanceMinor: i.openedMinor });
+    if (i.domain === 'receivable' && !receivables.some((x) => x.customerId === i.customerId && x.invoiceId === i.invoiceId)) receivables.push({ customerId: i.customerId, invoiceId: i.invoiceId, outstandingMinor: i.openedMinor });
+    if (i.domain === 'points' && !pointsCustomers.includes(i.customerId)) pointsCustomers.push(i.customerId);
+  }
+  const by = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  return {
+    storedValue: storedValue.sort((a, b) => by(a.instrumentId, b.instrumentId)),
+    receivables: receivables.sort((a, b) => by(`${a.customerId}/${a.invoiceId}`, `${b.customerId}/${b.invoiceId}`)),
+    pointsCustomers: pointsCustomers.sort(by),
+  };
 }
 
 export interface OpeningReversalRequest {
   readonly loadId: string;
   readonly cutoverId: string;
   readonly reason: string;
-  /** Gift cards / store credit the load opened, with the balance it opened them at. */
+  /** Gift cards / store credit the load opened, with the balance it opened them at — from the opening-item register. */
   readonly storedValue: readonly { readonly instrumentId: string; readonly balanceMinor: number }[];
   /** Credit customers' invoices the load opened, with the outstanding it opened them at. */
   readonly receivables: readonly { readonly customerId: string; readonly invoiceId: string; readonly outstandingMinor: number }[];
@@ -65,8 +112,10 @@ export interface ReversalDomainLine {
 }
 
 export interface OpeningReversalDeps {
-  readonly windows: (tenantId: string) => Promise<readonly CutoverWindow[]> | readonly CutoverWindow[];
-  readonly recordWindow: (tenantId: string, w: CutoverWindow) => Promise<void> | void;
+  /** Every cutover GO the gate recorded (OB-52) — the first per cutover stands. */
+  readonly gos: (tenantId: string) => Promise<readonly CutoverGo[]> | readonly CutoverGo[];
+  /** Round 7: every gift card / credit, invoice and points opening the load itself registered when it created them. */
+  readonly openedItems: (tenantId: string, loadId: string) => Promise<OpenedItems>;
   readonly requests: (tenantId: string) => Promise<readonly OpeningReversalRequest[]> | readonly OpeningReversalRequest[];
   /** Append; resolve the request that STANDS for the load (another writer's, when theirs landed first). */
   readonly recordRequest: (tenantId: string, r: OpeningReversalRequest) => Promise<OpeningReversalRequest | void> | OpeningReversalRequest | void;
@@ -84,45 +133,46 @@ export interface OpeningReversalDeps {
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isTime = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
-const isMinor = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
 
-/** The window in force for a cutover now, or undefined (the latest record for the cutover wins). */
-export function windowOpenNow(windows: readonly CutoverWindow[], cutoverId: string, nowIso: string): CutoverWindow | undefined {
-  const w = windows.filter((x) => x.cutoverId === cutoverId).at(-1);
-  if (w === undefined) return undefined;
+/** Where a cutover's reversal window stands now: no GO recorded, open, or not open (closed — or, on a skewed clock, not yet). */
+export function windowStanding(gos: readonly CutoverGo[], cutoverId: string, nowIso: string):
+  { readonly state: 'no_go' } | { readonly state: 'open' | 'closed'; readonly window: CutoverWindow } {
+  const go = gos.find((g) => g.cutoverId === cutoverId); // the FIRST GO stands; a later one never moves the window
+  if (go === undefined) return { state: 'no_go' };
+  const window = reversalWindowOf(go);
   const now = Date.parse(nowIso);
-  return now >= Date.parse(w.opensAt) && now <= Date.parse(w.closesAt) ? w : undefined;
+  return { state: now >= Date.parse(window.opensAt) && now <= Date.parse(window.closesAt) ? 'open' : 'closed', window };
 }
 
-const outsideWindow = (cutoverId: string) => apiError(422, {
-  code: 'outside_cutover_window',
-  whatHappened: `An opening load is reversed only inside the real cutover window, and cutover ${cutoverId} has no window open now (OB-44). Trial loads are not reversed — they go into a fresh shop.`,
+const noGo = (cutoverId: string) => apiError(422, {
+  code: 'no_cutover_go',
+  whatHappened: `Cutover ${cutoverId} has no GO on record, so its reversal window has not opened (OB-52: it opens at the owner's signed-in GO and closes 48 hours later). Trial loads are not reversed — they go into a fresh shop.`,
   wasItSaved: 'not_saved',
-  nextSafeAction: 'Rehearse in a fresh shop instead, or have the owner record the cutover window (POST /v1/migration/cutover/windows/:cutoverId). Nothing was changed.',
+  nextSafeAction: 'Rehearse in a fresh shop instead. On the real night, the window opens when the cutover gate says GO with the owner signed in (POST /v1/migration/cutover/decision). Nothing was changed.',
 });
 
-function readRequestBody(b: Record<string, unknown>): Omit<OpeningReversalRequest, 'loadId' | 'requestedBy' | 'requestedAt'> | undefined {
-  if (!isStr(b['cutoverId']) || !isStr(b['reason'])) return undefined;
-  const sv = b['storedValue'] ?? [];
-  const rc = b['receivables'] ?? [];
-  const pc = b['pointsCustomers'] ?? [];
-  if (!Array.isArray(sv) || !sv.every((x) => isObj(x) && isStr(x['instrumentId']) && isMinor(x['balanceMinor']))) return undefined;
-  if (!Array.isArray(rc) || !rc.every((x) => isObj(x) && isStr(x['customerId']) && isStr(x['invoiceId']) && isMinor(x['outstandingMinor']))) return undefined;
-  if (!Array.isArray(pc) || !pc.every(isStr)) return undefined;
-  return {
-    cutoverId: (b['cutoverId'] as string).trim(), reason: (b['reason'] as string).trim(),
-    storedValue: (sv as Record<string, unknown>[]).map((x) => ({ instrumentId: x['instrumentId'] as string, balanceMinor: x['balanceMinor'] as number })),
-    receivables: (rc as Record<string, unknown>[]).map((x) => ({ customerId: x['customerId'] as string, invoiceId: x['invoiceId'] as string, outstandingMinor: x['outstandingMinor'] as number })),
-    pointsCustomers: [...(pc as string[])],
-  };
+const outsideWindow = (w: CutoverWindow) => apiError(422, {
+  code: 'outside_cutover_window',
+  whatHappened: `An opening load is reversed only inside the cutover window, and cutover ${w.cutoverId}'s window ran from its GO at ${w.opensAt} to ${w.closesAt} (48 hours, OB-52) — it is not open now.`,
+  wasItSaved: 'not_saved',
+  nextSafeAction: 'Correct what the load got wrong by each domain\'s own correcting route (a stock adjustment, a credit note, a journal) with its own approval. Nothing was changed.',
+});
+
+/** Refuse unless the cutover's window is open now. */
+function assertWindowOpen(gos: readonly CutoverGo[], cutoverId: string, nowIso: string): void {
+  const s = windowStanding(gos, cutoverId, nowIso);
+  if (s.state === 'no_go') throw noGo(cutoverId);
+  if (s.state === 'closed') throw outsideWindow(s.window);
 }
 
-const sameRequest = (a: OpeningReversalRequest, b: Omit<OpeningReversalRequest, 'loadId' | 'requestedBy' | 'requestedAt'>): boolean =>
-  a.cutoverId === b.cutoverId && a.reason === b.reason
-  && a.storedValue.length === b.storedValue.length && a.storedValue.every((x, i) => x.instrumentId === b.storedValue[i]!.instrumentId && x.balanceMinor === b.storedValue[i]!.balanceMinor)
-  && a.receivables.length === b.receivables.length && a.receivables.every((x, i) => x.customerId === b.receivables[i]!.customerId && x.invoiceId === b.receivables[i]!.invoiceId && x.outstandingMinor === b.receivables[i]!.outstandingMinor)
-  && a.pointsCustomers.length === b.pointsCustomers.length && a.pointsCustomers.every((x, i) => x === b.pointsCustomers[i]);
+/** The caller says WHICH cutover and WHY — never which items: those are head office's, from the load's own register. */
+function readRequestBody(b: Record<string, unknown>): { cutoverId: string; reason: string } | 'names_items' | undefined {
+  if (['storedValue', 'receivables', 'pointsCustomers'].some((k) => k in b)) return 'names_items';
+  if (!isStr(b['cutoverId']) || !isStr(b['reason'])) return undefined;
+  return { cutoverId: (b['cutoverId'] as string).trim(), reason: (b['reason'] as string).trim() };
+}
+
+const sameRequest = (a: OpeningReversalRequest, b: { cutoverId: string; reason: string }): boolean => a.cutoverId === b.cutoverId && a.reason === b.reason;
 
 export function openingReversalRoutes(deps: OpeningReversalDeps): readonly Route[] {
   const audit = async (tenantId: string, entry: AuditEntry): Promise<void> => { await deps.recordAudit?.(tenantId, entry); };
@@ -133,18 +183,29 @@ export function openingReversalRoutes(deps: OpeningReversalDeps): readonly Route
   };
   return [
     {
+      // OB-52 "A": RETIRED. The round-6 route took the window's opening and closing as typed dates; the window is now fixed
+      // by the recorded GO (it opens at the GO and closes 48 hours later), so a typed window is refused, nothing recorded.
       api: 'API-12', method: 'POST', path: '/v1/migration/cutover/windows/:cutoverId',
       permission: 'migration.cutover.decide', idempotent: true,
+      handler: () => {
+        throw apiError(410, {
+          code: 'cutover_window_is_set_by_the_go',
+          whatHappened: 'The reversal window is no longer typed in. It opens at the owner\'s signed-in cutover GO and closes 48 hours later (OB-52).',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Give GO on the cutover gate (POST /v1/migration/cutover/decision, signed in as the owner); read the window at GET /v1/migration/cutover/windows/:cutoverId. Nothing was recorded.',
+        });
+      },
+    },
+    {
+      // OB-52: READ the window a cutover's recorded GO opened — when it opens and closes, and whether it is open now.
+      api: 'API-12', method: 'GET', path: '/v1/migration/cutover/windows/:cutoverId',
+      permission: 'migration.parallel.read',
       handler: async (ctx) => {
         const cutoverId = (ctx.params['cutoverId'] ?? '').trim();
-        const b = isObj(ctx.body) ? ctx.body : {};
-        if (cutoverId === '' || !isTime(b['opensAt']) || !isTime(b['closesAt']) || Date.parse(b['opensAt']) >= Date.parse(b['closesAt'])) {
-          throw apiError(400, { code: 'not_readable_as_a_cutover_window', whatHappened: 'A cutover window needs the cutoverId in the path and { opensAt, closesAt } — two times, the opening first.', wasItSaved: 'not_saved', nextSafeAction: 'Send when the cutover night starts and ends. Nothing was recorded.' });
-        }
-        const w: CutoverWindow = { cutoverId, opensAt: new Date(Date.parse(b['opensAt'])).toISOString(), closesAt: new Date(Date.parse(b['closesAt'])).toISOString(), recordedBy: ctx.userId, recordedAt: deps.now() };
-        await deps.recordWindow(ctx.tenantId, w);
-        await audit(ctx.tenantId, { actorId: ctx.userId, action: 'migration.cutover_window.record', objectType: 'cutover', objectId: cutoverId, at: w.recordedAt, origin: { tenantId: ctx.tenantId, branchId: ctx.branchId ?? null }, before: {}, after: { opensAt: w.opensAt, closesAt: w.closesAt }, correlationId: cutoverId });
-        return { status: 201, body: { window: w } };
+        const now = deps.now();
+        const s = windowStanding(await deps.gos(ctx.tenantId), cutoverId, now);
+        if (s.state === 'no_go') return { status: 200, body: { cutoverId, go: false, window: null, openNow: false, asAt: now } };
+        return { status: 200, body: { cutoverId, go: true, window: s.window, openNow: s.state === 'open', asAt: now } };
       },
     },
     {
@@ -153,8 +214,11 @@ export function openingReversalRoutes(deps: OpeningReversalDeps): readonly Route
       handler: async (ctx) => {
         const loadId = (ctx.params['loadId'] ?? '').trim();
         const body = readRequestBody(isObj(ctx.body) ? ctx.body : {});
+        if (body === 'names_items') {
+          throw apiError(400, { code: 'opening_items_come_from_the_load', whatHappened: 'What a reversal takes back is never named by the person asking: head office reads every gift card, credit, invoice and points opening from the load\'s own register (hard rule #10).', wasItSaved: 'not_saved', nextSafeAction: 'Send only { cutoverId, reason }. Nothing was recorded.' });
+        }
         if (loadId === '' || body === undefined) {
-          throw apiError(400, { code: 'not_readable_as_an_opening_reversal', whatHappened: 'Reversing an opening load needs the loadId in the path and { cutoverId, reason, storedValue?: [{ instrumentId, balanceMinor }], receivables?: [{ customerId, invoiceId, outstandingMinor }], pointsCustomers?: [customerId] } — the instruments, invoices and points the load opened, from its extract.', wasItSaved: 'not_saved', nextSafeAction: 'Send why, and what the load opened. Nothing was recorded.' });
+          throw apiError(400, { code: 'not_readable_as_an_opening_reversal', whatHappened: 'Reversing an opening load needs the loadId in the path and { cutoverId, reason }.', wasItSaved: 'not_saved', nextSafeAction: 'Send which cutover and why. Nothing was recorded.' });
         }
         const t = ctx.tenantId;
         const { request: prior, approval } = await read(t, loadId);
@@ -162,8 +226,8 @@ export function openingReversalRoutes(deps: OpeningReversalDeps): readonly Route
           if (sameRequest(prior, body)) return { status: 200, body: { request: prior, alreadyRequested: true, approved: approval !== undefined } };
           throw apiError(409, { code: 'opening_reversal_conflict', whatHappened: `A reversal of load ${loadId} was already requested by ${prior.requestedBy} with different figures. A request is never overwritten.`, wasItSaved: 'not_saved', nextSafeAction: 'Read the request on record and decide on that one. Nothing was changed.' });
         }
-        if (windowOpenNow(await deps.windows(t), body.cutoverId, deps.now()) === undefined) throw outsideWindow(body.cutoverId);
-        const request: OpeningReversalRequest = { ...body, loadId, requestedBy: ctx.userId, requestedAt: deps.now() };
+        assertWindowOpen(await deps.gos(t), body.cutoverId, deps.now());
+        const request: OpeningReversalRequest = { ...body, ...(await deps.openedItems(t, loadId)), loadId, requestedBy: ctx.userId, requestedAt: deps.now() };
         const problems = await deps.problems(t, request);
         if (problems.length > 0) {
           throw apiError(422, { code: 'opening_cannot_be_reversed_as_loaded', whatHappened: `Load ${loadId} cannot be reversed as it stands: ${problems.join('; ')}.`, wasItSaved: 'not_saved', nextSafeAction: 'Settle each named item (a spent gift card, a part-paid invoice) by its own route first, or leave it and reverse the rest by a corrected request. Nothing was recorded.' });
@@ -192,7 +256,7 @@ export function openingReversalRoutes(deps: OpeningReversalDeps): readonly Route
         if (request.requestedBy === ctx.userId) {
           throw apiError(403, { code: 'self_approval', whatHappened: `You requested the reversal of load ${loadId}, so you cannot also approve it (OB-44 · §28: a second approver).`, wasItSaved: 'not_saved', nextSafeAction: 'Ask another person with the authority to decide the cutover. Nothing was changed.' });
         }
-        if (windowOpenNow(await deps.windows(t), request.cutoverId, deps.now()) === undefined) throw outsideWindow(request.cutoverId);
+        assertWindowOpen(await deps.gos(t), request.cutoverId, deps.now());
         const problems = await deps.problems(t, request);
         if (problems.length > 0) {
           throw apiError(422, { code: 'opening_cannot_be_reversed_as_loaded', whatHappened: `Since the request, load ${loadId} can no longer be reversed as it stands: ${problems.join('; ')}.`, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was reversed. Settle what is named, then request again.' });

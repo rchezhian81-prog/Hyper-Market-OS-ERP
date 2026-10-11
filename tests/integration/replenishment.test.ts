@@ -15,7 +15,9 @@ import { runMigrations } from '../../packages/persistence/src/migrations';
 // on-order from the issued purchase orders still owed to it plus the transfers on the van to it, and sold from the ledger's
 // `sold` movements there. A request may carry only planning parameters — a typed `onHand`/`onOrder`/`reserved` is refused
 // by name — and the store's effective range ALWAYS decides what may be proposed. Every proposal is ADVISORY ONLY (hard
-// rule #5): it can never become a purchase order by itself. In memory and, with DATABASE_URL, on real PostgreSQL.
+// rule #5): it can never become a purchase order by itself. Round 7: what the store has promised to a B2B / online order
+// (its holds still standing) is taken off the position as `reserved`, from head office's records. In memory and, with
+// DATABASE_URL, on real PostgreSQL.
 
 const codeOf = (res: { body: unknown }): string | undefined => (res.body as { error?: { code?: string } }).error?.code;
 interface Proposal { productId: string; position: number; reorderPoint: number; suggestedQty: number; reason: string; advisoryOnly: boolean; shelfLifeCap?: number; shelfLifeCapped?: boolean }
@@ -111,7 +113,7 @@ describe.each(backings)('FUL-11 replenishment runs on head office\'s facts for o
     const item = { productId: 'p1', maxLevel: 100, reorderPoint: 50 };
     const first = await s.propose('u-mgr', [item], { storeId: 'S-A' });
     expect(proposals(first)[0]).toMatchObject({ productId: 'p1', position: 5, suggestedQty: 95, advisoryOnly: true });
-    expect((first.body as { stockFacts: unknown[] }).stockFacts).toEqual([{ productId: 'p1', onHand: 5, onOrder: 0, inTransit: 0 }]);
+    expect((first.body as { stockFacts: unknown[] }).stockFacts).toEqual([{ productId: 'p1', onHand: 5, onOrder: 0, inTransit: 0, reserved: 0 }]);
 
     // An issued order for 10 to S-A: on order, so only 85 more is proposed.
     expect((await s.call('POST', '/v1/purchase/orders/po-a', 'u-mgr', { supplierId: 'sup-1', deliverToLocationId: 'S-A', lines: [{ productId: 'p1', orderedQty: 10, unitCost: cost }] })).status).toBe(201);
@@ -126,20 +128,44 @@ describe.each(backings)('FUL-11 replenishment runs on head office\'s facts for o
     })).status).toBe(201);
     const afterGrn = await s.propose('u-mgr', [item], { storeId: 'S-A' });
     expect(proposals(afterGrn)[0]).toMatchObject({ position: 15, suggestedQty: 85 });
-    expect((afterGrn.body as { stockFacts: unknown[] }).stockFacts).toEqual([{ productId: 'p1', onHand: 11, onOrder: 4, inTransit: 0 }]);
+    expect((afterGrn.body as { stockFacts: unknown[] }).stockFacts).toEqual([{ productId: 'p1', onHand: 11, onOrder: 4, inTransit: 0, reserved: 0 }]);
 
     // 30 on the van from the warehouse to S-A: in transit, so 30 less is proposed.
     expect((await s.call('POST', '/v1/warehouse/transfers/tr-1', 'u-owner', { fromLocationId: 'WH', toLocationId: 'S-A', lines: [{ productId: 'p1', batchId: null, quantityMinor: 30, uom: 'each', unitCost: { minor: 1_000, currency: 'INR' } }] })).status).toBe(201);
     expect((await s.call('POST', '/v1/warehouse/transfers/tr-1/dispatch', 'u-mgr', {})).status).toBe(200);
     const vanned = await s.propose('u-mgr', [item], { storeId: 'S-A' }, 'rp-van');
     expect(proposals(vanned)[0]).toMatchObject({ position: 45, suggestedQty: 55 });
-    expect((vanned.body as { stockFacts: unknown[] }).stockFacts).toEqual([{ productId: 'p1', onHand: 11, onOrder: 4, inTransit: 30 }]);
+    expect((vanned.body as { stockFacts: unknown[] }).stockFacts).toEqual([{ productId: 'p1', onHand: 11, onOrder: 4, inTransit: 30, reserved: 0 }]);
 
     // The same request again (same key) is the same answer.
     const replay = await s.propose('u-mgr', [item], { storeId: 'S-A' }, 'rp-van');
     expect(replay.body).toEqual(vanned.body);
     // S-B's view of p1 is S-B's 300 — above the reorder point, nothing proposed.
     expect(proposals(await s.propose('u-owner', [item], { storeId: 'S-B' }))).toEqual([]);
+  }, 120_000);
+
+  it('round 7: what the store has PROMISED to a B2B order (FUL-09) is not on its shelf for the next shopper — the hold reduces the proposal; another store\'s hold does not', async () => {
+    const h = harness();
+    const s = await shop(h);
+    await h.enableFeature(s.t, 'b2b');
+    await s.receive('S-A', 'rice', 40);
+    await s.receive('S-B', 'rice', 40);
+    const item = { productId: 'rice', maxLevel: 100, reorderPoint: 50 };
+    expect(proposals(await s.propose('u-owner', [item], { storeId: 'S-A' }))[0]).toMatchObject({ position: 40, suggestedQty: 60 });
+    // A business customer's order holds 15 bags at S-A (and 5 at S-B).
+    expect((await s.call('POST', '/v1/b2b/accounts/CATERER', 'u-owner', { creditLimitMinor: 10_000_000, paymentTermsDays: 30 })).status).toBeLessThan(300);
+    const RICE = { lineId: 'l1', productId: 'rice', description: 'Ponni rice 25kg', unitPriceMinor: 10_000, taxRateBps: 500 };
+    for (const [q, so, loc, qty] of [['q1', 'so1', 'S-A', 15], ['q2', 'so2', 'S-B', 5]] as const) {
+      const quoted = await s.call('POST', `/v1/b2b/documents/CATERER/quotations/${q}`, 'u-mgr', { lines: [{ ...RICE, qty }], locationId: loc });
+      expect(quoted.status, JSON.stringify(quoted.body)).toBeLessThan(300);
+      const ordered = await s.call('POST', `/v1/b2b/documents/CATERER/orders/${so}`, 'u-mgr', { fromQuotationId: q });
+      expect(ordered.status, JSON.stringify(ordered.body)).toBeLessThan(300);
+    }
+    const held = await s.propose('u-owner', [item], { storeId: 'S-A' });
+    expect(proposals(held)[0]).toMatchObject({ productId: 'rice', position: 25, suggestedQty: 75, advisoryOnly: true });
+    expect((held.body as { stockFacts: unknown[] }).stockFacts).toEqual([{ productId: 'rice', onHand: 40, onOrder: 0, inTransit: 0, reserved: 15 }]);
+    // The caller still cannot say what is reserved.
+    expect(codeOf(await s.propose('u-owner', [{ ...item, reserved: 0 }], { storeId: 'S-A' }))).toBe('replenishment_carries_caller_stock');
   }, 120_000);
 
   it('demand is what the store\'s own ledger recorded selling — another store\'s sales are not its demand; the range always applies', async () => {

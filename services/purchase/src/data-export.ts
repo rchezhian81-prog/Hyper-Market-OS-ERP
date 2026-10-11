@@ -184,7 +184,7 @@ export function buildExportDomains(sources: {
           { name: 'costMinor', type: 'integer', sensitive: true, description: 'hours × hourly rate, rounded to the paisa; blank if no rate.' },
         ],
       },
-      // One calendar month of days at most — a pay period — so an export is never an unbounded scan of every day.
+      // At most 92 days per export (OB-51: a quarter) — so an export is never an unbounded scan of every day.
       period: { maxDays: 92 }, // OB-51 (owner, 11 Oct 2026): a quarter per export
       rows: async (t, period) => {
         if (period === undefined) return [];

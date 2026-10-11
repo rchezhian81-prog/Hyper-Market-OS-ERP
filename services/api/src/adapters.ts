@@ -219,7 +219,8 @@ import type { JournalEntry, PeriodState, FinanceDeps } from '../../finance/src/i
 import type { AccountOpeningsDeps, AccountOpeningsRecord, AccountOpeningsSignOff } from '../../finance/src/account-openings';
 import { openingEntryId, openingReversalEntryId } from '../../finance/src/account-openings';
 import { postJournal } from '../../finance/src/index';
-import type { OpeningReversalDeps, CutoverWindow, OpeningReversalRequest, OpeningReversalApproval, ReversalDomainLine } from '../../migration/src/opening-reversal';
+import { openedItemsOf, type OpeningItem, type OpenedItems } from '../../migration/src/opening-reversal';
+import type { OpeningReversalDeps, CutoverGo, OpeningReversalRequest, OpeningReversalApproval, ReversalDomainLine } from '../../migration/src/opening-reversal';
 import type { DayBookDeps, DayBookJournal, DayBookExceptionRecord, StoredPostingMap } from '../../finance/src/day-book';
 import type { ConcessionTagDeps, ConcessionTradingBreach } from '../../finance/src/concession-tags';
 import type { ObservedHealthDeps, ConnectorQueueDepth, BackupRecord, StoredAlertRules } from '../../platform/src/observed-health';
@@ -1324,6 +1325,13 @@ export function streamName(...parts: readonly string[]): string {
   return parts.join(PART);
 }
 
+/** Round 7 (GT-05/OB-44): the register of what a migration load opened — written in the same atomic write as each item. */
+const openingItemsStream = (loadId: string): string => streamName(STREAM.migration, 'opening-items', loadId);
+function openingItemEntry(tenantId: string, item: OpeningItem, at: string): BatchEntry {
+  const ref = item.domain === 'stored_value' ? item.instrumentId : item.domain === 'receivable' ? `${item.customerId}/${item.invoiceId}` : item.customerId;
+  return { stream: openingItemsStream(item.loadId), event: makeEvent({ id: `opening-item-${item.loadId}-${item.domain}-${ref}`, type: 'OpeningItemRecorded', occurredAt: at, idempotencyKey: `opening-item-${tenantId}-${item.loadId}-${item.domain}-${ref}`, source: 'api/migration', payload: item }) };
+}
+
 /** Where a shop's subscription (plan) is recorded — read by the operator's shop list (OB-15-d-3) as head office writes it. */
 export const PLATFORM_BILLING_STREAM = streamName(STREAM.platform, 'billing');
 
@@ -1921,6 +1929,93 @@ export function categoryRegisterAdapter(input: {
 /** The product master's stream (`ProductPublished`, latest per id). */
 export const PRODUCTS_STREAM = streamName(STREAM.catalogue, 'products');
 
+// ── Keyed catalogue indexes (GT-05 store volume) ────────────────────────────────────────────────────────────────────────
+// The product publish's SKU-clash check and the barcode route's one-code-one-item check used to fold the WHOLE product
+// master / barcode register on every call — ~150 ms a call at 15 000 products on PostgreSQL, quadratic over a load. Each now
+// reads only the key it needs, by `latestOfType` on a per-key index stream (one indexed row):
+//   • `catalogue/barcode-owner/<code>`  → the product the code names (`BarcodeOwnerIndexed`);
+//   • `catalogue/sku-holder/<sku>`      → the last product to claim the SKU (`SkuClaimed`);
+//   • `catalogue/product-sku/<product>` → the SKU a product is published under now (`ProductSkuIndexed`).
+// A claimant holds a SKU only while its own current SKU is still that SKU, so a product that moves to a new SKU frees the
+// old one without a release record. Each index entry is written in the SAME atomic batch as the record it indexes, and the
+// write is GUARDED per code / per SKU (`barcode:<code>`, `sku:<sku>`): two simultaneous writers both read version v, one
+// lands, the other is refused by name and re-checks — never two owners (hard rule #10). The ledger stays the only truth:
+// an index entry is derived from the record beside it, appended, never updated (hard rule #2). A tenant whose catalogue was
+// written before these indexes is indexed ONCE — one guarded batch, marker included — before its first keyed check, so no
+// keyed check ever runs against a half-built index.
+const BARCODES_STREAM = streamName(STREAM.catalogue, 'barcodes');
+const barcodeOwnerStream = (code: string): string => streamName(STREAM.catalogue, 'barcode-owner', code);
+const skuHolderStream = (sku: string): string => streamName(STREAM.catalogue, 'sku-holder', sku);
+const productSkuStream = (productId: string): string => streamName(STREAM.catalogue, 'product-sku', productId);
+const CATALOGUE_INDEX_STREAM = streamName(STREAM.catalogue, 'indexes');
+interface SkuIndexed { readonly productId: string; readonly sku: string }
+
+/** The index entries for one published product: its current SKU, and its claim on that SKU. */
+function skuIndexEntries(tenantId: string, record: { readonly productId: string; readonly sku: string }, suffix: string, at: string): BatchEntry[] {
+  const payload: SkuIndexed = { productId: record.productId, sku: record.sku };
+  return [
+    { stream: productSkuStream(record.productId), event: makeEvent({ id: `product-sku-${record.productId}-${suffix}`, type: 'ProductSkuIndexed', occurredAt: at, idempotencyKey: `product-sku-${tenantId}-${record.productId}-${suffix}`, source: 'api/catalogue', payload }) },
+    { stream: skuHolderStream(record.sku), event: makeEvent({ id: `sku-claim-${record.productId}-${suffix}`, type: 'SkuClaimed', occurredAt: at, idempotencyKey: `sku-claim-${tenantId}-${record.sku}-${record.productId}-${suffix}`, source: 'api/catalogue', payload }) },
+  ];
+}
+
+/** Indexes built once per tenant — remembered per process (a marker, once written, is permanent). */
+const builtIndexes = new WeakMap<EventStore, Set<string>>();
+/**
+ * Make sure a tenant's catalogue index `name` exists: a keyed look for its marker; when absent, ONE guarded batch writes an
+ * entry for every record already in the ledger AND the marker — all or nothing. A competing builder loses the guard and
+ * finds the marker.
+ */
+async function ensureCatalogueIndex(store: EventStore, tenantId: string, name: 'barcode-owner' | 'sku', build: () => Promise<BatchEntry[]>): Promise<void> {
+  const seen = builtIndexes.get(store) ?? new Set<string>();
+  builtIndexes.set(store, seen);
+  const markerKey = `catalogue-index-${tenantId}-${name}`;
+  if (seen.has(markerKey)) return;
+  for (let attempt = 0; ; attempt += 1) {
+    if ((await store.findByIdempotencyKey(tenantId, markerKey)) !== undefined) { seen.add(markerKey); return; }
+    const version = await store.guardVersion(tenantId, `catalogue-index:${name}`);
+    const entries = await build();
+    const marker: BatchEntry = { stream: CATALOGUE_INDEX_STREAM, event: makeEvent({ id: `catalogue-index-${name}`, type: 'CatalogueIndexBuilt', occurredAt: new Date().toISOString(), idempotencyKey: markerKey, source: 'api/catalogue', payload: { index: name, entries: entries.length } }) };
+    try {
+      await store.appendBatch(tenantId, [...entries, marker], { guard: { key: `catalogue-index:${name}`, expectedVersion: version } });
+      seen.add(markerKey);
+      return;
+    } catch (err) {
+      if (!(err instanceof ConcurrencyConflictError) || attempt >= 4) throw err;
+    }
+  }
+}
+
+async function ensureSkuIndex(store: EventStore, tenantId: string): Promise<void> {
+  await ensureCatalogueIndex(store, tenantId, 'sku', async () => {
+    const latest = new Map<string, ProductRecord>();
+    for (const r of await allOf<ProductRecord>(store, tenantId, PRODUCTS_STREAM, 'ProductPublished')) latest.set(r.productId, r);
+    const at = new Date().toISOString();
+    return [...latest.values()].flatMap((r) => skuIndexEntries(tenantId, r, 'indexed', at));
+  });
+}
+
+async function ensureBarcodeIndex(store: EventStore, tenantId: string): Promise<void> {
+  await ensureCatalogueIndex(store, tenantId, 'barcode-owner', async () => {
+    const latest = new Map<string, BarcodeAssignment>();
+    for (const a of await allOf<BarcodeAssignment>(store, tenantId, BARCODES_STREAM, 'BarcodeAssigned')) latest.set(a.code, a);
+    const at = new Date().toISOString();
+    return [...latest.values()].map((a) => ({ stream: barcodeOwnerStream(a.code), event: makeEvent({ id: `barcode-owner-${a.code}-indexed`, type: 'BarcodeOwnerIndexed', occurredAt: at, idempotencyKey: `barcode-owner-${tenantId}-${a.code}-indexed`, source: 'api/catalogue', payload: a }) }));
+  });
+}
+
+/** Who holds a SKU now (other than `productId`), by key — and the version its write guard is at, read FIRST. */
+async function skuHolderOf(store: EventStore, tenantId: string, sku: string, productId: string): Promise<{ holder?: string; version: number }> {
+  await ensureSkuIndex(store, tenantId);
+  const version = await store.guardVersion(tenantId, `sku:${sku}`);
+  const claim = await store.latestOfType(tenantId, skuHolderStream(sku), 'SkuClaimed');
+  const claimant = claim === undefined ? undefined : payloadOf<SkuIndexed>(claim).productId;
+  if (claimant === undefined || claimant === productId) return { version };
+  const now = await store.latestOfType(tenantId, productSkuStream(claimant), 'ProductSkuIndexed');
+  return now !== undefined && payloadOf<SkuIndexed>(now).sku === sku ? { holder: claimant, version } : { version };
+}
+
+
 /** Why a product is in use (SF-06-b rollback guard): a barcode assigned to it, or a price set for it — or undefined. */
 export async function productInUse(store: EventStore, tenantId: string, productId: string): Promise<string | undefined> {
   if ((await allOf<{ productId: string }>(store, tenantId, streamName(STREAM.catalogue, 'barcodes'), 'BarcodeAssigned')).some((b) => b.productId === productId)) return 'has a barcode';
@@ -1943,18 +2038,22 @@ export function productMasterAdapter(input: {
     return byId;
   };
   return {
-    publish: async (tenantId, record, key) => {
-      await input.store.append(tenantId, stream, makeEvent({
+    publish: async (tenantId, record, key, skuVersion) => {
+      const at = input.now();
+      // The product's version and its SKU index entries, in ONE atomic batch — guarded on the SKU when the caller read it.
+      await ensureSkuIndex(input.store, tenantId);
+      await input.store.appendBatch(tenantId, [{ stream, event: makeEvent({
         id: `product-${record.productId}-${key}`,
         type: 'ProductPublished',
-        occurredAt: input.now(),
+        occurredAt: at,
         // Keyed on the caller's idempotency key so a retry dedups to one version; a deliberate re-publish
         // (a new key) is a new version.
         idempotencyKey: `product-${tenantId}-${record.productId}-${key}`,
         source: 'api/catalogue',
         payload: record,
-      }));
+      }) }, ...skuIndexEntries(tenantId, record, key, at)], skuVersion === undefined ? undefined : { guard: { key: `sku:${record.sku}`, expectedVersion: skuVersion } });
     },
+    skuHolder: (tenantId, sku, productId) => skuHolderOf(input.store, tenantId, sku, productId),
     categoryRegister: { ...categoryRegisterAdapter(input), approvals: approvalRequestsAdapter(input) },
     product: async (tenantId, productId) => (await foldLatest(tenantId)).get(productId),
     products: async (tenantId) =>
@@ -1972,19 +2071,31 @@ export function barcodeAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): BarcodeRegistryDeps {
-  const stream = streamName(STREAM.catalogue, 'barcodes');
+  const stream = BARCODES_STREAM;
   return {
-    assign: async (tenantId, assignment, key) => {
-      await input.store.append(tenantId, stream, makeEvent({
+    assign: async (tenantId, assignment, key, version) => {
+      const at = input.now();
+      await ensureBarcodeIndex(input.store, tenantId);
+      // The assignment and its owner index entry in ONE atomic batch — guarded on the code when the caller read it.
+      await input.store.appendBatch(tenantId, [{ stream, event: makeEvent({
         id: `barcode-${assignment.code}-${key}`,
         type: 'BarcodeAssigned',
-        occurredAt: input.now(),
+        occurredAt: at,
         // Keyed on the caller's idempotency key so a retry dedups; a deliberate re-assign (new key) appends
         // a new version the fold's last-wins picks up.
         idempotencyKey: `barcode-${tenantId}-${assignment.code}-${key}`,
         source: 'api/catalogue',
         payload: assignment,
-      }));
+      }) }, { stream: barcodeOwnerStream(assignment.code), event: makeEvent({
+        id: `barcode-owner-${assignment.code}-${key}`, type: 'BarcodeOwnerIndexed', occurredAt: at,
+        idempotencyKey: `barcode-owner-${tenantId}-${assignment.code}-${key}`, source: 'api/catalogue', payload: assignment,
+      }) }], version === undefined ? undefined : { guard: { key: `barcode:${assignment.code}`, expectedVersion: version } });
+    },
+    current: async (tenantId, code) => {
+      await ensureBarcodeIndex(input.store, tenantId);
+      const version = await input.store.guardVersion(tenantId, `barcode:${code}`); // read BEFORE the owner
+      const owner = await input.store.latestOfType(tenantId, barcodeOwnerStream(code), 'BarcodeOwnerIndexed');
+      return { version, ...(owner === undefined ? {} : { assignment: payloadOf<BarcodeAssignment>(owner) }) };
     },
     all: (tenantId) => allOf<BarcodeAssignment>(input.store, tenantId, stream, 'BarcodeAssigned'),
   };
@@ -4901,15 +5012,16 @@ export function b2bCollectionsAdapter(input: {
       return [...byId.values()];
     },
 
-    recordInvoice: async (tenantId, customerId, invoice) => {
-      await input.store.append(tenantId, forB2BCustomer(customerId), makeEvent({
+    recordInvoice: async (tenantId, customerId, invoice, openingLoadId) => {
+      const at = input.now();
+      await input.store.appendBatch(tenantId, [{ stream: forB2BCustomer(customerId), event: makeEvent({
         id: `b2b-inv-${customerId}-${invoice.invoiceId}`,
         type: 'B2BInvoiceRecorded',
-        occurredAt: input.now(),
+        occurredAt: at,
         idempotencyKey: `b2b-inv-${tenantId}-${customerId}-${invoice.invoiceId}-${invoice.grossMinor}-${invoice.dueOn}-${invoice.disputed ?? false}`,
         source: 'api/finance',
         payload: invoice,
-      }));
+      }) }, ...(openingLoadId === undefined ? [] : [openingItemEntry(tenantId, { loadId: openingLoadId, domain: 'receivable', customerId, invoiceId: invoice.invoiceId, openedMinor: invoice.grossMinor }, at)])]);
     },
 
     recordPayment: async (tenantId, customerId, payment) => {
@@ -7309,9 +7421,12 @@ export function dataImportAdapter(input: {
         .map((c) => (rollbacks.has(c.jobId) ? { ...c, rolledBack: rollbacks.get(c.jobId)! } : c));
     },
     recordCommit: async (tenantId, record, key, effects) => {
+      // GT-05: a product the load publishes is indexed by its SKU like any other publish (the index is built first).
+      if (effects.some((e) => e.kind === 'product')) await ensureSkuIndex(input.store, tenantId);
       // ONE atomic save: the job's record and every real record it applies — never one without the other.
       await input.store.appendBatch(tenantId, [
         ...effects.map((e) => effectEntry(tenantId, e, record.jobId, record.at)),
+        ...effects.flatMap((e) => (e.kind === 'product' ? skuIndexEntries(tenantId, e.product, `import-${record.jobId}`, record.at) : [])),
         {
           stream: DATA_IMPORTS_STREAM,
           event: makeEvent({
@@ -7625,6 +7740,15 @@ export function accountOpeningsAdapter(input: { readonly store: EventStore; read
  * own domain's compensating record (never a delete), each keyed on the load so a re-run lands only what is missing.
  */
 const OPENING_REVERSALS_STREAM = streamName(STREAM.migration, 'opening-reversals');
+const openedItemsIn = async (store: EventStore, tenantId: string, loadId: string): Promise<OpenedItems> =>
+  openedItemsOf(await allOf<OpeningItem>(store, tenantId, openingItemsStream(loadId), 'OpeningItemRecorded'));
+/** OB-52: the cutover GOs the gate recorded — one per cutover (keyed), the first standing. */
+const CUTOVER_GO_STREAM = streamName(STREAM.migration, 'cutover-go');
+const cutoverGosOf = (store: EventStore, tenantId: string): Promise<readonly CutoverGo[]> => allOf<CutoverGo>(store, tenantId, CUTOVER_GO_STREAM, 'CutoverGoRecorded');
+async function recordCutoverGoIn(store: EventStore, tenantId: string, go: CutoverGo): Promise<CutoverGo> {
+  const res = await store.append(tenantId, CUTOVER_GO_STREAM, makeEvent({ id: `cutover-go-${go.cutoverId}-${randomUUID()}`, type: 'CutoverGoRecorded', occurredAt: go.goAt, idempotencyKey: `cutover-go-${tenantId}-${go.cutoverId}`, source: 'api/migration', payload: go }));
+  return res.record.event.payload as CutoverGo;
+}
 export function openingReversalAdapter(input: { readonly store: EventStore; readonly now: () => string }): OpeningReversalDeps {
   const stockOf = async (tenantId: string, loadId: string): Promise<{ opened: Movement[]; reversed: Movement[] }> => {
     const grnIds = new Set((await goodsReceiptAdapter(input).all(tenantId)).map((g) => g.grnId)
@@ -7662,10 +7786,9 @@ export function openingReversalAdapter(input: { readonly store: EventStore; read
   };
   return {
     now: input.now,
-    windows: (tenantId) => allOf<CutoverWindow>(input.store, tenantId, OPENING_REVERSALS_STREAM, 'CutoverWindowRecorded'),
-    recordWindow: async (tenantId, w) => {
-      await input.store.append(tenantId, OPENING_REVERSALS_STREAM, makeEvent({ id: `cutover-window-${w.cutoverId}-${randomUUID()}`, type: 'CutoverWindowRecorded', occurredAt: w.recordedAt, idempotencyKey: `cutover-window-${tenantId}-${w.cutoverId}-${w.opensAt}-${w.closesAt}`, source: 'api/migration', payload: w }));
-    },
+    // OB-52: the window is the recorded GO's (round-6 `CutoverWindowRecorded` typed windows are kept but no longer read).
+    gos: (tenantId) => cutoverGosOf(input.store, tenantId),
+    openedItems: (tenantId, loadId) => openedItemsIn(input.store, tenantId, loadId),
     requests: (tenantId) => allOf<OpeningReversalRequest>(input.store, tenantId, OPENING_REVERSALS_STREAM, 'OpeningReversalRequested'),
     recordRequest: async (tenantId, r) => {
       const res = await input.store.append(tenantId, OPENING_REVERSALS_STREAM, makeEvent({ id: `opening-reversal-${r.loadId}-${randomUUID()}`, type: 'OpeningReversalRequested', occurredAt: r.requestedAt, idempotencyKey: `opening-reversal-${tenantId}-${r.loadId}`, source: 'api/migration', payload: r }));
@@ -7677,7 +7800,9 @@ export function openingReversalAdapter(input: { readonly store: EventStore; read
       return res.record.event.payload as OpeningReversalApproval;
     },
 
-    problems: async (tenantId, r) => {
+    problems: async (tenantId, asked) => {
+      // Round 7: the items are ALWAYS the load's own register's — whatever the request record holds.
+      const r = { ...asked, ...(await openedItemsIn(input.store, tenantId, asked.loadId)) };
       const p: string[] = [];
       for (const v of r.storedValue) {
         const inst = await sv.instrument(tenantId, v.instrumentId);
@@ -7714,7 +7839,8 @@ export function openingReversalAdapter(input: { readonly store: EventStore; read
       return p;
     },
 
-    execute: async (tenantId, r, a) => {
+    execute: async (tenantId, asked, a) => {
+      const r = { ...asked, ...(await openedItemsIn(input.store, tenantId, asked.loadId)) };
       const at = a.approvedAt;
       const why = `opening load ${r.loadId} reversed in cutover ${r.cutoverId}: ${r.reason} (requested by ${r.requestedBy}, approved by ${a.approvedBy})`;
       // Stock: every opening receipt movement out again, at its own cost.
@@ -7779,7 +7905,8 @@ export function openingReversalAdapter(input: { readonly store: EventStore; read
       }
     },
 
-    position: async (tenantId, r) => {
+    position: async (tenantId, asked) => {
+      const r = { ...asked, ...(await openedItemsIn(input.store, tenantId, asked.loadId)) };
       const out: ReversalDomainLine[] = [];
       const stock = await stockOf(tenantId, r.loadId);
       const qty = new Map<string, { opened: number; reversed: number }>();
@@ -8460,8 +8587,8 @@ export function customerAdapter(input: {
     // bumped by every movement that lands.
     pointsVersion: (tenantId, customerId) => input.store.guardVersion(tenantId, `points:${customerId}`),
 
-    recordPointsMovement: async (tenantId, customerId, m, expectedVersion) => {
-      await input.store.appendBatch(tenantId, [{ stream: forCustomerPoints(customerId), event: makeEvent({
+    recordPointsMovement: async (tenantId, customerId, m, expectedVersion, openingLoadId) => {
+      await input.store.appendBatch(tenantId, [...(openingLoadId === undefined ? [] : [openingItemEntry(tenantId, { loadId: openingLoadId, domain: 'points', customerId, openedMinor: m.delta }, m.at)]), { stream: forCustomerPoints(customerId), event: makeEvent({
         id: `points-${m.movementId}`,
         type: 'PointsMovement',
         occurredAt: m.at,
@@ -9032,25 +9159,25 @@ export function storedValueAdapter(input: {
       return perInstrument.flat();
     },
 
-    recordIssue: async (tenantId, instrument, opening) => {
+    recordIssue: async (tenantId, instrument, opening, openingLoadId) => {
       // The instrument goes on the shared index (so it can be found and, later, pooled by owner); its
-      // opening value is the first movement on the instrument's own stream, where the balance folds.
-      await input.store.append(tenantId, STORED_VALUE_INDEX, makeEvent({
+      // opening value is the first movement on the instrument's own stream, where the balance folds. One atomic write — with
+      // a load's opening-item register entry when a migration load opened it (round 7).
+      await input.store.appendBatch(tenantId, [{ stream: STORED_VALUE_INDEX, event: makeEvent({
         id: `sv-issue-${instrument.instrumentId}`,
         type: 'StoredValueIssued',
         occurredAt: instrument.issuedAt,
         idempotencyKey: `sv-issue-${tenantId}-${instrument.instrumentId}`,
         source: 'api/customer',
         payload: instrument,
-      }));
-      await input.store.append(tenantId, forInstrument(instrument.instrumentId), makeEvent({
+      }) }, { stream: forInstrument(instrument.instrumentId), event: makeEvent({
         id: `sv-mv-${opening.movementId}`,
         type: 'StoredValueMovement',
         occurredAt: opening.at,
         idempotencyKey: `sv-mv-${tenantId}-${opening.movementId}`,
         source: 'api/customer',
         payload: opening,
-      }));
+      }) }, ...(openingLoadId === undefined ? [] : [openingItemEntry(tenantId, { loadId: openingLoadId, domain: 'stored_value', instrumentId: instrument.instrumentId, openedMinor: opening.deltaMinor }, opening.at)])]);
     },
 
     // The instrument's write guard (Wave 2a · PF-01): one version per card, read before the balance and bumped by
@@ -10958,6 +11085,7 @@ export function migrationAdapter(input: {
 
   return {
     now: input.now,
+    recordCutoverGo: (tenantId, go) => recordCutoverGoIn(input.store, tenantId, go),
 
     target: (tenantId) => ({
       targetId: `tgt-${tenantId}`, tenantId,
@@ -12534,8 +12662,14 @@ export function replenishmentFactsAdapter(input: {
       const at = await placeOf(tenantId);
       const inv = inventoryAdapter(input);
       const onHand: Record<string, number> = {};
+      const places = new Set<string>([storeId]);
       for (const r of await inv.availability(tenantId)) {
-        if (at(storeId, r.locationId)) onHand[r.productId] = (onHand[r.productId] ?? 0) + r.onHandMinor;
+        if (at(storeId, r.locationId)) { onHand[r.productId] = (onHand[r.productId] ?? 0) + r.onHandMinor; places.add(r.locationId); }
+      }
+      // FUL-11 round 7: the holds still standing at the store's places — online orders (FUL-02) and B2B orders (FUL-09).
+      const reserved: Record<string, number> = {};
+      for (const place of places) {
+        for (const r of await outstandingReservationsAt(input.store, tenantId, place, input.now())) reserved[r.productId] = (reserved[r.productId] ?? 0) + r.quantityMinor;
       }
       const inTransit: Record<string, number> = {};
       for (const r of await inv.inTransit!(tenantId)) {
@@ -12546,7 +12680,7 @@ export function replenishmentFactsAdapter(input: {
       for (const d of openDeliveriesFor(await purchaseOrdersAdapter(input).all(tenantId), storeId, of)) {
         for (const l of d.lines) onOrder[l.productId] = (onOrder[l.productId] ?? 0) + l.openQty;
       }
-      return { onHand, onOrder, inTransit };
+      return { onHand, onOrder, inTransit, reserved };
     },
     soldLines: async (tenantId, storeId, fromIso, toIso) => {
       const at = await placeOf(tenantId);
