@@ -31,6 +31,7 @@ import { isAdjustmentReason, ADJUSTMENT_REASON_CODES } from '../../../packages/a
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { checkMovement, type Movement } from './index';
 import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
+import { freezingPlanOf, type CountFreezeCheck } from './count-freeze';
 
 export const ADJUSTMENT_REQUEST_FLAGS = Object.freeze([
   'requester_unknown', 'requester_lacks_authority', 'value_unknown',
@@ -88,6 +89,8 @@ export interface AdjustmentRequestDeps {
   readonly recordDecision: (tenantId: string, record: AdjustmentRequestRecord) => Promise<void> | void;
   /** The M08 ledger append — idempotent on the movement id. */
   readonly appendMovement: (tenantId: string, m: Movement) => Promise<void> | void;
+  /** WF-08 / OB-59: which open count plan freezes this correction here (absent on a bare stub — nothing is frozen). */
+  readonly countFreeze?: CountFreezeCheck;
   readonly now: () => string;
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
 }
@@ -136,7 +139,7 @@ export const adjustmentMovementId = (requestId: string): string => `adj-req:${re
 /** What deciding a request came to — for the direct route and for the manager's relayed decision alike (SP-4). */
 export type AdjustmentDecisionOutcome =
   | { readonly ok: true; readonly record: AdjustmentRequestRecord; readonly alreadyDecided: boolean }
-  | { readonly ok: false; readonly refusedBecause: 'adjustment_request_unknown' | 'self_approval' | 'adjustment_request_already_decided' | `movement_${string}`; readonly detail: string };
+  | { readonly ok: false; readonly refusedBecause: 'adjustment_request_unknown' | 'self_approval' | 'adjustment_request_already_decided' | 'frozen_by_a_stock_count' | `movement_${string}`; readonly detail: string };
 
 /**
  * Decide a pending request (§28): a person who is NOT the raiser approves — ONE compensating M08 movement posts, keyed
@@ -172,6 +175,13 @@ export async function decideAdjustmentRequest(deps: AdjustmentRequestDeps, input
     };
     const check = checkMovement(m);
     if (!check.ok) return { ok: false, refusedBecause: `movement_${check.refusedBecause ?? 'refused'}`, detail: check.detail };
+    // WF-08 / OB-59: approved on a head-office screen while a count is open here for this product → refused, nothing
+    // posts, the request stays pending. A decision RELAYED from the store already happened on the floor: it posts, and the
+    // open plan raises it as a freeze exception that needs a recount (never silent, never as if no count were open).
+    if (input.via === 'direct') {
+      const frozen = await freezingPlanOf(deps.countFreeze, input.tenantId, [m]);
+      if (frozen !== undefined) return { ok: false, refusedBecause: 'frozen_by_a_stock_count', detail: `${m.productId} is being counted at ${m.locationId} under count plan ${frozen.planId}, which freezes "${m.kind}" movements there until the count is approved or cancelled — so this adjustment cannot post now (OB-59). The request stays pending.` };
+    }
     await deps.appendMovement(input.tenantId, m);
     movementId = m.movementId;
   }
@@ -262,12 +272,13 @@ export function adjustmentRequestRoutes(deps: AdjustmentRequestDeps): readonly R
         const out = await decideAdjustmentRequest(deps, { tenantId: ctx.tenantId, requestId, decidedBy: ctx.userId, decision, reason: b['reason'].trim(), branchId: ctx.branchId ?? null, via: 'direct',
           assertInScope: (locationId) => assertLocationInScope(ctx, locationId, deps.locationBranches) });
         if (!out.ok) {
-          const status = out.refusedBecause === 'adjustment_request_unknown' ? 404 : out.refusedBecause === 'adjustment_request_already_decided' ? 409 : 422;
+          const status = out.refusedBecause === 'adjustment_request_unknown' ? 404 : out.refusedBecause === 'adjustment_request_already_decided' || out.refusedBecause === 'frozen_by_a_stock_count' ? 409 : 422;
           throw apiError(status, {
             code: out.refusedBecause, whatHappened: out.detail, wasItSaved: 'not_saved',
             nextSafeAction: out.refusedBecause === 'self_approval' ? 'A different person with approval authority must decide it. Nothing was changed.'
               : out.refusedBecause === 'adjustment_request_unknown' ? 'Check the store has synchronised — the request may still be on the store computer.'
-                : out.refusedBecause === 'adjustment_request_already_decided' ? 'Raise a new request if the position is still wrong. Nothing was changed.' : 'Nothing was posted. Raise it with the store.',
+                : out.refusedBecause === 'adjustment_request_already_decided' ? 'Raise a new request if the position is still wrong. Nothing was changed.'
+                  : out.refusedBecause === 'frozen_by_a_stock_count' ? 'Decide it again once the count closes (approved or cancelled). Nothing was posted; the request is still pending.' : 'Nothing was posted. Raise it with the store.',
           });
         }
         const r = out.record;

@@ -44,6 +44,7 @@ import { isCurrencyCode, type CurrencyCode, type Money } from '../../../packages
 import { checkMovement, type Movement } from './index';
 import { normaliseUom } from '../../../packages/contracts/src/quantity';
 import { assertLocationInScope, locationInScope, type LocationBranches } from './location-scope';
+import { assertNotFrozenByCount, type CountFreezeCheck } from './count-freeze';
 import { outsideBranchScope, type RequestContext } from '../../kernel/src/index';
 
 /**
@@ -144,6 +145,8 @@ export interface TransfersDeps {
   readonly transferVersion?: (tenantId: string, transferId: string) => Promise<number> | number;
   /** Batch 2: the resolved transfer and the found units' compensating movements — ONE atomic write. */
   readonly recordShortfallResolved?: (tenantId: string, transfer: Transfer, posted: readonly Movement[], expectedVersion?: number) => Promise<void> | void;
+  /** WF-08 / OB-59: which open count plan freezes an adjustment here (absent on a bare stub — nothing is frozen). */
+  readonly countFreeze?: CountFreezeCheck;
   readonly now: () => string;
 }
 
@@ -386,6 +389,8 @@ export function transfersRoutes(deps: TransfersDeps): readonly Route[] {
         });
         if (!judged.ok) throw apiError(SHORTFALL_STATUS[judged.code], { code: judged.code, whatHappened: judged.why, wasItSaved: 'not_saved', nextSafeAction: 'Nothing was changed. Read the transfer and its exception, then try again.' });
         const posted = foundPostings(transfer, { ...(transfer.receivedBy === undefined ? {} : { receivedBy: transfer.receivedBy }) }, judged.resolution);
+        // WF-08 / OB-59: found units come back on an adjustment — refused while an open count there froze adjustments.
+        await assertNotFrozenByCount(deps.countFreeze, ctx.tenantId, posted, 'found-stock adjustment');
         const costed = costedResolution(judged.resolution, transfer);
         for (const m of posted) {
           const check = checkMovement(m);

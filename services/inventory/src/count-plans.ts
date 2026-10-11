@@ -10,9 +10,11 @@
 //     that names no frozen kinds takes the owner's default (OB-59, 11 Oct 2026): adjustments and write-offs only —
 //     deliveries and transfers keep flowing; the planner may still name more (or an empty list to freeze nothing). A till
 //     sale or a till return can never be frozen (hard rule #1 — the till never waits on head office).
-//   • OPEN — the freeze starts. A frozen kind typed on the plain movements route is refused by name; one that lands any
-//     other way (a delivery booked on a device while the line was down, which must never be refused into the void) is a
-//     visible exception on the plan, and the product it touched must be counted again after it (hard rule #10).
+//   • OPEN — the freeze starts. A frozen kind sent by ANY head-office route is refused by name (round 10, `count-freeze.ts`:
+//     the plain movements route, the write-off route, a held returned unit's write-off, an adjustment request's approval,
+//     an ad-hoc count's correction, a transfer's found / arrived-damaged postings); one RELAYED by the store computer (a
+//     decision or receipt made on the floor while the line was down, which must never be refused into the void) is kept,
+//     is a visible exception on the plan, and the product it touched must be counted again after it (hard rule #10).
 //   • BLIND COUNT — the counter sends only what they saw. Head office works out the expected figure AS OF the moment
 //     counted (every movement dated up to then), so a sale that reaches head office late is not mistaken for a loss.
 //     Every variance is HELD for the plan; nothing is applied line by line. A counter's sheet never shows the expected.
