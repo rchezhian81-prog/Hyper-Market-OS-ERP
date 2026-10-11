@@ -317,6 +317,21 @@
           <input id="close-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" />
         </div>
         <button id="do-close" type="button" class="primary wide" hidden>Close the day now</button>
+        <!-- OB-55: only card/UPI payments are open — the day may close with them carried to head office, on a SECOND
+             person's approval (their own staff ID and till PIN, keyed by them) and the manager's own PIN above. -->
+        <div id="carry-row" hidden>
+          <p class="lead" id="carry-lead">These payments go to head office by name. Finance settles each one when the provider answers.</p>
+          <label for="carry-approver" id="carry-approver-label">Second person's staff ID</label>
+          <input id="carry-approver" type="text" autocomplete="off" maxlength="40" />
+          <label for="carry-pin" id="carry-pin-label">Their till PIN — they key it themselves</label>
+          <input id="carry-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" />
+          <label for="carry-reason" id="carry-reason-label">Why</label>
+          <select id="carry-reason">
+            <option value="provider_not_answering" id="carry-reason-provider">The card or UPI provider is not answering</option>
+            <option value="machine_fault" id="carry-reason-machine">The card machine is faulty</option>
+          </select>
+          <button id="do-carry" type="button" class="primary wide">Close with these sent to head office</button>
+        </div>
       </section>
     </main>
 

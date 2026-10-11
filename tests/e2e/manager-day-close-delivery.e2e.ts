@@ -8,6 +8,7 @@ import { chromium, type Browser } from 'playwright-core';
 import { startEdge, type EdgeProcess } from '../../edge/store-edge/src/main';
 import { readLog } from '../../edge/store-edge/src/file-log';
 import { prepareTillBox, pinOf, signInAtLane, operatorHeader } from '../support/till-operator';
+import { PaymentAttempts } from '../../edge/store-edge/src/payment-attempts';
 
 /**
  * **The store manager closes the day, in a real browser, and it reaches the store computer (M14-FR-04 · P-01).**
@@ -76,14 +77,19 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
   });
 
   /** A real box that serves the manager screen AND stands its lane socket + authoritative close behind it. */
-  async function boxWithScreen(): Promise<{ edge: EdgeProcess; base: string }> {
+  async function boxWithScreen(before?: (dir: string) => Promise<void>): Promise<{ edge: EdgeProcess; base: string }> {
     const dir = await mkdtemp(join(tmpdir(), 'sre-mgr-dayclose-'));
     dirs.push(dir);
+    if (before !== undefined) await before(dir);
     // Round 4: the box knows its lane and its people — the manager (who may close the day) and a cashier — each with their
     // own till PIN; the close is the manager's OWN act, verified on the box.
     const tillEnv = await prepareTillBox({
       dir, key: KEY, pack: JSON.parse(PACK_JSON) as Record<string, unknown>,
-      people: [{ userId: 'u-mgr', displayName: 'Manager', manager: true }, { userId: 'u-lanecash', displayName: 'Cashier' }],
+      people: [
+        { userId: 'u-mgr', displayName: 'Manager', manager: true }, { userId: 'u-lanecash', displayName: 'Cashier' },
+        // OB-55: the owner, who may approve a day-close matter with their own PIN on this box.
+        { userId: 'u-owner', displayName: 'Owner', permissions: ['till.dayclose.read', 'till.dayclose.approve'] },
+      ],
     });
     const edge = (await startEdge({
       EDGE_DATA_DIR: dir, EDGE_TENANT_ID: 't-sre', PACK_SIGNING_KEY: KEY, EDGE_CAPACITY_BYTES: '10485760',
@@ -204,4 +210,55 @@ describe.skipIf(!HAVE_BROWSER)('the store manager closes the day and it reaches 
     expect(await page.locator('#do-close').getAttribute('hidden')).not.toBeNull();
     expect(await readLog(edge.dayCloseLog.path)).toEqual([]);
   });
+
+  it('OB-55: only a payment is open — the day closes with it sent to head office, on the manager\'s PIN and a SECOND person\'s', async () => {
+    // Yesterday the cashier's till asked the card machine and got no answer (written on the box's own payment log).
+    const yesterday = new Date(Date.now() - 36 * 3_600_000).toISOString();
+    const { edge, base } = await boxWithScreen(async (dir) => {
+      const pa = await PaymentAttempts.open({ dataDir: dir, capacityBytes: 10_485_760, now: () => yesterday });
+      expect(await pa.ask({ laneId: 'lane-1', by: 'u-lanecash', attemptId: 'PAY-e2e-carry', billRef: 'B-e2e-9', kind: 'card', amountMinor: 64_000 })).toMatchObject({ ok: true });
+      expect(await pa.answer({ laneId: 'lane-1', by: 'u-lanecash', attemptId: 'PAY-e2e-carry', outcome: 'no_answer' })).toMatchObject({ ok: true });
+      await pa.close();
+    });
+    const page = await openCloseTab(base);
+    // The payment is the only thing open: the plain close is not offered, the carry-forward is — with the manager's PIN.
+    await page.waitForSelector('#carry-row:not([hidden])', { timeout: 10_000 });
+    expect(await page.locator('#do-close').getAttribute('hidden')).not.toBeNull();
+    expect(await page.locator('#close-pin-row').getAttribute('hidden')).toBeNull();
+    expect((await page.textContent('#blockers')) ?? '').toContain('Card payment of Rs 640.00 on till lane-1, bill B-e2e-9');
+
+    // The manager naming themselves as the second person: the BOX refuses, nothing locks, no PIN stays on the screen.
+    await page.fill('#close-pin', pinOf('u-mgr'));
+    await page.fill('#carry-approver', 'u-mgr');
+    await page.fill('#carry-pin', pinOf('u-mgr'));
+    await page.click('#do-carry');
+    await page.waitForFunction(
+      () => ((globalThis as unknown as BrowserGlobals).document.getElementById('banner-text')?.textContent ?? '').toLowerCase().includes('second person'),
+      undefined, { timeout: 10_000 },
+    );
+    expect(await page.inputValue('#close-pin')).toBe('');
+    expect(await page.inputValue('#carry-pin')).toBe('');
+    expect(await readLog(edge.dayCloseLog.path)).toEqual([]);
+
+    // The owner keys their own PIN beside the manager's: the day locks on the box with the payment carried by name.
+    await page.fill('#close-pin', pinOf('u-mgr'));
+    await page.fill('#carry-approver', 'u-owner');
+    await page.fill('#carry-pin', pinOf('u-owner'));
+    await page.click('#do-carry');
+    await page.waitForFunction(
+      () => ((globalThis as unknown as BrowserGlobals).document.getElementById('banner-title')?.textContent ?? '').toLowerCase().includes('closed'),
+      undefined, { timeout: 10_000 },
+    );
+    expect((await page.textContent('#banner-text')) ?? '').toContain('head office');
+    expect(await page.locator('#carry-row').getAttribute('hidden')).not.toBeNull();
+    const records = (await readLog(edge.dayCloseLog.path)).filter((r) => r.ok === true).map((r) => JSON.parse(r.record) as { closedBy: string; carriedForward: { approvedBy: string; reason: string; payments: { attemptId: string }[] } });
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ closedBy: 'u-mgr', carriedForward: { approvedBy: 'u-owner', reason: 'provider_not_answering', payments: [{ attemptId: 'PAY-e2e-carry' }] } });
+    expect(JSON.stringify(records)).not.toContain(pinOf('u-owner'));
+    expect(edge.dayCloseOutbox.pending().map((i) => i.event.type)).toContain('StoreDayClosed');
+
+    // Tamil: the same section speaks Tamil.
+    await page.dispatchEvent('#lang', 'click');
+    expect((await page.textContent('#do-carry')) ?? '').toContain('தலைமை அலுவலகத்துக்கு');
+  }, 90_000);
 });

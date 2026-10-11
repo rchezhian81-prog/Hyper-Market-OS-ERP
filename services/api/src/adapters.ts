@@ -27,6 +27,7 @@ import type { Money, CurrencyCode } from '../../../packages/contracts/src/money'
 import { money } from '../../../packages/contracts/src/money';
 import type { BatchEntry, EventStore, PersistedEvent } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
+import { stockValueCheckFor } from './finance-close-adapters';
 import {
   foldBilling,
   type BillingEvent, type BillingSnapshot, type BillingRail, type DunningPolicy, type Mandate,
@@ -13231,7 +13232,10 @@ export interface AverageBuyingCost {
   readonly receivedMinor: number;
   readonly receivedValueMinor: number;
 }
-export async function averageBuyingCosts(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<{
+export async function averageBuyingCosts(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, opts?: {
+  /** OB-56: only receipts of this month (YYYY-MM) or earlier — the average as it stood at that month's close. */
+  readonly throughPeriod?: string;
+}): Promise<{
   readonly costOf: (productId: string, storeId: string) => number | undefined;
   readonly rows: readonly AverageBuyingCost[];
 }> {
@@ -13246,6 +13250,7 @@ export async function averageBuyingCosts(input: { readonly store: EventStore; re
   for (const e of await input.store.readStream(tenantId, STREAM.inventory, { type: 'InventoryMoved' })) {
     const m = payloadOf<Movement>(e);
     if (m.kind !== 'received' || m.unitCostMinor === undefined || m.quantityMinor <= 0) continue;
+    if (opts?.throughPeriod !== undefined && m.occurredAt.slice(0, 7) > opts.throughPeriod) continue;
     const storeId = branchOf(m.locationId);
     const key = `${m.productId}\u001f${storeId}`;
     const a = acc.get(key) ?? { productId: m.productId, storeId, qty: 0, value: 0, scale: minorPerUnitOf(m.uom) };
@@ -13472,6 +13477,10 @@ async function bookChecksFor(input: { readonly store: EventStore; readonly now: 
   const stock = stockAdjustmentCheck(period, stockAdjustmentSources(counts, writeOffs), adjJournals);
   if (stock.check !== null) checks.push(stock.check);
   else notChecked.push(`Count differences and write-offs: none applied in ${period}.`);
+  // OB-56: the stock ledger's closing value (average buying cost) against the inventory account in the books.
+  const stockValue = await stockValueCheckFor(input, tenantId, period);
+  if (stockValue.check !== null) checks.push(stockValue.check);
+  else notChecked.push(stockValue.notChecked);
   // Payables.
   const ap = payablesAdapter(input);
   const [accounts, apJournals, map] = await Promise.all([ap.supplierAccounts(tenantId), ap.payablesJournals(tenantId), ap.postingMap(tenantId)]);

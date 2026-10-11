@@ -276,9 +276,11 @@ export type LaneDayCloseHandler = (
     readonly closerPin?: string;
     /** The person this box already verified for the request (their till session or the hosted sign-in). */
     readonly verifiedPerson?: { readonly userId: string; readonly via: string; readonly laneId: string };
+    /** OB-55: close with the named pending card/UPI payments carried forward — a second person's staff ID and own till PIN. */
+    readonly carryForward?: { readonly attemptIds: readonly string[]; readonly approvedBy: string; readonly approverPin: string; readonly reason: string };
   },
 ) => Promise<
-  | { readonly closed: true; readonly tradingDay: string; readonly locked: true }
+  | { readonly closed: true; readonly tradingDay: string; readonly locked: true; readonly carriedForward?: readonly string[]; readonly unresolvedMinor?: { readonly card: number; readonly upi: number } }
   | { readonly closed: false; readonly reason: string }
 >;
 
@@ -1041,10 +1043,19 @@ export function startLaneServer(input: {
             // never logged or echoed) or the session this box verified for the request. A typed name alone closes nothing.
             const verifiedPerson = verifiedPersonOf(req);
             const closerPin = typeof b['closerPin'] === 'string' && b['closerPin'] !== '' ? (b['closerPin'] as string) : undefined;
+            // OB-55: a carry-forward names each pending payment and the second person (their PIN goes to the register only).
+            const cfb = b['carryForward'] !== null && typeof b['carryForward'] === 'object' ? (b['carryForward'] as Record<string, unknown>) : undefined;
+            const carryForward = cfb === undefined ? undefined : {
+              attemptIds: Array.isArray(cfb['attemptIds']) ? (cfb['attemptIds'] as unknown[]).filter((a): a is string => typeof a === 'string') : [],
+              approvedBy: typeof cfb['approvedBy'] === 'string' ? cfb['approvedBy'] : '',
+              approverPin: typeof cfb['approverPin'] === 'string' ? cfb['approverPin'] : '',
+              reason: typeof cfb['reason'] === 'string' ? cfb['reason'] : '',
+            };
             send(res, 200, await doClose({
               dayCloseId, closedBy,
               ...(verifiedPerson === undefined ? {} : { verifiedPerson }),
               ...(closerPin === undefined ? {} : { closerPin }),
+              ...(carryForward === undefined ? {} : { carryForward }),
             }), cors);
           } catch (e) {
             send(res, 200, { closed: false, reason: e instanceof Error ? e.message : String(e) }, cors);

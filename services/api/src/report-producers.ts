@@ -25,6 +25,8 @@ import { valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import type { HeldVersionsReport } from '../../platform/src/store-packs';
 import { returnedValue, refundLegs } from '../../../packages/finance/src/day-book';
 import { produceMore, PRODUCED_FROM_DOMAIN_REGISTERS } from './report-producers-more';
+import { paymentExceptionsAdapter } from './finance-close-adapters';
+import { unresolvedOnDay } from '../../finance/src/payment-exceptions';
 
 /** The report ids head office can work out from its own records — each a `case` in `produce` below. */
 export const PRODUCED_AT_HEAD_OFFICE: readonly string[] = Object.freeze([
@@ -260,11 +262,17 @@ export function reportProducers(input: {
           }
         }
         const refunded = [...refunds.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+        // OB-55 "A": card/UPI payments of this day a store's close carried forward with no final answer — said BESIDE what
+        // was taken (never folded in: whether the customer paid is not known), until the provider's answer resolves each.
+        const pe = paymentExceptionsAdapter({ store: input.store, now: input.now });
+        const [carriedEx, carriedRes] = await Promise.all([pe.exceptions(tenantId), pe.resolutions(tenantId)]);
+        const unresolved = unresolvedOnDay(carriedEx.filter((e) => inScope(options.scope, e.storeId)), carriedRes, day);
         return {
           tradingDay: day, sources,
           figures: [
             ...ordered.map(([kind, t]) => mk(kind, t.total, 'minor_currency')),
             ...refunded.map(([kind, t]) => mk(`refunded — ${kind}`, t.total, 'minor_currency')),
+            ...unresolved.map((u) => mk(`unresolved — ${u.kind} (${u.attemptIds.join(', ')})`, u.amountMinor, 'minor_currency')),
             ...withheldFigure(mk, withheld),
           ],
           rows: ordered.map(([kind, t]) => ({ key: kind, totalMinor: String(t.total), bills: String(t.bills) })),

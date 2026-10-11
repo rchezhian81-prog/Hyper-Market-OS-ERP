@@ -66,6 +66,8 @@ import { posRoutes } from '../../pos/src/index';
 import { returnsRoutes } from '../../pos/src/returns';
 import { heldStockDecisionRoutes } from '../../pos/src/held-stock-decisions';
 import { periodBooksRoutes } from '../../finance/src/period-books';
+import { paymentExceptionRoutes } from '../../finance/src/payment-exceptions';
+import { carryPaymentExceptionsIn, paymentExceptionsAdapter } from './finance-close-adapters';
 import { noReceiptReturnRoutes } from '../../pos/src/no-receipt-returns';
 import { refundApprovalRoutes } from '../../pos/src/refund-approvals';
 import { approvalRequestRoutes } from '../../identity/src/approval-requests';
@@ -768,6 +770,8 @@ export function buildSurface(deps: {
     ...(store === undefined ? [] : openingReversalRoutes({ ...openingReversalAdapter({ store, now }), recordAudit: auditTrail?.recordAudit })),
     // WF-18 / M23 / D10-FR-03 (Batch 3 r8): count differences and write-offs to the books, account classes, the period P&L.
     ...(store === undefined ? [] : periodBooksRoutes(periodBooksAdapter({ store, now }))),
+    // OB-55 "A" (Batch 3 r9): card/UPI payments a store's day close carried forward — the finance exception list, resolved once.
+    ...(store === undefined ? [] : paymentExceptionRoutes(paymentExceptionsAdapter({ store, now }))),
     // WF-11 / M13-FR-02 (Batch 3 r8): a person's decision on a returned unit held off the shelf.
     ...(store === undefined ? [] : heldStockDecisionRoutes({ ...heldStockDecisionsAdapter({ store, now }), approvals: approvalRequestsAdapter({ store, now }), locationBranches: locationBranchesOf(store, now), recordAudit: auditTrail?.recordAudit })),
     // Purchase-order lifecycle (M06-FR-01/02/04) — propose, approve+issue under §28, supplier holds.
@@ -1125,7 +1129,7 @@ export function buildSurface(deps: {
       : { ...shiftAdapter({ store, now }), tillSealKey: sealKey }),
     ...dayCloseRoutes(store === undefined
       ? { dayClose: empty(undefined), recordDayClose: () => {}, dayReopen: empty(undefined), recordDayReopen: () => {}, dayCloses: empty([]), dayReopens: empty([]), canApproveDayReopen: empty(false), now }
-      : { ...dayCloseAdapter({ store, now }), tillSealKey: sealKey }),
+      : { ...dayCloseAdapter({ store, now }), tillSealKey: sealKey, carryPaymentExceptions: (t, close, payments) => carryPaymentExceptionsIn(store, t, close, payments, now()) }),
     ...lpCasesRoutes(store === undefined
       ? { cases: empty([]), case: empty(undefined), recordOpened: () => {}, recordEvidence: () => {}, recordClosed: () => {}, now }
       : lpCasesAdapter({ store, now })),

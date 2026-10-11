@@ -111,7 +111,7 @@ export interface ManagerPorts {
    * The screen shows whatever the box decides; it never reports a close the box did not make.
    */
   /** Round 4: `closerPin` is the closer's own till PIN, keyed by them — the box verifies it (a typed name closes nothing). */
-  requestDayClose?(input: { readonly dayCloseId: string; readonly closedBy: string; readonly closerPin?: string }): Promise<BoxCloseOutcome>;
+  requestDayClose?(input: { readonly dayCloseId: string; readonly closedBy: string; readonly closerPin?: string; readonly carryForward?: CarryForwardInput & { readonly attemptIds: readonly string[] } }): Promise<BoxCloseOutcome>;
 }
 
 /**
@@ -122,6 +122,17 @@ export interface ManagerPorts {
  * sale rung on a lane a second ago, still in the box's outbox). The screen surfaces it rather than
  * reporting a false all-clear (P-08), and never invents a translated blocker to stand in for it.
  */
+/**
+ * OB-55 "A": close with the card/UPI payments that have no final answer CARRIED FORWARD to head office — a SECOND
+ * person's staff ID and their own till PIN (keyed by them; passed to the store computer only, never kept), and the reason.
+ * The screen adds every pending payment by name; the store computer refuses unless it is exactly its own pending list.
+ */
+export interface CarryForwardInput {
+  readonly approvedBy: string;
+  readonly approverPin: string;
+  readonly reason: string;
+}
+
 export type BoxCloseOutcome =
   | { readonly closed: true; readonly tradingDay: string }
   | { readonly closed: false; readonly reason: string };
@@ -452,6 +463,8 @@ export interface CloseInput {
   readonly closedAt: string;
   /** Round 4: the manager's own till PIN, keyed by them at the close — passed to the store computer only, never kept. */
   readonly closerPin?: string;
+  /** OB-55: close with the pending card/UPI payments carried forward, on a second person's approval. */
+  readonly carryForward?: CarryForwardInput;
 }
 
 export type CloseAttempt =
@@ -872,7 +885,20 @@ export function createManagerSession(
         return { closed: false, reason: 'nobody is named on this screen, so it cannot close the day' };
       }
       // Round 4: with the manager's OWN till PIN — the box verifies the person and their authority before it locks anything.
-      return post({ dayCloseId: input.dayCloseId, closedBy: config.manager.userId, ...(input.closerPin === undefined || input.closerPin === '' ? {} : { closerPin: input.closerPin }) });
+      // OB-55: a carry-forward names EVERY pending payment this screen was told of — the box checks it is exactly its own list.
+      let carryForward: (CarryForwardInput & { readonly attemptIds: readonly string[] }) | undefined;
+      if (input.carryForward !== undefined) {
+        const pending = ports.pendingPayments?.(config.tradingDay);
+        if (pending === undefined || !pending.known || pending.items.length === 0) {
+          return { closed: false, reason: 'this screen cannot see the pending payments, so it cannot carry them forward' };
+        }
+        carryForward = { ...input.carryForward, attemptIds: pending.items.map((i) => i.id) };
+      }
+      return post({
+        dayCloseId: input.dayCloseId, closedBy: config.manager.userId,
+        ...(input.closerPin === undefined || input.closerPin === '' ? {} : { closerPin: input.closerPin }),
+        ...(carryForward === undefined ? {} : { carryForward }),
+      });
     },
 
     exceptions: () => ports.openExceptions(config.tradingDay),

@@ -144,6 +144,9 @@ export const EVENT_ROUTES: Readonly<Record<string, EventRoute>> = {
   // so a template fills it (an empty/absent id yields no path → dead-lettered by name, hard rule #6).
   StoreDayClosed: '/v1/pos/day-close/:dayCloseId/synced',
   StoreDayReopened: '/v1/pos/day-close/:dayCloseId/reopen/synced',
+  // OB-55 "A": the provider's later answer on a card/UPI payment a day close carried forward to head office — resolves the
+  // named finance exception once. `attemptId` is a plain payload field matching the path param.
+  CarriedPaymentResolved: '/v1/finance/payment-exceptions/:attemptId/resolved/synced',
   // The migration screen's decisions (MG-04 / MG-06, §31 — Stage C3a). Made at the store box on the night,
   // committed to its outbox, relayed HERE under the store token to the dedicated synced routes, which
   // re-check the DECIDER's own authority (never the relay's) and re-run the engine; a decision the cloud

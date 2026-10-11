@@ -41,6 +41,23 @@ export interface CloseDayInput {
    * The store box, which holds the payment-attempt log, always supplies it.
    */
   readonly pendingPayments?: readonly PendingPayment[];
+  /**
+   * OB-55 "A" (owner, 11 Oct 2026): the pending payments the manager CARRIES FORWARD to head office as named finance
+   * exceptions instead of holding the close — allowed only with a SECOND person's approval (never the closer), naming
+   * EVERY pending payment by its attempt id. Absent: the old refusal stands.
+   */
+  readonly carriedForward?: CarryForward;
+}
+
+/** OB-55: the second person's approval to close with the named pending payments carried forward. */
+export interface CarryForward {
+  /** The approval the store computer issued and spent for this close (its one-use approval register, PF-02). */
+  readonly approvalId: string;
+  /** Who approved — verified by their own PIN on the store computer; never the closer (§28). */
+  readonly approvedBy: string;
+  readonly reason: string;
+  /** Each pending payment carried, by attempt id — must be exactly the pending set. */
+  readonly attemptIds: readonly string[];
 }
 
 /** A card or UPI payment still waiting for its final answer. */
@@ -133,6 +150,13 @@ export class PendingPaymentsError extends Error {
   }
 }
 
+export class CarryForwardRefusedError extends Error {
+  constructor(id: string, why: string) {
+    super(`Day close "${id}" cannot carry the pending card/UPI payments forward: ${why}`);
+    this.name = 'CarryForwardRefusedError';
+  }
+}
+
 export class ReopenApprovalRequiredError extends Error {
   constructor(id: string) {
     super(`Reopening day close "${id}" needs an approval by a different person (M14-FR-04 / §28).`);
@@ -168,9 +192,8 @@ export function closeDay(input: CloseDayInput, outbox: SyncOutbox): DayCloseResu
   if (input.openShifts !== undefined && input.openShifts.length > 0) {
     throw new OpenShiftsError(input.id, input.openShifts);
   }
-  if (input.pendingPayments !== undefined && input.pendingPayments.length > 0) {
-    throw new PendingPaymentsError(input.id, input.pendingPayments);
-  }
+  const carried = carriedPayments(input);
+
 
   outbox.enqueue(
     makeEvent({
@@ -188,6 +211,7 @@ export function closeDay(input: CloseDayInput, outbox: SyncOutbox): DayCloseResu
         // metadata, not part of the posted payload), so carry it explicitly.
         closedAt: input.closedAt,
         locked: true,
+        ...(carried.length === 0 ? {} : { carriedForward: carriedForwardOf(input.carriedForward!, carried) }),
       },
     }),
   );
@@ -200,6 +224,43 @@ export function closeDay(input: CloseDayInput, outbox: SyncOutbox): DayCloseResu
     closedAt: input.closedAt,
     locked: true,
   });
+}
+
+/**
+ * OB-55: which pending payments this close carries forward — none when nothing is pending. Throws the old refusal when a
+ * payment is pending and no carry-forward is given; refuses a carry-forward approved by the closer, or one that does not
+ * name exactly the pending payments (a payment left out would be silently closed over; one named that is not pending
+ * would be a false exception).
+ */
+export function carriedPayments(input: Pick<CloseDayInput, 'id' | 'closedBy' | 'pendingPayments' | 'carriedForward'>): readonly PendingPayment[] {
+  const pending = input.pendingPayments ?? [];
+  if (pending.length === 0) return [];
+  const cf = input.carriedForward;
+  if (cf === undefined) throw new PendingPaymentsError(input.id, pending);
+  if (cf.approvedBy.trim() === '' || cf.approvedBy.trim() === input.closedBy.trim()) {
+    throw new CarryForwardRefusedError(input.id, 'a second person must approve it — never the person closing the day (§28)');
+  }
+  if (cf.reason.trim() === '') throw new CarryForwardRefusedError(input.id, 'the approval needs a reason');
+  const named = new Set(cf.attemptIds);
+  const missing = pending.filter((p) => !named.has(p.attemptId)).map((p) => p.attemptId);
+  const extra = [...named].filter((a) => !pending.some((p) => p.attemptId === a));
+  if (missing.length > 0 || extra.length > 0 || named.size !== cf.attemptIds.length) {
+    throw new CarryForwardRefusedError(input.id, `the approval must name each pending payment exactly once${missing.length > 0 ? ` — not named: ${missing.join(', ')}` : ''}${extra.length > 0 ? ` — not pending: ${extra.join(', ')}` : ''}`);
+  }
+  return pending;
+}
+
+/** The carried-forward block a close carries to head office — each payment by name, and the unresolved totals by kind. */
+export function carriedForwardOf(cf: CarryForward, payments: readonly PendingPayment[]): {
+  readonly approvalId: string; readonly approvedBy: string; readonly reason: string;
+  readonly payments: readonly PendingPayment[]; readonly unresolvedMinor: { readonly card: number; readonly upi: number };
+} {
+  const sum = (k: 'card' | 'upi'): number => payments.filter((p) => p.kind === k).reduce((n, p) => n + p.amountMinor, 0);
+  return {
+    approvalId: cf.approvalId, approvedBy: cf.approvedBy, reason: cf.reason,
+    payments: payments.map((p) => ({ attemptId: p.attemptId, laneId: p.laneId, billRef: p.billRef, kind: p.kind, amountMinor: p.amountMinor, askedAt: p.askedAt, state: p.state })),
+    unresolvedMinor: { card: sum('card'), upi: sum('upi') },
+  };
 }
 
 /**

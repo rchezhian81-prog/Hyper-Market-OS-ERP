@@ -413,6 +413,23 @@ export const STOCK_ADJUSTMENT_POSTING_RULES: PostingMap['rules'] = [
 ];
 
 /**
+ * OB-56 "A" (owner, 11 Oct 2026): the month-end stock adjustment — suggested accounts (the CA commits their own). Cost of
+ * goods sold is debited; the month's purchases (receipts at cost) are credited to the goods-received clearing the supplier
+ * bills debit; the inventory account moves to the closing stock value (`increase` or `decrease`, one of them zero).
+ */
+export const STOCK_PERIOD_POSTING_RULES: PostingMap['rules'] = [
+  {
+    kind: 'stock_period_adjustment',
+    legs: [
+      { account: 'cost_of_goods_sold', side: 'debit', component: 'cost_of_sales' },
+      { account: 'inventory', side: 'debit', component: 'increase' },
+      { account: 'inventory', side: 'credit', component: 'decrease' },
+      { account: 'purchases_grni', side: 'credit', component: 'purchases' },
+    ],
+  },
+];
+
+/**
  * A SUGGESTED starting mapping for an Indian retail day book — a clearing-account pattern. The sale
  * voucher debits `sales_clearing` for the day's takings and credits revenue and output GST; each tender
  * kind's voucher debits its own account and credits the clearing, so a day whose tenders cover its sales
@@ -516,6 +533,8 @@ export const DEFAULT_RETAIL_POSTING_MAP: PostingMap = {
     // WF-18 / WF-08 / D10-FR-03 (Batch 3 r8): an applied count difference and a write-off reach the books — a shortage or a
     // write-off is a loss against inventory, a surplus the mirror. Suggested like the rest; the CA commits the mapping.
     ...STOCK_ADJUSTMENT_POSTING_RULES,
+    // OB-56: the month-end stock adjustment (cost of goods sold) — suggested like the rest.
+    ...STOCK_PERIOD_POSTING_RULES,
     // SP-7b (M23-FR-01): the supplier account — a matched invoice's payable, its reversal, a debit note — through a
     // goods-received-not-invoiced clearing (`payables.ts`). Suggested like the rest; the accountant commits it.
     ...PAYABLES_POSTING_RULES,

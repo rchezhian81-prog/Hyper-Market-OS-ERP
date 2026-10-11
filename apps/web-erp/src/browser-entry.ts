@@ -4832,7 +4832,7 @@ export function openDayClosePort(
   laneWriteBase: string | undefined,
 ): ManagerPorts['requestDayClose'] {
   if (laneWriteBase === undefined) return undefined;
-  return async ({ dayCloseId, closedBy, closerPin }): Promise<BoxCloseOutcome> => {
+  return async ({ dayCloseId, closedBy, closerPin, carryForward }): Promise<BoxCloseOutcome> => {
     const fetchFn = (globalThis as { fetch?: typeof fetch }).fetch;
     if (fetchFn === undefined) {
       return { closed: false, reason: 'this screen cannot reach the store computer from here — the day is not closed' };
@@ -4842,7 +4842,7 @@ export function openDayClosePort(
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json' },
         // The PIN goes to the store computer's PIN register and nowhere else (round 4 · ADR-0020).
-        body: JSON.stringify({ dayCloseId, closedBy, ...(closerPin === undefined ? {} : { closerPin }) }),
+        body: JSON.stringify({ dayCloseId, closedBy, ...(closerPin === undefined ? {} : { closerPin }), ...(carryForward === undefined ? {} : { carryForward }) }),
       });
       const body = (await res.json().catch(() => ({}))) as { closed?: boolean; tradingDay?: string; reason?: string };
       if (res.status >= 200 && res.status < 300 && body.closed === true && typeof body.tradingDay === 'string') {
