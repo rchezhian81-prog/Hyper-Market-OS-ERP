@@ -31,10 +31,27 @@ const RECORD_APPLIED = 'INSERT INTO schema_migrations (name) VALUES ($1)';
  * reads what's already applied, then runs each new migration's SQL and records it.
  * Idempotent: already-applied migrations are skipped.
  */
+/** One key for the migration lock, so two processes starting on a new release apply each migration once. */
+const MIGRATION_LOCK_KEY = 4_207_011;
+
 export async function runMigrations(
   client: SqlClient,
   migrations: readonly Migration[],
 ): Promise<MigrationOutcome> {
+  // Where the client offers a transaction (PostgreSQL), the whole run holds a transaction-scoped advisory lock: a second
+  // process starting at the same moment waits, then finds everything applied — instead of both creating the same table
+  // (found at round-6 integration: test files sharing a fresh database raced on a new migration). Without a transaction
+  // (an embedded engine, a fake), it runs as before.
+  if (client.transaction !== undefined) {
+    return client.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock($1)', [MIGRATION_LOCK_KEY]);
+      return applyPending(tx, migrations);
+    });
+  }
+  return applyPending(client, migrations);
+}
+
+async function applyPending(client: SqlClient, migrations: readonly Migration[]): Promise<MigrationOutcome> {
   await client.query(ENSURE_TABLE);
   const rows = await client.query<{ name: string }>(SELECT_APPLIED);
   const alreadyApplied = new Set(rows.map((r) => String(r.name)));
