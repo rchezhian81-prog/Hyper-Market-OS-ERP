@@ -31,6 +31,7 @@ import {
 import { AccessControl, AccessDeniedError } from '../../../packages/rbac/src/rbac';
 import type { ProductRecord } from '../../../packages/product/src/product';
 import type { ImportCommitRecord } from './data-import';
+import type { StoredPurchaseOrder } from './purchase-orders';
 
 type Row = Readonly<Record<string, string>>;
 
@@ -80,6 +81,30 @@ export interface ExportJournal {
 }
 
 /**
+ * A customer as the export reads it (SF-10 · M16): the loyalty member register — the shop's register of enrolled
+ * customers (OB-28/29: a member code and the last four digits of the mobile, NEVER the number or an email, P-04) — with
+ * the customer's consent ledger folded to the latest decision per purpose and channel.
+ */
+export interface ExportCustomer {
+  readonly customerRef: string; readonly status: string; readonly mobileLast4: string; readonly enrolledAt: string; readonly enrolledBy: string;
+  readonly leftAt?: string;
+  readonly consents: readonly { readonly purpose: string; readonly channel: string; readonly given: boolean; readonly recordedAt: string; readonly evidence: string }[];
+}
+/** A member's wallet as the export reads it — the SAME feed the store computers pull (`GET /v1/loyalty/wallets`). */
+export interface ExportLoyaltyWallet { readonly memberRef: string; readonly points: number; readonly storeCreditMinor: number }
+/** An order as the export reads it — the order index, each order at its current state (M18). */
+export interface ExportOrder {
+  readonly orderId: string; readonly locationId: string; readonly placedAt: string; readonly currentState: string;
+  readonly lines: readonly unknown[]; readonly fulfilment?: string; readonly customerRef?: string;
+}
+/** An issued payslip as the export reads it — the payslip register, with the employee's branch from the staff register. */
+export interface ExportPayslip {
+  readonly employeeId: string; readonly branchId: string | null; readonly period: string; readonly onDate: string;
+  readonly paidDays: number; readonly lopDays: number; readonly grossMinor: number; readonly totalEmployeeDeductionMinor: number;
+  readonly totalEmployerContributionMinor: number; readonly netPayMinor: number;
+}
+
+/**
  * The EXPORT COVERAGE REGISTER (audit SF-10 · M30-FR-02 · P-06): every business-data domain, and whether the shop can
  * take it out through the governed export (`exported`) or not yet (`not_yet`, with why and where it is planned). A
  * guardrail checks that every `exported` entry is a registered domain, so the register cannot claim coverage the
@@ -92,11 +117,12 @@ export const EXPORT_COVERAGE: readonly { readonly domain: string; readonly modul
   { domain: 'Stock on hand by store', module: 'M08', status: 'exported', exportDomain: 'stock-on-hand' },
   { domain: 'Supplier master', module: 'M06/M24', status: 'exported', exportDomain: 'suppliers' },
   { domain: 'Ledger journals', module: 'M23', status: 'exported', exportDomain: 'ledger-journals' },
-  { domain: 'Purchase orders', module: 'M06', status: 'not_yet', why: 'needs the purchase-order read model on the export engine — the next adapter' },
-  { domain: 'Customers and consent', module: 'M16', status: 'not_yet', why: 'personal data: a customer\'s own copy is the access/export request (FUL-06); a bulk export needs the owner\'s decision on who may take it' },
-  { domain: 'Loyalty points and store credit', module: 'M17', status: 'not_yet', why: 'member codes are pseudonymous; the export shape is with the loyalty liability work' },
-  { domain: 'Online orders', module: 'M18', status: 'not_yet', why: 'needs a tenant-wide order index on the export engine' },
-  { domain: 'Payroll and attendance', module: 'M26', status: 'not_yet', why: 'sensitive personal data — needs a per-column classification agreed with the owner before any export' },
+  { domain: 'Purchase orders', module: 'M06', status: 'exported', exportDomain: 'purchase-orders' },
+  { domain: 'Customers and consent', module: 'M16', status: 'exported', exportDomain: 'customers' },
+  { domain: 'Loyalty points and store credit', module: 'M17', status: 'exported', exportDomain: 'loyalty-wallets' },
+  { domain: 'Orders (desk and online)', module: 'M18', status: 'exported', exportDomain: 'orders' },
+  { domain: 'Payroll (issued payslips)', module: 'M26', status: 'exported', exportDomain: 'payslips' },
+  { domain: 'Attendance hours', module: 'M25/M26', status: 'not_yet', why: 'the attendance store answers one day at a time; a shop-wide attendance read model is needed before it can be exported whole' },
 ];
 
 export function buildExportDomains(sources: {
@@ -107,8 +133,125 @@ export function buildExportDomains(sources: {
   readonly stock?: (tenantId: string) => Promise<readonly ExportStockRow[]>;
   readonly suppliers?: (tenantId: string) => Promise<readonly ExportSupplier[]>;
   readonly journals?: (tenantId: string) => Promise<readonly ExportJournal[]>;
+  /** SF-10 round 5: the remaining domains, each from its own read model. */
+  readonly purchaseOrders?: (tenantId: string) => Promise<readonly StoredPurchaseOrder[]>;
+  readonly customers?: (tenantId: string) => Promise<readonly ExportCustomer[]>;
+  readonly loyaltyWallets?: (tenantId: string) => Promise<{ readonly pointValuePaise: number; readonly members: readonly ExportLoyaltyWallet[] }>;
+  readonly orders?: (tenantId: string) => Promise<readonly ExportOrder[]>;
+  readonly payslips?: (tenantId: string) => Promise<readonly ExportPayslip[]>;
 }): readonly ExportDomainSource[] {
   const more: ExportDomainSource[] = [];
+  if (sources.purchaseOrders !== undefined) {
+    const pos = sources.purchaseOrders;
+    more.push({
+      spec: {
+        // A PO is delivered to a store (OB-37): a store-limited buyer exports that store's orders only.
+        domain: 'purchase-orders', requires: 'purchase.commitment.read', branchColumn: 'store',
+        columns: [
+          { name: 'poId', type: 'text' }, { name: 'number', type: 'text' }, { name: 'supplierId', type: 'text' },
+          { name: 'store', type: 'text', description: 'The store it is delivered to; blank for an order raised before OB-37 (store not named).' },
+          { name: 'status', type: 'enum', description: 'proposed | issued.' }, { name: 'lines', type: 'integer' },
+          { name: 'totalMinor', type: 'integer', description: 'Order value in paise.' }, { name: 'currency', type: 'text' },
+          { name: 'requisitionedBy', type: 'text' }, { name: 'approvedBy', type: 'text', description: 'The second person who issued it (§28).' },
+          { name: 'raisedAt', type: 'date' }, { name: 'issuedAt', type: 'date' },
+          { name: 'receivedQty', type: 'text', description: 'productId:quantity pairs received against it, base units.' },
+          { name: 'cancelledQty', type: 'text', description: 'productId:quantity pairs cancelled, base units.' },
+        ],
+      },
+      rows: async (t) => (await pos(t)).map((p) => ({
+        poId: p.poId, number: p.number, supplierId: p.supplierId, store: p.deliverToLocationId ?? '', status: p.status, lines: String(p.lines.length),
+        totalMinor: String(p.totalMinor), currency: p.currency, requisitionedBy: p.requisitionedBy, approvedBy: p.approvedBy ?? '', raisedAt: p.at, issuedAt: p.issuedAt ?? '',
+        receivedQty: Object.entries(p.receivedByProduct).map(([k, v]) => `${k}:${v}`).join(';'),
+        cancelledQty: Object.entries(p.cancelledByProduct).map(([k, v]) => `${k}:${v}`).join(';'),
+      })),
+    });
+  }
+  if (sources.customers !== undefined) {
+    const customers = sources.customers;
+    more.push({
+      spec: {
+        // Personal data (P-04 · DPDP): exported only to a role that may read a customer's record, and the identifying
+        // columns are REDACTED unless the person also holds export.sensitive. The shop holds no full mobile number or
+        // email for a customer — only what is listed here.
+        domain: 'customers', requires: 'customer.profile.read',
+        columns: [
+          { name: 'customerRef', type: 'text', sensitive: true, description: 'The member code (pseudonymous).' },
+          { name: 'status', type: 'enum', description: 'member | left.' },
+          { name: 'mobileLast4', type: 'text', sensitive: true, description: 'The last four digits of the mobile — the shop keeps no more.' },
+          { name: 'enrolledAt', type: 'date', description: 'When the customer said yes to loyalty.' }, { name: 'enrolledBy', type: 'text' },
+          { name: 'leftAt', type: 'date' },
+          { name: 'consent', type: 'text', description: 'purpose/channel=given|withdrawn@date pairs, the latest decision for each.' },
+          { name: 'consentEvidence', type: 'text', sensitive: true, description: 'How each latest decision was captured.' },
+        ],
+      },
+      rows: async (t) => (await customers(t)).map((c) => ({
+        customerRef: c.customerRef, status: c.status, mobileLast4: c.mobileLast4, enrolledAt: c.enrolledAt, enrolledBy: c.enrolledBy, leftAt: c.leftAt ?? '',
+        consent: c.consents.map((x) => `${x.purpose}/${x.channel}=${x.given ? 'given' : 'withdrawn'}@${x.recordedAt}`).join(';'),
+        consentEvidence: c.consents.map((x) => `${x.purpose}/${x.channel}:${x.evidence}`).join(';'),
+      })),
+    });
+  }
+  if (sources.loyaltyWallets !== undefined) {
+    const wallets = sources.loyaltyWallets;
+    more.push({
+      spec: {
+        domain: 'loyalty-wallets', requires: 'loyalty.points.read',
+        columns: [
+          { name: 'memberRef', type: 'text', sensitive: true, description: 'The member code (pseudonymous) — redacted without export.sensitive.' },
+          { name: 'points', type: 'integer' },
+          { name: 'pointsValueMinor', type: 'integer', description: 'points × the point value in force, in paise.' },
+          { name: 'storeCreditMinor', type: 'integer', description: 'Store credit still held, in paise.' },
+        ],
+      },
+      rows: async (t) => {
+        const feed = await wallets(t);
+        return feed.members.map((m) => ({
+          memberRef: m.memberRef, points: String(m.points), pointsValueMinor: String(m.points * feed.pointValuePaise), storeCreditMinor: String(m.storeCreditMinor),
+        }));
+      },
+    });
+  }
+  if (sources.orders !== undefined) {
+    const orders = sources.orders;
+    more.push({
+      spec: {
+        domain: 'orders', requires: 'order.read', branchColumn: 'store',
+        columns: [
+          { name: 'orderId', type: 'text' }, { name: 'store', type: 'text', description: 'The store that fulfils it.' },
+          { name: 'placedAt', type: 'date' }, { name: 'state', type: 'enum', description: 'Its state now (the last step of its lifecycle).' },
+          { name: 'lines', type: 'integer' }, { name: 'fulfilment', type: 'enum', description: 'delivery | pickup | blank (a desk order).' },
+          { name: 'customerRef', type: 'text', sensitive: true, description: 'Who placed it through the storefront — redacted without export.sensitive.' },
+        ],
+      },
+      rows: async (t) => (await orders(t)).map((o) => ({
+        orderId: o.orderId, store: o.locationId, placedAt: o.placedAt, state: o.currentState, lines: String(o.lines.length), fulfilment: o.fulfilment ?? '', customerRef: o.customerRef ?? '',
+      })),
+    });
+  }
+  if (sources.payslips !== undefined) {
+    const payslips = sources.payslips;
+    more.push({
+      spec: {
+        // Pay is the most sensitive figure the shop holds: exported only by those who hold payroll.statutory.read (the
+        // owner; HR when the owner names an HR role), the pay columns redacted for anyone without export.sensitive, scoped
+        // to the employee's branch. READ-ONLY: this carries no bank details and is never a salary bank file — the bank-file
+        // release stays under the payroll pilot hold.
+        domain: 'payslips', requires: 'payroll.statutory.read', branchColumn: 'branch',
+        columns: [
+          { name: 'employeeId', type: 'text' }, { name: 'branch', type: 'text', description: 'The employee\'s branch (blank if not on the staff register).' },
+          { name: 'period', type: 'text' }, { name: 'onDate', type: 'date' },
+          { name: 'paidDays', type: 'integer' }, { name: 'lopDays', type: 'integer', description: 'Loss-of-pay days.' },
+          { name: 'grossMinor', type: 'integer', sensitive: true }, { name: 'employeeDeductionsMinor', type: 'integer', sensitive: true, description: 'PF + ESI + PT + TDS withheld.' },
+          { name: 'employerContributionsMinor', type: 'integer', sensitive: true }, { name: 'netPayMinor', type: 'integer', sensitive: true },
+        ],
+      },
+      rows: async (t) => (await payslips(t)).map((p) => ({
+        employeeId: p.employeeId, branch: p.branchId ?? '', period: p.period, onDate: p.onDate, paidDays: String(p.paidDays), lopDays: String(p.lopDays),
+        grossMinor: String(p.grossMinor), employeeDeductionsMinor: String(p.totalEmployeeDeductionMinor),
+        employerContributionsMinor: String(p.totalEmployerContributionMinor), netPayMinor: String(p.netPayMinor),
+      })),
+    });
+  }
   if (sources.sales !== undefined) {
     const sales = sources.sales;
     more.push({
@@ -219,6 +362,9 @@ export function buildExportDomains(sources: {
           { name: 'rowsApplied', type: 'integer' },
           { name: 'reconciles', type: 'text', description: 'yes | no | blank (not a financial import).' },
           { name: 'at', type: 'date' },
+          { name: 'rolledBack', type: 'enum', description: 'yes when the load was rolled back (M30-FR-04) — its records withdrawn by compensating records.' },
+          { name: 'rolledBackAt', type: 'date' },
+          { name: 'rollbackApprovedBy', type: 'text', description: 'The second person who approved the rollback (§28).' },
         ],
       },
       rows: async (t) =>
@@ -231,6 +377,9 @@ export function buildExportDomains(sources: {
           rowsApplied: String(c.rowsApplied),
           reconciles: c.reconciles === undefined ? '' : c.reconciles ? 'yes' : 'no',
           at: c.at,
+          rolledBack: c.rolledBack === undefined ? 'no' : 'yes',
+          rolledBackAt: c.rolledBack?.at ?? '',
+          rollbackApprovedBy: c.rolledBack?.approvedBy ?? '',
         })),
     },
   ];

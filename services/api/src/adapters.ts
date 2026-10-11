@@ -306,7 +306,7 @@ import type { TargetKind } from '../../../packages/migration/src/trial';
 import type { DomainFinding, Acceptance } from '../../../packages/migration/src/verification-report';
 import type { Signature } from '../../../packages/migration/src/verification-report';
 import type { HistoryExclusion } from '../../../packages/migration/src/history';
-import type { AgentId, Budget, Proposal, EvidenceItem as AiEvidenceItem, AiDeps } from '../../ai/src/index';
+import type { AgentId, Budget, Proposal, EvidenceItem as AiEvidenceItem, AiDeps, InboxEntry } from '../../ai/src/index';
 import type { PricingDeps, PriceChangeRecord } from '../../pricing/src/index';
 import type { PriceListDeps } from '../../pricing/src/price-list';
 import type { PriceEntry } from '../../../packages/price-list/src/price-list';
@@ -1376,8 +1376,25 @@ const forRefundIndex = streamName(STREAM.orders, 'refunds');
 // read or place against another customer's order (hard rule #6).
 const forCustomerOrders = (customerRef: string): string => streamName(STREAM.orders, 'customer', customerRef);
 const forStorefrontRefusals = streamName(STREAM.orders, 'access-refusals');
+// SF-10 · M30-FR-02: a tenant-wide INDEX of placed orders (desk and storefront alike), appended beside each order's own
+// stream — the same shape as the customer index — so the governed export folds every order without walking unknown ids.
+const forOrderIndex = streamName(STREAM.orders, 'index');
 // M19-FR-01 / Item 2: the kept ownership state of substitution exceptions — latest per exception id.
 const forExceptionOwnership = streamName(STREAM.orders, 'substitution-exception-ownership');
+/**
+ * SF-10 · M30-FR-02: every placed order with its CURRENT state — the order index, each order folded exactly as
+ * `GET /v1/orders/:orderId` folds it (the placed record plus its last transition). A read; it writes nothing.
+ */
+export async function ordersForExport(store: EventStore, tenantId: string): Promise<readonly (PlacedOrder & { readonly currentState: string })[]> {
+  const placed = await allOf<PlacedOrder>(store, tenantId, forOrderIndex, 'OrderPlaced');
+  const out: (PlacedOrder & { readonly currentState: string })[] = [];
+  for (const o of placed) {
+    const transitions = await allOf<OrderTransition>(store, tenantId, forOrder(o.orderId), 'OrderTransitioned');
+    out.push({ ...o, currentState: transitions.at(-1)?.to ?? o.state });
+  }
+  return out;
+}
+
 /** SP-7a: every captured supplier invoice, on one register — the record the match, the payable and the statement read. */
 const SUPPLIER_INVOICES_STREAM = streamName(STREAM.purchase, 'invoices');
 // SP-7b: the tenant's three-way-match tolerances — the owner's, latest wins, every version on the ledger.
@@ -1790,6 +1807,16 @@ export function payslipStoreAdapter(input: { readonly store: EventStore; readonl
       return all.sort((a, b) => b.period.localeCompare(a.period))[0]; // most recent pay period
     },
   };
+}
+
+/**
+ * SF-10 · M30-FR-02: every issued payslip in the shop, latest issue per (employee, period) — the SAME fold `payslipsFor`
+ * runs for one person, over the whole payslip register, for the governed payroll export. A read; it writes nothing.
+ */
+export async function allIssuedPayslips(store: EventStore, tenantId: string): Promise<readonly IssuedPayslip[]> {
+  const byKey = new Map<string, IssuedPayslip>();
+  for (const p of await allOf<IssuedPayslip>(store, tenantId, PAYSLIPS_STREAM, 'PayslipIssued')) byKey.set(`${p.employeeId}|${p.period}`, p);
+  return [...byKey.values()];
 }
 
 export const STREAM_FOR = { forCustomer, forDriverRun, forLocation, forSaleReturns, forOrderPack, supplierInvoices: SUPPLIER_INVOICES_STREAM } as const;
@@ -8885,6 +8912,15 @@ export function ordersAdapter(input: {
         source: 'api/orders',
         payload: order,
       }));
+      // SF-10: and on the shop-wide order index, so the export reads every order. Idempotent on the order id.
+      await input.store.append(tenantId, forOrderIndex, makeEvent({
+        id: `ord-placed-idx-${order.orderId}`,
+        type: 'OrderPlaced',
+        occurredAt: order.placedAt,
+        idempotencyKey: `ord-placed-idx-${tenantId}-${order.orderId}`,
+        source: 'api/orders',
+        payload: order,
+      }));
       // A storefront order is also indexed under its customer, so "my orders" folds without walking every order.
       if (order.customerRef !== undefined) {
         await input.store.append(tenantId, forCustomerOrders(order.customerRef), makeEvent({
@@ -11129,6 +11165,21 @@ function serviceGuidanceProposals(views: readonly { readonly serviceCase: Servic
   }));
 }
 
+/**
+ * EA-09: annotate a shared-inbox entry from the SAME draft proposal a run of the agent raises for that finding (the ids
+ * are the same by construction) — its evidence and the route a person acts through — and the branch of the governed
+ * record behind it (`null` = shop-wide). An entry with no matching proposal carries no evidence, so the inbox withholds it.
+ */
+function annotateInbox<E extends { readonly finding: { readonly findingId: string } }>(
+  proposals: readonly Omit<Proposal, 'committed'>[], branchOf: (entry: E) => string | null,
+): (entry: E) => InboxEntry<E> {
+  const byId = new Map(proposals.map((p) => [p.proposalId, p]));
+  return (entry) => {
+    const p = byId.get(entry.finding.findingId);
+    return { ...entry, branchId: branchOf(entry), evidence: p?.evidence ?? [], wouldRequire: p?.wouldRequire ?? '' };
+  };
+}
+
 export function aiAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
@@ -11393,13 +11444,18 @@ export function aiAdapter(input: {
 
       // Merge the two folds into one worklist, each entry tagged by its source so the screen can label
       // it. Product suggestions lead (the everyday catalogue gaps), then the mapping suggestions.
+      // EA-09: both legs rest on shop-wide records (one product master, P-02; import sources are head office's), so
+      // their branch is null — every reader sees them, only a company-wide steward sets one aside.
+      const now = input.now();
+      const product = annotateInbox<{ readonly source: 'product' } & (typeof productWL.open)[number]>(dataQualityProposals(productFindings, now), () => null);
+      const mapping = annotateInbox<{ readonly source: 'mapping' } & (typeof mappingWL.open)[number]>(mappingQualityProposals(mappingFindings, now), () => null);
       const open = [
-        ...productWL.open.map((i) => ({ source: 'product' as const, ...i })),
-        ...mappingWL.open.map((i) => ({ source: 'mapping' as const, ...i })),
+        ...productWL.open.map((i) => product({ source: 'product' as const, ...i })),
+        ...mappingWL.open.map((i) => mapping({ source: 'mapping' as const, ...i })),
       ];
       const dismissed = [
-        ...productWL.dismissed.map((i) => ({ source: 'product' as const, ...i })),
-        ...mappingWL.dismissed.map((i) => ({ source: 'mapping' as const, ...i })),
+        ...productWL.dismissed.map((i) => product({ source: 'product' as const, ...i })),
+        ...mappingWL.dismissed.map((i) => mapping({ source: 'mapping' as const, ...i })),
       ];
       return { open, dismissed, openCount: open.length, dismissedCount: dismissed.length };
     },
@@ -11435,7 +11491,10 @@ export function aiAdapter(input: {
       const findings = input.operationsAlerts === undefined
         ? []
         : recommendOperationsRunbooks(liveNotCleared(await input.operationsAlerts(tenantId)));
-      return buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+      const wl = buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+      // EA-09: the branch is the one the alert's rule watches (a store computer's own component); none = shop-wide.
+      const annotate = annotateInbox<(typeof wl.open)[number]>(operationsProposals(findings, input.now()), (e) => e.finding.branchId ?? null);
+      return { ...wl, open: wl.open.map(annotate), dismissed: wl.dismissed.map(annotate) };
     },
 
     /**
@@ -11467,10 +11526,12 @@ export function aiAdapter(input: {
       for (const d of await allOf<SuggestionDisposition>(input.store, tenantId, STREAM.ai, 'AiWorkforceDismissed')) {
         latest.set(d.findingId, d); // occurrence order → the last decision on a finding wins
       }
-      const findings = input.dailyTasks === undefined
-        ? []
-        : taskGuidanceFindings(assessDailyTasks({ tasks: await input.dailyTasks(tenantId), now: input.now() }));
-      return buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+      const report = input.dailyTasks === undefined ? undefined : assessDailyTasks({ tasks: await input.dailyTasks(tenantId), now: input.now() });
+      const findings = report === undefined ? [] : taskGuidanceFindings(report);
+      const wl = buildDataQualityWorklist({ findings, dispositions: [...latest.values()] });
+      // EA-09: the branch is the task's own (a task naming none is shop-wide).
+      const annotate = annotateInbox<(typeof wl.open)[number]>(workforceGuidanceProposals(report?.assessments ?? [], input.now()), (e) => e.finding.branchId ?? null);
+      return { ...wl, open: wl.open.map(annotate), dismissed: wl.dismissed.map(annotate) };
     },
 
     /**

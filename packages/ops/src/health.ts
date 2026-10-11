@@ -290,6 +290,12 @@ export interface AlertRule {
   /** Escalate if not acknowledged within this many minutes (§32 target: 15). */
   readonly ackWithinMinutes: number;
   readonly escalatesToUserId?: string;
+  /**
+   * EA-09 · AI-NFR-02: the branch (store) whose component this rule watches — e.g. one store computer's own lane
+   * queue. Absent: the rule watches a shop-wide component (head office's database, a connector, the backup), and the
+   * alert it raises belongs to the whole shop.
+   */
+  readonly branchId?: string;
 }
 
 export interface RaisedAlert {
@@ -301,6 +307,8 @@ export interface RaisedAlert {
   readonly detail: string;
   readonly raisedAt: string;
   readonly ackDueBy: string;
+  /** EA-09: the branch the alert's rule watches; absent = a shop-wide alert. */
+  readonly branchId?: string;
 }
 
 /** Turn a health check into owned, actionable alerts. */
@@ -324,6 +332,7 @@ export function raiseAlerts(
       ackDueBy: new Date(Date.parse(health.checkedAt) + rule.ackWithinMinutes * 60_000)
         .toISOString()
         .replace(/\.\d{3}Z$/, 'Z'),
+      ...(rule.branchId === undefined ? {} : { branchId: rule.branchId }),
     });
   }
   return alerts.sort((a, b) => SEVERITY[a.status] - SEVERITY[b.status]);

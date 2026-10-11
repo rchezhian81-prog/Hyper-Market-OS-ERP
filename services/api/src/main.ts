@@ -268,6 +268,10 @@ import {
   STREAM, syncWatermarksAdapter, storeSyncView, dayBookAdapter, payablesAdapter, supplierAccountAdapter, supplierMasterAdapter, supplierOpeningsAdapter, storeStockFactsAdapter, displayFundingAdapter, concessionTagsAdapter, observedHealthAdapter, catalogueAdapter, productMasterAdapter, categoryRegisterAdapter, productMergeAdapter, packHierarchyAdapter, barcodeAdapter, taxClassAdapter, cataloguePreviewAdapter, pricingAdapter, priceListAdapter, posAdapter, returnsAdapter, refundApprovalsAdapter, approvalRequestsAdapter, noReceiptReturnsAdapter, exchangesAdapter, inventoryAdapter, goodsReceiptAdapter, warehouseAdapter, transfersAdapter, floorIndentsAdapter, countsAdapter, writeOffAdapter, productionAdapter, weighedCostingAdapter, packagingAdapter, wasteAdapter, shelfCountAdapter, spacePerformanceAdapter, assortmentAdapter, purchaseAdapter, purchaseOrdersAdapter, supplierScorecardAdapter, rebatesAdapter, rfqAdapter, importQualityAdapter, dataImportAdapter, supplierInvoiceIdUsed, productUomFrom, acceptedAsn, productInUse, storeSettingsAdapter, storeRulesAdapter, heldVersionsAdapter, branchScopeHeldBy, dataExportAdapter, financeAdapter, settlementAdapter, customerAdapter, segmentDataAdapter, marketingDraftInputs, dataRightsAdapter, erasureExecutionAdapter, privacyDomainHoldingsAdapter, serviceCaseAdapter, campaignAdapter, campaignSendAdapter, modelGatewayAdapter, ordersAdapter, fulfilmentAdapter, dispatchAdapter, notificationQueueAdapter, fulfilmentPackingAdapter, orderFulfilmentAdapter, stockLossAdapter, substitutionTruthAdapter, b2bMoneyEffectsAdapter, b2bPostingAdapter, fulfilmentWaveAdapter, assignmentsAdapter, driverRunAdapter, identityAdapter, accessLifecycleAdapter, peopleAdapter, signInEnder, delegationAdapter, approvalDecisionAdapter, syncedGoodsReceiptAdapter, assembledGoodsReceiptAdapter, syncedCountsAdapter, adjustmentRequestAdapter, syncedWarehouseAdapter, receivingScanAdapter, emergencyAccessAdapter, drillThroughAdapter, platformAdapter, deviceRegistryAdapter, versionPolicyAdapter, partnerAdapter, backgroundJobsAdapter, supportAccessAdapter, statusCentreAdapter, licencesAdapter, serviceRequestsAdapter, remoteSessionsAdapter, alertLifecycleAdapter, legalHoldsAdapter, riskRegisterAdapter, drReadinessAdapter, auditTrailAdapter, reportingAdapter, migrationAdapter, legacyHistoryAdapter, aiAdapter, storedValueAdapter, couponAdapter, promotionAdapter, promotionCatalogueAdapter, cashAdapter, shiftAdapter, dayCloseAdapter, lpCasesAdapter, lpRulesAdapter, lpActivityAdapter, fraudSignalsAdapter, b2bCreditAdapter, b2bCollectionsAdapter, b2bPortalAdapter, b2bCommissionAdapter, b2bDocumentsAdapter, supplierPortalAdapter, concessionAdapter, secretsAdapter, orgStructureAdapter, scrapAdapter, facilitiesAdapter, facilitiesAssetsAdapter, facilitiesMonitoringAdapter, complianceAdapter, documentsAdapter, suspendedBillsAdapter, quotationsAdapter, scheduledBriefAdapter, eInvoiceAdapter, eWayBillAdapter, payRunAdapter, gstr1SubmissionAdapter, gstReturnsAdapter, integrationAdapter, webhookAdapter, connectorAdapter, connectorDeliveryAdapter, financeNotesAdapter, lotTraceAdapter, recallAdapter, qualityHoldAdapter, saleBlocksAdapter, loyaltyMembersAdapter, loyaltyEffectsAdapter, loyaltyWalletsAdapter, loyaltyLiabilityAdapter, independentEvidenceAdapter, compensationFulfilmentAdapter, nearExpiryAdapter, rosterStoreAdapter, certStoreAdapter, sopStoreAdapter, attendanceStoreAdapter, checklistStoreAdapter, taskStoreAdapter, payslipStoreAdapter, salesHistoryAdapter, billingAdapter, serviceabilityAdapter, consolidationAdapter, planogramStoreAdapter, documentTemplatesAdapter, tokenRevocationAdapter, effectiveGrants, deliveryServiceAdapter, b2bStockAdapter, commissionRuleAdapter, b2bOrderingAdapter, customer360Adapter,
 } from './adapters';
 import { ROLE_CATALOGUE, OWNER_ROLE_ID } from './roles';
+// SF-10 round 5: the read models the remaining export domains fold.
+import { allIssuedPayslips, ordersForExport } from './adapters';
+import { buildWalletFeed } from '../../customer/src/loyalty-wallets';
+import type { MemberRecord } from '../../customer/src/loyalty-members';
 import type { DependencyProbe } from '../../platform/src/index';
 import { SandboxRecurringBillingProvider, type Plan as BillingPlan } from '../../../packages/platform/src/index';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
@@ -716,6 +720,41 @@ export function buildSurface(deps: {
             stock: async (t) => inventoryAdapter({ store, now }).availability(t),
             suppliers: async (t) => supplierMasterAdapter({ store, now }).records(t),
             journals: async (t) => (await store.readStream(t, STREAM.finance, { type: 'JournalPosted' })).map((e) => e.event.payload as ExportJournal),
+            // SF-10 round 5 — each from its own domain's read model, never a copy:
+            // purchase orders: the SAME fold `GET /v1/purchase/orders` lists;
+            purchaseOrders: async (t) => purchaseOrdersAdapter({ store, now }).all(t),
+            // customers: the loyalty member register (latest fact per member) + each one's consent ledger (latest per
+            // purpose and channel) — the SAME records `GET /v1/customers/:id/consent` returns;
+            customers: async (t) => {
+              const latestMember = new Map<string, MemberRecord>();
+              for (const m of await loyaltyWallets!.allMembers(t)) latestMember.set(m.memberRef, m);
+              const consents = customerAdapter({ store, now });
+              return Promise.all([...latestMember.values()].sort((a, b) => a.memberRef.localeCompare(b.memberRef)).map(async (m) => {
+                const latestConsent = new Map<string, { purpose: string; channel: string; given: boolean; recordedAt: string; evidence: string }>();
+                for (const c of await consents.consentRecords(t, m.memberRef)) latestConsent.set(`${c.purpose}/${c.channel}`, { purpose: c.purpose, channel: c.channel, given: c.given, recordedAt: c.recordedAt, evidence: c.evidence });
+                return {
+                  customerRef: m.memberRef, status: m.status, mobileLast4: m.mobileLast4, enrolledAt: m.consentGivenAt, enrolledBy: m.enrolledBy,
+                  ...(m.leftAt === undefined ? {} : { leftAt: m.leftAt }), consents: [...latestConsent.values()],
+                };
+              }));
+            },
+            // loyalty: the SAME wallet feed the store computers pull (`GET /v1/loyalty/wallets`);
+            loyaltyWallets: async (t) => {
+              const feed = await buildWalletFeed(loyaltyWallets!, t);
+              return { pointValuePaise: feed.rule.pointValuePaise, members: feed.members };
+            },
+            // orders: the shop-wide order index, each at its current state as `GET /v1/orders/:id` folds it;
+            orders: (t) => ordersForExport(store, t),
+            // payroll: the payslip register (latest issue per employee and period), with the branch from the staff register.
+            payslips: async (t) => {
+              const staff = new Map((await attendanceStoreAdapter({ store, now }).employees(t)).map((e) => [e.employeeId, e.branchId] as const));
+              return (await allIssuedPayslips(store, t)).map((p) => ({
+                employeeId: p.employeeId, branchId: staff.get(p.employeeId) ?? null, period: p.period, onDate: p.payslip.onDate,
+                paidDays: p.payslip.paidDays, lopDays: p.payslip.lopDays, grossMinor: p.payslip.grossMinor,
+                totalEmployeeDeductionMinor: p.payslip.statutory.totalEmployeeDeductionMinor,
+                totalEmployerContributionMinor: p.payslip.statutory.totalEmployerContributionMinor, netPayMinor: p.payslip.netPayMinor,
+              }));
+            },
           }),
           access: tenantAccessResolver(store, ROLE_CATALOGUE),
           ...dataExportAdapter({ store, now }),
@@ -1636,7 +1675,7 @@ export function buildSurface(deps: {
       ...(deps.modelTransport === undefined ? {} : { transport: deps.modelTransport }),
       ...(deps.modelPricing === undefined ? {} : { pricing: deps.modelPricing }),
     })),
-    ...aiRoutes(store === undefined ? {
+    ...aiRoutes({ ...(store === undefined ? {
       // Stopped by default, matching the adapter. A kill switch that defaults off is an agent
       // running because nobody has told it not to.
       killSwitchOn: empty(true), setKillSwitch: () => {},
@@ -1680,7 +1719,7 @@ export function buildSurface(deps: {
       // desk board reads, so A05 flags the same open, unanswered cases breaching their first-response SLA
       // that a human sees. A05 flags only; a service agent replies (hard rule #5).
       serviceCases: (t) => serviceCaseAdapter({ store, now }).serviceCases(t),
-    })),
+    })), modelProviderConfigured: () => deps.modelTransport !== undefined }),
   ];
   // The versioned API surface as a manifest (M36-FR-04, P-06): reads THIS table at request time, so it lists
   // every endpoint registered — itself included — and `docs/api/surface.md` is generated from the same fold.
