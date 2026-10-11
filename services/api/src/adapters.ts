@@ -172,6 +172,7 @@ import type { SyncedWarehouseDeps, ReceivingScanDeps, ReceivingScanRecord } from
 import type { SyncedCountsDeps } from '../../inventory/src/counts-synced';
 import type { CountPlan, CountPlanDeps, VarianceCause, PlaceMovement } from '../../inventory/src/count-plans';
 import { budgetKey, type OpenToBuyDeps, type PurchaseBudget, type BudgetOverride } from '../../purchase/src/open-to-buy';
+import type { InvoiceIngestionDeps, InvoiceDocumentRecord, ItemMapping } from '../../purchase/src/invoice-ingestion';
 import type { AdjustmentRequestDeps, AdjustmentRequestRecord } from '../../inventory/src/adjustment-requests';
 import type { ProductReceiptRules } from '../../../packages/receiving/src/index';
 import type { EmergencyAccessDeps, EmergencyGrant } from '../../identity/src/emergency-access';
@@ -13404,5 +13405,44 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
       }));
     },
     permissionsOfUser: (tenantId, userId) => permissionsHeldBy(input.store, tenantId, userId),
+  };
+}
+
+/**
+ * D03-FR-02 (round 8) — bills handed in as an e-invoice or a scan: one `InvoiceDocumentRecorded` per state (received, then
+ * confirmed), latest per document; the supplier item-code → product mappings people confirmed; the supplier found by GSTIN;
+ * and the supplier-invoice register's own capture (the portal path) as the one way onto the register.
+ */
+const INVOICE_DOCUMENTS_STREAM = streamName(STREAM.purchase, 'invoice-documents');
+export function invoiceIngestionAdapter(input: { readonly store: EventStore; readonly now: () => string }): Omit<InvoiceIngestionDeps, 'recordAudit' | 'extractor'> {
+  const fold = async (tenantId: string): Promise<readonly InvoiceDocumentRecord[]> => {
+    const byId = new Map<string, InvoiceDocumentRecord>();
+    for (const d of await allOf<InvoiceDocumentRecord>(input.store, tenantId, INVOICE_DOCUMENTS_STREAM, 'InvoiceDocumentRecorded')) { byId.delete(d.documentId); byId.set(d.documentId, d); }
+    return [...byId.values()];
+  };
+  return {
+    now: input.now,
+    document: async (tenantId, documentId) => (await fold(tenantId)).find((d) => d.documentId === documentId),
+    documents: fold,
+    recordDocument: async (tenantId, doc) => {
+      await input.store.append(tenantId, INVOICE_DOCUMENTS_STREAM, makeEvent({
+        id: `invoice-document-${doc.documentId}-${doc.state}`, type: 'InvoiceDocumentRecorded', occurredAt: doc.confirmedAt ?? doc.receivedAt,
+        // One record per document per state: a re-sent receipt or confirmation collapses.
+        idempotencyKey: `invoice-document-${tenantId}-${doc.documentId}-${doc.state}`, source: 'api/purchase', payload: doc,
+      }));
+    },
+    supplierByGstin: async (tenantId, gstin) =>
+      [...(await foldSupplierRecords(input.store, tenantId)).values()].find((r) => r.gstin !== null && r.gstin.toUpperCase() === gstin.toUpperCase())?.supplierId,
+    mappings: async (tenantId, supplierId) =>
+      (await allOf<ItemMapping>(input.store, tenantId, INVOICE_DOCUMENTS_STREAM, 'SupplierItemMapped')).filter((m) => m.supplierId === supplierId),
+    recordMappings: async (tenantId, mappings) => {
+      for (const m of mappings) {
+        await input.store.append(tenantId, INVOICE_DOCUMENTS_STREAM, makeEvent({
+          id: `supplier-item-${m.supplierId}-${m.supplierItemCode}-${m.productId}`, type: 'SupplierItemMapped', occurredAt: m.at,
+          idempotencyKey: `supplier-item-${tenantId}-${m.supplierId}-${m.supplierItemCode}-${m.productId}-${m.at}`, source: 'api/purchase', payload: m,
+        }));
+      }
+    },
+    purchase: purchaseAdapter(input),
   };
 }

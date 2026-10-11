@@ -23,6 +23,7 @@ import { LocalIdp } from './local-idp';
 import type { PaymentVerifier } from '../../packages/orders/src/payment-verification';
 import type { NotificationTransport } from '../../packages/notifications/src/index';
 import type { ModelTransport, ModelTier, TierPricing } from '../../packages/ai/src/index';
+import type { InvoiceExtractor } from '../../packages/purchasing/src/invoice-extraction';
 
 type Kernel = Parameters<typeof handle>[0];
 type IdempotencyStore = Kernel['idempotency'];
@@ -107,6 +108,8 @@ export function apiHarness(opts: {
   migrationTargetKind?: 'rehearsal' | 'staging' | 'local' | 'production';
   /** FUL-03: the payment provider the surface asks (the test-mode one in tests). Omitted → online payments stay pending. */
   paymentVerifier?: PaymentVerifier;
+  /** D03-FR-02 (round 8): the OCR engine behind the bill-scan port — the deterministic fake in tests; production has none. */
+  invoiceExtractor?: InvoiceExtractor;
   /** The clock the session-channel guard reads (PA-10) — injected to drive a support session past its time box. */
   now?: () => string;
   /** A notification transport for the send path (PA-08) — the recording test adapter; production has none. */
@@ -129,6 +132,7 @@ export function apiHarness(opts: {
     signingKey: PACK_KEY, migrationTargetKind: opts.migrationTargetKind ?? 'rehearsal', store, revocations,
     ...(opts.personalDataKeys === undefined ? {} : { personalDataKeys: opts.personalDataKeys }),
     ...(opts.paymentVerifier === undefined ? {} : { paymentVerifier: opts.paymentVerifier }),
+    ...(opts.invoiceExtractor === undefined ? {} : { invoiceExtractor: opts.invoiceExtractor }),
     ...(opts.notificationTransport === undefined ? {} : { notificationTransport: opts.notificationTransport }),
     ...(opts.deliveryReportSecrets === undefined ? {} : { deliveryReportSecrets: opts.deliveryReportSecrets }),
     ...(opts.modelTransport === undefined ? {} : { modelTransport: opts.modelTransport }),

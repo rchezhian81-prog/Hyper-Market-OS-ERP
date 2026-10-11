@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 951 | 577 | 577 | 89 | 299 |
+| 13 | 955 | 579 | 579 | 89 | 299 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -148,6 +148,10 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/purchase/import-jobs/:jobId` | `purchase.import.record` | core | yes |
 | GET | `/v1/purchase/import-quality` | `purchase.import.read` | core | — |
 | GET | `/v1/purchase/import-quality/:sourceId` | `purchase.import.read` | core | — |
+| GET | `/v1/purchase/invoice-documents` | `purchase.invoice.capture` | core | — |
+| GET | `/v1/purchase/invoice-documents/:documentId` | `purchase.invoice.capture` | core | — |
+| POST | `/v1/purchase/invoice-documents/:documentId` | `purchase.invoice.capture` | core | yes |
+| POST | `/v1/purchase/invoice-documents/:documentId/confirm` | `purchase.invoice.capture` | core | yes |
 | GET | `/v1/purchase/invoices` | `purchase.commitment.read` | core | — |
 | GET | `/v1/purchase/invoices/:invoiceId` | `purchase.commitment.read` | core | — |
 | POST | `/v1/purchase/invoices/:invoiceId/capture` | `purchase.invoice.capture` | core | yes |
