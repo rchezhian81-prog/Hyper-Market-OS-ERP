@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { apiHarness, TEST_IDP } from '../support/api-harness';
 import { startRealCloud, type RealCloud } from '../support/real-store';
 import type { HttpRequest } from '../../services/kernel/src/index';
-import { verifyOutboundSignature, type OutboundTransport } from '../../services/platform/src/outbound-webhooks';
+import { verifyOutboundSignature } from '../../services/platform/src/outbound-webhooks';
+import { recordingPartner, approvedSubscription } from '../support/outbound-partner';
 
 /**
  * **D14-FR-06 / M32-FR-01·02 · roadmap §30.1: "signed webhooks with replay protection, retry schedule, dead-letter and
@@ -21,20 +22,14 @@ import { verifyOutboundSignature, type OutboundTransport } from '../../services/
  *     letter is listed, never deleted, and a person may send it again (a new series; the history stays).
  *   • HELD — with the signing secret unavailable nothing is sent unsigned; the message waits and is said.
  *   • RECONCILE — every message since a time with its status and the totals; switched off, nothing more is sent.
+ *   • Round 10: every subscription (and every change to one) is approved by a second person with setup rights
+ *     (`partner_webhook_subscription`); the partner's host resolves to a public address (the SSRF guard has its own
+ *     proof in `outbound-webhooks-refuse-private-destinations.test.ts`).
  */
 
-const OWNER = 'u-owner'; const CASHIER = 'u-cash';
+const OWNER = 'u-owner'; const CASHIER = 'u-cash'; const CHECKER = 'u-setup-checker';
 const SECRET_NAME = 'partner-a-signing';
 const SECRET = ['outbound', 'test', 'secret', 'built', 'at', 'run', 'time'].join('-').padEnd(40, 'x');
-
-interface Sent { url: string; headers: Record<string, string>; body: string }
-function recordingPartner(): OutboundTransport & { sent: Sent[]; answers: (number | null)[] } {
-  const sent: Sent[] = []; const answers: (number | null)[] = [];
-  return {
-    name: 'recording-partner', sent, answers,
-    send: async (m) => { sent.push({ url: m.url, headers: { ...m.headers }, body: m.body }); const a = answers.length > 0 ? answers.shift()! : 200; return { status: a }; },
-  };
-}
 
 type Raw = (method: HttpRequest['method'], path: string, user: string, body?: unknown, key?: string, query?: Record<string, string>) => Promise<{ status: number; body: unknown }>;
 const codeOf = (r: { body: unknown }): string | undefined => (r.body as { error?: { code?: string } } | null)?.error?.code;
@@ -53,9 +48,11 @@ async function theOutboundPath(raw: Raw, partner: ReturnType<typeof recordingPar
   expect(codeOf(await post(OWNER, S, { ...good, signingKeyRef: SECRET }))).toBe('not_readable_as_an_outbound_webhook'); // a literal secret, never
   expect(codeOf(await post(OWNER, S, { ...good, eventTypes: ['PayrollRun'] }))).toBe('event_type_not_published');
   expect((await post(CASHIER, S, good)).status).toBe(403);
-  const made = await post(OWNER, S, good, 'sub-1');
+  // Round 10: without a second person's approval nothing is set up.
+  expect(codeOf(await post(OWNER, S, good))).toBe('partner_subscription_needs_approval');
+  const made = await post(OWNER, S, await approvedSubscription(raw, OWNER, CHECKER, 'SUB-A', good), 'sub-1');
   expect(made.status, JSON.stringify(made.body)).toBe(201);
-  expect(made.body).toMatchObject({ subscription: { version: 1, active: true, setBy: OWNER } });
+  expect(made.body).toMatchObject({ subscription: { version: 1, active: true, setBy: OWNER, approvedBy: CHECKER } });
   expect((await post(OWNER, S, good, 'sub-1b')).body).toMatchObject({ unchanged: true });
 
   // Two sales after it was made.
@@ -124,7 +121,8 @@ async function theOutboundPath(raw: Raw, partner: ReturnType<typeof recordingPar
 async function heldWithoutTheSecret(raw: Raw, partner: ReturnType<typeof recordingPartner>, drain: () => Promise<void>): Promise<void> {
   const S = '/v1/integration/outbound-webhooks/SUB-NOKEY';
   vi.setSystemTime(Date.now() + 1_000); // a subscription delivers what happens from the moment it is made
-  expect((await raw('POST', S, OWNER, { partnerId: 'partner-b', url: 'https://partner-b.example.test/h', eventTypes: ['SaleCommitted'], signingKeyRef: 'vault://not-configured' }, 'sub-nokey')).status).toBe(201);
+  const nokey = { partnerId: 'partner-b', url: 'https://partner-b.example.test/h', eventTypes: ['SaleCommitted'], signingKeyRef: 'vault://not-configured' };
+  expect((await raw('POST', S, OWNER, await approvedSubscription(raw, OWNER, CHECKER, 'SUB-NOKEY', nokey), 'sub-nokey')).status).toBe(201);
   vi.setSystemTime(Date.now() + 1_000);
   expect((await raw('POST', '/v1/sales', OWNER, sale('NOKEY-1'), 'sale-nokey')).status).toBe(202);
   const before = partner.sent.filter((s) => s.url.includes('partner-b')).length;
@@ -143,6 +141,7 @@ describe('outbound webhooks — signed, retried, dead-lettered, reconciled (real
     const h = apiHarness({ outboundTransport: partner, outboundSecrets: new Map([[SECRET_NAME, SECRET]]) });
     await h.seedOwner(T, OWNER);
     await h.provisionRole(T, CASHIER, 'cashier');
+    await h.provisionRole(T, CHECKER, 'platform_admin');
     const raw: Raw = (method, path, user, body, key, query) => h.request({ method, path, userId: user, tenantId: T, ...(body === undefined ? {} : { body }), ...(key === undefined ? {} : { idempotencyKey: key }), ...(query === undefined ? {} : { query }) });
     const drain = async () => { const r = await raw('POST', '/v1/integration/outbound-deliveries/drain', OWNER, {}, `drain-${randomUUID()}`); expect(r.status, JSON.stringify(r.body)).toBe(200); };
     await theOutboundPath(raw, partner, drain);
@@ -171,6 +170,7 @@ describeOrSkip('outbound webhooks on real PostgreSQL, through the production ass
       env: { [`OUTBOUND_WEBHOOK_SECRET__${SECRET_NAME}`]: SECRET },
     });
     await cloud.grant(CASHIER, 'cashier');
+    await cloud.grant(CHECKER, 'owner'); // a second person with setup rights (the owner's own role may not hand out platform_admin's)
   }, 120_000);
   afterAll(async () => { await cloud?.stop(); vi.useRealTimers(); });
   it('the whole path — each pass run by the API\'s own worker — and nothing sent without its secret', async () => {

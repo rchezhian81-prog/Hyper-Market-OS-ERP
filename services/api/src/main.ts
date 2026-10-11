@@ -1762,11 +1762,15 @@ export function buildSurface(deps: {
     // WF-20 · M35-FR-04: an incident linked to the alerts that raised it, its timeline, actions with named owners, a
     // post-mortem, and a close only a named person makes.
     // D14 / M32: outbound webhooks to partners — signed, retried on a schedule, dead-lettered visibly, reconcilable.
-    ...outboundWebhookRoutes(outboundWebhooksAdapter({
-      ...(store === undefined ? {} : { store }), now,
-      ...(deps.outboundTransport === undefined ? {} : { transport: deps.outboundTransport }),
-      ...(deps.outboundSecrets === undefined ? {} : { secrets: deps.outboundSecrets }),
-    })),
+    ...outboundWebhookRoutes({
+      ...outboundWebhooksAdapter({
+        ...(store === undefined ? {} : { store }), now,
+        ...(deps.outboundTransport === undefined ? {} : { transport: deps.outboundTransport }),
+        ...(deps.outboundSecrets === undefined ? {} : { secrets: deps.outboundSecrets }),
+      }),
+      // Round 10: a partner subscription takes a second person's approval (kind partner_webhook_subscription).
+      ...(store === undefined ? {} : { approvals: approvalRequestsAdapter({ store, now }) }),
+    }),
     ...opsIncidentRoutes(store === undefined
       ? { facts: async () => [], record: async () => {}, alerts: () => [], isKnownPerson: async () => false, now }
       : opsIncidentsAdapter({ store, now })),
