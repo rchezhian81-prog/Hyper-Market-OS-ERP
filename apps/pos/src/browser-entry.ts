@@ -24,6 +24,7 @@ import {
   type CashMovementWrite, type ShiftCloseWrite, type TillCashRead, type CashMovementOutcome, type ShiftCloseOutcome, type TillCashStatus,
 } from './till-session';
 import { createPosView, type PosView } from './view-adapter';
+import { customerDisplayFrame, CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayFrame } from './customer-display';
 import {
   createRefundView, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome,
 } from './refund-view';
@@ -1298,7 +1299,21 @@ export function bootPos(config?: {
     tradingDayAt: (atIsoUtc: string) => session.tradingDayFor(atIsoUtc),
   });
 
-  return Object.assign(view, { till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
+  // D04-FR-05 · M12-FR-01: the customer display's frame, from the till's own basket — no network (see customer-display.ts).
+  let displaySeq = 0;
+  const customerDisplay = (): CustomerDisplayFrame => {
+    const totals = session.totals();
+    displaySeq += 1;
+    return customerDisplayFrame({
+      laneId: session.laneId() ?? null, basket: view.basket(),
+      // Each line at its own price before the offer; the offer is shown once, as the saving.
+      lineTotalsMinor: session.replacementLines().map((l) => l.lineTotalMinor + (l.discountMinor ?? 0)),
+      promotionDiscountMinor: totals.promotionDiscount.minor, payableMinor: totals.payable.minor, currency: totals.payable.currency, seq: displaySeq,
+    });
+  };
+  const customerDisplayChannelName = (): string => CUSTOMER_DISPLAY_CHANNEL;
+
+  return Object.assign(view, { customerDisplay, customerDisplayChannelName, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its

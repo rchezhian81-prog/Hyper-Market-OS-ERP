@@ -709,6 +709,23 @@ function render() {
 
   paintOperator();
   paintBadge();
+  publishToDisplay();
+}
+
+// ── The customer display (D04-FR-05 · M12-FR-01) ───────────────────────────
+// The screen facing the customer is a second window on this till computer (customer-display.html). Each time the basket
+// is drawn here, the till's own frame — lines, saving, amount to pay; nothing a customer must not see — goes to it over a
+// BroadcastChannel: no network, so it works with the cable out. A display that is not open, or a browser without the
+// channel, never stops a sale.
+let displayChannel = null;
+function publishToDisplay() {
+  if (typeof session.customerDisplay !== 'function' || typeof BroadcastChannel !== 'function') return;
+  try {
+    if (displayChannel === null) displayChannel = new BroadcastChannel(session.customerDisplayChannelName());
+    displayChannel.postMessage(session.customerDisplay());
+  } catch {
+    /* the display is a convenience for the customer; the sale never waits on it */
+  }
 }
 
 // ── The sync badge: what the BOX knows, never what the shell assumes ────────
