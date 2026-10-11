@@ -288,6 +288,11 @@ export class PaymentAttempts {
     return [...this.attempts.values()].filter((a) => a.state === 'asked' || a.state === 'no_answer');
   }
 
+  /** One attempt as this box holds it (OB-55: the late-answer guard reads when it was asked). */
+  get(attemptId: unknown): Attempt | undefined {
+    return isStr(attemptId) ? this.attempts.get(attemptId) : undefined;
+  }
+
   /** The unresolved attempt on this bill, if any — the till asks before it offers the machine again. */
   unresolvedOn(laneId: string, billRef: string): Attempt | undefined {
     return [...this.attempts.values()].find((a) => a.laneId === laneId && a.billRef === billRef && a.state === 'no_answer');

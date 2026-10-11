@@ -73,17 +73,47 @@ export interface PaymentExceptionConflict {
   readonly at: string;
 }
 
+/**
+ * PF-06 (P-04): the machine's answer for an attempt of an EARLIER trading day, typed in at the till on a manager's
+ * approval — a PERSON's answer, relayed so head office sees it. It lifts the store's day-close hold; it never resolves a
+ * carried-forward exception (only the provider's answer does).
+ */
+export interface LatePaymentAnswer {
+  readonly attemptId: string;
+  readonly storeId: string;
+  readonly laneId: string;
+  readonly billRef: string;
+  readonly kind: 'card' | 'upi';
+  readonly amountMinor: number;
+  readonly askedAt: string;
+  readonly tradingDay: string;
+  readonly outcome: 'approved' | 'declined';
+  readonly answeredBy: string;
+  readonly approvedBy: string;
+  readonly approvalId: string;
+  readonly answeredAt: string;
+  /** What head office found re-checking the approver (record-and-flag, never a refusal). */
+  readonly flags: readonly string[];
+}
+
 export interface PaymentExceptionDeps {
   readonly exceptions: (tenantId: string) => Promise<readonly PaymentException[]>;
   readonly resolutions: (tenantId: string) => Promise<readonly PaymentExceptionResolution[]>;
   readonly conflicts: (tenantId: string) => Promise<readonly PaymentExceptionConflict[]>;
   readonly recordResolution: (tenantId: string, r: PaymentExceptionResolution) => Promise<void>;
   readonly recordConflict: (tenantId: string, c: PaymentExceptionConflict) => Promise<void>;
+  readonly lateAnswers: (tenantId: string) => Promise<readonly LatePaymentAnswer[]>;
+  readonly recordLateAnswer: (tenantId: string, a: LatePaymentAnswer) => Promise<void>;
+  /** The permissions a person holds now (undefined: no grant at all) — to re-check a late answer's approver. */
+  readonly permissionsOf?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined>;
   readonly now: () => string;
 }
 
+/** The manager's authority a late answer's approval needs — the till approval authority head office re-checks. */
+export const LATE_ANSWER_AUTHORITY = 'pos.return.approve';
+
 /** The list as finance and the owner read it: every exception with its state, and the open amounts by kind and day. */
-export function paymentExceptionList(exceptions: readonly PaymentException[], resolutions: readonly PaymentExceptionResolution[], conflicts: readonly PaymentExceptionConflict[]) {
+export function paymentExceptionList(exceptions: readonly PaymentException[], resolutions: readonly PaymentExceptionResolution[], conflicts: readonly PaymentExceptionConflict[], lateAnswers: readonly LatePaymentAnswer[] = []) {
   const resolvedBy = new Map<string, PaymentExceptionResolution>();
   for (const r of resolutions) if (!resolvedBy.has(r.attemptId)) resolvedBy.set(r.attemptId, r);
   const rows = exceptions.map((e) => {
@@ -93,6 +123,7 @@ export function paymentExceptionList(exceptions: readonly PaymentException[], re
       state: r === undefined ? 'open' as const : r.paid ? 'resolved_paid' as const : 'resolved_not_paid' as const,
       resolution: r ?? null,
       conflicts: conflicts.filter((c) => c.attemptId === e.attemptId),
+      lateAnswer: lateAnswers.find((a) => a.attemptId === e.attemptId) ?? null,
     };
   }).sort((a, b) => (a.tradingDay === b.tradingDay ? a.attemptId.localeCompare(b.attemptId) : a.tradingDay.localeCompare(b.tradingDay)));
   const open = rows.filter((r) => r.state === 'open');
@@ -103,6 +134,8 @@ export function paymentExceptionList(exceptions: readonly PaymentException[], re
     openMinor: { card: sumOf(open, 'card'), upi: sumOf(open, 'upi') },
     owedToCustomersMinor: rows.reduce((n, r) => n + (r.resolution?.owedToCustomerMinor ?? 0), 0),
     flagged: rows.filter((r) => r.governanceFlags.length > 0 || r.conflicts.length > 0).map((r) => r.attemptId),
+    // PF-06: every machine answer typed in late on a manager's approval — shown, with any doubt about the approver.
+    lateAnswers,
   };
 }
 
@@ -158,8 +191,45 @@ export function paymentExceptionRoutes(deps: PaymentExceptionDeps): readonly Rou
       api: 'API-09', method: 'GET', path: '/v1/finance/payment-exceptions',
       permission: 'finance.period.read',
       handler: async (ctx) => {
-        const [e, r, c] = await Promise.all([deps.exceptions(ctx.tenantId), deps.resolutions(ctx.tenantId), deps.conflicts(ctx.tenantId)]);
-        return { status: 200, body: { ...paymentExceptionList(e, r, c), asAt: deps.now() } };
+        const [e, r, c, la] = await Promise.all([deps.exceptions(ctx.tenantId), deps.resolutions(ctx.tenantId), deps.conflicts(ctx.tenantId), deps.lateAnswers(ctx.tenantId)]);
+        return { status: 200, body: { ...paymentExceptionList(e, r, c, la), asAt: deps.now() } };
+      },
+    },
+    {
+      // PF-06: the store computer relays a machine answer typed in late for an earlier day's attempt, on a manager's
+      // approval at the till. Recorded once per attempt; the approver is re-checked and any doubt is a flag.
+      api: 'API-09', method: 'POST', path: '/v1/finance/payment-exceptions/:attemptId/late-answer/synced',
+      permission: 'till.dayclose.sync', idempotent: true,
+      handler: async (ctx) => {
+        const attemptId = ctx.params['attemptId'] ?? '';
+        const b = isObj(ctx.body) ? ctx.body : {};
+        const ok = isStr(b['laneId']) && isStr(b['billRef']) && (b['kind'] === 'card' || b['kind'] === 'upi') && isInt(b['amountMinor'])
+          && isStr(b['askedAt']) && isStr(b['tradingDay']) && (b['outcome'] === 'approved' || b['outcome'] === 'declined')
+          && isStr(b['answeredBy']) && isStr(b['approvedBy']) && isStr(b['approvalId']) && isStr(b['answeredAt']);
+        if (!ok) {
+          throw apiError(400, {
+            code: 'not_readable_as_a_late_answer',
+            whatHappened: 'A late answer needs the attempt (till, bill, card or UPI, amount, when asked, trading day), the answer, who typed it, the manager who approved it and the approval.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Keep it at the store and raise it. Nothing was changed.',
+          });
+        }
+        const existing = (await deps.lateAnswers(ctx.tenantId)).find((a) => a.attemptId === attemptId);
+        if (existing !== undefined) return { status: 200, body: { attemptId, recorded: true, alreadyRecorded: true, flags: existing.flags } };
+        const flags: string[] = [];
+        if (b['approvedBy'] === b['answeredBy']) flags.push('approved_by_the_person_who_answered');
+        else if (deps.permissionsOf !== undefined) {
+          const held = await deps.permissionsOf(ctx.tenantId, b['approvedBy'] as string);
+          if (held === undefined) flags.push('approver_unknown');
+          else if (!held.includes(LATE_ANSWER_AUTHORITY)) flags.push('approver_lacks_authority');
+        }
+        const rec: LatePaymentAnswer = {
+          attemptId, storeId: isStr(b['storeId']) ? b['storeId'] : '', laneId: b['laneId'] as string, billRef: b['billRef'] as string, kind: b['kind'] as 'card' | 'upi',
+          amountMinor: b['amountMinor'] as number, askedAt: b['askedAt'] as string, tradingDay: b['tradingDay'] as string, outcome: b['outcome'] as 'approved' | 'declined',
+          answeredBy: b['answeredBy'] as string, approvedBy: b['approvedBy'] as string, approvalId: b['approvalId'] as string, answeredAt: b['answeredAt'] as string, flags,
+        };
+        await deps.recordLateAnswer(ctx.tenantId, rec);
+        return { status: 202, body: { attemptId, recorded: true, flags } };
       },
     },
     {

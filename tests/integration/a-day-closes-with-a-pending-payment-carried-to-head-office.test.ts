@@ -157,7 +157,7 @@ describe.each(backings)('OB-55 — a day closes with a pending card/UPI payment 
     // ── The manager's PIN and the owner's PIN, naming both: the day locks on the box, offline.
     const closed = await close({ attemptIds: both, approvedBy: 'u-owner', approverPin: pinOf('u-owner'), reason: 'card provider down since 9pm' });
     expect(closed, JSON.stringify(closed)).toMatchObject({ closed: true, tradingDay: DAY_D, locked: true, unresolvedMinor: { card: 64_000, upi: 41_000 } });
-    expect([...(closed as { carriedForward: string[] }).carriedForward].sort()).toEqual([...both].sort());
+    expect([...(closed as unknown as { carriedForward: string[] }).carriedForward].sort()).toEqual([...both].sort());
     const dayLog = (await readLog(edge.dayCloseLog.path)).filter((r) => r.ok).map((r) => JSON.parse(r.record) as { closedBy: string; carriedForward: { approvedBy: string; approvalId: string; payments: { attemptId: string; tradingDay: string }[] }; approverVerified?: unknown });
     expect(dayLog).toHaveLength(1);
     expect(dayLog[0]).toMatchObject({ closedBy: 'u-mgr', carriedForward: { approvedBy: 'u-owner' } });
@@ -238,6 +238,58 @@ describe.each(backings)('OB-55 — a day closes with a pending card/UPI payment 
     // A payment no close carried is not an exception.
     expect((await resolve('PAY-unknown', [])).status).toBe(404);
   }, 90_000);
+
+  it('PF-06: a machine answer typed in next morning for yesterday\'s attempt needs a manager at the till, and reaches head office as such', async () => {
+    const h = harness();
+    const T = randomUUID();
+    await h.seedOwner(T, 'u-owner');
+    await h.provisionRole(T, 'u-box', 'store_computer', ['store-1']);
+    await h.provisionRole(T, 'u-mgr', 'store_manager');
+    await h.provisionRole(T, 'u-lanecash', 'cashier');
+    await h.provisionRole(T, 'u-acct', 'accountant');
+    globalThis.fetch = (async (url: string, init: RequestInit): Promise<Response> => {
+      if (String(url).startsWith('http://127.0.0.1:')) return savedFetch(url, init);
+      const hdr = (init.headers ?? {}) as Record<string, string>;
+      const res = await h.raw({
+        method: (init.method ?? 'GET') as HttpRequest['method'], path: new URL(url).pathname,
+        token: TEST_IDP.issue({ sub: 'u-box', tenantId: T, branchId: 'store-1' }), idempotencyKey: hdr['idempotency-key'],
+        body: init.body === undefined ? undefined : JSON.parse(String(init.body)) as unknown,
+      });
+      return new Response(JSON.stringify(res.body), { status: res.status });
+    }) as unknown as typeof globalThis.fetch;
+    const dir = await mkdtemp(join(tmpdir(), 'sre-late-answer-'));
+    dirs.push(dir);
+    const ready = await prepareTillBox({ dir, key: TEST_PACK_KEY, people: PEOPLE, pack: PACK });
+    vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+    vi.setSystemTime(ON_DAY_D);
+    const edge = (await startEdge({
+      EDGE_DATA_DIR: dir, EDGE_TENANT_ID: T, PACK_SIGNING_KEY: TEST_PACK_KEY, EDGE_CAPACITY_BYTES: '10485760', EDGE_LANE_PORT: '0',
+      EDGE_SCREEN_PORT: '0', EDGE_APPS_DIR: 'apps', CLOUD_API_URL: 'https://cloud.example.test', CLOUD_API_TOKEN: TEST_IDP.issue({ sub: 'u-box', tenantId: T, branchId: 'store-1' }), ...ready,
+    }, () => {}))!;
+    stops.push(() => edge.stop());
+    const t = bootPos({ laneId: 'lane-1', taxPercent: 0, lanePort: edge.lane!.port });
+    await signInTill(t, 'u-lanecash');
+    t.scan({ productId: 'P2', description: 'Rice 5kg', unitPriceMinor: 41_000, qty: 1 });
+    const upi = await t.startCardPayment('upi');
+    // The same day, the cashier records what the machine said for another attempt with no approval (today's flow).
+    t.newSale();
+    t.scan({ productId: 'P1', description: 'Ghee 1L', unitPriceMinor: 64_000, qty: 1 });
+    const sameDay = await t.startCardPayment('card');
+    expect(await t.answerCardPayment(sameDay.attemptId!, 'declined')).toMatchObject({ ok: true, state: 'declined' });
+
+    vi.setSystemTime(NEXT_MORNING);
+    await signInTill(t, 'u-lanecash');
+    expect(await t.answerCardPayment(upi.attemptId!, 'declined')).toMatchObject({ ok: false, refusedBecause: 'approval_required' });
+    const approval = await t.approveAtTill({ managerId: 'u-mgr', pin: pinOf('u-mgr'), kind: 'late_payment_answer', billRef: upi.attemptId!, valueMinor: 41_000, reason: 'machine slip shows declined' });
+    expect(await t.answerCardPayment(upi.attemptId!, 'declined', approval.approvalId)).toMatchObject({ ok: true, state: 'declined' });
+    expect((await edge.syncOnce!()).dead).toBe(0);
+    const l = (await h.request({ method: 'GET', path: '/v1/finance/payment-exceptions', userId: 'u-acct', tenantId: T })).body as { lateAnswers: { attemptId: string; outcome: string; answeredBy: string; approvedBy: string; tradingDay: string; storeId: string; flags: string[] }[] };
+    expect(l.lateAnswers).toEqual([expect.objectContaining({ attemptId: upi.attemptId, outcome: 'declined', answeredBy: 'u-lanecash', approvedBy: 'u-mgr', tradingDay: DAY_D, storeId: 'store-1', flags: [] })]);
+    // The day now closes (the relay is not trading the day owes the cloud), and the same answer re-sent records nothing twice.
+    expect(await edge.closeDay({ dayCloseId: 'dc-late', closedBy: 'u-mgr', closerPin: pinOf('u-mgr') })).toMatchObject({ closed: true });
+    const again = await h.request({ method: 'POST', path: `/v1/finance/payment-exceptions/${upi.attemptId!}/late-answer/synced`, userId: 'u-box', tenantId: T, idempotencyKey: `fresh-${randomUUID()}`, body: { ...l.lateAnswers[0], approvalId: 'apr-x', laneId: 'lane-1', billRef: 'b', kind: 'upi', amountMinor: 41_000, askedAt: 'x', answeredAt: 'y' } });
+    expect(again.body).toMatchObject({ alreadyRecorded: true });
+  }, 60_000);
 
   it('finance resolves an exception from the provider\'s record — an incomplete record with nothing in it is NOT a decline', async () => {
     const h = harness();

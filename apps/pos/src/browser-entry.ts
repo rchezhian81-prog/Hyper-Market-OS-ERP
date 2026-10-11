@@ -212,7 +212,7 @@ export function laneOperator(port: number = DEFAULT_LANE_PORT): TillOperatorPort
 }
 
 /** What a manager's approval at the till is for (ADR-0021): the kind, the bill (not for a no-receipt return) and the amount. */
-export type TillApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 'no_sale' | 'price_override';
+export type TillApprovalKind = 'refund' | 'no_receipt_return' | 'exchange_refund' | 'no_sale' | 'price_override' | 'late_payment_answer';
 export interface TillApprovalRequest {
   readonly managerId: string;
   readonly pin: string;
@@ -801,7 +801,8 @@ export function bootPos(config?: {
    */
   readonly startCardPayment: (kind: 'card' | 'upi', amountMinor?: number) => Promise<CardAttemptAnswer>;
   /** What the machine said, recorded on the store computer. On `approved`, pay with `tenderCardOrUpi({ ..., ref: attemptId })`. */
-  readonly answerCardPayment: (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer') => Promise<CardAttemptAnswer>;
+  /** OB-55: an answer for an attempt of an EARLIER trading day needs a manager's approval at this till (`approvalId`). */
+  readonly answerCardPayment: (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer', approvalId?: string) => Promise<CardAttemptAnswer>;
   /** Settle a payment that got no answer against the PROVIDER's record — never by hand. */
   readonly checkCardPayment: (attemptId: string) => Promise<CardAttemptAnswer>;
   /**
@@ -1229,8 +1230,8 @@ export function bootPos(config?: {
     if (amountMinor <= 0) return { ok: false, refusedBecause: 'nothing_to_pay', laneMessage: 'There is nothing to pay.' };
     return cardAnswer(await payments.ask({ attemptId: `PAY-${newRequestKey().slice(3)}`, billRef: session.billRef(), kind, amountMinor }));
   };
-  const answerCardPayment = async (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer'): Promise<CardAttemptAnswer> =>
-    cardAnswer(await payments.answer({ attemptId, outcome }));
+  const answerCardPayment = async (attemptId: string, outcome: 'approved' | 'declined' | 'no_answer', approvalId?: string): Promise<CardAttemptAnswer> =>
+    cardAnswer(await payments.answer({ attemptId, outcome, ...(approvalId === undefined ? {} : { approvalId }) }));
   const checkCardPayment = async (attemptId: string): Promise<CardAttemptAnswer> => cardAnswer(await payments.recover({ attemptId }));
 
   const abandonAtTill = async (billId: string, reason: string): Promise<HeldAnswer> => {

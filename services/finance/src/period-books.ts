@@ -20,8 +20,9 @@
 //   3. A PERIOD PROFIT AND LOSS FROM THE BOOKS. Every journal posted to the month, summed per account, each account read
 //      as income or expense by the accountant's account classes (a suggested set ships for the suggested mapping; the CA
 //      commits their own). An account in the month with no class is listed and the statement says it is incomplete —
-//      never silently left out. What the books do not yet carry is said, not invented (cost of goods sold: the stock
-//      ledger values every sale, but no cost-of-sales journal is posted until the CA chooses how — see `notInTheBooks`).
+//      never silently left out. What the books do not yet carry is said, not invented (cost of goods sold arrives with the
+//      month-end stock adjustment, OB-56 `stock-period.ts`; until it is posted `notInTheBooks` says so, and once it is the
+//      statement shows gross margin).
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
@@ -151,10 +152,21 @@ export interface ProfitAndLoss {
   readonly journals: number;
   /** What the books do not yet carry, in words — never a silent gap. */
   readonly notInTheBooks: readonly string[];
+  /**
+   * OB-56: once the month-end stock adjustment is posted to the month — sales revenue less cost of goods sold, and the
+   * margin as a share of revenue (basis points). `null` until it is posted (said in `notInTheBooks`).
+   */
+  readonly grossMargin: { readonly revenueMinor: number; readonly costOfSalesMinor: number; readonly grossMarginMinor: number; readonly marginBps: number | null } | null;
+}
+
+/** OB-56: which accounts are sales revenue and which is cost of goods sold — read from the accountant's posting map. */
+export interface MarginAccounts {
+  readonly revenueAccounts: readonly string[];
+  readonly costOfSalesAccount: string;
 }
 
 /** The month's P&L from its journals and the account classes. Pure. */
-export function profitAndLoss(period: string, journals: readonly JournalEntry[], classes: Readonly<Record<string, AccountClass>>): ProfitAndLoss {
+export function profitAndLoss(period: string, journals: readonly JournalEntry[], classes: Readonly<Record<string, AccountClass>>, margin?: MarginAccounts): ProfitAndLoss {
   const inMonth = journals.filter((j) => j.period === period);
   const net = new Map<string, number>(); // debit − credit per account
   for (const j of inMonth) for (const l of j.lines) net.set(l.accountCode, (net.get(l.accountCode) ?? 0) + l.debitMinor - l.creditMinor);
@@ -164,13 +176,21 @@ export function profitAndLoss(period: string, journals: readonly JournalEntry[],
   const unclassified = accounts.filter((a) => classes[a] === undefined).map((a) => ({ account: a, netDebitMinor: net.get(a) ?? 0 }));
   const totalIncomeMinor = income.reduce((s, x) => s + x.amountMinor, 0);
   const totalExpensesMinor = expenses.reduce((s, x) => s + x.amountMinor, 0);
-  const hasCostOfSales = accounts.some((a) => a === 'cost_of_goods_sold');
+  // OB-56 "A": the books carry stock by a month-end adjustment — gross margin is shown once that journal is in the month.
+  const adjusted = inMonth.some((j) => j.entryId === `stock-period:${period}`);
+  const costAccount = margin?.costOfSalesAccount ?? 'cost_of_goods_sold';
+  const revenueAccounts = margin?.revenueAccounts ?? ['sales_revenue'];
+  const revenueMinor = revenueAccounts.reduce((n, a) => n - (net.get(a) ?? 0), 0);
+  const costOfSalesMinor = net.get(costAccount) ?? 0;
   return {
     period, income, expenses, totalIncomeMinor, totalExpensesMinor, netMinor: totalIncomeMinor - totalExpensesMinor,
     unclassified, complete: unclassified.length === 0, journals: inMonth.length,
-    notInTheBooks: hasCostOfSales ? [] : [
-      'Cost of goods sold: the stock ledger values every sale at weighted-average cost (the margin on the Today screen and in head office profitability), but no cost-of-sales or purchase-to-inventory journal is posted to the books yet — how the books carry inventory (perpetual journals or a period-end stock adjustment) is the CA\'s decision. Until then this statement is sales and the posted gains, losses and write-offs, not gross margin.',
+    notInTheBooks: adjusted ? [] : [
+      `Cost of goods sold: the month-end stock adjustment for ${period} is not posted yet (POST /v1/finance/periods/${period}/stock-adjustment, OB-56). Until it is, this statement is sales and the posted gains, losses and write-offs, not gross margin.`,
     ],
+    grossMargin: adjusted
+      ? { revenueMinor, costOfSalesMinor, grossMarginMinor: revenueMinor - costOfSalesMinor, marginBps: revenueMinor === 0 ? null : Math.round(((revenueMinor - costOfSalesMinor) * 10_000) / revenueMinor) }
+      : null,
   };
 }
 
@@ -330,8 +350,14 @@ export function periodBooksRoutes(deps: PeriodBooksDeps): readonly Route[] {
             nextSafeAction: 'The accountant defines them first (PUT /v1/finance/account-classes; GET it for a suggested set). Nothing was changed.',
           });
         }
-        const [journals, states] = await Promise.all([deps.journals(ctx.tenantId), deps.periodStates(ctx.tenantId)]);
-        const pl = profitAndLoss(period, journals, classes);
+        const [journals, states, map] = await Promise.all([deps.journals(ctx.tenantId), deps.periodStates(ctx.tenantId), deps.postingMap(ctx.tenantId)]);
+        // OB-56: revenue is what the accountant's sale rule credits as net; cost of sales what the stock rule debits.
+        const saleRevenue = map?.rules.find((r) => r.kind === 'sale')?.legs.filter((l) => l.side === 'credit' && l.component === 'net').map((l) => l.account);
+        const costOfSales = map?.rules.find((r) => r.kind === 'stock_period_adjustment')?.legs.find((l) => l.component === 'cost_of_sales')?.account;
+        const pl = profitAndLoss(period, journals, classes, {
+          revenueAccounts: saleRevenue !== undefined && saleRevenue.length > 0 ? saleRevenue : ['sales_revenue'],
+          costOfSalesAccount: costOfSales ?? 'cost_of_goods_sold',
+        });
         return { status: 200, body: { ...pl, periodState: states.get(period) ?? 'open', asAt: deps.now() } };
       },
     },

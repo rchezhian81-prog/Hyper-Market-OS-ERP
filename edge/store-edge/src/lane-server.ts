@@ -218,7 +218,7 @@ export type LaneTillActivityHandler = (input: {
 /** The payment-attempt register this socket asks (`PaymentAttempts`). */
 export interface LanePaymentAttemptsPort {
   ask(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly billRef: unknown; readonly kind: unknown; readonly amountMinor: unknown }): Promise<AttemptAnswer>;
-  answer(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown }): Promise<AttemptAnswer>;
+  answer(input: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown; readonly approvalId?: string }): Promise<AttemptAnswer>;
   recover(input: { readonly laneId: string; readonly attemptId: unknown }): Promise<AttemptAnswer>;
   checkTenders(input: { readonly laneId: string; readonly saleId: string; readonly tenders: unknown }): TenderCheck;
   status(laneId: string): { readonly unresolved: readonly Attempt[]; readonly paidWithoutSale: readonly Attempt[]; readonly owedToCustomers: readonly Attempt[] };
@@ -779,7 +779,7 @@ export function startLaneServer(input: {
           const out = pathname === LANE_PAYMENTS_ROUTE
             ? await payments.ask({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], billRef: b['billRef'], kind: b['kind'], amountMinor: b['amountMinor'] })
             : pathname === LANE_PAYMENTS_ANSWER_ROUTE
-              ? await payments.answer({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], outcome: b['outcome'] })
+              ? await payments.answer({ laneId: ops.laneId, by: check.userId, attemptId: b['attemptId'], outcome: b['outcome'], ...(typeof b['approvalId'] === 'string' ? { approvalId: b['approvalId'] } : {}) })
               : await payments.recover({ laneId: ops.laneId, attemptId: b['attemptId'] });
           send(res, 200, out, { ...cors, 'cache-control': 'no-store' });
         } catch (e) {

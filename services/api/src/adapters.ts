@@ -4695,7 +4695,7 @@ const APPROVAL_DECISIONS_STREAM = streamName(STREAM.identity, 'approval-decision
  * The permissions a user genuinely holds in a tenant — from their grants and the role catalogue, never from a body.
  * `undefined` when they hold no grant at all (an unknown name), which the synced routes record as its own flag (§28).
  */
-async function permissionsHeldBy(store: EventStore, tenantId: string, userId: string): Promise<readonly string[] | undefined> {
+export async function permissionsHeldBy(store: EventStore, tenantId: string, userId: string): Promise<readonly string[] | undefined> {
   const grants = await effectiveGrants(store, tenantId);
   const roleIds = new Set(grants.filter((g) => g.userId === userId).map((g) => g.roleId));
   if (roleIds.size === 0) return undefined;

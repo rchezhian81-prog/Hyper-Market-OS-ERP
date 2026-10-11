@@ -126,8 +126,21 @@ describe('D04-FR-02 / PF-06 — a card or UPI payment with no final answer holds
     const today = await t2.startCardPayment('card');
     expect(await t2.answerCardPayment(today.attemptId!, 'no_answer')).toMatchObject({ ok: true });
 
-    // The cashier records what the machine said for the UPI request (declined). Now day D closes and locks.
-    expect(await t2.answerCardPayment(upi.attemptId!, 'declined')).toMatchObject({ ok: true, state: 'declined' });
+    // The cashier alone cannot lift yesterday's hold by typing what the machine said (PF-06 · P-04): an answer for an
+    // EARLIER trading day's attempt needs a manager's one-use approval at this till for exactly that attempt.
+    expect(await t2.answerCardPayment(upi.attemptId!, 'declined')).toMatchObject({ ok: false, refusedBecause: 'approval_required' });
+    expect(await edge.closeDay({ dayCloseId: `dc-${DAY_D}`, closedBy: 'u-mgr', closerPin: pinOf('u-mgr') })).toMatchObject({ closed: false });
+    const approval = await t2.approveAtTill({ managerId: 'u-mgr', pin: pinOf('u-mgr'), kind: 'late_payment_answer', billRef: upi.attemptId!, valueMinor: 41_000, reason: 'machine slip shows declined' });
+    expect(approval).toMatchObject({ approved: true });
+    // An approval for another amount does not fit; the right one is spent once by this answer.
+    expect(await t2.answerCardPayment(upi.attemptId!, 'declined', 'apr-not-issued-here')).toMatchObject({ ok: false, refusedBecause: 'approval_unknown' });
+    expect(await t2.answerCardPayment(upi.attemptId!, 'declined', approval.approvalId)).toMatchObject({ ok: true, state: 'declined' });
+    // It is relayed to head office as a PERSON's answer on a manager's approval — on the box's day-close relay log.
+    const late = (await readLog(join(dir, 'day-close.log'))).filter((r) => r.ok && r.record.includes('lateAnswerAttemptId')).map((r) => JSON.parse(r.record) as Record<string, unknown>);
+    expect(late).toEqual([expect.objectContaining({ attemptId: upi.attemptId, outcome: 'declined', answeredBy: 'u-lanecash', approvedBy: 'u-mgr', tradingDay: DAY_D })]);
+    expect(edge.dayCloseOutbox.pending().map((i) => i.event.type)).toContain('LatePaymentAnswerRecorded');
+    // Today's own attempts keep today's flow: no approval needed for a same-day answer.
+    // Now day D closes and locks.
     const closed = await edge.closeDay({ dayCloseId: `dc-${DAY_D}`, closedBy: 'u-mgr', closerPin: pinOf('u-mgr') });
     expect(closed, JSON.stringify(closed)).toMatchObject({ closed: true, tradingDay: DAY_D, locked: true });
     // The manager list still shows TODAY's open payment — it will hold tonight's close.

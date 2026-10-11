@@ -161,6 +161,23 @@ function dayCloseEventFrom(record: string, index: number): DomainEvent | undefin
   const p = (parsed !== null && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
   const dayCloseId = typeof p['dayCloseId'] === 'string' && p['dayCloseId'] !== '' ? (p['dayCloseId'] as string) : `record-${index}`;
 
+  // OB-55 / PF-06: a machine answer typed in late for an earlier day's attempt, on a manager's approval — relayed once.
+  const lateAttemptId = p['lateAnswerAttemptId'];
+  if (typeof lateAttemptId === 'string' && lateAttemptId !== '') {
+    return makeEvent({
+      id: `edge-late-payment-answer-${lateAttemptId}`,
+      type: 'LatePaymentAnswerRecorded',
+      occurredAt: typeof p['answeredAt'] === 'string' ? (p['answeredAt'] as string) : new Date().toISOString(),
+      idempotencyKey: `late-payment-answer:${lateAttemptId}`,
+      source: 'edge/box',
+      payload: {
+        attemptId: lateAttemptId, laneId: p['laneId'], billRef: p['billRef'], kind: p['kind'], amountMinor: p['amountMinor'], askedAt: p['askedAt'],
+        tradingDay: p['tradingDay'], outcome: p['outcome'], answeredBy: p['answeredBy'], approvedBy: p['approvedBy'], approvalId: p['approvalId'],
+        answeredAt: p['answeredAt'], storeId: p['storeId'],
+      },
+    });
+  }
+
   // OB-55: the provider's later answer on a payment a close carried forward — relayed once per payment, keyed on it.
   const resolvedAttemptId = p['resolvedAttemptId'];
   if (typeof resolvedAttemptId === 'string' && resolvedAttemptId !== '') {
@@ -829,8 +846,12 @@ export async function startEdge(
   const deviceEventsOutbox = deviceEventsPipeline.outbox;
   const tillCashOutbox = tillCashPipeline.outbox;
   // LIVE unsent across ALL pipelines — the day close's gate, and (PA-04) what this box tells head office it still holds.
+  // OB-55 / PF-06: a payment exception's relay (a late answer, a carried payment's provider answer) rides the day-close
+  // queue AHEAD of the next close event, so it reaches head office first; it is not trading the day still owes the cloud,
+  // and counting it would stop an offline store closing (P-01). It stays visible on the queue and is relayed once.
+  const EXCEPTION_RELAYS = new Set(['LatePaymentAnswerRecorded', 'CarriedPaymentResolved']);
   const unsentAcrossAllQueues = (): number => outbox.pending().length + returnsOutbox.pending().length
-    + completionsOutbox.pending().length + dayCloseOutbox.pending().length + concessionTagsOutbox.pending().length
+    + completionsOutbox.pending().length + dayCloseOutbox.pending().filter((i) => !EXCEPTION_RELAYS.has(i.event.type)).length + concessionTagsOutbox.pending().length
     + deviceEventsOutbox.pending().length + tillCashOutbox.pending().length;
 
   // Every device-event key this box has EVER taken, rebuilt from the whole durable log — not from the outbox,
@@ -1349,6 +1370,32 @@ export async function startEdge(
     }
     return out;
   };
+  // OB-55 / PF-06 (P-04): the machine's answer typed in for a card/UPI attempt of an EARLIER trading day lifts the day-close
+  // hold, so it is not one cashier's act: it needs a manager's one-use approval at this till for exactly that attempt and
+  // amount (spent here), and it is relayed to head office as a person's answer — never mistaken for the provider's. An
+  // answer on the same trading day keeps today's flow.
+  const answerGuarded = async (pa: PaymentAttempts, i: { readonly laneId: string; readonly by: string; readonly attemptId: unknown; readonly outcome: unknown; readonly approvalId?: string }): ReturnType<PaymentAttempts['answer']> => {
+    const a = pa.get(i.attemptId);
+    const rule = packCutoff(pack);
+    const late = a !== undefined && a.state === 'asked' && a.laneId === i.laneId && (i.outcome === 'approved' || i.outcome === 'declined')
+      && tradingDate(wallClockIn(a.askedAt), rule) < tradingDate(wallClockIn(new Date().toISOString()), rule);
+    if (!late || a === undefined) return pa.answer(i);
+    if (tillApprovals === null) return { ok: false, refusedBecause: 'approval_required', laneMessage: 'This payment was asked on an earlier day. Its answer needs a manager\'s approval, and this store computer cannot take one. Nothing was recorded.', attempt: a };
+    const spent = await tillApprovals.spendOverride({ approvalId: i.approvalId, kind: 'late_payment_answer', billRef: a.attemptId, valueMinor: a.amountMinor, requestedBy: i.by, laneId: i.laneId, activityId: `late-answer:${a.attemptId}` });
+    if (!spent.ok) return { ok: false, refusedBecause: spent.refusedBecause, laneMessage: `This payment was asked on an earlier trading day, so the machine's answer needs a manager's approval for it. ${spent.laneMessage}`, attempt: a };
+    const out = await pa.answer(i);
+    if (out.ok && out.attempt.state === i.outcome) {
+      const record = JSON.stringify({
+        lateAnswerAttemptId: a.attemptId, attemptId: a.attemptId, laneId: a.laneId, billRef: a.billRef, kind: a.kind, amountMinor: a.amountMinor,
+        askedAt: a.askedAt, tradingDay: tradingDate(wallClockIn(a.askedAt), rule), outcome: i.outcome, answeredBy: i.by,
+        approvedBy: spent.stamp!.approvedBy, approvalId: spent.stamp!.approvalId, answeredAt: out.attempt.answeredAt ?? new Date().toISOString(), storeId: storeIdOfThisBox(),
+      });
+      await dayCloseLog.append(record);
+      const event = dayCloseEventFrom(record, 0);
+      if (event !== undefined) dayCloseOutbox.enqueue(event);
+    }
+    return out;
+  };
   const lane = lanePort === undefined ? null : await startLaneServer({
     node,
     port: Number(lanePort),
@@ -1369,7 +1416,7 @@ export async function startEdge(
     ...(payments === null ? {} : {
       payments: {
         ask: (i) => payments.ask(i),
-        answer: (i) => payments.answer(i),
+        answer: (i) => answerGuarded(payments, i),
         recover: (i) => recoverCarrying(payments, i),
         checkTenders: (i) => payments.checkTenders(i),
         status: (laneId) => payments.status(laneId),
