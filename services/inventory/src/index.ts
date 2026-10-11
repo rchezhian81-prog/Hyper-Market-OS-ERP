@@ -58,7 +58,10 @@ export type MovementKind =
   | 'consumed_in_production'
   /** Batch 2 · FUL-01: a finished production batch released by quality (production.ts) — on-hand at the run's own
    *  output unit cost. Only the production release posts it. */
-  | 'produced';
+  | 'produced'
+  /** OB-44 "A": an opening receipt reversed inside the cutover window — the same quantity out at the receipt's own cost
+   *  (never cost of goods sold). Only the opening-reversal route posts it, with a named person and a second approver. */
+  | 'opening_reversed';
 
 /**
  * Who owns a lot of stock on the store's shelves (M27-FR-02, M08 ownership field). Absent on a
@@ -71,11 +74,13 @@ export type StockOwnership = 'own' | 'concession' | 'consignment' | 'customer_pr
 /** What each kind does to on-hand. Declared, never inferred from a sign on the quantity. */
 export const EFFECT_ON_HAND: Readonly<Record<MovementKind, 1 | -1>> = {
   received: 1, returned: 1, transferred_in: 1, counted: 1, adjusted: 1, produced: 1,
-  sold: -1, transferred_out: -1, wasted: -1, returned_to_supplier: -1, consumed_in_production: -1,
+  sold: -1, transferred_out: -1, wasted: -1, returned_to_supplier: -1, consumed_in_production: -1, opening_reversed: -1,
 };
 
 /** Batch 2 · FUL-01: the kinds only the production routes post — never accepted on the plain movements route. */
 export const PRODUCTION_ONLY_KINDS: readonly MovementKind[] = ['consumed_in_production', 'produced'];
+/** OB-44: the kind only the cutover opening-reversal posts — never accepted on the plain movements route. */
+export const REVERSAL_ONLY_KINDS: readonly MovementKind[] = ['opening_reversed'];
 
 /**
  * An issue whose VALUE moves on rather than being spent (valuation's `isTransferOut`): stock sent to another of our own
@@ -441,6 +446,14 @@ export function inventoryRoutes(deps: InventoryDeps): readonly Route[] {
             whatHappened: `A "${m.kind}" movement is posted only by a committed production run or its quality release — never typed here.`,
             wasItSaved: 'not_saved',
             nextSafeAction: 'Commit the run at POST /v1/production/runs/:runId and release it at …/release. Nothing was appended here.',
+          });
+        }
+        if ((REVERSAL_ONLY_KINDS as readonly string[]).includes(m.kind)) {
+          throw apiError(422, {
+            code: 'opening_reversal_uses_its_own_route',
+            whatHappened: 'An opening receipt is reversed only inside the cutover window, by a named person with a second approver — never typed here.',
+            wasItSaved: 'not_saved',
+            nextSafeAction: 'Use POST /v1/migration/opening-reversals/:loadId and its approval. Nothing was appended here.',
           });
         }
         // PA-01-r1: stock moves only at a location inside the caller's branches — refused by name, nothing appended.

@@ -13,7 +13,9 @@
 import { postJournal, type PostingInput, type PostingMap, type PostingRule, type JournalEntry as PostedJournal } from './posting';
 import type { CurrencyCode } from '../../contracts/src/money';
 
-export type PayablesKind = 'supplier_invoice' | 'supplier_invoice_reversal' | 'supplier_debit_note' | 'supplier_payment' | 'supplier_opening_balance';
+export type PayablesKind = 'supplier_invoice' | 'supplier_invoice_reversal' | 'supplier_debit_note' | 'supplier_payment' | 'supplier_opening_balance'
+  /** OB-44: a signed opening reversed inside the cutover window — the posting undone by its own compensating journal. */
+  | 'supplier_opening_reversal';
 export type PayablesSourceKind = 'supplier_invoice' | 'supplier_debit_note' | 'supplier_payment' | 'supplier_opening_balance';
 
 /** The supplier account as the payables posting reads it — a structural subset of the purchase service's statement. */
@@ -47,6 +49,8 @@ export interface PayablesAccount {
     readonly openingId: string;
     readonly amountMinor: number;
     readonly signed: boolean;
+    /** OB-44: reversed inside the cutover window (a named person and a second approver) — no longer owed; never erased. */
+    readonly reversed?: boolean;
     /** The date the opening books are true at (YYYY-MM-DD) — the period it posts to. */
     readonly openingDate: string;
   }[];
@@ -138,6 +142,14 @@ export const PAYABLES_POSTING_RULES: readonly PostingRule[] = Object.freeze([
       { account: 'supplier_payable', side: 'credit', component: 'amount' },
     ],
   },
+  {
+    // OB-44 (owner, 11 Oct 2026): an opening reversed inside the cutover window — the opening's own journal, undone.
+    kind: 'supplier_opening_reversal',
+    legs: [
+      { account: 'supplier_payable', side: 'debit', component: 'amount' },
+      { account: 'opening_balances', side: 'credit', component: 'amount' },
+    ],
+  },
 ]);
 
 /** What the ledger already holds for a source: accruals less reversals for an invoice; the amount for a debit note or a payment. */
@@ -146,7 +158,7 @@ export function ledgerHolds(prior: readonly PostedPayable[], sourceKind: Payable
   for (const p of prior) {
     if (p.sourceKind !== sourceKind || p.sourceId !== sourceId) continue;
     if (p.kind === 'supplier_invoice') held += p.components['payable'] ?? 0;
-    else if (p.kind === 'supplier_invoice_reversal') held -= p.components['amount'] ?? 0;
+    else if (p.kind === 'supplier_invoice_reversal' || p.kind === 'supplier_opening_reversal') held -= p.components['amount'] ?? 0;
     else held += p.components['amount'] ?? 0;
   }
   return held;
@@ -213,6 +225,17 @@ export function planPayablesPostings(accounts: readonly PayablesAccount[], prior
     }
     for (const op of a.openings ?? []) {
       if (!op.signed) continue; // an unsigned opening is shown, never owed and never posted
+      if (op.reversed === true) {
+        // OB-44: reversed in the cutover window — whatever the ledger still holds for it is taken back out, once.
+        const held = ledgerHolds(prior, 'supplier_opening_balance', op.openingId);
+        if (held > 0) {
+          out.push({
+            kind: 'supplier_opening_reversal', sourceKind: 'supplier_opening_balance', sourceId: op.openingId, supplierId: a.supplierId,
+            documentDate: op.openingDate, components: { amount: held },
+          });
+        }
+        continue;
+      }
       const delta = op.amountMinor - ledgerHolds(prior, 'supplier_opening_balance', op.openingId);
       if (delta <= 0) continue; // an opening is a fact recorded once, at its amount — it never grows
       out.push({
@@ -332,7 +355,7 @@ export function reconcilePayables(
     const registerOwedMinor = a.invoices.filter((i) => i.matched).reduce((s, i) => s + i.payableMinor, 0)
       - a.debitNotes.reduce((s, d) => s + d.valueMinor, 0)
       - a.payments.reduce((s, p) => s + p.amountMinor, 0)
-      + (a.openings ?? []).filter((o) => o.signed).reduce((s, o) => s + o.amountMinor, 0);
+      + (a.openings ?? []).filter((o) => o.signed && o.reversed !== true).reduce((s, o) => s + o.amountMinor, 0);
     const ledgerOwedMinor = control === undefined ? 0 : journals
       .filter((j) => j.supplierId === a.supplierId)
       .flatMap((j) => j.lines)

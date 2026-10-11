@@ -338,14 +338,14 @@ export function foldSupplierAccount(input: SupplierAccountInput): SupplierAccoun
   const payments = (input.payments ?? []).filter((p) => p.supplierId === input.supplierId);
   const paidMinor = payments.reduce((s, p) => s + p.amountMinor, 0);
   const openings = (input.openings ?? []).filter((o) => o.supplierId === input.supplierId);
-  const openingMinor = openings.filter((o) => o.signed).reduce((s, o) => s + o.amountMinor, 0);
+  const openingMinor = openings.filter((o) => o.signed && o.reversed !== true).reduce((s, o) => s + o.amountMinor, 0); // OB-44: a reversed opening is not owed
   return {
     supplierId: input.supplierId, currency: 'INR',
     invoices, debitNotes, refusedNotOwed, pendingSupplierReturns, pendingLineReturns, payments, openings,
     totals: {
       invoicedMinor: invoices.reduce((s, i) => s + i.invoicedMinor, 0),
       accruedMinor, withheldMinor: invoices.reduce((s, i) => s + i.withheldMinor, 0),
-      openingMinor, openingPendingSignOffMinor: openings.filter((o) => !o.signed).reduce((s, o) => s + o.amountMinor, 0),
+      openingMinor, openingPendingSignOffMinor: openings.filter((o) => !o.signed && o.reversed !== true).reduce((s, o) => s + o.amountMinor, 0),
       debitNotesMinor, paidMinor, owedMinor: accruedMinor + openingMinor - debitNotesMinor - paidMinor,
       unmatchedInvoices: invoices.filter((i) => !i.matched).length,
       blockedInvoices: invoices.filter((i) => i.blocked).length,

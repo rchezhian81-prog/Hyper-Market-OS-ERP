@@ -79,6 +79,8 @@ export interface AccountOpeningsDeps {
 /** The clearing account sub-ledger openings post against (payables.ts) — it nets to nothing once every opening is in. */
 export const OPENING_CLEARING_ACCOUNT = 'opening_balances';
 export const openingEntryId = (loadId: string): string => `opening-${loadId}`;
+/** OB-44: the compensating journal that undoes a load's opening inside the cutover window — its own entry, never an edit. */
+export const openingReversalEntryId = (loadId: string): string => `opening-${loadId}-reversal`;
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isDate = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00.000Z`));
@@ -281,14 +283,17 @@ export function accountOpeningsRoutes(deps: AccountOpeningsDeps): readonly Route
         const signOff = (await deps.signOffs(t)).find((s) => s.loadId === loadId) ?? null;
         const all = await deps.journals(t);
         const opening = all.filter((j) => j.entryId === openingEntryId(loadId));
-        const ledger = balances(opening);
+        // OB-44: once the load is reversed in the cutover window, its compensating journal sits beside it and the two net out.
+        const reversal = all.filter((j) => j.entryId === openingReversalEntryId(loadId));
+        const reversed = reversal.length > 0;
+        const ledger = balances([...opening, ...reversal]);
         // What the LEDGER holds, per account — debit and credit as the trial balance prints them.
         const ledgerLines = [...ledger].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
           .map(([accountCode, net]) => ({ accountCode, debitMinor: net > 0 ? net : 0, creditMinor: net < 0 ? -net : 0 }));
         const checks: AccountOpeningCheck[] = [];
         if (signOff !== null) {
           for (const l of rec.lines) {
-            const expected = l.debitMinor - l.creditMinor;
+            const expected = reversed ? 0 : l.debitMinor - l.creditMinor;
             const actual = ledger.get(l.accountCode) ?? null;
             checks.push({ check: 'account', key: l.accountCode, expected, actual, agrees: actual === expected || (expected === 0 && actual === null) });
           }
@@ -297,8 +302,10 @@ export function accountOpeningsRoutes(deps: AccountOpeningsDeps): readonly Route
           }
           const dr = ledgerLines.reduce((s, l) => s + l.debitMinor, 0);
           const cr = ledgerLines.reduce((s, l) => s + l.creditMinor, 0);
-          checks.push({ check: 'total_debit', key: 'debits', expected: signOff.oldSystemDebitMinor, actual: dr, agrees: dr === signOff.oldSystemDebitMinor });
-          checks.push({ check: 'total_credit', key: 'credits', expected: signOff.oldSystemCreditMinor, actual: cr, agrees: cr === signOff.oldSystemCreditMinor });
+          const expDr = reversed ? 0 : signOff.oldSystemDebitMinor;
+          const expCr = reversed ? 0 : signOff.oldSystemCreditMinor;
+          checks.push({ check: 'total_debit', key: 'debits', expected: expDr, actual: dr, agrees: dr === expDr });
+          checks.push({ check: 'total_credit', key: 'credits', expected: expCr, actual: cr, agrees: cr === expCr });
           checks.push({ check: 'old_system_totals', key: 'accounts', expected: signOff.accountCount, actual: rec.lines.length, agrees: signOff.accountCount === rec.lines.length });
         }
         // The clearing account across EVERY journal: sub-ledger openings (supplier bills) post against it; the trial balance
@@ -311,7 +318,7 @@ export function accountOpeningsRoutes(deps: AccountOpeningsDeps): readonly Route
         return {
           status: 200,
           body: {
-            loadId, openings: rec, signOff, signed: signOff !== null, posted: opening.length > 0,
+            loadId, openings: rec, signOff, signed: signOff !== null, posted: opening.length > 0, reversed,
             ledger: ledgerLines, checks, differences, agrees: signOff !== null && opening.length > 0 && differences.length === 0, asAt: deps.now(),
           },
         };

@@ -63,6 +63,18 @@ export interface AccountOpening extends SupplierOpeningBalance {
   readonly signed: boolean;
   readonly signedBy: string | null;
   readonly signedAt: string | null;
+  /** OB-44: reversed inside the cutover window — shown, never owed, never erased. */
+  readonly reversed?: boolean;
+}
+
+/** OB-44 "A": a load's opening bill reversed inside the cutover window by a named person with a second approver. Never edited. */
+export interface SupplierOpeningReversal {
+  readonly openingId: string;
+  readonly loadId: string;
+  readonly reversalId: string;
+  readonly requestedBy: string;
+  readonly approvedBy: string;
+  readonly at: string;
 }
 
 export interface SupplierOpeningDeps {
@@ -74,17 +86,20 @@ export interface SupplierOpeningDeps {
   readonly signOffs: (tenantId: string) => Promise<readonly SupplierOpeningSignOff[]> | readonly SupplierOpeningSignOff[];
   /** Append the sign-off; resolve the sign-off that STANDS for the load (another signer's, when theirs landed first). */
   readonly recordSignOff: (tenantId: string, signOff: SupplierOpeningSignOff) => Promise<SupplierOpeningSignOff | void> | SupplierOpeningSignOff | void;
+  /** OB-44: the openings reversed inside the cutover window. Optional on a bare stub. */
+  readonly reversals?: (tenantId: string) => Promise<readonly SupplierOpeningReversal[]> | readonly SupplierOpeningReversal[];
   readonly recordAudit?: (tenantId: string, entry: AuditEntry) => Promise<unknown> | void;
   readonly now: () => string;
 }
 
 /** The openings with their signed state — the one fold the account, the list and the posting all read. Pure. */
-export function openingsWithSignOff(openings: readonly SupplierOpeningBalance[], signOffs: readonly SupplierOpeningSignOff[]): readonly AccountOpening[] {
+export function openingsWithSignOff(openings: readonly SupplierOpeningBalance[], signOffs: readonly SupplierOpeningSignOff[], reversals: readonly SupplierOpeningReversal[] = []): readonly AccountOpening[] {
   const signedBy = new Map<string, SupplierOpeningSignOff>();
   for (const s of signOffs) for (const id of s.openingIds) if (!signedBy.has(id)) signedBy.set(id, s);
+  const reversed = new Set(reversals.map((r) => r.openingId));
   return openings.map((o) => {
     const s = signedBy.get(o.openingId);
-    return { ...o, signed: s !== undefined, signedBy: s?.signedBy ?? null, signedAt: s?.signedAt ?? null };
+    return { ...o, signed: s !== undefined, signedBy: s?.signedBy ?? null, signedAt: s?.signedAt ?? null, ...(reversed.has(o.openingId) ? { reversed: true } : {}) };
   });
 }
 
@@ -230,9 +245,9 @@ export function supplierOpeningRoutes(deps: SupplierOpeningDeps): readonly Route
         const loadId = ctx.query['loadId'];
         const supplierId = ctx.query['supplierId'];
         const [openings, signOffs] = await Promise.all([deps.openings(ctx.tenantId), deps.signOffs(ctx.tenantId)]);
-        const rows = openingsWithSignOff(openings, signOffs)
+        const rows = openingsWithSignOff(openings, signOffs, deps.reversals === undefined ? [] : await deps.reversals(ctx.tenantId))
           .filter((o) => (loadId === undefined || o.loadId === loadId) && (supplierId === undefined || o.supplierId === supplierId));
-        const signedMinor = rows.filter((o) => o.signed).reduce((s, o) => s + o.amountMinor, 0);
+        const signedMinor = rows.filter((o) => o.signed && o.reversed !== true).reduce((s, o) => s + o.amountMinor, 0);
         const pendingMinor = rows.filter((o) => !o.signed).reduce((s, o) => s + o.amountMinor, 0);
         return {
           status: 200,

@@ -163,7 +163,6 @@ async function expandPackedLines(deps: PurchaseOrderDeps, tenantId: string, raw:
       });
     }
     let converted;
-    const per = normaliseUom(hierarchy.baseUom) ?? hierarchy.baseUom;
     try {
       converted = unitCostFromPackCost(hierarchy, pack['level'], packCost['minor'] as number);
     } catch (err) {
