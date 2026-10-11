@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto';
 import type { EventStore } from '../../../packages/persistence/src/event-store';
 import type { BoundStoreGuard, Route } from '../../kernel/src/index';
-import { judgeBoxRequest, storeReferencesIn, storeStampFor, STORE_COMPUTER_ROLE } from '../../platform/src/store-computer-identity';
+import { classifyReferences, judgeBoxRequest, storeReferencesIn, storeStampFor, STORE_COMPUTER_ROLE } from '../../platform/src/store-computer-identity';
 import { storeComputerRefusalsAdapter, storeOfLocationResolver, STREAM, streamName } from './adapters';
 import { makeEvent } from '../../../packages/contracts/src/event';
 
@@ -54,7 +54,7 @@ export function storeComputerBinding(input: { readonly store: EventStore; readon
     if (grants.length === 0) return { ok: true }; // not a store computer — nothing to judge
     // The stores its store_computer grants NAME — a tenant-wide grant names none (it never stands for "every store").
     const grantedStores = [...new Set(grants.flatMap((g) => (g.branchScope === 'all' ? [] : g.branchScope)))];
-    const references = storeReferencesIn(request);
+    const references = classifyReferences(request.routePath, storeReferencesIn(request));
     const placing = references.length === 0 ? { storeOf: (s: string) => s, knownStores: new Set<string>() } : await storeOfLocationResolver(input, principal.tenantId);
     const verdict = judgeBoxRequest({ credentialStore: principal.branchId, grantedStores, references, ...placing });
     if (verdict.ok) {

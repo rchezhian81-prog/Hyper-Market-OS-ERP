@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { apiHarness, TEST_IDP, type ApiHarness } from '../support/api-harness';
 import { startRealCloud, type RealCloud } from '../support/real-store';
 import type { HttpRequest } from '../../services/kernel/src/index';
-import { storeStampFor } from '../../services/platform/src/store-computer-identity';
+import { storeStampFor, classifyReferences } from '../../services/platform/src/store-computer-identity';
 
 /**
  * **OB-54 round 10 (hard rule #10): a record a store computer relays that names NO store is stamped with the store its
@@ -163,6 +163,10 @@ describe('OB-54 round 10 — the stamp rule itself', () => {
     // A route with no store field: attributed to the store, the body left exactly as sealed.
     expect(storeStampFor({ method: 'POST', routePath: '/v1/approvals/decisions/:id/synced', body: { id: 'a' }, credentialStore: SA, references: [] })).toEqual({ kind: 'attributed' });
     expect(storeStampFor({ method: 'GET', routePath: '/v1/sales', body: undefined, credentialStore: SA, references: [] })).toEqual({ kind: 'none' });
+    // A family's own store field names a STORE (an unknown code there is refused); a shelf or bin field names a location.
+    expect(classifyReferences('/v1/sales', [{ field: 'body.locationId', value: 'X' }, { field: 'body.lines[0].locationId', value: 'Y' }, { field: 'body.storeId', value: 'Z' }]).map((r) => r.names))
+      .toEqual(['store', 'location', 'store']);
+    expect(classifyReferences('/v1/merchandising/shelf-counts/:countId/synced', [{ field: 'body.locationId', value: 'loc1' }]).map((r) => r.names)).toEqual(['location']);
   });
 });
 

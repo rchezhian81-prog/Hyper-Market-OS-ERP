@@ -59,8 +59,25 @@ const BODY_STORE_KEYS = new Set([
   'storeId', 'branchId', 'locationId', 'warehouseId', 'fromLocationId', 'toLocationId', 'foundAtLocationId', 'backStoreId',
 ]);
 
-/** One store reference found in a request: where, and the value (a store, or a location to be placed in one). */
-export interface StoreReference { readonly field: string; readonly value: string }
+/**
+ * One store reference found in a request: where, and the value (a store, or a location to be placed in one). `names`:
+ * 'store' when the field names a STORE outright (storeId, branchId, warehouseId, backStoreId, or the field a family is
+ * placed by — `STORE_STAMP_FIELD`); 'location' when it names a place that may be a shelf or bin inside a store.
+ */
+export interface StoreReference { readonly field: string; readonly value: string; readonly names?: 'store' | 'location' }
+
+/** Body keys that name a store outright (the rest of BODY_STORE_KEYS name a location that may be a shelf or a bin). */
+const STORE_NAMING_KEYS = new Set(['storeId', 'branchId', 'warehouseId', 'backStoreId']);
+
+/** Mark each reference as naming a store or a location, for this route (its own store field names a store). */
+export function classifyReferences(routePath: string, references: readonly StoreReference[]): readonly StoreReference[] {
+  const own = STORE_STAMP_FIELD[routePath];
+  return references.map((r) => {
+    const key = r.field.split('.').pop()!.replace(/\[\d+\]$/, '');
+    const isStore = r.field.startsWith('path.') || r.field.startsWith('query.') || STORE_NAMING_KEYS.has(key) || (own !== undefined && r.field === `body.${own}`);
+    return { ...r, names: isStore ? 'store' as const : 'location' as const };
+  });
+}
 
 /** Every store or location a request names — path params, query, and the body at any depth (lines included). */
 export function storeReferencesIn(input: {
@@ -93,9 +110,10 @@ export type BoxRequestVerdict =
  * Judge one request from a caller holding `store_computer` grants (`grantedStores`: the stores those grants name — a
  * tenant-wide grant names none). `credentialStore` is the signed `branch_id` claim. `storeOf` places a location in its
  * store; `knownStores` is every store head office knows (org branches, stores with settings, stores a box is granted for).
- * A reference that places in ANOTHER known store is refused. Round 10 (OB-54 · hard rule #10): a code that places in NO
- * known store is refused too — a store code head office cannot place is never guessed into the box's own store, nor left
- * for a route to read as "no store"; it is refused by name and listed with the other refusals.
+ * A reference that places in ANOTHER known store is refused. Round 10 (OB-54 · hard rule #10): a STORE code (a field that
+ * names a store — `classifyReferences`) that places in NO known store is refused too — never guessed into the box's own
+ * store, nor left for a route to read as "no store"; it is refused by name and listed. An unplaced code in a LOCATION
+ * field (a shelf or bin code) names no store and is left to the route's own location rules.
  */
 export function judgeBoxRequest(input: {
   readonly credentialStore: string | null; readonly grantedStores: readonly string[];
@@ -111,13 +129,14 @@ export function judgeBoxRequest(input: {
   }
   for (const r of input.references) {
     const store = input.storeOf(r.value);
-    if (store !== credentialStore && !input.knownStores.has(store)) {
+    // An unplaceable SHELF or BIN code (a location field) is the route's own business; an unplaceable STORE code is not.
+    if (store !== credentialStore && !input.knownStores.has(store) && r.names !== 'location') {
       return {
         ok: false, reason: 'record_names_unknown_store', field: r.field, namedStore: r.value,
         why: `Store ${credentialStore}'s computer sent a record that names ${r.value} at ${r.field}, which head office cannot place in any store it knows. A record is never guessed into a store (OB-54), so it was refused and kept as an exception.`,
       };
     }
-    if (store !== credentialStore) {
+    if (store !== credentialStore && input.knownStores.has(store)) {
       return {
         ok: false, reason: 'record_names_another_store', field: r.field, namedStore: store,
         why: `Store ${credentialStore}'s computer sent a record that names ${store === r.value ? `store ${store}` : `${r.value} (store ${store})`} at ${r.field}. A store computer relays and reports only for its own store (OB-54), so it was refused and kept as an exception.`,
