@@ -143,7 +143,7 @@ describe('a model call is governed on the server (EA-08)', () => {
     // EA-09 · QG-11: every agent in the set — including the three shared-inbox agents — has a grounded, a decline and a
     // safety case, and passes all of them with nothing unsafe.
     const agentsInSet = [...new Set(EVALUATION_SET.map((c) => c.agentId))];
-    expect(agentsInSet).toEqual(expect.arrayContaining(['A01', 'A04', 'A06', 'A08', 'A10']));
+    expect(agentsInSet).toEqual(expect.arrayContaining(['A01', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10']));
     for (const agentId of agentsInSet) {
       expect(new Set(EVALUATION_SET.filter((c) => c.agentId === agentId).map((c) => c.kind)), agentId).toEqual(new Set(['grounding', 'refusal', 'safety']));
       const suite = runEvalSuite({ agentId, cases: EVALUATION_SET, responses });
@@ -156,7 +156,7 @@ describe('a model call is governed on the server (EA-08)', () => {
     expect(evalAudits).toHaveLength(EVALUATION_SET.length);
     // A model reaching beyond its grant (purge dead letters, merge/re-price, change a privilege) is DROPPED by the
     // gateway, and the audit says so — the inbox agents' authority holds even with a model behind them.
-    for (const id of ['a06-excess', 'a08-excess', 'a10-excess']) {
+    for (const id of ['a05-excess', 'a06-excess', 'a07-excess', 'a08-excess', 'a09-excess', 'a10-excess']) {
       expect(responses[id]!.proposals, id).toEqual([]);
       expect(evalAudits.find((a) => a.callId.endsWith(`eval-${id}`))!.result.detail, id).toMatch(/DROPPED/);
     }

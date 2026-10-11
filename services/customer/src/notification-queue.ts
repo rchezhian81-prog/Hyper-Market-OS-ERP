@@ -100,6 +100,9 @@ export interface MessageTemplateVersion {
   readonly withdrawnBy?: string;
   readonly withdrawnAt?: string;
   readonly withdrawalReason?: string;
+  /** Round 8 (A09): the words were drafted by the assistant through a governed call — kept on every later state, so the
+   *  approver (always a different person) knows whose words they approve. */
+  readonly aiDraft?: { readonly agent: 'A09'; readonly callId: string; readonly auditHash: string; readonly citedEvidenceIds: readonly string[] };
 }
 
 /** Whether a recipient may still be messaged at all (PA-08 r6) — before consent is even asked. */

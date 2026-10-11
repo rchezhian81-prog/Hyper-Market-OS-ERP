@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 939 | 570 | 570 | 89 | 297 |
+| 13 | 942 | 572 | 572 | 89 | 297 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -468,13 +468,16 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | GET | `/v1/service/cases/:caseId/drafts` | `service.case.read` | core | — |
 | POST | `/v1/service/cases/:caseId/drafts/:draftId` | `service.case.manage` | core | yes |
 | POST | `/v1/service/cases/:caseId/drafts/:draftId/decision` | `service.case.manage` | core | yes |
+| POST | `/v1/service/cases/:caseId/drafts/:draftId/send` | `service.case.manage` | core | yes |
 | POST | `/v1/service/cases/:caseId/first-response` | `service.case.manage` | core | yes |
 | POST | `/v1/service/cases/:caseId/resolution` | `service.case.manage` | core | yes |
+| POST | `/v1/service/cases/:caseId/root-cause` | `service.case.manage` | core | yes |
 | POST | `/v1/service/cases/:caseId/satisfaction` | `service.case.manage` | core | yes |
 | GET | `/v1/service/cases/:caseId/sla` | `service.case.read` | core | — |
 | GET | `/v1/service/compensation-policy` | `service.case.read` | core | — |
 | POST | `/v1/service/compensation-policy` | `service.compensation.approve` | core | yes |
 | GET | `/v1/service/report` | `service.case.read` | core | — |
+| GET | `/v1/service/root-causes` | `service.case.read` | core | — |
 | GET | `/v1/stored-value/households/:ownerRef/balance` | `loyalty.value.read` | core | — |
 | GET | `/v1/stored-value/households/:ownerRef/double-spends` | `lp.case.read` | core | — |
 | POST | `/v1/stored-value/instruments` | `loyalty.value.issue` | core | yes |
