@@ -184,7 +184,7 @@ import { project, projectBatches, fefoBatchesAt, EFFECT_ON_HAND, movesValueOnwar
 import { minorPerUnitOf, normaliseUom, valueAtUnitCost } from '../../../packages/contracts/src/quantity';
 import type { Movement, Availability, BatchBalance, InventoryDeps, StockOwnership, InTransitStock, TransferShortfall } from '../../inventory/src/index';
 import { splitStoreValuation, type OwnedStockValue, tagsAsConcessionSales, latestTagVersions, type ConcessionTag } from '../../../packages/concession/src/index';
-import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting } from '../../inventory/src/goods-receipt';
+import type { GoodsReceiptDeps, GrnRecord, StoredReceiptPolicy, PoReceiptPosting, ProductReceiptFacts } from '../../inventory/src/goods-receipt';
 import { receiptRuleFor } from '../../inventory/src/goods-receipt';
 import { COLD_CHAIN_CLASS_DEFAULTS } from '../../../packages/fulfilment/src/packing';
 import { weightedAverageValuation, type ValuationMovement } from '../../../packages/stock/src/valuation';
@@ -2078,7 +2078,7 @@ export function productMergeAdapter(input: {
 export function packHierarchyAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
-}): PackHierarchyDeps {
+}): PackHierarchyDeps & { readonly packs: (tenantId: string) => Promise<ReadonlyMap<string, PackHierarchy>> } {
   const stream = streamName(STREAM.catalogue, 'pack-hierarchy');
   const foldLatest = async (tenantId: string): Promise<Map<string, PackHierarchy>> => {
     const events = await input.store.readStream(tenantId, stream, { type: 'PackHierarchyDefined' });
@@ -2101,6 +2101,8 @@ export function packHierarchyAdapter(input: {
       }));
     },
     pack: async (tenantId, productId) => (await foldLatest(tenantId)).get(productId),
+    // GT-05 (store volume): every product's current pack levels in one read.
+    packs: foldLatest,
   };
 }
 
@@ -4302,8 +4304,12 @@ export function auditTrailAdapter(input: { readonly store: EventStore }): AuditT
       // the chain is folded again over the new tail — never two records with one sequence, never a fork.
       for (let attempt = 0; ; attempt += 1) {
         const expectedVersion = await input.store.guardVersion(tenantId, AUDIT_CHAIN_GUARD);
+        // The seal needs only the TAIL (the engine reads `last()` for the sequence and the previous hash), so only the tail
+        // is read — one indexed row, not the whole chain (GT-05: a store-volume load seals thousands of records, and
+        // re-reading the chain for each made every audited write slower than the last).
         const seed = new InMemoryAuditStore();
-        for (const r of await records(tenantId)) seed.append(r);
+        const tail = await input.store.latestOfType(tenantId, AUDIT_TRAIL_STREAM, 'AuditRecordSealed');
+        if (tail !== undefined) seed.append(payloadOf<AuditRecord>(tail));
         // The engine validates the entry (an unattributable record is refused) and seals it over the tail.
         const sealed = new AuditTrail(seed).record(entry);
         try {
@@ -6337,6 +6343,24 @@ export function goodsReceiptAdapter(input: {
       return pack?.snapshot.products.find((p) => p.productId === productId)?.baseUom;
     },
     packOf: (tenantId, productId) => packHierarchyAdapter(input).pack(tenantId, productId),
+    // GT-05 (store volume): the unit, pack levels and receiving rule of every product on a receipt from ONE fold of each
+    // source — the same sources and the same rule as productUom / packOf / productRule above.
+    productFacts: async (tenantId, productIds) => {
+      const masters = new Map((await productMasterAdapter(input).products(tenantId)).map((m) => [m.productId, m] as const));
+      const pack = await latest<SignedPack>(input.store, tenantId, STREAM.catalogue, 'CataloguePublished');
+      const published = new Map((pack?.snapshot.products ?? []).map((p) => [p.productId, p] as const));
+      const levels = await packHierarchyAdapter(input).packs(tenantId);
+      const out = new Map<string, ProductReceiptFacts>();
+      for (const productId of productIds) {
+        const master = masters.get(productId);
+        const product = published.get(productId);
+        const uom = master?.baseUom ?? product?.baseUom;
+        const level = levels.get(productId);
+        const rule = receiptRuleFor(productId, product, master, COLD_CHAIN_CLASS_DEFAULTS);
+        out.set(productId, { ...(uom === undefined ? {} : { uom }), ...(level === undefined ? {} : { pack: level }), ...(rule === undefined ? {} : { rule }) });
+      }
+      return out;
+    },
     // Batch 2: a quarantined line's physical return to the supplier — the receipt's next state, once per line.
     commitLineReturn: async (tenantId, record, key) => {
       await input.store.append(tenantId, grnStream, makeEvent({

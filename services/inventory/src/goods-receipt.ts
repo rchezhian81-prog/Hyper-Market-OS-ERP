@@ -291,6 +291,12 @@ export interface GoodsReceiptDeps {
   readonly productUom?: (tenantId: string, productId: string) => Promise<string | undefined> | string | undefined;
   /** OB-31 · SF-11: the product's pack levels (base → inner → case …) from the master, for a line counted in packs. */
   readonly packOf?: (tenantId: string, productId: string) => Promise<PackHierarchy | undefined> | PackHierarchy | undefined;
+  /**
+   * GT-05 (store volume): the same three facts — the master's unit, the pack levels and the receiving rule — for every product
+   * on a receipt in ONE read, so an opening receipt of a thousand lines reads the master once, not once per line. The SAME
+   * sources as `productUom` / `packOf` / `productRule`; optional — without it each line asks them one by one.
+   */
+  readonly productFacts?: (tenantId: string, productIds: readonly string[]) => Promise<ReadonlyMap<string, ProductReceiptFacts>>;
   /** F03 — the tenant's receiving tolerance policy, or `undefined` when none has been set (the default applies, flagged). */
   readonly receiptPolicy: (tenantId: string) => Promise<StoredReceiptPolicy | undefined> | StoredReceiptPolicy | undefined;
   readonly recordReceiptPolicy: (tenantId: string, policy: StoredReceiptPolicy) => Promise<void> | void;
@@ -322,6 +328,25 @@ const isCapturedLine = (v: unknown): v is CapturedLine =>
  * The product master's rules for every product on a receipt — head office's, never the body's (F03). A product the
  * master does not know is SAID (`unverified`) and falls back to untracked rather than refusing goods in the building.
  */
+/** GT-05: one product's receiving facts, read in bulk (see `GoodsReceiptDeps.productFacts`). */
+export interface ProductReceiptFacts {
+  readonly uom?: string;
+  readonly pack?: PackHierarchy;
+  readonly rule?: ProductReceiptRules;
+}
+
+/** GT-05: the deps a receipt runs on, with the per-product lookups answered from ONE bulk read when the adapter offers it. */
+async function withProductFacts<D extends Pick<GoodsReceiptDeps, 'productFacts' | 'productUom' | 'packOf' | 'productRule'>>(deps: D, tenantId: string, productIds: readonly string[]): Promise<D> {
+  if (deps.productFacts === undefined) return deps;
+  const facts = await deps.productFacts(tenantId, [...new Set(productIds)]);
+  return {
+    ...deps,
+    productRule: (_t: string, productId: string) => facts.get(productId)?.rule,
+    ...(deps.productUom === undefined ? {} : { productUom: (_t: string, productId: string) => facts.get(productId)?.uom }),
+    ...(deps.packOf === undefined ? {} : { packOf: (_t: string, productId: string) => facts.get(productId)?.pack }),
+  };
+}
+
 export async function rulesFromMaster(
   deps: Pick<GoodsReceiptDeps, 'productRule'>, tenantId: string, productIds: Iterable<string>,
 ): Promise<{ readonly rules: readonly ProductReceiptRules[]; readonly unverified: boolean; readonly handlingUnknown: boolean }> {
@@ -928,11 +953,12 @@ export function goodsReceiptRoutes(deps: GoodsReceiptDeps): readonly Route[] {
         // and only an ISSUED order is folded into. No / unknown / unissued order is said and the delivery still comes in.
         // OB-31 · SF-11: every line in the product's own unit (spelling normalised, packs converted) — or refused by name.
         const inUnits: CapturedLine[] = [];
-        for (const l of lines as CapturedLine[]) inUnits.push(await lineInProductUnit(deps, ctx.tenantId, l, flags));
+        const known = await withProductFacts(deps, ctx.tenantId, (lines as CapturedLine[]).map((l) => l.productId));
+        for (const l of lines as CapturedLine[]) inUnits.push(await lineInProductUnit(known, ctx.tenantId, l, flags));
         const order = await orderForReceipt(deps, ctx.tenantId, isStr(b['poId']) ? b['poId'] : null, flags, b['warehouseId'] as string);
         const aligned = alignToOrder(inUnits, order.ordered, flags);
         // The product master's rules and the tenant's policy — never the body (F03). Unknown is SAID, then the safe fallback.
-        const master = await rulesFromMaster(deps, ctx.tenantId, aligned.map((l) => l.productId));
+        const master = await rulesFromMaster(known, ctx.tenantId, aligned.map((l) => l.productId));
         if (master.unverified) flags.push('product_rules_unverified'); sayHandling(flags, master);
         const inForce = await policyInForce(deps, ctx.tenantId);
         if (inForce.defaulted) flags.push('default_policy');
