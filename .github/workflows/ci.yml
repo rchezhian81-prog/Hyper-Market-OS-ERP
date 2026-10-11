@@ -97,6 +97,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # The real backup job (infra/pilot/backup/encrypted-backup.sh) encrypts with age; its connected test runs it here.
+      - name: Install the backup job's encryption tool (age)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq age
+
       - name: Migrate, then prove the migrations are idempotent
         env:
           DATABASE_URL: postgres://sre@localhost:5432/sre_core
