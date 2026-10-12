@@ -37,7 +37,8 @@ export interface B2BLoginBinding {
 export interface B2BPortalDeps {
   /** The customer this authenticated user is a portal login for — from the stored binding, never the request. */
   readonly customerForUser: (tenantId: string, userId: string) => Promise<B2BLoginBinding | undefined> | B2BLoginBinding | undefined;
-  readonly recordLoginBinding: (tenantId: string, binding: B2BLoginBinding) => Promise<void> | void;
+  /** `ref` (round 14): the OB-76 invite this binding comes from — re-binding to an earlier customer is then a fresh fact. */
+  readonly recordLoginBinding: (tenantId: string, binding: B2BLoginBinding, ref?: string) => Promise<void> | void;
   /** The logins currently bound to a customer — what staff review. */
   readonly loginsFor: (tenantId: string, customerId: string) => Promise<readonly B2BLoginBinding[]> | readonly B2BLoginBinding[];
   readonly recordAccessRefusal: (tenantId: string, r: B2BPortalRefusal) => Promise<void> | void;

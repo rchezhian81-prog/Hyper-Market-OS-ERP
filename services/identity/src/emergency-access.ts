@@ -24,6 +24,7 @@ import type { Route } from '../../kernel/src/index';
 import { apiError, notFound, requireActorIsCaller } from '../../kernel/src/index';
 import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
 import { machineIdentityGrantRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
+import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
 import { actionDetails, approvalNamedIn, type ApprovalPort } from './approval-requests';
 import {
   grantEmergencyAccess, revokeEmergencyAccess, emergencyAccessReview, EmergencyAccessError,
@@ -53,6 +54,11 @@ export interface EmergencyAccessDeps {
   readonly rolesHeldBy?: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
   /** PA-12 r12: whether this user is a PERSON — given a sign-in at the identity server (/v1/identity/people). */
   readonly isPerson?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
+  /**
+   * Round 14 (verifier G5): the outside-party role (OB-76) this user holds now or has an open invite for — undefined for
+   * anyone else. Nothing is added to an outside party's login, and an outside-party role is never given here.
+   */
+  readonly outsideLoginOf?: (tenantId: string, userId: string) => Promise<string | undefined> | string | undefined;
   readonly now: () => string;
 }
 
@@ -95,6 +101,9 @@ export function emergencyAccessRoutes(deps: EmergencyAccessDeps): readonly Route
           const mixed = machineIdentityGrantRefusal(b['roleId'] as string, await deps.rolesHeldBy(ctx.tenantId, b['userId'] as string), (await deps.isPerson?.(ctx.tenantId, b['userId'] as string)) ?? false);
           if (mixed !== undefined) throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Grant the person a person\'s role on their own sign-in. Nobody\'s access changed.' });
         }
+        // Round 14 (verifier G5): not even in an emergency is anything added to an outside party's login.
+        const outside = outsidePartyGrantRefusal(b['roleId'] as string, await deps.outsideLoginOf?.(ctx.tenantId, b['userId'] as string));
+        if (outside !== undefined) throw apiError(422, { code: OUTSIDE_LOGIN_REFUSAL_CODE, whatHappened: outside, wasItSaved: 'not_saved', nextSafeAction: 'Grant a member of staff on their own login. Nobody\'s access changed.' });
         const now = deps.now();
         // The owner's approval, given in their own session for exactly this grant (kind `emergency_access`). A typed
         // approver is refused by name; no approval at all grants nothing.

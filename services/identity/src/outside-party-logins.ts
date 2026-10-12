@@ -44,6 +44,27 @@ export const OUTSIDE_PARTY_KINDS: Readonly<Record<OutsidePartyRole, { readonly s
   supplier: { segment: 'suppliers', permission: 'supplier.portal.manage', party: 'supplier portal partner' },
 };
 
+/** The code every refusal of the "an outside party's login holds only its own role" rule carries (round 14, verifier G5). */
+export const OUTSIDE_LOGIN_REFUSAL_CODE = 'outside_party_login_holds_only_its_role';
+
+/**
+ * Round 14 (verifier G5): grant-time rule for every route that ADDS a role other than this flow — the generic grant
+ * request and approval, an emergency grant, a joiner/mover change. `roleId` is the role being added; `outsideOf` is the
+ * outside-party role the user holds NOW or has an open (invited or approved) invite for, from head office's own records
+ * (never the request). undefined = acceptable; otherwise the plain-English reason.
+ *   • an outside-party role is given only through this flow (two people, bound to its party) — never through those routes;
+ *   • nothing is ever added to an outside party's login: one person, one party, never a member of staff's authority.
+ */
+export function outsidePartyGrantRefusal(roleId: string, outsideOf: string | undefined): string | undefined {
+  if ((OUTSIDE_PARTY_ROLES as readonly string[]).includes(roleId)) {
+    return `The ${roleId} role is an outside party's own login. It is given only through the outside-login invite a second person approves, bound to that party's record (OB-76) — never through this route.`;
+  }
+  if (outsideOf !== undefined) {
+    return `This login belongs to an outside party (${outsideOf}). Nothing is added to an outside party's login — its password must never carry a member of staff's authority (OB-76). A member of staff gets their own login.`;
+  }
+  return undefined;
+}
+
 /** The B2B portal grants an invite for a business customer's login carries (the B2B portal's own list). */
 export const B2B_LOGIN_GRANTS = ['place_order', 'view_invoices', 'view_statement', 'make_payment'] as const;
 
@@ -101,17 +122,28 @@ export function foldOutsideLogins(events: readonly OutsideLoginEvent[]): readonl
 export interface OutsidePartyLoginDeps {
   readonly now: () => string;
   readonly invites: (tenantId: string) => Promise<readonly OutsideLoginRecord[]> | readonly OutsideLoginRecord[];
-  readonly recordInvite: (tenantId: string, invite: OutsideLoginInvite) => Promise<void> | void;
-  /** ONE batch: the approval AND the `RoleGranted` (assignment + who asked + who approved) the access resolver folds. */
-  readonly recordApproval: (tenantId: string, invite: OutsideLoginInvite, approvedBy: string, at: string) => Promise<void> | void;
+  /** Round 14 (G6): 'login_taken' when another invite for the same login won the per-login guard at the same moment. */
+  readonly recordInvite: (tenantId: string, invite: OutsideLoginInvite) => Promise<void | 'login_taken'> | void | 'login_taken';
+  /**
+   * ONE batch: the approval AND the `RoleGranted` (assignment + who asked + who approved) the access resolver folds. Round
+   * 14 (G6): under a per-login guard — 'login_taken' when another approval bound the same login at the same moment.
+   */
+  readonly recordApproval: (tenantId: string, invite: OutsideLoginInvite, approvedBy: string, at: string) => Promise<void | 'login_taken'> | void | 'login_taken';
   readonly recordRejection: (tenantId: string, inviteId: string, rejectedBy: string, reason: string, at: string) => Promise<void> | void;
-  /** ONE batch: the revocation AND the `RoleRevoked` that takes the role away on the ledger every reader folds. */
+  /**
+   * ONE batch: the revocation, the `RoleRevoked` that takes the role away on the ledger every reader folds, AND (round 14,
+   * verifier G4) the append-only UNBINDING of the login from its party where the party's own reads look.
+   */
   readonly recordRevocation: (tenantId: string, invite: OutsideLoginInvite, revokedBy: string, reason: string, at: string) => Promise<void> | void;
   /** The roles a user holds NOW (grants minus revocations). */
   readonly rolesHeldBy: (tenantId: string, userId: string) => Promise<readonly string[]> | readonly string[];
   /** Does the party record exist (a B2B account with a credit limit set, a customer record, a configured portal partner)? */
   readonly partyExists: (tenantId: string, role: OutsidePartyRole, partyId: string) => Promise<boolean> | boolean;
-  /** Bind the login to its party's record where the party's own reads look (the B2B binding, the partner's logins). Idempotent. */
+  /**
+   * Bind the login to its party's record where the party's own reads look (the B2B binding, the partner's logins). Round 14
+   * (verifier G4): keyed per INVITE, so re-binding a login to a party it was bound to before is a fresh record, never a
+   * collapse onto the old one. Idempotent per invite.
+   */
   readonly bind: (tenantId: string, invite: OutsideLoginInvite, by: string, at: string) => Promise<void> | void;
   /** The token revocation list the authenticator consults — a revoked login's open sessions end on the next request. */
   readonly revocations?: { readonly revoke: (tenantId: string, revocation: TokenRevocation) => Promise<void> | void };
@@ -129,6 +161,9 @@ const PARTY_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const notSaved = (status: number, code: string, whatHappened: string, nextSafeAction: string) =>
   apiError(status, { code, whatHappened, wasItSaved: 'not_saved', nextSafeAction });
 const origin = (ctx: RequestContext) => ({ tenantId: ctx.tenantId, branchId: ctx.branchId ?? null });
+
+/** Round 14 (G6): the refusal when the per-login guard was won by another invite or approval at the same moment. */
+const loginTaken = (userId: string) => notSaved(409, 'login_claimed_at_the_same_moment', `Another invite or approval for login ${userId} was recorded at the same moment. One login is bound to one party, so this one was not recorded.`, 'Read the logins list: the other one stands. Revoke or reject it first if this one is the one wanted. Nothing was changed.');
 
 /** What a list and a decision show: the record, never a password. */
 const present = (r: OutsideLoginRecord) => r;
@@ -189,18 +224,20 @@ export function outsidePartyLoginRoutes(deps: OutsidePartyLoginDeps): readonly R
           if (all.some((r) => r.userId === userId && (r.state === 'invited' || r.state === 'approved'))) {
             throw notSaved(409, 'login_already_invited', `${userId} already has an open invite or an approved login. One login is bound to one party.`, 'Read the logins list; revoke the old one first if the person moved. Nothing was saved.');
           }
-          if (!(await deps.partyExists(ctx.tenantId, role, partyId))) {
-            throw notSaved(422, 'party_record_unknown', `No ${kind.party} "${partyId}" is held here, so there is nothing to bind a login to.`, `Set up the ${kind.party} first. Nothing was saved.`);
-          }
           if ((await deps.rolesHeldBy(ctx.tenantId, userId)).length > 0) {
             throw notSaved(422, 'login_already_holds_a_role', `${userId} already holds a role here. An outside party's login is its own — never a member of staff's, never another party's.`, 'Invite a new login id for this person. Nothing was saved.');
+          }
+          if (!(await deps.partyExists(ctx.tenantId, role, partyId))) {
+            throw notSaved(422, 'party_record_unknown', `No ${kind.party} "${partyId}" is held here, so there is nothing to bind a login to.`, `Set up the ${kind.party} first. Nothing was saved.`);
           }
           const at = deps.now();
           const invite: OutsideLoginInvite = {
             inviteId, role, partyId, userId, displayName, ...(role === 'b2b_customer' ? { grants: [...new Set(grants as string[])].sort() } : {}),
             invitedBy: ctx.userId, invitedAt: at, reason: isStr(b['reason']) ? b['reason'].trim() : null,
           };
-          await deps.recordInvite(ctx.tenantId, invite);
+          // Round 14 (verifier G6): the invite claims the LOGIN under a per-login guard — of two invites for one login sent
+          // at the same moment exactly one is recorded; the other is a visible 409, never a second party.
+          if ((await deps.recordInvite(ctx.tenantId, invite)) === 'login_taken') throw loginTaken(userId);
           await deps.recordAudit?.(ctx.tenantId, {
             actorId: ctx.userId, action: 'outside_login.invite', objectType: 'user', objectId: userId, at, origin: origin(ctx),
             before: null, after: { role, partyId, inviteId, ...(invite.grants === undefined ? {} : { grants: invite.grants.join(',') }) }, correlationId: inviteId,
@@ -234,9 +271,12 @@ export function outsidePartyLoginRoutes(deps: OutsidePartyLoginDeps): readonly R
             throw notSaved(422, 'login_already_holds_a_role', `${r.userId} has come to hold a role since the invite. An outside party's login is its own.`, 'Reject this invite and invite a new login id. Nothing was changed.');
           }
           const at = deps.now();
-          // The binding first, then the grant: a grant never stands without the binding that scopes it to its own party.
+          // Round 14 (verifier G6): the approval claims the LOGIN under the same per-login guard — two approvals binding one
+          // login to two parties at once: exactly one wins, the other is a visible 409 and binds nothing.
+          if ((await deps.recordApproval(ctx.tenantId, r, ctx.userId, at)) === 'login_taken') throw loginTaken(r.userId);
+          // Then the binding — its read resolves the login's CURRENT party from the approved invite (round 14, G4), so a grant
+          // whose binding write was cut off still reads its own party only; a re-sent approval finishes the binding.
           await deps.bind(ctx.tenantId, r, ctx.userId, at);
-          await deps.recordApproval(ctx.tenantId, r, ctx.userId, at);
           await deps.recordAudit?.(ctx.tenantId, {
             actorId: ctx.userId, action: 'outside_login.approve', objectType: 'user', objectId: r.userId, at, origin: origin(ctx),
             before: { state: 'invited', invitedBy: r.invitedBy }, after: { state: 'approved', role, partyId: r.partyId, invitedBy: r.invitedBy, approvedBy: ctx.userId },

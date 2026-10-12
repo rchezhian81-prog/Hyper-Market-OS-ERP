@@ -19,6 +19,7 @@ import type { AuditEntry } from '../../../packages/audit/src/index';
 import { REVOCATION_REASONS, type TokenRevocation, type RevocationReason } from './revocation';
 import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
 import { machineIdentityGrantRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
+import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
 
 /**
  * Document number formats per type (M01-FR-02) — configuration, not tenant data: what an invoice
@@ -161,6 +162,11 @@ export interface IdentityDeps {
   /** PA-12 r12: whether this user is a PERSON — given a sign-in at the identity server (/v1/identity/people). */
   readonly isPerson?: (tenantId: string, userId: string) => Promise<boolean> | boolean;
   /**
+   * Round 14 (verifier G5): the outside-party role (OB-76) this user holds now or has an open invite for — undefined for
+   * anyone else. Nothing is added to an outside party's login, and an outside-party role is never given here.
+   */
+  readonly outsideLoginOf?: (tenantId: string, userId: string) => Promise<string | undefined> | string | undefined;
+  /**
    * Seal this privilege change into the tamper-evident domain audit trail (M34-FR-01), attributed to the
    * acting user. Optional — the running system provides it; a bare deps stub may omit it. The actor is
    * ALWAYS the caller (`ctx.userId`), never client-supplied; a role grant is exactly the "who was given
@@ -254,6 +260,9 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
             throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Give the machine its own sign-in holding only its role, and the person their own. Nothing was requested.' });
           }
         }
+        // Round 14 (verifier G5): nothing is added to an outside party's login, and an outside-party role is never given here.
+        const outside = outsidePartyGrantRefusal(roleId, await deps.outsideLoginOf?.(ctx.tenantId, userId));
+        if (outside !== undefined) throw apiError(422, { code: OUTSIDE_LOGIN_REFUSAL_CODE, whatHappened: outside, wasItSaved: 'not_saved', nextSafeAction: 'Give a member of staff their own login; an outside party\'s login is invited through the outside-login screen. Nothing was requested.' });
         if (userId === ctx.userId) {
           throw apiError(422, {
             code: 'granting_to_yourself',
@@ -309,6 +318,9 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
             throw apiError(422, { code: MACHINE_IDENTITY_REFUSAL_CODE, whatHappened: mixed, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request; give the machine its own sign-in holding only its role. Nobody\'s access changed.' });
           }
         }
+        // Round 14 (verifier G5): judged again at APPROVAL — the login may have become an outside party's since it was asked.
+        const outside = outsidePartyGrantRefusal(pending.roleId, await deps.outsideLoginOf?.(ctx.tenantId, pending.userId));
+        if (outside !== undefined) throw apiError(422, { code: OUTSIDE_LOGIN_REFUSAL_CODE, whatHappened: outside, wasItSaved: 'not_saved', nextSafeAction: 'Reject this request; a member of staff gets their own login. Nobody\'s access changed.' });
         const request: GrantRequest = {
           grantId, userId: pending.userId, roleId: pending.roleId, branchScope: pending.branchScope,
           requestedBy: pending.requestedBy, approvedBy: ctx.userId, requestedAt: pending.requestedAt,

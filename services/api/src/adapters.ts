@@ -306,7 +306,7 @@ import type { TokenRevocation, TokenRevocationStore } from '../../identity/src/r
 import type { AccessLifecycleDeps, LifecycleChange } from '../../identity/src/access-lifecycle';
 import { foldPeople, type PeopleDeps, type PersonSignInEvent } from '../../identity/src/people';
 import type { IdentityDirectory } from '../../identity/src/identity-directory';
-import { foldOutsideLogins, type OutsidePartyLoginDeps, type OutsideLoginEvent } from '../../identity/src/outside-party-logins';
+import { foldOutsideLogins, OUTSIDE_PARTY_ROLES, type OutsidePartyLoginDeps, type OutsideLoginEvent, type OutsideLoginRecord, type OutsidePartyRole } from '../../identity/src/outside-party-logins';
 import { AccessControl, type Role, type RoleAssignment } from '../../../packages/rbac/src/rbac';
 import type { DependencyProbe, FeatureFlagChange, PlatformDeps, ExportedEvent } from '../../platform/src/index';
 import { inMemorySettings } from '../../platform/src/index';
@@ -534,6 +534,7 @@ export function accessLifecycleAdapter(input: {
     roles: () => input.roleCatalogue,
     currentGrants: async (tenantId, userId) => (await effectiveGrants(input.store, tenantId)).filter((g) => g.userId === userId),
     isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
+    outsideLoginOf: (tenantId, userId) => outsideLoginOf(input.store, tenantId, userId, input.now()),
     permissionsOf: async (tenantId, userId) => {
       const held = (await effectiveGrants(input.store, tenantId)).filter((a) => a.userId === userId);
       return [...new Set(held.flatMap((a) => input.roleCatalogue.find((r) => r.id === a.roleId)?.permissions ?? []))].sort();
@@ -5016,6 +5017,7 @@ export function emergencyAccessAdapter(input: {
     // PA-12 round 10: what the user holds now, so an emergency grant never mixes a machine-only role with a person's.
     rolesHeldBy: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
     isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
+    outsideLoginOf: (tenantId, userId) => outsideLoginOf(input.store, tenantId, userId, input.now()),
     grants: (tenantId) => foldGrants(tenantId),
     grant: async (tenantId, grantId) => (await foldGrants(tenantId)).find((g) => g.grantId === grantId),
     recordGrant: async (tenantId, grantId, grant, key) => {
@@ -7726,17 +7728,30 @@ export function b2bPortalAdapter(input: {
   readonly now: () => string;
 }): B2BPortalDeps {
   return {
-    // Latest binding wins: a login moved to another customer re-points, and the old customer's list drops it.
-    customerForUser: async (tenantId, userId) =>
-      latest<B2BLoginBinding>(input.store, tenantId, forB2BPortalLogin(userId), 'B2BLoginBound'),
-    recordLoginBinding: async (tenantId, binding) => {
+    // Round 14 (verifier G4): an OB-76 login reads the party of its approved, unrevoked invite — never a collapsed binding
+    // row; any other login, the latest of its bindings and unbindings (an unbinding ends it). A login moved to another
+    // customer re-points, and the old customer's list drops it.
+    customerForUser: async (tenantId, userId) => {
+      const governed = await governedOutsideBinding(input.store, tenantId, userId, 'b2b_customer');
+      if (governed !== 'ungoverned') {
+        return governed === undefined ? undefined : {
+          customerId: governed.partyId, userId, grants: (governed.grants ?? []) as B2BLoginBinding['grants'],
+          boundBy: governed.approvedBy ?? governed.invitedBy, at: governed.approvedAt ?? governed.invitedAt,
+        };
+      }
+      const rows = await input.store.readStream(tenantId, forB2BPortalLogin(userId));
+      const last = [...rows].reverse().find((e) => e.event.type === 'B2BLoginBound' || e.event.type === 'B2BLoginUnbound');
+      return last === undefined || last.event.type === 'B2BLoginUnbound' ? undefined : payloadOf<B2BLoginBinding>(last);
+    },
+    recordLoginBinding: async (tenantId, binding, ref) => {
       const event = (id: string, key: string) => makeEvent({
         id, type: 'B2BLoginBound', occurredAt: binding.at,
         idempotencyKey: key, source: 'api/finance', payload: binding,
       });
       // Keyed on (user, customer, grants) so re-sending the same binding collapses, while a change of grants
       // or of customer is a new, latest-wins fact.
-      const digest = `${binding.userId}-${binding.customerId}-${[...binding.grants].sort().join('.')}`;
+      // Round 14 (verifier G4): an OB-76 binding carries its invite (`ref`), so re-binding to an earlier customer is fresh.
+      const digest = `${binding.userId}-${binding.customerId}-${[...binding.grants].sort().join('.')}${ref === undefined ? '' : `-${ref}`}`;
       await input.store.append(tenantId, forB2BPortalLogin(binding.userId), event(`b2b-login-${digest}`, `b2b-login-${tenantId}-${digest}`));
       await input.store.append(tenantId, forB2BPortalLogins(binding.customerId), event(`b2b-login-idx-${digest}`, `b2b-login-idx-${tenantId}-${digest}`));
     },
@@ -7744,7 +7759,8 @@ export function b2bPortalAdapter(input: {
     loginsFor: async (tenantId, customerId) => {
       const ever = await allOf<B2BLoginBinding>(input.store, tenantId, forB2BPortalLogins(customerId), 'B2BLoginBound');
       const users = [...new Set(ever.map((b) => b.userId))];
-      const current = await Promise.all(users.map((u) => latest<B2BLoginBinding>(input.store, tenantId, forB2BPortalLogin(u), 'B2BLoginBound')));
+      const portal = b2bPortalAdapter(input);
+      const current = await Promise.all(users.map((u) => portal.customerForUser(tenantId, u)));
       return current.filter((b): b is B2BLoginBinding => b !== undefined && b.customerId === customerId);
     },
     recordAccessRefusal: async (tenantId, r) => {
@@ -8254,8 +8270,15 @@ export function supplierPortalAdapter(input: {
 
     // Which partner this login is bound to (M24-FR-01) — read from the per-user login index the config
     // write maintains below. Latest binding wins, so a login reassigned to another partner re-points.
-    partnerForUser: async (tenantId, userId) =>
-      (await latest<{ partnerId: string }>(input.store, tenantId, forPortalLogin(userId), 'SupplierLoginBound'))?.partnerId,
+    // Round 14 (verifier G4): an OB-76 login reads the partner of its approved, unrevoked invite; any other login, the
+    // latest of its bindings and unbindings.
+    partnerForUser: async (tenantId, userId) => {
+      const governed = await governedOutsideBinding(input.store, tenantId, userId, 'supplier');
+      if (governed !== 'ungoverned') return governed?.partyId;
+      const rows = await input.store.readStream(tenantId, forPortalLogin(userId));
+      const last = [...rows].reverse().find((e) => e.event.type === 'SupplierLoginBound' || e.event.type === 'SupplierLoginUnbound');
+      return last === undefined || last.event.type === 'SupplierLoginUnbound' ? undefined : payloadOf<{ partnerId: string }>(last).partnerId;
+    },
 
     submissions: async (tenantId, partnerId) =>
       allOf<SubmissionRecord>(input.store, tenantId, forPortalPartner(partnerId), 'SupplierSubmissionReceived'),
@@ -10229,6 +10252,7 @@ export function identityAdapter(input: {
     // PA-12 round 10: the roles a user holds now (grants minus revocations, plus a live emergency grant) — never the request.
     rolesHeldBy: (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
     isPerson: (tenantId, userId) => isPersonNow(input.store, tenantId, userId),
+    outsideLoginOf: (tenantId, userId) => outsideLoginOf(input.store, tenantId, userId, input.now()),
     /** Every permission from every role this user holds. Union, deduplicated, sorted. */
     permissionsOf: async (tenantId, userId) => {
       const held = (await assignments(tenantId)).filter((a) => a.userId === userId);
@@ -14006,6 +14030,40 @@ export async function productVersionsOf(store: EventStore, tenantId: string, pro
 
 const OUTSIDE_LOGIN_EVENTS = new Set(['OutsideLoginInvited', 'OutsideLoginApproved', 'OutsideLoginRejected', 'OutsideLoginRevoked']);
 
+/** Every OB-76 outside-login invite, with what became of it (folded from the identity ledger). */
+async function outsideLoginRecords(store: EventStore, tenantId: string): Promise<readonly OutsideLoginRecord[]> {
+  return foldOutsideLogins((await store.readStream(tenantId, STREAM.identity))
+    .filter((e) => OUTSIDE_LOGIN_EVENTS.has(e.event.type))
+    .map((e) => ({ ...payloadOf<Record<string, unknown>>(e), type: e.event.type } as unknown as OutsideLoginEvent)));
+}
+
+/**
+ * Round 14 (verifier G4 · hard rule #10): which party an OB-76 outside login is bound to NOW — resolved from the approved
+ * invite's own lifecycle, never from the latest binding row (which a re-binding to an earlier party used to collapse onto).
+ * 'ungoverned': the login has no OB-76 invite of this role (bound some other way — its binding rows decide). undefined:
+ * governed, and no approved, unrevoked invite stands (revoked, rejected, pending) — it reads nobody's rows. Two approved
+ * at once (a ledger from before the per-login guard) is not guessed between: it reads nobody's rows either.
+ */
+export async function governedOutsideBinding(store: EventStore, tenantId: string, userId: string, role: OutsidePartyRole): Promise<OutsideLoginRecord | undefined | 'ungoverned'> {
+  const mine = (await outsideLoginRecords(store, tenantId)).filter((r) => r.userId === userId && r.role === role);
+  if (mine.length === 0) return 'ungoverned';
+  const approved = mine.filter((r) => r.state === 'approved');
+  return approved.length === 1 ? approved[0] : undefined;
+}
+
+/**
+ * Round 14 (verifier G5): the outside-party role this user holds NOW, or has an open (invited or approved) OB-76 invite
+ * for — undefined for anyone else. Read from head office's own ledger, never the request.
+ */
+export async function outsideLoginOf(store: EventStore, tenantId: string, userId: string, at: string): Promise<string | undefined> {
+  const held = (await rolesHeldNow(store, tenantId, userId, at)).find((r) => (OUTSIDE_PARTY_ROLES as readonly string[]).includes(r));
+  if (held !== undefined) return held;
+  return (await outsideLoginRecords(store, tenantId)).find((r) => r.userId === userId && (r.state === 'invited' || r.state === 'approved'))?.role;
+}
+
+/** Round 14 (verifier G6): the per-login write guard an outside-login invite and approval claim the login under. */
+const outsideLoginGuard = (userId: string): string => `outside-login:${userId}`;
+
 /**
  * OB-76 (owner, 12 Oct 2026): logins for outside parties — the invite, the second person's approval, a rejection and a
  * revocation, on the identity ledger beside the grants. An approval is ONE batch with the `RoleGranted` the access
@@ -14017,22 +14075,35 @@ export function outsidePartyLoginAdapter(input: {
   readonly store: EventStore;
   readonly now: () => string;
 }): Pick<OutsidePartyLoginDeps, 'now' | 'invites' | 'recordInvite' | 'recordApproval' | 'recordRejection' | 'recordRevocation' | 'rolesHeldBy' | 'partyExists' | 'bind'> {
-  const read = async (tenantId: string): Promise<OutsideLoginEvent[]> =>
-    (await input.store.readStream(tenantId, STREAM.identity))
-      .filter((e) => OUTSIDE_LOGIN_EVENTS.has(e.event.type))
-      .map((e) => ({ ...payloadOf<Record<string, unknown>>(e), type: e.event.type } as unknown as OutsideLoginEvent));
   const outsideEvent = (tenantId: string, type: string, id: string, at: string, payload: unknown): BatchEntry => ({
     stream: STREAM.identity,
     event: makeEvent({ id: `outside-login-${id}`, type, occurredAt: at, idempotencyKey: `outside-login-${tenantId}-${id}`, source: 'api/identity', payload }),
   });
   return {
     now: input.now,
-    invites: async (tenantId) => foldOutsideLogins(await read(tenantId)),
+    invites: (tenantId) => outsideLoginRecords(input.store, tenantId),
+    // Round 14 (verifier G6): the invite claims the LOGIN under its per-login guard — read before the open-invite check, so
+    // of two invites for one login sent at the same moment exactly one lands; the other reads 'login_taken' (a 409).
     recordInvite: async (tenantId, invite) => {
-      await input.store.appendBatch(tenantId, [outsideEvent(tenantId, 'OutsideLoginInvited', `${invite.inviteId}-invited`, invite.invitedAt, { invite })]);
+      const version = await input.store.guardVersion(tenantId, outsideLoginGuard(invite.userId));
+      const open = (await outsideLoginRecords(input.store, tenantId)).some((r) => r.userId === invite.userId && r.inviteId !== invite.inviteId && (r.state === 'invited' || r.state === 'approved'));
+      if (open) return 'login_taken';
+      try {
+        await input.store.appendBatch(tenantId, [outsideEvent(tenantId, 'OutsideLoginInvited', `${invite.inviteId}-invited`, invite.invitedAt, { invite })], { guard: { key: outsideLoginGuard(invite.userId), expectedVersion: version } });
+      } catch (err) {
+        if (err instanceof ConcurrencyConflictError) return 'login_taken';
+        throw err;
+      }
+      return undefined;
     },
     recordApproval: async (tenantId, invite, approvedBy, at) => {
       const provenance = { kind: 'outside_party_login', inviteId: invite.inviteId, partyRole: invite.role, partyId: invite.partyId, decision: 'OB-76' };
+      // Round 14 (verifier G6): the approval claims the LOGIN under the same per-login guard: another invite of this login
+      // already approved (or approved at this same moment) means this one binds nothing — 'login_taken', a visible 409.
+      const version = await input.store.guardVersion(tenantId, outsideLoginGuard(invite.userId));
+      if ((await outsideLoginRecords(input.store, tenantId)).some((r) => r.userId === invite.userId && r.inviteId !== invite.inviteId && r.state === 'approved')) return 'login_taken';
+      const guard = { guard: { key: outsideLoginGuard(invite.userId), expectedVersion: version } };
+      try {
       await input.store.appendBatch(tenantId, [
         outsideEvent(tenantId, 'OutsideLoginApproved', `${invite.inviteId}-approved`, at, { inviteId: invite.inviteId, approvedBy, at }),
         {
@@ -14048,7 +14119,12 @@ export function outsidePartyLoginAdapter(input: {
             },
           }),
         },
-      ]);
+      ], guard);
+      } catch (err) {
+        if (err instanceof ConcurrencyConflictError) return 'login_taken';
+        throw err;
+      }
+      return undefined;
     },
     recordRejection: async (tenantId, inviteId, rejectedBy, reason, at) => {
       await input.store.appendBatch(tenantId, [outsideEvent(tenantId, 'OutsideLoginRejected', `${inviteId}-rejected`, at, { inviteId, rejectedBy, reason, at })]);
@@ -14064,6 +14140,15 @@ export function outsidePartyLoginAdapter(input: {
             payload: { userId: invite.userId, roleId: invite.role, branchScope: 'all', provenance: { kind: 'outside_party_login', inviteId: invite.inviteId, revokedBy, reason } },
           }),
         },
+        // Round 14 (verifier G4): the revocation ENDS the binding — an append-only unbinding where the party's own reads
+        // look, keyed per invite, so the login reads nobody's rows until a new invite is approved and bound.
+        ...(invite.role === 'b2b_customer' ? [{
+          stream: forB2BPortalLogin(invite.userId),
+          event: makeEvent({ id: `b2b-login-unbound-${invite.inviteId}`, type: 'B2BLoginUnbound', occurredAt: at, idempotencyKey: `b2b-login-unbound-${tenantId}-${invite.inviteId}`, source: 'api/identity', payload: { userId: invite.userId, customerId: invite.partyId, inviteId: invite.inviteId, unboundBy: revokedBy, at } }),
+        }] : invite.role === 'supplier' ? [{
+          stream: forPortalLogin(invite.userId),
+          event: makeEvent({ id: `portal-login-unbound-${invite.inviteId}`, type: 'SupplierLoginUnbound', occurredAt: at, idempotencyKey: `portal-login-unbound-${tenantId}-${invite.inviteId}`, source: 'api/identity', payload: { userId: invite.userId, partnerId: invite.partyId, inviteId: invite.inviteId, unboundBy: revokedBy, at } }),
+        }] : []),
       ]);
     },
     rolesHeldBy: async (tenantId, userId) => rolesHeldNow(input.store, tenantId, userId, input.now()),
@@ -14079,13 +14164,21 @@ export function outsidePartyLoginAdapter(input: {
     },
     bind: async (tenantId, invite, by, at) => {
       if (invite.role === 'b2b_customer') {
-        await b2bPortalAdapter(input).recordLoginBinding(tenantId, { customerId: invite.partyId, userId: invite.userId, grants: (invite.grants ?? []) as B2BLoginBinding['grants'], boundBy: by, at });
+        // Round 14 (verifier G4): keyed per INVITE — re-binding to a customer the login was bound to before is a fresh fact.
+        await b2bPortalAdapter(input).recordLoginBinding(tenantId, { customerId: invite.partyId, userId: invite.userId, grants: (invite.grants ?? []) as B2BLoginBinding['grants'], boundBy: by, at }, invite.inviteId);
       } else if (invite.role === 'supplier') {
         const portal = supplierPortalAdapter(input);
         const config = await portal.partner(tenantId, invite.partyId);
         if (config !== undefined && !config.logins.includes(invite.userId)) {
           await portal.recordPartner(tenantId, invite.partyId, { ...config, logins: [...config.logins, invite.userId] }, at);
         }
+        // Round 14 (verifier G4): the binding itself, keyed per INVITE and never skipped — even when the partner's list
+        // already names this login (bound to it before), the re-binding is a fresh, latest fact.
+        await input.store.append(tenantId, forPortalLogin(invite.userId), makeEvent({
+          id: `portal-login-${invite.userId}-${invite.partyId}-${invite.inviteId}`, type: 'SupplierLoginBound', occurredAt: at,
+          idempotencyKey: `portal-login-${tenantId}-${invite.userId}-${invite.partyId}-${invite.inviteId}`, source: 'api/identity',
+          payload: { userId: invite.userId, partnerId: invite.partyId, inviteId: invite.inviteId },
+        }));
       }
       // An app customer's login IS the customer record (the storefront scopes to the signed-in subject): nothing more to bind.
     },
