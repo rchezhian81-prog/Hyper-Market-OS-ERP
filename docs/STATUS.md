@@ -5,6 +5,12 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Round 20 — verifier r19 closed (12 October 2026)
+
+- **Built and integration-tested (memory + PostgreSQL); no staff UAT:** the containerised store computer has its own bill-number witness volume (`EDGE_WITNESS_DIR`), with a loud start-up self-check shown on the box and at head office; an impossible box-reported bill count is refused and raised as a warning (window 10,000), never locking a till; two different changes to one setting at once — the second gets a visible "changed at the same moment" (16 families); after a restore, bills issued but never received are named at head office after a 30-minute grace; a late-committing bill can no longer be missed by the incremental high-water (transaction-safe fence); the idempotency-conflict register is branch-scoped and separates harmless re-sends; stranded stock (unregistered or closed places) is listed with the way out.
+- **Full gate (12 Oct, PostgreSQL):** 11,441 unit/integration and 33 performance passed; browser 352/353 — the Organisation journey's rename race fixed in the test afterwards and passed 3/3.
+- **Owner to confirm (chosen by the build, changeable):** the 10,000-bill plausibility window and the 30-minute grace before "never received" is raised.
+
 ## Coordinated programme · Rounds 17–19 — bill numbers never repeat; ghost stores refused; settings set back stick (12 October 2026)
 
 - **Built and integration-tested (memory + PostgreSQL), browser-verified where a screen changed; no staff UAT:**
