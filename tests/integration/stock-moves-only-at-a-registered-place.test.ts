@@ -73,8 +73,56 @@ async function onlyRegisteredPlaces(h: ApiHarness): Promise<void> {
   expect(await places()).not.toContain('store-77');
 }
 
+/**
+ * Verifier r19 (6a/6b · P-08): stock left at a place that is not (or no longer) a stock place — booked before the business
+ * registered its places, or at a department since CLOSED — is LISTED for head office (`strandedStock` on the stock
+ * exceptions), and a movement there is refused with words that say which it is and the way out; reopening (or registering)
+ * the place makes it movable again. Never a silent block.
+ */
+async function strandedStockIsListed(h: ApiHarness): Promise<void> {
+  const T = randomUUID();
+  await h.seedOwner(T, 'u-owner');
+  const call = (method: 'GET' | 'POST', path: string, body?: unknown): Promise<Res> =>
+    h.request({ method, path, userId: 'u-owner', tenantId: T, ...(method === 'GET' ? {} : { idempotencyKey: `k-${randomUUID()}` }), ...(body === undefined ? {} : { body }) });
+  const move = (movementId: string, locationId: string, kind = 'received', quantityMinor = 5) => call('POST', '/v1/inventory/movements', {
+    movementId, productId: 'P1', locationId, kind, quantityMinor, unitCostMinor: 100, uom: 'ea', occurredAt: AT, enteredBy: 'u-owner',
+  });
+  // 6a: stock booked at an id BEFORE any place was registered (unjudged then).
+  expect((await move('mv-pre', 'old-shelf')).status).toBe(202);
+  expect((await call('POST', '/v1/org/nodes/C1', { kind: 'company', name: 'C' })).status).toBeLessThan(300);
+  expect((await call('POST', '/v1/org/nodes/store-1', { kind: 'branch', name: 's1', parentId: 'C1', companyId: 'C1' })).status).toBeLessThan(300);
+  // 6b: a department with stock, then CLOSED.
+  expect((await call('POST', '/v1/org/nodes/D-DAIRY', { kind: 'department', name: 'Dairy', parentId: 'store-1' })).status).toBeLessThan(300);
+  expect((await move('mv-dairy', 'D-DAIRY', 'received', 7)).status).toBe(202);
+  expect((await call('POST', '/v1/org/nodes/D-DAIRY', { kind: 'department', name: 'Dairy', parentId: 'store-1', status: 'closed' })).status).toBeLessThan(300);
+
+  const stranded = async (): Promise<{ locationId: string; onHandMinor: number; why: string; says: string }[]> =>
+    ((await call('GET', '/v1/inventory/exceptions')).body as { strandedStock: { locationId: string; onHandMinor: number; why: string; says: string }[] }).strandedStock;
+  const listed = await stranded();
+  expect(listed).toEqual(expect.arrayContaining([
+    expect.objectContaining({ locationId: 'old-shelf', onHandMinor: 5, why: 'place_not_registered' }),
+    expect.objectContaining({ locationId: 'D-DAIRY', onHandMinor: 7, why: 'place_closed' }),
+  ]));
+  expect(listed.find((r) => r.locationId === 'D-DAIRY')?.says).toMatch(/CLOSED: reopen it/);
+  // The refusals say which it is, and where the stock is listed.
+  const closedMove = await move('mv-out-1', 'D-DAIRY', 'transferred_out', 7);
+  expect(closedMove.status).toBe(422);
+  expect((closedMove.body as { error: { whatHappened: string; nextSafeAction: string } }).error.whatHappened).toMatch(/CLOSED place/);
+  expect((closedMove.body as { error: { nextSafeAction: string } }).error.nextSafeAction).toMatch(/strandedStock/);
+  const preMove = await move('mv-out-2', 'old-shelf', 'transferred_out', 5);
+  expect(codeOf(preMove)).toBe('unknown_location');
+  expect((preMove.body as { error: { nextSafeAction: string } }).error.nextSafeAction).toMatch(/strandedStock/);
+  // The way out works: reopen the department / register the old id, move the stock out, and it leaves the list.
+  expect((await call('POST', '/v1/org/nodes/D-DAIRY', { kind: 'department', name: 'Dairy', parentId: 'store-1', status: 'draft' })).status).toBeLessThan(300);
+  expect((await move('mv-out-1', 'D-DAIRY', 'transferred_out', 7)).status).toBe(202);
+  expect((await call('POST', '/v1/org/nodes/old-shelf', { kind: 'department', name: 'Old shelf', parentId: 'store-1' })).status).toBeLessThan(300);
+  expect((await move('mv-out-2', 'old-shelf', 'transferred_out', 5)).status).toBe(202);
+  expect(await stranded()).toEqual([]);
+}
+
 describe('verifier r18 C2-R1: stock moves only at a registered place (memory)', () => {
   it('refuses a phantom place, launders nothing, accepts registered places', async () => { await onlyRegisteredPlaces(apiHarness()); }, 60_000);
+  it('r19: stock stranded at an unregistered or closed place is listed and the refusal says why', async () => { await strandedStockIsListed(apiHarness()); }, 60_000);
 });
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -83,5 +131,10 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r18 C2-R1: stock moves onl
     const pool = new Pool({ connectionString: DATABASE_URL, max: 8, options: '-c app.tenant_id=*' });
     const sql = pgPoolClient(pool);
     try { await onlyRegisteredPlaces(apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) })); } finally { await pool.end(); }
+  }, 120_000);
+  it('r19: stock stranded at an unregistered or closed place is listed and the refusal says why', async () => {
+    const pool = new Pool({ connectionString: DATABASE_URL, max: 8, options: '-c app.tenant_id=*' });
+    const sql = pgPoolClient(pool);
+    try { await strandedStockIsListed(apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) })); } finally { await pool.end(); }
   }, 120_000);
 });

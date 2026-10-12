@@ -13987,9 +13987,11 @@ export async function storeOfLocationResolver(input: { readonly store: EventStor
  * any other with 422 `unknown_location`), and a transfer is judged against them — never against "a place that once held stock"
  * (a stray movement could create one) and never against a bin typed for an unregistered store.
  */
-export async function knownStockPlace(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<((locationId: string) => boolean) & { readonly registeredAny: boolean }> {
+export async function knownStockPlace(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<((locationId: string) => boolean) & { readonly registeredAny: boolean; readonly closed: ReadonlySet<string> }> {
   const known = new Set<string>();
-  for (const n of await orgStructureAdapter(input).nodes(tenantId)) if (n.status !== 'closed') known.add(n.nodeId);
+  // Verifier r19 (6b): a CLOSED organisation node is not a stock place — kept apart so its leftover stock is named as such.
+  const closed = new Set<string>();
+  for (const n of await orgStructureAdapter(input).nodes(tenantId)) if (n.status !== 'closed') known.add(n.nodeId); else closed.add(n.nodeId);
   for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) {
     known.add(s.storeId);
     if (typeof s.warehouseId === 'string' && s.warehouseId !== '') known.add(s.warehouseId);
@@ -13999,7 +14001,8 @@ export async function knownStockPlace(input: { readonly store: EventStore; reado
   for (const b of await warehouseAdapter(input).bins(tenantId)) {
     if (typeof b.storeId === 'string' && known.has(b.storeId) && typeof b.locationId === 'string' && b.locationId !== '') known.add(b.locationId);
   }
-  return Object.assign((locationId: string) => known.has(locationId), { registeredAny: known.size > 0 });
+  for (const k of known) closed.delete(k);
+  return Object.assign((locationId: string) => known.has(locationId), { registeredAny: known.size > 0, closed });
 }
 
 export async function registeredStores(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<ReadonlySet<string>> {
