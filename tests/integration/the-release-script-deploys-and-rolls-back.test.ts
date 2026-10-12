@@ -201,8 +201,12 @@ describe('the release script deploys a merged commit and rolls a broken one back
     await mkdir(join(sandbox, 'state'), { recursive: true });
     // Another "deployment" holds the lock until we close its stdin — then it exits and the lock is released
     // (killing it would leave a child holding the inherited descriptor, which is exactly the point of the lock).
-    const holder = spawn('bash', ['-c', 'exec 9>"$1"; flock 9; read -r _', '_', lock], { stdio: ['pipe', 'ignore', 'ignore'] });
-    await new Promise((res) => setTimeout(res, 300));
+    // It says "held" once it has the lock — on a busy runner a fixed pause let the release take the lock first.
+    const holder = spawn('bash', ['-c', 'exec 9>"$1"; flock 9; echo held; read -r _', '_', lock], { stdio: ['pipe', 'pipe', 'ignore'] });
+    await new Promise<void>((res, rej) => {
+      const timer = setTimeout(() => rej(new Error('the lock holder never took the lock')), 10_000);
+      holder.stdout!.on('data', (d: Buffer) => { if (d.toString().includes('held')) { clearTimeout(timer); res(); } });
+    });
     try {
       const r = run([V2, 'octocat', '7']);
       expect(r.code).toBe(75);
