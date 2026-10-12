@@ -1603,6 +1603,16 @@ const GSTR1_SUBMISSION_INDEX = streamName(STREAM.gstreturns, 'submission-index')
 const ROSTER_STREAM = streamName(STREAM.workforce, 'roster');
 
 /**
+ * An event id that follows its idempotency key — one id per key. An id built from a clock instead let two different facts
+ * written in the same millisecond share one id under two keys: the ledger's unique event id refuses the second (a named
+ * clash since round 12; a raw 500 on PostgreSQL before), so the second fact was lost. With the id derived from the key,
+ * the same fact again is the same id and key (a dedup) and a different fact is a different id.
+ */
+function keyedEventId(prefix: string, key: string): string {
+  return `${prefix}-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
+}
+
+/**
  * The durable roster store (M25-FR-01 follow-on). The workforce DECISION routes are stateless what-ifs; this
  * makes the roster durable — the staff directory, shifts and assignments each append to one tenant stream and
  * "current" is a latest-per-id fold of the stored facts (hard rule #2), so a restart never loses who is on.
@@ -1610,7 +1620,7 @@ const ROSTER_STREAM = streamName(STREAM.workforce, 'roster');
 export function rosterStoreAdapter(input: { readonly store: EventStore; readonly now: () => string }): RosterStoreDeps {
   const append = async (tenantId: string, type: string, id: string, key: string, payload: object): Promise<void> => {
     await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-      id: `${type}-${id}-${input.now()}`,
+      id: keyedEventId(`${type}-${id}`, key),
       type,
       occurredAt: input.now(),
       idempotencyKey: key,
@@ -1661,7 +1671,7 @@ export function certStoreAdapter(input: { readonly store: EventStore; readonly n
     now: input.now,
     putCertification: async (tenantId, cert, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `RosterCertificationSet-${cert.certificationId}-${input.now()}`,
+        id: keyedEventId(`RosterCertificationSet-${cert.certificationId}`, key),
         type: 'RosterCertificationSet',
         occurredAt: input.now(),
         idempotencyKey: key,
@@ -1694,13 +1704,13 @@ export function sopStoreAdapter(input: { readonly store: EventStore; readonly no
     now: input.now,
     putSop: async (tenantId, sop, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `SopDefinitionSet-${sop.sopId}-${input.now()}`,
+        id: keyedEventId(`SopDefinitionSet-${sop.sopId}`, key),
         type: 'SopDefinitionSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: sop,
       }));
     },
     putAcknowledgement: async (tenantId, ack, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `SopAcknowledgedSet-${ack.sopId}-${ack.employeeId}-${input.now()}`,
+        id: keyedEventId(`SopAcknowledgedSet-${ack.sopId}-${ack.employeeId}`, key),
         type: 'SopAcknowledgedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: ack,
       }));
     },
@@ -1738,7 +1748,7 @@ export function attendanceStoreAdapter(input: { readonly store: EventStore; read
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
         // The id follows the idempotency key (one event per key): a timestamp alone let two corrections in the same
         // millisecond share an id under different keys — a clash the ledger refuses (hard rule #10), not a correction.
-        id: `AttendanceSet-${record.employeeId}-${record.date}-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`,
+        id: keyedEventId(`AttendanceSet-${record.employeeId}-${record.date}`, key),
         type: 'AttendanceSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: record,
       }));
     },
@@ -1769,7 +1779,7 @@ export function checklistStoreAdapter(input: { readonly store: EventStore; reado
     now: input.now,
     putChecklist: async (tenantId, checklist, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `ChecklistSubmittedSet-${checklist.checklistId}-${input.now()}`,
+        id: keyedEventId(`ChecklistSubmittedSet-${checklist.checklistId}`, key),
         type: 'ChecklistSubmittedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: checklist,
       }));
     },
@@ -1800,13 +1810,13 @@ export function taskStoreAdapter(input: { readonly store: EventStore; readonly n
     now: input.now,
     putTask: async (tenantId, def, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `DailyTaskSet-${def.taskId}-${input.now()}`,
+        id: keyedEventId(`DailyTaskSet-${def.taskId}`, key),
         type: 'DailyTaskSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: def,
       }));
     },
     completeTask: async (tenantId, completion, key) => {
       await input.store.append(tenantId, ROSTER_STREAM, makeEvent({
-        id: `DailyTaskCompletedSet-${completion.taskId}-${input.now()}`,
+        id: keyedEventId(`DailyTaskCompletedSet-${completion.taskId}`, key),
         type: 'DailyTaskCompletedSet', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: completion,
       }));
     },
@@ -1849,7 +1859,7 @@ export function payslipStoreAdapter(input: { readonly store: EventStore; readonl
     now: input.now,
     putPayslip: async (tenantId, issued, key) => {
       await input.store.append(tenantId, PAYSLIPS_STREAM, makeEvent({
-        id: `PayslipIssued-${issued.employeeId}-${issued.period}-${input.now()}`,
+        id: keyedEventId(`PayslipIssued-${issued.employeeId}-${issued.period}`, key),
         type: 'PayslipIssued', occurredAt: input.now(), idempotencyKey: key, source: 'api/hr', payload: issued,
       }));
     },
@@ -5304,12 +5314,13 @@ export function lpRulesAdapter(input: {
     },
 
     recordRule: async (tenantId, rule) => {
+      const ruleKey = `lp-rule-${tenantId}-${rule.kind}-${rule.maxCount ?? ''}-${rule.maxTotalValueMinor ?? ''}-${rule.maxSingleValueMinor ?? ''}-${rule.escalateAtMultiple ?? ''}`;
       await input.store.append(tenantId, rulesStream, makeEvent({
-        id: `lp-rule-${rule.kind}-${input.now()}`,
+        id: keyedEventId(`lp-rule-${rule.kind}`, ruleKey),
         type: 'LpRuleSet',
         occurredAt: input.now(),
         // Keyed on the kind AND the limits — re-setting the same thresholds collapses, a re-tune is a new fact.
-        idempotencyKey: `lp-rule-${tenantId}-${rule.kind}-${rule.maxCount ?? ''}-${rule.maxTotalValueMinor ?? ''}-${rule.maxSingleValueMinor ?? ''}-${rule.escalateAtMultiple ?? ''}`,
+        idempotencyKey: ruleKey,
         source: 'api/pos',
         payload: rule,
       }));
@@ -5410,12 +5421,13 @@ export function fraudSignalsAdapter(input: {
       (await latest<FraudThresholds>(input.store, tenantId, thresholdsStream, 'FraudThresholdsSet')) ?? {},
 
     recordThresholds: async (tenantId, thresholds) => {
+      const thresholdsKey = `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`;
       await input.store.append(tenantId, thresholdsStream, makeEvent({
-        id: `fraud-thresholds-${input.now()}`,
+        id: keyedEventId('fraud-thresholds', thresholdsKey),
         type: 'FraudThresholdsSet',
         occurredAt: input.now(),
         // Keyed on the values — re-setting the same thresholds collapses, a re-tune is a new fact.
-        idempotencyKey: `fraud-thresholds-${tenantId}-${JSON.stringify(thresholds)}`,
+        idempotencyKey: thresholdsKey,
         source: 'api/pos',
         payload: thresholds,
       }));
@@ -7635,28 +7647,30 @@ export function purchaseAdapter(input: {
     },
 
     recordMatch: async (tenantId, invoiceId, r) => {
+      const matchKey = `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}-${r.poId ?? ''}-${r.blocked ? 'blocked' : 'clear'}`;
       await input.store.append(tenantId, STREAM.purchase, makeEvent({
-        id: `match-${invoiceId}-${r.matchedAt}`,
+        id: keyedEventId(`match-${invoiceId}`, matchKey),
         type: 'InvoiceMatched',
         occurredAt: r.matchedAt,
         // Keyed on the *outcome*, not just the invoice. Re-running an unchanged match is the same event and collapses;
         // a match that now pays a different figure — or that is no longer blocked because the tenant's tolerances changed
         // (SP-7b) — is a different fact and must be recorded, or the ledger would show the first answer forever.
-        idempotencyKey: `match-${tenantId}-${invoiceId}-${r.payableMinor}-${r.invoicedMinor}-${r.poId ?? ''}-${r.blocked ? 'blocked' : 'clear'}`,
+        idempotencyKey: matchKey,
         source: 'api/purchase',
         payload: r,
       }));
     },
 
     applyBankChange: async (tenantId, r) => {
+      const bankKey = `bank-${tenantId}-${r.supplierId}-${r.newAccount}-${r.requestedAt}`;
       await input.store.append(tenantId, STREAM.purchase, makeEvent({
-        id: `bank-${r.supplierId}-${r.requestedAt}`,
+        id: keyedEventId(`bank-${r.supplierId}`, bankKey),
         type: 'SupplierBankChanged',
         occurredAt: input.now(),
         // The request's own date is in the key. Without it a supplier who moved to a new account
         // and later moved back would have the return collapse into the original change as a
         // replay — and the ledger would then assert the money still goes to the middle account.
-        idempotencyKey: `bank-${tenantId}-${r.supplierId}-${r.newAccount}-${r.requestedAt}`,
+        idempotencyKey: bankKey,
         source: 'api/purchase',
         payload: r satisfies BankChangeRequest,
       }));
@@ -8255,7 +8269,7 @@ export function supplierPortalAdapter(input: {
       await input.store.append(tenantId, forPortalPartner(partnerId), makeEvent({
         // The id follows the key: a changed config (a verification, a new document) is a new event with its own id — it
         // used to reuse the grants-only id, which the ledger's unique event id refuses (a 500 on PostgreSQL).
-        id: `portal-partner-${partnerId}-${createHash('sha256').update(partnerKey).digest('hex').slice(0, 24)}`,
+        id: keyedEventId(`portal-partner-${partnerId}`, partnerKey),
         type: 'SupplierPartnerConfigured',
         occurredAt: input.now(),
         idempotencyKey: partnerKey,
