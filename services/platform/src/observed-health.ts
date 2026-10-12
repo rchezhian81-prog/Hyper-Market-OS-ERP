@@ -126,6 +126,8 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
     readonly records: readonly BoxHealthRecord[]; readonly knownStores: readonly string[];
     /** Verifier r19: bills issued but never received, and box reports refused — per store, judged with the ledger. */
     readonly billNumberFindings?: ReadonlyMap<string, readonly BillNumberFinding[]>;
+    /** Verifier r20 HW-2: the bill-number high-water's visibility fence, when it is waiting on an open transaction. */
+    readonly billNumberHighWater?: { readonly since: string; readonly waitingSeconds: number; readonly streams: readonly string[] } | null;
   }>;
   /** OB-78: the owner's early-warning line for a store computer's disk, in hours of trading left (tenant setting, default 48). */
   readonly boxDiskWarnHours?: (tenantId: string) => Promise<number> | number;
@@ -218,8 +220,26 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
       ? ['localStoreWritable — a lane-side signal (the store box reports it through its own health check); never guessed ok here']
       : [`localStoreWritable — not every store computer has a fresh report (${judgedBoxes.boxes.filter((b) => b.stale).map((b) => `${b.storeId}: ${b.state === 'never_reported' ? 'never reported' : `stale, last ${b.lastReportAt}`}`).join('; ')}); never guessed ok here`],
     boxes: judgedBoxes?.boxes ?? [],
-    boxComponents: judgedBoxes?.components ?? [],
+    boxComponents: [...judgedBoxes?.components ?? [], ...highWaterComponent(boxReports?.billNumberHighWater ?? null)],
   };
+}
+
+/** Verifier r20 HW-2: a fence still waiting after this long is shown (the API's own idle-in-transaction limit is 1 minute). */
+export const HIGH_WATER_WAIT_WARN_SECONDS = 300;
+
+/**
+ * Verifier r20 HW-2 (P-08, P-03): the bill-number high-water waiting on an open database transaction — shown only once it
+ * has waited HIGH_WATER_WAIT_WARN_SECONDS (a fence normally settles within milliseconds). The count stays right meanwhile;
+ * it only gets slower until that transaction ends, so it is `degraded`, never `down`.
+ */
+export function highWaterComponent(w: { readonly since: string; readonly waitingSeconds: number; readonly streams: readonly string[] } | null): ComponentHealth[] {
+  if (w === null || w.waitingSeconds < HIGH_WATER_WAIT_WARN_SECONDS) return [];
+  const mins = Math.floor(w.waitingSeconds / 60);
+  return [{
+    name: 'bill_number_high_water', status: 'degraded',
+    detail: `bill-number high-water is waiting on an open database transaction since ${w.since} (${mins} min): head office still counts every bill number correctly, but each count re-reads every bill since then and gets slower until that transaction ends. Ask the database administrator to find it — a session "idle in transaction" or a prepared transaction anywhere on the database server (pg_stat_activity, pg_prepared_xacts) — and end it`,
+    evidence: { waitingSince: w.since, waitingSeconds: w.waitingSeconds, streams: w.streams.join(','), warnAfterSeconds: HIGH_WATER_WAIT_WARN_SECONDS },
+  }];
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';

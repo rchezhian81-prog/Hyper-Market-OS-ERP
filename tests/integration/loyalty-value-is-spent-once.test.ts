@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
 import { apiHarness, TEST_PACK_KEY, type ApiHarness } from '../support/api-harness';
+import { SqlIdempotencyStore } from '../../services/kernel/src/index';
+import { pgPoolClient } from '../../packages/persistence/src/pg-client';
+import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { loyaltyMemberKey, memberRefFor, readWalletFeed, spendRefFor } from '../../packages/loyalty/src/index';
 
 // PF-09 step 3 (audit PF-09, HIGH · M17-FR-01/03/04 · OB-28 "C and 1"): the till spends a member's points and store
@@ -12,12 +17,12 @@ import { loyaltyMemberKey, memberRefFor, readWalletFeed, spendRefFor } from '../
 //   • a spend the true balance can no longer cover (spent elsewhere first) is applied as far as it goes, never below zero,
 //     and raised as a valued exception — the sale is still banked (hard rules #1, #10).
 
-const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+// The PostgreSQL leg runs under a fresh tenant each time (the database keeps every earlier run's facts).
+let A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const MOBILE = '98400 55555';
 const MEMBER = memberRefFor(loyaltyMemberKey(TEST_PACK_KEY), MOBILE)!;
 
-async function shop(): Promise<ApiHarness> {
-  const h = apiHarness();
+async function shop(h: ApiHarness = apiHarness()): Promise<ApiHarness> {
   await h.seedOwner(A, 'u-owner');
   await h.provisionRole(A, 'u-mgr', 'store_manager');
   await h.provisionRole(A, 'u-cash', 'cashier');
@@ -131,4 +136,58 @@ describe('PF-09 step 3: points and store credit spent at the till are spent once
     expect(r.banked).toBe(true);
     expect(r.spends![0]).toMatchObject({ appliedMinor: 0, shortfallMinor: 500 });
   });
+});
+
+/**
+ * Verifier r20 IC-3 (hard rule #10): loyalty follows only the bill head office BANKED. A store computer that gave one sale id
+ * to two different bills (a restored disk) sends the second; head office keeps the first and says the second was not banked.
+ * The second bill's member, points and store credit are NOT earned or spent at head office — they are raised as an exception
+ * (`loyalty_on_a_bill_not_banked`) for the person who banks it by hand. Re-sent, it still moves nothing.
+ */
+async function loyaltyFollowsTheBankedBill(h: ApiHarness): Promise<void> {
+  await shop(h);
+  await bank(h, sale('S1', 100_000, [{ kind: 'cash', amountMinor: 100_000 }])); // 20 points
+  await issueCredit(h, 'sc-1', 5_000);
+  expect(await points(h)).toBe(20);
+  // The banked bill: no member named, cash only.
+  const walkIn = { ...sale('S-IC3', 2_000, [{ kind: 'cash', amountMinor: 2_000 }]) } as Record<string, unknown>;
+  delete walkIn['customerRef'];
+  const first = await bank(h, walkIn, 'ic3-first');
+  expect(first.loyalty === undefined || (first.loyalty as { outcome: string }).outcome !== 'earned').toBe(true);
+  // A DIFFERENT bill under the same sale id, naming the member and spending 10 points and ₹20 of store credit.
+  const other = sale('S-IC3', 10_000, [
+    { kind: 'loyalty_points', amountMinor: 500, points: 10 },
+    { kind: 'store_credit', amountMinor: 2_000 },
+    { kind: 'cash', amountMinor: 7_500 },
+  ]);
+  const second = await bank(h, other, 'ic3-second') as unknown as Record<string, unknown>;
+  expect(second).toMatchObject({ thisBillBanked: false, notBankedBecause: 'a_different_bill_holds_this_sale_id' });
+  expect(await points(h)).toBe(20); // nothing spent, nothing earned for a bill head office did not bank
+  const credit = ((await h.request({ method: 'GET', path: '/v1/stored-value/instruments/sc-1', userId: 'u-owner', tenantId: A })).body as { balanceMinor: number }).balanceMinor;
+  expect(credit).toBe(5_000);
+  expect((await feed(h)).members[0]!.appliedSpendRefs).not.toEqual(expect.arrayContaining([spendRefFor('S-IC3', 'loyalty_points')]));
+  // Raised for a person: what the not-banked bill carried.
+  const ex = JSON.stringify((await h.request({ method: 'GET', path: '/v1/sales/exceptions', userId: 'u-owner', tenantId: A })).body);
+  expect(ex).toMatch(/loyalty_on_a_bill_not_banked/);
+  expect(ex).toMatch(/points worth 500 and store credit worth 2000/);
+  expect(ex).not.toMatch(/98400|55555/); // a member code, never the phone number
+  // Re-sent (a lost reply, a fresh key): still nothing moves.
+  await bank(h, other, 'ic3-second-again');
+  expect(await points(h)).toBe(20);
+  // The same bill re-sent is still "already banked" and its loyalty follows it as before (nothing for a walk-in).
+  const again = await bank(h, walkIn, 'ic3-first-again') as unknown as Record<string, unknown>;
+  expect(again['thisBillBanked']).toBeUndefined();
+  expect(await points(h)).toBe(20);
+}
+
+describe('verifier r20 IC-3: loyalty follows only the banked bill', () => {
+  it('memory', async () => { await loyaltyFollowsTheBankedBill(apiHarness()); }, 60_000);
+  const DATABASE_URL = process.env['DATABASE_URL'];
+  it.skipIf(DATABASE_URL === undefined)('PostgreSQL', async () => {
+    const pool = new Pool({ connectionString: DATABASE_URL, max: 8, options: '-c app.tenant_id=*' });
+    const sql = pgPoolClient(pool);
+    const memoryTenant = A;
+    A = randomUUID();
+    try { await loyaltyFollowsTheBankedBill(apiHarness({ store: new SqlEventStore(sql), idempotency: new SqlIdempotencyStore(sql) })); } finally { A = memoryTenant; await pool.end(); }
+  }, 120_000);
 });

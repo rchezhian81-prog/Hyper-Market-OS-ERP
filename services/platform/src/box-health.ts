@@ -97,6 +97,11 @@ export interface IssuedReport {
   readonly soldThrough?: number;
   /** Numbers the box cannot vouch for — given after the backup it was restored from — as [from, to] ranges. */
   readonly atRisk?: readonly (readonly [number, number])[];
+  /**
+   * Verifier r20 LOST-1: the bills under this prefix still waiting in the box's own queues when it reported — how many, and
+   * the lowest and highest count among them (`count: 0`: none). Absent on an older box: its whole queue stands in.
+   */
+  readonly unsent?: { readonly count: number; readonly from?: number; readonly to?: number };
 }
 
 /** Verifier r19 BOX-1: a reported count head office would not fold, and why. */
@@ -221,8 +226,22 @@ export function readBoxHealthReport(body: unknown, receivedAt: string):
           && isCount(r[0]) && isCount(r[1]) && (r[0] as number) >= 1 && (r[0] as number) <= (r[1] as number) && (r[1] as number) <= through))) {
           problems.push(`receiptNumbersIssued[${i}].atRisk must be at most 50 [from, to] ranges of counts from 1 to its through`); return;
         }
+        // Verifier r20 LOST-1: the bills under this prefix still waiting in the box's queues (optional; an older box does not say).
+        const rawUnsent = x['unsent'];
+        let unsent: { count: number; from?: number; to?: number } | undefined;
+        if (rawUnsent !== undefined) {
+          const u = isObj(rawUnsent) ? rawUnsent : {};
+          const count = u['count'];
+          const ok = isCount(count) && (count === 0
+            ? u['from'] === undefined && u['to'] === undefined
+            : isCount(u['from']) && isCount(u['to']) && (u['from'] as number) >= 1 && (u['from'] as number) <= (u['to'] as number) && (u['to'] as number) <= through
+              && count <= (u['to'] as number) - (u['from'] as number) + 1);
+          if (!ok) { problems.push(`receiptNumbersIssued[${i}].unsent must be { count: 0 }, or { count, from, to } with 1 <= from <= to <= its through and count at most to - from + 1`); return; }
+          unsent = count === 0 ? { count: 0 } : { count: count as number, from: u['from'] as number, to: u['to'] as number };
+        }
         receiptNumbersIssued.push({
           prefix: x['prefix'], through,
+          ...(unsent === undefined ? {} : { unsent }),
           ...(x['soldThrough'] === undefined ? {} : { soldThrough: x['soldThrough'] as number }),
           ...(rawRisk === undefined ? {} : { atRisk: (rawRisk as [number, number][]).map(([a, z]) => [a, z] as const) }),
         });
@@ -306,39 +325,62 @@ export function judgeReportedIssued(input: {
 }
 
 /**
- * Verifier r19 (sales lost by a restore · P-08): the numbers each store's box put on bills, or cannot vouch for, that head
- * office should hold by now — from reports at least UNRECEIVED_GRACE_MINUTES old: every count above what head office has
- * banked up to the reported `soldThrough` (`through` from an older box), and every `atRisk` number. Per store and prefix, at
- * most UNRECEIVED_CHECK_CAP numbers (the newest), with the time of the first report that named them. The caller checks each
- * against the ledger and keeps the ones never received.
+ * Verifier r20 LOST-1: does this report say count `n` under this prefix is still waiting in the box's own queues? By the
+ * prefix's `unsent` range when the box gives one (a count inside [from, to] is waiting — never assumed sent); from an older
+ * box that gives none, its WHOLE queue stands in: anything unsent means the number may still be on its way.
+ */
+export function stillOnTheBox(r: Pick<BoxHealthRecord, 'queue'>, x: Pick<IssuedReport, 'unsent'>, n: number): boolean {
+  if (x.unsent !== undefined) return x.unsent.count > 0 && x.unsent.from !== undefined && x.unsent.to !== undefined && n >= x.unsent.from && n <= x.unsent.to;
+  return r.queue.unsent > 0;
+}
+
+/**
+ * Verifier r19 (sales lost by a restore · P-08), r20 LOST-1 (P-03): the numbers each store's box put on bills, or cannot
+ * vouch for, that head office should hold by now. A number is a candidate when it is above what head office has banked
+ * under its prefix up to the reported `soldThrough` (`through` from an older box), or in the `atRisk` list — AND:
+ *   • the box has said it no longer holds it: a report whose queue for that prefix is empty or does not cover the number
+ *     (`stillOnTheBox`); the grace (UNRECEIVED_GRACE_MINUTES) runs from the FIRST such report, never from when the number
+ *     was first reported sold — so a long catch-up after an outage, with the bills still queued, raises nothing;
+ *   • the box's LATEST report naming the prefix does not say it holds it again.
+ * Per store and prefix, at most UNRECEIVED_CHECK_CAP numbers (the newest), with the time of the first report that said the
+ * box no longer held them. The caller checks the ones at or below banked against the ledger; those above it are unbanked
+ * by definition (banked is the highest count head office holds).
  */
 export function unreceivedCandidates(input: {
   readonly records: readonly BoxHealthRecord[];
   readonly at: string;
   readonly banked: ReadonlyMap<string, number>;
 }): { storeId: string; prefix: string; numbers: number[]; since: string; capped: boolean }[] {
-  const cutoff = Date.parse(input.at) - UNRECEIVED_GRACE_MINUTES * 60_000;
-  const by = new Map<string, { storeId: string; prefix: string; numbers: Map<number, string> }>();
-  const ordered = [...input.records].filter((r) => Date.parse(r.receivedAt) <= cutoff).sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt));
+  const atMs = Date.parse(input.at);
+  const cutoff = atMs - UNRECEIVED_GRACE_MINUTES * 60_000;
+  const by = new Map<string, { storeId: string; prefix: string; numbers: Map<number, string>; latest: { r: BoxHealthRecord; x: IssuedReport } }>();
+  const ordered = [...input.records].filter((r) => Date.parse(r.receivedAt) <= atMs).sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt));
   for (const r of ordered) {
     for (const x of r.receiptNumbersIssued ?? []) {
       const key = `${r.storeId}\u0000${x.prefix}`;
-      const cur = by.get(key) ?? { storeId: r.storeId, prefix: x.prefix, numbers: new Map<number, string>() };
+      const cur = by.get(key) ?? { storeId: r.storeId, prefix: x.prefix, numbers: new Map<number, string>(), latest: { r, x } };
+      cur.latest = { r, x };
       const banked = input.banked.get(x.prefix) ?? 0;
       const sold = x.soldThrough ?? x.through;
-      for (let n = Math.max(banked + 1, sold - UNRECEIVED_CHECK_CAP + 1); n <= sold; n += 1) if (!cur.numbers.has(n)) cur.numbers.set(n, r.receivedAt);
+      const note = (n: number): void => { if (!cur.numbers.has(n) && !stillOnTheBox(r, x, n)) cur.numbers.set(n, r.receivedAt); };
+      for (let n = Math.max(banked + 1, sold - UNRECEIVED_CHECK_CAP + 1); n <= sold; n += 1) note(n);
       for (const [from, to] of x.atRisk ?? []) {
-        for (let n = Math.max(from, to - UNRECEIVED_CHECK_CAP + 1); n <= to; n += 1) if (!cur.numbers.has(n)) cur.numbers.set(n, r.receivedAt);
+        for (let n = Math.max(from, to - UNRECEIVED_CHECK_CAP + 1); n <= to; n += 1) note(n);
       }
       by.set(key, cur);
     }
   }
-  return [...by.values()].filter((v) => v.numbers.size > 0).map((v) => {
-    const all = [...v.numbers.keys()].sort((a, b) => a - b);
+  const out: { storeId: string; prefix: string; numbers: number[]; since: string; capped: boolean }[] = [];
+  for (const v of by.values()) {
+    const all = [...v.numbers]
+      .filter(([n, since]) => Date.parse(since) <= cutoff && !stillOnTheBox(v.latest.r, v.latest.x, n))
+      .map(([n]) => n).sort((a, b) => a - b);
+    if (all.length === 0) continue;
     const numbers = all.slice(-UNRECEIVED_CHECK_CAP);
     const since = numbers.map((n) => v.numbers.get(n)!).sort()[0]!;
-    return { storeId: v.storeId, prefix: v.prefix, numbers, since, capped: all.length > numbers.length };
-  });
+    out.push({ storeId: v.storeId, prefix: v.prefix, numbers, since, capped: all.length > numbers.length });
+  }
+  return out;
 }
 
 /** [from, to] ranges of sorted counts. */
@@ -362,6 +404,12 @@ export function billNumberFindingsFor(input: {
   readonly at: string;
   /** The never-received numbers, after the ledger check (from `unreceivedCandidates`). */
   readonly unreceived: readonly { readonly prefix: string; readonly numbers: readonly number[]; readonly since: string; readonly capped: boolean }[];
+  /**
+   * Verifier r20 BOX-2: what head office holds banked per prefix (sales and refunds). With it, a refused report stops being
+   * a finding once a LATER report from the store is accepted for that prefix (plausible) and everything it put on a bill
+   * is banked. Absent: a refusal stays a finding for 7 days, as before.
+   */
+  readonly banked?: ReadonlyMap<string, number>;
 }): BillNumberFinding[] {
   const out: BillNumberFinding[] = [];
   for (const u of input.unreceived) {
@@ -369,7 +417,7 @@ export function billNumberFindingsFor(input: {
     const ranges = countRanges(u.numbers);
     out.push({
       kind: 'issued_never_received', prefix: u.prefix, ranges, since: u.since,
-      detail: `bills issued but never received: store ${input.storeId}'s computer gave ${rangeWords(u.prefix, ranges)} (on a bill, or after the backup it was restored from) and head office has not received ${u.numbers.length === 1 ? 'it' : 'them'} ${UNRECEIVED_GRACE_MINUTES} minutes or more after the store computer first reported ${u.numbers.length === 1 ? 'it' : 'them'} (${u.since})${u.capped ? `; only the newest ${UNRECEIVED_CHECK_CAP} were checked` : ''}. If the store computer was restored from a backup, these sales are lost from head office's books: find the paper bills and enter them, or write them off with the reason`,
+      detail: `bills issued but never received: store ${input.storeId}'s computer gave ${rangeWords(u.prefix, ranges)} (on a bill, or after the backup it was restored from) and head office has not received ${u.numbers.length === 1 ? 'it' : 'them'} ${UNRECEIVED_GRACE_MINUTES} minutes or more after the store computer said it no longer held ${u.numbers.length === 1 ? 'it' : 'them'} to send (${u.since})${u.capped ? `; only the newest ${UNRECEIVED_CHECK_CAP} were checked` : ''}. If the store computer was restored from a backup, these sales are lost from head office's books: find the paper bills and enter them, or write them off with the reason`,
     });
   }
   // A refused report (BOX-1): the latest per prefix in the last 7 days.
@@ -382,7 +430,20 @@ export function billNumberFindingsFor(input: {
       if (cur === undefined || Date.parse(rec.receivedAt) >= Date.parse(cur.at)) refused.set(r.prefix, { r, at: rec.receivedAt, by: rec.reportedBy });
     }
   }
-  for (const { r, at, by } of [...refused.values()].sort((a, b) => a.r.prefix.localeCompare(b.r.prefix))) {
+  // Verifier r20 BOX-2: resolved — a later report from this store was accepted for the prefix, and everything that report
+  // says it put on a bill is banked. The refusal stays on the record as evidence; it is no longer something to look at.
+  const resolved = (prefix: string, refusedAt: string): boolean => {
+    if (input.banked === undefined) return false;
+    let later: IssuedReport | undefined;
+    let laterAt = Date.parse(refusedAt);
+    for (const rec of input.records) {
+      if (rec.storeId !== input.storeId || Date.parse(rec.receivedAt) <= laterAt) continue;
+      const x = (rec.receiptNumbersIssued ?? []).find((y) => y.prefix === prefix);
+      if (x !== undefined) { later = x; laterAt = Date.parse(rec.receivedAt); }
+    }
+    return later !== undefined && (later.soldThrough ?? later.through) <= (input.banked.get(prefix) ?? 0);
+  };
+  for (const { r, at, by } of [...refused.values()].filter((x) => !resolved(x.r.prefix, x.at)).sort((a, b) => a.r.prefix.localeCompare(b.r.prefix))) {
     out.push({
       kind: 'report_refused', prefix: r.prefix, through: r.through, since: at,
       detail: r.because === 'prefix_of_another_store'

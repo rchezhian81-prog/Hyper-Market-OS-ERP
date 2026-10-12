@@ -150,6 +150,9 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
         } satisfies IntakeContext);
 
         let notThisBill: Record<string, unknown> | undefined;
+        // Verifier r20 IC-3: the bill loyalty follows — the one head office BANKED under this sale id. A different bill that
+        // arrives under a banked id earns and spends nothing; its loyalty is raised for a person instead (below).
+        let loyaltyBill: IncomingSale = sale;
         if (!intake.alreadyBanked) {
           await deps.bankSale(ctx.tenantId, sale);
           if (intake.exceptions.length > 0) {
@@ -166,8 +169,21 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
               ownerAction: 'A store computer gave one bill number to two different bills (a computer restored from a backup, or two computers on one till). The customer holds the second bill, which head office has not banked. Find it at the store computer, bank it by hand, and check that till\'s bill-number prefix.',
             }]);
             // Verifier r19 IC-3: the answer says what happened — this bill was NOT banked (a different bill holds the id). Still
-            // 202, so the store computer stops re-sending it; the owner's finding above is where it is worked. (Loyalty below is
-            // idempotent per sale id: it never earns or spends twice for the id.)
+            // 202, so the store computer stops re-sending it; the owner's finding above is where it is worked. Loyalty below
+            // follows the BANKED bill (idempotent per sale id: it never earns or spends twice for the id).
+            loyaltyBill = first;
+            // What the not-banked bill carried for loyalty (a member, points or store credit spent): raised, never applied —
+            // a person who banks it by hand settles it (the same member code and tender amounts, never a phone number).
+            const spentOnIt = sale.tenders.filter((t) => t.kind === 'loyalty_points' || t.kind === 'store_credit');
+            const member = typeof sale.customerRef === 'string' && sale.customerRef.trim() !== '' ? sale.customerRef : undefined;
+            if (member !== undefined || spentOnIt.length > 0) {
+              await deps.recordExceptions(ctx.tenantId, [{
+                kind: 'loyalty_on_a_bill_not_banked', severity: 'material', saleId: sale.saleId,
+                differenceMinor: spentOnIt.reduce((n, t) => n + t.amountMinor, 0),
+                detail: `sale ${sale.saleId} (receipt ${sale.receiptNumber}) arrived as a DIFFERENT bill from the one head office banked under that id, and it carried loyalty — ${member === undefined ? 'no member named' : `member ${member}`}${spentOnIt.length === 0 ? ', nothing spent' : `, spent ${spentOnIt.map((t) => `${t.kind === 'loyalty_points' ? 'points' : 'store credit'} worth ${t.amountMinor}`).join(' and ')}`}. None of it was earned or spent at head office: loyalty follows only the bill head office banked`,
+                ownerAction: 'When this bill is banked by hand, settle its loyalty with it: take the points or store credit the customer spent at the till, and add the points it earns, for the member named. Until then the member\'s balance does not include it.',
+              }]);
+            }
             notThisBill = {
               alreadyBanked: false, thisBillBanked: false,
               notBankedBecause: 'a_different_bill_holds_this_sale_id',
@@ -180,9 +196,9 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
         // once, on a retry too. Before the earn, so the earn reads the balance the spend left. A shortfall (spent twice
         // across channels) is raised as a valued exception; a fault is said, never thrown (the sale is banked).
         let spends: unknown;
-        if (deps.loyaltySpendOnSale !== undefined && sale.tenders.some((t) => t.kind === 'loyalty_points' || t.kind === 'store_credit')) {
+        if (deps.loyaltySpendOnSale !== undefined && loyaltyBill.tenders.some((t) => t.kind === 'loyalty_points' || t.kind === 'store_credit')) {
           try {
-            const outcomes = await deps.loyaltySpendOnSale(ctx.tenantId, sale);
+            const outcomes = await deps.loyaltySpendOnSale(ctx.tenantId, loyaltyBill);
             spends = outcomes;
             const short = outcomes.filter((o) => o.shortfallMinor > 0);
             if (short.length > 0) {
@@ -203,7 +219,7 @@ export function posRoutes(deps: PosDeps): readonly Route[] {
         let loyalty: unknown;
         if (deps.loyaltyOnSale !== undefined) {
           try {
-            loyalty = await deps.loyaltyOnSale(ctx.tenantId, sale);
+            loyalty = await deps.loyaltyOnSale(ctx.tenantId, loyaltyBill);
           } catch (err) {
             loyalty = { outcome: 'not_recorded', detail: `The sale is banked, but its loyalty points were not recorded: ${err instanceof Error ? err.message : String(err)}. The till's resend will try again.` };
           }

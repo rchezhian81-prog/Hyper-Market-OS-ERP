@@ -315,6 +315,56 @@ async function salesLostByARestore(cloud: Cloud): Promise<void> {
   });
 }
 
+/**
+ * Verifier r20 LOST-1 — through a REAL store computer: bills it still holds unsent are said, per prefix, on its health
+ * report (how many, lowest and highest count), and head office never names them "never received" however long they wait.
+ */
+async function billsStillOnTheBoxAreNotLost(cloud: Cloud): Promise<void> {
+  expect((await cloud.call('POST', `/v1/stores/${S2}/tills/lane-7/receipt-prefix`, OWNER, { prefix: 'S2L7-' }, `pfx-lane-7-${randomUUID()}`)).status).toBe(201);
+  await withBoxes(cloud, async ({ boot, stop, dir }) => {
+    // Head office refuses nothing; only the SALES fail to arrive (a slow link timing out on them), the reports get through.
+    const viaCloud = globalThis.fetch;
+    let blockSales = true;
+    const reports: { receiptNumbersIssued?: { prefix: string; unsent?: unknown }[] }[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit): Promise<Response> => {
+      const u = String(url);
+      if (blockSales && /\/v1\/sales$/.test(new URL(u).pathname)) throw new Error('timed out');
+      if (u.endsWith('/v1/store-computers/health-reports') && init?.body !== undefined) reports.push(JSON.parse(String(init.body)) as never);
+      return viaCloud(url, init);
+    }) as unknown as typeof globalThis.fetch;
+    try {
+      const e = await boot(await dir('lost1'), 'lane-7');
+      await e.refreshStorePack!();
+      expect([await sell(e, 'lane-7'), await sell(e, 'lane-7'), await sell(e, 'lane-7')]).toEqual(['S2L7-000001', 'S2L7-000002', 'S2L7-000003']);
+      await e.syncOnce!();
+      expect(await e.reportBoxHealth!()).toBe(true);
+      const said = reports.at(-1)?.receiptNumbersIssued?.find((x) => x.prefix === 'S2L7-');
+      expect(said).toMatchObject({ through: 3, soldThrough: 3, unsent: { count: 3, from: 1, to: 3 } });
+      vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+      try {
+        vi.setSystemTime(Date.now() + (UNRECEIVED_GRACE_MINUTES + 5) * 60_000);
+        expect(await e.reportBoxHealth!()).toBe(true); // still holding them, long past the grace
+        const o = await observed(cloud);
+        expect((o.observed.boxes.find((b) => b.storeId === S2)?.billNumberFindings ?? []).filter((f) => f.prefix === 'S2L7-')).toEqual([]);
+        // The link carries the sales again: they are banked, the box says it holds none.
+        blockSales = false;
+        expect(await e.syncOnce!()).toMatchObject({ sent: 3 });
+        // (The fake clock moves in 20 ms steps; a report is keyed by its time, so the next one is a moment later.)
+        vi.setSystemTime(Date.now() + 1_000);
+        expect(await e.reportBoxHealth!()).toBe(true);
+        expect(reports.at(-1)?.receiptNumbersIssued?.find((x) => x.prefix === 'S2L7-')?.unsent).toEqual({ count: 0 });
+        vi.setSystemTime(Date.now() + (UNRECEIVED_GRACE_MINUTES + 5) * 60_000);
+        expect((((await observed(cloud)).observed.boxes.find((b) => b.storeId === S2)?.billNumberFindings) ?? []).filter((f) => f.prefix === 'S2L7-')).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+      await stop(e);
+    } finally {
+      globalThis.fetch = viaCloud;
+    }
+  });
+}
+
 function memoryCloud(tenant: string): { cloud: Cloud; ready: Promise<void> } {
   const h = apiHarness();
   const cloud: Cloud = {
@@ -357,6 +407,10 @@ describe('verifier r19: a store computer says when its bill numbers are at risk 
     const { cloud, ready } = memoryCloud(randomUUID()); await ready;
     await salesLostByARestore(cloud);
   }, 120_000);
+  it('r20 LOST-1: bills the box still holds unsent are said per prefix, and never called lost', async () => {
+    const { cloud, ready } = memoryCloud(randomUUID()); await ready;
+    await billsStillOnTheBoxAreNotLost(cloud);
+  }, 120_000);
 });
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -390,4 +444,5 @@ describe.skipIf(DATABASE_URL === undefined)('verifier r19: a store computer says
   it('OB87-2: a shared witness folder', async () => { await sharedWitnessFolder(cloud); }, 240_000);
   it('BOX-1: a report never locks a till', async () => { await aReportNeverLocksATill(cloud); }, 240_000);
   it('sales lost by a restore are named', async () => { await salesLostByARestore(cloud); }, 240_000);
+  it('r20 LOST-1: bills still on the box are never called lost', async () => { await billsStillOnTheBoxAreNotLost(cloud); }, 240_000);
 });

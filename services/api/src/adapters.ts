@@ -323,7 +323,7 @@ import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/inde
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
 import type { BoxHealthRecord, BillNumberFinding } from '../../platform/src/box-health';
-import { unreceivedCandidates, billNumberFindingsFor } from '../../platform/src/box-health';
+import { unreceivedCandidates, billNumberFindingsFor, judgeReportedIssued, PLAUSIBLE_ISSUED_AHEAD } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
@@ -1625,6 +1625,14 @@ function keyedEventId(prefix: string, key: string): string {
 }
 
 /**
+ * Which earlier events on the stream are the SAME setting (e.g. the same rule kind, the same asset) and that subject's key —
+ * absent: every event of the type is one setting. Verifier r20 SET-2: the key names the subject's own write guard.
+ */
+type SettingSubject =
+  | { readonly sameSubject?: undefined; readonly subjectKey?: undefined }
+  | { readonly sameSubject: (payload: unknown) => boolean; readonly subjectKey: string };
+
+/**
  * Hard rule #10 · verifier r18 RULE10-ABA — a SETTING (a policy, a threshold, a rule, a limit) set back to an earlier
  * value must be in force. These settings used to be keyed on their VALUE alone, so A → B → A collapsed the second A onto
  * the first: the owner was told "saved" and B stayed in force. Now a setting's key is its value AND the setting it
@@ -1632,7 +1640,7 @@ function keyedEventId(prefix: string, key: string): string {
  * before — a true replay, or a crash-retry of one, dedupes), while a change back to an earlier value is a new, latest fact.
  * Two writers setting the same value over the same predecessor meet on one key and collapse to one event.
  */
-async function appendSetting(store: EventStore, tenantId: string, stream: string, s: {
+async function appendSetting(store: EventStore, tenantId: string, stream: string, s: SettingSubject & {
   readonly type: string;
   /** The event id's prefix (the id follows the key, so two different settings never clash on one id). */
   readonly idPrefix: string;
@@ -1641,17 +1649,18 @@ async function appendSetting(store: EventStore, tenantId: string, stream: string
   readonly occurredAt: string;
   readonly source: string;
   readonly payload: object;
-  /** Which earlier events on the stream are the SAME setting (e.g. the same rule kind) — absent: every event of the type. */
-  readonly sameSubject?: (payload: unknown) => boolean;
   /** Whether the setting in force already holds this value (the fields the value key names). */
   readonly sameValue: (payload: unknown) => boolean;
 }): Promise<void> {
   // Verifier r19 SET-1 (hard rule #10): two DIFFERENT values for the same setting at the same moment both answered "saved"
-  // and one was silently lost. Now each setting family (stream + type) writes under one write guard: the writer reads the
-  // guard, then the setting in force, and its append lands only while the guard still holds. A writer that lost the race
-  // re-reads: another subject of the same family moved the guard → it simply tries again; the SAME value landed at the same
-  // moment → one fact, saved; a DIFFERENT value landed → a visible 409 "changed at the same moment", never a silent loss.
-  const guardKey = `setting:${stream}:${s.type}`;
+  // and one was silently lost. Now each setting writes under a write guard: the writer reads the guard, then the setting in
+  // force, and its append lands only while the guard still holds. A writer that lost the race re-reads: the SAME value
+  // landed at the same moment → one fact, saved; a DIFFERENT value landed → a visible 409 "changed at the same moment",
+  // never a silent loss.
+  // Verifier r20 SET-2: the guard is the SUBJECT's own (family + subject key) — saves to DIFFERENT items of one family (ten
+  // production costs, forty invoice matches at once) never meet on one guard, so none is refused for another's save. A
+  // setting with no subjects (one per family) keeps the family guard: the family IS the subject.
+  const guardKey = s.subjectKey === undefined ? `setting:${stream}:${s.type}` : `setting:${stream}:${s.type}:${s.subjectKey}`;
   const latestOf = async (): Promise<PersistedEvent | undefined> =>
     (await store.readStream(tenantId, stream, { type: s.type })).filter((e) => s.sameSubject?.(e.event.payload) ?? true).at(-1);
   for (let attempt = 0; ; attempt += 1) {
@@ -1667,10 +1676,19 @@ async function appendSetting(store: EventStore, tenantId: string, stream: string
     } catch (e) {
       if (!(e instanceof ConcurrencyConflictError) || e.key !== guardKey) throw e;
       const now = await latestOf();
-      // Another subject of the same family (another rule kind, another asset) moved the guard: this setting is untouched.
-      if (now?.event.id === prior?.event.id && attempt < 8) continue;
       // The same value landed at the same moment: the two requests are one fact, and it is in force.
       if (now !== undefined && s.sameValue(now.event.payload)) return;
+      // The guard moved but this setting reads unchanged (a write that has not become visible yet): try again, a few times.
+      if (now?.event.id === prior?.event.id) {
+        if (attempt < 8) continue;
+        // Verifier r20 SET-2: still unchanged after every try — head office was busy, nobody changed THIS setting. Said so.
+        throw apiError(409, {
+          code: 'setting_busy_try_again',
+          whatHappened: 'Head office was busy saving other changes at the same moment and could not save this one. Nobody else changed this setting; yours was not saved.',
+          wasItSaved: 'not_saved',
+          nextSafeAction: 'Save it again in a moment. Nothing else was changed.',
+        });
+      }
       throw apiError(409, {
         code: 'setting_changed_at_the_same_moment',
         whatHappened: 'Somebody else changed this same setting at the same moment, to a different value. Their value is the one head office kept; yours was not saved.',
@@ -4148,6 +4166,7 @@ export function facilitiesAdapter(input: {
         type: 'FacilitiesScheduleSet', idPrefix: `fac-sched-${schedule.scheduleId}`, valueKey: `fac-sched-${tenantId}-${schedule.scheduleId}-${v(schedule)}`,
         occurredAt: input.now(), source: 'api/platform', payload: schedule,
         sameSubject: (p) => (p as typeof schedule).scheduleId === schedule.scheduleId,
+        subjectKey: schedule.scheduleId,
         sameValue: (p) => v(p as typeof schedule) === v(schedule),
       });
     },
@@ -4251,6 +4270,7 @@ export function facilitiesAssetsAdapter(input: {
         type: 'FacilitiesAssetSet', idPrefix: `fac-asset-${asset.assetId}`, valueKey: `fac-asset-${tenantId}-${asset.assetId}-${v(asset)}`,
         occurredAt: input.now(), source: 'api/platform', payload: asset,
         sameSubject: (p) => (p as typeof asset).assetId === asset.assetId,
+        subjectKey: asset.assetId,
         sameValue: (p) => v(p as typeof asset) === v(asset),
       });
     },
@@ -4338,6 +4358,7 @@ export function facilitiesMonitoringAdapter(input: {
         type: 'FacilitiesEquipmentRangeSet', idPrefix: `fac-range-${reg.assetId}`, valueKey: `fac-range-${tenantId}-${reg.assetId}-${v(reg)}`,
         occurredAt: input.now(), source: 'api/platform', payload: reg,
         sameSubject: (p) => (p as typeof reg).assetId === reg.assetId,
+        subjectKey: reg.assetId,
         sameValue: (p) => v(p as typeof reg) === v(reg),
       });
     },
@@ -4517,6 +4538,7 @@ export function integrationAdapter(input: {
         type: 'IntegrationMatrixEntrySet', idPrefix: `intg-matrix-${entry.entryId}`, valueKey: `intg-matrix-${tenantId}-${entry.entryId}-${v(entry)}`,
         occurredAt: input.now(), source: 'api/platform', payload: entry,
         sameSubject: (p) => (p as typeof entry).entryId === entry.entryId,
+        subjectKey: entry.entryId,
         sameValue: (p) => v(p as typeof entry) === v(entry),
       });
     },
@@ -5677,6 +5699,7 @@ export function lpRulesAdapter(input: {
         type: 'LpRuleSet', idPrefix: `lp-rule-${rule.kind}`, valueKey: `lp-rule-${tenantId}-${rule.kind}-${limits(rule)}`,
         occurredAt: input.now(), source: 'api/pos', payload: rule,
         sameSubject: (p) => (p as LpRule).kind === rule.kind,
+        subjectKey: rule.kind,
         sameValue: (p) => limits(p as LpRule) === limits(rule),
       });
     },
@@ -6492,6 +6515,7 @@ export function productionAdapter(input: {
         type: 'ProductionCostSet', idPrefix: `prod-cost-${productId}`, valueKey: `prod-cost-${tenantId}-${productId}-${cost.minor}-${cost.currency}`,
         occurredAt: input.now(), source: 'api/inventory', payload: { productId, cost },
         sameSubject: (p) => (p as { productId: string }).productId === productId,
+        subjectKey: productId,
         sameValue: (p) => { const c = (p as { cost: Money }).cost; return c.minor === cost.minor && c.currency === cost.currency; },
       });
     },
@@ -8003,6 +8027,7 @@ export function purchaseAdapter(input: {
         type: 'InvoiceMatched', idPrefix: `match-${invoiceId}`, valueKey: `match-${tenantId}-${invoiceId}-${outcome(r)}`,
         occurredAt: r.matchedAt, source: 'api/purchase', payload: r,
         sameSubject: (p) => (p as StoredMatch).invoiceId === invoiceId,
+        subjectKey: invoiceId,
         sameValue: (p) => outcome(p as StoredMatch) === outcome(r),
       });
     },
@@ -12761,6 +12786,9 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
         knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
         // Verifier r19: bills issued and never received (sales lost by a restore), and box reports head office refused.
         billNumberFindings: await billNumberFindingsOf(input.store, tenantId, records, input.now()),
+        // Verifier r20 HW-2: whether the bill-number high-water is waiting on an open database transaction (read after the
+        // findings, whose count just ran the fold).
+        billNumberHighWater: (await highWaterFenceWait(input.store, tenantId)) ?? null,
       };
     },
     alertRules: (tenantId) => latest<StoredAlertRules>(input.store, tenantId, ALERT_RULES_STREAM, 'AlertRulesDefined'),
@@ -14296,6 +14324,7 @@ export function openToBuyAdapter(input: { readonly store: EventStore; readonly n
         type: 'PurchaseBudgetSet', idPrefix: 'purchase-budget', valueKey: `purchase-budget-${tenantId}-${digest}`,
         occurredAt: budget.setAt, source: 'api/purchase', payload: budget,
         sameSubject: (p) => budgetKey(p as PurchaseBudget) === budgetKey(budget),
+        subjectKey: budgetKey(budget),
         sameValue: (p) => v(p as PurchaseBudget) === v(budget),
       });
     },
@@ -14641,29 +14670,50 @@ export async function issuedPrefixStores(store: EventStore, tenantId: string): P
 
 /**
  * Verifier r19 (sales lost by a restore · P-08) and BOX-1: each store's bill-number findings for the owner. The candidates
- * (numbers a box put on a bill, or cannot vouch for after a restore, reported at least the grace period ago and above what
- * head office banked, or in its at-risk list) are checked ONE BY ONE against the ledger — a sale's receipt-number index
- * (`receipt-<tenant>-<number>`) or a refund's number — so a number banked out of order is never reported as lost.
+ * (numbers a box put on a bill, or cannot vouch for after a restore, that the box says it no longer holds to send — r20
+ * LOST-1 — at least the grace period ago, above what head office banked or in its at-risk list) are checked against the
+ * ledger, so a number banked out of order is never reported as lost.
+ *
+ * Verifier r20 (cost): a number ABOVE the prefix's banked count is unbanked by definition (banked is the highest count head
+ * office holds, read through the fenced high-water) — no read at all. Only at-risk numbers at or below it are looked up,
+ * in ONE indexed read per prefix (`existingIdempotencyKeys`, the ledger's unique (tenant, key) index), never one by one.
+ *
+ * Verifier r20 BOX-2: every kept report is re-judged at read (`judgeReportedIssued`: this store's own prefixes, at most
+ * PLAUSIBLE_ISSUED_AHEAD above banked) — a report kept before r19 judged them at arrival can raise nothing implausible; a
+ * report accepted at arrival always passes again (banked only grows, prefixes are never un-issued).
  */
 export async function billNumberFindingsOf(store: EventStore, tenantId: string, records: readonly BoxHealthRecord[], at: string): Promise<ReadonlyMap<string, readonly BillNumberFinding[]>> {
   const banked = await bankedReceiptCounts(store, tenantId);
-  const candidates = unreceivedCandidates({ records, at, banked });
+  const issuedPrefixes = await issuedPrefixStores(store, tenantId);
+  const judged = records.map((r) => (r.receiptNumbersIssued === undefined ? r
+    : { ...r, receiptNumbersIssued: judgeReportedIssued({ storeId: r.storeId, issued: r.receiptNumbersIssued, issuedPrefixes, banked }).accepted }));
+  const candidates = unreceivedCandidates({ records: judged, at, banked });
   let refundNumbers: Set<string> | undefined;
   const unreceived = new Map<string, { prefix: string; numbers: number[]; since: string; capped: boolean }[]>();
+  const numberOf = (prefix: string, n: number): string => `${prefix}${String(n).padStart(RECEIPT_COUNTER_DIGITS, '0')}`;
   for (const c of candidates) {
-    const missing: number[] = [];
-    for (const n of c.numbers) {
-      const number = `${c.prefix}${String(n).padStart(RECEIPT_COUNTER_DIGITS, '0')}`;
-      if (await store.findByIdempotencyKey(tenantId, `receipt-${tenantId}-${number}`) !== undefined) continue;
-      refundNumbers ??= new Set((await store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded' })).map((e) => String((e.event.payload as { number?: unknown }).number ?? '')));
-      if (refundNumbers.has(number)) continue;
-      missing.push(n);
+    const top = banked.get(c.prefix) ?? 0;
+    const toCheck = c.numbers.filter((n) => n <= top);
+    const missing = c.numbers.filter((n) => n > top);
+    if (toCheck.length > 0) {
+      const keys = toCheck.map((n) => `receipt-${tenantId}-${numberOf(c.prefix, n)}`);
+      const held = store.existingIdempotencyKeys !== undefined
+        ? await store.existingIdempotencyKeys(tenantId, keys)
+        : new Set((await Promise.all(keys.map(async (k) => ((await store.findByIdempotencyKey(tenantId, k)) === undefined ? undefined : k)))).filter((k): k is string => k !== undefined));
+      for (const n of toCheck) {
+        const number = numberOf(c.prefix, n);
+        if (held.has(`receipt-${tenantId}-${number}`)) continue;
+        refundNumbers ??= new Set((await store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded' })).map((e) => String((e.event.payload as { number?: unknown }).number ?? '')));
+        if (refundNumbers.has(number)) continue;
+        missing.push(n);
+      }
     }
+    missing.sort((a, b) => a - b);
     if (missing.length > 0) unreceived.set(c.storeId, [...(unreceived.get(c.storeId) ?? []), { prefix: c.prefix, numbers: missing, since: c.since, capped: c.capped }]);
   }
   const out = new Map<string, readonly BillNumberFinding[]>();
   for (const storeId of new Set(records.map((r) => r.storeId))) {
-    const f = billNumberFindingsFor({ storeId, records, at, unreceived: unreceived.get(storeId) ?? [] });
+    const f = billNumberFindingsFor({ storeId, records: judged, at, unreceived: unreceived.get(storeId) ?? [], banked });
     if (f.length > 0) out.set(storeId, f);
   }
   return out;
@@ -14703,7 +14753,28 @@ export async function bankedReceiptCounts(
     // also for a report kept before head office judged reports at arrival.
     const issued = await issuedPrefixStores(store, tenantId);
     const own = (prefix: string): boolean => (issued.get(prefix)?.has(opts.storeId!) ?? false) || (prefix.startsWith('R-') && prefix.endsWith('-') && !issued.has(prefix));
-    for (const [key, count] of reported) if (key.startsWith(mine) && own(key.slice(mine.length))) raise(key.slice(mine.length), count);
+    // Verifier r20 BOX-2: and only up to PLAUSIBLE_ISSUED_AHEAD above what sales and refunds bank — the same bound head
+    // office judges a report by at arrival, so a report kept before that judging can never lock a till either.
+    // The running maximum is exact while it is plausible; when it is not (an implausible report kept before judging), the
+    // highest PLAUSIBLE count for that prefix is read from this store's reports — a rare path, only for that anomaly.
+    const fromLedger = new Map(out);
+    const capOf = (prefix: string): number => (fromLedger.get(prefix) ?? 0) + PLAUSIBLE_ISSUED_AHEAD;
+    let implausible = false;
+    for (const [key, count] of reported) {
+      const prefix = key.slice(mine.length);
+      if (!key.startsWith(mine) || !own(prefix)) continue;
+      if (count <= capOf(prefix)) raise(prefix, count); else implausible = true;
+    }
+    if (implausible) {
+      for (const e of await store.readStream(tenantId, BOX_HEALTH_STREAM, { type: 'StoreComputerHealthReported' })) {
+        const r = e.event.payload as { storeId?: unknown; receiptNumbersIssued?: unknown };
+        if (r.storeId !== opts.storeId || !Array.isArray(r.receiptNumbersIssued)) continue;
+        for (const x of r.receiptNumbersIssued as { prefix?: unknown; through?: unknown }[]) {
+          if (typeof x.prefix !== 'string' || typeof x.through !== 'number' || !Number.isSafeInteger(x.through) || x.through < 1 || !own(x.prefix)) continue;
+          if (x.through <= capOf(x.prefix)) raise(x.prefix, x.through);
+        }
+      }
+    }
   }
   return out;
 }
@@ -14733,7 +14804,14 @@ const HIGH_WATER_PROJECTION = 'receipt-high-water@1';
  * kept in the snapshot and used once it has. (`@2`: a new state shape; `@1` snapshots are simply not read.)
  */
 const HIGH_WATER_FENCED = 'receipt-high-water@2';
-interface FencedHighWater { readonly maxima: Record<string, number>; readonly pending?: { readonly seq: number; readonly token: string } }
+interface FencedHighWater { readonly maxima: Record<string, number>; readonly pending?: { readonly seq: number; readonly token: string; readonly since?: string } }
+/**
+ * Verifier r20 HW-2 (P-08): the fence each high-water fold is waiting on, and since when (this process's clock) — per
+ * snapshot store, per tenant + stream + type. A fence normally settles within milliseconds; one that does not is held
+ * back by a transaction still open somewhere on the database cluster (transaction ids are cluster-wide), and the fold
+ * then re-reads every bill since it. Read by the health check (`highWaterFenceWait`), never by the count itself.
+ */
+const HIGH_WATER_WAITS = new WeakMap<SnapshotStore, Map<string, { readonly token: string; readonly seq: number; readonly since: string }>>();
 async function receiptHighWater(
   store: EventStore, snapshots: SnapshotStore, tenantId: string, stream: string, type: string,
   keysOf: (payload: unknown) => readonly (readonly [string, number])[],
@@ -14781,7 +14859,21 @@ async function fencedHighWater(
   const advanceTo = Math.max(watermark, freshSettled ? fresh.seq : pendingSettled ? pending.seq : watermark);
   const settled = tail.filter((e) => e.seq <= advanceTo);
   // The fence to wait for next: none when the fresh one has settled; the fresh one once the old one is used; else the old one.
-  const nextPending = freshSettled ? undefined : pendingSettled || pending === undefined ? fresh : pending;
+  const nextPending: FencedHighWater['pending'] = freshSettled ? undefined
+    : pendingSettled || pending === undefined ? { ...fresh, since: new Date().toISOString() } : pending;
+  // Verifier r20 HW-2: remember what the fold waits on, and since when, for the health check.
+  const waits = HIGH_WATER_WAITS.get(snapshots) ?? new Map<string, { token: string; seq: number; since: string }>();
+  HIGH_WATER_WAITS.set(snapshots, waits);
+  const waitKey = `${tenantId}\u0000${stream}\u0000${type}`;
+  // The OLDEST fence still unsettled is kept, so "since" is when the stalling transaction was first seen — a busy shop's
+  // ordinary short transactions settle within milliseconds and never accumulate into a false "waiting".
+  if (nextPending === undefined) waits.delete(waitKey);
+  else {
+    const held = waits.get(waitKey);
+    if (held === undefined || (held.token !== nextPending.token && await store.fenceSettled!(tenantId, held.token))) {
+      waits.set(waitKey, { token: nextPending.token, seq: nextPending.seq, since: nextPending.since ?? new Date().toISOString() });
+    }
+  }
   const pendingChanged = nextPending?.token !== pending?.token || nextPending?.seq !== pending?.seq;
   if (settled.length >= HIGH_WATER_EVERY || (pendingChanged && tail.length >= HIGH_WATER_EVERY)) {
     const snap = new Map<string, number>(Object.entries(base?.state.maxima ?? {}));
@@ -14798,6 +14890,29 @@ async function fencedHighWater(
   }
   for (const e of tail) fold(out, e.event.payload);
   return out;
+}
+
+/**
+ * Verifier r20 HW-2 (P-08): is the bill-number high-water waiting on an open database transaction, and since when? From the
+ * folds this process ran (`HIGH_WATER_WAITS`), else the fence a kept snapshot is waiting on — each re-checked NOW, so a
+ * transaction that has since ended reads as settled. `undefined`: nothing is waiting.
+ */
+export async function highWaterFenceWait(
+  store: EventStore, tenantId: string, opts?: { readonly snapshots?: SnapshotStore },
+): Promise<{ readonly since: string; readonly waitingSeconds: number; readonly streams: readonly string[] } | undefined> {
+  if (store.fenceSettled === undefined || store.positionFence === undefined) return undefined;
+  const snapshots = opts?.snapshots ?? processHighWaterSnapshots(store);
+  const waits = HIGH_WATER_WAITS.get(snapshots);
+  let since: string | undefined;
+  const streams: string[] = [];
+  for (const [stream, type] of [[STREAM.sales, 'ReceiptNumberIssued'], [STREAM.returns, 'ReturnRecorded']] as const) {
+    const w = waits?.get(`${tenantId}\u0000${stream}\u0000${type}`)
+      ?? (await snapshots.load<FencedHighWater>(tenantId, stream, `${HIGH_WATER_FENCED}:${type}`))?.result.state.pending;
+    if (w === undefined || w.since === undefined || await store.fenceSettled(tenantId, w.token)) continue;
+    streams.push(stream);
+    if (since === undefined || Date.parse(w.since) < Date.parse(since)) since = w.since;
+  }
+  return since === undefined ? undefined : { since, waitingSeconds: Math.max(0, Math.floor((Date.now() - Date.parse(since)) / 1000)), streams };
 }
 
 /** A process-local snapshot store per event store, when the composition gives none (still correct: a snapshot is disposable). */
