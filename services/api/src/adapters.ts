@@ -28,7 +28,7 @@ import { money } from '../../../packages/contracts/src/money';
 import type { AppendResult, BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { issuedSeriesFor, PrefixWriteRaced, type ReceiptPrefixDeps, type ReceiptPrefixIssue } from '../../platform/src/receipt-prefixes';
-import { splitReceiptNumber, RECEIPT_COUNTER_MAX } from '../../../packages/contracts/src/receipt-number';
+import { splitReceiptNumber, RECEIPT_COUNTER_MAX, RECEIPT_COUNTER_DIGITS } from '../../../packages/contracts/src/receipt-number';
 import { notCanonical } from '../../platform/src/store-computer-identity';
 import { stockValueCheckFor } from './finance-close-adapters';
 import {
@@ -322,7 +322,8 @@ import { PersonalDataSealingStore, type PersonalDataPolicy, type SubjectKeyStore
 import { figure, sourceFreshness, syncedThrough } from '../../reporting/src/index';
 import type { ReportingDeps, Figure, SourceFreshness, StoreSyncReport } from '../../reporting/src/index';
 import { latestDomainReports, latestPerStore, type SyncWatermarkRecord } from '../../platform/src/sync-watermarks';
-import type { BoxHealthRecord } from '../../platform/src/box-health';
+import type { BoxHealthRecord, BillNumberFinding } from '../../platform/src/box-health';
+import { unreceivedCandidates, billNumberFindingsFor } from '../../platform/src/box-health';
 import type { BranchScope } from '../../kernel/src/index';
 import { tradingDayIn, tradingDayWindow, type TradingCalendar } from '../../../packages/calendar/src/index';
 import type { ConsolidationDeps } from '../../reporting/src/consolidation-route';
@@ -12753,10 +12754,15 @@ export function observedHealthAdapter(input: { readonly store: EventStore; reado
       return { stalestCompleteAt: stalest!.at, stalestStore: stalest!.store, unsent, deadLettered, stores: latestByStore.size };
     },
     // M35-FR-03: the store computers' own health reports (disk, queue, till devices) and the stores head office knows.
-    storeComputers: async (tenantId) => ({
-      records: await boxHealthAdapter({ store: input.store }).records(tenantId),
-      knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
-    }),
+    storeComputers: async (tenantId) => {
+      const records = await boxHealthAdapter({ store: input.store }).records(tenantId);
+      return {
+        records,
+        knownStores: (await orgStructureAdapter({ store: input.store, now: input.now }).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId),
+        // Verifier r19: bills issued and never received (sales lost by a restore), and box reports head office refused.
+        billNumberFindings: await billNumberFindingsOf(input.store, tenantId, records, input.now()),
+      };
+    },
     alertRules: (tenantId) => latest<StoredAlertRules>(input.store, tenantId, ALERT_RULES_STREAM, 'AlertRulesDefined'),
     defineAlertRules: async (tenantId, rules) => {
       await input.store.append(tenantId, ALERT_RULES_STREAM, makeEvent({
@@ -13473,11 +13479,18 @@ export function mergeStoreSync(
 
 /** M35-FR-03: every health report each store computer made (append-only; the latest per store is read). */
 const BOX_HEALTH_STREAM = streamName(STREAM.org, 'store-computer-health');
-export function boxHealthAdapter(input: { readonly store: EventStore }): {
+export function boxHealthAdapter(input: { readonly store: EventStore; readonly snapshots?: SnapshotStore }): {
   records: (tenantId: string) => Promise<readonly BoxHealthRecord[]>;
   record: (tenantId: string, r: BoxHealthRecord) => Promise<BoxHealthRecord>;
+  issuedAndBanked: (tenantId: string) => Promise<{ issuedPrefixes: ReadonlyMap<string, ReadonlySet<string>>; banked: ReadonlyMap<string, number> }>;
 } {
   return {
+    // Verifier r19 BOX-1: what head office issued (each prefix → the stores it was issued to) and banked from sales and
+    // refunds — never from any box's report — to judge what a box reports before it is folded.
+    issuedAndBanked: async (tenantId) => ({
+      issuedPrefixes: await issuedPrefixStores(input.store, tenantId),
+      banked: await bankedReceiptCounts(input.store, tenantId, input.snapshots === undefined ? undefined : { snapshots: input.snapshots }),
+    }),
     records: (tenantId) => allOf<BoxHealthRecord>(input.store, tenantId, BOX_HEALTH_STREAM, 'StoreComputerHealthReported'),
     record: async (tenantId, r) => {
       // Round 13 (verifier B5 low · hard rule #10): keyed on WHAT the box said as well as when — a retried POST of the same
@@ -14611,6 +14624,48 @@ export function receiptPrefixAdapter(input: { readonly store: EventStore; readon
   };
 }
 
+/** Verifier r19 BOX-1: every prefix head office ever issued to a till (any version), with the stores it was issued to. */
+export async function issuedPrefixStores(store: EventStore, tenantId: string): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
+  const out = new Map<string, Set<string>>();
+  for (const i of await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued')) {
+    if (typeof i.prefix !== 'string' || typeof i.storeId !== 'string') continue;
+    const set = out.get(i.prefix) ?? new Set<string>();
+    set.add(i.storeId);
+    out.set(i.prefix, set);
+  }
+  return out;
+}
+
+/**
+ * Verifier r19 (sales lost by a restore · P-08) and BOX-1: each store's bill-number findings for the owner. The candidates
+ * (numbers a box put on a bill, or cannot vouch for after a restore, reported at least the grace period ago and above what
+ * head office banked, or in its at-risk list) are checked ONE BY ONE against the ledger — a sale's receipt-number index
+ * (`receipt-<tenant>-<number>`) or a refund's number — so a number banked out of order is never reported as lost.
+ */
+export async function billNumberFindingsOf(store: EventStore, tenantId: string, records: readonly BoxHealthRecord[], at: string): Promise<ReadonlyMap<string, readonly BillNumberFinding[]>> {
+  const banked = await bankedReceiptCounts(store, tenantId);
+  const candidates = unreceivedCandidates({ records, at, banked });
+  let refundNumbers: Set<string> | undefined;
+  const unreceived = new Map<string, { prefix: string; numbers: number[]; since: string; capped: boolean }[]>();
+  for (const c of candidates) {
+    const missing: number[] = [];
+    for (const n of c.numbers) {
+      const number = `${c.prefix}${String(n).padStart(RECEIPT_COUNTER_DIGITS, '0')}`;
+      if (await store.findByIdempotencyKey(tenantId, `receipt-${tenantId}-${number}`) !== undefined) continue;
+      refundNumbers ??= new Set((await store.readStream(tenantId, STREAM.returns, { type: 'ReturnRecorded' })).map((e) => String((e.event.payload as { number?: unknown }).number ?? '')));
+      if (refundNumbers.has(number)) continue;
+      missing.push(n);
+    }
+    if (missing.length > 0) unreceived.set(c.storeId, [...(unreceived.get(c.storeId) ?? []), { prefix: c.prefix, numbers: missing, since: c.since, capped: c.capped }]);
+  }
+  const out = new Map<string, readonly BillNumberFinding[]>();
+  for (const storeId of new Set(records.map((r) => r.storeId))) {
+    const f = billNumberFindingsFor({ storeId, records, at, unreceived: unreceived.get(storeId) ?? [] });
+    if (f.length > 0) out.set(storeId, f);
+  }
+  return out;
+}
+
 /** OB-81: the store pack's `receiptSeries` for one store — each till's current issued prefix. */
 export async function issuedReceiptSeries(store: EventStore, tenantId: string, storeId: string): Promise<ReturnType<typeof issuedSeriesFor>> {
   return issuedSeriesFor(await allOf<ReceiptPrefixIssue>(store, tenantId, RECEIPT_PREFIX_STREAM, 'TillReceiptPrefixIssued'), storeId);
@@ -14641,7 +14696,11 @@ export async function bankedReceiptCounts(
           ? [[`${r.storeId as string}\u0000${x.prefix}`, x.through] as const] : []));
     });
     const mine = `${opts.storeId}\u0000`;
-    for (const [key, count] of reported) if (key.startsWith(mine)) raise(key.slice(mine.length), count);
+    // Verifier r19 BOX-1: only this store's own prefixes (issued to one of its tills, or its own `R-<lane>-` numbering) —
+    // also for a report kept before head office judged reports at arrival.
+    const issued = await issuedPrefixStores(store, tenantId);
+    const own = (prefix: string): boolean => (issued.get(prefix)?.has(opts.storeId!) ?? false) || (prefix.startsWith('R-') && prefix.endsWith('-') && !issued.has(prefix));
+    for (const [key, count] of reported) if (key.startsWith(mine) && own(key.slice(mine.length))) raise(key.slice(mine.length), count);
   }
   return out;
 }

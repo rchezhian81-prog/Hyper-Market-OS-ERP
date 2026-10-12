@@ -39,7 +39,11 @@ RUN node scripts/build-service.mjs edge
 # Owned by the user that writes it. A sale that cannot be written is a sale refused at the lane,
 # so the permissions on this directory are a trading matter rather than a tidiness one.
 RUN mkdir -p /var/lib/sre-edge && chown sre:sre /var/lib/sre-edge
-VOLUME ["/var/lib/sre-edge"]
+# OB-87 · verifier r19 OB87-1: the bill-number witness, OUTSIDE the data folder and on its own volume (compose mounts
+# `edge-witness` here and sets EDGE_WITNESS_DIR). Made and owned here, so a fresh named volume starts writable by `sre`
+# under the read-only root; without it every start looked like a possible restore (a new "ZZ" prefix each boot).
+RUN mkdir -p /var/lib/sre-edge-witness && chown sre:sre /var/lib/sre-edge-witness
+VOLUME ["/var/lib/sre-edge", "/var/lib/sre-edge-witness"]
 
 USER sre
 

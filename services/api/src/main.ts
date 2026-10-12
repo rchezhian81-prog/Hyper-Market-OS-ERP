@@ -1134,7 +1134,7 @@ export function buildSurface(deps: {
     // M35-FR-03: each store computer reports its disk, its queue and its tills' devices (its own store, stamped — OB-54);
     // head office's observed health judges them, stale when the box has gone quiet.
     ...boxHealthRoutes(store === undefined ? { now, record: async () => {} } : {
-      now, storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u), ...boxHealthAdapter({ store }),
+      now, storeComputerScopeOf: (t, u) => storeComputerScopeHeldBy(store, t, u), ...boxHealthAdapter({ store, ...(deps.snapshots === undefined ? {} : { snapshots: deps.snapshots }) }),
     }),
     ...posRoutes(store === undefined ? {
       catalogue: empty(new Map()), currentPackVersion: empty(1),

@@ -50,7 +50,7 @@ import {
 } from '../../../packages/ops/src/index';
 import { readRules, readThresholds } from './operational-health';
 import { raiseKey, type AlertLifecycleDeps, type AlertLifecycleEvent } from './alert-lifecycle';
-import { judgeBoxes, type BoxHealthRecord, type BoxHealthView } from './box-health';
+import { judgeBoxes, type BoxHealthRecord, type BoxHealthView, type BillNumberFinding } from './box-health';
 import type { ComponentHealth } from '../../../packages/ops/src/index';
 
 export interface ConnectorQueueDepth {
@@ -122,7 +122,11 @@ export interface ObservedHealthDeps extends Pick<AlertLifecycleDeps, 'alerts' | 
    * M35-FR-03: the store computers' own health reports (disk, queue, till devices — `box-health.ts`) and the stores head
    * office knows (so one that never reported is named, not left out). Absent: the lane-side signals stay not observed.
    */
-  readonly storeComputers?: (tenantId: string) => Promise<{ readonly records: readonly BoxHealthRecord[]; readonly knownStores: readonly string[] }>;
+  readonly storeComputers?: (tenantId: string) => Promise<{
+    readonly records: readonly BoxHealthRecord[]; readonly knownStores: readonly string[];
+    /** Verifier r19: bills issued but never received, and box reports refused — per store, judged with the ledger. */
+    readonly billNumberFindings?: ReadonlyMap<string, readonly BillNumberFinding[]>;
+  }>;
   /** OB-78: the owner's early-warning line for a store computer's disk, in hours of trading left (tenant setting, default 48). */
   readonly boxDiskWarnHours?: (tenantId: string) => Promise<number> | number;
 }
@@ -168,6 +172,7 @@ export async function observeSignals(deps: ObservedHealthDeps, tenantId: string,
   const judgedBoxes = boxReports === undefined || (boxReports.records.length === 0)
     ? undefined : judgeBoxes({
       records: boxReports.records, knownStores: boxReports.knownStores, at, thresholds,
+      ...(boxReports.billNumberFindings === undefined ? {} : { billNumberFindings: boxReports.billNumberFindings }),
       ...(deps.boxDiskWarnHours === undefined ? {} : { diskWarnHours: await deps.boxDiskWarnHours(tenantId) }),
     });
   const writable = judgedBoxes?.localStoreWritable;

@@ -159,6 +159,11 @@ services:
     restart: unless-stopped
     environment:
       EDGE_DATA_DIR: /var/lib/sre-edge
+      # OB-87 · verifier r19 OB87-1: the bill-number WITNESS log lives OUTSIDE the data folder, on its own volume, so a
+      # restore of the data volume from an older backup is told apart from an ordinary restart (the box then numbers
+      # under a fresh prefix and never repeats a bill number). It must be writable under the read-only root — without
+      # it every restart looked like a possible restore. Never back it up with edge-data, never restore over it.
+      EDGE_WITNESS_DIR: /var/lib/sre-edge-witness
       EDGE_TENANT_ID: ${EDGE_TENANT_ID}
       # The same key the cloud signs packs with — the edge VERIFIES with it, which is
       # how a lane knows a price list came from us (hard rule #4: from .env only).
@@ -178,6 +183,8 @@ services:
       # The one thing this container must be able to write is the one thing it must
       # never lose, so it is a named volume rather than the container's own layer.
       - edge-data:/var/lib/sre-edge
+      # OB-87: the witness — a SEPARATE named volume (not inside edge-data), so a backup of edge-data never carries it.
+      - edge-witness:/var/lib/sre-edge-witness
     read_only: true
     tmpfs:
       - /tmp
@@ -329,5 +336,7 @@ services:
 volumes:
   db-data:
   edge-data:
+  # OB-87: the store edge's bill-number witness — never backed up with edge-data, never restored over.
+  edge-witness:
   caddy-data:
   caddy-config:
