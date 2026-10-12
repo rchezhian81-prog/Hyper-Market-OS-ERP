@@ -184,6 +184,20 @@ export const STORE_STAMP_FIELD: Readonly<Record<string, string>> = Object.freeze
   '/v1/merchandising/shelf-counts/:countId/synced': 'storeId',
   '/v1/warehouse/movements/:commandId/synced': 'command.storeId',
   '/v1/hr/workforce/tasks/:taskId/complete/synced': 'branchId',
+  // OB-54 round 12: the card/UPI no-answer and late-answer relays (OB-69 · PF-06) are placed by their storeId.
+  '/v1/finance/payment-exceptions/:attemptId/no-answer/synced': 'storeId',
+  '/v1/finance/payment-exceptions/:attemptId/late-answer/synced': 'storeId',
+});
+
+/**
+ * OB-54 round 12: routes that act on a record head office ALREADY holds, by its path id — the record's own recorded store
+ * is judged like a store the request names (`record.<param>`): a box acts only on its own store's records. Route path →
+ * the path parameter naming the record.
+ */
+export const RECORD_STORE_PARAM: Readonly<Record<string, string>> = Object.freeze({
+  '/v1/finance/payment-exceptions/:attemptId/no-answer/synced': 'attemptId',
+  '/v1/finance/payment-exceptions/:attemptId/late-answer/synced': 'attemptId',
+  '/v1/finance/payment-exceptions/:attemptId/resolved/synced': 'attemptId',
 });
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH']);
