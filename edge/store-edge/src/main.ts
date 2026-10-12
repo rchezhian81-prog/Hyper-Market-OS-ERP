@@ -2274,8 +2274,13 @@ export async function startEdge(
         salesLogUsedBytes: await log.usedBytes(), salesLogCapacityBytes: log.capacityBytes, reserveBytes: SALE_RESERVE_BYTES,
       },
       queue: { unsent: queues.reduce((n, h) => n + h.unsentCount, 0), deadLettered: queues.reduce((n, h) => n + h.deadLetterCount, 0) },
-      // What the tills' devices last said (kept on this disk); the cashier who sent it stays on the box.
-      tills: (peripheralReports?.latest() ?? []).map((r) => ({ laneId: r.laneId, reportedAt: r.reportedAt, devices: r.devices })),
+      // What the tills' devices last said (kept on this disk); the cashier who sent it stays on the box. `attended`: is
+      // anybody signed in at that till now (P-08) — a signed-in till re-sends its devices every 5 minutes, an unattended
+      // one stops, so head office can say whether a stale lane is expected (nobody there) or a till to check.
+      tills: (peripheralReports?.latest() ?? []).map((r) => ({
+        laneId: r.laneId, reportedAt: r.reportedAt, devices: r.devices,
+        attended: (tillOperators?.live() ?? []).some((s) => s.laneId === r.laneId),
+      })),
     };
     return boxHealthReporter(report);
   };

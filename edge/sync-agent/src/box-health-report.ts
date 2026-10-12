@@ -19,7 +19,13 @@ export interface BoxHealthReport {
     readonly reserveBytes: number;
   };
   readonly queue: { readonly unsent: number; readonly deadLettered: number };
-  readonly tills: readonly { readonly laneId: string; readonly reportedAt: string; readonly devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[] }[];
+  readonly tills: readonly {
+    readonly laneId: string;
+    readonly reportedAt: string;
+    readonly devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[];
+    /** Is somebody signed in at that till now (P-08)? An unattended till stops re-sending its devices and goes stale. */
+    readonly attended?: boolean;
+  }[];
 }
 
 export const BOX_HEALTH_REPORT_PATH = '/v1/store-computers/health-reports';

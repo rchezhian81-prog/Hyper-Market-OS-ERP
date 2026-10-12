@@ -25,6 +25,7 @@ import {
 } from './till-session';
 import { createPosView, type PosView } from './view-adapter';
 import { customerDisplayFrame, CUSTOMER_DISPLAY_CHANNEL, type CustomerDisplayFrame } from './customer-display';
+import { createDeviceHeartbeat, type DeviceHeartbeat, type DeviceStatus } from './device-heartbeat';
 import {
   createRefundView, type RefundPolicy, type RefundLineChoice, type RefundScreenOutcome,
 } from './refund-view';
@@ -727,6 +728,11 @@ export function bootPos(config?: {
   paymentsPort?: PaymentAttemptsPort;
   /** The till's void-evidence call to its box (audit PF-07). Overridable for tests; production posts to this till's own edge. */
   tillActivityPost?: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  /**
+   * The device re-send's timer (D04-FR-05 · P-08): `every(ms, fn)` answers a cancel, `soon(fn)` runs off the call stack.
+   * Overridable for tests (a simulated clock); production uses `setInterval` / `setTimeout`.
+   */
+  deviceHeartbeatTimers?: { readonly every?: (ms: number, fn: () => void) => () => void; readonly soon?: (fn: () => void) => void };
   /** The till's loyalty-balance call to its box (PF-09 step 3). Overridable for tests; production posts to this till's own edge. */
   loyaltyWalletPost?: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }): PosView & {
@@ -742,6 +748,14 @@ export function bootPos(config?: {
   readonly customerDisplayChannelName: () => string;
   /** D04-FR-05: send what this till's devices say to the store computer (needs a signed-in cashier). */
   readonly reportDevices: (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[]) => Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }>;
+  /**
+   * D04-FR-05 · P-08: the device adapter says how the devices are now. Kept as the last known and sent to the store
+   * computer at once if anything changed; re-sent every 5 minutes while a cashier is signed in (`device-heartbeat.ts`).
+   * Fire-and-forget: never awaited, never on the sale path, nothing sent while a sale is being written.
+   */
+  readonly devicesSaid: (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[]) => void;
+  /** The device re-send itself — for the page and the tests (`running`, `tick`, `lastKnown`). */
+  readonly deviceHeartbeat: DeviceHeartbeat;
   readonly till: ReturnType<typeof createTillSession>;
   /**
    * The next receipt number for this lane, from the store computer (audit PF-04): saved on the box before it is given,
@@ -830,6 +844,19 @@ export function bootPos(config?: {
   readonly lane: () => { readonly laneId: string | null; readonly tradingDayCutoff: string; readonly tradingDayAt: (atIsoUtc: string) => string };
 } {
   const outbox = new SyncOutbox();
+  // D04-FR-05 · P-01: how many sale/refund writes to the box are waiting for its answer. The device re-send never starts
+  // while one is (`device-heartbeat.ts`); it goes once the write has answered. Counting only — no network here.
+  let commitsInFlight = 0;
+  let heartbeatRef: DeviceHeartbeat | undefined;
+  const whileCommitting = (write: DurableWrite): DurableWrite => async (id, record) => {
+    commitsInFlight += 1;
+    try {
+      return await write(id, record);
+    } finally {
+      commitsInFlight -= 1;
+      if (commitsInFlight === 0) heartbeatRef?.commitEnded();
+    }
+  };
   // Only what was GIVEN goes in: no lane, cashier or day is ever made up here (F09).
   const identity = {
     ...(config?.laneId === undefined ? {} : { laneId: config.laneId }),
@@ -847,7 +874,7 @@ export function bootPos(config?: {
     },
     new Ledger(new InMemoryLedgerStore()),
     outbox,
-    config?.durable ?? laneDurable(config?.lanePort ?? DEFAULT_LANE_PORT),
+    whileCommitting(config?.durable ?? laneDurable(config?.lanePort ?? DEFAULT_LANE_PORT)),
   );
   // Indexing happens once at boot, so every subsequent scan is O(1) (§32).
   const catalogue = config?.catalogue ? new CatalogueCache(config.catalogue) : undefined;
@@ -870,7 +897,7 @@ export function bootPos(config?: {
     outbox,
     {
       // The refund's durable write goes to this till's own edge, exactly as the sale's does.
-      durableReturn: config?.durableReturn ?? laneDurableReturn(lanePort),
+      durableReturn: whileCommitting(config?.durableReturn ?? laneDurableReturn(lanePort)),
       // And so does every cash movement and the close (SP-4c · F10): the box records, decides and dates them.
       cashMovement: config?.cashMovement ?? laneCashMovement(lanePort),
       shiftClose: config?.shiftClose ?? laneShiftClose(lanePort),
@@ -1088,8 +1115,9 @@ export function bootPos(config?: {
   const receiptTemplate = (): PosReceiptTemplate | null => config?.receiptTemplate ?? null;
 
   // The cashier signs in ONCE for both surfaces — the sale and the till name the same person (SP-4b · F09).
-  const signIn = (cashierId: string): void => { session.signIn(cashierId); till.signIn(cashierId); };
-  const signOut = (): void => { session.signOut(); till.signOut(); };
+  // D04-FR-05 · P-08: the device re-send runs only while somebody is signed in (it is defined further down).
+  const signIn = (cashierId: string): void => { session.signIn(cashierId); till.signIn(cashierId); heartbeatRef?.start(); };
+  const signOut = (): void => { heartbeatRef?.stop(); session.signOut(); till.signOut(); };
   const operator = (): string | undefined => session.operator();
 
   // HELD BASKETS (audit PF-05): the basket goes to the store computer's disk; the till clears only once the box has it.
@@ -1310,6 +1338,11 @@ export function bootPos(config?: {
   // the store computer through the signed-in session, for the manager's Today screen. The device adapter that knows is
   // hardware-side (external); this only carries its words. A device failing never stops a sale.
   const reportDevices = async (devices: readonly { readonly kind: string; readonly state: string; readonly detail?: string }[]): Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }> => {
+    // Kept as the last known, so the 5-minute re-send carries it on (P-08) — even when this send is refused or lost.
+    if (Array.isArray(devices) && devices.length > 0) deviceHeartbeat.remember(devices);
+    return postDevices(devices);
+  };
+  const postDevices = async (devices: readonly DeviceStatus[]): Promise<{ readonly recorded: boolean; readonly refusedBecause?: string; readonly laneMessage?: string }> => {
     if (session.operator() === undefined) return { recorded: false, refusedBecause: 'operator_not_signed_in', laneMessage: 'Sign in before the till reports its devices.' };
     try {
       const base = laneBase(config?.lanePort ?? DEFAULT_LANE_PORT);
@@ -1321,6 +1354,21 @@ export function bootPos(config?: {
     } catch {
       return { recorded: false, refusedBecause: 'lane_unreachable', laneMessage: 'This till cannot reach its store computer; the device report was not sent.' };
     }
+  };
+
+  // D04-FR-05 · P-08: keep the last known device states and re-send them while a cashier is signed in, and at once on a
+  // change — so a healthy, quiet till stays fresh at head office. Fire-and-forget; never on the sale path (hard rule #1).
+  const deviceHeartbeat = createDeviceHeartbeat({
+    send: postDevices,
+    signedIn: () => session.operator() !== undefined,
+    committing: () => commitsInFlight > 0,
+    ...(config?.deviceHeartbeatTimers?.every === undefined ? {} : { every: config.deviceHeartbeatTimers.every }),
+    ...(config?.deviceHeartbeatTimers?.soon === undefined ? {} : { soon: config.deviceHeartbeatTimers.soon }),
+  });
+  heartbeatRef = deviceHeartbeat;
+  if (session.operator() !== undefined) deviceHeartbeat.start();
+  const devicesSaid = (devices: readonly DeviceStatus[]): void => {
+    if (Array.isArray(devices) && devices.length > 0) deviceHeartbeat.update(devices);
   };
 
   // D04-FR-05 · M12-FR-01: the customer display's frame, from the till's own basket — no network (see customer-display.ts).
@@ -1337,7 +1385,7 @@ export function bootPos(config?: {
   };
   const customerDisplayChannelName = (): string => CUSTOMER_DISPLAY_CHANNEL;
 
-  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
+  return Object.assign(view, { customerDisplay, customerDisplayChannelName, reportDevices, devicesSaid, deviceHeartbeat, till, nextReceipt, receiptsRemaining, receiptNotice, holdAtTill, heldAtTill, recallAtTill, abandonAtTill, startCardPayment, answerCardPayment, checkCardPayment, voidAtTill, priceChangeValue, priceChangeAtTill, noSaleAtTill, currentBillRef: () => session.billRef(), lookupRefund, noReceiptReturn, receiptTemplate, signIn, signOut, operator, lane, signInAtTill, resumeAtTill, signOutAtTill, tillSignInBy, operatorToken, approveAtTill, loyaltyWallet });
 }
 
 // Attach for the view. `app.js` uses `window.posSession` when present and falls back to its
