@@ -5,6 +5,20 @@ _Update it at the end of every session (prompt R10). This is what stops the proj
 
 ---
 
+## Coordinated programme · Rounds 13–16 — verifier rounds r13–r17 closed in turn; owner decisions OB-76 to OB-86 (12 October 2026)
+
+- **Built and integration-tested (memory + PostgreSQL), browser-verified where a screen changed; no staff UAT:**
+  - OB-76 outside-party logins by staff invite + second-person approval; OB-77 customer sees delivery steps with as-of time; OB-78 early disk warning in hours of trading (gaps over 60 min excluded; "not yet known" reads unknown); OB-79 floor restocking refused under an explicit transfer freeze.
+  - Store lock generalised: every relay is judged on the store of the record it acts on (person and store computer), head office's own record decides (OB-84), unplaceable relays refused and listed; non-canonical store ids refused on every write.
+  - OB-80 till identity per (store, till); OB-81 per-store bill-number prefixes issued by head office (≤ 16 characters, unique across stores); OB-82 old till cash placed once; OB-83 over/short by own store.
+  - Till device heartbeat every 5 minutes while signed in; stale lanes named; hung adapter detected when the adapter offers a clock.
+  - Store setup page saves every setting (loyalty numbers were unsaveable); setup and warehouse pages open offline.
+  - Event store: identical concurrent appends collapse; id clash under another key is a named 409.
+- **Full gate (12 Oct, PostgreSQL):** 11,371 tests passed; two browser tests fixed afterwards (B2B portal expectation after G5; Organisation page timeout under load).
+- **Open (verifier r17, being fixed next round):** OB-85 store-coded fallback numbering on a box with no setup yet; prefix issue race (two people, one till) must be a visible conflict, not a silent overwrite; invisible characters / unchecked store keys (assets, display contracts, grant branch scopes) can create a ghost store; OB-86 audit entry on the automatic old-cash placement; low items listed in scratchpad report r17.
+- **Owner decisions this period:** OB-75 to OB-86 recorded in docs/registers/decisions.md.
+- **For the CA:** confirm the bill-number format (prefix + 6 digits, ≤ 16 characters) before real trading.
+
 ## Coordinated programme · Rounds 9–13 — owner decisions OB-55 to OB-79 built or deferred; the pilot's missing screens built; two independent checks (11–12 October 2026)
 
 Branch `claude/new-session-lw91i4` at `c2ce28e4`, compared with `main` at `d14a8b2f` (PR #761). Not yet merged to main.
