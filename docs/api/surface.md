@@ -18,7 +18,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 
 | APIs served | Endpoints | Writes | Idempotent writes | Feature-gated | Distinct permissions |
 |---|---|---|---|---|---|
-| 13 | 993 | 605 | 605 | 89 | 300 |
+| 13 | 994 | 605 | 605 | 89 | 300 |
 
 ## API-01 — Identity / Admin (M01–M02)
 
@@ -331,6 +331,7 @@ this live from `GET /v1/platform/api-manifest` (M36-FR-04).
 | POST | `/v1/warehouse/movements/:commandId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/warehouse/movements/:commandId/synced` | `inventory.movement.sync` | core | yes |
 | POST | `/v1/warehouse/put-away/suggest` | `inventory.availability.read` | core | yes |
+| GET | `/v1/warehouse/transfers` | `inventory.availability.read` | core | — |
 | GET | `/v1/warehouse/transfers/:transferId` | `inventory.availability.read` | core | — |
 | POST | `/v1/warehouse/transfers/:transferId` | `inventory.movement.append` | core | yes |
 | POST | `/v1/warehouse/transfers/:transferId/dispatch` | `inventory.movement.append` | core | yes |

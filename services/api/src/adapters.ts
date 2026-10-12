@@ -5545,6 +5545,8 @@ export function transfersAdapter(input: {
     now: input.now,
 
     transfer: async (tenantId, transferId) => (await foldTransfers(tenantId)).get(transferId),
+    // Round 12 (WF-07 screen): every transfer's latest state, in the order first recorded.
+    transfers: async (tenantId) => [...(await foldTransfers(tenantId)).values()],
 
     // SP-5 (F05): the sending location's own weighted-average unit cost for the product — `not_known` (unvalued) → undefined.
     unitCostAt: async (tenantId, locationId, productId) => {

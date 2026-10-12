@@ -134,6 +134,7 @@ describe('every page gives the chrome what it needs', () => {
     // a loss-making price on their own Approvals page (ADR-0024), so that page has no sheet at all. Four since
     // 2b-vi-c-4: the buyer's page lost its "who checked this bill?" sheet — the check is a second person's own act at
     // head office.
-    expect(sheets).toBe(4);
+    // Six since round 12: the Count plans and Transfers pages open a plan or a transfer as a record drawer.
+    expect(sheets).toBe(6);
   });
 });

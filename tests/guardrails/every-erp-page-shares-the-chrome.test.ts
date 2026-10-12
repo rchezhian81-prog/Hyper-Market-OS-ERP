@@ -22,8 +22,8 @@ const styleOf = (html: string): string => html.slice(html.indexOf('<style>'), ht
 const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
 describe('every page carries the one chrome', () => {
-  it('finds the fifty-five pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation)', () => {
-    expect(PAGES.length).toBe(55);
+  it('finds the fifty-seven pages (round 8: Returned goods to decide, Customer cases, Assistant drafts; round 10: Organisation, Delegation; round 12: Count plans, Transfers)', () => {
+    expect(PAGES.length).toBe(57);
   });
 
   it('loads sre-chrome.js AFTER its own script, so the page\'s words come first and the chrome finishes the frame', () => {
@@ -208,6 +208,8 @@ describe('every word on every page has a Tamil twin (design system §1 rule 6 ·
   const SESSION_WORDS: Record<string, string> = {
     'payroll.js': 'apps/web-erp/src/payroll-session.ts',
     'payroll-payslip.js': 'apps/web-erp/src/payroll-ess-session.ts',
+    'count-plans.js': 'apps/web-erp/src/count-plans-session.ts',
+    'transfers.js': 'apps/web-erp/src/transfers-session.ts',
   };
   // No page is English-only any more: the erasure console and the company report joined the toggle in slice 5c.
   for (const script of SCRIPTS) {

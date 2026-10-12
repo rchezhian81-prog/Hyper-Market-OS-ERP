@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SRE Count plans</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#192f27" />
+    <!--
+      Count plans (WF-08 · D05-FR-05 · M09-FR-04 · OB-59 · OB-66 · §28). A THIN CLIENT over head office's count-plan routes
+      (/v1/inventory/count-plans*): plan a count for one place (the freeze defaults to the owner's choice — adjustments and
+      write-offs only), open it (the freeze starts), count blind from the sheet, recount, give each difference a cause, and
+      have a DIFFERENT person approve it (head office posts one correction per line) or cancel it. The plan's freeze
+      exceptions and the damaged write-offs held on it are shown as head office reports them. Every rule and every refusal
+      is head office's; the words come from the tested session model (apps/web-erp/src/count-plans-session.ts).
+    -->
+    <link rel="stylesheet" href="./sre-foundation.css" />
+    <style>
+      :root { --tap: 48px; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); min-height: 100dvh; display: flex; flex-direction: column; }
+      main { width: min(1100px, 100%); margin: 0 auto; padding: 16px; display: grid; gap: 16px; align-content: start; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      h3 { margin: 0; font-size: 17px; }
+      p.lede { margin: 0; color: var(--muted); font-size: 14px; }
+      label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+      input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); min-height: var(--tap); min-width: 0; }
+      textarea { min-height: 72px; }
+      fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 0; display: flex; gap: 8px 16px; flex-wrap: wrap; }
+      fieldset label { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; min-height: var(--tap); }
+      fieldset input { min-height: auto; width: 20px; height: 20px; }
+      .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+      button { font: inherit; font-weight: 600; min-height: var(--tap); border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0 16px; }
+      button.quiet { background: var(--line); color: var(--ink); }
+      button[disabled] { opacity: .5; cursor: not-allowed; }
+      .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+      .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; }
+      .panel b { font-size: 22px; font-variant-numeric: tabular-nums; } .panel span { color: var(--muted); font-size: 14px; }
+      table { width: 100%; border-collapse: collapse; }
+      td, th { text-align: left; padding: 8px 10px; vertical-align: top; overflow-wrap: anywhere; }
+      .tone-ok { border-left: 6px solid var(--ok); } .tone-degraded { border-left: 6px solid var(--degraded); } .tone-idle { border-left: 6px solid var(--idle); } .tone-error { border-left: 6px solid var(--error); }
+      ul.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      ul.rows li { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; background: var(--bg); }
+      .inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+      .status { font-size: 14px; min-height: 20px; margin: 0; }
+      .status.good { color: var(--good); } .status.err { color: var(--danger-text); }
+      .nobody { background: var(--warn); color: var(--on-warn); padding: 8px 16px; font-weight: 600; margin: 0; }
+      .muted { color: var(--muted); font-size: 14px; }
+      .drawer-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="who" id="who">Count plans</h1>
+      <span class="sync">
+        <button class="lang" id="lang" type="button" aria-label="Switch language">தமிழ்</button>
+      </span>
+    </header>
+    <!--SCREEN-DATA-->
+    <p class="nobody" id="nobody" hidden></p>
+    <main>
+      <div>
+        <h2 id="title">Count plans</h2>
+        <p class="lead" id="lede"></p>
+      </div>
+
+      <div class="panels" role="status" aria-live="polite">
+        <div class="panel"><b id="n-planned">–</b><span id="p-planned">Planned</span></div>
+        <div class="panel"><b id="n-counting">–</b><span id="p-counting">Counting</span></div>
+        <div class="panel"><b id="n-approved">–</b><span id="p-approved">Approved</span></div>
+        <div class="panel"><b id="n-cancelled">–</b><span id="p-cancelled">Cancelled</span></div>
+      </div>
+
+      <section aria-labelledby="new-h" id="new-section">
+        <h3 id="new-h">Plan a count</h3>
+        <p class="lede" id="new-lede"></p>
+        <div class="row">
+          <label for="place"><span id="l-place">Place</span><input id="place" autocomplete="off" /></label>
+          <label for="threshold"><span id="l-threshold">Recount threshold</span><input id="threshold" inputmode="decimal" autocomplete="off" /></label>
+        </div>
+        <label for="products"><span id="l-products">Products</span><textarea id="products" autocomplete="off"></textarea></label>
+        <fieldset>
+          <legend id="l-freeze">Freeze</legend>
+          <label><input type="radio" name="freeze" value="default" checked /><span id="f-default">Default</span></label>
+          <label><input type="radio" name="freeze" value="custom" /><span id="f-custom">Custom</span></label>
+          <label><input type="radio" name="freeze" value="none" /><span id="f-none">None</span></label>
+        </fieldset>
+        <fieldset id="kinds" hidden></fieldset>
+        <label for="note"><span id="l-note">Note</span><input id="note" autocomplete="off" /></label>
+        <button id="create" type="button">Plan this count</button>
+        <p class="status" id="create-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="reg-h">
+        <h3 id="reg-h">Count plans</h3>
+        <p class="lede" id="reg-lede"></p>
+        <p class="status" id="list-status" role="status" aria-live="polite"></p>
+        <table id="register" aria-labelledby="reg-h">
+          <thead><tr><th id="c-plan">Plan</th><th id="c-place">Place</th><th id="c-products">Products</th><th id="c-state">State</th><th id="c-freeze">Freeze</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </main>
+
+    <div class="sheet" id="drawer" role="dialog" aria-modal="true" aria-labelledby="d-title" hidden>
+      <div class="sheet-inner">
+        <div class="drawer-head"><h3 id="d-title"></h3><button class="quiet" id="d-close" type="button">✕</button></div>
+        <p id="d-state"></p>
+        <p class="muted" id="d-freeze"></p>
+        <p class="muted" id="d-totals"></p>
+        <p class="status" id="d-status" role="status" aria-live="polite"></p>
+        <div class="inline" id="d-acts">
+          <button id="d-open" type="button">Open</button>
+          <label for="d-reason"><span id="l-d-reason">Reason</span><input id="d-reason" autocomplete="off" /></label>
+          <button id="d-approve" type="button">Approve</button>
+          <button class="quiet" id="d-cancel" type="button">Cancel</button>
+        </div>
+        <h3 id="d-sheet-h">Count sheet</h3>
+        <p class="lede" id="d-sheet-lede"></p>
+        <ul class="rows" id="d-sheet"></ul>
+        <h3 id="d-lines-h">Lines</h3>
+        <ul class="rows" id="d-lines"></ul>
+        <h3 id="d-breaches-h">Freeze exceptions</h3>
+        <p class="lede" id="d-breaches-lede"></p>
+        <ul class="rows" id="d-breaches"></ul>
+        <h3 id="d-held-h">Held write-offs</h3>
+        <p class="lede" id="d-held-lede"></p>
+        <ul class="rows" id="d-held"></ul>
+      </div>
+    </div>
+    <script src="./web-erp.bundle.js" type="module"></script>
+    <script type="module" src="./count-plans.js"></script>
+    <!-- The one chrome every ERP page carries: sync badge, cache strip, language toggle (sre-chrome.js). -->
+    <script type="module" src="./sre-chrome.js"></script>
+  </body>
+</html>
