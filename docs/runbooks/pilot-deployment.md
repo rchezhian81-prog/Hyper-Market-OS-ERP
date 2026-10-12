@@ -209,6 +209,17 @@ transaction that was running at that point has finished — on the WHOLE databas
 - **The API ends its own stuck sessions.** Every API connection carries `idle_in_transaction_session_timeout` =
   `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` (default **60000 ms, one minute**). The API's log says so at start:
   `database: a session idle inside an open transaction is ended after 60000 ms`. Leave it at the default; never set `0`.
+  It is in **milliseconds**: the API refuses to start (exit code 78) on any value between 1 and 9999 — "60" meant as
+  seconds would end ordinary work mid-way — and says so by name.
+- **When the database ends one of the API's sessions** (this limit, `pg_terminate_backend`, a database restart), the API
+  keeps running (verifier r21 IDLE-CRASH). The request that was using that session answers
+  `500 database_ended_transaction` — "the database ended this transaction before it finished … nothing in it was saved"
+  — and the till or screen simply sends it again under the same key. The log says
+  `database: the server ended a pooled connection (…)` for a connection that was idle in the pool.
+- **Last resort policy.** Any error that escapes every request's own handling is written to the log between `***` lines.
+  If it is only a database connection that died, the API keeps serving. Anything else: the API drains and exits with
+  code 70, and the container's restart policy (`unless-stopped`) starts it again; the tills keep selling meanwhile.
+  Search the log for `***` after any restart you did not expect.
 - **Anything else** (a `psql` window left in `BEGIN`, a prepared transaction, a long migration rehearsal on the same
   server) is not covered by that setting. If one is held for more than **5 minutes**, the health page shows
   `bill_number_high_water` — "bill-number high-water is waiting on an open database transaction since …". Bill numbers

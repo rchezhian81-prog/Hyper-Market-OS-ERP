@@ -636,6 +636,15 @@ export async function handle(opts: KernelOptions, request: HttpRequest): Promise
         wasItSaved: 'not_saved',
         nextSafeAction: 'Nothing was changed. Raise it with support so the two records can be compared.',
       }), traceId)
+      // Verifier r21 IDLE-CRASH: the database ended the session this request's transaction ran on before its COMMIT was
+      // sent (packages/persistence/src/pg-client.ts). PostgreSQL rolled it back whole — a visible failure that is known
+      // not saved, never a process crash and never the "did it save?" doubt.
+      : (e as Error | undefined)?.name === 'DatabaseSessionEndedError' ? asResponse(apiError(500, {
+        code: 'database_ended_transaction',
+        whatHappened: 'The database ended this transaction before it finished (its connection was closed), so nothing in it was saved.',
+        wasItSaved: 'not_saved',
+        nextSafeAction: 'Send it again under the same Idempotency-Key. If it keeps happening, tell support: head office is still running.',
+      }), traceId)
       : asResponse(apiError(500, {
       code: 'unhandled',
       whatHappened: 'The request failed in a way this service did not expect.',

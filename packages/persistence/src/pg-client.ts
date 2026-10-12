@@ -30,8 +30,16 @@ export interface PgQueryable {
 
 /** A single connection checked out of a pool — queryable and, crucially, releasable. */
 export interface PgPoolClient extends PgQueryable {
-  /** Return the connection to the pool. MUST be called once, in a `finally`, or the pool leaks. */
+  /** Return the connection to the pool. MUST be called once, in a `finally`, or the pool leaks. `release(err)` discards it. */
   release(err?: unknown): void;
+  /**
+   * Verifier r21 IDLE-CRASH: a checked-out node-postgres client is an EventEmitter that emits `'error'` when the server ends
+   * its session between statements (idle_in_transaction_session_timeout, an administrator's pg_terminate_backend, a server
+   * restart). The pool takes its own listener OFF while the client is checked out, so with nobody listening Node turns that
+   * `'error'` into an uncaught exception and the whole API process exits. Optional so a plain fake still fits.
+   */
+  on?(event: 'error', listener: (err: Error) => void): unknown;
+  removeListener?(event: 'error', listener: (err: Error) => void): unknown;
 }
 
 /**
@@ -42,6 +50,105 @@ export interface PgPoolClient extends PgQueryable {
  */
 export interface PgPool extends PgQueryable {
   connect(): Promise<PgPoolClient>;
+  /** node-postgres emits `'error'` on the POOL when an IDLE pooled connection is ended by the server (see {@link pgPoolClient}). */
+  on?(event: 'error', listener: (err: Error) => void): unknown;
+}
+
+/** What {@link pgPoolClient} tells its owner (the API's log) when the database ends one of its connections. */
+export interface PgPoolOptions {
+  /** Said once per ended idle connection — loudly, never swallowed (P-08). Default: written to stderr. */
+  readonly onConnectionEnded?: (detail: string) => void;
+}
+
+/**
+ * Verifier r21 IDLE-CRASH: the database ended the session a transaction was running on — `idle_in_transaction_session_timeout`
+ * fired, an administrator terminated it, or the server restarted — BEFORE that transaction's COMMIT was sent. PostgreSQL rolls
+ * an unfinished transaction back when its session ends, so the transaction saved NOTHING (all-or-nothing, FND-01). The API
+ * answers it as a visible 500 that says so (services/kernel/src/pipeline.ts), never as a crash and never as "unknown".
+ */
+export class DatabaseSessionEndedError extends Error {
+  override readonly name = 'DatabaseSessionEndedError';
+  readonly ended: unknown;
+  constructor(ended: unknown) {
+    super(`the database ended this transaction before it finished, so nothing in it was saved (${describeDbError(ended)})`);
+    this.ended = ended;
+  }
+}
+
+/** A database error in one line: its SQLSTATE (when it has one) and message. */
+export function describeDbError(e: unknown): string {
+  if (e instanceof Error) {
+    const code = (e as { code?: unknown }).code;
+    return typeof code === 'string' ? `${code}: ${e.message}` : e.message;
+  }
+  return String(e);
+}
+
+/**
+ * SQLSTATEs that mean the SESSION is gone (not that one statement was refused): 25P03 idle-in-transaction timeout, 57P01
+ * admin shutdown / pg_terminate_backend, 57P02 crash shutdown, 57P03 cannot connect now, 57P05 idle-session timeout, and
+ * class 08 connection exceptions. Plus node-postgres's own words for a socket that died under it.
+ */
+const SESSION_ENDED_CODES = new Set(['25P03', '57P01', '57P02', '57P03', '57P05']);
+export function isSessionEnded(err: unknown): boolean {
+  if (err instanceof DatabaseSessionEndedError) return true;
+  if (!(err instanceof Error)) return false;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code === 'string' && (SESSION_ENDED_CODES.has(code) || code.startsWith('08'))) return true;
+  return /Connection terminated|not queryable|terminating connection|ECONNRESET|EPIPE/i.test(err.message);
+}
+
+/**
+ * Check a connection out for one transaction, LISTENING for its `'error'` the whole time it is checked out (verifier r21
+ * IDLE-CRASH), and hand it back WITH the error when its session ended, so the pool DISCARDS it rather than lending a dead
+ * socket to the next request. `run` gets the connection and a probe saying whether the server already ended the session.
+ */
+async function pinned<T>(pool: PgPool, run: (conn: PgPoolClient, ended: () => unknown) => Promise<T>): Promise<T> {
+  const conn = await pool.connect();
+  let ended: unknown;
+  const onError = (e: Error): void => { ended ??= e; };
+  conn.on?.('error', onError);
+  let releaseWith: unknown;
+  try {
+    return await run(conn, () => ended);
+  } catch (err) {
+    if (ended !== undefined || isSessionEnded(err)) releaseWith = ended ?? err;
+    throw err;
+  } finally {
+    conn.release(releaseWith);
+    // A healthy connection goes back to the pool with only the pool's own listener on it. A broken one KEEPS ours: the
+    // socket's last words ("Connection terminated unexpectedly") can arrive after the release, and they are already said.
+    if (releaseWith === undefined) conn.removeListener?.('error', onError);
+  }
+}
+
+/**
+ * BEGIN → setup → fn → COMMIT on one pinned connection. Any failure before COMMIT was SENT, on a session the server ended,
+ * becomes a {@link DatabaseSessionEndedError} — true by construction, because PostgreSQL rolls back an unfinished transaction
+ * when its session ends. A COMMIT that itself failed on a dying socket keeps its raw error: whether it landed is unknown.
+ */
+async function inTransaction<T>(
+  pool: PgPool, setup: readonly (readonly [string, readonly unknown[]])[], fn: (conn: PgPoolClient) => Promise<T>,
+): Promise<T> {
+  return pinned(pool, async (conn, ended) => {
+    let commitSent = false;
+    try {
+      await conn.query('BEGIN');
+      for (const [sql, params] of setup) await conn.query(sql, [...params]);
+      const out = await fn(conn);
+      const before = ended();
+      if (before !== undefined) throw new DatabaseSessionEndedError(before);
+      commitSent = true;
+      await conn.query('COMMIT');
+      return out;
+    } catch (err) {
+      const sessionEnded = ended() !== undefined || isSessionEnded(err);
+      // Best-effort rollback on a live connection; a dead one has already been rolled back by the server.
+      if (!sessionEnded) { try { await conn.query('ROLLBACK'); } catch { /* connection unusable — released by `pinned` */ } }
+      if (sessionEnded && !commitSent && !(err instanceof DatabaseSessionEndedError)) throw new DatabaseSessionEndedError(ended() ?? err);
+      throw err;
+    }
+  });
 }
 
 const unwrap = async <R extends SqlRow>(
@@ -69,34 +176,36 @@ export function pgClient(pool: PgQueryable): SqlClient {
  * it does. A transaction needs one connection pinned for its lifetime, which only a Pool can hand
  * out — hence a distinct factory rather than sniffing an ambiguous `connect` at runtime.
  */
-export function pgPoolClient(pool: PgPool): SqlClient {
+export function pgPoolClient(pool: PgPool, options: PgPoolOptions = {}): SqlClient {
+  listenForEndedConnections(pool, options);
   return {
     query: (sql, params) => unwrap(pool, sql, params),
     // Row-level security (migration 0012): every statement through the returned view runs inside a pinned
     // transaction that first sets `app.tenant_id` for THAT transaction only (`set_config(..., true)`), so a
     // pooled connection carries no scope from one request into the next.
     forTenant: (tenantScope) => tenantScopedPool(pool, tenantScope),
-    async transaction<T>(fn: (tx: SqlClient) => Promise<T>): Promise<T> {
-      // One pinned connection for the whole transaction, so the callback's reads see its own
-      // uncommitted writes (see the SqlClient.transaction contract). BEGIN → run → COMMIT, and any
-      // throw rolls the whole thing back before the error propagates.
-      const conn = await pool.connect();
-      const tx: SqlClient = { query: (sql, params) => unwrap(conn, sql, params) };
-      try {
-        await conn.query('BEGIN');
-        const out = await fn(tx);
-        await conn.query('COMMIT');
-        return out;
-      } catch (err) {
-        // Best-effort rollback; if the connection is already broken this throws, but the release in
-        // `finally` still returns/destroys it, and the original error is what the caller must see.
-        try { await conn.query('ROLLBACK'); } catch { /* connection unusable — released below */ }
-        throw err;
-      } finally {
-        conn.release();
-      }
-    },
+    // One pinned connection for the whole transaction, so the callback's reads see its own uncommitted writes (see the
+    // SqlClient.transaction contract). BEGIN → run → COMMIT, and any throw rolls the whole thing back before it propagates.
+    transaction: <T>(fn: (tx: SqlClient) => Promise<T>): Promise<T> =>
+      inTransaction(pool, [], (conn) => fn({ query: (sql, params) => unwrap(conn, sql, params) })),
   };
+}
+
+/** The pools already listened to — one pool feeds several adapters (main.ts), and each ended connection is said ONCE. */
+const LISTENED = new WeakSet<object>();
+
+/**
+ * Pool-level handling (verifier r21 IDLE-CRASH): node-postgres emits `'error'` on the pool when the server ends an IDLE pooled
+ * connection, and an EventEmitter with no `'error'` listener throws — the process would exit. The pool has already removed the
+ * dead connection and opens a fresh one on the next checkout, so the right answer is to SAY it and keep serving.
+ */
+export function listenForEndedConnections(pool: PgPool, options: PgPoolOptions): void {
+  if (pool.on === undefined || LISTENED.has(pool)) return;
+  LISTENED.add(pool);
+  const say = options.onConnectionEnded ?? ((detail: string) => { process.stderr.write(`${detail}\n`); });
+  pool.on('error', (e) => {
+    say(`database: the server ended a pooled connection (${describeDbError(e)}); it was discarded and the next request opens a fresh one`);
+  });
 }
 
 /** The SQL that binds the transaction to one tenant's rows (migration 0012). Transaction-local: gone at COMMIT. */
@@ -108,21 +217,8 @@ const SET_TENANT_SCOPE = "SELECT set_config('app.tenant_id', $1, true)";
  * connection is released in every path, so a scope never leaks to the next borrower.
  */
 function tenantScopedPool(pool: PgPool, tenantScope: string): SqlClient {
-  const inScope = async <T>(fn: (conn: PgPoolClient) => Promise<T>): Promise<T> => {
-    const conn = await pool.connect();
-    try {
-      await conn.query('BEGIN');
-      await conn.query(SET_TENANT_SCOPE, [tenantScope]);
-      const out = await fn(conn);
-      await conn.query('COMMIT');
-      return out;
-    } catch (err) {
-      try { await conn.query('ROLLBACK'); } catch { /* connection unusable — released below */ }
-      throw err;
-    } finally {
-      conn.release();
-    }
-  };
+  const inScope = <T>(fn: (conn: PgPoolClient) => Promise<T>): Promise<T> =>
+    inTransaction(pool, [[SET_TENANT_SCOPE, [tenantScope]]], fn);
   return {
     query: (sql, params) => inScope((conn) => unwrap(conn, sql, params)),
     transaction: <T>(fn: (tx: SqlClient) => Promise<T>) =>
