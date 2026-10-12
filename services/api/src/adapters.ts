@@ -25,10 +25,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { makeEvent, type DomainEvent } from '../../../packages/contracts/src/event';
 import type { Money, CurrencyCode } from '../../../packages/contracts/src/money';
 import { money } from '../../../packages/contracts/src/money';
-import type { BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
+import type { AppendResult, BatchEntry, EventStore, PersistedEvent, WriteGuard } from '../../../packages/persistence/src/event-store';
 import { ConcurrencyConflictError } from '../../../packages/persistence/src/event-store';
 import { issuedSeriesFor, PrefixWriteRaced, type ReceiptPrefixDeps, type ReceiptPrefixIssue } from '../../platform/src/receipt-prefixes';
 import { splitReceiptNumber } from '../../../packages/contracts/src/receipt-number';
+import { notCanonical } from '../../platform/src/store-computer-identity';
 import { stockValueCheckFor } from './finance-close-adapters';
 import {
   foldBilling,
@@ -83,6 +84,7 @@ import type { RefusedDecision } from '../../migration/src/decisions';
 import type { ExceptionResolution, MigrationException } from '../../../packages/migration/src/cleaning';
 import type { ControlTotal, TotalSignature } from '../../../packages/migration/src/reconcile';
 import type { CashDeps, RecordedCashMovement, TillMovement } from '../../pos/src/cash';
+import type { PlacementTrigger } from '../../pos/src/till-store';
 import type { ShiftDeps, ClosedShiftRecord, OverShortReview } from '../../pos/src/shift';
 import type { DayCloseDeps, DayCloseRecord, DayReopenRecord } from '../../pos/src/day-close';
 import type { B2BCreditDeps, B2BAccount, RecordedReceivable } from '../../finance/src/b2b-credit';
@@ -3521,8 +3523,12 @@ export interface LegacyTillPlacement {
   readonly at: string;
   /** The stores head office knew at the moment it was placed — the evidence for the decision. */
   readonly storesKnown: readonly string[];
+  /** OB-86 "A": what made head office place it automatically — the route and the person (absent on older records). */
+  readonly triggeredBy?: PlacementTrigger;
 }
 const LEGACY_TILL_PLACEMENTS = streamName(STREAM.cash, 'legacy-till-placements', 'v1');
+/** OB-86 · verifier r17 OB82-1: the store set's write guard — every org-node write and every automatic placement takes it. */
+export const ORG_STORES_GUARD = 'org-stores';
 const legacyPlacementKey = (tenantId: string, tillId: string): string => `legacy-till-placed-${tenantId}-${tillId}`;
 
 /** The one-time placement of a till's pre-OB-80 records, if it has been made. */
@@ -3555,17 +3561,51 @@ async function hasLegacyTillHistory(store: EventStore, tenantId: string, tillId:
  * OB-82: the store a till's pre-OB-80 records belong to — the one-time placement; made automatically here, once, when the
  * till has such records and head office knows exactly one store at this moment. undefined → not placed (shown unplaced).
  */
-export async function legacyTillStore(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, tillId: string): Promise<string | undefined> {
+export async function legacyTillStore(
+  input: { readonly store: EventStore; readonly now: () => string }, tenantId: string, tillId: string, trigger?: PlacementTrigger,
+): Promise<string | undefined> {
   const placed = await legacyTillPlacement(input.store, tenantId, tillId);
   if (placed !== undefined) return placed.storeId;
   if (!(await hasLegacyTillHistory(input.store, tenantId, tillId))) return undefined;
-  const { knownStores } = await storeOfLocationResolver(input, tenantId);
-  if (knownStores.size !== 1) return undefined;
-  const only = [...knownStores][0]!;
-  return (await placeLegacyTill(input.store, tenantId, {
-    tillId, storeId: only, placedBy: 'system', how: 'single_store_rule', at: input.now(), storesKnown: [only],
-    reason: `head office first read or wrote till ${tillId}'s records kept by its id alone while it knew exactly one store (${only})`,
-  })).placement.storeId;
+  const triggeredBy: PlacementTrigger = trigger ?? { route: 'unnamed head-office read', by: 'system' };
+  // OB-86 "A" · verifier r17 OB82-1 (c): the one-store fact must be STABLE at the moment of the write. The store set's guard
+  // (`ORG_STORES_GUARD`, bumped by every org-node write — the only way a store now comes to exist, since settings need an
+  // org node and a role's scope must name a registered store) is read BEFORE the store set, and the placement is appended
+  // under it: a store added in between moves the guard, the append is refused by name, and the decision is taken again on
+  // the new store set (two stores → not placed, shown unplaced). Never a placement made on a store count already stale.
+  for (let attempt = 0; ; attempt += 1) {
+    const expectedVersion = await input.store.guardVersion(tenantId, ORG_STORES_GUARD);
+    const { knownStores } = await storeOfLocationResolver(input, tenantId);
+    if (knownStores.size !== 1) return undefined;
+    const only = [...knownStores][0]!;
+    const at = input.now();
+    const p: LegacyTillPlacement = {
+      tillId, storeId: only, placedBy: 'system', how: 'single_store_rule', at, storesKnown: [only], triggeredBy,
+      reason: `head office first read or wrote till ${tillId}'s records kept by its id alone (${triggeredBy.route}, by ${triggeredBy.by}) while it knew exactly one store (${only})`,
+    };
+    let res: AppendResult;
+    try {
+      [res] = await input.store.appendBatch(tenantId, [{ stream: LEGACY_TILL_PLACEMENTS, event: makeEvent({
+        id: `legacy-till-placed-${tillId}`, type: 'LegacyTillPlaced', occurredAt: at,
+        idempotencyKey: legacyPlacementKey(tenantId, tillId), source: 'api/pos', payload: p,
+      }) }], { guard: { key: ORG_STORES_GUARD, expectedVersion } }) as [AppendResult];
+    } catch (e) {
+      if (e instanceof ConcurrencyConflictError && attempt < 16) continue;
+      throw e;
+    }
+    const stands = res.record.event.payload as LegacyTillPlacement;
+    if (!res.deduped) {
+      // OB-86 "A": the automatic placement on the M34 audit trail, naming what triggered it. Written only by the call
+      // whose append LANDED (one key per till), so a re-read or a racing read never writes a second entry.
+      await auditTrailAdapter(input).recordAudit(tenantId, {
+        actorId: 'system', action: 'till.legacy.place', objectType: 'till', objectId: tillId, at,
+        origin: { tenantId, branchId: only }, before: null,
+        after: { storeId: only, how: 'single_store_rule', storesKnown: only, triggeredByRoute: triggeredBy.route, triggeredBy: triggeredBy.by },
+        reason: p.reason, correlationId: tillId,
+      });
+    }
+    return stands.storeId;
+  }
 }
 
 /** OB-80: the tills head office has kept cash for at a store (since OB-80). */
@@ -3596,19 +3636,19 @@ export function cashAdapter(input: {
     // chain kept by the till's id alone, exactly as before OB-80.
     // OB-82: the old chain joins ONLY the store its one-time placement names, and the two chains are de-duplicated by movement
     // id — a movement the till re-sent after OB-80 that is already on the old chain counts ONCE.
-    tillMovements: async (tenantId, tillId, storeId) => {
+    tillMovements: async (tenantId, tillId, storeId, trigger) => {
       if (storeId === undefined) return read(tenantId, forTillCash(tillId));
-      const legacy = (await legacyTillStore(input, tenantId, tillId)) === storeId ? await read(tenantId, forTillCash(tillId)) : [];
+      const legacy = (await legacyTillStore(input, tenantId, tillId, trigger)) === storeId ? await read(tenantId, forTillCash(tillId)) : [];
       const seen = new Set(legacy.map((m) => m.movementId));
       return [...legacy, ...(await read(tenantId, forStoreTillCash(storeId, tillId))).filter((m) => !seen.has(m.movementId))];
     },
-    legacyTill: async (tenantId, tillId) => {
-      const store = await legacyTillStore(input, tenantId, tillId);
+    legacyTill: async (tenantId, tillId, trigger) => {
+      const store = await legacyTillStore(input, tenantId, tillId, trigger);
       const placement = store === undefined ? undefined : await legacyTillPlacement(input.store, tenantId, tillId);
-      return { ...(placement === undefined ? {} : { placement }), movements: await read(tenantId, forTillCash(tillId)) };
+      return { ...(placement === undefined ? {} : { placement }), movements: await read(tenantId, forTillCash(tillId)), hasHistory: await hasLegacyTillHistory(input.store, tenantId, tillId) };
     },
     placeLegacyTill: async (tenantId, p) => placeLegacyTill(input.store, tenantId, p),
-    legacyStoreOfTill: (tenantId, tillId) => legacyTillStore(input, tenantId, tillId),
+    legacyStoreOfTill: (tenantId, tillId, trigger) => legacyTillStore(input, tenantId, tillId, trigger),
     storeOfTill: (tenantId, tillId) => storeOfLane(input.store, tenantId, tillId),
     knownStores: async (tenantId) => [...(await storeOfLocationResolver(input, tenantId)).knownStores],
     // SP-4c: the custodian / recorder a relayed movement names is re-verified from their grants, never taken on the box's word.
@@ -3667,7 +3707,7 @@ export function shiftAdapter(input: {
     // OB-80: a close is kept per (store, till) — the till's registered store when the close names none.
     storeOfTill: (tenantId, tillId) => storeOfLane(input.store, tenantId, tillId),
     // OB-82: a close kept before OB-80 (no store) belongs to its till's one-time legacy placement.
-    legacyStoreOfTill: (tenantId, tillId) => legacyTillStore(input, tenantId, tillId),
+    legacyStoreOfTill: (tenantId, tillId, trigger) => legacyTillStore(input, tenantId, tillId, trigger),
     knownStores: async (tenantId) => [...(await storeOfLocationResolver(input, tenantId)).knownStores],
 
     closedShift: async (tenantId, shiftId) => (await closes(tenantId)).find((r) => r.shiftId === shiftId),
@@ -4725,7 +4765,18 @@ export function orgStructureAdapter(input: {
       // exactly what is held already → nothing to record; anything else (a rename, a rename BACK, an activation) is a new
       // version of the node, keyed on its version number and its whole content. The latest-wins fold reads it.
       const entry = await orgNodeVersionEntry(input.store, tenantId, node, input.now());
-      if (entry !== undefined) await input.store.append(tenantId, entry.stream, entry.event);
+      // OB-86 · verifier r17 OB82-1 (c): every org-node write moves the store set's guard, so an automatic one-store decision
+      // racing a store being added is refused and re-taken (legacyTillStore). A lost round is read again and re-sent.
+      if (entry !== undefined) {
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            await input.store.appendBatch(tenantId, [entry], { guard: { key: ORG_STORES_GUARD, expectedVersion: await input.store.guardVersion(tenantId, ORG_STORES_GUARD) } });
+            break;
+          } catch (e) {
+            if (!(e instanceof ConcurrencyConflictError) || attempt >= 16) throw e;
+          }
+        }
+      }
     },
     recordRegistration: async (tenantId, registration) => {
       await input.store.append(tenantId, ORG_REGISTRATIONS_STREAM, makeEvent({
@@ -13827,9 +13878,22 @@ export async function storeOfLocationResolver(input: { readonly store: EventStor
     if (typeof s.warehouseId === 'string' && s.warehouseId !== '') backStoreOf.set(s.warehouseId, s.storeId);
   }
   for (const g of await effectiveGrants(input.store, tenantId)) {
-    if (g.roleId === STORE_COMPUTER_ROLE_ID && g.branchScope !== 'all') for (const b of g.branchScope) known.add(b);
+    // Round 18 (verifier r17 C-2): a scope that is not a canonical id (a pasted invisible character, padding) never counts
+    // as a store — so a bad scope can never inflate the stores OB-82's one-store rule counts. New scopes must also name a
+    // REGISTERED store (store-computer-binding.ts KNOWN_STORE_FIELDS), so none can be added now.
+    if (g.roleId === STORE_COMPUTER_ROLE_ID && g.branchScope !== 'all') for (const b of g.branchScope) if (!notCanonical(b)) known.add(b);
   }
   return { storeOf: (locationId) => backStoreOf.get(locationId) ?? placed(locationId), knownStores: known };
+}
+
+/**
+ * Round 18 (verifier r17 C-2 c): the stores head office has REGISTERED — a branch in its organisation tree, or a store set
+ * up with its settings. Never a grant's scope (that is what is being checked) and never a value a record merely names.
+ */
+export async function registeredStores(input: { readonly store: EventStore; readonly now: () => string }, tenantId: string): Promise<ReadonlySet<string>> {
+  const known = new Set<string>((await orgStructureAdapter(input).nodes(tenantId)).filter((n) => n.kind === 'branch').map((n) => n.nodeId));
+  for (const s of await allOf<StoreSettings>(input.store, tenantId, STORE_SETTINGS_STREAM, 'StoreSettingsSet')) known.add(s.storeId);
+  return known;
 }
 
 /** WF-20 · M35-FR-04: operational incidents and post-mortems — every fact appended, keyed so a re-send is the same one. */

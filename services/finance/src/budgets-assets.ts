@@ -18,6 +18,7 @@
 
 import type { Route } from '../../kernel/src/index';
 import { apiError } from '../../kernel/src/index';
+import { firstUnknownStore, unknownStoreWords } from '../../platform/src/store-computer-identity';
 import { postJournal as postMapped, UnmappedKindError, MissingComponentError, UnbalancedJournalError } from '../../../packages/finance/src/posting';
 import { postJournal, type FinanceDeps, type JournalEntry } from './index';
 import type { StoredPostingMap } from './day-book';
@@ -127,6 +128,8 @@ export interface BudgetAssetDeps extends Pick<FinanceDeps, 'periodStates' | 'app
   readonly journals: (tenantId: string) => Promise<readonly JournalEntry[]>;
   readonly accountClasses: (tenantId: string) => Promise<Readonly<Record<string, AccountClass>> | undefined>;
   readonly postingMap: (tenantId: string) => Promise<StoredPostingMap | undefined> | StoredPostingMap | undefined;
+  /** Round 18 (verifier r17 C-2 c): the stores head office has registered — an asset is only ever at one of them. */
+  readonly registeredStores?: (tenantId: string) => Promise<ReadonlySet<string>>;
 }
 
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -146,6 +149,11 @@ export function budgetAssetRoutes(deps: BudgetAssetDeps): readonly Route[] {
     const a = foldAssets(await deps.assetFacts(t)).find((x) => x.assetId === assetId);
     if (a === undefined) throw refuse(404, 'no_such_asset', `There is no fixed asset ${assetId} on the register.`, 'Add it first (POST /v1/finance/fixed-assets/:assetId).');
     return a;
+  };
+  const assertKnownStore = async (tenantId: string, store: unknown, field: string): Promise<void> => {
+    if (deps.registeredStores === undefined) return;
+    const ghost = firstUnknownStore([store], await deps.registeredStores(tenantId));
+    if (ghost !== undefined) throw apiError(422, unknownStoreWords(ghost, field));
   };
   const assetJournals = async (t: string): Promise<readonly FixedAssetJournal[]> => (await deps.journals(t)).filter((j): j is FixedAssetJournal => 'fixedAsset' in j);
 
@@ -230,6 +238,8 @@ export function budgetAssetRoutes(deps: BudgetAssetDeps): readonly Route[] {
           && isInt(b['usefulLifeMonths']) && (b['usefulLifeMonths'] as number) >= 1 && (b['usefulLifeMonths'] as number) <= 600
           && typeof b['inServiceDate'] === 'string' && DATE.test(b['inServiceDate']);
         if (!ok) throw refuse(400, 'not_readable_as_a_fixed_asset', 'A fixed asset is { name, category, storeId, costMinor (>0), salvageMinor (0..cost), usefulLifeMonths (1..600), inServiceDate (YYYY-MM-DD) }.', 'Send the asset. Nothing was saved.');
+        // Round 18 (verifier r17 C-2 c): an asset is at a store head office knows — never a ghost that books depreciation.
+        await assertKnownStore(ctx.tenantId, b['storeId'], 'The asset\'s storeId');
         const f: FixedAssetFact = {
           kind: 'added', assetId, name: (b['name'] as string).trim(), category: (b['category'] as string).trim(), storeId: (b['storeId'] as string).trim(),
           costMinor: b['costMinor'] as number, salvageMinor: b['salvageMinor'] as number, usefulLifeMonths: b['usefulLifeMonths'] as number,
@@ -254,6 +264,7 @@ export function budgetAssetRoutes(deps: BudgetAssetDeps): readonly Route[] {
         if (!isStr(b['toStoreId']) || typeof b['on'] !== 'string' || !DATE.test(b['on']) || !isStr(b['reason'])) throw refuse(400, 'not_readable_as_a_transfer', 'A transfer is { toStoreId, on (YYYY-MM-DD), reason }.', 'Send where it went, when and why. Nothing was changed.');
         if (a.disposal !== null) throw refuse(409, 'asset_disposed', `${a.assetId} was disposed of on ${a.disposal.on}.`, 'A disposed asset does not move. Nothing was changed.');
         if (b['toStoreId'] === a.storeId) throw refuse(409, 'already_there', `${a.assetId} is already at ${a.storeId}.`, 'Nothing was changed.');
+        await assertKnownStore(ctx.tenantId, b['toStoreId'], 'The transfer\'s toStoreId');
         const last = a.transfers[a.transfers.length - 1]?.on ?? a.inServiceDate;
         if ((b['on'] as string) < last) throw refuse(409, 'transfer_before_last_move', `${a.assetId} cannot move on ${b['on'] as string}: its last move or service date is ${last}.`, 'Send the real date. Nothing was changed.');
         const f: FixedAssetFact = { kind: 'transferred', assetId: a.assetId, fromStoreId: a.storeId, toStoreId: (b['toStoreId'] as string).trim(), on: b['on'] as string, reason: (b['reason'] as string).slice(0, 300), by: ctx.userId, at: deps.now() };

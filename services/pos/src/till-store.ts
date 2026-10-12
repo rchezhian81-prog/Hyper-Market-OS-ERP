@@ -28,8 +28,14 @@ export interface TillStoreDeps {
    * device register. undefined while the till's old records are not placed (they are then shown as unplaced, never folded
    * into a store).
    */
-  readonly legacyStoreOfTill?: (tenantId: string, tillId: string) => Promise<string | undefined> | string | undefined;
+  readonly legacyStoreOfTill?: (tenantId: string, tillId: string, trigger?: PlacementTrigger) => Promise<string | undefined> | string | undefined;
 }
+
+/**
+ * OB-86 "A" (owner, 12 Oct 2026, "Automatic, but audited"): what made head office look at a till's old records — the route
+ * and the person — carried to the automatic one-time placement so the placement record and its M34 audit entry name it.
+ */
+export interface PlacementTrigger { readonly route: string; readonly by: string }
 
 const text = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v : undefined);
 

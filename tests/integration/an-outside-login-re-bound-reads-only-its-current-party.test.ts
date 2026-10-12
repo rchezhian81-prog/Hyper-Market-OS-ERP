@@ -61,6 +61,9 @@ async function shop(h: ApiHarness) {
   const call = (method: 'GET' | 'POST', path: string, userId: string, body?: unknown, key?: string): Promise<Res> =>
     h.request({ method, path, userId, tenantId: T, ...(body === undefined ? {} : { body }), ...(method === 'GET' ? {} : { idempotencyKey: key ?? `k-${n += 1}` }) });
   const ok = async (p: Promise<Res>, what: string): Promise<Res> => { const r = await p; expect(r.status, `${what}: ${JSON.stringify(r.body)}`).toBeLessThan(300); return r; };
+  // Round 18 (verifier r17 C-2 c): a role's branch scope names a store head office knows.
+  await ok(call('POST', '/v1/org/nodes/C1', 'u-owner', { kind: 'company', name: 'SRE Retail' }), 'company');
+  await ok(call('POST', '/v1/org/nodes/store-1', 'u-owner', { kind: 'branch', name: 'Store One', parentId: 'C1', companyId: 'C1' }), 'store-1 in the org tree');
   await ok(call('POST', '/v1/b2b/accounts/X', 'u-owner', { creditLimitMinor: 500_000 }), 'account X');
   await ok(call('POST', '/v1/b2b/accounts/Y', 'u-owner', { creditLimitMinor: 100_000 }), 'account Y');
   for (const p of ['SX', 'SY']) await ok(call('POST', `/v1/supplier-portal/partners/${p}`, 'u-owner', { grants: ['view_statement', 'view_orders'], documents: [], requiredDocuments: [], logins: [] }), `partner ${p}`);

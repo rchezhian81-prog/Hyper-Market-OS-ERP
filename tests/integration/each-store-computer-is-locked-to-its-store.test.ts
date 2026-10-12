@@ -78,6 +78,8 @@ async function askAndApprove(api: Api, grantId: string, userId: string, roleId: 
 }
 
 async function grantTimeAndSetup(api: Api): Promise<void> {
+  // Round 18 (verifier r17 C-2 c): a role's scope names only stores head office knows — so the stores come first.
+  await twoStores(api);
   // A tenant-wide store computer grant is refused when it is ASKED for — nobody is even asked to approve it.
   const wide = await askAndApprove(api, 'g-wide', BOX_A, 'store_computer', 'all');
   expect(wide.asked.status).toBe(422);
@@ -92,7 +94,6 @@ async function grantTimeAndSetup(api: Api): Promise<void> {
   expect((await askAndApprove(api, 'g-box-a', BOX_A, 'store_computer', [SA])).approved?.status).toBe(201);
   expect((await askAndApprove(api, 'g-box-b', BOX_B, 'store_computer', [SB])).approved?.status).toBe(201);
   expect((await askAndApprove(api, 'g-mgr-a', 'u-mgr-a', 'store_manager', [SA])).approved?.status).toBe(201);
-  await twoStores(api);
 }
 
 async function everyRecordIsJudged(api: Api): Promise<void> {

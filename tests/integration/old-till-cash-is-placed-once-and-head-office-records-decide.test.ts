@@ -11,7 +11,8 @@ import { pgPoolClient } from '../../packages/persistence/src/pg-client';
 import { SqlEventStore } from '../../packages/persistence/src/event-store';
 import { runMigrations } from '../../packages/persistence/src/migrations';
 import { makeEvent } from '../../packages/contracts/src/event';
-import { STREAM, streamName } from '../../services/api/src/adapters';
+import { legacyTillStore, STREAM, streamName } from '../../services/api/src/adapters';
+import type { EventStore } from '../../packages/persistence/src/event-store';
 
 /**
  * **Round 16 — the verifier's r16 findings, on the real API, in memory and (with DATABASE_URL) on real PostgreSQL.**
@@ -322,5 +323,89 @@ describe.each(backings)('Round 16 — old till cash placed once; over/short by o
     expect(after.map((d) => [d.branchId, d.status]).sort()).toEqual([[S1, 'registered'], [S2, 'blocked']]);
     // With two stores' lane-1 the till's name alone places it nowhere for a company-wide reader: named, never guessed.
     expect(codeOf(await b.call('GET', '/v1/tills/lane-1/cash', 'u-owner'))).toBe('till_store_unknown');
+  }, 120_000);
+});
+
+// ── Round 18 — verifier r17 OB82-1 (OB-86 "A", "Automatic, but audited") and OB82-2 ───────────────────────────────────
+type TrailMatch = { actorId: string; action: string; objectId: string; after: Record<string, string> };
+describe.each(backings)('Round 18 — the automatic placement is audited, never races a new store, and an empty till is never placed — on $name', ({ harness }) => {
+  it('OB-86: a store manager\'s read places the old float ONCE and the M34 audit trail names the route and the person; re-reads write nothing more', async () => {
+    const h = harness();
+    const b = await business(h, [S1]);
+    await b.oldFloat();
+    // The verifier's probe: a store MANAGER's read is what first touches the old till records.
+    expect(await b.till(S1, 'u-mgr1')).toMatchObject({ storeId: S1, balanceMinor: 100_000 });
+    const placed = await b.placements();
+    expect(placed).toEqual([expect.objectContaining({ tillId: 'lane-1', storeId: S1, how: 'single_store_rule', placedBy: 'system', storesKnown: [S1], triggeredBy: { route: 'GET /v1/tills/:tillId/cash', by: 'u-mgr1' } })]);
+    const trail = async (): Promise<TrailMatch[]> => ((await b.call('GET', '/v1/audit/trail', 'u-owner', undefined, { action: 'till.legacy.place' })).body as { matches: TrailMatch[] }).matches;
+    const first = await trail();
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({ actorId: 'system', objectId: 'lane-1', after: { storeId: S1, how: 'single_store_rule', triggeredByRoute: 'GET /v1/tills/:tillId/cash', triggeredBy: 'u-mgr1' } });
+    // Every later read — the owner, the over/short list, readiness, a relayed re-send — is the SAME placement, no new entry.
+    await b.till(S1);
+    await b.call('GET', '/v1/shifts/over-short', 'u-mgr1');
+    await b.readinessCash(S1);
+    await b.call('POST', '/v1/tills/lane-1/cash-movements/synced', 'u-box-a', { ...mv('cm-old', 'float_issue', 100_000), at: OLD_FLOAT.at });
+    expect(await b.placements()).toHaveLength(1);
+    expect(await trail()).toHaveLength(1);
+  }, 120_000);
+
+  it('OB82-1 (c): a store added between the one-store read and the placement write — the write is refused and re-decided: NOT placed, shown unplaced', async () => {
+    const h = harness();
+    const b = await business(h, [S1]);
+    await b.oldFloat();
+    // Store-2 is created at the worst moment: after head office counted ONE store, before its placement reaches the ledger.
+    let injected = false;
+    const racing: EventStore = Object.assign(Object.create(Object.getPrototypeOf(h.store) as object) as EventStore, h.store, {
+      guardVersion: (t: string, k: string) => h.store.guardVersion(t, k),
+      readStream: (t: string, s: string, o?: Parameters<EventStore['readStream']>[2]) => h.store.readStream(t, s, o),
+      findByIdempotencyKey: (t: string, k: string) => h.store.findByIdempotencyKey(t, k),
+      latestOfType: (t: string, s: string, ty: string) => h.store.latestOfType(t, s, ty),
+      append: (t: string, s: string, e: Parameters<EventStore['append']>[2]) => h.store.append(t, s, e),
+      appendBatch: async (t: string, entries: Parameters<EventStore['appendBatch']>[1], o?: Parameters<EventStore['appendBatch']>[2]) => {
+        if (!injected && entries.some((x) => x.event.type === 'LegacyTillPlaced')) {
+          injected = true;
+          expect((await b.call('POST', `/v1/org/nodes/${S2}`, 'u-owner', { kind: 'branch', name: S2, parentId: 'C1', companyId: 'C1' })).status).toBe(201);
+        }
+        return h.store.appendBatch(t, entries, o);
+      },
+    });
+    const placedAt = await legacyTillStore({ store: racing, now: () => new Date().toISOString() }, b.T, 'lane-1', { route: 'probe', by: 'u-owner' });
+    expect(injected).toBe(true);
+    expect(placedAt).toBeUndefined(); // two stores now: never placed on a count that was already stale
+    expect(await b.placements()).toEqual([]);
+    expect(await b.till(S1)).toMatchObject({ balanceMinor: 0, unplacedLegacy: { balanceMinor: 100_000 } }); // visible, never a silent ₹0
+  }, 120_000);
+
+  it('OB82-1 (c): reads racing a store being added — a placement is only ever made while the business truly had one store', async () => {
+    for (let round = 0; round < 6; round += 1) {
+      const h = harness();
+      const b = await business(h, [S1]);
+      await b.oldFloat();
+      const [r1, , r2] = await Promise.all([b.till(S1), b.secondStore(), b.till(S1)]);
+      // Each read is either the placed ₹1,000 or a visible unplaced ₹1,000 — never a silent ₹0.
+      for (const r of [r1, r2]) expect(r.balanceMinor === 100_000 || r.unplacedLegacy?.balanceMinor === 100_000, JSON.stringify(r)).toBe(true);
+      const placementEvents = await h.store.readStream(b.T, streamName(STREAM.cash, 'legacy-till-placements', 'v1'));
+      expect(placementEvents.length).toBeLessThanOrEqual(1);
+      if (placementEvents.length === 1) {
+        // The placement LANDED before store-2 existed: store-2's org record is later in the ledger than the placement.
+        const s2 = (await h.store.readStream(b.T, streamName(STREAM.org, 'nodes'))).find((e) => (e.event.payload as { nodeId: string }).nodeId === S2);
+        if (s2 !== undefined) expect(s2.seq).toBeGreaterThan(placementEvents[0]!.seq);
+      }
+    }
+  }, 120_000);
+
+  it('OB82-2: placing a till that has NO records kept by its id alone is refused 422 nothing_to_place — no permanent fact with no subject, no audit entry', async () => {
+    const h = harness();
+    const b = await business(h, [S1]);
+    const r = await b.call('POST', '/v1/tills/lane-77/legacy-placement', 'u-owner', { storeId: S1, reason: 'probe' });
+    expect(r.status).toBe(422);
+    expect(codeOf(r)).toBe('nothing_to_place');
+    expect(await b.placements()).toEqual([]);
+    expect(((await b.call('GET', '/v1/audit/trail', 'u-owner', undefined, { action: 'till.legacy.place' })).body as { matches: unknown[] }).matches).toEqual([]);
+    // A till that DOES have old records is still placed by a named person as before.
+    await b.secondStore();
+    await b.oldFloat();
+    expect((await b.call('POST', '/v1/tills/lane-1/legacy-placement', 'u-owner', { storeId: S1, reason: 'go-live' })).status).toBe(201);
   }, 120_000);
 });

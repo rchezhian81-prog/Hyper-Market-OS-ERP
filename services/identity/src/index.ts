@@ -17,7 +17,7 @@ import type { Permission, Role, RoleAssignment } from '../../../packages/rbac/sr
 import { formatNumber, type NumberFormat } from '../../../packages/numbering/src/numbering';
 import type { AuditEntry } from '../../../packages/audit/src/index';
 import { REVOCATION_REASONS, type TokenRevocation, type RevocationReason } from './revocation';
-import { storeComputerGrantRefusal } from '../../platform/src/store-computer-identity';
+import { firstUnknownStore, storeComputerGrantRefusal, unknownStoreWords } from '../../platform/src/store-computer-identity';
 import { machineIdentityGrantRefusal, MACHINE_IDENTITY_REFUSAL_CODE } from './machine-identities';
 import { outsidePartyGrantRefusal, OUTSIDE_LOGIN_REFUSAL_CODE } from './outside-party-logins';
 
@@ -147,6 +147,11 @@ export function grantRole(input: {
 }
 
 export interface IdentityDeps {
+  /**
+   * Round 18 (verifier r17 C-2 c): the stores head office has registered (org tree branches, stores with settings). When
+   * wired, a grant's branch scope must name only these — never a ghost store (422 `unknown_store`).
+   */
+  readonly registeredStores?: (tenantId: string) => Promise<ReadonlySet<string>>;
   readonly roles: (tenantId: string) => Promise<readonly Role[]> | readonly Role[];
   readonly permissionsOf: (tenantId: string, userId: string) => Promise<readonly Permission[]> | readonly Permission[];
   readonly recordGrant: (tenantId: string, a: RoleAssignment, g: GrantRequest) => Promise<void> | void;
@@ -252,6 +257,12 @@ export function identityRoutes(deps: IdentityDeps): readonly Route[] {
         const unbound = storeComputerGrantRefusal(roleId, scope);
         if (unbound !== undefined) {
           throw apiError(422, { code: 'store_computer_grant_must_name_one_store', whatHappened: unbound, wasItSaved: 'not_saved', nextSafeAction: 'Request the store computer role for this box\'s own store only: branchScope ["<its store>"]. Nothing was requested.' });
+        }
+        // Round 18 (verifier r17 C-2 c): a scope names only stores head office knows — a pasted or mistyped store is never
+        // granted (it would book a box's till cash at a ghost store, and count as a store for OB-82).
+        if (scope !== 'all' && deps.registeredStores !== undefined) {
+          const ghost = firstUnknownStore(scope, await deps.registeredStores(ctx.tenantId));
+          if (ghost !== undefined) throw apiError(422, unknownStoreWords(ghost, 'The grant\'s branchScope'));
         }
         // PA-12 round 10: a machine identity (backup_job) is never also a person — refused at the REQUEST.
         if (deps.rolesHeldBy !== undefined) {
