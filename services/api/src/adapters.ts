@@ -3607,12 +3607,11 @@ export async function legacyTillStore(
   // under it: a store added in between moves the guard, the append is refused by name, and the decision is taken again on
   // the new store set (two stores → not placed, shown unplaced). Never a placement made on a store count already stale.
   for (let attempt = 0; ; attempt += 1) {
-    // A racing read that placed it a moment ago (its batch moved the guard and refused ours): its placement stands.
-    if (attempt > 0) {
-      const raced = await legacyTillPlacement(input.store, tenantId, tillId);
-      if (raced !== undefined) return raced.storeId;
-    }
     const expectedVersion = await input.store.guardVersion(tenantId, ORG_STORES_GUARD);
+    // Read AFTER the guard: a racing read whose placement landed before this point is seen here (its placement stands, no
+    // second audit record); one that lands after it moves the guard and refuses our batch, and the next round sees it.
+    const raced = await legacyTillPlacement(input.store, tenantId, tillId);
+    if (raced !== undefined) return raced.storeId;
     const { knownStores } = await storeOfLocationResolver(input, tenantId);
     if (knownStores.size !== 1) return undefined;
     const only = [...knownStores][0]!;
