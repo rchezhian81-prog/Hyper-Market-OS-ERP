@@ -59,6 +59,10 @@ const scan = (commandId: string, over: Record<string, unknown> = {}) => ({
 
 async function setup(api: Api): Promise<void> {
   const owner = as(api, OWNER);
+  // The records here are dated by the test machine's clock (UTC); the shop is set to UTC so head office's trading day
+  // agrees at every hour (the India day differs from 18:30 to 24:00 UTC).
+  const tz = await api.raw('PUT', '/v1/platform/setup/locale.time_zone', TEST_IDP.issue({ sub: OWNER, tenantId: api.tenant }), { value: 'UTC' }, 'tz');
+  expect(tz.status).toBe(200);
   for (const [id, body] of [
     ['C-R10', { kind: 'company', name: 'Synthetic Retail' }],
     [SA, { kind: 'branch', name: 'Store A', parentId: 'C-R10', companyId: 'C-R10' }],
