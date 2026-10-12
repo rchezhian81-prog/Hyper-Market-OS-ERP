@@ -97,6 +97,12 @@ export interface CountPlanDeps extends CountsDeps {
   readonly plans: (tenantId: string) => Promise<readonly CountPlan[]> | readonly CountPlan[];
   /** Append the plan's new state (created / opened / approved / cancelled) — a new event each time, never an edit. */
   readonly recordPlan: (tenantId: string, plan: CountPlan, step: 'created' | 'opened' | 'approved' | 'cancelled') => Promise<void> | void;
+  /**
+   * WF-08 (hard rule #10): the plan's ONE terminal decision — approved OR cancelled — appended under a single key, so two
+   * people closing the same plan at once cannot both land. Answers the decision that STANDS (this one when it landed, the
+   * other person's when it lost). Absent on a bare stub: `recordPlan` is used and taken as landed.
+   */
+  readonly closePlan?: (tenantId: string, plan: CountPlan, step: 'approved' | 'cancelled') => Promise<CountPlan> | CountPlan;
   readonly causes: (tenantId: string, planId: string) => Promise<readonly VarianceCause[]> | readonly VarianceCause[];
   readonly recordCause: (tenantId: string, cause: VarianceCause) => Promise<void> | void;
   /** Every count recorded under this plan (the count register's records carrying `planId`), latest state per count. */
@@ -110,6 +116,9 @@ export interface CountPlanDeps extends CountsDeps {
   /** Who holds which permissions — a relayed count's counter is re-verified (flag, never silent). */
   readonly permissionsOfUser?: (tenantId: string, userId: string) => Promise<readonly string[] | undefined> | readonly string[] | undefined;
 }
+
+/** One count variance an approval posted. */
+interface PostedLine { readonly countId: string; readonly productId: string; readonly varianceMinor: number; readonly valueMinor: number; readonly movementId: string | null; readonly causeCode: string }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 const isNonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
@@ -288,6 +297,32 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
     if (applied.length > 0) await audit(ctx, 'count.plan.held_write_offs.apply', plan, { applied: applied.map((a) => a.writeOffId).join(','), outcome: plan.state }, `held damaged write-offs applied at the count's close (OB-66)`);
     return applied;
   };
+  /** The plan's terminal decision, under one key (approve and cancel share it) — answers the decision that stands. */
+  const close = async (ctx: RequestContext, plan: CountPlan, step: 'approved' | 'cancelled'): Promise<CountPlan> => {
+    if (deps.closePlan !== undefined) return deps.closePlan(ctx.tenantId, plan, step);
+    await deps.recordPlan(ctx.tenantId, plan, step);
+    return plan;
+  };
+  /**
+   * An approved plan whose posting was cut short (a crash between the decision and the last line) is finished by the next
+   * approval request: every final count still waiting posts, as the approver who decided the plan — never twice.
+   */
+  const finishPosting = async (ctx: RequestContext, plan: CountPlan): Promise<PostedLine[]> => {
+    const [counts, causes] = await Promise.all([deps.planCounts(ctx.tenantId, plan.planId), deps.causes(ctx.tenantId, plan.planId)]);
+    const byId = new Map(counts.map((c) => [c.countId, c] as const));
+    const lines = planPosition(plan, counts, causes, await deps.movementsAt(ctx.tenantId, plan.locationId, plan.productIds));
+    const out: PostedLine[] = [];
+    for (const l of lines) {
+      const c = l.finalCountId === null ? undefined : byId.get(l.finalCountId);
+      if (c === undefined || c.pendingApproval !== true || c.decision !== undefined || c.varianceMinor === 0) continue;
+      const r = await decideCount(deps, {
+        tenantId: ctx.tenantId, countId: c.countId, decidedBy: plan.approvedBy ?? ctx.userId, decision: 'approved',
+        reason: `count plan ${plan.planId}: ${l.cause?.causeCode ?? ''} — ${l.cause?.note ?? ''}; ${plan.approvalReason ?? ''}`, branchId: ctx.branchId ?? null, via: 'direct',
+      });
+      if (r.ok && r.alreadyDecided !== true) out.push({ countId: c.countId, productId: l.productId, varianceMinor: l.varianceMinor, valueMinor: l.valueMinor, movementId: r.record.movementId ?? null, causeCode: l.cause?.causeCode ?? '' });
+    }
+    return out;
+  };
   const audit = async (ctx: RequestContext, action: string, plan: CountPlan, after: Record<string, string>, reason: string) => {
     await deps.recordAudit?.(ctx.tenantId, {
       actorId: ctx.userId, action, objectType: 'count_plan', objectId: plan.planId, at: deps.now(),
@@ -408,7 +443,7 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         const plan = await load(ctx);
         const b = (ctx.body ?? {}) as Record<string, unknown>;
         if (!isStr(b['reason'])) throw refuse(400, 'not_readable_as_a_count_approval', 'An approval needs a reason — the audit line a person reads later.');
-        if (plan.state === 'approved') return { status: 200, body: { plan, alreadyApproved: true, heldWriteOffsApplied: await applyHeld(ctx, plan) } };
+        if (plan.state === 'approved') return { status: 200, body: { plan, alreadyApproved: true, posted: await finishPosting(ctx, plan), heldWriteOffsApplied: await applyHeld(ctx, plan) } };
         if (plan.state !== 'counting') throw refuse(409, 'count_plan_not_open', `Count plan ${plan.planId} is ${plan.state}; only an open count can be approved.`);
         const { counts, lines } = await positionOf(ctx.tenantId, plan);
         const waiting = lines.filter((l) => l.state === 'not_counted' || l.state === 'recount_required' || l.state === 'cause_required');
@@ -421,8 +456,18 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         if (own.length > 0) {
           throw refuse(422, 'self_approval', `${ctx.userId} counted ${own.map((l) => l.productId).join(', ')} and cannot approve their own variance (§28).`, 'A different person with approval authority approves. Nothing was posted.');
         }
+        // The plan's terminal decision is claimed FIRST, under the one key approve and cancel share (hard rule #10): a cancel
+        // that lands a moment earlier wins and this approval posts nothing; once approved, no cancel can land.
+        const at = deps.now();
+        const approved: CountPlan = { ...plan, state: 'approved', approvedBy: ctx.userId, approvedAt: at, approvalReason: b['reason'].trim() };
+        const standing = await close(ctx, approved, 'approved');
+        if (standing.state === 'cancelled') throw refuse(409, 'count_plan_already_cancelled', `Count plan ${plan.planId} was cancelled by ${standing.cancelledBy ?? 'someone'} a moment ago; nothing posts from a cancelled count.`, 'Plan a new count if the place still needs one. Nothing was posted.');
+        if (standing.approvedAt !== at || standing.approvedBy !== ctx.userId) {
+          // Another approval of the same plan landed first: it posts; this one is the same decision, told so.
+          return { status: 200, body: { plan: standing, alreadyApproved: true, posted: await finishPosting(ctx, standing), heldWriteOffsApplied: await applyHeld(ctx, standing) } };
+        }
         // Every final variance posts ONE compensating movement through the count register's own decide step.
-        const posted: { countId: string; productId: string; varianceMinor: number; valueMinor: number; movementId: string | null; causeCode: string }[] = [];
+        const posted: PostedLine[] = [];
         for (const l of ready) {
           const out = await decideCount(deps, {
             tenantId: ctx.tenantId, countId: l.finalCountId as string, decidedBy: ctx.userId, decision: 'approved',
@@ -433,14 +478,11 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         }
         // Every count a recount superseded is closed as superseded — recorded, never posted (hard rule #2).
         const finalIds = new Set(lines.map((l) => l.finalCountId));
-        const at = deps.now();
         for (const c of counts) {
           if (finalIds.has(c.countId) || c.pendingApproval !== true) continue;
           const by = counts.find((x) => x.recountOf === c.countId)?.countId ?? 'a recount';
           await deps.recordDecision(ctx.tenantId, { ...c, adjusted: false, pendingApproval: false, approvedBy: null, decision: 'rejected', decidedAt: at, decisionReason: `superseded by recount ${by} in count plan ${plan.planId}`, movementId: null });
         }
-        const approved: CountPlan = { ...plan, state: 'approved', approvedBy: ctx.userId, approvedAt: at, approvalReason: b['reason'].trim() };
-        await deps.recordPlan(ctx.tenantId, approved, 'approved');
         const lossMinor = posted.filter((p) => p.varianceMinor < 0).reduce((s, p) => s + p.valueMinor, 0);
         const gainMinor = posted.filter((p) => p.varianceMinor > 0).reduce((s, p) => s + p.valueMinor, 0);
         await audit(ctx, 'count.plan.approve', plan, { state: 'approved', posted: String(posted.length), lossMinor: String(lossMinor), gainMinor: String(gainMinor) }, approved.approvalReason ?? '');
@@ -459,7 +501,10 @@ export function countPlanRoutes(deps: CountPlanDeps): readonly Route[] {
         if (plan.state === 'cancelled') return { status: 200, body: { plan, alreadyCancelled: true, heldWriteOffsApplied: await applyHeld(ctx, plan) } };
         if (plan.state === 'approved') throw refuse(409, 'count_plan_already_approved', `Count plan ${plan.planId} was approved; its corrections stand (a correction to them is a new count).`);
         const cancelled: CountPlan = { ...plan, state: 'cancelled', cancelledBy: ctx.userId, cancelledAt: deps.now(), cancelReason: b['reason'].trim() };
-        await deps.recordPlan(ctx.tenantId, cancelled, 'cancelled');
+        // One terminal decision per plan (hard rule #10): an approval that landed a moment earlier wins — this cancel is refused.
+        const standing = await close(ctx, cancelled, 'cancelled');
+        if (standing.state === 'approved') throw refuse(409, 'count_plan_already_approved', `Count plan ${plan.planId} was approved by ${standing.approvedBy ?? 'someone'} a moment ago; its corrections stand (a correction to them is a new count).`);
+        if (standing.cancelledAt !== cancelled.cancelledAt || standing.cancelledBy !== ctx.userId) return { status: 200, body: { plan: standing, alreadyCancelled: true, heldWriteOffsApplied: await applyHeld(ctx, standing) } };
         await audit(ctx, 'count.plan.cancel', plan, { state: 'cancelled' }, cancelled.cancelReason ?? '');
         const heldWriteOffsApplied = await applyHeld(ctx, cancelled);
         return { status: 200, body: { plan: cancelled, heldWriteOffsApplied, alreadyCancelled: false } };

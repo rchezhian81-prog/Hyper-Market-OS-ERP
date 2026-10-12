@@ -69,6 +69,17 @@ export interface WriteGuard {
 
 export interface AppendOptions {
   readonly guard?: WriteGuard;
+  /**
+   * Further guards the SAME batch must hold (each checked and bumped with `guard`, all or none) — for a write that
+   * spends two things at once, e.g. a purchase-order amendment that moves the order AND spends the month's open-to-buy.
+   * Only honoured together with `guard`.
+   */
+  readonly alsoGuards?: readonly WriteGuard[];
+}
+
+/** Every guard a batch must hold: `guard` then `alsoGuards` (none when there is no `guard`). */
+function guardsOf(options?: AppendOptions): readonly WriteGuard[] {
+  return options?.guard === undefined ? [] : [options.guard, ...(options.alsoGuards ?? [])];
 }
 
 /** The named loss of a compare-and-append: the key's version moved between the read and the write. */
@@ -201,10 +212,15 @@ export class InMemoryEventStore implements EventStore {
     // moved. A batch that dedups ENTIRELY is a replay of a command that already landed: it never touches the guard,
     // so a lane retrying a lost reply with the version it first read still gets its idempotent answer.
     if (options?.guard !== undefined && staged.length > 0) {
-      const gkey = tenantKey(tenantId, options.guard.key);
-      const current = this.guards.get(gkey) ?? 0;
-      if (current !== options.guard.expectedVersion) return Promise.reject(new ConcurrencyConflictError(options.guard.key, options.guard.expectedVersion));
-      this.guards.set(gkey, current + 1);
+      const all = guardsOf(options);
+      for (const g of all) {
+        const current = this.guards.get(tenantKey(tenantId, g.key)) ?? 0;
+        if (current !== g.expectedVersion) return Promise.reject(new ConcurrencyConflictError(g.key, g.expectedVersion));
+      }
+      for (const g of all) {
+        const gkey = tenantKey(tenantId, g.key);
+        this.guards.set(gkey, (this.guards.get(gkey) ?? 0) + 1);
+      }
     }
     // Commit — one pass, no interleaving, so either every staged record lands or (on no staging) none.
     for (const record of staged) {
@@ -317,7 +333,7 @@ export class SqlEventStore implements EventStore {
     // on the same connection, so a lost compare rolls every insert back. Without a transaction primitive the
     // guard cannot be honoured, and it fails closed by name rather than appending unguarded (hard rule #10).
     const guard = options?.guard;
-    const run = (client: SqlClient): Promise<AppendResult[]> => this.appendAllWith(client, tenantId, entries, guard);
+    const run = (client: SqlClient): Promise<AppendResult[]> => this.appendAllWith(client, tenantId, entries, guardsOf(options));
     // Row-level security (migration 0012): the statements run on the tenant's scoped view, so the database
     // itself refuses a row for any other tenant — even if a bug here ever bound the wrong id.
     const scoped = scopedTo(this.client, tenantId);
@@ -343,7 +359,7 @@ export class SqlEventStore implements EventStore {
    * own uncommitted inserts; using `this.client` (a different pool connection) would not.
    */
   private async appendAllWith(
-    client: SqlClient, tenantId: string, entries: readonly BatchEntry[], guard?: WriteGuard,
+    client: SqlClient, tenantId: string, entries: readonly BatchEntry[], guards: readonly WriteGuard[],
   ): Promise<AppendResult[]> {
     const results: AppendResult[] = [];
     for (const { stream, event } of entries) {
@@ -390,16 +406,19 @@ export class SqlEventStore implements EventStore {
     // then bump it ONLY if it still holds the version the writer read. The UPDATE takes the row lock, so two
     // competing transactions serialise on it; the second re-evaluates the WHERE after the first commits, finds
     // the version moved, updates no row — and this whole transaction rolls back with the conflict named.
-    if (guard !== undefined && results.some((r) => !r.deduped)) {
-      await client.query(
-        'INSERT INTO write_guards (tenant_id, key, version) VALUES ($1, $2, 0) ON CONFLICT (tenant_id, key) DO NOTHING',
-        [tenantId, guard.key],
-      );
-      const bumped = await client.query(
-        'UPDATE write_guards SET version = version + 1, updated_at = now() WHERE tenant_id = $1 AND key = $2 AND version = $3 RETURNING version',
-        [tenantId, guard.key, guard.expectedVersion],
-      );
-      if (bumped.length === 0) throw new ConcurrencyConflictError(guard.key, guard.expectedVersion);
+    // Several guards (`alsoGuards`) are taken in key order, so two batches holding the same pair never deadlock.
+    if (guards.length > 0 && results.some((r) => !r.deduped)) {
+      for (const guard of [...guards].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))) {
+        await client.query(
+          'INSERT INTO write_guards (tenant_id, key, version) VALUES ($1, $2, 0) ON CONFLICT (tenant_id, key) DO NOTHING',
+          [tenantId, guard.key],
+        );
+        const bumped = await client.query(
+          'UPDATE write_guards SET version = version + 1, updated_at = now() WHERE tenant_id = $1 AND key = $2 AND version = $3 RETURNING version',
+          [tenantId, guard.key, guard.expectedVersion],
+        );
+        if (bumped.length === 0) throw new ConcurrencyConflictError(guard.key, guard.expectedVersion);
+      }
     }
     return results;
   }
